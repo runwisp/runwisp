@@ -140,7 +140,7 @@ jobs:
               pkg.version = process.env.VERSION;
               fs.writeFileSync('${pkg_dir}/package.json', JSON.stringify(pkg, null, 2) + '\n');
             "
-            npm publish "${pkg_dir}" --access public --tag "${{ steps.npm_tag.outputs.TAG }}" --provenance
+            npm publish "./${pkg_dir}" --access public --tag "${{ steps.npm_tag.outputs.TAG }}" --provenance
             echo "::endgroup::"
           done
 
