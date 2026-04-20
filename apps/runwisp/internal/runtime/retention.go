@@ -1,0 +1,180 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package runtime
+
+import (
+	"context"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/charmbracelet/log"
+	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage"
+)
+
+// RetentionCleaner periodically prunes old runs and their logs.
+type RetentionCleaner struct {
+	db           storage.RunRepository
+	tasks        map[string]*model.Task
+	interval     time.Duration
+	cancel       context.CancelFunc
+	logDir       string
+	maxTotalSize int64
+}
+
+// NewRetentionCleaner builds a cleaner with the given cadence.
+func NewRetentionCleaner(db storage.RunRepository, tasks map[string]*model.Task, interval time.Duration, logDir string, maxTotalSize int64) *RetentionCleaner {
+	if interval == 0 {
+		interval = time.Hour
+	}
+
+	return &RetentionCleaner{
+		db:           db,
+		tasks:        tasks,
+		interval:     interval,
+		logDir:       logDir,
+		maxTotalSize: maxTotalSize,
+	}
+}
+
+func (cleaner *RetentionCleaner) Start() {
+	ctx, cancel := context.WithCancel(context.Background())
+	cleaner.cancel = cancel
+	go cleaner.run(ctx)
+}
+
+func (cleaner *RetentionCleaner) Stop() {
+	cleaner.cancel()
+}
+
+func (cleaner *RetentionCleaner) run(ctx context.Context) {
+	ticker := time.NewTicker(cleaner.interval)
+	defer ticker.Stop()
+
+	cleaner.cleanOldRuns()
+
+	for {
+		select {
+		case <-ticker.C:
+			cleaner.cleanOldRuns()
+		case <-ctx.Done():
+			log.Debug("Stopping retention cleaner")
+			return
+		}
+	}
+}
+
+func (cleaner *RetentionCleaner) cleanOldRuns() {
+	log.Debug("Running retention cleanup")
+
+	totalDeleted := 0
+	for _, task := range cleaner.tasks {
+		if task.Retention.Age == "" && task.Retention.Runs == 0 {
+			continue
+		}
+
+		deletedRuns, err := cleaner.db.DeleteOldRuns(task)
+		if err != nil {
+			log.Error("Failed to clean runs", "task", task.Name, "err", err)
+			continue
+		}
+
+		for _, run := range deletedRuns {
+			logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
+			logutil.RemoveLogFiles(logPath)
+			logutil.RemoveEmptyParents(logPath, cleaner.logDir)
+		}
+
+		if len(deletedRuns) > 0 {
+			log.Info("Retention cleaned runs", "count", len(deletedRuns), "task", task.Name)
+			totalDeleted += len(deletedRuns)
+		}
+	}
+
+	if totalDeleted > 0 {
+		log.Info("Retention cleanup complete", "deleted", totalDeleted)
+	}
+
+	cleaner.enforceMaxTotalSize()
+}
+
+// enforceMaxTotalSize deletes the oldest completed runs when the log directory
+// exceeds the configured storage cap.
+func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
+	if cleaner.maxTotalSize <= 0 || cleaner.logDir == "" {
+		return
+	}
+
+	totalSize := dirSize(cleaner.logDir)
+	if totalSize <= cleaner.maxTotalSize {
+		return
+	}
+
+	log.Warn("Log storage exceeds storage.maxSize, purging oldest runs",
+		"current", config.FormatByteSize(totalSize), "limit", config.FormatByteSize(cleaner.maxTotalSize))
+
+	// Fetch oldest completed runs in batches and delete until under limit
+	deleted := 0
+	offset := 0
+	for totalSize > cleaner.maxTotalSize {
+		runs, err := cleaner.db.QueryRuns("", 100, offset, "", "created_at", "asc", "")
+		if err != nil || len(runs) == 0 {
+			break
+		}
+
+		deletedInBatch := 0
+		for _, run := range runs {
+			if !run.Status.IsTerminal() {
+				continue
+			}
+			logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
+			if info, statErr := os.Stat(logPath); statErr == nil {
+				totalSize -= info.Size()
+			}
+			if info, statErr := os.Stat(logPath + ".idx"); statErr == nil {
+				totalSize -= info.Size()
+			}
+			logutil.RemoveLogFiles(logPath)
+			logutil.RemoveEmptyParents(logPath, cleaner.logDir)
+			if err := cleaner.db.DeleteRun(run.ID); err != nil {
+				log.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
+				continue
+			}
+			deleted++
+			deletedInBatch++
+
+			if totalSize <= cleaner.maxTotalSize {
+				break
+			}
+		}
+
+		// No terminal runs found in this batch — advance past them
+		if deletedInBatch == 0 {
+			offset += len(runs)
+		}
+	}
+
+	if deleted > 0 {
+		log.Info("Purged runs to enforce storage.maxSize", "deleted", deleted)
+	}
+}
+
+// dirSize returns the total size in bytes of all files under dir (recursive).
+func dirSize(dir string) int64 {
+	var total int64
+	filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, e := d.Info(); e == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}

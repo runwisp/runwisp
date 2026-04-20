@@ -1,0 +1,22 @@
+{
+  "name": "@runwisp/linux-arm64",
+  "version": "0.0.0-bootstrap.0",
+  "description": "The linux-arm64 binary for runwisp",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runwisp/runwisp.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "runwisp": "runwisp"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ]
+}

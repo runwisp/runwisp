@@ -1,0 +1,48 @@
+{
+  "name": "RunWisp",
+  "build": {
+    "dockerfile": "Dockerfile.devcontainer"
+  },
+  "runArgs": ["--userns=keep-id", "--security-opt=label=disable"],
+  "mounts": [
+    "source=runwisp-vscode-server,target=/home/vscode/.vscode-server,type=volume",
+    "source=runwisp-vscode-config,target=/home/vscode/.config,type=volume",
+    "source=runwisp-vscode-local-share,target=/home/vscode/.local/share,type=volume",
+    "source=runwisp-vscode-local-state,target=/home/vscode/.local/state,type=volume"
+  ],
+  "containerUser": "vscode",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "remoteEnv": {
+    "BUN_INSTALL": "/home/vscode/.bun",
+    "PATH": "/home/vscode/.bun/bin:${containerEnv:PATH}"
+  },
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": {
+      "label": "RunWisp daemon",
+      "onAutoForward": "notify"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "files.eol": "\n",
+        "go.toolsManagement.autoUpdate": true,
+        "npm.packageManager": "bun",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-playwright.playwright",
+        "bradlc.vscode-tailwindcss",
+        "svelte.svelte-vscode",
+        "golang.go",
+        "oven.bun-vscode",
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+  "postCreateCommand": "bun install && cd apps/runwisp && go mod download"
+}

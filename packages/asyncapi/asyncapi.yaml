@@ -1,0 +1,444 @@
+asyncapi: 2.6.0
+info:
+  title: RunWisp Protocol
+  version: 1.0.0
+  description: WebSocket protocol between RunWisp daemons and the control plane
+
+defaultContentType: application/json
+
+channels:
+  cloudToDaemon:
+    description: Messages sent from cloud to the daemon
+    publish:
+      message:
+        oneOf:
+          - $ref: "#/components/messages/authResult"
+          - $ref: "#/components/messages/pong"
+          - $ref: "#/components/messages/executionDispatch"
+          - $ref: "#/components/messages/executionStop"
+          - $ref: "#/components/messages/logRequest"
+          - $ref: "#/components/messages/logListen"
+          - $ref: "#/components/messages/logStop"
+          - $ref: "#/components/messages/errorCloudToDaemon"
+
+  daemonToCloud:
+    description: Messages sent from the daemon to cloud
+    subscribe:
+      message:
+        oneOf:
+          - $ref: "#/components/messages/ping"
+          - $ref: "#/components/messages/executionUpdate"
+          - $ref: "#/components/messages/logChunk"
+          - $ref: "#/components/messages/logResponse"
+          - $ref: "#/components/messages/errorDaemonToCloud"
+
+components:
+  messages:
+    authResult:
+      name: auth:result
+      payload:
+        $ref: "#/components/schemas/AuthResultMessage"
+
+    pong:
+      name: pong
+      payload:
+        $ref: "#/components/schemas/PongMessage"
+
+    executionDispatch:
+      name: execution:dispatch
+      payload:
+        $ref: "#/components/schemas/ExecutionDispatchMessage"
+
+    executionStop:
+      name: execution:stop
+      payload:
+        $ref: "#/components/schemas/ExecutionStopMessage"
+
+    logRequest:
+      name: log:request
+      payload:
+        $ref: "#/components/schemas/LogRequestMessage"
+
+    logListen:
+      name: log:listen
+      payload:
+        $ref: "#/components/schemas/LogListenMessage"
+
+    logStop:
+      name: log:stop
+      payload:
+        $ref: "#/components/schemas/LogStopMessage"
+
+    errorCloudToDaemon:
+      name: error
+      payload:
+        $ref: "#/components/schemas/ProtocolErrorMessage"
+
+    ping:
+      name: ping
+      payload:
+        $ref: "#/components/schemas/PingMessage"
+
+    executionUpdate:
+      name: execution:update
+      payload:
+        $ref: "#/components/schemas/ExecutionUpdateMessage"
+
+    logChunk:
+      name: log:chunk
+      payload:
+        $ref: "#/components/schemas/LogChunkMessage"
+
+    logResponse:
+      name: log:response
+      payload:
+        $ref: "#/components/schemas/LogResponseMessage"
+
+    errorDaemonToCloud:
+      name: error
+      payload:
+        $ref: "#/components/schemas/DaemonProtocolErrorMessage"
+
+  schemas:
+    ExecutionStatus:
+      $id: ExecutionStatus
+      type: string
+      enum:
+        - running
+        - ok
+        - err
+        - stopped
+        - timeout
+
+    TriggerType:
+      $id: TriggerType
+      type: string
+      enum:
+        - manual
+        - schedule
+        - success
+        - failure
+
+    AuthResultMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: auth:result
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        success:
+          type: boolean
+        connectionId:
+          type: string
+        error:
+          type: string
+      required:
+        - type
+        - success
+
+    PongMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: pong
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+      required:
+        - type
+
+    ExecutionDispatchMessage:
+      type: object
+      description: |
+        Dispatches an execution to a daemon.
+        For "fan-out" distribution on cluster runners, the control plane sends
+        this message to every connected node simultaneously.
+      properties:
+        type:
+          type: string
+          const: execution:dispatch
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        execution:
+          $ref: "#/components/schemas/ExecutionPayload"
+      required:
+        - type
+        - execution
+
+    ExecutionPayload:
+      type: object
+      properties:
+        id:
+          type: string
+        taskId:
+          type: string
+        taskName:
+          type: string
+        executionId:
+          type: string
+        priority:
+          type: integer
+        triggeredBy:
+          $ref: "#/components/schemas/TriggerType"
+        inputValues:
+          type: object
+          additionalProperties:
+            type: string
+        script:
+          type: object
+        timeout:
+          type: integer
+      required:
+        - id
+        - taskId
+        - taskName
+        - executionId
+        - priority
+        - triggeredBy
+        - inputValues
+        - script
+        - timeout
+
+    ExecutionStopMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: execution:stop
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        executionId:
+          type: string
+        reason:
+          type: string
+      required:
+        - type
+        - executionId
+        - reason
+
+    LogRequestMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: log:request
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+        executionId:
+          type: string
+        offset:
+          type: integer
+          format: int64
+          minimum: 0
+        limit:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - type
+        - id
+        - executionId
+        - offset
+        - limit
+
+    LogListenMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: log:listen
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        executionId:
+          type: string
+      required:
+        - type
+        - executionId
+
+    LogStopMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: log:stop
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        executionId:
+          type: string
+      required:
+        - type
+        - executionId
+
+    ProtocolErrorMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: error
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+      required:
+        - type
+        - code
+        - message
+
+    PingMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: ping
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+      required:
+        - type
+
+    ExecutionUpdateMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: "execution:update"
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        executionId:
+          type: string
+        status:
+          $ref: "#/components/schemas/ExecutionStatus"
+        exitCode:
+          type: integer
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - type
+        - executionId
+        - status
+
+    LogChunkMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: log:chunk
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        executionId:
+          type: string
+        data:
+          type: string
+        offset:
+          type: integer
+          format: int64
+          minimum: 0
+        final:
+          type: boolean
+      required:
+        - type
+        - executionId
+        - data
+        - offset
+        - final
+
+    LogResponseMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: log:response
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+        executionId:
+          type: string
+        data:
+          type: string
+        offset:
+          type: integer
+          format: int64
+          minimum: 0
+        final:
+          type: boolean
+      required:
+        - type
+        - id
+        - executionId
+        - data
+        - offset
+        - final
+
+    DaemonProtocolErrorMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          const: error
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+      required:
+        - type
+        - code
+        - message

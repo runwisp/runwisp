@@ -1,0 +1,47 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
+	"github.com/spf13/cobra"
+)
+
+var openapiCmd = &cobra.Command{
+	Use:   "openapi",
+	Short: "Print the OpenAPI 3.1 spec (JSON) to stdout",
+	Long:  `Generates and prints the OpenAPI 3.1 specification derived from the huma route definitions. Useful for feeding into code generators (openapi-typescript, openapi-zod-client, etc.).`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runOpenAPI()
+	},
+}
+
+func runOpenAPI() error {
+	// Construct a server with minimal dependencies — only route registration matters.
+	srv, err := server.New(server.Options{
+		Tasks:      map[string]*model.Task{},
+		Port:       8080,
+		LogDir:     os.TempDir(),
+		EventBus:   events.NewEventBus(),
+		Password:   "openapi-generation",
+		JWTSecret:  "openapi-generation",
+		DaemonInfo: &model.DaemonInfo{},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to construct server for OpenAPI generation: %w", err)
+	}
+
+	spec, err := json.MarshalIndent(srv.API().OpenAPI(), "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal OpenAPI spec: %w", err)
+	}
+	fmt.Println(string(spec))
+	return nil
+}

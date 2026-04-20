@@ -1,0 +1,21 @@
+{
+    "name": "@runwisp/eslint-config",
+    "version": "0.0.0",
+    "license": "Apache-2.0",
+    "type": "module",
+    "private": true,
+    "exports": {
+        "./base": "./base.js",
+        "./svelte": "./svelte.js"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.39.1",
+        "eslint": "^9.39.1",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-sonarjs": "^4.0.0",
+        "eslint-plugin-svelte": "^3.13.1",
+        "globals": "^16.5.0",
+        "typescript": "5.9.2",
+        "typescript-eslint": "^8.48.1"
+    }
+}

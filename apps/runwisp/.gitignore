@@ -1,0 +1,48 @@
+# Binaries
+/runwisp
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+logs/
+*.log
+
+# Data
+data/
+
+# Go
+vendor/
+*.prof
+coverage.out
+
+# Embedded UI (generated)
+internal/ui/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+runwisp.yaml
+runwisp.db
+
+# Ignore Windows Zone.Identifier detritus
+*:Zone.Identifier

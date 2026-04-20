@@ -1,0 +1,419 @@
+/* Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0 */
+
+@import "tailwindcss";
+@plugin "@tailwindcss/forms";
+@plugin "@tailwindcss/typography";
+
+/* RunWisp Design System - Wisp-inspired ethereal aesthetic */
+/* (c) PoppyCake s.r.o. */
+
+@import "@fontsource/tasa-orbiter/400.css";
+@import "@fontsource/tasa-orbiter/500.css";
+@import "@fontsource/tasa-orbiter/600.css";
+@import "@fontsource/tasa-orbiter/700.css";
+
+@theme {
+    /* Wisp Color Palette - Ethereal, mystical, professional */
+
+    /* Primary - Wisp Violet (ethereal purple-blue) */
+    --color-wisp-50: oklch(0.97 0.02 280);
+    --color-wisp-100: oklch(0.94 0.04 280);
+    --color-wisp-200: oklch(0.88 0.08 280);
+    --color-wisp-300: oklch(0.78 0.12 280);
+    --color-wisp-400: oklch(0.68 0.16 275);
+    --color-wisp-500: oklch(0.58 0.18 270);
+    --color-wisp-600: oklch(0.5 0.18 268);
+    --color-wisp-700: oklch(0.42 0.16 268);
+    --color-wisp-800: oklch(0.35 0.12 268);
+    --color-wisp-900: oklch(0.28 0.08 268);
+    --color-wisp-950: oklch(0.18 0.06 268);
+
+    /* Accent - Aurora Teal (mystical glow) */
+    --color-aurora-50: oklch(0.97 0.02 180);
+    --color-aurora-100: oklch(0.94 0.05 180);
+    --color-aurora-200: oklch(0.88 0.1 178);
+    --color-aurora-300: oklch(0.78 0.14 176);
+    --color-aurora-400: oklch(0.68 0.16 174);
+    --color-aurora-500: oklch(0.58 0.14 172);
+    --color-aurora-600: oklch(0.5 0.12 172);
+    --color-aurora-700: oklch(0.42 0.1 172);
+    --color-aurora-800: oklch(0.35 0.08 172);
+    --color-aurora-900: oklch(0.28 0.06 172);
+
+    /* Mist - Cool neutral grays with slight purple tint */
+    --color-mist-50: oklch(0.98 0.005 280);
+    --color-mist-100: oklch(0.96 0.008 280);
+    --color-mist-200: oklch(0.92 0.01 280);
+    --color-mist-300: oklch(0.86 0.012 280);
+    --color-mist-400: oklch(0.7 0.012 280);
+    --color-mist-500: oklch(0.55 0.012 280);
+    --color-mist-600: oklch(0.45 0.012 280);
+    --color-mist-700: oklch(0.35 0.012 280);
+    --color-mist-800: oklch(0.25 0.012 280);
+    --color-mist-900: oklch(0.18 0.012 280);
+    --color-mist-950: oklch(0.12 0.012 280);
+
+    /* Semantic Colors (v2) */
+
+    /* Success - Aurora Mint (teal-green, matches your aurora/wisp vibe) */
+    --color-success-50: oklch(0.97 0.018 165);
+    --color-success-100: oklch(0.94 0.035 165);
+    --color-success-200: oklch(0.88 0.06 165);
+    --color-success-300: oklch(0.78 0.09 165);
+    --color-success-400: oklch(0.68 0.11 165);
+    --color-success-500: oklch(0.58 0.115 165);
+    --color-success-600: oklch(0.5 0.105 165);
+    --color-success-700: oklch(0.42 0.095 165);
+
+    /* Danger - Rose Crimson (cooler red, less orange, more “wisp”) */
+    --color-danger-50: oklch(0.97 0.014 355);
+    --color-danger-100: oklch(0.94 0.028 355);
+    --color-danger-200: oklch(0.88 0.052 355);
+    --color-danger-300: oklch(0.78 0.085 355);
+    --color-danger-400: oklch(0.68 0.115 355);
+    --color-danger-500: oklch(0.58 0.145 355);
+    --color-danger-600: oklch(0.5 0.135 355);
+    --color-danger-700: oklch(0.42 0.12 355);
+
+    --color-warning-50: oklch(0.98 0.03 85);
+    --color-warning-100: oklch(0.95 0.08 85);
+    --color-warning-200: oklch(0.9 0.12 80);
+    --color-warning-300: oklch(0.85 0.16 75);
+    --color-warning-400: oklch(0.8 0.18 70);
+    --color-warning-500: oklch(0.75 0.16 65);
+    --color-warning-600: oklch(0.65 0.14 60);
+    --color-warning-700: oklch(0.55 0.12 55);
+
+    /* Typography */
+    --font-sans: "TASA Orbiter", system-ui, -apple-system, sans-serif;
+    --font-mono: "JetBrains Mono", "Fira Code", monospace;
+
+    /* Font sizes */
+    --text-2xs: 0.625rem;
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.25rem;
+    --text-2xl: 1.5rem;
+    --text-3xl: 1.875rem;
+    --text-4xl: 2.25rem;
+
+    /* Spacing scale */
+    --spacing-px: 1px;
+    --spacing-0: 0;
+    --spacing-0\.5: 0.125rem;
+    --spacing-1: 0.25rem;
+    --spacing-1\.5: 0.375rem;
+    --spacing-2: 0.5rem;
+    --spacing-2\.5: 0.625rem;
+    --spacing-3: 0.75rem;
+    --spacing-3\.5: 0.875rem;
+    --spacing-4: 1rem;
+    --spacing-5: 1.25rem;
+    --spacing-6: 1.5rem;
+    --spacing-7: 1.75rem;
+    --spacing-8: 2rem;
+    --spacing-9: 2.25rem;
+    --spacing-10: 2.5rem;
+    --spacing-12: 3rem;
+    --spacing-14: 3.5rem;
+    --spacing-16: 4rem;
+    --spacing-20: 5rem;
+    --spacing-24: 6rem;
+
+    /* Border radius */
+    --radius-none: 0;
+    --radius-sm: 0.25rem;
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;
+    --radius-xl: 0.75rem;
+    --radius-2xl: 1rem;
+    --radius-3xl: 1.5rem;
+    --radius-full: 9999px;
+
+    /* Shadows - Soft, ethereal */
+    --shadow-xs: 0 1px 2px 0 oklch(0.18 0.02 280 / 0.05);
+    --shadow-sm:
+        0 1px 3px 0 oklch(0.18 0.02 280 / 0.08), 0 1px 2px -1px oklch(0.18 0.02 280 / 0.08);
+    --shadow-md:
+        0 4px 6px -1px oklch(0.18 0.02 280 / 0.08), 0 2px 4px -2px oklch(0.18 0.02 280 / 0.08);
+    --shadow-lg:
+        0 10px 15px -3px oklch(0.18 0.02 280 / 0.08), 0 4px 6px -4px oklch(0.18 0.02 280 / 0.08);
+    --shadow-xl:
+        0 20px 25px -5px oklch(0.18 0.02 280 / 0.1), 0 8px 10px -6px oklch(0.18 0.02 280 / 0.1);
+
+    /* Glow effects for wisp theme */
+    --shadow-glow-sm: 0 0 10px oklch(0.58 0.18 270 / 0.15);
+    --shadow-glow-md: 0 0 20px oklch(0.58 0.18 270 / 0.2);
+    --shadow-glow-lg: 0 0 30px oklch(0.58 0.18 270 / 0.25);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Semantic Design Tokens — surface / text / border / action
+   Components use ONLY these; raw palette stays for one-offs.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Light mode (default) */
+:root {
+    /* Surfaces */
+    --rw-surface: var(--color-mist-50);
+    --rw-surface-raised: white;
+    --rw-surface-overlay: white;
+    --rw-surface-sunken: var(--color-mist-100);
+    /* On-surface text */
+    --rw-on-surface: var(--color-mist-900);
+    --rw-on-surface-muted: var(--color-mist-600);
+    --rw-on-surface-faint: var(--color-mist-400);
+    /* Borders / outlines */
+    --rw-outline: var(--color-mist-200);
+    --rw-outline-hover: var(--color-mist-300);
+    --rw-outline-faint: var(--color-mist-100);
+    --rw-ring: var(--color-wisp-500);
+    --rw-backdrop: oklch(0.12 0.012 280 / 0.5);
+    /* Primary action */
+    --rw-primary: var(--color-wisp-600);
+    --rw-primary-hover: var(--color-wisp-700);
+    --rw-primary-active: var(--color-wisp-800);
+    --rw-on-primary: white;
+    --rw-primary-soft: var(--color-wisp-100);
+    --rw-primary-soft-text: var(--color-wisp-700);
+    /* Danger */
+    --rw-danger: var(--color-danger-600);
+    --rw-danger-hover: var(--color-danger-700);
+    --rw-danger-active: var(--color-danger-800);
+    --rw-on-danger: white;
+    --rw-danger-soft: var(--color-danger-50);
+    --rw-danger-soft-text: var(--color-danger-700);
+    /* Success */
+    --rw-success: var(--color-success-600);
+    --rw-success-hover: var(--color-success-700);
+    --rw-on-success: white;
+    --rw-success-soft: var(--color-success-50);
+    --rw-success-soft-text: var(--color-success-700);
+    /* Warning */
+    --rw-warning: var(--color-warning-500);
+    --rw-warning-hover: var(--color-warning-600);
+    --rw-on-warning: white;
+    --rw-warning-soft: var(--color-warning-50);
+    --rw-warning-soft-text: var(--color-warning-700);
+    /* Info */
+    --rw-info: var(--color-aurora-600);
+    --rw-info-hover: var(--color-aurora-700);
+    --rw-on-info: white;
+    --rw-info-soft: var(--color-aurora-50);
+    --rw-info-soft-text: var(--color-aurora-700);
+    /* Glass */
+    --rw-glass: oklch(1 0 0 / 0.8);
+    --rw-glass-blur: blur(12px);
+}
+
+/* Dark mode */
+:root.dark {
+    --rw-surface: var(--color-mist-950);
+    --rw-surface-raised: var(--color-mist-900);
+    --rw-surface-overlay: var(--color-mist-900);
+    --rw-surface-sunken: oklch(0.08 0.012 280);
+    --rw-on-surface: var(--color-mist-100);
+    --rw-on-surface-muted: var(--color-mist-400);
+    --rw-on-surface-faint: var(--color-mist-600);
+    --rw-outline: var(--color-mist-800);
+    --rw-outline-hover: var(--color-mist-700);
+    --rw-outline-faint: var(--color-mist-800);
+    --rw-ring: var(--color-wisp-400);
+    --rw-backdrop: oklch(0 0 0 / 0.7);
+    /* Primary */
+    --rw-primary: var(--color-wisp-500);
+    --rw-primary-hover: var(--color-wisp-400);
+    --rw-primary-active: var(--color-wisp-300);
+    --rw-on-primary: white;
+    --rw-primary-soft: oklch(0.22 0.06 270);
+    --rw-primary-soft-text: var(--color-wisp-300);
+    /* Danger */
+    --rw-danger: var(--color-danger-500);
+    --rw-danger-hover: var(--color-danger-400);
+    --rw-danger-active: var(--color-danger-300);
+    --rw-on-danger: white;
+    --rw-danger-soft: oklch(0.2 0.04 355);
+    --rw-danger-soft-text: var(--color-danger-300);
+    /* Success */
+    --rw-success: var(--color-success-500);
+    --rw-success-hover: var(--color-success-400);
+    --rw-on-success: white;
+    --rw-success-soft: oklch(0.2 0.04 165);
+    --rw-success-soft-text: var(--color-success-300);
+    /* Warning */
+    --rw-warning: var(--color-warning-400);
+    --rw-warning-hover: var(--color-warning-300);
+    --rw-on-warning: var(--color-mist-950);
+    --rw-warning-soft: oklch(0.2 0.04 85);
+    --rw-warning-soft-text: var(--color-warning-300);
+    /* Info */
+    --rw-info: var(--color-aurora-500);
+    --rw-info-hover: var(--color-aurora-400);
+    --rw-on-info: white;
+    --rw-info-soft: oklch(0.2 0.04 180);
+    --rw-info-soft-text: var(--color-aurora-300);
+    /* Glass */
+    --rw-glass: oklch(0.12 0.012 280 / 0.9);
+}
+
+/* Register semantic tokens as Tailwind theme values */
+@theme {
+    /* Surfaces */
+    --color-surface: var(--rw-surface);
+    --color-surface-raised: var(--rw-surface-raised);
+    --color-surface-overlay: var(--rw-surface-overlay);
+    --color-surface-sunken: var(--rw-surface-sunken);
+    /* On-surface text */
+    --color-on-surface: var(--rw-on-surface);
+    --color-on-surface-muted: var(--rw-on-surface-muted);
+    --color-on-surface-faint: var(--rw-on-surface-faint);
+    /* Borders */
+    --color-outline: var(--rw-outline);
+    --color-outline-hover: var(--rw-outline-hover);
+    --color-outline-faint: var(--rw-outline-faint);
+    --color-ring: var(--rw-ring);
+    --color-backdrop: var(--rw-backdrop);
+    /* Primary */
+    --color-primary: var(--rw-primary);
+    --color-primary-hover: var(--rw-primary-hover);
+    --color-primary-active: var(--rw-primary-active);
+    --color-on-primary: var(--rw-on-primary);
+    --color-primary-soft: var(--rw-primary-soft);
+    --color-primary-soft-text: var(--rw-primary-soft-text);
+    /* Danger */
+    --color-danger-surface: var(--rw-danger);
+    --color-danger-hover: var(--rw-danger-hover);
+    --color-danger-active: var(--rw-danger-active);
+    --color-on-danger: var(--rw-on-danger);
+    --color-danger-soft: var(--rw-danger-soft);
+    --color-danger-soft-text: var(--rw-danger-soft-text);
+    /* Success */
+    --color-success-surface: var(--rw-success);
+    --color-success-hover: var(--rw-success-hover);
+    --color-on-success: var(--rw-on-success);
+    --color-success-soft: var(--rw-success-soft);
+    --color-success-soft-text: var(--rw-success-soft-text);
+    /* Warning */
+    --color-warning-surface: var(--rw-warning);
+    --color-warning-hover: var(--rw-warning-hover);
+    --color-on-warning: var(--rw-on-warning);
+    --color-warning-soft: var(--rw-warning-soft);
+    --color-warning-soft-text: var(--rw-warning-soft-text);
+    /* Info */
+    --color-info: var(--rw-info);
+    --color-info-hover: var(--rw-info-hover);
+    --color-on-info: var(--rw-on-info);
+    --color-info-soft: var(--rw-info-soft);
+    --color-info-soft-text: var(--rw-info-soft-text);
+
+    /* Transition durations */
+    --duration-fast: 100ms;
+    --duration-normal: 200ms;
+    --duration-slow: 300ms;
+
+    /* Easings */
+    --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+}
+
+/* Base styles */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--rw-surface);
+    color: var(--rw-on-surface);
+}
+
+/* Focus styles */
+:focus-visible {
+    outline: 2px solid var(--rw-ring);
+    outline-offset: 2px;
+}
+
+/* Selection styles */
+::selection {
+    background-color: var(--color-wisp-200);
+    color: var(--color-wisp-900);
+}
+
+:root.dark ::selection {
+    background-color: var(--color-wisp-800);
+    color: var(--color-wisp-100);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--rw-surface-sunken);
+    border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--rw-outline-hover);
+    border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--rw-on-surface-faint);
+}
+
+/* Utility classes for the design system */
+.rw-text-gradient {
+    background: linear-gradient(135deg, var(--color-wisp-600), var(--color-aurora-500));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.rw-border-subtle {
+    border-color: var(--color-mist-200);
+}
+
+.rw-bg-glass {
+    background: var(--rw-glass);
+    backdrop-filter: var(--rw-glass-blur);
+}
+
+/* Legacy aliases — prefer .rw-bg-glass which adapts to light/dark */
+.rw-bg-glass-dark {
+    background: var(--rw-glass);
+    backdrop-filter: var(--rw-glass-blur);
+}
+
+/* Utilities */
+.spinner {
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.btn-scale {
+    transition: all 0.15s ease-in-out;
+}
+.btn-scale:active {
+    transform: scale(0.97);
+}

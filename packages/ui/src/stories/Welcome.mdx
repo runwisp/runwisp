@@ -1,0 +1,241 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+import Logo from "../../static/runwisp_c.svg";
+
+<Meta title="Welcome" />
+
+<style>
+    {`
+    .rw-container {
+      font-family: 'TASA Orbiter', system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    
+    .rw-hero {
+      text-align: center;
+      padding: 3rem 0;
+      margin-bottom: 2rem;
+      background: linear-gradient(135deg, oklch(0.97 0.02 280), oklch(0.94 0.04 280));
+      border-radius: 1rem;
+    }
+    
+    .rw-logo {
+      width: 128px;
+      height: 128px;
+      margin: 0 auto 1.5rem;
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .rw-title {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin: 0 0 0.5rem;
+      background: linear-gradient(135deg, oklch(0.50 0.18 268), oklch(0.50 0.12 172));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .rw-subtitle {
+      font-size: 1.125rem;
+      color: oklch(0.55 0.012 280);
+      margin: 0;
+    }
+    
+    .rw-section {
+      margin-bottom: 2rem;
+    }
+    
+    .rw-section h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: oklch(0.18 0.012 280);
+      margin: 0 0 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid oklch(0.92 0.010 280);
+    }
+    
+    .rw-section p {
+      color: oklch(0.45 0.012 280);
+      line-height: 1.7;
+    }
+    
+    .rw-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    
+    .rw-card {
+      padding: 1.25rem;
+      background: white;
+      border: 1px solid oklch(0.92 0.010 280);
+      border-radius: 0.75rem;
+    }
+    
+    .rw-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: oklch(0.25 0.012 280);
+      margin: 0 0 0.5rem;
+    }
+    
+    .rw-card p {
+      font-size: 0.875rem;
+      color: oklch(0.55 0.012 280);
+      margin: 0;
+    }
+    
+    .rw-colors {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    
+    .rw-color {
+      width: 48px;
+      height: 48px;
+      border-radius: 0.5rem;
+      border: 1px solid oklch(0.92 0.010 280);
+    }
+    
+    .rw-footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid oklch(0.92 0.010 280);
+      text-align: center;
+      font-size: 0.875rem;
+      color: oklch(0.55 0.012 280);
+    }
+  `}
+</style>
+
+<div className="rw-container">
+  <div className="rw-hero">
+    <div className="rw-logo">
+      <img src={Logo} alt="RunWisp Logo" />
+    </div>
+    <h1 className="rw-title">RunWisp UI Components</h1>
+    <p className="rw-subtitle">Shared Svelte 5 components for dashboards, operators, and admin tooling</p>
+  </div>
+
+<div className="rw-section">
+    <h2>🌟 Overview</h2>
+    <p>
+        `@runwisp/ui` is the shared component package used by the RunWisp dashboard and related
+        interfaces. It bundles the common primitives, data-display components, and theme tokens that
+        keep the product visually consistent across apps.
+    </p>
+</div>
+
+  <div className="rw-section">
+    <h2>🎨 Color Palette</h2>
+    <p>Our color system features three main palettes:</p>
+    
+    <h3 style={{ marginTop: '1rem', marginBottom: '0.5rem', fontSize: '1rem', fontWeight: 600, color: 'oklch(0.25 0.012 280)' }}>Wisp (Primary)</h3>
+    <div className="rw-colors">
+      <div className="rw-color" style={{ background: 'oklch(0.97 0.02 280)' }} title="wisp-50" />
+      <div className="rw-color" style={{ background: 'oklch(0.88 0.08 280)' }} title="wisp-200" />
+      <div className="rw-color" style={{ background: 'oklch(0.68 0.16 275)' }} title="wisp-400" />
+      <div className="rw-color" style={{ background: 'oklch(0.58 0.18 270)' }} title="wisp-500" />
+      <div className="rw-color" style={{ background: 'oklch(0.50 0.18 268)' }} title="wisp-600" />
+      <div className="rw-color" style={{ background: 'oklch(0.35 0.12 268)' }} title="wisp-800" />
+    </div>
+
+    <h3 style={{ marginTop: '1rem', marginBottom: '0.5rem', fontSize: '1rem', fontWeight: 600, color: 'oklch(0.25 0.012 280)' }}>Aurora (Accent)</h3>
+    <div className="rw-colors">
+      <div className="rw-color" style={{ background: 'oklch(0.97 0.02 180)' }} title="aurora-50" />
+      <div className="rw-color" style={{ background: 'oklch(0.88 0.10 178)' }} title="aurora-200" />
+      <div className="rw-color" style={{ background: 'oklch(0.68 0.16 174)' }} title="aurora-400" />
+      <div className="rw-color" style={{ background: 'oklch(0.58 0.14 172)' }} title="aurora-500" />
+      <div className="rw-color" style={{ background: 'oklch(0.42 0.10 172)' }} title="aurora-700" />
+    </div>
+
+    <h3 style={{ marginTop: '1rem', marginBottom: '0.5rem', fontSize: '1rem', fontWeight: 600, color: 'oklch(0.25 0.012 280)' }}>Mist (Neutral)</h3>
+    <div className="rw-colors">
+      <div className="rw-color" style={{ background: 'oklch(0.98 0.005 280)' }} title="mist-50" />
+      <div className="rw-color" style={{ background: 'oklch(0.92 0.010 280)' }} title="mist-200" />
+      <div className="rw-color" style={{ background: 'oklch(0.70 0.012 280)' }} title="mist-400" />
+      <div className="rw-color" style={{ background: 'oklch(0.55 0.012 280)' }} title="mist-500" />
+      <div className="rw-color" style={{ background: 'oklch(0.35 0.012 280)' }} title="mist-700" />
+      <div className="rw-color" style={{ background: 'oklch(0.18 0.012 280)' }} title="mist-900" />
+    </div>
+
+  </div>
+
+<div className="rw-section">
+    <h2>📦 Components</h2>
+    <div className="rw-grid">
+        <div className="rw-card">
+            <h3>Core</h3>
+            <p>Button, Badge, Card, Alert, Modal, Tabs, Tooltip, Progress, Dropdown</p>
+        </div>
+        <div className="rw-card">
+            <h3>Forms</h3>
+            <p>Input, Select, Checkbox, Toggle, Textarea</p>
+        </div>
+        <div className="rw-card">
+            <h3>Layout</h3>
+            <p>PageContainer and shared layout primitives</p>
+        </div>
+        <div className="rw-card">
+            <h3>Data</h3>
+            <p>DataGrid, Avatar, StatusIndicator, StatCard, EmptyState</p>
+        </div>
+        <div className="rw-card">
+            <h3>Navigation</h3>
+            <p>Breadcrumb, Tabs</p>
+        </div>
+    </div>
+</div>
+
+<div className="rw-section">
+    <h2>🚀 Getting Started</h2>
+    <p>Import components from `@runwisp/ui` and include the shared theme stylesheet:</p>
+    <pre
+        style={{
+            background: "oklch(0.18 0.012 280)",
+            color: "oklch(0.92 0.010 280)",
+            padding: "1rem",
+            borderRadius: "0.5rem",
+            fontSize: "0.875rem",
+            marginTop: "1rem",
+            overflow: "auto",
+        }}
+    >
+        {`import { Button, Card, DataGrid } from "@runwisp/ui";
+import "@runwisp/ui/theme.css";`}
+    </pre>
+</div>
+
+<div className="rw-section">
+    <h2>✨ Design Principles</h2>
+    <div className="rw-grid">
+        <div className="rw-card">
+            <h3>Ethereal</h3>
+            <p>Soft gradients, subtle shadows, and delicate color transitions</p>
+        </div>
+        <div className="rw-card">
+            <h3>Professional</h3>
+            <p>Clean layouts, consistent spacing, readable typography</p>
+        </div>
+        <div className="rw-card">
+            <h3>Accessible</h3>
+            <p>WCAG compliant colors, keyboard navigation, screen reader support</p>
+        </div>
+        <div className="rw-card">
+            <h3>Modern</h3>
+            <p>Contemporary patterns that stay durable as the product evolves</p>
+        </div>
+    </div>
+</div>
+
+  <div className="rw-footer">
+    <p>© {new Date().getFullYear()} PoppyCake s.r.o. • RunWisp Design System</p>
+  </div>
+</div>

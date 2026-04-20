@@ -1,0 +1,71 @@
+{
+  "$schema": "https://cdn.jsdelivr.net/npm/nx@21/schemas/nx-schema.json",
+  "defaultBase": "main",
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
+    "sharedGlobals": [
+      {
+        "env": "NODE_ENV"
+      }
+    ],
+    "production": [
+      "default",
+      "!{projectRoot}/**/*.spec.*",
+      "!{projectRoot}/**/*.test.*",
+      "!{projectRoot}/tsconfig.spec.json"
+    ]
+  },
+  "targetDefaults": {
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "production",
+        "^production",
+        "{projectRoot}/.env*"
+      ],
+      "outputs": [
+        "{projectRoot}/dist/**",
+        "{projectRoot}/.svelte-kit/**",
+        "{projectRoot}/build/**"
+      ],
+      "cache": true
+    },
+    "check": {
+      "dependsOn": [
+        "^check"
+      ],
+      "cache": true
+    },
+    "generate": {
+      "cache": true
+    },
+    "generate:api": {
+      "cache": true
+    },
+    "format": {
+      "cache": true
+    },
+    "build-dev": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "default",
+        "^production",
+        "{projectRoot}/.env*"
+      ],
+      "outputs": [
+        "{projectRoot}/dist/**",
+        "{projectRoot}/.svelte-kit/**",
+        "{projectRoot}/build/**"
+      ],
+      "cache": true
+    }
+  },
+  "analytics": false
+}

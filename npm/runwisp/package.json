@@ -1,0 +1,30 @@
+{
+  "name": "runwisp",
+  "version": "0.0.0-bootstrap.0",
+  "description": "Open-source cron replacement and process supervisor with a built-in web UI. A modern alternative to crond and supervisord.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runwisp/runwisp.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://runwisp.com",
+  "bugs": {
+    "url": "https://github.com/runwisp/runwisp/issues"
+  },
+  "keywords": [
+    "cron",
+    "scheduler",
+    "process-supervisor",
+    "task-runner",
+    "supervisord"
+  ],
+  "optionalDependencies": {
+    "@runwisp/linux-x64": "0.0.0",
+    "@runwisp/linux-arm64": "0.0.0",
+    "@runwisp/darwin-x64": "0.0.0",
+    "@runwisp/darwin-arm64": "0.0.0"
+  }
+}

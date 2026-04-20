@@ -1,0 +1,144 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package testutil
+
+import (
+	"context"
+	"time"
+
+	"github.com/runwisp/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/stretchr/testify/mock"
+)
+
+// MockRunRepository is a testify mock for storage.RunRepository.
+type MockRunRepository struct {
+	mock.Mock
+}
+
+func (m *MockRunRepository) CreateRun(run *model.Run) error {
+	args := m.Called(run)
+	return args.Error(0)
+}
+
+func (m *MockRunRepository) UpdateRun(run *model.Run) error {
+	args := m.Called(run)
+	return args.Error(0)
+}
+
+func (m *MockRunRepository) GetRun(id string) (*model.Run, error) {
+	args := m.Called(id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*model.Run), args.Error(1)
+}
+
+func (m *MockRunRepository) GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error) {
+	args := m.Called(externalExecutionID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*model.Run), args.Error(1)
+}
+
+func (m *MockRunRepository) CountRuns(taskName string) (int64, error) {
+	args := m.Called(taskName)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockRunRepository) CountRunsFiltered(status, taskName, searchQuery string) (int64, error) {
+	args := m.Called(status, taskName, searchQuery)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockRunRepository) QueryRuns(taskName string, limit, offset int, status, sortField, sortDirection, searchQuery string) ([]model.Run, error) {
+	args := m.Called(taskName, limit, offset, status, sortField, sortDirection, searchQuery)
+	return args.Get(0).([]model.Run), args.Error(1)
+}
+
+func (m *MockRunRepository) DeleteRun(id string) error {
+	args := m.Called(id)
+	return args.Error(0)
+}
+
+func (m *MockRunRepository) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
+	args := m.Called(task)
+	return args.Get(0).([]model.Run), args.Error(1)
+}
+
+func (m *MockRunRepository) MarkCrashedRuns() (int64, error) {
+	args := m.Called()
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockRunRepository) GetPendingRuns() ([]model.Run, error) {
+	args := m.Called()
+	return args.Get(0).([]model.Run), args.Error(1)
+}
+
+func (m *MockRunRepository) GetLastRunByTask(taskName string) (*model.Run, error) {
+	args := m.Called(taskName)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*model.Run), args.Error(1)
+}
+
+func (m *MockRunRepository) GetRunSummary() (*model.RunSummary, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*model.RunSummary), args.Error(1)
+}
+
+func (m *MockRunRepository) EnsureTaskRegistered(taskName string, firstSeen time.Time) error {
+	args := m.Called(taskName, firstSeen)
+	return args.Error(0)
+}
+
+func (m *MockRunRepository) GetTaskRegistration(taskName string) (*model.TaskRegistration, error) {
+	args := m.Called(taskName)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*model.TaskRegistration), args.Error(1)
+}
+
+func (m *MockRunRepository) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// MockExecutor is a testify mock for executor.Executor.
+type MockExecutor struct {
+	mock.Mock
+}
+
+func (m *MockExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *executor.ExecuteResult {
+	args := m.Called(ctx, task, run)
+
+	if len(args) > 1 {
+		if d, ok := args.Get(1).(time.Duration); ok {
+			select {
+			case <-ctx.Done():
+				return &executor.ExecuteResult{ExitCode: -1, Error: ctx.Err()}
+			case <-time.After(d):
+			}
+		}
+	} else {
+		select {
+		case <-ctx.Done():
+			return &executor.ExecuteResult{ExitCode: -1, Error: ctx.Err()}
+		default:
+		}
+	}
+
+	return args.Get(0).(*executor.ExecuteResult)
+}
+
+func (m *MockExecutor) Availability() executor.Availability {
+	return executor.Availability{}
+}

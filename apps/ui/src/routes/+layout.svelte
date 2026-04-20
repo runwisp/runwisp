@@ -1,0 +1,93 @@
+<!-- SPDX-FileCopyrightText: PoppyCake, s.r.o. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+<script lang="ts">
+    import "../app.css";
+    import { browser } from "$app/environment";
+    import { page } from "$app/stores";
+    import { runUpdatesStore, authStore, taskStore } from "$lib/stores";
+    import { browserAuthEventBus } from "$lib/adapters/browser";
+    import AuthModal from "$lib/components/AuthModal.svelte";
+    import AppLayout from "$lib/layouts/AppLayout.svelte";
+    import { ToastContainer } from "@runwisp/ui";
+    import { toTaskPageId } from "$lib/utils/task-id";
+
+    let { children } = $props();
+
+    let hydrated = $state(false);
+
+    $effect(() => {
+        hydrated = true;
+        if (!browser) return;
+
+        void authStore.load();
+
+        const disposeAuthSuccess = browserAuthEventBus.onAuthSuccess(() => {
+            runUpdatesStore.connect();
+            void taskStore.loadIfNeeded();
+        });
+
+        return () => {
+            disposeAuthSuccess();
+            runUpdatesStore.disconnect();
+        };
+    });
+
+    $effect(() => {
+        const status = authStore.current;
+        if (!status.loaded) return;
+
+        if (status.authenticated) {
+            runUpdatesStore.connect();
+            void taskStore.loadIfNeeded();
+        }
+    });
+
+    let activePage = $derived.by(() => {
+        const path = $page.url.pathname;
+        if (path === "/") return "overview";
+        if (path.startsWith("/runs")) return "runs";
+        if (path.startsWith("/tasks/")) {
+            //Extract task name after /tasks/
+            const parts = path.split("/");
+            return parts[2] ? toTaskPageId(parts[2]) : "";
+        }
+        return "";
+    });
+
+    let navTasks = $derived(
+        taskStore.items.map((t) => ({
+            id: toTaskPageId(t.name),
+            name: t.name,
+            group: t.group ?? "Tasks",
+            href: `/tasks/${t.name}`,
+        })),
+    );
+
+    let isAuthenticated = $derived(!hydrated ? false : authStore.current.authenticated);
+</script>
+
+<svelte:head>
+    <title>RunWisp</title>
+    <meta
+        name="description"
+        content="Web-based task scheduling and process supervision with real-time monitoring"
+    />
+</svelte:head>
+
+<AuthModal />
+<ToastContainer />
+
+{#if !hydrated}
+    <div class="flex h-screen items-center justify-center bg-mist-50">
+        <div
+            class="border-primary-600 h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
+        ></div>
+    </div>
+{:else if isAuthenticated}
+    <AppLayout {activePage} tasks={navTasks} urls={{ overview: "/", runs: "/runs" }}>
+        {@render children()}
+    </AppLayout>
+{:else}
+    {@render children()}
+{/if}

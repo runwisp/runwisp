@@ -1,0 +1,162 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+
+# Builds cross-platform binaries and publishes them as:
+#   1. GitHub Release assets (tar.gz + checksums)
+#   2. npm packages (`bunx runwisp` / `npx runwisp`)
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build all platforms
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/runwisp/go.mod
+          cache-dependency-path: apps/runwisp/go.sum
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build web UI
+        run: bunx nx run @runwisp/web-ui:build
+
+      - name: Sync UI assets into Go embed directory
+        run: ./scripts/sync-ui-dist.sh
+        working-directory: apps/runwisp
+
+      - name: Cross-compile binaries
+        working-directory: apps/runwisp
+        env:
+          RELEASE: "1"
+        run: ./scripts/build-all.sh
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: apps/runwisp/dist/
+
+  github-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist
+
+      - name: Package archives
+        run: |
+          for dir in dist/*/; do
+            target=$(basename "${dir}")
+            tar czf "runwisp-${target}.tar.gz" -C "${dir}" runwisp
+          done
+
+      - name: Generate checksums
+        run: sha256sum runwisp-*.tar.gz > checksums-sha256.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            runwisp-*.tar.gz
+            checksums-sha256.txt
+
+  npm-publish:
+    name: Publish npm packages
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: npm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Determine npm dist-tag
+        id: npm_tag
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          if [[ "${VERSION}" == *-* ]]; then
+            prerelease="${VERSION#*-}"
+            echo "TAG=${prerelease%%.*}" >> "$GITHUB_OUTPUT"
+          else
+            echo "TAG=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Copy binaries into npm package dirs
+        run: |
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            cp "dist/${target}/runwisp" "npm/${target}/runwisp"
+            chmod +x "npm/${target}/runwisp"
+          done
+
+      - name: Stamp versions & publish platform packages
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            pkg_dir="npm/${platform}"
+
+            echo "::group::Publish @runwisp/${platform}@${VERSION}"
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('${pkg_dir}/package.json', 'utf8'));
+              pkg.version = process.env.VERSION;
+              fs.writeFileSync('${pkg_dir}/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
+            npm publish "${pkg_dir}" --access public --tag "${{ steps.npm_tag.outputs.TAG }}" --provenance
+            echo "::endgroup::"
+          done
+
+      - name: Publish main runwisp package
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: npm/runwisp
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.env.VERSION;
+            for (const dep of Object.keys(pkg.optionalDependencies)) {
+              pkg.optionalDependencies[dep] = process.env.VERSION;
+            }
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          npm publish --access public --tag "${{ steps.npm_tag.outputs.TAG }}" --provenance

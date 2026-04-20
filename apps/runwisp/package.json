@@ -1,0 +1,111 @@
+{
+  "name": "@runwisp/app",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "build-ui": "./scripts/sync-ui-dist.sh",
+    "build-ui-dev": "./scripts/sync-ui-dist.sh",
+    "build": "./scripts/build.sh",
+    "build-all": "./scripts/build-all.sh",
+    "build-dev": "./scripts/build.sh",
+    "test": "go test -v ./...",
+    "check": "./scripts/check-go.sh",
+    "format": "go fmt ./...",
+    "clean": "rm -rf runwisp dist internal/ui/dist",
+    "openapi": "./scripts/generate-openapi.sh"
+  },
+  "nx": {
+    "targets": {
+      "build-ui": {
+        "dependsOn": [
+          "@runwisp/web-ui:build"
+        ],
+        "cache": true,
+        "inputs": [
+          "{workspaceRoot}/apps/ui/build/**"
+        ],
+        "outputs": [
+          "{projectRoot}/internal/ui/dist/**"
+        ]
+      },
+      "build-ui-dev": {
+        "dependsOn": [
+          "@runwisp/web-ui:build-dev"
+        ],
+        "cache": false
+      },
+      "build": {
+        "dependsOn": [
+          "build-ui"
+        ],
+        "cache": true,
+        "inputs": [
+          "{projectRoot}/cmd/**/*.go",
+          "{projectRoot}/internal/**/*.go",
+          "!{projectRoot}/internal/ui/dist/**",
+          "{projectRoot}/go.mod",
+          "{projectRoot}/go.sum"
+        ],
+        "outputs": [
+          "{projectRoot}/runwisp"
+        ]
+      },
+      "build-all": {
+        "dependsOn": [
+          "build-ui"
+        ],
+        "cache": true,
+        "inputs": [
+          "{projectRoot}/cmd/**/*.go",
+          "{projectRoot}/internal/**/*.go",
+          "!{projectRoot}/internal/ui/dist/**",
+          "{projectRoot}/go.mod",
+          "{projectRoot}/go.sum"
+        ],
+        "outputs": [
+          "{projectRoot}/dist/**"
+        ]
+      },
+      "build-dev": {
+        "dependsOn": [
+          "build-ui-dev"
+        ],
+        "cache": false,
+        "inputs": [
+          "{projectRoot}/cmd/**/*.go",
+          "{projectRoot}/internal/**/*.go",
+          "{projectRoot}/internal/ui/dist/**",
+          "{projectRoot}/go.mod",
+          "{projectRoot}/go.sum"
+        ],
+        "outputs": [
+          "{projectRoot}/runwisp"
+        ]
+      },
+      "check": {
+        "inputs": [
+          "{projectRoot}/cmd/**/*.go",
+          "{projectRoot}/internal/**/*.go",
+          "{projectRoot}/tests/**/*.go",
+          "{projectRoot}/go.mod"
+        ]
+      },
+      "openapi": {
+        "dependsOn": [
+          "build-ui"
+        ],
+        "cache": true,
+        "inputs": [
+          "{projectRoot}/cmd/**/*.go",
+          "{projectRoot}/internal/**/*.go",
+          "!{projectRoot}/internal/generated/**",
+          "{projectRoot}/go.mod",
+          "{projectRoot}/go.sum"
+        ],
+        "outputs": [
+          "{projectRoot}/openapi.json"
+        ]
+      }
+    }
+  }
+}

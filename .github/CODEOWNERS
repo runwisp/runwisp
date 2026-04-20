@@ -1,0 +1,13 @@
+# Default — catch-all
+* @riki137
+
+# Go runner
+apps/runwisp/ @riki137
+
+# Frontend
+apps/ui/ @riki137
+packages/ui/ @riki137
+
+# Shared packages
+packages/common/ @riki137
+packages/asyncapi/ @riki137

@@ -1,0 +1,203 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"context"
+	"sort"
+	"time"
+
+	"github.com/charmbracelet/log"
+	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/tui"
+)
+
+// daemonServices holds all long-lived services created during daemon startup.
+type daemonServices struct {
+	DB               storage.RunRepository
+	EventBus         events.EventBus
+	Executor         executor.Executor
+	TaskManager      runtime.TaskManager
+	TasksMap         map[string]*model.Task
+	Scheduler        *runtime.Scheduler
+	RetentionCleaner *runtime.RetentionCleaner
+	ScheduleResult   runtime.ScheduleResult
+	CrashedRuns      int64
+	PendingSummary   tui.PendingRunsSummary
+	CatchUpResult    runtime.CatchUpResult
+}
+
+// initDaemonServices creates and wires together the core daemon services.
+// db must already be open; initDaemonServices marks crashed runs and then
+// builds all higher-level services on top of it.
+func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode) (*daemonServices, error) {
+	crashed, err := db.MarkCrashedRuns()
+	if err != nil {
+		log.Warn("Failed to mark crashed runs", "err", err)
+	}
+
+	eventBus := events.NewEventBus()
+
+	exec := initExecutor(cfg.Config, eventBus)
+
+	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)
+
+	var scheduler *runtime.Scheduler
+	var schedResult runtime.ScheduleResult
+	var pendingSummary tui.PendingRunsSummary
+	var catchUpResult runtime.CatchUpResult
+
+	if mode == modeStandalone {
+		scheduler = runtime.NewScheduler(taskManager, tasksMap)
+		schedResult, err = scheduler.Start()
+		if err != nil {
+			log.Warn("Failed to start scheduler", "err", err)
+		}
+
+		pendingSummary = resumePendingRuns(db, taskManager)
+
+		catchUpResult = runtime.RunMissedTickCatchUp(db, tasksMap, taskManager, time.Now())
+		if catchUpResult.Triggered > 0 {
+			log.Info("Missed-tick catch-up completed", "triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
+		}
+	}
+
+	retentionCleaner := initRetentionCleaner(cfg, db, tasksMap)
+
+	return &daemonServices{
+		DB:               db,
+		EventBus:         eventBus,
+		Executor:         exec,
+		TaskManager:      taskManager,
+		TasksMap:         tasksMap,
+		Scheduler:        scheduler,
+		RetentionCleaner: retentionCleaner,
+		ScheduleResult:   schedResult,
+		CrashedRuns:      crashed,
+		PendingSummary:   pendingSummary,
+		CatchUpResult:    catchUpResult,
+	}, nil
+}
+
+func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executor {
+	dockerBackend, err := executor.NewContainerBackend(context.Background())
+	if err != nil {
+		log.Debug("Docker backend unavailable", "err", err)
+	}
+
+	var minFreeDisk int64
+	minFreeDisk = cfg.Storage.MinFreeSpaceBytes
+
+	return executor.New(executor.Options{
+		LogDir:            flags.LogDir(),
+		EventBus:          eventBus,
+		CloudShellEnabled: cfg.IsCloudShellEnabled(),
+		HasLocalTasks:     len(cfg.Tasks) > 0,
+		Docker:            dockerBackend,
+		MinFreeDisk:       minFreeDisk,
+	})
+}
+
+func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.Executor, eventBus events.EventBus) (runtime.TaskManager, map[string]*model.Task) {
+	taskManager := runtime.NewTaskManager(exec, eventBus)
+	taskManager.BindPersistenceHook(func(run *model.Run, isNew bool) {
+		var dbErr error
+		if isNew {
+			dbErr = db.CreateRun(run)
+		} else {
+			dbErr = db.UpdateRun(run)
+		}
+		if dbErr != nil {
+			log.Error("Failed to persist run", "id", run.ID, "err", dbErr)
+		}
+	})
+
+	tasksMap := make(map[string]*model.Task)
+	for i := range cfg.Config.Tasks {
+		task := &cfg.Config.Tasks[i]
+		tasksMap[task.Name] = task
+		taskManager.UpsertTask(task)
+	}
+
+	return taskManager, tasksMap
+}
+
+func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap map[string]*model.Task) *runtime.RetentionCleaner {
+	maxTotalSize := cfg.Config.Storage.MaxSizeBytes
+	cleaner := runtime.NewRetentionCleaner(db, tasksMap, time.Hour, flags.LogDir(), maxTotalSize)
+	cleaner.Start()
+	return cleaner
+}
+
+func resumePendingRuns(db storage.RunRepository, taskManager runtime.TaskManager) tui.PendingRunsSummary {
+	pendingRuns, err := db.GetPendingRuns()
+	if err != nil {
+		log.Warn("Failed to query pending runs", "err", err)
+		return tui.PendingRunsSummary{}
+	}
+	if len(pendingRuns) == 0 {
+		return tui.PendingRunsSummary{}
+	}
+
+	pr := taskManager.LoadPendingRuns(pendingRuns)
+	return tui.PendingRunsSummary{
+		Total:   len(pendingRuns),
+		Resumed: pr.Resumed,
+		Queued:  pr.Queued,
+		Skipped: pr.Skipped,
+		Failed:  pr.Failed,
+	}
+}
+
+// buildDaemonInfo assembles static identity and capability info for the API.
+func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
+	taskNames := make([]string, 0, len(svc.TasksMap))
+	for name := range svc.TasksMap {
+		taskNames = append(taskNames, name)
+	}
+	sort.Strings(taskNames)
+
+	tasks := make([]model.TaskBrief, 0, len(taskNames))
+	for _, name := range taskNames {
+		j := svc.TasksMap[name]
+		tasks = append(tasks, model.TaskBrief{
+			Name:    j.Name,
+			Group:   j.Group,
+			Trigger: j.Trigger,
+			Execution: model.TaskExecution{
+				Restart: j.Execution.Restart,
+				Concurrency: model.TaskConcurrency{
+					Limit:  j.Execution.Concurrency.Limit,
+					Policy: j.Execution.Concurrency.Policy,
+				},
+			},
+		})
+	}
+
+	capInfos := capInfosFromAvailability(svc.Executor.Availability())
+
+	return &model.DaemonInfo{
+		Version:      server.Version,
+		Fingerprint:  cfg.Fingerprint,
+		Port:         flags.Port,
+		CloudEnabled: cfg.CloudConfig.Enabled,
+		Tasks:        tasks,
+		Capabilities: capInfos,
+	}
+}
+
+func capInfosFromAvailability(a executor.Availability) []model.CapInfo {
+	return []model.CapInfo{
+		{Name: "shell", Available: a.Shell.Available},
+		{Name: "container", Available: a.Container.Available},
+		{Name: "http", Available: a.HTTP.Available},
+		{Name: "config", Available: a.Config.Available},
+	}
+}

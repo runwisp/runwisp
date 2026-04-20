@@ -1,0 +1,15 @@
+{
+    "extends": "@runwisp/typescript-config/base.json",
+    "compilerOptions": {
+        "allowJs": true,
+        "checkJs": true,
+        "jsx": "preserve",
+        "lib": ["ESNext", "DOM", "DOM.Iterable"],
+        "paths": {
+            "$lib": ["./src/lib"],
+            "$lib/*": ["./src/lib/*"]
+        }
+    },
+    "include": ["src/**/*"],
+    "exclude": ["node_modules", "dist", ".storybook"]
+}

@@ -1,0 +1,37 @@
+{
+  "name": "runwisp",
+  "description": "Open-source cron replacement and process supervisor with a built-in web UI. A modern alternative to crond and supervisord.",
+  "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/runwisp/runwisp.git"
+  },
+  "homepage": "https://github.com/runwisp/runwisp#readme",
+  "bugs": {
+    "url": "https://github.com/runwisp/runwisp/issues"
+  },
+  "packageManager": "bun@1.3.3",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "nx run @runwisp/app:build-dev --outputStyle=stream && cd apps/runwisp && ./runwisp",
+    "build": "nx run @runwisp/app:build --outputStyle=stream",
+    "build:all": "nx run @runwisp/app:build-all --outputStyle=stream",
+    "build-dev": "nx run @runwisp/app:build-dev --outputStyle=stream",
+    "check": "nx run-many -t check --outputStyle=stream",
+    "format": "nx run-many -t format --outputStyle=stream",
+    "theme": "nx run @runwisp/ui:dev --outputStyle=stream",
+    "web-ui": "nx run @runwisp/web-ui:dev --outputStyle=stream",
+    "test": "nx run-many -t test --outputStyle=stream"
+  },
+  "devDependencies": {
+    "nx": "^22.6.5",
+    "prettier": "^3.8.3",
+    "prettier-plugin-svelte": "^3.5.1",
+    "prettier-plugin-tailwindcss": "^0.7.2",
+    "typescript": "6.0.3"
+  }
+}

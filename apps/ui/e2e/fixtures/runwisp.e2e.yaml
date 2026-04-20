@@ -1,0 +1,26 @@
+tasks:
+    echo-task:
+        trigger:
+            api: true
+        run: |
+            set -eu
+            echo "echo-line-1"
+            echo "echo-line-2"
+
+    fail-task:
+        trigger:
+            api: true
+        run: |
+            set -eu
+            echo "fail-line-1"
+            >&2 echo "fail-error"
+            exit 1
+
+    slow-task:
+        trigger:
+            api: true
+        run: |
+            set -eu
+            echo "slow-line-1"
+            sleep 2
+            echo "slow-line-2"

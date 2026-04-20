@@ -1,0 +1,53 @@
+{
+  "name": "@runwisp/asyncapi",
+  "description": "AsyncAPI specification and code generation for the RunWisp WebSocket protocol.",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/runwisp/runwisp.git",
+    "directory": "packages/asyncapi"
+  },
+  "homepage": "https://github.com/runwisp/runwisp/tree/main/packages/asyncapi#readme",
+  "bugs": {
+    "url": "https://github.com/runwisp/runwisp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.js",
+    "check": "tsc --noEmit && eslint ."
+  },
+  "nx": {
+    "targets": {
+      "generate": {
+        "cache": true,
+        "inputs": [
+          "{projectRoot}/asyncapi.yaml",
+          "{projectRoot}/scripts/generate.js"
+        ],
+        "outputs": [
+          "{projectRoot}/src/generated/protocol-messages.ts",
+          "{workspaceRoot}/apps/runwisp/internal/generated/protocol"
+        ]
+      }
+    }
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@apidevtools/json-schema-ref-parser": "^15.2.2",
+    "@asyncapi/modelina": "^5.10.1",
+    "@runwisp/eslint-config": "workspace:*",
+    "@runwisp/typescript-config": "workspace:*",
+    "eslint": "^9.39.1",
+    "typescript": "5.9.2",
+    "yaml": "^2.8.2"
+  }
+}
