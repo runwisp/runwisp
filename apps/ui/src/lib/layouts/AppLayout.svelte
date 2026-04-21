@@ -6,6 +6,7 @@
     import Logo from "@runwisp/ui/components/Logo.svelte";
     import { type Snippet, type Component } from "svelte";
     import { resolve } from "$app/paths";
+    import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
 
     let {
         activePage,
@@ -147,20 +148,7 @@
         </div>
 
         <!-- Status Footer -->
-        <div class="border-t border-mist-100 bg-mist-50/50 p-4">
-            <div class="flex items-center gap-3">
-                <div class="relative flex h-2 w-2">
-                    <span
-                        class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"
-                    ></span>
-                    <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-                </div>
-                <div class="flex flex-col">
-                    <span class="text-xs font-medium text-mist-700">Connected</span>
-                    <span class="text-[10px] text-mist-500">indev</span>
-                </div>
-            </div>
-        </div>
+        <ConnectionStatusIndicator />
     </aside>
 
     <!-- Main Content -->

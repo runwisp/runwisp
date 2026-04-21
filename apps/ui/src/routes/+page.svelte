@@ -5,9 +5,10 @@
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
     import { OverviewPage, type DaemonState, type DaemonStats } from "$lib/components/dashboard";
-    import { formatBytes, Skeleton, ErrorState } from "@runwisp/ui";
+    import { formatBytes, Skeleton } from "@runwisp/ui";
+    import ConnectionLostPanel from "$lib/components/ConnectionLostPanel.svelte";
     import { runsApi, tasksApi, systemApi, type MetricsSample } from "$lib/api";
-    import { runUpdatesStore, upsertRun } from "$lib/stores";
+    import { runUpdatesStore, upsertRun, connectionStore } from "$lib/stores";
     import { getApiUrl } from "$lib/utils/env";
     import { toTaskPageId } from "$lib/utils/task-id";
     import { createAsyncData } from "$lib/utils/async-data.svelte";
@@ -102,6 +103,11 @@
             dashState.runningRuns = upsertRunningRun(dashState.runningRuns, run, RUNNING_RUN_LIMIT);
         });
 
+        const disposeReconnect = connectionStore.onReconnect(() => {
+            void loadData();
+            void loadSystemStats();
+        });
+
         const statsInterval = setInterval(() => void loadSystemStats(), 2000);
 
         void loadData();
@@ -109,8 +115,15 @@
 
         return () => {
             unsubscribe();
+            disposeReconnect();
             clearInterval(statsInterval);
         };
+    });
+
+    // Keep the legacy `daemonState.status` in sync with the shared connection store
+    // so the overview hero's health banner reflects reality.
+    $effect(() => {
+        daemonState.status = connectionStore.status === "connected" ? "connected" : "disconnected";
     });
 
     async function loadData() {
@@ -120,15 +133,15 @@
             dashState.recentRuns = pageData.data.recentRuns;
             dashState.runningRuns = pageData.data.runningRuns;
             dashState.backendReachable = true;
-            daemonState.status = "connected";
+            connectionStore.markConnected();
         } else if (pageData.error) {
             dashState.backendReachable = false;
-            daemonState.status = "disconnected";
+            connectionStore.markDisconnected(pageData.error);
         }
     }
 
     async function loadSystemStats() {
-        if (!dashState.backendReachable) return;
+        if (connectionStore.status === "disconnected") return;
         try {
             const [sys, info, history] = await Promise.all([
                 systemApi.getStats(),
@@ -172,15 +185,10 @@
     }
 </script>
 
-{#if pageData.loading}
+{#if pageData.loading && !pageData.data}
     <Skeleton rows={4} />
-{:else if pageData.error && !dashState.backendReachable}
-    <ErrorState
-        message="Unable to reach the daemon API at {daemonState.backendUrl}."
-        variant="disconnected"
-        onRetry={loadData}
-        retrying={pageData.loading}
-    />
+{:else if connectionStore.status !== "connected" && !pageData.data}
+    <ConnectionLostPanel backendUrl={daemonState.backendUrl} />
 {:else}
     <OverviewPage
         state={daemonState}

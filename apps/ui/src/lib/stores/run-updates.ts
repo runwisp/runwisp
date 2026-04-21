@@ -6,6 +6,7 @@ import { runUpdateEventSchema } from "$lib/types";
 import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
 import { getApiUrl } from "$lib/utils/env";
 import { connectSSE, type SSEConnection } from "$lib/utils/sse";
+import { connectionStore } from "./connection.svelte";
 import type { RunUpdateEvent, RunUpdateEventType, RunUpdateHandler } from "$lib/types";
 
 export type { RunUpdateEvent, RunUpdateHandler };
@@ -34,12 +35,17 @@ class RunUpdateManager {
             eventTypes,
             onOpen: () => {
                 this.logger.info("SSE connection established");
+                connectionStore.markConnected();
             },
             onError: (info) => {
                 this.logger.warn(
                     `SSE connection error: ${info.message ?? "unknown"}`,
                     info.status !== undefined ? `(HTTP ${info.status.toString()})` : "",
                 );
+                // 401 means the daemon is up but rejected our auth — not a connection loss.
+                if (info.status !== 401) {
+                    connectionStore.markDisconnected(info.message ?? "SSE connection error");
+                }
             },
             onEvent: (eventType, data) => {
                 try {
