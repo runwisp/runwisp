@@ -46,6 +46,14 @@ func runDefault() error {
 		return err
 	}
 
+	// Health check failed. Before paying the cost of spawning a background
+	// daemon (which would then silently fail to bind), probe the port
+	// ourselves. If something is holding it but it is not a RunWisp daemon
+	// we can surface a clear, actionable error immediately.
+	if bindErr := probePortAvailable(flags.Host, flags.Port); bindErr != nil {
+		return portConflictError(flags.Host, flags.Port, bindErr)
+	}
+
 	if err := spawnDaemon(); err != nil {
 		log.Warn("Failed to spawn background daemon, running inline", "err", err)
 		return runDaemon(modeStandalone)
