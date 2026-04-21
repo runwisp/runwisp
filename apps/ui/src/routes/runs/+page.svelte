@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { RunsPage } from "$lib/components/dashboard";
-    import { Skeleton, ErrorState } from "@runwisp/ui";
+    import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi } from "$lib/api";
     import { runUpdatesStore, upsertRun } from "$lib/stores";
     import { createAsyncData } from "$lib/utils/async-data.svelte";
@@ -29,22 +29,17 @@
         const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
             runs = upsertRun(runs, event.data.run);
         });
-        void loadRuns();
+        void runsData.fetch();
         return () => unsubscribe();
     });
 
-    async function loadRuns() {
-        await runsData.fetch();
+    $effect(() => {
         if (runsData.data) {
             runs = runsData.data.runs;
         }
-    }
+    });
 </script>
 
-{#if runsData.loading}
-    <Skeleton rows={5} />
-{:else if runsData.error}
-    <ErrorState message={runsData.error} onRetry={loadRuns} retrying={runsData.loading} />
-{:else}
+<AsyncDataView data={runsData} skeletonRows={5}>
     <RunsPage {runs} fetchLogs={logSession.fetchLogs} streamLogs={logSession.streamLogs} />
-{/if}
+</AsyncDataView>

@@ -3,82 +3,87 @@
 
 <script lang="ts">
     import { formatDuration } from "@runwisp/ui";
-    import { connectionStore } from "$lib/stores";
+    import { connectionStore, type ConnectionStatus } from "$lib/stores";
+
+    interface Theme {
+        label: string;
+        container: string;
+        title: string;
+        labelColor: string;
+        subtitleColor: string;
+        dot: string;
+        ping: string | null;
+    }
+
+    const THEMES: Record<ConnectionStatus, Theme> = {
+        connected: {
+            label: "Connected",
+            container: "bg-mist-50/50 border-mist-100",
+            title: "Connected to the runner API",
+            labelColor: "text-mist-700",
+            subtitleColor: "text-mist-500",
+            dot: "bg-emerald-500",
+            ping: "bg-emerald-400",
+        },
+        connecting: {
+            label: "Connecting",
+            container: "bg-warning-50/70 border-warning-200",
+            title: "Attempting to reach the runner API",
+            labelColor: "text-warning-700",
+            subtitleColor: "text-warning-600",
+            dot: "bg-warning-500",
+            ping: "bg-warning-400",
+        },
+        disconnected: {
+            label: "Offline",
+            container: "bg-danger-50/70 border-danger-200 hover:bg-danger-50",
+            title: "Click to retry connecting to the runner API",
+            labelColor: "text-danger-700",
+            subtitleColor: "text-danger-600",
+            dot: "bg-danger-500",
+            ping: null,
+        },
+    };
 
     let status = $derived(connectionStore.status);
-    let now = $derived(connectionStore.now);
-    let disconnectedSince = $derived(connectionStore.disconnectedSince);
+    let theme = $derived(THEMES[status]);
 
     let subtitle = $derived.by(() => {
         if (status === "connected") return "indev";
         if (status === "connecting") return "Reconnecting…";
-        if (disconnectedSince !== null) {
-            return "Down for " + formatDuration(now - disconnectedSince);
-        }
+        const since = connectionStore.disconnectedSince;
+        if (since !== null) return "Down for " + formatDuration(connectionStore.now - since);
         return "Not reachable";
     });
-
-    let label = $derived.by(() => {
-        if (status === "connected") return "Connected";
-        if (status === "connecting") return "Connecting";
-        return "Offline";
-    });
-
-    async function handleClick() {
-        if (status === "connected") return;
-        await connectionStore.retryNow();
-    }
 </script>
 
+{#snippet body()}
+    <div class="relative flex h-2 w-2 shrink-0">
+        {#if theme.ping}
+            <span
+                class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 {theme.ping}"
+            ></span>
+        {/if}
+        <span class="relative inline-flex h-2 w-2 rounded-full {theme.dot}"></span>
+    </div>
+    <div class="flex min-w-0 flex-col">
+        <span class="text-xs font-medium {theme.labelColor}">{theme.label}</span>
+        <span class="truncate text-[10px] {theme.subtitleColor}">{subtitle}</span>
+    </div>
+{/snippet}
+
 {#if status === "connected"}
-    <div class="border-t border-mist-100 bg-mist-50/50 p-4" title="Connected to the runner API">
-        <div class="flex items-center gap-3">
-            <div class="relative flex h-2 w-2">
-                <span
-                    class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"
-                ></span>
-                <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-            </div>
-            <div class="flex flex-col">
-                <span class="text-xs font-medium text-mist-700">{label}</span>
-                <span class="text-[10px] text-mist-500">{subtitle}</span>
-            </div>
-        </div>
+    <div class="flex items-center gap-3 border-t p-4 {theme.container}" title={theme.title}>
+        {@render body()}
     </div>
 {:else}
     <button
         type="button"
-        onclick={handleClick}
+        onclick={connectionStore.retryNow}
         disabled={status === "connecting"}
-        class="group flex w-full items-center gap-3 border-t p-4 text-left transition-colors disabled:cursor-progress
-            {status === 'disconnected'
-            ? 'border-danger-200 bg-danger-50/70 hover:bg-danger-50'
-            : 'border-warning-200 bg-warning-50/70'}"
-        title={status === "disconnected"
-            ? "Click to retry connecting to the runner API"
-            : "Attempting to reach the runner API"}
+        title={theme.title}
+        class="flex w-full items-center gap-3 border-t p-4 text-left transition-colors disabled:cursor-progress {theme.container}"
     >
-        <div class="relative flex h-2 w-2 shrink-0">
-            {#if status === "connecting"}
-                <span
-                    class="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning-400 opacity-75"
-                ></span>
-                <span class="relative inline-flex h-2 w-2 rounded-full bg-warning-500"></span>
-            {:else}
-                <span class="relative inline-flex h-2 w-2 rounded-full bg-danger-500"></span>
-            {/if}
-        </div>
-        <div class="flex min-w-0 flex-col">
-            <span
-                class="text-xs font-medium {status === 'disconnected'
-                    ? 'text-danger-700'
-                    : 'text-warning-700'}">{label}</span
-            >
-            <span
-                class="truncate text-[10px] {status === 'disconnected'
-                    ? 'text-danger-600'
-                    : 'text-warning-600'}">{subtitle}</span
-            >
-        </div>
+        {@render body()}
     </button>
 {/if}

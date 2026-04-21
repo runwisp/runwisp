@@ -4,7 +4,8 @@
 <script lang="ts">
     import { page } from "$app/stores";
     import { TaskPage } from "$lib/components/dashboard";
-    import { toast, Skeleton, ErrorState } from "@runwisp/ui";
+    import { toast, ErrorState } from "@runwisp/ui";
+    import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
     import { runUpdatesStore, upsertRun } from "$lib/stores";
     import { createAsyncData } from "$lib/utils/async-data.svelte";
@@ -64,18 +65,16 @@
     });
 
     $effect(() => {
-        void loadData();
+        if (taskName) void pageData.fetch();
         return () => pageData.abort();
     });
 
-    async function loadData() {
-        if (!taskName) return;
-        await pageData.fetch();
+    $effect(() => {
         if (pageData.data) {
             task = pageData.data.task;
             runs = pageData.data.runs;
         }
-    }
+    });
 
     async function handleRun() {
         if (!taskName) return;
@@ -106,24 +105,22 @@
     }
 </script>
 
-{#if pageData.loading}
-    <Skeleton rows={4} />
-{:else if pageData.error}
-    <ErrorState message={pageData.error} onRetry={loadData} retrying={pageData.loading} />
-{:else if task}
-    <TaskPage
-        {task}
-        {runs}
-        {concurrencyReached}
-        {triggering}
-        {stopping}
-        onRun={handleRun}
-        onStop={handleStop}
-        fetchLogs={logSession.fetchLogs}
-        streamLogs={logSession.streamLogs}
-        initialRunId={$page.url.searchParams.get("runId")}
-        {selectRunId}
-    />
-{:else}
-    <ErrorState message={'No task named "' + taskName + '" found.'} />
-{/if}
+<AsyncDataView data={pageData}>
+    {#if task}
+        <TaskPage
+            {task}
+            {runs}
+            {concurrencyReached}
+            {triggering}
+            {stopping}
+            onRun={handleRun}
+            onStop={handleStop}
+            fetchLogs={logSession.fetchLogs}
+            streamLogs={logSession.streamLogs}
+            initialRunId={$page.url.searchParams.get("runId")}
+            {selectRunId}
+        />
+    {:else}
+        <ErrorState message={'No task named "' + taskName + '" found.'} />
+    {/if}
+</AsyncDataView>

@@ -5,8 +5,8 @@
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
     import { OverviewPage, type DaemonState, type DaemonStats } from "$lib/components/dashboard";
-    import { formatBytes, Skeleton } from "@runwisp/ui";
-    import ConnectionLostPanel from "$lib/components/ConnectionLostPanel.svelte";
+    import { formatBytes } from "@runwisp/ui";
+    import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, type MetricsSample } from "$lib/api";
     import { runUpdatesStore, upsertRun, connectionStore } from "$lib/stores";
     import { getApiUrl } from "$lib/utils/env";
@@ -21,7 +21,6 @@
         tasks: Task[];
         recentRuns: Run[];
         runningRuns: Run[];
-        backendReachable: boolean;
         cpuUsage: number;
         memUsage: number;
         metricsHistory: MetricsSample[];
@@ -31,7 +30,6 @@
         tasks: [],
         recentRuns: [],
         runningRuns: [],
-        backendReachable: true,
         cpuUsage: 0,
         memUsage: 0,
         metricsHistory: [],
@@ -103,42 +101,28 @@
             dashState.runningRuns = upsertRunningRun(dashState.runningRuns, run, RUNNING_RUN_LIMIT);
         });
 
-        const disposeReconnect = connectionStore.onReconnect(() => {
-            void loadData();
-            void loadSystemStats();
-        });
-
         const statsInterval = setInterval(() => void loadSystemStats(), 2000);
 
-        void loadData();
+        void pageData.fetch();
         void loadSystemStats();
 
         return () => {
             unsubscribe();
-            disposeReconnect();
             clearInterval(statsInterval);
         };
     });
 
-    // Keep the legacy `daemonState.status` in sync with the shared connection store
-    // so the overview hero's health banner reflects reality.
     $effect(() => {
-        daemonState.status = connectionStore.status === "connected" ? "connected" : "disconnected";
-    });
-
-    async function loadData() {
-        await pageData.fetch();
         if (pageData.data) {
             dashState.tasks = pageData.data.tasks;
             dashState.recentRuns = pageData.data.recentRuns;
             dashState.runningRuns = pageData.data.runningRuns;
-            dashState.backendReachable = true;
-            connectionStore.markConnected();
-        } else if (pageData.error) {
-            dashState.backendReachable = false;
-            connectionStore.markDisconnected(pageData.error);
         }
-    }
+    });
+
+    $effect(() => {
+        daemonState.status = connectionStore.status === "connected" ? "connected" : "disconnected";
+    });
 
     async function loadSystemStats() {
         if (connectionStore.status === "disconnected") return;
@@ -185,11 +169,7 @@
     }
 </script>
 
-{#if pageData.loading && !pageData.data}
-    <Skeleton rows={4} />
-{:else if connectionStore.status !== "connected" && !pageData.data}
-    <ConnectionLostPanel backendUrl={daemonState.backendUrl} />
-{:else}
+<AsyncDataView data={pageData}>
     <OverviewPage
         state={daemonState}
         {stats}
@@ -201,4 +181,4 @@
         onTaskClick={handleTaskClick}
         onRunClick={handleRunClick}
     />
-{/if}
+</AsyncDataView>

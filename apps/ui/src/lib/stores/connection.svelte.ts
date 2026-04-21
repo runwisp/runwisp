@@ -63,7 +63,9 @@ function createConnectionStore() {
     }
 
     function markConnected() {
-        const wasDown = status !== "connected";
+        // Only fire reconnect listeners when we've actually recovered from a
+        // previous successful connection — not on the very first success.
+        const wasDown = lastConnectedAt !== null && status !== "connected";
         status = "connected";
         lastConnectedAt = Date.now();
         disconnectedSince = null;
@@ -125,6 +127,14 @@ function createConnectionStore() {
         return () => reconnectListeners.delete(listener);
     }
 
+    function reportFetchError(err: unknown): boolean {
+        if (isConnectionError(err)) {
+            markDisconnected(err);
+            return true;
+        }
+        return false;
+    }
+
     return {
         get status() {
             return status;
@@ -152,9 +162,19 @@ function createConnectionStore() {
         },
         markConnected,
         markDisconnected,
+        reportFetchError,
         retryNow: attemptReconnect,
         onReconnect,
     };
+}
+
+function isConnectionError(err: unknown): boolean {
+    if (err instanceof AuthRequiredError) return false;
+    const msg = formatError(err);
+    if (msg === null) return false;
+    return /networkerror|failed to fetch|load failed|network request failed|typeerror.*fetch/i.test(
+        msg,
+    );
 }
 
 function formatError(err: unknown): string | null {
