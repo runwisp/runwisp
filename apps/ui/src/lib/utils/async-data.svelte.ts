@@ -38,8 +38,8 @@ export function createAsyncData<T>(
         } catch (err: unknown) {
             if (ac.signal.aborted) return;
             if (err instanceof AuthRequiredError) return;
-            connectionStore.reportFetchError(err);
-            const message = extractErrorMessage(err);
+            const isConnectionErr = connectionStore.reportFetchError(err);
+            const message = isConnectionErr ? "Connection lost" : extractErrorMessage(err);
             error = message;
             if (toastOnError) {
                 toast.error(message);

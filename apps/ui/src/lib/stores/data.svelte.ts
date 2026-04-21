@@ -3,6 +3,7 @@
 
 import { tasksApi, AuthRequiredError } from "$lib/api";
 import { toast, extractErrorMessage } from "@runwisp/ui";
+import { connectionStore } from "$lib/stores/connection.svelte";
 import { sortByCreatedAtDesc } from "$lib/utils/sort";
 import type { Task, Run } from "$lib/types";
 
@@ -18,7 +19,11 @@ function createTaskStore() {
             loaded = true;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
-            toast.error(extractErrorMessage(err, "Failed to load tasks"));
+            const isConnectionErr = connectionStore.reportFetchError(err);
+            const message = isConnectionErr
+                ? "Connection lost"
+                : extractErrorMessage(err, "Failed to load tasks");
+            toast.error(message);
         }
     }
 

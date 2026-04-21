@@ -5,6 +5,7 @@
     import "../app.css";
     import { browser } from "$app/environment";
     import { page } from "$app/stores";
+    import { preloadCode } from "$app/navigation";
     import { runUpdatesStore, authStore, taskStore } from "$lib/stores";
     import { browserAuthEventBus } from "$lib/adapters/browser";
     import AuthModal from "$lib/components/AuthModal.svelte";
@@ -19,6 +20,11 @@
     $effect(() => {
         hydrated = true;
         if (!browser) return;
+
+        // Best-effort: preload route JS so a click still navigates when the
+        // daemon (which serves the chunks) has since gone down.
+        void preloadCode("/");
+        void preloadCode("/runs");
 
         void authStore.load();
 
