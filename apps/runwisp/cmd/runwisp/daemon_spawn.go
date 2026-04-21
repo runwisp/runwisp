@@ -122,7 +122,8 @@ func waitForProcessExit(pid int, timeout time.Duration) error {
 
 // waitForDaemon streams the daemon log file in real-time while polling the
 // health endpoint. It returns immediately on success, aborts early on fatal
-// log lines or process exit, and falls back to a static log dump on timeout.
+// log lines or process exit, and always dumps a log tail when startup fails
+// so the user can see why — regardless of which detection path tripped first.
 func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Duration) error {
 	fmt.Fprintf(os.Stderr, "Starting daemon...\n")
 
@@ -172,10 +173,8 @@ func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Durati
 				line = strings.TrimRight(line, "\n\r")
 				fmt.Fprintf(os.Stderr, "  %s\n", line)
 
-				if strings.Contains(line, "FATA") || strings.Contains(line, "Fatal error") {
-					done <- result{
-						err: fmt.Errorf("daemon failed to start: %s", line),
-					}
+				if msg, fatal := classifyDaemonLogLine(line); fatal {
+					done <- result{err: fmt.Errorf("daemon failed to start: %s", msg)}
 					return
 				}
 			}
@@ -211,20 +210,22 @@ func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Durati
 
 			pid, err := datadir.ReadPidFile(flags.DataDir)
 			if err != nil {
-				time.Sleep(200 * time.Millisecond)
-				done <- result{err: errors.New("daemon process exited unexpectedly")}
+				// Give the tailer a beat to flush any final log lines
+				// from the dying daemon before we report the exit.
+				time.Sleep(300 * time.Millisecond)
+				done <- result{err: errors.New("daemon process exited unexpectedly during startup")}
 				return
 			}
 
 			proc, err := os.FindProcess(pid)
 			if err != nil {
-				time.Sleep(200 * time.Millisecond)
+				time.Sleep(300 * time.Millisecond)
 				done <- result{err: fmt.Errorf("daemon process %d not found", pid)}
 				return
 			}
 			if err := proc.Signal(syscall.Signal(0)); err != nil {
-				time.Sleep(200 * time.Millisecond)
-				done <- result{err: fmt.Errorf("daemon process %d exited", pid)}
+				time.Sleep(300 * time.Millisecond)
+				done <- result{err: fmt.Errorf("daemon process %d exited during startup", pid)}
 				return
 			}
 		}
@@ -232,15 +233,61 @@ func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Durati
 
 	defer close(stop)
 
+	var (
+		startupErr error
+		timedOut   bool
+	)
 	select {
 	case r := <-done:
-		return r.err
-	case <-time.After(timeout):
-		if logTail := tailFile(logPath, 4096); logTail != "" {
-			fmt.Fprintf(os.Stderr, "\n--- daemon log (%s) ---\n%s\n---\n\n", logPath, strings.TrimSpace(logTail))
+		if r.err == nil {
+			return nil
 		}
-		return errors.New("daemon failed to start: health check timed out")
+		startupErr = r.err
+	case <-time.After(timeout):
+		timedOut = true
+		startupErr = errors.New("daemon failed to start: health check timed out")
 	}
+
+	// On any failure path, surface the daemon log so the user can see the
+	// underlying cause. Also promote a recognised bind error to a clearer
+	// message — this is the most common cause of a silent startup failure.
+	logTail := tailFile(logPath, 4096)
+	if hint := bindFailureHint(logTail, flags.Host, flags.Port); hint != "" {
+		return errors.New(hint)
+	}
+	if logTail != "" {
+		fmt.Fprintf(os.Stderr, "\n--- daemon log (%s) ---\n%s\n---\n\n", logPath, strings.TrimSpace(logTail))
+	} else if timedOut {
+		fmt.Fprintf(os.Stderr, "(daemon log at %s is empty)\n", logPath)
+	}
+	return startupErr
+}
+
+// classifyDaemonLogLine returns a trimmed message and fatal=true when the
+// given daemon log line indicates an unrecoverable startup failure.
+func classifyDaemonLogLine(line string) (string, bool) {
+	switch {
+	case strings.Contains(line, "FATA"),
+		strings.Contains(line, "Fatal error"),
+		strings.Contains(line, "Server failed"),
+		strings.Contains(line, "address already in use"),
+		strings.Contains(line, "bind: permission denied"):
+		return line, true
+	}
+	return "", false
+}
+
+// bindFailureHint inspects a daemon log tail for signs that the server could
+// not bind its port and returns a ready-to-display error message. Returns ""
+// when no bind failure is detected.
+func bindFailureHint(logTail string, host string, port int) string {
+	if logTail == "" {
+		return ""
+	}
+	if !strings.Contains(logTail, "address already in use") {
+		return ""
+	}
+	return portConflictError(host, port, errors.New("bind: address already in use")).Error()
 }
 
 // tailFile reads the last maxBytes bytes from a file.
