@@ -86,7 +86,7 @@ function createConnectionStore() {
     }
 
     function markDisconnected(error?: unknown) {
-        if (status !== "disconnected") {
+        if (status === "connected") {
             disconnectedSince = Date.now();
             retryDelay = INITIAL_RETRY_DELAY_MS;
         }
