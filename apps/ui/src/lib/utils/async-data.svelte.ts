@@ -3,6 +3,7 @@
 
 import { toast, extractErrorMessage } from "@runwisp/ui";
 import { AuthRequiredError } from "$lib/api";
+import { connectionStore } from "$lib/stores/connection.svelte";
 
 export interface AsyncData<T> {
     readonly data: T | undefined;
@@ -15,9 +16,9 @@ export interface AsyncData<T> {
 
 export function createAsyncData<T>(
     fetcher: (signal: AbortSignal) => Promise<T>,
-    options: { toastOnError?: boolean } = {},
+    options: { toastOnError?: boolean; reloadOnReconnect?: boolean } = {},
 ): AsyncData<T> {
-    const { toastOnError = true } = options;
+    const { toastOnError = true, reloadOnReconnect = true } = options;
 
     let data = $state<T | undefined>(undefined);
     let error = $state<string | undefined>(undefined);
@@ -33,10 +34,12 @@ export function createAsyncData<T>(
         error = undefined;
         try {
             data = await fetcher(ac.signal);
+            connectionStore.markConnected();
         } catch (err: unknown) {
             if (ac.signal.aborted) return;
             if (err instanceof AuthRequiredError) return;
-            const message = extractErrorMessage(err);
+            const isConnectionErr = connectionStore.reportFetchError(err);
+            const message = isConnectionErr ? "Connection lost" : extractErrorMessage(err);
             error = message;
             if (toastOnError) {
                 toast.error(message);
@@ -46,6 +49,10 @@ export function createAsyncData<T>(
                 loading = false;
             }
         }
+    }
+
+    if (reloadOnReconnect) {
+        $effect(() => connectionStore.onReconnect(() => void doFetch()));
     }
 
     return {

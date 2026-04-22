@@ -16,23 +16,46 @@ const DEFAULT_DURATION = 5000;
 
 class ToastStore {
     items = $state<Toast[]>([]);
+    private timers = new Map<string, ReturnType<typeof setTimeout>>();
 
     add(type: ToastType, message: string, duration = DEFAULT_DURATION): string {
-        const id = generateUlid();
-        const t: Toast = { id, type, message, duration };
-
-        this.items = [...this.items, t];
-
-        if (duration > 0) {
-            setTimeout(() => {
-                this.remove(id);
-            }, duration);
+        const existing = this.items.find((t) => t.type === type && t.message === message);
+        if (existing) {
+            this.refreshTimer(existing.id, duration);
+            return existing.id;
         }
 
+        const id = generateUlid();
+        this.items = [...this.items, { id, type, message, duration }];
+        if (duration > 0) {
+            this.scheduleRemoval(id, duration);
+        }
         return id;
     }
 
+    private scheduleRemoval(id: string, duration: number) {
+        this.timers.set(
+            id,
+            setTimeout(() => {
+                this.remove(id);
+            }, duration),
+        );
+    }
+
+    private refreshTimer(id: string, duration: number) {
+        const existing = this.timers.get(id);
+        if (existing) clearTimeout(existing);
+        if (duration > 0) {
+            this.scheduleRemoval(id, duration);
+        }
+    }
+
     remove(id: string) {
+        const timer = this.timers.get(id);
+        if (timer) {
+            clearTimeout(timer);
+            this.timers.delete(id);
+        }
         this.items = this.items.filter((t) => t.id !== id);
     }
 
@@ -53,6 +76,10 @@ class ToastStore {
     }
 
     clear() {
+        for (const timer of this.timers.values()) {
+            clearTimeout(timer);
+        }
+        this.timers.clear();
         this.items = [];
     }
 }

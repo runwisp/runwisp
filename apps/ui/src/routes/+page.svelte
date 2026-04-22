@@ -5,9 +5,10 @@
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
     import { OverviewPage, type DaemonState, type DaemonStats } from "$lib/components/dashboard";
-    import { formatBytes, Skeleton, ErrorState } from "@runwisp/ui";
+    import { formatBytes } from "@runwisp/ui";
+    import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, type MetricsSample } from "$lib/api";
-    import { runUpdatesStore, upsertRun } from "$lib/stores";
+    import { runUpdatesStore, upsertRun, connectionStore } from "$lib/stores";
     import { getApiUrl } from "$lib/utils/env";
     import { toTaskPageId } from "$lib/utils/task-id";
     import { createAsyncData } from "$lib/utils/async-data.svelte";
@@ -20,7 +21,6 @@
         tasks: Task[];
         recentRuns: Run[];
         runningRuns: Run[];
-        backendReachable: boolean;
         cpuUsage: number;
         memUsage: number;
         metricsHistory: MetricsSample[];
@@ -30,7 +30,6 @@
         tasks: [],
         recentRuns: [],
         runningRuns: [],
-        backendReachable: true,
         cpuUsage: 0,
         memUsage: 0,
         metricsHistory: [],
@@ -104,7 +103,7 @@
 
         const statsInterval = setInterval(() => void loadSystemStats(), 2000);
 
-        void loadData();
+        void pageData.fetch();
         void loadSystemStats();
 
         return () => {
@@ -113,22 +112,20 @@
         };
     });
 
-    async function loadData() {
-        await pageData.fetch();
+    $effect(() => {
         if (pageData.data) {
             dashState.tasks = pageData.data.tasks;
             dashState.recentRuns = pageData.data.recentRuns;
             dashState.runningRuns = pageData.data.runningRuns;
-            dashState.backendReachable = true;
-            daemonState.status = "connected";
-        } else if (pageData.error) {
-            dashState.backendReachable = false;
-            daemonState.status = "disconnected";
         }
-    }
+    });
+
+    $effect(() => {
+        daemonState.status = connectionStore.status === "connected" ? "connected" : "disconnected";
+    });
 
     async function loadSystemStats() {
-        if (!dashState.backendReachable) return;
+        if (connectionStore.status === "disconnected") return;
         try {
             const [sys, info, history] = await Promise.all([
                 systemApi.getStats(),
@@ -172,16 +169,7 @@
     }
 </script>
 
-{#if pageData.loading}
-    <Skeleton rows={4} />
-{:else if pageData.error && !dashState.backendReachable}
-    <ErrorState
-        message="Unable to reach the daemon API at {daemonState.backendUrl}."
-        variant="disconnected"
-        onRetry={loadData}
-        retrying={pageData.loading}
-    />
-{:else}
+<AsyncDataView data={pageData}>
     <OverviewPage
         state={daemonState}
         {stats}
@@ -193,4 +181,4 @@
         onTaskClick={handleTaskClick}
         onRunClick={handleRunClick}
     />
-{/if}
+</AsyncDataView>

@@ -97,10 +97,14 @@
 
     let systemHealth = $derived.by<SystemHealth>(() => {
         if (daemonState.status !== "connected") {
+            const endpoint =
+                daemonState.backendUrl.trim() === ""
+                    ? "this site's origin"
+                    : daemonState.backendUrl;
             return {
                 label: "Daemon offline",
                 variant: "danger",
-                detail: `Unable to reach ${daemonState.backendUrl}.`,
+                detail: `Unable to reach ${endpoint}.`,
             };
         }
 

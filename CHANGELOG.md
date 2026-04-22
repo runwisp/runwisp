@@ -7,11 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- WebUI shows a "Connection Lost" panel with live downtime, retry countdown, and a manual retry button when the daemon is unreachable.
+- Sidebar now shows a live connection status indicator; clicking it when offline triggers an immediate reconnect attempt.
+
 ### Fixed
 
-- Port conflict on daemon startup now surfaces a clear, actionable error message instead of silently timing out. If the configured port is held by a non-RunWisp process, RunWisp will tell you exactly what's blocking it and how to resolve it (stop the other process, pick a different port, or identify it with `ss`/`lsof`). ([#portcheck](apps/runwisp/cmd/runwisp/portcheck.go))
-- Daemon startup failure log tail is now always printed on every failure path (fatal log line, process exit, or health check timeout), not only on timeout. Previously a fatal log line would abort startup but produce no log output.
-- Error messages for daemon process exit during startup now include `"during startup"` to distinguish them from runtime exits.
+- Port conflict on daemon startup now shows a clear error identifying what is blocking the port, instead of silently timing out.
+- Daemon startup failures now always print the log tail, regardless of how the process failed.
+- Daemon process exit during startup is now distinguished from a runtime exit in error messages.
 
 ## [0.1.0] - 2026-04-20
 
