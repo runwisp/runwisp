@@ -52,14 +52,13 @@ function createConnectionStore() {
         nextRetryAt = null;
     }
 
-    function scheduleRetry(delayMs: number = retryDelay) {
+    function scheduleRetry() {
         cancelRetry();
-        const bounded = Math.min(Math.max(delayMs, INITIAL_RETRY_DELAY_MS), MAX_RETRY_DELAY_MS);
+        const bounded = Math.min(Math.max(retryDelay, INITIAL_RETRY_DELAY_MS), MAX_RETRY_DELAY_MS);
         nextRetryAt = Date.now() + bounded;
         retryTimer = setTimeout(() => {
             void attemptReconnect();
         }, bounded);
-        retryDelay = Math.min(bounded * 2, MAX_RETRY_DELAY_MS);
     }
 
     function markConnected() {
@@ -93,7 +92,9 @@ function createConnectionStore() {
         status = "disconnected";
         lastError = formatError(error);
         startTick();
-        scheduleRetry();
+        if (retryTimer === null && !pingInFlight) {
+            scheduleRetry();
+        }
     }
 
     async function attemptReconnect(): Promise<boolean> {
@@ -115,7 +116,10 @@ function createConnectionStore() {
                 markConnected();
                 return true;
             }
-            markDisconnected(err);
+            retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY_MS);
+            status = "disconnected";
+            lastError = formatError(err);
+            scheduleRetry();
             return false;
         } finally {
             pingInFlight = false;
