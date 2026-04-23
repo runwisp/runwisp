@@ -11,16 +11,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 const (
 	DefaultConcurrencyLimit = 1
-	PersistenceChannelSize  = 10000
+	// PersistenceChannelSize bounds the run-persistence work queue.
+	// Sized for realistic burst (pending-run replay on startup) while staying
+	// well below 1 MB of reserved channel ring memory.
+	PersistenceChannelSize = 1024
 )
 
 // TriggerRunOptions customize run creation for non-local invocations.
@@ -58,7 +61,7 @@ type defaultTaskManager struct {
 	persistence *PersistenceCoordinator
 	eventBus    events.EventBus
 	mu          sync.RWMutex
-	isShutdown  int32 // atomic flag: 0 = running, 1 = shutdown
+	isShutdown  atomic.Bool
 	wg          sync.WaitGroup
 }
 
@@ -82,10 +85,10 @@ func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.R
 	if m.eventBus == nil {
 		return
 	}
-	// PublishSync guarantees event ordering: run.created always arrives
+	// Publish guarantees event ordering: run.created always arrives
 	// before run.started for the same run. The SSE handler's buffered
 	// channel provides the async decoupling.
-	m.eventBus.PublishSync(eventType, events.RunEvent{
+	m.eventBus.Publish(eventType, events.RunEvent{
 		Run: run.Copy(),
 	})
 }
@@ -126,7 +129,7 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 	ts := m.tasks[taskName]
 	for {
 		for len(ts.queue) == 0 || len(ts.active) >= m.getConcurrencyLimit(ts.task) {
-			if atomic.LoadInt32(&m.isShutdown) == 1 {
+			if m.isShutdown.Load() {
 				return
 			}
 			ts.cond.Wait()
@@ -150,12 +153,12 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 	case model.PolicyQueue:
 		ts.queue = append(ts.queue, run)
 		ts.cond.Signal()
-		log.Debug("Task queued", "name", ts.task.Name, "active", len(ts.active), "limit", concurrencyLimit, "queue", len(ts.queue))
+		slog.Debug("Task queued", "name", ts.task.Name, "active", len(ts.active), "limit", concurrencyLimit, "queue", len(ts.queue))
 		return actionQueued, nil
 	case model.PolicyTerminate:
 		if len(ts.active) > 0 {
 			oldest := ts.active[0]
-			log.Info("Terminating oldest run", "run", oldest.Run.ID, "task", ts.task.Name)
+			slog.Info("Terminating oldest run", "run", oldest.Run.ID, "task", ts.task.Name)
 			oldest.Cancel()
 		}
 		return actionStart, nil
@@ -289,7 +292,7 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 		if duration, err := time.ParseDuration(task.Execution.Timeout); err == nil {
 			ctx, cancel = context.WithTimeout(ctx, duration)
 		} else {
-			log.Warn("Invalid timeout", "task", task.Name, "err", err)
+			slog.Warn("Invalid timeout", "task", task.Name, "err", err)
 			ctx, cancel = context.WithCancel(ctx)
 		}
 	} else {
@@ -438,7 +441,7 @@ func (m *defaultTaskManager) cancelActiveRun(match func(*ActiveRun) bool, notFou
 
 // Shutdown terminates all active runs and prepares for exit.
 func (m *defaultTaskManager) Shutdown() {
-	atomic.StoreInt32(&m.isShutdown, 1)
+	m.isShutdown.Store(true)
 	m.mu.Lock()
 	for _, ts := range m.tasks {
 		for _, ar := range ts.active {

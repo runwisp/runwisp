@@ -380,7 +380,7 @@ func TestRunsStream(t *testing.T) {
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		s.eventBus.PublishSync(events.EventRunCreated, events.RunEvent{Run: &model.Run{ID: ulid.Make().String()}})
+		s.eventBus.Publish(events.EventRunCreated, events.RunEvent{Run: &model.Run{ID: ulid.Make().String()}})
 		time.Sleep(100 * time.Millisecond)
 		cancel()
 	}()

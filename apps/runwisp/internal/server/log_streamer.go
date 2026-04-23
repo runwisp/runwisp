@@ -12,10 +12,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 // runGetter abstracts fetching a run by ID for log streaming.
@@ -162,7 +162,7 @@ func (s *logStreamer) emitInitialData(remaining int64) error {
 func (s *logStreamer) emitChunk(data []byte) {
 	jsonData, err := json.Marshal(string(data))
 	if err != nil {
-		log.Warn("Failed to marshal log chunk for SSE", "err", err)
+		slog.Warn("Failed to marshal log chunk for SSE", "err", err)
 		return
 	}
 	fmt.Fprintf(s.resp, "data: %s\n\n", jsonData)
@@ -182,7 +182,7 @@ func (s *logStreamer) pollLoop(ctx context.Context, runID string, bus events.Eve
 
 	unsubCompleted := bus.Subscribe(events.EventRunCompleted, func(e events.Event) {
 		if re, ok := e.Data.(events.RunEvent); ok && re.Run.ID == runID {
-			log.Debug("SSE: EventRunCompleted received via bus", "runID", runID)
+			slog.Debug("SSE: EventRunCompleted received via bus", "runID", runID)
 			select {
 			case doneCh <- struct{}{}:
 			default:
@@ -193,7 +193,7 @@ func (s *logStreamer) pollLoop(ctx context.Context, runID string, bus events.Eve
 
 	unsubFailed := bus.Subscribe(events.EventRunFailed, func(e events.Event) {
 		if re, ok := e.Data.(events.RunEvent); ok && re.Run.ID == runID {
-			log.Debug("SSE: EventRunFailed received via bus", "runID", runID)
+			slog.Debug("SSE: EventRunFailed received via bus", "runID", runID)
 			select {
 			case doneCh <- struct{}{}:
 			default:
@@ -209,40 +209,40 @@ func (s *logStreamer) pollLoop(ctx context.Context, runID string, bus events.Eve
 	fallbackTicker := time.NewTicker(5 * time.Second)
 	defer fallbackTicker.Stop()
 
-	log.Debug("SSE: pollLoop started, subscribed to EventBus", "runID", runID)
+	slog.Debug("SSE: pollLoop started, subscribed to EventBus", "runID", runID)
 
 	// Immediate check: the run may have completed between the initial GetRun
 	// in the handler and the EventBus subscription above, so the event was
 	// already published and we missed it. Without this, fast-completing runs
 	// would wait up to 5s for the fallback ticker.
 	if s.checkRunCompleted(runID, db) {
-		log.Debug("SSE: immediate DB check triggered done", "runID", runID)
+		slog.Debug("SSE: immediate DB check triggered done", "runID", runID)
 		return
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Debug("SSE: pollLoop context cancelled", "runID", runID)
+			slog.Debug("SSE: pollLoop context cancelled", "runID", runID)
 			return
 		case <-doneCh:
-			log.Debug("SSE: doneCh fired, emitting final data + done", "runID", runID, "lastSize", s.lastSize)
+			slog.Debug("SSE: doneCh fired, emitting final data + done", "runID", runID, "lastSize", s.lastSize)
 			s.emitNewData()
 			s.emitDone()
-			log.Debug("SSE: done event emitted", "runID", runID)
+			slog.Debug("SSE: done event emitted", "runID", runID)
 			return
 		case <-ticker.C:
 			if s.handleRotation() {
 				continue
 			}
 			if err := s.emitNewData(); err != nil {
-				log.Error("SSE: emitNewData error in pollLoop", "runID", runID, "err", err)
+				slog.Error("SSE: emitNewData error in pollLoop", "runID", runID, "err", err)
 				return
 			}
 		case <-fallbackTicker.C:
-			log.Debug("SSE: fallback DB check", "runID", runID)
+			slog.Debug("SSE: fallback DB check", "runID", runID)
 			if s.checkRunCompleted(runID, db) {
-				log.Debug("SSE: fallback DB check triggered done", "runID", runID)
+				slog.Debug("SSE: fallback DB check triggered done", "runID", runID)
 				return
 			}
 		}
@@ -259,7 +259,7 @@ func (s *logStreamer) handleRotation() bool {
 	// Drain remaining bytes from the old file
 	oldEnd, seekErr := s.file.Seek(0, io.SeekEnd)
 	if seekErr != nil {
-		log.Warn("Failed to seek to end of old log file during rotation", "err", seekErr)
+		slog.Warn("Failed to seek to end of old log file during rotation", "err", seekErr)
 	} else if oldEnd > s.lastSize {
 		if _, seekErr := s.file.Seek(s.lastSize, io.SeekStart); seekErr == nil {
 			drainSize := oldEnd - s.lastSize
@@ -277,7 +277,7 @@ func (s *logStreamer) handleRotation() bool {
 	s.file.Close()
 	newFile, err := os.Open(s.logPath)
 	if err != nil {
-		log.Error("Failed to reopen log file after rotation", "err", err)
+		slog.Error("Failed to reopen log file after rotation", "err", err)
 		s.file = nil
 		return true
 	}
@@ -289,7 +289,7 @@ func (s *logStreamer) handleRotation() bool {
 func (s *logStreamer) emitNewData() error {
 	currentSize, err := s.file.Seek(0, io.SeekEnd)
 	if err != nil {
-		log.Error("Failed to seek to end of log file", "err", err)
+		slog.Error("Failed to seek to end of log file", "err", err)
 		return err
 	}
 	if currentSize <= s.lastSize {
@@ -297,7 +297,7 @@ func (s *logStreamer) emitNewData() error {
 	}
 
 	if _, err := s.file.Seek(s.lastSize, io.SeekStart); err != nil {
-		log.Error("Failed to seek in log file", "err", err)
+		slog.Error("Failed to seek in log file", "err", err)
 		return err
 	}
 
@@ -308,7 +308,7 @@ func (s *logStreamer) emitNewData() error {
 	buf := make([]byte, toRead)
 	n, err := s.file.Read(buf)
 	if err != nil && err != io.EOF {
-		log.Error("Failed to read log file", "err", err)
+		slog.Error("Failed to read log file", "err", err)
 		return err
 	}
 	if n > 0 {
@@ -321,7 +321,7 @@ func (s *logStreamer) emitNewData() error {
 func (s *logStreamer) checkRunCompleted(runID string, db runGetter) bool {
 	updatedRun, err := db.GetRun(runID)
 	if err != nil {
-		log.Error("Failed to fetch run status", "err", err)
+		slog.Error("Failed to fetch run status", "err", err)
 		return true
 	}
 	if updatedRun != nil && updatedRun.Status == model.PhaseEnded {

@@ -4,11 +4,9 @@
 package main
 
 import (
-	"context"
 	"sort"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
@@ -17,6 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
+	"log/slog"
 )
 
 // daemonServices holds all long-lived services created during daemon startup.
@@ -40,7 +39,7 @@ type daemonServices struct {
 func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode) (*daemonServices, error) {
 	crashed, err := db.MarkCrashedRuns()
 	if err != nil {
-		log.Warn("Failed to mark crashed runs", "err", err)
+		slog.Warn("Failed to mark crashed runs", "err", err)
 	}
 
 	eventBus := events.NewEventBus()
@@ -58,14 +57,14 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 		scheduler = runtime.NewScheduler(taskManager, tasksMap)
 		schedResult, err = scheduler.Start()
 		if err != nil {
-			log.Warn("Failed to start scheduler", "err", err)
+			slog.Warn("Failed to start scheduler", "err", err)
 		}
 
 		pendingSummary = resumePendingRuns(db, taskManager)
 
 		catchUpResult = runtime.RunMissedTickCatchUp(db, tasksMap, taskManager, time.Now())
 		if catchUpResult.Triggered > 0 {
-			log.Info("Missed-tick catch-up completed", "triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
+			slog.Info("Missed-tick catch-up completed", "triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
 		}
 	}
 
@@ -87,10 +86,7 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 }
 
 func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executor {
-	dockerBackend, err := executor.NewContainerBackend(context.Background())
-	if err != nil {
-		log.Debug("Docker backend unavailable", "err", err)
-	}
+	dockerBackend := executor.NewLazyContainerBackend()
 
 	var minFreeDisk int64
 	minFreeDisk = cfg.Storage.MinFreeSpaceBytes
@@ -115,7 +111,7 @@ func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.
 			dbErr = db.UpdateRun(run)
 		}
 		if dbErr != nil {
-			log.Error("Failed to persist run", "id", run.ID, "err", dbErr)
+			slog.Error("Failed to persist run", "id", run.ID, "err", dbErr)
 		}
 	})
 
@@ -139,7 +135,7 @@ func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap 
 func resumePendingRuns(db storage.RunRepository, taskManager runtime.TaskManager) tui.PendingRunsSummary {
 	pendingRuns, err := db.GetPendingRuns()
 	if err != nil {
-		log.Warn("Failed to query pending runs", "err", err)
+		slog.Warn("Failed to query pending runs", "err", err)
 		return tui.PendingRunsSummary{}
 	}
 	if len(pendingRuns) == 0 {

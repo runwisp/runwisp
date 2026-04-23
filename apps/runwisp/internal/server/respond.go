@@ -7,12 +7,12 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/charmbracelet/log"
+	"log/slog"
 )
 
 func respondError(resp http.ResponseWriter, status int, publicMsg string, err error) {
 	if err != nil && status >= http.StatusInternalServerError {
-		log.Error(publicMsg, "err", err)
+		slog.Error(publicMsg, "err", err)
 	}
 	http.Error(resp, publicMsg, status)
 }
@@ -37,6 +37,6 @@ func respondJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(body); err != nil {
-		log.Error("Failed to encode JSON response", "err", err)
+		slog.Error("Failed to encode JSON response", "err", err)
 	}
 }

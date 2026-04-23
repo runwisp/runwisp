@@ -49,18 +49,13 @@ func runTUIClient() error {
 	}
 
 	err := runTUIConnect(client, password, passwordExplicit)
-	if err != nil && errors.Is(err, apiclient.ErrUnauthorized) {
-		if passwordExplicit {
-			return fmt.Errorf("authentication failed — the password does not match the daemon on port %d", flags.Port)
+	if err != nil {
+		if errors.Is(err, apiclient.ErrUnauthorized) {
+			return tuiPasswordMismatchError(flags.Port, passwordExplicit)
 		}
-		return fmt.Errorf(
-			"authentication failed — password mismatch with the daemon on port %d\n\n"+
-				"The daemon was likely started from a different directory with its own password.\n"+
-				"To fix this, either:\n"+
-				"  - Use --password or RUNWISP_PASSWORD with the correct password\n"+
-				"  - Stop the other daemon and restart from this directory",
-			flags.Port,
-		)
+		if errors.Is(err, apiclient.ErrRateLimited) {
+			return authRateLimitedError(flags.Port)
+		}
 	}
 	return err
 }

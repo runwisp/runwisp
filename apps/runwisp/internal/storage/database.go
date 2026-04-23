@@ -4,28 +4,26 @@
 package storage
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
-	stdlog "log"
-	"os"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/log"
-	"github.com/glebarez/sqlite"
+	_ "modernc.org/sqlite"
+
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/xhit/go-str2duration/v2"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 const (
-	MaxSearchQueryLength = 100  // Max characters in search query
-	RetentionBatchSize   = 1000 // Max runs to delete per batch
-	SQLiteBusyTimeout    = 5000 // SQLite busy timeout in ms
-	SQLiteMaxOpenConns   = 1    // SQLite uses single-writer serialized mode
+	MaxSearchQueryLength = 100
+	RetentionBatchSize   = 1000
+	SQLiteBusyTimeout    = 5000
+	SQLiteMaxOpenConns   = 1
 )
 
 // RunRepository defines the interface for run persistence.
@@ -43,72 +41,111 @@ type RunRepository interface {
 	GetPendingRuns() ([]model.Run, error)
 	GetLastRunByTask(taskName string) (*model.Run, error)
 	GetRunSummary() (*model.RunSummary, error)
-	// EnsureTaskRegistered records the first time a task was seen by the daemon.
-	// Uses INSERT OR IGNORE so subsequent calls are no-ops, preserving the original timestamp.
 	EnsureTaskRegistered(taskName string, firstSeen time.Time) error
-	// GetTaskRegistration returns the per-task registration record, or nil if none exists.
 	GetTaskRegistration(taskName string) (*model.TaskRegistration, error)
 	Close() error
 }
 
-// SQLiteDatabase wraps persistence concerns for runs.
+// SQLiteDatabase wraps persistence concerns for runs and configuration.
 type SQLiteDatabase struct {
-	db *gorm.DB
+	db *sql.DB
 }
 
+const schemaSQL = `
+CREATE TABLE IF NOT EXISTS runs (
+id                    TEXT PRIMARY KEY,
+external_execution_id TEXT,
+task_name             TEXT NOT NULL DEFAULT '',
+status                VARCHAR(20) NOT NULL,
+end_reason            VARCHAR(20),
+exit_code             INTEGER DEFAULT 0,
+start_at              DATETIME,
+end_at                DATETIME,
+triggered_by          VARCHAR(20) NOT NULL,
+created_at            DATETIME,
+retry_attempt         INTEGER DEFAULT 0,
+retry_of_run_id       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_runs_external_execution_id ON runs(external_execution_id);
+CREATE INDEX IF NOT EXISTS idx_runs_task_name ON runs(task_name);
+
+CREATE TABLE IF NOT EXISTS task_registrations (
+task_name     TEXT PRIMARY KEY,
+first_seen_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS config_entries (
+key   TEXT PRIMARY KEY,
+value TEXT NOT NULL
+);
+`
+
 // New opens (and migrates) the SQLite database.
-// logOutput controls where GORM logs are written; nil defaults to os.Stderr.
+// logOutput is accepted for API compatibility but no longer used (we rely on slog).
 func New(dbPath string, logOutput io.Writer) (Database, error) {
-	if logOutput == nil {
-		logOutput = os.Stderr
-	}
-	gormLogger := logger.New(
-		stdlog.New(logOutput, "", stdlog.LstdFlags),
-		logger.Config{
-			SlowThreshold:             time.Second,
-			LogLevel:                  logger.Warn,
-			IgnoreRecordNotFoundError: true,
-			Colorful:                  true,
-		},
-	)
-
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
-		Logger: gormLogger,
-	})
+	_ = logOutput
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	if err := db.AutoMigrate(&model.Run{}, &model.TaskRegistration{}, &model.ConfigEntry{}); err != nil {
-		return nil, fmt.Errorf("failed to migrate database: %w", err)
-	}
+	// SQLite uses single-writer serialized mode, limit to 1 connection.
+	db.SetMaxOpenConns(SQLiteMaxOpenConns)
 
-	// Optimize SQLite for concurrency
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
-	}
-
-	if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
 		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
 	}
-
-	if _, err := sqlDB.Exec("PRAGMA busy_timeout=" + strconv.Itoa(SQLiteBusyTimeout) + ";"); err != nil {
+	if _, err := db.Exec("PRAGMA busy_timeout=" + strconv.Itoa(SQLiteBusyTimeout) + ";"); err != nil {
 		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
 	}
 
-	// SQLite uses single-writer serialized mode, limit to 1 connection
-	sqlDB.SetMaxOpenConns(SQLiteMaxOpenConns)
+	if _, err := db.Exec(schemaSQL); err != nil {
+		return nil, fmt.Errorf("failed to migrate database: %w", err)
+	}
 
 	return &SQLiteDatabase{db: db}, nil
 }
 
+const runColumns = `id, external_execution_id, task_name, status, end_reason, exit_code,
+start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id`
+
 func (db *SQLiteDatabase) CreateRun(run *model.Run) error {
-	return db.db.Create(run).Error
+	_, err := db.db.Exec(
+		`INSERT INTO runs (`+runColumns+`)
+ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		run.ID, run.ExternalExecutionID, run.TaskName, run.Status, run.EndReason, run.ExitCode,
+		run.StartAt, run.EndAt, run.TriggeredBy, run.CreatedAt, run.RetryAttempt, run.RetryOfRunID,
+	)
+	return err
 }
 
 func (db *SQLiteDatabase) UpdateRun(run *model.Run) error {
-	return db.db.Save(run).Error
+	_, err := db.db.Exec(
+		`UPDATE runs SET
+external_execution_id = ?, task_name = ?, status = ?, end_reason = ?, exit_code = ?,
+start_at = ?, end_at = ?, triggered_by = ?, created_at = ?,
+retry_attempt = ?, retry_of_run_id = ?
+ WHERE id = ?`,
+		run.ExternalExecutionID, run.TaskName, run.Status, run.EndReason, run.ExitCode,
+		run.StartAt, run.EndAt, run.TriggeredBy, run.CreatedAt,
+		run.RetryAttempt, run.RetryOfRunID,
+		run.ID,
+	)
+	return err
+}
+
+func scanRun(scanner interface {
+	Scan(dest ...any) error
+}) (*model.Run, error) {
+	var run model.Run
+	err := scanner.Scan(
+		&run.ID, &run.ExternalExecutionID, &run.TaskName, &run.Status, &run.EndReason, &run.ExitCode,
+		&run.StartAt, &run.EndAt, &run.TriggeredBy, &run.CreatedAt, &run.RetryAttempt, &run.RetryOfRunID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &run, nil
 }
 
 func (db *SQLiteDatabase) GetRun(id string) (*model.Run, error) {
@@ -119,77 +156,124 @@ func (db *SQLiteDatabase) GetRunByExternalExecutionID(externalExecutionID string
 	return db.getRunWhere("external_execution_id = ?", externalExecutionID)
 }
 
-func (db *SQLiteDatabase) getRunWhere(query string, args ...any) (*model.Run, error) {
-	var run model.Run
-	if err := db.db.Where(query, args...).First(&run).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, err
+func (db *SQLiteDatabase) getRunWhere(whereClause string, args ...any) (*model.Run, error) {
+	row := db.db.QueryRow(`SELECT `+runColumns+` FROM runs WHERE `+whereClause+` LIMIT 1`, args...)
+	run, err := scanRun(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
 	}
-	return &run, nil
+	return run, err
 }
 
 func (db *SQLiteDatabase) GetRunSummary() (*model.RunSummary, error) {
-	var result struct {
-		Total       int64
-		Success     int64
-		Failed      int64
-		LastFailure *time.Time
-	}
-	err := db.db.Model(&model.Run{}).
-		Select(
-			"COUNT(*) AS total",
-			"SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END) AS success",
-			"SUM(CASE WHEN end_reason IN ('failed','crashed','timeout') THEN 1 ELSE 0 END) AS failed",
-			"MAX(CASE WHEN end_reason IN ('failed','crashed','timeout') THEN end_at END) AS last_failure",
-		).
-		Scan(&result).Error
-	if err != nil {
+	row := db.db.QueryRow(`
+SELECT COUNT(*),
+COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0),
+COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout') THEN 1 ELSE 0 END), 0),
+MAX(CASE WHEN end_reason IN ('failed','crashed','timeout') THEN end_at END)
+FROM runs`)
+	summary := &model.RunSummary{}
+	if err := row.Scan(&summary.Total, &summary.Success, &summary.Failed, &summary.LastFailure); err != nil {
 		return nil, err
 	}
-	return &model.RunSummary{
-		Total:       result.Total,
-		Success:     result.Success,
-		Failed:      result.Failed,
-		LastFailure: result.LastFailure,
-	}, nil
+	return summary, nil
 }
 
 func (db *SQLiteDatabase) CountRuns(taskName string) (int64, error) {
 	var count int64
-	err := db.db.Model(&model.Run{}).Where("task_name = ?", taskName).Count(&count).Error
+	err := db.db.QueryRow(`SELECT COUNT(*) FROM runs WHERE task_name = ?`, taskName).Scan(&count)
 	return count, err
 }
 
-func (db *SQLiteDatabase) CountRunsFiltered(status, taskName, searchQuery string) (int64, error) {
-	var count int64
-	query := db.db.Model(&model.Run{})
+type queryBuilder struct {
+	where []string
+	args  []any
+}
 
-	query = applyStatusFilter(query, status)
-	if taskName != "" {
-		query = query.Where("task_name = ?", taskName)
+func (q *queryBuilder) add(clause string, args ...any) {
+	q.where = append(q.where, clause)
+	q.args = append(q.args, args...)
+}
+
+func (q *queryBuilder) whereSQL() string {
+	if len(q.where) == 0 {
+		return ""
 	}
+	return " WHERE " + strings.Join(q.where, " AND ")
+}
 
-	query = db.applySearchFilter(query, searchQuery)
+func applyStatusFilter(q *queryBuilder, status string) {
+	if status == "" {
+		return
+	}
+	switch model.EndReason(status) {
+	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped, model.ReasonTimeout, model.ReasonCrashed:
+		q.add("end_reason = ?", status)
+	default:
+		q.add("status = ?", status)
+	}
+}
 
-	err := query.Count(&count).Error
+func applySearchFilter(q *queryBuilder, searchQuery string) {
+	if searchQuery == "" {
+		return
+	}
+	if len(searchQuery) > MaxSearchQueryLength {
+		searchQuery = searchQuery[:MaxSearchQueryLength]
+	}
+	searchQuery = strings.ReplaceAll(searchQuery, "%", "")
+	searchQuery = strings.ReplaceAll(searchQuery, "_", "")
+	pattern := "%" + searchQuery + "%"
+	q.add("(task_name LIKE ? OR id LIKE ?)", pattern, pattern)
+}
+
+func (db *SQLiteDatabase) CountRunsFiltered(status, taskName, searchQuery string) (int64, error) {
+	var q queryBuilder
+	applyStatusFilter(&q, status)
+	if taskName != "" {
+		q.add("task_name = ?", taskName)
+	}
+	applySearchFilter(&q, searchQuery)
+
+	var count int64
+	err := db.db.QueryRow(`SELECT COUNT(*) FROM runs`+q.whereSQL(), q.args...).Scan(&count)
 	return count, err
 }
 
 func (db *SQLiteDatabase) QueryRuns(taskName string, limit, offset int, status, sortField, sortDirection, searchQuery string) ([]model.Run, error) {
-	var runs []model.Run
-	query := db.db.Model(&model.Run{})
+	var q queryBuilder
 	if taskName != "" {
-		query = query.Where("task_name = ?", taskName)
+		q.add("task_name = ?", taskName)
 	}
-	query = applyStatusFilter(query, status)
-	query = db.applySearchFilter(query, searchQuery)
-	return runs, query.Order(db.buildOrderClause(sortField, sortDirection)).Limit(limit).Offset(offset).Find(&runs).Error
+	applyStatusFilter(&q, status)
+	applySearchFilter(&q, searchQuery)
+
+	order := buildOrderClause(sortField, sortDirection)
+	args := append(q.args, limit, offset)
+
+	rows, err := db.db.Query(
+		`SELECT `+runColumns+` FROM runs`+q.whereSQL()+` ORDER BY `+order+` LIMIT ? OFFSET ?`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []model.Run
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, *r)
+	}
+	return runs, rows.Err()
 }
 
 func (db *SQLiteDatabase) DeleteRun(id string) error {
-	return db.db.Delete(&model.Run{}, "id = ?", id).Error
+	_, err := db.db.Exec(`DELETE FROM runs WHERE id = ?`, id)
+	return err
 }
 
 func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
@@ -198,27 +282,25 @@ func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
 	if task.Retention.Age != "" {
 		parsedInterval, err := str2duration.ParseDuration(task.Retention.Age)
 		if err != nil {
-			log.Warn("Invalid retention age", "age", task.Retention.Age, "task", task.Name, "err", err)
+			slog.Warn("Invalid retention age", "age", task.Retention.Age, "task", task.Name, "err", err)
 		} else {
 			cutoff := time.Now().Add(-parsedInterval)
-			var runs []model.Run
-			if err := db.db.Where("task_name = ? AND created_at < ?", task.Name, cutoff).Limit(RetentionBatchSize).Find(&runs).Error; err != nil {
+			if err := db.collectRuns(uniqueRuns,
+				`SELECT `+runColumns+` FROM runs WHERE task_name = ? AND created_at < ? LIMIT ?`,
+				task.Name, cutoff, RetentionBatchSize,
+			); err != nil {
 				return nil, fmt.Errorf("query retention days for %s: %w", task.Name, err)
-			}
-			for _, r := range runs {
-				uniqueRuns[r.ID] = r
 			}
 		}
 	}
 
 	if len(uniqueRuns) < RetentionBatchSize && task.Retention.Runs > 0 {
-		var runs []model.Run
 		remaining := RetentionBatchSize - len(uniqueRuns)
-		if err := db.db.Where("task_name = ?", task.Name).Order("created_at DESC").Offset(task.Retention.Runs).Limit(remaining).Find(&runs).Error; err != nil {
+		if err := db.collectRuns(uniqueRuns,
+			`SELECT `+runColumns+` FROM runs WHERE task_name = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+			task.Name, remaining, task.Retention.Runs,
+		); err != nil {
 			return nil, fmt.Errorf("query retention runs for %s: %w", task.Name, err)
-		}
-		for _, r := range runs {
-			uniqueRuns[r.ID] = r
 		}
 	}
 
@@ -233,117 +315,132 @@ func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
 		finalRuns = append(finalRuns, run)
 	}
 
-	if err := db.db.Delete(&model.Run{}, "id IN ?", ids).Error; err != nil {
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	if _, err := db.db.Exec(`DELETE FROM runs WHERE id IN (`+placeholders+`)`, args...); err != nil {
 		return nil, fmt.Errorf("delete old runs for %s: %w", task.Name, err)
 	}
 
 	return finalRuns, nil
 }
 
+func (db *SQLiteDatabase) collectRuns(into map[string]model.Run, query string, args ...any) error {
+	rows, err := db.db.Query(query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return err
+		}
+		into[r.ID] = *r
+	}
+	return rows.Err()
+}
+
 // MarkCrashedRuns flags runs that never completed (e.g., after a crash).
 func (db *SQLiteDatabase) MarkCrashedRuns() (int64, error) {
 	now := time.Now()
-	crashed := model.ReasonCrashed
-	// Only mark RUNNING tasks as crashed. PENDING tasks should be resumed.
-	result := db.db.Model(&model.Run{}).
-		Where("status = ? AND end_at IS NULL", model.PhaseRunning).
-		Updates(map[string]any{
-			"status":     model.PhaseEnded,
-			"end_reason": crashed,
-			"end_at":     now,
-			"exit_code":  -2,
-		})
-
-	if result.Error != nil {
-		return 0, result.Error
+	result, err := db.db.Exec(
+		`UPDATE runs SET status = ?, end_reason = ?, end_at = ?, exit_code = ?
+ WHERE status = ? AND end_at IS NULL`,
+		model.PhaseEnded, string(model.ReasonCrashed), now, -2, model.PhaseRunning,
+	)
+	if err != nil {
+		return 0, err
 	}
-
-	return result.RowsAffected, nil
+	return result.RowsAffected()
 }
 
 func (db *SQLiteDatabase) GetPendingRuns() ([]model.Run, error) {
+	rows, err := db.db.Query(
+		`SELECT `+runColumns+` FROM runs WHERE status = ? ORDER BY created_at ASC`,
+		model.PhasePending,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
 	var runs []model.Run
-	err := db.db.Where("status = ?", model.PhasePending).Order("created_at ASC").Find(&runs).Error
-	return runs, err
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, *r)
+	}
+	return runs, rows.Err()
 }
 
 func (db *SQLiteDatabase) GetLastRunByTask(taskName string) (*model.Run, error) {
-	var run model.Run
-	err := db.db.Where("task_name = ?", taskName).Order("created_at DESC").First(&run).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
+	row := db.db.QueryRow(
+		`SELECT `+runColumns+` FROM runs WHERE task_name = ? ORDER BY created_at DESC LIMIT 1`,
+		taskName,
+	)
+	run, err := scanRun(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
 	}
-	return &run, nil
+	return run, err
 }
 
 func (db *SQLiteDatabase) EnsureTaskRegistered(taskName string, firstSeen time.Time) error {
-	return db.db.Exec(
-		"INSERT OR IGNORE INTO task_registrations (task_name, first_seen_at) VALUES (?, ?)",
+	_, err := db.db.Exec(
+		`INSERT OR IGNORE INTO task_registrations (task_name, first_seen_at) VALUES (?, ?)`,
 		taskName, firstSeen,
-	).Error
+	)
+	return err
 }
 
 func (db *SQLiteDatabase) GetTaskRegistration(taskName string) (*model.TaskRegistration, error) {
 	var r model.TaskRegistration
-	err := db.db.First(&r, "task_name = ?", taskName).Error
+	err := db.db.QueryRow(
+		`SELECT task_name, first_seen_at FROM task_registrations WHERE task_name = ?`,
+		taskName,
+	).Scan(&r.TaskName, &r.FirstSeenAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &r, nil
 }
 
 func (db *SQLiteDatabase) GetConfigValue(key string) (string, bool, error) {
-	var entry model.ConfigEntry
-	err := db.db.First(&entry, "key = ?", key).Error
+	var value string
+	err := db.db.QueryRow(`SELECT value FROM config_entries WHERE key = ?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", false, nil
-		}
 		return "", false, err
 	}
-	return entry.Value, true, nil
+	return value, true, nil
 }
 
 func (db *SQLiteDatabase) SetConfigValue(key, value string) error {
-	return db.db.Exec(
-		"INSERT INTO config_entries (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+	_, err := db.db.Exec(
+		`INSERT INTO config_entries (key, value) VALUES (?, ?)
+ ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
 		key, value,
-	).Error
+	)
+	return err
 }
 
 func (db *SQLiteDatabase) Close() error {
-	sqlDB, err := db.db.DB()
-	if err != nil {
-		return err
-	}
-	return sqlDB.Close()
+	return db.db.Close()
 }
 
-func (db *SQLiteDatabase) applySearchFilter(query *gorm.DB, searchQuery string) *gorm.DB {
-	if searchQuery == "" {
-		return query
-	}
-
-	// Prevent excessively long search queries
-	if len(searchQuery) > MaxSearchQueryLength {
-		searchQuery = searchQuery[:MaxSearchQueryLength]
-	}
-
-	// Sanitize LIKE wildcard characters to prevent injection
-	searchQuery = strings.ReplaceAll(searchQuery, "%", "")
-	searchQuery = strings.ReplaceAll(searchQuery, "_", "")
-
-	searchPattern := "%" + searchQuery + "%"
-	return query.Where("task_name LIKE ? OR id LIKE ?", searchPattern, searchPattern)
-}
-
-func (db *SQLiteDatabase) buildOrderClause(sortField, sortDirection string) string {
+func buildOrderClause(sortField, sortDirection string) string {
 	if sortField == "" {
 		return "created_at DESC"
 	}
@@ -357,25 +454,10 @@ func (db *SQLiteDatabase) buildOrderClause(sortField, sortDirection string) stri
 	case "duration":
 		return fmt.Sprintf("(COALESCE(julianday(end_at) - julianday(start_at), 0)) %s", direction)
 	case "start_at":
-		coalesced := fmt.Sprintf("COALESCE(%s, created_at)", sortField)
-		return fmt.Sprintf("%s %s, created_at %s", coalesced, direction, direction)
+		return fmt.Sprintf("COALESCE(start_at, created_at) %s, created_at %s", direction, direction)
 	case "task_name", "status", "exit_code", "created_at":
 		return fmt.Sprintf("%s %s", sortField, direction)
 	default:
 		return "created_at DESC"
-	}
-}
-
-// applyStatusFilter adds a WHERE clause that matches either a phase or an
-// end_reason depending on the supplied value.
-func applyStatusFilter(query *gorm.DB, status string) *gorm.DB {
-	if status == "" {
-		return query
-	}
-	switch model.EndReason(status) {
-	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped, model.ReasonTimeout, model.ReasonCrashed:
-		return query.Where("end_reason = ?", status)
-	default:
-		return query.Where("status = ?", status)
 	}
 }

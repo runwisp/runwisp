@@ -5,15 +5,16 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 // --- Palette ---
@@ -114,10 +115,24 @@ const (
 	taskPad  = 36
 )
 
-// ConfigureLogger sets up charmbracelet/log for clean runtime output.
+// ConfigureLogger sets up slog for clean runtime output: info level, no timestamps.
 func ConfigureLogger() {
-	log.SetReportTimestamp(false)
-	log.SetLevel(log.InfoLevel)
+	SetLogOutput(os.Stderr)
+}
+
+// SetLogOutput redirects slog's default logger to the given writer,
+// preserving our level/format settings (info level, no timestamps).
+func SetLogOutput(w io.Writer) {
+	handler := slog.NewTextHandler(w, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return a
+		},
+	})
+	slog.SetDefault(slog.New(handler))
 }
 
 // PrintStartup renders the polished startup display to stderr.

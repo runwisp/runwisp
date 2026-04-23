@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/tui"
+	"log/slog"
 )
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.
@@ -33,15 +33,10 @@ func runDefault() error {
 			return nil
 		}
 		if errors.Is(err, apiclient.ErrUnauthorized) {
-			return fmt.Errorf(
-				"another RunWisp daemon is already running on port %d with a different password\n\n"+
-					"This usually happens when an instance was started from a different directory.\n"+
-					"To resolve this, you can:\n"+
-					"  - Stop the other daemon first\n"+
-					"  - Use a different port:  runwisp --port <PORT>\n"+
-					"  - Set RUNWISP_PASSWORD to the other daemon's password to connect to it",
-				flags.Port,
-			)
+			return passwordMismatchError(flags.Port)
+		}
+		if errors.Is(err, apiclient.ErrRateLimited) {
+			return authRateLimitedError(flags.Port)
 		}
 		return err
 	}
@@ -55,7 +50,7 @@ func runDefault() error {
 	}
 
 	if err := spawnDaemon(); err != nil {
-		log.Warn("Failed to spawn background daemon, running inline", "err", err)
+		slog.Warn("Failed to spawn background daemon, running inline", "err", err)
 		return runDaemon(modeStandalone)
 	}
 
@@ -77,7 +72,7 @@ func runTUIConnect(client *apiclient.Client, password string, passwordExplicit b
 
 	info, err := client.GetDaemonInfo()
 	if err != nil {
-		log.Warn("Could not fetch daemon info", "err", err)
+		slog.Warn("Could not fetch daemon info", "err", err)
 	}
 
 	startupInfo := buildStartupInfoFromDaemon(info, password, passwordExplicit)

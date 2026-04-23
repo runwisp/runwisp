@@ -8,7 +8,7 @@
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
     import { runUpdatesStore, upsertRun } from "$lib/stores";
-    import { createAsyncData } from "$lib/utils/async-data.svelte";
+    import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { type Run, type Task } from "$lib/types";
 
@@ -27,7 +27,7 @@
     );
     let concurrencyReached = $derived(triggering || activeRunCount >= concurrencyLimit);
 
-    const pageData = createAsyncData(
+    const pageData = new AsyncData(
         async (
             signal: AbortSignal,
         ): Promise<{

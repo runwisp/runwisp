@@ -485,7 +485,7 @@ func TestLogStreamer_PollLoop_EmitsNewDataAndDone(t *testing.T) {
 		// After another poll interval, signal completion via EventBus
 		time.Sleep(600 * time.Millisecond)
 		run := &model.Run{ID: "run1", Status: model.PhaseEnded}
-		bus.PublishSync(events.EventRunCompleted, events.RunEvent{Run: run})
+		bus.Publish(events.EventRunCompleted, events.RunEvent{Run: run})
 	}()
 
 	go func() {

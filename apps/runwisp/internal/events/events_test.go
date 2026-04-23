@@ -25,7 +25,7 @@ func TestEventBus(t *testing.T) {
 		defer unsub()
 
 		data := RunEvent{Run: &model.Run{ID: "test-data"}}
-		eb.PublishSync(EventRunCreated, data)
+		eb.Publish(EventRunCreated, data)
 
 		assert.True(t, called)
 		assert.Equal(t, EventRunCreated, received.Type)
@@ -61,12 +61,12 @@ func TestEventBus(t *testing.T) {
 			count++
 		})
 
-		eb.PublishSync(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
 		assert.Equal(t, 1, count)
 
 		unsub()
 
-		eb.PublishSync(EventRunCreated, RunEvent{Run: &model.Run{ID: "2"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "2"}})
 		assert.Equal(t, 1, count)
 	})
 
@@ -82,9 +82,9 @@ func TestEventBus(t *testing.T) {
 		})
 		defer unsub()
 
-		eb.PublishSync(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
-		eb.PublishSync(EventRunStarted, RunEvent{Run: &model.Run{ID: "2"}})
-		eb.PublishSync(EventLogLine, LogLineEvent{RunID: "3"})
+		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
+		eb.Publish(EventRunStarted, RunEvent{Run: &model.Run{ID: "2"}})
+		eb.Publish(EventLogLine, LogLineEvent{RunID: "3"})
 
 		assert.Equal(t, 3, count)
 	})
@@ -97,12 +97,12 @@ func TestEventBus(t *testing.T) {
 			count++
 		})
 
-		eb.PublishSync(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
 		assert.Equal(t, 1, count)
 
 		unsub()
 
-		eb.PublishSync(EventRunCreated, RunEvent{Run: &model.Run{ID: "2"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "2"}})
 		assert.Equal(t, 1, count)
 	})
 
@@ -118,7 +118,7 @@ func TestEventBus(t *testing.T) {
 			count2++
 		})
 
-		eb.PublishSync(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
 
 		assert.Equal(t, 1, count1)
 		assert.Equal(t, 1, count2)

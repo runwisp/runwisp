@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
+	"log/slog"
 )
 
 var initForce bool
@@ -84,7 +84,7 @@ func runInit() error {
 
 	password := generateInitPassword()
 
-	log.Info("Created configuration file", "path", target)
+	slog.Info("Created configuration file", "path", target)
 	fmt.Println()
 	fmt.Println("  Generated password: " + password)
 	fmt.Println()

@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/internal/events"
+	"log/slog"
 )
 
 type PaginationParams struct {
@@ -230,7 +230,7 @@ func (srv *Server) registerRunsSSE(api huma.API) {
 				select {
 				case eventChan <- event:
 				default:
-					log.Warn("Run stream channel full", "event", event.Type)
+					slog.Warn("Run stream channel full", "event", event.Type)
 				}
 			}
 		})

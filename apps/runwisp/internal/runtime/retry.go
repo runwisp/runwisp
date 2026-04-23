@@ -4,11 +4,10 @@
 package runtime
 
 import (
-	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 func isFailureReason(reason model.EndReason) bool {
@@ -64,12 +63,12 @@ func computeRetryDelay(task *model.Task, attempt int) time.Duration {
 
 // scheduleRetry waits for the retry delay and triggers a new run.
 func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Run) {
-	if atomic.LoadInt32(&m.isShutdown) == 1 {
+	if m.isShutdown.Load() {
 		return
 	}
 
 	delay := computeRetryDelay(task, failedRun.RetryAttempt)
-	log.Info("Scheduling retry", "attempt", failedRun.RetryAttempt+1, "max", task.Retry.Limit, "task", task.Name, "delay", delay)
+	slog.Info("Scheduling retry", "attempt", failedRun.RetryAttempt+1, "max", task.Retry.Limit, "task", task.Name, "delay", delay)
 
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
@@ -80,7 +79,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 		return
 	}
 
-	if atomic.LoadInt32(&m.isShutdown) == 1 {
+	if m.isShutdown.Load() {
 		return
 	}
 
@@ -90,12 +89,12 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 		RetryOfRunID: &failedRun.ID,
 	})
 	if err != nil {
-		log.Error("Retry failed", "task", task.Name, "attempt", failedRun.RetryAttempt+1, "err", err)
+		slog.Error("Retry failed", "task", task.Name, "attempt", failedRun.RetryAttempt+1, "err", err)
 	}
 }
 
 func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *model.Run) {
-	if atomic.LoadInt32(&m.isShutdown) == 1 {
+	if m.isShutdown.Load() {
 		return
 	}
 
@@ -103,6 +102,6 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 		TriggeredBy: previousRun.TriggeredBy,
 	})
 	if err != nil {
-		log.Error("Restart failed", "task", task.Name, "err", err)
+		slog.Error("Restart failed", "task", task.Name, "err", err)
 	}
 }

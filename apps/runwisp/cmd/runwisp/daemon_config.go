@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/log"
+	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/config"
@@ -142,7 +142,7 @@ func resolveJWTSecret(configRepo storage.ConfigRepository, envPassword string) (
 	}
 
 	if passwordChanged {
-		log.Info("Password changed — rotating JWT secret to invalidate existing sessions")
+		slog.Info("Password changed — rotating JWT secret to invalidate existing sessions")
 	}
 
 	if !secretFound || passwordChanged {

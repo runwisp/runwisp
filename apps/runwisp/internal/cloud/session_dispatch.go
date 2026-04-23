@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/coder/websocket"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
+	"log/slog"
 )
 
 // sessionRunner manages the active WebSocket session loops (read, write,
@@ -56,7 +56,7 @@ func (sr *sessionRunner) run(ctx context.Context, session *wsSession) error {
 
 	cancel()
 	if err := session.conn.Close(websocket.StatusNormalClosure, "reconnect"); err != nil {
-		log.Info("failed to close session", "err", err)
+		slog.Info("failed to close session", "err", err)
 	}
 	waitGroup.Wait()
 
@@ -83,7 +83,7 @@ func (sr *sessionRunner) readLoop(ctx context.Context, session *wsSession) error
 		session.lastReceived.Store(time.Now().UnixMilli())
 
 		if err := sr.handleInboundPayload(session, payload); err != nil {
-			log.Info("failed to handle inbound message", "error", err.Error())
+			slog.Info("failed to handle inbound message", "error", err.Error())
 		}
 	}
 }
@@ -148,7 +148,7 @@ func (sr *sessionRunner) handleInboundPayload(session *wsSession, payload []byte
 	case protocol.PongMessage:
 		return nil
 	case protocol.ProtocolErrorMessage:
-		log.Info("cloud protocol error", "code", message.Code, "message", message.Message, "requestId", message.RequestID)
+		slog.Info("cloud protocol error", "code", message.Code, "message", message.Message, "requestId", message.RequestID)
 		return nil
 	case protocol.ExecutionDispatchMessage:
 		if dispatchErr := sr.handler.HandleExecutionDispatch(message); dispatchErr != nil {
@@ -191,6 +191,6 @@ func (sr *sessionRunner) handleInboundPayload(session *wsSession, payload []byte
 func (sr *sessionRunner) sendProtocolError(session *wsSession, kind CloudErrorKind, message string, requestID string) {
 	errorMessage := NewProtocolErrorMessage(string(kind), message, requestID)
 	if err := sendMessage(session, errorMessage); err != nil {
-		log.Info("failed to send protocol error", "error", err.Error())
+		slog.Info("failed to send protocol error", "error", err.Error())
 	}
 }

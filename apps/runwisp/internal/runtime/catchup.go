@@ -6,10 +6,10 @@ package runtime
 import (
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
+	"log/slog"
 )
 
 // CatchUpResult summarises missed-tick catch-up actions taken at startup.
@@ -34,21 +34,21 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 		// restart after the first. On first startup firstSeenAt == now, so
 		// countMissedTicks returns 0 — no spurious initial run.
 		if err := db.EnsureTaskRegistered(task.Name, now); err != nil {
-			log.Warn("Failed to register task for catch-up", "task", task.Name, "err", err)
+			slog.Warn("Failed to register task for catch-up", "task", task.Name, "err", err)
 			result.Errors++
 			continue
 		}
 
 		schedule, err := parser.Parse(task.Trigger.Cron)
 		if err != nil {
-			log.Warn("Failed to parse schedule for catch-up", "task", task.Name, "err", err)
+			slog.Warn("Failed to parse schedule for catch-up", "task", task.Name, "err", err)
 			result.Errors++
 			continue
 		}
 
 		lastRun, err := db.GetLastRunByTask(task.Name)
 		if err != nil {
-			log.Warn("Failed to query last run for catch-up", "task", task.Name, "err", err)
+			slog.Warn("Failed to query last run for catch-up", "task", task.Name, "err", err)
 			result.Errors++
 			continue
 		}
@@ -57,7 +57,7 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 		if lastRun == nil {
 			reg, err := db.GetTaskRegistration(task.Name)
 			if err != nil {
-				log.Warn("Failed to query task registration for catch-up", "task", task.Name, "err", err)
+				slog.Warn("Failed to query task registration for catch-up", "task", task.Name, "err", err)
 				result.Errors++
 				continue
 			}
@@ -79,7 +79,7 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 			triggers = 1
 		}
 
-		log.Info("Triggering missed run catch-up",
+		slog.Info("Triggering missed run catch-up",
 			"task", task.Name,
 			"missed", missedCount,
 			"triggering", triggers,
@@ -88,7 +88,7 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 
 		for range triggers {
 			if _, err := runner.TriggerRun(task.Name, model.TriggeredByCron); err != nil {
-				log.Error("Failed to trigger catch-up run", "task", task.Name, "err", err)
+				slog.Error("Failed to trigger catch-up run", "task", task.Name, "err", err)
 				result.Errors++
 			} else {
 				result.Triggered++

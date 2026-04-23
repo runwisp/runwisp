@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/log"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
@@ -24,6 +23,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 // allowedVolumePrefixes lists host path prefixes that may be bind-mounted.
@@ -237,7 +237,7 @@ func (b *ContainerBackend) Start(ctx context.Context, def model.ExecutionDef) (*
 
 func (b *ContainerBackend) removeContainer(ctx context.Context, containerID string) {
 	if err := b.docker.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
-		log.Warn("Failed to remove container", "id", containerID, "err", err)
+		slog.Warn("Failed to remove container", "id", containerID, "err", err)
 	}
 }
 

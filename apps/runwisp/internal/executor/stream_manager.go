@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 // StreamManager reads process output and writes log lines to a writer,
@@ -55,7 +55,7 @@ func (s *StreamManager) StreamToFile(reader io.Reader, writer io.Writer, task *m
 	lineBuf := NewLineBuffer(func(line string) {
 		formatted := FormatLine(line, prefix)
 		if _, err := writer.Write([]byte(formatted)); err != nil {
-			log.Warn("Failed to write log line to file", "stream", prefix, "err", err)
+			slog.Warn("Failed to write log line to file", "stream", prefix, "err", err)
 		}
 		batch.WriteString(formatted)
 		batchLines++

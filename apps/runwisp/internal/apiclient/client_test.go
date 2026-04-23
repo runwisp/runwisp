@@ -123,6 +123,17 @@ func TestAuthenticate_AuthError(t *testing.T) {
 	assert.ErrorIs(t, err, ErrUnauthorized)
 }
 
+func TestAuthenticate_RateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "pw")
+	err := c.Authenticate()
+	assert.ErrorIs(t, err, ErrRateLimited)
+}
+
 func TestListTasks(t *testing.T) {
 	tasks := []model.TaskResponse{
 		{Task: model.Task{Name: "task-1"}},
