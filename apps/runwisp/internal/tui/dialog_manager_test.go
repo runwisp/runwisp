@@ -151,6 +151,44 @@ func TestDialogManager_SyncMouseState(t *testing.T) {
 	}
 }
 
+func TestDialogManager_SyncMouseState_Hold(t *testing.T) {
+	var dm DialogManager
+
+	// Hold alone disables the mouse even with no dialog.
+	dm.SetMouseHold(true)
+	cmd := dm.SyncMouseState()
+	if cmd == nil {
+		t.Fatal("expected disable-mouse cmd when hold is set")
+	}
+	if !dm.mouseDisabled {
+		t.Fatal("expected mouseDisabled=true under hold")
+	}
+
+	// Releasing the hold re-enables the mouse.
+	dm.SetMouseHold(false)
+	cmd = dm.SyncMouseState()
+	if cmd == nil {
+		t.Fatal("expected enable-mouse cmd when hold is released")
+	}
+	if dm.mouseDisabled {
+		t.Fatal("expected mouseDisabled=false after releasing hold")
+	}
+
+	// Copy dialog + hold together: still disabled; releasing hold while copy
+	// dialog is open must keep mouse disabled.
+	dm.SetMouseHold(true)
+	_ = dm.SyncMouseState()
+	dm.ShowCopy("Test", "val")
+	dm.SetMouseHold(false)
+	cmd = dm.SyncMouseState()
+	if cmd != nil {
+		t.Fatal("expected no cmd: copy dialog still holds mouse disabled")
+	}
+	if !dm.mouseDisabled {
+		t.Fatal("expected mouseDisabled to remain true while copy dialog open")
+	}
+}
+
 func TestDialogManager_RenderOverlays_NoDialog(t *testing.T) {
 	var dm DialogManager
 	base := "hello world"

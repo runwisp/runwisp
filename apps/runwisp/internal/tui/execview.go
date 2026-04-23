@@ -68,10 +68,14 @@ type ExecView struct {
 	run           *model.Run
 	pane          LogPane
 	focused       bool
+	fullscreen    bool
 	headerFocus   headerFocusItem
 	hoveredHeader headerFocusItem
 	headerLayout  execHeaderLayout
 }
+
+// execHeaderHeight is the number of header lines drawn above the log in normal mode.
+const execHeaderHeight = 4
 
 func NewExecView(run *model.Run) ExecView {
 	return ExecView{
@@ -86,14 +90,38 @@ func NewExecView(run *model.Run) ExecView {
 
 func (v *ExecView) SetSize(w, h int) {
 	v.pane.SetSize(w, h)
-	v.pane.SetHeaderHeight(4)
+	if v.fullscreen {
+		v.pane.SetHeaderHeight(0)
+	} else {
+		v.pane.SetHeaderHeight(execHeaderHeight)
+	}
 }
 
+// ToggleFullscreen flips fullscreen mode. In fullscreen, the header is hidden,
+// line numbers are suppressed, and header focus/hover are cleared so the pane
+// behaves as a plain scrollback buffer suited for native terminal text selection.
+func (v *ExecView) ToggleFullscreen() {
+	v.fullscreen = !v.fullscreen
+	v.pane.SetLineNumbers(!v.fullscreen)
+	if v.fullscreen {
+		v.pane.SetHeaderHeight(0)
+		v.headerFocus = headerFocusNone
+		v.hoveredHeader = headerFocusNone
+		v.headerLayout.reset()
+	} else {
+		v.pane.SetHeaderHeight(execHeaderHeight)
+	}
+}
+
+func (v *ExecView) Fullscreen() bool         { return v.fullscreen }
 func (v *ExecView) SetFocused(focused bool)  { v.focused = focused }
 func (v *ExecView) AppendChunk(chunk string) { v.pane.AppendChunk(chunk) }
 func (v *ExecView) FlushPending()            { v.pane.FlushPending() }
 func (v *ExecView) maxHScroll() int          { return v.pane.MaxHScroll() }
 func (v *ExecView) hitAt(x, y int) headerFocusItem {
+	if v.fullscreen {
+		return headerFocusNone
+	}
 	return v.headerLayout.hitAt(x, y)
 }
 
@@ -115,6 +143,11 @@ func (v *ExecView) Update(msg tea.Msg) tea.Cmd {
 	}
 
 	key := keyMsg.String()
+
+	if v.fullscreen {
+		v.pane.HandleKeyScroll(key)
+		return nil
+	}
 
 	switch key {
 	case "up", "k":

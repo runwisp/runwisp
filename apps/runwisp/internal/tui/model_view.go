@@ -14,34 +14,39 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 
-	sidebarView := m.sidebar.View()
-
-	var mainContent string
-	if m.execView != nil {
-		mainContent = m.execView.View()
+	var body string
+	if m.isExecFullscreen() {
+		body = strings.TrimRight(m.execView.View(), "\n")
 	} else {
-		mainW, _ := m.mainSize()
-		switch m.sidebar.ActivePage() {
-		case PageHome:
-			if m.sidebar.ActiveTask() != "" {
-				runNowHovered := m.mouse.hoverY == m.layout.taskBtnY && m.mouse.hoverX >= sidebarWidth
-				header, _ := renderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, runNowHovered)
-				mainContent = header + m.execList.View()
-			} else {
-				header, _ := renderHomeHeader(m.info, m.hasLaunchTicket(), mainW, m.homeCursor, m.mouse.homeHover)
-				mainContent = header + m.execList.View()
-			}
-		case PageInfo:
-			mainContent = m.infoView.View()
-		case PageDebug:
-			mainContent = m.debugView.View()
-		}
-	}
+		sidebarView := m.sidebar.View()
 
-	body := lipgloss.JoinHorizontal(lipgloss.Top,
-		strings.TrimRight(sidebarView, "\n"),
-		strings.TrimRight(mainContent, "\n"),
-	)
+		var mainContent string
+		if m.execView != nil {
+			mainContent = m.execView.View()
+		} else {
+			mainW, _ := m.mainSize()
+			switch m.sidebar.ActivePage() {
+			case PageHome:
+				if m.sidebar.ActiveTask() != "" {
+					runNowHovered := m.mouse.hoverY == m.layout.taskBtnY && m.mouse.hoverX >= sidebarWidth
+					header, _ := renderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, runNowHovered)
+					mainContent = header + m.execList.View()
+				} else {
+					header, _ := renderHomeHeader(m.info, m.hasLaunchTicket(), mainW, m.homeCursor, m.mouse.homeHover)
+					mainContent = header + m.execList.View()
+				}
+			case PageInfo:
+				mainContent = m.infoView.View()
+			case PageDebug:
+				mainContent = m.debugView.View()
+			}
+		}
+
+		body = lipgloss.JoinHorizontal(lipgloss.Top,
+			strings.TrimRight(sidebarView, "\n"),
+			strings.TrimRight(mainContent, "\n"),
+		)
+	}
 
 	helpText := m.buildHelpText()
 	if flash, ok := m.dialogs.FlashActive(); ok {
@@ -59,6 +64,15 @@ func (m Model) View() string {
 func (m Model) buildHelpText() string {
 	if m.execView != nil {
 		var parts []string
+		if m.execView.Fullscreen() {
+			scrollParts := "esc/f exit fullscreen  ↑↓ scroll"
+			if m.execView.maxHScroll() > 0 {
+				scrollParts += "  ←→ pan"
+			}
+			scrollParts += "  G end  g top  pgup/pgdn page"
+			parts = append(parts, scrollParts, "select text with mouse", "q/^C quit")
+			return strings.Join(parts, "  ")
+		}
 		switch m.execView.headerFocus {
 		case headerFocusBack, headerFocusAction:
 			parts = append(parts, "enter activate  ←→ switch  ↓ details")
@@ -71,7 +85,7 @@ func (m Model) buildHelpText() string {
 			if m.execView.maxHScroll() > 0 {
 				scrollParts += "  ←→ pan"
 			}
-			scrollParts += "  G end  g top  pgup/pgdn page"
+			scrollParts += "  G end  g top  pgup/pgdn page  f fullscreen"
 			parts = append(parts, scrollParts)
 		}
 		if m.execView.run != nil {

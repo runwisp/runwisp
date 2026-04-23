@@ -69,10 +69,6 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		prevTask := m.sidebar.ActiveTask()
 		m.sidebar.handleClick(y)
 		focusCmd := m.focusSidebar()
-		// Close exec view when clicking sidebar items.
-		if m.execView != nil {
-			m.closeExecView()
-		}
 		if cmd := m.applySidebarSelectionChange(prevPage, prevTask); cmd != nil {
 			return m, tea.Batch(focusCmd, cmd)
 		}
@@ -184,8 +180,7 @@ func (m Model) handleExecViewClick(x, y int) (tea.Model, tea.Cmd) {
 
 	switch m.execView.hitAt(x, y) {
 	case headerFocusBack:
-		m.closeExecView()
-		return m, nil
+		return m, m.closeExecView()
 	case headerFocusID, headerFocusStarted, headerFocusDuration:
 		return m, m.dialogs.CopyToClipboard(m.execView.copyValueFor(m.execView.hitAt(x, y)))
 	case headerFocusAction:

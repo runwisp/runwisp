@@ -353,6 +353,101 @@ func TestExecView_HasActionButton(t *testing.T) {
 	}
 }
 
+func TestExecView_ToggleFullscreen(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	if ev.Fullscreen() {
+		t.Fatal("expected fullscreen=false initially")
+	}
+	if !ev.pane.cfg.LineNumbers {
+		t.Fatal("expected line numbers enabled initially")
+	}
+	// Normal mode: header takes 4 lines of the 24-high viewport.
+	if got := ev.pane.VisibleLines(); got != 20 {
+		t.Fatalf("expected 20 visible lines in normal mode, got %d", got)
+	}
+
+	ev.headerFocus = headerFocusID
+	ev.hoveredHeader = headerFocusBack
+	ev.ToggleFullscreen()
+
+	if !ev.Fullscreen() {
+		t.Fatal("expected fullscreen=true after toggle")
+	}
+	if ev.pane.cfg.LineNumbers {
+		t.Fatal("expected line numbers disabled in fullscreen")
+	}
+	if ev.headerFocus != headerFocusNone {
+		t.Fatalf("expected headerFocus cleared, got %d", ev.headerFocus)
+	}
+	if ev.hoveredHeader != headerFocusNone {
+		t.Fatalf("expected hoveredHeader cleared, got %d", ev.hoveredHeader)
+	}
+	// Fullscreen: header height 0, so full 24 lines visible.
+	if got := ev.pane.VisibleLines(); got != 24 {
+		t.Fatalf("expected 24 visible lines in fullscreen, got %d", got)
+	}
+	if hit := ev.hitAt(5, 1); hit != headerFocusNone {
+		t.Fatalf("expected no header hitbox in fullscreen, got %d", hit)
+	}
+
+	ev.ToggleFullscreen()
+	if ev.Fullscreen() {
+		t.Fatal("expected fullscreen=false after second toggle")
+	}
+	if !ev.pane.cfg.LineNumbers {
+		t.Fatal("expected line numbers re-enabled after exiting fullscreen")
+	}
+	if got := ev.pane.VisibleLines(); got != 20 {
+		t.Fatalf("expected 20 visible lines after exit, got %d", got)
+	}
+}
+
+func TestExecView_Fullscreen_ViewHasNoHeader(t *testing.T) {
+	ev := newSizedExecView(80, 10)
+	ev.AppendChunk("hello world\n")
+	ev.ToggleFullscreen()
+
+	out := ev.View()
+	// The normal-mode header renders "← Back" and the task name; neither should appear in fullscreen.
+	if strings.Contains(out, "← Back") {
+		t.Fatalf("fullscreen view leaked back button: %q", out)
+	}
+	if strings.Contains(out, "test-task") {
+		t.Fatalf("fullscreen view leaked task name: %q", out)
+	}
+	if !strings.Contains(out, "hello world") {
+		t.Fatalf("fullscreen view missing log content: %q", out)
+	}
+}
+
+func TestExecView_Fullscreen_UpDoesNotEnterHeader(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.ToggleFullscreen()
+	ev.pane.scroll = 0
+
+	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+
+	if ev.headerFocus != headerFocusNone {
+		t.Fatalf("fullscreen up must not enter header; got focus=%d", ev.headerFocus)
+	}
+}
+
+func TestExecView_Fullscreen_StillScrollsWithKeys(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	for i := 0; i < 100; i++ {
+		ev.AppendChunk("line\n")
+	}
+	ev.ToggleFullscreen()
+	ev.pane.scroll = 0
+	ev.pane.follow = false
+
+	ev.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+
+	if ev.pane.scroll == 0 {
+		t.Fatal("expected pgdown to advance scroll in fullscreen")
+	}
+}
+
 func TestExecView_NotFocused_IgnoresInput(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	ev.SetFocused(false)
