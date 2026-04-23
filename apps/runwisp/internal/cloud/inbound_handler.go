@@ -9,12 +9,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
+	"log/slog"
 )
 
 type logListener struct {
@@ -77,7 +77,7 @@ func (h *InboundHandler) HandleExecutionDispatch(message protocol.ExecutionDispa
 		return &CloudError{Kind: CloudErrorKindConflict, Message: triggerErr.Error()}
 	}
 
-	log.Info("execution dispatched", "executionId", executionID, "task", taskName)
+	slog.Info("execution dispatched", "executionId", executionID, "task", taskName)
 	return nil
 }
 

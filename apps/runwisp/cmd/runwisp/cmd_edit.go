@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/spf13/cobra"
+	"log/slog"
 )
 
 var editCmd = &cobra.Command{
@@ -88,9 +88,9 @@ func runEdit(args []string) error {
 	}
 
 	if originalName != draft.Name {
-		log.Info("Renamed and updated task", "old", originalName, "new", draft.Name, "config", flags.CfgFile)
+		slog.Info("Renamed and updated task", "old", originalName, "new", draft.Name, "config", flags.CfgFile)
 	} else {
-		log.Info("Updated task", "name", draft.Name, "config", flags.CfgFile)
+		slog.Info("Updated task", "name", draft.Name, "config", flags.CfgFile)
 	}
 	return nil
 }

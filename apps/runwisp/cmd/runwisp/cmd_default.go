@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/tui"
+	"log/slog"
 )
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.
@@ -55,7 +55,7 @@ func runDefault() error {
 	}
 
 	if err := spawnDaemon(); err != nil {
-		log.Warn("Failed to spawn background daemon, running inline", "err", err)
+		slog.Warn("Failed to spawn background daemon, running inline", "err", err)
 		return runDaemon(modeStandalone)
 	}
 
@@ -77,7 +77,7 @@ func runTUIConnect(client *apiclient.Client, password string, passwordExplicit b
 
 	info, err := client.GetDaemonInfo()
 	if err != nil {
-		log.Warn("Could not fetch daemon info", "err", err)
+		slog.Warn("Could not fetch daemon info", "err", err)
 	}
 
 	startupInfo := buildStartupInfoFromDaemon(info, password, passwordExplicit)

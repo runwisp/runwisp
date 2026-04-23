@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 const (
@@ -170,7 +170,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 			defer wg.Done()
 			defer func() {
 				if rec := recover(); rec != nil {
-					log.Error("Recovered from panic in stream", "stream", prefix, "task", task.Name, "err", rec)
+					slog.Error("Recovered from panic in stream", "stream", prefix, "task", task.Name, "err", rec)
 				}
 			}()
 			r.streamer.StreamToFile(reader, writer, task, run, prefix)
@@ -233,6 +233,6 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 
 func writeLogLine(w io.Writer, prefix, message string) {
 	if _, err := w.Write([]byte(FormatLine(message, prefix))); err != nil {
-		log.Warn("Failed to write log line", "prefix", prefix, "err", err)
+		slog.Warn("Failed to write log line", "prefix", prefix, "err", err)
 	}
 }

@@ -272,16 +272,16 @@ const (
 
 // Run represents a persisted execution.
 type Run struct {
-	ID                  string      `gorm:"type:text;primary_key" json:"id"`
-	ExternalExecutionID *string     `gorm:"index" json:"external_execution_id,omitempty"`
-	TaskName            string      `gorm:"index;not null;default:''" json:"task_name"`
-	Status              RunPhase    `gorm:"type:varchar(20);not null" json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
-	EndReason           *EndReason  `gorm:"type:varchar(20)" json:"end_reason,omitempty" enum:"success,failed,stopped,timeout,crashed" doc:"Why the run ended (set when status=ended)"`
+	ID                  string      `json:"id"`
+	ExternalExecutionID *string     `json:"external_execution_id,omitempty"`
+	TaskName            string      `json:"task_name"`
+	Status              RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
+	EndReason           *EndReason  `json:"end_reason,omitempty" enum:"success,failed,stopped,timeout,crashed" doc:"Why the run ended (set when status=ended)"`
 	ExitCode            int         `json:"exit_code"`
-	LogPath             string      `gorm:"-" json:"-"`
+	LogPath             string      `json:"-"`
 	StartAt             *time.Time  `json:"start_at,omitempty"`
 	EndAt               *time.Time  `json:"end_at,omitempty"`
-	TriggeredBy         TriggeredBy `gorm:"type:varchar(20);not null" json:"triggered_by" enum:"cron,api,cloud" doc:"How the run was triggered"`
+	TriggeredBy         TriggeredBy `json:"triggered_by" enum:"cron,api,cloud" doc:"How the run was triggered"`
 	CreatedAt           time.Time   `json:"created_at"`
 	RetryAttempt        int         `json:"retry_attempt"`
 	RetryOfRunID        *string     `json:"retry_of_run_id,omitempty"`
@@ -383,12 +383,12 @@ func IsLongRunningTask(restartPolicy RestartPolicy, concurrencyLimit int) bool {
 // TaskRegistration is a one-to-one per-task record for metadata that has no
 // natural home in the run log (first-seen timestamp, future per-task flags, etc.).
 type TaskRegistration struct {
-	TaskName    string    `gorm:"primaryKey"`
-	FirstSeenAt time.Time `gorm:"not null"`
+	TaskName    string
+	FirstSeenAt time.Time
 }
 
 // ConfigEntry stores a named daemon configuration value persisted in the database.
 type ConfigEntry struct {
-	Key   string `gorm:"primaryKey"`
-	Value string `gorm:"not null"`
+	Key   string
+	Value string
 }

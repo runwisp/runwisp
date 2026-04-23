@@ -116,7 +116,12 @@ func (eBus *defaultEventBus) SubscribeAll(handler EventHandler) func() {
 	}
 }
 
-// Publish broadcasts an event asynchronously.
+// Publish broadcasts an event synchronously to all subscribers. Handlers are
+// invoked on the caller's goroutine; panicking handlers are isolated via
+// recover so one misbehaving subscriber cannot take down the caller.
+//
+// Callers that need async fan-out should push into their own buffered channel
+// from the handler (the SSE streamer does this).
 func (eBus *defaultEventBus) Publish(eventType EventType, data EventData) {
 	event := Event{
 		Type:      eventType,
@@ -126,30 +131,17 @@ func (eBus *defaultEventBus) Publish(eventType EventType, data EventData) {
 
 	handlers := eBus.copyHandlers(eventType)
 	for _, handler := range handlers {
-		h := handler // capture handler for goroutine
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Error("EventBus: recovered from panic in handler", "panic", r)
-				}
-			}()
-			h(event)
-		}()
+		eBus.invoke(handler, event)
 	}
 }
 
-// PublishSync broadcasts an event synchronously.
-func (eBus *defaultEventBus) PublishSync(eventType EventType, data EventData) {
-	event := Event{
-		Type:      eventType,
-		Timestamp: time.Now(),
-		Data:      data,
-	}
-
-	handlers := eBus.copyHandlers(eventType)
-	for _, handler := range handlers {
-		handler(event)
-	}
+func (eBus *defaultEventBus) invoke(handler EventHandler, event Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("EventBus: recovered from panic in handler", "panic", r)
+		}
+	}()
+	handler(event)
 }
 
 func (eBus *defaultEventBus) copyHandlers(eventType EventType) []EventHandler {

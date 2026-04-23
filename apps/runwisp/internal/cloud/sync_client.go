@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/log"
+	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -204,7 +204,7 @@ func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
 		if scriptJSON, err := model.MarshalExecutionDef(execDef); err == nil {
 			task.Script = scriptJSON
 		} else {
-			log.Warn("Failed to marshal execution", "task", t.Name, "err", err)
+			slog.Warn("Failed to marshal execution", "task", t.Name, "err", err)
 			continue // Skip task if we cannot marshal its execution definition
 		}
 

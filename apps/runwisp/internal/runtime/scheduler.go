@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/charmbracelet/log"
 	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 // ScheduleResult holds the outcome of scheduling tasks.
@@ -80,9 +80,9 @@ func (scheduler *Scheduler) Stop() {
 func (scheduler *Scheduler) addTask(task *model.Task) error {
 	taskName := task.Name
 	entryID, err := scheduler.cron.AddFunc(task.Trigger.Cron, func() {
-		log.Debug("Cron triggering task", "name", taskName)
+		slog.Debug("Cron triggering task", "name", taskName)
 		if _, err := scheduler.taskManager.TriggerRun(taskName, model.TriggeredByCron); err != nil {
-			log.Error("Failed to trigger task", "name", taskName, "err", err)
+			slog.Error("Failed to trigger task", "name", taskName, "err", err)
 		}
 	})
 	if err == nil {

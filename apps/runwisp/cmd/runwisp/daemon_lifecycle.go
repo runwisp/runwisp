@@ -11,12 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui"
+	"log/slog"
 )
 
 // startCloudClient creates and runs the cloud client in a background goroutine.
@@ -41,11 +41,11 @@ func startCloudClient(
 		LogDir:       flags.LogDir(),
 		Availability: svc.Executor.Availability(),
 		OnConnected: func() {
-			log.Info("Cloud connected")
+			slog.Info("Cloud connected")
 		},
 	})
 	if clientErr != nil {
-		log.Error("Failed to create cloud client", "err", clientErr)
+		slog.Error("Failed to create cloud client", "err", clientErr)
 		return cancelCloud, &cloudWG
 	}
 
@@ -54,7 +54,7 @@ func startCloudClient(
 		go func() {
 			defer cloudWG.Done()
 			if runErr := cloudClient.Run(cloudCtx); runErr != nil {
-				log.Error("Cloud integration stopped", "err", runErr)
+				slog.Error("Cloud integration stopped", "err", runErr)
 			}
 		}()
 	}
@@ -64,20 +64,20 @@ func startCloudClient(
 
 // runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down.
 func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, scheduler *runtime.Scheduler, jm runtime.TaskManager) error {
-	log.Info("Running in daemon mode (no TUI). Press Ctrl+C to stop.")
+	slog.Info("Running in daemon mode (no TUI). Press Ctrl+C to stop.")
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 
-	log.Info("Shutting down...")
+	slog.Info("Shutting down...")
 	cancelCloud()
 	cloudWG.Wait()
 	if scheduler != nil {
 		scheduler.Stop()
 	}
 	jm.Shutdown()
-	log.Info("Goodbye!")
+	slog.Info("Goodbye!")
 	return nil
 }
 
@@ -94,17 +94,17 @@ func runWithTUI(
 	if srv != nil {
 		localClient := apiclient.New(localAPIBaseURL(), "")
 		if err := pollHealth(localClient, 3*time.Second); err != nil {
-			log.Warn("Health check did not pass before TUI start", "err", err)
+			slog.Warn("Health check did not pass before TUI start", "err", err)
 		}
 	}
 
 	client := apiclient.New(localAPIBaseURL(), info.Password)
 	if authErr := client.Authenticate(); authErr != nil {
-		log.Warn("TUI auth failed", "err", authErr)
+		slog.Warn("TUI auth failed", "err", authErr)
 	}
 
 	if debugWriter != nil {
-		log.SetOutput(debugWriter)
+		tui.SetLogOutput(debugWriter)
 	}
 
 	shutdownFunc := func() error {
@@ -125,13 +125,13 @@ func runWithTUI(
 
 	quitAction, tuiErr := tui.StartTUI(info, client, debugWriter, shutdownFunc, launchTicketFunc)
 	if tuiErr != nil {
-		log.SetOutput(os.Stderr)
-		log.Warn("TUI exited with error", "err", tuiErr)
+		tui.SetLogOutput(os.Stderr)
+		slog.Warn("TUI exited with error", "err", tuiErr)
 	}
-	log.SetOutput(os.Stderr)
+	tui.SetLogOutput(os.Stderr)
 
 	if quitAction == tui.QuitKeepDaemon {
-		log.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
+		slog.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
 		return runHeadless(cancelCloud, cloudWG, svc.Scheduler, svc.TaskManager)
 	}
 

@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/spf13/cobra"
+	"log/slog"
 )
 
 var triggerCmd = &cobra.Command{
@@ -90,7 +90,7 @@ func runTrigger(taskName string) (int, error) {
 		return 0, fmt.Errorf("failed to trigger task %q: %w", taskName, err)
 	}
 
-	log.Info("Task triggered", "name", taskName, "run", run.ID)
+	slog.Info("Task triggered", "name", taskName, "run", run.ID)
 
 	result := <-done
 
@@ -98,6 +98,6 @@ func runTrigger(taskName string) (int, error) {
 		return result.Run.ExitCode, nil
 	}
 
-	log.Info("Task completed", "name", taskName, "status", result.Run.Status)
+	slog.Info("Task completed", "name", taskName, "status", result.Run.Status)
 	return 0, nil
 }

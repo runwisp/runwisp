@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/coder/websocket"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
@@ -19,6 +18,7 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
+	"log/slog"
 )
 
 const (
@@ -123,7 +123,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		connMgr.refreshExecutionState,
 	)
 	client.bridge.Subscribe()
-	log.Info("cloud integration enabled", "baseURL", cfg.BaseURL.String(), "fingerprint", cfg.Fingerprint)
+	slog.Info("cloud integration enabled", "baseURL", cfg.BaseURL.String(), "fingerprint", cfg.Fingerprint)
 
 	return client, nil
 }
@@ -144,10 +144,10 @@ func (client *Client) Run(ctx context.Context) error {
 		resetBackoff, err := client.runConnectionAttempt(ctx)
 		if err != nil {
 			if isHardAuthError(err) {
-				log.Info("cloud integration stopped due to hard auth error", "error", err.Error())
+				slog.Info("cloud integration stopped due to hard auth error", "error", err.Error())
 				return err
 			}
-			log.Info("cloud connection attempt ended", "error", err.Error())
+			slog.Info("cloud connection attempt ended", "error", err.Error())
 		}
 
 		if resetBackoff {
@@ -160,7 +160,7 @@ func (client *Client) Run(ctx context.Context) error {
 
 		client.conn.setState(StateReconnecting)
 		delay := backoff.NextBackOff()
-		log.Info("reconnecting", "delay", delay.String())
+		slog.Info("reconnecting", "delay", delay.String())
 
 		select {
 		case <-ctx.Done():
@@ -239,7 +239,7 @@ func (client *Client) syncTasks(ctx context.Context, connection *websocket.Conn)
 		return syncErr
 	}
 
-	log.Info(
+	slog.Info(
 		"task snapshot synced",
 		"added", syncResult.Summary.Added,
 		"updated", syncResult.Summary.Updated,
@@ -283,7 +283,7 @@ func (client *Client) startSession(ctx context.Context, connection *websocket.Co
 
 func closeConnection(conn *websocket.Conn, reason string) {
 	if closeErr := conn.Close(websocket.StatusPolicyViolation, reason); closeErr != nil {
-		log.Warn("Failed to close connection", "err", closeErr)
+		slog.Warn("Failed to close connection", "err", closeErr)
 	}
 }
 

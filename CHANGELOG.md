@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Memory & binary size optimization.** Daemon idle RSS reduced ~19% (27.0 MB → 21.9 MB) and stripped binary size reduced ~22% (23.1 MB → 17.9 MB):
+  - Replaced GORM with `database/sql` + `modernc.org/sqlite` driver directly in the storage layer. Dropped `gorm.io/gorm`, `glebarez/sqlite`, `jinzhu/inflection`, `jinzhu/now`, and a large generic/reflection tax.
+  - Replaced `charmbracelet/log` with stdlib `log/slog` across the daemon. Dropped `charmbracelet/log` and `go-logfmt`.
+  - Docker client is now lazily initialized (`NewLazyContainerBackend`), so users who never run container tasks pay no idle cost for it.
+  - EventBus now publishes synchronously; removed goroutine-per-handler-per-publish churn.
+  - Persistence queue switched from `chan func()` to a typed `chan persistTask`, eliminating per-run closure allocations; channel buffer right-sized from 10000 → 1024.
+  - Default `GOMEMLIMIT` of 128 MiB applied when not set via env, letting the GC trade CPU for RSS at steady state.
+  - `debug.FreeOSMemory()` called after retention cleanup to return freed pages to the kernel.
+
 ## [0.1.1] - 2026-04-22
 
 ### Added

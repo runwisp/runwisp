@@ -8,13 +8,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	rdebug "runtime/debug"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
+	"log/slog"
 )
 
 // RetentionCleaner periodically prunes old runs and their logs.
@@ -63,14 +64,14 @@ func (cleaner *RetentionCleaner) run(ctx context.Context) {
 		case <-ticker.C:
 			cleaner.cleanOldRuns()
 		case <-ctx.Done():
-			log.Debug("Stopping retention cleaner")
+			slog.Debug("Stopping retention cleaner")
 			return
 		}
 	}
 }
 
 func (cleaner *RetentionCleaner) cleanOldRuns() {
-	log.Debug("Running retention cleanup")
+	slog.Debug("Running retention cleanup")
 
 	totalDeleted := 0
 	for _, task := range cleaner.tasks {
@@ -80,7 +81,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns() {
 
 		deletedRuns, err := cleaner.db.DeleteOldRuns(task)
 		if err != nil {
-			log.Error("Failed to clean runs", "task", task.Name, "err", err)
+			slog.Error("Failed to clean runs", "task", task.Name, "err", err)
 			continue
 		}
 
@@ -91,16 +92,20 @@ func (cleaner *RetentionCleaner) cleanOldRuns() {
 		}
 
 		if len(deletedRuns) > 0 {
-			log.Info("Retention cleaned runs", "count", len(deletedRuns), "task", task.Name)
+			slog.Info("Retention cleaned runs", "count", len(deletedRuns), "task", task.Name)
 			totalDeleted += len(deletedRuns)
 		}
 	}
 
 	if totalDeleted > 0 {
-		log.Info("Retention cleanup complete", "deleted", totalDeleted)
+		slog.Info("Retention cleanup complete", "deleted", totalDeleted)
 	}
 
 	cleaner.enforceMaxTotalSize()
+
+	// Return freed pages to the OS so RSS doesn't stay at the high-water mark
+	// after a large cleanup batch.
+	rdebug.FreeOSMemory()
 }
 
 // enforceMaxTotalSize deletes the oldest completed runs when the log directory
@@ -115,7 +120,7 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 		return
 	}
 
-	log.Warn("Log storage exceeds storage.maxSize, purging oldest runs",
+	slog.Warn("Log storage exceeds storage.maxSize, purging oldest runs",
 		"current", config.FormatByteSize(totalSize), "limit", config.FormatByteSize(cleaner.maxTotalSize))
 
 	// Fetch oldest completed runs in batches and delete until under limit
@@ -142,7 +147,7 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 			logutil.RemoveLogFiles(logPath)
 			logutil.RemoveEmptyParents(logPath, cleaner.logDir)
 			if err := cleaner.db.DeleteRun(run.ID); err != nil {
-				log.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
+				slog.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
 				continue
 			}
 			deleted++
@@ -160,7 +165,7 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 	}
 
 	if deleted > 0 {
-		log.Info("Purged runs to enforce storage.maxSize", "deleted", deleted)
+		slog.Info("Purged runs to enforce storage.maxSize", "deleted", deleted)
 	}
 }
 

@@ -13,9 +13,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/hashicorp/golang-lru/v2/expirable"
+	"log/slog"
 )
 
 const (
@@ -183,7 +183,7 @@ func (a *AuthService) handleAuth(resp http.ResponseWriter, req *http.Request) {
 
 	req.Body = http.MaxBytesReader(resp, req.Body, MaxRequestBodySize)
 	if err := json.NewDecoder(req.Body).Decode(&reqBody); err != nil {
-		log.Warn("Failed to decode auth request", "err", err)
+		slog.Warn("Failed to decode auth request", "err", err)
 		respondBadRequest(resp, "Invalid request")
 		return
 	}
@@ -217,7 +217,7 @@ func (a *AuthService) handleAuth(resp http.ResponseWriter, req *http.Request) {
 	resp.Header().Set("Content-Type", "application/json")
 	resp.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(resp).Encode(map[string]string{"token": tokenString}); err != nil {
-		log.Error("Failed to encode auth response", "err", err)
+		slog.Error("Failed to encode auth response", "err", err)
 	}
 }
 

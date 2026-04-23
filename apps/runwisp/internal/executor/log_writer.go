@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/logutil"
+	"log/slog"
 )
 
 const (
@@ -163,7 +163,7 @@ func (w *LogWriter) Write(p []byte) (n int, err error) {
 
 		case "tail":
 			if err := w.rotateTail(); err != nil {
-				log.Error("Failed to rotate log file, continuing without rotation", "err", err)
+				slog.Error("Failed to rotate log file, continuing without rotation", "err", err)
 			}
 		}
 	}
@@ -178,7 +178,7 @@ func (w *LogWriter) Write(p []byte) (n int, err error) {
 			var buf [8]byte
 			binary.LittleEndian.PutUint64(buf[:], uint64(w.currentOffset))
 			if _, idxErr := w.idxFile.Write(buf[:]); idxErr != nil {
-				log.Warn("Failed to write to log index", "err", idxErr)
+				slog.Warn("Failed to write to log index", "err", idxErr)
 			}
 		}
 		w.writeTidxEntry()
@@ -194,7 +194,7 @@ func (w *LogWriter) writeSystemLine(msg string) {
 		time.Now().Format("2006-01-02 15:04:05"), msg)
 	n, err := w.file.Write([]byte(line))
 	if err != nil {
-		log.Warn("Failed to write system log line", "err", err)
+		slog.Warn("Failed to write system log line", "err", err)
 	}
 	w.currentOffset += int64(n)
 	w.lineCount++
@@ -218,7 +218,7 @@ func (w *LogWriter) writeTidxEntry() {
 			Timestamp: now,
 		})
 		if _, err := w.tidxFile.Write(buf[:]); err != nil {
-			log.Warn("Failed to write to timestamp index", "err", err)
+			slog.Warn("Failed to write to timestamp index", "err", err)
 		}
 		w.lastTidxTime = now
 	}
@@ -232,16 +232,16 @@ func (w *LogWriter) rotateTail() error {
 	w.rotatedBytes += w.currentOffset
 
 	if err := w.file.Sync(); err != nil {
-		log.Warn("Failed to sync log file before rotation", "err", err)
+		slog.Warn("Failed to sync log file before rotation", "err", err)
 	}
 	if err := w.file.Close(); err != nil {
-		log.Warn("Failed to close log file before rotation", "err", err)
+		slog.Warn("Failed to close log file before rotation", "err", err)
 	}
 	if err := w.idxFile.Sync(); err != nil {
-		log.Warn("Failed to sync log index before rotation", "err", err)
+		slog.Warn("Failed to sync log index before rotation", "err", err)
 	}
 	if err := w.idxFile.Close(); err != nil {
-		log.Warn("Failed to close log index before rotation", "err", err)
+		slog.Warn("Failed to close log index before rotation", "err", err)
 	}
 	if w.tidxFile != nil {
 		w.tidxFile.Sync()
@@ -265,12 +265,12 @@ func (w *LogWriter) rotateTail() error {
 		w.file, reopenErr = os.OpenFile(w.mainPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if reopenErr != nil {
 			w.stopped = true
-			log.Error("Failed to re-open log file after rotation failure", "err", reopenErr)
+			slog.Error("Failed to re-open log file after rotation failure", "err", reopenErr)
 		}
 		w.idxFile, reopenErr = os.OpenFile(w.idxPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if reopenErr != nil {
 			w.stopped = true
-			log.Error("Failed to re-open index file after rotation failure", "err", reopenErr)
+			slog.Error("Failed to re-open index file after rotation failure", "err", reopenErr)
 		}
 		return fmt.Errorf("failed to rotate log: %w", err)
 	}
@@ -299,7 +299,7 @@ func (w *LogWriter) rotateTail() error {
 	if w.tidxPath != "" {
 		tidx, tidxErr := os.Create(w.tidxPath)
 		if tidxErr != nil {
-			log.Warn("Failed to create timestamp index after rotation", "err", tidxErr)
+			slog.Warn("Failed to create timestamp index after rotation", "err", tidxErr)
 			w.tidxFile = nil
 		} else {
 			w.tidxFile = tidx
@@ -311,7 +311,7 @@ func (w *LogWriter) rotateTail() error {
 	var buf [8]byte
 	binary.LittleEndian.PutUint64(buf[:], 0)
 	if _, err := w.idxFile.Write(buf[:]); err != nil {
-		log.Warn("Failed to write initial index entry after rotation", "err", err)
+		slog.Warn("Failed to write initial index entry after rotation", "err", err)
 	}
 
 	w.writeSystemLine(fmt.Sprintf(

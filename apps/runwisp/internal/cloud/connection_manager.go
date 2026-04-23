@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/charmbracelet/log"
+	"log/slog"
 )
 
 // connectionManager manages the WebSocket session state, lifecycle transitions,
@@ -46,7 +46,7 @@ func (cm *connectionManager) transitionStateLocked(next LifecycleState) {
 	}
 	previous := cm.state
 	cm.state = next
-	log.Info(
+	slog.Info(
 		"lifecycle transition",
 		"from", previous,
 		"to", next,

@@ -14,12 +14,20 @@ import (
 // RunPersistenceHook persists run state transitions.
 type RunPersistenceHook func(run *model.Run, isNew bool)
 
+// persistTask is the unit of work dispatched through the buffered channel.
+// A typed struct avoids the per-call closure allocation that a chan func()
+// would impose.
+type persistTask struct {
+	run   *model.Run
+	isNew bool
+}
+
 // PersistenceCoordinator manages async persistence of run state via a buffered
 // channel. A single worker goroutine drains the channel so callers never block
 // on I/O.
 type PersistenceCoordinator struct {
 	hook   RunPersistenceHook
-	ch     chan func()
+	ch     chan persistTask
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -28,7 +36,7 @@ type PersistenceCoordinator struct {
 func NewPersistenceCoordinator(bufferSize int) *PersistenceCoordinator {
 	ctx, cancel := context.WithCancel(context.Background())
 	pc := &PersistenceCoordinator{
-		ch:     make(chan func(), bufferSize),
+		ch:     make(chan persistTask, bufferSize),
 		ctx:    ctx,
 		cancel: cancel,
 	}
@@ -55,20 +63,14 @@ func (pc *PersistenceCoordinator) BindHook(hook RunPersistenceHook, exec executo
 // PersistNew enqueues a create-style persistence task.
 func (pc *PersistenceCoordinator) PersistNew(run *model.Run) {
 	if pc.hook != nil {
-		copiedRun := run.Copy()
-		pc.enqueue(func() {
-			pc.hook(copiedRun, true)
-		})
+		pc.enqueue(persistTask{run: run.Copy(), isNew: true})
 	}
 }
 
 // PersistExisting enqueues an update-style persistence task.
 func (pc *PersistenceCoordinator) PersistExisting(run *model.Run) {
 	if pc.hook != nil {
-		copiedRun := run.Copy()
-		pc.enqueue(func() {
-			pc.hook(copiedRun, false)
-		})
+		pc.enqueue(persistTask{run: run.Copy(), isNew: false})
 	}
 }
 
@@ -83,7 +85,7 @@ func (pc *PersistenceCoordinator) Done() <-chan struct{} {
 	return pc.ctx.Done()
 }
 
-func (pc *PersistenceCoordinator) enqueue(task func()) {
+func (pc *PersistenceCoordinator) enqueue(task persistTask) {
 	select {
 	case <-pc.ctx.Done():
 		return
@@ -96,12 +98,12 @@ func (pc *PersistenceCoordinator) worker() {
 	for {
 		select {
 		case task := <-pc.ch:
-			task()
+			pc.hook(task.run, task.isNew)
 		case <-pc.ctx.Done():
 			for {
 				select {
 				case task := <-pc.ch:
-					task()
+					pc.hook(task.run, task.isNew)
 				default:
 					return
 				}

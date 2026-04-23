@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/datadir"
+	"log/slog"
 )
 
 // pollHealth polls a client's health endpoint until it responds or timeout.
@@ -68,7 +68,7 @@ func spawnDaemon() error {
 	}
 
 	if err := cmd.Process.Release(); err != nil {
-		log.Warn("Failed to release daemon process", "err", err)
+		slog.Warn("Failed to release daemon process", "err", err)
 	}
 	logFile.Close()
 	return nil
@@ -111,7 +111,7 @@ func waitForProcessExit(pid int, timeout time.Duration) error {
 		}
 		if err := proc.Signal(syscall.Signal(0)); err != nil {
 			if rmErr := os.Remove(pidPath); rmErr != nil && !os.IsNotExist(rmErr) {
-				log.Warn("Failed to remove stale PID file", "path", pidPath, "err", rmErr)
+				slog.Warn("Failed to remove stale PID file", "path", pidPath, "err", rmErr)
 			}
 			return nil
 		}

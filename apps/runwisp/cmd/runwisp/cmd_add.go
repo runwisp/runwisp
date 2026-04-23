@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/spf13/cobra"
+	"log/slog"
 )
 
 var addCmd = &cobra.Command{
@@ -76,7 +76,7 @@ func runAdd(args []string) error {
 		return err
 	}
 	if created {
-		log.Info("Created configuration file", "path", flags.CfgFile)
+		slog.Info("Created configuration file", "path", flags.CfgFile)
 	}
 
 	existingNames := config.TaskNamesFromDocument(doc)
@@ -101,7 +101,7 @@ func runAdd(args []string) error {
 		return err
 	}
 
-	log.Info("Added task", "name", draft.Name, "config", flags.CfgFile)
+	slog.Info("Added task", "name", draft.Name, "config", flags.CfgFile)
 
 	return nil
 }

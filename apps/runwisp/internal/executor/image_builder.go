@@ -12,11 +12,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/charmbracelet/log"
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/image"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 // ImageBuilder handles Docker image creation from execution definitions.
@@ -66,7 +66,7 @@ func (b *ImageBuilder) Build(ctx context.Context, ctr *model.ContainerExecution)
 // Remove deletes a previously built image.
 func (b *ImageBuilder) Remove(ctx context.Context, imageTag string) {
 	if _, err := b.docker.ImageRemove(ctx, imageTag, image.RemoveOptions{Force: true}); err != nil {
-		log.Warn("Failed to remove image", "tag", imageTag, "err", err)
+		slog.Warn("Failed to remove image", "tag", imageTag, "err", err)
 	}
 }
 

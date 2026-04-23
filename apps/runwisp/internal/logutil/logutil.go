@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 // LogIndexInterval is the number of lines between index entries in log files.
@@ -43,7 +43,7 @@ func RemoveLogFiles(logPath string) {
 	for _, suffix := range []string{"", ".idx", ".prev", ".idx.prev", ".tidx", ".tidx.prev", ".meta"} {
 		p := logPath + suffix
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			log.Warn("Failed to delete log file", "path", p, "err", err)
+			slog.Warn("Failed to delete log file", "path", p, "err", err)
 		}
 	}
 }

@@ -10,13 +10,13 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/spf13/cobra"
+	"log/slog"
 )
 
 // daemonMode controls which subsystems runDaemon initializes.
@@ -94,7 +94,7 @@ func runDaemon(mode daemonMode) error {
 	// Warn standalone users who have RUNWISP_CLOUD_TOKEN set but aren't using
 	// the cloud subcommand.
 	if mode == modeStandalone && os.Getenv("RUNWISP_CLOUD_TOKEN") != "" {
-		log.Warn("RUNWISP_CLOUD_TOKEN is set but ignored in standalone mode — use 'runwisp cloud' to start in cloud mode")
+		slog.Warn("RUNWISP_CLOUD_TOKEN is set but ignored in standalone mode — use 'runwisp cloud' to start in cloud mode")
 	}
 
 	logSecurityWarnings(cfg)
@@ -106,7 +106,7 @@ func runDaemon(mode daemonMode) error {
 	defer svc.DB.Close()
 
 	if pidErr := datadir.WritePidFile(flags.DataDir); pidErr != nil {
-		log.Warn("Failed to write PID file", "err", pidErr)
+		slog.Warn("Failed to write PID file", "err", pidErr)
 	}
 	defer datadir.CleanPidFile(flags.DataDir)
 	if cfg.PasswordGenerated {
@@ -180,7 +180,7 @@ func runDaemon(mode daemonMode) error {
 			return
 		}
 		if startErr := srv.Start(); startErr != nil {
-			log.Error("Server failed", "err", startErr)
+			slog.Error("Server failed", "err", startErr)
 			p, _ := os.FindProcess(os.Getpid())
 			_ = p.Signal(syscall.SIGTERM)
 		}
@@ -198,9 +198,9 @@ func runDaemon(mode daemonMode) error {
 // logSecurityWarnings emits log warnings for security-sensitive configurations.
 func logSecurityWarnings(cfg *daemonConfig) {
 	if cfg.Config.Daemon.CloudShellTasks {
-		log.Warn("Cloud shell dispatch enabled — the cloud control plane can execute arbitrary shell commands on this host")
+		slog.Warn("Cloud shell dispatch enabled — the cloud control plane can execute arbitrary shell commands on this host")
 	}
 	if flags.Host != "127.0.0.1" && flags.Host != "::1" && flags.Host != "localhost" {
-		log.Warn("HTTP server bound to non-loopback address — the API and web UI are accessible from the network", "host", flags.Host)
+		slog.Warn("HTTP server bound to non-loopback address — the API and web UI are accessible from the network", "host", flags.Host)
 	}
 }

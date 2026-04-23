@@ -6,9 +6,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/spf13/cobra"
+	"log/slog"
 )
 
 var validateCmd = &cobra.Command{
@@ -30,6 +30,6 @@ func runValidate() error {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	log.Info("Configuration is valid", "path", flags.CfgFile, "tasks", len(cfg.Tasks))
+	slog.Info("Configuration is valid", "path", flags.CfgFile, "tasks", len(cfg.Tasks))
 	return nil
 }

@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 func isFailureReason(reason model.EndReason) bool {
@@ -69,7 +69,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 	}
 
 	delay := computeRetryDelay(task, failedRun.RetryAttempt)
-	log.Info("Scheduling retry", "attempt", failedRun.RetryAttempt+1, "max", task.Retry.Limit, "task", task.Name, "delay", delay)
+	slog.Info("Scheduling retry", "attempt", failedRun.RetryAttempt+1, "max", task.Retry.Limit, "task", task.Name, "delay", delay)
 
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
@@ -90,7 +90,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 		RetryOfRunID: &failedRun.ID,
 	})
 	if err != nil {
-		log.Error("Retry failed", "task", task.Name, "attempt", failedRun.RetryAttempt+1, "err", err)
+		slog.Error("Retry failed", "task", task.Name, "attempt", failedRun.RetryAttempt+1, "err", err)
 	}
 }
 
@@ -103,6 +103,6 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 		TriggeredBy: previousRun.TriggeredBy,
 	})
 	if err != nil {
-		log.Error("Restart failed", "task", task.Name, "err", err)
+		slog.Error("Restart failed", "task", task.Name, "err", err)
 	}
 }

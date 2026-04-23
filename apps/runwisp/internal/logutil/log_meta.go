@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/charmbracelet/log"
+	"log/slog"
 )
 
 // LogMeta tracks cumulative rotation state so readers can present
@@ -45,6 +45,6 @@ func WriteLogMeta(logPath string, meta LogMeta) {
 		return
 	}
 	if err := os.WriteFile(MetaPath(logPath), data, 0644); err != nil {
-		log.Warn("Failed to write log metadata", "path", MetaPath(logPath), "err", err)
+		slog.Warn("Failed to write log metadata", "path", MetaPath(logPath), "err", err)
 	}
 }

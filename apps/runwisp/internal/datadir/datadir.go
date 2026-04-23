@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/log"
+	"log/slog"
 )
 
 func EnsureDir(dir string) error {
@@ -77,7 +77,7 @@ func ResolvePassword(dataDir string) (password string, isNew bool, err error) {
 // CleanPasswordFile removes the stored password file.
 func CleanPasswordFile(dataDir string) {
 	if err := os.Remove(filepath.Join(dataDir, "password")); err != nil && !os.IsNotExist(err) {
-		log.Warn("Failed to remove password file", "err", err)
+		slog.Warn("Failed to remove password file", "err", err)
 	}
 }
 
@@ -101,7 +101,7 @@ func ReadPidFile(dataDir string) (int, error) {
 // CleanPidFile removes the PID file.
 func CleanPidFile(dataDir string) {
 	if err := os.Remove(PidFilePath(dataDir)); err != nil && !os.IsNotExist(err) {
-		log.Warn("Failed to remove PID file", "err", err)
+		slog.Warn("Failed to remove PID file", "err", err)
 	}
 }
 

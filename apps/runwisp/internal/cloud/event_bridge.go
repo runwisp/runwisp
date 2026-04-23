@@ -6,9 +6,9 @@ package cloud
 import (
 	"encoding/base64"
 
-	"github.com/charmbracelet/log"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 // EventBridge subscribes to runtime events and forwards execution status
@@ -105,7 +105,7 @@ func (b *EventBridge) handleLogLineEvent(event events.Event) {
 	encoded := base64.StdEncoding.EncodeToString(chunkBytes)
 	message := NewLogChunkMessage(logEvent.ExternalExecutionID, encoded, offset, false)
 	if err := b.sendReady(message); err != nil {
-		log.Warn("failed to send log chunk", "executionID", logEvent.ExternalExecutionID, "offset", offset, "err", err)
+		slog.Warn("failed to send log chunk", "executionID", logEvent.ExternalExecutionID, "offset", offset, "err", err)
 	}
 }
 
@@ -117,6 +117,6 @@ func (b *EventBridge) sendTerminalLogChunk(executionID string) {
 
 	message := NewLogChunkMessage(executionID, "", offset, true)
 	if err := b.sendReady(message); err != nil {
-		log.Info("failed to send final log chunk", "executionID", executionID, "err", err)
+		slog.Info("failed to send final log chunk", "executionID", executionID, "err", err)
 	}
 }

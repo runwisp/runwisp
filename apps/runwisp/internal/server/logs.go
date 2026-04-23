@@ -12,11 +12,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"log/slog"
 )
 
 const (
@@ -38,7 +38,7 @@ func (srv *Server) resolveLogPath(resp http.ResponseWriter, req *http.Request) (
 
 	run, err := srv.db.GetRun(runIDStr)
 	if err != nil {
-		log.Error("Failed to get run", "run", runIDStr, "err", err)
+		slog.Error("Failed to get run", "run", runIDStr, "err", err)
 		respondNotFound(resp, "Run not found")
 		return "", nil, false
 	}
@@ -70,7 +70,7 @@ func (srv *Server) serveLogByLines(resp http.ResponseWriter, logPath, startLineS
 	idxPath := logPath + ".idx"
 	indices, err := logutil.ReadLogIndex(idxPath)
 	if err != nil {
-		log.Warn("Failed to read log index", "path", idxPath, "err", err)
+		slog.Warn("Failed to read log index", "path", idxPath, "err", err)
 		respondNotFound(resp, "Log index not found")
 		return
 	}
@@ -138,7 +138,7 @@ func (srv *Server) handleLogStream(resp http.ResponseWriter, req *http.Request) 
 
 	run, err := srv.db.GetRun(runIDStr)
 	if err != nil {
-		log.Error("Failed to get run", "run", runIDStr, "err", err)
+		slog.Error("Failed to get run", "run", runIDStr, "err", err)
 		respondNotFound(resp, "Run not found")
 		return
 	}
@@ -146,7 +146,7 @@ func (srv *Server) handleLogStream(resp http.ResponseWriter, req *http.Request) 
 	// Extend the write deadline for this long-lived SSE connection.
 	rc := http.NewResponseController(resp)
 	if err := rc.SetWriteDeadline(time.Now().Add(LogStreamTimeout + 30*time.Second)); err != nil {
-		log.Warn("Failed to extend write deadline for SSE", "err", err)
+		slog.Warn("Failed to extend write deadline for SSE", "err", err)
 	}
 
 	resp.Header().Set("Content-Type", "text/event-stream")
@@ -185,21 +185,21 @@ func (srv *Server) handleLogStream(resp http.ResponseWriter, req *http.Request) 
 	offsetStr := req.URL.Query().Get("offset")
 	remaining, err := streamer.seekToOffset(offsetStr, virtualSize, physSize)
 	if err != nil {
-		log.Error("Failed to seek in log file", "err", err)
+		slog.Error("Failed to seek in log file", "err", err)
 		return
 	}
 
 	if err := streamer.emitInitialData(remaining); err != nil {
-		log.Error("Failed to read log file", "err", err)
+		slog.Error("Failed to read log file", "err", err)
 		return
 	}
 
 	if run.Status != model.PhaseEnded {
-		log.Debug("SSE: entering pollLoop", "runID", run.ID, "status", run.Status, "logPath", logPath, "initLastSize", streamer.lastSize)
+		slog.Debug("SSE: entering pollLoop", "runID", run.ID, "status", run.Status, "logPath", logPath, "initLastSize", streamer.lastSize)
 		streamer.pollLoop(ctx, run.ID, srv.eventBus, srv.db)
-		log.Debug("SSE: pollLoop exited", "runID", run.ID)
+		slog.Debug("SSE: pollLoop exited", "runID", run.ID)
 	} else {
-		log.Debug("SSE: run already ended, emitting done immediately", "runID", run.ID, "logPath", logPath)
+		slog.Debug("SSE: run already ended, emitting done immediately", "runID", run.ID, "logPath", logPath)
 		streamer.emitDone()
 	}
 }
@@ -227,11 +227,11 @@ func serveLogRange(w http.ResponseWriter, file *os.File, offset, maxBytes, fileS
 		}
 
 		if _, err := w.Write(data); err != nil {
-			log.Error("Failed to write log data", "err", err)
+			slog.Error("Failed to write log data", "err", err)
 		}
 	} else {
 		if _, err := io.Copy(w, file); err != nil {
-			log.Error("Failed to copy log data", "err", err)
+			slog.Error("Failed to copy log data", "err", err)
 		}
 	}
 }
