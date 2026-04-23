@@ -4,7 +4,6 @@
 package runtime
 
 import (
-	"sync/atomic"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -64,7 +63,7 @@ func computeRetryDelay(task *model.Task, attempt int) time.Duration {
 
 // scheduleRetry waits for the retry delay and triggers a new run.
 func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Run) {
-	if atomic.LoadInt32(&m.isShutdown) == 1 {
+	if m.isShutdown.Load() {
 		return
 	}
 
@@ -80,7 +79,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 		return
 	}
 
-	if atomic.LoadInt32(&m.isShutdown) == 1 {
+	if m.isShutdown.Load() {
 		return
 	}
 
@@ -95,7 +94,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 }
 
 func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *model.Run) {
-	if atomic.LoadInt32(&m.isShutdown) == 1 {
+	if m.isShutdown.Load() {
 		return
 	}
 

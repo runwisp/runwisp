@@ -7,16 +7,28 @@ import { connectionStore } from "$lib/stores/connection.svelte";
 import { sortByCreatedAtDesc } from "$lib/utils/sort";
 import type { Task, Run } from "$lib/types";
 
-function createTaskStore() {
-    let items = $state<Task[]>([]);
-    let loaded = $state(false);
+class TaskStore {
+    #items = $state<Task[]>([]);
+    #loaded = $state(false);
 
-    async function loadIfNeeded() {
-        if (loaded) return;
+    get items(): Task[] {
+        return this.#items;
+    }
+
+    set items(value: Task[]) {
+        this.#items = value;
+    }
+
+    get loaded(): boolean {
+        return this.#loaded;
+    }
+
+    async loadIfNeeded(): Promise<void> {
+        if (this.#loaded) return;
         try {
             const list = await tasksApi.getAll();
-            items = list;
-            loaded = true;
+            this.#items = list;
+            this.#loaded = true;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
             const isConnectionErr = connectionStore.reportFetchError(err);
@@ -26,22 +38,9 @@ function createTaskStore() {
             toast.error(message);
         }
     }
-
-    return {
-        get items() {
-            return items;
-        },
-        set items(v: Task[]) {
-            items = v;
-        },
-        get loaded() {
-            return loaded;
-        },
-        loadIfNeeded,
-    };
 }
 
-export const taskStore = createTaskStore();
+export const taskStore = new TaskStore();
 
 /** Status progression index — higher means further along in lifecycle. */
 const PHASE_ORDER: Record<string, number> = { pending: 0, running: 1, ended: 2 };

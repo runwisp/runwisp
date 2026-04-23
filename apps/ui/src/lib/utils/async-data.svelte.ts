@@ -5,70 +5,70 @@ import { toast, extractErrorMessage } from "@runwisp/ui";
 import { AuthRequiredError } from "$lib/api";
 import { connectionStore } from "$lib/stores/connection.svelte";
 
-export interface AsyncData<T> {
-    readonly data: T | undefined;
-    readonly error: string | undefined;
-    readonly loading: boolean;
-    fetch(): Promise<void>;
-    reload(): Promise<void>;
-    abort(): void;
+export interface AsyncDataOptions {
+    toastOnError?: boolean;
+    reloadOnReconnect?: boolean;
 }
 
-export function createAsyncData<T>(
-    fetcher: (signal: AbortSignal) => Promise<T>,
-    options: { toastOnError?: boolean; reloadOnReconnect?: boolean } = {},
-): AsyncData<T> {
-    const { toastOnError = true, reloadOnReconnect = true } = options;
+export class AsyncData<T> {
+    #data = $state<T | undefined>(undefined);
+    #error = $state<string | undefined>(undefined);
+    #loading = $state(false);
+    #controller: AbortController | null = null;
+    readonly #fetcher: (signal: AbortSignal) => Promise<T>;
+    readonly #toastOnError: boolean;
 
-    let data = $state<T | undefined>(undefined);
-    let error = $state<string | undefined>(undefined);
-    let loading = $state(false);
-    let controller: AbortController | null = null;
+    constructor(fetcher: (signal: AbortSignal) => Promise<T>, options: AsyncDataOptions = {}) {
+        const { toastOnError = true, reloadOnReconnect = true } = options;
+        this.#fetcher = fetcher;
+        this.#toastOnError = toastOnError;
 
-    async function doFetch() {
-        controller?.abort();
+        if (reloadOnReconnect) {
+            $effect(() => connectionStore.onReconnect(() => void this.fetch()));
+        }
+    }
+
+    get data(): T | undefined {
+        return this.#data;
+    }
+
+    get error(): string | undefined {
+        return this.#error;
+    }
+
+    get loading(): boolean {
+        return this.#loading;
+    }
+
+    fetch = async (): Promise<void> => {
+        this.#controller?.abort();
         const ac = new AbortController();
-        controller = ac;
+        this.#controller = ac;
 
-        loading = true;
-        error = undefined;
+        this.#loading = true;
+        this.#error = undefined;
         try {
-            data = await fetcher(ac.signal);
+            this.#data = await this.#fetcher(ac.signal);
             connectionStore.markConnected();
         } catch (err: unknown) {
             if (ac.signal.aborted) return;
             if (err instanceof AuthRequiredError) return;
             const isConnectionErr = connectionStore.reportFetchError(err);
             const message = isConnectionErr ? "Connection lost" : extractErrorMessage(err);
-            error = message;
-            if (toastOnError) {
+            this.#error = message;
+            if (this.#toastOnError) {
                 toast.error(message);
             }
         } finally {
             if (!ac.signal.aborted) {
-                loading = false;
+                this.#loading = false;
             }
         }
-    }
+    };
 
-    if (reloadOnReconnect) {
-        $effect(() => connectionStore.onReconnect(() => void doFetch()));
-    }
+    reload = (): Promise<void> => this.fetch();
 
-    return {
-        get data() {
-            return data;
-        },
-        get error() {
-            return error;
-        },
-        get loading() {
-            return loading;
-        },
-        fetch: doFetch,
-        reload: doFetch,
-        abort() {
-            controller?.abort();
-        },
+    abort = (): void => {
+        this.#controller?.abort();
     };
 }

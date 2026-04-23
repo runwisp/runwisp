@@ -102,22 +102,30 @@ func waitForProcessExit(pid int, timeout time.Duration) error {
 	pidPath := datadir.PidFilePath(flags.DataDir)
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(pidPath); os.IsNotExist(err) {
-			return nil
-		}
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			return nil
-		}
-		if err := proc.Signal(syscall.Signal(0)); err != nil {
-			if rmErr := os.Remove(pidPath); rmErr != nil && !os.IsNotExist(rmErr) {
-				slog.Warn("Failed to remove stale PID file", "path", pidPath, "err", rmErr)
+		if !processAlive(pid, pidPath) {
+			if _, err := os.Stat(pidPath); err == nil {
+				if rmErr := os.Remove(pidPath); rmErr != nil && !os.IsNotExist(rmErr) {
+					slog.Warn("Failed to remove stale PID file", "path", pidPath, "err", rmErr)
+				}
 			}
 			return nil
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 	return fmt.Errorf("daemon (pid %d) did not shut down within %s", pid, timeout)
+}
+
+// processAlive returns true when the PID file exists AND the process
+// responds to signal 0. Either side failing means the daemon is gone.
+func processAlive(pid int, pidPath string) bool {
+	if _, err := os.Stat(pidPath); os.IsNotExist(err) {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
 }
 
 // waitForDaemon streams the daemon log file in real-time while polling the
@@ -127,125 +135,90 @@ func waitForProcessExit(pid int, timeout time.Duration) error {
 func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Duration) error {
 	fmt.Fprintf(os.Stderr, "Starting daemon...\n")
 
-	type result struct {
-		err error
-	}
-
-	done := make(chan result, 1)
-	stop := make(chan struct{})
-
-	// Health poller goroutine.
-	go func() {
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			if err := client.HealthCheck(); err == nil {
-				done <- result{}
-				return
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
-	}()
-
-	// Log tailer goroutine.
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-
-		f, err := os.Open(logPath)
-		if err != nil {
-			return
-		}
-		defer f.Close()
-
-		reader := bufio.NewReader(f)
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-
-			line, err := reader.ReadString('\n')
-			if line != "" {
-				line = strings.TrimRight(line, "\n\r")
-				fmt.Fprintf(os.Stderr, "  %s\n", line)
-
-				if msg, fatal := classifyDaemonLogLine(line); fatal {
-					done <- result{err: fmt.Errorf("daemon failed to start: %s", msg)}
-					return
-				}
-			}
-			if err != nil {
-				time.Sleep(50 * time.Millisecond)
-				reader.Reset(f)
-			}
-		}
-	}()
-
-	// Process monitor goroutine.
-	go func() {
-		pidPath := datadir.PidFilePath(flags.DataDir)
-		for i := 0; i < 20; i++ {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			if _, err := os.Stat(pidPath); err == nil {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			time.Sleep(300 * time.Millisecond)
-
-			pid, err := datadir.ReadPidFile(flags.DataDir)
-			if err != nil {
-				// Give the tailer a beat to flush any final log lines
-				// from the dying daemon before we report the exit.
-				time.Sleep(300 * time.Millisecond)
-				done <- result{err: errors.New("daemon process exited unexpectedly during startup")}
-				return
-			}
-
-			proc, err := os.FindProcess(pid)
-			if err != nil {
-				time.Sleep(300 * time.Millisecond)
-				done <- result{err: fmt.Errorf("daemon process %d not found", pid)}
-				return
-			}
-			if err := proc.Signal(syscall.Signal(0)); err != nil {
-				time.Sleep(300 * time.Millisecond)
-				done <- result{err: fmt.Errorf("daemon process %d exited during startup", pid)}
-				return
-			}
-		}
-	}()
-
-	defer close(stop)
+	pidPath := datadir.PidFilePath(flags.DataDir)
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 
 	var (
+		logFile    *os.File
+		logReader  *bufio.Reader
+		pidSeen    bool
 		startupErr error
 		timedOut   bool
 	)
-	select {
-	case r := <-done:
-		if r.err == nil {
+	defer func() {
+		if logFile != nil {
+			logFile.Close()
+		}
+	}()
+
+	drainLog := func() (fatalMsg string, fatal bool) {
+		if logReader == nil {
+			if f, err := os.Open(logPath); err == nil {
+				logFile = f
+				logReader = bufio.NewReader(f)
+			} else {
+				return "", false
+			}
+		}
+		for {
+			line, err := logReader.ReadString('\n')
+			if line != "" {
+				line = strings.TrimRight(line, "\n\r")
+				fmt.Fprintf(os.Stderr, "  %s\n", line)
+				if msg, isFatal := classifyDaemonLogLine(line); isFatal {
+					return msg, true
+				}
+			}
+			if err != nil {
+				// Reset so next drain picks up writes appended after EOF.
+				logReader.Reset(logFile)
+				return "", false
+			}
+		}
+	}
+
+loop:
+	for {
+		if msg, fatal := drainLog(); fatal {
+			startupErr = fmt.Errorf("daemon failed to start: %s", msg)
+			break
+		}
+
+		if err := client.HealthCheck(); err == nil {
 			return nil
 		}
-		startupErr = r.err
-	case <-time.After(timeout):
-		timedOut = true
-		startupErr = errors.New("daemon failed to start: health check timed out")
+
+		if _, err := os.Stat(pidPath); err == nil {
+			pidSeen = true
+		} else if pidSeen {
+			// Give the log tailer one more drain to flush any final lines
+			// from the dying daemon before we report the exit.
+			time.Sleep(200 * time.Millisecond)
+			drainLog()
+			startupErr = errors.New("daemon process exited unexpectedly during startup")
+			break
+		}
+
+		if pidSeen {
+			if pid, err := datadir.ReadPidFile(flags.DataDir); err == nil {
+				if !processAlive(pid, pidPath) {
+					time.Sleep(200 * time.Millisecond)
+					drainLog()
+					startupErr = fmt.Errorf("daemon process %d exited during startup", pid)
+					break
+				}
+			}
+		}
+
+		if time.Now().After(deadline) {
+			timedOut = true
+			startupErr = errors.New("daemon failed to start: health check timed out")
+			break loop
+		}
+
+		<-ticker.C
 	}
 
 	// On any failure path, surface the daemon log so the user can see the

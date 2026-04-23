@@ -11,7 +11,7 @@
     import { runUpdatesStore, upsertRun, connectionStore } from "$lib/stores";
     import { getApiUrl } from "$lib/utils/env";
     import { toTaskPageId } from "$lib/utils/task-id";
-    import { createAsyncData } from "$lib/utils/async-data.svelte";
+    import { AsyncData } from "$lib/utils/async-data.svelte";
     import { type Run, type Task } from "$lib/types";
 
     const RECENT_RUN_LIMIT = 16;
@@ -35,7 +35,7 @@
         metricsHistory: [],
     });
 
-    const pageData = createAsyncData(async () => {
+    const pageData = new AsyncData(async () => {
         const [tasksData, recentRunsRes, runningRunsRes] = await Promise.all([
             tasksApi.getAll(),
             runsApi.getAll({

@@ -61,7 +61,7 @@ type defaultTaskManager struct {
 	persistence *PersistenceCoordinator
 	eventBus    events.EventBus
 	mu          sync.RWMutex
-	isShutdown  int32 // atomic flag: 0 = running, 1 = shutdown
+	isShutdown  atomic.Bool
 	wg          sync.WaitGroup
 }
 
@@ -129,7 +129,7 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 	ts := m.tasks[taskName]
 	for {
 		for len(ts.queue) == 0 || len(ts.active) >= m.getConcurrencyLimit(ts.task) {
-			if atomic.LoadInt32(&m.isShutdown) == 1 {
+			if m.isShutdown.Load() {
 				return
 			}
 			ts.cond.Wait()
@@ -441,7 +441,7 @@ func (m *defaultTaskManager) cancelActiveRun(match func(*ActiveRun) bool, notFou
 
 // Shutdown terminates all active runs and prepares for exit.
 func (m *defaultTaskManager) Shutdown() {
-	atomic.StoreInt32(&m.isShutdown, 1)
+	m.isShutdown.Store(true)
 	m.mu.Lock()
 	for _, ts := range m.tasks {
 		for _, ar := range ts.active {

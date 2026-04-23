@@ -11,7 +11,10 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/robfig/cron/v3"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
+	"gopkg.in/yaml.v3"
+	"log/slog"
 )
 
 var (
@@ -151,8 +154,39 @@ func promptRequiredFields(scanner *bufio.Scanner, draft *taskDraft) bool {
 	return true
 }
 
-// promptTaskLoop displays the task preview and handles interactive editing.
-// Returns true when the user confirms.
+// runTaskEditor drives the interactive prompt loop and persists the result.
+// When originalName is empty, the draft is added; otherwise it replaces the
+// named task. Returns true when the user confirmed and the write succeeded.
+func runTaskEditor(scanner *bufio.Scanner, doc *yaml.Node, draft *taskDraft, ctx promptContext, originalName string) error {
+	if !promptTaskLoop(scanner, draft, ctx) {
+		fmt.Println("  Cancelled.")
+		return nil
+	}
+
+	task := draft.toTask()
+	if originalName == "" {
+		if err := config.AddTaskToDocument(doc, draft.Name, task); err != nil {
+			return err
+		}
+	} else {
+		if err := config.UpdateTaskInDocument(doc, originalName, draft.Name, task); err != nil {
+			return err
+		}
+	}
+	if err := config.WriteDocument(flags.CfgFile, doc); err != nil {
+		return err
+	}
+
+	switch {
+	case originalName == "":
+		slog.Info("Added task", "name", draft.Name, "config", flags.CfgFile)
+	case originalName != draft.Name:
+		slog.Info("Renamed and updated task", "old", originalName, "new", draft.Name, "config", flags.CfgFile)
+	default:
+		slog.Info("Updated task", "name", draft.Name, "config", flags.CfgFile)
+	}
+	return nil
+}
 func promptTaskLoop(scanner *bufio.Scanner, draft *taskDraft, ctx promptContext) bool {
 	for {
 		printTaskPreview(draft)

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import createClient, { type Middleware } from "openapi-fetch";
+import { z } from "zod";
 import type { APIPaths } from "@runwisp/common";
 import { browser } from "$app/environment";
 import { getApiUrl } from "./utils/env";
@@ -219,48 +220,17 @@ export const systemApi = {
 
         const response = await fetch(`${API_BASE_URL}/api/system/history`, { headers });
         if (!response.ok) throw new Error("Failed to fetch metrics history");
-        return parseMetricsSamples(await response.json());
+        return metricsSamplesSchema.parse(await response.json());
     },
 };
 
-export interface MetricsSample {
-    ts: number;
-    cpu: number;
-    mem: number;
-    mem_used: number;
-    mem_total: number;
-}
+const metricsSampleSchema = z.object({
+    ts: z.number(),
+    cpu: z.number(),
+    mem: z.number(),
+    mem_used: z.number(),
+    mem_total: z.number(),
+});
+const metricsSamplesSchema = z.array(metricsSampleSchema);
 
-function parseMetricsSamples(value: unknown): MetricsSample[] {
-    if (!Array.isArray(value)) {
-        throw new Error("Invalid metrics history response");
-    }
-
-    return value.map(parseMetricsSample);
-}
-
-function parseMetricsSample(value: unknown): MetricsSample {
-    if (!isMetricsSample(value)) {
-        throw new Error("Invalid metrics sample response");
-    }
-
-    return value;
-}
-
-function isMetricsSample(value: unknown): value is MetricsSample {
-    if (typeof value !== "object" || !value) {
-        return false;
-    }
-
-    return (
-        hasNumberField(value, "ts") &&
-        hasNumberField(value, "cpu") &&
-        hasNumberField(value, "mem") &&
-        hasNumberField(value, "mem_used") &&
-        hasNumberField(value, "mem_total")
-    );
-}
-
-function hasNumberField(value: object, key: string): boolean {
-    return key in value && typeof Reflect.get(value, key) === "number";
-}
+export type MetricsSample = z.infer<typeof metricsSampleSchema>;

@@ -4,10 +4,8 @@
 import type { LogEvent } from "@runwisp/ui";
 import { browser } from "$app/environment";
 import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
-import { getEventSourceErrorDetails, getMessageEventData } from "$lib/utils/event-source";
-import { buildSSEUrl } from "$lib/utils/sse";
+import { connectSSE } from "$lib/utils/sse";
 import { getApiUrl } from "$lib/utils/env";
-import { SSE_CONFIG } from "$lib/config/constants";
 import { createLogger } from "$lib/utils/logger";
 
 const logger = createLogger("LogStreamer");
@@ -64,142 +62,98 @@ export function createLogStreamer(taskName: string) {
         let buffer = "";
         let byteOffset = 0;
         let finished = false;
-        let disposed = false;
-        let source: EventSource | null = null;
-        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-        let reconnectDelay: number = SSE_CONFIG.RECONNECT_DELAY;
 
-        function connect() {
-            if (disposed || finished) return;
-
-            // On reconnect, discard any partial line from the previous connection.
-            // The server will resume from byteOffset, so line numbering stays valid.
-            buffer = "";
-
-            const base = `/api/tasks/${taskName}/runs/${runId}/log-stream`;
-            const url = buildSSEUrl(
-                byteOffset > 0 ? base + "?offset=" + String(byteOffset) : base,
-                getApiUrl(),
-            );
-            logger.info(
-                "Connecting to log stream: " +
-                    url +
-                    ", byteOffset=" +
-                    String(byteOffset) +
-                    ", lineCount=" +
-                    String(lineCount),
-            );
-            source = browserAuthEventSourceFactory(url);
-
-            source.onopen = () => {
+        const base = `/api/tasks/${taskName}/runs/${runId}/log-stream`;
+        const connection = connectSSE({
+            path: () => (byteOffset > 0 ? base + "?offset=" + String(byteOffset) : base),
+            eventTypes: ["message", "done", "metadata"],
+            onOpen: () => {
                 logger.info(`Log stream connection opened: ${taskName}/${runId}`);
-                reconnectDelay = SSE_CONFIG.RECONNECT_DELAY;
-            };
-
-            source.onmessage = (e) => {
-                try {
-                    const rawChunk = getMessageEventData(e);
-                    if (rawChunk === undefined) {
-                        throw new Error("log stream chunk was not a string");
-                    }
-                    const chunk = parseStreamChunk(rawChunk);
-                    if (chunk === null) {
-                        throw new Error("log stream chunk was not a string");
-                    }
-                    byteOffset += new TextEncoder().encode(chunk).byteLength;
-                    buffer += chunk;
-                    const parts = buffer.split(/\r?\n/);
-
-                    const completeLines = parts.slice(0, -1);
-                    buffer = parts[parts.length - 1] ?? "";
-
-                    if (completeLines.length > 0) {
-                        const linesMap: Record<number, string> = {};
-                        completeLines.forEach((text, i) => {
-                            linesMap[lineCount + i] = text;
-                        });
-                        lineCount += completeLines.length;
-
-                        onEvent({
-                            lines: linesMap,
-                            sizeLines: lineCount,
-                            finished: false,
-                        });
-                    }
-                } catch (err) {
-                    logger.error("Error parsing log stream chunk:", err);
-                }
-            };
-
-            source.addEventListener("done", () => {
-                logger.info(
-                    'Log stream "done" event received: ' +
-                        taskName +
-                        "/" +
-                        runId +
-                        ", lineCount=" +
-                        String(lineCount) +
-                        ", bufferLen=" +
-                        String(buffer.length),
-                );
-                finished = true;
-                if (buffer) {
-                    onEvent({
-                        lines: { [lineCount]: buffer },
-                        sizeLines: lineCount + 1,
-                        finished: true,
-                    });
-                } else {
-                    onEvent({
-                        lines: {},
-                        sizeLines: lineCount,
-                        finished: true,
-                    });
-                }
-                cleanup();
-            });
-
-            source.addEventListener("metadata", (e) => {
-                const data = getMessageEventData(e);
-                logger.info("Log stream metadata: " + taskName + "/" + runId, data);
-            });
-
-            source.onerror = (e) => {
-                const { status, message } = getEventSourceErrorDetails(e);
+                // On reconnect, discard any partial line from the previous connection.
+                // The server resumes from byteOffset, so line numbering stays valid.
+                buffer = "";
+            },
+            onError: (info) => {
+                if (finished) return;
                 logger.warn(
                     "Log stream error for " + taskName + "/" + runId + ":",
-                    (message ?? "connection lost") +
-                        (status !== undefined ? " (HTTP " + String(status) + ")" : ""),
+                    (info.message ?? "connection lost") +
+                        (info.status !== undefined ? " (HTTP " + String(info.status) + ")" : ""),
                 );
-                cleanup();
-                scheduleReconnect();
-            };
-        }
+            },
+            onEvent: (eventType, data) => {
+                if (eventType === "message") {
+                    try {
+                        const chunk = parseStreamChunk(data);
+                        if (chunk === null) {
+                            throw new Error("log stream chunk was not a string");
+                        }
+                        byteOffset += new TextEncoder().encode(chunk).byteLength;
+                        buffer += chunk;
+                        const parts = buffer.split(/\r?\n/);
 
-        function cleanup() {
-            if (source) {
-                source.close();
-                source = null;
-            }
-        }
+                        const completeLines = parts.slice(0, -1);
+                        buffer = parts[parts.length - 1] ?? "";
 
-        function scheduleReconnect() {
-            if (disposed || finished) return;
-            const delay = reconnectDelay;
-            reconnectDelay = Math.min(reconnectDelay * 2, SSE_CONFIG.MAX_RECONNECT_DELAY);
-            logger.debug("Reconnecting log stream in " + String(delay) + "ms");
-            reconnectTimeout = setTimeout(connect, delay);
-        }
+                        if (completeLines.length > 0) {
+                            const linesMap: Record<number, string> = {};
+                            completeLines.forEach((text, i) => {
+                                linesMap[lineCount + i] = text;
+                            });
+                            lineCount += completeLines.length;
 
-        connect();
+                            onEvent({
+                                lines: linesMap,
+                                sizeLines: lineCount,
+                                finished: false,
+                            });
+                        }
+                    } catch (err) {
+                        logger.error("Error parsing log stream chunk:", err);
+                    }
+                    return;
+                }
+                if (eventType === "done") {
+                    logger.info(
+                        'Log stream "done" event received: ' +
+                            taskName +
+                            "/" +
+                            runId +
+                            ", lineCount=" +
+                            String(lineCount) +
+                            ", bufferLen=" +
+                            String(buffer.length),
+                    );
+                    finished = true;
+                    if (buffer) {
+                        onEvent({
+                            lines: { [lineCount]: buffer },
+                            sizeLines: lineCount + 1,
+                            finished: true,
+                        });
+                    } else {
+                        onEvent({
+                            lines: {},
+                            sizeLines: lineCount,
+                            finished: true,
+                        });
+                    }
+                    connection.disconnect();
+                    return;
+                }
+                if (eventType === "metadata") {
+                    logger.info("Log stream metadata: " + taskName + "/" + runId, data);
+                }
+            },
+            deps: {
+                createEventSource: browserAuthEventSourceFactory,
+                getApiUrl,
+            },
+        });
 
         return () => {
-            disposed = true;
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-                reconnectTimeout = null;
-            }
-            cleanup();
+            finished = true;
+            connection.disconnect();
         };
     };
 }

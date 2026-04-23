@@ -88,20 +88,5 @@ func runAdd(args []string) error {
 		confirmLabel:  "Confirm and add",
 		existingNames: existingNames,
 	}
-	if !promptTaskLoop(scanner, draft, ctx) {
-		fmt.Println("  Cancelled.")
-		return nil
-	}
-
-	task := draft.toTask()
-	if err := config.AddTaskToDocument(doc, draft.Name, task); err != nil {
-		return err
-	}
-	if err := config.WriteDocument(flags.CfgFile, doc); err != nil {
-		return err
-	}
-
-	slog.Info("Added task", "name", draft.Name, "config", flags.CfgFile)
-
-	return nil
+	return runTaskEditor(scanner, doc, draft, ctx, "")
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/spf13/cobra"
-	"log/slog"
 )
 
 var editCmd = &cobra.Command{
@@ -74,23 +73,5 @@ func runEdit(args []string) error {
 		existingNames: config.TaskNamesFromDocument(doc),
 		originalName:  originalName,
 	}
-	if !promptTaskLoop(scanner, draft, ctx) {
-		fmt.Println("  Cancelled.")
-		return nil
-	}
-
-	task := draft.toTask()
-	if err := config.UpdateTaskInDocument(doc, originalName, draft.Name, task); err != nil {
-		return err
-	}
-	if err := config.WriteDocument(flags.CfgFile, doc); err != nil {
-		return err
-	}
-
-	if originalName != draft.Name {
-		slog.Info("Renamed and updated task", "old", originalName, "new", draft.Name, "config", flags.CfgFile)
-	} else {
-		slog.Info("Updated task", "name", draft.Name, "config", flags.CfgFile)
-	}
-	return nil
+	return runTaskEditor(scanner, doc, draft, ctx, originalName)
 }

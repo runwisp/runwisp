@@ -25,15 +25,21 @@ export interface SSEErrorInfo {
 }
 
 export interface ReconnectingSSEOptions {
-    /** URL path (will be prefixed with apiUrl and get token appended) */
-    path: string;
+    /**
+     * URL path to connect to (will be prefixed with apiUrl). May be a function
+     * to allow per-reconnect resumption parameters (e.g. a byte offset).
+     */
+    path: string | (() => string);
     /** Called for each named SSE event */
     onEvent: (eventType: string, data: string) => void;
     /** Called when connection is established */
     onOpen?: () => void;
     /** Called on connection error (before reconnect) */
     onError?: (info: SSEErrorInfo) => void;
-    /** Event type names to listen for. If empty, uses `onmessage`. */
+    /**
+     * Event type names to listen for. If empty, uses `onmessage`. To receive
+     * both the default unnamed events and named events, include `"message"`.
+     */
     eventTypes?: string[];
     /** Whether to auto-reconnect on error. Default: true */
     reconnect?: boolean;
@@ -91,12 +97,13 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
     function connect() {
         if (disposed) return;
 
-        const url = buildSSEUrl(path, resolveApiUrl());
+        const resolvedPath = typeof path === "function" ? path() : path;
+        const url = buildSSEUrl(resolvedPath, resolveApiUrl());
         let es: EventSource;
         try {
             es = createEventSource(url);
         } catch (err) {
-            logger.warn("SSE failed to create EventSource for " + path, err);
+            logger.warn("SSE failed to create EventSource for " + resolvedPath, err);
             onError?.({ message: String(err), url });
             scheduleReconnect();
             return;
@@ -110,7 +117,7 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
 
         es.onerror = (e: Event) => {
             const info = extractErrorInfo(e, es, url);
-            logger.warn(`SSE error on ${path}: ${formatErrorInfo(info)}`);
+            logger.warn(`SSE error on ${resolvedPath}: ${formatErrorInfo(info)}`);
             onError?.(info);
             cleanup();
             scheduleReconnect();

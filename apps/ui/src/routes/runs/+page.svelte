@@ -6,13 +6,13 @@
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi } from "$lib/api";
     import { runUpdatesStore, upsertRun } from "$lib/stores";
-    import { createAsyncData } from "$lib/utils/async-data.svelte";
+    import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { type Run } from "$lib/types";
 
     let runs = $state<Run[]>([]);
 
-    const runsData = createAsyncData(() =>
+    const runsData = new AsyncData(() =>
         runsApi.getAll({
             limit: 200,
             sort_field: "start_at",
