@@ -54,6 +54,13 @@ func (v *ExecView) renderActionButtons() string {
 
 func (v *ExecView) View() string {
 	var b strings.Builder
+
+	if v.fullscreen {
+		v.headerLayout.reset()
+		v.pane.RenderLines(&b, false)
+		return b.String()
+	}
+
 	w := v.pane.width
 
 	b.WriteString(padLine("", w, colorBgLight))

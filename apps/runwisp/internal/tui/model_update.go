@@ -105,8 +105,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "esc":
 			if m.execView != nil {
-				m.closeExecView()
-				return m, nil
+				if m.execView.Fullscreen() {
+					m.execView.ToggleFullscreen()
+					m.updateLayout()
+					return m, m.syncMouseState()
+				}
+				return m, m.closeExecView()
 			}
 			if m.panelFocus == PanelMain {
 				return m, m.focusSidebar()
@@ -114,8 +118,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "backspace":
 			if m.execView != nil {
-				m.closeExecView()
-				return m, nil
+				if m.execView.Fullscreen() {
+					m.execView.ToggleFullscreen()
+					m.updateLayout()
+					return m, m.syncMouseState()
+				}
+				return m, m.closeExecView()
+			}
+
+		case "f":
+			if m.execView != nil {
+				m.execView.ToggleFullscreen()
+				if m.execView.Fullscreen() {
+					m.panelFocus = PanelMain
+					m.execView.SetFocused(true)
+				}
+				m.updateLayout()
+				return m, m.syncMouseState()
 			}
 
 		case "left", "h":
@@ -127,6 +146,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			ev := m.execView
+			if ev.Fullscreen() {
+				// In fullscreen the sidebar is hidden; left just scrolls the pane.
+				break
+			}
 			atEdge := ev.headerFocus == headerFocusBack || ev.headerFocus == headerFocusStarted ||
 				(ev.headerFocus == headerFocusNone && ev.pane.hScroll <= 0)
 			if atEdge {
@@ -140,16 +163,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.focusMainPanel()
 			}
+			if m.execView.Fullscreen() {
+				break
+			}
 			if m.panelFocus == PanelSidebar {
 				return m, m.focusMainPanel()
 			}
 
 		case "enter":
-			if m.execView != nil && m.execView.headerFocus != headerFocusNone {
+			if m.execView != nil && m.panelFocus == PanelMain && m.execView.headerFocus != headerFocusNone {
 				switch m.execView.headerFocus {
 				case headerFocusBack:
-					m.closeExecView()
-					return m, nil
+					return m, m.closeExecView()
 				case headerFocusAction:
 					switch m.execView.Action() {
 					case execViewActionStop:
@@ -168,6 +193,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if run := m.execList.SelectedRun(); run != nil {
 					return m, m.openExecView(run)
+				}
+			}
+			// Enter on sidebar commits the cursor item as the main view;
+			// close any open exec view so the user lands on that view.
+			if m.panelFocus == PanelSidebar && m.execView != nil {
+				if cmd := m.closeExecView(); cmd != nil {
+					cmds = append(cmds, cmd)
 				}
 			}
 
@@ -315,7 +347,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			// Concurrency limit or other error — close exec view to show the task list.
 			if m.execView != nil {
-				m.closeExecView()
+				if cmd := m.closeExecView(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
 		} else if msg.Run != nil {
 			if cmd := m.openExecView(msg.Run); cmd != nil {

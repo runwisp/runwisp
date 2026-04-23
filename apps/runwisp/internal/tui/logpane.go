@@ -43,11 +43,33 @@ func NewLogPane(cfg LogPaneConfig) LogPane {
 func (p *LogPane) SetSize(w, h int) {
 	p.width = w
 	p.height = h
+	p.clampScroll()
+}
+
+// clampScroll keeps the vertical scroll within [0, maxScroll]; when following,
+// it snaps back to the tail so resize/header-toggle doesn't leave a stale offset.
+func (p *LogPane) clampScroll() {
+	if p.follow {
+		p.scroll = p.maxScroll()
+		return
+	}
+	if ms := p.maxScroll(); p.scroll > ms {
+		p.scroll = ms
+	}
+	if p.scroll < 0 {
+		p.scroll = 0
+	}
 }
 
 // SetHeaderHeight tells the pane how many lines the caller's header occupies.
 func (p *LogPane) SetHeaderHeight(h int) {
 	p.headerH = h
+	p.clampScroll()
+}
+
+// SetLineNumbers toggles the left gutter with absolute line numbers.
+func (p *LogPane) SetLineNumbers(enabled bool) {
+	p.cfg.LineNumbers = enabled
 }
 
 func (p *LogPane) VisibleLines() int {

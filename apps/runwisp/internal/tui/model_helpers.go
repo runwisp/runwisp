@@ -63,6 +63,11 @@ func (m *Model) applySidebarSelectionChange(prevPage Page, prevTask string) tea.
 	m.recalcExecListHeight()
 
 	cmds := []tea.Cmd{m.dialogs.SyncMouseState(), m.fetchExecWindow()}
+	if m.execView != nil {
+		if cmd := m.closeExecView(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
 	if cmd := m.autoOpenLongRunning(m.sidebar.ActiveTask()); cmd != nil {
 		cmds = append(cmds, cmd)
 	}

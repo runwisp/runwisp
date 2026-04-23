@@ -22,6 +22,17 @@ type DialogManager struct {
 	// mouseDisabled tracks whether terminal mouse tracking has been
 	// temporarily disabled (so users can natively select text).
 	mouseDisabled bool
+
+	// mouseHold, when true, keeps mouse tracking disabled even if no dialog
+	// is active. Set by callers (e.g. fullscreen log) that need native
+	// terminal text selection while the TUI keeps running.
+	mouseHold bool
+}
+
+// SetMouseHold marks whether an external caller (outside any dialog) needs
+// the mouse kept disabled for native terminal text selection.
+func (dm *DialogManager) SetMouseHold(hold bool) {
+	dm.mouseHold = hold
 }
 
 // HasConfirm reports whether a confirm dialog is active.
@@ -141,9 +152,9 @@ func (dm *DialogManager) FlashActive() (string, bool) {
 }
 
 // SyncMouseState disables terminal mouse tracking when the copy dialog is
-// visible and re-enables it when the dialog closes.
+// visible (or any mouse-hold is active) and re-enables it otherwise.
 func (dm *DialogManager) SyncMouseState() tea.Cmd {
-	wantDisabled := dm.copyDialog != nil
+	wantDisabled := dm.copyDialog != nil || dm.mouseHold
 
 	if wantDisabled && !dm.mouseDisabled {
 		dm.mouseDisabled = true

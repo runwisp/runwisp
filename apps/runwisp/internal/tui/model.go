@@ -146,12 +146,25 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	return nil
 }
 
-func (m *Model) closeExecView() {
+func (m *Model) closeExecView() tea.Cmd {
 	m.streams.CancelLogStream()
 	m.execView = nil
 	if m.panelFocus == PanelMain {
 		m.execList.SetFocused(true)
 	}
+	return m.syncMouseState()
+}
+
+// isExecFullscreen reports whether the exec view is showing in fullscreen mode.
+func (m *Model) isExecFullscreen() bool {
+	return m.execView != nil && m.execView.Fullscreen()
+}
+
+// syncMouseState refreshes the mouse-hold derived from non-dialog state
+// (currently: fullscreen log) and dispatches any enable/disable command.
+func (m *Model) syncMouseState() tea.Cmd {
+	m.dialogs.SetMouseHold(m.isExecFullscreen())
+	return m.dialogs.SyncMouseState()
 }
 
 // fetchExecWindow is a convenience wrapper for StreamManager.
@@ -171,7 +184,10 @@ func (m *Model) updateLayout() {
 }
 
 func (m *Model) mainSize() (int, int) {
-	w := m.width - sidebarWidth
+	w := m.width
+	if !m.isExecFullscreen() {
+		w -= sidebarWidth
+	}
 	if w < 20 {
 		w = 20
 	}
