@@ -1,7 +1,66 @@
-# RunWisp - Agent Directives
+# RunWisp — Agent Directives
 
-**Context**: Open-source cron replacement and process supervisor owned by **PoppyCake, s.r.o.** Go daemon (Apache-2.0) with an embedded Svelte web dashboard, optional cloud connectivity. Pre-1.0 (breaking changes permitted).
-**Stack**: Bun, Nx, Go, Svelte 5 runes, Tailwind CSS.
+**License**: Apache-2.0 · **Status**: Pre-1.0 (breaking changes permitted)
+**Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun + Nx monorepo, embedded SQLite (GORM), AsyncAPI-defined optional control-plane protocol.
+
+## 🎯 PRODUCT VISION (read this first — it outranks everything below)
+
+RunWisp replaces **crond + supervisord** with one small Go binary that a single developer can drop on a VPS, a Raspberry Pi, or into a Docker image and immediately see *what ran, when, why it failed, and what it printed*. Every design decision must serve that sentence.
+
+**Who we're for**: the solo dev / small ops team whose current options are "edit crontab over SSH" or "stand up Airflow". We meet them in the middle.
+
+**Prime directives** (in priority order; when they conflict, the higher one wins):
+
+1. **Nothing silently fails.** Every run has an exit code, duration, timestamps, and captured output — persisted, browsable, and streamable. If a change makes failures invisible, reject it.
+2. **One binary, zero runtime deps.** No Python, Node, external DB, systemd, or sidecars required to run RunWisp. SQLite and the web UI are *embedded*. Do not add runtime deps; prefer a vendored Go lib over a service.
+3. **YAML is the sole source of truth.** `runwisp.yaml` defines every task. The REST API and Web UI are **read-only + trigger** — they never mutate task definitions. Schema changes are user-visible breaking changes; treat the YAML surface as an API even pre-1.0. Never add a feature that *requires* the UI or API to configure.
+4. **Local-first, offline-complete.** The daemon must work fully offline. Any network integration (`internal/cloud/`) is strictly optional — no feature may degrade when it's disabled or unreachable.
+5. **Built for the individual and the small team.** Every core capability ships in the binary: scheduling, supervision, observability, web UI, TUI, REST. No artificial limits, no feature flags gating basics. If it helps one operator run their tasks well, it belongs in the binary.
+6. **Boring in prod.** Predictable resource use, graceful shutdown, recoverable state after crash or kill -9. Prefer a simple mechanism that's easy to reason about over a clever one that saves 5%. *(Perf target: ~15 MB RAM idle is aspirational at v0.1.x; it will harden into a CI-enforced budget before 1.0. Don't regress it casually.)*
+
+## 🚫 NON-GOALS
+
+These are **not** bugs to fix or features to add. If a user/issue/PR asks for them in the daemon, push back — they belong in a different tool, or at most in an external integration that speaks to RunWisp over its documented protocol.
+
+- **DAGs / workflow orchestration** — that's Dagu/Airflow/Temporal. RunWisp tasks are independent units.
+- **Clustering, leader election, HA failover, cross-instance coordination** — one daemon owns its tasks. Anything involving multiple daemons acting in concert is out of scope for the daemon itself; operators who want that can build it on top of the REST API / control-plane protocol.
+- **Plugin systems / arbitrary extensibility** — the surface is YAML + shell commands + REST. No JS hooks, no Lua, no WASM.
+- **Replacing the user's shell or package manager** — `run:` is a shell command the user already knows how to write. Don't invent a DSL on top of it.
+- **Being a log aggregator** — we capture per-run stdout/stderr for visibility. We are not Loki, not ELK.
+- **Enterprise identity systems** — CHAP + JWT answers "does this operator control this daemon?". SSO, directory integration, org/team modeling, fine-grained RBAC policies are outside the daemon's scope.
+- **Long-horizon analytics / reporting** — retention is per-task and bounded. Anything that needs cross-task, cross-instance, or indefinite history lives outside the daemon.
+
+When in doubt, ask: *"Does this help **one** operator run **their** tasks on **one** machine better?"* If no, it probably doesn't belong in `apps/runwisp`.
+
+## 🧭 INVARIANTS (violating any of these is a bug, regardless of what a test says)
+
+- **Supported platforms**: Linux, macOS, WSL. These are first-class — builds, tests, manual smoke. Native Windows is out of scope.
+- **Config is reloaded only on SIGHUP or an explicit `runwisp reload` command.** No file-watchers, no auto-reload. A running daemon keeps its in-memory task set until the operator asks.
+- **Crash safety**: Killing the daemon (SIGKILL, power loss) must not corrupt state. On restart, any run that was in-flight is marked **interrupted** with a terminal status — it is **not resumed**. A fresh execution may then be created by the normal scheduling/catchup logic.
+- **Determinism of scheduling**: Given the same YAML + clock, the scheduler produces the same firings. Randomness, wall-clock reads, and FS I/O are injected, never called inline in scheduling logic.
+- **No required network**: Daemon startup, task execution, UI serving, and TUI must all work with the NIC unplugged. Any outbound integration attempts happen in the background and never block the hot path.
+- **Single writer per task**: Exactly one goroutine/run-manager owns a task's run lifecycle. Any other code observing state does so via `internal/events/` or read-only storage queries.
+- **Generated code is write-once**: `internal/generated/protocol/` is regenerated from `packages/asyncapi/asyncapi.yaml`. Never hand-edit. If you need a new message, edit the AsyncAPI spec.
+- **Embedded assets stay embedded**: The web UI ships inside the binary. No "download assets at runtime", no CDN fallback.
+
+## 🔐 TRUST MODEL
+
+- The daemon runs **with the privilege of whoever started it**, executing **user-authored shell** from YAML. This is intentional — it's a cron replacement — but it means:
+  - YAML is trusted input; the REST API / UI is not.
+  - Never execute user-provided strings from HTTP/WS bodies as shell. `run:` comes from disk only.
+  - Secrets (JWT secret, passwords) live under the data dir (`internal/datadir/`) with restrictive perms; never log them; never transmit them over any outbound integration.
+- CHAP (challenge-response) auth is the login boundary. JWT is the session. Don't bypass either for "convenience" endpoints.
+
+## 🧠 DECISION HEURISTICS (use when the spec is silent)
+
+When a design question isn't answered by the above, resolve it in this order:
+
+1. **Does it make a failure more visible?** → Yes = lean toward it.
+2. **Does it add a runtime dependency or a required network call?** → Yes = reject or make it strictly optional.
+3. **Does it change the YAML schema?** → Treat as breaking; document in CHANGELOG, update `runwisp.example.yaml`, update JSON schema / OpenAPI.
+4. **Does it add state that must survive restart?** → It goes through `internal/storage/` (GORM + SQLite), gets a ULID, and has a reconciliation path on boot.
+5. **Does it touch the control-plane protocol?** → Edit `packages/asyncapi/asyncapi.yaml` first, regenerate, then consume the generated types. Never the other way round.
+6. **Can a solo dev understand it by reading `runwisp.yaml` + the web UI?** → If no, simplify or document.
 
 ## 🚨 TECHNICAL DEBT & HYGIENE (HIGHEST PRIORITY)
 
@@ -18,16 +77,16 @@
 **Code Location Rules:**
 
 - `packages/common`: Shared types, constants (Apache-2.0). _No duplicating these in apps._
-- `packages/asyncapi`: `asyncapi.yaml` is the **single source of truth** for the cloud WS protocol. Generates Go types into `apps/runwisp/internal/generated/protocol/`. **Never hand-write message types.**
+- `packages/asyncapi`: `asyncapi.yaml` is the **single source of truth** for the optional control-plane WebSocket protocol. Generates Go types into `apps/runwisp/internal/generated/protocol/`. **Never hand-write message types.**
 - `packages/ui`: Svelte 5 UI component library & layouts (shared between `web-ui` and other frontends).
 - `packages/eslint-config` / `packages/typescript-config`: Shared tooling configs.
-- `apps/runwisp`: Go standalone cron daemon binary. Single binary with embedded SQLite, REST API, SSE log streaming, and optional cloud connectivity (`internal/cloud/`).
+- `apps/runwisp`: Go standalone cron daemon binary. Single binary with embedded SQLite, REST API, SSE log streaming, and optional outbound control-plane integration (`internal/cloud/`).
   - `cmd/runwisp/`: CLI entry point — daemon lifecycle, run/trigger/status/list/tui commands.
   - `internal/model/`: Core domain types (`Task`, `Run`, enums, concurrency/restart/missed-run policies).
   - `internal/server/`: HTTP server, REST routes, CHAP auth, SSE log streaming.
   - `internal/runtime/`: Task scheduler, run manager (concurrency policies, queuing), catchup, retention, retry.
   - `internal/executor/`: Low-level process execution engine.
-  - `internal/cloud/`: Cloud platform client (WebSocket protocol, lifecycle, dispatch).
+  - `internal/cloud/`: Optional outbound control-plane client (WebSocket protocol defined in `packages/asyncapi`, connection lifecycle, ad-hoc dispatch handling).
   - `internal/config/`: YAML config parsing.
   - `internal/storage/`: SQLite persistence (GORM).
   - `internal/events/`: In-memory pub/sub event bus for run lifecycle and log-line events.
@@ -52,8 +111,24 @@
 
 ## 💾 DATA MODEL & I/O
 
-- **Embedded SQLite**: The daemon uses embedded SQLite for persistence (runs, logs, state).
-- **IDs**: Use Monotonic ULIDs exclusively.
+- **Embedded SQLite (GORM)** is the only persistent store. No external DB, no KV, no Redis. Migrations are forward-only; old daemons must tolerate reading rows written by slightly newer ones where feasible.
+- **IDs**: Monotonic ULIDs exclusively. No auto-increment integers on user-visible entities, no UUIDv4.
+- **Logs**: per-task log files on disk under the data dir, indexed by `internal/logutil/`. SQLite stores run metadata, not log bodies. Rotation/overflow is governed by YAML (`logs.maxSize`, `logs.overflow`).
+- **Clock & time**: use injected clock interfaces in `internal/runtime/`. Cron expressions respect the daemon's local TZ unless explicitly scoped (document any TZ change as user-facing).
+- **Events**: `internal/events/` is in-memory, best-effort, per-process. It is **not** a durability mechanism — if something must survive restart, it lives in SQLite or on disk.
+
+## 🛰 OPTIONAL CONTROL-PLANE INTEGRATION (`internal/cloud/`)
+
+The daemon can optionally connect outbound to a control-plane peer that speaks the protocol in `packages/asyncapi/asyncapi.yaml`. This is a generic mechanism — any service that implements the protocol can play that role. The daemon's rules for it:
+
+- **Strictly opt-in.** Daemon must boot, schedule, run, and serve UI with the integration disabled, unconfigured, or unreachable. Connection failures are logged, retried with backoff, and never user-visible as errors in the hot path.
+- **Protocol only via generated types.** Messages come from `packages/asyncapi/asyncapi.yaml`; `internal/generated/protocol/` is the only consumer-facing surface. Never hand-roll a message.
+- **Allowed inbound surface on the daemon:**
+  1. **Observability push** — run status, logs, history, health snapshots sent outbound.
+  2. **Trigger/stop commands** against tasks defined in `runwisp.yaml`.
+  3. **Ad-hoc task execution** — the peer may request an ephemeral task run, **only** when explicitly opted-in via YAML (e.g. a `cloud.allowDispatch` flag). Default is off. Ad-hoc runs never modify the YAML task set — they are one-shot executions, logged like any other run.
+- **YAML remains canonical.** The integration never edits, replaces, or shadows the configured task set.
+- **Backpressure.** If the peer is slow or disconnected, bound the buffer and drop — never block task execution or local event delivery.
 
 ## ⚙️ FUNCTION, CLASS & STATE DESIGN
 
@@ -65,8 +140,17 @@
 4. **Testability**: Every new service function/method must be testable WITHOUT a server, real DB, or network. Accept interfaces, not concretes.
 5. **Side Effects**: I/O, time, and randomness must be injected/behind an interface, not called directly in business logic. (If a function is hard to test, split it).
 
+## 🧪 TESTING PHILOSOPHY
+
+- Unit tests must run without a server, real SQLite file, real network, real clock, or real filesystem. Use `internal/testutil/` fakes. If a new component can't be tested that way, split it until it can.
+- Integration tests that need the real binary go under `apps/runwisp/tests/` and must be hermetic (isolated data dir, ephemeral ports).
+- A feature isn't done until there's a test that would have caught the bug *before* the fix.
+
 ## 🤖 AGENT EXECUTION RULES
 
-1. Always use the built-in file tools (`read` for reading files, `grep` for searching content, `glob` for searching file paths) instead of standard shell commands like `cat`, `find`, or `grep`.
-2. For Go changes in `apps/runwisp`, always verify with `bun run build && bun run test` before committing.
-3. For TypeScript changes, run `bun run check` and `bun run test`.
+1. Use the built-in file tools (`view`, `grep`, `glob`, `edit`) — not shell `cat`/`find`/`grep`.
+2. Before finalizing **Go** changes: `bun run build && bun run test` (and `bun run check` if lint/TS is adjacent).
+3. Before finalizing **TypeScript/Svelte** changes: `bun run check && bun run test`.
+4. Changes to `packages/asyncapi/asyncapi.yaml` **require regeneration** before commit; downstream Go types must compile.
+5. Changes to the YAML config schema **require** updating: `runwisp.example.yaml`, any JSON schema, OpenAPI (`apps/runwisp/openapi.json`), CHANGELOG, and the README config reference if behavior is user-visible.
+6. When a judgment call arises that Prime Directives / Non-Goals / Invariants don't clearly resolve: **stop and ask the user**. Do not silently pick a direction that might violate vision.

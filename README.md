@@ -191,9 +191,6 @@ If you need DAG pipelines or enterprise-level orchestration, tools like Dagu or 
 RunWisp is configured through a single `runwisp.yaml` file. Here's a complete example:
 
 ```yaml
-daemon:
-  allowShellTasks: true
-
 # Disk-usage safeguards
 storage:
   maxSize: 5gb
