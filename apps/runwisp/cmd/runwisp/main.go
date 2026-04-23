@@ -26,7 +26,11 @@ func applyDefaultMemoryLimit() {
 func main() {
 	applyDefaultMemoryLimit()
 	if err := rootCmd.Execute(); err != nil {
-		slog.Error("Fatal error", "err", err)
+		if ufe, ok := isUserFacing(err); ok {
+			renderUserFacingError(os.Stderr, ufe)
+		} else {
+			slog.Error("Fatal error", "err", err)
+		}
 		os.Exit(1)
 	}
 }

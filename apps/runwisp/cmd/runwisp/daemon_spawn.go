@@ -225,8 +225,8 @@ loop:
 	// underlying cause. Also promote a recognised bind error to a clearer
 	// message — this is the most common cause of a silent startup failure.
 	logTail := tailFile(logPath, 4096)
-	if hint := bindFailureHint(logTail, flags.Host, flags.Port); hint != "" {
-		return errors.New(hint)
+	if hint := bindFailureHint(logTail, flags.Host, flags.Port); hint != nil {
+		return hint
 	}
 	if logTail != "" {
 		fmt.Fprintf(os.Stderr, "\n--- daemon log (%s) ---\n%s\n---\n\n", logPath, strings.TrimSpace(logTail))
@@ -251,16 +251,16 @@ func classifyDaemonLogLine(line string) (string, bool) {
 }
 
 // bindFailureHint inspects a daemon log tail for signs that the server could
-// not bind its port and returns a ready-to-display error message. Returns ""
-// when no bind failure is detected.
-func bindFailureHint(logTail string, host string, port int) string {
+// not bind its port and returns a ready-to-display user-facing error. Returns
+// nil when no bind failure is detected.
+func bindFailureHint(logTail string, host string, port int) error {
 	if logTail == "" {
-		return ""
+		return nil
 	}
 	if !strings.Contains(logTail, "address already in use") {
-		return ""
+		return nil
 	}
-	return portConflictError(host, port, errors.New("bind: address already in use")).Error()
+	return portConflictError(host, port, errors.New("bind: address already in use"))
 }
 
 // tailFile reads the last maxBytes bytes from a file.

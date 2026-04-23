@@ -33,15 +33,10 @@ func runDefault() error {
 			return nil
 		}
 		if errors.Is(err, apiclient.ErrUnauthorized) {
-			return fmt.Errorf(
-				"another RunWisp daemon is already running on port %d with a different password\n\n"+
-					"This usually happens when an instance was started from a different directory.\n"+
-					"To resolve this, you can:\n"+
-					"  - Stop the other daemon first\n"+
-					"  - Use a different port:  runwisp --port <PORT>\n"+
-					"  - Set RUNWISP_PASSWORD to the other daemon's password to connect to it",
-				flags.Port,
-			)
+			return passwordMismatchError(flags.Port)
+		}
+		if errors.Is(err, apiclient.ErrRateLimited) {
+			return authRateLimitedError(flags.Port)
 		}
 		return err
 	}

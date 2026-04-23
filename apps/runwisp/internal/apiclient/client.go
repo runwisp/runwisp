@@ -42,6 +42,9 @@ func (c *Client) Authenticate() error {
 		Nonce string `json:"nonce"`
 	}
 	if err := c.doJSON("GET", "/api/auth/challenge", nil, &challenge); err != nil {
+		if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited) {
+			return err
+		}
 		return fmt.Errorf("auth challenge: %w", err)
 	}
 
@@ -58,6 +61,9 @@ func (c *Client) Authenticate() error {
 		Token string `json:"token"`
 	}
 	if err := c.doJSON("POST", "/api/auth", body, &authResult); err != nil {
+		if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited) {
+			return err
+		}
 		return fmt.Errorf("auth failed: %w", err)
 	}
 
@@ -131,6 +137,11 @@ func (c *Client) doRequest(method, path string, body io.Reader, isJSON bool) (*h
 		return nil, ErrUnauthorized
 	}
 
+	if resp.StatusCode == http.StatusTooManyRequests {
+		resp.Body.Close()
+		return nil, ErrRateLimited
+	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		resp.Body.Close()
@@ -154,3 +165,8 @@ func (c *Client) CreateLaunchTicket() (string, error) {
 
 // ErrUnauthorized is returned when the API returns 401.
 var ErrUnauthorized = errors.New("unauthorized")
+
+// ErrRateLimited is returned when the API returns 429. Callers should surface
+// a retry-after hint to the user; the daemon's auth endpoints share a single
+// per-IP bucket, so hitting this usually means too many failed login attempts.
+var ErrRateLimited = errors.New("rate limited")
