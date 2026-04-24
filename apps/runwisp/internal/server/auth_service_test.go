@@ -243,7 +243,7 @@ func TestLaunchTicketStore_CreateAndConsume(t *testing.T) {
 
 	ticket, err := store.create()
 	require.NoError(t, err)
-	assert.Len(t, ticket, 64) // 32 bytes hex-encoded
+	assert.Len(t, ticket, 43) // 43 base62 chars ≈ 256 bits of entropy
 
 	assert.True(t, store.consume(ticket))
 	// Single-use: second consume fails.
@@ -260,7 +260,7 @@ func TestAuthService_CreateLaunchTicket(t *testing.T) {
 
 	ticket, err := auth.CreateLaunchTicket()
 	require.NoError(t, err)
-	assert.Len(t, ticket, 64)
+	assert.Len(t, ticket, 43)
 
 	// Ticket should be consumable through the internal store.
 	assert.True(t, auth.launchTickets.consume(ticket))
