@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/hashicorp/golang-lru/v2/expirable"
+	"github.com/runwisp/runwisp/internal/datadir"
 	"log/slog"
 )
 
@@ -75,11 +76,12 @@ func newLaunchTicketStore() *launchTicketStore {
 }
 
 func (s *launchTicketStore) create() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
+	// 43 base62 chars ≈ 256 bits of entropy (matches the prior 32-byte hex ticket)
+	// while shrinking the URL-visible token from 64 to 43 characters.
+	ticket, err := datadir.RandBase62(43)
+	if err != nil {
 		return "", err
 	}
-	ticket := hex.EncodeToString(buf)
 	s.entries.Add(ticket, time.Now().Add(launchTicketTTL))
 	return ticket, nil
 }

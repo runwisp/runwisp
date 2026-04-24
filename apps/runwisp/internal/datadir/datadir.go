@@ -29,19 +29,25 @@ func GenerateJWTSecret() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(key), nil
 }
 
-// GeneratePassword returns a cryptographically random base62 password (128+ bits of entropy).
-func GeneratePassword() (string, error) {
+// RandBase62 returns a cryptographically random base62 string of n characters.
+// Each character contributes ~5.954 bits of entropy.
+func RandBase62(n int) (string, error) {
 	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	max := big.NewInt(int64(len(alphabet)))
-	b := make([]byte, 22)
+	b := make([]byte, n)
 	for i := range b {
-		n, err := rand.Int(rand.Reader, max)
+		v, err := rand.Int(rand.Reader, max)
 		if err != nil {
-			return "", fmt.Errorf("failed to generate random password: %w", err)
+			return "", fmt.Errorf("failed to generate random base62 string: %w", err)
 		}
-		b[i] = alphabet[n.Int64()]
+		b[i] = alphabet[v.Int64()]
 	}
 	return string(b), nil
+}
+
+// GeneratePassword returns a cryptographically random base62 password (128+ bits of entropy).
+func GeneratePassword() (string, error) {
+	return RandBase62(22)
 }
 
 // ResolvePassword reads or generates the daemon password.
