@@ -7,17 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+
+## [0.2.0] - 2026-04-25
+
 ### Improved
 
 - **Config format moved from YAML to TOML.** `runwisp.yaml` is no longer read; configuration lives in `runwisp.toml`. Every per-task field has been flattened and renamed for a much gentler learning curve. The `runwisp add` and `runwisp edit` CLI commands are gone — edit the TOML file in your editor (it's now simple enough that interactive editors are unnecessary). 
 
+- **Launch tickets are shorter without losing security.** One-time launch-ticket URLs now use 43 base62 characters instead of 64 hex characters, keeping the same ~256 bits of entropy while producing a noticeably shorter URL.
+
 ### Added
 
 - **Fullscreen log streaming in the TUI.** Press `f` while viewing a task's logs to expand to fullscreen — the terminal cursor works normally (no hijacking), line numbers disappear, and you can select and copy text directly with your mouse. Press `f` or `esc` to return to the normal view.
-
-### Improved
-
-- **Launch tickets are shorter without losing security.** One-time launch-ticket URLs now use 43 base62 characters instead of 64 hex characters, keeping the same ~256 bits of entropy while producing a noticeably shorter URL.
 
 ### Fixed
 
@@ -58,7 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/runwisp/runwisp/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/runwisp/runwisp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/runwisp/runwisp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/runwisp/runwisp/releases/tag/v0.1.0
