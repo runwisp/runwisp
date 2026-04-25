@@ -35,6 +35,9 @@ func writeTOML(t *testing.T, content string) string {
 func TestLoad(t *testing.T) {
 	t.Run("valid config", func(t *testing.T) {
 		path := writeTOML(t, `
+[daemon]
+allow_cloud_dispatch = true
+
 [defaults]
 timeout = "30m"
 log_max_size = "200mb"

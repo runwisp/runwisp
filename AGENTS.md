@@ -154,3 +154,4 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 4. Changes to `packages/asyncapi/asyncapi.yaml` **require regeneration** before commit; downstream Go types must compile.
 5. Changes to the TOML config schema **require** updating: `runwisp.example.toml`, OpenAPI (`apps/runwisp/openapi.json`), CHANGELOG, and the README config reference if behavior is user-visible.
 6. When a judgment call arises that Prime Directives / Non-Goals / Invariants don't clearly resolve: **stop and ask the user**. Do not silently pick a direction that might violate vision.
+7. If you introduced a user-facing change, always add a user-friendly edit to CHANGELOG.md
