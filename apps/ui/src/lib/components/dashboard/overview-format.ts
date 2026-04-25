@@ -43,8 +43,8 @@ export function formatTaskNextRunLabel(task: TaskOverview): string {
 }
 
 export function formatTaskTriggerLabel(task: TaskOverview): string {
-    if (task.task.trigger?.cron) {
-        return task.task.trigger.cron;
+    if (task.task.cron) {
+        return task.task.cron;
     }
 
     return task.isApiOnly ? "API trigger" : "Manual trigger";

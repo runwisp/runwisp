@@ -539,8 +539,14 @@
       "TaskBrief": {
         "additionalProperties": false,
         "properties": {
-          "execution": {
-            "$ref": "#/components/schemas/TaskExecution"
+          "api_trigger": {
+            "type": "boolean"
+          },
+          "catch_up": {
+            "type": "string"
+          },
+          "cron": {
+            "type": "string"
           },
           "group": {
             "type": "string"
@@ -548,84 +554,65 @@
           "name": {
             "type": "string"
           },
-          "trigger": {
-            "$ref": "#/components/schemas/TaskTrigger"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
-      },
-      "TaskConcurrency": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
+          "on_overlap": {
+            "type": "string"
+          },
+          "parallelism": {
             "format": "int64",
             "type": "integer"
           },
-          "policy": {
-            "description": "How overlapping runs are handled",
-            "enum": [
-              "queue",
-              "skip",
-              "terminate"
-            ],
+          "restart": {
             "type": "string"
           }
         },
         "required": [
-          "limit"
+          "name",
+          "api_trigger"
         ],
-        "type": "object"
-      },
-      "TaskExecution": {
-        "additionalProperties": false,
-        "properties": {
-          "concurrency": {
-            "$ref": "#/components/schemas/TaskConcurrency"
-          },
-          "restart": {
-            "description": "Whether and when a task is restarted after completion",
-            "enum": [
-              "never",
-              "always",
-              "on-failure"
-            ],
-            "type": "string"
-          },
-          "timeout": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "TaskLogs": {
-        "additionalProperties": false,
-        "properties": {
-          "maxSize": {
-            "type": "string"
-          },
-          "overflow": {
-            "type": "string"
-          }
-        },
         "type": "object"
       },
       "TaskResponse": {
         "additionalProperties": false,
         "properties": {
-          "description": {
+          "api_trigger": {
+            "type": "boolean"
+          },
+          "catch_up": {
+            "description": "What to do when cron ticks are missed during downtime",
+            "enum": [
+              "latest",
+              "all",
+              "skip"
+            ],
             "type": "string"
           },
-          "execution": {
-            "$ref": "#/components/schemas/TaskExecution"
+          "cron": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
           },
           "group": {
             "type": "string"
           },
-          "logs": {
-            "$ref": "#/components/schemas/TaskLogs"
+          "keep_for": {
+            "type": "string"
+          },
+          "keep_runs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "log_max_size": {
+            "type": "string"
+          },
+          "log_on_full": {
+            "description": "What to do when log output exceeds log_max_size",
+            "enum": [
+              "drop_new",
+              "drop_old",
+              "kill_task"
+            ],
+            "type": "string"
           },
           "name": {
             "type": "string"
@@ -633,75 +620,45 @@
           "next_run_at": {
             "type": "string"
           },
-          "retention": {
-            "$ref": "#/components/schemas/TaskRetention"
-          },
-          "retry": {
-            "$ref": "#/components/schemas/TaskRetry"
-          },
-          "trigger": {
-            "$ref": "#/components/schemas/TaskTrigger"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
-      },
-      "TaskRetention": {
-        "additionalProperties": false,
-        "properties": {
-          "age": {
-            "type": "string"
-          },
-          "runs": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "TaskRetry": {
-        "additionalProperties": false,
-        "properties": {
-          "backoff": {
-            "type": "string"
-          },
-          "delaySec": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "limit": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "TaskTrigger": {
-        "additionalProperties": false,
-        "properties": {
-          "api": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "catchup": {
-            "description": "What to do when cron ticks are missed during downtime",
+          "on_overlap": {
+            "description": "How overlapping runs are handled",
             "enum": [
-              "latest",
-              "all",
-              "none"
+              "queue",
+              "skip",
+              "terminate"
             ],
             "type": "string"
           },
-          "cron": {
+          "parallelism": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "restart": {
+            "description": "Whether and when a task is restarted after completion",
+            "enum": [
+              "never",
+              "always",
+              "on_failure"
+            ],
+            "type": "string"
+          },
+          "retry_attempts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retry_backoff": {
+            "type": "string"
+          },
+          "retry_delay": {
+            "type": "string"
+          },
+          "timeout": {
             "type": "string"
           }
         },
         "required": [
-          "api"
+          "name",
+          "api_trigger"
         ],
         "type": "object"
       }

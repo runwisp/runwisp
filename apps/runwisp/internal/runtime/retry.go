@@ -20,7 +20,7 @@ func isFailureReason(reason model.EndReason) bool {
 }
 
 func shouldRestart(task *model.Task, run *model.Run) bool {
-	switch task.Execution.Restart {
+	switch task.Restart {
 	case model.RestartAlways:
 		return run.EndReason == nil || *run.EndReason != model.ReasonStopped
 	case model.RestartOnFailure:
@@ -31,25 +31,25 @@ func shouldRestart(task *model.Task, run *model.Run) bool {
 }
 
 func shouldRetry(task *model.Task, run *model.Run) bool {
-	if task.Execution.Restart != "" && task.Execution.Restart != model.RestartNever {
+	if task.Restart != "" && task.Restart != model.RestartNever {
 		return false
 	}
-	if task.Retry.Limit <= 0 || run.EndReason == nil || !isFailureReason(*run.EndReason) {
+	if task.RetryAttempts <= 0 || run.EndReason == nil || !isFailureReason(*run.EndReason) {
 		return false
 	}
-	return run.RetryAttempt < task.Retry.Limit
+	return run.RetryAttempt < task.RetryAttempts
 }
 
 // computeRetryDelay calculates the delay before the next retry attempt.
 func computeRetryDelay(task *model.Task, attempt int) time.Duration {
-	baseDelay := time.Duration(task.Retry.DelaySec) * time.Second
+	baseDelay := parseRetryDelay(task.RetryDelay)
 	if baseDelay <= 0 {
 		baseDelay = 5 * time.Second
 	}
 
 	const maxDelay = 5 * time.Minute
 
-	switch task.Retry.Backoff {
+	switch task.RetryBackoff {
 	case "exponential":
 		delay := baseDelay * (1 << min(attempt, 30))
 		return min(delay, maxDelay)
@@ -61,6 +61,17 @@ func computeRetryDelay(task *model.Task, attempt int) time.Duration {
 	}
 }
 
+func parseRetryDelay(raw string) time.Duration {
+	if raw == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0
+	}
+	return d
+}
+
 // scheduleRetry waits for the retry delay and triggers a new run.
 func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Run) {
 	if m.isShutdown.Load() {
@@ -68,7 +79,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 	}
 
 	delay := computeRetryDelay(task, failedRun.RetryAttempt)
-	slog.Info("Scheduling retry", "attempt", failedRun.RetryAttempt+1, "max", task.Retry.Limit, "task", task.Name, "delay", delay)
+	slog.Info("Scheduling retry", "attempt", failedRun.RetryAttempt+1, "max", task.RetryAttempts, "task", task.Name, "delay", delay)
 
 	timer := time.NewTimer(delay)
 	defer timer.Stop()

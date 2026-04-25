@@ -1,0 +1,106 @@
+# RunWisp — example configuration.
+#
+# Every task needs a name (the table key) and a `run` command. Everything
+# else has sensible defaults — add a key only when you want to change it.
+
+[storage]
+max_size       = "5gb"
+min_free_space = "500mb"
+
+[defaults]
+timeout      = "1h"
+log_max_size = "100mb"
+log_on_full  = "drop_old"
+keep_runs    = 50
+keep_for     = "30d"
+
+
+[tasks.network-heartbeat]
+group       = "Monitoring"
+description = "Pings external services every minute"
+cron        = "* * * * *"
+on_overlap  = "skip"
+keep_runs   = 100
+run = """
+set -eu
+echo "[$(date -Iseconds)] Starting health checks..."
+curl -s -o /dev/null -w "Cloudflare latency: %{time_total}s\n" https://1.1.1.1
+curl -s -o /dev/null -w "Google latency: %{time_total}s\n" https://8.8.8.8
+echo "[$(date -Iseconds)] Health checks completed successfully."
+"""
+
+
+[tasks.nightly-db-backup]
+group       = "Infrastructure"
+description = "Simulates a database dump, compression, and upload"
+cron        = "30 2 * * *"
+timeout     = "30m"
+on_overlap  = "skip"
+keep_for    = "14d"
+run = """
+set -eu
+tables=("users" "transactions" "audit_logs" "sessions" "metadata")
+echo "[$(date)] Initiating database backup sequence..."
+for table in "${tables[@]}"; do
+  echo "[$(date)] Exporting table: $table..."
+  sleep $((RANDOM % 7 + 2))
+  rows=$((RANDOM % 50000 + 10000))
+  echo "  -> Exported $rows rows from $table."
+done
+echo "[$(date)] Compressing archive..."
+sleep 12
+echo "[$(date)] Upload complete."
+"""
+
+
+[tasks.process-event-queue]
+description    = "Worker that retries with exponential backoff"
+cron           = "*/10 * * * *"
+retry_attempts = 3
+retry_delay    = "2s"
+retry_backoff  = "exponential"
+run = """
+echo "Starting queue processing..."
+jobs=$((RANDOM % 5 + 1))
+echo "Found $jobs jobs in the queue."
+for ((i=1; i<=jobs; i++)); do
+  echo "Processing job $i..."
+  sleep $((RANDOM % 3 + 1))
+  if [ $((RANDOM % 100)) -lt 30 ]; then
+    >&2 echo "CRITICAL: Database connection lost while processing job $i!"
+    exit 1
+  fi
+  echo "Job $i processed successfully."
+done
+echo "Queue drained gracefully."
+"""
+
+
+[tasks.log-stress-test]
+description  = "Generates a lot of output to exercise log overflow behavior"
+log_max_size = "20mb"
+log_on_full  = "kill_task"
+run = """
+echo "WARNING: Starting log tsunami..."
+dd if=/dev/urandom bs=1M count=50 2>/dev/null | base64
+"""
+
+
+[tasks.metrics-collector-daemon]
+group       = "Services"
+description = "Long-running metrics collector kept alive by restart policy"
+restart     = "always"
+on_overlap  = "skip"
+run = """
+trap 'echo "SIGTERM received — shutting down gracefully."; exit 0' TERM INT
+iteration=0
+while true; do
+  iteration=$((iteration + 1))
+  uptime_s=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "N/A")
+  mem_free=$(awk '/MemAvailable/ {printf "%.0f MB", $2/1024}' /proc/meminfo 2>/dev/null || echo "N/A")
+  load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo "N/A")
+  echo "[$(date -Iseconds)] tick=$iteration uptime=${uptime_s}s mem_free=${mem_free} load=${load}"
+  sleep 30 &
+  wait $!
+done
+"""

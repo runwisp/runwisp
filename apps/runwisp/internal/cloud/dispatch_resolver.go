@@ -54,16 +54,12 @@ func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.Execution
 	task := &model.Task{
 		Name:         taskName,
 		ExecutionDef: execDef,
-		Execution: model.TaskExecution{
-			Concurrency: model.TaskConcurrency{
-				Limit:  1,
-				Policy: model.PolicyQueue,
-			},
-		},
+		Parallelism:  1,
+		OnOverlap:    model.PolicyQueue,
 	}
 
 	if dispatch.Timeout > 0 {
-		task.Execution.Timeout = fmt.Sprintf("%dms", dispatch.Timeout)
+		task.Timeout = fmt.Sprintf("%dms", dispatch.Timeout)
 	}
 
 	return task

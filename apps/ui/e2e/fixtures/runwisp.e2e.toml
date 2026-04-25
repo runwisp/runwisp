@@ -1,0 +1,26 @@
+[tasks.echo-task]
+description = "Emits a few lines of stdout for basic streaming tests"
+run = """
+set -eu
+echo "echo-line-1"
+echo "echo-line-2"
+echo "echo-line-3"
+"""
+
+[tasks.fail-task]
+description = "Exits non-zero after a little output"
+run = """
+set -eu
+echo "fail-line-1"
+>&2 echo "fail-line-2-stderr"
+exit 1
+"""
+
+[tasks.slow-task]
+description = "Sleeps for a while so the UI can observe a running state"
+run = """
+set -eu
+echo "slow-start"
+sleep 3
+echo "slow-end"
+"""

@@ -41,7 +41,7 @@ Thumbs.db
 # Environment
 .env
 .env.local
-runwisp.yaml
+runwisp.toml
 runwisp.db
 
 # Ignore Windows Zone.Identifier detritus

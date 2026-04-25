@@ -47,7 +47,7 @@ const (
 type taskState struct {
 	task   *model.Task
 	active []*ActiveRun
-	queue  []*model.Run // non-nil only when task.Execution.Concurrency.Policy == PolicyQueue
+	queue  []*model.Run // non-nil only when task.OnOverlap == PolicyQueue
 	cond   *sync.Cond   // non-nil only when policy == PolicyQueue
 }
 
@@ -111,7 +111,7 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 	}
 	ts.task = &taskCopy
 
-	if task.Execution.Concurrency.Policy == model.PolicyQueue && ts.cond == nil {
+	if task.OnOverlap == model.PolicyQueue && ts.cond == nil {
 		ts.queue = make([]*model.Run, 0)
 		ts.cond = sync.NewCond(&m.mu)
 		m.wg.Add(1)
@@ -147,7 +147,7 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 		return actionStart, nil
 	}
 
-	switch ts.task.Execution.Concurrency.Policy {
+	switch ts.task.OnOverlap {
 	case model.PolicySkip:
 		return actionRejected, fmt.Errorf("task already running, skipping (policy: skip)")
 	case model.PolicyQueue:
@@ -203,7 +203,7 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 			continue
 		}
 
-		if ts.task.Execution.Concurrency.Policy == model.PolicyQueue {
+		if ts.task.OnOverlap == model.PolicyQueue {
 			ts.queue = append(ts.queue, &r)
 			ts.cond.Signal()
 			result.Queued++
@@ -288,8 +288,8 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 	ctx := context.Background()
 	var cancel context.CancelFunc
 
-	if task.Execution.Timeout != "" {
-		if duration, err := time.ParseDuration(task.Execution.Timeout); err == nil {
+	if task.Timeout != "" {
+		if duration, err := time.ParseDuration(task.Timeout); err == nil {
 			ctx, cancel = context.WithTimeout(ctx, duration)
 		} else {
 			slog.Warn("Invalid timeout", "task", task.Name, "err", err)
@@ -389,10 +389,10 @@ func resolveRunOutcome(result *executor.ExecuteResult) runOutcome {
 }
 
 func (m *defaultTaskManager) getConcurrencyLimit(task *model.Task) int {
-	if task.Execution.Concurrency.Limit == 0 {
+	if task.Parallelism == 0 {
 		return DefaultConcurrencyLimit
 	}
-	return task.Execution.Concurrency.Limit
+	return task.Parallelism
 }
 
 // GetActiveRuns returns a copy of active runs for the given task.

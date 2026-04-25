@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/spf13/cobra"
 	"log/slog"
 )
@@ -17,59 +18,16 @@ var initForce bool
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Scaffold a runwisp.yaml with example tasks",
-	Long:  `Creates a new runwisp.yaml configuration file with commented example tasks and generates a random password. Use --force to overwrite an existing file.`,
+	Short: "Scaffold a runwisp.toml with example tasks",
+	Long:  `Creates a new runwisp.toml configuration file with commented example tasks and generates a random password. Use --force to overwrite an existing file.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runInit()
 	},
 }
 
 func init() {
-	initCmd.Flags().BoolVarP(&initForce, "force", "f", false, "overwrite existing runwisp.yaml")
+	initCmd.Flags().BoolVarP(&initForce, "force", "f", false, "overwrite existing runwisp.toml")
 }
-
-const configTemplate = `# RunWisp configuration
-# Documentation: https://github.com/runwisp/runwisp
-storage:
-  maxSize: 5gb
-  minFreeSpace: 500mb
-
-defaults:
-  timeout: 1h
-  logs:
-    maxSize: 100mb
-    overflow: tail
-  retention:
-    runs: 50
-    age: 30d
-
-tasks:
-  hello-world:
-    description: "A simple hello-world task"
-    trigger:
-      cron: "*/5 * * * *"
-    execution:
-      concurrency:
-        limit: 1
-        policy: queue
-    run: |
-      echo "Hello from RunWisp!"
-      echo "Current time: $(date)"
-
-  backup:
-    description: "Database backup (example)"
-    trigger:
-      cron: "0 2 * * *"
-    execution:
-      timeout: 30m
-      concurrency:
-        limit: 1
-        policy: skip
-    retention:
-      runs: 30
-    run: |
-      pg_dump mydb > /backups/mydb-$(date +%%F).sql
-`
 
 func runInit() error {
 	target := flags.CfgFile
@@ -78,8 +36,14 @@ func runInit() error {
 		return fmt.Errorf("%s already exists (use --force to overwrite)", target)
 	}
 
-	if err := os.WriteFile(target, []byte(configTemplate), 0644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", target, err)
+	if initForce {
+		if err := config.WriteInitForce(target); err != nil {
+			return fmt.Errorf("failed to write %s: %w", target, err)
+		}
+	} else {
+		if err := config.WriteInit(target); err != nil {
+			return fmt.Errorf("failed to write %s: %w", target, err)
+		}
 	}
 
 	password := generateInitPassword()

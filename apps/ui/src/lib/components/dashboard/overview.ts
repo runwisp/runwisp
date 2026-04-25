@@ -61,7 +61,7 @@ export function buildTaskOverviews(
         const lastRun = activeRun ?? recentRunsByTask.get(task.name);
         const lastStatus = lastRun ? displayStatus(lastRun.status, lastRun.end_reason) : undefined;
         const nextRunMs = toTimestamp(task.next_run_at);
-        const isApiOnly = Boolean(task.trigger?.api) && !task.trigger?.cron;
+        const isApiOnly = task.api_trigger && !task.cron;
 
         let state: OverviewTaskState = "idle";
         if (activeRun) {
@@ -81,10 +81,7 @@ export function buildTaskOverviews(
             state,
             nextRunMs,
             isApiOnly,
-            isLongRunning: isLongRunningTask(
-                task.execution?.restart,
-                task.execution?.concurrency?.limit,
-            ),
+            isLongRunning: isLongRunningTask(task.restart, task.parallelism),
         };
     });
 }
@@ -184,7 +181,7 @@ function matchesFilter(task: TaskOverview, filter: OverviewTaskFilter): boolean 
 function matchesSearch(task: TaskOverview, query: string): boolean {
     const group = task.task.group?.toLowerCase() ?? "";
     const description = task.task.description?.toLowerCase() ?? "";
-    const cron = task.task.trigger?.cron?.toLowerCase() ?? "";
+    const cron = task.task.cron?.toLowerCase() ?? "";
 
     return [task.task.name.toLowerCase(), group, description, cron].some((value) =>
         value.includes(query),

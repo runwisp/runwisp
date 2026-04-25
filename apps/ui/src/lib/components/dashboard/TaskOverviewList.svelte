@@ -241,7 +241,7 @@
                                 <p
                                     class={[
                                         "font-medium text-mist-950",
-                                        task.task.trigger?.cron ? "font-mono" : "",
+                                        task.task.cron ? "font-mono" : "",
                                     ]}
                                 >
                                     {formatTaskTriggerLabel(task)}

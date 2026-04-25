@@ -169,10 +169,8 @@ func TestDeleteOldRuns(t *testing.T) {
 	require.NoError(t, db.CreateRun(&run2))
 
 	task := &model.Task{
-		Name: "task1",
-		Retention: model.TaskRetention{
-			Age: "1d",
-		},
+		Name:    "task1",
+		KeepFor: "1d",
 	}
 
 	deleted, err := db.DeleteOldRuns(task)
@@ -201,10 +199,8 @@ func TestDeleteOldRunsByCount(t *testing.T) {
 	}
 
 	task := &model.Task{
-		Name: "task1",
-		Retention: model.TaskRetention{
-			Runs: 2,
-		},
+		Name:     "task1",
+		KeepRuns: 2,
 	}
 
 	deleted, err := db.DeleteOldRuns(task)

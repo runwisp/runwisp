@@ -22,10 +22,8 @@ func TestScheduler(t *testing.T) {
 
 	task := &model.Task{
 		Name: "task1",
-		Trigger: model.TaskTrigger{
-			Cron: "@every 1s",
-		},
-		Run: "echo hi",
+		Cron: "@every 1s",
+		Run:  "echo hi",
 	}
 	jm.UpsertTask(task)
 	tasks := map[string]*model.Task{"task1": task}

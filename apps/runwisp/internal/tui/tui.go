@@ -180,7 +180,7 @@ func PrintStartup(info StartupInfo) {
 			if i == last {
 				prefix = "└─"
 			}
-			schedule := task.Trigger.Cron
+			schedule := task.Cron
 			if schedule == "" {
 				schedule = "manual"
 			}
@@ -198,7 +198,7 @@ func PrintStartup(info StartupInfo) {
 	// --- Demo notice ---
 	if info.UsingDemo {
 		fmt.Fprintf(w, "  %s\n", yellowSt.Render("No config found — running with built-in demo task"))
-		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Run 'runwisp init' to create runwisp.yaml"))
+		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Run 'runwisp init' to create runwisp.toml"))
 		fmt.Fprintln(w)
 	}
 

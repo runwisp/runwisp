@@ -164,16 +164,14 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
 	for _, name := range taskNames {
 		j := svc.TasksMap[name]
 		tasks = append(tasks, model.TaskBrief{
-			Name:    j.Name,
-			Group:   j.Group,
-			Trigger: j.Trigger,
-			Execution: model.TaskExecution{
-				Restart: j.Execution.Restart,
-				Concurrency: model.TaskConcurrency{
-					Limit:  j.Execution.Concurrency.Limit,
-					Policy: j.Execution.Concurrency.Policy,
-				},
-			},
+			Name:        j.Name,
+			Group:       j.Group,
+			Cron:        j.Cron,
+			APITrigger:  j.APITrigger,
+			CatchUp:     j.CatchUp,
+			Restart:     j.Restart,
+			Parallelism: j.Parallelism,
+			OnOverlap:   j.OnOverlap,
 		})
 	}
 

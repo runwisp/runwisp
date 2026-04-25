@@ -4,72 +4,105 @@
 package config
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/runwisp/runwisp/internal/model"
-	"gopkg.in/yaml.v3"
 )
 
-type fileConfig struct {
-	Daemon   Daemon          `yaml:"daemon,omitempty"`
-	Storage  Storage         `yaml:"storage,omitempty"`
-	Defaults Defaults        `yaml:"defaults,omitempty"`
-	Tasks    taskDefinitions `yaml:"tasks"`
+// Config is the in-memory representation of runwisp.toml after load + defaults.
+type Config struct {
+	Tasks    []model.Task
+	Defaults Defaults
+	Storage  Storage
+	Daemon   Daemon
 }
 
-func (c *fileConfig) UnmarshalYAML(value *yaml.Node) error {
-	type rawFileConfig fileConfig
-	var raw rawFileConfig
-	if err := model.ValidateMappingKeys(value, "daemon", "storage", "defaults", "tasks"); err != nil {
-		return err
-	}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*c = fileConfig(raw)
-	return nil
+// Daemon holds daemon-wide toggles.
+type Daemon struct {
+	AllowCloudDispatch bool `toml:"allow_cloud_dispatch,omitempty"`
 }
 
-func (c fileConfig) intoConfig() *Config {
-	return &Config{
-		Tasks:    []model.Task(c.Tasks),
-		Defaults: c.Defaults,
-		Storage:  c.Storage,
-		Daemon:   c.Daemon,
-	}
+// Defaults provides fallback values applied to every task.
+type Defaults struct {
+	Timeout    string `toml:"timeout,omitempty"`
+	LogMaxSize string `toml:"log_max_size,omitempty"`
+	LogOnFull  string `toml:"log_on_full,omitempty"`
+	KeepRuns   int    `toml:"keep_runs,omitempty"`
+	KeepFor    string `toml:"keep_for,omitempty"`
 }
 
-type taskDefinitions []model.Task
+// Storage controls global disk-usage limits for log files.
+type Storage struct {
+	MaxSize      string `toml:"max_size,omitempty"`
+	MinFreeSpace string `toml:"min_free_space,omitempty"`
 
-func (d *taskDefinitions) UnmarshalYAML(value *yaml.Node) error {
-	if value.Kind == 0 || value.Tag == "!!null" {
-		return nil
+	MaxSizeBytes      int64 `toml:"-"`
+	MinFreeSpaceBytes int64 `toml:"-"`
+}
+
+// IsCloudShellEnabled reports whether the daemon accepts peer-dispatched shell tasks.
+func (cfg *Config) IsCloudShellEnabled() bool {
+	return cfg.Daemon.AllowCloudDispatch
+}
+
+// taskWire is the over-the-wire task shape used only during TOML decoding.
+// It exists so api_trigger can be distinguished between "absent" (nil, default true)
+// and "explicitly false" (&false).
+type taskWire struct {
+	Group       string `toml:"group,omitempty"`
+	Description string `toml:"description,omitempty"`
+
+	Cron       string                `toml:"cron,omitempty"`
+	APITrigger *bool                 `toml:"api_trigger,omitempty"`
+	CatchUp    model.MissedRunPolicy `toml:"catch_up,omitempty"`
+
+	Timeout     string                  `toml:"timeout,omitempty"`
+	Restart     model.RestartPolicy     `toml:"restart,omitempty"`
+	Parallelism int                     `toml:"parallelism,omitempty"`
+	OnOverlap   model.ConcurrencyPolicy `toml:"on_overlap,omitempty"`
+
+	RetryAttempts int    `toml:"retry_attempts,omitempty"`
+	RetryDelay    string `toml:"retry_delay,omitempty"`
+	RetryBackoff  string `toml:"retry_backoff,omitempty"`
+
+	LogMaxSize string `toml:"log_max_size,omitempty"`
+	LogOnFull  string `toml:"log_on_full,omitempty"`
+
+	KeepRuns int    `toml:"keep_runs,omitempty"`
+	KeepFor  string `toml:"keep_for,omitempty"`
+
+	Run string `toml:"run,omitempty"`
+}
+
+// tomlConfig is the over-the-wire config shape used only during TOML decoding.
+type tomlConfig struct {
+	Daemon   Daemon               `toml:"daemon,omitempty"`
+	Storage  Storage              `toml:"storage,omitempty"`
+	Defaults Defaults             `toml:"defaults,omitempty"`
+	Tasks    map[string]*taskWire `toml:"tasks,omitempty"`
+}
+
+func (w *taskWire) toTask(name string) model.Task {
+	apiTrigger := true
+	if w.APITrigger != nil {
+		apiTrigger = *w.APITrigger
 	}
-	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("tasks must be a mapping of task names to task definitions")
+	return model.Task{
+		Name:          name,
+		Group:         w.Group,
+		Description:   w.Description,
+		Cron:          w.Cron,
+		APITrigger:    apiTrigger,
+		CatchUp:       w.CatchUp,
+		Timeout:       w.Timeout,
+		Restart:       w.Restart,
+		Parallelism:   w.Parallelism,
+		OnOverlap:     w.OnOverlap,
+		RetryAttempts: w.RetryAttempts,
+		RetryDelay:    w.RetryDelay,
+		RetryBackoff:  w.RetryBackoff,
+		LogMaxSize:    w.LogMaxSize,
+		LogOnFull:     w.LogOnFull,
+		KeepRuns:      w.KeepRuns,
+		KeepFor:       w.KeepFor,
+		Run:           w.Run,
 	}
-
-	tasks := make([]model.Task, 0, len(value.Content)/2)
-	seen := make(map[string]struct{}, len(value.Content)/2)
-	for i := 0; i < len(value.Content); i += 2 {
-		name := strings.TrimSpace(value.Content[i].Value)
-		if name == "" {
-			return fmt.Errorf("task name is required")
-		}
-		if _, exists := seen[name]; exists {
-			return fmt.Errorf("duplicate task name: %s", name)
-		}
-		seen[name] = struct{}{}
-
-		var task model.Task
-		if err := value.Content[i+1].Decode(&task); err != nil {
-			return err
-		}
-		task.Name = name
-		tasks = append(tasks, task)
-	}
-
-	*d = tasks
-	return nil
 }

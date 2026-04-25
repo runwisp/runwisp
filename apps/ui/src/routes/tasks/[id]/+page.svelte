@@ -22,9 +22,7 @@
 
     const DEFAULT_CONCURRENCY_LIMIT = 1;
     let activeRunCount = $derived(runs.filter((r) => r.status === "running").length);
-    let concurrencyLimit = $derived(
-        task?.execution?.concurrency?.limit ?? DEFAULT_CONCURRENCY_LIMIT,
-    );
+    let concurrencyLimit = $derived(task?.parallelism ?? DEFAULT_CONCURRENCY_LIMIT);
     let concurrencyReached = $derived(triggering || activeRunCount >= concurrencyLimit);
 
     const pageData = new AsyncData(

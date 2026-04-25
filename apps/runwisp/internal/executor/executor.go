@@ -67,7 +67,7 @@ type Options struct {
 // New creates a routing executor with available backends.
 // CloudShellEnabled only controls what is reported to the cloud control plane;
 // the cloud dispatch path uses Availability to reject disallowed types.
-// Local tasks from runwisp.yaml always have shell access.
+// Local tasks from runwisp.toml always have shell access.
 func New(opts Options) Executor {
 	backends := make(map[string]Backend)
 	avail := Availability{
@@ -218,8 +218,8 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		LogPath:     logPath,
 		IdxPath:     idxPath,
 		TidxPath:    tidxPath,
-		MaxSize:     task.Logs.MaxSizeBytes,
-		Overflow:    task.Logs.Overflow,
+		MaxSize:     task.LogMaxSizeBytes,
+		Overflow:    task.LogOnFull,
 		CancelFunc:  cancelFunc,
 		MinFreeDisk: r.diskChecker.minFreeDisk,
 		LogDir:      r.logDir,

@@ -279,10 +279,10 @@ func (db *SQLiteDatabase) DeleteRun(id string) error {
 func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
 	uniqueRuns := make(map[string]model.Run)
 
-	if task.Retention.Age != "" {
-		parsedInterval, err := str2duration.ParseDuration(task.Retention.Age)
+	if task.KeepFor != "" {
+		parsedInterval, err := str2duration.ParseDuration(task.KeepFor)
 		if err != nil {
-			slog.Warn("Invalid retention age", "age", task.Retention.Age, "task", task.Name, "err", err)
+			slog.Warn("Invalid keep_for", "keep_for", task.KeepFor, "task", task.Name, "err", err)
 		} else {
 			cutoff := time.Now().Add(-parsedInterval)
 			if err := db.collectRuns(uniqueRuns,
@@ -294,11 +294,11 @@ func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
 		}
 	}
 
-	if len(uniqueRuns) < RetentionBatchSize && task.Retention.Runs > 0 {
+	if len(uniqueRuns) < RetentionBatchSize && task.KeepRuns > 0 {
 		remaining := RetentionBatchSize - len(uniqueRuns)
 		if err := db.collectRuns(uniqueRuns,
 			`SELECT `+runColumns+` FROM runs WHERE task_name = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-			task.Name, remaining, task.Retention.Runs,
+			task.Name, remaining, task.KeepRuns,
 		); err != nil {
 			return nil, fmt.Errorf("query retention runs for %s: %w", task.Name, err)
 		}

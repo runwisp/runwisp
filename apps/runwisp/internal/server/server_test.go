@@ -29,8 +29,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func ptrBool(v bool) *bool { return &v }
-
 func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.MockExecutor, string) {
 	repo := new(testutil.MockRunRepository)
 	exec := new(testutil.MockExecutor)
@@ -38,17 +36,11 @@ func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.
 	jm := runtime.NewTaskManager(exec, eb)
 
 	task := &model.Task{
-		Name: "task1",
-		Run:  "echo hi",
-		Trigger: model.TaskTrigger{
-			API: ptrBool(true),
-		},
-		Execution: model.TaskExecution{
-			Concurrency: model.TaskConcurrency{
-				Limit:  1,
-				Policy: model.PolicyQueue,
-			},
-		},
+		Name:        "task1",
+		Run:         "echo hi",
+		APITrigger:  true,
+		Parallelism: 1,
+		OnOverlap:   model.PolicyQueue,
 	}
 	jm.UpsertTask(task)
 	tasks := map[string]*model.Task{"task1": task}

@@ -16,7 +16,7 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     const port = Number(process.env.E2E_PORT) || 19287;
     const runnerRoot = resolve(__dirname, "../../runwisp");
     const binaryPath = join(runnerRoot, "runwisp");
-    const configPath = resolve(__dirname, "fixtures/runwisp.e2e.yaml");
+    const configPath = resolve(__dirname, "fixtures/runwisp.e2e.toml");
     const dataDir = await mkdtemp(join(tmpdir(), "runwisp-e2e-"));
 
     const daemon = spawn(

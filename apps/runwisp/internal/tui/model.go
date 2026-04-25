@@ -234,7 +234,7 @@ func (m *Model) taskDisplayByName(name string) *model.TaskBrief {
 // isLongRunningTask returns true if the task has restart:always and concurrency limit <= 1.
 func (m *Model) isLongRunningTask(name string) bool {
 	task := m.taskDisplayByName(name)
-	return task != nil && model.IsLongRunningTask(task.Execution.Restart, task.Execution.Concurrency.Limit)
+	return task != nil && model.IsLongRunningTask(task.Restart, task.Parallelism)
 }
 
 // latestRunningExec returns the most recent running execution for the given task, if any.
