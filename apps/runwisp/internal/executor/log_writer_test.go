@@ -39,10 +39,10 @@ func TestLogWriter_BasicWrite(t *testing.T) {
 	assert.False(t, w.Truncated())
 }
 
-func TestLogWriter_HeadOverflow(t *testing.T) {
+func TestLogWriter_DropNewOverflow(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 100
-	opts.Overflow = "head"
+	opts.Overflow = "drop_new"
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
@@ -60,10 +60,10 @@ func TestLogWriter_HeadOverflow(t *testing.T) {
 	assert.Contains(t, string(data), "SYSTEM")
 }
 
-func TestLogWriter_KillOverflow(t *testing.T) {
+func TestLogWriter_KillTaskOverflow(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 100
-	opts.Overflow = "kill"
+	opts.Overflow = "kill_task"
 	cancelled := false
 	opts.CancelFunc = func() { cancelled = true }
 	w, err := NewLogWriter(opts)
@@ -77,10 +77,10 @@ func TestLogWriter_KillOverflow(t *testing.T) {
 	assert.True(t, w.Truncated())
 }
 
-func TestLogWriter_TailRotation(t *testing.T) {
+func TestLogWriter_DropOldRotation(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 200
-	opts.Overflow = "tail"
+	opts.Overflow = "drop_old"
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
@@ -113,7 +113,7 @@ func TestLogWriter_TailRotation(t *testing.T) {
 func TestLogWriter_UnlimitedSize(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 0
-	opts.Overflow = "tail"
+	opts.Overflow = "drop_old"
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
@@ -132,7 +132,7 @@ func TestLogWriter_UnlimitedSize(t *testing.T) {
 func TestLogWriter_MultipleRotationsMeta(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 300
-	opts.Overflow = "tail"
+	opts.Overflow = "drop_old"
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
@@ -241,7 +241,7 @@ func TestLogWriter_TimestampIndex_TimeBasedEntries(t *testing.T) {
 func TestLogWriter_TimestampIndex_Rotation(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 200
-	opts.Overflow = "tail"
+	opts.Overflow = "drop_old"
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 

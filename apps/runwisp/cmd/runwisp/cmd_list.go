@@ -37,13 +37,13 @@ func runList() error {
 	fmt.Fprintln(w, "----\t--------\t-----------\t------\t---\t-----------")
 
 	for _, task := range cfg.Tasks {
-		schedule := task.Trigger.Cron
+		schedule := task.Cron
 		if schedule == "" {
 			schedule = "(manual)"
 		}
 
 		api := "no"
-		if task.Trigger.APIEnabled() {
+		if task.APITrigger {
 			api = "yes"
 		}
 
@@ -55,8 +55,8 @@ func runList() error {
 		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n",
 			task.Name,
 			schedule,
-			task.Execution.Concurrency.Limit,
-			task.Execution.Concurrency.Policy,
+			task.Parallelism,
+			task.OnOverlap,
 			api,
 			desc,
 		)

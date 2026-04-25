@@ -47,7 +47,7 @@ func (scheduler *Scheduler) Start() (ScheduleResult, error) {
 
 	result := ScheduleResult{}
 	for _, task := range scheduler.tasks {
-		if task.Trigger.Cron == "" {
+		if task.Cron == "" {
 			continue
 		}
 		if err := scheduler.addTask(task); err != nil {
@@ -79,7 +79,7 @@ func (scheduler *Scheduler) Stop() {
 
 func (scheduler *Scheduler) addTask(task *model.Task) error {
 	taskName := task.Name
-	entryID, err := scheduler.cron.AddFunc(task.Trigger.Cron, func() {
+	entryID, err := scheduler.cron.AddFunc(task.Cron, func() {
 		slog.Debug("Cron triggering task", "name", taskName)
 		if _, err := scheduler.taskManager.TriggerRun(taskName, model.TriggeredByCron); err != nil {
 			slog.Error("Failed to trigger task", "name", taskName, "err", err)

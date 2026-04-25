@@ -17,13 +17,9 @@ import (
 
 func testTask(name string, policy model.ConcurrencyPolicy, limit int) *model.Task {
 	return &model.Task{
-		Name: name,
-		Execution: model.TaskExecution{
-			Concurrency: model.TaskConcurrency{
-				Limit:  limit,
-				Policy: policy,
-			},
-		},
+		Name:        name,
+		Parallelism: limit,
+		OnOverlap:   policy,
 	}
 }
 

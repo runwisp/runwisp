@@ -430,7 +430,7 @@ func (v *InfoView) renderTasksSection(w int) []string {
 	lines = append(lines, padLine("", w, colorBg))
 
 	for _, task := range v.info.Tasks {
-		sched := task.Trigger.Cron
+		sched := task.Cron
 		if sched == "" {
 			sched = "manual"
 		}

@@ -29,51 +29,32 @@ The resulting `runwisp` binary is self-contained. Copy it anywhere in your `$PAT
 ## Quick Start
 
 ```bash
-./runwisp init
-./runwisp add hello "*/5 * * * *" "echo Hello, World!"
-./runwisp # Launch RunWisp and open the terminal UI
+./runwisp init     # scaffold a runwisp.toml
+./runwisp validate # sanity-check the config
+./runwisp          # launch RunWisp and open the terminal UI
 ```
 
-Or add tasks interactively:
+Tasks are stored in `runwisp.toml` — edit it with your editor. Full config example:
 
-```bash
-./runwisp add
-```
+```toml
+[storage]
+max_size       = "5gb"
+min_free_space = "500mb"
 
-Edit existing tasks:
+[defaults]
+timeout      = "1h"
+log_max_size = "100mb"
+log_on_full  = "drop_old"
+keep_runs    = 50
+keep_for     = "30d"
 
-```bash
-./runwisp edit hello
-```
-
-Tasks are stored in `runwisp.yaml`. Full config example:
-
-```yaml
-storage:
-  maxSize: 5gb
-  minFreeSpace: 500mb
-
-defaults:
-  timeout: 1h
-  logs:
-    maxSize: 100mb
-    overflow: tail
-  retention:
-    runs: 50
-    age: 30d
-
-tasks:
-  hello-world:
-    description: "Simple hello world task"
-    trigger:
-      cron: "*/5 * * * *"
-    execution:
-      concurrency:
-        limit: 1
-        policy: queue
-    run: |
-      echo "Hello, World!"
-      echo "Current date: $(date)"
+[tasks.hello-world]
+description = "Simple hello world task"
+cron        = "*/5 * * * *"
+run = """
+echo "Hello, World!"
+echo "Current date: $(date)"
+"""
 ```
 
 RunWisp listens on port 8080 by default. Open `http://localhost:8080` to access the web dashboard.

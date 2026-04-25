@@ -12,7 +12,7 @@
 
 **The open-source cron replacement and process supervisor with a built-in web dashboard.**
 
-One binary. One YAML file. Zero dependencies. Full visibility.
+One binary. One TOML file. Zero dependencies. Full visibility.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](apps/runwisp/)
@@ -24,7 +24,7 @@ One binary. One YAML file. Zero dependencies. Full visibility.
 
 ---
 
-> **TL;DR** — RunWisp replaces `crond`, `crontab`, and `supervisord` with a single small Go binary. Define tasks in YAML, get a web dashboard, terminal UI, REST API, real-time log streaming, and execution history out of the box. No Python, no Node.js, no external database.
+> **TL;DR** — RunWisp replaces `crond`, `crontab`, and `supervisord` with a single small Go binary. Define tasks in TOML, get a web dashboard, terminal UI, REST API, real-time log streaming, and execution history out of the box. No Python, no Node.js, no external database.
 
 ---
 
@@ -32,9 +32,9 @@ One binary. One YAML file. Zero dependencies. Full visibility.
 
 If you've ever SSH'd into a server to figure out _why_ a cron job silently failed at 3 AM, RunWisp is for you.
 
-- **`systemd` timers are tedious and OS-locked.** Writing `.timer` and `.service` files for every job is painful, and `journalctl` doesn't work in Docker or macOS. RunWisp provides scheduling, concurrency control (queue/skip/terminate), and logging in a single cross-platform `runwisp.yaml`.
+- **`systemd` timers are tedious and OS-locked.** Writing `.timer` and `.service` files for every job is painful, and `journalctl` doesn't work in Docker or macOS. RunWisp provides scheduling, concurrency control (queue/skip/terminate), and logging in a single cross-platform `runwisp.toml`.
 - **Containerized cron lacks observability.** Lightweight runners (like `supercronic`) fix the container execution problem but dump everything to `stdout`. RunWisp gives you segregated, per-task log retention, persistent execution history, and one-click re-triggering.
-- **End the DevOps translation game.** Developers define their task schedules, retries, and limits in a single `runwisp.yaml` file that lives in the repo. Because an identical binary handles scheduling across a local MacBook, integration branches, and production, dev environments match prod exactly. DevOps teams never have to manually provision, sync, or troubleshoot OS-level timers across varying infrastructures again.
+- **End the DevOps translation game.** Developers define their task schedules, retries, and limits in a single `runwisp.toml` file that lives in the repo. Because an identical binary handles scheduling across a local MacBook, integration branches, and production, dev environments match prod exactly. DevOps teams never have to manually provision, sync, or troubleshoot OS-level timers across varying infrastructures again.
 
 ---
 
@@ -72,36 +72,23 @@ curl -fsSL https://github.com/runwisp/runwisp/releases/latest/download/runwisp-l
 chmod +x runwisp
 ```
 
-**2. Define your tasks** in `runwisp.yaml`:
+**2. Define your tasks** in `runwisp.toml`:
 
-```yaml
-tasks:
-  backup-db:
-    trigger:
-      cron: "0 2 * * *" # every night at 2 AM
-      api: true # Allow to run from Web UI or API (defaults to false)
-    execution:
-      concurrency:
-        limit: 1
-        policy: skip # don't stack if the previous run is still going
-    retention:
-      runs: 30
-    run: pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz
+```toml
+[tasks.backup-db]
+cron       = "0 2 * * *"  # every night at 2 AM
+on_overlap = "skip"       # don't stack if the previous run is still going
+keep_runs  = 30
+run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
 
-  health-check:
-    trigger:
-      cron: "*/5 * * * *" # every 5 minutes
-    run: curl -sf https://myapp.example.com/health || exit 1
+[tasks.health-check]
+cron = "*/5 * * * *"       # every 5 minutes
+run  = "curl -sf https://myapp.example.com/health || exit 1"
 
-  worker:
-    trigger:
-      api: true
-    execution:
-      restart: always # auto-restart on crash
-      concurrency:
-        limit: 1
-        policy: skip
-    run: node /app/worker.js # long-running process
+[tasks.worker]
+restart    = "always"      # auto-restart on crash
+on_overlap = "skip"
+run        = "node /app/worker.js"  # long-running process
 ```
 
 **3. Start RunWisp:**
@@ -123,16 +110,16 @@ That's it. Your tasks are running, monitored, and accessible through the web UI,
 ### Scheduling & Execution
 
 - **Cron scheduling** — standard cron expressions, per-task concurrency policies (`queue`, `skip`, `terminate`)
-- **Process supervision** — long-running daemons with `execution.restart: always`, crash recovery, and graceful shutdown
-- **Retries with backoff** — configurable `retry.limit`, `retry.delaySec`, and `retry.backoff` (linear or exponential)
-- **Timeouts** — per-task `execution.timeout` enforcement, automatic kill on deadline
-- **Catchup policies** — configurable missed-run behaviour (`latest`, `all`, `skip`) via `trigger.catchup`
+- **Process supervision** — long-running daemons with `restart = "always"`, crash recovery, and graceful shutdown
+- **Retries with backoff** — configurable `retry_attempts`, `retry_delay`, and `retry_backoff` (linear or exponential)
+- **Timeouts** — per-task `timeout` enforcement, automatic kill on deadline
+- **Catchup policies** — configurable missed-run behaviour (`latest`, `all`, `skip`) via `catch_up`
 
 ### Observability
 
 - **Real-time log streaming** — live stdout/stderr over SSE, viewable in the web UI and TUI
 - **Execution history** — every run is recorded in SQLite with exit code, duration, start/end timestamps
-- **Log rotation** — per-task `logs.maxSize` with overflow policies (`tail`, `head`, `kill`)
+- **Log rotation** — per-task `log_max_size` with overflow policies (`drop_new`, `drop_old`, `kill_task`)
 
 ### Interfaces
 
@@ -144,8 +131,8 @@ That's it. Your tasks are running, monitored, and accessible through the web UI,
 
 - **Single binary, zero dependencies** — compiled Go with embedded SQLite and embedded web UI
 - **~15 MB RAM at idle** — designed for VPS, Raspberry Pi, and edge deployments
-- **YAML configuration** — one file, version-controllable, reviewable in pull requests
-- **Disk safeguards** — `storage.maxSize` and `storage.minFreeSpace` limits to prevent runaway log growth
+- **TOML configuration** — one file, version-controllable, reviewable in pull requests
+- **Disk safeguards** — `storage.max_size` and `storage.min_free_space` limits to prevent runaway log growth
 
 ---
 
@@ -163,7 +150,7 @@ That's it. Your tasks are running, monitored, and accessible through the web UI,
 | **Log rotation**        | External (logrotate) | journald           | Built-in    | **Built-in, per-task**      |
 | **Execution history**   | No                   | `journalctl`       | No          | **SQLite, browsable in UI** |
 | **Single binary**       | Yes                  | Part of systemd    | No (Python) | **Yes**                     |
-| **Config format**       | `crontab` syntax     | INI unit files     | INI files   | **Single YAML file**        |
+| **Config format**       | `crontab` syntax     | INI unit files     | INI files   | **Single TOML file**        |
 
 ---
 
@@ -188,66 +175,45 @@ If you need DAG pipelines or enterprise-level orchestration, tools like Dagu or 
 
 ## Configuration Reference
 
-RunWisp is configured through a single `runwisp.yaml` file. Here's a complete example:
+RunWisp is configured through a single `runwisp.toml` file. Here's a complete example:
 
-```yaml
+```toml
 # Disk-usage safeguards
-storage:
-  maxSize: 5gb
-  minFreeSpace: 500mb
+[storage]
+max_size       = "5gb"
+min_free_space = "500mb"
 
 # Global defaults (applied to every task unless overridden)
-defaults:
-  timeout: 1h
-  logs:
-    maxSize: 100mb
-    overflow: tail
-  retention:
-    runs: 50
-    age: 30d
+[defaults]
+timeout      = "1h"
+log_max_size = "100mb"
+log_on_full  = "drop_old"
+keep_runs    = 50
+keep_for     = "30d"
 
-# Tasks (map keyed by task ID)
-tasks:
-  backup-db:
-    group: Backups
-    description: "Nightly database backup"
-    trigger:
-      cron: "0 2 * * *"
-      api: true
-    execution:
-      timeout: 30m
-      concurrency:
-        limit: 1
-        policy: skip
-    retention:
-      runs: 30
-    run: pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz
+[tasks.backup-db]
+group       = "Backups"
+description = "Nightly database backup"
+cron        = "0 2 * * *"
+timeout     = "30m"
+on_overlap  = "skip"
+keep_runs   = 30
+run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
 
-  process-event-queue:
-    description: "Worker that retries with exponential backoff"
-    trigger:
-      cron: "*/10 * * * *"
-      api: true
-    execution:
-      concurrency:
-        limit: 1
-        policy: queue
-    retry:
-      limit: 3
-      delaySec: 2
-      backoff: exponential
-    run: /usr/local/bin/process-queue
+[tasks.process-event-queue]
+description    = "Worker that retries with exponential backoff"
+cron           = "*/10 * * * *"
+on_overlap     = "queue"
+retry_attempts = 3
+retry_delay    = "2s"
+retry_backoff  = "exponential"
+run = "/usr/local/bin/process-queue"
 
-  metrics-daemon:
-    description: "Always-on metrics collector"
-    trigger:
-      api: true
-    execution:
-      restart: always
-      concurrency:
-        limit: 1
-        policy: skip
-    run: /usr/local/bin/metrics-agent
+[tasks.metrics-daemon]
+description = "Always-on metrics collector"
+restart     = "always"
+on_overlap  = "skip"
+run         = "/usr/local/bin/metrics-agent"
 ```
 
 ---
@@ -258,7 +224,7 @@ tasks:
 
 |                                                     |                                    |
 | --------------------------------------------------- | ---------------------------------- |
-| [Example Config](apps/runwisp/runwisp.example.yaml) | Annotated example with all options |
+| [Example Config](apps/runwisp/runwisp.example.toml) | Annotated example with all options |
 | [Contributing](CONTRIBUTING.md)                     | How to contribute                  |
 | [Security Policy](SECURITY.md)                      | Reporting vulnerabilities          |
 

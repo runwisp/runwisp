@@ -35,19 +35,19 @@ binary="${workdir}/runwisp"
 
 binary_bytes=$(stat -c%s "${binary}")
 
-cat >"${workdir}/runwisp.yaml" <<'YAML'
-storage:
-  maxSize: 1gb
-  minFreeSpace: 100mb
-defaults:
-  timeout: 1h
-tasks:
-  bench:
-    description: "bench placeholder"
-    trigger:
-      cron: "0 0 1 1 *"
-    run: "true"
-YAML
+cat >"${workdir}/runwisp.toml" <<'TOML'
+[storage]
+max_size       = "1gb"
+min_free_space = "100mb"
+
+[defaults]
+timeout = "1h"
+
+[tasks.bench]
+description = "bench placeholder"
+cron        = "0 0 1 1 *"
+run         = "true"
+TOML
 
 export RUNWISP_PASSWORD="benchpass"
 
@@ -56,7 +56,7 @@ port=$(( (RANDOM % 10000) + 40000 ))
 
 (
     cd "${workdir}"
-    "${binary}" daemon --port "${port}" --config runwisp.yaml --data "${workdir}/data" \
+    "${binary}" daemon --port "${port}" --config runwisp.toml --data "${workdir}/data" \
         >"${workdir}/daemon.log" 2>&1 &
     echo $! >"${workdir}/pid"
 )

@@ -46,23 +46,18 @@ func init() {
 // so that `./runwisp` works out of the box with zero setup.
 var demoTask = model.Task{
 	Name:        "hello-world",
-	Description: "Demo task — runs every minute. Create a runwisp.yaml to define your own tasks.",
+	Description: "Demo task — runs every minute. Create a runwisp.toml to define your own tasks.",
 	Run: `echo "👋 Hello from RunWisp!"
 echo "Current time: $(date)"
 echo ""
 echo "This is a built-in demo task."
-echo "Create a runwisp.yaml file to define your own tasks:"
+echo "Create a runwisp.toml file to define your own tasks:"
 echo "  runwisp init"
 `,
-	Trigger: model.TaskTrigger{
-		Cron: "* * * * *",
-	},
-	Execution: model.TaskExecution{
-		Concurrency: model.TaskConcurrency{
-			Limit:  1,
-			Policy: model.PolicySkip,
-		},
-	},
+	Cron:        "* * * * *",
+	APITrigger:  true,
+	Parallelism: 1,
+	OnOverlap:   model.PolicySkip,
 }
 
 func runDaemon(mode daemonMode) error {
@@ -197,7 +192,7 @@ func runDaemon(mode daemonMode) error {
 
 // logSecurityWarnings emits log warnings for security-sensitive configurations.
 func logSecurityWarnings(cfg *daemonConfig) {
-	if cfg.Config.Daemon.CloudShellTasks {
+	if cfg.Config.Daemon.AllowCloudDispatch {
 		slog.Warn("Cloud shell dispatch enabled — the cloud control plane can execute arbitrary shell commands on this host")
 	}
 	if flags.Host != "127.0.0.1" && flags.Host != "::1" && flags.Host != "localhost" {

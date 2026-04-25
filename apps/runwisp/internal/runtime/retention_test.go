@@ -26,10 +26,8 @@ func TestRetentionCleaner(t *testing.T) {
 	now := time.Now()
 
 	task := &model.Task{
-		Name: "task1",
-		Retention: model.TaskRetention{
-			Age: "1d",
-		},
+		Name:    "task1",
+		KeepFor: "1d",
 	}
 	tasks := map[string]*model.Task{"task1": task}
 

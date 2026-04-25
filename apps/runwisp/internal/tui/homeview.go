@@ -200,8 +200,8 @@ func renderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 
 	// Schedule + Run Now button.
 	schedule := "manual"
-	if task != nil && task.Trigger.Cron != "" {
-		schedule = task.Trigger.Cron
+	if task != nil && task.Cron != "" {
+		schedule = task.Cron
 	}
 	schedInfo := "  Schedule: " + schedule
 	if nextRun := nextCronRun(schedule); nextRun != "" {

@@ -4,12 +4,9 @@
 package model
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 var taskNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
@@ -22,39 +19,32 @@ func SanitizeTaskName(name string) string {
 
 // Task describes a runnable task loaded from configuration.
 type Task struct {
-	Name         string        `yaml:"-" json:"name"`
-	Group        string        `yaml:"group,omitempty" json:"group,omitempty"`
-	Description  string        `yaml:"description,omitempty" json:"description,omitempty"`
-	Trigger      TaskTrigger   `yaml:"trigger,omitempty" json:"trigger,omitempty"`
-	Execution    TaskExecution `yaml:"execution,omitempty" json:"execution,omitempty"`
-	Retry        TaskRetry     `yaml:"retry,omitempty" json:"retry,omitempty"`
-	Logs         TaskLogs      `yaml:"logs,omitempty" json:"logs,omitempty"`
-	Retention    TaskRetention `yaml:"retention,omitempty" json:"retention,omitempty"`
-	Run          string        `yaml:"run,omitempty" json:"-"`
-	ExecutionDef ExecutionDef  `yaml:"-" json:"-"`
-}
+	Name        string `toml:"-"                     json:"name"`
+	Group       string `toml:"group,omitempty"       json:"group,omitempty"`
+	Description string `toml:"description,omitempty" json:"description,omitempty"`
 
-// UnmarshalYAML validates the supported task keys before decoding.
-func (t *Task) UnmarshalYAML(value *yaml.Node) error {
-	type rawTask Task
-	var raw rawTask
-	if err := ValidateMappingKeys(value,
-		"group",
-		"description",
-		"trigger",
-		"execution",
-		"retry",
-		"logs",
-		"retention",
-		"run",
-	); err != nil {
-		return err
-	}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*t = Task(raw)
-	return nil
+	Cron       string          `toml:"cron,omitempty"        json:"cron,omitempty"`
+	APITrigger bool            `toml:"api_trigger,omitempty" json:"api_trigger"`
+	CatchUp    MissedRunPolicy `toml:"catch_up,omitempty"    json:"catch_up,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
+
+	Timeout     string            `toml:"timeout,omitempty"     json:"timeout,omitempty"`
+	Restart     RestartPolicy     `toml:"restart,omitempty"     json:"restart,omitempty" enum:"never,always,on_failure" doc:"Whether and when a task is restarted after completion"`
+	Parallelism int               `toml:"parallelism,omitempty" json:"parallelism,omitempty"`
+	OnOverlap   ConcurrencyPolicy `toml:"on_overlap,omitempty"  json:"on_overlap,omitempty" enum:"queue,skip,terminate" doc:"How overlapping runs are handled"`
+
+	RetryAttempts int    `toml:"retry_attempts,omitempty" json:"retry_attempts,omitempty"`
+	RetryDelay    string `toml:"retry_delay,omitempty"    json:"retry_delay,omitempty"`
+	RetryBackoff  string `toml:"retry_backoff,omitempty"  json:"retry_backoff,omitempty"`
+
+	LogMaxSize      string `toml:"log_max_size,omitempty" json:"log_max_size,omitempty"`
+	LogOnFull       string `toml:"log_on_full,omitempty"  json:"log_on_full,omitempty" enum:"drop_new,drop_old,kill_task" doc:"What to do when log output exceeds log_max_size"`
+	LogMaxSizeBytes int64  `toml:"-"                       json:"-"`
+
+	KeepRuns int    `toml:"keep_runs,omitempty" json:"keep_runs,omitempty"`
+	KeepFor  string `toml:"keep_for,omitempty"  json:"keep_for,omitempty"`
+
+	Run          string       `toml:"run,omitempty" json:"-"`
+	ExecutionDef ExecutionDef `toml:"-"             json:"-"`
 }
 
 // ResolvedExecutionDef returns the runtime execution definition for the task.
@@ -66,147 +56,6 @@ func (t *Task) ResolvedExecutionDef() ExecutionDef {
 		return nil
 	}
 	return &ShellExecution{Script: t.Run}
-}
-
-type TaskTrigger struct {
-	Cron    string          `yaml:"cron,omitempty" json:"cron,omitempty"`
-	API     *bool           `yaml:"api,omitempty" json:"api"`
-	Catchup MissedRunPolicy `yaml:"catchup,omitempty" json:"catchup,omitempty" enum:"latest,all,none" doc:"What to do when cron ticks are missed during downtime"`
-}
-
-// APIEnabled reports whether the task can be triggered via the API.
-// Defaults to true when the field is not explicitly set.
-func (t *TaskTrigger) APIEnabled() bool {
-	return t.API == nil || *t.API
-}
-
-func (t *TaskTrigger) UnmarshalYAML(value *yaml.Node) error {
-	type rawTaskTrigger TaskTrigger
-	var raw rawTaskTrigger
-	if err := ValidateMappingKeys(value, "cron", "api", "catchup"); err != nil {
-		return err
-	}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*t = TaskTrigger(raw)
-	return nil
-}
-
-type TaskExecution struct {
-	Timeout     string          `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	Restart     RestartPolicy   `yaml:"restart,omitempty" json:"restart,omitempty" enum:"never,always,on-failure" doc:"Whether and when a task is restarted after completion"`
-	Concurrency TaskConcurrency `yaml:"concurrency,omitempty" json:"concurrency,omitempty"`
-}
-
-func (t *TaskExecution) UnmarshalYAML(value *yaml.Node) error {
-	type rawTaskExecution TaskExecution
-	var raw rawTaskExecution
-	if err := ValidateMappingKeys(value, "timeout", "restart", "concurrency"); err != nil {
-		return err
-	}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*t = TaskExecution(raw)
-	return nil
-}
-
-type TaskConcurrency struct {
-	Limit  int               `yaml:"limit,omitempty" json:"limit"`
-	Policy ConcurrencyPolicy `yaml:"policy,omitempty" json:"policy,omitempty" enum:"queue,skip,terminate" doc:"How overlapping runs are handled"`
-}
-
-func (t *TaskConcurrency) UnmarshalYAML(value *yaml.Node) error {
-	type rawTaskConcurrency TaskConcurrency
-	var raw rawTaskConcurrency
-	if err := ValidateMappingKeys(value, "limit", "policy"); err != nil {
-		return err
-	}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*t = TaskConcurrency(raw)
-	return nil
-}
-
-type TaskRetry struct {
-	Limit    int    `yaml:"limit,omitempty" json:"limit,omitempty"`
-	DelaySec int    `yaml:"delaySec,omitempty" json:"delaySec,omitempty"`
-	Backoff  string `yaml:"backoff,omitempty" json:"backoff,omitempty"`
-}
-
-func (t *TaskRetry) UnmarshalYAML(value *yaml.Node) error {
-	type rawTaskRetry TaskRetry
-	var raw rawTaskRetry
-	if err := ValidateMappingKeys(value, "limit", "delaySec", "backoff"); err != nil {
-		return err
-	}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*t = TaskRetry(raw)
-	return nil
-}
-
-type TaskLogs struct {
-	MaxSize      string `yaml:"maxSize,omitempty" json:"maxSize,omitempty"`
-	Overflow     string `yaml:"overflow,omitempty" json:"overflow,omitempty"`
-	MaxSizeBytes int64  `yaml:"-" json:"-"`
-}
-
-func (t *TaskLogs) UnmarshalYAML(value *yaml.Node) error {
-	type rawTaskLogs TaskLogs
-	var raw rawTaskLogs
-	if err := ValidateMappingKeys(value, "maxSize", "overflow"); err != nil {
-		return err
-	}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*t = TaskLogs(raw)
-	return nil
-}
-
-type TaskRetention struct {
-	Runs int    `yaml:"runs,omitempty" json:"runs,omitempty"`
-	Age  string `yaml:"age,omitempty" json:"age,omitempty"`
-}
-
-func (t *TaskRetention) UnmarshalYAML(value *yaml.Node) error {
-	type rawTaskRetention TaskRetention
-	var raw rawTaskRetention
-	if err := ValidateMappingKeys(value, "runs", "age"); err != nil {
-		return err
-	}
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*t = TaskRetention(raw)
-	return nil
-}
-
-func ValidateMappingKeys(value *yaml.Node, allowedKeys ...string) error {
-	if value.Kind == 0 || value.Tag == "!!null" {
-		return nil
-	}
-	if value.Kind != yaml.MappingNode {
-		return nil
-	}
-
-	allowed := make(map[string]struct{}, len(allowedKeys))
-	for _, key := range allowedKeys {
-		allowed[key] = struct{}{}
-	}
-
-	for i := 0; i < len(value.Content); i += 2 {
-		key := value.Content[i].Value
-		if _, ok := allowed[key]; !ok {
-			return fmt.Errorf("unknown field %q", key)
-		}
-	}
-
-	return nil
 }
 
 // RunPhase captures the high-level lifecycle phase of a run.
@@ -258,16 +107,23 @@ type RestartPolicy string
 const (
 	RestartNever     RestartPolicy = "never"
 	RestartAlways    RestartPolicy = "always"
-	RestartOnFailure RestartPolicy = "on-failure"
+	RestartOnFailure RestartPolicy = "on_failure"
 )
 
 // MissedRunPolicy controls what happens when cron ticks are missed (e.g. daemon downtime).
 type MissedRunPolicy string
 
 const (
-	MissedRunLatest MissedRunPolicy = "latest" // trigger one catch-up run for the most recent missed tick
-	MissedRunAll    MissedRunPolicy = "all"    // trigger a run for every missed tick
-	MissedRunNone   MissedRunPolicy = "none"   // skip missed ticks entirely
+	MissedRunLatest MissedRunPolicy = "latest" // one catch-up run for the most recent missed tick
+	MissedRunAll    MissedRunPolicy = "all"    // one run per missed tick
+	MissedRunSkip   MissedRunPolicy = "skip"   // drop missed ticks
+)
+
+// Log overflow behavior when task output exceeds log_max_size.
+const (
+	LogOverflowDropNew  = "drop_new"  // stop writing; keep older output (task keeps running)
+	LogOverflowDropOld  = "drop_old"  // rotate: keep recent output (task keeps running)
+	LogOverflowKillTask = "kill_task" // terminate the task
 )
 
 // Run represents a persisted execution.
@@ -353,12 +209,16 @@ type DaemonInfo struct {
 	Capabilities []CapInfo   `json:"capabilities"`
 }
 
-// TaskBrief is a trimmed task descriptor.
+// TaskBrief is a trimmed task descriptor exposed via the API.
 type TaskBrief struct {
-	Name      string        `json:"name"`
-	Group     string        `json:"group,omitempty"`
-	Trigger   TaskTrigger   `json:"trigger,omitempty"`
-	Execution TaskExecution `json:"execution,omitempty"`
+	Name        string            `json:"name"`
+	Group       string            `json:"group,omitempty"`
+	Cron        string            `json:"cron,omitempty"`
+	APITrigger  bool              `json:"api_trigger"`
+	CatchUp     MissedRunPolicy   `json:"catch_up,omitempty"`
+	Restart     RestartPolicy     `json:"restart,omitempty"`
+	Parallelism int               `json:"parallelism,omitempty"`
+	OnOverlap   ConcurrencyPolicy `json:"on_overlap,omitempty"`
 }
 
 // CapInfo describes a daemon capability.
@@ -375,9 +235,9 @@ type RunSummary struct {
 	LastFailure *time.Time `json:"last_failure,omitempty" doc:"Timestamp of most recent failure"`
 }
 
-// IsLongRunningTask returns true for always-restart tasks with concurrency <= 1.
-func IsLongRunningTask(restartPolicy RestartPolicy, concurrencyLimit int) bool {
-	return restartPolicy == RestartAlways && concurrencyLimit <= 1
+// IsLongRunningTask reports whether the task is an always-on daemon run.
+func IsLongRunningTask(restartPolicy RestartPolicy, parallelism int) bool {
+	return restartPolicy == RestartAlways && parallelism <= 1
 }
 
 // TaskRegistration is a one-to-one per-task record for metadata that has no

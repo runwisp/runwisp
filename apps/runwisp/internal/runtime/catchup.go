@@ -26,7 +26,7 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
 	for _, task := range tasks {
-		if task.Trigger.Cron == "" || task.Trigger.Catchup == model.MissedRunNone {
+		if task.Cron == "" || task.CatchUp == model.MissedRunSkip {
 			continue
 		}
 
@@ -39,7 +39,7 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 			continue
 		}
 
-		schedule, err := parser.Parse(task.Trigger.Cron)
+		schedule, err := parser.Parse(task.Cron)
 		if err != nil {
 			slog.Warn("Failed to parse schedule for catch-up", "task", task.Name, "err", err)
 			result.Errors++
@@ -75,7 +75,7 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 		}
 
 		triggers := missedCount
-		if task.Trigger.Catchup == model.MissedRunLatest {
+		if task.CatchUp == model.MissedRunLatest {
 			triggers = 1
 		}
 
@@ -83,7 +83,7 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 			"task", task.Name,
 			"missed", missedCount,
 			"triggering", triggers,
-			"policy", task.Trigger.Catchup,
+			"policy", task.CatchUp,
 		)
 
 		for range triggers {

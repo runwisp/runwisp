@@ -41,9 +41,7 @@
         selectRunId?: string | null;
     }>();
 
-    const isLongRunning = $derived(
-        isLongRunningTask(task.execution?.restart, task.execution?.concurrency?.limit),
-    );
+    const isLongRunning = $derived(isLongRunningTask(task.restart, task.parallelism));
     let historyExpanded = $state(false);
     let confirmOpen = $state(false);
     let stopConfirmOpen = $state(false);

@@ -141,29 +141,26 @@ func (s *tuiSuite) selectDebugScreen(t *testing.T) string {
 func writeE2EConfig(t *testing.T, dir string) string {
 	t.Helper()
 
-	configPath := filepath.Join(dir, "runwisp.e2e.yaml")
+	configPath := filepath.Join(dir, "runwisp.e2e.toml")
 	config := `
-tasks:
-  alpha-stream:
-    trigger:
-      api: true
-    run: |
-      set -eu
-      echo "alpha-line-1"
-      sleep 1
-      echo "alpha-line-2"
-      sleep 1
-      echo "alpha-line-3"
+[tasks.alpha-stream]
+run = """
+set -eu
+echo "alpha-line-1"
+sleep 1
+echo "alpha-line-2"
+sleep 1
+echo "alpha-line-3"
+"""
 
-  bravo-fail:
-    trigger:
-      api: true
-    run: |
-      set -eu
-      echo "bravo-line-1"
-      sleep 1
-      >&2 echo "bravo-line-2"
-      exit 1
+[tasks.bravo-fail]
+run = """
+set -eu
+echo "bravo-line-1"
+sleep 1
+>&2 echo "bravo-line-2"
+exit 1
+"""
 `
 
 	require.NoError(t, os.WriteFile(configPath, []byte(config), 0o600))

@@ -13,7 +13,7 @@ import (
 
 var validateCmd = &cobra.Command{
 	Use:   "validate",
-	Short: "Validate runwisp.yaml without starting anything",
+	Short: "Validate runwisp.toml without starting anything",
 	Long:  `Parses and validates the configuration file, reporting any errors. Useful for CI pipelines and pre-commit checks.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runValidate()

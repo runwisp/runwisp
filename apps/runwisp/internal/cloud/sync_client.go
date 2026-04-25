@@ -208,42 +208,41 @@ func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
 			continue // Skip task if we cannot marshal its execution definition
 		}
 
-		if t.Execution.Restart != "" {
-			task.RestartPolicy = string(t.Execution.Restart)
+		if t.Restart != "" {
+			task.RestartPolicy = string(t.Restart)
 		}
-		if t.Retry.Limit > 0 {
-			retries := t.Retry.Limit
+		if t.RetryAttempts > 0 {
+			retries := t.RetryAttempts
 			task.MaxRetries = &retries
 		}
-		if t.Retry.DelaySec > 0 {
-			delayMs := t.Retry.DelaySec * 1000
+		if delayMs := parseRetryDelayMillis(t.RetryDelay); delayMs > 0 {
 			task.RetryDelay = &delayMs
 		}
-		if t.Retry.Backoff != "" {
-			task.RetryBackoff = t.Retry.Backoff
+		if t.RetryBackoff != "" {
+			task.RetryBackoff = t.RetryBackoff
 		}
 
-		if t.Execution.Concurrency.Limit > 0 {
-			limit := t.Execution.Concurrency.Limit
+		if t.Parallelism > 0 {
+			limit := t.Parallelism
 			task.ConcurrencyLimit = &limit
 		}
 
-		behavior := mapConcurrencyBehavior(t.Execution.Concurrency.Policy)
+		behavior := mapConcurrencyBehavior(t.OnOverlap)
 		if behavior != "" {
 			task.ConcurrencyBehavior = behavior
 		}
 
-		if timeoutMs := parseTimeoutMillis(t.Execution.Timeout); timeoutMs > 0 {
+		if timeoutMs := parseTimeoutMillis(t.Timeout); timeoutMs > 0 {
 			task.Timeout = &timeoutMs
 		}
 
 		enabled := true
 		task.Enabled = &enabled
 
-		if strings.TrimSpace(t.Trigger.Cron) != "" {
+		if strings.TrimSpace(t.Cron) != "" {
 			task.Schedules = []syncTaskSchedule{
 				{
-					Cron:     strings.TrimSpace(t.Trigger.Cron),
+					Cron:     strings.TrimSpace(t.Cron),
 					Timezone: "UTC",
 					Enabled:  true,
 				},
@@ -276,6 +275,14 @@ func mapConcurrencyBehavior(policy model.ConcurrencyPolicy) string {
 }
 
 func parseTimeoutMillis(raw string) int {
+	return parseDurationMillis(raw)
+}
+
+func parseRetryDelayMillis(raw string) int {
+	return parseDurationMillis(raw)
+}
+
+func parseDurationMillis(raw string) int {
 	if strings.TrimSpace(raw) == "" {
 		return 0
 	}

@@ -36,7 +36,7 @@ func (s *runService) ListTasks() []model.TaskResponse {
 	tasks := make([]model.TaskResponse, 0, len(s.tasks))
 	for _, task := range s.tasks {
 		tr := model.TaskResponse{Task: *task}
-		if task.Trigger.Cron != "" && s.scheduler != nil {
+		if task.Cron != "" && s.scheduler != nil {
 			tr.NextRunAt = s.scheduler.GetNextRun(task.Name)
 		}
 		tasks = append(tasks, tr)
@@ -84,7 +84,7 @@ func (s *runService) TriggerRun(taskName string) (*model.Run, error) {
 	if !exists {
 		return nil, ErrTaskNotFound
 	}
-	if !task.Trigger.APIEnabled() {
+	if !task.APITrigger {
 		return nil, ErrAPIDisabled
 	}
 	return s.taskManager.TriggerRun(taskName, model.TriggeredByAPI)

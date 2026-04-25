@@ -15,6 +15,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/internal/model"
 	"log/slog"
 )
 
@@ -37,8 +38,8 @@ type LogWriter struct {
 
 	// Size limiting
 	maxSize    int64  // 0 = unlimited
-	overflow   string // "tail", "head", "kill"
-	cancelFunc func() // cancel context for "kill" mode
+	overflow   string // model.LogOverflow* constants
+	cancelFunc func() // cancel context for kill_task mode
 
 	// Disk space monitoring
 	minFreeDisk   int64  // 0 = disabled
@@ -50,7 +51,7 @@ type LogWriter struct {
 	lineCount     int64
 	totalProduced int64 // total bytes the process output (before any truncation)
 	truncated     bool
-	stopped       bool // "head" mode or disk-full: no more writes accepted
+	stopped       bool // drop_new mode or disk-full: no more writes accepted
 
 	// Rotation bookkeeping: cumulative counts from rotated-away files
 	rotatedLines int64
@@ -67,8 +68,8 @@ type LogWriterOpts struct {
 	IdxPath     string
 	TidxPath    string // timestamp index path (.tidx)
 	MaxSize     int64  // 0 = unlimited
-	Overflow    string // "tail" (default), "head", "kill"
-	CancelFunc  func() // for "kill" mode
+	Overflow    string // model.LogOverflow* constants; defaults to drop_old
+	CancelFunc  func() // for kill_task mode
 	MinFreeDisk int64  // 0 = disabled
 	LogDir      string
 }
@@ -97,7 +98,7 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 
 	overflow := opts.Overflow
 	if overflow == "" {
-		overflow = "tail"
+		overflow = model.LogOverflowDropOld
 	}
 
 	return &LogWriter{
@@ -142,17 +143,17 @@ func (w *LogWriter) Write(p []byte) (n int, err error) {
 	// Check per-run size limit
 	if w.maxSize > 0 && w.currentOffset+int64(len(p)) > w.maxSize {
 		switch w.overflow {
-		case "head":
+		case model.LogOverflowDropNew:
 			w.writeSystemLine(fmt.Sprintf(
-				"Log output truncated: exceeded logs.maxSize (%s). Process continues running.",
+				"Log output truncated: exceeded log_max_size (%s). Process continues running.",
 				config.FormatByteSize(w.maxSize)))
 			w.stopped = true
 			w.truncated = true
 			return len(p), nil
 
-		case "kill":
+		case model.LogOverflowKillTask:
 			w.writeSystemLine(fmt.Sprintf(
-				"Process killed: log output exceeded logs.maxSize (%s).",
+				"Process killed: log output exceeded log_max_size (%s).",
 				config.FormatByteSize(w.maxSize)))
 			w.truncated = true
 			w.stopped = true
@@ -161,7 +162,7 @@ func (w *LogWriter) Write(p []byte) (n int, err error) {
 			}
 			return len(p), nil
 
-		case "tail":
+		case model.LogOverflowDropOld:
 			if err := w.rotateTail(); err != nil {
 				slog.Error("Failed to rotate log file, continuing without rotation", "err", err)
 			}

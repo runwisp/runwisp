@@ -16,18 +16,12 @@ import (
 
 func catchupTask(policy model.MissedRunPolicy) *model.Task {
 	return &model.Task{
-		Name: "my-task",
-		Trigger: model.TaskTrigger{
-			Cron:    "*/5 * * * *",
-			Catchup: policy,
-		},
-		Run: "echo hi",
-		Execution: model.TaskExecution{
-			Concurrency: model.TaskConcurrency{
-				Limit:  1,
-				Policy: model.PolicyQueue,
-			},
-		},
+		Name:        "my-task",
+		Cron:        "*/5 * * * *",
+		CatchUp:     policy,
+		Run:         "echo hi",
+		Parallelism: 1,
+		OnOverlap:   model.PolicyQueue,
 	}
 }
 
@@ -176,12 +170,12 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		runner.AssertNumberOfCalls(t, "TriggerRun", 4)
 	})
 
-	t.Run("policy=none skips entirely", func(t *testing.T) {
+	t.Run("policy=skip skips entirely", func(t *testing.T) {
 		db := new(testutil.MockRunRepository)
 		runner := new(mockTaskRunner)
 
 		tasks := map[string]*model.Task{
-			"my-task": catchupTask(model.MissedRunNone),
+			"my-task": catchupTask(model.MissedRunSkip),
 		}
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)

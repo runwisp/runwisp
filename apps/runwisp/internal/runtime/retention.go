@@ -75,7 +75,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns() {
 
 	totalDeleted := 0
 	for _, task := range cleaner.tasks {
-		if task.Retention.Age == "" && task.Retention.Runs == 0 {
+		if task.KeepFor == "" && task.KeepRuns == 0 {
 			continue
 		}
 
@@ -120,7 +120,7 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 		return
 	}
 
-	slog.Warn("Log storage exceeds storage.maxSize, purging oldest runs",
+	slog.Warn("Log storage exceeds storage.max_size, purging oldest runs",
 		"current", config.FormatByteSize(totalSize), "limit", config.FormatByteSize(cleaner.maxTotalSize))
 
 	// Fetch oldest completed runs in batches and delete until under limit
@@ -165,7 +165,7 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 	}
 
 	if deleted > 0 {
-		slog.Info("Purged runs to enforce storage.maxSize", "deleted", deleted)
+		slog.Info("Purged runs to enforce storage.max_size", "deleted", deleted)
 	}
 }
 

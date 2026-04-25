@@ -193,9 +193,9 @@
                             />
                         </div>
 
-                        {#if task.task.trigger?.cron}
+                        {#if task.task.cron}
                             <p class="mt-2 font-mono text-xs text-mist-500">
-                                {task.task.trigger.cron}
+                                {task.task.cron}
                             </p>
                         {/if}
                     </button>

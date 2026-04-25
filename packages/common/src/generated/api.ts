@@ -446,64 +446,54 @@ export interface components {
             work_dir: string;
         };
         TaskBrief: {
-            execution?: components["schemas"]["TaskExecution"];
+            api_trigger: boolean;
+            catch_up?: string;
+            cron?: string;
             group?: string;
             name: string;
-            trigger?: components["schemas"]["TaskTrigger"];
-        };
-        TaskConcurrency: {
+            on_overlap?: string;
             /** Format: int64 */
-            limit: number;
-            /**
-             * @description How overlapping runs are handled
-             * @enum {string}
-             */
-            policy?: "queue" | "skip" | "terminate";
-        };
-        TaskExecution: {
-            concurrency?: components["schemas"]["TaskConcurrency"];
-            /**
-             * @description Whether and when a task is restarted after completion
-             * @enum {string}
-             */
-            restart?: "never" | "always" | "on-failure";
-            timeout?: string;
-        };
-        TaskLogs: {
-            maxSize?: string;
-            overflow?: string;
+            parallelism?: number;
+            restart?: string;
         };
         TaskResponse: {
-            description?: string;
-            execution?: components["schemas"]["TaskExecution"];
-            group?: string;
-            logs?: components["schemas"]["TaskLogs"];
-            name: string;
-            next_run_at?: string;
-            retention?: components["schemas"]["TaskRetention"];
-            retry?: components["schemas"]["TaskRetry"];
-            trigger?: components["schemas"]["TaskTrigger"];
-        };
-        TaskRetention: {
-            age?: string;
-            /** Format: int64 */
-            runs?: number;
-        };
-        TaskRetry: {
-            backoff?: string;
-            /** Format: int64 */
-            delaySec?: number;
-            /** Format: int64 */
-            limit?: number;
-        };
-        TaskTrigger: {
-            api: boolean | null;
+            api_trigger: boolean;
             /**
              * @description What to do when cron ticks are missed during downtime
              * @enum {string}
              */
-            catchup?: "latest" | "all" | "none";
+            catch_up?: "latest" | "all" | "skip";
             cron?: string;
+            description?: string;
+            group?: string;
+            keep_for?: string;
+            /** Format: int64 */
+            keep_runs?: number;
+            log_max_size?: string;
+            /**
+             * @description What to do when log output exceeds log_max_size
+             * @enum {string}
+             */
+            log_on_full?: "drop_new" | "drop_old" | "kill_task";
+            name: string;
+            next_run_at?: string;
+            /**
+             * @description How overlapping runs are handled
+             * @enum {string}
+             */
+            on_overlap?: "queue" | "skip" | "terminate";
+            /** Format: int64 */
+            parallelism?: number;
+            /**
+             * @description Whether and when a task is restarted after completion
+             * @enum {string}
+             */
+            restart?: "never" | "always" | "on_failure";
+            /** Format: int64 */
+            retry_attempts?: number;
+            retry_backoff?: string;
+            retry_delay?: string;
+            timeout?: string;
         };
     };
     responses: never;
