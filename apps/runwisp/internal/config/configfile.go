@@ -40,13 +40,26 @@ run = "echo hello from runwisp"
 # cron = "* * * * *"
 # run  = "curl -fsS https://example.com/healthz"
 #
+# Example of an always-on service (one or more long-lived processes that
+# RunWisp keeps alive with exponential restart backoff):
+#
+# [services.api-worker]
+# instances = 3
+# run       = "exec ./bin/worker"
+#
 # Full list of per-task keys:
 #   group, description
 #   cron, api_trigger, catch_up          # latest | all | skip
-#   timeout, restart, parallelism, on_overlap
+#   timeout, parallelism, on_overlap     # restart=always is rejected on tasks; use [services.*]
 #   retry_attempts, retry_delay, retry_backoff
 #   log_max_size, log_on_full            # drop_new | drop_old | kill_task
 #   keep_runs, keep_for
+#
+# Per-service keys ([services.*] only):
+#   group, description, run, instances
+#   timeout, parallelism, on_overlap
+#   restart_delay, restart_backoff       # none | exponential
+#   log_max_size, log_on_full, keep_runs, keep_for
 #
 # Global sections:
 #

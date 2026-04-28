@@ -72,6 +72,7 @@ type ExecView struct {
 	headerFocus   headerFocusItem
 	hoveredHeader headerFocusItem
 	headerLayout  execHeaderLayout
+	taskIsService bool
 }
 
 // execHeaderHeight is the number of header lines drawn above the log in normal mode.
@@ -226,6 +227,11 @@ func (v *ExecView) Action() execViewAction {
 	}
 	if v.run.Status == model.PhaseRunning {
 		return execViewActionStop
+	}
+	if v.taskIsService {
+		// Services manage their own restarts via the supervisor; manual
+		// retry of a single replica is not a valid operation.
+		return execViewActionNone
 	}
 	if v.run.IsRetryable() {
 		return execViewActionRetry

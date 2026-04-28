@@ -60,6 +60,10 @@ func (m *mockTaskRunner) TerminateRunByExternalExecutionID(externalExecutionID s
 	return m.Called(externalExecutionID).Error(0)
 }
 
+func (m *mockTaskRunner) RestartServiceReplicas(taskName string) error {
+	return m.Called(taskName).Error(0)
+}
+
 func TestCountMissedTicks(t *testing.T) {
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 

@@ -64,7 +64,8 @@ end_at                DATETIME,
 triggered_by          VARCHAR(20) NOT NULL,
 created_at            DATETIME,
 retry_attempt         INTEGER DEFAULT 0,
-retry_of_run_id       TEXT
+retry_of_run_id       TEXT,
+replica_index         INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_runs_external_execution_id ON runs(external_execution_id);
 CREATE INDEX IF NOT EXISTS idx_runs_task_name ON runs(task_name);
@@ -103,18 +104,33 @@ func New(dbPath string, logOutput io.Writer) (Database, error) {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
+	if err := migrateAddReplicaIndex(db); err != nil {
+		return nil, fmt.Errorf("failed to migrate replica_index: %w", err)
+	}
+
 	return &SQLiteDatabase{db: db}, nil
 }
 
+func migrateAddReplicaIndex(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE runs ADD COLUMN replica_index INTEGER NOT NULL DEFAULT 0`)
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "duplicate column") {
+		return nil
+	}
+	return err
+}
+
 const runColumns = `id, external_execution_id, task_name, status, end_reason, exit_code,
-start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id`
+start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, replica_index`
 
 func (db *SQLiteDatabase) CreateRun(run *model.Run) error {
 	_, err := db.db.Exec(
 		`INSERT INTO runs (`+runColumns+`)
- VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		run.ID, run.ExternalExecutionID, run.TaskName, run.Status, run.EndReason, run.ExitCode,
-		run.StartAt, run.EndAt, run.TriggeredBy, run.CreatedAt, run.RetryAttempt, run.RetryOfRunID,
+		run.StartAt, run.EndAt, run.TriggeredBy, run.CreatedAt, run.RetryAttempt, run.RetryOfRunID, run.ReplicaIndex,
 	)
 	return err
 }
@@ -124,11 +140,11 @@ func (db *SQLiteDatabase) UpdateRun(run *model.Run) error {
 		`UPDATE runs SET
 external_execution_id = ?, task_name = ?, status = ?, end_reason = ?, exit_code = ?,
 start_at = ?, end_at = ?, triggered_by = ?, created_at = ?,
-retry_attempt = ?, retry_of_run_id = ?
+retry_attempt = ?, retry_of_run_id = ?, replica_index = ?
  WHERE id = ?`,
 		run.ExternalExecutionID, run.TaskName, run.Status, run.EndReason, run.ExitCode,
 		run.StartAt, run.EndAt, run.TriggeredBy, run.CreatedAt,
-		run.RetryAttempt, run.RetryOfRunID,
+		run.RetryAttempt, run.RetryOfRunID, run.ReplicaIndex,
 		run.ID,
 	)
 	return err
@@ -140,7 +156,7 @@ func scanRun(scanner interface {
 	var run model.Run
 	err := scanner.Scan(
 		&run.ID, &run.ExternalExecutionID, &run.TaskName, &run.Status, &run.EndReason, &run.ExitCode,
-		&run.StartAt, &run.EndAt, &run.TriggeredBy, &run.CreatedAt, &run.RetryAttempt, &run.RetryOfRunID,
+		&run.StartAt, &run.EndAt, &run.TriggeredBy, &run.CreatedAt, &run.RetryAttempt, &run.RetryOfRunID, &run.ReplicaIndex,
 	)
 	if err != nil {
 		return nil, err

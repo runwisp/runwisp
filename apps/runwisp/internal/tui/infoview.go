@@ -430,8 +430,13 @@ func (v *InfoView) renderTasksSection(w int) []string {
 	lines = append(lines, padLine("", w, colorBg))
 
 	for _, task := range v.info.Tasks {
-		sched := task.Cron
-		if sched == "" {
+		var sched string
+		switch {
+		case task.Kind.IsService():
+			sched = fmt.Sprintf("service x%d", task.Instances)
+		case task.Cron != "":
+			sched = task.Cron
+		default:
 			sched = "manual"
 		}
 		name := lipgloss.NewStyle().Background(colorBg).Foreground(colorTextBright).Bold(true).Render(task.Name)

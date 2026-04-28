@@ -110,6 +110,93 @@ bogus = 1
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "strict mode")
 	})
+
+	t.Run("service with defaults", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.web]
+run = "exec ./bin/web"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		s := cfg.Tasks[0]
+		assert.Equal(t, model.KindService, s.Kind)
+		assert.Equal(t, "Services", s.Group)
+		assert.Equal(t, model.RestartAlways, s.Restart)
+		assert.Equal(t, model.PolicySkip, s.OnOverlap)
+		assert.Equal(t, 1, s.Instances)
+		assert.Equal(t, "1s", s.RestartDelay)
+		assert.Equal(t, model.RestartBackoffExponential, s.RestartBackoff)
+		assert.True(t, s.APITrigger)
+	})
+
+	t.Run("service with multiple instances", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.worker]
+instances = 5
+run = "exec ./bin/worker"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		assert.Equal(t, 5, cfg.Tasks[0].Instances)
+	})
+
+	t.Run("service rejects cron", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.web]
+cron = "* * * * *"
+run = "exec ./bin/web"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+	})
+
+	t.Run("task rejects restart=always", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.web]
+restart = "always"
+run = "exec ./bin/web"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "[services.web]")
+	})
+
+	t.Run("task rejects instances", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.web]
+instances = 3
+run = "exec ./bin/web"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "instances is only valid on [services.*]")
+	})
+
+	t.Run("name collision between tasks and services", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.foo]
+run = "echo hi"
+
+[services.foo]
+run = "exec ./bin/foo"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "used by both")
+	})
+
+	t.Run("service with too many instances rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.web]
+instances = 65
+run = "exec ./bin/web"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "instances")
+	})
 }
 
 func TestValidate(t *testing.T) {

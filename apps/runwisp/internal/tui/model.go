@@ -134,6 +134,7 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 		run = latest
 	}
 	ev := NewExecView(run)
+	ev.taskIsService = m.isService(run.TaskName)
 	mainW, mainH := m.mainSize()
 	ev.SetSize(mainW, mainH)
 	ev.SetFocused(true)
@@ -231,10 +232,29 @@ func (m *Model) taskDisplayByName(name string) *model.TaskBrief {
 	return nil
 }
 
-// isLongRunningTask returns true if the task has restart:always and concurrency limit <= 1.
-func (m *Model) isLongRunningTask(name string) bool {
+// isSingleInstanceService reports whether the task is a service with exactly one replica.
+// Used to decide whether to auto-open its log view on start.
+func (m *Model) isSingleInstanceService(name string) bool {
 	task := m.taskDisplayByName(name)
-	return task != nil && model.IsLongRunningTask(task.Restart, task.Parallelism)
+	return task != nil && task.Kind.IsService() && task.Instances <= 1
+}
+
+// isService reports whether the named task is configured as an always-on service.
+func (m *Model) isService(name string) bool {
+	task := m.taskDisplayByName(name)
+	return task != nil && task.Kind.IsService()
+}
+
+// serviceInstances returns the configured replica count for a service, or 0 if not a service.
+func (m *Model) serviceInstances(name string) int {
+	task := m.taskDisplayByName(name)
+	if task == nil || !task.Kind.IsService() {
+		return 0
+	}
+	if task.Instances < 1 {
+		return 1
+	}
+	return task.Instances
 }
 
 // latestRunningExec returns the most recent running execution for the given task, if any.
@@ -242,10 +262,10 @@ func (m *Model) latestRunningExec(taskName string) *model.Run {
 	return m.execWindow.LatestRunning(taskName)
 }
 
-// autoOpenLongRunning opens the latest running execution for long-running tasks.
+// autoOpenService opens the latest running execution for single-instance services.
 // Returns a command if a log stream should be started, or nil.
-func (m *Model) autoOpenLongRunning(taskName string) tea.Cmd {
-	if !m.isLongRunningTask(taskName) {
+func (m *Model) autoOpenService(taskName string) tea.Cmd {
+	if !m.isSingleInstanceService(taskName) {
 		return nil
 	}
 	if run := m.latestRunningExec(taskName); run != nil {

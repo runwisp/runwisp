@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
 
+- **Always-on services with `[services.NAME]`.** A new top-level config section for long-lived processes. RunWisp keeps the configured number of `instances` alive at all times and restarts each replica with exponential backoff (default 1s → 60s cap) on exit. Replica counts default to `1`; bump `instances = 3` for a worker pool. Per-replica run history is fully visible — every restart shows up in the dashboard and TUI with its own exit code, duration, and captured output.
+- **Restart backoff is now configurable.** New per-service `restart_delay` (default `"1s"`) and `restart_backoff` (`exponential` or `none`, default `exponential`) tune the curve. A replica that runs at least 60 seconds resets its backoff counter, so a service that finally stabilises returns to fast-restart behaviour on its next failure.
+- **`POST /api/tasks/{name}/restart`.** Cancels every active replica of a service; the supervisor refills each freed slot via the normal exit-handler path. The web dashboard and TUI both surface a **Restart Service** button (in place of "Run Now") on a service's detail view, so a one-key/one-click restart is available without using the API directly.
+- **`replica_index` on every run.** Persisted on the run record and surfaced in the API. The TUI and the web dashboard both suffix the task name with `#N` when index > 0 (in the run lists, run header, and recent-activity panels) so multi-replica services are visible at a glance.
+
+### Changed
+
+- **`restart = "always"` on `[tasks.NAME]` is now rejected.** There is exactly one canonical way to express always-on: `[services.NAME]`. Migrate existing tasks by moving them under `[services.*]` (cron-driven jobs are unaffected — they continue to use `[tasks.*]`).
+- **`runwisp list` shows `(service xN)`** in the SCHEDULE column for services, alongside the cron expression for scheduled tasks and `(manual)` for tasks without a schedule.
+
+### Fixed
+
+- **Services now self-heal after a manual stop or service-restart.** Stopping a single service replica from the TUI or web dashboard left the slot permanently empty, and **Restart Service** killed every replica without bringing any back up. Both actions now correctly trigger the supervisor to refill each freed slot at its original replica index.
 
 ## [0.2.0] - 2026-04-25
 

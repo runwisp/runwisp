@@ -86,11 +86,8 @@ dd if=/dev/urandom bs=1M count=50 2>/dev/null | base64
 """
 
 
-[tasks.metrics-collector-daemon]
-group       = "Services"
-description = "Long-running metrics collector kept alive by restart policy"
-restart     = "always"
-on_overlap  = "skip"
+[services.metrics-collector]
+description = "Long-running metrics collector, supervised with exponential restart backoff"
 run = """
 trap 'echo "SIGTERM received — shutting down gracefully."; exit 0' TERM INT
 iteration=0
@@ -102,5 +99,19 @@ while true; do
   echo "[$(date -Iseconds)] tick=$iteration uptime=${uptime_s}s mem_free=${mem_free} load=${load}"
   sleep 30 &
   wait $!
+done
+"""
+
+
+[services.api-worker]
+description = "Three always-on workers consuming the same job queue"
+instances   = 3
+run = """
+trap 'echo "SIGTERM received — draining and exiting."; exit 0' TERM INT
+echo "[$(date -Iseconds)] worker starting up..."
+while true; do
+  job=$((RANDOM % 10))
+  echo "[$(date -Iseconds)] processing job #$job"
+  sleep $((RANDOM % 5 + 2))
 done
 """

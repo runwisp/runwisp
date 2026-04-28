@@ -22,6 +22,13 @@ func isFailureReason(reason model.EndReason) bool {
 func shouldRestart(task *model.Task, run *model.Run) bool {
 	switch task.Restart {
 	case model.RestartAlways:
+		// Services are supervisor-managed: every replica exit refills the slot,
+		// including manual stops and service-restart cancellations. The
+		// daemon-wide shutdown guard in scheduleRestart prevents restart loops
+		// during teardown.
+		if task.Kind.IsService() {
+			return true
+		}
 		return run.EndReason == nil || *run.EndReason != model.ReasonStopped
 	case model.RestartOnFailure:
 		return run.EndReason != nil && isFailureReason(*run.EndReason)
@@ -40,9 +47,18 @@ func shouldRetry(task *model.Task, run *model.Run) bool {
 	return run.RetryAttempt < task.RetryAttempts
 }
 
+// restartBackoffResetThreshold is the minimum run duration that resets a
+// service's per-replica restart attempt counter. Runs that last at least this
+// long are treated as "the service was healthy" — the next failure starts the
+// backoff over from the base delay. Not configurable in v1.
+const restartBackoffResetThreshold = 60 * time.Second
+
+// restartBackoffCap caps the exponential restart delay.
+const restartBackoffCap = 60 * time.Second
+
 // computeRetryDelay calculates the delay before the next retry attempt.
 func computeRetryDelay(task *model.Task, attempt int) time.Duration {
-	baseDelay := parseRetryDelay(task.RetryDelay)
+	baseDelay := parseDuration(task.RetryDelay, 0)
 	if baseDelay <= 0 {
 		baseDelay = 5 * time.Second
 	}
@@ -61,13 +77,28 @@ func computeRetryDelay(task *model.Task, attempt int) time.Duration {
 	}
 }
 
-func parseRetryDelay(raw string) time.Duration {
+// computeRestartDelay calculates the delay before a service replica is
+// re-spawned after exiting. attempt is the number of consecutive prior
+// restarts without a healthy (>= restartBackoffResetThreshold) run.
+func computeRestartDelay(task *model.Task, attempt int) time.Duration {
+	base := parseDuration(task.RestartDelay, time.Second)
+	if attempt <= 0 || task.RestartBackoff != model.RestartBackoffExponential {
+		return base
+	}
+	delay := base * (1 << min(attempt, 30))
+	if delay > restartBackoffCap || delay <= 0 {
+		return restartBackoffCap
+	}
+	return delay
+}
+
+func parseDuration(raw string, fallback time.Duration) time.Duration {
 	if raw == "" {
-		return 0
+		return fallback
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil {
-		return 0
+		return fallback
 	}
 	return d
 }
@@ -104,15 +135,36 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 	}
 }
 
-func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *model.Run) {
+func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *model.Run, attempt int) {
 	if m.isShutdown.Load() {
 		return
 	}
 
-	_, err := m.TriggerRunWithOptions(task.Name, TriggerRunOptions{
+	delay := computeRestartDelay(task, attempt)
+	if delay > 0 {
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-m.persistence.Done():
+			timer.Stop()
+			return
+		}
+	}
+
+	if m.isShutdown.Load() {
+		return
+	}
+
+	options := TriggerRunOptions{
 		TriggeredBy: previousRun.TriggeredBy,
-	})
+	}
+	if task.Kind.IsService() {
+		idx := previousRun.ReplicaIndex
+		options.ReplicaIndex = &idx
+	}
+
+	_, err := m.TriggerRunWithOptions(task.Name, options)
 	if err != nil {
-		slog.Error("Restart failed", "task", task.Name, "err", err)
+		slog.Error("Restart failed", "task", task.Name, "replica", previousRun.ReplicaIndex, "err", err)
 	}
 }

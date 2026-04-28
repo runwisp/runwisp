@@ -101,6 +101,14 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaTriggerRun)
 
 	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "restartService",
+		Method:      http.MethodPost,
+		Path:        "/api/tasks/{taskName}/restart",
+		Summary:     "Restart all replicas of a service",
+		Tags:        []string{"Runs"},
+	}, srv.humaRestartService)
+
+	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "deleteRun",
 		Method:        http.MethodDelete,
 		Path:          "/api/tasks/{taskName}/runs/{runId}",
@@ -158,11 +166,29 @@ func (srv *Server) humaTriggerRun(ctx context.Context, input *TaskNameInput) (*T
 			return nil, huma.Error404NotFound(err.Error())
 		case errors.Is(err, ErrAPIDisabled):
 			return nil, huma.Error403Forbidden(err.Error())
+		case errors.Is(err, ErrServiceNotRunnable):
+			return nil, huma.Error409Conflict(err.Error())
 		default:
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
 	}
 	return &TriggerRunOutput{Body: *run}, nil
+}
+
+func (srv *Server) humaRestartService(ctx context.Context, input *TaskNameInput) (*StopRunOutput, error) {
+	if err := srv.runService.RestartService(input.TaskName); err != nil {
+		switch {
+		case errors.Is(err, ErrTaskNotFound):
+			return nil, huma.Error404NotFound(err.Error())
+		case errors.Is(err, ErrNotAService):
+			return nil, huma.Error400BadRequest(err.Error())
+		default:
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+	}
+	out := &StopRunOutput{}
+	out.Body.Message = "Service replicas restarting"
+	return out, nil
 }
 
 func (srv *Server) humaGetRun(ctx context.Context, input *TaskRunInput) (*RunOutput, error) {

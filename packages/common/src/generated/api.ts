@@ -121,6 +121,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskName}/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restart all replicas of a service */
+        post: operations["restartService"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskName}/run": {
         parameters: {
             query?: never;
@@ -309,6 +326,8 @@ export interface components {
             external_execution_id?: string;
             id: string;
             /** Format: int64 */
+            replica_index: number;
+            /** Format: int64 */
             retry_attempt: number;
             retry_of_run_id?: string;
             /** Format: date-time */
@@ -450,6 +469,10 @@ export interface components {
             catch_up?: string;
             cron?: string;
             group?: string;
+            /** Format: int64 */
+            instances?: number;
+            /** @enum {string} */
+            kind?: "task" | "service";
             name: string;
             on_overlap?: string;
             /** Format: int64 */
@@ -466,9 +489,19 @@ export interface components {
             cron?: string;
             description?: string;
             group?: string;
+            /**
+             * Format: int64
+             * @description For services: number of always-running replicas
+             */
+            instances?: number;
             keep_for?: string;
             /** Format: int64 */
             keep_runs?: number;
+            /**
+             * @description Whether this is a scheduled task or an always-on service
+             * @enum {string}
+             */
+            kind?: "task" | "service";
             log_max_size?: string;
             /**
              * @description What to do when log output exceeds log_max_size
@@ -489,6 +522,13 @@ export interface components {
              * @enum {string}
              */
             restart?: "never" | "always" | "on_failure";
+            /**
+             * @description Backoff curve between consecutive restarts
+             * @enum {string}
+             */
+            restart_backoff?: "none" | "exponential";
+            /** @description Base delay before each restart (e.g. "1s") */
+            restart_delay?: string;
             /** Format: int64 */
             retry_attempts?: number;
             retry_backoff?: string;
@@ -775,6 +815,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    restartService: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopRunOutputBody"];
                 };
             };
             /** @description Error */

@@ -200,12 +200,17 @@ func renderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 
 	// Schedule + Run Now button.
 	schedule := "manual"
-	if task != nil && task.Cron != "" {
+	switch {
+	case task != nil && task.Kind.IsService():
+		schedule = fmt.Sprintf("service x%d", task.Instances)
+	case task != nil && task.Cron != "":
 		schedule = task.Cron
 	}
 	schedInfo := "  Schedule: " + schedule
-	if nextRun := nextCronRun(schedule); nextRun != "" {
-		schedInfo += "  •  Next: " + nextRun
+	if task != nil && !task.Kind.IsService() {
+		if nextRun := nextCronRun(schedule); nextRun != "" {
+			schedInfo += "  •  Next: " + nextRun
+		}
 	}
 	schedText := lipgloss.NewStyle().
 		Background(colorBgLight).
@@ -216,7 +221,11 @@ func renderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 	if runNowHovered {
 		style = btnRunNowHoverStyle
 	}
-	btn := style.Render("▶ Run Now (r)")
+	btnLabel := "▶ Run Now (r)"
+	if task != nil && task.Kind.IsService() {
+		btnLabel = "↻ Restart (r)"
+	}
+	btn := style.Render(btnLabel)
 
 	schedWidth := lipgloss.Width(schedText)
 	btnWidth := lipgloss.Width(btn)

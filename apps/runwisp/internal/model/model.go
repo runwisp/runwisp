@@ -19,9 +19,10 @@ func SanitizeTaskName(name string) string {
 
 // Task describes a runnable task loaded from configuration.
 type Task struct {
-	Name        string `toml:"-"                     json:"name"`
-	Group       string `toml:"group,omitempty"       json:"group,omitempty"`
-	Description string `toml:"description,omitempty" json:"description,omitempty"`
+	Name        string   `toml:"-"                     json:"name"`
+	Kind        TaskKind `toml:"-"                     json:"kind,omitempty" enum:"task,service" doc:"Whether this is a scheduled task or an always-on service"`
+	Group       string   `toml:"group,omitempty"       json:"group,omitempty"`
+	Description string   `toml:"description,omitempty" json:"description,omitempty"`
 
 	Cron       string          `toml:"cron,omitempty"        json:"cron,omitempty"`
 	APITrigger bool            `toml:"api_trigger,omitempty" json:"api_trigger"`
@@ -31,6 +32,10 @@ type Task struct {
 	Restart     RestartPolicy     `toml:"restart,omitempty"     json:"restart,omitempty" enum:"never,always,on_failure" doc:"Whether and when a task is restarted after completion"`
 	Parallelism int               `toml:"parallelism,omitempty" json:"parallelism,omitempty"`
 	OnOverlap   ConcurrencyPolicy `toml:"on_overlap,omitempty"  json:"on_overlap,omitempty" enum:"queue,skip,terminate" doc:"How overlapping runs are handled"`
+
+	Instances      int    `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running replicas"`
+	RestartDelay   string `toml:"restart_delay,omitempty"  json:"restart_delay,omitempty" doc:"Base delay before each restart (e.g. \"1s\")"`
+	RestartBackoff string `toml:"restart_backoff,omitempty" json:"restart_backoff,omitempty" enum:"none,exponential" doc:"Backoff curve between consecutive restarts"`
 
 	RetryAttempts int    `toml:"retry_attempts,omitempty" json:"retry_attempts,omitempty"`
 	RetryDelay    string `toml:"retry_delay,omitempty"    json:"retry_delay,omitempty"`
@@ -110,6 +115,23 @@ const (
 	RestartOnFailure RestartPolicy = "on_failure"
 )
 
+// TaskKind distinguishes scheduled/manual tasks from always-on services.
+type TaskKind string
+
+const (
+	KindTask    TaskKind = ""
+	KindService TaskKind = "service"
+)
+
+// IsService reports whether the task is an always-on service.
+func (k TaskKind) IsService() bool { return k == KindService }
+
+// RestartBackoffNone applies a constant delay between restarts.
+const RestartBackoffNone = "none"
+
+// RestartBackoffExponential doubles the delay between consecutive restarts up to a cap.
+const RestartBackoffExponential = "exponential"
+
 // MissedRunPolicy controls what happens when cron ticks are missed (e.g. daemon downtime).
 type MissedRunPolicy string
 
@@ -141,6 +163,7 @@ type Run struct {
 	CreatedAt           time.Time   `json:"created_at"`
 	RetryAttempt        int         `json:"retry_attempt"`
 	RetryOfRunID        *string     `json:"retry_of_run_id,omitempty"`
+	ReplicaIndex        int         `json:"replica_index"`
 }
 
 // Copy creates a deep copy of the Run to prevent data races.
@@ -212,6 +235,7 @@ type DaemonInfo struct {
 // TaskBrief is a trimmed task descriptor exposed via the API.
 type TaskBrief struct {
 	Name        string            `json:"name"`
+	Kind        TaskKind          `json:"kind,omitempty" enum:"task,service"`
 	Group       string            `json:"group,omitempty"`
 	Cron        string            `json:"cron,omitempty"`
 	APITrigger  bool              `json:"api_trigger"`
@@ -219,6 +243,7 @@ type TaskBrief struct {
 	Restart     RestartPolicy     `json:"restart,omitempty"`
 	Parallelism int               `json:"parallelism,omitempty"`
 	OnOverlap   ConcurrencyPolicy `json:"on_overlap,omitempty"`
+	Instances   int               `json:"instances,omitempty"`
 }
 
 // CapInfo describes a daemon capability.
@@ -233,11 +258,6 @@ type RunSummary struct {
 	Success     int64      `json:"success" doc:"Number of successful runs"`
 	Failed      int64      `json:"failed" doc:"Number of failed runs"`
 	LastFailure *time.Time `json:"last_failure,omitempty" doc:"Timestamp of most recent failure"`
-}
-
-// IsLongRunningTask reports whether the task is an always-on daemon run.
-func IsLongRunningTask(restartPolicy RestartPolicy, parallelism int) bool {
-	return restartPolicy == RestartAlways && parallelism <= 1
 }
 
 // TaskRegistration is a one-to-one per-task record for metadata that has no

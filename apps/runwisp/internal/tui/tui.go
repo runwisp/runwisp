@@ -180,8 +180,13 @@ func PrintStartup(info StartupInfo) {
 			if i == last {
 				prefix = "└─"
 			}
-			schedule := task.Cron
-			if schedule == "" {
+			var schedule string
+			switch {
+			case task.Kind.IsService():
+				schedule = fmt.Sprintf("service x%d", task.Instances)
+			case task.Cron != "":
+				schedule = task.Cron
+			default:
 				schedule = "manual"
 			}
 			dots := strings.Repeat("·", max(2, taskPad-len(task.Name)))

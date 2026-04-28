@@ -125,6 +125,13 @@ export const tasksApi = {
         return data;
     },
 
+    restartService: async (taskName: string): Promise<void> => {
+        const { error } = await apiClient.POST("/api/tasks/{taskName}/restart", {
+            params: { path: { taskName } },
+        });
+        if (error) throw new Error("Failed to restart service");
+    },
+
     getRun: async (taskName: string, runId: string) => {
         const { data, error } = await apiClient.GET("/api/tasks/{taskName}/runs/{runId}", {
             params: { path: { taskName, runId } },

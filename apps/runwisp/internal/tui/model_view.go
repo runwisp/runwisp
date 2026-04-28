@@ -100,8 +100,12 @@ func (m Model) buildHelpText() string {
 		return strings.Join(parts, "  ")
 	}
 	if m.panelFocus == PanelSidebar {
-		if m.sidebar.CursorTaskName() != "" {
-			return "↑↓ navigate  enter select  r run now  → main panel  q/^C quit"
+		if name := m.sidebar.CursorTaskName(); name != "" {
+			actionHint := "r run now"
+			if m.isService(name) {
+				actionHint = "r restart"
+			}
+			return "↑↓ navigate  enter select  " + actionHint + "  → main panel  q/^C quit"
 		}
 		return "↑↓ navigate  enter select  → main panel  q/^C quit"
 	}
@@ -118,8 +122,12 @@ func (m Model) buildHelpText() string {
 	if m.sidebar.ActivePage() == PageDebug {
 		return "↑↓ scroll  G end  g top  pgup/pgdn page  ← sidebar  q/^C quit"
 	}
-	if m.sidebar.ActiveTask() != "" {
-		return "↑↓ navigate  enter open  r run now  esc/← sidebar  q/^C quit"
+	if name := m.sidebar.ActiveTask(); name != "" {
+		actionHint := "r run now"
+		if m.isService(name) {
+			actionHint = "r restart"
+		}
+		return "↑↓ navigate  enter open  " + actionHint + "  esc/← sidebar  q/^C quit"
 	}
 	return "↑↓ navigate  enter open  esc/← sidebar  q/^C quit"
 }

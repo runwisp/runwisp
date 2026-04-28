@@ -14,10 +14,12 @@ import (
 )
 
 var (
-	ErrTaskNotFound = errors.New("task not found")
-	ErrAPIDisabled  = errors.New("API triggering disabled for this task")
-	ErrRunNotFound  = errors.New("run not found")
-	ErrNotRunning   = errors.New("run is not currently running")
+	ErrTaskNotFound       = errors.New("task not found")
+	ErrAPIDisabled        = errors.New("API triggering disabled for this task")
+	ErrRunNotFound        = errors.New("run not found")
+	ErrNotRunning         = errors.New("run is not currently running")
+	ErrServiceNotRunnable = errors.New("services cannot be triggered; use the restart endpoint")
+	ErrNotAService        = errors.New("task is not a service")
 )
 
 type runService struct {
@@ -84,10 +86,24 @@ func (s *runService) TriggerRun(taskName string) (*model.Run, error) {
 	if !exists {
 		return nil, ErrTaskNotFound
 	}
+	if task.Kind.IsService() {
+		return nil, ErrServiceNotRunnable
+	}
 	if !task.APITrigger {
 		return nil, ErrAPIDisabled
 	}
 	return s.taskManager.TriggerRun(taskName, model.TriggeredByAPI)
+}
+
+func (s *runService) RestartService(taskName string) error {
+	task, exists := s.tasks[taskName]
+	if !exists {
+		return ErrTaskNotFound
+	}
+	if !task.Kind.IsService() {
+		return ErrNotAService
+	}
+	return s.taskManager.RestartServiceReplicas(taskName)
 }
 
 func (s *runService) DeleteRun(runID string) error {

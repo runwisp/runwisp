@@ -66,6 +66,8 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 		if catchUpResult.Triggered > 0 {
 			slog.Info("Missed-tick catch-up completed", "triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
 		}
+
+		startServiceReplicas(taskManager, tasksMap)
 	}
 
 	retentionCleaner := initRetentionCleaner(cfg, db, tasksMap)
@@ -132,6 +134,17 @@ func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap 
 	return cleaner
 }
 
+func startServiceReplicas(taskManager runtime.TaskManager, tasksMap map[string]*model.Task) {
+	for _, task := range tasksMap {
+		if !task.Kind.IsService() {
+			continue
+		}
+		if err := taskManager.StartServiceReplicas(task.Name); err != nil {
+			slog.Error("Failed to start service replicas", "task", task.Name, "err", err)
+		}
+	}
+}
+
 func resumePendingRuns(db storage.RunRepository, taskManager runtime.TaskManager) tui.PendingRunsSummary {
 	pendingRuns, err := db.GetPendingRuns()
 	if err != nil {
@@ -165,6 +178,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
 		j := svc.TasksMap[name]
 		tasks = append(tasks, model.TaskBrief{
 			Name:        j.Name,
+			Kind:        j.Kind,
 			Group:       j.Group,
 			Cron:        j.Cron,
 			APITrigger:  j.APITrigger,
@@ -172,6 +186,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
 			Restart:     j.Restart,
 			Parallelism: j.Parallelism,
 			OnOverlap:   j.OnOverlap,
+			Instances:   j.Instances,
 		})
 	}
 

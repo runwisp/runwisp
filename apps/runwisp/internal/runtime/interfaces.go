@@ -15,6 +15,7 @@ type TaskRunner interface {
 	UpsertTask(task *model.Task)
 	TerminateRun(runID string) error
 	TerminateRunByExternalExecutionID(externalExecutionID string) error
+	RestartServiceReplicas(taskName string) error
 }
 
 // TaskManager is the full lifecycle interface for task management.
@@ -24,6 +25,7 @@ type TaskManager interface {
 	BindPersistenceHook(hook RunPersistenceHook)
 	GetActiveRuns(taskName string) []*ActiveRun
 	LoadPendingRuns(runs []model.Run) PendingRunsResult
+	StartServiceReplicas(taskName string) error
 	Shutdown()
 }
 

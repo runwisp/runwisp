@@ -44,9 +44,6 @@ export function displayStatus(
   return phase;
 }
 
-export function isLongRunningTask(
-  restartPolicy: string | undefined | null,
-  concurrencyLimit: number | undefined | null,
-): boolean {
-  return restartPolicy === "always" && (concurrencyLimit ?? 1) <= 1;
+export function isService(kind: string | undefined | null): boolean {
+  return kind === "service";
 }
