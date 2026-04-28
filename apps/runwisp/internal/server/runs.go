@@ -242,6 +242,15 @@ func (srv *Server) registerRunsSSE(api huma.API) {
 		"run.updated":   RunUpdatedEvent{},
 		"ping":          PingEvent{},
 	}, func(ctx context.Context, input *struct{}, send sse.Sender) {
+		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+		if !ok {
+			// huma owns the response writer here, so we communicate refusal via
+			// the SSE channel and return; the client will see a single ping then
+			// EOF, which the UI already handles as a closed stream.
+			return
+		}
+		defer release()
+
 		// Flush response headers immediately so SSE clients (e.g. EventSource
 		// polyfill using fetch) receive the 200 + text/event-stream header
 		// without waiting for the first real event.

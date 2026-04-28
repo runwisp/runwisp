@@ -25,6 +25,23 @@ type contextKey string
 // middleware.RealIP can overwrite r.RemoteAddr with spoofable headers.
 const peerAddrContextKey contextKey = "peerAddr"
 
+// maxProtectedBodySize bounds request bodies on authenticated routes.
+// All currently-defined endpoints take parameters in the URL path only;
+// 1 MiB is a generous ceiling that keeps a misbehaving (or malicious) client
+// from streaming gigabytes into a handler that doesn't actually read the body.
+const maxProtectedBodySize = 1 << 20
+
+// maxBodySize wraps the request body in http.MaxBytesReader so handlers that
+// happen to call io.Copy / json.Decode see EOF after the limit.
+func maxBodySize(limit int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // savePeerAddr captures the original TCP peer address into context.
 // Must be registered before middleware.RealIP so that security-critical
 // loopback checks (isLoopbackRequest) use the real connection address
@@ -110,6 +127,7 @@ func (srv *Server) setupRoutes() {
 
 	// Protected routes
 	srv.router.Group(func(r chi.Router) {
+		r.Use(maxBodySize(maxProtectedBodySize))
 		r.Use(jwtauth.Verify(
 			srv.auth.JWTAuth(),
 			jwtauth.TokenFromHeader,
@@ -123,8 +141,8 @@ func (srv *Server) setupRoutes() {
 		// Raw chi handlers for complex endpoints
 		r.Post("/api/auth/launch-ticket", srv.handleCreateLaunchTicket)
 		r.Get("/api/tasks/{taskName}/runs/{runId}/log", srv.handleGetLog)
-		r.Get("/api/tasks/{taskName}/runs/{runId}/log-stream", srv.handleLogStream)
-		r.Get("/api/daemon/log-stream", srv.handleDaemonLogStream)
+		r.With(srv.streams.middleware).Get("/api/tasks/{taskName}/runs/{runId}/log-stream", srv.handleLogStream)
+		r.With(srv.streams.middleware).Get("/api/daemon/log-stream", srv.handleDaemonLogStream)
 	})
 	ui.Serve(srv.router)
 }

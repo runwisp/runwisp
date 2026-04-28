@@ -4,6 +4,8 @@
 package datadir
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -57,5 +59,66 @@ func TestGeneratePassword_Unique(t *testing.T) {
 	}
 	if first == second {
 		t.Fatal("two generated passwords should not be identical")
+	}
+}
+
+func TestEnsureDir_Mode0700(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "data")
+	if err := EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0700 {
+		t.Fatalf("expected data dir mode 0700, got %#o", perm)
+	}
+}
+
+func TestWritePidFile_RefusesSymlink(t *testing.T) {
+	dataDir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(target, []byte("untouched"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, PidFilePath(dataDir)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := WritePidFile(dataDir); err == nil {
+		t.Fatal("expected WritePidFile to refuse a symlinked path")
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "untouched" {
+		t.Fatalf("symlink target was modified: %q", got)
+	}
+}
+
+func TestWriteSecretFile_RefusesSymlink(t *testing.T) {
+	dataDir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(target, []byte("untouched"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	pwPath := filepath.Join(dataDir, "password")
+	if err := os.Symlink(target, pwPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeSecretFile(pwPath, "newpw"); err == nil {
+		t.Fatal("expected writeSecretFile to refuse a symlinked path")
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "untouched" {
+		t.Fatalf("symlink target was modified: %q", got)
 	}
 }

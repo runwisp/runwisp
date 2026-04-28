@@ -167,7 +167,8 @@ func (srv *Server) handleLogStream(resp http.ResponseWriter, req *http.Request) 
 
 	streamer, err := newLogStreamer(ctx, resp, flusher, logPath)
 	if err != nil {
-		fmt.Fprintf(resp, "data: Error opening log: %v\n\n", err)
+		slog.Error("SSE: failed to open log", "runID", run.ID, "logPath", logPath, "err", err)
+		fmt.Fprint(resp, "data: Error opening log\n\n")
 		flusher.Flush()
 		return
 	}
@@ -175,7 +176,8 @@ func (srv *Server) handleLogStream(resp http.ResponseWriter, req *http.Request) 
 
 	virtualSize, physSize, err := streamer.virtualFileSize()
 	if err != nil {
-		fmt.Fprintf(resp, "data: Error getting file info: %v\n\n", err)
+		slog.Error("SSE: failed to stat log", "runID", run.ID, "logPath", logPath, "err", err)
+		fmt.Fprint(resp, "data: Error reading log\n\n")
 		flusher.Flush()
 		return
 	}
