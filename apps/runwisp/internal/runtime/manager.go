@@ -32,6 +32,9 @@ type TriggerRunOptions struct {
 	ExternalExecutionID string
 	RetryAttempt        int
 	RetryOfRunID        *string
+	// ReplicaIndex pins the run to a specific replica slot. Required for
+	// supervisor-driven restarts of services; nil for cron/API/retry runs.
+	ReplicaIndex *int
 }
 
 // concurrencyAction describes what the caller should do after evaluating a concurrency policy.
@@ -49,6 +52,15 @@ type taskState struct {
 	active []*ActiveRun
 	queue  []*model.Run // non-nil only when task.OnOverlap == PolicyQueue
 	cond   *sync.Cond   // non-nil only when policy == PolicyQueue
+
+	// liveReplicas tracks supervisor-owned replica slots for services. Allocated
+	// only when task.Kind.IsService(). Bypasses evaluateConcurrency so a
+	// service's "active" set is bounded by task.Instances rather than parallelism.
+	liveReplicas map[int]struct{}
+	// restartAttempts is keyed by replica index; counts consecutive restarts
+	// without a "long enough" run. Reset in execute() when a run lasts at least
+	// restartBackoffResetThreshold.
+	restartAttempts map[int]int
 }
 
 // Compile-time check: *defaultTaskManager satisfies TaskManager.
@@ -110,6 +122,11 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 		m.tasks[task.Name] = ts
 	}
 	ts.task = &taskCopy
+
+	if task.Kind.IsService() && ts.liveReplicas == nil {
+		ts.liveReplicas = make(map[int]struct{})
+		ts.restartAttempts = make(map[int]int)
+	}
 
 	if task.OnOverlap == model.PolicyQueue && ts.cond == nil {
 		ts.queue = make([]*model.Run, 0)
@@ -190,6 +207,9 @@ type PendingRunsResult struct {
 }
 
 // LoadPendingRuns re-queues runs that were pending when the system stopped.
+// Service replicas are never resumed — the supervisor spawns fresh runs at the
+// configured Instances count instead. Pending service rows are marked failed so
+// they don't linger in the database.
 func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -199,6 +219,13 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 		r := run
 		ts, exists := m.tasks[r.TaskName]
 		if !exists {
+			result.Skipped++
+			continue
+		}
+
+		if ts.task.Kind.IsService() {
+			r.End(model.ReasonFailed, -1, time.Now())
+			m.persistence.PersistExisting(&r)
 			result.Skipped++
 			continue
 		}
@@ -248,6 +275,28 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		externalExecutionID = &externalIDCopy
 	}
 
+	if ts.task.Kind.IsService() {
+		idx, err := m.reserveReplicaSlot(ts, options.ReplicaIndex)
+		if err != nil {
+			return nil, err
+		}
+		run := &model.Run{
+			ID:                  ulid.Make().String(),
+			ExternalExecutionID: externalExecutionID,
+			TaskName:            taskName,
+			Status:              model.PhasePending,
+			TriggeredBy:         triggeredBy,
+			CreatedAt:           time.Now(),
+			RetryAttempt:        options.RetryAttempt,
+			RetryOfRunID:        options.RetryOfRunID,
+			ReplicaIndex:        idx,
+		}
+		m.persistence.PersistNew(run)
+		m.publishRun(events.EventRunCreated, run, 0)
+		m.startRun(ts.task, run)
+		return run, nil
+	}
+
 	run := &model.Run{
 		ID:                  ulid.Make().String(),
 		ExternalExecutionID: externalExecutionID,
@@ -280,6 +329,89 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	m.startRun(ts.task, run)
 	return run, nil
+}
+
+// reserveReplicaSlot allocates a replica index for a service run.
+// Must be called with m.mu held.
+func (m *defaultTaskManager) reserveReplicaSlot(ts *taskState, requested *int) (int, error) {
+	limit := ts.task.Instances
+	if limit < 1 {
+		limit = 1
+	}
+	if requested != nil {
+		idx := *requested
+		if idx < 0 || idx >= limit {
+			return 0, fmt.Errorf("replica index %d out of range [0,%d) for service %s", idx, limit, ts.task.Name)
+		}
+		if _, taken := ts.liveReplicas[idx]; taken {
+			return 0, fmt.Errorf("replica %d already live for service %s", idx, ts.task.Name)
+		}
+		ts.liveReplicas[idx] = struct{}{}
+		return idx, nil
+	}
+	for i := 0; i < limit; i++ {
+		if _, taken := ts.liveReplicas[i]; !taken {
+			ts.liveReplicas[i] = struct{}{}
+			return i, nil
+		}
+	}
+	return 0, fmt.Errorf("no free replica slots for service %s (instances=%d)", ts.task.Name, limit)
+}
+
+// StartServiceReplicas brings every replica of a service up to its desired count.
+// Idempotent — already-running replicas are left untouched.
+func (m *defaultTaskManager) StartServiceReplicas(taskName string) error {
+	m.mu.RLock()
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		m.mu.RUnlock()
+		return fmt.Errorf("task not found: %s", taskName)
+	}
+	if !ts.task.Kind.IsService() {
+		m.mu.RUnlock()
+		return fmt.Errorf("task %s is not a service", taskName)
+	}
+	limit := ts.task.Instances
+	if limit < 1 {
+		limit = 1
+	}
+	missing := make([]int, 0, limit)
+	for i := 0; i < limit; i++ {
+		if _, taken := ts.liveReplicas[i]; !taken {
+			missing = append(missing, i)
+		}
+	}
+	m.mu.RUnlock()
+
+	for _, idx := range missing {
+		i := idx
+		if _, err := m.TriggerRunWithOptions(taskName, TriggerRunOptions{
+			TriggeredBy:  model.TriggeredByAPI,
+			ReplicaIndex: &i,
+		}); err != nil {
+			slog.Error("Failed to start service replica", "task", taskName, "replica", i, "err", err)
+		}
+	}
+	return nil
+}
+
+// RestartServiceReplicas cancels every active replica of a service.
+// The exit handler refills each freed slot via the supervisor.
+func (m *defaultTaskManager) RestartServiceReplicas(taskName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		return fmt.Errorf("task not found: %s", taskName)
+	}
+	if !ts.task.Kind.IsService() {
+		return fmt.Errorf("task %s is not a service", taskName)
+	}
+	for _, ar := range ts.active {
+		ar.Cancel()
+	}
+	return nil
 }
 
 // startRun registers the run and spawns the execution goroutine.
@@ -329,6 +461,8 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	m.persistence.PersistExisting(run)
 	m.publishRun(outcome.eventType, run, result.ExitCode)
 
+	runDuration := endTime.Sub(active.StartedAt)
+
 	m.mu.Lock()
 	ts := m.tasks[task.Name]
 	for i, ar := range ts.active {
@@ -336,6 +470,15 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 			ts.active = append(ts.active[:i], ts.active[i+1:]...)
 			break
 		}
+	}
+	var nextRestartAttempt int
+	if task.Kind.IsService() {
+		delete(ts.liveReplicas, run.ReplicaIndex)
+		if runDuration >= restartBackoffResetThreshold {
+			ts.restartAttempts[run.ReplicaIndex] = 0
+		}
+		nextRestartAttempt = ts.restartAttempts[run.ReplicaIndex]
+		ts.restartAttempts[run.ReplicaIndex] = nextRestartAttempt + 1
 	}
 	if ts.cond != nil {
 		ts.cond.Signal()
@@ -350,7 +493,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 			m.wg.Add(1)
 			go func() {
 				defer m.wg.Done()
-				m.scheduleRestart(task, copiedRun)
+				m.scheduleRestart(task, copiedRun, nextRestartAttempt)
 			}()
 		case shouldRetry(task, run):
 			m.wg.Add(1)

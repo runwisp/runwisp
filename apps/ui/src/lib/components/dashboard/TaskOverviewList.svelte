@@ -206,7 +206,13 @@
                                 {#if task.task.group}
                                     <Badge variant="default" size="sm">{task.task.group}</Badge>
                                 {/if}
-                                {#if task.isLongRunning}
+                                {#if task.task.kind === "service"}
+                                    <Badge variant="info" size="sm">
+                                        {(task.task.instances ?? 1) > 1
+                                            ? `Service ×${task.task.instances}`
+                                            : "Service"}
+                                    </Badge>
+                                {:else if task.isLongRunning}
                                     <Badge variant="info" size="sm">Long-running</Badge>
                                 {/if}
                             </div>

@@ -97,11 +97,12 @@ run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
 cron = "*/5 * * * *"       # every 5 minutes
 run  = "curl -sf https://myapp.example.com/health || exit 1"
 
-[tasks.worker]
-restart    = "always"      # auto-restart on crash
-on_overlap = "skip"
-run        = "node /app/worker.js"  # long-running process
+[services.worker]
+instances = 3              # keep three replicas always running
+run       = "node /app/worker.js"
 ```
+
+`[tasks.*]` is for scheduled and manual jobs; `[services.*]` is for always-on processes that RunWisp keeps alive with exponential restart backoff. Each replica of a service runs as its own visible run, with its own exit code, duration, and captured logs.
 
 **3. Start RunWisp:**
 
@@ -133,7 +134,7 @@ runwisp validate            # parse and check runwisp.toml without starting anyt
 ### Scheduling & Execution
 
 - **Cron scheduling** — standard cron expressions, per-task concurrency policies (`queue`, `skip`, `terminate`)
-- **Process supervision** — long-running daemons with `restart = "always"`, crash recovery, and graceful shutdown
+- **Process supervision** — long-running services with one or more `instances`, exponential restart backoff, crash recovery, and graceful shutdown
 - **Retries with backoff** — configurable `retry_attempts`, `retry_delay`, and `retry_backoff` (linear or exponential)
 - **Timeouts** — per-task `timeout` enforcement, automatic kill on deadline
 - **Catchup policies** — configurable missed-run behaviour (`latest`, `all`, `skip`) via `catch_up`

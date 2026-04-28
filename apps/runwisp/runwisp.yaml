@@ -1,0 +1,122 @@
+storage:
+  maxSize: 5gb
+  minFreeSpace: 500mb
+
+defaults:
+  timeout: 1h
+  logs:
+    maxSize: 100mb
+    overflow: tail
+  retention:
+    runs: 50
+    age: 30d
+
+tasks:
+  network-heartbeat:
+    group: Monitoring
+    description: "Pings external services every minute"
+    trigger:
+      cron: "* * * * *"
+      api: true
+      catchup: latest
+    execution:
+      concurrency:
+        limit: 1
+        policy: skip
+    retention:
+      runs: 100
+    run: |
+      set -eu
+      echo "[$(date -Iseconds)] Starting health checks..."
+      curl -s -o /dev/null -w "Cloudflare latency: %{time_total}s\n" https://1.1.1.1
+      curl -s -o /dev/null -w "Google latency: %{time_total}s\n" https://8.8.8.8
+      echo "[$(date -Iseconds)] Health checks completed successfully."
+
+  nightly-db-backup:
+    group: Infrastructure
+    description: "Simulates a database dump, compression, and upload"
+    trigger:
+      cron: "30 2 * * *"
+      api: true
+    execution:
+      timeout: 30m
+      concurrency:
+        limit: 1
+        policy: skip
+    retention:
+      age: 14d
+    run: |
+      set -eu
+      tables=("users" "transactions" "audit_logs" "sessions" "metadata")
+      echo "[$(date)] Initiating database backup sequence..."
+      for table in "${tables[@]}"; do
+        echo "[$(date)] Exporting table: $table..."
+        sleep $((RANDOM % 7 + 2))
+        rows=$((RANDOM % 50000 + 10000))
+        echo "  -> Exported $rows rows from $table."
+      done
+      echo "[$(date)] Compressing archive..."
+      sleep 12
+      echo "[$(date)] Upload complete."
+
+  process-event-queue:
+    description: "Worker that retries with exponential backoff"
+    trigger:
+      cron: "*/10 * * * *"
+      api: true
+    execution:
+      concurrency:
+        limit: 1
+        policy: queue
+    retry:
+      limit: 3
+      delaySec: 2
+      backoff: exponential
+    run: |
+      echo "Starting queue processing..."
+      jobs=$((RANDOM % 5 + 1))
+      echo "Found $jobs jobs in the queue."
+      for ((i=1; i<=jobs; i++)); do
+        echo "Processing job $i..."
+        sleep $((RANDOM % 3 + 1))
+        if [ $((RANDOM % 100)) -lt 30 ]; then
+          >&2 echo "CRITICAL: Database connection lost while processing job $i!"
+          exit 1
+        fi
+        echo "Job $i processed successfully."
+      done
+      echo "Queue drained gracefully."
+
+  log-stress-test:
+    description: "Generates a lot of output to exercise log overflow behavior"
+    trigger:
+      api: true
+    logs:
+      maxSize: 20mb
+      overflow: kill
+    run: |
+      echo "WARNING: Starting log tsunami..."
+      dd if=/dev/urandom bs=1M count=50 2>/dev/null | base64
+
+  metrics-collector-daemon:
+    group: Services
+    description: "Long-running metrics collector kept alive by restart policy"
+    trigger:
+      api: true
+    execution:
+      restart: always
+      concurrency:
+        limit: 1
+        policy: skip
+    run: |
+      trap 'echo "SIGTERM received — shutting down gracefully."; exit 0' TERM INT
+      iteration=0
+      while true; do
+        iteration=$((iteration + 1))
+        uptime_s=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "N/A")
+        mem_free=$(awk '/MemAvailable/ {printf "%.0f MB", $2/1024}' /proc/meminfo 2>/dev/null || echo "N/A")
+        load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo "N/A")
+        echo "[$(date -Iseconds)] tick=$iteration uptime=${uptime_s}s mem_free=${mem_free} load=${load}"
+        sleep 30 &
+        wait $!
+      done

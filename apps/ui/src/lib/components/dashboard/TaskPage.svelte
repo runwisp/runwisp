@@ -2,10 +2,10 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Play, PanelLeftClose, History, Square } from "@lucide/svelte";
+    import { Play, PanelLeftClose, History, Square, RefreshCcw } from "@lucide/svelte";
     import Button from "@runwisp/ui/components/Button.svelte";
     import Modal from "@runwisp/ui/components/Modal.svelte";
-    import { isLongRunningTask, type Task, type Run } from "@runwisp/common";
+    import { isLongRunningTask, isService, type Task, type Run } from "@runwisp/common";
     import type { LogEvent, LogSlice } from "@runwisp/ui";
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
     import { RunsList, RunDetailPanel } from "@runwisp/ui";
@@ -17,8 +17,10 @@
         concurrencyReached = false,
         triggering = false,
         stopping = false,
+        restarting = false,
         onRun,
         onStop,
+        onRestart,
         fetchLogs,
         streamLogs,
         initialRunId = null,
@@ -29,8 +31,10 @@
         concurrencyReached?: boolean;
         triggering?: boolean;
         stopping?: boolean;
+        restarting?: boolean;
         onRun: () => void;
         onStop?: (runId: string) => void;
+        onRestart?: () => void;
         fetchLogs: (
             runId: string,
             from: number,
@@ -41,10 +45,13 @@
         selectRunId?: string | null;
     }>();
 
-    const isLongRunning = $derived(isLongRunningTask(task.restart, task.parallelism));
+    const taskIsService = $derived(isService(task.kind));
+    const isLongRunning = $derived(isLongRunningTask(task.kind, task.restart, task.parallelism));
+    const instanceCount = $derived(taskIsService ? Math.max(1, task.instances ?? 1) : 0);
     let historyExpanded = $state(false);
     let confirmOpen = $state(false);
     let stopConfirmOpen = $state(false);
+    let restartConfirmOpen = $state(false);
 
     let sortedRuns: Run[] = $derived(sortByCreatedAtDesc(runs));
 
@@ -97,7 +104,7 @@
                     {historyExpanded ? "Hide History" : "History"}
                 </Button>
             {/if}
-            {#if selectedRun?.status === "running" && onStop}
+            {#if !taskIsService && selectedRun?.status === "running" && onStop}
                 <Button
                     variant="danger"
                     onclick={() => (stopConfirmOpen = true)}
@@ -107,10 +114,22 @@
                     Stop
                 </Button>
             {/if}
-            <Button variant="primary" onclick={() => (confirmOpen = true)} loading={triggering}>
-                {#snippet icon()}<Play size={16} />{/snippet}
-                Run Task
-            </Button>
+            {#if taskIsService}
+                <Button
+                    variant="primary"
+                    onclick={() => (restartConfirmOpen = true)}
+                    loading={restarting}
+                    disabled={!onRestart}
+                >
+                    {#snippet icon()}<RefreshCcw size={16} />{/snippet}
+                    Restart Service
+                </Button>
+            {:else}
+                <Button variant="primary" onclick={() => (confirmOpen = true)} loading={triggering}>
+                    {#snippet icon()}<Play size={16} />{/snippet}
+                    Run Task
+                </Button>
+            {/if}
         </div>
     </div>
 
@@ -180,6 +199,28 @@
                 "Stop Now",
                 "danger",
                 Square,
+            )}
+        {/snippet}
+    </Modal>
+
+    <Modal
+        bind:open={restartConfirmOpen}
+        title="Restart Service"
+        description={instanceCount > 1
+            ? `Cancel and restart all ${instanceCount} replicas of ${task.name}?`
+            : `Cancel and restart ${task.name}?`}
+        size="sm"
+    >
+        {#snippet footer()}
+            {@render confirmFooter(
+                () => (restartConfirmOpen = false),
+                () => {
+                    restartConfirmOpen = false;
+                    onRestart?.();
+                },
+                "Restart Now",
+                "primary",
+                RefreshCcw,
             )}
         {/snippet}
     </Modal>

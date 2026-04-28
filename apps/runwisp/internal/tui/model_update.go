@@ -360,6 +360,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StopRunMsg:
 		m.logActionResult("Stopped run for", msg.TaskName, msg.Err)
 
+	case RestartServiceMsg:
+		m.logActionResult("Restarted service", msg.TaskName, msg.Err)
+
 	case reconnectLogMsg:
 		if m.execView != nil && m.execView.RunID() == msg.RunID &&
 			m.execView.run.Status == model.PhaseRunning {

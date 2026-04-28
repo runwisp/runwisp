@@ -37,8 +37,13 @@ func runList() error {
 	fmt.Fprintln(w, "----\t--------\t-----------\t------\t---\t-----------")
 
 	for _, task := range cfg.Tasks {
-		schedule := task.Cron
-		if schedule == "" {
+		var schedule string
+		switch {
+		case task.Kind.IsService():
+			schedule = fmt.Sprintf("(service x%d)", task.Instances)
+		case task.Cron != "":
+			schedule = task.Cron
+		default:
 			schedule = "(manual)"
 		}
 

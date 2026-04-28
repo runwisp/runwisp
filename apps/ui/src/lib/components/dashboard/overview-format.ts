@@ -35,6 +35,10 @@ export function formatTaskLastResultLabel(task: TaskOverview): string {
 }
 
 export function formatTaskNextRunLabel(task: TaskOverview): string {
+    if (task.task.kind === "service") {
+        return "Always on";
+    }
+
     if (task.nextRunMs !== undefined) {
         return formatRelativeTimeWithAbsolute(new Date(task.nextRunMs));
     }
@@ -43,6 +47,11 @@ export function formatTaskNextRunLabel(task: TaskOverview): string {
 }
 
 export function formatTaskTriggerLabel(task: TaskOverview): string {
+    if (task.task.kind === "service") {
+        const instances = Math.max(1, task.task.instances ?? 1);
+        return instances > 1 ? `Service ×${String(instances)}` : "Service";
+    }
+
     if (task.task.cron) {
         return task.task.cron;
     }

@@ -5,6 +5,7 @@ package testutil
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/executor"
@@ -124,19 +125,30 @@ func (m *MockExecutor) Execute(ctx context.Context, task *model.Task, run *model
 		if d, ok := args.Get(1).(time.Duration); ok {
 			select {
 			case <-ctx.Done():
-				return &executor.ExecuteResult{ExitCode: -1, Error: ctx.Err()}
+				return cancelledResult(ctx.Err())
 			case <-time.After(d):
 			}
 		}
 	} else {
 		select {
 		case <-ctx.Done():
-			return &executor.ExecuteResult{ExitCode: -1, Error: ctx.Err()}
+			return cancelledResult(ctx.Err())
 		default:
 		}
 	}
 
 	return args.Get(0).(*executor.ExecuteResult)
+}
+
+// cancelledResult mirrors the real executor's classification of a cancelled
+// context: DeadlineExceeded → TimedOut, Canceled → Stopped.
+func cancelledResult(err error) *executor.ExecuteResult {
+	return &executor.ExecuteResult{
+		ExitCode: -1,
+		Error:    err,
+		TimedOut: errors.Is(err, context.DeadlineExceeded),
+		Stopped:  errors.Is(err, context.Canceled),
+	}
 }
 
 func (m *MockExecutor) Availability() executor.Availability {

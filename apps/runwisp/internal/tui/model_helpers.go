@@ -19,6 +19,7 @@ const (
 	confirmActionTrigger confirmAction = iota
 	confirmActionStop
 	confirmActionRetry
+	confirmActionRestartService
 )
 
 func (m *Model) focusSidebar() tea.Cmd {
@@ -115,6 +116,9 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 		if taskName == "" {
 			return nil
 		}
+		if m.isService(taskName) {
+			return m.confirmAction(confirmActionRestartService)
+		}
 		client := m.client
 		return m.showConfirmDialog(
 			"Run Now",
@@ -122,6 +126,27 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 			func() tea.Msg {
 				run, err := client.TriggerRun(taskName)
 				return TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
+			},
+		)
+	case confirmActionRestartService:
+		taskName := m.resolveTaskName()
+		if taskName == "" {
+			return nil
+		}
+		client := m.client
+		instances := m.serviceInstances(taskName)
+		var prompt string
+		if instances > 1 {
+			prompt = fmt.Sprintf("Cancel and restart all %d replicas of\n'%s'?", instances, taskName)
+		} else {
+			prompt = fmt.Sprintf("Cancel and restart\n'%s'?", taskName)
+		}
+		return m.showConfirmDialog(
+			"Restart Service",
+			prompt,
+			func() tea.Msg {
+				err := client.RestartService(taskName)
+				return RestartServiceMsg{TaskName: taskName, Err: err}
 			},
 		)
 	case confirmActionStop:

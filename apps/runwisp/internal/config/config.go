@@ -47,18 +47,39 @@ func decode(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	names := make([]string, 0, len(raw.Tasks))
-	for name := range raw.Tasks {
+	taskNames := make([]string, 0, len(raw.Tasks))
+	for name, w := range raw.Tasks {
 		if strings.TrimSpace(name) == "" {
 			return nil, fmt.Errorf("task name is required")
 		}
-		names = append(names, name)
+		if w.Restart == model.RestartAlways {
+			return nil, fmt.Errorf("task %q sets restart=\"always\"; use [services.%s] instead", name, name)
+		}
+		if w.Instances != nil {
+			return nil, fmt.Errorf("task %q sets instances; instances is only valid on [services.*]", name)
+		}
+		taskNames = append(taskNames, name)
 	}
-	sort.Strings(names)
+	sort.Strings(taskNames)
 
-	tasks := make([]model.Task, 0, len(names))
-	for _, name := range names {
+	serviceNames := make([]string, 0, len(raw.Services))
+	for name := range raw.Services {
+		if strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("service name is required")
+		}
+		if _, dup := raw.Tasks[name]; dup {
+			return nil, fmt.Errorf("name %q used by both [tasks.*] and [services.*]", name)
+		}
+		serviceNames = append(serviceNames, name)
+	}
+	sort.Strings(serviceNames)
+
+	tasks := make([]model.Task, 0, len(taskNames)+len(serviceNames))
+	for _, name := range taskNames {
 		tasks = append(tasks, raw.Tasks[name].toTask(name))
+	}
+	for _, name := range serviceNames {
+		tasks = append(tasks, raw.Services[name].toTask(name))
 	}
 
 	return &Config{
@@ -197,6 +218,23 @@ func Validate(cfg *Config) error {
 			return fmt.Errorf("invalid restart for task %s: %w", task.Name, err)
 		}
 
+		if task.Kind.IsService() {
+			if task.Instances < 1 {
+				return fmt.Errorf("invalid instances for service %s: must be >= 1", task.Name)
+			}
+			if task.Instances > MaxServiceInstances {
+				return fmt.Errorf("invalid instances for service %s: must be <= %d", task.Name, MaxServiceInstances)
+			}
+			if task.RestartDelay != "" {
+				if _, err := time.ParseDuration(task.RestartDelay); err != nil {
+					return fmt.Errorf("invalid restart_delay for service %s: %v", task.Name, err)
+				}
+			}
+			if err := validateRestartBackoff(task.RestartBackoff); err != nil {
+				return fmt.Errorf("invalid restart_backoff for service %s: %w", task.Name, err)
+			}
+		}
+
 		if task.RetryAttempts < 0 {
 			return fmt.Errorf("invalid retry_attempts for task %s: must be non-negative", task.Name)
 		}
@@ -233,19 +271,24 @@ func Validate(cfg *Config) error {
 	return nil
 }
 
+func validateRestartBackoff(value string) error {
+	switch value {
+	case "", model.RestartBackoffNone, model.RestartBackoffExponential:
+		return nil
+	default:
+		return fmt.Errorf("invalid value %q: must be none or exponential", value)
+	}
+}
+
 // ApplyDefaults fills in zero-valued fields with sensible defaults.
 func ApplyDefaults(cfg *Config) {
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
 
-		if task.Group == "" {
-			task.Group = "Tasks"
-		}
-		if task.Parallelism == 0 {
-			task.Parallelism = 1
-		}
-		if task.OnOverlap == "" {
-			task.OnOverlap = model.PolicyQueue
+		if task.Kind.IsService() {
+			applyServiceDefaults(task)
+		} else {
+			applyTaskDefaults(task)
 		}
 		if task.CatchUp == "" {
 			task.CatchUp = model.MissedRunLatest
@@ -284,5 +327,38 @@ func ApplyDefaults(cfg *Config) {
 	}
 	if bytes, err := ParseByteSize(cfg.Storage.MinFreeSpace); err == nil {
 		cfg.Storage.MinFreeSpaceBytes = bytes
+	}
+}
+
+func applyTaskDefaults(task *model.Task) {
+	if task.Group == "" {
+		task.Group = "Tasks"
+	}
+	if task.Parallelism == 0 {
+		task.Parallelism = 1
+	}
+	if task.OnOverlap == "" {
+		task.OnOverlap = model.PolicyQueue
+	}
+}
+
+func applyServiceDefaults(task *model.Task) {
+	if task.Group == "" {
+		task.Group = "Services"
+	}
+	if task.OnOverlap == "" {
+		task.OnOverlap = model.PolicySkip
+	}
+	if task.Parallelism == 0 {
+		task.Parallelism = 1
+	}
+	if task.Instances == 0 {
+		task.Instances = 1
+	}
+	if task.RestartDelay == "" {
+		task.RestartDelay = "1s"
+	}
+	if task.RestartBackoff == "" {
+		task.RestartBackoff = model.RestartBackoffExponential
 	}
 }

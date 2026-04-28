@@ -45,8 +45,14 @@ export function displayStatus(
 }
 
 export function isLongRunningTask(
+  kind: string | undefined | null,
   restartPolicy: string | undefined | null,
   concurrencyLimit: number | undefined | null,
 ): boolean {
+  if (kind === "service") return true;
   return restartPolicy === "always" && (concurrencyLimit ?? 1) <= 1;
+}
+
+export function isService(kind: string | undefined | null): boolean {
+  return kind === "service";
 }

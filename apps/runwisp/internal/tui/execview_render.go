@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -87,10 +88,14 @@ func (v *ExecView) View() string {
 	}
 	idTag := idStyle.Render("#" + v.run.ID[len(v.run.ID)-8:])
 
+	taskLabel := v.run.TaskName
+	if v.run.ReplicaIndex > 0 {
+		taskLabel = fmt.Sprintf("%s#%d", taskLabel, v.run.ReplicaIndex)
+	}
 	headerLeft := bgLight.Render("  ") +
 		backBtn +
 		bgLight.Render("  ") +
-		bgLight.Bold(true).Foreground(colorTextBright).Render(v.run.TaskName) +
+		bgLight.Bold(true).Foreground(colorTextBright).Render(taskLabel) +
 		bgLight.Render("  ")
 	idX0 := sidebarWidth + lipgloss.Width(headerLeft)
 	headerLeft = headerLeft + idTag

@@ -81,7 +81,7 @@ export function buildTaskOverviews(
             state,
             nextRunMs,
             isApiOnly,
-            isLongRunning: isLongRunningTask(task.restart, task.parallelism),
+            isLongRunning: isLongRunningTask(task.kind, task.restart, task.parallelism),
         };
     });
 }

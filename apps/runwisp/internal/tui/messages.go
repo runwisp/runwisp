@@ -74,6 +74,12 @@ type StopRunMsg struct {
 	Err      error
 }
 
+// RestartServiceMsg is the result of a "Restart Service" action.
+type RestartServiceMsg struct {
+	TaskName string
+	Err      error
+}
+
 // QuitAction specifies what should happen to the daemon when the TUI exits.
 type QuitAction int
 

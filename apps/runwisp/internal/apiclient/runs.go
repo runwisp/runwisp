@@ -99,6 +99,11 @@ func (c *Client) TriggerRun(taskName string) (*model.Run, error) {
 	return &run, nil
 }
 
+// RestartService restarts every replica of a service task.
+func (c *Client) RestartService(taskName string) error {
+	return c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/restart", taskName), nil, nil)
+}
+
 // StopRun sends a stop signal to a running execution.
 func (c *Client) StopRun(taskName string, runID string) error {
 	return c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/runs/%s/stop", taskName, runID), nil, nil)

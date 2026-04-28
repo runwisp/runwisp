@@ -18,6 +18,7 @@
     let runs = $state<Run[]>([]);
     let triggering = $state(false);
     let stopping = $state(false);
+    let restarting = $state(false);
     let selectRunId = $state<string | null>(null);
 
     const DEFAULT_CONCURRENCY_LIMIT = 1;
@@ -101,6 +102,19 @@
             stopping = false;
         }
     }
+
+    async function handleRestart() {
+        if (!taskName) return;
+        restarting = true;
+        try {
+            await tasksApi.restartService(taskName);
+            toast.success(`Restarting "${taskName}"`);
+        } catch {
+            toast.error(`Failed to restart "${taskName}"`);
+        } finally {
+            restarting = false;
+        }
+    }
 </script>
 
 <AsyncDataView data={pageData}>
@@ -111,8 +125,10 @@
             {concurrencyReached}
             {triggering}
             {stopping}
+            {restarting}
             onRun={handleRun}
             onStop={handleStop}
+            onRestart={handleRestart}
             fetchLogs={logSession.fetchLogs}
             streamLogs={logSession.streamLogs}
             initialRunId={$page.url.searchParams.get("runId")}

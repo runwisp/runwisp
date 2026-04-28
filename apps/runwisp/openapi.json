@@ -237,6 +237,10 @@
           "id": {
             "type": "string"
           },
+          "replica_index": {
+            "format": "int64",
+            "type": "integer"
+          },
           "retry_attempt": {
             "format": "int64",
             "type": "integer"
@@ -277,7 +281,8 @@
           "exit_code",
           "triggered_by",
           "created_at",
-          "retry_attempt"
+          "retry_attempt",
+          "replica_index"
         ],
         "type": "object"
       },
@@ -551,6 +556,17 @@
           "group": {
             "type": "string"
           },
+          "instances": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "task",
+              "service"
+            ],
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -595,12 +611,25 @@
           "group": {
             "type": "string"
           },
+          "instances": {
+            "description": "For services: number of always-running replicas",
+            "format": "int64",
+            "type": "integer"
+          },
           "keep_for": {
             "type": "string"
           },
           "keep_runs": {
             "format": "int64",
             "type": "integer"
+          },
+          "kind": {
+            "description": "Whether this is a scheduled task or an always-on service",
+            "enum": [
+              "task",
+              "service"
+            ],
+            "type": "string"
           },
           "log_max_size": {
             "type": "string"
@@ -640,6 +669,18 @@
               "always",
               "on_failure"
             ],
+            "type": "string"
+          },
+          "restart_backoff": {
+            "description": "Backoff curve between consecutive restarts",
+            "enum": [
+              "none",
+              "exponential"
+            ],
+            "type": "string"
+          },
+          "restart_delay": {
+            "description": "Base delay before each restart (e.g. \"1s\")",
             "type": "string"
           },
           "retry_attempts": {
@@ -1152,6 +1193,52 @@
         "summary": "List all tasks",
         "tags": [
           "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{taskName}/restart": {
+      "post": {
+        "operationId": "restartService",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopRunOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Restart all replicas of a service",
+        "tags": [
+          "Runs"
         ]
       }
     },
