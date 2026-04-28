@@ -433,10 +433,10 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 			}
 		}
 
-		// Auto-open when a long-running task starts and user is viewing that task.
+		// Auto-open when a single-instance service starts and user is viewing that task.
 		if m.execView == nil && runEvt.Run.Status == model.PhaseRunning &&
 			m.sidebar.ActiveTask() == runEvt.TaskName &&
-			m.isLongRunningTask(runEvt.TaskName) {
+			m.isSingleInstanceService(runEvt.TaskName) {
 			return m.openExecView(runEvt.Run)
 		}
 	}

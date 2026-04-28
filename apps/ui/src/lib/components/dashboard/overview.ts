@@ -1,13 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-    displayStatus,
-    isLongRunningTask,
-    type RunStatus,
-    type Run,
-    type Task,
-} from "@runwisp/common";
+import { displayStatus, type RunStatus, type Run, type Task } from "@runwisp/common";
 
 export type TaskWithId = Task & { id: string };
 
@@ -22,7 +16,6 @@ export interface TaskOverview {
     state: OverviewTaskState;
     nextRunMs: number | undefined;
     isApiOnly: boolean;
-    isLongRunning: boolean;
 }
 
 export interface OverviewSummary {
@@ -81,7 +74,6 @@ export function buildTaskOverviews(
             state,
             nextRunMs,
             isApiOnly,
-            isLongRunning: isLongRunningTask(task.kind, task.restart, task.parallelism),
         };
     });
 }

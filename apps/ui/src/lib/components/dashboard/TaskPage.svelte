@@ -5,7 +5,7 @@
     import { Play, PanelLeftClose, History, Square, RefreshCcw } from "@lucide/svelte";
     import Button from "@runwisp/ui/components/Button.svelte";
     import Modal from "@runwisp/ui/components/Modal.svelte";
-    import { isLongRunningTask, isService, type Task, type Run } from "@runwisp/common";
+    import { isService, type Task, type Run } from "@runwisp/common";
     import type { LogEvent, LogSlice } from "@runwisp/ui";
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
     import { RunsList, RunDetailPanel } from "@runwisp/ui";
@@ -46,8 +46,8 @@
     }>();
 
     const taskIsService = $derived(isService(task.kind));
-    const isLongRunning = $derived(isLongRunningTask(task.kind, task.restart, task.parallelism));
     const instanceCount = $derived(taskIsService ? Math.max(1, task.instances ?? 1) : 0);
+    const hideHistory = $derived(taskIsService && instanceCount == 1);
     let historyExpanded = $state(false);
     let confirmOpen = $state(false);
     let stopConfirmOpen = $state(false);
@@ -87,7 +87,7 @@
             </p>
         </div>
         <div class="flex items-center gap-2">
-            {#if isLongRunning}
+            {#if hideHistory}
                 <Button
                     variant="ghost"
                     size="sm"
@@ -137,10 +137,10 @@
     <div
         class={[
             "grid min-h-0 flex-1 gap-6",
-            isLongRunning && !historyExpanded ? "grid-cols-1" : "grid-cols-1 md:grid-cols-12",
+            hideHistory && !historyExpanded ? "grid-cols-1" : "grid-cols-1 md:grid-cols-12",
         ]}
     >
-        {#if !isLongRunning || historyExpanded}
+        {#if !hideHistory || historyExpanded}
             <RunsList
                 {runs}
                 {selectedRunId}
@@ -153,7 +153,7 @@
         <div
             class={[
                 "flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm",
-                isLongRunning && !historyExpanded ? "" : "md:col-span-8 lg:col-span-9",
+                hideHistory && !historyExpanded ? "" : "md:col-span-8 lg:col-span-9",
             ]}
         >
             <RunDetailPanel run={selectedRun} {fetchLogs} {streamLogs} />

@@ -69,7 +69,7 @@ func (m *Model) applySidebarSelectionChange(prevPage Page, prevTask string) tea.
 			cmds = append(cmds, cmd)
 		}
 	}
-	if cmd := m.autoOpenLongRunning(m.sidebar.ActiveTask()); cmd != nil {
+	if cmd := m.autoOpenService(m.sidebar.ActiveTask()); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
 	if m.sidebar.ActivePage() == PageInfo && prevPage != PageInfo {

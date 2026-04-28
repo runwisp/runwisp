@@ -232,10 +232,11 @@ func (m *Model) taskDisplayByName(name string) *model.TaskBrief {
 	return nil
 }
 
-// isLongRunningTask returns true if the task is a service or has restart:always with concurrency limit <= 1.
-func (m *Model) isLongRunningTask(name string) bool {
+// isSingleInstanceService reports whether the task is a service with exactly one replica.
+// Used to decide whether to auto-open its log view on start.
+func (m *Model) isSingleInstanceService(name string) bool {
 	task := m.taskDisplayByName(name)
-	return task != nil && model.IsLongRunningTask(task.Kind, task.Restart, task.Parallelism)
+	return task != nil && task.Kind.IsService() && task.Instances <= 1
 }
 
 // isService reports whether the named task is configured as an always-on service.
@@ -261,10 +262,10 @@ func (m *Model) latestRunningExec(taskName string) *model.Run {
 	return m.execWindow.LatestRunning(taskName)
 }
 
-// autoOpenLongRunning opens the latest running execution for long-running tasks.
+// autoOpenService opens the latest running execution for single-instance services.
 // Returns a command if a log stream should be started, or nil.
-func (m *Model) autoOpenLongRunning(taskName string) tea.Cmd {
-	if !m.isLongRunningTask(taskName) {
+func (m *Model) autoOpenService(taskName string) tea.Cmd {
+	if !m.isSingleInstanceService(taskName) {
 		return nil
 	}
 	if run := m.latestRunningExec(taskName); run != nil {

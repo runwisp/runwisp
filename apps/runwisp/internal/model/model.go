@@ -260,14 +260,6 @@ type RunSummary struct {
 	LastFailure *time.Time `json:"last_failure,omitempty" doc:"Timestamp of most recent failure"`
 }
 
-// IsLongRunningTask reports whether the task is an always-on daemon run.
-func IsLongRunningTask(kind TaskKind, restartPolicy RestartPolicy, parallelism int) bool {
-	if kind.IsService() {
-		return true
-	}
-	return restartPolicy == RestartAlways && parallelism <= 1
-}
-
 // TaskRegistration is a one-to-one per-task record for metadata that has no
 // natural home in the run log (first-seen timestamp, future per-task flags, etc.).
 type TaskRegistration struct {

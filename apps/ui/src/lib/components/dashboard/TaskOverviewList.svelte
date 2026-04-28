@@ -212,8 +212,6 @@
                                             ? `Service ×${task.task.instances}`
                                             : "Service"}
                                     </Badge>
-                                {:else if task.isLongRunning}
-                                    <Badge variant="info" size="sm">Long-running</Badge>
                                 {/if}
                             </div>
 
