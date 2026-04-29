@@ -424,6 +424,10 @@ func TestLogStream(t *testing.T) {
 }
 
 func addAuth(req *http.Request, s *Server) {
-	_, ts, _ := s.auth.JWTAuth().Encode(map[string]any{"exp": time.Now().Add(time.Hour).Unix()})
+	_, ts, _ := s.auth.JWTAuth().Encode(map[string]any{
+		"exp": time.Now().Add(time.Hour).Unix(),
+		"iss": JWTIssuer,
+		"aud": JWTAudience,
+	})
 	req.Header.Set("Authorization", "Bearer "+ts)
 }

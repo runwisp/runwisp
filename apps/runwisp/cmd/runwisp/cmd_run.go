@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -196,6 +197,28 @@ func logSecurityWarnings(cfg *daemonConfig) {
 		slog.Warn("Cloud shell dispatch enabled — the cloud control plane can execute arbitrary shell commands on this host")
 	}
 	if flags.Host != "127.0.0.1" && flags.Host != "::1" && flags.Host != "localhost" {
-		slog.Warn("HTTP server bound to non-loopback address — the API and web UI are accessible from the network", "host", flags.Host)
+		printNonLoopbackBanner(flags.Host)
 	}
+}
+
+// printNonLoopbackBanner writes an unmissable stderr banner when the daemon
+// is binding to an address reachable beyond localhost. Plain HTTP over a real
+// network exposes the auth cookie and JWT in cleartext; we want operators to
+// see this clearly without forcing them to add extra flags or terminate the
+// process — they may know what they're doing (private LAN, behind a TLS proxy,
+// etc.) and just need a visible reminder, not a roadblock.
+func printNonLoopbackBanner(host string) {
+	banner := fmt.Sprintf(
+		"\n"+
+			"================================================================================\n"+
+			"  SECURITY: HTTP server is binding to %q (not loopback).\n"+
+			"  The web UI and API will be reachable from the network in cleartext HTTP.\n"+
+			"  Auth tokens travel over the wire — terminate TLS at a reverse proxy\n"+
+			"  (nginx, caddy, traefik) and set RUNWISP_TRUST_PROXY=<proxy-CIDR> so the\n"+
+			"  daemon honors X-Forwarded-Proto. Do not expose plaintext HTTP to the\n"+
+			"  public internet.\n"+
+			"================================================================================\n",
+		host,
+	)
+	_, _ = fmt.Fprint(os.Stderr, banner)
 }

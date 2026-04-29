@@ -39,6 +39,7 @@ type Server struct {
 	runService      *runService
 	stats           *statsProvider
 	metrics         *MetricsCollector
+	streams         *streamLimiter
 }
 
 // DaemonInfo, TaskBrief, and CapInfo live in the model package.
@@ -69,7 +70,7 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("parse trusted proxies: %w", err)
 	}
 
-	authSvc := NewAuthService(opts.Password, opts.JWTSecret)
+	authSvc := NewAuthService(opts.Password, opts.JWTSecret, trustedProxies)
 
 	router := chi.NewRouter()
 
@@ -96,6 +97,7 @@ func New(opts Options) (*Server, error) {
 		s.logOutput = os.Stderr
 	}
 	s.daemonLogBuffer = opts.DaemonLogBuffer
+	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)
 	s.setupRoutes()
 	return s, nil
 }
@@ -113,6 +115,7 @@ func (srv *Server) Start() error {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 16, // 64 KiB
 	}
 	return httpServer.ListenAndServe()
 }

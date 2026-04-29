@@ -44,3 +44,28 @@ When deploying RunWisp:
 - Use HTTPS (via a reverse proxy) for all API and WebSocket connections.
 - Keep the RunWisp binary and dependencies up to date.
 - Set `RUNWISP_TRUST_PROXY` only to your actual reverse proxy CIDR ranges.
+
+## Network Exposure
+
+By default the daemon binds to `127.0.0.1` and is reachable only from the same
+host. If you bind to a non-loopback address (`--host 0.0.0.0`, a public IP,
+etc.) the API, the JWT cookie, and the auth challenge response all travel in
+**cleartext HTTP** — anyone on path can capture them. The recommended
+deployment for any non-loopback bind is:
+
+1. Keep `--host 127.0.0.1` (or `::1`).
+2. Run a reverse proxy (nginx, Caddy, Traefik, …) on the same host that
+   terminates TLS and forwards to the daemon over the loopback interface.
+3. Set `RUNWISP_TRUST_PROXY` to the CIDR of that proxy (e.g. `127.0.0.1/32`)
+   so the daemon honors `X-Forwarded-Proto: https` for cookie issuance.
+
+The daemon prints a banner to stderr when it starts on a non-loopback address
+without a trusted proxy configured. Don't ignore it.
+
+### `RUNWISP_TRUST_PROXY`
+
+Comma-separated list of CIDR ranges whose `X-Forwarded-For` and
+`X-Forwarded-Proto` headers the daemon will trust. Only set this to the
+addresses of reverse proxies you control. The variable rejects catch-all
+ranges (`0.0.0.0/0`, `::/0`) — trusting the entire internet would let any
+client spoof their IP for rate-limit and loopback checks.

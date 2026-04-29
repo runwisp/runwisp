@@ -11,11 +11,14 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/hashicorp/golang-lru/v2/expirable"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/runwisp/runwisp/internal/datadir"
+	"github.com/sebest/xff"
 	"log/slog"
 )
 
@@ -97,23 +100,31 @@ func (s *launchTicketStore) consume(ticket string) bool {
 
 // AuthService handles challenge-response authentication and JWT token issuance.
 type AuthService struct {
-	jwtAuth       *jwtauth.JWTAuth
-	password      string
-	nonces        *nonceStore
-	launchTickets *launchTicketStore
+	jwtAuth        *jwtauth.JWTAuth
+	password       string
+	nonces         *nonceStore
+	launchTickets  *launchTicketStore
+	trustedProxies *xff.Options
 }
 
 // NewAuthService creates an AuthService with the given password and JWT signing secret.
-func NewAuthService(password, jwtSecret string) *AuthService {
+// trustedProxies is consulted when deciding whether to honor X-Forwarded-Proto on
+// cookie issuance; pass nil if the daemon sits directly on the network.
+func NewAuthService(password, jwtSecret string, trustedProxies *xff.Options) *AuthService {
 	if jwtSecret == "" {
 		panic("jwtSecret must not be empty; it should be resolved from the database before creating AuthService")
 	}
 
 	return &AuthService{
-		jwtAuth:       jwtauth.New("HS256", []byte(jwtSecret), nil),
-		password:      password,
-		nonces:        newNonceStore(),
-		launchTickets: newLaunchTicketStore(),
+		jwtAuth: jwtauth.New(
+			"HS256", []byte(jwtSecret), nil,
+			jwt.WithIssuer(JWTIssuer),
+			jwt.WithAudience(JWTAudience),
+		),
+		password:       password,
+		nonces:         newNonceStore(),
+		launchTickets:  newLaunchTicketStore(),
+		trustedProxies: trustedProxies,
 	}
 }
 
@@ -122,21 +133,28 @@ func (a *AuthService) JWTAuth() *jwtauth.JWTAuth {
 	return a.jwtAuth
 }
 
-func isSecureRequest(r *http.Request) bool {
+// isSecureRequest reports whether the connection delivering r used TLS. We
+// trust X-Forwarded-Proto only when the immediate peer is in the operator's
+// configured trusted-proxy set; otherwise any client could falsely claim TLS
+// and trick us into setting Secure on a cookie that travels in cleartext.
+func (a *AuthService) isSecureRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	return r.Header.Get("X-Forwarded-Proto") == "https"
+	if isFromTrustedProxy(r, a.trustedProxies) {
+		return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	}
+	return false
 }
 
-func setAuthCookie(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) {
+func (a *AuthService) setAuthCookie(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     authCookieName,
 		Value:    token,
 		Path:     authCookiePath,
 		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
-		Secure:   isSecureRequest(r),
+		Secure:   a.isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 }
@@ -215,7 +233,7 @@ func (a *AuthService) handleAuth(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	setAuthCookie(resp, req, tokenString, JWTTokenDuration)
+	a.setAuthCookie(resp, req, tokenString, JWTTokenDuration)
 	resp.Header().Set("Content-Type", "application/json")
 	resp.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(resp).Encode(map[string]string{"token": tokenString}); err != nil {
@@ -292,6 +310,6 @@ func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setAuthCookie(w, r, tokenString, JWTTokenDuration)
+	srv.auth.setAuthCookie(w, r, tokenString, JWTTokenDuration)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,12 +20,12 @@ import (
 
 func TestNewAuthService_PanicsOnEmptySecret(t *testing.T) {
 	assert.Panics(t, func() {
-		NewAuthService("pass", "")
+		NewAuthService("pass", "", nil)
 	})
 }
 
 func TestNewAuthService_ExplicitSecret(t *testing.T) {
-	auth := NewAuthService("pass", "my-secret")
+	auth := NewAuthService("pass", "my-secret", nil)
 	assert.NotNil(t, auth.JWTAuth())
 }
 
@@ -66,7 +67,7 @@ func computeChallenge(password, nonce string) string {
 }
 
 func TestHandleAuth_Success(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret")
+	auth := NewAuthService("secret", "test-jwt-secret", nil)
 
 	nonce, err := auth.nonces.create()
 	require.NoError(t, err)
@@ -101,7 +102,7 @@ func TestHandleAuth_Success(t *testing.T) {
 }
 
 func TestHandleAuth_WrongPassword(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret")
+	auth := NewAuthService("secret", "test-jwt-secret", nil)
 
 	nonce, err := auth.nonces.create()
 	require.NoError(t, err)
@@ -118,7 +119,7 @@ func TestHandleAuth_WrongPassword(t *testing.T) {
 }
 
 func TestHandleAuth_InvalidNonce(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret")
+	auth := NewAuthService("secret", "test-jwt-secret", nil)
 
 	body := `{"nonce":"deadbeef","response":"anything"}`
 	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
@@ -132,7 +133,7 @@ func TestHandleAuth_InvalidNonce(t *testing.T) {
 }
 
 func TestHandleAuth_NonceReplay(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret")
+	auth := NewAuthService("secret", "test-jwt-secret", nil)
 
 	nonce, err := auth.nonces.create()
 	require.NoError(t, err)
@@ -155,7 +156,7 @@ func TestHandleAuth_NonceReplay(t *testing.T) {
 }
 
 func TestHandleAuth_MalformedBody(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret")
+	auth := NewAuthService("secret", "test-jwt-secret", nil)
 
 	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader("not-json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -167,7 +168,7 @@ func TestHandleAuth_MalformedBody(t *testing.T) {
 }
 
 func TestHandleAuth_OversizedBody(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret")
+	auth := NewAuthService("secret", "test-jwt-secret", nil)
 
 	// MaxRequestBodySize is 1024 bytes; send a body larger than that
 	bigBody := strings.Repeat("x", MaxRequestBodySize+100)
@@ -181,7 +182,7 @@ func TestHandleAuth_OversizedBody(t *testing.T) {
 }
 
 func TestHandleAuth_JWTContainsExpAndIat(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret")
+	auth := NewAuthService("secret", "test-jwt-secret", nil)
 
 	nonce, err := auth.nonces.create()
 	require.NoError(t, err)
@@ -208,10 +209,47 @@ func TestHandleAuth_JWTContainsExpAndIat(t *testing.T) {
 	assert.False(t, iat.IsZero())
 }
 
+func TestProtectedRoute_RejectsTokenWithWrongAudience(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	_, ts, err := s.auth.JWTAuth().Encode(map[string]any{
+		"exp": time.Now().Add(time.Hour).Unix(),
+		"iss": JWTIssuer,
+		"aud": "some-other-api",
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/api/tasks", nil)
+	req.Header.Set("Authorization", "Bearer "+ts)
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestProtectedRoute_RejectsTokenWithWrongIssuer(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	_, ts, err := s.auth.JWTAuth().Encode(map[string]any{
+		"exp": time.Now().Add(time.Hour).Unix(),
+		"iss": "someone-else",
+		"aud": JWTAudience,
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/api/tasks", nil)
+	req.Header.Set("Authorization", "Bearer "+ts)
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
 func TestSetAuthCookie_HTTP(t *testing.T) {
+	auth := NewAuthService("pass", "test-jwt-secret", nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/auth", nil)
-	setAuthCookie(w, r, "test-token", JWTTokenDuration)
+	auth.setAuthCookie(w, r, "test-token", JWTTokenDuration)
 
 	cookies := w.Result().Cookies()
 	require.Len(t, cookies, 1)
@@ -225,15 +263,50 @@ func TestSetAuthCookie_HTTP(t *testing.T) {
 	assert.Equal(t, http.SameSiteStrictMode, c.SameSite)
 }
 
-func TestSetAuthCookie_HTTPS(t *testing.T) {
+func TestSetAuthCookie_XForwardedProtoFromUntrustedClientIgnored(t *testing.T) {
+	// With no trusted proxies configured, X-Forwarded-Proto must be ignored
+	// — otherwise any client could spoof "https" and trick us into setting
+	// the Secure flag on a cookie that travels in cleartext.
+	auth := NewAuthService("pass", "test-jwt-secret", nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r.RemoteAddr = "203.0.113.50:1234"
 	r.Header.Set("X-Forwarded-Proto", "https")
-	setAuthCookie(w, r, "test-token", JWTTokenDuration)
+	auth.setAuthCookie(w, r, "test-token", JWTTokenDuration)
 
 	cookies := w.Result().Cookies()
 	require.Len(t, cookies, 1)
-	assert.True(t, cookies[0].Secure, "Secure should be true for HTTPS")
+	assert.False(t, cookies[0].Secure, "Secure must not be set based on a spoofable header")
+}
+
+func TestSetAuthCookie_XForwardedProtoFromTrustedProxyHonored(t *testing.T) {
+	trusted, err := parseTrustedProxies("127.0.0.1/32")
+	require.NoError(t, err)
+	auth := NewAuthService("pass", "test-jwt-secret", trusted)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r.RemoteAddr = "127.0.0.1:1234"
+	r.Header.Set("X-Forwarded-Proto", "https")
+	auth.setAuthCookie(w, r, "test-token", JWTTokenDuration)
+
+	cookies := w.Result().Cookies()
+	require.Len(t, cookies, 1)
+	assert.True(t, cookies[0].Secure, "Secure should be set when XFP=https is forwarded by a trusted proxy")
+}
+
+func TestParseTrustedProxies_RejectsCatchAll(t *testing.T) {
+	for _, cidr := range []string{"0.0.0.0/0", "::/0"} {
+		_, err := parseTrustedProxies(cidr)
+		assert.Error(t, err, "expected %s to be rejected", cidr)
+	}
+}
+
+func TestParseTrustedProxies_AcceptsValidCIDR(t *testing.T) {
+	opts, err := parseTrustedProxies("10.0.0.0/8,127.0.0.1")
+	require.NoError(t, err)
+	require.NotNil(t, opts)
+	assert.Equal(t, []string{"10.0.0.0/8", "127.0.0.1/32"}, opts.AllowedSubnets)
 }
 
 // --- Launch ticket store tests ---
@@ -256,7 +329,7 @@ func TestLaunchTicketStore_InvalidTicket(t *testing.T) {
 }
 
 func TestAuthService_CreateLaunchTicket(t *testing.T) {
-	auth := NewAuthService("pass", "test-jwt-secret")
+	auth := NewAuthService("pass", "test-jwt-secret", nil)
 
 	ticket, err := auth.CreateLaunchTicket()
 	require.NoError(t, err)
