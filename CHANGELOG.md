@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+
+## [0.3.0] - 2026-04-29
+
 ### Added
 
 - **Always-on services with `[services.NAME]`.** A new top-level config section for long-lived processes. RunWisp keeps the configured number of `instances` alive at all times and restarts each replica with exponential backoff (default 1s → 60s cap) on exit. Replica counts default to `1`; bump `instances = 3` for a worker pool. Per-replica run history is fully visible — every restart shows up in the dashboard and TUI with its own exit code, duration, and captured output.
@@ -74,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/runwisp/runwisp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/runwisp/runwisp/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/runwisp/runwisp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/runwisp/runwisp/compare/v0.1.0...v0.1.1
