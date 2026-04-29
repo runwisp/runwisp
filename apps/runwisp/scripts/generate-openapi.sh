@@ -14,4 +14,4 @@ fi
 
 # Use a fixed version so the checked-in openapi.json stays deterministic
 # (the real binary version is injected at build time via metadata.sh).
-go run -ldflags "-X ${module}/internal/server.RunnerVersion=dev" ./cmd/runwisp openapi > openapi.json
+go run -ldflags "-X ${module}/internal/version.Version=dev" ./cmd/runwisp openapi > openapi.json

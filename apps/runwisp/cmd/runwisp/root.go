@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/runwisp/runwisp/internal/datadir"
-	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +35,7 @@ var rootCmd = &cobra.Command{
 	Use:     "runwisp",
 	Short:   "RunWisp — lightweight cron daemon with a web UI",
 	Long:    `RunWisp is a standalone cron daemon and process supervisor with a web UI and a terminal UI.`,
-	Version: server.Version,
+	Version: version.Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDefault()
 	},
@@ -51,7 +51,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVarP(&flags.CfgFile, "config", "c", "runwisp.toml", "path to configuration file")
 	rootCmd.PersistentFlags().StringVar(&flags.DataDir, "data", "data", "directory for all persistent data (db, logs, secrets)")
-	rootCmd.PersistentFlags().IntVarP(&flags.Port, "port", "p", 8080, "HTTP server port")
+	rootCmd.PersistentFlags().IntVarP(&flags.Port, "port", "p", 9477, "HTTP server port")
 	rootCmd.PersistentFlags().StringVar(&flags.Host, "host", "127.0.0.1", "HTTP server bind address (use 0.0.0.0 to listen on all interfaces)")
 
 	rootCmd.AddCommand(runCmd)

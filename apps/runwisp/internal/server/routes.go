@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/httprate"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/runwisp/runwisp/internal/ui"
+	"github.com/runwisp/runwisp/internal/version"
 	"github.com/sebest/xff"
 )
 
@@ -105,7 +106,7 @@ func (srv *Server) setupRoutes() {
 	srv.router.Use(middleware.RealIP)
 
 	// Create huma API after all global middleware is registered (chi requirement)
-	config := huma.DefaultConfig("RunWisp API", Version)
+	config := huma.DefaultConfig("RunWisp API", version.Version)
 	config.Servers = []*huma.Server{{URL: fmt.Sprintf("http://localhost:%d", srv.port)}}
 	srv.api = humachi.New(srv.router, config)
 

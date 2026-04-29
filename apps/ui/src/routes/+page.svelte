@@ -8,7 +8,7 @@
     import { formatBytes } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, type MetricsSample } from "$lib/api";
-    import { runUpdatesStore, upsertRun, connectionStore } from "$lib/stores";
+    import { runUpdatesStore, upsertRun, connectionStore, systemStore } from "$lib/stores";
     import { getApiUrl } from "$lib/utils/env";
     import { toTaskPageId } from "$lib/utils/task-id";
     import { AsyncData } from "$lib/utils/async-data.svelte";
@@ -21,8 +21,6 @@
         tasks: Task[];
         recentRuns: Run[];
         runningRuns: Run[];
-        cpuUsage: number;
-        memUsage: number;
         metricsHistory: MetricsSample[];
     }
 
@@ -30,8 +28,6 @@
         tasks: [],
         recentRuns: [],
         runningRuns: [],
-        cpuUsage: 0,
-        memUsage: 0,
         metricsHistory: [],
     });
 
@@ -57,19 +53,19 @@
         };
     });
 
-    let daemonState = $state<DaemonState>({
-        name: "runwisp",
-        version: "—",
-        uptime: "—",
-        status: "connected",
-        host: "unknown",
-        cpus: 0,
-        memory: "—",
+    let daemonState = $derived<DaemonState>({
+        name: systemStore.name,
+        version: systemStore.version,
+        uptime: systemStore.uptime,
+        status: connectionStore.status === "connected" ? "connected" : "disconnected",
+        host: systemStore.host,
+        cpus: systemStore.cpus,
+        memory: formatBytes(systemStore.memTotal),
         backendUrl: getApiUrl(),
-        os: "—",
-        arch: "—",
-        workDir: "—",
-        fingerprint: "—",
+        os: systemStore.os,
+        arch: systemStore.arch,
+        workDir: systemStore.workDir,
+        fingerprint: systemStore.fingerprint,
     });
 
     let stats = $derived.by<DaemonStats>(() => {
@@ -88,8 +84,8 @@
         return {
             activeTasks: dashState.runningRuns.length,
             successRate: Math.round(successRate * 10) / 10,
-            cpuUsage: dashState.cpuUsage,
-            memUsage: dashState.memUsage,
+            cpuUsage: systemStore.cpuUsage,
+            memUsage: systemStore.memUsage,
         };
     });
 
@@ -120,34 +116,13 @@
         }
     });
 
-    $effect(() => {
-        daemonState.status = connectionStore.status === "connected" ? "connected" : "disconnected";
-    });
-
     async function loadSystemStats() {
+        await systemStore.refresh();
         if (connectionStore.status === "disconnected") return;
         try {
-            const [sys, info, history] = await Promise.all([
-                systemApi.getStats(),
-                systemApi.getInfo(),
-                systemApi.getMetricsHistory(),
-            ]);
-            daemonState.name = sys.name;
-            daemonState.version = sys.version;
-            daemonState.uptime = sys.uptime;
-            daemonState.host = sys.host;
-            daemonState.cpus = sys.cpu_cores;
-            daemonState.memory = formatBytes(sys.mem_total);
-            daemonState.os = sys.os;
-            daemonState.arch = sys.arch;
-            daemonState.workDir = sys.work_dir;
-            daemonState.fingerprint = info.fingerprint;
-
-            dashState.cpuUsage = sys.cpu_usage;
-            dashState.memUsage = sys.mem_usage;
-            dashState.metricsHistory = history;
+            dashState.metricsHistory = await systemApi.getMetricsHistory();
         } catch {
-            // silent — system stats are secondary
+            // silent — metrics history is secondary
         }
     }
 

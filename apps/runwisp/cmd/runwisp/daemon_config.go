@@ -17,8 +17,8 @@ import (
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/fingerprint"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/version"
 )
 
 // daemonConfig holds resolved configuration and secrets for the daemon.
@@ -47,7 +47,7 @@ func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*da
 	if mode == modeCloud {
 		// Cloud mode: env vars were already set by cmd_cloud.go, so pass empty
 		// overrides and let LoadConfig read from the environment.
-		cloudCfg, err = cloud.LoadConfig(server.Version, "", "", fp)
+		cloudCfg, err = cloud.LoadConfig(version.Version, "", "", fp)
 		if err != nil {
 			return nil, err
 		}

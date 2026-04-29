@@ -41,6 +41,17 @@ jobs:
         run: ./scripts/sync-ui-dist.sh
         working-directory: apps/runwisp
 
+      - name: Verify CHANGELOG matches release tag
+        working-directory: apps/runwisp
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          changelog_version=$(./scripts/metadata.sh version)
+          if [[ "${tag_version}" != "${changelog_version}" ]]; then
+            printf 'Tag %s does not match top CHANGELOG entry %s\n' \
+              "${tag_version}" "${changelog_version}" >&2
+            exit 1
+          fi
+
       - name: Cross-compile binaries
         working-directory: apps/runwisp
         env:

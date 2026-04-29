@@ -14,9 +14,8 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/version"
 )
-
-var Version = "0.0.0-dev"
 
 const AppName = "runwisp"
 
@@ -34,7 +33,7 @@ func newStatsProvider(daemonInfo *model.DaemonInfo, startTime time.Time) *statsP
 
 func (p *statsProvider) GetSystemStats() model.SystemStats {
 	stats := model.SystemStats{
-		Version:  Version,
+		Version:  version.Version,
 		Name:     AppName,
 		CPUCores: runtime.NumCPU(),
 		OS:       runtime.GOOS,
