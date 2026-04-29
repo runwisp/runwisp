@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
-
-- **Safer-by-default install.** The data directory is created owner-only, and writes to internal state files (PID, password, JWT secret) refuse to follow symlinks — a stray or malicious symlink in the data dir can no longer redirect a daemon write to clobber something else.
-- **Stricter session-token validation.** Issued JWTs now carry and validate explicit issuer and audience claims; tokens with mismatched claims are rejected. The cookie `Secure` flag is no longer set based on a header any client could spoof — only real TLS, or a proxy you've listed in `RUNWISP_TRUST_PROXY`, counts as secure.
-- **Resource caps to bound abuse.** Authenticated API request bodies are capped at 1 MiB, headers at 64 KiB, and concurrent SSE / log streams are limited (64 globally, 8 per source IP) so a single noisy or malicious client can't exhaust the daemon. Stream caps account on the real TCP peer and can't be bypassed via `X-Forwarded-For` header.
-- **Clear startup signals for risky configs.** Starting on a non-loopback address prints a prominent stderr banner reminding you to put a TLS-terminating reverse proxy in front of the daemon. Setting `RUNWISP_TRUST_PROXY` to a catch-all range (`0.0.0.0/0`, `::/0`) is now a startup error rather than a silent misconfiguration.
-
 ### Added
 
 - **Always-on services with `[services.NAME]`.** A new top-level config section for long-lived processes. RunWisp keeps the configured number of `instances` alive at all times and restarts each replica with exponential backoff (default 1s → 60s cap) on exit. Replica counts default to `1`; bump `instances = 3` for a worker pool. Per-replica run history is fully visible — every restart shows up in the dashboard and TUI with its own exit code, duration, and captured output.
@@ -29,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Services now self-heal after a manual stop or service-restart.** Stopping a single service replica from the TUI or web dashboard left the slot permanently empty, and **Restart Service** killed every replica without bringing any back up. Both actions now correctly trigger the supervisor to refill each freed slot at its original replica index.
+- **Hardened defaults for public deployments.** The data directory and its internal files (PID, password, JWT secret) are now created with owner-only permissions and symlink-safe writes. Sessions are validated with explicit issuer/audience claims, and the `Secure` cookie flag is set only on real TLS or a proxy you've explicitly trusted via `RUNWISP_TRUST_PROXY` — not based on a spoofable header. Starting on a non-loopback address prints a reminder to put a reverse proxy in front; setting `RUNWISP_TRUST_PROXY` to an open range (`0.0.0.0/0`, `::/0`) is now a startup error.
+- **A noisy client can no longer starve the daemon.** API request bodies are capped at 1 MiB, headers at 64 KiB, and concurrent log streams are limited to 64 globally / 8 per IP — enforced against the real TCP peer, not a forwarded header.
 
 ## [0.2.0] - 2026-04-25
 
