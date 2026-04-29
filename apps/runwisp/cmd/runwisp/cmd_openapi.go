@@ -27,7 +27,7 @@ func runOpenAPI() error {
 	// Construct a server with minimal dependencies — only route registration matters.
 	srv, err := server.New(server.Options{
 		Tasks:      map[string]*model.Task{},
-		Port:       8080,
+		Port:       9477,
 		LogDir:     os.TempDir(),
 		EventBus:   events.NewEventBus(),
 		Password:   "openapi-generation",

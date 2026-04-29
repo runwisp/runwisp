@@ -17,7 +17,7 @@ The dev server starts at `http://localhost:5173` and proxies API requests to the
 
 | Variable       | Description         | Default                 |
 | -------------- | ------------------- | ----------------------- |
-| `VITE_API_URL` | Daemon API base URL | `http://localhost:8080` |
+| `VITE_API_URL` | Daemon API base URL | `http://localhost:9477` |
 
 ## Architecture
 

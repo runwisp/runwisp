@@ -17,9 +17,9 @@
     "BUN_INSTALL": "/home/vscode/.bun",
     "PATH": "/home/vscode/.bun/bin:${containerEnv:PATH}"
   },
-  "forwardPorts": [8080],
+  "forwardPorts": [9477],
   "portsAttributes": {
-    "8080": {
+    "9477": {
       "label": "RunWisp daemon",
       "onAutoForward": "notify"
     }

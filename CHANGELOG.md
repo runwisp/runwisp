@@ -7,13 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
 
+- **Default HTTP port moved from `8080` to `9477`.** Port `8080` collides with too many other tools by default (Tomcat, dev proxies, k8s port-forwards). RunWisp now listens on `9477` out of the box; pass `--port 8080` (or set it in `runwisp.toml`) to keep the old behaviour.
+
+### Fixed
+
+- **Version is now reported correctly everywhere.** The CLI (`runwisp version`), the TUI info pane, and the web dashboard previously all showed `0.0.0-dev` even on released builds. The build now reads the version from the top of `CHANGELOG.md`, so what you see in the UI matches the release you installed.
 
 ## [0.3.0] - 2026-04-29
 
 ### Added
 
-- **Always-on services with `[services.NAME]`.** A new top-level config section for long-lived processes. RunWisp keeps the configured number of `instances` alive at all times and restarts each replica with exponential backoff (default 1s → 60s cap) on exit. Replica counts default to `1`; bump `instances = 3` for a worker pool. Per-replica run history is fully visible — every restart shows up in the dashboard and TUI with its own exit code, duration, and captured output.
+- **Always-on services with `[services.NAME]`.** A new top-level config section for long-lived processes. RunWisp keeps the configured number of `instances` alive at all times and restarts each replica with exponential backoff (default 1s → 60s cap) on exit.
 - **Restart backoff is now configurable.** New per-service `restart_delay` (default `"1s"`) and `restart_backoff` (`exponential` or `none`, default `exponential`) tune the curve. A replica that runs at least 60 seconds resets its backoff counter, so a service that finally stabilises returns to fast-restart behaviour on its next failure.
 - **`POST /api/tasks/{name}/restart`.** Cancels every active replica of a service; the supervisor refills each freed slot via the normal exit-handler path. The web dashboard and TUI both surface a **Restart Service** button (in place of "Run Now") on a service's detail view, so a one-key/one-click restart is available without using the API directly.
 - **`replica_index` on every run.** Persisted on the run record and surfaced in the API. The TUI and the web dashboard both suffix the task name with `#N` when index > 0 (in the run lists, run header, and recent-activity panels) so multi-replica services are visible at a glance.

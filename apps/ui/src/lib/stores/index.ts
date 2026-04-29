@@ -7,3 +7,4 @@ export { runUpdatesStore } from "./run-updates.js";
 export type { RunUpdateHandler, RunUpdateEvent } from "./run-updates.js";
 export { connectionStore } from "./connection.svelte.js";
 export type { ConnectionStatus } from "./connection.svelte.js";
+export { systemStore } from "./system.svelte.js";

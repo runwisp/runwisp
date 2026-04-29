@@ -12,9 +12,9 @@ import (
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
-	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/internal/version"
 	"log/slog"
 )
 
@@ -193,7 +193,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
 	capInfos := capInfosFromAvailability(svc.Executor.Availability())
 
 	return &model.DaemonInfo{
-		Version:      server.Version,
+		Version:      version.Version,
 		Fingerprint:  cfg.Fingerprint,
 		Port:         flags.Port,
 		CloudEnabled: cfg.CloudConfig.Enabled,

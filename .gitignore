@@ -24,6 +24,9 @@ coverage
 build
 dist
 
+# AI
+.claude
+.kilo
 
 # Debug
 npm-debug.log*

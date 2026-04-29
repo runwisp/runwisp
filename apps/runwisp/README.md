@@ -57,7 +57,7 @@ echo "Current date: $(date)"
 """
 ```
 
-RunWisp listens on port 8080 by default. Open `http://localhost:8080` to access the web dashboard.
+RunWisp listens on port 9477 by default. Open `http://localhost:9477` to access the web dashboard.
 
 ## API Reference
 
@@ -66,9 +66,9 @@ RunWisp listens on port 8080 by default. Open `http://localhost:8080` to access 
 RunWisp uses challenge-response authentication so the password is never sent over the wire:
 
 ```bash
-NONCE=$(curl -s http://localhost:8080/api/auth/challenge | jq -r '.nonce')
+NONCE=$(curl -s http://localhost:9477/api/auth/challenge | jq -r '.nonce')
 
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth \
+TOKEN=$(curl -s -X POST http://localhost:9477/api/auth \
   -H "Content-Type: application/json" \
   -d "{\"nonce\":\"$NONCE\",\"response\":\"$(echo -n "$PASSWORD:$NONCE" | sha256sum | cut -d' ' -f1)\"}" \
   | jq -r '.token')
@@ -77,7 +77,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/auth \
 Use the token in subsequent requests:
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/tasks
+curl -H "Authorization: Bearer $TOKEN" http://localhost:9477/api/tasks
 ```
 
 ### Endpoints

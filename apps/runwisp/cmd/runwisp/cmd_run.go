@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/internal/version"
 	"github.com/spf13/cobra"
 	"log/slog"
 )
@@ -136,7 +137,7 @@ func runDaemon(mode daemonMode) error {
 	webUIDisabled := srv == nil && cfg.CloudConfig.Enabled
 
 	startupInfo := tui.StartupInfo{
-		Version:    server.Version,
+		Version:    version.Version,
 		ConfigPath: flags.CfgFile,
 		DataDir:    flags.DataDir,
 		DBPath:     flags.DBPath(),

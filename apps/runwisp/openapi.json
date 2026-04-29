@@ -23,7 +23,7 @@
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
             "examples": [
-              "http://localhost:8080/schemas/DaemonInfo.json"
+              "http://localhost:9477/schemas/DaemonInfo.json"
             ],
             "format": "uri",
             "readOnly": true,
@@ -94,7 +94,7 @@
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
             "examples": [
-              "http://localhost:8080/schemas/ErrorModel.json"
+              "http://localhost:9477/schemas/ErrorModel.json"
             ],
             "format": "uri",
             "readOnly": true,
@@ -202,7 +202,7 @@
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
             "examples": [
-              "http://localhost:8080/schemas/Run.json"
+              "http://localhost:9477/schemas/Run.json"
             ],
             "format": "uri",
             "readOnly": true,
@@ -352,7 +352,7 @@
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
             "examples": [
-              "http://localhost:8080/schemas/RunSummary.json"
+              "http://localhost:9477/schemas/RunSummary.json"
             ],
             "format": "uri",
             "readOnly": true,
@@ -407,7 +407,7 @@
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
             "examples": [
-              "http://localhost:8080/schemas/RunsResponseBody.json"
+              "http://localhost:9477/schemas/RunsResponseBody.json"
             ],
             "format": "uri",
             "readOnly": true,
@@ -441,7 +441,7 @@
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
             "examples": [
-              "http://localhost:8080/schemas/StopRunOutputBody.json"
+              "http://localhost:9477/schemas/StopRunOutputBody.json"
             ],
             "format": "uri",
             "readOnly": true,
@@ -463,7 +463,7 @@
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
             "examples": [
-              "http://localhost:8080/schemas/SystemStats.json"
+              "http://localhost:9477/schemas/SystemStats.json"
             ],
             "format": "uri",
             "readOnly": true,
@@ -707,7 +707,7 @@
   },
   "info": {
     "title": "RunWisp API",
-    "version": "0.0.0-dev"
+    "version": "dev"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1596,7 +1596,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8080"
+      "url": "http://localhost:9477"
     }
   ]
 }

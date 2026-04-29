@@ -219,7 +219,7 @@ export interface components {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example http://localhost:8080/schemas/DaemonInfo.json
+             * @example http://localhost:9477/schemas/DaemonInfo.json
              */
             readonly $schema?: string;
             capabilities: components["schemas"]["CapInfo"][] | null;
@@ -242,7 +242,7 @@ export interface components {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example http://localhost:8080/schemas/ErrorModel.json
+             * @example http://localhost:9477/schemas/ErrorModel.json
              */
             readonly $schema?: string;
             /**
@@ -309,7 +309,7 @@ export interface components {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example http://localhost:8080/schemas/Run.json
+             * @example http://localhost:9477/schemas/Run.json
              */
             readonly $schema?: string;
             /** Format: date-time */
@@ -364,7 +364,7 @@ export interface components {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example http://localhost:8080/schemas/RunSummary.json
+             * @example http://localhost:9477/schemas/RunSummary.json
              */
             readonly $schema?: string;
             /**
@@ -396,7 +396,7 @@ export interface components {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example http://localhost:8080/schemas/RunsResponseBody.json
+             * @example http://localhost:9477/schemas/RunsResponseBody.json
              */
             readonly $schema?: string;
             /** @description List of runs */
@@ -411,7 +411,7 @@ export interface components {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example http://localhost:8080/schemas/StopRunOutputBody.json
+             * @example http://localhost:9477/schemas/StopRunOutputBody.json
              */
             readonly $schema?: string;
             /** @description Result message */
@@ -421,7 +421,7 @@ export interface components {
             /**
              * Format: uri
              * @description A URL to the JSON Schema for this object.
-             * @example http://localhost:8080/schemas/SystemStats.json
+             * @example http://localhost:9477/schemas/SystemStats.json
              */
             readonly $schema?: string;
             /** @description CPU architecture (e.g. amd64, arm64) */

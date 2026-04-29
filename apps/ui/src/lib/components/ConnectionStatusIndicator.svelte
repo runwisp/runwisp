@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { formatDuration } from "@runwisp/ui";
-    import { connectionStore, type ConnectionStatus } from "$lib/stores";
+    import { connectionStore, systemStore, type ConnectionStatus } from "$lib/stores";
 
     interface Theme {
         label: string;
@@ -49,7 +49,7 @@
     let theme = $derived(THEMES[status]);
 
     let subtitle = $derived.by(() => {
-        if (status === "connected") return "indev";
+        if (status === "connected") return `v${systemStore.version}`;
         if (status === "connecting") return "Reconnecting…";
         const since = connectionStore.disconnectedSince;
         if (since !== null) return "Down for " + formatDuration(connectionStore.now - since);

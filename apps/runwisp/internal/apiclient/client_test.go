@@ -332,6 +332,6 @@ func TestStreamRunEvents(t *testing.T) {
 }
 
 func TestBaseURL(t *testing.T) {
-	c := New("http://localhost:8080/", "")
-	assert.Equal(t, "http://localhost:8080", c.BaseURL())
+	c := New("http://localhost:9477/", "")
+	assert.Equal(t, "http://localhost:9477", c.BaseURL())
 }
