@@ -75,7 +75,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns() {
 
 	totalDeleted := 0
 	for _, task := range cleaner.tasks {
-		if task.KeepFor == "" && task.KeepRuns == 0 {
+		if task.KeepFor == 0 && task.KeepRuns == 0 {
 			continue
 		}
 

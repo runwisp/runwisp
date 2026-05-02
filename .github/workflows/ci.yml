@@ -47,8 +47,12 @@ jobs:
         run: git diff --exit-code
 
   build:
-    name: Check & Build
-    runs-on: ubuntu-latest
+    name: Check & Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
 
@@ -65,12 +69,14 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Check
+        if: matrix.os == 'ubuntu-latest'
         run: bun run check
 
       - name: Build
         run: bun run build
 
       - name: Upload binary
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
         with:
           name: runwisp-binary
@@ -78,9 +84,13 @@ jobs:
           retention-days: 1
 
   test:
-    name: Unit Tests
-    runs-on: ubuntu-latest
+    name: Unit Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
 

@@ -215,7 +215,7 @@ func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
 			retries := t.RetryAttempts
 			task.MaxRetries = &retries
 		}
-		if delayMs := parseRetryDelayMillis(t.RetryDelay); delayMs > 0 {
+		if delayMs := durationToMillis(t.RetryDelay); delayMs > 0 {
 			task.RetryDelay = &delayMs
 		}
 		if t.RetryBackoff != "" {
@@ -232,7 +232,7 @@ func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
 			task.ConcurrencyBehavior = behavior
 		}
 
-		if timeoutMs := parseTimeoutMillis(t.Timeout); timeoutMs > 0 {
+		if timeoutMs := durationToMillis(t.Timeout); timeoutMs > 0 {
 			task.Timeout = &timeoutMs
 		}
 
@@ -274,26 +274,11 @@ func mapConcurrencyBehavior(policy model.ConcurrencyPolicy) string {
 	return concurrencyBehaviorMap[policy]
 }
 
-func parseTimeoutMillis(raw string) int {
-	return parseDurationMillis(raw)
-}
-
-func parseRetryDelayMillis(raw string) int {
-	return parseDurationMillis(raw)
-}
-
-func parseDurationMillis(raw string) int {
-	if strings.TrimSpace(raw) == "" {
+func durationToMillis(d time.Duration) int {
+	if d <= 0 {
 		return 0
 	}
-	duration, err := time.ParseDuration(raw)
-	if err != nil {
-		return 0
-	}
-	if duration <= 0 {
-		return 0
-	}
-	return int(duration.Milliseconds())
+	return int(d.Milliseconds())
 }
 
 func classifySyncHTTPError(statusCode int) CloudErrorKind {

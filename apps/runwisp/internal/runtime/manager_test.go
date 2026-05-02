@@ -4,6 +4,8 @@
 package runtime
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func testTask(name string, policy model.ConcurrencyPolicy, limit int) *model.Task {
@@ -192,6 +195,248 @@ func TestPersistenceHook(t *testing.T) {
 
 	assert.True(t, created)
 	assert.True(t, updated)
+}
+
+// TestRetryFiresOnFailure exercises the retry path end-to-end: a failed
+// run must trigger a follow-up run with RetryAttempt incremented and
+// RetryOfRunID pointing back at the original.
+func TestRetryFiresOnFailure(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+	defer jm.Shutdown()
+
+	task := &model.Task{
+		Name:          "task1",
+		Run:           "echo hi",
+		Parallelism:   1,
+		OnOverlap:     model.PolicySkip,
+		RetryAttempts: 2,
+		RetryDelay:    5 * time.Millisecond,
+	}
+	jm.UpsertTask(task)
+
+	var calls atomic.Int32
+	exec.On("Execute", mock.Anything, task, mock.Anything).Run(func(args mock.Arguments) {
+		calls.Add(1)
+	}).Return(&executor.ExecuteResult{ExitCode: 1})
+
+	var (
+		mu   sync.Mutex
+		runs []*model.Run
+	)
+	jm.BindPersistenceHook(func(r *model.Run, isNew bool) {
+		if !isNew {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		runs = append(runs, r)
+	})
+
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	// Initial + 2 retries = 3 calls.
+	require.Eventually(t, func() bool {
+		return calls.Load() >= 3
+	}, time.Second, 10*time.Millisecond, "expected 3 executions")
+
+	// Allow any spurious retry to surface, then cap.
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, int32(3), calls.Load(), "retry must stop at attempt budget")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, runs, 3, "should have created original + 2 retry runs")
+	assert.Equal(t, 0, runs[0].RetryAttempt)
+	assert.Nil(t, runs[0].RetryOfRunID)
+
+	assert.Equal(t, 1, runs[1].RetryAttempt)
+	require.NotNil(t, runs[1].RetryOfRunID)
+	assert.Equal(t, runs[0].ID, *runs[1].RetryOfRunID)
+
+	assert.Equal(t, 2, runs[2].RetryAttempt)
+	require.NotNil(t, runs[2].RetryOfRunID)
+	assert.Equal(t, runs[1].ID, *runs[2].RetryOfRunID)
+}
+
+// TestRetrySkippedForCloudRun pins the rule that cloud-triggered runs are
+// retried by the control plane, never by the local daemon.
+func TestRetrySkippedForCloudRun(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+	defer jm.Shutdown()
+
+	task := &model.Task{
+		Name:          "task1",
+		Run:           "echo hi",
+		Parallelism:   1,
+		OnOverlap:     model.PolicySkip,
+		RetryAttempts: 3,
+		RetryDelay:    5 * time.Millisecond,
+	}
+	jm.UpsertTask(task)
+
+	var calls atomic.Int32
+	exec.On("Execute", mock.Anything, task, mock.Anything).Run(func(args mock.Arguments) {
+		calls.Add(1)
+	}).Return(&executor.ExecuteResult{ExitCode: 1})
+
+	_, err := jm.TriggerRun("task1", model.TriggeredByCloud)
+	require.NoError(t, err)
+
+	// One initial run, then long enough for a retry to fire if it were going
+	// to.
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, int32(1), calls.Load(), "cloud-triggered runs must not retry locally")
+}
+
+// TestRetryNotFiredWhenRestartPolicySet pins the precedence: when a task has
+// both retry and restart configured, restart wins and retry is suppressed.
+func TestRetryNotFiredWhenRestartPolicySet(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+	defer jm.Shutdown()
+
+	task := &model.Task{
+		Name:          "task1",
+		Run:           "echo hi",
+		Parallelism:   1,
+		OnOverlap:     model.PolicySkip,
+		Restart:       model.RestartOnFailure,
+		RestartDelay:  5 * time.Millisecond,
+		RetryAttempts: 3,
+		RetryDelay:    5 * time.Millisecond,
+	}
+	jm.UpsertTask(task)
+
+	var calls atomic.Int32
+	exec.On("Execute", mock.Anything, task, mock.Anything).Run(func(args mock.Arguments) {
+		calls.Add(1)
+	}).Return(&executor.ExecuteResult{ExitCode: 1})
+
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	// Wait for at least 4 calls — restart loops indefinitely, retry would cap
+	// at 4 (initial + 3 retries) and then stop. Watching for >=5 confirms the
+	// restart path took over.
+	require.Eventually(t, func() bool {
+		return calls.Load() >= 5
+	}, time.Second, 10*time.Millisecond, "restart should keep firing past retry budget")
+}
+
+// TestLoadPendingRunsResumed: a pending cron task with a free slot is
+// resumed and starts execution.
+func TestLoadPendingRunsResumed(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+	defer jm.Shutdown()
+
+	task := testTask("task1", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+
+	var calls atomic.Int32
+	exec.On("Execute", mock.Anything, task, mock.Anything).Run(func(args mock.Arguments) {
+		calls.Add(1)
+	}).Return(&executor.ExecuteResult{ExitCode: 0}, 50*time.Millisecond)
+
+	pending := []model.Run{
+		{ID: "01", TaskName: "task1", Status: model.PhasePending},
+	}
+	result := jm.LoadPendingRuns(pending)
+
+	assert.Equal(t, 1, result.Resumed)
+	assert.Equal(t, 0, result.Queued)
+	assert.Equal(t, 0, result.Failed)
+	assert.Equal(t, 0, result.Skipped)
+
+	require.Eventually(t, func() bool {
+		return calls.Load() >= 1
+	}, time.Second, 10*time.Millisecond)
+}
+
+// TestLoadPendingRunsQueued: every pending run on a queue-policy task is
+// pushed onto the per-task queue. The queue processor drains them as slots
+// open, so they all count as Queued (not Resumed).
+func TestLoadPendingRunsQueued(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+	defer jm.Shutdown()
+
+	task := testTask("task1", model.PolicyQueue, 1)
+	jm.UpsertTask(task)
+
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
+		&executor.ExecuteResult{ExitCode: 0}, 10*time.Millisecond,
+	)
+
+	pending := []model.Run{
+		{ID: "01", TaskName: "task1", Status: model.PhasePending},
+		{ID: "02", TaskName: "task1", Status: model.PhasePending},
+		{ID: "03", TaskName: "task1", Status: model.PhasePending},
+	}
+	result := jm.LoadPendingRuns(pending)
+
+	assert.Equal(t, 0, result.Resumed)
+	assert.Equal(t, 3, result.Queued)
+	assert.Equal(t, 0, result.Failed)
+}
+
+// TestLoadPendingRunsFailedWhenSlotFull: a non-queue policy with no free
+// slot marks the pending run as failed.
+func TestLoadPendingRunsFailedWhenSlotFull(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+	defer jm.Shutdown()
+
+	task := testTask("task1", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
+		&executor.ExecuteResult{ExitCode: 0}, 200*time.Millisecond,
+	)
+
+	// Trigger one run that holds the only slot.
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+
+	pending := []model.Run{
+		{ID: "01", TaskName: "task1", Status: model.PhasePending},
+		{ID: "02", TaskName: "task1", Status: model.PhasePending},
+	}
+	result := jm.LoadPendingRuns(pending)
+
+	assert.Equal(t, 0, result.Resumed)
+	assert.Equal(t, 0, result.Queued)
+	assert.Equal(t, 2, result.Failed, "skip-policy + full slots → mark pending as failed")
+}
+
+// TestLoadPendingRunsSkippedTaskNotFound: pending runs whose task is no
+// longer in the config are dropped as skipped.
+func TestLoadPendingRunsSkippedTaskNotFound(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+	defer jm.Shutdown()
+
+	pending := []model.Run{
+		{ID: "01", TaskName: "ghost", Status: model.PhasePending},
+		{ID: "02", TaskName: "ghost", Status: model.PhasePending},
+	}
+	result := jm.LoadPendingRuns(pending)
+
+	assert.Equal(t, 2, result.Skipped)
+	assert.Equal(t, 0, result.Resumed)
+	assert.Equal(t, 0, result.Queued)
+	assert.Equal(t, 0, result.Failed)
 }
 
 func TestPersistAfterShutdownDoesNotPanic(t *testing.T) {

@@ -87,6 +87,6 @@ func TestPublishRunNilBus(t *testing.T) {
 	// Nil bus should not panic
 	jm := NewTaskManager(new(testutil.MockExecutor), nil).(*defaultTaskManager)
 	assert.NotPanics(t, func() {
-		jm.publishRun("test", &model.Run{}, 0)
+		jm.publishRun("test", &model.Run{})
 	})
 }
