@@ -12,401 +12,337 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// Update processes messages.
+// Update processes messages by delegating to per-type handlers.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
-	// Confirmation dialog intercepts all input when visible.
 	if m.dialogs.HasConfirm() {
-		if m.dialogs.IsShuttingDown() {
-			switch msg := msg.(type) {
-			case tea.KeyMsg:
-				if msg.String() == "ctrl+c" {
-					m.streams.Shutdown()
-					m.quitAction = QuitKeepDaemon
-					return m, tea.Quit
-				}
-				return m, nil
-			case spinnerTickMsg:
-				cmd := m.dialogs.UpdateSpinner(msg.Inner)
-				return m, cmd
-			case shutdownDoneMsg:
-				return m, tea.Quit
-			case tea.MouseMsg:
-				return m, nil
-			}
-		} else {
-			switch msg := msg.(type) {
-			case tea.KeyMsg:
-				if msg.String() == "ctrl+c" {
-					m.streams.Shutdown()
-					m.quitAction = QuitKeepDaemon
-					return m, tea.Quit
-				}
-				cmd, closed := m.dialogs.UpdateConfirmKeep(msg)
-				if cmd != nil {
-					return m, m.execConfirmCmd(cmd, closed)
-				}
-				if closed {
-					m.dialogs.DismissConfirm()
-				}
-				return m, nil
-			case tea.MouseMsg:
-				cmd, closed := m.dialogs.UpdateConfirmKeep(msg)
-				if cmd != nil {
-					return m, m.execConfirmCmd(cmd, closed)
-				}
-				if closed {
-					m.dialogs.DismissConfirm()
-				}
-				return m, nil
-			}
+		if newModel, cmd, intercepted := m.interceptConfirmDialog(msg); intercepted {
+			return newModel, cmd
 		}
 	}
-
-	// Copy dialog intercepts all input when visible.
 	if m.dialogs.HasCopy() {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			if msg.String() == "ctrl+c" {
-				m.dialogs.DismissCopy()
-				cmd := m.dialogs.SyncMouseState()
-				m.showQuitConfirm()
-				return m, cmd
-			}
-			if m.dialogs.UpdateCopy(msg) {
-				return m, m.dialogs.SyncMouseState()
-			}
-			return m, nil
-		case tea.MouseMsg:
-			if m.dialogs.UpdateCopy(msg) {
-				return m, m.dialogs.SyncMouseState()
-			}
-			return m, nil
+		if newModel, cmd, intercepted := m.interceptCopyDialog(msg); intercepted {
+			return newModel, cmd
 		}
 	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.ready = true
-		m.updateLayout()
-		return m, nil
-
+		return m.handleWindowSize(msg)
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
-
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			m.showQuitConfirm()
-			return m, nil
-
-		case "esc":
-			if m.execView != nil {
-				if m.execView.Fullscreen() {
-					m.execView.ToggleFullscreen()
-					m.updateLayout()
-					return m, m.syncMouseState()
-				}
-				return m, m.closeExecView()
-			}
-			if m.panelFocus == PanelMain {
-				return m, m.focusSidebar()
-			}
-
-		case "backspace":
-			if m.execView != nil {
-				if m.execView.Fullscreen() {
-					m.execView.ToggleFullscreen()
-					m.updateLayout()
-					return m, m.syncMouseState()
-				}
-				return m, m.closeExecView()
-			}
-
-		case "f":
-			if m.execView != nil {
-				m.execView.ToggleFullscreen()
-				if m.execView.Fullscreen() {
-					m.panelFocus = PanelMain
-					m.execView.SetFocused(true)
-				}
-				m.updateLayout()
-				return m, m.syncMouseState()
-			}
-
-		case "left", "h":
-			if m.execView == nil {
-				if m.panelFocus == PanelMain && m.sidebar.ActivePage() == PageDebug && m.debugView.pane.hScroll > 0 {
-					break
-				}
-				return m, m.focusSidebar()
-			}
-
-			ev := m.execView
-			if ev.Fullscreen() {
-				// In fullscreen the sidebar is hidden; left just scrolls the pane.
-				break
-			}
-			atEdge := ev.headerFocus == headerFocusBack || ev.headerFocus == headerFocusStarted ||
-				(ev.headerFocus == headerFocusNone && ev.pane.hScroll <= 0)
-			if atEdge {
-				return m, m.focusSidebar()
-			}
-
-		case "right", "l":
-			if m.execView == nil {
-				if m.panelFocus == PanelMain && m.sidebar.ActivePage() == PageDebug {
-					break
-				}
-				return m, m.focusMainPanel()
-			}
-			if m.execView.Fullscreen() {
-				break
-			}
-			if m.panelFocus == PanelSidebar {
-				return m, m.focusMainPanel()
-			}
-
-		case "enter":
-			if m.execView != nil && m.panelFocus == PanelMain && m.execView.headerFocus != headerFocusNone {
-				switch m.execView.headerFocus {
-				case headerFocusBack:
-					return m, m.closeExecView()
-				case headerFocusAction:
-					switch m.execView.Action() {
-					case execViewActionStop:
-						return m, m.confirmAction(confirmActionStop)
-					case execViewActionRetry:
-						return m, m.confirmAction(confirmActionRetry)
-					}
-				case headerFocusStarted, headerFocusDuration, headerFocusID:
-					return m, m.copyExecField()
-				}
-				return m, nil
-			}
-			if m.panelFocus == PanelMain && m.execView == nil {
-				if m.homeCursor >= 0 {
-					return m, m.activateHomeField()
-				}
-				if run := m.execList.SelectedRun(); run != nil {
-					return m, m.openExecView(run)
-				}
-			}
-			// Enter on sidebar commits the cursor item as the main view;
-			// close any open exec view so the user lands on that view.
-			if m.panelFocus == PanelSidebar && m.execView != nil {
-				if cmd := m.closeExecView(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-			}
-
-		case "r":
-			if m.execView != nil {
-				return m, m.confirmAction(confirmActionRetry)
-			}
-			return m, m.confirmAction(confirmActionTrigger)
-
-		case "s":
-			if m.execView != nil {
-				return m, m.confirmAction(confirmActionStop)
-			}
-
-		case "up", "k":
-			if m.panelFocus == PanelMain && m.execView == nil && m.sidebar.ActivePage() == PageHome && m.sidebar.ActiveTask() == "" {
-				if m.execList.Cursor() == 0 || m.execList.totalCount() == 0 {
-					fields := homeFields(m.info, m.hasLaunchTicket())
-					if len(fields) > 0 {
-						if m.homeCursor < 0 {
-							return m, m.focusHomeField(len(fields) - 1)
-						} else if m.homeCursor > 0 {
-							m.homeCursor--
-						}
-						return m, m.dialogs.SyncMouseState()
-					}
-				}
-			}
-
-		case "down", "j":
-			if m.panelFocus == PanelMain && m.execView == nil && m.homeCursor >= 0 {
-				fields := homeFields(m.info, m.hasLaunchTicket())
-				if m.homeCursor < len(fields)-1 {
-					m.homeCursor++
-				} else {
-					m.homeCursor = -1
-					m.execList.SetFocused(true)
-				}
-				return m, m.dialogs.SyncMouseState()
-			}
-		}
-
-		// Delegate to focused sub-component.
-		if m.execView != nil && m.panelFocus != PanelSidebar {
-			cmd := m.execView.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		} else if m.panelFocus == PanelSidebar {
-			prevPage := m.sidebar.ActivePage()
-			prevTask := m.sidebar.ActiveTask()
-			m.sidebar.Update(msg)
-			if cmd := m.applySidebarSelectionChange(prevPage, prevTask); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		} else if m.panelFocus == PanelMain && m.sidebar.ActivePage() == PageInfo {
-			m.infoView.Update(msg)
-		} else if m.panelFocus == PanelMain && m.sidebar.ActivePage() == PageDebug {
-			m.debugView.Update(msg)
-		} else if m.panelFocus == PanelMain && m.homeCursor < 0 {
-			cmd := m.execList.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			if m.execList.NeedsFetch() {
-				cmds = append(cmds, m.fetchExecWindow())
-			}
-		}
-
+		return m.handleKey(msg)
 	case execWindowFetchedMsg:
-		m.execWindow.ApplyFetch(msg.Items, msg.Offset, msg.Total)
-
+		return m.handleExecWindowFetched(msg)
 	case sseConnectedMsg:
-		cmds = append(cmds, m.streams.OnSSEConnected(msg.ch))
-
+		return m.handleSSEConnected(msg)
 	case sseEventMsg:
-		cmds = append(cmds, m.handleSSEEvent(msg.Event))
-		cmds = append(cmds, m.streams.ContinueListeningSSE())
-
+		return m.handleSSEEventMsg(msg)
 	case sseDisconnectedMsg:
-		m.debugView.AppendLine("Events stream disconnected. Reconnecting...")
-		cmds = append(cmds, m.streams.SubscribeEvents())
-
+		return m.handleSSEDisconnected()
 	case logStreamConnectedMsg:
-		if m.execView != nil && m.execView.RunID() == msg.RunID {
-			cmds = append(cmds, m.streams.OnLogConnected(msg.RunID, msg.Ch))
-		}
-
+		return m.handleLogStreamConnected(msg)
 	case logChunkMsg:
-		if m.execView != nil && m.execView.RunID() == msg.RunID {
-			m.execView.AppendChunk(msg.Chunk)
-			cmds = append(cmds, m.streams.ContinueListeningLog(msg.RunID))
-		}
-
+		return m.handleLogChunk(msg)
 	case logDoneMsg:
-		if m.execView != nil && m.execView.RunID() == msg.RunID {
-			m.execView.FlushPending()
-			if m.execView.run.Status == model.PhaseRunning {
-				cmds = append(cmds, m.scheduleLogReconnect(msg.RunID))
-			}
-		}
-
+		return m.handleLogDone(msg)
 	case logBatchMsg:
-		if m.execView != nil && m.execView.RunID() == msg.RunID {
-			for _, line := range msg.Lines {
-				m.execView.AppendChunk(line + "\n")
-			}
-			m.execView.FlushPending()
-			if m.execView.run.Status == model.PhaseRunning {
-				cmds = append(cmds, m.scheduleLogReconnect(msg.RunID))
-			}
-		}
-
+		return m.handleLogBatch(msg)
 	case DebugLogMsg:
-		m.debugView.AppendLine(msg.Message)
-
+		return m.handleDebugLog(msg)
 	case openBrowserMsg:
-		if msg.Err != nil {
-			m.debugView.AppendLine("Failed to open browser: " + msg.Err.Error())
-		}
-		if msg.BrowserOpened {
-			cmds = append(cmds, m.dialogs.Flash("Opened browser", 3*time.Second))
-		} else if msg.URL != "" {
-			// No graphical session or browser failed — offer URL for manual copy.
-			return m, m.dialogs.CopyToClipboard(msg.URL)
-		}
-
+		return m.handleOpenBrowser(msg)
 	case daemonLogConnectedMsg:
-		cmds = append(cmds, m.streams.OnDaemonLogConnected(msg.ch))
-
+		return m.handleDaemonLogConnected(msg)
 	case daemonLogLineMsg:
-		m.debugView.AppendLine(msg.Line)
-		cmds = append(cmds, m.streams.ContinueListeningDaemonLog())
-
+		return m.handleDaemonLogLine(msg)
 	case daemonLogDisconnectedMsg:
-		m.debugView.AppendLine("Daemon log stream disconnected. Reconnecting...")
-		cmds = append(cmds, m.streams.SubscribeDaemonLogs())
-
+		return m.handleDaemonLogDisconnected()
 	case TriggerRunMsg:
-		action := "Triggered run for"
-		if msg.Retry {
-			action = "Retried run for"
-		}
-		m.logActionResult(action, msg.TaskName, msg.Err)
-		if msg.Err != nil {
-			// Concurrency limit or other error — close exec view to show the task list.
-			if m.execView != nil {
-				if cmd := m.closeExecView(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-			}
-		} else if msg.Run != nil {
-			if cmd := m.openExecView(msg.Run); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-
+		return m.handleTriggerRun(msg)
 	case StopRunMsg:
-		m.logActionResult("Stopped run for", msg.TaskName, msg.Err)
-
+		return m.handleStopRun(msg)
 	case RestartServiceMsg:
-		m.logActionResult("Restarted service", msg.TaskName, msg.Err)
-
+		return m.handleRestartService(msg)
 	case reconnectLogMsg:
-		if m.execView != nil && m.execView.RunID() == msg.RunID &&
-			m.execView.run.Status == model.PhaseRunning {
-			cmds = append(cmds, m.streams.StartLogStream(m.execView.run))
-		}
-
+		return m.handleReconnectLog(msg)
 	case TickMsg:
-		m.execWindow.UpdateVisibleTimes(m.execList.scroll, m.execList.viewportHeight())
-		cmds = append(cmds, m.tickCmd())
-		if m.execList.NeedsFetch() {
-			cmds = append(cmds, m.fetchExecWindow())
-		}
-		if m.sidebar.ActivePage() == PageInfo {
-			cmds = append(cmds, m.streams.FetchSystemStats())
-		}
-
+		return m.handleTick()
 	case quitMsg:
-		m.streams.Shutdown()
-		m.quitAction = msg.Action
-		if msg.Action == QuitShutdownDaemon && m.shutdownFunc != nil {
-			return m, m.startShutdownSpinner()
-		}
-		return m, tea.Quit
-
+		return m.handleQuit(msg)
 	case flashExpiredMsg:
-		m.dialogs.ClearFlashIfExpired()
-
+		return m.handleFlashExpired()
 	case systemStatsMsg:
-		if msg.Err == nil && msg.Stats != nil {
-			m.infoView.UpdateStats(msg.Stats)
-		}
-
+		return m.handleSystemStats(msg)
 	case metricsHistoryMsg:
-		if msg.Err == nil && msg.Samples != nil {
-			m.infoView.LoadHistory(msg.Samples)
-		}
-
+		return m.handleMetricsHistory(msg)
 	case runSummaryMsg:
-		if msg.Err == nil && msg.Summary != nil {
-			m.infoView.UpdateRunSummary(msg.Summary)
+		return m.handleRunSummary(msg)
+	}
+	return m, nil
+}
+
+// interceptConfirmDialog handles input while the confirm dialog is visible.
+// Returns intercepted=false to let the main dispatcher process the message
+// (e.g. WindowSizeMsg keeps layout responsive even with a dialog open).
+func (m Model) interceptConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	if m.dialogs.IsShuttingDown() {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			if msg.String() == "ctrl+c" {
+				m.streams.Shutdown()
+				m.quitAction = QuitKeepDaemon
+				return m, tea.Quit, true
+			}
+			return m, nil, true
+		case spinnerTickMsg:
+			cmd := m.dialogs.UpdateSpinner(msg.Inner)
+			return m, cmd, true
+		case shutdownDoneMsg:
+			return m, tea.Quit, true
+		case tea.MouseMsg:
+			return m, nil, true
 		}
+		return m, nil, false
 	}
 
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			m.streams.Shutdown()
+			m.quitAction = QuitKeepDaemon
+			return m, tea.Quit, true
+		}
+		cmd, closed := m.dialogs.UpdateConfirmKeep(msg)
+		if cmd != nil {
+			return m, m.execConfirmCmd(cmd, closed), true
+		}
+		if closed {
+			m.dialogs.DismissConfirm()
+		}
+		return m, nil, true
+	case tea.MouseMsg:
+		cmd, closed := m.dialogs.UpdateConfirmKeep(msg)
+		if cmd != nil {
+			return m, m.execConfirmCmd(cmd, closed), true
+		}
+		if closed {
+			m.dialogs.DismissConfirm()
+		}
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// interceptCopyDialog handles input while the copy dialog is visible.
+func (m Model) interceptCopyDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			m.dialogs.DismissCopy()
+			cmd := m.dialogs.SyncMouseState()
+			m.showQuitConfirm()
+			return m, cmd, true
+		}
+		if m.dialogs.UpdateCopy(msg) {
+			return m, m.dialogs.SyncMouseState(), true
+		}
+		return m, nil, true
+	case tea.MouseMsg:
+		if m.dialogs.UpdateCopy(msg) {
+			return m, m.dialogs.SyncMouseState(), true
+		}
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width = msg.Width
+	m.height = msg.Height
+	m.ready = true
+	m.updateLayout()
+	return m, nil
+}
+
+func (m Model) handleExecWindowFetched(msg execWindowFetchedMsg) (tea.Model, tea.Cmd) {
+	m.execWindow.ApplyFetch(msg.Items, msg.Offset, msg.Total)
+	return m, nil
+}
+
+func (m Model) handleSSEConnected(msg sseConnectedMsg) (tea.Model, tea.Cmd) {
+	return m, m.streams.OnSSEConnected(msg.ch)
+}
+
+func (m Model) handleSSEEventMsg(msg sseEventMsg) (tea.Model, tea.Cmd) {
+	cmd := m.handleSSEEvent(msg.Event)
+	return m, tea.Batch(cmd, m.streams.ContinueListeningSSE())
+}
+
+func (m Model) handleSSEDisconnected() (tea.Model, tea.Cmd) {
+	m.debugView.AppendLine("Events stream disconnected. Reconnecting...")
+	return m, m.streams.SubscribeEvents()
+}
+
+func (m Model) handleLogStreamConnected(msg logStreamConnectedMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) {
+		return m, nil
+	}
+	return m, m.streams.OnLogConnected(msg.RunID, msg.Ch)
+}
+
+func (m Model) handleLogChunk(msg logChunkMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) {
+		return m, nil
+	}
+	m.execView.AppendChunk(msg.Chunk)
+	return m, m.streams.ContinueListeningLog(msg.RunID)
+}
+
+func (m Model) handleLogDone(msg logDoneMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) {
+		return m, nil
+	}
+	m.execView.FlushPending()
+	if m.execView.run.Status == model.PhaseRunning {
+		return m, m.scheduleLogReconnect(msg.RunID)
+	}
+	return m, nil
+}
+
+func (m Model) handleLogBatch(msg logBatchMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) {
+		return m, nil
+	}
+	for _, line := range msg.Lines {
+		m.execView.AppendChunk(line + "\n")
+	}
+	m.execView.FlushPending()
+	if m.execView.run.Status == model.PhaseRunning {
+		return m, m.scheduleLogReconnect(msg.RunID)
+	}
+	return m, nil
+}
+
+func (m Model) handleDebugLog(msg DebugLogMsg) (tea.Model, tea.Cmd) {
+	m.debugView.AppendLine(msg.Message)
+	return m, nil
+}
+
+func (m Model) handleOpenBrowser(msg openBrowserMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.debugView.AppendLine("Failed to open browser: " + msg.Err.Error())
+	}
+	if msg.BrowserOpened {
+		return m, m.dialogs.Flash("Opened browser", 3*time.Second)
+	}
+	if msg.URL != "" {
+		// No graphical session or browser failed — offer URL for manual copy.
+		return m, m.dialogs.CopyToClipboard(msg.URL)
+	}
+	return m, nil
+}
+
+func (m Model) handleDaemonLogConnected(msg daemonLogConnectedMsg) (tea.Model, tea.Cmd) {
+	return m, m.streams.OnDaemonLogConnected(msg.ch)
+}
+
+func (m Model) handleDaemonLogLine(msg daemonLogLineMsg) (tea.Model, tea.Cmd) {
+	m.debugView.AppendLine(msg.Line)
+	return m, m.streams.ContinueListeningDaemonLog()
+}
+
+func (m Model) handleDaemonLogDisconnected() (tea.Model, tea.Cmd) {
+	m.debugView.AppendLine("Daemon log stream disconnected. Reconnecting...")
+	return m, m.streams.SubscribeDaemonLogs()
+}
+
+func (m Model) handleTriggerRun(msg TriggerRunMsg) (tea.Model, tea.Cmd) {
+	action := "Triggered run for"
+	if msg.Retry {
+		action = "Retried run for"
+	}
+	m.logActionResult(action, msg.TaskName, msg.Err)
+	if msg.Err != nil {
+		// Concurrency limit or other error — close exec view to show the task list.
+		if m.execView != nil {
+			return m, m.closeExecView()
+		}
+		return m, nil
+	}
+	if msg.Run != nil {
+		return m, m.openExecView(msg.Run)
+	}
+	return m, nil
+}
+
+func (m Model) handleStopRun(msg StopRunMsg) (tea.Model, tea.Cmd) {
+	m.logActionResult("Stopped run for", msg.TaskName, msg.Err)
+	return m, nil
+}
+
+func (m Model) handleRestartService(msg RestartServiceMsg) (tea.Model, tea.Cmd) {
+	m.logActionResult("Restarted service", msg.TaskName, msg.Err)
+	return m, nil
+}
+
+func (m Model) handleReconnectLog(msg reconnectLogMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) || m.execView.run.Status != model.PhaseRunning {
+		return m, nil
+	}
+	return m, m.streams.StartLogStream(m.execView.run)
+}
+
+func (m Model) handleTick() (tea.Model, tea.Cmd) {
+	m.execWindow.UpdateVisibleTimes(m.execList.scroll, m.execList.viewportHeight())
+	cmds := []tea.Cmd{m.tickCmd()}
+	if m.execList.NeedsFetch() {
+		cmds = append(cmds, m.fetchExecWindow())
+	}
+	if m.sidebar.ActivePage() == PageInfo {
+		cmds = append(cmds, m.streams.FetchSystemStats())
+	}
 	return m, tea.Batch(cmds...)
+}
+
+func (m Model) handleQuit(msg quitMsg) (tea.Model, tea.Cmd) {
+	m.streams.Shutdown()
+	m.quitAction = msg.Action
+	if msg.Action == QuitShutdownDaemon && m.shutdownFunc != nil {
+		return m, m.startShutdownSpinner()
+	}
+	return m, tea.Quit
+}
+
+func (m Model) handleFlashExpired() (tea.Model, tea.Cmd) {
+	m.dialogs.ClearFlashIfExpired()
+	return m, nil
+}
+
+func (m Model) handleSystemStats(msg systemStatsMsg) (tea.Model, tea.Cmd) {
+	if msg.Err == nil && msg.Stats != nil {
+		m.infoView.UpdateStats(msg.Stats)
+	}
+	return m, nil
+}
+
+func (m Model) handleMetricsHistory(msg metricsHistoryMsg) (tea.Model, tea.Cmd) {
+	if msg.Err == nil && msg.Samples != nil {
+		m.infoView.LoadHistory(msg.Samples)
+	}
+	return m, nil
+}
+
+func (m Model) handleRunSummary(msg runSummaryMsg) (tea.Model, tea.Cmd) {
+	if msg.Err == nil && msg.Summary != nil {
+		m.infoView.UpdateRunSummary(msg.Summary)
+	}
+	return m, nil
+}
+
+// viewingRun reports whether the active execView is showing the given run ID.
+func (m *Model) viewingRun(runID string) bool {
+	return m.execView != nil && m.execView.RunID() == runID
 }
 
 // handleSSEEvent processes a parsed SSE run event.

@@ -13,7 +13,6 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/runwisp/runwisp/internal/model"
-	str2duration "github.com/xhit/go-str2duration/v2"
 )
 
 // Load reads, decodes, defaults, and validates a runwisp.toml file.
@@ -76,209 +75,158 @@ func decode(data []byte) (*Config, error) {
 
 	tasks := make([]model.Task, 0, len(taskNames)+len(serviceNames))
 	for _, name := range taskNames {
-		tasks = append(tasks, raw.Tasks[name].toTask(name))
+		t, err := raw.Tasks[name].toTask(name)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
 	}
 	for _, name := range serviceNames {
-		tasks = append(tasks, raw.Services[name].toTask(name))
+		t, err := raw.Services[name].toTask(name)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+
+	defaults, err := raw.Defaults.toDefaults()
+	if err != nil {
+		return nil, err
+	}
+	storage, err := raw.Storage.toStorage()
+	if err != nil {
+		return nil, err
 	}
 
 	return &Config{
 		Tasks:    tasks,
-		Defaults: raw.Defaults,
-		Storage:  raw.Storage,
+		Defaults: defaults,
+		Storage:  storage,
 		Daemon:   raw.Daemon,
 	}, nil
 }
 
-func validateLogOnFull(value string) error {
-	if value == "" {
-		return nil
-	}
-	switch value {
-	case model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKillTask:
-		return nil
-	default:
-		return fmt.Errorf("invalid value %q: must be drop_new, drop_old, or kill_task", value)
-	}
-}
-
-func validateCatchUp(value string) error {
-	if value == "" {
-		return nil
-	}
-	switch value {
-	case "latest", "all", "skip":
-		return nil
-	default:
-		return fmt.Errorf("invalid value %q: must be latest, all, or skip", value)
-	}
-}
-
-func validateRestart(value model.RestartPolicy) error {
-	switch value {
-	case "", model.RestartNever, model.RestartAlways, model.RestartOnFailure:
-		return nil
-	default:
-		return fmt.Errorf("invalid value %q: must be never, always, or on_failure", value)
-	}
-}
-
-func validateRetryBackoff(value string) error {
-	if value == "" {
-		return nil
-	}
-	switch value {
-	case "linear", "exponential":
-		return nil
-	default:
-		return fmt.Errorf("invalid value %q: must be linear or exponential", value)
-	}
-}
-
-func validateKeepFor(raw string) error {
-	if raw == "" {
-		return nil
-	}
-	if _, err := str2duration.ParseDuration(raw); err != nil {
-		return fmt.Errorf("invalid duration %q: %w", raw, err)
-	}
-	return nil
-}
-
-// Validate checks for invalid configuration values.
+// Validate checks for invalid configuration values. Durations and byte sizes
+// have already been parsed at this point — only enum membership, ranges, and
+// required fields remain.
 func Validate(cfg *Config) error {
-	if cfg.Defaults.LogMaxSize != "" {
-		if _, err := ParseByteSize(cfg.Defaults.LogMaxSize); err != nil {
-			return fmt.Errorf("invalid defaults.log_max_size: %v", err)
-		}
-	}
-	if err := validateLogOnFull(cfg.Defaults.LogOnFull); err != nil {
-		return fmt.Errorf("invalid defaults.log_on_full: %w", err)
-	}
-	if cfg.Defaults.Timeout != "" {
-		if _, err := time.ParseDuration(cfg.Defaults.Timeout); err != nil {
-			return fmt.Errorf("invalid defaults.timeout: %v", err)
-		}
+	if err := requireOneOf("defaults.log_on_full", cfg.Defaults.LogOnFull, validLogOnFull, true); err != nil {
+		return err
 	}
 	if cfg.Defaults.KeepRuns < 0 {
 		return fmt.Errorf("invalid defaults.keep_runs: must be non-negative")
 	}
-	if err := validateKeepFor(cfg.Defaults.KeepFor); err != nil {
-		return fmt.Errorf("invalid defaults.keep_for: %w", err)
-	}
-
-	if cfg.Storage.MaxSize != "" {
-		if _, err := ParseByteSize(cfg.Storage.MaxSize); err != nil {
-			return fmt.Errorf("invalid storage.max_size: %v", err)
-		}
-	}
-	if cfg.Storage.MinFreeSpace != "" {
-		if _, err := ParseByteSize(cfg.Storage.MinFreeSpace); err != nil {
-			return fmt.Errorf("invalid storage.min_free_space: %v", err)
-		}
-	}
 
 	seen := make(map[string]struct{}, len(cfg.Tasks))
-	for _, task := range cfg.Tasks {
-		if strings.TrimSpace(task.Name) == "" {
-			return fmt.Errorf("task name is required")
+	for i := range cfg.Tasks {
+		if err := validateTask(&cfg.Tasks[i], seen); err != nil {
+			return err
 		}
-		if _, exists := seen[task.Name]; exists {
-			return fmt.Errorf("duplicate task name: %s", task.Name)
-		}
-		seen[task.Name] = struct{}{}
+	}
+	return nil
+}
 
-		execDef := task.ResolvedExecutionDef()
-		if execDef == nil {
-			return fmt.Errorf("task run command is required for task: %s", task.Name)
-		}
-		if shellDef, ok := execDef.(*model.ShellExecution); ok && strings.TrimSpace(shellDef.Script) == "" {
-			return fmt.Errorf("task run command is required for task: %s", task.Name)
-		}
+func validateTask(task *model.Task, seen map[string]struct{}) error {
+	if strings.TrimSpace(task.Name) == "" {
+		return fmt.Errorf("task name is required")
+	}
+	if _, exists := seen[task.Name]; exists {
+		return fmt.Errorf("duplicate task name: %s", task.Name)
+	}
+	seen[task.Name] = struct{}{}
 
-		if task.Parallelism <= 0 {
-			return fmt.Errorf("invalid parallelism for task %s: must be greater than zero", task.Name)
-		}
+	execDef := task.ResolvedExecutionDef()
+	if execDef == nil {
+		return fmt.Errorf("task run command is required for task: %s", task.Name)
+	}
+	if shellDef, ok := execDef.(*model.ShellExecution); ok && strings.TrimSpace(shellDef.Script) == "" {
+		return fmt.Errorf("task run command is required for task: %s", task.Name)
+	}
 
-		if task.OnOverlap != model.PolicyQueue && task.OnOverlap != model.PolicySkip && task.OnOverlap != model.PolicyTerminate {
-			return fmt.Errorf(
-				"invalid on_overlap for task %s: %s (must be queue, skip, or terminate)",
-				task.Name,
-				task.OnOverlap,
-			)
-		}
+	if task.Parallelism <= 0 {
+		return fmt.Errorf("invalid parallelism for task %s: must be greater than zero", task.Name)
+	}
 
-		if task.Timeout != "" {
-			if _, err := time.ParseDuration(task.Timeout); err != nil {
-				return fmt.Errorf("invalid timeout for task %s: %v", task.Name, err)
-			}
-		}
+	if err := requireOneOf(fmt.Sprintf("on_overlap for task %s", task.Name),
+		string(task.OnOverlap), validOnOverlap, false); err != nil {
+		return err
+	}
+	if err := requireOneOf(fmt.Sprintf("restart for task %s", task.Name),
+		string(task.Restart), validRestart, true); err != nil {
+		return err
+	}
+	if err := requireOneOf(fmt.Sprintf("retry_backoff for task %s", task.Name),
+		task.RetryBackoff, validRetryBackoff, true); err != nil {
+		return err
+	}
+	if err := requireOneOf(fmt.Sprintf("log_on_full for task %s", task.Name),
+		task.LogOnFull, validLogOnFull, true); err != nil {
+		return err
+	}
+	if err := requireOneOf(fmt.Sprintf("catch_up for task %s", task.Name),
+		string(task.CatchUp), validCatchUp, true); err != nil {
+		return err
+	}
 
-		if err := validateRestart(task.Restart); err != nil {
-			return fmt.Errorf("invalid restart for task %s: %w", task.Name, err)
+	if task.Kind.IsService() {
+		if task.Instances < 1 {
+			return fmt.Errorf("invalid instances for service %s: must be >= 1", task.Name)
 		}
+		if task.Instances > MaxServiceInstances {
+			return fmt.Errorf("invalid instances for service %s: must be <= %d", task.Name, MaxServiceInstances)
+		}
+		if err := requireOneOf(fmt.Sprintf("restart_backoff for service %s", task.Name),
+			task.RestartBackoff, validRestartBackoff, true); err != nil {
+			return err
+		}
+	}
 
-		if task.Kind.IsService() {
-			if task.Instances < 1 {
-				return fmt.Errorf("invalid instances for service %s: must be >= 1", task.Name)
-			}
-			if task.Instances > MaxServiceInstances {
-				return fmt.Errorf("invalid instances for service %s: must be <= %d", task.Name, MaxServiceInstances)
-			}
-			if task.RestartDelay != "" {
-				if _, err := time.ParseDuration(task.RestartDelay); err != nil {
-					return fmt.Errorf("invalid restart_delay for service %s: %v", task.Name, err)
-				}
-			}
-			if err := validateRestartBackoff(task.RestartBackoff); err != nil {
-				return fmt.Errorf("invalid restart_backoff for service %s: %w", task.Name, err)
-			}
-		}
-
-		if task.RetryAttempts < 0 {
-			return fmt.Errorf("invalid retry_attempts for task %s: must be non-negative", task.Name)
-		}
-		if task.RetryDelay != "" {
-			if _, err := time.ParseDuration(task.RetryDelay); err != nil {
-				return fmt.Errorf("invalid retry_delay for task %s: %v", task.Name, err)
-			}
-		}
-		if err := validateRetryBackoff(task.RetryBackoff); err != nil {
-			return fmt.Errorf("invalid retry_backoff for task %s: %w", task.Name, err)
-		}
-
-		if task.LogMaxSize != "" {
-			if _, err := ParseByteSize(task.LogMaxSize); err != nil {
-				return fmt.Errorf("invalid log_max_size for task %s: %v", task.Name, err)
-			}
-		}
-		if err := validateLogOnFull(task.LogOnFull); err != nil {
-			return fmt.Errorf("invalid log_on_full for task %s: %w", task.Name, err)
-		}
-
-		if task.KeepRuns < 0 {
-			return fmt.Errorf("invalid keep_runs for task %s: must be non-negative", task.Name)
-		}
-		if err := validateKeepFor(task.KeepFor); err != nil {
-			return fmt.Errorf("invalid keep_for for task %s: %w", task.Name, err)
-		}
-
-		if err := validateCatchUp(string(task.CatchUp)); err != nil {
-			return fmt.Errorf("invalid catch_up for task %s: %w", task.Name, err)
-		}
+	if task.RetryAttempts < 0 {
+		return fmt.Errorf("invalid retry_attempts for task %s: must be non-negative", task.Name)
+	}
+	if task.KeepRuns < 0 {
+		return fmt.Errorf("invalid keep_runs for task %s: must be non-negative", task.Name)
 	}
 
 	return nil
 }
 
-func validateRestartBackoff(value string) error {
-	switch value {
-	case "", model.RestartBackoffNone, model.RestartBackoffExponential:
-		return nil
-	default:
-		return fmt.Errorf("invalid value %q: must be none or exponential", value)
+// requireOneOf returns nil if value is in the allowed set. When emptyOK is
+// true, an empty value is accepted (used for optional enums that fall through
+// to a default).
+func requireOneOf(scope, value string, allowed []string, emptyOK bool) error {
+	if value == "" {
+		if emptyOK {
+			return nil
+		}
+		return fmt.Errorf("invalid %s: required, must be one of %s", scope, strings.Join(allowed, ", "))
 	}
+	for _, candidate := range allowed {
+		if value == candidate {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid %s: %q (must be one of %s)", scope, value, strings.Join(allowed, ", "))
 }
+
+var (
+	validOnOverlap = []string{
+		string(model.PolicyQueue),
+		string(model.PolicySkip),
+		string(model.PolicyTerminate),
+	}
+	validRestart = []string{
+		string(model.RestartNever),
+		string(model.RestartAlways),
+		string(model.RestartOnFailure),
+	}
+	validRetryBackoff     = []string{"linear", "exponential"}
+	validRestartBackoff   = []string{model.RestartBackoffNone, model.RestartBackoffExponential}
+	validLogOnFull        = []string{model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKillTask}
+	validCatchUp          = []string{string(model.MissedRunLatest), string(model.MissedRunAll), string(model.MissedRunSkip)}
+	defaultTaskLogMaxSize = int64(100 * 1024 * 1024)
+	defaultRestartDelay   = time.Second
+)
 
 // ApplyDefaults fills in zero-valued fields with sensible defaults.
 func ApplyDefaults(cfg *Config) {
@@ -294,10 +242,10 @@ func ApplyDefaults(cfg *Config) {
 			task.CatchUp = model.MissedRunLatest
 		}
 
-		if task.Timeout == "" && cfg.Defaults.Timeout != "" {
+		if task.Timeout == 0 {
 			task.Timeout = cfg.Defaults.Timeout
 		}
-		if task.LogMaxSize == "" && cfg.Defaults.LogMaxSize != "" {
+		if task.LogMaxSize == 0 {
 			task.LogMaxSize = cfg.Defaults.LogMaxSize
 		}
 		if task.LogOnFull == "" && cfg.Defaults.LogOnFull != "" {
@@ -306,27 +254,16 @@ func ApplyDefaults(cfg *Config) {
 		if task.KeepRuns == 0 && cfg.Defaults.KeepRuns > 0 {
 			task.KeepRuns = cfg.Defaults.KeepRuns
 		}
-		if task.KeepFor == "" && cfg.Defaults.KeepFor != "" {
+		if task.KeepFor == 0 {
 			task.KeepFor = cfg.Defaults.KeepFor
 		}
 
-		if task.LogMaxSize == "" {
-			task.LogMaxSize = "100mb"
+		if task.LogMaxSize == 0 {
+			task.LogMaxSize = defaultTaskLogMaxSize
 		}
 		if task.LogOnFull == "" {
 			task.LogOnFull = model.LogOverflowDropOld
 		}
-
-		if bytes, err := ParseByteSize(task.LogMaxSize); err == nil {
-			task.LogMaxSizeBytes = bytes
-		}
-	}
-
-	if bytes, err := ParseByteSize(cfg.Storage.MaxSize); err == nil {
-		cfg.Storage.MaxSizeBytes = bytes
-	}
-	if bytes, err := ParseByteSize(cfg.Storage.MinFreeSpace); err == nil {
-		cfg.Storage.MinFreeSpaceBytes = bytes
 	}
 }
 
@@ -355,8 +292,8 @@ func applyServiceDefaults(task *model.Task) {
 	if task.Instances == 0 {
 		task.Instances = 1
 	}
-	if task.RestartDelay == "" {
-		task.RestartDelay = "1s"
+	if task.RestartDelay == 0 {
+		task.RestartDelay = defaultRestartDelay
 	}
 	if task.RestartBackoff == "" {
 		task.RestartBackoff = model.RestartBackoffExponential

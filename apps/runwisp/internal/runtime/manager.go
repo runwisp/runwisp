@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,18 +16,16 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
+	"github.com/runwisp/runwisp/internal/runtime/retry"
+	"github.com/runwisp/runwisp/internal/runtime/services"
 )
 
-const (
-	DefaultConcurrencyLimit = 1
-	// PersistenceChannelSize bounds the run-persistence work queue.
-	// Sized for realistic burst (pending-run replay on startup) while staying
-	// well below 1 MB of reserved channel ring memory.
-	PersistenceChannelSize = 1024
-)
+// PersistenceChannelSize bounds the run-persistence work queue. Sized for
+// realistic burst (pending-run replay on startup) while staying well below
+// 1 MB of reserved channel ring memory.
+const PersistenceChannelSize = 1024
 
-// TriggerRunOptions customize run creation for non-local invocations.
+// TriggerRunOptions customise run creation for non-local invocations.
 type TriggerRunOptions struct {
 	TriggeredBy         model.TriggeredBy
 	ExternalExecutionID string
@@ -35,32 +34,6 @@ type TriggerRunOptions struct {
 	// ReplicaIndex pins the run to a specific replica slot. Required for
 	// supervisor-driven restarts of services; nil for cron/API/retry runs.
 	ReplicaIndex *int
-}
-
-// concurrencyAction describes what the caller should do after evaluating a concurrency policy.
-type concurrencyAction int
-
-const (
-	actionStart    concurrencyAction = iota // start the run immediately
-	actionQueued                            // run was enqueued; do not start
-	actionRejected                          // run was rejected (policy: skip)
-)
-
-// taskState holds all per-task runtime state under the manager mutex.
-type taskState struct {
-	task   *model.Task
-	active []*ActiveRun
-	queue  []*model.Run // non-nil only when task.OnOverlap == PolicyQueue
-	cond   *sync.Cond   // non-nil only when policy == PolicyQueue
-
-	// liveReplicas tracks supervisor-owned replica slots for services. Allocated
-	// only when task.Kind.IsService(). Bypasses evaluateConcurrency so a
-	// service's "active" set is bounded by task.Instances rather than parallelism.
-	liveReplicas map[int]struct{}
-	// restartAttempts is keyed by replica index; counts consecutive restarts
-	// without a "long enough" run. Reset in execute() when a run lasts at least
-	// restartBackoffResetThreshold.
-	restartAttempts map[int]int
 }
 
 // Compile-time check: *defaultTaskManager satisfies TaskManager.
@@ -77,13 +50,6 @@ type defaultTaskManager struct {
 	wg          sync.WaitGroup
 }
 
-// ActiveRun holds context for an in-flight run.
-type ActiveRun struct {
-	Run       *model.Run
-	Cancel    context.CancelFunc
-	StartedAt time.Time
-}
-
 func NewTaskManager(exec executor.Executor, bus events.EventBus) TaskManager {
 	return &defaultTaskManager{
 		executor:    exec,
@@ -91,18 +57,6 @@ func NewTaskManager(exec executor.Executor, bus events.EventBus) TaskManager {
 		persistence: NewPersistenceCoordinator(PersistenceChannelSize),
 		eventBus:    bus,
 	}
-}
-
-func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.Run, exitCode int) {
-	if m.eventBus == nil {
-		return
-	}
-	// Publish guarantees event ordering: run.created always arrives
-	// before run.started for the same run. The SSE handler's buffered
-	// channel provides the async decoupling.
-	m.eventBus.Publish(eventType, events.RunEvent{
-		Run: run.Copy(),
-	})
 }
 
 // BindPersistenceHook wires persistence to both the manager and executor.
@@ -123,9 +77,12 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 	}
 	ts.task = &taskCopy
 
-	if task.Kind.IsService() && ts.liveReplicas == nil {
-		ts.liveReplicas = make(map[int]struct{})
-		ts.restartAttempts = make(map[int]int)
+	if task.Kind.IsService() {
+		if ts.supervisor == nil {
+			ts.supervisor = services.NewSupervisor(task.Name, task.Instances)
+		} else {
+			ts.supervisor.SetInstances(task.Instances)
+		}
 	}
 
 	if task.OnOverlap == model.PolicyQueue && ts.cond == nil {
@@ -133,54 +90,6 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 		ts.cond = sync.NewCond(&m.mu)
 		m.wg.Add(1)
 		go m.queueProcessLoop(task.Name)
-	}
-}
-
-// queueProcessLoop drains the per-task queue, starting runs as slots open.
-// Holds m.mu for its entire lifetime, releasing it only via cond.Wait.
-func (m *defaultTaskManager) queueProcessLoop(taskName string) {
-	defer m.wg.Done()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	ts := m.tasks[taskName]
-	for {
-		for len(ts.queue) == 0 || len(ts.active) >= m.getConcurrencyLimit(ts.task) {
-			if m.isShutdown.Load() {
-				return
-			}
-			ts.cond.Wait()
-		}
-		run := ts.queue[0]
-		ts.queue = ts.queue[1:]
-		m.startRun(ts.task, run)
-	}
-}
-
-// evaluateConcurrency decides whether a run can start and mutates queue state accordingly.
-// Must be called with m.mu held.
-func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, concurrencyLimit int) (concurrencyAction, error) {
-	if len(ts.active) < concurrencyLimit {
-		return actionStart, nil
-	}
-
-	switch ts.task.OnOverlap {
-	case model.PolicySkip:
-		return actionRejected, fmt.Errorf("task already running, skipping (policy: skip)")
-	case model.PolicyQueue:
-		ts.queue = append(ts.queue, run)
-		ts.cond.Signal()
-		slog.Debug("Task queued", "name", ts.task.Name, "active", len(ts.active), "limit", concurrencyLimit, "queue", len(ts.queue))
-		return actionQueued, nil
-	case model.PolicyTerminate:
-		if len(ts.active) > 0 {
-			oldest := ts.active[0]
-			slog.Info("Terminating oldest run", "run", oldest.Run.ID, "task", ts.task.Name)
-			oldest.Cancel()
-		}
-		return actionStart, nil
-	default:
-		return actionStart, nil
 	}
 }
 
@@ -207,9 +116,9 @@ type PendingRunsResult struct {
 }
 
 // LoadPendingRuns re-queues runs that were pending when the system stopped.
-// Service replicas are never resumed — the supervisor spawns fresh runs at the
-// configured Instances count instead. Pending service rows are marked failed so
-// they don't linger in the database.
+// Service replicas are never resumed — the supervisor spawns fresh runs at
+// the configured Instances count instead. Pending service rows are marked
+// failed so they don't linger in the database.
 func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -276,7 +185,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	}
 
 	if ts.task.Kind.IsService() {
-		idx, err := m.reserveReplicaSlot(ts, options.ReplicaIndex)
+		idx, err := ts.supervisor.Reserve(options.ReplicaIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -292,7 +201,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 			ReplicaIndex:        idx,
 		}
 		m.persistence.PersistNew(run)
-		m.publishRun(events.EventRunCreated, run, 0)
+		m.publishRun(events.EventRunCreated, run)
 		m.startRun(ts.task, run)
 		return run, nil
 	}
@@ -309,7 +218,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	}
 
 	m.persistence.PersistNew(run)
-	m.publishRun(events.EventRunCreated, run, 0)
+	m.publishRun(events.EventRunCreated, run)
 
 	concurrencyLimit := m.getConcurrencyLimit(ts.task)
 	action, actionErr := m.evaluateConcurrency(ts, run, concurrencyLimit)
@@ -322,44 +231,18 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	case actionQueued:
 		return run, nil
 	case actionStart:
-		// PolicyTerminate: evaluateConcurrency already cancelled the oldest run.
-		// Do NOT eagerly remove it from active here — let the goroutine clean up
-		// after executor.Execute returns, so the concurrency count stays accurate.
+		// PolicyTerminate: evaluateConcurrency already cancelled the oldest
+		// run. Do NOT eagerly remove it from active here — let the goroutine
+		// clean up after executor.Execute returns, so the concurrency count
+		// stays accurate.
 	}
 
 	m.startRun(ts.task, run)
 	return run, nil
 }
 
-// reserveReplicaSlot allocates a replica index for a service run.
-// Must be called with m.mu held.
-func (m *defaultTaskManager) reserveReplicaSlot(ts *taskState, requested *int) (int, error) {
-	limit := ts.task.Instances
-	if limit < 1 {
-		limit = 1
-	}
-	if requested != nil {
-		idx := *requested
-		if idx < 0 || idx >= limit {
-			return 0, fmt.Errorf("replica index %d out of range [0,%d) for service %s", idx, limit, ts.task.Name)
-		}
-		if _, taken := ts.liveReplicas[idx]; taken {
-			return 0, fmt.Errorf("replica %d already live for service %s", idx, ts.task.Name)
-		}
-		ts.liveReplicas[idx] = struct{}{}
-		return idx, nil
-	}
-	for i := 0; i < limit; i++ {
-		if _, taken := ts.liveReplicas[i]; !taken {
-			ts.liveReplicas[i] = struct{}{}
-			return i, nil
-		}
-	}
-	return 0, fmt.Errorf("no free replica slots for service %s (instances=%d)", ts.task.Name, limit)
-}
-
-// StartServiceReplicas brings every replica of a service up to its desired count.
-// Idempotent — already-running replicas are left untouched.
+// StartServiceReplicas brings every replica of a service up to its desired
+// count. Idempotent — already-running replicas are left untouched.
 func (m *defaultTaskManager) StartServiceReplicas(taskName string) error {
 	m.mu.RLock()
 	ts, exists := m.tasks[taskName]
@@ -371,16 +254,7 @@ func (m *defaultTaskManager) StartServiceReplicas(taskName string) error {
 		m.mu.RUnlock()
 		return fmt.Errorf("task %s is not a service", taskName)
 	}
-	limit := ts.task.Instances
-	if limit < 1 {
-		limit = 1
-	}
-	missing := make([]int, 0, limit)
-	for i := 0; i < limit; i++ {
-		if _, taken := ts.liveReplicas[i]; !taken {
-			missing = append(missing, i)
-		}
-	}
+	missing := ts.supervisor.MissingSlots()
 	m.mu.RUnlock()
 
 	for _, idx := range missing {
@@ -395,8 +269,8 @@ func (m *defaultTaskManager) StartServiceReplicas(taskName string) error {
 	return nil
 }
 
-// RestartServiceReplicas cancels every active replica of a service.
-// The exit handler refills each freed slot via the supervisor.
+// RestartServiceReplicas cancels every active replica of a service. The exit
+// handler refills each freed slot via the supervisor.
 func (m *defaultTaskManager) RestartServiceReplicas(taskName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -414,19 +288,14 @@ func (m *defaultTaskManager) RestartServiceReplicas(taskName string) error {
 	return nil
 }
 
-// startRun registers the run and spawns the execution goroutine.
-// Assumes m.mu is held.
+// startRun registers the run and spawns the execution goroutine. Assumes
+// m.mu is held.
 func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 	ctx := context.Background()
 	var cancel context.CancelFunc
 
-	if task.Timeout != "" {
-		if duration, err := time.ParseDuration(task.Timeout); err == nil {
-			ctx, cancel = context.WithTimeout(ctx, duration)
-		} else {
-			slog.Warn("Invalid timeout", "task", task.Name, "err", err)
-			ctx, cancel = context.WithCancel(ctx)
-		}
+	if task.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, task.Timeout)
 	} else {
 		ctx, cancel = context.WithCancel(ctx)
 	}
@@ -450,7 +319,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	run.Status = model.PhaseRunning
 	run.StartAt = &active.StartedAt
 	m.persistence.PersistExisting(run)
-	m.publishRun(events.EventRunStarted, run, 0)
+	m.publishRun(events.EventRunStarted, run)
 
 	result := m.executor.Execute(ctx, task, run)
 
@@ -459,7 +328,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	run.End(outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)
-	m.publishRun(outcome.eventType, run, result.ExitCode)
+	m.publishRun(outcome.eventType, run)
 
 	runDuration := endTime.Sub(active.StartedAt)
 
@@ -473,35 +342,32 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	}
 	var nextRestartAttempt int
 	if task.Kind.IsService() {
-		delete(ts.liveReplicas, run.ReplicaIndex)
-		if runDuration >= restartBackoffResetThreshold {
-			ts.restartAttempts[run.ReplicaIndex] = 0
-		}
-		nextRestartAttempt = ts.restartAttempts[run.ReplicaIndex]
-		ts.restartAttempts[run.ReplicaIndex] = nextRestartAttempt + 1
+		nextRestartAttempt = ts.supervisor.RecordExit(run.ReplicaIndex, runDuration)
 	}
 	if ts.cond != nil {
 		ts.cond.Signal()
 	}
 	m.mu.Unlock()
 
-	// Retry logic: only for non-cloud runs (cloud retries are handled by the control plane)
-	if run.TriggeredBy != model.TriggeredByCloud {
-		copiedRun := run.Copy()
-		switch {
-		case shouldRestart(task, run):
-			m.wg.Add(1)
-			go func() {
-				defer m.wg.Done()
-				m.scheduleRestart(task, copiedRun, nextRestartAttempt)
-			}()
-		case shouldRetry(task, run):
-			m.wg.Add(1)
-			go func() {
-				defer m.wg.Done()
-				m.scheduleRetry(task, copiedRun)
-			}()
-		}
+	// Retry logic: only for non-cloud runs (cloud retries are handled by the
+	// control plane).
+	if run.TriggeredBy == model.TriggeredByCloud {
+		return
+	}
+	copiedRun := run.Copy()
+	switch {
+	case retry.ShouldRestart(task, run):
+		m.wg.Add(1)
+		go func() {
+			defer m.wg.Done()
+			m.scheduleRestart(task, copiedRun, nextRestartAttempt)
+		}()
+	case retry.ShouldRetry(task, run):
+		m.wg.Add(1)
+		go func() {
+			defer m.wg.Done()
+			m.scheduleRetry(task, copiedRun)
+		}()
 	}
 }
 
@@ -531,11 +397,16 @@ func resolveRunOutcome(result *executor.ExecuteResult) runOutcome {
 	return runOutcome{endReason: reason, eventType: eventType}
 }
 
-func (m *defaultTaskManager) getConcurrencyLimit(task *model.Task) int {
-	if task.Parallelism == 0 {
-		return DefaultConcurrencyLimit
+func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.Run) {
+	if m.eventBus == nil {
+		return
 	}
-	return task.Parallelism
+	// Publish guarantees event ordering: run.created always arrives before
+	// run.started for the same run. The SSE handler's buffered channel
+	// provides the async decoupling.
+	m.eventBus.Publish(eventType, events.RunEvent{
+		Run: run.Copy(),
+	})
 }
 
 // GetActiveRuns returns a copy of active runs for the given task.
@@ -559,7 +430,8 @@ func (m *defaultTaskManager) TerminateRun(runID string) error {
 	}, fmt.Sprintf("run not found: %s", runID))
 }
 
-// TerminateRunByExternalExecutionID cancels a running run bound to an external execution ID.
+// TerminateRunByExternalExecutionID cancels a running run bound to an
+// external execution ID.
 func (m *defaultTaskManager) TerminateRunByExternalExecutionID(externalExecutionID string) error {
 	return m.cancelActiveRun(func(ar *ActiveRun) bool {
 		return ar.Run.ExternalExecutionID != nil && *ar.Run.ExternalExecutionID == externalExecutionID

@@ -6,6 +6,7 @@ package cloud
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
@@ -59,7 +60,7 @@ func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.Execution
 	}
 
 	if dispatch.Timeout > 0 {
-		task.Timeout = fmt.Sprintf("%dms", dispatch.Timeout)
+		task.Timeout = time.Duration(dispatch.Timeout) * time.Millisecond
 	}
 
 	return task

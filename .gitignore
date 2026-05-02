@@ -34,5 +34,7 @@ npm-debug.log*
 # Misc
 .DS_Store
 *.pem
-# wbaum worktrees
+
+# Worktrees
 .wbaum/
+.worktrees/

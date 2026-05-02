@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
@@ -66,13 +67,13 @@ run = "echo hello"
 		assert.True(t, task.APITrigger)
 		assert.Equal(t, model.PolicySkip, task.OnOverlap)
 		assert.Equal(t, 1, task.Parallelism)
-		assert.Equal(t, "30m", task.Timeout)
-		assert.Equal(t, "200mb", task.LogMaxSize)
+		assert.Equal(t, 30*time.Minute, task.Timeout)
+		assert.Equal(t, int64(200*1024*1024), task.LogMaxSize)
 		assert.Equal(t, "drop_old", task.LogOnFull)
 		assert.Equal(t, 25, task.KeepRuns)
-		assert.Equal(t, "14d", task.KeepFor)
-		assert.Equal(t, int64(5*1024*1024*1024), cfg.Storage.MaxSizeBytes)
-		assert.Equal(t, int64(500*1024*1024), cfg.Storage.MinFreeSpaceBytes)
+		assert.Equal(t, 14*24*time.Hour, task.KeepFor)
+		assert.Equal(t, int64(5*1024*1024*1024), cfg.Storage.MaxSize)
+		assert.Equal(t, int64(500*1024*1024), cfg.Storage.MinFreeSpace)
 		assert.True(t, cfg.Daemon.AllowCloudDispatch)
 	})
 
@@ -111,6 +112,28 @@ bogus = 1
 		assert.Contains(t, err.Error(), "strict mode")
 	})
 
+	t.Run("malformed timeout is rejected at load", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+timeout = "garbage"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "timeout")
+	})
+
+	t.Run("malformed log_max_size is rejected at load", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+log_max_size = "abc"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "log_max_size")
+	})
+
 	t.Run("service with defaults", func(t *testing.T) {
 		path := writeTOML(t, `
 [services.web]
@@ -125,7 +148,7 @@ run = "exec ./bin/web"
 		assert.Equal(t, model.RestartAlways, s.Restart)
 		assert.Equal(t, model.PolicySkip, s.OnOverlap)
 		assert.Equal(t, 1, s.Instances)
-		assert.Equal(t, "1s", s.RestartDelay)
+		assert.Equal(t, time.Second, s.RestartDelay)
 		assert.Equal(t, model.RestartBackoffExponential, s.RestartBackoff)
 		assert.True(t, s.APITrigger)
 	})
@@ -312,21 +335,21 @@ func TestValidate(t *testing.T) {
 func TestApplyDefaults(t *testing.T) {
 	cfg := &Config{
 		Defaults: Defaults{
-			Timeout:    "45m",
-			LogMaxSize: "200mb",
+			Timeout:    45 * time.Minute,
+			LogMaxSize: 200 * 1024 * 1024,
 			LogOnFull:  "drop_old",
 			KeepRuns:   25,
-			KeepFor:    "14d",
+			KeepFor:    14 * 24 * time.Hour,
 		},
 		Tasks: []model.Task{
 			{Name: "uses-defaults", Run: "echo 1"},
 			{
 				Name:        "overrides",
 				Run:         "echo 2",
-				Timeout:     "10m",
+				Timeout:     10 * time.Minute,
 				Parallelism: 5,
 				OnOverlap:   model.PolicySkip,
-				LogMaxSize:  "50mb",
+				LogMaxSize:  50 * 1024 * 1024,
 				LogOnFull:   "kill_task",
 				KeepRuns:    5,
 			},
@@ -339,21 +362,20 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, 1, defaulted.Parallelism)
 	assert.Equal(t, model.PolicyQueue, defaulted.OnOverlap)
 	assert.Equal(t, model.MissedRunLatest, defaulted.CatchUp)
-	assert.Equal(t, "45m", defaulted.Timeout)
-	assert.Equal(t, "200mb", defaulted.LogMaxSize)
+	assert.Equal(t, 45*time.Minute, defaulted.Timeout)
+	assert.Equal(t, int64(200*1024*1024), defaulted.LogMaxSize)
 	assert.Equal(t, "drop_old", defaulted.LogOnFull)
 	assert.Equal(t, 25, defaulted.KeepRuns)
-	assert.Equal(t, "14d", defaulted.KeepFor)
-	assert.Equal(t, int64(200*1024*1024), defaulted.LogMaxSizeBytes)
+	assert.Equal(t, 14*24*time.Hour, defaulted.KeepFor)
 
 	overridden := cfg.Tasks[1]
 	assert.Equal(t, 5, overridden.Parallelism)
 	assert.Equal(t, model.PolicySkip, overridden.OnOverlap)
-	assert.Equal(t, "10m", overridden.Timeout)
-	assert.Equal(t, "50mb", overridden.LogMaxSize)
+	assert.Equal(t, 10*time.Minute, overridden.Timeout)
+	assert.Equal(t, int64(50*1024*1024), overridden.LogMaxSize)
 	assert.Equal(t, "kill_task", overridden.LogOnFull)
 	assert.Equal(t, 5, overridden.KeepRuns)
-	assert.Equal(t, "14d", overridden.KeepFor)
+	assert.Equal(t, 14*24*time.Hour, overridden.KeepFor)
 }
 
 func TestApplyDefaultsBuiltinFallback(t *testing.T) {
@@ -363,7 +385,6 @@ func TestApplyDefaultsBuiltinFallback(t *testing.T) {
 
 	ApplyDefaults(cfg)
 
-	assert.Equal(t, "100mb", cfg.Tasks[0].LogMaxSize)
+	assert.Equal(t, int64(100*1024*1024), cfg.Tasks[0].LogMaxSize)
 	assert.Equal(t, model.LogOverflowDropOld, cfg.Tasks[0].LogOnFull)
-	assert.Equal(t, int64(100*1024*1024), cfg.Tasks[0].LogMaxSizeBytes)
 }

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +15,6 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/xhit/go-str2duration/v2"
 )
 
 const (
@@ -295,18 +293,13 @@ func (db *SQLiteDatabase) DeleteRun(id string) error {
 func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
 	uniqueRuns := make(map[string]model.Run)
 
-	if task.KeepFor != "" {
-		parsedInterval, err := str2duration.ParseDuration(task.KeepFor)
-		if err != nil {
-			slog.Warn("Invalid keep_for", "keep_for", task.KeepFor, "task", task.Name, "err", err)
-		} else {
-			cutoff := time.Now().Add(-parsedInterval)
-			if err := db.collectRuns(uniqueRuns,
-				`SELECT `+runColumns+` FROM runs WHERE task_name = ? AND created_at < ? LIMIT ?`,
-				task.Name, cutoff, RetentionBatchSize,
-			); err != nil {
-				return nil, fmt.Errorf("query retention days for %s: %w", task.Name, err)
-			}
+	if task.KeepFor > 0 {
+		cutoff := time.Now().Add(-task.KeepFor)
+		if err := db.collectRuns(uniqueRuns,
+			`SELECT `+runColumns+` FROM runs WHERE task_name = ? AND created_at < ? LIMIT ?`,
+			task.Name, cutoff, RetentionBatchSize,
+		); err != nil {
+			return nil, fmt.Errorf("query retention days for %s: %w", task.Name, err)
 		}
 	}
 

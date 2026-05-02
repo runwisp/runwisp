@@ -218,7 +218,7 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		LogPath:     logPath,
 		IdxPath:     idxPath,
 		TidxPath:    tidxPath,
-		MaxSize:     task.LogMaxSizeBytes,
+		MaxSize:     task.LogMaxSize,
 		Overflow:    task.LogOnFull,
 		CancelFunc:  cancelFunc,
 		MinFreeDisk: r.diskChecker.minFreeDisk,

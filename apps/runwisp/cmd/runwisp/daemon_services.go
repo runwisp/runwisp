@@ -90,8 +90,7 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executor {
 	dockerBackend := executor.NewLazyContainerBackend()
 
-	var minFreeDisk int64
-	minFreeDisk = cfg.Storage.MinFreeSpaceBytes
+	minFreeDisk := cfg.Storage.MinFreeSpace
 
 	return executor.New(executor.Options{
 		LogDir:            flags.LogDir(),
@@ -128,7 +127,7 @@ func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.
 }
 
 func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap map[string]*model.Task) *runtime.RetentionCleaner {
-	maxTotalSize := cfg.Config.Storage.MaxSizeBytes
+	maxTotalSize := cfg.Config.Storage.MaxSize
 	cleaner := runtime.NewRetentionCleaner(db, tasksMap, time.Hour, flags.LogDir(), maxTotalSize)
 	cleaner.Start()
 	return cleaner

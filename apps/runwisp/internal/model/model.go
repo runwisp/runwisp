@@ -18,6 +18,10 @@ func SanitizeTaskName(name string) string {
 }
 
 // Task describes a runnable task loaded from configuration.
+//
+// Duration and size fields are parsed from their human-readable TOML form
+// (e.g. "30m", "100mb") at config load time and stored as native Go types.
+// JSON output therefore renders them as integer nanoseconds / bytes.
 type Task struct {
 	Name        string   `toml:"-"                     json:"name"`
 	Kind        TaskKind `toml:"-"                     json:"kind,omitempty" enum:"task,service" doc:"Whether this is a scheduled task or an always-on service"`
@@ -28,25 +32,24 @@ type Task struct {
 	APITrigger bool            `toml:"api_trigger,omitempty" json:"api_trigger"`
 	CatchUp    MissedRunPolicy `toml:"catch_up,omitempty"    json:"catch_up,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
 
-	Timeout     string            `toml:"timeout,omitempty"     json:"timeout,omitempty"`
+	Timeout     time.Duration     `toml:"-"                     json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
 	Restart     RestartPolicy     `toml:"restart,omitempty"     json:"restart,omitempty" enum:"never,always,on_failure" doc:"Whether and when a task is restarted after completion"`
 	Parallelism int               `toml:"parallelism,omitempty" json:"parallelism,omitempty"`
 	OnOverlap   ConcurrencyPolicy `toml:"on_overlap,omitempty"  json:"on_overlap,omitempty" enum:"queue,skip,terminate" doc:"How overlapping runs are handled"`
 
-	Instances      int    `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running replicas"`
-	RestartDelay   string `toml:"restart_delay,omitempty"  json:"restart_delay,omitempty" doc:"Base delay before each restart (e.g. \"1s\")"`
-	RestartBackoff string `toml:"restart_backoff,omitempty" json:"restart_backoff,omitempty" enum:"none,exponential" doc:"Backoff curve between consecutive restarts"`
+	Instances      int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running replicas"`
+	RestartDelay   time.Duration `toml:"-"                        json:"restart_delay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
+	RestartBackoff string        `toml:"restart_backoff,omitempty" json:"restart_backoff,omitempty" enum:"none,exponential" doc:"Backoff curve between consecutive restarts"`
 
-	RetryAttempts int    `toml:"retry_attempts,omitempty" json:"retry_attempts,omitempty"`
-	RetryDelay    string `toml:"retry_delay,omitempty"    json:"retry_delay,omitempty"`
-	RetryBackoff  string `toml:"retry_backoff,omitempty"  json:"retry_backoff,omitempty"`
+	RetryAttempts int           `toml:"retry_attempts,omitempty" json:"retry_attempts,omitempty"`
+	RetryDelay    time.Duration `toml:"-"                        json:"retry_delay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
+	RetryBackoff  string        `toml:"retry_backoff,omitempty"  json:"retry_backoff,omitempty"`
 
-	LogMaxSize      string `toml:"log_max_size,omitempty" json:"log_max_size,omitempty"`
-	LogOnFull       string `toml:"log_on_full,omitempty"  json:"log_on_full,omitempty" enum:"drop_new,drop_old,kill_task" doc:"What to do when log output exceeds log_max_size"`
-	LogMaxSizeBytes int64  `toml:"-"                       json:"-"`
+	LogMaxSize int64  `toml:"-"                     json:"log_max_size,omitempty" doc:"Per-task log size cap, in bytes"`
+	LogOnFull  string `toml:"log_on_full,omitempty" json:"log_on_full,omitempty" enum:"drop_new,drop_old,kill_task" doc:"What to do when log output exceeds log_max_size"`
 
-	KeepRuns int    `toml:"keep_runs,omitempty" json:"keep_runs,omitempty"`
-	KeepFor  string `toml:"keep_for,omitempty"  json:"keep_for,omitempty"`
+	KeepRuns int           `toml:"keep_runs,omitempty" json:"keep_runs,omitempty"`
+	KeepFor  time.Duration `toml:"-"                   json:"keep_for,omitempty" doc:"Retention window, in nanoseconds"`
 
 	Run          string       `toml:"run,omitempty" json:"-"`
 	ExecutionDef ExecutionDef `toml:"-"             json:"-"`

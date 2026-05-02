@@ -170,7 +170,7 @@ func TestDeleteOldRuns(t *testing.T) {
 
 	task := &model.Task{
 		Name:    "task1",
-		KeepFor: "1d",
+		KeepFor: 24 * time.Hour,
 	}
 
 	deleted, err := db.DeleteOldRuns(task)

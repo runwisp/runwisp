@@ -25,7 +25,7 @@ func serviceTask(name string, instances int) *model.Task {
 		Parallelism:    1,
 		OnOverlap:      model.PolicySkip,
 		Instances:      instances,
-		RestartDelay:   "1ms",
+		RestartDelay:   time.Millisecond,
 		RestartBackoff: model.RestartBackoffNone,
 	}
 }
@@ -52,10 +52,9 @@ func TestStartServiceReplicas(t *testing.T) {
 	djm.mu.RLock()
 	ts := djm.tasks["svc"]
 	assert.Len(t, ts.active, 3, "all 3 replicas should be active")
-	assert.Len(t, ts.liveReplicas, 3)
+	assert.Equal(t, 3, ts.supervisor.LiveCount())
 	for i := 0; i < 3; i++ {
-		_, ok := ts.liveReplicas[i]
-		assert.True(t, ok, "replica %d should be live", i)
+		assert.True(t, ts.supervisor.IsLive(i), "replica %d should be live", i)
 	}
 	indexes := make(map[int]bool)
 	for _, ar := range ts.active {
@@ -90,7 +89,8 @@ func TestServiceReplicaRefillsOnExit(t *testing.T) {
 	ts := djm.tasks["svc"]
 	// At any point in time the supervisor should target exactly task.Instances
 	// live replicas; the indexes must always be {0, 1}.
-	for idx := range ts.liveReplicas {
+	for _, ar := range ts.active {
+		idx := ar.Run.ReplicaIndex
 		assert.Truef(t, idx == 0 || idx == 1, "unexpected replica index %d", idx)
 	}
 	djm.mu.RUnlock()
@@ -217,8 +217,7 @@ func TestServiceReplicaRefillsAfterManualStop(t *testing.T) {
 	defer djm.mu.RUnlock()
 
 	assert.Len(t, djm.tasks["svc"].active, 2, "supervisor should refill replica 0")
-	_, slot0Live := djm.tasks["svc"].liveReplicas[0]
-	assert.True(t, slot0Live, "replica index 0 should be live again")
+	assert.True(t, djm.tasks["svc"].supervisor.IsLive(0), "replica index 0 should be live again")
 
 	var refillRunID string
 	for _, ar := range djm.tasks["svc"].active {
@@ -228,6 +227,40 @@ func TestServiceReplicaRefillsAfterManualStop(t *testing.T) {
 		}
 	}
 	assert.NotEqual(t, targetRunID, refillRunID, "a fresh run should occupy replica 0")
+}
+
+// TestRestartAttemptsIncrementOnQuickExit verifies that the per-replica
+// restart-attempt counter advances on every short-lived exit. The state
+// itself lives on the supervisor; this exercise pins the integration with
+// the manager's run-completion path.
+func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+	defer jm.Shutdown()
+
+	task := serviceTask("svc", 1)
+	// Long enough delay between restarts that we can sample mid-cycle without
+	// races, but short enough to keep the test quick.
+	task.RestartDelay = 30 * time.Millisecond
+	jm.UpsertTask(task)
+
+	// Each replica run exits quickly with failure; well under the 60s reset
+	// threshold so the counter must keep climbing.
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
+		&executor.ExecuteResult{ExitCode: 1}, 5*time.Millisecond,
+	)
+
+	require.NoError(t, jm.StartServiceReplicas("svc"))
+	time.Sleep(250 * time.Millisecond)
+
+	djm := jm.(*defaultTaskManager)
+	djm.mu.RLock()
+	attempts := djm.tasks["svc"].supervisor.Attempts(0)
+	djm.mu.RUnlock()
+
+	assert.Greater(t, attempts, 1,
+		"counter should accumulate across multiple quick exits, got %d", attempts)
 }
 
 func TestRestartServiceReplicasRejectsNonService(t *testing.T) {
