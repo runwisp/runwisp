@@ -494,7 +494,11 @@ export interface components {
              * @description For services: number of always-running replicas
              */
             instances?: number;
-            keep_for?: string;
+            /**
+             * Format: int64
+             * @description Retention window, in nanoseconds
+             */
+            keep_for?: number;
             /** Format: int64 */
             keep_runs?: number;
             /**
@@ -502,7 +506,11 @@ export interface components {
              * @enum {string}
              */
             kind?: "task" | "service";
-            log_max_size?: string;
+            /**
+             * Format: int64
+             * @description Per-task log size cap, in bytes
+             */
+            log_max_size?: number;
             /**
              * @description What to do when log output exceeds log_max_size
              * @enum {string}
@@ -527,13 +535,24 @@ export interface components {
              * @enum {string}
              */
             restart_backoff?: "none" | "exponential";
-            /** @description Base delay before each restart (e.g. "1s") */
-            restart_delay?: string;
+            /**
+             * Format: int64
+             * @description Base delay before each restart, in nanoseconds
+             */
+            restart_delay?: number;
             /** Format: int64 */
             retry_attempts?: number;
             retry_backoff?: string;
-            retry_delay?: string;
-            timeout?: string;
+            /**
+             * Format: int64
+             * @description Base delay before each retry, in nanoseconds
+             */
+            retry_delay?: number;
+            /**
+             * Format: int64
+             * @description Per-run timeout in nanoseconds
+             */
+            timeout?: number;
         };
     };
     responses: never;
