@@ -12,7 +12,7 @@ import (
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 )
 
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 func newEnvelopeFields() (int, string) {
 	return ProtocolVersion, time.Now().UTC().Format(time.RFC3339Nano)

@@ -198,6 +198,20 @@ components:
           type: object
         timeout:
           type: integer
+        logUploadUrl:
+          type: string
+          description: |
+            Signed PUT URL the daemon uses to upload the gzipped terminal log
+            archive. Empty string means archival is disabled for this dispatch
+            (transient cloud-side issuance error); the daemon keeps the local
+            file and skips upload.
+        logPath:
+          type: string
+          description: |
+            S3 object key the daemon must echo back as `logPath` on the
+            terminal `execution:update` message after a successful upload.
+            Format `{orgId}/{yyyy-mm}/{executionId}.log.gz`. Empty when
+            `logUploadUrl` is empty.
       required:
         - id
         - taskId
@@ -208,6 +222,8 @@ components:
         - inputValues
         - script
         - timeout
+        - logUploadUrl
+        - logPath
 
     ExecutionStopMessage:
       type: object
@@ -357,6 +373,20 @@ components:
           type: string
           format: date-time
           nullable: true
+        logPath:
+          type: string
+          nullable: true
+          description: |
+            Echoed S3 object key from `ExecutionPayload.logPath`, set only on
+            terminal updates after a successful upload.
+        logSize:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+          description: |
+            Gzipped byte count of the uploaded archive. Set only on terminal
+            updates after a successful upload.
       required:
         - type
         - executionId

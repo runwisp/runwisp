@@ -81,12 +81,15 @@ function postProcessGo(dir) {
       "\n",
     );
 
-    // Fix Go naming conventions: trailing Id -> ID (e.g., ConnectionId -> ConnectionID, Id -> ID)
+    // Fix Go naming conventions: trailing Id -> ID, Url -> URL
     content = content.replace(
-      /^(\s+)(\w*Id)\b/gm,
+      /^(\s+)(\w*(?:Id|Url))\b/gm,
       (match, indent, fieldName) => {
         if (fieldName[0] < "A" || fieldName[0] > "Z") return match;
-        return `${indent}${fieldName.replace(/Id$/, "ID")}`;
+        const fixed = fieldName
+          .replace(/Id$/, "ID")
+          .replace(/Url$/, "URL");
+        return `${indent}${fixed}`;
       },
     );
 
@@ -110,9 +113,9 @@ function postProcessGo(dir) {
       '$1 json.RawMessage$2" binding:"required"`',
     );
 
-    // int -> int64 for fields with format: int64 (offset, limit)
+    // int -> int64 for fields with format: int64 (offset, limit, logSize)
     content = content.replace(
-      /(\s+(?:Offset|Limit))\s+int(\s+`json:"(?:offset|limit))/g,
+      /(\s+(?:Offset|Limit|LogSize))\s+int(\s+`json:"(?:offset|limit|logSize))/g,
       "$1 int64$2",
     );
 
@@ -205,7 +208,7 @@ async function generateZod(resolved) {
   let outCode = `// Generated from asyncapi.yaml
 import { z } from "zod";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export const inboundDaemonMessageSchema = z.discriminatedUnion("type", [
   ${inboundZodObjs.join(",\n  ")}

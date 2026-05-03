@@ -33,12 +33,13 @@ func startCloudClient(
 	}
 
 	cloudClient, clientErr := cloud.NewClient(cfg.CloudConfig, cloud.Dependencies{
-		TaskManager:  svc.TaskManager,
-		RunRepo:      svc.DB,
-		EventBus:     svc.EventBus,
-		LocalTasks:   svc.TasksMap,
-		LogDir:       flags.LogDir(),
-		Availability: svc.Executor.Availability(),
+		TaskManager:       svc.TaskManager,
+		RunRepo:           svc.DB,
+		PendingUploadRepo: svc.DB,
+		EventBus:          svc.EventBus,
+		LocalTasks:        svc.TasksMap,
+		LogDir:            flags.LogDir(),
+		Availability:      svc.Executor.Availability(),
 		OnConnected: func() {
 			slog.Info("Cloud connected")
 		},
@@ -49,6 +50,7 @@ func startCloudClient(
 	}
 
 	if cloudClient != nil {
+		cloudClient.RecoverArchiveBacklog(cloudCtx)
 		cloudWG.Add(1)
 		go func() {
 			defer cloudWG.Done()

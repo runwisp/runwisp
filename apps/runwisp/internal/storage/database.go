@@ -97,6 +97,13 @@ CREATE INDEX IF NOT EXISTS idx_notifications_fingerprint ON notifications(finger
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_severity ON notifications(severity);
 CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
+
+CREATE TABLE IF NOT EXISTS pending_log_uploads (
+external_execution_id TEXT PRIMARY KEY,
+upload_url            TEXT NOT NULL,
+log_path              TEXT NOT NULL,
+inserted_at           INTEGER NOT NULL
+);
 `
 
 // New opens (and migrates) the SQLite database.
@@ -467,6 +474,47 @@ func (db *SQLiteDatabase) SetConfigValue(key, value string) error {
 
 func (db *SQLiteDatabase) Close() error {
 	return db.db.Close()
+}
+
+func (db *SQLiteDatabase) UpsertPendingLogUpload(rec PendingLogUpload) error {
+	_, err := db.db.Exec(
+		`INSERT INTO pending_log_uploads (external_execution_id, upload_url, log_path, inserted_at)
+ VALUES (?, ?, ?, ?)
+ ON CONFLICT(external_execution_id) DO UPDATE SET
+   upload_url = excluded.upload_url,
+   log_path = excluded.log_path,
+   inserted_at = excluded.inserted_at`,
+		rec.ExternalExecutionID, rec.UploadURL, rec.LogPath, rec.InsertedAt,
+	)
+	return err
+}
+
+func (db *SQLiteDatabase) DeletePendingLogUpload(externalExecutionID string) error {
+	_, err := db.db.Exec(
+		`DELETE FROM pending_log_uploads WHERE external_execution_id = ?`,
+		externalExecutionID,
+	)
+	return err
+}
+
+func (db *SQLiteDatabase) ListPendingLogUploads() ([]PendingLogUpload, error) {
+	rows, err := db.db.Query(
+		`SELECT external_execution_id, upload_url, log_path, inserted_at FROM pending_log_uploads`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var recs []PendingLogUpload
+	for rows.Next() {
+		var r PendingLogUpload
+		if err := rows.Scan(&r.ExternalExecutionID, &r.UploadURL, &r.LogPath, &r.InsertedAt); err != nil {
+			return nil, err
+		}
+		recs = append(recs, r)
+	}
+	return recs, rows.Err()
 }
 
 func buildOrderClause(sortField, sortDirection string) string {

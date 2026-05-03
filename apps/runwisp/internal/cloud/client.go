@@ -33,13 +33,14 @@ const (
 )
 
 type Dependencies struct {
-	TaskManager  runtime.TaskRunner
-	RunRepo      storage.RunRepository
-	EventBus     events.EventBus
-	LocalTasks   map[string]*model.Task
-	LogDir       string
-	Availability executor.Availability
-	OnConnected  func()
+	TaskManager       runtime.TaskRunner
+	RunRepo           storage.RunRepository
+	PendingUploadRepo storage.PendingLogUploadRepository
+	EventBus          events.EventBus
+	LocalTasks        map[string]*model.Task
+	LogDir            string
+	Availability      executor.Availability
+	OnConnected       func()
 }
 
 type Client struct {
@@ -53,6 +54,7 @@ type Client struct {
 	onConnected  func()
 	handler      *InboundHandler
 	tracker      *ExecutionTracker
+	uploader     *LogUploader
 	bridge       *EventBridge
 	sessions     *sessionRunner
 
@@ -91,6 +93,8 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 	tracker := NewExecutionTracker()
 	connMgr := newConnectionManager(tracker)
 
+	uploader := NewLogUploader(deps.PendingUploadRepo, deps.RunRepo, deps.LogDir)
+
 	client := &Client{
 		config:       cfg,
 		runRepo:      deps.RunRepo,
@@ -100,6 +104,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		availability: deps.Availability,
 		onConnected:  deps.OnConnected,
 		tracker:      tracker,
+		uploader:     uploader,
 		conn:         connMgr,
 	}
 
@@ -111,6 +116,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		func(update protocol.ExecutionUpdateMessage) {
 			client.tracker.QueueUpdate(update, connMgr.sendIfReady)
 		},
+		uploader,
 	)
 
 	client.sessions = &sessionRunner{handler: client.handler}
@@ -126,6 +132,32 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 	slog.Info("cloud integration enabled", "baseURL", cfg.BaseURL.String(), "fingerprint", cfg.Fingerprint)
 
 	return client, nil
+}
+
+// RecoverArchiveBacklog re-runs uploads for executions whose dispatch was
+// persisted but never archived (typically after a daemon crash mid-run).
+// On success the resulting terminal `execution:update` is queued for
+// delivery once the cloud session is up. Safe to call before Run.
+func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
+	if client == nil || client.uploader == nil {
+		return
+	}
+	client.uploader.RecoverOrphans(ctx, func(executionID string, result LogUploaderResult) {
+		// Build a synthetic terminal update from the run record, then
+		// overlay the recovered logPath/logSize. We re-fetch via the
+		// run repo to get the canonical end_reason/exit_code.
+		run, err := client.runRepo.GetRunByExternalExecutionID(executionID)
+		if err != nil || run == nil {
+			return
+		}
+		update := mapRunToExecutionUpdate(run)
+		if update == nil {
+			return
+		}
+		update.LogPath = result.LogPath
+		update.LogSize = result.LogSize
+		client.tracker.QueueUpdate(*update, client.conn.sendIfReady)
+	})
 }
 
 func (client *Client) Run(ctx context.Context) error {
