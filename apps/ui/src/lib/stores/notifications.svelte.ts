@@ -175,8 +175,8 @@ class NotificationStore {
 
     async #setReadState(id: string, read: boolean): Promise<void> {
         const idx = this.#items.findIndex((n) => n.id === id);
-        if (idx < 0) return;
         const previous = this.#items[idx];
+        if (!previous) return;
         const wasUnread = isUnread(previous);
         if (read === !wasUnread) return;
 
@@ -234,13 +234,14 @@ class NotificationStore {
             },
             onEvent: (eventType, data) => {
                 try {
+                    this.#logger.debug("SSE notification event", eventType);
                     const raw: unknown = JSON.parse(data);
                     const parsed = streamEnvelopeSchema.safeParse(raw);
                     if (!parsed.success) {
                         this.#logger.warn("Invalid notification SSE payload", parsed.error.message);
                         return;
                     }
-                    this.#applyUpdate(eventType, parsed.data.notification);
+                    this.#applyUpdate(parsed.data.notification);
                 } catch (e) {
                     this.#logger.error("Malformed notification SSE event", e);
                 }
@@ -252,15 +253,10 @@ class NotificationStore {
         });
     }
 
-    #applyUpdate(eventType: string, n: Notification): void {
+    #applyUpdate(n: Notification): void {
         const idx = this.#items.findIndex((x) => x.id === n.id);
-        if (eventType === "notification.created" && idx < 0) {
-            this.#items = [n, ...this.#items];
-            if (isUnread(n)) this.#unread += 1;
-            return;
-        }
-        if (idx >= 0) {
-            const prev = this.#items[idx];
+        const prev = this.#items[idx];
+        if (prev) {
             const next = this.#items.slice();
             next[idx] = n;
             this.#items = next;
@@ -268,7 +264,6 @@ class NotificationStore {
             if (delta !== 0) this.#unread = Math.max(0, this.#unread + delta);
             return;
         }
-        // Updated event for a row we never saw — treat like a created row.
         this.#items = [n, ...this.#items];
         if (isUnread(n)) this.#unread += 1;
     }

@@ -126,6 +126,11 @@ loop:
 	assert.Equal(t, "notification.created", got[0].Type)
 	assert.Equal(t, "notification.updated", got[1].Type)
 	assert.Equal(t, got[0].Notification.ID, got[1].Notification.ID, "same row")
+	// The coalescer queries CountUnreadNotifications post-upsert and ships it
+	// on every update so SSE clients can replace their badge instead of
+	// delta-tracking. Both events here come from a single still-unread row.
+	assert.EqualValues(t, 1, got[0].UnreadCount)
+	assert.EqualValues(t, 1, got[1].UnreadCount)
 }
 
 func TestCoalescer_DistinctFingerprintsAllPersist(t *testing.T) {

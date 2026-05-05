@@ -106,10 +106,21 @@ func (m Model) handleNotificationStreamConnected(msg notificationStreamConnected
 func (m Model) handleNotificationEvent(msg notificationEventMsg) (tea.Model, tea.Cmd) {
 	switch msg.Event.Type {
 	case "notification.created", "notification.updated":
-		n, err := apiclient.DecodeNotificationEnvelope(msg.Event.Data)
+		env, err := apiclient.DecodeNotificationEnvelope(msg.Event.Data)
 		if err != nil {
 			m.debugView.AppendLine("Failed to parse notification: " + err.Error())
-		} else if m.notifications.Upsert(n) {
+		} else {
+			m.notifications.SetUnread(int(env.UnreadCount))
+			if m.notifications.Upsert(env.Notification) {
+				m.updateLayout()
+			}
+		}
+	case "notifications.unread_count_changed":
+		count, err := apiclient.DecodeUnreadCountEnvelope(msg.Event.Data)
+		if err != nil {
+			m.debugView.AppendLine("Failed to parse unread count: " + err.Error())
+		} else {
+			m.notifications.SetUnread(int(count))
 			m.updateLayout()
 		}
 	}

@@ -41,16 +41,27 @@ type NotificationsPage struct {
 }
 
 // NotificationStreamEvent is a parsed SSE event from /api/notifications/stream.
-// Type is one of "notification.created", "notification.updated", or "ping".
+// Type is one of "notification.created", "notification.updated",
+// "notifications.unread_count_changed", or "ping".
 type NotificationStreamEvent struct {
 	Type string
 	Data json.RawMessage
 }
 
-// NotificationEnvelope unwraps the {notification: {...}} payload that
-// notification.created and notification.updated use.
+// NotificationEnvelope unwraps the {notification: {...}, unread_count: N}
+// payload that notification.created and notification.updated use. UnreadCount
+// is the post-mutation server count; clients display it as the badge value
+// instead of delta-tracking. A negative value means the server failed to
+// query and the field should be ignored.
 type NotificationEnvelope struct {
 	Notification Notification `json:"notification"`
+	UnreadCount  int64        `json:"unread_count"`
+}
+
+// UnreadCountEnvelope is the body of a notifications.unread_count_changed
+// event — count-only, no notification row.
+type UnreadCountEnvelope struct {
+	UnreadCount int64 `json:"unread_count"`
 }
 
 // ListNotifications fetches one page of notifications. Pass before="" for the
@@ -152,11 +163,22 @@ func (c *Client) StreamNotifications(ctx context.Context) (<-chan NotificationSt
 }
 
 // DecodeNotificationEnvelope unwraps a notification.created or
-// notification.updated event's payload to a Notification.
-func DecodeNotificationEnvelope(data []byte) (Notification, error) {
+// notification.updated event's payload, returning the row and the server's
+// post-mutation unread count.
+func DecodeNotificationEnvelope(data []byte) (NotificationEnvelope, error) {
 	var env NotificationEnvelope
 	if err := json.Unmarshal(data, &env); err != nil {
-		return Notification{}, fmt.Errorf("decode notification: %w", err)
+		return NotificationEnvelope{}, fmt.Errorf("decode notification: %w", err)
 	}
-	return env.Notification, nil
+	return env, nil
+}
+
+// DecodeUnreadCountEnvelope unwraps a notifications.unread_count_changed
+// event's payload to a single int64.
+func DecodeUnreadCountEnvelope(data []byte) (int64, error) {
+	var env UnreadCountEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return 0, fmt.Errorf("decode unread count: %w", err)
+	}
+	return env.UnreadCount, nil
 }

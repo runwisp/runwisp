@@ -14,12 +14,24 @@ import (
 )
 
 // Update is the SSE-shaped envelope the Hub broadcasts. Type is one of
-// "notification.created" or "notification.updated"; Notification is the
-// row in its current state.
+// "notification.created", "notification.updated", or
+// UpdateTypeUnreadCountChanged; Notification is the row in its current state
+// (zero-valued for unread-count-only updates). UnreadCount is the database's
+// post-mutation count of rows with read_at IS NULL — producers populate it so
+// the SSE handler ships an authoritative number with every event.
 type Update struct {
 	Type         string
 	Notification storage.Notification
+	UnreadCount  int64
 }
+
+// SSE event type constants. Kept here so producers and the server-side
+// serializer agree on the same strings.
+const (
+	UpdateTypeCreated            = "notification.created"
+	UpdateTypeUpdated            = "notification.updated"
+	UpdateTypeUnreadCountChanged = "notifications.unread_count_changed"
+)
 
 // Subscriber is the receiving end of a Hub subscription.
 type Subscriber struct {
@@ -77,8 +89,10 @@ func (h *Hub) Subscribe() (*Subscriber, func()) {
 // subscriber whose channel is full silently misses this update.
 func (h *Hub) Publish(u Update) {
 	h.mu.Lock()
-	h.recentID[h.recentAt%h.maxIDs] = u.Notification.ID
-	h.recentAt++
+	if u.Notification.ID != "" {
+		h.recentID[h.recentAt%h.maxIDs] = u.Notification.ID
+		h.recentAt++
+	}
 	subs := make([]*Subscriber, 0, len(h.subs))
 	for s := range h.subs {
 		subs = append(subs, s)

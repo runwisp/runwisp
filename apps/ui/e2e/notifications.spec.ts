@@ -53,7 +53,10 @@ test.describe("notifications", () => {
         await bell(page).click();
         await expect(popover(page)).toBeVisible();
 
-        const item = popover(page).locator('[data-testid="notification-item"]').filter({ hasText: "fail-task" }).first();
+        const item = popover(page)
+            .locator('[data-testid="notification-item"]')
+            .filter({ hasText: "fail-task" })
+            .first();
         await expect(item).toBeVisible({ timeout: 5_000 });
     });
 
@@ -70,7 +73,10 @@ test.describe("notifications", () => {
         await bell(page).click();
         await expect(popover(page)).toBeVisible();
 
-        const item = popover(page).locator('[data-testid="notification-item"]').filter({ hasText: "fail-task" }).first();
+        const item = popover(page)
+            .locator('[data-testid="notification-item"]')
+            .filter({ hasText: "fail-task" })
+            .first();
         // Coalescing produces a single fail-task row whose rhythm phrase
         // includes a "N×" multiplier as soon as count >= 2. Earlier specs
         // in the run may have already pushed the count up, so we assert
@@ -107,7 +113,12 @@ test.describe("notifications", () => {
         await expect(page).toHaveURL(/\/notifications\/?$/);
         await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
 
-        await expect(page.locator('[data-testid="notification-item"]').filter({ hasText: "fail-task" }).first()).toBeVisible({
+        await expect(
+            page
+                .locator('[data-testid="notification-item"]')
+                .filter({ hasText: "fail-task" })
+                .first(),
+        ).toBeVisible({
             timeout: 5_000,
         });
     });

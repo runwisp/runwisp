@@ -48,13 +48,6 @@
                 return "bg-aurora-500";
         }
     });
-
-    let href = $derived.by(() => {
-        if (!notification.task_name) return null;
-        const base = resolve("/tasks/[id]", { id: notification.task_name });
-        if (notification.run_id) return `${base}?runId=${encodeURIComponent(notification.run_id)}`;
-        return base;
-    });
 </script>
 
 {#snippet body()}
@@ -88,9 +81,13 @@
     </div>
 {/snippet}
 
-{#if href}
+{#if notification.task_name}
     <a
-        {href}
+        href={notification.run_id
+            ? resolve(
+                  `/tasks/${encodeURIComponent(notification.task_name)}?runId=${encodeURIComponent(notification.run_id)}`,
+              )
+            : resolve(`/tasks/${encodeURIComponent(notification.task_name)}`)}
         {onclick}
         data-testid="notification-item"
         class="flex gap-3 rounded-lg border border-mist-100 bg-white p-3 no-underline transition-colors hover:bg-mist-50"

@@ -52,7 +52,8 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
     const fakeFetch: typeof fetch = (input, init) => {
         const url =
             typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-        const method = init?.method ?? (typeof input !== "string" && "method" in input ? input.method : "GET");
+        const method =
+            init?.method ?? (typeof input !== "string" && "method" in input ? input.method : "GET");
         requests.push({ url, method });
         if (url.includes("/api/notifications/unread-count")) {
             return Promise.resolve(

@@ -95,14 +95,26 @@ type NotificationByIDInput struct {
 
 // ---------- SSE wrapper types ----------
 // huma/sse dispatches event names by Go type, so the created/updated payloads
-// each need a distinct named type. Both wrap the same DTO.
+// each need a distinct named type. UnreadCount is the post-mutation count of
+// rows with read_at IS NULL — clients use it as the authoritative badge value
+// instead of delta-tracking. A negative value means the server failed to
+// query and the client should ignore this field.
 
 type NotificationCreatedEvent struct {
 	Notification NotificationDTO `json:"notification"`
+	UnreadCount  int64           `json:"unread_count"`
 }
 
 type NotificationUpdatedEvent struct {
 	Notification NotificationDTO `json:"notification"`
+	UnreadCount  int64           `json:"unread_count"`
+}
+
+// NotificationUnreadCountEvent is the body-less count-only event emitted when
+// a mutation changes the unread count without a single notification to ship
+// (e.g. mark-all-read).
+type NotificationUnreadCountEvent struct {
+	UnreadCount int64 `json:"unread_count"`
 }
 
 // ---------- Registration ----------
@@ -181,6 +193,7 @@ func (srv *Server) humaMarkAllNotificationsRead(_ context.Context, _ *struct{}) 
 	if err := srv.notifyRepo.MarkAllNotificationsRead(time.Now()); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to mark notifications read")
 	}
+	srv.publishUnreadCountChanged(0)
 	return nil, nil
 }
 
@@ -220,11 +233,28 @@ func (srv *Server) humaUnreadNotificationCount(_ context.Context, _ *struct{}) (
 
 // publishNotificationUpdate fans a read-state change out to live SSE
 // subscribers so other surfaces (Web UI, second TUI window) stay in sync.
+// The post-mutation unread count is queried once and shipped on the event so
+// clients never have to delta-track.
 func (srv *Server) publishNotificationUpdate(n *storage.Notification) {
 	if srv.notifyHub == nil || n == nil {
 		return
 	}
-	srv.notifyHub.Publish(inapp.Update{Type: "notification.updated", Notification: *n})
+	count, err := srv.notifyRepo.CountUnreadNotifications()
+	if err != nil {
+		// Ship the row update even if the count query failed; -1 tells the
+		// client to ignore the count field rather than trust a stale value.
+		count = -1
+	}
+	srv.notifyHub.Publish(inapp.Update{Type: inapp.UpdateTypeUpdated, Notification: *n, UnreadCount: count})
+}
+
+// publishUnreadCountChanged fans a count-only update (e.g. mark-all-read) so
+// SSE clients can refresh their badge without a per-row event burst.
+func (srv *Server) publishUnreadCountChanged(count int64) {
+	if srv.notifyHub == nil {
+		return
+	}
+	srv.notifyHub.Publish(inapp.Update{Type: inapp.UpdateTypeUnreadCountChanged, UnreadCount: count})
 }
 
 // registerNotificationsSSE mirrors the runs SSE stream: bounded per-conn
@@ -240,9 +270,10 @@ func (srv *Server) registerNotificationsSSE(api huma.API) {
 		Description: "Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced or marked read/unread.",
 		Tags:        []string{"Notifications"},
 	}, map[string]any{
-		"notification.created": NotificationCreatedEvent{},
-		"notification.updated": NotificationUpdatedEvent{},
-		"ping":                 PingEvent{},
+		inapp.UpdateTypeCreated:            NotificationCreatedEvent{},
+		inapp.UpdateTypeUpdated:            NotificationUpdatedEvent{},
+		inapp.UpdateTypeUnreadCountChanged: NotificationUnreadCountEvent{},
+		"ping":                             PingEvent{},
 	}, func(ctx context.Context, _ *struct{}, send sse.Sender) {
 		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
 		if !ok {
@@ -285,15 +316,16 @@ func (srv *Server) registerNotificationsSSE(api huma.API) {
 				if !ok {
 					return
 				}
-				dto := notificationToDTO(u.Notification)
 				var payload any
 				switch u.Type {
-				case "notification.created":
-					payload = NotificationCreatedEvent{Notification: dto}
-				case "notification.updated":
-					payload = NotificationUpdatedEvent{Notification: dto}
+				case inapp.UpdateTypeCreated:
+					payload = NotificationCreatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
+				case inapp.UpdateTypeUpdated:
+					payload = NotificationUpdatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
+				case inapp.UpdateTypeUnreadCountChanged:
+					payload = NotificationUnreadCountEvent{UnreadCount: u.UnreadCount}
 				default:
-					payload = NotificationUpdatedEvent{Notification: dto}
+					payload = NotificationUpdatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
 				}
 				if err := send(sse.Message{Data: payload}); err != nil {
 					return

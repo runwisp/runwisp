@@ -43,10 +43,11 @@ type notificationsPanel struct {
 	expanded bool
 	cursor   int // index into `ordered`; only meaningful when expanded
 
-	// unread is the server's authoritative snapshot, adjusted by the deltas
-	// the panel observes locally (SSE Upserts and per-row mark-read/unread).
-	// We never derive it from `items` alone because items is paginated and
-	// older unread rows can live beyond the loaded slice.
+	// unread is the server-authoritative count of rows with read_at IS NULL.
+	// It is *replaced* (never delta'd) — seeded once at startup from
+	// /api/notifications/unread-count and overwritten on every SSE event that
+	// carries an unread_count. Local mark-read/unread does NOT touch it; the
+	// next SSE event corrects the badge within ~1 round-trip.
 	unread int
 
 	// flashCursorUntil paints the cursor row with an accent background until
@@ -73,7 +74,8 @@ func newNotificationsPanel() notificationsPanel {
 }
 
 // Upsert applies a created/updated SSE event. Returns true when the panel
-// changed in a way that warrants a repaint.
+// changed in a way that warrants a repaint. The unread badge is owned by
+// SetUnread (server-driven), not Upsert.
 func (p *notificationsPanel) Upsert(n apiclient.Notification) bool {
 	if n.ID == "" {
 		return false
@@ -88,14 +90,10 @@ func (p *notificationsPanel) Upsert(n apiclient.Notification) bool {
 		p.ordered = append(p.ordered, "")
 		copy(p.ordered[idx+1:], p.ordered[idx:])
 		p.ordered[idx] = n.ID
-		if isUnread(n) {
-			p.unread++
-		}
 		changed = true
 	} else if n.Count != prev.Count ||
 		!prev.LastOccurredAt.Equal(n.LastOccurredAt) ||
 		isUnread(prev) != isUnread(n) {
-		p.unread = clampNonNegative(p.unread + boolDelta(isUnread(n), isUnread(prev)))
 		changed = true
 	}
 	if changed {
@@ -199,10 +197,15 @@ func (p *notificationsPanel) Selected() *apiclient.Notification {
 	return &n
 }
 
-// SetUnread overwrites the badge counter with the server's snapshot. Called
-// once at startup with the value from /api/notifications/unread-count.
+// SetUnread overwrites the badge with the server's authoritative count.
+// Called from the startup snapshot and from every SSE event that carries an
+// unread_count. Negative values (the server's "query failed" sentinel) are
+// ignored so the badge keeps the last known good value.
 func (p *notificationsPanel) SetUnread(n int) {
-	p.unread = clampNonNegative(n)
+	if n < 0 {
+		return
+	}
+	p.unread = n
 	p.rebuildContent()
 }
 
@@ -242,7 +245,8 @@ func (p *notificationsPanel) RefreshLabels() {
 }
 
 // MarkReadLocal stamps a single notification's ReadAt. No-op if the id is
-// unknown or the row was already read.
+// unknown or the row was already read. The badge does not change here — the
+// authoritative count arrives on the next SSE event.
 func (p *notificationsPanel) MarkReadLocal(id string, at time.Time) bool {
 	n, ok := p.items[id]
 	if !ok || n.ReadAt != nil {
@@ -251,13 +255,13 @@ func (p *notificationsPanel) MarkReadLocal(id string, at time.Time) bool {
 	stamp := at
 	n.ReadAt = &stamp
 	p.items[id] = n
-	p.unread = clampNonNegative(p.unread - 1)
 	p.rebuildContent()
 	return true
 }
 
 // MarkUnreadLocal clears a single notification's ReadAt. No-op if the id is
-// unknown or the row was already unread.
+// unknown or the row was already unread. The badge does not change here —
+// the authoritative count arrives on the next SSE event.
 func (p *notificationsPanel) MarkUnreadLocal(id string) bool {
 	n, ok := p.items[id]
 	if !ok || n.ReadAt == nil {
@@ -265,7 +269,6 @@ func (p *notificationsPanel) MarkUnreadLocal(id string) bool {
 	}
 	n.ReadAt = nil
 	p.items[id] = n
-	p.unread++
 	p.rebuildContent()
 	return true
 }
@@ -511,26 +514,6 @@ func truncateLine(s string, max int) string {
 }
 
 func isUnread(n apiclient.Notification) bool { return n.ReadAt == nil }
-
-// boolDelta returns +1 when the new state is true and the old wasn't, -1 in
-// the opposite direction, and 0 otherwise.
-func boolDelta(now, prev bool) int {
-	switch {
-	case now && !prev:
-		return 1
-	case !now && prev:
-		return -1
-	default:
-		return 0
-	}
-}
-
-func clampNonNegative(n int) int {
-	if n < 0 {
-		return 0
-	}
-	return n
-}
 
 var (
 	notificationsPanelPrefixStyle = lipgloss.NewStyle().

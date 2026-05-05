@@ -88,11 +88,18 @@ func (c *Coalescer) Receive(title, body string, ev *notify.Event) {
 		c.log.Error("notify coalescer: upsert failed", "fingerprint", n.Fingerprint, "error", err)
 		return
 	}
-	updateType := "notification.created"
+	updateType := UpdateTypeCreated
 	if !created {
-		updateType = "notification.updated"
+		updateType = UpdateTypeUpdated
 	}
-	c.hub.Publish(Update{Type: updateType, Notification: *n})
+	count, err := c.repo.CountUnreadNotifications()
+	if err != nil {
+		// SSE clients can re-derive on next event or by polling; don't drop
+		// the row update because the count query failed.
+		c.log.Error("notify coalescer: unread count query failed", "error", err)
+		count = -1
+	}
+	c.hub.Publish(Update{Type: updateType, Notification: *n, UnreadCount: count})
 }
 
 func fingerprintBytes(ev *notify.Event) []byte {

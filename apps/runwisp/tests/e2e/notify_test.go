@@ -240,9 +240,9 @@ func waitForNotificationEvent(
 			if ev.Type != wanted {
 				continue
 			}
-			notif, err := apiclient.DecodeNotificationEnvelope(ev.Data)
+			env, err := apiclient.DecodeNotificationEnvelope(ev.Data)
 			require.NoError(t, err)
-			return notif
+			return env.Notification
 		case <-deadline:
 			t.Fatalf("never received SSE event %q", wanted)
 		}
@@ -276,4 +276,104 @@ func hasDeliveryFailure(items []apiclient.Notification) bool {
 		}
 	}
 	return false
+}
+
+// TestNotificationsUnreadCountShipsOnEveryEvent verifies the regression fix
+// for SSE-driven badge drift: every notification SSE event carries the
+// post-mutation unread count, and mark-all-read emits a count-only
+// notifications.unread_count_changed event so listeners can refresh the
+// badge without delta-tracking.
+func TestNotificationsUnreadCountShipsOnEveryEvent(t *testing.T) {
+	configPath := writeNotifyConfig(t, `
+[tasks.fail-task]
+run = "exit 1"
+`)
+
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+
+	password := waitForPassword(t, daemon.dataDir)
+	client := apiclient.New(daemon.baseURL, password)
+	require.NoError(t, client.Authenticate())
+
+	streamCtx, cancelStream := context.WithCancel(context.Background())
+	t.Cleanup(cancelStream)
+	events, err := client.StreamNotifications(streamCtx)
+	require.NoError(t, err)
+	waitForFirstPing(t, events)
+
+	_, err = client.TriggerRun("fail-task")
+	require.NoError(t, err)
+
+	createdEnv := waitForNotificationEnvelope(t, events, "notification.created", 10*time.Second)
+	require.EqualValues(t, 1, createdEnv.UnreadCount,
+		"notification.created must ship the post-mutation unread count")
+
+	require.NoError(t, client.MarkNotificationRead(createdEnv.Notification.ID))
+	updatedEnv := waitForNotificationEnvelope(t, events, "notification.updated", 5*time.Second)
+	require.EqualValues(t, 0, updatedEnv.UnreadCount,
+		"mark-read emits notification.updated with the fresh unread count")
+
+	require.NoError(t, client.MarkNotificationUnread(createdEnv.Notification.ID))
+	unreadEnv := waitForNotificationEnvelope(t, events, "notification.updated", 5*time.Second)
+	require.EqualValues(t, 1, unreadEnv.UnreadCount)
+
+	require.NoError(t, client.MarkAllNotificationsRead())
+	count := waitForUnreadCountEvent(t, events, 5*time.Second)
+	require.EqualValues(t, 0, count,
+		"mark-all-read must emit notifications.unread_count_changed with 0")
+}
+
+func waitForNotificationEnvelope(
+	t *testing.T,
+	events <-chan apiclient.NotificationStreamEvent,
+	wanted string,
+	timeout time.Duration,
+) apiclient.NotificationEnvelope {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				t.Fatalf("stream closed before %s arrived", wanted)
+			}
+			if ev.Type != wanted {
+				continue
+			}
+			env, err := apiclient.DecodeNotificationEnvelope(ev.Data)
+			require.NoError(t, err)
+			return env
+		case <-deadline:
+			t.Fatalf("never received SSE event %q", wanted)
+			return apiclient.NotificationEnvelope{}
+		}
+	}
+}
+
+func waitForUnreadCountEvent(
+	t *testing.T,
+	events <-chan apiclient.NotificationStreamEvent,
+	timeout time.Duration,
+) int64 {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				t.Fatal("stream closed before notifications.unread_count_changed arrived")
+			}
+			if ev.Type != "notifications.unread_count_changed" {
+				continue
+			}
+			count, err := apiclient.DecodeUnreadCountEnvelope(ev.Data)
+			require.NoError(t, err)
+			return count
+		case <-deadline:
+			t.Fatal("never received notifications.unread_count_changed")
+			return 0
+		}
+	}
 }
