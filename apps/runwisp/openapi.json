@@ -197,10 +197,15 @@
         "properties": {
           "notification": {
             "$ref": "#/components/schemas/NotificationDTO"
+          },
+          "unread_count": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
-          "notification"
+          "notification",
+          "unread_count"
         ],
         "type": "object"
       },
@@ -309,15 +314,33 @@
         ],
         "type": "object"
       },
+      "NotificationUnreadCountEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "unread_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread_count"
+        ],
+        "type": "object"
+      },
       "NotificationUpdatedEvent": {
         "additionalProperties": false,
         "properties": {
           "notification": {
             "$ref": "#/components/schemas/NotificationDTO"
+          },
+          "unread_count": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
-          "notification"
+          "notification",
+          "unread_count"
         ],
         "type": "object"
       },
@@ -1055,6 +1078,32 @@
                           "event"
                         ],
                         "title": "Event notification.updated",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
+                          },
+                          "event": {
+                            "const": "notifications.unread_count_changed",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notifications.unread_count_changed",
                         "type": "object"
                       },
                       {

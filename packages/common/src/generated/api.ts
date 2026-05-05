@@ -411,6 +411,8 @@ export interface components {
         };
         NotificationCreatedEvent: {
             notification: components["schemas"]["NotificationDTO"];
+            /** Format: int64 */
+            unread_count: number;
         };
         NotificationDTO: {
             /** @description Pre-rendered body text */
@@ -465,8 +467,14 @@ export interface components {
              */
             count: number;
         };
+        NotificationUnreadCountEvent: {
+            /** Format: int64 */
+            unread_count: number;
+        };
         NotificationUpdatedEvent: {
             notification: components["schemas"]["NotificationDTO"];
+            /** Format: int64 */
+            unread_count: number;
         };
         NotificationsListBody: {
             /**
@@ -862,6 +870,17 @@ export interface operations {
                          * @constant
                          */
                         event: "notification.updated";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["NotificationUnreadCountEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notifications.unread_count_changed";
                         /** @description The event ID. */
                         id?: number;
                         /** @description The retry time in milliseconds. */
