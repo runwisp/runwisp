@@ -8,12 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
 // Notification is one persistent in-app notification row, possibly representing
-// many coalesced occurrences of the same underlying event.
+// many coalesced occurrences of the same underlying event. ReadAt is nil when
+// the row is unread; a non-nil pointer is the moment it was marked read.
 type Notification struct {
 	ID             string
 	Fingerprint    string
@@ -27,25 +27,28 @@ type Notification struct {
 	Occurrences    []time.Time
 	CreatedAt      time.Time
 	LastOccurredAt time.Time
+	ReadAt         *time.Time
 }
 
-// NotificationRepository persists in-app notifications and read-state.
+// NotificationRepository persists in-app notifications and per-row read state.
 type NotificationRepository interface {
 	// UpsertByFingerprint folds an event into an existing row when one matches
 	// the fingerprint and falls within the coalescing window; otherwise inserts.
-	// ringSize trims the merged occurrence list (0 = no trim).
+	// ringSize trims the merged occurrence list (0 = no trim). A successful
+	// coalesce clears ReadAt so a fresh occurrence makes the row unread again.
 	UpsertByFingerprint(n *Notification, window time.Duration, ringSize int) (created bool, err error)
 	ListNotifications(limit int, before string) ([]Notification, error)
 	GetNotificationByID(id string) (*Notification, error)
 	PruneNotificationsByCount(keep int) (int64, error)
 	PruneNotificationsByAge(olderThan time.Duration) (int64, error)
-	CountNotificationsSince(t time.Time) (int64, error)
-	GetLastReadAt() (time.Time, error)
-	SetLastReadAt(t time.Time) error
+	CountUnreadNotifications() (int64, error)
+	MarkNotificationRead(id string, at time.Time) (*Notification, error)
+	MarkNotificationUnread(id string) (*Notification, error)
+	MarkAllNotificationsRead(at time.Time) error
 }
 
 const notificationColumns = `id, fingerprint, kind, severity, task_name, run_id, title, body,
-count, occurrences_json, created_at, last_occurred_at`
+count, occurrences_json, created_at, last_occurred_at, read_at`
 
 func encodeOccurrences(ts []time.Time) (string, error) {
 	if ts == nil {
@@ -74,9 +77,10 @@ func scanNotification(scanner interface {
 }) (*Notification, error) {
 	var n Notification
 	var occJSON string
+	var readAt sql.NullTime
 	if err := scanner.Scan(
 		&n.ID, &n.Fingerprint, &n.Kind, &n.Severity, &n.TaskName, &n.RunID,
-		&n.Title, &n.Body, &n.Count, &occJSON, &n.CreatedAt, &n.LastOccurredAt,
+		&n.Title, &n.Body, &n.Count, &occJSON, &n.CreatedAt, &n.LastOccurredAt, &readAt,
 	); err != nil {
 		return nil, err
 	}
@@ -85,13 +89,18 @@ func scanNotification(scanner interface {
 		return nil, fmt.Errorf("decode occurrences for %s: %w", n.ID, err)
 	}
 	n.Occurrences = occ
+	if readAt.Valid {
+		t := readAt.Time
+		n.ReadAt = &t
+	}
 	return &n, nil
 }
 
 // UpsertByFingerprint folds new occurrences into an existing row when one
 // matches the fingerprint and falls within the coalescing window. Otherwise
 // it inserts the supplied notification as a fresh row. The decision and the
-// write happen in a single transaction.
+// write happen in a single transaction. A coalesce clears read_at — a new
+// occurrence of a previously-acknowledged event surfaces it again.
 func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Duration, ringSize int) (bool, error) {
 	if n == nil {
 		return false, errors.New("notification is nil")
@@ -124,7 +133,7 @@ func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Durat
 		}
 		if _, err := tx.Exec(
 			`INSERT INTO notifications (`+notificationColumns+`)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
 			n.ID, n.Fingerprint, n.Kind, n.Severity, n.TaskName, n.RunID,
 			n.Title, n.Body, n.Count, occJSON, n.CreatedAt, n.LastOccurredAt,
 		); err != nil {
@@ -133,6 +142,7 @@ func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Durat
 		if err := tx.Commit(); err != nil {
 			return false, err
 		}
+		n.ReadAt = nil
 		return true, nil
 	case err != nil:
 		return false, err
@@ -154,7 +164,7 @@ func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Durat
 	newCount := existingCount + 1
 	if _, err := tx.Exec(
 		`UPDATE notifications
-		 SET count = ?, occurrences_json = ?, last_occurred_at = ?, title = ?, body = ?
+		 SET count = ?, occurrences_json = ?, last_occurred_at = ?, title = ?, body = ?, read_at = NULL
 		 WHERE id = ?`,
 		newCount, mergedJSON, n.LastOccurredAt, n.Title, n.Body, existingID,
 	); err != nil {
@@ -167,6 +177,7 @@ func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Durat
 	n.ID = existingID
 	n.Count = newCount
 	n.Occurrences = merged
+	n.ReadAt = nil
 	return false, nil
 }
 
@@ -243,37 +254,58 @@ func (db *SQLiteDatabase) PruneNotificationsByAge(olderThan time.Duration) (int6
 	return res.RowsAffected()
 }
 
-// CountNotificationsSince counts rows whose last_occurred_at is strictly after t.
-func (db *SQLiteDatabase) CountNotificationsSince(t time.Time) (int64, error) {
+// CountUnreadNotifications counts rows whose read_at is NULL.
+func (db *SQLiteDatabase) CountUnreadNotifications() (int64, error) {
 	var c int64
-	err := db.db.QueryRow(`SELECT COUNT(*) FROM notifications WHERE last_occurred_at > ?`, t).Scan(&c)
+	err := db.db.QueryRow(`SELECT COUNT(*) FROM notifications WHERE read_at IS NULL`).Scan(&c)
 	return c, err
 }
 
-// GetLastReadAt returns the operator's last-read marker, or zero time if unset.
-func (db *SQLiteDatabase) GetLastReadAt() (time.Time, error) {
-	var t time.Time
-	err := db.db.QueryRow(`SELECT last_read_at FROM notification_read_state WHERE id = 1`).Scan(&t)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return time.Time{}, nil
-	case err != nil:
-		// Some SQLite drivers return a parse error rather than ErrNoRows in edge
-		// cases (legacy DBs without the row). Treat any decode failure as "unset".
-		if strings.Contains(err.Error(), "parsing time") {
-			return time.Time{}, nil
-		}
-		return time.Time{}, err
+// MarkNotificationRead stamps read_at on a single row and returns the updated
+// row. Idempotent — re-marking a read row leaves the original timestamp.
+func (db *SQLiteDatabase) MarkNotificationRead(id string, at time.Time) (*Notification, error) {
+	if id == "" {
+		return nil, errors.New("notification id is empty")
 	}
-	return t, nil
+	res, err := db.db.Exec(
+		`UPDATE notifications SET read_at = ? WHERE id = ? AND read_at IS NULL`,
+		at, id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		// Either the row doesn't exist or it's already read — fetch to disambiguate.
+		existing, getErr := db.GetNotificationByID(id)
+		if getErr != nil {
+			return nil, getErr
+		}
+		return existing, nil
+	}
+	return db.GetNotificationByID(id)
 }
 
-// SetLastReadAt persists a single-row marker.
-func (db *SQLiteDatabase) SetLastReadAt(t time.Time) error {
+// MarkNotificationUnread clears read_at on a single row and returns it.
+// Idempotent — clearing an already-unread row is a no-op.
+func (db *SQLiteDatabase) MarkNotificationUnread(id string) (*Notification, error) {
+	if id == "" {
+		return nil, errors.New("notification id is empty")
+	}
+	res, err := db.db.Exec(`UPDATE notifications SET read_at = NULL WHERE id = ?`, id)
+	if err != nil {
+		return nil, err
+	}
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return nil, ErrNotFound
+	}
+	return db.GetNotificationByID(id)
+}
+
+// MarkAllNotificationsRead stamps read_at on every currently-unread row.
+func (db *SQLiteDatabase) MarkAllNotificationsRead(at time.Time) error {
 	_, err := db.db.Exec(
-		`INSERT INTO notification_read_state (id, last_read_at) VALUES (1, ?)
-		 ON CONFLICT(id) DO UPDATE SET last_read_at = excluded.last_read_at`,
-		t,
+		`UPDATE notifications SET read_at = ? WHERE read_at IS NULL`,
+		at,
 	)
 	return err
 }

@@ -32,6 +32,7 @@ const notificationSchema = z.object({
     occurrences: z.array(z.string()).default([]),
     created_at: z.string(),
     last_occurred_at: z.string(),
+    read_at: z.string().nullable().optional(),
 });
 
 export type Notification = z.infer<typeof notificationSchema>;
@@ -43,7 +44,6 @@ const listResponseSchema = z.object({
 
 const unreadResponseSchema = z.object({
     count: z.number().int().nonnegative(),
-    last_read_at: z.string().optional(),
 });
 
 const streamEnvelopeSchema = z.object({ notification: notificationSchema });
@@ -56,11 +56,16 @@ export interface NotificationStoreDeps {
 
 const PAGE_SIZE = 50;
 
+function isUnread(n: Notification): boolean {
+    return !n.read_at;
+}
+
 class NotificationStore {
     #items = $state<Notification[]>([]);
+    // unread is the server's authoritative snapshot, adjusted by the deltas
+    // we observe locally (SSE events + per-row mark-read/unread). We never
+    // recompute it from #items because items is paginated.
     #unread = $state(0);
-    #lastReadAt = $state<string | null>(null);
-    #lastReadAtMs = 0;
     #connection: SSEConnection | null = null;
     #connected = $state(false);
     #loaded = $state(false);
@@ -84,9 +89,6 @@ class NotificationStore {
     }
     get unread(): number {
         return this.#unread;
-    }
-    get lastReadAt(): string | null {
-        return this.#lastReadAt;
     }
     get connected(): boolean {
         return this.#connected;
@@ -118,9 +120,7 @@ class NotificationStore {
             this.#items = [...page.items];
             this.#cursor = page.next_cursor ?? null;
             this.#hasMore = Boolean(page.next_cursor);
-            const { count, lastReadAt } = await this.#fetchUnread();
-            this.#unread = count;
-            this.#setLastReadAt(lastReadAt);
+            this.#unread = await this.#fetchUnread();
             this.#loaded = true;
             this.#connect();
         } catch (e) {
@@ -145,21 +145,69 @@ class NotificationStore {
         }
     }
 
-    /** Persist the operator's last-read marker; resets the unread count. */
+    /** Stamp every currently-unread row read on the server, and apply the
+     * change locally to the loaded slice. */
     async markAllRead(): Promise<void> {
         const now = new Date().toISOString();
         try {
             const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/read`, {
                 method: "POST",
                 credentials: "include",
-                headers: { "content-type": "application/json", ...authHeaders() },
-                body: JSON.stringify({ last_read_at: now }),
+                headers: authHeaders(),
             });
             if (!res.ok) throw new Error(`Mark-read returned ${res.status.toString()}`);
-            this.#setLastReadAt(now);
+            this.#items = this.#items.map((n) => (isUnread(n) ? { ...n, read_at: now } : n));
             this.#unread = 0;
         } catch (e) {
             this.#logger.error("Failed to mark notifications read", e);
+        }
+    }
+
+    /** Mark a single notification read. */
+    async markRead(id: string): Promise<void> {
+        await this.#setReadState(id, true);
+    }
+
+    /** Mark a single notification unread. */
+    async markUnread(id: string): Promise<void> {
+        await this.#setReadState(id, false);
+    }
+
+    async #setReadState(id: string, read: boolean): Promise<void> {
+        const idx = this.#items.findIndex((n) => n.id === id);
+        if (idx < 0) return;
+        const previous = this.#items[idx];
+        const wasUnread = isUnread(previous);
+        if (read === !wasUnread) return;
+
+        const optimistic: Notification = {
+            ...previous,
+            read_at: read ? new Date().toISOString() : null,
+        };
+        const next = this.#items.slice();
+        next[idx] = optimistic;
+        this.#items = next;
+        this.#unread = Math.max(0, this.#unread + (read ? -1 : 1));
+
+        const verb = read ? "read" : "unread";
+        try {
+            const url = `${this.#getApiUrl()}/api/notifications/${encodeURIComponent(id)}/${verb}`;
+            const res = await this.#fetch(url, {
+                method: "POST",
+                credentials: "include",
+                headers: authHeaders(),
+            });
+            if (!res.ok) throw new Error(`Mark-${verb} returned ${res.status.toString()}`);
+        } catch (e) {
+            this.#logger.error(`Failed to mark notification ${verb}`, e);
+            // Roll back the optimistic change.
+            const rollback = this.#items.slice();
+            const j = rollback.findIndex((n) => n.id === id);
+            if (j >= 0) {
+                rollback[j] = previous;
+                this.#items = rollback;
+                this.#unread = Math.max(0, this.#unread + (read ? 1 : -1));
+            }
         }
     }
 
@@ -205,57 +253,24 @@ class NotificationStore {
     }
 
     #applyUpdate(eventType: string, n: Notification): void {
-        const existing = this.#items.find((x) => x.id === n.id);
-        const isNewer = this.#isNewerThanMarker(n);
-        if (eventType === "notification.created" && !existing) {
+        const idx = this.#items.findIndex((x) => x.id === n.id);
+        if (eventType === "notification.created" && idx < 0) {
             this.#items = [n, ...this.#items];
-            if (isNewer) this.#unread += 1;
+            if (isUnread(n)) this.#unread += 1;
             return;
         }
-        // Updated path: rewrite the item in place by id; if it wasn't tracked,
-        // prepend it (server shouldn't normally publish "updated" for an
-        // unknown id, but we handle it defensively).
-        if (existing) {
+        if (idx >= 0) {
+            const prev = this.#items[idx];
             const next = this.#items.slice();
-            const idx = next.findIndex((x) => x.id === n.id);
-            if (idx >= 0) {
-                next[idx] = n;
-                this.#items = next;
-            } else {
-                this.#items = [n, ...next];
-            }
-            // Treat subsequent occurrences as a new unread bump only when count grew
-            // and the latest occurrence postdates the user's mark-read marker.
-            if (n.count > existing.count && isNewer) {
-                this.#unread += n.count - existing.count;
-            }
+            next[idx] = n;
+            this.#items = next;
+            const delta = (isUnread(n) ? 1 : 0) - (isUnread(prev) ? 1 : 0);
+            if (delta !== 0) this.#unread = Math.max(0, this.#unread + delta);
             return;
         }
+        // Updated event for a row we never saw — treat like a created row.
         this.#items = [n, ...this.#items];
-        if (isNewer) this.#unread += n.count;
-    }
-
-    #isNewerThanMarker(n: Notification): boolean {
-        if (this.#lastReadAtMs <= 0) return true;
-        const ts = Date.parse(n.last_occurred_at);
-        if (Number.isNaN(ts)) return true;
-        return ts > this.#lastReadAtMs;
-    }
-
-    #setLastReadAt(value: string | null | undefined): void {
-        if (!value) {
-            this.#lastReadAt = null;
-            this.#lastReadAtMs = 0;
-            return;
-        }
-        const ms = Date.parse(value);
-        if (Number.isNaN(ms) || ms <= 0) {
-            this.#lastReadAt = null;
-            this.#lastReadAtMs = 0;
-            return;
-        }
-        this.#lastReadAt = value;
-        this.#lastReadAtMs = ms;
+        if (isUnread(n)) this.#unread += 1;
     }
 
     async #fetchPage(
@@ -273,15 +288,14 @@ class NotificationStore {
         return listResponseSchema.parse(raw);
     }
 
-    async #fetchUnread(): Promise<{ count: number; lastReadAt: string | undefined }> {
+    async #fetchUnread(): Promise<number> {
         const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/unread-count`, {
             credentials: "include",
             headers: authHeaders(),
         });
         if (!res.ok) throw new Error(`Unread returned ${res.status.toString()}`);
         const raw: unknown = await res.json();
-        const parsed = unreadResponseSchema.parse(raw);
-        return { count: parsed.count, lastReadAt: parsed.last_read_at };
+        return unreadResponseSchema.parse(raw).count;
     }
 }
 

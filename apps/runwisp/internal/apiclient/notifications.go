@@ -17,20 +17,21 @@ import (
 // Notification mirrors the server's NotificationDTO. ISO timestamps from the
 // server are decoded as time.Time on this side; the Occurrences ring stays
 // as raw RFC3339Nano strings since the TUI/web UI both render them
-// directly.
+// directly. ReadAt is nil when the row is unread.
 type Notification struct {
-	ID             string    `json:"id"`
-	Fingerprint    string    `json:"fingerprint"`
-	Kind           string    `json:"kind"`
-	Severity       string    `json:"severity"`
-	TaskName       string    `json:"task_name"`
-	RunID          string    `json:"run_id"`
-	Title          string    `json:"title"`
-	Body           string    `json:"body"`
-	Count          int       `json:"count"`
-	Occurrences    []string  `json:"occurrences"`
-	CreatedAt      time.Time `json:"created_at"`
-	LastOccurredAt time.Time `json:"last_occurred_at"`
+	ID             string     `json:"id"`
+	Fingerprint    string     `json:"fingerprint"`
+	Kind           string     `json:"kind"`
+	Severity       string     `json:"severity"`
+	TaskName       string     `json:"task_name"`
+	RunID          string     `json:"run_id"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body"`
+	Count          int        `json:"count"`
+	Occurrences    []string   `json:"occurrences"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LastOccurredAt time.Time  `json:"last_occurred_at"`
+	ReadAt         *time.Time `json:"read_at,omitempty"`
 }
 
 // NotificationsPage is the cursor-paginated list response.
@@ -73,17 +74,25 @@ func (c *Client) ListNotifications(limit int, before string) (NotificationsPage,
 	return page, nil
 }
 
-// MarkNotificationsRead persists the operator's last-read marker. Anything
-// newer than this timestamp counts as unread.
-func (c *Client) MarkNotificationsRead(lastReadAt time.Time) error {
-	body := struct {
-		LastReadAt time.Time `json:"last_read_at"`
-	}{LastReadAt: lastReadAt}
-	return c.doJSON("POST", "/api/notifications/read", body, nil)
+// MarkAllNotificationsRead stamps every currently-unread row as read using the
+// server's clock.
+func (c *Client) MarkAllNotificationsRead() error {
+	return c.doJSON("POST", "/api/notifications/read", nil, nil)
 }
 
-// UnreadNotificationCount returns the number of notifications strictly newer
-// than the persisted last-read marker.
+// MarkNotificationRead stamps a single notification as read.
+func (c *Client) MarkNotificationRead(id string) error {
+	return c.doJSON("POST", "/api/notifications/"+url.PathEscape(id)+"/read", nil, nil)
+}
+
+// MarkNotificationUnread clears the read marker on a single notification so it
+// re-enters the unread set.
+func (c *Client) MarkNotificationUnread(id string) error {
+	return c.doJSON("POST", "/api/notifications/"+url.PathEscape(id)+"/unread", nil, nil)
+}
+
+// UnreadNotificationCount returns the number of notifications with read_at IS
+// NULL.
 func (c *Client) UnreadNotificationCount() (int64, error) {
 	var resp struct {
 		Count int64 `json:"count"`

@@ -90,16 +90,13 @@ body              TEXT NOT NULL DEFAULT '',
 count             INTEGER NOT NULL DEFAULT 1,
 occurrences_json  TEXT NOT NULL DEFAULT '[]',
 created_at        DATETIME NOT NULL,
-last_occurred_at  DATETIME NOT NULL
+last_occurred_at  DATETIME NOT NULL,
+read_at           DATETIME
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_fingerprint ON notifications(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_severity ON notifications(severity);
-
-CREATE TABLE IF NOT EXISTS notification_read_state (
-id           INTEGER PRIMARY KEY CHECK (id = 1),
-last_read_at DATETIME NOT NULL
-);
+CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
 `
 
 // New opens (and migrates) the SQLite database.
@@ -129,6 +126,14 @@ func New(dbPath string, logOutput io.Writer) (Database, error) {
 		return nil, fmt.Errorf("failed to migrate replica_index: %w", err)
 	}
 
+	if err := migrateAddNotificationReadAt(db); err != nil {
+		return nil, fmt.Errorf("failed to migrate notifications.read_at: %w", err)
+	}
+
+	if err := migrateDropNotificationReadState(db); err != nil {
+		return nil, fmt.Errorf("failed to drop notification_read_state: %w", err)
+	}
+
 	return &SQLiteDatabase{db: db}, nil
 }
 
@@ -140,6 +145,24 @@ func migrateAddReplicaIndex(db *sql.DB) error {
 	if strings.Contains(err.Error(), "duplicate column") {
 		return nil
 	}
+	return err
+}
+
+func migrateAddNotificationReadAt(db *sql.DB) error {
+	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN read_at DATETIME`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return err
+		}
+	}
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at)`)
+	return err
+}
+
+// migrateDropNotificationReadState retires the legacy single-row global
+// last-read marker. Per-notification read_at on the notifications table is now
+// the source of truth.
+func migrateDropNotificationReadState(db *sql.DB) error {
+	_, err := db.Exec(`DROP TABLE IF EXISTS notification_read_state`)
 	return err
 }
 

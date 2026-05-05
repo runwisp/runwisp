@@ -115,6 +115,7 @@ func (m Model) Init() tea.Cmd {
 		m.streams.SubscribeEvents(),
 		m.streams.SubscribeNotifications(),
 		m.streams.FetchUnreadCount(),
+		m.streams.FetchNotifications(),
 		m.tickCmd(),
 	}
 	if m.isRemote {
@@ -132,6 +133,8 @@ func (m Model) tickCmd() tea.Cmd {
 // openExecView creates the execution detail view for the given run.
 // It checks the exec window for a more recent version of the run
 // (SSE events may arrive before the API response that triggered this call).
+// Any unread notifications attached to this run are marked read — opening the
+// run is the operator acknowledging it.
 // Returns a tea.Cmd to start log streaming if the run is active or completed.
 func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	if latest := m.execWindow.FindRun(run.ID); latest != nil {
@@ -145,10 +148,47 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	ev.headerFocus = headerFocusBack
 	m.execView = &ev
 	m.execList.SetFocused(false)
+
+	cmds := []tea.Cmd{m.markRunNotificationsRead(run.ID)}
 	if run.Status != model.PhasePending {
-		return m.streams.StartLogStream(run)
+		cmds = append(cmds, m.streams.StartLogStream(run))
 	}
-	return nil
+	return tea.Batch(cmds...)
+}
+
+// markRunNotificationsRead applies an optimistic local mark-read to every
+// known notification tied to runID and fires per-row API calls. Returns nil
+// when nothing matches so the caller doesn't pay for an empty batch.
+func (m *Model) markRunNotificationsRead(runID string) tea.Cmd {
+	ids := m.notifications.UnreadIDsForRun(runID)
+	if len(ids) == 0 {
+		return nil
+	}
+	now := time.Now()
+	cmds := make([]tea.Cmd, 0, len(ids))
+	for _, id := range ids {
+		m.notifications.MarkReadLocal(id, now)
+		if cmd := m.streams.MarkNotificationRead(id); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+// toggleSelectedNotificationRead flips the read state of the cursor row in
+// the expanded notifications panel. Optimistically updates the local store
+// and returns a command that persists the change to the daemon.
+func (m *Model) toggleSelectedNotificationRead() tea.Cmd {
+	sel := m.notifications.Selected()
+	if sel == nil {
+		return nil
+	}
+	if sel.ReadAt == nil {
+		m.notifications.MarkReadLocal(sel.ID, time.Now())
+		return m.streams.MarkNotificationRead(sel.ID)
+	}
+	m.notifications.MarkUnreadLocal(sel.ID)
+	return m.streams.MarkNotificationUnread(sel.ID)
 }
 
 func (m *Model) closeExecView() tea.Cmd {

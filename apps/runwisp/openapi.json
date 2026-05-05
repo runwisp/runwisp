@@ -248,6 +248,11 @@
               "null"
             ]
           },
+          "read_at": {
+            "description": "When the operator marked this row read; null/absent when unread",
+            "format": "date-time",
+            "type": "string"
+          },
           "run_id": {
             "description": "Run that produced this notification (empty when not run-derived)",
             "type": "string"
@@ -281,29 +286,6 @@
         ],
         "type": "object"
       },
-      "NotificationMarkReadBody": {
-        "additionalProperties": false,
-        "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "http://localhost:9477/schemas/NotificationMarkReadBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
-          "last_read_at": {
-            "description": "Mark all notifications with last_occurred_at \u003c= this as read",
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "last_read_at"
-        ],
-        "type": "object"
-      },
       "NotificationUnreadBody": {
         "additionalProperties": false,
         "properties": {
@@ -317,19 +299,13 @@
             "type": "string"
           },
           "count": {
-            "description": "Number of notifications strictly newer than last_read_at",
+            "description": "Number of notifications with read_at IS NULL",
             "format": "int64",
             "type": "integer"
-          },
-          "last_read_at": {
-            "description": "Server-side last-read marker (zero when never set)",
-            "format": "date-time",
-            "type": "string"
           }
         },
         "required": [
-          "count",
-          "last_read_at"
+          "count"
         ],
         "type": "object"
       },
@@ -995,17 +971,7 @@
     },
     "/api/notifications/read": {
       "post": {
-        "operationId": "markNotificationsRead",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NotificationMarkReadBody"
-              }
-            }
-          },
-          "required": true
-        },
+        "operationId": "markAllNotificationsRead",
         "responses": {
           "204": {
             "description": "No Content"
@@ -1021,7 +987,7 @@
             "description": "Error"
           }
         },
-        "summary": "Set the last-read marker",
+        "summary": "Mark every unread notification read",
         "tags": [
           "Notifications"
         ]
@@ -1029,7 +995,7 @@
     },
     "/api/notifications/stream": {
       "get": {
-        "description": "Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced.",
+        "description": "Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced or marked read/unread.",
         "operationId": "streamNotifications",
         "responses": {
           "200": {
@@ -1168,7 +1134,79 @@
             "description": "Error"
           }
         },
-        "summary": "Count notifications newer than the last-read marker",
+        "summary": "Count notifications with read_at IS NULL",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "post": {
+        "operationId": "markNotificationRead",
+        "parameters": [
+          {
+            "description": "Notification ULID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Notification ULID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mark a single notification read",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/notifications/{id}/unread": {
+      "post": {
+        "operationId": "markNotificationUnread",
+        "parameters": [
+          {
+            "description": "Notification ULID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Notification ULID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mark a single notification unread",
         "tags": [
           "Notifications"
         ]

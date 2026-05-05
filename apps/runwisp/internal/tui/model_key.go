@@ -4,8 +4,6 @@
 package tui
 
 import (
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -140,12 +138,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "R":
+	case "r", "R":
 		if m.notifications.IsExpanded() {
-			return m, m.streams.MarkNotificationsRead(time.Now())
+			return m, m.toggleSelectedNotificationRead()
 		}
-
-	case "r":
+		if msg.String() == "R" {
+			break
+		}
 		if m.execView != nil {
 			return m, m.confirmAction(confirmActionRetry)
 		}
@@ -158,8 +157,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "up", "k":
 		if m.notifications.IsExpanded() {
-			m.notifications.MoveCursor(-1)
-			return m, nil
+			if m.notifications.MoveCursor(-1) {
+				return m, nil
+			}
+			m.notifications.BumpBoundaryFlash()
+			return m, scheduleNotificationFlashClear()
 		}
 		if m.panelFocus == PanelMain && m.execView == nil && m.sidebar.ActivePage() == PageHome && m.sidebar.ActiveTask() == "" {
 			if m.execList.Cursor() == 0 || m.execList.totalCount() == 0 {
@@ -177,8 +179,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "down", "j":
 		if m.notifications.IsExpanded() {
-			m.notifications.MoveCursor(1)
-			return m, nil
+			if m.notifications.MoveCursor(1) {
+				return m, nil
+			}
+			m.notifications.BumpBoundaryFlash()
+			return m, scheduleNotificationFlashClear()
 		}
 		if m.panelFocus == PanelMain && m.execView == nil && m.homeCursor >= 0 {
 			fields := homeFields(m.info, m.hasLaunchTicket())

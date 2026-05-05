@@ -4,8 +4,6 @@
 package tui
 
 import (
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
@@ -211,15 +209,33 @@ type openRunMsg struct {
 }
 
 // notificationUnreadCountMsg delivers the snapshot unread count fetched at
-// startup. SSE-driven Upserts maintain the count from there.
+// startup. It seeds the panel's badge before the first list page resolves so
+// the operator sees the right number even when older unread items live
+// beyond the loaded slice.
 type notificationUnreadCountMsg struct {
 	Count int64
 	Err   error
 }
 
-// notificationMarkReadMsg is the result of a "Mark all read" action.
-// LastReadAt is the timestamp the client persisted to the daemon.
-type notificationMarkReadMsg struct {
-	LastReadAt time.Time
-	Err        error
+// notificationsLoadedMsg delivers the initial page of notifications fetched
+// at startup so the expanded panel is populated immediately, instead of
+// waiting for a fresh SSE event.
+type notificationsLoadedMsg struct {
+	Items []apiclient.Notification
+	Err   error
 }
+
+// notificationReadStateMsg is the result of a per-notification mark-read or
+// mark-unread action. The TUI applies an optimistic local update before
+// firing the API call, so this message only logs failures (and resyncs from
+// the server when one occurs).
+type notificationReadStateMsg struct {
+	ID   string
+	Read bool
+	Err  error
+}
+
+// notificationBoundaryFlashClearedMsg nudges the panel to repaint after a
+// boundary-flash duration elapses so the cursor row returns to its normal
+// background.
+type notificationBoundaryFlashClearedMsg struct{}

@@ -76,6 +76,14 @@
     let paginatedRuns = $derived(
         sortedRuns.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     );
+
+    $effect(() => {
+        if (!selectedRunId) return;
+        const idx = sortedRuns.findIndex((r: Run) => r.id === selectedRunId);
+        if (idx < 0) return;
+        const targetPage = Math.floor(idx / pageSize) + 1;
+        if (targetPage !== currentPage) currentPage = targetPage;
+    });
 </script>
 
 <div

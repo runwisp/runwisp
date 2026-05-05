@@ -11,9 +11,10 @@
     interface Props {
         notification: Notification;
         compact?: boolean;
+        onclick?: () => void;
     }
 
-    let { notification, compact = false }: Props = $props();
+    let { notification, compact = false, onclick }: Props = $props();
 
     // Tick once every 30s so relative-time labels and the sparkline window
     // advance without waiting for an SSE event.
@@ -48,30 +49,23 @@
         }
     });
 
-    let isClickable = $derived(Boolean(notification.run_id && notification.task_name));
+    let href = $derived.by(() => {
+        if (!notification.task_name) return null;
+        const base = resolve("/tasks/[id]", { id: notification.task_name });
+        if (notification.run_id) return `${base}?runId=${encodeURIComponent(notification.run_id)}`;
+        return base;
+    });
 </script>
 
-<article
-    class="flex gap-3 rounded-lg border border-mist-100 bg-white p-3 transition-colors hover:bg-mist-50"
-    aria-label={notification.title || notification.kind}
->
+{#snippet body()}
     <span class="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full {dotClass}" aria-hidden="true"
     ></span>
 
     <div class="min-w-0 flex-1 space-y-1">
         <div class="flex items-baseline justify-between gap-2">
-            {#if isClickable}
-                <a
-                    href={resolve("/tasks/[id]", { id: notification.task_name })}
-                    class="truncate text-sm font-semibold text-mist-900 no-underline hover:text-wisp-700"
-                >
-                    {notification.title || notification.kind}
-                </a>
-            {:else}
-                <h3 class="truncate text-sm font-semibold text-mist-900">
-                    {notification.title || notification.kind}
-                </h3>
-            {/if}
+            <h3 class="truncate text-sm font-semibold text-mist-900 hover:text-wisp-700">
+                {notification.title || notification.kind}
+            </h3>
             <span class="shrink-0 text-2xs text-mist-400">{rhythm}</span>
         </div>
 
@@ -92,4 +86,24 @@
             />
         </div>
     </div>
-</article>
+{/snippet}
+
+{#if href}
+    <a
+        {href}
+        {onclick}
+        data-testid="notification-item"
+        class="flex gap-3 rounded-lg border border-mist-100 bg-white p-3 no-underline transition-colors hover:bg-mist-50"
+        aria-label={notification.title || notification.kind}
+    >
+        {@render body()}
+    </a>
+{:else}
+    <article
+        data-testid="notification-item"
+        class="flex gap-3 rounded-lg border border-mist-100 bg-white p-3 transition-colors hover:bg-mist-50"
+        aria-label={notification.title || notification.kind}
+    >
+        {@render body()}
+    </article>
+{/if}

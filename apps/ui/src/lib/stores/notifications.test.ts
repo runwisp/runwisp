@@ -18,6 +18,7 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
         occurrences: ["2026-05-05T12:00:00.000Z"],
         created_at: "2026-05-05T12:00:00.000Z",
         last_occurred_at: "2026-05-05T12:00:00.000Z",
+        read_at: null,
     };
     return { ...base, ...overrides };
 }
@@ -32,32 +33,39 @@ class FakeEventSource extends EventTarget {
     }
 }
 
+interface RecordedRequest {
+    url: string;
+    method: string;
+}
+
 interface Harness {
     store: ReturnType<typeof createNotificationStore>;
     es: FakeEventSource;
+    requests: RecordedRequest[];
 }
 
-function setupHarness(opts: {
-    unread?: number;
-    lastReadAt?: string;
-    items?: Notification[];
-}): Harness {
+function setupHarness(opts: { unread?: number; items?: Notification[] }): Harness {
     const items = opts.items ?? [];
     const unread = opts.unread ?? 0;
-    const lastReadAt = opts.lastReadAt;
+    const requests: RecordedRequest[] = [];
 
-    const fakeFetch: typeof fetch = (input) => {
+    const fakeFetch: typeof fetch = (input, init) => {
         const url =
             typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const method = init?.method ?? (typeof input !== "string" && "method" in input ? input.method : "GET");
+        requests.push({ url, method });
         if (url.includes("/api/notifications/unread-count")) {
             return Promise.resolve(
-                new Response(JSON.stringify({ count: unread, last_read_at: lastReadAt }), {
+                new Response(JSON.stringify({ count: unread }), {
                     status: 200,
                     headers: { "content-type": "application/json" },
                 }),
             );
         }
-        if (url.includes("/api/notifications/read")) {
+        if (url.match(/\/api\/notifications\/[^/]+\/(read|unread)$/)) {
+            return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        if (url.endsWith("/api/notifications/read")) {
             return Promise.resolve(new Response(null, { status: 204 }));
         }
         if (url.includes("/api/notifications")) {
@@ -80,7 +88,7 @@ function setupHarness(opts: {
         createEventSource: () => fakeES as unknown as EventSource,
         getApiUrl: () => "http://test",
     });
-    return { store, es: fakeES };
+    return { store, es: fakeES, requests };
 }
 
 describe("NotificationStore", () => {
@@ -102,99 +110,100 @@ describe("NotificationStore", () => {
         await a;
     });
 
-    it("ignores SSE events that predate the last-read marker", async () => {
-        const { store, es } = setupHarness({
-            items: [],
-            unread: 0,
-            lastReadAt: "2026-05-05T12:00:00.000Z",
-        });
+    it("ignores SSE 'updated' events whose row already counted as read", async () => {
+        const { store, es } = setupHarness({ items: [], unread: 0 });
         await store.init();
         es.fire("notification.created", {
             notification: makeNotification({
-                id: "01H000000000000000000OLD00",
-                last_occurred_at: "2026-05-05T11:59:00.000Z",
+                id: "01H000000000000000000RD000",
+                read_at: "2026-05-05T12:00:00.000Z",
             }),
         });
         expect(store.unread).toBe(0);
         expect(store.items).toHaveLength(1);
     });
 
-    it("bumps unread when a created event postdates the marker", async () => {
-        const { store, es } = setupHarness({
-            items: [],
-            unread: 0,
-            lastReadAt: "2026-05-05T12:00:00.000Z",
-        });
+    it("bumps unread when an unread row is created", async () => {
+        const { store, es } = setupHarness({ items: [], unread: 0 });
         await store.init();
         es.fire("notification.created", {
-            notification: makeNotification({
-                id: "01H000000000000000000NEW01",
-                last_occurred_at: "2026-05-05T12:01:00.000Z",
-            }),
+            notification: makeNotification({ id: "01H000000000000000000NEW01" }),
         });
         expect(store.unread).toBe(1);
     });
 
-    it("bumps unread by count delta on a coalesced update", async () => {
+    it("decrements unread when SSE update flips a row from unread to read", async () => {
         const id = "01H000000000000000000UPD01";
         const { store, es } = setupHarness({
-            items: [],
-            unread: 0,
-            lastReadAt: "2026-05-05T12:00:00.000Z",
+            items: [makeNotification({ id })],
+            unread: 1,
         });
         await store.init();
-        es.fire("notification.created", {
-            notification: makeNotification({
-                id,
-                count: 1,
-                last_occurred_at: "2026-05-05T12:01:00.000Z",
-            }),
-        });
         expect(store.unread).toBe(1);
         es.fire("notification.updated", {
-            notification: makeNotification({
-                id,
-                count: 4,
-                last_occurred_at: "2026-05-05T12:02:00.000Z",
-            }),
+            notification: makeNotification({ id, read_at: "2026-05-05T12:05:00.000Z" }),
         });
-        expect(store.unread).toBe(4);
-        expect(store.items).toHaveLength(1);
-        expect(store.items[0]?.count).toBe(4);
+        expect(store.unread).toBe(0);
+        expect(store.items[0]?.read_at).toBe("2026-05-05T12:05:00.000Z");
     });
 
-    it("does not bump on update when last_occurred_at predates the marker", async () => {
+    it("re-bumps unread when a coalesce SSE update clears read_at", async () => {
         const id = "01H000000000000000000UPD02";
         const { store, es } = setupHarness({
-            items: [],
+            items: [makeNotification({ id, read_at: "2026-05-05T12:00:00.000Z" })],
             unread: 0,
-            lastReadAt: "2026-05-05T13:00:00.000Z",
         });
         await store.init();
-        es.fire("notification.created", {
-            notification: makeNotification({
-                id,
-                count: 1,
-                last_occurred_at: "2026-05-05T12:00:00.000Z",
-            }),
-        });
         expect(store.unread).toBe(0);
         es.fire("notification.updated", {
-            notification: makeNotification({
-                id,
-                count: 5,
-                last_occurred_at: "2026-05-05T12:30:00.000Z",
-            }),
+            notification: makeNotification({ id, count: 2, read_at: null }),
         });
-        expect(store.unread).toBe(0);
+        expect(store.unread).toBe(1);
+        expect(store.items[0]?.read_at).toBeNull();
     });
 
-    it("clears unread on markAllRead()", async () => {
-        const { store } = setupHarness({ items: [makeNotification()], unread: 5 });
+    it("clears unread on markAllRead() and stamps loaded items", async () => {
+        const id = "01H000000000000000000ALL01";
+        const { store, requests } = setupHarness({
+            items: [makeNotification({ id })],
+            unread: 5,
+        });
         await store.init();
         expect(store.unread).toBe(5);
         await store.markAllRead();
         expect(store.unread).toBe(0);
-        expect(store.lastReadAt).not.toBeNull();
+        expect(store.items[0]?.read_at).not.toBeNull();
+        const markCall = requests.find(
+            (r) => r.url.endsWith("/api/notifications/read") && r.method === "POST",
+        );
+        expect(markCall).toBeDefined();
+    });
+
+    it("markRead() sets read_at locally and POSTs the per-row endpoint", async () => {
+        const id = "01H000000000000000000ROW01";
+        const { store, requests } = setupHarness({
+            items: [makeNotification({ id })],
+            unread: 1,
+        });
+        await store.init();
+        await store.markRead(id);
+        expect(store.items[0]?.read_at).not.toBeNull();
+        expect(store.unread).toBe(0);
+        const call = requests.find((r) => r.url.endsWith(`/api/notifications/${id}/read`));
+        expect(call?.method).toBe("POST");
+    });
+
+    it("markUnread() clears read_at locally and POSTs the per-row endpoint", async () => {
+        const id = "01H000000000000000000ROW02";
+        const { store, requests } = setupHarness({
+            items: [makeNotification({ id, read_at: "2026-05-05T12:00:00.000Z" })],
+            unread: 0,
+        });
+        await store.init();
+        await store.markUnread(id);
+        expect(store.items[0]?.read_at).toBeNull();
+        expect(store.unread).toBe(1);
+        const call = requests.find((r) => r.url.endsWith(`/api/notifications/${id}/unread`));
+        expect(call?.method).toBe("POST");
     });
 });

@@ -6,7 +6,6 @@ package tui
 import (
 	"context"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -262,16 +261,44 @@ func (sm *StreamManager) FetchUnreadCount() tea.Cmd {
 	}
 }
 
-// MarkNotificationsRead returns a command that persists the operator's
-// last-read marker to the daemon.
-func (sm *StreamManager) MarkNotificationsRead(at time.Time) tea.Cmd {
+// FetchNotifications returns a command that loads the most recent page of
+// notifications. The result seeds the panel so the expanded view isn't empty
+// while the SSE stream waits for new events.
+func (sm *StreamManager) FetchNotifications() tea.Cmd {
 	if sm.client == nil {
 		return nil
 	}
 	client := sm.client
 	return func() tea.Msg {
-		err := client.MarkNotificationsRead(at)
-		return notificationMarkReadMsg{LastReadAt: at, Err: err}
+		page, err := client.ListNotifications(notificationsInitialPageSize, "")
+		if err != nil {
+			return notificationsLoadedMsg{Err: err}
+		}
+		return notificationsLoadedMsg{Items: page.Items}
+	}
+}
+
+// MarkNotificationRead persists a single notification's read state.
+func (sm *StreamManager) MarkNotificationRead(id string) tea.Cmd {
+	if sm.client == nil || id == "" {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		err := client.MarkNotificationRead(id)
+		return notificationReadStateMsg{ID: id, Read: true, Err: err}
+	}
+}
+
+// MarkNotificationUnread clears a single notification's read state.
+func (sm *StreamManager) MarkNotificationUnread(id string) tea.Cmd {
+	if sm.client == nil || id == "" {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		err := client.MarkNotificationUnread(id)
+		return notificationReadStateMsg{ID: id, Read: false, Err: err}
 	}
 }
 

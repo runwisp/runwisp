@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -20,24 +21,26 @@ import (
 // can be tested with a fake.
 type NotificationHub interface {
 	Subscribe() (*inapp.Subscriber, func())
+	Publish(u inapp.Update)
 }
 
 // NotificationDTO is the JSON shape we expose. The storage type embeds
 // time.Time + a slice; this maps to ISO8601 strings that the TS client can
 // parse directly.
 type NotificationDTO struct {
-	ID             string    `json:"id" doc:"Stable ULID identifier"`
-	Fingerprint    string    `json:"fingerprint" doc:"Coalescing key (FNV1a hex)"`
-	Kind           string    `json:"kind" doc:"Event kind (run.failed, notify.delivery_failed, ...)"`
-	Severity       string    `json:"severity" doc:"info | warn | error"`
-	TaskName       string    `json:"task_name" doc:"Task that produced this notification (empty for daemon-level events)"`
-	RunID          string    `json:"run_id" doc:"Run that produced this notification (empty when not run-derived)"`
-	Title          string    `json:"title" doc:"Human-readable title"`
-	Body           string    `json:"body" doc:"Pre-rendered body text"`
-	Count          int       `json:"count" doc:"Number of coalesced occurrences within the window"`
-	Occurrences    []string  `json:"occurrences" doc:"Most-recent timestamps (newest first), ISO8601"`
-	CreatedAt      time.Time `json:"created_at" doc:"First time this notification was raised"`
-	LastOccurredAt time.Time `json:"last_occurred_at" doc:"Most recent occurrence"`
+	ID             string     `json:"id" doc:"Stable ULID identifier"`
+	Fingerprint    string     `json:"fingerprint" doc:"Coalescing key (FNV1a hex)"`
+	Kind           string     `json:"kind" doc:"Event kind (run.failed, notify.delivery_failed, ...)"`
+	Severity       string     `json:"severity" doc:"info | warn | error"`
+	TaskName       string     `json:"task_name" doc:"Task that produced this notification (empty for daemon-level events)"`
+	RunID          string     `json:"run_id" doc:"Run that produced this notification (empty when not run-derived)"`
+	Title          string     `json:"title" doc:"Human-readable title"`
+	Body           string     `json:"body" doc:"Pre-rendered body text"`
+	Count          int        `json:"count" doc:"Number of coalesced occurrences within the window"`
+	Occurrences    []string   `json:"occurrences" doc:"Most-recent timestamps (newest first), ISO8601"`
+	CreatedAt      time.Time  `json:"created_at" doc:"First time this notification was raised"`
+	LastOccurredAt time.Time  `json:"last_occurred_at" doc:"Most recent occurrence"`
+	ReadAt         *time.Time `json:"read_at,omitempty" doc:"When the operator marked this row read; null/absent when unread"`
 }
 
 func notificationToDTO(n storage.Notification) NotificationDTO {
@@ -58,6 +61,7 @@ func notificationToDTO(n storage.Notification) NotificationDTO {
 		Occurrences:    occ,
 		CreatedAt:      n.CreatedAt,
 		LastOccurredAt: n.LastOccurredAt,
+		ReadAt:         n.ReadAt,
 	}
 }
 
@@ -77,21 +81,16 @@ type NotificationsListBody struct {
 	NextCursor string            `json:"next_cursor,omitempty" doc:"Cursor to pass as 'before' on the next page; empty when exhausted"`
 }
 
-type NotificationMarkReadInput struct {
-	Body NotificationMarkReadBody
-}
-
-type NotificationMarkReadBody struct {
-	LastReadAt time.Time `json:"last_read_at" doc:"Mark all notifications with last_occurred_at <= this as read" required:"true"`
-}
-
 type NotificationUnreadOutput struct {
 	Body NotificationUnreadBody
 }
 
 type NotificationUnreadBody struct {
-	Count      int64     `json:"count" doc:"Number of notifications strictly newer than last_read_at"`
-	LastReadAt time.Time `json:"last_read_at" doc:"Server-side last-read marker (zero when never set)"`
+	Count int64 `json:"count" doc:"Number of notifications with read_at IS NULL"`
+}
+
+type NotificationByIDInput struct {
+	ID string `path:"id" doc:"Notification ULID"`
 }
 
 // ---------- SSE wrapper types ----------
@@ -122,19 +121,37 @@ func (srv *Server) registerNotificationsRoutes(api huma.API) {
 	}, srv.humaListNotifications)
 
 	huma.Register(api, huma.Operation{
-		OperationID:   "markNotificationsRead",
+		OperationID:   "markAllNotificationsRead",
 		Method:        http.MethodPost,
 		Path:          "/api/notifications/read",
-		Summary:       "Set the last-read marker",
+		Summary:       "Mark every unread notification read",
 		Tags:          []string{"Notifications"},
 		DefaultStatus: http.StatusNoContent,
-	}, srv.humaMarkNotificationsRead)
+	}, srv.humaMarkAllNotificationsRead)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "markNotificationRead",
+		Method:        http.MethodPost,
+		Path:          "/api/notifications/{id}/read",
+		Summary:       "Mark a single notification read",
+		Tags:          []string{"Notifications"},
+		DefaultStatus: http.StatusNoContent,
+	}, srv.humaMarkNotificationRead)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "markNotificationUnread",
+		Method:        http.MethodPost,
+		Path:          "/api/notifications/{id}/unread",
+		Summary:       "Mark a single notification unread",
+		Tags:          []string{"Notifications"},
+		DefaultStatus: http.StatusNoContent,
+	}, srv.humaMarkNotificationUnread)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getUnreadNotificationCount",
 		Method:      http.MethodGet,
 		Path:        "/api/notifications/unread-count",
-		Summary:     "Count notifications newer than the last-read marker",
+		Summary:     "Count notifications with read_at IS NULL",
 		Tags:        []string{"Notifications"},
 	}, srv.humaUnreadNotificationCount)
 
@@ -160,26 +177,54 @@ func (srv *Server) humaListNotifications(_ context.Context, input *Notifications
 	return out, nil
 }
 
-func (srv *Server) humaMarkNotificationsRead(_ context.Context, input *NotificationMarkReadInput) (*struct{}, error) {
-	if err := srv.notifyRepo.SetLastReadAt(input.Body.LastReadAt); err != nil {
-		return nil, huma.Error500InternalServerError("Failed to set read marker")
+func (srv *Server) humaMarkAllNotificationsRead(_ context.Context, _ *struct{}) (*struct{}, error) {
+	if err := srv.notifyRepo.MarkAllNotificationsRead(time.Now()); err != nil {
+		return nil, huma.Error500InternalServerError("Failed to mark notifications read")
 	}
 	return nil, nil
 }
 
-func (srv *Server) humaUnreadNotificationCount(_ context.Context, _ *struct{}) (*NotificationUnreadOutput, error) {
-	last, err := srv.notifyRepo.GetLastReadAt()
+func (srv *Server) humaMarkNotificationRead(_ context.Context, input *NotificationByIDInput) (*struct{}, error) {
+	updated, err := srv.notifyRepo.MarkNotificationRead(input.ID, time.Now())
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to read marker")
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil, huma.Error404NotFound("notification not found")
+		}
+		return nil, huma.Error500InternalServerError("Failed to mark notification read")
 	}
-	count, err := srv.notifyRepo.CountNotificationsSince(last)
+	srv.publishNotificationUpdate(updated)
+	return nil, nil
+}
+
+func (srv *Server) humaMarkNotificationUnread(_ context.Context, input *NotificationByIDInput) (*struct{}, error) {
+	updated, err := srv.notifyRepo.MarkNotificationUnread(input.ID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil, huma.Error404NotFound("notification not found")
+		}
+		return nil, huma.Error500InternalServerError("Failed to mark notification unread")
+	}
+	srv.publishNotificationUpdate(updated)
+	return nil, nil
+}
+
+func (srv *Server) humaUnreadNotificationCount(_ context.Context, _ *struct{}) (*NotificationUnreadOutput, error) {
+	count, err := srv.notifyRepo.CountUnreadNotifications()
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to count notifications")
 	}
 	out := &NotificationUnreadOutput{}
 	out.Body.Count = count
-	out.Body.LastReadAt = last
 	return out, nil
+}
+
+// publishNotificationUpdate fans a read-state change out to live SSE
+// subscribers so other surfaces (Web UI, second TUI window) stay in sync.
+func (srv *Server) publishNotificationUpdate(n *storage.Notification) {
+	if srv.notifyHub == nil || n == nil {
+		return
+	}
+	srv.notifyHub.Publish(inapp.Update{Type: "notification.updated", Notification: *n})
 }
 
 // registerNotificationsSSE mirrors the runs SSE stream: bounded per-conn
@@ -192,7 +237,7 @@ func (srv *Server) registerNotificationsSSE(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/notifications/stream",
 		Summary:     "Stream notification create/update events",
-		Description: "Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced.",
+		Description: "Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced or marked read/unread.",
 		Tags:        []string{"Notifications"},
 	}, map[string]any{
 		"notification.created": NotificationCreatedEvent{},

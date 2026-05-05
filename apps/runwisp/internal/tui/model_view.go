@@ -68,7 +68,7 @@ func (m Model) View() string {
 
 func (m Model) buildHelpText() string {
 	if m.notifications.IsExpanded() {
-		return "↑↓/j/k navigate  enter open  R mark all read  n/esc collapse  q/^C quit"
+		return "↑/↓ navigate  enter open  r mark read  n/esc collapse  q/^C quit"
 	}
 	if m.execView != nil {
 		var parts []string

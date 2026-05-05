@@ -24,7 +24,6 @@ async function triggerRunViaAPI(page: Page, taskName: string, token: string): Pr
 async function markAllReadViaAPI(page: Page, token: string): Promise<void> {
     const response = await page.request.post("/api/notifications/read", {
         headers: { Authorization: `Bearer ${token}` },
-        data: { last_read_at: new Date().toISOString() },
     });
     expect(response.status(), "mark all read").toBeLessThan(400);
 }
@@ -54,7 +53,7 @@ test.describe("notifications", () => {
         await bell(page).click();
         await expect(popover(page)).toBeVisible();
 
-        const item = popover(page).locator("article").filter({ hasText: "fail-task" }).first();
+        const item = popover(page).locator('[data-testid="notification-item"]').filter({ hasText: "fail-task" }).first();
         await expect(item).toBeVisible({ timeout: 5_000 });
     });
 
@@ -71,7 +70,7 @@ test.describe("notifications", () => {
         await bell(page).click();
         await expect(popover(page)).toBeVisible();
 
-        const item = popover(page).locator("article").filter({ hasText: "fail-task" }).first();
+        const item = popover(page).locator('[data-testid="notification-item"]').filter({ hasText: "fail-task" }).first();
         // Coalescing produces a single fail-task row whose rhythm phrase
         // includes a "N×" multiplier as soon as count >= 2. Earlier specs
         // in the run may have already pushed the count up, so we assert
@@ -79,7 +78,7 @@ test.describe("notifications", () => {
         await expect(item).toContainText(/\d+×/, { timeout: 15_000 });
 
         const allFailTask = await popover(page)
-            .locator("article")
+            .locator('[data-testid="notification-item"]')
             .filter({ hasText: "fail-task" })
             .count();
         expect(allFailTask, "fail-task should produce exactly one coalesced row").toBe(1);
@@ -108,7 +107,7 @@ test.describe("notifications", () => {
         await expect(page).toHaveURL(/\/notifications\/?$/);
         await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
 
-        await expect(page.locator("article").filter({ hasText: "fail-task" }).first()).toBeVisible({
+        await expect(page.locator('[data-testid="notification-item"]').filter({ hasText: "fail-task" }).first()).toBeVisible({
             timeout: 5_000,
         });
     });

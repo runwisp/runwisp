@@ -49,7 +49,7 @@
             <p class="px-2 py-6 text-center text-xs text-mist-400">No notifications yet.</p>
         {:else}
             {#each items as item (item.id)}
-                <NotificationItem notification={item} compact />
+                <NotificationItem notification={item} compact onclick={onClose} />
             {/each}
             {#if extra > 0}
                 <a

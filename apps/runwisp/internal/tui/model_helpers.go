@@ -80,10 +80,14 @@ func (m *Model) applySidebarSelectionChange(prevPage Page, prevTask string) tea.
 }
 
 func (m *Model) mainHeaderHeight() int {
+	base := m.layout.homeH
 	if m.sidebar.ActiveTask() != "" {
-		return m.layout.taskH
+		base = m.layout.taskH
 	}
-	return m.layout.homeH
+	if m.sidebar.ActivePage() == PageHome {
+		base += m.notifications.PanelHeight()
+	}
+	return base
 }
 
 func (m *Model) detectDoubleClick(y int) bool {

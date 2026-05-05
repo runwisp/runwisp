@@ -86,8 +86,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleNotificationStreamDisconnected()
 	case notificationUnreadCountMsg:
 		return m.handleNotificationUnreadCount(msg)
-	case notificationMarkReadMsg:
-		return m.handleNotificationMarkRead(msg)
+	case notificationsLoadedMsg:
+		return m.handleNotificationsLoaded(msg)
+	case notificationReadStateMsg:
+		return m.handleNotificationReadState(msg)
+	case notificationBoundaryFlashClearedMsg:
+		m.notifications.ClearBoundaryFlash()
+		return m, nil
 	case openRunMsg:
 		return m.handleOpenRun(msg)
 	}
@@ -121,8 +126,19 @@ func (m Model) handleNotificationUnreadCount(msg notificationUnreadCountMsg) (te
 		m.debugView.AppendLine("Failed to load unread count: " + msg.Err.Error())
 		return m, nil
 	}
-	m.notifications.SetUnread(int(msg.Count))
+	m.notifications.SetUnreadHint(int(msg.Count))
 	m.updateLayout()
+	return m, nil
+}
+
+func (m Model) handleNotificationsLoaded(msg notificationsLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.debugView.AppendLine("Failed to load notifications: " + msg.Err.Error())
+		return m, nil
+	}
+	if m.notifications.LoadHistorical(msg.Items) {
+		m.updateLayout()
+	}
 	return m, nil
 }
 
@@ -133,13 +149,25 @@ func (m Model) handleOpenRun(msg openRunMsg) (tea.Model, tea.Cmd) {
 	return m, m.openExecView(msg.Run)
 }
 
-func (m Model) handleNotificationMarkRead(msg notificationMarkReadMsg) (tea.Model, tea.Cmd) {
-	if msg.Err != nil {
-		m.debugView.AppendLine("Failed to mark notifications read: " + msg.Err.Error())
+func (m Model) handleNotificationReadState(msg notificationReadStateMsg) (tea.Model, tea.Cmd) {
+	if msg.Err == nil {
+		// Local state was already applied optimistically — nothing to do.
+		// The server publishes notification.updated so other surfaces sync.
 		return m, nil
 	}
-	m.notifications.MarkAllReadLocal(msg.LastReadAt)
-	return m, m.dialogs.Flash("Notifications marked read", 2*time.Second)
+	verb := "read"
+	if !msg.Read {
+		verb = "unread"
+	}
+	m.debugView.AppendLine("Failed to mark notification " + verb + ": " + msg.Err.Error())
+	// Roll back the optimistic update.
+	if msg.Read {
+		m.notifications.MarkUnreadLocal(msg.ID)
+	} else {
+		m.notifications.MarkReadLocal(msg.ID, time.Now())
+	}
+	m.updateLayout()
+	return m, nil
 }
 
 // interceptConfirmDialog handles input while the confirm dialog is visible.
