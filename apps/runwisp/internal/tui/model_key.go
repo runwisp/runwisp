@@ -140,10 +140,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "r":
+	case "R":
 		if m.notifications.IsExpanded() {
 			return m, m.streams.MarkNotificationsRead(time.Now())
 		}
+
+	case "r":
 		if m.execView != nil {
 			return m, m.confirmAction(confirmActionRetry)
 		}

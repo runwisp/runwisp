@@ -19,9 +19,9 @@ import (
 // once at shutdown. A future SIGHUP-driven reload would simply call Stop and
 // then construct a fresh Service — no shared state survives the call.
 type Service struct {
-	bus       events.EventBus
-	ingressCh chan *Event
-	queueSize int
+	bus         events.EventBus
+	ingressCh   chan *Event
+	ingressSize int
 
 	registry *ActionRegistry
 	router   *Router
@@ -46,29 +46,42 @@ type Service struct {
 	stopped        atomic.Bool
 }
 
+// DefaultIngressSize is the default capacity of the bus → service buffer.
+// Operators tune it via TOML notify.queue_size.
+const DefaultIngressSize = 1024
+
+// DefaultActionQueueSize is the per-action worker queue capacity. Held
+// internal by design — operators rarely need to think about it.
+const DefaultActionQueueSize = 256
+
 // Config bundles everything Service.New needs that isn't already on the
 // dispatcher / router. Storage is the persistent in-app row repository; the
 // retention loop calls PruneNotificationsByCount and PruneNotificationsByAge.
 type Config struct {
-	Bus            events.EventBus
-	Channels       []Channel     // includes inapp + each configured provider
-	Rules          []Rule        // routing predicates
-	FailureSink    FailureSink   // typically the inapp.Channel
-	QueueSize      int           // ingress channel cap; 0 → 1024
-	Clock          Clock         // 0 → RealClock
-	Logger         *slog.Logger  // 0 → slog.Default
-	RetentionEvery time.Duration // 0 → 5min
-	RetentionKeep  int           // PruneNotificationsByCount target; 0 → no prune
-	RetentionAge   time.Duration // PruneNotificationsByAge cutoff; 0 → no prune
-	RetentionFn    func()        // executed on each tick; injected by Service builder
+	Bus             events.EventBus
+	Channels        []Channel     // includes inapp + each configured provider
+	Rules           []Rule        // routing predicates
+	FailureSink     FailureSink   // typically the inapp.Channel
+	IngressSize     int           // bus → service buffer; 0 → DefaultIngressSize
+	ActionQueueSize int           // per-action worker queue; 0 → DefaultActionQueueSize
+	Clock           Clock         // 0 → RealClock
+	Logger          *slog.Logger  // 0 → slog.Default
+	RetentionEvery  time.Duration // 0 → 5min
+	RetentionKeep   int           // PruneNotificationsByCount target; 0 → no prune
+	RetentionAge    time.Duration // PruneNotificationsByAge cutoff; 0 → no prune
+	RetentionFn     func()        // executed on each tick; injected by Service builder
 }
 
 // New constructs a Service from already-built channels and pre-compiled rules.
 // It does not touch any I/O — all start-time work happens in Start.
 func New(cfg Config) *Service {
-	queueSize := cfg.QueueSize
-	if queueSize <= 0 {
-		queueSize = 1024
+	ingressSize := cfg.IngressSize
+	if ingressSize <= 0 {
+		ingressSize = DefaultIngressSize
+	}
+	actionQueueSize := cfg.ActionQueueSize
+	if actionQueueSize <= 0 {
+		actionQueueSize = DefaultActionQueueSize
 	}
 	clock := cfg.Clock
 	if clock == nil {
@@ -89,12 +102,12 @@ func New(cfg Config) *Service {
 	}
 	registry := NewActionRegistry(actions)
 	router := NewRouter(cfg.Rules, registry)
-	disp := newDispatcher(router, registry, queueSize, clock, cfg.FailureSink, logger)
+	disp := newDispatcher(router, registry, actionQueueSize, clock, cfg.FailureSink, logger)
 
 	return &Service{
 		bus:            cfg.Bus,
-		ingressCh:      make(chan *Event, queueSize),
-		queueSize:      queueSize,
+		ingressCh:      make(chan *Event, ingressSize),
+		ingressSize:    ingressSize,
 		registry:       registry,
 		router:         router,
 		disp:           disp,
@@ -137,7 +150,7 @@ func (s *Service) Start(ctx context.Context) error {
 	s.logger.Info("notify started",
 		"channels", len(s.channels),
 		"rules", len(s.router.rules),
-		"queue_size", s.queueSize)
+		"ingress_size", s.ingressSize)
 	return nil
 }
 

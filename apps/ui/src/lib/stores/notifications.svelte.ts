@@ -37,7 +37,10 @@ const listResponseSchema = z.object({
     next_cursor: z.string().optional(),
 });
 
-const unreadResponseSchema = z.object({ count: z.number().int().nonnegative() });
+const unreadResponseSchema = z.object({
+    count: z.number().int().nonnegative(),
+    last_read_at: z.string().optional(),
+});
 
 const streamEnvelopeSchema = z.object({ notification: notificationSchema });
 
@@ -54,6 +57,7 @@ class NotificationStore {
     #byId = new Map<string, Notification>();
     #unread = $state(0);
     #lastReadAt = $state<string | null>(null);
+    #lastReadAtMs = 0;
     #connection: SSEConnection | null = null;
     #connected = $state(false);
     #loaded = $state(false);
@@ -95,8 +99,9 @@ class NotificationStore {
             this.#items = [...page.items];
             this.#cursor = page.next_cursor ?? null;
             this.#hasMore = Boolean(page.next_cursor);
-            const unread = await this.#fetchUnread();
-            this.#unread = unread;
+            const { count, lastReadAt } = await this.#fetchUnread();
+            this.#unread = count;
+            this.#setLastReadAt(lastReadAt);
             this.#loaded = true;
             this.#connect();
         } catch (e) {
@@ -133,7 +138,7 @@ class NotificationStore {
                 body: JSON.stringify({ last_read_at: now }),
             });
             if (!res.ok) throw new Error(`Mark-read returned ${res.status.toString()}`);
-            this.#lastReadAt = now;
+            this.#setLastReadAt(now);
             this.#unread = 0;
         } catch (e) {
             this.#logger.error("Failed to mark notifications read", e);
@@ -149,6 +154,16 @@ class NotificationStore {
     /** Test seam: replace the fetch implementation. */
     setApi(api: ApiClient): void {
         this.#api = api;
+    }
+
+    /** Test seam: drive a SSE event without standing up an EventSource. */
+    _applyForTest(eventType: string, n: Notification): void {
+        this.#applyUpdate(eventType, n);
+    }
+
+    /** Test seam: seed the last-read marker as if init() observed it. */
+    _setLastReadAtForTest(value: string | null | undefined): void {
+        this.#setLastReadAt(value);
     }
 
     #connect(): void {
@@ -189,9 +204,10 @@ class NotificationStore {
     #applyUpdate(eventType: string, n: Notification): void {
         const existing = this.#byId.get(n.id);
         this.#byId.set(n.id, n);
+        const isNewer = this.#isNewerThanMarker(n);
         if (eventType === "notification.created" && !existing) {
             this.#items = [n, ...this.#items];
-            this.#unread += 1;
+            if (isNewer) this.#unread += 1;
             return;
         }
         // Updated path: rewrite the item in place by id; if it wasn't tracked,
@@ -206,14 +222,38 @@ class NotificationStore {
             } else {
                 this.#items = [n, ...next];
             }
-            // Treat subsequent occurrences as a new unread bump only when count grew.
-            if (n.count > existing.count) {
+            // Treat subsequent occurrences as a new unread bump only when count grew
+            // and the latest occurrence postdates the user's mark-read marker.
+            if (n.count > existing.count && isNewer) {
                 this.#unread += n.count - existing.count;
             }
             return;
         }
         this.#items = [n, ...this.#items];
-        this.#unread += n.count;
+        if (isNewer) this.#unread += n.count;
+    }
+
+    #isNewerThanMarker(n: Notification): boolean {
+        if (this.#lastReadAtMs <= 0) return true;
+        const ts = Date.parse(n.last_occurred_at);
+        if (Number.isNaN(ts)) return true;
+        return ts > this.#lastReadAtMs;
+    }
+
+    #setLastReadAt(value: string | null | undefined): void {
+        if (!value) {
+            this.#lastReadAt = null;
+            this.#lastReadAtMs = 0;
+            return;
+        }
+        const ms = Date.parse(value);
+        if (Number.isNaN(ms) || ms <= 0) {
+            this.#lastReadAt = null;
+            this.#lastReadAtMs = 0;
+            return;
+        }
+        this.#lastReadAt = value;
+        this.#lastReadAtMs = ms;
     }
 
     async #fetchPage(
@@ -231,14 +271,15 @@ class NotificationStore {
         return listResponseSchema.parse(raw);
     }
 
-    async #fetchUnread(): Promise<number> {
+    async #fetchUnread(): Promise<{ count: number; lastReadAt: string | undefined }> {
         const res = await this.#api.fetch(`${getApiUrl()}/api/notifications/unread-count`, {
             credentials: "include",
             headers: authHeaders(),
         });
         if (!res.ok) throw new Error(`Unread returned ${res.status.toString()}`);
         const raw: unknown = await res.json();
-        return unreadResponseSchema.parse(raw).count;
+        const parsed = unreadResponseSchema.parse(raw);
+        return { count: parsed.count, lastReadAt: parsed.last_read_at };
     }
 }
 

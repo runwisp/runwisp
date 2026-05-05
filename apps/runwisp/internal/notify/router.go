@@ -32,8 +32,8 @@ func (r *Router) Route(ev *Event) []Action {
 	if r == nil || ev == nil {
 		return nil
 	}
-	seen := make(map[string]struct{})
-	var out []Action
+	seen := make(map[string]struct{}, len(r.rules))
+	out := make([]Action, 0, len(r.rules))
 	for _, rule := range r.rules {
 		if rule.Match == nil || !rule.Match(ev) {
 			continue

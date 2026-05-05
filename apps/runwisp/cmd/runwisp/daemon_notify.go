@@ -51,6 +51,13 @@ func initNotify(
 		return notifyBundle{}, fmt.Errorf("resolve notify config: %w", err)
 	}
 
+	// No notifiers and no rules: nothing to do. Skip every goroutine and the
+	// bus subscription. The server's notification routes still respond from
+	// the persistent repo; the SSE stream falls back to ping-only.
+	if len(resolved.Notifiers) == 0 && len(resolved.Rules) == 0 {
+		return notifyBundle{}, nil
+	}
+
 	if override := envBackoffOverride(logger); override != nil {
 		for i := range resolved.Notifiers {
 			resolved.Notifiers[i].Transport = override()
@@ -100,7 +107,7 @@ func initNotify(
 		Channels:       channels,
 		Rules:          resolved.Rules,
 		FailureSink:    failureSink,
-		QueueSize:      notifyCfg.QueueSize,
+		IngressSize:    notifyCfg.QueueSize,
 		Logger:         logger,
 		RetentionEvery: 5 * time.Minute,
 		RetentionKeep:  notifyCfg.HistoryKeep,

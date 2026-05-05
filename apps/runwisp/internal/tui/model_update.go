@@ -362,6 +362,9 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 	if m.sidebar.ActivePage() == PageInfo {
 		cmds = append(cmds, m.streams.FetchSystemStats())
 	}
+	if m.notifications.PanelHeight() > 0 {
+		m.notifications.RefreshLabels()
+	}
 	return m, tea.Batch(cmds...)
 }
 

@@ -192,6 +192,9 @@ func validateNotify(cfg *NotifyConfig) error {
 			if strings.TrimSpace(spec.ChatID) == "" {
 				return fmt.Errorf("notifier %q: chat_id is required for type=telegram", spec.ID)
 			}
+			if strings.TrimSpace(spec.ParseMode) == "MarkdownV2" && strings.TrimSpace(spec.TemplatePath) == "" {
+				return fmt.Errorf("notifier %q: parse_mode=MarkdownV2 requires template_path (the embedded default uses HTML)", spec.ID)
+			}
 		}
 	}
 

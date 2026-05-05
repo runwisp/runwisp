@@ -51,9 +51,39 @@ type Coalescer struct {
 type indexEntry struct {
 	fingerprint    uint64
 	id             string
+	fingerprintHex string
+	kind           string
+	severity       string
+	taskName       string
+	runID          string
+	title          string
+	body           string
 	count          int
 	occurrences    []time.Time
+	createdAt      time.Time
 	lastOccurredAt time.Time
+}
+
+// snapshot builds a storage.Notification for hub publishing without touching
+// SQLite. The slice is copied so subsequent occurrence pushes don't mutate the
+// hub message in flight.
+func (e *indexEntry) snapshot() storage.Notification {
+	occ := make([]time.Time, len(e.occurrences))
+	copy(occ, e.occurrences)
+	return storage.Notification{
+		ID:             e.id,
+		Fingerprint:    e.fingerprintHex,
+		Kind:           e.kind,
+		Severity:       e.severity,
+		TaskName:       e.taskName,
+		RunID:          e.runID,
+		Title:          e.title,
+		Body:           e.body,
+		Count:          e.count,
+		Occurrences:    occ,
+		CreatedAt:      e.createdAt,
+		LastOccurredAt: e.lastOccurredAt,
+	}
 }
 
 // NewCoalescer constructs a coalescer. Pass DefaultCoalescerConfig() for
@@ -104,18 +134,15 @@ func (c *Coalescer) Receive(title, body string, ev *notify.Event) {
 			entry.count++
 			entry.lastOccurredAt = now
 			entry.occurrences = pushFront(entry.occurrences, now, c.cfg.OccurrenceN)
+			entry.title = title
+			entry.body = body
 			c.order.MoveToFront(elem)
 
 			if err := c.repo.UpdateOccurrence(entry.id, entry.count, now, entry.occurrences, title, body); err != nil {
 				c.log.Error("notify coalescer: update failed", "id", entry.id, "error", err)
 				return
 			}
-			n, err := c.repo.GetNotificationByID(entry.id)
-			if err != nil {
-				c.log.Error("notify coalescer: refetch after update failed", "id", entry.id, "error", err)
-				return
-			}
-			c.hub.Publish(Update{Type: "notification.updated", Notification: *n})
+			c.hub.Publish(Update{Type: "notification.updated", Notification: entry.snapshot()})
 			return
 		}
 		// Window elapsed; treat as new and let the storage layer dedupe at the
@@ -150,8 +177,16 @@ func (c *Coalescer) Receive(title, body string, ev *notify.Event) {
 	entry := &indexEntry{
 		fingerprint:    fp,
 		id:             n.ID,
+		fingerprintHex: n.Fingerprint,
+		kind:           n.Kind,
+		severity:       n.Severity,
+		taskName:       n.TaskName,
+		runID:          n.RunID,
+		title:          n.Title,
+		body:           n.Body,
 		count:          n.Count,
 		occurrences:    n.Occurrences,
+		createdAt:      n.CreatedAt,
 		lastOccurredAt: n.LastOccurredAt,
 	}
 	if existing, ok := c.index[fp]; ok {

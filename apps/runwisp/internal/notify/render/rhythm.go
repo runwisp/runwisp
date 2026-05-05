@@ -25,25 +25,25 @@ type RhythmInput struct {
 // apps/ui/src/lib/utils/notification-rhythm.ts.
 func Phrase(in RhythmInput) string {
 	if in.Count <= 1 {
-		return relative(in.LastOccurredAt, in.Now)
+		return Relative(in.LastOccurredAt, in.Now)
 	}
 
 	withinHour := allWithin(in.Occurrences, in.Now, time.Hour)
 	if withinHour {
-		return fmt.Sprintf("%d× in the last hour, latest %s", in.Count, relative(in.LastOccurredAt, in.Now))
+		return fmt.Sprintf("%d× in the last hour, latest %s", in.Count, Relative(in.LastOccurredAt, in.Now))
 	}
 
 	withinDay := allWithin(in.Occurrences, in.Now, 24*time.Hour)
 	if withinDay {
-		return fmt.Sprintf("%d× today, latest %s", in.Count, relative(in.LastOccurredAt, in.Now))
+		return fmt.Sprintf("%d× today, latest %s", in.Count, Relative(in.LastOccurredAt, in.Now))
 	}
 
 	span := in.Now.Sub(in.CreatedAt)
 	if span >= 7*24*time.Hour {
-		return fmt.Sprintf("%d× since %s, latest %s", in.Count, relative(in.CreatedAt, in.Now), relative(in.LastOccurredAt, in.Now))
+		return fmt.Sprintf("%d× since %s, latest %s", in.Count, Relative(in.CreatedAt, in.Now), Relative(in.LastOccurredAt, in.Now))
 	}
 
-	return fmt.Sprintf("%d× over %s, latest %s", in.Count, formatSpan(span), relative(in.LastOccurredAt, in.Now))
+	return fmt.Sprintf("%d× over %s, latest %s", in.Count, formatSpan(span), Relative(in.LastOccurredAt, in.Now))
 }
 
 // Sparkline returns an 8-cell unicode block sparkline (or shorter when there
@@ -117,9 +117,9 @@ func allWithin(occ []time.Time, now time.Time, window time.Duration) bool {
 	return true
 }
 
-// relative returns a short human string ("just now", "5m ago", "yesterday",
+// Relative returns a short human string ("just now", "5m ago", "yesterday",
 // "3d ago"). Identical wording to the TS counterpart.
-func relative(t, now time.Time) string {
+func Relative(t, now time.Time) string {
 	d := now.Sub(t)
 	switch {
 	case d < 30*time.Second:

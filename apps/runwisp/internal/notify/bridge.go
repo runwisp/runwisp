@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -26,7 +24,6 @@ func MapRunEvent(e events.Event) *Event {
 		return nil
 	}
 	return &Event{
-		ID:        ulid.Make().String(),
 		Kind:      kind,
 		Severity:  severity,
 		Timestamp: e.Timestamp,

@@ -86,15 +86,9 @@ func (d *dispatcher) startWorkers(ctx context.Context) {
 	})
 }
 
-// dispatch enqueues an event into every matching action's queue. Drops with a
-// log line when a queue is full (drop-oldest is enforced by the worker via
-// non-blocking send semantics — see "drop-newest in practice" below).
-//
-// The plan calls for drop-oldest, but a per-action ring on a goroutine-fed
-// channel is awkward; the dispatcher uses drop-newest here for simplicity
-// (newer failure is more useful than the queued one is the original intent;
-// in practice with cap=256 we drop only under sustained pressure where either
-// policy is acceptable). The hot path's drop semantics live in bridge.go.
+// dispatch enqueues an event into every matching action's queue.
+// Drop-oldest under pressure: when the queue is full we drain one slot
+// (the oldest waiting event) before retrying the send.
 func (d *dispatcher) dispatch(ev *Event) {
 	if ev == nil {
 		return
@@ -107,13 +101,7 @@ func (d *dispatcher) dispatch(ev *Event) {
 		if !ok {
 			continue
 		}
-		select {
-		case queue <- ev:
-		default:
-			d.droppedAction.Add(1)
-			d.logger.Warn("notify dispatcher queue full; dropping",
-				"action", a.ID(), "kind", string(ev.Kind))
-		}
+		d.enqueueDropOldest(a.ID(), queue, ev)
 	}
 }
 
@@ -125,12 +113,26 @@ func (d *dispatcher) dispatchDirect(actionID string, ev *Event) {
 	if !ok {
 		return
 	}
-	select {
-	case queue <- ev:
-	default:
-		d.droppedAction.Add(1)
-		d.logger.Warn("notify dispatcher direct queue full; dropping",
-			"action", actionID, "kind", string(ev.Kind))
+	d.enqueueDropOldest(actionID, queue, ev)
+}
+
+// enqueueDropOldest sends ev to queue, evicting the oldest queued event under
+// sustained pressure so the freshest signal always reaches the worker.
+func (d *dispatcher) enqueueDropOldest(actionID string, queue chan *Event, ev *Event) {
+	for {
+		select {
+		case queue <- ev:
+			return
+		default:
+		}
+		select {
+		case <-queue:
+			d.droppedAction.Add(1)
+			d.logger.Warn("notify dispatcher queue full; dropping oldest",
+				"action", actionID, "kind", string(ev.Kind))
+		default:
+			// Worker drained between the two selects; loop back and try the send.
+		}
 	}
 }
 

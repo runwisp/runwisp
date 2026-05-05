@@ -320,10 +320,16 @@
             "description": "Number of notifications strictly newer than last_read_at",
             "format": "int64",
             "type": "integer"
+          },
+          "last_read_at": {
+            "description": "Server-side last-read marker (zero when never set)",
+            "format": "date-time",
+            "type": "string"
           }
         },
         "required": [
-          "count"
+          "count",
+          "last_read_at"
         ],
         "type": "object"
       },

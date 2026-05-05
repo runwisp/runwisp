@@ -132,29 +132,47 @@ func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
 	assert.Empty(t, sink.Captured(), "ctx cancel must not be surfaced as a delivery failure")
 }
 
-func TestDispatcher_DropsWhenQueueFull(t *testing.T) {
-	block := make(chan struct{})
+func TestDispatcher_DropsOldestWhenQueueFull(t *testing.T) {
+	release := make(chan struct{})
+	startedFirst := make(chan struct{})
+	var firstOnce sync.Once
+	var seen []string
+	var seenMu sync.Mutex
 	a := &executeAction{
 		id: "slow",
-		execFn: func(ctx context.Context, _ *Event) error {
-			<-block
+		execFn: func(ctx context.Context, ev *Event) error {
+			firstOnce.Do(func() { close(startedFirst) })
+			<-release
+			seenMu.Lock()
+			seen = append(seen, ev.TaskName)
+			seenMu.Unlock()
 			return nil
 		},
 	}
 	registry := NewActionRegistry([]Action{a})
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slow"}}}, registry)
 	sink := &recordingFailureSink{}
+	// Capacity 1: with the first event held by the worker plus one queued,
+	// any further dispatch must evict the oldest queued event.
 	d := newDispatcher(router, registry, 1, RealClock(), sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	d.startWorkers(ctx)
 
+	d.dispatch(&Event{Kind: KindRunFailed, TaskName: "first"})
+	<-startedFirst
 	for i := 0; i < 10; i++ {
-		d.dispatch(&Event{Kind: KindRunFailed})
+		d.dispatch(&Event{Kind: KindRunFailed, TaskName: "burst"})
 	}
-	close(block)
+	d.dispatch(&Event{Kind: KindRunFailed, TaskName: "newest"})
+	close(release)
 	d.closeQueues()
 	d.waitWorkers()
+
 	assert.Greater(t, d.DroppedActionCount(), uint64(0), "must record drops under pressure")
+	seenMu.Lock()
+	defer seenMu.Unlock()
+	require.NotEmpty(t, seen, "worker must have processed at least one event")
+	assert.Equal(t, "newest", seen[len(seen)-1], "newest event must reach the worker last")
 }

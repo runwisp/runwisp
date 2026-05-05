@@ -90,7 +90,8 @@ type NotificationUnreadOutput struct {
 }
 
 type NotificationUnreadBody struct {
-	Count int64 `json:"count" doc:"Number of notifications strictly newer than last_read_at"`
+	Count      int64     `json:"count" doc:"Number of notifications strictly newer than last_read_at"`
+	LastReadAt time.Time `json:"last_read_at" doc:"Server-side last-read marker (zero when never set)"`
 }
 
 // ---------- SSE wrapper types ----------
@@ -107,9 +108,10 @@ type NotificationUpdatedEvent struct {
 
 // ---------- Registration ----------
 
-// registerNotificationsRoutes always registers the route shapes so the
-// generated openapi spec is complete. Handlers degrade to 503 when the
-// daemon was booted without an in-app sink wired (notify disabled).
+// registerNotificationsRoutes registers the REST + SSE shapes. The repository
+// is wired unconditionally so REST handlers always succeed; the SSE handler
+// degrades to a ping-only stream when the in-app Hub is absent (notify
+// disabled).
 func (srv *Server) registerNotificationsRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listNotifications",
@@ -142,9 +144,6 @@ func (srv *Server) registerNotificationsRoutes(api huma.API) {
 // ---------- Handlers ----------
 
 func (srv *Server) humaListNotifications(_ context.Context, input *NotificationsListInput) (*NotificationsListOutput, error) {
-	if srv.notifyRepo == nil {
-		return nil, huma.Error503ServiceUnavailable("notifications subsystem not enabled")
-	}
 	rows, err := srv.notifyRepo.ListNotifications(input.Limit, input.Before)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list notifications")
@@ -162,9 +161,6 @@ func (srv *Server) humaListNotifications(_ context.Context, input *Notifications
 }
 
 func (srv *Server) humaMarkNotificationsRead(_ context.Context, input *NotificationMarkReadInput) (*struct{}, error) {
-	if srv.notifyRepo == nil {
-		return nil, huma.Error503ServiceUnavailable("notifications subsystem not enabled")
-	}
 	if err := srv.notifyRepo.SetLastReadAt(input.Body.LastReadAt); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to set read marker")
 	}
@@ -172,11 +168,6 @@ func (srv *Server) humaMarkNotificationsRead(_ context.Context, input *Notificat
 }
 
 func (srv *Server) humaUnreadNotificationCount(_ context.Context, _ *struct{}) (*NotificationUnreadOutput, error) {
-	if srv.notifyRepo == nil {
-		out := &NotificationUnreadOutput{}
-		out.Body.Count = 0
-		return out, nil
-	}
 	last, err := srv.notifyRepo.GetLastReadAt()
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to read marker")
@@ -187,6 +178,7 @@ func (srv *Server) humaUnreadNotificationCount(_ context.Context, _ *struct{}) (
 	}
 	out := &NotificationUnreadOutput{}
 	out.Body.Count = count
+	out.Body.LastReadAt = last
 	return out, nil
 }
 

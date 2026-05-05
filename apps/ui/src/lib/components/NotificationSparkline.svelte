@@ -3,6 +3,7 @@
 
 <script lang="ts">
     import { sparkline } from "$lib/utils/notification-rhythm";
+    import { clockStore } from "$lib/stores";
 
     interface Props {
         occurrences: string[];
@@ -18,7 +19,7 @@
         class: className = "",
     }: Props = $props();
 
-    let rendered = $derived(sparkline(occurrences, new Date(), windowMs, cells));
+    let rendered = $derived(sparkline(occurrences, new Date(clockStore.now), windowMs, cells));
 </script>
 
 {#if rendered}

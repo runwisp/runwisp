@@ -2,8 +2,10 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
+    import { resolve } from "$app/paths";
     import { phrase } from "$lib/utils/notification-rhythm";
     import NotificationSparkline from "./NotificationSparkline.svelte";
+    import { clockStore } from "$lib/stores";
     import type { Notification } from "$lib/stores/notifications.svelte";
 
     interface Props {
@@ -19,6 +21,7 @@
             createdAt: notification.created_at,
             lastOccurredAt: notification.last_occurred_at,
             occurrences: notification.occurrences,
+            now: new Date(clockStore.now),
         }),
     );
 
@@ -32,6 +35,8 @@
                 return "bg-aurora-500";
         }
     });
+
+    let isClickable = $derived(Boolean(notification.run_id && notification.task_name));
 </script>
 
 <article
@@ -43,9 +48,18 @@
 
     <div class="min-w-0 flex-1 space-y-1">
         <div class="flex items-baseline justify-between gap-2">
-            <h3 class="truncate text-sm font-semibold text-mist-900">
-                {notification.title || notification.kind}
-            </h3>
+            {#if isClickable}
+                <a
+                    href={resolve("/tasks/[id]", { id: notification.task_name })}
+                    class="truncate text-sm font-semibold text-mist-900 no-underline hover:text-wisp-700"
+                >
+                    {notification.title || notification.kind}
+                </a>
+            {:else}
+                <h3 class="truncate text-sm font-semibold text-mist-900">
+                    {notification.title || notification.kind}
+                </h3>
+            {/if}
             <span class="shrink-0 text-2xs text-mist-400">{rhythm}</span>
         </div>
 

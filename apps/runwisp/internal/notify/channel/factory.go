@@ -66,6 +66,7 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 			ChatID:    spec.ChatID,
 			ParseMode: spec.ParseMode,
 			Renderer:  r,
+			Transport: spec.Transport,
 		})
 	default:
 		return nil, fmt.Errorf("unknown notifier type %q (id=%s)", spec.Type, spec.ID)

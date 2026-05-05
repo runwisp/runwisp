@@ -146,6 +146,9 @@ done
 # bot_token_env = "RUNWISP_TG_TOKEN"
 # chat_id       = "-1001234567890"
 # parse_mode    = "HTML"
+# # parse_mode = "MarkdownV2" requires a custom template_path — the embedded
+# # default uses HTML and would otherwise render literal tags.
+# # template_path = "templates/telegram.tmpl"
 
 # [[notification_route]]
 # match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
@@ -159,6 +162,8 @@ done
 # disable_inapp    = false
 # queue_size       = 1024
 # default_timeout  = "10s"
+# # Set RUNWISP_NOTIFY_MAX_ELAPSED=10s in env to shrink the global retry
+# # budget — useful for tests or when delivery failures should surface fast.
 # history_keep     = 500
 # history_keep_for = "30d"
 # coalesce_window  = "1h"

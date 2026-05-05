@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/notify/render"
 )
 
 const (
@@ -57,8 +58,12 @@ func (p *notificationsPanel) Upsert(n apiclient.Notification) bool {
 	p.items[n.ID] = n
 	changed := false
 	if !existed {
-		p.ordered = append(p.ordered, n.ID)
-		sort.Sort(sort.Reverse(sort.StringSlice(p.ordered)))
+		idx := sort.Search(len(p.ordered), func(i int) bool {
+			return p.ordered[i] < n.ID
+		})
+		p.ordered = append(p.ordered, "")
+		copy(p.ordered[idx+1:], p.ordered[idx:])
+		p.ordered[idx] = n.ID
 		if p.lastReadAt.IsZero() || n.LastOccurredAt.After(p.lastReadAt) {
 			p.unread++
 		}
@@ -136,6 +141,15 @@ func (p *notificationsPanel) Selected() *apiclient.Notification {
 // SetUnread records the server-side unread count fetched at startup.
 func (p *notificationsPanel) SetUnread(n int) { p.unread = n }
 
+// RefreshLabels rebuilds the cached expanded viewport content so relative
+// time labels ("5m ago") tick forward without waiting for an SSE event.
+// Cheap: a string-builder pass over the in-memory ordered list.
+func (p *notificationsPanel) RefreshLabels() {
+	if p.expanded {
+		p.rebuildContent()
+	}
+}
+
 // MarkAllReadLocal applies the visual side of "mark all read"; call after
 // the API call has succeeded.
 func (p *notificationsPanel) MarkAllReadLocal(at time.Time) {
@@ -207,7 +221,7 @@ func (p *notificationsPanel) renderExpanded() string {
 		title = fmt.Sprintf("Notifications (%d unread)", p.unread)
 	}
 	headerL := notificationsPanelPrefixStyle.Render("  " + title)
-	headerR := notificationsPanelHintStyle.Render("n collapse · j/k navigate · r mark read · enter open  ")
+	headerR := notificationsPanelHintStyle.Render("n collapse · j/k navigate · R mark read · enter open  ")
 	header := joinHeaderLine(headerL, headerR, p.width)
 
 	body := p.viewport.View()
@@ -310,26 +324,13 @@ func summarizeNotification(n apiclient.Notification) string {
 	return title
 }
 
-// relativeTime returns the same buckets the rhythm phrase uses, but stripped
-// to a single token suitable for inline rendering. Mirrors the Go and TS
-// rhythm helpers.
+// relativeTime delegates to render.Relative so the panel's "just now / 5m
+// ago / 3d ago" labels match the rhythm phrase used in the Web UI.
 func relativeTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	d := time.Since(t)
-	switch {
-	case d < 30*time.Second:
-		return "just now"
-	case d < time.Minute:
-		return fmt.Sprintf("%ds ago", int(d/time.Second))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d/time.Minute))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d/time.Hour))
-	default:
-		return fmt.Sprintf("%dd ago", int(d/(24*time.Hour)))
-	}
+	return render.Relative(t, time.Now())
 }
 
 func truncateLine(s string, max int) string {

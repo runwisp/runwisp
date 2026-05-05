@@ -29,16 +29,19 @@ func MatchKind(kinds ...Kind) Predicate {
 	}
 }
 
+// severityRank orders severities for MatchSeverity. Hoisted to package scope
+// so the closure doesn't allocate the map on every call.
+var severityRank = map[Severity]int{SevInfo: 0, SevWarn: 1, SevError: 2}
+
 // MatchSeverity succeeds when the event severity is at least the threshold.
 // Order: info < warn < error.
 func MatchSeverity(min Severity) Predicate {
-	rank := map[Severity]int{SevInfo: 0, SevWarn: 1, SevError: 2}
-	threshold, ok := rank[min]
+	threshold, ok := severityRank[min]
 	if !ok {
 		return MatchAll()
 	}
 	return func(ev *Event) bool {
-		got, ok := rank[ev.Severity]
+		got, ok := severityRank[ev.Severity]
 		if !ok {
 			return false
 		}
