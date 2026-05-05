@@ -167,7 +167,6 @@ done
 # history_keep     = 500
 # history_keep_for = "30d"
 # coalesce_window  = "1h"
-# coalesce_index   = 4096
 # occurrence_ring  = 10
 
 # Per-task sugar: implies a synthetic route with the listed notifiers plus

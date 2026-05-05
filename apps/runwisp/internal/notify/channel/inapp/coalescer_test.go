@@ -35,7 +35,7 @@ func TestCoalescer_FoldsRepeatsWithinWindow(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8, 50)
 	clk := testutil.NewFakeClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, MaxIndex: 16, OccurrenceN: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
 	c.Receive("title", "first body", makeEvent("backup-db"))
 	clk.Advance(5 * time.Minute)
@@ -54,7 +54,7 @@ func TestCoalescer_InsertsNewRowAfterWindow(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8, 50)
 	clk := testutil.NewFakeClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, MaxIndex: 16, OccurrenceN: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
 	c.Receive("t", "b", makeEvent("backup-db"))
 	clk.Advance(2 * time.Hour)
@@ -69,7 +69,7 @@ func TestCoalescer_SeparatesByFingerprint(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8, 50)
 	clk := testutil.NewFakeClock(time.Now().UTC())
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, MaxIndex: 16, OccurrenceN: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
 	c.Receive("t", "b", makeEvent("alpha"))
 	c.Receive("t", "b", makeEvent("beta"))
@@ -85,7 +85,7 @@ func TestCoalescer_OccurrenceRingTrimmed(t *testing.T) {
 	hub := NewHub(8, 50)
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	const ringSize = 4
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, MaxIndex: 16, OccurrenceN: ringSize}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: ringSize}, nil)
 
 	for i := 0; i < 20; i++ {
 		c.Receive("t", "b", makeEvent("backup-db"))
@@ -105,7 +105,7 @@ func TestCoalescer_PublishesCreatedThenUpdated(t *testing.T) {
 	defer unsub()
 
 	clk := testutil.NewFakeClock(time.Now().UTC())
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, MaxIndex: 16, OccurrenceN: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
 	c.Receive("t", "b", makeEvent("backup-db"))
 	clk.Advance(time.Minute)
@@ -128,11 +128,11 @@ loop:
 	assert.Equal(t, got[0].Notification.ID, got[1].Notification.ID, "same row")
 }
 
-func TestCoalescer_LRUEvictionDoesNotCorruptDB(t *testing.T) {
+func TestCoalescer_DistinctFingerprintsAllPersist(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8, 50)
 	clk := testutil.NewFakeClock(time.Now().UTC())
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, MaxIndex: 2, OccurrenceN: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
 		c.Receive("t", "b", makeEvent(name))
@@ -140,6 +140,5 @@ func TestCoalescer_LRUEvictionDoesNotCorruptDB(t *testing.T) {
 	}
 	rows, err := db.ListNotifications(50, "")
 	require.NoError(t, err)
-	assert.Len(t, rows, 5, "DB rows are independent of the in-memory LRU index")
-	assert.LessOrEqual(t, c.IndexSize(), 2)
+	assert.Len(t, rows, 5, "each distinct fingerprint persists as its own row")
 }

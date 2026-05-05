@@ -3,8 +3,12 @@
 
 import { z } from "zod";
 import { browser } from "$app/environment";
-import { browserAuthEventSourceFactory, browserTokenStorage } from "$lib/adapters/browser";
-import { getApiUrl } from "$lib/utils/env";
+import {
+    browserAuthEventSourceFactory,
+    browserTokenStorage,
+    type EventSourceFactory,
+} from "$lib/adapters/browser";
+import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
 import { connectSSE, type SSEConnection } from "$lib/utils/sse";
 import { createLogger } from "$lib/utils/logger";
 import { connectionStore } from "./connection.svelte";
@@ -44,27 +48,36 @@ const unreadResponseSchema = z.object({
 
 const streamEnvelopeSchema = z.object({ notification: notificationSchema });
 
-interface ApiClient {
-    fetch: typeof fetch;
+export interface NotificationStoreDeps {
+    fetch?: typeof fetch;
+    createEventSource?: EventSourceFactory;
+    getApiUrl?: () => string;
 }
-
-const defaultApi: ApiClient = { fetch: (...args) => globalThis.fetch(...args) };
 
 const PAGE_SIZE = 50;
 
 class NotificationStore {
     #items = $state<Notification[]>([]);
-    #byId = new Map<string, Notification>();
     #unread = $state(0);
     #lastReadAt = $state<string | null>(null);
     #lastReadAtMs = 0;
     #connection: SSEConnection | null = null;
     #connected = $state(false);
     #loaded = $state(false);
+    #initInFlight: Promise<void> | null = null;
     #cursor: string | null = null;
     #hasMore = $state(false);
     #logger = createLogger("NotificationStore");
-    #api: ApiClient = defaultApi;
+
+    #fetch: typeof fetch;
+    #createEventSource: EventSourceFactory;
+    #getApiUrl: () => string;
+
+    constructor(deps: Required<NotificationStoreDeps>) {
+        this.#fetch = deps.fetch;
+        this.#createEventSource = deps.createEventSource;
+        this.#getApiUrl = deps.getApiUrl;
+    }
 
     get items(): Notification[] {
         return this.#items;
@@ -85,17 +98,23 @@ class NotificationStore {
         return this.#hasMore;
     }
 
-    /** Fetch the first page and start streaming. Idempotent. */
-    async init(): Promise<void> {
+    /** Fetch the first page and start streaming. Idempotent and re-entrancy-safe:
+     * concurrent callers all observe the same in-flight Promise. */
+    init(): Promise<void> {
         if (this.#loaded) {
             this.#connect();
-            return;
+            return Promise.resolve();
         }
+        if (this.#initInFlight) return this.#initInFlight;
+        this.#initInFlight = this.#runInit().finally(() => {
+            this.#initInFlight = null;
+        });
+        return this.#initInFlight;
+    }
+
+    async #runInit(): Promise<void> {
         try {
             const page = await this.#fetchPage();
-            for (const n of page.items) {
-                this.#byId.set(n.id, n);
-            }
             this.#items = [...page.items];
             this.#cursor = page.next_cursor ?? null;
             this.#hasMore = Boolean(page.next_cursor);
@@ -115,8 +134,7 @@ class NotificationStore {
         try {
             const page = await this.#fetchPage(this.#cursor);
             for (const n of page.items) {
-                if (this.#byId.has(n.id)) continue;
-                this.#byId.set(n.id, n);
+                if (this.#items.some((x) => x.id === n.id)) continue;
                 this.#items.push(n);
             }
             // The server returns DESC by id; appending preserves the contract.
@@ -131,7 +149,7 @@ class NotificationStore {
     async markAllRead(): Promise<void> {
         const now = new Date().toISOString();
         try {
-            const res = await this.#api.fetch(`${getApiUrl()}/api/notifications/read`, {
+            const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/read`, {
                 method: "POST",
                 credentials: "include",
                 headers: { "content-type": "application/json", ...authHeaders() },
@@ -149,21 +167,6 @@ class NotificationStore {
         this.#connection?.disconnect();
         this.#connection = null;
         this.#connected = false;
-    }
-
-    /** Test seam: replace the fetch implementation. */
-    setApi(api: ApiClient): void {
-        this.#api = api;
-    }
-
-    /** Test seam: drive a SSE event without standing up an EventSource. */
-    _applyForTest(eventType: string, n: Notification): void {
-        this.#applyUpdate(eventType, n);
-    }
-
-    /** Test seam: seed the last-read marker as if init() observed it. */
-    _setLastReadAtForTest(value: string | null | undefined): void {
-        this.#setLastReadAt(value);
     }
 
     #connect(): void {
@@ -195,15 +198,14 @@ class NotificationStore {
                 }
             },
             deps: {
-                createEventSource: browserAuthEventSourceFactory,
-                getApiUrl,
+                createEventSource: this.#createEventSource,
+                getApiUrl: this.#getApiUrl,
             },
         });
     }
 
     #applyUpdate(eventType: string, n: Notification): void {
-        const existing = this.#byId.get(n.id);
-        this.#byId.set(n.id, n);
+        const existing = this.#items.find((x) => x.id === n.id);
         const isNewer = this.#isNewerThanMarker(n);
         if (eventType === "notification.created" && !existing) {
             this.#items = [n, ...this.#items];
@@ -261,8 +263,8 @@ class NotificationStore {
     ): Promise<{ items: Notification[]; next_cursor?: string | undefined }> {
         let qs = `limit=${PAGE_SIZE.toString()}`;
         if (before) qs += `&before=${encodeURIComponent(before)}`;
-        const url = `${getApiUrl()}/api/notifications?${qs}`;
-        const res = await this.#api.fetch(url, {
+        const url = `${this.#getApiUrl()}/api/notifications?${qs}`;
+        const res = await this.#fetch(url, {
             credentials: "include",
             headers: authHeaders(),
         });
@@ -272,7 +274,7 @@ class NotificationStore {
     }
 
     async #fetchUnread(): Promise<{ count: number; lastReadAt: string | undefined }> {
-        const res = await this.#api.fetch(`${getApiUrl()}/api/notifications/unread-count`, {
+        const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/unread-count`, {
             credentials: "include",
             headers: authHeaders(),
         });
@@ -283,4 +285,14 @@ class NotificationStore {
     }
 }
 
-export const notificationStore = new NotificationStore();
+/** Construct a notification store. Tests pass `deps` to inject fakes; the
+ * default singleton uses the browser-auth EventSource factory and global fetch. */
+export function createNotificationStore(deps: NotificationStoreDeps = {}): NotificationStore {
+    return new NotificationStore({
+        fetch: deps.fetch ?? ((...args) => globalThis.fetch(...args)),
+        createEventSource: deps.createEventSource ?? browserAuthEventSourceFactory,
+        getApiUrl: deps.getApiUrl ?? defaultGetApiUrl,
+    });
+}
+
+export const notificationStore = createNotificationStore();

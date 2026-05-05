@@ -12,23 +12,23 @@ import (
 )
 
 func TestRouter_DeduplicatesActionsAcrossRules(t *testing.T) {
-	a := testutil.NewFakeChannel("slack:ops", "slack")
-	registry := notify.NewActionRegistry([]notify.Action{a})
+	a := testutil.NewFakeChannel("slack:ops")
+	channels := map[string]notify.Channel{a.ID(): a}
 	router := notify.NewRouter([]notify.Rule{
 		{Match: notify.MatchKind(notify.KindRunFailed), ActionIDs: []string{"slack:ops"}},
 		{Match: notify.MatchSeverity(notify.SevError), ActionIDs: []string{"slack:ops"}},
-	}, registry)
+	}, channels)
 
 	out := router.Route(&notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError})
 	assert.Len(t, out, 1, "duplicate action across rules must be deduped")
 }
 
 func TestRouter_SkipsUnknownActions(t *testing.T) {
-	a := testutil.NewFakeChannel("slack:ops", "slack")
-	registry := notify.NewActionRegistry([]notify.Action{a})
+	a := testutil.NewFakeChannel("slack:ops")
+	channels := map[string]notify.Channel{a.ID(): a}
 	router := notify.NewRouter([]notify.Rule{
 		{Match: notify.MatchAll(), ActionIDs: []string{"slack:ops", "missing"}},
-	}, registry)
+	}, channels)
 
 	out := router.Route(&notify.Event{Kind: notify.KindRunSucceeded, Severity: notify.SevInfo})
 	assert.Len(t, out, 1)

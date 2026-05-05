@@ -23,7 +23,6 @@ type Service struct {
 	ingressCh   chan *Event
 	ingressSize int
 
-	registry *ActionRegistry
 	router   *Router
 	disp     *dispatcher
 	channels []Channel
@@ -96,19 +95,17 @@ func New(cfg Config) *Service {
 		retentionEvery = 5 * time.Minute
 	}
 
-	actions := make([]Action, 0, len(cfg.Channels))
+	channelByID := make(map[string]Channel, len(cfg.Channels))
 	for _, c := range cfg.Channels {
-		actions = append(actions, c)
+		channelByID[c.ID()] = c
 	}
-	registry := NewActionRegistry(actions)
-	router := NewRouter(cfg.Rules, registry)
-	disp := newDispatcher(router, registry, actionQueueSize, clock, cfg.FailureSink, logger)
+	router := NewRouter(cfg.Rules, channelByID)
+	disp := newDispatcher(router, channelByID, actionQueueSize, clock, cfg.FailureSink, logger)
 
 	return &Service{
 		bus:            cfg.Bus,
 		ingressCh:      make(chan *Event, ingressSize),
 		ingressSize:    ingressSize,
-		registry:       registry,
 		router:         router,
 		disp:           disp,
 		channels:       cfg.Channels,
@@ -134,7 +131,7 @@ func (s *Service) Start(ctx context.Context) error {
 		return nil
 	}
 
-	workCtx, cancel := context.WithCancel(context.Background())
+	workCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
 	s.disp.startWorkers(workCtx)
 

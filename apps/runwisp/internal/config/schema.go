@@ -31,7 +31,6 @@ type NotifyConfig struct {
 	HistoryKeep    int
 	HistoryKeepFor time.Duration
 	CoalesceWindow time.Duration
-	CoalesceIndex  int
 	OccurrenceRing int
 }
 
@@ -200,7 +199,6 @@ type notifyWire struct {
 	HistoryKeep    int    `toml:"history_keep,omitempty"`
 	HistoryKeepFor string `toml:"history_keep_for,omitempty"`
 	CoalesceWindow string `toml:"coalesce_window,omitempty"`
-	CoalesceIndex  int    `toml:"coalesce_index,omitempty"`
 	OccurrenceRing int    `toml:"occurrence_ring,omitempty"`
 }
 

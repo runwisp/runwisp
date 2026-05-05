@@ -73,7 +73,6 @@ func initNotify(
 
 		coalescerCfg := inapp.CoalescerConfig{
 			Window:      notifyCfg.CoalesceWindow,
-			MaxIndex:    notifyCfg.CoalesceIndex,
 			OccurrenceN: notifyCfg.OccurrenceRing,
 		}
 		coalescer := inapp.NewCoalescer(db, hub, notify.RealClock(), coalescerCfg, logger)

@@ -3,8 +3,8 @@
 
 package notify
 
-// Rule binds a predicate to a list of action IDs to invoke when the predicate
-// matches. ActionIDs are resolved against an ActionRegistry at routing time;
+// Rule binds a predicate to a list of channel IDs to invoke when the predicate
+// matches. ChannelIDs are resolved against the channel map at routing time;
 // unknown IDs are skipped (validation happens at config load).
 type Rule struct {
 	Match     Predicate
@@ -12,28 +12,27 @@ type Rule struct {
 }
 
 // Router applies a flat list of rules in declaration order. Each event may
-// match multiple rules; resulting actions are deduplicated.
+// match multiple rules; resulting channels are deduplicated.
 type Router struct {
 	rules    []Rule
-	registry *ActionRegistry
+	channels map[string]Channel
 }
 
-// NewRouter wires a rule list to a registry.
-func NewRouter(rules []Rule, registry *ActionRegistry) *Router {
-	return &Router{rules: rules, registry: registry}
+// NewRouter wires a rule list to the channel map.
+func NewRouter(rules []Rule, channels map[string]Channel) *Router {
+	return &Router{rules: rules, channels: channels}
 }
 
-// Route returns the (deduplicated) Actions whose rule predicates match ev.
-// The synthetic KindNotifyDeliveryFailed event is always routed only to the
-// in-app channel via the dispatcher's direct path; the Router treats it as
-// any other event but the dispatcher bypasses it before calling Route. Cycle
-// guard lives in the dispatcher, not here.
-func (r *Router) Route(ev *Event) []Action {
+// Route returns the (deduplicated) Channels whose rule predicates match ev.
+// The synthetic KindNotifyDeliveryFailed event is delivered directly to the
+// in-app channel by the dispatcher and never reaches Route — that's the cycle
+// guard.
+func (r *Router) Route(ev *Event) []Channel {
 	if r == nil || ev == nil {
 		return nil
 	}
 	seen := make(map[string]struct{}, len(r.rules))
-	out := make([]Action, 0, len(r.rules))
+	out := make([]Channel, 0, len(r.rules))
 	for _, rule := range r.rules {
 		if rule.Match == nil || !rule.Match(ev) {
 			continue
@@ -42,12 +41,12 @@ func (r *Router) Route(ev *Event) []Action {
 			if _, dup := seen[id]; dup {
 				continue
 			}
-			a := r.registry.Get(id)
-			if a == nil {
+			c, ok := r.channels[id]
+			if !ok {
 				continue
 			}
 			seen[id] = struct{}{}
-			out = append(out, a)
+			out = append(out, c)
 		}
 	}
 	return out

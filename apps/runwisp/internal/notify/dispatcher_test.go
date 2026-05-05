@@ -34,34 +34,35 @@ func (s *recordingFailureSink) Captured() []*Event {
 	return out
 }
 
-type executeAction struct {
+type executeChannel struct {
 	id      string
 	matchFn func(*Event) bool
 	execFn  func(context.Context, *Event) error
 	hits    atomic.Int64
 }
 
-func (a *executeAction) ID() string { return a.id }
-func (a *executeAction) Match(ev *Event) bool {
+func (a *executeChannel) ID() string { return a.id }
+func (a *executeChannel) Match(ev *Event) bool {
 	if a.matchFn != nil {
 		return a.matchFn(ev)
 	}
 	return true
 }
-func (a *executeAction) Execute(ctx context.Context, ev *Event) error {
+func (a *executeChannel) Execute(ctx context.Context, ev *Event) error {
 	a.hits.Add(1)
 	if a.execFn != nil {
 		return a.execFn(ctx, ev)
 	}
 	return nil
 }
+func (a *executeChannel) Close(context.Context) error { return nil }
 
 func TestDispatcher_DeliversMatchingActions(t *testing.T) {
-	a := &executeAction{id: "a"}
-	registry := NewActionRegistry([]Action{a})
-	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"a"}}}, registry)
+	a := &executeChannel{id: "a"}
+	channels := map[string]Channel{a.id: a}
+	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"a"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, registry, 8, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 8, RealClock(), sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -77,14 +78,14 @@ func TestDispatcher_DeliversMatchingActions(t *testing.T) {
 
 func TestDispatcher_PermanentFailureSurfacedToSink(t *testing.T) {
 	cause := errors.New("503 Service Unavailable (after retries)")
-	a := &executeAction{
+	a := &executeChannel{
 		id:     "slack:ops",
 		execFn: func(context.Context, *Event) error { return cause },
 	}
-	registry := NewActionRegistry([]Action{a})
-	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, registry)
+	channels := map[string]Channel{a.id: a}
+	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, registry, 8, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 8, RealClock(), sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -107,7 +108,7 @@ func TestDispatcher_PermanentFailureSurfacedToSink(t *testing.T) {
 
 func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
 	released := make(chan struct{})
-	a := &executeAction{
+	a := &executeChannel{
 		id: "slow",
 		execFn: func(ctx context.Context, _ *Event) error {
 			<-ctx.Done()
@@ -115,10 +116,10 @@ func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
 			return ctx.Err()
 		},
 	}
-	registry := NewActionRegistry([]Action{a})
-	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slow"}}}, registry)
+	channels := map[string]Channel{a.id: a}
+	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slow"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, registry, 4, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 4, RealClock(), sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	d.startWorkers(ctx)
@@ -138,7 +139,7 @@ func TestDispatcher_DropsOldestWhenQueueFull(t *testing.T) {
 	var firstOnce sync.Once
 	var seen []string
 	var seenMu sync.Mutex
-	a := &executeAction{
+	a := &executeChannel{
 		id: "slow",
 		execFn: func(ctx context.Context, ev *Event) error {
 			firstOnce.Do(func() { close(startedFirst) })
@@ -149,12 +150,12 @@ func TestDispatcher_DropsOldestWhenQueueFull(t *testing.T) {
 			return nil
 		},
 	}
-	registry := NewActionRegistry([]Action{a})
-	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slow"}}}, registry)
+	channels := map[string]Channel{a.id: a}
+	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slow"}}}, channels)
 	sink := &recordingFailureSink{}
 	// Capacity 1: with the first event held by the worker plus one queued,
 	// any further dispatch must evict the oldest queued event.
-	d := newDispatcher(router, registry, 1, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 1, RealClock(), sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

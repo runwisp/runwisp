@@ -3,9 +3,9 @@
 
 <script lang="ts">
     import { resolve } from "$app/paths";
+    import { browser } from "$app/environment";
     import { phrase } from "$lib/utils/notification-rhythm";
     import NotificationSparkline from "./NotificationSparkline.svelte";
-    import { clockStore } from "$lib/stores";
     import type { Notification } from "$lib/stores/notifications.svelte";
 
     interface Props {
@@ -15,13 +15,25 @@
 
     let { notification, compact = false }: Props = $props();
 
+    // Tick once every 30s so relative-time labels and the sparkline window
+    // advance without waiting for an SSE event.
+    let nowMs = $state(Date.now());
+    $effect(() => {
+        if (!browser) return;
+        const t = setInterval(() => {
+            nowMs = Date.now();
+        }, 30_000);
+        return () => clearInterval(t);
+    });
+    let now = $derived(new Date(nowMs));
+
     let rhythm = $derived(
         phrase({
             count: notification.count,
             createdAt: notification.created_at,
             lastOccurredAt: notification.last_occurred_at,
             occurrences: notification.occurrences,
-            now: new Date(clockStore.now),
+            now,
         }),
     );
 
@@ -73,7 +85,11 @@
             {:else}
                 <span></span>
             {/if}
-            <NotificationSparkline occurrences={notification.occurrences} class="text-mist-500" />
+            <NotificationSparkline
+                occurrences={notification.occurrences}
+                {now}
+                class="text-mist-500"
+            />
         </div>
     </div>
 </article>

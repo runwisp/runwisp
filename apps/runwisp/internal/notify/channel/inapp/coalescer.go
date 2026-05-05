@@ -4,11 +4,9 @@
 package inapp
 
 import (
-	"container/list"
 	"hash/fnv"
 	"log/slog"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -20,80 +18,30 @@ import (
 // CoalescerConfig parameterizes the dedupe behavior.
 type CoalescerConfig struct {
 	Window      time.Duration // matches existing rows whose last_occurred_at falls within this span
-	MaxIndex    int           // max in-memory fingerprints tracked (LRU)
 	OccurrenceN int           // ring size of recorded occurrence timestamps
 }
 
 // Default values for CoalescerConfig.
 const (
 	DefaultWindow     = time.Hour
-	DefaultMaxIndex   = 4096
 	DefaultOccurrence = 10
 )
 
-// Coalescer folds repeats into a single persistent row, capping memory via
-// LRU eviction. It owns its in-memory index; SQLite is authoritative — the
-// index is a fast path, and any row not in the index is treated as a fresh
-// occurrence (the storage UpsertByFingerprint then handles the within-window
-// dedupe at the DB level).
+// Coalescer folds repeats into a single persistent row. SQLite is the
+// authoritative store; UpsertByFingerprint owns dedupe in a single transaction
+// (SELECT-or-INSERT-or-UPDATE), so the Coalescer is a thin glue layer.
 type Coalescer struct {
 	repo  storage.NotificationRepository
 	hub   *Hub
 	clock notify.Clock
 	cfg   CoalescerConfig
 	log   *slog.Logger
-
-	mu    sync.Mutex
-	index map[uint64]*list.Element
-	order *list.List
 }
 
-type indexEntry struct {
-	fingerprint    uint64
-	id             string
-	fingerprintHex string
-	kind           string
-	severity       string
-	taskName       string
-	runID          string
-	title          string
-	body           string
-	count          int
-	occurrences    []time.Time
-	createdAt      time.Time
-	lastOccurredAt time.Time
-}
-
-// snapshot builds a storage.Notification for hub publishing without touching
-// SQLite. The slice is copied so subsequent occurrence pushes don't mutate the
-// hub message in flight.
-func (e *indexEntry) snapshot() storage.Notification {
-	occ := make([]time.Time, len(e.occurrences))
-	copy(occ, e.occurrences)
-	return storage.Notification{
-		ID:             e.id,
-		Fingerprint:    e.fingerprintHex,
-		Kind:           e.kind,
-		Severity:       e.severity,
-		TaskName:       e.taskName,
-		RunID:          e.runID,
-		Title:          e.title,
-		Body:           e.body,
-		Count:          e.count,
-		Occurrences:    occ,
-		CreatedAt:      e.createdAt,
-		LastOccurredAt: e.lastOccurredAt,
-	}
-}
-
-// NewCoalescer constructs a coalescer. Pass DefaultCoalescerConfig() for
-// production defaults.
+// NewCoalescer constructs a coalescer.
 func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock notify.Clock, cfg CoalescerConfig, log *slog.Logger) *Coalescer {
 	if cfg.Window == 0 {
 		cfg.Window = DefaultWindow
-	}
-	if cfg.MaxIndex == 0 {
-		cfg.MaxIndex = DefaultMaxIndex
 	}
 	if cfg.OccurrenceN == 0 {
 		cfg.OccurrenceN = DefaultOccurrence
@@ -110,8 +58,6 @@ func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock notify.Cl
 		clock: clock,
 		cfg:   cfg,
 		log:   log,
-		index: make(map[uint64]*list.Element),
-		order: list.New(),
 	}
 }
 
@@ -121,35 +67,8 @@ func (c *Coalescer) Receive(title, body string, ev *notify.Event) {
 	if ev == nil {
 		return
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	now := c.clock.Now()
-	fpRaw := fingerprintBytes(ev)
-	fp := hashFingerprint(fpRaw)
-
-	if elem, ok := c.index[fp]; ok {
-		entry := elem.Value.(*indexEntry)
-		if now.Sub(entry.lastOccurredAt) < c.cfg.Window {
-			entry.count++
-			entry.lastOccurredAt = now
-			entry.occurrences = pushFront(entry.occurrences, now, c.cfg.OccurrenceN)
-			entry.title = title
-			entry.body = body
-			c.order.MoveToFront(elem)
-
-			if err := c.repo.UpdateOccurrence(entry.id, entry.count, now, entry.occurrences, title, body); err != nil {
-				c.log.Error("notify coalescer: update failed", "id", entry.id, "error", err)
-				return
-			}
-			c.hub.Publish(Update{Type: "notification.updated", Notification: entry.snapshot()})
-			return
-		}
-		// Window elapsed; treat as new and let the storage layer dedupe at the
-		// DB level (it will insert because the existing row is outside the
-		// window).
-	}
-
+	fp := hashFingerprint(fingerprintBytes(ev))
 	n := &storage.Notification{
 		ID:             ulid.Make().String(),
 		Fingerprint:    strconv.FormatUint(fp, 16),
@@ -173,64 +92,7 @@ func (c *Coalescer) Receive(title, body string, ev *notify.Event) {
 	if !created {
 		updateType = "notification.updated"
 	}
-
-	entry := &indexEntry{
-		fingerprint:    fp,
-		id:             n.ID,
-		fingerprintHex: n.Fingerprint,
-		kind:           n.Kind,
-		severity:       n.Severity,
-		taskName:       n.TaskName,
-		runID:          n.RunID,
-		title:          n.Title,
-		body:           n.Body,
-		count:          n.Count,
-		occurrences:    n.Occurrences,
-		createdAt:      n.CreatedAt,
-		lastOccurredAt: n.LastOccurredAt,
-	}
-	if existing, ok := c.index[fp]; ok {
-		c.order.Remove(existing)
-	}
-	elem := c.order.PushFront(entry)
-	c.index[fp] = elem
-	c.evictIfFull()
-
 	c.hub.Publish(Update{Type: updateType, Notification: *n})
-}
-
-// IndexSize returns the in-memory index size; diagnostic-only.
-func (c *Coalescer) IndexSize() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.order.Len()
-}
-
-func (c *Coalescer) evictIfFull() {
-	for c.order.Len() > c.cfg.MaxIndex {
-		oldest := c.order.Back()
-		if oldest == nil {
-			return
-		}
-		entry := oldest.Value.(*indexEntry)
-		c.order.Remove(oldest)
-		delete(c.index, entry.fingerprint)
-	}
-}
-
-func pushFront(slice []time.Time, t time.Time, max int) []time.Time {
-	if max <= 0 {
-		return append([]time.Time{t}, slice...)
-	}
-	out := make([]time.Time, 0, max)
-	out = append(out, t)
-	if len(slice) > 0 {
-		if len(slice) > max-1 {
-			slice = slice[:max-1]
-		}
-		out = append(out, slice...)
-	}
-	return out
 }
 
 func fingerprintBytes(ev *notify.Event) []byte {

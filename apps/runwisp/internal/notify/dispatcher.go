@@ -36,11 +36,11 @@ type FailureSink interface {
 }
 
 // dispatcher pumps events from the ingress channel through the router to
-// per-action queues, where workers execute side effects with retry and
+// per-channel queues, where workers execute side effects with retry and
 // surface permanent failures back via the FailureSink.
 type dispatcher struct {
 	router     *Router
-	registry   *ActionRegistry
+	channels   map[string]Channel
 	queueSize  int
 	clock      Clock
 	failures   FailureSink
@@ -53,20 +53,20 @@ type dispatcher struct {
 	droppedAction atomic.Uint64
 }
 
-func newDispatcher(router *Router, registry *ActionRegistry, queueSize int, clock Clock, failures FailureSink, logger *slog.Logger) *dispatcher {
+func newDispatcher(router *Router, channels map[string]Channel, queueSize int, clock Clock, failures FailureSink, logger *slog.Logger) *dispatcher {
 	if queueSize <= 0 {
 		queueSize = 256
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	queues := make(map[string]chan *Event, len(registry.IDs()))
-	registry.Each(func(id string, _ Action) {
+	queues := make(map[string]chan *Event, len(channels))
+	for id := range channels {
 		queues[id] = make(chan *Event, queueSize)
-	})
+	}
 	return &dispatcher{
 		router:    router,
-		registry:  registry,
+		channels:  channels,
 		queueSize: queueSize,
 		clock:     clock,
 		failures:  failures,
@@ -75,45 +75,34 @@ func newDispatcher(router *Router, registry *ActionRegistry, queueSize int, cloc
 	}
 }
 
-// startWorkers spawns one worker goroutine per action. Workers exit when
+// startWorkers spawns one worker goroutine per channel. Workers exit when
 // their queue is closed AND drained, or when ctx is cancelled.
 func (d *dispatcher) startWorkers(ctx context.Context) {
 	d.executeCtx = ctx
-	d.registry.Each(func(id string, a Action) {
+	for id, c := range d.channels {
 		queue := d.queues[id]
 		d.workers.Add(1)
-		go d.worker(ctx, id, a, queue)
-	})
+		go d.worker(ctx, id, c, queue)
+	}
 }
 
-// dispatch enqueues an event into every matching action's queue.
+// dispatch enqueues an event into every matching channel's queue.
 // Drop-oldest under pressure: when the queue is full we drain one slot
 // (the oldest waiting event) before retrying the send.
 func (d *dispatcher) dispatch(ev *Event) {
 	if ev == nil {
 		return
 	}
-	for _, a := range d.router.Route(ev) {
-		if !a.Match(ev) {
+	for _, c := range d.router.Route(ev) {
+		if !c.Match(ev) {
 			continue
 		}
-		queue, ok := d.queues[a.ID()]
+		queue, ok := d.queues[c.ID()]
 		if !ok {
 			continue
 		}
-		d.enqueueDropOldest(a.ID(), queue, ev)
+		d.enqueueDropOldest(c.ID(), queue, ev)
 	}
-}
-
-// dispatchDirect bypasses the router and pushes the event into the queue for
-// a single action. Used by reportDeliveryFailure to deliver synthetic events
-// straight to the in-app channel without re-routing.
-func (d *dispatcher) dispatchDirect(actionID string, ev *Event) {
-	queue, ok := d.queues[actionID]
-	if !ok {
-		return
-	}
-	d.enqueueDropOldest(actionID, queue, ev)
 }
 
 // enqueueDropOldest sends ev to queue, evicting the oldest queued event under
@@ -146,7 +135,7 @@ func (d *dispatcher) waitWorkers() {
 	d.workers.Wait()
 }
 
-func (d *dispatcher) worker(ctx context.Context, id string, action Action, queue <-chan *Event) {
+func (d *dispatcher) worker(ctx context.Context, id string, ch Channel, queue <-chan *Event) {
 	defer d.workers.Done()
 	for {
 		select {
@@ -156,18 +145,18 @@ func (d *dispatcher) worker(ctx context.Context, id string, action Action, queue
 			if !ok {
 				return
 			}
-			d.executeOne(ctx, id, action, ev)
+			d.executeOne(ctx, id, ch, ev)
 		}
 	}
 }
 
-func (d *dispatcher) executeOne(ctx context.Context, id string, action Action, ev *Event) {
+func (d *dispatcher) executeOne(ctx context.Context, id string, ch Channel, ev *Event) {
 	defer func() {
 		if r := recover(); r != nil {
-			d.logger.Error("notify action panicked", "action", id, "panic", r)
+			d.logger.Error("notify channel panicked", "channel", id, "panic", r)
 		}
 	}()
-	err := action.Execute(ctx, ev)
+	err := ch.Execute(ctx, ev)
 	if err == nil {
 		return
 	}

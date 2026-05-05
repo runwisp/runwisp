@@ -98,33 +98,6 @@ func TestUpsertByFingerprint_InsertsAfterWindowExpires(t *testing.T) {
 	assert.Len(t, rows, 2)
 }
 
-func TestUpdateOccurrence(t *testing.T) {
-	db := setupNotificationDB(t)
-	now := time.Now().UTC().Truncate(time.Second)
-
-	n := newNotification(now, "fp-4")
-	_, err := db.UpsertByFingerprint(n, time.Hour, 10)
-	require.NoError(t, err)
-
-	later := now.Add(time.Minute)
-	occ := []time.Time{later, now}
-	require.NoError(t, db.UpdateOccurrence(n.ID, 2, later, occ, "new-title", "new-body"))
-
-	got, err := db.GetNotificationByID(n.ID)
-	require.NoError(t, err)
-	assert.Equal(t, 2, got.Count)
-	assert.Equal(t, later.Unix(), got.LastOccurredAt.Unix())
-	assert.Equal(t, "new-title", got.Title)
-	assert.Equal(t, "new-body", got.Body)
-	assert.Len(t, got.Occurrences, 2)
-}
-
-func TestUpdateOccurrence_NotFound(t *testing.T) {
-	db := setupNotificationDB(t)
-	err := db.UpdateOccurrence("missing", 1, time.Now(), nil, "", "")
-	assert.ErrorIs(t, err, ErrNotFound)
-}
-
 func TestListNotifications_PaginationByULIDCursor(t *testing.T) {
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)

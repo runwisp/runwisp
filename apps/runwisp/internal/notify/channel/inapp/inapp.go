@@ -24,7 +24,6 @@ func New(id string, renderer render.Renderer, coalescer *Coalescer) *Channel {
 }
 
 func (c *Channel) ID() string                  { return c.id }
-func (c *Channel) Type() string                { return "inapp" }
 func (c *Channel) Match(*notify.Event) bool    { return true }
 func (c *Channel) Close(context.Context) error { return nil }
 

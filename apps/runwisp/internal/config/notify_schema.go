@@ -35,7 +35,6 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 		DisableInapp:   t.Notify.DisableInapp,
 		QueueSize:      t.Notify.QueueSize,
 		HistoryKeep:    t.Notify.HistoryKeep,
-		CoalesceIndex:  t.Notify.CoalesceIndex,
 		OccurrenceRing: t.Notify.OccurrenceRing,
 	}
 

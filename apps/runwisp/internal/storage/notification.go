@@ -35,7 +35,6 @@ type NotificationRepository interface {
 	// the fingerprint and falls within the coalescing window; otherwise inserts.
 	// ringSize trims the merged occurrence list (0 = no trim).
 	UpsertByFingerprint(n *Notification, window time.Duration, ringSize int) (created bool, err error)
-	UpdateOccurrence(id string, count int, lastOccurredAt time.Time, occurrences []time.Time, title, body string) error
 	ListNotifications(limit int, before string) ([]Notification, error)
 	GetNotificationByID(id string) (*Notification, error)
 	PruneNotificationsByCount(keep int) (int64, error)
@@ -169,33 +168,6 @@ func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Durat
 	n.Count = newCount
 	n.Occurrences = merged
 	return false, nil
-}
-
-// UpdateOccurrence rewrites count/last_occurred_at/occurrences/title/body for
-// an existing row. Used when the in-memory coalescer decided to fold an event
-// into a row it already tracks (no SELECT round-trip needed).
-func (db *SQLiteDatabase) UpdateOccurrence(id string, count int, lastOccurredAt time.Time, occurrences []time.Time, title, body string) error {
-	occJSON, err := encodeOccurrences(occurrences)
-	if err != nil {
-		return err
-	}
-	res, err := db.db.Exec(
-		`UPDATE notifications
-		 SET count = ?, occurrences_json = ?, last_occurred_at = ?, title = ?, body = ?
-		 WHERE id = ?`,
-		count, occJSON, lastOccurredAt, title, body, id,
-	)
-	if err != nil {
-		return err
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return ErrNotFound
-	}
-	return nil
 }
 
 // ListNotifications returns the most recent notifications ordered by id DESC

@@ -17,22 +17,20 @@ import (
 // FakeChannel records every Execute call. Optionally returns a configured
 // error to simulate transient or permanent failures.
 type FakeChannel struct {
-	IDValue   string
-	TypeValue string
-	MatchFn   func(*notify.Event) bool
-	Err       error
+	IDValue string
+	MatchFn func(*notify.Event) bool
+	Err     error
 
 	mu       sync.Mutex
 	received []*notify.Event
 	closed   bool
 }
 
-func NewFakeChannel(id, typ string) *FakeChannel {
-	return &FakeChannel{IDValue: id, TypeValue: typ}
+func NewFakeChannel(id string) *FakeChannel {
+	return &FakeChannel{IDValue: id}
 }
 
-func (f *FakeChannel) ID() string   { return f.IDValue }
-func (f *FakeChannel) Type() string { return f.TypeValue }
+func (f *FakeChannel) ID() string { return f.IDValue }
 func (f *FakeChannel) Match(ev *notify.Event) bool {
 	if f.MatchFn != nil {
 		return f.MatchFn(ev)

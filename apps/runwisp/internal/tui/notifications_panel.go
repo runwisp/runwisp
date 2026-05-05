@@ -324,8 +324,9 @@ func summarizeNotification(n apiclient.Notification) string {
 	return title
 }
 
-// relativeTime delegates to render.Relative so the panel's "just now / 5m
-// ago / 3d ago" labels match the rhythm phrase used in the Web UI.
+// relativeTime is the single source of truth for relative-time labels — kept
+// in lockstep with the Web UI's rhythm phrase so operators see the same
+// "just now / 5m ago / 3d ago" wording in both surfaces.
 func relativeTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
