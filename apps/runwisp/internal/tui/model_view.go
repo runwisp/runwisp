@@ -25,15 +25,20 @@ func (m Model) View() string {
 			mainContent = m.execView.View()
 		} else {
 			mainW, _ := m.mainSize()
+			m.notifications.SetWidth(mainW)
+			panelView := ""
+			if m.sidebar.ActivePage() == PageHome && m.notifications.PanelHeight() > 0 {
+				panelView = m.notifications.View() + "\n"
+			}
 			switch m.sidebar.ActivePage() {
 			case PageHome:
 				if m.sidebar.ActiveTask() != "" {
 					runNowHovered := m.mouse.hoverY == m.layout.taskBtnY && m.mouse.hoverX >= sidebarWidth
 					header, _ := renderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, runNowHovered)
-					mainContent = header + m.execList.View()
+					mainContent = header + panelView + m.execList.View()
 				} else {
 					header, _ := renderHomeHeader(m.info, m.hasLaunchTicket(), mainW, m.homeCursor, m.mouse.homeHover)
-					mainContent = header + m.execList.View()
+					mainContent = header + panelView + m.execList.View()
 				}
 			case PageInfo:
 				mainContent = m.infoView.View()
@@ -62,6 +67,9 @@ func (m Model) View() string {
 }
 
 func (m Model) buildHelpText() string {
+	if m.notifications.IsExpanded() {
+		return "↑↓/j/k navigate  enter open  r mark all read  n/esc collapse  q/^C quit"
+	}
 	if m.execView != nil {
 		var parts []string
 		if m.execView.Fullscreen() {
@@ -127,7 +135,15 @@ func (m Model) buildHelpText() string {
 		if m.isService(name) {
 			actionHint = "r restart"
 		}
-		return "↑↓ navigate  enter open  " + actionHint + "  esc/← sidebar  q/^C quit"
+		base := "↑↓ navigate  enter open  " + actionHint + "  esc/← sidebar"
+		if m.sidebar.ActivePage() == PageHome && m.notifications.PanelHeight() > 0 {
+			base += "  n notifications"
+		}
+		return base + "  q/^C quit"
 	}
-	return "↑↓ navigate  enter open  esc/← sidebar  q/^C quit"
+	base := "↑↓ navigate  enter open  esc/← sidebar"
+	if m.sidebar.ActivePage() == PageHome && m.notifications.PanelHeight() > 0 {
+		base += "  n notifications"
+	}
+	return base + "  q/^C quit"
 }

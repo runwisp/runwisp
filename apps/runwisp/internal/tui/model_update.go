@@ -78,8 +78,68 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMetricsHistory(msg)
 	case runSummaryMsg:
 		return m.handleRunSummary(msg)
+	case notificationStreamConnectedMsg:
+		return m.handleNotificationStreamConnected(msg)
+	case notificationEventMsg:
+		return m.handleNotificationEvent(msg)
+	case notificationStreamDisconnectedMsg:
+		return m.handleNotificationStreamDisconnected()
+	case notificationUnreadCountMsg:
+		return m.handleNotificationUnreadCount(msg)
+	case notificationMarkReadMsg:
+		return m.handleNotificationMarkRead(msg)
+	case openRunMsg:
+		return m.handleOpenRun(msg)
 	}
 	return m, nil
+}
+
+func (m Model) handleNotificationStreamConnected(msg notificationStreamConnectedMsg) (tea.Model, tea.Cmd) {
+	return m, m.streams.OnNotificationConnected(msg.ch)
+}
+
+func (m Model) handleNotificationEvent(msg notificationEventMsg) (tea.Model, tea.Cmd) {
+	switch msg.Event.Type {
+	case "notification.created", "notification.updated":
+		n, err := apiclient.DecodeNotificationEnvelope(msg.Event.Data)
+		if err != nil {
+			m.debugView.AppendLine("Failed to parse notification: " + err.Error())
+		} else if m.notifications.Upsert(n) {
+			m.updateLayout()
+		}
+	}
+	return m, m.streams.ContinueListeningNotifications()
+}
+
+func (m Model) handleNotificationStreamDisconnected() (tea.Model, tea.Cmd) {
+	m.debugView.AppendLine("Notifications stream disconnected. Reconnecting...")
+	return m, m.streams.SubscribeNotifications()
+}
+
+func (m Model) handleNotificationUnreadCount(msg notificationUnreadCountMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.debugView.AppendLine("Failed to load unread count: " + msg.Err.Error())
+		return m, nil
+	}
+	m.notifications.SetUnread(int(msg.Count))
+	m.updateLayout()
+	return m, nil
+}
+
+func (m Model) handleOpenRun(msg openRunMsg) (tea.Model, tea.Cmd) {
+	if msg.Run == nil {
+		return m, nil
+	}
+	return m, m.openExecView(msg.Run)
+}
+
+func (m Model) handleNotificationMarkRead(msg notificationMarkReadMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.debugView.AppendLine("Failed to mark notifications read: " + msg.Err.Error())
+		return m, nil
+	}
+	m.notifications.MarkAllReadLocal(msg.LastReadAt)
+	return m, m.dialogs.Flash("Notifications marked read", 2*time.Second)
 }
 
 // interceptConfirmDialog handles input while the confirm dialog is visible.

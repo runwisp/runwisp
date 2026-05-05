@@ -116,6 +116,8 @@ func runDaemon(mode daemonMode) error {
 	if cfg.Password != "" {
 		srv, err = server.New(server.Options{
 			DB:              svc.DB,
+			NotificationDB:  svc.DB,
+			NotificationHub: svc.Notify.Hub,
 			TaskManager:     svc.TaskManager,
 			Tasks:           svc.TasksMap,
 			Scheduler:       svc.Scheduler,
@@ -186,7 +188,7 @@ func runDaemon(mode daemonMode) error {
 	tui.PrintStartup(startupInfo)
 
 	if noTUI {
-		return runHeadless(cancelCloud, cloudWG, svc.Scheduler, svc.TaskManager)
+		return runHeadless(cancelCloud, cloudWG, svc)
 	}
 
 	return runWithTUI(srv, svc, startupInfo, debugWriter, cancelCloud, cloudWG)

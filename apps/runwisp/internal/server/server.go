@@ -25,6 +25,8 @@ type Server struct {
 	router          *chi.Mux
 	api             huma.API
 	db              storage.RunRepository
+	notifyRepo      storage.NotificationRepository
+	notifyHub       NotificationHub
 	taskManager     runtime.TaskRunner
 	tasks           map[string]*model.Task
 	scheduler       runtime.ScheduleSource
@@ -46,6 +48,8 @@ type Server struct {
 
 type Options struct {
 	DB              storage.RunRepository
+	NotificationDB  storage.NotificationRepository // optional; nil disables /api/notifications
+	NotificationHub NotificationHub                // optional; nil disables /api/notifications/stream
 	TaskManager     runtime.TaskRunner
 	Tasks           map[string]*model.Task
 	Scheduler       runtime.ScheduleSource
@@ -77,6 +81,8 @@ func New(opts Options) (*Server, error) {
 	s := &Server{
 		router:         router,
 		db:             opts.DB,
+		notifyRepo:     opts.NotificationDB,
+		notifyHub:      opts.NotificationHub,
 		taskManager:    opts.TaskManager,
 		tasks:          opts.Tasks,
 		scheduler:      opts.Scheduler,

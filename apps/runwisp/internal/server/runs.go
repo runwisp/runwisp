@@ -126,6 +126,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaStopRun)
 
 	srv.registerRunsSSE(protectedAPI)
+	srv.registerNotificationsRoutes(protectedAPI)
 }
 
 func (srv *Server) humaGetTasks(ctx context.Context, input *struct{}) (*TasksOutput, error) {

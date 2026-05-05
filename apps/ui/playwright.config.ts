@@ -26,7 +26,7 @@ export default defineConfig({
     projects: [
         {
             name: "authenticated",
-            testMatch: ["dashboard.spec.ts", "task-execution.spec.ts"],
+            testMatch: ["dashboard.spec.ts", "task-execution.spec.ts", "notifications.spec.ts"],
             use: { ...devices["Desktop Chrome"] },
         },
         {

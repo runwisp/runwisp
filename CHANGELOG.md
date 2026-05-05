@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Notifications subsystem.** RunWisp now pushes failures instead of waiting for you to look. Configure `[[notifier]]` blocks for Slack and Telegram, declare `[[notification_route]]` rules (or use the per-task `notify_on_failure = [...]` shorthand), and failed runs/timeouts/crashes flow out as messages while every event also appears in a new **in-app notification feed** with coalescing, a sparkline of recent occurrences, and rhythm-aware phrases ("12× in the last hour, latest 30s ago"). The Web UI gains a bell + popover in the topbar and a `/notifications` page; the TUI mirrors it with a collapsible panel on the home screen — press `n` to expand, `j`/`k` to navigate, `enter` to jump to the run, `r` to mark all read. Outbound delivery failures surface as in-app notifications too, so a broken Slack webhook never goes unnoticed. Secrets follow `*_env` > `*_file` > inline precedence; `inapp` is reserved as a notifier id. Disable the in-app surface with `[notify] disable_inapp = true`. The outbound retry budget can also be shortened globally via the `RUNWISP_NOTIFY_MAX_ELAPSED` env var (default 5 min) — handy for tests or operators who want delivery failures to surface in seconds.
+
 ### Changed
 
 - **Default HTTP port moved from `8080` to `9477`.** Port `8080` collides with too many other tools by default (Tomcat, dev proxies, k8s port-forwards). RunWisp now listens on `9477` out of the box; pass `--port 8080` (or set it in `runwisp.toml`) to keep the old behaviour.

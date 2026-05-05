@@ -15,6 +15,58 @@ type Config struct {
 	Defaults Defaults
 	Storage  Storage
 	Daemon   Daemon
+	Notify   NotifyConfig
+}
+
+// NotifyConfig is the resolved notification configuration. Secrets are not
+// resolved at this stage — the configload helper in internal/notify/configload
+// reads NotifierSpecs and produces a runnable notify.Service. Values stored
+// here are plain types so the config package does not need to import notify.
+type NotifyConfig struct {
+	Notifiers      []NotifierSpec
+	Routes         []NotificationRoute
+	DisableInapp   bool
+	QueueSize      int
+	DefaultTimeout time.Duration
+	HistoryKeep    int
+	HistoryKeepFor time.Duration
+	CoalesceWindow time.Duration
+	CoalesceIndex  int
+	OccurrenceRing int
+}
+
+// NotifierSpec is one [[notifier]] block, post-decode but pre-secret-resolution.
+// The Source* fields tell the secret resolver which channel to read from
+// (env, file, inline). Exactly one of the three is set per secret-bearing
+// field, enforced by Validate.
+type NotifierSpec struct {
+	ID   string
+	Type string
+
+	// Slack-specific
+	WebhookURL     string
+	WebhookURLEnv  string
+	WebhookURLFile string
+	SlackChannel   string
+
+	// Telegram-specific
+	BotToken     string
+	BotTokenEnv  string
+	BotTokenFile string
+	ChatID       string
+	ParseMode    string
+
+	TemplatePath string
+}
+
+// NotificationRoute pairs a predicate description with target action IDs.
+// Match values are stored as strings (kinds, severity, glob); the consumer
+// in internal/notify/configload compiles them into notify.Predicate.
+type NotificationRoute struct {
+	Kinds      []string
+	Severity   string
+	TaskGlob   string
+	NotifierID []string
 }
 
 // Daemon holds daemon-wide toggles.
@@ -79,6 +131,9 @@ type taskWire struct {
 	KeepFor  string `toml:"keep_for,omitempty"`
 
 	Run string `toml:"run,omitempty"`
+
+	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
+	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
 }
 
 // serviceWire is the over-the-wire shape for [services.*] entries. Cron and
@@ -104,6 +159,9 @@ type serviceWire struct {
 	KeepFor  string `toml:"keep_for,omitempty"`
 
 	Run string `toml:"run,omitempty"`
+
+	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
+	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
 }
 
 // defaultsWire mirrors [defaults] before parsing.
@@ -128,6 +186,53 @@ type tomlConfig struct {
 	Defaults defaultsWire            `toml:"defaults,omitempty"`
 	Tasks    map[string]*taskWire    `toml:"tasks,omitempty"`
 	Services map[string]*serviceWire `toml:"services,omitempty"`
+	Notify   notifyWire              `toml:"notify,omitempty"`
+
+	Notifiers []notifierWire `toml:"notifier,omitempty"`
+	Routes    []routeWire    `toml:"notification_route,omitempty"`
+}
+
+// notifyWire mirrors the [notify] block before parsing.
+type notifyWire struct {
+	QueueSize      int    `toml:"queue_size,omitempty"`
+	DefaultTimeout string `toml:"default_timeout,omitempty"`
+	DisableInapp   bool   `toml:"disable_inapp,omitempty"`
+	HistoryKeep    int    `toml:"history_keep,omitempty"`
+	HistoryKeepFor string `toml:"history_keep_for,omitempty"`
+	CoalesceWindow string `toml:"coalesce_window,omitempty"`
+	CoalesceIndex  int    `toml:"coalesce_index,omitempty"`
+	OccurrenceRing int    `toml:"occurrence_ring,omitempty"`
+}
+
+// notifierWire is one [[notifier]] block before secret resolution.
+type notifierWire struct {
+	ID   string `toml:"id"`
+	Type string `toml:"type"`
+
+	WebhookURL     string `toml:"webhook_url,omitempty"`
+	WebhookURLEnv  string `toml:"webhook_url_env,omitempty"`
+	WebhookURLFile string `toml:"webhook_url_file,omitempty"`
+	Channel        string `toml:"channel,omitempty"`
+
+	BotToken     string `toml:"bot_token,omitempty"`
+	BotTokenEnv  string `toml:"bot_token_env,omitempty"`
+	BotTokenFile string `toml:"bot_token_file,omitempty"`
+	ChatID       string `toml:"chat_id,omitempty"`
+	ParseMode    string `toml:"parse_mode,omitempty"`
+
+	TemplatePath string `toml:"template_path,omitempty"`
+}
+
+// routeWire is one [[notification_route]] block before validation.
+type routeWire struct {
+	Match  routeMatchWire `toml:"match"`
+	Notify []string       `toml:"notify"`
+}
+
+type routeMatchWire struct {
+	Kind     []string `toml:"kind,omitempty"`
+	Severity string   `toml:"severity,omitempty"`
+	Task     string   `toml:"task,omitempty"`
 }
 
 func (w *taskWire) toTask(name string) (model.Task, error) {

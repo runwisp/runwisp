@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"sort"
 	"time"
 
@@ -20,13 +21,14 @@ import (
 
 // daemonServices holds all long-lived services created during daemon startup.
 type daemonServices struct {
-	DB               storage.RunRepository
+	DB               storage.Database
 	EventBus         events.EventBus
 	Executor         executor.Executor
 	TaskManager      runtime.TaskManager
 	TasksMap         map[string]*model.Task
 	Scheduler        *runtime.Scheduler
 	RetentionCleaner *runtime.RetentionCleaner
+	Notify           notifyBundle
 	ScheduleResult   runtime.ScheduleResult
 	CrashedRuns      int64
 	PendingSummary   tui.PendingRunsSummary
@@ -72,6 +74,16 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 
 	retentionCleaner := initRetentionCleaner(cfg, db, tasksMap)
 
+	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
+	if err != nil {
+		slog.Warn("Failed to initialize notify subsystem", "err", err)
+	}
+	if notifyB.Service != nil {
+		if startErr := notifyB.Service.Start(context.Background()); startErr != nil {
+			slog.Warn("Failed to start notify subsystem", "err", startErr)
+		}
+	}
+
 	return &daemonServices{
 		DB:               db,
 		EventBus:         eventBus,
@@ -80,6 +92,7 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 		TasksMap:         tasksMap,
 		Scheduler:        scheduler,
 		RetentionCleaner: retentionCleaner,
+		Notify:           notifyB,
 		ScheduleResult:   schedResult,
 		CrashedRuns:      crashed,
 		PendingSummary:   pendingSummary,

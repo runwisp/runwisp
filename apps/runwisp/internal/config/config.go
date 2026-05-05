@@ -98,11 +98,17 @@ func decode(data []byte) (*Config, error) {
 		return nil, err
 	}
 
+	notifyCfg, err := raw.toNotifyConfig(taskNames, raw.Tasks, serviceNames, raw.Services)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Tasks:    tasks,
 		Defaults: defaults,
 		Storage:  storage,
 		Daemon:   raw.Daemon,
+		Notify:   notifyCfg,
 	}, nil
 }
 
@@ -122,6 +128,9 @@ func Validate(cfg *Config) error {
 		if err := validateTask(&cfg.Tasks[i], seen); err != nil {
 			return err
 		}
+	}
+	if err := validateNotify(&cfg.Notify); err != nil {
+		return err
 	}
 	return nil
 }

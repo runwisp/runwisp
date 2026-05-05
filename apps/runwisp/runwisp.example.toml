@@ -115,3 +115,59 @@ while true; do
   sleep $((RANDOM % 5 + 2))
 done
 """
+
+
+# -----------------------------------------------------------------------------
+# Notifications (optional)
+#
+# Notifiers describe outbound channels (Slack, Telegram). The "inapp" channel
+# is auto-registered and lights up the bell in the Web UI plus the footer line
+# in the TUI; opt out with [notify] disable_inapp = true.
+#
+# Routes pick which notifiers fire for which events. Per-task sugar
+# (notify_on_failure / notify_on_success) desugars to synthetic routes at
+# config-load time.
+#
+# Secrets follow env > file > inline precedence; supplying more than one is
+# an error.
+# -----------------------------------------------------------------------------
+
+# [[notifier]]
+# id              = "slack-ops"
+# type            = "slack"
+# webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+# # Or:
+# # webhook_url_file = "secrets/slack-ops.url"   # path relative to data dir
+# # webhook_url      = "https://hooks.slack.com/services/..."
+
+# [[notifier]]
+# id            = "tg-oncall"
+# type          = "telegram"
+# bot_token_env = "RUNWISP_TG_TOKEN"
+# chat_id       = "-1001234567890"
+# parse_mode    = "HTML"
+
+# [[notification_route]]
+# match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+# notify = ["slack-ops", "tg-oncall", "inapp"]
+
+# [[notification_route]]
+# match  = { kind = ["notify.delivery_failed"] }
+# notify = ["inapp"]
+
+# [notify]
+# disable_inapp    = false
+# queue_size       = 1024
+# default_timeout  = "10s"
+# history_keep     = 500
+# history_keep_for = "30d"
+# coalesce_window  = "1h"
+# coalesce_index   = 4096
+# occurrence_ring  = 10
+
+# Per-task sugar: implies a synthetic route with the listed notifiers plus
+# "inapp" (unless disable_inapp = true). Mirrors notify_on_success.
+#
+# [tasks.nightly-db-backup]
+# notify_on_failure = ["slack-ops"]
+

@@ -24,3 +24,9 @@ echo "slow-start"
 sleep 3
 echo "slow-end"
 """
+
+# Surface failed runs as in-app notifications so the bell + popover have
+# something real to render. No outbound notifiers configured.
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["inapp"]

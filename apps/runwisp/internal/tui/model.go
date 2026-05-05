@@ -46,8 +46,9 @@ type Model struct {
 	infoView   *InfoView
 	debugView  DebugView
 
-	dialogs DialogManager
-	streams StreamManager
+	dialogs       DialogManager
+	streams       StreamManager
+	notifications notificationsPanel
 
 	panelFocus PanelFocus
 	info       StartupInfo
@@ -95,6 +96,7 @@ func NewModel(cfg TUIConfig) Model {
 		debugView:        debugView,
 		dialogs:          DialogManager{},
 		streams:          NewStreamManager(cfg.Client),
+		notifications:    newNotificationsPanel(),
 		panelFocus:       PanelSidebar,
 		info:             cfg.Info,
 		client:           cfg.Client,
@@ -111,6 +113,8 @@ func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.streams.FetchExecWindow(m.execWindow, m.execList.scroll, m.execList.viewportHeight()),
 		m.streams.SubscribeEvents(),
+		m.streams.SubscribeNotifications(),
+		m.streams.FetchUnreadCount(),
 		m.tickCmd(),
 	}
 	if m.isRemote {
@@ -216,6 +220,10 @@ func (m *Model) recalcExecListHeight() {
 			listH -= m.layout.homeH
 		}
 	}
+	m.notifications.SetWidth(mainW)
+	if m.sidebar.ActivePage() == PageHome {
+		listH -= m.notifications.PanelHeight()
+	}
 	if listH < 5 {
 		listH = 5
 	}
@@ -319,6 +327,25 @@ func (m *Model) copyExecField() tea.Cmd {
 // hasLaunchTicket reports whether the one-click browser-open action is available.
 func (m *Model) hasLaunchTicket() bool {
 	return m.launchTicketFunc != nil
+}
+
+// openRunByID opens the exec view for a run identified by task + run ID.
+// Looks the run up in the in-memory window first; falls back to a REST call.
+func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
+	if run := m.execWindow.FindRun(runID); run != nil {
+		return m.openExecView(run)
+	}
+	if m.client == nil {
+		return nil
+	}
+	client := m.client
+	return func() tea.Msg {
+		run, err := client.GetRun(taskName, runID)
+		if err != nil {
+			return DebugLogMsg{Message: fmt.Sprintf("Failed to load run %s: %s", runID, err.Error())}
+		}
+		return openRunMsg{Run: run}
+	}
 }
 
 // activateHomeField performs the primary action for the currently selected home field:

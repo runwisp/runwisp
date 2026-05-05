@@ -1,0 +1,5 @@
+<b>{{ tgEscape .TaskName }}</b> — <i>{{ tgEscape (printf "%s" .Kind) }}</i>
+{{ if .Reason }}<code>{{ tgEscape .Reason }}</code>{{ end }}
+{{- if .Run }}
+Run <code>{{ tgEscape .Run.ID }}</code> ({{ tgEscape (printf "%s" .Run.TriggeredBy) }}) at {{ timeRFC .Timestamp }}
+{{- end }}

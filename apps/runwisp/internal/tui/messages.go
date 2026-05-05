@@ -4,6 +4,8 @@
 package tui
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
@@ -186,4 +188,38 @@ type shutdownDoneMsg struct {
 // spinnerTickMsg wraps the bubbles spinner tick for the confirm dialog.
 type spinnerTickMsg struct {
 	Inner tea.Msg
+}
+
+// notificationStreamConnectedMsg signals the notifications SSE stream is established.
+type notificationStreamConnectedMsg struct {
+	ch <-chan apiclient.NotificationStreamEvent
+}
+
+// notificationEventMsg wraps a parsed notification SSE event.
+type notificationEventMsg struct {
+	Event apiclient.NotificationStreamEvent
+}
+
+// notificationStreamDisconnectedMsg signals the notifications stream dropped.
+type notificationStreamDisconnectedMsg struct{}
+
+// openRunMsg requests the model open an exec view for the given run. Used by
+// asynchronous run lookups (e.g., notification → exec view) where the run is
+// not in the local execWindow cache yet.
+type openRunMsg struct {
+	Run *model.Run
+}
+
+// notificationUnreadCountMsg delivers the snapshot unread count fetched at
+// startup. SSE-driven Upserts maintain the count from there.
+type notificationUnreadCountMsg struct {
+	Count int64
+	Err   error
+}
+
+// notificationMarkReadMsg is the result of a "Mark all read" action.
+// LastReadAt is the timestamp the client persisted to the daemon.
+type notificationMarkReadMsg struct {
+	LastReadAt time.Time
+	Err        error
 }
