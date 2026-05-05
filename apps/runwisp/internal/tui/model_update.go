@@ -126,7 +126,7 @@ func (m Model) handleNotificationUnreadCount(msg notificationUnreadCountMsg) (te
 		m.debugView.AppendLine("Failed to load unread count: " + msg.Err.Error())
 		return m, nil
 	}
-	m.notifications.SetUnreadHint(int(msg.Count))
+	m.notifications.SetUnread(int(msg.Count))
 	m.updateLayout()
 	return m, nil
 }

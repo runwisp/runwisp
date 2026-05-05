@@ -35,8 +35,7 @@ const (
 // summary line that the operator can expand into a scrollable list. Items
 // are tracked by ID so SSE updates mutate in place; the cursor highlights
 // one row at a time inside a bubble's viewport. Read state is per-item
-// (carried on apiclient.Notification.ReadAt) — the panel never holds a
-// global "last read" marker.
+// (carried on apiclient.Notification.ReadAt).
 type notificationsPanel struct {
 	items   map[string]apiclient.Notification
 	ordered []string // ULIDs DESC
@@ -44,12 +43,11 @@ type notificationsPanel struct {
 	expanded bool
 	cursor   int // index into `ordered`; only meaningful when expanded
 
-	// hintUnreadFloor seeds the unread badge before the initial page has
-	// loaded — the dedicated unread-count endpoint resolves first, and the
-	// snapshot count covers items beyond what's currently in `items`. Once
-	// the panel observes a derived count >= floor (or the user explicitly
-	// changes a row's read state), the floor stops shadowing the derivation.
-	hintUnreadFloor int
+	// unread is the server's authoritative snapshot, adjusted by the deltas
+	// the panel observes locally (SSE Upserts and per-row mark-read/unread).
+	// We never derive it from `items` alone because items is paginated and
+	// older unread rows can live beyond the loaded slice.
+	unread int
 
 	// flashCursorUntil paints the cursor row with an accent background until
 	// this moment, then reverts. Used as boundary feedback when j/k/arrows
@@ -90,10 +88,14 @@ func (p *notificationsPanel) Upsert(n apiclient.Notification) bool {
 		p.ordered = append(p.ordered, "")
 		copy(p.ordered[idx+1:], p.ordered[idx:])
 		p.ordered[idx] = n.ID
+		if isUnread(n) {
+			p.unread++
+		}
 		changed = true
 	} else if n.Count != prev.Count ||
 		!prev.LastOccurredAt.Equal(n.LastOccurredAt) ||
-		readStateOf(prev) != readStateOf(n) {
+		isUnread(prev) != isUnread(n) {
+		p.unread = clampNonNegative(p.unread + boolDelta(isUnread(n), isUnread(prev)))
 		changed = true
 	}
 	if changed {
@@ -108,21 +110,8 @@ func (p *notificationsPanel) IsExpanded() bool { return p.expanded }
 // Total returns the count of distinct tracked notifications.
 func (p *notificationsPanel) Total() int { return len(p.items) }
 
-// Unread returns the number of items currently considered unread. When the
-// snapshot count fetched at startup exceeds the count we can derive from the
-// loaded items (older unread items beyond the first page), the snapshot wins.
-func (p *notificationsPanel) Unread() int {
-	derived := 0
-	for _, id := range p.ordered {
-		if p.items[id].ReadAt == nil {
-			derived++
-		}
-	}
-	if p.hintUnreadFloor > derived {
-		return p.hintUnreadFloor
-	}
-	return derived
-}
+// Unread returns the snapshot+delta-tracked unread count.
+func (p *notificationsPanel) Unread() int { return p.unread }
 
 // Toggle flips expanded state and snaps the cursor into a valid range.
 func (p *notificationsPanel) Toggle() {
@@ -210,14 +199,10 @@ func (p *notificationsPanel) Selected() *apiclient.Notification {
 	return &n
 }
 
-// SetUnreadHint records the unread snapshot fetched at startup. It only
-// affects the badge while the local items map underestimates (older unread
-// rows beyond the first loaded page).
-func (p *notificationsPanel) SetUnreadHint(n int) {
-	if n < 0 {
-		n = 0
-	}
-	p.hintUnreadFloor = n
+// SetUnread overwrites the badge counter with the server's snapshot. Called
+// once at startup with the value from /api/notifications/unread-count.
+func (p *notificationsPanel) SetUnread(n int) {
+	p.unread = clampNonNegative(n)
 	p.rebuildContent()
 }
 
@@ -256,38 +241,31 @@ func (p *notificationsPanel) RefreshLabels() {
 	}
 }
 
-// MarkReadLocal stamps a single notification's ReadAt and clears the snapshot
-// floor (which can no longer be trusted once per-row state is touched). No-op
-// if the id is unknown locally.
+// MarkReadLocal stamps a single notification's ReadAt. No-op if the id is
+// unknown or the row was already read.
 func (p *notificationsPanel) MarkReadLocal(id string, at time.Time) bool {
 	n, ok := p.items[id]
-	if !ok {
-		return false
-	}
-	if n.ReadAt != nil {
+	if !ok || n.ReadAt != nil {
 		return false
 	}
 	stamp := at
 	n.ReadAt = &stamp
 	p.items[id] = n
-	p.hintUnreadFloor = 0
+	p.unread = clampNonNegative(p.unread - 1)
 	p.rebuildContent()
 	return true
 }
 
-// MarkUnreadLocal clears a single notification's ReadAt locally. Snapshot
-// floor is dropped for the same reason as MarkReadLocal.
+// MarkUnreadLocal clears a single notification's ReadAt. No-op if the id is
+// unknown or the row was already unread.
 func (p *notificationsPanel) MarkUnreadLocal(id string) bool {
 	n, ok := p.items[id]
-	if !ok {
-		return false
-	}
-	if n.ReadAt == nil {
+	if !ok || n.ReadAt == nil {
 		return false
 	}
 	n.ReadAt = nil
 	p.items[id] = n
-	p.hintUnreadFloor = 0
+	p.unread++
 	p.rebuildContent()
 	return true
 }
@@ -325,7 +303,7 @@ func (p *notificationsPanel) SetWidth(w int) {
 // PanelHeight returns the total height the panel needs (0 when there are
 // no items and no unread state to report; >=1 otherwise).
 func (p *notificationsPanel) PanelHeight() int {
-	if len(p.items) == 0 && p.Unread() == 0 {
+	if len(p.items) == 0 && p.unread == 0 {
 		return 0
 	}
 	if p.expanded {
@@ -349,11 +327,10 @@ func (p *notificationsPanel) View() string {
 // in parentheses; with zero unread the parens drop entirely so pressing "r"
 // produces visible feedback.
 func (p *notificationsPanel) countLabel() string {
-	u := p.Unread()
-	if u == 0 {
+	if p.unread == 0 {
 		return "Notifications"
 	}
-	return fmt.Sprintf("Notifications (%d)", u)
+	return fmt.Sprintf("Notifications (%d)", p.unread)
 }
 
 func (p *notificationsPanel) renderCollapsed() string {
@@ -447,7 +424,7 @@ func (p *notificationsPanel) renderRow(n apiclient.Notification, selected bool) 
 		indicator = "▸ "
 	}
 	sev := lipgloss.NewStyle().Background(bg).Render(" ")
-	if n.ReadAt == nil {
+	if isUnread(n) {
 		sev = notificationSeverityStyle(n.Severity).Background(bg).Render("●")
 	}
 
@@ -533,9 +510,27 @@ func truncateLine(s string, max int) string {
 	return s[:max-1] + "…"
 }
 
-// readStateOf is a small helper so Upsert can detect read-state transitions
-// without dereferencing the pointer in three places.
-func readStateOf(n apiclient.Notification) bool { return n.ReadAt != nil }
+func isUnread(n apiclient.Notification) bool { return n.ReadAt == nil }
+
+// boolDelta returns +1 when the new state is true and the old wasn't, -1 in
+// the opposite direction, and 0 otherwise.
+func boolDelta(now, prev bool) int {
+	switch {
+	case now && !prev:
+		return 1
+	case !now && prev:
+		return -1
+	default:
+		return 0
+	}
+}
+
+func clampNonNegative(n int) int {
+	if n < 0 {
+		return 0
+	}
+	return n
+}
 
 var (
 	notificationsPanelPrefixStyle = lipgloss.NewStyle().

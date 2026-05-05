@@ -168,7 +168,7 @@ func TestPruneByAge(t *testing.T) {
 	assert.Equal(t, "fp-new", rows[0].Fingerprint)
 }
 
-func TestMarkNotificationRead_StampsAndIsIdempotent(t *testing.T) {
+func TestMarkNotificationRead_Stamps(t *testing.T) {
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -181,13 +181,12 @@ func TestMarkNotificationRead_StampsAndIsIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got.ReadAt)
 	assert.Equal(t, stamp.Unix(), got.ReadAt.Unix())
+}
 
-	// Idempotent — re-marking preserves the original timestamp.
-	later := stamp.Add(time.Hour)
-	got, err = db.MarkNotificationRead(n.ID, later)
-	require.NoError(t, err)
-	require.NotNil(t, got.ReadAt)
-	assert.Equal(t, stamp.Unix(), got.ReadAt.Unix(), "second mark must not overwrite")
+func TestMarkNotificationRead_NotFound(t *testing.T) {
+	db := setupNotificationDB(t)
+	_, err := db.MarkNotificationRead("does-not-exist", time.Now())
+	assert.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestMarkNotificationUnread_ClearsReadAt(t *testing.T) {

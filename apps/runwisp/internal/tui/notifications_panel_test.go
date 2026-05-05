@@ -207,18 +207,18 @@ func TestNotificationsPanel_MarkUnreadLocalRestoresUnread(t *testing.T) {
 	}
 }
 
-func TestNotificationsPanel_SetUnreadHint(t *testing.T) {
+func TestNotificationsPanel_SetUnread(t *testing.T) {
 	p := newNotificationsPanel()
-	p.SetUnreadHint(7)
+	p.SetUnread(7)
 	if p.Unread() != 7 {
-		t.Fatalf("SetUnreadHint: want 7, got %d", p.Unread())
+		t.Fatalf("SetUnread: want 7, got %d", p.Unread())
 	}
 	if p.PanelHeight() != notificationsCollapsedH {
-		t.Fatal("SetUnreadHint alone should make the panel visible at collapsed height")
+		t.Fatal("SetUnread alone should make the panel visible at collapsed height")
 	}
 }
 
-func TestNotificationsPanel_LoadHistoricalUsesItemReadState(t *testing.T) {
+func TestNotificationsPanel_LoadHistoricalDoesNotTouchUnread(t *testing.T) {
 	p := newNotificationsPanel()
 	now := time.Now()
 	items := []apiclient.Notification{
@@ -231,8 +231,11 @@ func TestNotificationsPanel_LoadHistoricalUsesItemReadState(t *testing.T) {
 	if p.Total() != 2 {
 		t.Fatalf("Total after LoadHistorical: want 2, got %d", p.Total())
 	}
-	if p.Unread() != 1 {
-		t.Fatalf("Unread should reflect per-row state from the loaded page; got %d", p.Unread())
+	// Unread is owned by the server snapshot + SSE deltas; LoadHistorical only
+	// hydrates items (the snapshot may already include unread rows beyond the
+	// loaded slice, so deriving from items would double-count).
+	if p.Unread() != 0 {
+		t.Fatalf("LoadHistorical must not touch unread; got %d", p.Unread())
 	}
 
 	// Re-loading the same items is a no-op.
@@ -244,25 +247,6 @@ func TestNotificationsPanel_LoadHistoricalUsesItemReadState(t *testing.T) {
 	p.Toggle()
 	if got := p.Selected(); got == nil || got.ID != "01B" {
 		t.Fatalf("Selected should be highest ULID; got %v", got)
-	}
-}
-
-func TestNotificationsPanel_HintFloorYieldsToDerivedCount(t *testing.T) {
-	p := newNotificationsPanel()
-	now := time.Now()
-	// Unread snapshot says "3 unread"; the loaded page only has one unread row.
-	p.SetUnreadHint(3)
-	p.LoadHistorical([]apiclient.Notification{
-		unreadNotification("01A", "info", now, "loaded"),
-	})
-	if p.Unread() != 3 {
-		t.Fatalf("Hint floor must shadow derivation while it's higher; got %d", p.Unread())
-	}
-	// Marking the only loaded row read drops the floor to zero (per-row state
-	// has been touched, so the snapshot is stale).
-	p.MarkReadLocal("01A", now)
-	if p.Unread() != 0 {
-		t.Fatalf("After explicit local change the floor must be cleared; got %d", p.Unread())
 	}
 }
 
@@ -383,6 +367,7 @@ func TestNotificationsPanel_CountLabelShowsUnreadCountOnly(t *testing.T) {
 		readNotification("01A", "info", now, "first"),
 		unreadNotification("01B", "info", now, "second"),
 	})
+	p.SetUnread(1)
 	view := p.View()
 	if !strings.Contains(view, "Notifications (1)") {
 		t.Errorf("collapsed view should show single-number badge; got %q", view)

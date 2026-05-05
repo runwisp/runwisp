@@ -262,36 +262,21 @@ func (db *SQLiteDatabase) CountUnreadNotifications() (int64, error) {
 }
 
 // MarkNotificationRead stamps read_at on a single row and returns the updated
-// row. Idempotent — re-marking a read row leaves the original timestamp.
+// row. Re-marking an already-read row overwrites the timestamp.
 func (db *SQLiteDatabase) MarkNotificationRead(id string, at time.Time) (*Notification, error) {
-	if id == "" {
-		return nil, errors.New("notification id is empty")
-	}
-	res, err := db.db.Exec(
-		`UPDATE notifications SET read_at = ? WHERE id = ? AND read_at IS NULL`,
-		at, id,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if rows, _ := res.RowsAffected(); rows == 0 {
-		// Either the row doesn't exist or it's already read — fetch to disambiguate.
-		existing, getErr := db.GetNotificationByID(id)
-		if getErr != nil {
-			return nil, getErr
-		}
-		return existing, nil
-	}
-	return db.GetNotificationByID(id)
+	return db.setNotificationReadAt(id, &at)
 }
 
 // MarkNotificationUnread clears read_at on a single row and returns it.
-// Idempotent — clearing an already-unread row is a no-op.
 func (db *SQLiteDatabase) MarkNotificationUnread(id string) (*Notification, error) {
+	return db.setNotificationReadAt(id, nil)
+}
+
+func (db *SQLiteDatabase) setNotificationReadAt(id string, at *time.Time) (*Notification, error) {
 	if id == "" {
 		return nil, errors.New("notification id is empty")
 	}
-	res, err := db.db.Exec(`UPDATE notifications SET read_at = NULL WHERE id = ?`, id)
+	res, err := db.db.Exec(`UPDATE notifications SET read_at = ? WHERE id = ?`, at, id)
 	if err != nil {
 		return nil, err
 	}
