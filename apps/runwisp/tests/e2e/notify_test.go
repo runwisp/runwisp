@@ -154,6 +154,43 @@ notify = ["broken", "inapp"]
 		hits.Load(), page.Items)
 }
 
+// TestNotificationsZeroConfigInappFires verifies the zero-setup default: a
+// TOML with no [notify] section, no [[notifier]] blocks, no
+// [[notification_route]] rules, and no per-task notify_on_failure still
+// produces an in-app notification when a run fails. The bell in the Web UI
+// and the footer line in the TUI must light up out of the box.
+func TestNotificationsZeroConfigInappFires(t *testing.T) {
+	configPath := writeNotifyConfig(t, `
+[tasks.fail-task]
+run = "exit 1"
+`)
+
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+
+	password := waitForPassword(t, daemon.dataDir)
+	client := apiclient.New(daemon.baseURL, password)
+	require.NoError(t, client.Authenticate())
+
+	streamCtx, cancelStream := context.WithCancel(context.Background())
+	t.Cleanup(cancelStream)
+	events, err := client.StreamNotifications(streamCtx)
+	require.NoError(t, err)
+	waitForFirstPing(t, events)
+
+	_, err = client.TriggerRun("fail-task")
+	require.NoError(t, err)
+
+	created := waitForNotificationEvent(t, events, "notification.created", 10*time.Second)
+	require.Equal(t, "fail-task", created.TaskName)
+	require.Equal(t, "run.failed", created.Kind)
+
+	page := waitForListedNotifications(t, client, 1, 5*time.Second)
+	require.Equal(t, "fail-task", page.Items[0].TaskName)
+	require.Equal(t, "run.failed", page.Items[0].Kind)
+}
+
 // ---------- helpers ----------
 
 func writeNotifyConfig(t *testing.T, contents string) string {

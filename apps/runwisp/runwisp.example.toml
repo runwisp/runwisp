@@ -120,13 +120,13 @@ done
 # -----------------------------------------------------------------------------
 # Notifications (optional)
 #
-# Notifiers describe outbound channels (Slack, Telegram). The "inapp" channel
-# is auto-registered and lights up the bell in the Web UI plus the footer line
-# in the TUI; opt out with [notify] disable_inapp = true.
+# In-app notifications are on by default — every failed, timed-out, or crashed
+# run lights up the bell in the Web UI and the footer line in the TUI, with
+# zero config required. Opt out with [notify] disable_inapp = true.
 #
-# Routes pick which notifiers fire for which events. Per-task sugar
-# (notify_on_failure / notify_on_success) desugars to synthetic routes at
-# config-load time.
+# Notifiers describe optional outbound channels (Slack, Telegram). Routes pick
+# which notifiers fire for which events. Per-task sugar (notify_on_failure /
+# notify_on_success) desugars to synthetic routes at config-load time.
 #
 # Secrets follow env > file > inline precedence; supplying more than one is
 # an error.

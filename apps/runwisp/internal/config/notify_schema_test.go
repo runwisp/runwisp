@@ -47,7 +47,7 @@ notify_on_failure = ["ops"]
 	assert.Equal(t, "telegram", cfg.Notify.Notifiers[1].Type)
 	assert.False(t, cfg.Notify.DisableInapp)
 
-	require.Len(t, cfg.Notify.Routes, 2, "explicit route + per-task sugar")
+	require.Len(t, cfg.Notify.Routes, 3, "explicit route + per-task sugar + default inapp catch-all")
 	explicit := cfg.Notify.Routes[0]
 	assert.Equal(t, []string{"run.failed"}, explicit.Kinds)
 	assert.Equal(t, "backup-*", explicit.TaskGlob)
@@ -58,6 +58,31 @@ notify_on_failure = ["ops"]
 	assert.Equal(t, "backup-db", synth.TaskGlob)
 	assert.Contains(t, synth.NotifierID, "ops")
 	assert.Contains(t, synth.NotifierID, "inapp", "per-task sugar must imply inapp by default")
+
+	defaultRoute := cfg.Notify.Routes[2]
+	assert.Equal(t, []string{"run.failed", "run.timeout", "run.crashed"}, defaultRoute.Kinds)
+	assert.Empty(t, defaultRoute.TaskGlob, "default catch-all matches every task")
+	assert.Equal(t, []string{"inapp"}, defaultRoute.NotifierID)
+}
+
+func TestNotifyConfig_DefaultInappRouteWithZeroConfig(t *testing.T) {
+	src := `
+[tasks.process-event-queue]
+cron        = "*/10 * * * *"
+parallelism = 1
+on_overlap  = "queue"
+run         = "exit 1"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	require.Len(t, cfg.Notify.Routes, 1,
+		"zero-config TOML must still produce the default in-app catch-all route")
+	r := cfg.Notify.Routes[0]
+	assert.Equal(t, []string{"run.failed", "run.timeout", "run.crashed"}, r.Kinds)
+	assert.Empty(t, r.TaskGlob)
+	assert.Equal(t, []string{"inapp"}, r.NotifierID)
 }
 
 func TestValidate_RejectsDuplicateNotifierID(t *testing.T) {

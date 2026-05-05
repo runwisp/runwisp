@@ -95,8 +95,25 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 
 	desugarTaskNotify(taskNames, taskWires, &out)
 	desugarServiceNotify(serviceNames, serviceWires, &out)
+	appendDefaultInappRoute(&out)
 
 	return out, nil
+}
+
+// appendDefaultInappRoute installs the zero-config in-app safety net: every
+// failed, timed-out, or crashed run lights up the bell in the Web UI and the
+// footer in the TUI, even when the operator has not declared a single
+// notifier or route. Opt out with [notify] disable_inapp = true. The router
+// deduplicates channel IDs across matching rules, so this is harmless when
+// the same task also has explicit notify_on_failure sugar.
+func appendDefaultInappRoute(out *NotifyConfig) {
+	if out.DisableInapp {
+		return
+	}
+	out.Routes = append(out.Routes, NotificationRoute{
+		Kinds:      []string{"run.failed", "run.timeout", "run.crashed"},
+		NotifierID: []string{inappNotifierID},
+	})
 }
 
 // desugarTaskNotify converts per-task notify_on_failure / notify_on_success
