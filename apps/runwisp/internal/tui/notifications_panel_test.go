@@ -98,6 +98,48 @@ func TestNotificationsPanel_CollapsedView(t *testing.T) {
 	}
 }
 
+// The collapsed preview is a "you have something to look at" hint, so a newer
+// already-read row must not eclipse the freshest unread one.
+func TestNotificationsPanel_CollapsedPreviewSkipsReadNewerItem(t *testing.T) {
+	p := newNotificationsPanel()
+	p.SetWidth(120)
+	now := time.Now()
+	p.Upsert(unreadNotification("01A", "warn", now.Add(-time.Hour), "older-unread"))
+	p.Upsert(readNotification("01Z", "error", now, "newer-read"))
+
+	view := p.View()
+	if !strings.Contains(view, "older-unread") {
+		t.Errorf("collapsed preview should surface the newest unread row; got %q", view)
+	}
+	if strings.Contains(view, "newer-read") {
+		t.Errorf("collapsed preview must not show a read row even when it has the higher ULID; got %q", view)
+	}
+}
+
+// When every tracked row is read, the collapsed line falls back to the bare
+// header — no severity tag, no title — instead of advertising stale state.
+func TestNotificationsPanel_CollapsedPreviewEmptyWhenAllRead(t *testing.T) {
+	p := newNotificationsPanel()
+	p.SetWidth(120)
+	now := time.Now()
+	p.Upsert(readNotification("01A", "error", now.Add(-time.Hour), "first-read"))
+	p.Upsert(readNotification("01B", "error", now, "second-read"))
+
+	view := p.View()
+	if !strings.Contains(view, "Notifications") {
+		t.Errorf("collapsed view should still show the header label; got %q", view)
+	}
+	if !strings.Contains(view, "press n to expand") {
+		t.Errorf("collapsed view should still show the expand hint; got %q", view)
+	}
+	if strings.Contains(view, "ERROR") {
+		t.Errorf("collapsed view must not render a severity tag when nothing is unread; got %q", view)
+	}
+	if strings.Contains(view, "first-read") || strings.Contains(view, "second-read") {
+		t.Errorf("collapsed view must not render a row title when nothing is unread; got %q", view)
+	}
+}
+
 func TestNotificationsPanel_UpsertCoalesceRepaints(t *testing.T) {
 	p := newNotificationsPanel()
 	now := time.Now()

@@ -465,11 +465,13 @@ func stripeFocusLine(content string, restWidth int, restBg lipgloss.Color) strin
 }
 
 func (p *notificationsPanel) latest() *apiclient.Notification {
-	if len(p.ordered) == 0 {
-		return nil
+	for _, id := range p.ordered {
+		n := p.items[id]
+		if isUnread(n) {
+			return &n
+		}
 	}
-	n := p.items[p.ordered[0]]
-	return &n
+	return nil
 }
 
 func (p *notificationsPanel) ensureCursorVisible() {
