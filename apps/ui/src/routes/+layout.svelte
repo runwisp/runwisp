@@ -6,7 +6,7 @@
     import { browser } from "$app/environment";
     import { page } from "$app/stores";
     import { preloadCode } from "$app/navigation";
-    import { runUpdatesStore, authStore, taskStore } from "$lib/stores";
+    import { runUpdatesStore, authStore, taskStore, notificationStore } from "$lib/stores";
     import { browserAuthEventBus } from "$lib/adapters/browser";
     import AuthModal from "$lib/components/AuthModal.svelte";
     import AppLayout from "$lib/layouts/AppLayout.svelte";
@@ -31,11 +31,13 @@
         const disposeAuthSuccess = browserAuthEventBus.onAuthSuccess(() => {
             runUpdatesStore.connect();
             void taskStore.loadIfNeeded();
+            void notificationStore.init();
         });
 
         return () => {
             disposeAuthSuccess();
             runUpdatesStore.disconnect();
+            notificationStore.disconnect();
         };
     });
 
@@ -46,6 +48,7 @@
         if (status.authenticated) {
             runUpdatesStore.connect();
             void taskStore.loadIfNeeded();
+            void notificationStore.init();
         }
     });
 

@@ -8,3 +8,5 @@ export type { RunUpdateHandler, RunUpdateEvent } from "./run-updates.js";
 export { connectionStore } from "./connection.svelte.js";
 export type { ConnectionStatus } from "./connection.svelte.js";
 export { systemStore } from "./system.svelte.js";
+export { notificationStore } from "./notifications.svelte.js";
+export type { Notification } from "./notifications.svelte.js";

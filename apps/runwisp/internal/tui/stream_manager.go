@@ -24,7 +24,8 @@ type StreamManager struct {
 	logCh     <-chan string
 	sseCh     <-chan apiclient.RunStreamEvent
 
-	daemonLogCh <-chan string
+	daemonLogCh    <-chan string
+	notificationCh <-chan apiclient.NotificationStreamEvent
 }
 
 func NewStreamManager(client *apiclient.Client) StreamManager {
@@ -216,6 +217,95 @@ func (sm *StreamManager) ContinueListeningDaemonLog() tea.Cmd {
 		return listenDaemonLog(sm.daemonLogCh)
 	}
 	return nil
+}
+
+// SubscribeNotifications connects to the SSE notifications stream.
+func (sm *StreamManager) SubscribeNotifications() tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	ctx := sm.ctx
+	return func() tea.Msg {
+		ch, err := client.StreamNotifications(ctx)
+		if err != nil {
+			return DebugLogMsg{Message: "Notifications stream failed: " + err.Error()}
+		}
+		return notificationStreamConnectedMsg{ch: ch}
+	}
+}
+
+// OnNotificationConnected stores the channel and returns a command to listen.
+func (sm *StreamManager) OnNotificationConnected(ch <-chan apiclient.NotificationStreamEvent) tea.Cmd {
+	sm.notificationCh = ch
+	return listenNotifications(ch)
+}
+
+// ContinueListeningNotifications returns a command to wait for the next event.
+func (sm *StreamManager) ContinueListeningNotifications() tea.Cmd {
+	if sm.notificationCh != nil {
+		return listenNotifications(sm.notificationCh)
+	}
+	return nil
+}
+
+// FetchUnreadCount returns a command that loads the snapshot unread count.
+func (sm *StreamManager) FetchUnreadCount() tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		count, err := client.UnreadNotificationCount()
+		return notificationUnreadCountMsg{Count: count, Err: err}
+	}
+}
+
+// FetchNotifications returns a command that loads the most recent page of
+// notifications. The result seeds the panel so the expanded view isn't empty
+// while the SSE stream waits for new events.
+func (sm *StreamManager) FetchNotifications() tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		page, err := client.ListNotifications(notificationsInitialPageSize, "")
+		if err != nil {
+			return notificationsLoadedMsg{Err: err}
+		}
+		return notificationsLoadedMsg{Items: page.Items}
+	}
+}
+
+// MarkNotificationRead persists a single notification's read state.
+func (sm *StreamManager) MarkNotificationRead(id string) tea.Cmd {
+	if sm.client == nil || id == "" {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		err := client.MarkNotificationRead(id)
+		return notificationReadStateMsg{ID: id, Read: true, Err: err}
+	}
+}
+
+// MarkNotificationUnread clears a single notification's read state.
+func (sm *StreamManager) MarkNotificationUnread(id string) tea.Cmd {
+	if sm.client == nil || id == "" {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		err := client.MarkNotificationUnread(id)
+		return notificationReadStateMsg{ID: id, Read: false, Err: err}
+	}
+}
+
+func listenNotifications(ch <-chan apiclient.NotificationStreamEvent) tea.Cmd {
+	return listenChannel(ch, func(event apiclient.NotificationStreamEvent) tea.Msg {
+		return notificationEventMsg{Event: event}
+	}, notificationStreamDisconnectedMsg{})
 }
 
 func listenDaemonLog(ch <-chan string) tea.Cmd {

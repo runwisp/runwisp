@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Notifications.** RunWisp now pushes failures at you instead of waiting for you to notice. In-app notifications are on by default - every failed, timed-out, or crashed run lights up a bell in the Web UI and the footer in the TUI, with zero config. Repeats are coalesced into a single row with a sparkline and a rhythm-aware summary ("12× in the last hour, latest 30s ago"), so a flapping job is one line, not a wall of noise. Want it in Slack or Telegram too? Add a `[[notifier]]` block and a route, and the same failures flow out as messages — and if your webhook breaks, that failure shows up in-app, so the alerting never silently dies.
+
 ### Changed
 
 - **Default HTTP port moved from `8080` to `9477`.** Port `8080` collides with too many other tools by default (Tomcat, dev proxies, k8s port-forwards). RunWisp now listens on `9477` out of the box; pass `--port 8080` (or set it in `runwisp.toml`) to keep the old behaviour.
@@ -15,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Version is now reported correctly everywhere.** The CLI (`runwisp version`), the TUI info pane, and the web dashboard previously all showed `0.0.0-dev` even on released builds. The build now reads the version from the top of `CHANGELOG.md`, so what you see in the UI matches the release you installed.
 - **Duration and size fields in API responses now serialise as integers.** `timeout`, `restart_delay`, `retry_delay`, and `keep_for` are emitted as nanoseconds (int64); `log_max_size` is emitted as bytes. The TOML config surface is unchanged, but values are parsed once at config load time, so a malformed duration or byte size is now rejected at startup with a clear error.
+- **Notification badge no longer drifts in the TUI.** Every notification SSE event now ships the server's authoritative unread count, and a new `notifications.unread_count_changed` event fires on Mark-all-read. The TUI replaces (never increments) its badge from these values, so the count agrees with the daemon's live state instead of slowly diverging until you restart the TUI.
 
 ## [0.3.0] - 2026-04-29
 

@@ -7,6 +7,7 @@
     import { type Snippet, type Component } from "svelte";
     import { resolve } from "$app/paths";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
+    import NotificationBell from "$lib/components/NotificationBell.svelte";
 
     let {
         activePage,
@@ -165,6 +166,7 @@
                     >{activePage.replace("task_", "").replace(/_/g, " ")}</span
                 >
             </div>
+            <NotificationBell />
         </header>
 
         <!-- Scrollable Area -->

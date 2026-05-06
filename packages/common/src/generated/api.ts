@@ -16,6 +16,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List in-app notifications */
+        get: operations["listNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark every unread notification read */
+        post: operations["markAllNotificationsRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream notification create/update events
+         * @description Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced or marked read/unread.
+         */
+        get: operations["streamNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Count notifications with read_at IS NULL */
+        get: operations["getUnreadNotificationCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a single notification read */
+        post: operations["markNotificationRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/{id}/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a single notification unread */
+        post: operations["markNotificationUnread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs": {
         parameters: {
             query?: never;
@@ -304,6 +409,85 @@ export interface components {
              */
             ts: number;
         };
+        NotificationCreatedEvent: {
+            notification: components["schemas"]["NotificationDTO"];
+            /** Format: int64 */
+            unread_count: number;
+        };
+        NotificationDTO: {
+            /** @description Pre-rendered body text */
+            body: string;
+            /**
+             * Format: int64
+             * @description Number of coalesced occurrences within the window
+             */
+            count: number;
+            /**
+             * Format: date-time
+             * @description First time this notification was raised
+             */
+            created_at: string;
+            /** @description Coalescing key (FNV1a hex) */
+            fingerprint: string;
+            /** @description Stable ULID identifier */
+            id: string;
+            /** @description Event kind (run.failed, notify.delivery_failed, ...) */
+            kind: string;
+            /**
+             * Format: date-time
+             * @description Most recent occurrence
+             */
+            last_occurred_at: string;
+            /** @description Most-recent timestamps (newest first), ISO8601 */
+            occurrences: string[] | null;
+            /**
+             * Format: date-time
+             * @description When the operator marked this row read; null/absent when unread
+             */
+            read_at?: string;
+            /** @description Run that produced this notification (empty when not run-derived) */
+            run_id: string;
+            /** @description info | warn | error */
+            severity: string;
+            /** @description Task that produced this notification (empty for daemon-level events) */
+            task_name: string;
+            /** @description Human-readable title */
+            title: string;
+        };
+        NotificationUnreadBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/NotificationUnreadBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: int64
+             * @description Number of notifications with read_at IS NULL
+             */
+            count: number;
+        };
+        NotificationUnreadCountEvent: {
+            /** Format: int64 */
+            unread_count: number;
+        };
+        NotificationUpdatedEvent: {
+            notification: components["schemas"]["NotificationDTO"];
+            /** Format: int64 */
+            unread_count: number;
+        };
+        NotificationsListBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/NotificationsListBody.json
+             */
+            readonly $schema?: string;
+            /** @description Notifications in id-DESC order */
+            items: components["schemas"]["NotificationDTO"][] | null;
+            /** @description Cursor to pass as 'before' on the next page; empty when exhausted */
+            next_cursor?: string;
+        };
         PingEvent: Record<string, never>;
         Run: {
             /**
@@ -580,6 +764,229 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DaemonInfo"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    listNotifications: {
+        parameters: {
+            query?: {
+                /** @description Max items per page */
+                limit?: number;
+                /** @description Cursor: return only items with id < before (descending) */
+                before?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationsListBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    markAllNotificationsRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    streamNotifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": ({
+                        data: components["schemas"]["NotificationCreatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notification.created";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["NotificationUpdatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notification.updated";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["NotificationUnreadCountEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notifications.unread_count_changed";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["PingEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "ping";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    })[];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getUnreadNotificationCount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationUnreadBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    markNotificationRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Notification ULID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    markNotificationUnread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Notification ULID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

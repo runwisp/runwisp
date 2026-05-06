@@ -75,6 +75,21 @@
         }
     });
 
+    $effect(() => {
+        const initialRunId = $page.url.searchParams.get("runId");
+        if (!initialRunId || !taskName || runs.length === 0) return;
+        if (runs.some((r) => r.id === initialRunId)) return;
+        void (async () => {
+            try {
+                const run = await tasksApi.getRun(taskName, initialRunId);
+                if (run) runs = upsertRun(runs, run);
+            } catch {
+                // Run not found / not authorized — TaskPage's fallback selection
+                // (running run, else newest) keeps the UI usable.
+            }
+        })();
+    });
+
     async function handleRun() {
         if (!taskName) return;
         triggering = true;

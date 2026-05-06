@@ -77,6 +77,26 @@ CREATE TABLE IF NOT EXISTS config_entries (
 key   TEXT PRIMARY KEY,
 value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS notifications (
+id                TEXT PRIMARY KEY,
+fingerprint       TEXT NOT NULL,
+kind              TEXT NOT NULL,
+severity          TEXT NOT NULL,
+task_name         TEXT NOT NULL DEFAULT '',
+run_id            TEXT NOT NULL DEFAULT '',
+title             TEXT NOT NULL DEFAULT '',
+body              TEXT NOT NULL DEFAULT '',
+count             INTEGER NOT NULL DEFAULT 1,
+occurrences_json  TEXT NOT NULL DEFAULT '[]',
+created_at        DATETIME NOT NULL,
+last_occurred_at  DATETIME NOT NULL,
+read_at           DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_fingerprint ON notifications(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_severity ON notifications(severity);
+CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
 `
 
 // New opens (and migrates) the SQLite database.

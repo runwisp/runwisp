@@ -78,7 +78,106 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMetricsHistory(msg)
 	case runSummaryMsg:
 		return m.handleRunSummary(msg)
+	case notificationStreamConnectedMsg:
+		return m.handleNotificationStreamConnected(msg)
+	case notificationEventMsg:
+		return m.handleNotificationEvent(msg)
+	case notificationStreamDisconnectedMsg:
+		return m.handleNotificationStreamDisconnected()
+	case notificationUnreadCountMsg:
+		return m.handleNotificationUnreadCount(msg)
+	case notificationsLoadedMsg:
+		return m.handleNotificationsLoaded(msg)
+	case notificationReadStateMsg:
+		return m.handleNotificationReadState(msg)
+	case notificationBoundaryFlashClearedMsg:
+		m.notifications.ClearBoundaryFlash()
+		return m, nil
+	case openRunMsg:
+		return m.handleOpenRun(msg)
 	}
+	return m, nil
+}
+
+func (m Model) handleNotificationStreamConnected(msg notificationStreamConnectedMsg) (tea.Model, tea.Cmd) {
+	return m, m.streams.OnNotificationConnected(msg.ch)
+}
+
+func (m Model) handleNotificationEvent(msg notificationEventMsg) (tea.Model, tea.Cmd) {
+	switch msg.Event.Type {
+	case "notification.created", "notification.updated":
+		env, err := apiclient.DecodeNotificationEnvelope(msg.Event.Data)
+		if err != nil {
+			m.debugView.AppendLine("Failed to parse notification: " + err.Error())
+		} else {
+			m.notifications.SetUnread(int(env.UnreadCount))
+			if m.notifications.Upsert(env.Notification) {
+				m.updateLayout()
+			}
+		}
+	case "notifications.unread_count_changed":
+		count, err := apiclient.DecodeUnreadCountEnvelope(msg.Event.Data)
+		if err != nil {
+			m.debugView.AppendLine("Failed to parse unread count: " + err.Error())
+		} else {
+			m.notifications.SetUnread(int(count))
+			m.updateLayout()
+		}
+	}
+	return m, m.streams.ContinueListeningNotifications()
+}
+
+func (m Model) handleNotificationStreamDisconnected() (tea.Model, tea.Cmd) {
+	m.debugView.AppendLine("Notifications stream disconnected. Reconnecting...")
+	return m, m.streams.SubscribeNotifications()
+}
+
+func (m Model) handleNotificationUnreadCount(msg notificationUnreadCountMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.debugView.AppendLine("Failed to load unread count: " + msg.Err.Error())
+		return m, nil
+	}
+	m.notifications.SetUnread(int(msg.Count))
+	m.updateLayout()
+	return m, nil
+}
+
+func (m Model) handleNotificationsLoaded(msg notificationsLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.debugView.AppendLine("Failed to load notifications: " + msg.Err.Error())
+		return m, nil
+	}
+	if m.notifications.LoadHistorical(msg.Items) {
+		m.updateLayout()
+	}
+	return m, nil
+}
+
+func (m Model) handleOpenRun(msg openRunMsg) (tea.Model, tea.Cmd) {
+	if msg.Run == nil {
+		return m, nil
+	}
+	return m, m.openExecView(msg.Run)
+}
+
+func (m Model) handleNotificationReadState(msg notificationReadStateMsg) (tea.Model, tea.Cmd) {
+	if msg.Err == nil {
+		// Local state was already applied optimistically — nothing to do.
+		// The server publishes notification.updated so other surfaces sync.
+		return m, nil
+	}
+	verb := "read"
+	if !msg.Read {
+		verb = "unread"
+	}
+	m.debugView.AppendLine("Failed to mark notification " + verb + ": " + msg.Err.Error())
+	// Roll back the optimistic update.
+	if msg.Read {
+		m.notifications.MarkUnreadLocal(msg.ID)
+	} else {
+		m.notifications.MarkReadLocal(msg.ID, time.Now())
+	}
+	m.updateLayout()
 	return m, nil
 }
 
@@ -301,6 +400,9 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 	}
 	if m.sidebar.ActivePage() == PageInfo {
 		cmds = append(cmds, m.streams.FetchSystemStats())
+	}
+	if m.notifications.PanelHeight() > 0 {
+		m.notifications.RefreshLabels()
 	}
 	return m, tea.Batch(cmds...)
 }

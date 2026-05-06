@@ -17,8 +17,9 @@ type ConfigRepository interface {
 	SetConfigValue(key, value string) error
 }
 
-// Database is the full persistent store for the daemon: runs + configuration.
+// Database is the full persistent store for the daemon: runs + configuration + notifications.
 type Database interface {
 	RunRepository
 	ConfigRepository
+	NotificationRepository
 }

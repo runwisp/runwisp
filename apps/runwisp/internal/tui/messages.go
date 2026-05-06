@@ -187,3 +187,55 @@ type shutdownDoneMsg struct {
 type spinnerTickMsg struct {
 	Inner tea.Msg
 }
+
+// notificationStreamConnectedMsg signals the notifications SSE stream is established.
+type notificationStreamConnectedMsg struct {
+	ch <-chan apiclient.NotificationStreamEvent
+}
+
+// notificationEventMsg wraps a parsed notification SSE event.
+type notificationEventMsg struct {
+	Event apiclient.NotificationStreamEvent
+}
+
+// notificationStreamDisconnectedMsg signals the notifications stream dropped.
+type notificationStreamDisconnectedMsg struct{}
+
+// openRunMsg requests the model open an exec view for the given run. Used by
+// asynchronous run lookups (e.g., notification → exec view) where the run is
+// not in the local execWindow cache yet.
+type openRunMsg struct {
+	Run *model.Run
+}
+
+// notificationUnreadCountMsg delivers the snapshot unread count fetched at
+// startup. It seeds the panel's badge before the first list page resolves so
+// the operator sees the right number even when older unread items live
+// beyond the loaded slice.
+type notificationUnreadCountMsg struct {
+	Count int64
+	Err   error
+}
+
+// notificationsLoadedMsg delivers the initial page of notifications fetched
+// at startup so the expanded panel is populated immediately, instead of
+// waiting for a fresh SSE event.
+type notificationsLoadedMsg struct {
+	Items []apiclient.Notification
+	Err   error
+}
+
+// notificationReadStateMsg is the result of a per-notification mark-read or
+// mark-unread action. The TUI applies an optimistic local update before
+// firing the API call, so this message only logs failures (and resyncs from
+// the server when one occurs).
+type notificationReadStateMsg struct {
+	ID   string
+	Read bool
+	Err  error
+}
+
+// notificationBoundaryFlashClearedMsg nudges the panel to repaint after a
+// boundary-flash duration elapses so the cursor row returns to its normal
+// background.
+type notificationBoundaryFlashClearedMsg struct{}

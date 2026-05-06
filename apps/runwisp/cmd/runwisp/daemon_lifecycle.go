@@ -13,7 +13,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/cloud"
-	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui"
 	"log/slog"
@@ -63,7 +62,7 @@ func startCloudClient(
 }
 
 // runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down.
-func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, scheduler *runtime.Scheduler, jm runtime.TaskManager) error {
+func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices) error {
 	slog.Info("Running in daemon mode (no TUI). Press Ctrl+C to stop.")
 
 	sigCh := make(chan os.Signal, 1)
@@ -73,10 +72,15 @@ func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, schedu
 	slog.Info("Shutting down...")
 	cancelCloud()
 	cloudWG.Wait()
-	if scheduler != nil {
-		scheduler.Stop()
+	if svc.Scheduler != nil {
+		svc.Scheduler.Stop()
 	}
-	jm.Shutdown()
+	if svc.Notify.Service != nil {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = svc.Notify.Service.Stop(stopCtx)
+		stopCancel()
+	}
+	svc.TaskManager.Shutdown()
 	slog.Info("Goodbye!")
 	return nil
 }
@@ -114,6 +118,11 @@ func runWithTUI(
 		if svc.Scheduler != nil {
 			svc.Scheduler.Stop()
 		}
+		if svc.Notify.Service != nil {
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = svc.Notify.Service.Stop(stopCtx)
+			stopCancel()
+		}
 		svc.TaskManager.Shutdown()
 		return nil
 	}
@@ -132,7 +141,7 @@ func runWithTUI(
 
 	if quitAction == tui.QuitKeepDaemon {
 		slog.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
-		return runHeadless(cancelCloud, cloudWG, svc.Scheduler, svc.TaskManager)
+		return runHeadless(cancelCloud, cloudWG, svc)
 	}
 
 	tui.PrintShutdownComplete()

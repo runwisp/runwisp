@@ -8,3 +8,6 @@ bun.lockb
 # Miscellaneous
 /static/
 /test-results/
+
+# Generated rhythm test vectors (Go-side fixture for parity test)
+src/lib/utils/__rhythm_vectors.json

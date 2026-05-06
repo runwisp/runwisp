@@ -192,6 +192,190 @@
         ],
         "type": "object"
       },
+      "NotificationCreatedEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "notification": {
+            "$ref": "#/components/schemas/NotificationDTO"
+          },
+          "unread_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notification",
+          "unread_count"
+        ],
+        "type": "object"
+      },
+      "NotificationDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "description": "Pre-rendered body text",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of coalesced occurrences within the window",
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "description": "First time this notification was raised",
+            "format": "date-time",
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "Coalescing key (FNV1a hex)",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable ULID identifier",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Event kind (run.failed, notify.delivery_failed, ...)",
+            "type": "string"
+          },
+          "last_occurred_at": {
+            "description": "Most recent occurrence",
+            "format": "date-time",
+            "type": "string"
+          },
+          "occurrences": {
+            "description": "Most-recent timestamps (newest first), ISO8601",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "read_at": {
+            "description": "When the operator marked this row read; null/absent when unread",
+            "format": "date-time",
+            "type": "string"
+          },
+          "run_id": {
+            "description": "Run that produced this notification (empty when not run-derived)",
+            "type": "string"
+          },
+          "severity": {
+            "description": "info | warn | error",
+            "type": "string"
+          },
+          "task_name": {
+            "description": "Task that produced this notification (empty for daemon-level events)",
+            "type": "string"
+          },
+          "title": {
+            "description": "Human-readable title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "fingerprint",
+          "kind",
+          "severity",
+          "task_name",
+          "run_id",
+          "title",
+          "body",
+          "count",
+          "occurrences",
+          "created_at",
+          "last_occurred_at"
+        ],
+        "type": "object"
+      },
+      "NotificationUnreadBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/NotificationUnreadBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of notifications with read_at IS NULL",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "NotificationUnreadCountEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "unread_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread_count"
+        ],
+        "type": "object"
+      },
+      "NotificationUpdatedEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "notification": {
+            "$ref": "#/components/schemas/NotificationDTO"
+          },
+          "unread_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notification",
+          "unread_count"
+        ],
+        "type": "object"
+      },
+      "NotificationsListBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/NotificationsListBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "items": {
+            "description": "Notifications in id-DESC order",
+            "items": {
+              "$ref": "#/components/schemas/NotificationDTO"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "next_cursor": {
+            "description": "Cursor to pass as 'before' on the next page; empty when exhausted",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "PingEvent": {
         "additionalProperties": false,
         "type": "object"
@@ -748,6 +932,332 @@
         "summary": "Get daemon info",
         "tags": [
           "System"
+        ]
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "operationId": "listNotifications",
+        "parameters": [
+          {
+            "description": "Max items per page",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "description": "Max items per page",
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Cursor: return only items with id \u003c before (descending)",
+            "explode": false,
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "description": "Cursor: return only items with id \u003c before (descending)",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsListBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List in-app notifications",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/notifications/read": {
+      "post": {
+        "operationId": "markAllNotificationsRead",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mark every unread notification read",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/notifications/stream": {
+      "get": {
+        "description": "Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced or marked read/unread.",
+        "operationId": "streamNotifications",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationCreatedEvent"
+                          },
+                          "event": {
+                            "const": "notification.created",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notification.created",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationUpdatedEvent"
+                          },
+                          "event": {
+                            "const": "notification.updated",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notification.updated",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
+                          },
+                          "event": {
+                            "const": "notifications.unread_count_changed",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notifications.unread_count_changed",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/PingEvent"
+                          },
+                          "event": {
+                            "const": "ping",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event ping",
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "title": "Server Sent Events",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stream notification create/update events",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/notifications/unread-count": {
+      "get": {
+        "operationId": "getUnreadNotificationCount",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationUnreadBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Count notifications with read_at IS NULL",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "post": {
+        "operationId": "markNotificationRead",
+        "parameters": [
+          {
+            "description": "Notification ULID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Notification ULID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mark a single notification read",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/notifications/{id}/unread": {
+      "post": {
+        "operationId": "markNotificationUnread",
+        "parameters": [
+          {
+            "description": "Notification ULID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Notification ULID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mark a single notification unread",
+        "tags": [
+          "Notifications"
         ]
       }
     },

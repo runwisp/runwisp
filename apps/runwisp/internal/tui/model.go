@@ -46,8 +46,9 @@ type Model struct {
 	infoView   *InfoView
 	debugView  DebugView
 
-	dialogs DialogManager
-	streams StreamManager
+	dialogs       DialogManager
+	streams       StreamManager
+	notifications notificationsPanel
 
 	panelFocus PanelFocus
 	info       StartupInfo
@@ -95,6 +96,7 @@ func NewModel(cfg TUIConfig) Model {
 		debugView:        debugView,
 		dialogs:          DialogManager{},
 		streams:          NewStreamManager(cfg.Client),
+		notifications:    newNotificationsPanel(),
 		panelFocus:       PanelSidebar,
 		info:             cfg.Info,
 		client:           cfg.Client,
@@ -111,6 +113,9 @@ func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.streams.FetchExecWindow(m.execWindow, m.execList.scroll, m.execList.viewportHeight()),
 		m.streams.SubscribeEvents(),
+		m.streams.SubscribeNotifications(),
+		m.streams.FetchUnreadCount(),
+		m.streams.FetchNotifications(),
 		m.tickCmd(),
 	}
 	if m.isRemote {
@@ -128,6 +133,8 @@ func (m Model) tickCmd() tea.Cmd {
 // openExecView creates the execution detail view for the given run.
 // It checks the exec window for a more recent version of the run
 // (SSE events may arrive before the API response that triggered this call).
+// Any unread notifications attached to this run are marked read — opening the
+// run is the operator acknowledging it.
 // Returns a tea.Cmd to start log streaming if the run is active or completed.
 func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	if latest := m.execWindow.FindRun(run.ID); latest != nil {
@@ -141,10 +148,47 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	ev.headerFocus = headerFocusBack
 	m.execView = &ev
 	m.execList.SetFocused(false)
+
+	cmds := []tea.Cmd{m.markRunNotificationsRead(run.ID)}
 	if run.Status != model.PhasePending {
-		return m.streams.StartLogStream(run)
+		cmds = append(cmds, m.streams.StartLogStream(run))
 	}
-	return nil
+	return tea.Batch(cmds...)
+}
+
+// markRunNotificationsRead applies an optimistic local mark-read to every
+// known notification tied to runID and fires per-row API calls. Returns nil
+// when nothing matches so the caller doesn't pay for an empty batch.
+func (m *Model) markRunNotificationsRead(runID string) tea.Cmd {
+	ids := m.notifications.UnreadIDsForRun(runID)
+	if len(ids) == 0 {
+		return nil
+	}
+	now := time.Now()
+	cmds := make([]tea.Cmd, 0, len(ids))
+	for _, id := range ids {
+		m.notifications.MarkReadLocal(id, now)
+		if cmd := m.streams.MarkNotificationRead(id); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+// toggleSelectedNotificationRead flips the read state of the cursor row in
+// the expanded notifications panel. Optimistically updates the local store
+// and returns a command that persists the change to the daemon.
+func (m *Model) toggleSelectedNotificationRead() tea.Cmd {
+	sel := m.notifications.Selected()
+	if sel == nil {
+		return nil
+	}
+	if sel.ReadAt == nil {
+		m.notifications.MarkReadLocal(sel.ID, time.Now())
+		return m.streams.MarkNotificationRead(sel.ID)
+	}
+	m.notifications.MarkUnreadLocal(sel.ID)
+	return m.streams.MarkNotificationUnread(sel.ID)
 }
 
 func (m *Model) closeExecView() tea.Cmd {
@@ -215,6 +259,10 @@ func (m *Model) recalcExecListHeight() {
 			m.layout.homeFieldsY = fieldsStartY
 			listH -= m.layout.homeH
 		}
+	}
+	m.notifications.SetWidth(mainW)
+	if m.sidebar.ActivePage() == PageHome {
+		listH -= m.notifications.PanelHeight()
 	}
 	if listH < 5 {
 		listH = 5
@@ -319,6 +367,25 @@ func (m *Model) copyExecField() tea.Cmd {
 // hasLaunchTicket reports whether the one-click browser-open action is available.
 func (m *Model) hasLaunchTicket() bool {
 	return m.launchTicketFunc != nil
+}
+
+// openRunByID opens the exec view for a run identified by task + run ID.
+// Looks the run up in the in-memory window first; falls back to a REST call.
+func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
+	if run := m.execWindow.FindRun(runID); run != nil {
+		return m.openExecView(run)
+	}
+	if m.client == nil {
+		return nil
+	}
+	client := m.client
+	return func() tea.Msg {
+		run, err := client.GetRun(taskName, runID)
+		if err != nil {
+			return DebugLogMsg{Message: fmt.Sprintf("Failed to load run %s: %s", runID, err.Error())}
+		}
+		return openRunMsg{Run: run}
+	}
 }
 
 // activateHomeField performs the primary action for the currently selected home field:

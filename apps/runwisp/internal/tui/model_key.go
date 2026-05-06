@@ -18,7 +18,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showQuitConfirm()
 		return m, nil
 
+	case "n":
+		if m.execView == nil && m.sidebar.ActivePage() == PageHome {
+			m.notifications.Toggle()
+			m.updateLayout()
+			return m, nil
+		}
+
 	case "esc":
+		if m.notifications.IsExpanded() {
+			m.notifications.Toggle()
+			m.updateLayout()
+			return m, nil
+		}
 		if m.execView != nil {
 			if m.execView.Fullscreen() {
 				m.execView.ToggleFullscreen()
@@ -86,6 +98,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter":
+		if m.notifications.IsExpanded() {
+			if sel := m.notifications.Selected(); sel != nil && sel.RunID != "" {
+				m.notifications.Toggle()
+				m.updateLayout()
+				return m, m.openRunByID(sel.TaskName, sel.RunID)
+			}
+			return m, nil
+		}
 		if m.execView != nil && m.panelFocus == PanelMain && m.execView.headerFocus != headerFocusNone {
 			switch m.execView.headerFocus {
 			case headerFocusBack:
@@ -118,7 +138,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "r":
+	case "r", "R":
+		if m.notifications.IsExpanded() {
+			return m, m.toggleSelectedNotificationRead()
+		}
+		if msg.String() == "R" {
+			break
+		}
 		if m.execView != nil {
 			return m, m.confirmAction(confirmActionRetry)
 		}
@@ -130,6 +156,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "up", "k":
+		if m.notifications.IsExpanded() {
+			if m.notifications.MoveCursor(-1) {
+				return m, nil
+			}
+			m.notifications.BumpBoundaryFlash()
+			return m, scheduleNotificationFlashClear()
+		}
 		if m.panelFocus == PanelMain && m.execView == nil && m.sidebar.ActivePage() == PageHome && m.sidebar.ActiveTask() == "" {
 			if m.execList.Cursor() == 0 || m.execList.totalCount() == 0 {
 				fields := homeFields(m.info, m.hasLaunchTicket())
@@ -145,6 +178,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "down", "j":
+		if m.notifications.IsExpanded() {
+			if m.notifications.MoveCursor(1) {
+				return m, nil
+			}
+			m.notifications.BumpBoundaryFlash()
+			return m, scheduleNotificationFlashClear()
+		}
 		if m.panelFocus == PanelMain && m.execView == nil && m.homeCursor >= 0 {
 			fields := homeFields(m.info, m.hasLaunchTicket())
 			if m.homeCursor < len(fields)-1 {

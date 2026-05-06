@@ -1,0 +1,27 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "{{ emoji .Severity }} {{ .TaskName }} — {{ .Kind }}"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Reason:* {{ jsonStr .Reason }}\n*Severity:* `{{ .Severity }}`"
+      }
+    }{{- if .Run }},
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Run `{{ .Run.ID }}` triggered by `{{ .Run.TriggeredBy }}` at {{ timeRFC .Timestamp }}"
+        }
+      ]
+    }{{- end }}
+  ]
+}
