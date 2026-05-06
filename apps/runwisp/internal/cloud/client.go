@@ -164,6 +164,7 @@ func (client *Client) Run(ctx context.Context) error {
 	if client == nil {
 		return nil
 	}
+	client.bridge.SetArchiveContext(ctx)
 	defer client.bridge.Shutdown()
 
 	backoff := newReconnectBackoff()

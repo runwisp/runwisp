@@ -6,6 +6,7 @@ package cloud
 import (
 	"context"
 	"encoding/base64"
+	"sync"
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
@@ -23,6 +24,9 @@ type EventBridge struct {
 	sendReady     func(any) error
 	onStateChange func()
 	unsubscribers []func()
+
+	ctxMu      sync.Mutex
+	archiveCtx context.Context
 }
 
 func NewEventBridge(
@@ -51,6 +55,16 @@ func (b *EventBridge) Subscribe() {
 	)
 }
 
+// SetArchiveContext binds a daemon-lifecycle context that finalize goroutines
+// thread into log archival. When the daemon shuts down and this ctx is
+// cancelled, in-flight uploads abort instead of running until process exit.
+// Until set (or after Shutdown), archives fall back to context.Background.
+func (b *EventBridge) SetArchiveContext(ctx context.Context) {
+	b.ctxMu.Lock()
+	b.archiveCtx = ctx
+	b.ctxMu.Unlock()
+}
+
 // Shutdown removes all event subscriptions.
 func (b *EventBridge) Shutdown() {
 	for _, unsubscribe := range b.unsubscribers {
@@ -59,6 +73,18 @@ func (b *EventBridge) Shutdown() {
 		}
 	}
 	b.unsubscribers = nil
+	b.ctxMu.Lock()
+	b.archiveCtx = nil
+	b.ctxMu.Unlock()
+}
+
+func (b *EventBridge) currentArchiveContext() context.Context {
+	b.ctxMu.Lock()
+	defer b.ctxMu.Unlock()
+	if b.archiveCtx == nil {
+		return context.Background()
+	}
+	return b.archiveCtx
 }
 
 func (b *EventBridge) handleRunEvent(event events.Event) {
@@ -99,7 +125,7 @@ func (b *EventBridge) finalizeRun(run *model.Run, update protocol.ExecutionUpdat
 	uploader := b.handler.Uploader()
 	if uploader != nil {
 		logFilePath := logutil.ResolveRunLogPath(b.handler.LogDir(), run.TaskName, run.ID, run.CreatedAt)
-		result, err := uploader.Archive(context.Background(), executionID, logFilePath)
+		result, err := uploader.Archive(b.currentArchiveContext(), executionID, logFilePath)
 		switch {
 		case err != nil:
 			slog.Warn("log archival failed; sending terminal update without logPath", "executionId", executionID, "err", err)

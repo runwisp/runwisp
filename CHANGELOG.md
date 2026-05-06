@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Cloud control-plane: terminal log archival.** When the optional cloud integration is enabled, finished runs whose dispatch carried a signed upload URL now have their logs gzipped and PUT to that URL, then echoed back to the control plane on the terminal status update. A new `pending_log_uploads` SQLite table tracks dispatches across daemon restarts, so a crash mid-archive is recovered on next start instead of losing the upload silently. Cloud integration remains strictly opt-in; daemons running offline are unaffected.
+- **Cloud control-plane protocol bumped to v2.** The dispatch payload gained `logUploadUrl` and `logPath`; the terminal `execution:update` echoes `logPath` and `logSize`. v0.4.x daemons (protocol v1) will not interoperate with v2 control planes.
+
 ### Fixed
 
-- **Graceful shutdown is now ~3× faster.** Daemon teardown previously ran six steps sequentially (up to ~10 s worst-case). All subsystems — HTTP server, scheduler, notification service, cloud client, task manager — now shut down in parallel under a 3-second deadline.
+- **Graceful shutdown is now ~3× faster.** Daemon teardown previously ran six steps sequentially (up to ~10 s worst-case). Subsystems now shut down in two layered phases — HTTP server and cloud connection first, then scheduler, notifications, and task manager — under a 3-second deadline. Per-subsystem shutdown errors are now logged instead of silently discarded.
 
 ## [0.4.0] - 2026-05-06
 
