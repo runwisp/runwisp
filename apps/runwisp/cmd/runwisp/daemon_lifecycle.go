@@ -61,8 +61,48 @@ func startCloudClient(
 	return cancelCloud, &cloudWG
 }
 
+// gracefulShutdown tears down all daemon subsystems in parallel under a 3-second
+// deadline. Both runHeadless and runWithTUI funnel through here.
+func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices, srv *server.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	cancelCloud()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() { defer wg.Done(); cloudWG.Wait() }()
+
+	if srv != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); _ = srv.Shutdown(ctx) }()
+	}
+	if svc.Scheduler != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); svc.Scheduler.Stop() }()
+	}
+	if svc.Notify.Service != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); _ = svc.Notify.Service.Stop(ctx) }()
+	}
+	wg.Add(1)
+	go func() { defer wg.Done(); svc.TaskManager.Shutdown() }()
+
+	svc.RetentionCleaner.Stop()
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		slog.Warn("Graceful shutdown deadline exceeded, forcing exit")
+	}
+}
+
 // runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down.
-func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices) error {
+func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices, srv *server.Server) error {
 	slog.Info("Running in daemon mode (no TUI). Press Ctrl+C to stop.")
 
 	sigCh := make(chan os.Signal, 1)
@@ -70,17 +110,7 @@ func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *d
 	<-sigCh
 
 	slog.Info("Shutting down...")
-	cancelCloud()
-	cloudWG.Wait()
-	if svc.Scheduler != nil {
-		svc.Scheduler.Stop()
-	}
-	if svc.Notify.Service != nil {
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = svc.Notify.Service.Stop(stopCtx)
-		stopCancel()
-	}
-	svc.TaskManager.Shutdown()
+	gracefulShutdown(cancelCloud, cloudWG, svc, srv)
 	slog.Info("Goodbye!")
 	return nil
 }
@@ -112,18 +142,7 @@ func runWithTUI(
 	}
 
 	shutdownFunc := func() error {
-		cancelCloud()
-		cloudWG.Wait()
-		svc.RetentionCleaner.Stop()
-		if svc.Scheduler != nil {
-			svc.Scheduler.Stop()
-		}
-		if svc.Notify.Service != nil {
-			stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = svc.Notify.Service.Stop(stopCtx)
-			stopCancel()
-		}
-		svc.TaskManager.Shutdown()
+		gracefulShutdown(cancelCloud, cloudWG, svc, srv)
 		return nil
 	}
 
@@ -141,7 +160,7 @@ func runWithTUI(
 
 	if quitAction == tui.QuitKeepDaemon {
 		slog.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
-		return runHeadless(cancelCloud, cloudWG, svc)
+		return runHeadless(cancelCloud, cloudWG, svc, srv)
 	}
 
 	tui.PrintShutdownComplete()

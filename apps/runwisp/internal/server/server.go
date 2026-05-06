@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -42,6 +43,7 @@ type Server struct {
 	stats           *statsProvider
 	metrics         *MetricsCollector
 	streams         *streamLimiter
+	httpServer      *http.Server
 }
 
 // DaemonInfo, TaskBrief, and CapInfo live in the model package.
@@ -114,7 +116,7 @@ func (srv *Server) Start() error {
 		host = "127.0.0.1"
 	}
 	addr := fmt.Sprintf("%s:%d", host, srv.port)
-	httpServer := &http.Server{
+	srv.httpServer = &http.Server{
 		Addr:              addr,
 		Handler:           srv.router,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -123,7 +125,16 @@ func (srv *Server) Start() error {
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 16, // 64 KiB
 	}
-	return httpServer.ListenAndServe()
+	return srv.httpServer.ListenAndServe()
+}
+
+// Shutdown gracefully stops the HTTP server and metrics collector.
+func (srv *Server) Shutdown(ctx context.Context) error {
+	srv.metrics.Stop()
+	if srv.httpServer != nil {
+		return srv.httpServer.Shutdown(ctx)
+	}
+	return nil
 }
 
 func (srv *Server) API() huma.API {
