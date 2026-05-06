@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package render
+// keep parity with apps/ui/src/lib/utils/notification-rhythm.ts
+package rhythm
 
 import (
 	"fmt"

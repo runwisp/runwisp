@@ -115,6 +115,65 @@ func TestSlack_PermanentOn4xxNoRetries(t *testing.T) {
 	assert.EqualValues(t, 1, hits.Load(), "must not retry permanent 4xx")
 }
 
+func TestSlack_ChannelOverrideIncludedWhenSet(t *testing.T) {
+	var receivedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		receivedBody = b
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ch, err := New(Config{
+		ID:         "ops",
+		WebhookURL: srv.URL,
+		Channel:    "#alerts",
+		Renderer:   newTestRenderer(t),
+		Transport:  newFastTransport(),
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, ch.Execute(context.Background(), &notify.Event{
+		Kind: notify.KindRunFailed, Severity: notify.SevError,
+		TaskName: "backup-db", Reason: "exit 1",
+		Timestamp: time.Now().UTC(),
+	}))
+
+	require.NotEmpty(t, receivedBody)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(receivedBody, &payload))
+	assert.Equal(t, "#alerts", payload["channel"])
+}
+
+func TestSlack_ChannelOverrideAbsentWhenEmpty(t *testing.T) {
+	var receivedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		receivedBody = b
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ch, err := New(Config{
+		ID:         "ops",
+		WebhookURL: srv.URL,
+		Renderer:   newTestRenderer(t),
+		Transport:  newFastTransport(),
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, ch.Execute(context.Background(), &notify.Event{
+		Kind: notify.KindRunFailed, Severity: notify.SevError,
+		TaskName: "backup-db", Reason: "exit 1",
+		Timestamp: time.Now().UTC(),
+	}))
+
+	require.NotEmpty(t, receivedBody)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(receivedBody, &payload))
+	assert.NotContains(t, payload, "channel")
+}
+
 func TestSlack_RedactsURLInError(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "ops",

@@ -130,11 +130,3 @@ func TestResolve_CompiledRulePredicates(t *testing.T) {
 	wrongTask := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, TaskName: "etl-1"}
 	assert.False(t, matches(wrongTask))
 }
-
-func TestQualifyActionID_PassThrough(t *testing.T) {
-	// Stub today; locking the contract so a future divergence trips the test.
-	got := qualifyActionID("ops", config.NotificationRoute{})
-	assert.Equal(t, "ops", got)
-	got = qualifyActionID("inapp", config.NotificationRoute{})
-	assert.Equal(t, "inapp", got)
-}

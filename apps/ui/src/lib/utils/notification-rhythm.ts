@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
+// keep parity with apps/runwisp/internal/tui/rhythm/rhythm.go
 import { relative } from "./format-time";
 
 export interface RhythmInput {

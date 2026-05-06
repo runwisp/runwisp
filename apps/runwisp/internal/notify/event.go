@@ -10,6 +10,7 @@
 package notify
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -47,6 +48,54 @@ var AllKinds = []Kind{
 	KindRunStopped,
 	KindRunCrashed,
 	KindNotifyDeliveryFailed,
+}
+
+// Title returns the user-facing title fragment for this Kind.
+func (k Kind) Title(ev *Event) string {
+	switch k {
+	case KindRunStarted:
+		return fmt.Sprintf("%s started", ev.TaskName)
+	case KindRunSucceeded:
+		return fmt.Sprintf("%s succeeded", ev.TaskName)
+	case KindRunFailed:
+		return fmt.Sprintf("%s failed", ev.TaskName)
+	case KindRunTimeout:
+		return fmt.Sprintf("%s timed out", ev.TaskName)
+	case KindRunStopped:
+		return fmt.Sprintf("%s stopped", ev.TaskName)
+	case KindRunCrashed:
+		return fmt.Sprintf("%s crashed", ev.TaskName)
+	case KindNotifyDeliveryFailed:
+		channel := ""
+		if ev.Extra != nil {
+			if v, ok := ev.Extra["channel"].(string); ok {
+				channel = v
+			}
+		}
+		if channel != "" {
+			return fmt.Sprintf("Delivery to %s failed", channel)
+		}
+		return "Notification delivery failed"
+	default:
+		return string(k)
+	}
+}
+
+// FingerprintToken returns the stable token used by the coalescer to bucket
+// events of this Kind. Must be updated when AllKinds grows.
+func (k Kind) FingerprintToken() string {
+	switch k {
+	case KindRunStarted,
+		KindRunSucceeded,
+		KindRunFailed,
+		KindRunTimeout,
+		KindRunStopped,
+		KindRunCrashed,
+		KindNotifyDeliveryFailed:
+		return string(k)
+	default:
+		return string(k)
+	}
 }
 
 // AllSeverities mirrors AllKinds for severity validation.

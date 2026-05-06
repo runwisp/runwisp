@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/internal/tui/rhythm"
 )
 
 const (
@@ -502,7 +502,7 @@ func relativeTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return render.Relative(t, time.Now())
+	return rhythm.Relative(t, time.Now())
 }
 
 func truncateLine(s string, max int) string {

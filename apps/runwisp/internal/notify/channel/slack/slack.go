@@ -7,7 +7,9 @@
 package slack
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -19,6 +21,7 @@ import (
 type Channel struct {
 	id         string
 	webhookURL string
+	channel    string
 	transport  *notify.HTTPProvider
 	renderer   render.Renderer
 }
@@ -27,6 +30,7 @@ type Channel struct {
 type Config struct {
 	ID         string
 	WebhookURL string
+	Channel    string // optional Slack channel override (e.g. "#ops")
 	Renderer   render.Renderer
 	Transport  *notify.HTTPProvider // optional; default constructed when nil
 }
@@ -46,13 +50,13 @@ func New(cfg Config) (*Channel, error) {
 	return &Channel{
 		id:         cfg.ID,
 		webhookURL: cfg.WebhookURL,
+		channel:    cfg.Channel,
 		transport:  transport,
 		renderer:   cfg.Renderer,
 	}, nil
 }
 
 func (c *Channel) ID() string                  { return c.id }
-func (c *Channel) Match(*notify.Event) bool    { return true }
 func (c *Channel) Close(context.Context) error { return nil }
 
 // String produces a log-friendly type-prefixed identifier. This is the only
@@ -65,10 +69,34 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 	if err != nil {
 		return fmt.Errorf("%s: render: %w", c, err)
 	}
-	if err := c.transport.PostJSON(ctx, c.webhookURL, "application/json", rendered.Body); err != nil {
+	body := rendered.Body
+	if c.channel != "" {
+		body, err = injectChannel(body, c.channel)
+		if err != nil {
+			return fmt.Errorf("%s: inject channel: %w", c, err)
+		}
+	}
+	if err := c.transport.PostJSON(ctx, c.webhookURL, "application/json", body); err != nil {
 		return fmt.Errorf("%s: %s", c, c.redact(err.Error()))
 	}
 	return nil
+}
+
+// injectChannel adds a top-level "channel" key to a JSON object body.
+func injectChannel(body []byte, ch string) ([]byte, error) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, err
+	}
+	enc, _ := json.Marshal(ch)
+	obj["channel"] = enc
+	var buf bytes.Buffer
+	e := json.NewEncoder(&buf)
+	e.SetEscapeHTML(false)
+	if err := e.Encode(obj); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
 // redact strips the webhook URL out of any string. Net/http embeds the full

@@ -35,19 +35,12 @@ func (s *recordingFailureSink) Captured() []*Event {
 }
 
 type executeChannel struct {
-	id      string
-	matchFn func(*Event) bool
-	execFn  func(context.Context, *Event) error
-	hits    atomic.Int64
+	id     string
+	execFn func(context.Context, *Event) error
+	hits   atomic.Int64
 }
 
 func (a *executeChannel) ID() string { return a.id }
-func (a *executeChannel) Match(ev *Event) bool {
-	if a.matchFn != nil {
-		return a.matchFn(ev)
-	}
-	return true
-}
 func (a *executeChannel) Execute(ctx context.Context, ev *Event) error {
 	a.hits.Add(1)
 	if a.execFn != nil {

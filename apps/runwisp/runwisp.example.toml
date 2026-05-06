@@ -136,6 +136,7 @@ done
 # id              = "slack-ops"
 # type            = "slack"
 # webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+# channel         = "#ops"    # optional: override the webhook's default channel
 # # Or:
 # # webhook_url_file = "secrets/slack-ops.url"   # path relative to data dir
 # # webhook_url      = "https://hooks.slack.com/services/..."
@@ -161,9 +162,7 @@ done
 # [notify]
 # disable_inapp    = false
 # queue_size       = 1024
-# default_timeout  = "10s"
-# # Set RUNWISP_NOTIFY_MAX_ELAPSED=10s in env to shrink the global retry
-# # budget — useful for tests or when delivery failures should surface fast.
+# default_timeout  = "10s"   # shrinks the retry budget — delivery failures surface faster
 # history_keep     = 500
 # history_keep_for = "30d"
 # coalesce_window  = "1h"

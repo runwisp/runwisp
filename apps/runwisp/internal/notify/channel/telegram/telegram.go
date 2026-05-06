@@ -79,7 +79,6 @@ func New(cfg Config) (*Channel, error) {
 }
 
 func (c *Channel) ID() string                  { return c.id }
-func (c *Channel) Match(*notify.Event) bool    { return true }
 func (c *Channel) Close(context.Context) error { return nil }
 func (c *Channel) String() string              { return "telegram:" + c.id }
 

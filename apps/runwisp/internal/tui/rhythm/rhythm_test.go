@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package render
+package rhythm
 
 import (
 	"encoding/json"
@@ -147,7 +147,7 @@ func TestRhythm_ExportVectors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	dst := filepath.Join("..", "..", "..", "..", "..", "apps", "ui", "src", "lib", "utils", "__rhythm_vectors.json")
+	dst := filepath.Join("..", "..", "..", "..", "..", "..", "apps", "ui", "src", "lib", "utils", "__rhythm_vectors.json")
 	if err := os.WriteFile(dst, append(out, '\n'), 0o644); err != nil {
 		t.Fatalf("write %s: %v", dst, err)
 	}

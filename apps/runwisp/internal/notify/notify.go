@@ -32,8 +32,6 @@ type Service struct {
 	logger *slog.Logger
 
 	retentionEvery time.Duration
-	retentionKeep  int
-	retentionAge   time.Duration
 	retentionFn    func()
 
 	unsubscribe func()
@@ -54,8 +52,7 @@ const DefaultIngressSize = 1024
 const DefaultActionQueueSize = 256
 
 // Config bundles everything Service.New needs that isn't already on the
-// dispatcher / router. Storage is the persistent in-app row repository; the
-// retention loop calls PruneNotificationsByCount and PruneNotificationsByAge.
+// dispatcher / router.
 type Config struct {
 	Bus             events.EventBus
 	Channels        []Channel     // includes inapp + each configured provider
@@ -66,8 +63,6 @@ type Config struct {
 	Clock           Clock         // 0 → RealClock
 	Logger          *slog.Logger  // 0 → slog.Default
 	RetentionEvery  time.Duration // 0 → 5min
-	RetentionKeep   int           // PruneNotificationsByCount target; 0 → no prune
-	RetentionAge    time.Duration // PruneNotificationsByAge cutoff; 0 → no prune
 	RetentionFn     func()        // executed on each tick; injected by Service builder
 }
 
@@ -113,8 +108,6 @@ func New(cfg Config) *Service {
 		clock:          clock,
 		logger:         logger,
 		retentionEvery: retentionEvery,
-		retentionKeep:  cfg.RetentionKeep,
-		retentionAge:   cfg.RetentionAge,
 		retentionFn:    cfg.RetentionFn,
 	}
 }

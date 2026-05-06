@@ -23,6 +23,7 @@ type NotifierSpec struct {
 	ID           string
 	Type         string
 	WebhookURL   string // slack
+	SlackChannel string // slack channel override (e.g. "#ops")
 	BotToken     string // telegram
 	ChatID       string // telegram
 	ParseMode    string // telegram
@@ -48,6 +49,7 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 		return slack.New(slack.Config{
 			ID:         spec.ID,
 			WebhookURL: spec.WebhookURL,
+			Channel:    spec.SlackChannel,
 			Renderer:   r,
 			Transport:  spec.Transport,
 		})

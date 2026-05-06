@@ -23,7 +23,6 @@ import (
 type ResolvedNotify struct {
 	Notifiers []channel.NotifierSpec
 	Rules     []notify.Rule
-	Settings  config.NotifyConfig // copy of the input; durations / sizes used by Service
 }
 
 // Resolve takes the post-parse config and the daemon's data dir, reads any
@@ -47,6 +46,7 @@ func Resolve(cfg config.NotifyConfig, dataDir string) (ResolvedNotify, error) {
 				return ResolvedNotify{}, fmt.Errorf("notifier %q webhook_url: %w", n.ID, err)
 			}
 			spec.WebhookURL = url
+			spec.SlackChannel = n.SlackChannel
 		case "telegram":
 			token, err := resolveSecret(n.BotToken, n.BotTokenEnv, n.BotTokenFile, dataDir)
 			if err != nil {
@@ -69,7 +69,6 @@ func Resolve(cfg config.NotifyConfig, dataDir string) (ResolvedNotify, error) {
 	return ResolvedNotify{
 		Notifiers: specs,
 		Rules:     rules,
-		Settings:  cfg,
 	}, nil
 }
 
@@ -117,22 +116,8 @@ func compileRoute(r config.NotificationRoute) (notify.Rule, error) {
 	if r.TaskGlob != "" {
 		preds = append(preds, notify.MatchTaskGlob(r.TaskGlob))
 	}
-	rule := notify.Rule{
+	return notify.Rule{
 		Match:     notify.And(preds...),
 		ActionIDs: append([]string(nil), r.NotifierID...),
-	}
-	// Notifier IDs are passed through as-is. The Service prefixes provider
-	// IDs (e.g. "ops" → "slack:ops") at construction time; we mirror that.
-	for i, id := range rule.ActionIDs {
-		rule.ActionIDs[i] = qualifyActionID(id, r)
-	}
-	return rule, nil
-}
-
-// qualifyActionID translates user-facing notifier IDs into the action IDs the
-// Service registers. Inapp stays as "inapp"; provider IDs get prefixed with
-// their type (looked up by the Service when wiring; here we just pass the
-// raw ID and rely on the Service to know the channel.Channel.ID() shape).
-func qualifyActionID(id string, _ config.NotificationRoute) string {
-	return id
+	}, nil
 }

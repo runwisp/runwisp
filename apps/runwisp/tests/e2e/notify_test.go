@@ -102,8 +102,6 @@ notify = ["ops", "inapp"]
 // retry budget, the daemon must surface a notify.delivery_failed in-app row
 // (so a broken webhook never silently rots).
 func TestNotificationsDeliveryFailureSurfacesInApp(t *testing.T) {
-	t.Setenv("RUNWISP_NOTIFY_MAX_ELAPSED", "1500ms")
-
 	var hits atomic.Int64
 	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
@@ -113,6 +111,9 @@ func TestNotificationsDeliveryFailureSurfacesInApp(t *testing.T) {
 	t.Cleanup(webhook.Close)
 
 	configPath := writeNotifyConfig(t, fmt.Sprintf(`
+[notify]
+default_timeout = "1500ms"
+
 [tasks.fail-task]
 run = "exit 1"
 

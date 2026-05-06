@@ -6,7 +6,6 @@ package main
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
@@ -18,11 +17,6 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/render"
 	"github.com/runwisp/runwisp/internal/storage"
 )
-
-// envNotifyMaxElapsed shrinks the outbound retry budget for every channel.
-// Useful for integration tests and operators who'd rather see a delivery
-// failure surface in seconds than minutes; absent or zero means default.
-const envNotifyMaxElapsed = "RUNWISP_NOTIFY_MAX_ELAPSED"
 
 // notifyBundle owns the runtime objects the rest of the daemon needs after
 // notify is wired: the Service (for lifecycle) and the inapp Hub (for the SSE
@@ -58,7 +52,7 @@ func initNotify(
 		return notifyBundle{}, nil
 	}
 
-	if override := envBackoffOverride(logger); override != nil {
+	if override := backoffOverride(notifyCfg.DefaultTimeout, logger); override != nil {
 		for i := range resolved.Notifiers {
 			resolved.Notifiers[i].Transport = override()
 		}
@@ -109,30 +103,20 @@ func initNotify(
 		IngressSize:    notifyCfg.QueueSize,
 		Logger:         logger,
 		RetentionEvery: 5 * time.Minute,
-		RetentionKeep:  notifyCfg.HistoryKeep,
-		RetentionAge:   notifyCfg.HistoryKeepFor,
 		RetentionFn:    retentionFn,
 	})
 
 	return notifyBundle{Service: svc, Hub: hub}, nil
 }
 
-// envBackoffOverride returns a transport-builder that shrinks the outbound
-// retry budget when RUNWISP_NOTIFY_MAX_ELAPSED is set to a parseable duration.
-// A separate transport is constructed per-channel so the per-channel
-// Body429Fn customisation in telegram.New still applies.
-func envBackoffOverride(logger *slog.Logger) func() *notify.HTTPProvider {
-	raw := os.Getenv(envNotifyMaxElapsed)
-	if raw == "" {
+// backoffOverride returns a transport-builder that shrinks the outbound retry
+// budget when default_timeout is set in TOML. A separate transport is
+// constructed per-channel so per-channel Body429Fn customisation still applies.
+func backoffOverride(d time.Duration, logger *slog.Logger) func() *notify.HTTPProvider {
+	if d <= 0 {
 		return nil
 	}
-	d, err := time.ParseDuration(raw)
-	if err != nil || d <= 0 {
-		logger.Warn("ignoring invalid RUNWISP_NOTIFY_MAX_ELAPSED",
-			"value", raw, "error", err)
-		return nil
-	}
-	logger.Info("notify backoff overridden via env", "max_elapsed", d)
+	logger.Info("notify backoff overridden via default_timeout", "max_elapsed", d)
 	return func() *notify.HTTPProvider {
 		t := notify.NewHTTPProvider()
 		bo := t.Backoff

@@ -47,31 +47,5 @@ func DefaultTitle(ev *notify.Event) string {
 	if ev == nil {
 		return ""
 	}
-	switch ev.Kind {
-	case notify.KindRunStarted:
-		return fmt.Sprintf("%s started", ev.TaskName)
-	case notify.KindRunSucceeded:
-		return fmt.Sprintf("%s succeeded", ev.TaskName)
-	case notify.KindRunFailed:
-		return fmt.Sprintf("%s failed", ev.TaskName)
-	case notify.KindRunTimeout:
-		return fmt.Sprintf("%s timed out", ev.TaskName)
-	case notify.KindRunStopped:
-		return fmt.Sprintf("%s stopped", ev.TaskName)
-	case notify.KindRunCrashed:
-		return fmt.Sprintf("%s crashed", ev.TaskName)
-	case notify.KindNotifyDeliveryFailed:
-		channel := ""
-		if ev.Extra != nil {
-			if v, ok := ev.Extra["channel"].(string); ok {
-				channel = v
-			}
-		}
-		if channel != "" {
-			return fmt.Sprintf("Delivery to %s failed", channel)
-		}
-		return "Notification delivery failed"
-	default:
-		return string(ev.Kind)
-	}
+	return ev.Kind.Title(ev)
 }

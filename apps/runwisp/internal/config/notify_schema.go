@@ -6,23 +6,12 @@ package config
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
+
+	"github.com/runwisp/runwisp/internal/notify/kinds"
 )
 
-// allowedNotifyKinds enumerates the public Kind values that may appear in
-// [[notification_route]] match.kind. Kept in sync with notify.AllKinds; we do
-// not import notify here to avoid pulling the runtime subsystem into config.
-var allowedNotifyKinds = []string{
-	"run.started",
-	"run.succeeded",
-	"run.failed",
-	"run.timeout",
-	"run.stopped",
-	"run.crashed",
-	"notify.delivery_failed",
-}
-
-var allowedNotifySeverities = []string{"info", "warn", "error"}
 var allowedNotifierTypes = []string{"slack", "telegram"}
 
 const inappNotifierID = "inapp"
@@ -142,7 +131,7 @@ func desugarServiceNotify(names []string, wires map[string]*serviceWire, out *No
 func appendSynthRoutes(out *NotifyConfig, taskName string, onFailure, onSuccess []string) {
 	if len(onFailure) > 0 {
 		ids := append([]string(nil), onFailure...)
-		if !out.DisableInapp && !containsString(ids, inappNotifierID) {
+		if !out.DisableInapp && !slices.Contains(ids, inappNotifierID) {
 			ids = append(ids, inappNotifierID)
 		}
 		out.Routes = append(out.Routes, NotificationRoute{
@@ -153,7 +142,7 @@ func appendSynthRoutes(out *NotifyConfig, taskName string, onFailure, onSuccess 
 	}
 	if len(onSuccess) > 0 {
 		ids := append([]string(nil), onSuccess...)
-		if !out.DisableInapp && !containsString(ids, inappNotifierID) {
+		if !out.DisableInapp && !slices.Contains(ids, inappNotifierID) {
 			ids = append(ids, inappNotifierID)
 		}
 		out.Routes = append(out.Routes, NotificationRoute{
@@ -162,15 +151,6 @@ func appendSynthRoutes(out *NotifyConfig, taskName string, onFailure, onSuccess 
 			NotifierID: ids,
 		})
 	}
-}
-
-func containsString(xs []string, target string) bool {
-	for _, x := range xs {
-		if x == target {
-			return true
-		}
-	}
-	return false
 }
 
 // validateNotify enforces structural rules: unique IDs, correct types,
@@ -200,6 +180,9 @@ func validateNotify(cfg *NotifyConfig) error {
 				spec.WebhookURL, spec.WebhookURLEnv, spec.WebhookURLFile); err != nil {
 				return err
 			}
+			if ch := strings.TrimSpace(spec.SlackChannel); ch != "" && ch[0] != '#' && ch[0] != '@' {
+				return fmt.Errorf("notifier %q: channel must start with # or @ (got %q)", spec.ID, ch)
+			}
 		case "telegram":
 			if err := requireOneSecretSource(spec.ID, "bot_token",
 				spec.BotToken, spec.BotTokenEnv, spec.BotTokenFile); err != nil {
@@ -223,11 +206,11 @@ func validateNotify(cfg *NotifyConfig) error {
 	for i, r := range cfg.Routes {
 		scope := fmt.Sprintf("notification_route #%d", i)
 		for _, k := range r.Kinds {
-			if err := requireOneOf(scope+" match.kind", k, allowedNotifyKinds, false); err != nil {
+			if err := requireOneOf(scope+" match.kind", k, kinds.AllKindStrings, false); err != nil {
 				return err
 			}
 		}
-		if err := requireOneOf(scope+" match.severity", r.Severity, allowedNotifySeverities, true); err != nil {
+		if err := requireOneOf(scope+" match.severity", r.Severity, kinds.AllSeverityStrings, true); err != nil {
 			return err
 		}
 		if r.TaskGlob != "" {

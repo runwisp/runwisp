@@ -112,7 +112,7 @@ func fingerprintBytes(ev *notify.Event) []byte {
 		ok, _ := ev.Extra["original_kind"].(string)
 		extraKey = ch + "|" + ok
 	}
-	return []byte(string(ev.Kind) + "|" + ev.TaskName + "|" + extraKey)
+	return []byte(ev.Kind.FingerprintToken() + "|" + ev.TaskName + "|" + extraKey)
 }
 
 func hashFingerprint(b []byte) uint64 {

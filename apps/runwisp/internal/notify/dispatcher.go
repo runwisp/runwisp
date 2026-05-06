@@ -10,8 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/oklog/ulid/v2"
 )
 
 // Clock is the time source used by the dispatcher and coalescer. The
@@ -94,9 +92,6 @@ func (d *dispatcher) dispatch(ev *Event) {
 		return
 	}
 	for _, c := range d.router.Route(ev) {
-		if !c.Match(ev) {
-			continue
-		}
 		queue, ok := d.queues[c.ID()]
 		if !ok {
 			continue
@@ -161,39 +156,15 @@ func (d *dispatcher) executeOne(ctx context.Context, id string, ch Channel, ev *
 		return
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		// Shutdown cancelled the work; not a delivery failure to surface.
 		return
 	}
-	d.reportDeliveryFailure(id, ev, err)
-}
-
-// reportDeliveryFailure synthesizes a notify.Event of kind delivery_failed and
-// routes it directly into the failure sink (in-app coalescer), bypassing the
-// router. The original event's Kind is preserved in Extra so the UI can show
-// "delivery to slack-ops failed for run.failed".
-func (d *dispatcher) reportDeliveryFailure(actionID string, original *Event, cause error) {
 	if d.failures == nil {
-		d.logger.Error("notify delivery exhausted retries", "action", actionID, "cause", cause.Error())
+		d.logger.Error("notify delivery exhausted retries", "action", id, "cause", err.Error())
 		return
 	}
-	syn := &Event{
-		ID:        ulid.Make().String(),
-		Kind:      KindNotifyDeliveryFailed,
-		Severity:  SevWarn,
-		Timestamp: d.clock.Now(),
-		Reason:    cause.Error(),
-		Extra: map[string]any{
-			"channel":       actionID,
-			"original_kind": string(original.Kind),
-			"task_name":     original.TaskName,
-		},
-	}
-	if original != nil {
-		syn.TaskName = original.TaskName
-	}
-	d.failures.IngestSynthetic(syn)
+	reportDeliveryFailure(d.failures, d.clock, id, ev, err)
 	d.logger.Error("notify delivery exhausted retries; surfacing in-app",
-		"action", actionID, "cause", cause.Error())
+		"action", id, "cause", err.Error())
 }
 
 // DroppedActionCount returns the cumulative number of events dropped because
