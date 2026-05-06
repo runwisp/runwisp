@@ -1,8 +1,10 @@
 # Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
 
 # Builds cross-platform binaries and publishes them as:
-#   1. GitHub Release assets (tar.gz + checksums)
-#   2. npm packages (`bunx runwisp` / `npx runwisp`)
+#   1. GitHub Release draft with assets (tar.gz + checksums)
+#   2. npm packages on release publish (`bunx runwisp` / `npx runwisp`)
+#
+# Flow: push tag → build + draft release → review → publish → npm publish
 
 name: Release
 
@@ -10,6 +12,8 @@ on:
   push:
     tags:
       - "v*"
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -17,6 +21,7 @@ permissions:
 
 jobs:
   build:
+    if: github.event_name == 'push'
     name: Build all platforms
     runs-on: ubuntu-latest
     steps:
@@ -65,10 +70,29 @@ jobs:
           path: apps/runwisp/dist/
 
   github-release:
-    name: Create GitHub Release
+    if: github.event_name == 'push'
+    name: Create GitHub Release (draft)
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: CHANGELOG.md
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          {
+            echo "BODY<<RELEASE_NOTES_EOF"
+            awk -v ver="${version}" '
+              $0 ~ "^## \\[" ver "\\]" { found=1; next }
+              /^## \[/ { if (found) exit }
+              found
+            ' CHANGELOG.md
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Download binaries
         uses: actions/download-artifact@v4
         with:
@@ -85,17 +109,18 @@ jobs:
       - name: Generate checksums
         run: sha256sum runwisp-*.tar.gz > checksums-sha256.txt
 
-      - name: Create release
+      - name: Create draft release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          draft: true
+          body: ${{ steps.notes.outputs.BODY }}
           files: |
             runwisp-*.tar.gz
             checksums-sha256.txt
 
   npm-publish:
+    if: github.event_name == 'release'
     name: Publish npm packages
-    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -107,15 +132,25 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Download binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: binaries
-          path: dist
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ github.event.release.tag_name }}" \
+            --pattern 'runwisp-*.tar.gz' --dir dist
+          for archive in dist/runwisp-*.tar.gz; do
+            target=$(basename "${archive}" .tar.gz)
+            target="${target#runwisp-}"
+            mkdir -p "dist/${target}"
+            tar xzf "${archive}" -C "dist/${target}"
+          done
 
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ github.event.release.tag_name }}
 
       - name: Determine npm dist-tag
         id: npm_tag

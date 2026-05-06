@@ -188,7 +188,7 @@ func runDaemon(mode daemonMode) error {
 	tui.PrintStartup(startupInfo)
 
 	if noTUI {
-		return runHeadless(cancelCloud, cloudWG, svc)
+		return runHeadless(cancelCloud, cloudWG, svc, srv)
 	}
 
 	return runWithTUI(srv, svc, startupInfo, debugWriter, cancelCloud, cloudWG)

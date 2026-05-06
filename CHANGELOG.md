@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Graceful shutdown is now ~3× faster.** Daemon teardown previously ran six steps sequentially (up to ~10 s worst-case). All subsystems — HTTP server, scheduler, notification service, cloud client, task manager — now shut down in parallel under a 3-second deadline.
+
 ## [0.4.0] - 2026-05-06
 
 ### Added
