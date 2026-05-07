@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	defaultCloudURL         = "https://app.runwisp.com"
-	defaultRequestTimeout   = 30 * time.Second
-	defaultTaskSyncTimeout  = 30 * time.Second
-	maxProtocolLogChunkSize = 1024 * 1024
+	defaultCloudURL        = "https://app.runwisp.com"
+	defaultRequestTimeout  = 30 * time.Second
+	defaultTaskSyncTimeout = 30 * time.Second
+	maxProtocolLogLines    = 5000
 )
 
 type Config struct {

@@ -295,6 +295,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskName}/runs/{runId}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a page of log lines
+         * @description Returns a JSON page of absolute-line-numbered log entries. Use `from` (negative for tail) and `limit` to window the result.
+         */
+        get: operations["getLogPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskName}/runs/{runId}/log/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the run's full log as text/plain
+         * @description Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.
+         */
+        get: operations["getLogRaw"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskName}/runs/{runId}/stop": {
         parameters: {
             query?: never;
@@ -381,6 +421,48 @@ export interface components {
              * @example https://example.com/errors/example
              */
             type: string;
+        };
+        LogLineEntry: {
+            /** @description True if this segment continues an oversized split line */
+            continued?: boolean;
+            /**
+             * Format: int64
+             * @description Absolute line number
+             */
+            n: number;
+            /** @description Stream identifier (stdout/stderr/system) */
+            stream: string;
+            /** @description Line content without trailing newline */
+            text: string;
+            /**
+             * Format: int64
+             * @description Unix milliseconds timestamp; 0 if unavailable
+             */
+            ts: number;
+        };
+        LogPageBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/LogPageBody.json
+             */
+            readonly $schema?: string;
+            /** @description True if the run has ended and the log is final */
+            finalized: boolean;
+            /**
+             * Format: int64
+             * @description Lowest line number still on disk; lines below were rotated away
+             */
+            first_available: number;
+            /** @description Returned lines, ascending by n */
+            lines: components["schemas"]["LogLineEntry"][] | null;
+            /**
+             * Format: int64
+             * @description Total lines produced across all segments
+             */
+            total_lines: number;
+            /** @description True if rotation has dropped lines below first_available */
+            truncated: boolean;
         };
         MetricsSample: {
             /**
@@ -1419,6 +1501,80 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getLogPage: {
+        parameters: {
+            query?: {
+                /** @description Anchor line number; negative values count from end (default -1000) */
+                from?: number;
+                /** @description Max lines returned (default 1000) */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+                /** @description Run ULID */
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogPageBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getLogRaw: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+                /** @description Run ULID */
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Content-Type"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
             };
             /** @description Error */
             default: {

@@ -160,8 +160,8 @@ func (sr *sessionRunner) handleInboundPayload(session *wsSession, payload []byte
 			sr.sendProtocolError(session, classifyErrorKind(stopErr), stopErr.Error(), "")
 		}
 		return nil
-	case protocol.LogRequestMessage:
-		response, responseErr := sr.handler.HandleLogRequest(message)
+	case protocol.LogReplayRequestMessage:
+		response, responseErr := sr.handler.HandleLogReplayRequest(message)
 		if responseErr != nil {
 			sr.sendProtocolError(session, classifyErrorKind(responseErr), responseErr.Error(), message.ID)
 		}

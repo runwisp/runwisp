@@ -13,6 +13,13 @@ const (
 	hScrollPadding = 6 // extra cols past the longest visible line so the user can confirm they reached the end
 )
 
+// paneLine carries one log line plus its stream so renderers can colour by
+// origin (stdout/stderr/system) without re-parsing on-disk prefixes.
+type paneLine struct {
+	stream string
+	text   string
+}
+
 type LogPaneConfig struct {
 	MaxLines    int
 	LineNumbers bool
@@ -21,16 +28,16 @@ type LogPaneConfig struct {
 }
 
 type LogPane struct {
-	cfg         LogPaneConfig
-	lines       []string
-	pendingLine string
-	totalLines  int
-	scroll      int
-	hScroll     int
-	follow      bool
-	width       int
-	height      int
-	headerH     int
+	cfg             LogPaneConfig
+	lines           []paneLine
+	totalLines      int
+	scroll          int
+	hScroll         int
+	follow          bool
+	width           int
+	height          int
+	headerH         int
+	firstLoadedLine int
 }
 
 func NewLogPane(cfg LogPaneConfig) LogPane {
@@ -103,6 +110,7 @@ func (p *LogPane) evictAndFollow() {
 	if p.cfg.MaxLines > 0 && len(p.lines) > p.cfg.MaxLines {
 		excess := len(p.lines) - p.cfg.MaxLines
 		p.lines = p.lines[excess:]
+		p.firstLoadedLine += excess
 		p.scroll -= excess
 		if p.scroll < 0 {
 			p.scroll = 0
@@ -113,53 +121,36 @@ func (p *LogPane) evictAndFollow() {
 	}
 }
 
-func (p *LogPane) AppendLine(s string) {
-	p.lines = append(p.lines, s)
-	p.totalLines++
+// AppendLine appends one absolute-numbered line. The line number is used to
+// track totalLines (the highest n+1 seen) so the gutter can size itself for
+// the largest expected number even before all lines have arrived.
+func (p *LogPane) AppendLine(n int64, stream, text string) {
+	if len(p.lines) == 0 && p.firstLoadedLine == 0 && n > 0 {
+		p.firstLoadedLine = int(n)
+	}
+	p.lines = append(p.lines, paneLine{stream: stream, text: text})
+	if int(n)+1 > p.totalLines {
+		p.totalLines = int(n) + 1
+	}
 	p.evictAndFollow()
 }
 
-// AppendChunk processes a raw log chunk from a stream. Chunks may contain
-// multiple newline-delimited lines and may end mid-line. Incomplete trailing
-// content is buffered and prepended to the next chunk.
-func (p *LogPane) AppendChunk(chunk string) {
-	if chunk == "" {
+// EvictBelow drops cached lines whose absolute index is < firstAvailable.
+// Used when the streamer reports a server-side rotation.
+func (p *LogPane) EvictBelow(firstAvailable int) {
+	if firstAvailable <= p.firstLoadedLine {
 		return
 	}
-
-	combined := p.pendingLine + chunk
-	p.pendingLine = ""
-
-	parts := strings.Split(combined, "\n")
-
-	if !strings.HasSuffix(chunk, "\n") {
-		p.pendingLine = parts[len(parts)-1]
-		parts = parts[:len(parts)-1]
+	skip := firstAvailable - p.firstLoadedLine
+	if skip >= len(p.lines) {
+		p.lines = p.lines[:0]
 	} else {
-		if parts[len(parts)-1] == "" {
-			parts = parts[:len(parts)-1]
-		}
+		p.lines = p.lines[skip:]
 	}
-
-	for i := range parts {
-		parts[i] = strings.TrimRight(parts[i], "\r")
-	}
-
-	if len(parts) == 0 {
-		return
-	}
-
-	p.lines = append(p.lines, parts...)
-	p.totalLines += len(parts)
-	p.evictAndFollow()
-}
-
-func (p *LogPane) FlushPending() {
-	if p.pendingLine != "" {
-		p.lines = append(p.lines, strings.TrimRight(p.pendingLine, "\r"))
-		p.totalLines++
-		p.pendingLine = ""
-		p.evictAndFollow()
+	p.firstLoadedLine = firstAvailable
+	p.scroll -= skip
+	if p.scroll < 0 {
+		p.scroll = 0
 	}
 }
 
@@ -277,7 +268,7 @@ func (p *LogPane) MaxHScroll() int {
 	}
 	maxWidth := 0
 	for i := p.scroll; i < end; i++ {
-		expanded := strings.ReplaceAll(p.lines[i], "\t", "    ")
+		expanded := strings.ReplaceAll(p.lines[i].text, "\t", "    ")
 		w := len([]rune(expanded))
 		if w > maxWidth {
 			maxWidth = w
@@ -290,8 +281,50 @@ func (p *LogPane) MaxHScroll() int {
 	return maxWidth - content + hScrollPadding
 }
 
+// PrependLines inserts lines before the current buffer, adjusting scroll so
+// the user's visual position stays stable. The first line in `lines` is
+// expected to be the lowest absolute line number; the slice is contiguous.
+func (p *LogPane) PrependLines(lines []paneLine, firstLine int) {
+	if len(lines) == 0 {
+		return
+	}
+	p.lines = append(append([]paneLine(nil), lines...), p.lines...)
+	p.firstLoadedLine = firstLine
+	if p.firstLoadedLine < 0 {
+		p.firstLoadedLine = 0
+	}
+	p.scroll += len(lines)
+}
+
+// NeedsOlder reports whether the user has scrolled to the top of the loaded
+// buffer and there are older lines on the server that haven't been fetched.
+func (p *LogPane) NeedsOlder() bool {
+	return p.scroll == 0 && p.firstLoadedLine > 0
+}
+
+// SetFirstLoadedLine records the absolute line number of lines[0]. Used after
+// a tail / page fetch seeds the buffer at a non-zero anchor.
+func (p *LogPane) SetFirstLoadedLine(firstLine int) {
+	p.firstLoadedLine = firstLine
+}
+
+// FirstLoadedLine returns the absolute line number of lines[0].
+func (p *LogPane) FirstLoadedLine() int {
+	return p.firstLoadedLine
+}
+
+// absoluteLineNumber returns the absolute (1-based) line number for
+// the given buffer index.
+func (p *LogPane) absoluteLineNumber(bufIdx int) int {
+	return p.firstLoadedLine + bufIdx + 1
+}
+
 func (p *LogPane) lineNumWidth() int {
-	w := len(fmt.Sprintf("%d", p.totalLines))
+	total := p.totalLines
+	if total < p.firstLoadedLine+len(p.lines) {
+		total = p.firstLoadedLine + len(p.lines)
+	}
+	w := len(fmt.Sprintf("%d", total))
 	if w < 3 {
 		w = 3
 	}
@@ -311,4 +344,12 @@ func (p *LogPane) LogContentWidth() int {
 		w = 10
 	}
 	return w
+}
+
+// SetTotalLines updates the server-known total so the gutter widens for the
+// expected maximum even before all lines have arrived.
+func (p *LogPane) SetTotalLines(total int) {
+	if total > p.totalLines {
+		p.totalLines = total
+	}
 }

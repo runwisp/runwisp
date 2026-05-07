@@ -19,7 +19,11 @@
             from: number,
             to: number,
         ) => Promise<LogSlice | LogEvent | void> | LogSlice | LogEvent | void;
-        streamLogs?: (runId: string, onEvent: (event: LogEvent) => void) => () => void;
+        streamLogs?: (
+            runId: string,
+            onEvent: (event: LogEvent) => void,
+            initialState?: { fromLine: number },
+        ) => () => void;
     }>();
 
     let userSelectedRunId = $state<string | null>(null);

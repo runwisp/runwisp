@@ -129,7 +129,8 @@ func TestExecuteEvents(t *testing.T) {
 	unsub := eb.Subscribe(events.EventLogLine, func(e events.Event) {
 		if logEvent, ok := e.Data.(events.LogLineEvent); ok {
 			mu.Lock()
-			receivedLogs.WriteString(logEvent.Line)
+			receivedLogs.WriteString(logEvent.Text)
+			receivedLogs.WriteString("\n")
 			mu.Unlock()
 		}
 	})

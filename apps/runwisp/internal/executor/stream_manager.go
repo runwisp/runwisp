@@ -13,55 +13,69 @@ import (
 	"log/slog"
 )
 
-// StreamManager reads process output and writes log lines to a writer,
-// batching log events for the event bus.
+// StreamManager reads process output, writes each line to the LogWriter (which
+// is the single source of absolute line numbers), and publishes one
+// LogLineEvent per line on the bus.
 type StreamManager struct {
 	eventBus events.EventBus
+	nowMs    func() int64
 }
 
 func NewStreamManager(eventBus events.EventBus) *StreamManager {
-	return &StreamManager{eventBus: eventBus}
+	return &StreamManager{
+		eventBus: eventBus,
+		nowMs:    func() int64 { return time.Now().UnixMilli() },
+	}
 }
 
-// StreamToFile reads from reader, writes lines to writer, and publishes batched log events.
-func (s *StreamManager) StreamToFile(reader io.Reader, writer io.Writer, task *model.Task, run *model.Run, prefix string) {
-	var batch strings.Builder
-	batchLines := 0
-	batchTimer := time.NewTicker(EventBatchInterval)
-	defer batchTimer.Stop()
-
+// StreamToFile reads from reader and writes lines to writer. Each completed
+// line is written via writer.WriteLineEvent (which assigns the absolute line
+// number under the writer's mutex), and a LogLineEvent is published with that
+// number. Lines that LineBuffer split because they exceeded MaxLineBufferSize
+// are emitted as separate events with Continued=true on segments 2..N.
+func (s *StreamManager) StreamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
 	externalExecutionID := ""
 	if run.ExternalExecutionID != nil {
 		externalExecutionID = *run.ExternalExecutionID
 	}
 
-	flushBatch := func() {
-		if batchLines == 0 {
+	// `incomplete` is true when the previous LineBuffer callback delivered a
+	// fragment without a trailing newline (LineBuffer overflow flush). The
+	// next call is then segment 2..N of the same logical line.
+	incomplete := false
+
+	publish := func(text string, lineNum int64, continued bool) {
+		if s.eventBus == nil {
 			return
 		}
-		if s.eventBus != nil {
-			s.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
-				TaskName:            task.Name,
-				RunID:               run.ID,
-				ExternalExecutionID: externalExecutionID,
-				Line:                batch.String(),
-				Stream:              prefix,
-			})
-		}
-		batch.Reset()
-		batchLines = 0
+		s.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
+			TaskName:            task.Name,
+			RunID:               run.ID,
+			ExternalExecutionID: externalExecutionID,
+			LineNum:             lineNum,
+			Timestamp:           s.nowMs(),
+			Stream:              stream,
+			Text:                text,
+			Continued:           continued,
+		})
 	}
 
 	lineBuf := NewLineBuffer(func(line string) {
-		formatted := FormatLine(line, prefix)
-		if _, err := writer.Write([]byte(formatted)); err != nil {
-			slog.Warn("Failed to write log line to file", "stream", prefix, "err", err)
+		isContinuation := incomplete
+		incomplete = !strings.HasSuffix(line, "\n")
+		text := strings.TrimSuffix(line, "\n")
+
+		n, err := writer.WriteLineEvent(text, stream)
+		if err != nil {
+			slog.Warn("Failed to write log line to file", "stream", stream, "err", err)
+			return
 		}
-		batch.WriteString(formatted)
-		batchLines++
-		if batchLines >= EventBatchSize {
-			flushBatch()
+		if n < 0 {
+			// Line was dropped (writer stopped / overflow). Skip the event so
+			// downstream subscribers never see a line that isn't on disk.
+			return
 		}
+		publish(text, n, isContinuation)
 	})
 
 	buf := make([]byte, StreamReadBufferSize)
@@ -70,39 +84,10 @@ func (s *StreamManager) StreamToFile(reader io.Reader, writer io.Writer, task *m
 		if n > 0 {
 			lineBuf.Write(buf[:n])
 		}
-
-		select {
-		case <-batchTimer.C:
-			flushBatch()
-		default:
-		}
-
 		if err != nil {
 			break
 		}
 	}
 
 	lineBuf.Flush()
-	flushBatch()
-}
-
-// FormatLine prepends a stream prefix for non-stdout lines.
-// STDOUT lines are returned as-is; STDERR gets an [ERR] tag; other
-// prefixes are wrapped in brackets. The line is always \n-terminated.
-func FormatLine(line string, prefix string) string {
-	switch prefix {
-	case "STDOUT":
-		return ensureNewline(line)
-	case "STDERR":
-		return "[ERR] " + strings.TrimSuffix(line, "\n") + "\n"
-	default:
-		return "[" + prefix + "] " + strings.TrimSuffix(line, "\n") + "\n"
-	}
-}
-
-func ensureNewline(s string) string {
-	if len(s) > 0 && s[len(s)-1] == '\n' {
-		return s
-	}
-	return s + "\n"
 }

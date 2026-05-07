@@ -92,7 +92,9 @@
         return lines;
     });
 
-    // Fetcher lifecycle — only recreate when fetchLogs or chunkSize changes.
+    // The fetcher serves on-demand scroll-up loads only; the parent seeds
+    // the initial cache via onStream (typically a tail fetch) so the
+    // viewport lands at the end of the log without racing the auto-scroll.
     $effect(() => {
         const fn = fetchLogs;
         const cs = chunkSize;
@@ -101,15 +103,6 @@
                 requestAnimationFrame(() => scrollToBottom());
             }
         });
-
-        // Kick off initial load if no data yet.
-        if (fn) {
-            untrack(() => {
-                if (cache.totalLines === 0) {
-                    fetcher!.enqueue(cache.firstAvailableLine, cache.firstAvailableLine + cs - 1);
-                }
-            });
-        }
 
         return () => {
             fetcher?.destroy();

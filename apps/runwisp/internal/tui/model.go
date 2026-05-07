@@ -151,7 +151,7 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 
 	cmds := []tea.Cmd{m.markRunNotificationsRead(run.ID)}
 	if run.Status != model.PhasePending {
-		cmds = append(cmds, m.streams.StartLogStream(run))
+		cmds = append(cmds, m.streams.StartLogStream(run, -int64(logTailLines)))
 	}
 	return tea.Batch(cmds...)
 }

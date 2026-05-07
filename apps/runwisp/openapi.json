@@ -152,6 +152,90 @@
         },
         "type": "object"
       },
+      "LogLineEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "continued": {
+            "description": "True if this segment continues an oversized split line",
+            "type": "boolean"
+          },
+          "n": {
+            "description": "Absolute line number",
+            "format": "int64",
+            "type": "integer"
+          },
+          "stream": {
+            "description": "Stream identifier (stdout/stderr/system)",
+            "type": "string"
+          },
+          "text": {
+            "description": "Line content without trailing newline",
+            "type": "string"
+          },
+          "ts": {
+            "description": "Unix milliseconds timestamp; 0 if unavailable",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n",
+          "ts",
+          "stream",
+          "text"
+        ],
+        "type": "object"
+      },
+      "LogPageBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/LogPageBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "finalized": {
+            "description": "True if the run has ended and the log is final",
+            "type": "boolean"
+          },
+          "first_available": {
+            "description": "Lowest line number still on disk; lines below were rotated away",
+            "format": "int64",
+            "type": "integer"
+          },
+          "lines": {
+            "description": "Returned lines, ascending by n",
+            "items": {
+              "$ref": "#/components/schemas/LogLineEntry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "total_lines": {
+            "description": "Total lines produced across all segments",
+            "format": "int64",
+            "type": "integer"
+          },
+          "truncated": {
+            "description": "True if rotation has dropped lines below first_available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "lines",
+          "first_available",
+          "total_lines",
+          "truncated",
+          "finalized"
+        ],
+        "type": "object"
+      },
       "MetricsSample": {
         "additionalProperties": false,
         "properties": {
@@ -2050,6 +2134,158 @@
         "summary": "Get a single run",
         "tags": [
           "Runs"
+        ]
+      }
+    },
+    "/api/tasks/{taskName}/runs/{runId}/log": {
+      "get": {
+        "description": "Returns a JSON page of absolute-line-numbered log entries. Use `from` (negative for tail) and `limit` to window the result.",
+        "operationId": "getLogPage",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Anchor line number; negative values count from end (default -1000)",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "Anchor line number; negative values count from end (default -1000)",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Max lines returned (default 1000)",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Max lines returned (default 1000)",
+              "format": "int64",
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogPageBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get a page of log lines",
+        "tags": [
+          "Logs"
+        ]
+      }
+    },
+    "/api/tasks/{taskName}/runs/{runId}/log/raw": {
+      "get": {
+        "description": "Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.",
+        "operationId": "getLogRaw",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "contentEncoding": "base64",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Download the run's full log as text/plain",
+        "tags": [
+          "Logs"
         ]
       }
     },

@@ -5,6 +5,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,14 +41,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSSEEventMsg(msg)
 	case sseDisconnectedMsg:
 		return m.handleSSEDisconnected()
+	case logOlderLoadedMsg:
+		return m.handleLogOlderLoaded(msg)
 	case logStreamConnectedMsg:
 		return m.handleLogStreamConnected(msg)
-	case logChunkMsg:
-		return m.handleLogChunk(msg)
+	case logLineMsg:
+		return m.handleLogLine(msg)
+	case logRotatedMsg:
+		return m.handleLogRotated(msg)
+	case logDroppedMsg:
+		return m.handleLogDropped(msg)
 	case logDoneMsg:
 		return m.handleLogDone(msg)
-	case logBatchMsg:
-		return m.handleLogBatch(msg)
 	case DebugLogMsg:
 		return m.handleDebugLog(msg)
 	case openBrowserMsg:
@@ -290,11 +295,27 @@ func (m Model) handleLogStreamConnected(msg logStreamConnectedMsg) (tea.Model, t
 	return m, m.streams.OnLogConnected(msg.RunID, msg.Ch)
 }
 
-func (m Model) handleLogChunk(msg logChunkMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleLogLine(msg logLineMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
-		return m, nil
+		return m, m.streams.ContinueListeningLog(msg.RunID)
 	}
-	m.execView.AppendChunk(msg.Chunk)
+	m.execView.pane.AppendLine(msg.Line.N, msg.Line.Stream, msg.Line.Text)
+	return m, m.streams.ContinueListeningLog(msg.RunID)
+}
+
+func (m Model) handleLogRotated(msg logRotatedMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) {
+		return m, m.streams.ContinueListeningLog(msg.RunID)
+	}
+	m.execView.pane.EvictBelow(int(msg.FirstAvailable))
+	return m, m.streams.ContinueListeningLog(msg.RunID)
+}
+
+func (m Model) handleLogDropped(msg logDroppedMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) {
+		return m, m.streams.ContinueListeningLog(msg.RunID)
+	}
+	m.debugView.AppendLine(fmt.Sprintf("Log stream dropped %d line(s) after #%d (server backpressure)", msg.Count, msg.After))
 	return m, m.streams.ContinueListeningLog(msg.RunID)
 }
 
@@ -302,23 +323,24 @@ func (m Model) handleLogDone(msg logDoneMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, nil
 	}
-	m.execView.FlushPending()
 	if m.execView.run.Status == model.PhaseRunning {
 		return m, m.scheduleLogReconnect(msg.RunID)
 	}
 	return m, nil
 }
 
-func (m Model) handleLogBatch(msg logBatchMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleLogOlderLoaded(msg logOlderLoadedMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, nil
 	}
-	for _, line := range msg.Lines {
-		m.execView.AppendChunk(line + "\n")
+	m.execView.loadingOlder = false
+	pane := make([]paneLine, len(msg.Lines))
+	for i, l := range msg.Lines {
+		pane[i] = paneLine{stream: l.Stream, text: l.Text}
 	}
-	m.execView.FlushPending()
-	if m.execView.run.Status == model.PhaseRunning {
-		return m, m.scheduleLogReconnect(msg.RunID)
+	m.execView.pane.PrependLines(pane, int(msg.FirstLine))
+	if msg.Total > 0 {
+		m.execView.pane.SetTotalLines(int(msg.Total))
 	}
 	return m, nil
 }
@@ -389,7 +411,8 @@ func (m Model) handleReconnectLog(msg reconnectLogMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) || m.execView.run.Status != model.PhaseRunning {
 		return m, nil
 	}
-	return m, m.streams.StartLogStream(m.execView.run)
+	resumeFrom := int64(m.execView.pane.firstLoadedLine + len(m.execView.pane.lines))
+	return m, m.streams.StartLogStream(m.execView.run, resumeFrom)
 }
 
 func (m Model) handleTick() (tea.Model, tea.Cmd) {
@@ -447,6 +470,24 @@ func (m *Model) viewingRun(runID string) bool {
 	return m.execView != nil && m.execView.RunID() == runID
 }
 
+// maybeLoadOlderLogs checks if the user scrolled to the top of the loaded buffer
+// and dispatches a fetch for older lines if available.
+func (m *Model) maybeLoadOlderLogs() tea.Cmd {
+	if m.execView == nil || m.execView.loadingOlder {
+		return nil
+	}
+	if !m.execView.pane.NeedsOlder() {
+		return nil
+	}
+	m.execView.loadingOlder = true
+	return m.streams.FetchOlderLogs(
+		m.execView.run.TaskName,
+		m.execView.run.ID,
+		int64(m.execView.pane.FirstLoadedLine()),
+		int64(logTailLines),
+	)
+}
+
 // handleSSEEvent processes a parsed SSE run event.
 func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 	var runEvt struct {
@@ -467,7 +508,7 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 			prevStatus := m.execView.run.Status
 			m.execView.run = runEvt.Run
 			if runEvt.Run.Status == model.PhaseRunning && prevStatus != model.PhaseRunning {
-				return m.streams.StartLogStream(runEvt.Run)
+				return m.streams.StartLogStream(runEvt.Run, -int64(logTailLines))
 			}
 		}
 

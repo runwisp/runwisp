@@ -25,9 +25,15 @@
             from: number,
             to: number,
         ) => Promise<LogSlice | LogEvent | undefined> | LogSlice | LogEvent | undefined;
-        streamLogs?: (runId: string, onEvent: (event: LogEvent) => void) => () => void;
+        streamLogs?: (
+            runId: string,
+            onEvent: (event: LogEvent) => void,
+            initialState?: { fromLine: number },
+        ) => () => void;
         showTaskName?: boolean;
     } = $props();
+
+    const TAIL_LINES = 1000;
 
     let logConsole = $state<{ onStream: (event: LogEvent) => void } | null>(null);
 
@@ -37,17 +43,29 @@
 
     $effect(() => {
         const id = runId;
-        if (!id || !streamLogs) return;
+        if (!id) return;
 
-        const connect = streamLogs;
-        const unsub = untrack(() =>
-            connect(id, (event: LogEvent) => {
-                if (logConsole) logConsole.onStream(event);
-            }),
-        );
+        const stream = streamLogs;
+        if (!stream) return;
+
+        let cleanup: (() => void) | undefined;
+
+        untrack(() => {
+            // Single SSE call seeds the viewport via backfill (negative
+            // fromLine = tail-from-end) and continues with live events on
+            // the same connection. No tail+stream handoff, no duplicate
+            // replay, native Last-Event-ID resume on reconnect.
+            cleanup = stream(
+                id,
+                (event: LogEvent) => {
+                    if (logConsole) logConsole.onStream(event);
+                },
+                { fromLine: -TAIL_LINES },
+            );
+        });
 
         return () => {
-            unsub();
+            if (cleanup) cleanup();
         };
     });
 </script>

@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Log streaming redesigned around absolute line numbers (BREAKING).** The REST and SSE log surface now speaks lines, not bytes. New endpoints:
+  - `GET /api/tasks/{name}/runs/{id}/log` — JSON page of `{n, ts, stream, text}` entries with `from`/`limit` query parameters (`from` accepts negative values for tail-from-end).
+  - `GET /api/tasks/{name}/runs/{id}/log/raw` — concatenates the rotated-away segment and the current segment as `text/plain` for download / `cat` / `grep`.
+  - `GET /api/tasks/{name}/runs/{id}/log/stream` — line-numbered SSE with `event: line | rotated | dropped | done`. Each event carries an `id:` so EventSource's native `Last-Event-ID` resume works on reconnect.
+  The previous `/log-stream` endpoint and the `start_line` / `end_line` / `tail` query shape on `/log` are removed. A single SSE call now serves "tail then follow" via `?from=-1000`; lines longer than 64 KB are split with `continued: true` on segments 2..N.
+
 ### Fixed
 
 - **Graceful shutdown is now ~3× faster.** Daemon teardown previously ran six steps sequentially (up to ~10 s worst-case). Subsystems now shut down in two layered phases — HTTP server first, then scheduler, notifications, and task manager — under a 3-second deadline. Per-subsystem shutdown errors are now logged instead of silently discarded.
+- **SSE log stream no longer cuts off large outputs.** When a run produced more than 1 MB of un-emitted log data before finishing, the SSE stream would emit a single 1 MB chunk and immediately send `done`, discarding the rest. The stream now drains the full log file before signalling completion.
+- **TUI and Web UI open long logs at the tail.** Opening a finished execution with a large log used to replay the entire file from the start, making the operator wait for the viewport to catch up. Both UIs now land at the tail in a single round-trip and lazily load older content when the user scrolls up.
 
 ## [0.4.0] - 2026-05-06
 

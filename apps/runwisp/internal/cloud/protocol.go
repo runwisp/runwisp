@@ -37,29 +37,34 @@ func NewExecutionUpdateMessage(executionID string, status protocol.ExecutionStat
 	}
 }
 
-func NewLogChunkMessage(executionID, data string, offset int64, final bool) protocol.LogChunkMessage {
+// NewLogLineMessage builds a single line-event push.
+func NewLogLineMessage(executionID string, n, ts int64, stream, text string, continued bool) protocol.LogLineMessage {
 	v, s := newEnvelopeFields()
-	return protocol.LogChunkMessage{
-		Type:        "log:chunk",
+	streamEnum := streamEnumFromString(stream)
+	return protocol.LogLineMessage{
+		Type:        "log:line",
 		V:           v,
 		SentAt:      s,
 		ExecutionID: executionID,
-		Data:        data,
-		Offset:      offset,
-		Final:       final,
+		N:           n,
+		Ts:          ts,
+		Stream:      &streamEnum,
+		Text:        text,
+		Continued:   continued,
 	}
 }
 
-func NewLogResponseMessage(requestID, executionID, data string, offset int64, final bool) protocol.LogResponseMessage {
+// NewLogReplayChunkMessage builds one page of historical lines for a
+// log:replayRequest reply. final=true marks the last chunk in the reply set.
+func NewLogReplayChunkMessage(requestID, executionID string, lines []protocol.LinesItem, final bool) protocol.LogReplayChunkMessage {
 	v, s := newEnvelopeFields()
-	return protocol.LogResponseMessage{
-		Type:        "log:response",
+	return protocol.LogReplayChunkMessage{
+		Type:        "log:replayChunk",
 		V:           v,
 		SentAt:      s,
 		ID:          requestID,
 		ExecutionID: executionID,
-		Data:        data,
-		Offset:      offset,
+		Lines:       lines,
 		Final:       final,
 	}
 }
@@ -76,6 +81,28 @@ func NewProtocolErrorMessage(code, message, requestID string) protocol.ProtocolE
 	}
 }
 
+func streamEnumFromString(stream string) protocol.Stream {
+	switch stream {
+	case "stderr":
+		return protocol.StreamStderr
+	case "system":
+		return protocol.StreamSystem
+	default:
+		return protocol.StreamStdout
+	}
+}
+
+func linesItemStreamFromString(stream string) protocol.LinesItemStream {
+	switch stream {
+	case "stderr":
+		return protocol.LinesItemStreamStderr
+	case "system":
+		return protocol.LinesItemStreamSystem
+	default:
+		return protocol.LinesItemStreamStdout
+	}
+}
+
 func decodeAs[T any](payload []byte) (any, error) {
 	var msg T
 	if err := decodeStrict(payload, &msg); err != nil {
@@ -89,7 +116,7 @@ var inboundDecoders = map[string]func([]byte) (any, error){
 	"execution:dispatch": decodeAs[protocol.ExecutionDispatchMessage],
 	"execution:stop":     decodeAs[protocol.ExecutionStopMessage],
 	"pong":               decodeAs[protocol.PongMessage],
-	"log:request":        decodeAs[protocol.LogRequestMessage],
+	"log:replayRequest":  decodeAs[protocol.LogReplayRequestMessage],
 	"log:listen":         decodeAs[protocol.LogListenMessage],
 	"log:stop":           decodeAs[protocol.LogStopMessage],
 	"error":              decodeAs[protocol.ProtocolErrorMessage],

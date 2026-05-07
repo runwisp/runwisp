@@ -113,9 +113,9 @@ function postProcessGo(dir) {
       '$1 json.RawMessage$2" binding:"required"`',
     );
 
-    // int -> int64 for fields with format: int64 (offset, limit, logSize)
+    // int -> int64 for fields with format: int64 (line numbers, timestamps, paging, archive size)
     content = content.replace(
-      /(\s+(?:Offset|Limit|LogSize))\s+int(\s+`json:"(?:offset|limit|logSize))/g,
+      /(\s+(?:Limit|LogSize|FromLine|N|Ts))\s+int(\s+`json:"(?:limit|logSize|fromLine|n|ts))/g,
       "$1 int64$2",
     );
 

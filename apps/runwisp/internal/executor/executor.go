@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
@@ -23,8 +22,6 @@ const (
 	StreamReadBufferSize  = 16 * 1024 // 16KB buffer for reading from stdout/stderr
 	InitialLineBufferSize = 4 * 1024  // 4KB initial line buffer
 	MaxLineBufferSize     = 64 * 1024 // 64KB max before flushing partial line
-	EventBatchSize        = 100       // Max log lines per event batch
-	EventBatchInterval    = 200 * time.Millisecond
 )
 
 // Executor defines the interface for running tasks.
@@ -149,19 +146,19 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	backend, ok := r.backends[execDef.ExecType()]
 	if !ok {
 		errMsg := fmt.Sprintf("unsupported execution type: %s", execDef.ExecType())
-		writeLogLine(writer, "SYSTEM", errMsg)
+		writer.WriteLineEvent(errMsg, logutil.StreamSystem)
 		return &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
 	}
 
 	proc, err := backend.Start(cancelCtx, execDef)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to start %s execution: %v", execDef.ExecType(), err)
-		writeLogLine(writer, "SYSTEM", errMsg)
+		writer.WriteLineEvent(errMsg, logutil.StreamSystem)
 		return &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
 	}
 
 	var wg sync.WaitGroup
-	streamOutput := func(reader io.ReadCloser, prefix string) {
+	streamOutput := func(reader io.ReadCloser, stream string) {
 		if reader == nil {
 			return
 		}
@@ -170,15 +167,15 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 			defer wg.Done()
 			defer func() {
 				if rec := recover(); rec != nil {
-					slog.Error("Recovered from panic in stream", "stream", prefix, "task", task.Name, "err", rec)
+					slog.Error("Recovered from panic in stream", "stream", stream, "task", task.Name, "err", rec)
 				}
 			}()
-			r.streamer.StreamToFile(reader, writer, task, run, prefix)
+			r.streamer.StreamToFile(reader, writer, task, run, stream)
 		}()
 	}
 
-	streamOutput(proc.Stdout, "STDOUT")
-	streamOutput(proc.Stderr, "STDERR")
+	streamOutput(proc.Stdout, logutil.StreamStdout)
+	streamOutput(proc.Stderr, logutil.StreamStderr)
 	wg.Wait()
 
 	exitCode, waitErr := proc.Wait()
@@ -229,10 +226,4 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		return nil, "", nil, nil, err
 	}
 	return writer, logPath, cancelCtx, cancelFunc, nil
-}
-
-func writeLogLine(w io.Writer, prefix, message string) {
-	if _, err := w.Write([]byte(FormatLine(message, prefix))); err != nil {
-		slog.Warn("Failed to write log line", "prefix", prefix, "err", err)
-	}
 }

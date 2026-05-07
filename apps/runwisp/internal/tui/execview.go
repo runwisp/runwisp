@@ -73,6 +73,7 @@ type ExecView struct {
 	hoveredHeader headerFocusItem
 	headerLayout  execHeaderLayout
 	taskIsService bool
+	loadingOlder  bool
 }
 
 // execHeaderHeight is the number of header lines drawn above the log in normal mode.
@@ -114,11 +115,9 @@ func (v *ExecView) ToggleFullscreen() {
 	}
 }
 
-func (v *ExecView) Fullscreen() bool         { return v.fullscreen }
-func (v *ExecView) SetFocused(focused bool)  { v.focused = focused }
-func (v *ExecView) AppendChunk(chunk string) { v.pane.AppendChunk(chunk) }
-func (v *ExecView) FlushPending()            { v.pane.FlushPending() }
-func (v *ExecView) maxHScroll() int          { return v.pane.MaxHScroll() }
+func (v *ExecView) Fullscreen() bool        { return v.fullscreen }
+func (v *ExecView) SetFocused(focused bool) { v.focused = focused }
+func (v *ExecView) maxHScroll() int         { return v.pane.MaxHScroll() }
 func (v *ExecView) hitAt(x, y int) headerFocusItem {
 	if v.fullscreen {
 		return headerFocusNone

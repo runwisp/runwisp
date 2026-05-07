@@ -141,8 +141,7 @@ func (srv *Server) setupRoutes() {
 
 		// Raw chi handlers for complex endpoints
 		r.Post("/api/auth/launch-ticket", srv.handleCreateLaunchTicket)
-		r.Get("/api/tasks/{taskName}/runs/{runId}/log", srv.handleGetLog)
-		r.With(srv.streams.middleware).Get("/api/tasks/{taskName}/runs/{runId}/log-stream", srv.handleLogStream)
+		r.With(srv.streams.middleware).Get("/api/tasks/{taskName}/runs/{runId}/log/stream", srv.handleLogStream)
 		r.With(srv.streams.middleware).Get("/api/daemon/log-stream", srv.handleDaemonLogStream)
 	})
 	ui.Serve(srv.router)

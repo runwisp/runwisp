@@ -5,13 +5,14 @@ package tui
 
 import (
 	"context"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 )
+
+const logTailLines = 1000
 
 // StreamManager owns SSE event subscriptions, log streaming, and data fetching.
 // Extracted from Model to isolate I/O and async concerns.
@@ -21,7 +22,7 @@ type StreamManager struct {
 	client *apiclient.Client
 
 	logCancel context.CancelFunc
-	logCh     <-chan string
+	logCh     <-chan apiclient.LogStreamMsg
 	sseCh     <-chan apiclient.RunStreamEvent
 
 	daemonLogCh    <-chan string
@@ -70,9 +71,11 @@ func (sm *StreamManager) ContinueListeningSSE() tea.Cmd {
 	return nil
 }
 
-// StartLogStream begins streaming logs for a run via the API.
-// Cancels any previous log stream.
-func (sm *StreamManager) StartLogStream(run *model.Run) tea.Cmd {
+// StartLogStream opens a single line-based SSE stream for the run. fromLine
+// is an absolute line anchor; pass a negative value (e.g. -logTailLines) to
+// land at the end of the log immediately. Cancels any previous stream owned
+// by this manager.
+func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd {
 	if sm.client == nil {
 		return nil
 	}
@@ -88,21 +91,53 @@ func (sm *StreamManager) StartLogStream(run *model.Run) tea.Cmd {
 	client := sm.client
 
 	return func() tea.Msg {
-		ch, err := client.StreamLog(ctx, taskName, runID)
+		ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: fromLine})
 		if err != nil {
-			content, fetchErr := client.GetLog(taskName, runID)
-			if fetchErr != nil {
-				return logDoneMsg{RunID: runID}
-			}
-			lines := strings.Split(content, "\n")
-			return logBatchMsg{RunID: runID, Lines: lines}
+			return logDoneMsg{RunID: runID}
 		}
 		return logStreamConnectedMsg{RunID: runID, Ch: ch}
 	}
 }
 
+// FetchOlderLogs fetches lines before the currently loaded range for scroll-up
+// via the JSON page endpoint. beforeLine is the absolute line number of the
+// first currently-loaded entry; the returned page covers
+// [max(0, beforeLine-count), beforeLine).
+func (sm *StreamManager) FetchOlderLogs(taskName, runID string, beforeLine, count int64) tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+
+	client := sm.client
+	startLine := beforeLine - count
+	if startLine < 0 {
+		startLine = 0
+	}
+	limit := beforeLine - startLine
+	if limit <= 0 {
+		return nil
+	}
+
+	return func() tea.Msg {
+		page, err := client.GetLogPage(taskName, runID, startLine, limit)
+		if err != nil {
+			return DebugLogMsg{Message: "Failed to load older logs: " + err.Error()}
+		}
+		first := startLine
+		if len(page.Lines) > 0 {
+			first = page.Lines[0].N
+		}
+		return logOlderLoadedMsg{
+			RunID:     runID,
+			Lines:     page.Lines,
+			FirstLine: first,
+			Total:     page.TotalLines,
+		}
+	}
+}
+
 // OnLogConnected stores the log channel and returns a command to start listening.
-func (sm *StreamManager) OnLogConnected(runID string, ch <-chan string) tea.Cmd {
+func (sm *StreamManager) OnLogConnected(runID string, ch <-chan apiclient.LogStreamMsg) tea.Cmd {
 	sm.logCh = ch
 	return listenLogStream(runID, ch)
 }
@@ -182,10 +217,23 @@ func listenSSE(ch <-chan apiclient.RunStreamEvent) tea.Cmd {
 	}, sseDisconnectedMsg{})
 }
 
-// listenLogStream waits for the next log chunk from the channel.
-func listenLogStream(runID string, ch <-chan string) tea.Cmd {
-	return listenChannel(ch, func(chunk string) tea.Msg {
-		return logChunkMsg{RunID: runID, Chunk: chunk}
+// listenLogStream waits for the next message from the line-based SSE channel.
+// Each delivered LogStreamMsg is mapped onto its concrete TUI message type.
+func listenLogStream(runID string, ch <-chan apiclient.LogStreamMsg) tea.Cmd {
+	return listenChannel(ch, func(msg apiclient.LogStreamMsg) tea.Msg {
+		switch msg.Kind {
+		case apiclient.LogStreamMsgKindLine:
+			return logLineMsg{RunID: runID, Line: msg.Line}
+		case apiclient.LogStreamMsgKindRotated:
+			return logRotatedMsg{RunID: runID, FirstAvailable: msg.Rotated.FirstAvailable}
+		case apiclient.LogStreamMsgKindDropped:
+			return logDroppedMsg{RunID: runID, After: msg.Dropped.After, Count: msg.Dropped.Count}
+		case apiclient.LogStreamMsgKindDone:
+			return logDoneMsg{RunID: runID, FinalLine: msg.Done.FinalLine}
+		case apiclient.LogStreamMsgKindErr:
+			return logDoneMsg{RunID: runID}
+		}
+		return nil
 	}, logDoneMsg{RunID: runID})
 }
 

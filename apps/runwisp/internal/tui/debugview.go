@@ -11,7 +11,8 @@ import (
 )
 
 type DebugView struct {
-	pane LogPane
+	pane    LogPane
+	lineSeq int64
 }
 
 func NewDebugView() DebugView {
@@ -30,7 +31,8 @@ func (v *DebugView) SetSize(w, h int) {
 }
 
 func (v *DebugView) AppendLine(msg string) {
-	v.pane.AppendLine(msg)
+	v.pane.AppendLine(v.lineSeq, "stdout", msg)
+	v.lineSeq++
 }
 
 func (v *DebugView) Update(msg tea.Msg) {
@@ -87,7 +89,7 @@ func (v *DebugView) View() string {
 		b.WriteString("\n")
 	}
 
-	v.pane.RenderLines(&b, false)
+	v.pane.RenderLines(&b, false, false)
 
 	return b.String()
 }

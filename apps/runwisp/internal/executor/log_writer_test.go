@@ -325,6 +325,81 @@ func TestLogWriter_TimestampIndex_LookupUseCases(t *testing.T) {
 	assert.Less(t, startLine, uint32(50))
 }
 
+// TestLogWriter_WriteLineEvent_MonotonicAcrossRotations is the Phase 1
+// invariant for the new line-coordinate world: the absolute line number
+// returned by WriteLineEvent is strictly monotonic across rotations.
+//
+// Note: rotations themselves write a "[SYSTEM] Log rotated:…" line that
+// occupies a real line number on disk, so consecutive WriteLineEvent calls
+// can have a gap of one across a rotation boundary. The invariant is
+// strict-monotonicity, not consecutive numbering, and lineNum always equals
+// rotatedLines+lineCount-1 for the line just written. A regression here
+// corrupts every downstream cursor (TUI, web UI, cloud replay).
+func TestLogWriter_WriteLineEvent_MonotonicAcrossRotations(t *testing.T) {
+	opts := newTestOpts(t.TempDir())
+	opts.MaxSize = 200
+	opts.Overflow = "drop_old"
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	const total = 30
+	assigned := make([]int64, 0, total)
+	line := strings.Repeat("x", 50) // ~51 bytes once formatted; forces rotations
+	for i := 0; i < total; i++ {
+		n, err := w.WriteLineEvent(line, "stdout")
+		require.NoError(t, err)
+		// drop_old should never silently drop lines (rotation makes room).
+		require.GreaterOrEqual(t, n, int64(0), "line %d unexpectedly dropped", i)
+		assigned = append(assigned, n)
+	}
+	require.NoError(t, w.Close())
+
+	for i := 1; i < len(assigned); i++ {
+		assert.Greater(t, assigned[i], assigned[i-1],
+			"line numbers must be strictly monotonic: assigned[%d]=%d after assigned[%d]=%d",
+			i, assigned[i], i-1, assigned[i-1])
+	}
+	assert.Equal(t, int64(0), assigned[0])
+
+	// At least one rotation must have happened given the maxSize and total
+	// payload — that's the test's whole point.
+	meta := logutil.ReadLogMeta(opts.LogPath)
+	require.Greater(t, meta.RotatedLines, int64(0), "test must trigger rotation")
+
+	// The last assigned number must equal rotatedLines+(finalLineCount-1)
+	// where finalLineCount is the total lines on disk in the current segment
+	// at the moment of the last WriteLineEvent call. After Close adds nothing
+	// for non-truncated runs, but since drop_old marks truncated=true Close
+	// writes a "Total process output:" SYSTEM line, so FinalLines reflects
+	// state AFTER Close. The key invariant we can assert without that
+	// noise: max assigned + 1 (the next line number that would be issued)
+	// must not exceed the total recorded lines.
+	assert.LessOrEqual(t, assigned[len(assigned)-1]+1, meta.RotatedLines+meta.FinalLines)
+}
+
+// TestLogWriter_WriteLineEvent_DropReturnsNegative covers the contract that
+// silently-dropped writes (drop_new mode at limit) report n=-1 so the
+// StreamManager skips publishing an event for a line that doesn't exist on
+// disk.
+func TestLogWriter_WriteLineEvent_DropReturnsNegative(t *testing.T) {
+	opts := newTestOpts(t.TempDir())
+	opts.MaxSize = 80
+	opts.Overflow = "drop_new"
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	first, err := w.WriteLineEvent(strings.Repeat("x", 50), "stdout")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), first)
+
+	// Second write pushes past the limit → drop_new path → -1.
+	second, err := w.WriteLineEvent(strings.Repeat("y", 50), "stdout")
+	require.NoError(t, err)
+	assert.Equal(t, int64(-1), second)
+
+	require.NoError(t, w.Close())
+}
+
 func TestLogWriter_TimestampIndex_NoTidxPath(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "test.log")

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -295,18 +296,21 @@ func TestDoJSON_AuthHeaderSent(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestGetLog(t *testing.T) {
+func TestGetLogRaw(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/tasks/my-task/runs/run-1/log", r.URL.Path)
+		assert.Equal(t, "/api/tasks/my-task/runs/run-1/log/raw", r.URL.Path)
 		fmt.Fprintln(w, "line 1")
 		fmt.Fprintln(w, "line 2")
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	log, err := c.GetLog("my-task", "run-1")
+	body, err := c.GetLogRaw("my-task", "run-1")
 	require.NoError(t, err)
-	assert.Equal(t, "line 1\nline 2\n", log)
+	defer body.Close()
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	assert.Equal(t, "line 1\nline 2\n", string(data))
 }
 
 func TestStreamRunEvents(t *testing.T) {
