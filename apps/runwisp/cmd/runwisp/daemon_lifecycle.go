@@ -33,12 +33,13 @@ func startCloudClient(
 	}
 
 	cloudClient, clientErr := cloud.NewClient(cfg.CloudConfig, cloud.Dependencies{
-		TaskManager:  svc.TaskManager,
-		RunRepo:      svc.DB,
-		EventBus:     svc.EventBus,
-		LocalTasks:   svc.TasksMap,
-		LogDir:       flags.LogDir(),
-		Availability: svc.Executor.Availability(),
+		TaskManager:       svc.TaskManager,
+		RunRepo:           svc.DB,
+		PendingUploadRepo: svc.DB,
+		EventBus:          svc.EventBus,
+		LocalTasks:        svc.TasksMap,
+		LogDir:            flags.LogDir(),
+		Availability:      svc.Executor.Availability(),
 		OnConnected: func() {
 			slog.Info("Cloud connected")
 		},
@@ -49,6 +50,7 @@ func startCloudClient(
 	}
 
 	if cloudClient != nil {
+		cloudClient.RecoverArchiveBacklog(cloudCtx)
 		cloudWG.Add(1)
 		go func() {
 			defer cloudWG.Done()
@@ -61,43 +63,88 @@ func startCloudClient(
 	return cancelCloud, &cloudWG
 }
 
-// gracefulShutdown tears down all daemon subsystems in parallel under a 3-second
-// deadline. Both runHeadless and runWithTUI funnel through here.
+// gracefulShutdown tears down all daemon subsystems under a 3-second deadline.
+// Layered: stop the input layer (HTTP server, cloud connection) first so no
+// new requests can enter, then drain the workers (scheduler, notifications,
+// task manager) once nothing can call into them. Within each layer subsystems
+// run in parallel. Both runHeadless and runWithTUI funnel through here.
 func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices, srv *server.Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	cancelCloud()
+	// RetentionCleaner.Stop only cancels its loop's context — non-blocking,
+	// so it's safe to call outside the deadline-bounded waits below.
+	svc.RetentionCleaner.Stop()
 
+	waitInput(ctx, cloudWG, srv)
+	waitDrain(ctx, svc)
+}
+
+// waitInput waits for the request-accepting layer to quiesce: HTTP server
+// drains in-flight handlers; cloud client returns from Run after cloudCtx is
+// cancelled. Once both return, downstream subsystems are no longer being
+// called into and can be torn down without racing.
+func waitInput(ctx context.Context, cloudWG *sync.WaitGroup, srv *server.Server) {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	go func() { defer wg.Done(); cloudWG.Wait() }()
+	go func() {
+		defer wg.Done()
+		cloudWG.Wait()
+	}()
 
 	if srv != nil {
 		wg.Add(1)
-		go func() { defer wg.Done(); _ = srv.Shutdown(ctx) }()
+		go func() {
+			defer wg.Done()
+			if err := srv.Shutdown(ctx); err != nil {
+				slog.Warn("HTTP server shutdown error", "err", err)
+			}
+		}()
 	}
+
+	awaitOrLog(ctx, &wg, "input layer")
+}
+
+// waitDrain stops worker subsystems. Order within is irrelevant — they don't
+// call into each other — but they all share the global deadline.
+func waitDrain(ctx context.Context, svc *daemonServices) {
+	var wg sync.WaitGroup
+
 	if svc.Scheduler != nil {
 		wg.Add(1)
-		go func() { defer wg.Done(); svc.Scheduler.Stop() }()
+		go func() {
+			defer wg.Done()
+			svc.Scheduler.Stop()
+		}()
 	}
 	if svc.Notify.Service != nil {
 		wg.Add(1)
-		go func() { defer wg.Done(); _ = svc.Notify.Service.Stop(ctx) }()
+		go func() {
+			defer wg.Done()
+			if err := svc.Notify.Service.Stop(ctx); err != nil {
+				slog.Warn("notification service shutdown error", "err", err)
+			}
+		}()
 	}
 	wg.Add(1)
-	go func() { defer wg.Done(); svc.TaskManager.Shutdown() }()
+	go func() {
+		defer wg.Done()
+		svc.TaskManager.Shutdown()
+	}()
 
-	svc.RetentionCleaner.Stop()
+	awaitOrLog(ctx, &wg, "drain layer")
+}
 
+func awaitOrLog(ctx context.Context, wg *sync.WaitGroup, label string) {
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
 
 	select {
 	case <-done:
 	case <-ctx.Done():
-		slog.Warn("Graceful shutdown deadline exceeded, forcing exit")
+		slog.Warn("graceful shutdown deadline exceeded", "phase", label)
 	}
 }
 

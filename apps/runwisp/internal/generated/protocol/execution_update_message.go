@@ -13,4 +13,6 @@ type ExecutionUpdateMessage struct {
 	ExitCode    *int             `json:"exitCode,omitempty"`
 	StartedAt   *time.Time       `json:"startedAt,omitempty"`
 	FinishedAt  *time.Time       `json:"finishedAt,omitempty"`
+	LogPath     string           `json:"logPath,omitempty"`
+	LogSize     int64            `json:"logSize,omitempty"`
 }

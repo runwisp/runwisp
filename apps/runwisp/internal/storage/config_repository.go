@@ -22,4 +22,23 @@ type Database interface {
 	RunRepository
 	ConfigRepository
 	NotificationRepository
+	PendingLogUploadRepository
+}
+
+// PendingLogUpload is a record of a dispatch that handed the daemon a signed
+// PUT URL for terminal log archival. The row is removed on a successful
+// upload; the crash-recovery sweep at startup retries any rows still present.
+type PendingLogUpload struct {
+	ExternalExecutionID string
+	UploadURL           string
+	LogPath             string
+	InsertedAt          int64
+}
+
+// PendingLogUploadRepository persists dispatch metadata so the daemon can
+// resume terminal log archival after a crash.
+type PendingLogUploadRepository interface {
+	UpsertPendingLogUpload(rec PendingLogUpload) error
+	DeletePendingLogUpload(externalExecutionID string) error
+	ListPendingLogUploads() ([]PendingLogUpload, error)
 }

@@ -4,9 +4,13 @@
 package cloud
 
 import (
+	"context"
 	"encoding/base64"
+	"sync"
 
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"log/slog"
 )
@@ -20,6 +24,9 @@ type EventBridge struct {
 	sendReady     func(any) error
 	onStateChange func()
 	unsubscribers []func()
+
+	ctxMu      sync.Mutex
+	archiveCtx context.Context
 }
 
 func NewEventBridge(
@@ -48,6 +55,16 @@ func (b *EventBridge) Subscribe() {
 	)
 }
 
+// SetArchiveContext binds a daemon-lifecycle context that finalize goroutines
+// thread into log archival. When the daemon shuts down and this ctx is
+// cancelled, in-flight uploads abort instead of running until process exit.
+// Until set (or after Shutdown), archives fall back to context.Background.
+func (b *EventBridge) SetArchiveContext(ctx context.Context) {
+	b.ctxMu.Lock()
+	b.archiveCtx = ctx
+	b.ctxMu.Unlock()
+}
+
 // Shutdown removes all event subscriptions.
 func (b *EventBridge) Shutdown() {
 	for _, unsubscribe := range b.unsubscribers {
@@ -56,6 +73,18 @@ func (b *EventBridge) Shutdown() {
 		}
 	}
 	b.unsubscribers = nil
+	b.ctxMu.Lock()
+	b.archiveCtx = nil
+	b.ctxMu.Unlock()
+}
+
+func (b *EventBridge) currentArchiveContext() context.Context {
+	b.ctxMu.Lock()
+	defer b.ctxMu.Unlock()
+	if b.archiveCtx == nil {
+		return context.Background()
+	}
+	return b.archiveCtx
 }
 
 func (b *EventBridge) handleRunEvent(event events.Event) {
@@ -81,11 +110,33 @@ func (b *EventBridge) handleRunEvent(event events.Event) {
 	}
 	b.onStateChange()
 
-	b.tracker.QueueUpdate(*update, b.sendReady)
-
-	if terminal {
-		b.sendTerminalLogChunk(executionID)
+	if !terminal {
+		b.tracker.QueueUpdate(*update, b.sendReady)
+		return
 	}
+
+	// Terminal path: archive the log first (off the publishing goroutine so
+	// the runtime's `execute` returns promptly and frees the concurrency
+	// slot), then emit the terminal update with logPath/logSize set.
+	go b.finalizeRun(run, *update, executionID)
+}
+
+func (b *EventBridge) finalizeRun(run *model.Run, update protocol.ExecutionUpdateMessage, executionID string) {
+	uploader := b.handler.Uploader()
+	if uploader != nil {
+		logFilePath := logutil.ResolveRunLogPath(b.handler.LogDir(), run.TaskName, run.ID, run.CreatedAt)
+		result, err := uploader.Archive(b.currentArchiveContext(), executionID, logFilePath)
+		switch {
+		case err != nil:
+			slog.Warn("log archival failed; sending terminal update without logPath", "executionId", executionID, "err", err)
+		case result != nil:
+			update.LogPath = result.LogPath
+			update.LogSize = result.LogSize
+		}
+	}
+
+	b.tracker.QueueUpdate(update, b.sendReady)
+	b.sendTerminalLogChunk(executionID)
 }
 
 func (b *EventBridge) handleLogLineEvent(event events.Event) {
@@ -94,25 +145,39 @@ func (b *EventBridge) handleLogLineEvent(event events.Event) {
 		return
 	}
 
-	chunkBytes := []byte(logEvent.Line)
-	// ClaimLogChunkOffset atomically reserves the offset range for this chunk,
-	// so concurrent goroutines (stdout/stderr) always get non-overlapping slots.
-	offset, exists := b.handler.ClaimLogChunkOffset(logEvent.ExternalExecutionID, int64(len(chunkBytes)))
-	if !exists {
+	chunk, exists := b.handler.BufferLogChunk(logEvent.ExternalExecutionID, []byte(logEvent.Line), b.emitLogChunk)
+	if !exists || !chunk.Ready {
 		return
 	}
+	b.emitLogChunk(logEvent.ExternalExecutionID, chunk.Offset, chunk.Data)
+}
 
-	encoded := base64.StdEncoding.EncodeToString(chunkBytes)
-	message := NewLogChunkMessage(logEvent.ExternalExecutionID, encoded, offset, false)
+func (b *EventBridge) emitLogChunk(executionID string, offset int64, data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	message := NewLogChunkMessage(executionID, encoded, offset, false)
 	if err := b.sendReady(message); err != nil {
-		slog.Warn("failed to send log chunk", "executionID", logEvent.ExternalExecutionID, "offset", offset, "err", err)
+		slog.Warn("failed to send log chunk", "executionID", executionID, "offset", offset, "err", err)
 	}
 }
 
 func (b *EventBridge) sendTerminalLogChunk(executionID string) {
-	offset, exists := b.handler.RemoveLogListener(executionID)
+	offset, pending, exists := b.handler.RemoveLogListener(executionID)
 	if !exists {
 		return
+	}
+
+	if len(pending) > 0 {
+		// Drain whatever was buffered for the rate-limit window. The final
+		// chunk follows with Final=true at the post-buffer offset.
+		encoded := base64.StdEncoding.EncodeToString(pending)
+		buffered := NewLogChunkMessage(executionID, encoded, offset, false)
+		if err := b.sendReady(buffered); err != nil {
+			slog.Info("failed to flush buffered log chunk", "executionID", executionID, "err", err)
+		}
+		offset += int64(len(pending))
 	}
 
 	message := NewLogChunkMessage(executionID, "", offset, true)
