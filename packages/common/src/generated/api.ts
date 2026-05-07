@@ -1,4 +1,24 @@
 export interface paths {
+    "/api/daemon/log-stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream the daemon's recent log output
+         * @description Server-Sent Events stream of daemon log lines. Replays the last 100 buffered lines, then emits new lines as they're written until the client disconnects.
+         */
+        get: operations["streamDaemonLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/info": {
         parameters: {
             query?: never;
@@ -335,6 +355,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskName}/runs/{runId}/log/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream a run's log lines as SSE
+         * @description Server-Sent Events stream of absolute-line-numbered log entries. Replays history starting at `from` (or `Last-Event-ID + 1`), then follows live output until the run terminates.
+         */
+        get: operations["streamLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskName}/runs/{runId}/stop": {
         parameters: {
             query?: never;
@@ -374,6 +414,10 @@ export interface components {
             port: number;
             tasks: components["schemas"]["TaskBrief"][] | null;
             version: string;
+        };
+        DaemonLogLineEvent: {
+            /** @description One captured daemon log line */
+            line: string;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -422,7 +466,46 @@ export interface components {
              */
             type: string;
         };
+        LogDoneEvent: {
+            /**
+             * Format: int64
+             * @description Last line number emitted before the run terminated
+             */
+            final_line: number;
+            /** @description Reason the stream is closing (e.g. 'ended') */
+            status: string;
+        };
+        LogDroppedEvent: {
+            /**
+             * Format: int64
+             * @description Highest line number observed before drops occurred
+             */
+            after: number;
+            /**
+             * Format: int64
+             * @description Number of line events dropped due to overflow
+             */
+            count: number;
+        };
         LogLineEntry: {
+            /** @description True if this segment continues an oversized split line */
+            continued?: boolean;
+            /**
+             * Format: int64
+             * @description Absolute line number
+             */
+            n: number;
+            /** @description Stream identifier (stdout/stderr/system) */
+            stream: string;
+            /** @description Line content without trailing newline */
+            text: string;
+            /**
+             * Format: int64
+             * @description Unix milliseconds timestamp; 0 if unavailable
+             */
+            ts: number;
+        };
+        LogLineSSEEvent: {
             /** @description True if this segment continues an oversized split line */
             continued?: boolean;
             /**
@@ -463,6 +546,13 @@ export interface components {
             total_lines: number;
             /** @description True if rotation has dropped lines below first_available */
             truncated: boolean;
+        };
+        LogRotatedEvent: {
+            /**
+             * Format: int64
+             * @description Lowest line number still on disk after rotation
+             */
+            first_available: number;
         };
         MetricsSample: {
             /**
@@ -829,6 +919,46 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    streamDaemonLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        data: components["schemas"]["DaemonLogLineEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "line";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    }[];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     getInfo: {
         parameters: {
             query?: never;
@@ -1574,6 +1704,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    streamLog: {
+        parameters: {
+            query?: {
+                /** @description Anchor line number; negative values count from end (default -1000) */
+                from?: number;
+                /** @description Cap on backfilled lines (default 5000) */
+                replay_limit?: number;
+            };
+            header?: {
+                /** @description Native SSE resume cursor; takes precedence over the from query */
+                "Last-Event-ID"?: string;
+            };
+            path: {
+                /** @description Task name */
+                taskName: string;
+                /** @description Run ULID */
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": ({
+                        data: components["schemas"]["LogDoneEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "done";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["LogDroppedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "dropped";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["LogLineSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "line";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["LogRotatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "rotated";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    })[];
                 };
             };
             /** @description Error */
