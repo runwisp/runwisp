@@ -89,12 +89,14 @@ func (c *Client) StreamDaemonLogs(ctx context.Context) (<-chan string, error) {
 				continue
 			}
 			data := strings.TrimPrefix(line, "data: ")
-			var logLine string
-			if err := json.Unmarshal([]byte(data), &logLine); err != nil {
-				logLine = data
+			var payload struct {
+				Line string `json:"line"`
+			}
+			if err := json.Unmarshal([]byte(data), &payload); err != nil {
+				continue
 			}
 			select {
-			case ch <- logLine:
+			case ch <- payload.Line:
 			case <-ctx.Done():
 				return
 			}

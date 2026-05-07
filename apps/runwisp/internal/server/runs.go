@@ -144,6 +144,8 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaGetLogRaw)
 
 	srv.registerRunsSSE(protectedAPI)
+	srv.registerLogSSE(protectedAPI)
+	srv.registerDaemonLogSSE(protectedAPI)
 	srv.registerNotificationsRoutes(protectedAPI)
 }
 

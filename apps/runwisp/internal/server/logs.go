@@ -8,10 +8,12 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/go-chi/chi/v5"
+	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
@@ -172,103 +174,82 @@ func readRawLog(logPath string) ([]byte, error) {
 	return body, nil
 }
 
-// handleLogStream is the raw-chi SSE endpoint. Huma's SSE support requires a
-// fixed event-name → struct map, but we want JSON-serialised line events with
-// `id:` set per line so EventSource's native Last-Event-ID resume works.
-func (srv *Server) handleLogStream(resp http.ResponseWriter, req *http.Request) {
-	taskName := chi.URLParam(req, "taskName")
-	runIDStr := chi.URLParam(req, "runId")
-	if _, err := ulid.Parse(runIDStr); err != nil {
-		respondBadRequest(resp, "Invalid run ID")
-		return
-	}
-
-	run, err := srv.db.GetRun(runIDStr)
-	if err != nil {
-		slog.Error("Failed to get run", "run", runIDStr, "err", err)
-		respondNotFound(resp, "Run not found")
-		return
-	}
-	if run.TaskName != taskName {
-		respondNotFound(resp, "Run not found")
-		return
-	}
-
-	rc := http.NewResponseController(resp)
-	if err := rc.SetWriteDeadline(time.Now().Add(LogStreamTimeout + 30*time.Second)); err != nil {
-		slog.Warn("Failed to extend write deadline for SSE", "err", err)
-	}
-
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := resp.(http.Flusher)
-	if !ok {
-		respondError(resp, http.StatusInternalServerError, "Streaming unsupported", nil)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(req.Context(), LogStreamTimeout)
-	defer cancel()
-
-	logPath := logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt)
-
-	from := parseFromQuery(req.URL.Query().Get("from"))
-	if resumeFrom, ok := parseLastEventID(req); ok {
-		from = resumeFrom + 1
-	}
-	replayLimit := parseReplayLimitQuery(req.URL.Query().Get("replay_limit"))
-
-	streamer := newLogStreamer(resp, flusher, logPath)
-	streamer.streamLoop(ctx, run.ID, srv.eventBus, srv.db, from, replayLimit, run.Status.IsTerminal())
+// LogStreamInput drives the SSE log endpoint. Huma performs path/query/header
+// validation against these tags so the handler only sees vetted values.
+type LogStreamInput struct {
+	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
+	RunID       string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
+	From        int64  `query:"from" doc:"Anchor line number; negative values count from end (default -1000)"`
+	ReplayLimit int64  `query:"replay_limit" minimum:"1" maximum:"50000" doc:"Cap on backfilled lines (default 5000)"`
+	LastEventID string `header:"Last-Event-ID" doc:"Native SSE resume cursor; takes precedence over the from query"`
 }
 
-// parseFromQuery interprets the SSE `from` query the same as the JSON page:
-// missing → tail-from-end default; explicit value → exact line anchor.
-func parseFromQuery(raw string) int64 {
-	if raw == "" {
-		return LogPageDefaultFrom
-	}
-	v, err := parseInt64(raw)
-	if err != nil {
-		return LogPageDefaultFrom
-	}
-	return v
-}
-
-func parseReplayLimitQuery(raw string) int64 {
-	if raw == "" {
-		return LogStreamReplayDefault
-	}
-	v, err := parseInt64(raw)
-	if err != nil || v <= 0 {
-		return LogStreamReplayDefault
-	}
-	if v > LogStreamReplayMax {
-		v = LogStreamReplayMax
-	}
-	return v
-}
-
-func parseInt64(raw string) (int64, error) {
-	var sign int64 = 1
-	if len(raw) > 0 && (raw[0] == '-' || raw[0] == '+') {
-		if raw[0] == '-' {
-			sign = -1
+func (srv *Server) registerLogSSE(api huma.API) {
+	sse.Register(api, huma.Operation{
+		OperationID: "streamLog",
+		Method:      http.MethodGet,
+		Path:        "/api/tasks/{taskName}/runs/{runId}/log/stream",
+		Summary:     "Stream a run's log lines as SSE",
+		Description: "Server-Sent Events stream of absolute-line-numbered log entries. Replays history starting at `from` (or `Last-Event-ID + 1`), then follows live output until the run terminates.",
+		Tags:        []string{"Logs"},
+	}, map[string]any{
+		"line":    LogLineSSEEvent{},
+		"rotated": LogRotatedEvent{},
+		"dropped": LogDroppedEvent{},
+		"done":    LogDoneEvent{},
+	}, func(ctx context.Context, input *LogStreamInput, send sse.Sender) {
+		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+		if !ok {
+			return
 		}
-		raw = raw[1:]
-	}
-	if raw == "" {
-		return 0, errors.New("empty integer")
-	}
-	var n int64
-	for _, c := range raw {
-		if c < '0' || c > '9' {
-			return 0, errors.New("non-digit in integer")
+		defer release()
+
+		if _, err := ulid.Parse(input.RunID); err != nil {
+			return
 		}
-		n = n*10 + int64(c-'0')
+		run, err := srv.db.GetRun(input.RunID)
+		if err != nil {
+			slog.Error("Failed to get run", "run", input.RunID, "err", err)
+			return
+		}
+		if run.TaskName != input.TaskName {
+			return
+		}
+
+		logPath := logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt)
+
+		from := input.From
+		if from == 0 {
+			from = LogPageDefaultFrom
+		}
+		if resume, ok := parseResumeID(input.LastEventID); ok {
+			from = resume + 1
+		}
+
+		replay := input.ReplayLimit
+		if replay <= 0 {
+			replay = LogStreamReplayDefault
+		}
+
+		streamCtx, cancel := context.WithTimeout(ctx, LogStreamTimeout)
+		defer cancel()
+
+		streamer := newLogStreamer(send, logPath)
+		streamer.streamLoop(streamCtx, run.ID, srv.eventBus, srv.db, from, replay, run.Status.IsTerminal())
+	})
+}
+
+// parseResumeID extracts a non-negative line index from the SSE
+// `Last-Event-ID` header. Returns ok=false when the header is empty or
+// malformed.
+func parseResumeID(raw string) (int64, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
 	}
-	return n * sign, nil
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
 }

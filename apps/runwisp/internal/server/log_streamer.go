@@ -5,9 +5,8 @@ package server
 
 import (
 	"context"
-	"net/http"
-	"strconv"
 
+	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
@@ -27,18 +26,8 @@ type runGetter interface {
 	GetRun(string) (*model.Run, error)
 }
 
-// lineLog mirrors the JSON line-page entry shape so SSE event payloads and
-// REST line pages share one struct.
-type lineLog struct {
-	N         int64  `json:"n"`
-	Ts        int64  `json:"ts"`
-	Stream    string `json:"stream"`
-	Text      string `json:"text"`
-	Continued bool   `json:"continued,omitempty"`
-}
-
-func lineLogFromEvent(le events.LogLineEvent) lineLog {
-	return lineLog{
+func lineEventFromBus(le events.LogLineEvent) LogLineSSEEvent {
+	return LogLineSSEEvent{
 		N:         le.LineNum,
 		Ts:        le.Timestamp,
 		Stream:    le.Stream,
@@ -47,8 +36,8 @@ func lineLogFromEvent(le events.LogLineEvent) lineLog {
 	}
 }
 
-func lineLogFromRecord(rec logutil.LogLineRecord) lineLog {
-	return lineLog{
+func lineEventFromRecord(rec logutil.LogLineRecord) LogLineSSEEvent {
+	return LogLineSSEEvent{
 		N:      rec.LineNum,
 		Stream: rec.Stream,
 		Text:   rec.Text,
@@ -61,37 +50,27 @@ func lineLogFromRecord(rec logutil.LogLineRecord) lineLog {
 // backfill, then transitions into a live phase fed by the event bus.
 type logStreamer struct {
 	logPath string
-	resp    http.ResponseWriter
-	flusher http.Flusher
+	send    sse.Sender
 
 	lastSent int64
 }
 
-func newLogStreamer(resp http.ResponseWriter, flusher http.Flusher, logPath string) *logStreamer {
+func newLogStreamer(send sse.Sender, logPath string) *logStreamer {
 	return &logStreamer{
 		logPath:  logPath,
-		resp:     resp,
-		flusher:  flusher,
+		send:     send,
 		lastSent: -1,
 	}
 }
 
-func (s *logStreamer) writeFrame(frame sseFrame) error {
-	return writeSSE(s.resp, s.flusher, frame)
-}
-
 // emitLine writes one line event and advances lastSent. Lines whose number
 // is <= lastSent are silently skipped (dedupe across backfill ↔ live).
-func (s *logStreamer) emitLine(line lineLog) error {
+func (s *logStreamer) emitLine(line LogLineSSEEvent) error {
 	if line.N <= s.lastSent {
 		return nil
 	}
-	frame := sseFrame{
-		id:    strconv.FormatInt(line.N, 10),
-		event: "line",
-		data:  line,
-	}
-	if err := s.writeFrame(frame); err != nil {
+	// safe: int == int64 on supported 64-bit platforms (linux/macOS/WSL on amd64/arm64).
+	if err := s.send(sse.Message{ID: int(line.N), Data: line}); err != nil {
 		return err
 	}
 	s.lastSent = line.N
@@ -99,23 +78,15 @@ func (s *logStreamer) emitLine(line lineLog) error {
 }
 
 func (s *logStreamer) emitDropped(after int64, count int64) error {
-	return s.writeFrame(sseFrame{
-		event: "dropped",
-		data: struct {
-			After int64 `json:"after"`
-			Count int64 `json:"count"`
-		}{after, count},
-	})
+	return s.send(sse.Message{Data: LogDroppedEvent{After: after, Count: count}})
 }
 
 func (s *logStreamer) emitDone(finalLine int64, status string) error {
-	return s.writeFrame(sseFrame{
-		event: "done",
-		data: struct {
-			FinalLine int64  `json:"final_line"`
-			Status    string `json:"status"`
-		}{finalLine, status},
-	})
+	return s.send(sse.Message{Data: LogDoneEvent{FinalLine: finalLine, Status: status}})
+}
+
+func (s *logStreamer) emitRotated(firstAvailable int64) error {
+	return s.send(sse.Message{Data: LogRotatedEvent{FirstAvailable: firstAvailable}})
 }
 
 // resolveBackfillAnchor turns the user-requested `from` into a concrete
@@ -217,12 +188,7 @@ func (s *logStreamer) streamLoop(ctx context.Context, runID string, bus events.E
 	}
 	resolvedAnchor := resolveBackfillAnchor(anchorFrom, replayLimit, totalLines, firstAvailable)
 	if firstAvailable > 0 {
-		if err := s.writeFrame(sseFrame{
-			event: "rotated",
-			data: struct {
-				FirstAvailable int64 `json:"first_available"`
-			}{firstAvailable},
-		}); err != nil {
+		if err := s.emitRotated(firstAvailable); err != nil {
 			return
 		}
 	}
@@ -230,7 +196,7 @@ func (s *logStreamer) streamLoop(ctx context.Context, runID string, bus events.E
 		if rec.LineNum < resolvedAnchor {
 			continue
 		}
-		if err := s.emitLine(lineLogFromRecord(rec)); err != nil {
+		if err := s.emitLine(lineEventFromRecord(rec)); err != nil {
 			return
 		}
 	}
@@ -244,11 +210,11 @@ func (s *logStreamer) streamLoop(ctx context.Context, runID string, bus events.E
 			terminal = true
 		}
 	}
-	drainPendingTo := func(threshold int64) error {
+	drainPending := func() error {
 		for {
 			select {
 			case le := <-pendingCh:
-				if err := s.emitLine(lineLogFromEvent(le)); err != nil {
+				if err := s.emitLine(lineEventFromBus(le)); err != nil {
 					return err
 				}
 			default:
@@ -258,7 +224,7 @@ func (s *logStreamer) streamLoop(ctx context.Context, runID string, bus events.E
 	}
 
 	if terminal {
-		if err := drainPendingTo(0); err != nil {
+		if err := drainPending(); err != nil {
 			return
 		}
 		if dropCount > 0 {
@@ -273,7 +239,7 @@ func (s *logStreamer) streamLoop(ctx context.Context, runID string, bus events.E
 		case <-ctx.Done():
 			return
 		case <-terminalCh:
-			if err := drainPendingTo(0); err != nil {
+			if err := drainPending(); err != nil {
 				return
 			}
 			if dropCount > 0 {
@@ -282,7 +248,7 @@ func (s *logStreamer) streamLoop(ctx context.Context, runID string, bus events.E
 			_ = s.emitDone(s.lastSent, "ended")
 			return
 		case le := <-pendingCh:
-			if err := s.emitLine(lineLogFromEvent(le)); err != nil {
+			if err := s.emitLine(lineEventFromBus(le)); err != nil {
 				return
 			}
 			if dropCount > 0 {

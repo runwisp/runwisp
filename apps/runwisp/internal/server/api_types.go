@@ -120,3 +120,26 @@ type RunCompletedEvent events.RunEvent
 type RunFailedEvent events.RunEvent
 type RunUpdatedEvent events.RunEvent
 type PingEvent struct{}
+
+// LogLineSSEEvent is the per-line payload for the run-log stream. Identical
+// shape to LogLineEntry; aliased so huma/sse's reverse-type lookup can map it
+// to the `line` event name.
+type LogLineSSEEvent LogLineEntry
+
+type LogRotatedEvent struct {
+	FirstAvailable int64 `json:"first_available" doc:"Lowest line number still on disk after rotation"`
+}
+
+type LogDroppedEvent struct {
+	After int64 `json:"after" doc:"Highest line number observed before drops occurred"`
+	Count int64 `json:"count" doc:"Number of line events dropped due to overflow"`
+}
+
+type LogDoneEvent struct {
+	FinalLine int64  `json:"final_line" doc:"Last line number emitted before the run terminated"`
+	Status    string `json:"status" doc:"Reason the stream is closing (e.g. 'ended')"`
+}
+
+type DaemonLogLineEvent struct {
+	Line string `json:"line" doc:"One captured daemon log line"`
+}
