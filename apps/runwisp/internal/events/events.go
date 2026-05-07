@@ -55,13 +55,26 @@ type RunEvent struct {
 	Error string     `json:"error,omitempty"`
 }
 
-// LogLineEvent streams stdout/stderr updates.
+// LogLineEvent carries one log line's worth of state. Each event represents
+// exactly one line on disk; LineNum is the absolute, monotonically increasing
+// line index assigned by LogWriter (= rotated_lines + line_count_in_segment),
+// stable across rotations.
+//
+// Text is the user-facing content WITHOUT trailing newline and WITHOUT any
+// disk-format prefix (e.g. "[ERR] " for stderr). Subscribers that need the
+// on-disk byte representation rebuild it via logutil.FormatLine(Text, Stream).
+//
+// Continued marks segments 2..N of a logical line that LineBuffer split when
+// it exceeded MaxLineBufferSize. Each segment still gets its own LineNum.
 type LogLineEvent struct {
 	TaskName            string `json:"task_name"`
 	RunID               string `json:"run_id"`
 	ExternalExecutionID string `json:"external_execution_id,omitempty"`
-	Line                string `json:"line"`
+	LineNum             int64  `json:"line_num"`
+	Timestamp           int64  `json:"timestamp"`
 	Stream              string `json:"stream"`
+	Text                string `json:"text"`
+	Continued           bool   `json:"continued,omitempty"`
 }
 
 // EventHandler processes events.

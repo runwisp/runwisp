@@ -219,27 +219,27 @@ func TestStopRun(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestGetLog(t *testing.T) {
+func TestGetLogRaw(t *testing.T) {
 	s, repo, _, logDir := setupServer(t)
 
 	id := ulid.Make().String()
 	now := time.Now()
 
-	run := &model.Run{ID: id, TaskName: "task1", CreatedAt: now}
+	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseEnded, CreatedAt: now}
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
-	require.NoError(t, os.WriteFile(logPath, []byte("log content"), 0644))
+	require.NoError(t, os.WriteFile(logPath, []byte("log content\n"), 0644))
 
 	repo.On("GetRun", id).Return(run, nil)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log", nil)
+	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log/raw", nil)
 	w := httptest.NewRecorder()
 
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "log content", w.Body.String())
+	assert.Equal(t, "log content\n", w.Body.String())
 }
 
 func TestGetRunNotFound(t *testing.T) {
@@ -398,20 +398,31 @@ func TestLogStream(t *testing.T) {
 
 	repo.On("GetRun", id).Return(run, nil)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log-stream", nil)
+	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log/stream", nil)
 	w := httptest.NewRecorder()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req = req.WithContext(ctx)
 
 	go func() {
-		time.Sleep(600 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
+		// The line-based streamer publishes events directly; the file write
+		// is unnecessary for the wire shape but kept so backfill remains
+		// representative.
 		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0644)
 		if err == nil {
 			f.WriteString("line 2\n")
 			f.Close()
 		}
-		time.Sleep(600 * time.Millisecond)
+		s.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
+			RunID:   id,
+			LineNum: 1,
+			Stream:  "stdout",
+			Text:    "line 2",
+		})
+		time.Sleep(200 * time.Millisecond)
+		s.eventBus.Publish(events.EventRunCompleted, events.RunEvent{Run: run})
+		time.Sleep(200 * time.Millisecond)
 		cancel()
 	}()
 
@@ -419,8 +430,49 @@ func TestLogStream(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "line 1")
-	assert.Contains(t, w.Body.String(), "line 2")
+	body := w.Body.String()
+	assert.Contains(t, body, "line 1")
+	assert.Contains(t, body, "line 2")
+	assert.Contains(t, body, "event: line")
+	assert.Contains(t, body, "event: done")
+}
+
+func TestGetLogPage_NegativeFrom_Tail(t *testing.T) {
+	s, repo, _, logDir := setupServer(t)
+
+	id := ulid.Make().String()
+	now := time.Now()
+
+	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseEnded, CreatedAt: now}
+	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
+	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
+
+	var content strings.Builder
+	for i := 1; i <= 20; i++ {
+		fmt.Fprintf(&content, "line %d\n", i)
+	}
+	require.NoError(t, os.WriteFile(logPath, []byte(content.String()), 0644))
+	require.NoError(t, os.WriteFile(logPath+".idx", nil, 0644))
+
+	repo.On("GetRun", id).Return(run, nil)
+
+	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log?from=-5", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var page LogPageBody
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
+
+	assert.Equal(t, int64(20), page.TotalLines)
+	assert.True(t, page.Finalized)
+	assert.False(t, page.Truncated)
+	require.Len(t, page.Lines, 5)
+	assert.Equal(t, int64(15), page.Lines[0].N)
+	assert.Equal(t, "line 16", page.Lines[0].Text)
+	assert.Equal(t, int64(19), page.Lines[4].N)
+	assert.Equal(t, "line 20", page.Lines[4].Text)
 }
 
 func addAuth(req *http.Request, s *Server) {

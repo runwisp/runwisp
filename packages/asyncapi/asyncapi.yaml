@@ -1,7 +1,7 @@
 asyncapi: 2.6.0
 info:
   title: RunWisp Protocol
-  version: 1.0.0
+  version: 2.0.0
   description: WebSocket protocol between RunWisp daemons and the control plane
 
 defaultContentType: application/json
@@ -16,7 +16,7 @@ channels:
           - $ref: "#/components/messages/pong"
           - $ref: "#/components/messages/executionDispatch"
           - $ref: "#/components/messages/executionStop"
-          - $ref: "#/components/messages/logRequest"
+          - $ref: "#/components/messages/logReplayRequest"
           - $ref: "#/components/messages/logListen"
           - $ref: "#/components/messages/logStop"
           - $ref: "#/components/messages/errorCloudToDaemon"
@@ -28,8 +28,8 @@ channels:
         oneOf:
           - $ref: "#/components/messages/ping"
           - $ref: "#/components/messages/executionUpdate"
-          - $ref: "#/components/messages/logChunk"
-          - $ref: "#/components/messages/logResponse"
+          - $ref: "#/components/messages/logLine"
+          - $ref: "#/components/messages/logReplayChunk"
           - $ref: "#/components/messages/errorDaemonToCloud"
 
 components:
@@ -54,10 +54,10 @@ components:
       payload:
         $ref: "#/components/schemas/ExecutionStopMessage"
 
-    logRequest:
-      name: log:request
+    logReplayRequest:
+      name: log:replayRequest
       payload:
-        $ref: "#/components/schemas/LogRequestMessage"
+        $ref: "#/components/schemas/LogReplayRequestMessage"
 
     logListen:
       name: log:listen
@@ -84,15 +84,15 @@ components:
       payload:
         $ref: "#/components/schemas/ExecutionUpdateMessage"
 
-    logChunk:
-      name: log:chunk
+    logLine:
+      name: log:line
       payload:
-        $ref: "#/components/schemas/LogChunkMessage"
+        $ref: "#/components/schemas/LogLineMessage"
 
-    logResponse:
-      name: log:response
+    logReplayChunk:
+      name: log:replayChunk
       payload:
-        $ref: "#/components/schemas/LogResponseMessage"
+        $ref: "#/components/schemas/LogReplayChunkMessage"
 
     errorDaemonToCloud:
       name: error
@@ -245,12 +245,16 @@ components:
         - executionId
         - reason
 
-    LogRequestMessage:
+    LogReplayRequestMessage:
       type: object
+      description: |
+        Cloud → daemon. Requests a bounded historical page of log lines for an
+        execution. The daemon replies with one or more log:replayChunk messages
+        whose final flag marks the end of the page.
       properties:
         type:
           type: string
-          const: log:request
+          const: log:replayRequest
         v:
           type: integer
         sentAt:
@@ -260,10 +264,9 @@ components:
           type: string
         executionId:
           type: string
-        offset:
+        fromLine:
           type: integer
           format: int64
-          minimum: 0
         limit:
           type: integer
           format: int64
@@ -272,7 +275,7 @@ components:
         - type
         - id
         - executionId
-        - offset
+        - fromLine
         - limit
 
     LogListenMessage:
@@ -392,12 +395,41 @@ components:
         - executionId
         - status
 
-    LogChunkMessage:
+    LogLineEntry:
       type: object
+      description: A single log line published or replayed by the daemon.
+      properties:
+        n:
+          type: integer
+          format: int64
+          description: Absolute, monotonically increasing line index.
+        ts:
+          type: integer
+          format: int64
+          description: Unix milliseconds. 0 if unavailable.
+        stream:
+          type: string
+          enum: [stdout, stderr, system]
+        text:
+          type: string
+          description: Line content WITHOUT trailing newline and without on-disk prefix.
+        continued:
+          type: boolean
+          description: True if this segment continues an oversized split line.
+      required:
+        - n
+        - stream
+        - text
+
+    LogLineMessage:
+      type: object
+      description: |
+        Daemon → cloud. Pushed live for any execution with an active log:listen
+        subscription. Each message carries exactly one absolute-numbered line.
       properties:
         type:
           type: string
-          const: log:chunk
+          const: log:line
         v:
           type: integer
         sentAt:
@@ -405,27 +437,36 @@ components:
           format: date-time
         executionId:
           type: string
-        data:
-          type: string
-        offset:
+        n:
           type: integer
           format: int64
-          minimum: 0
-        final:
+        ts:
+          type: integer
+          format: int64
+        stream:
+          type: string
+          enum: [stdout, stderr, system]
+        text:
+          type: string
+        continued:
           type: boolean
       required:
         - type
         - executionId
-        - data
-        - offset
-        - final
+        - n
+        - stream
+        - text
 
-    LogResponseMessage:
+    LogReplayChunkMessage:
       type: object
+      description: |
+        Daemon → cloud. One page of historical log lines in reply to a
+        log:replayRequest. A reply may span multiple chunks; final=true marks
+        the last chunk.
       properties:
         type:
           type: string
-          const: log:response
+          const: log:replayChunk
         v:
           type: integer
         sentAt:
@@ -435,20 +476,17 @@ components:
           type: string
         executionId:
           type: string
-        data:
-          type: string
-        offset:
-          type: integer
-          format: int64
-          minimum: 0
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogLineEntry"
         final:
           type: boolean
       required:
         - type
         - id
         - executionId
-        - data
-        - offset
+        - lines
         - final
 
     DaemonProtocolErrorMessage:

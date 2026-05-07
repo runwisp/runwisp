@@ -40,7 +40,11 @@
             from: number,
             to: number,
         ) => Promise<LogSlice | LogEvent | void> | LogSlice | LogEvent | void;
-        streamLogs?: (runId: string, onEvent: (event: LogEvent) => void) => () => void;
+        streamLogs?: (
+            runId: string,
+            onEvent: (event: LogEvent) => void,
+            initialState?: { fromLine: number },
+        ) => () => void;
         initialRunId?: string | null;
         selectRunId?: string | null;
     }>();

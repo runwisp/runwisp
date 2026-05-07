@@ -125,7 +125,27 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		Tags:        []string{"Runs"},
 	}, srv.humaStopRun)
 
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "getLogPage",
+		Method:      http.MethodGet,
+		Path:        "/api/tasks/{taskName}/runs/{runId}/log",
+		Summary:     "Get a page of log lines",
+		Description: "Returns a JSON page of absolute-line-numbered log entries. Use `from` (negative for tail) and `limit` to window the result.",
+		Tags:        []string{"Logs"},
+	}, srv.humaGetLogPage)
+
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "getLogRaw",
+		Method:      http.MethodGet,
+		Path:        "/api/tasks/{taskName}/runs/{runId}/log/raw",
+		Summary:     "Download the run's full log as text/plain",
+		Description: "Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.",
+		Tags:        []string{"Logs"},
+	}, srv.humaGetLogRaw)
+
 	srv.registerRunsSSE(protectedAPI)
+	srv.registerLogSSE(protectedAPI)
+	srv.registerDaemonLogSSE(protectedAPI)
 	srv.registerNotificationsRoutes(protectedAPI)
 }
 

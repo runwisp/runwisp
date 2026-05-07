@@ -58,7 +58,7 @@ func (v *ExecView) View() string {
 
 	if v.fullscreen {
 		v.headerLayout.reset()
-		v.pane.RenderLines(&b, false)
+		v.pane.RenderLines(&b, false, v.loadingOlder)
 		return b.String()
 	}
 
@@ -159,7 +159,7 @@ func (v *ExecView) View() string {
 	b.WriteString(padLine("", w, colorBgLight))
 	b.WriteString("\n")
 
-	v.pane.RenderLines(&b, v.headerFocus != headerFocusNone)
+	v.pane.RenderLines(&b, v.headerFocus != headerFocusNone, v.loadingOlder)
 
 	return b.String()
 }

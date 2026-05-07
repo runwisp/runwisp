@@ -3,6 +3,7 @@
 
 import type { LogEvent } from "@runwisp/ui";
 import { browser } from "$app/environment";
+import { z } from "zod";
 import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
 import { connectSSE } from "$lib/utils/sse";
 import { getApiUrl } from "$lib/utils/env";
@@ -10,71 +11,157 @@ import { createLogger } from "$lib/utils/logger";
 
 const logger = createLogger("LogStreamer");
 
-type LogFetchResult = { content: string; totalLines?: number; firstAvailableLine?: number };
+const logPageLineSchema = z.object({
+    n: z.number().int(),
+    ts: z.number().int().optional(),
+    stream: z.string(),
+    text: z.string(),
+    continued: z.boolean().optional(),
+});
 
-function parseStreamChunk(raw: string): string | null {
-    const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === "string" ? parsed : null;
-}
+export const logPageSchema = z.object({
+    lines: z.array(logPageLineSchema),
+    first_available: z.number().int().nonnegative(),
+    total_lines: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+    finalized: z.boolean(),
+});
 
-/** Parse a raw log fetch result into a LogEvent. */
-export function parseLogFetchResult(
-    result: LogFetchResult,
-    from: number,
-    finished: boolean,
-): LogEvent {
-    const lines = result.content.split(/\r?\n/);
-    if (result.content.endsWith("\n") && lines.length > 0) {
-        lines.pop();
-    }
+const rotatedSchema = z.object({ first_available: z.number().int().nonnegative() });
+const droppedSchema = z.object({
+    after: z.number().int(),
+    count: z.number().int().nonnegative(),
+});
+const doneSchema = z.object({
+    final_line: z.number().int(),
+    status: z.string(),
+});
 
-    // When the server clamped start_line to firstAvailableLine
-    // (because earlier lines were rotated away), the returned
-    // content starts at that line, not at `from`.
-    const actualFrom =
-        result.firstAvailableLine !== undefined && result.firstAvailableLine > from
-            ? result.firstAvailableLine
-            : from;
+export type LogPageLine = z.infer<typeof logPageLineSchema>;
+export type LogPage = z.infer<typeof logPageSchema>;
 
+/** Convert a daemon LogPage into the LogEvent shape consumed by LogConsole. */
+export function parseLogPage(page: LogPage): LogEvent {
     const slice: Record<number, string> = {};
-    lines.forEach((line, i) => {
-        slice[actualFrom + i] = line;
-    });
-
+    for (const l of page.lines) {
+        slice[l.n] = l.text;
+    }
     const out: LogEvent = {
         lines: slice,
-        sizeLines: result.totalLines ?? actualFrom + lines.length,
-        sizeBytes: result.content.length,
-        finished,
+        sizeLines: page.total_lines,
+        finished: page.finalized,
     };
-    if (result.firstAvailableLine !== undefined) {
-        out.firstAvailableLine = result.firstAvailableLine;
+    if (page.first_available > 0) {
+        out.firstAvailableLine = page.first_available;
     }
     return out;
 }
 
-/** Create an SSE log streamer for a specific task. Returns a function that connects to a run's log stream. */
+export interface LogStreamInitialState {
+    fromLine: number;
+}
+
+interface StreamerState {
+    totalLines: number;
+    firstAvailable: number;
+    lastReceivedId: number;
+    finished: boolean;
+}
+
+function buildLineEvent(state: StreamerState, line: LogPageLine): LogEvent {
+    const evt: LogEvent = {
+        lines: { [line.n]: line.text },
+        sizeLines: state.totalLines,
+        finished: false,
+    };
+    if (state.firstAvailable > 0) evt.firstAvailableLine = state.firstAvailable;
+    return evt;
+}
+
+function handleLineEvent(state: StreamerState, data: string, onEvent: (event: LogEvent) => void) {
+    const result = logPageLineSchema.safeParse(JSON.parse(data));
+    if (!result.success) return;
+    const line = result.data;
+    state.lastReceivedId = line.n;
+    if (line.n + 1 > state.totalLines) state.totalLines = line.n + 1;
+    onEvent(buildLineEvent(state, line));
+}
+
+function handleRotatedEvent(
+    state: StreamerState,
+    data: string,
+    onEvent: (event: LogEvent) => void,
+) {
+    const result = rotatedSchema.safeParse(JSON.parse(data));
+    if (!result.success) return;
+    if (result.data.first_available > state.firstAvailable) {
+        state.firstAvailable = result.data.first_available;
+        onEvent({
+            lines: {},
+            sizeLines: state.totalLines,
+            finished: false,
+            firstAvailableLine: state.firstAvailable,
+        });
+    }
+}
+
+function handleDroppedEvent(data: string) {
+    const result = droppedSchema.safeParse(JSON.parse(data));
+    if (!result.success) return;
+    logger.warn(
+        `Log stream dropped ${String(result.data.count)} line(s) after #${String(
+            result.data.after,
+        )}`,
+    );
+}
+
+function handleDoneEvent(
+    state: StreamerState,
+    data: string,
+    onEvent: (event: LogEvent) => void,
+): boolean {
+    const result = doneSchema.safeParse(JSON.parse(data));
+    if (!result.success) return false;
+    state.finished = true;
+    const sz =
+        result.data.final_line + 1 > state.totalLines
+            ? result.data.final_line + 1
+            : state.totalLines;
+    const evt: LogEvent = { lines: {}, sizeLines: sz, finished: true };
+    if (state.firstAvailable > 0) evt.firstAvailableLine = state.firstAvailable;
+    onEvent(evt);
+    return true;
+}
+
+/** Create an SSE log streamer for a specific task. */
 export function createLogStreamer(taskName: string) {
-    return (runId: string, onEvent: (event: LogEvent) => void): (() => void) => {
+    return (
+        runId: string,
+        onEvent: (event: LogEvent) => void,
+        initialState?: LogStreamInitialState,
+    ): (() => void) => {
         if (!browser) return () => {};
 
-        let lineCount = 0;
-        let buffer = "";
-        let byteOffset = 0;
-        let finished = false;
+        const state: StreamerState = {
+            totalLines: 0,
+            firstAvailable: 0,
+            lastReceivedId: -1,
+            finished: false,
+        };
 
-        const base = `/api/tasks/${taskName}/runs/${runId}/log-stream`;
+        const startFrom = initialState?.fromLine ?? -1000;
+        const base = `/api/tasks/${taskName}/runs/${runId}/log/stream`;
         const connection = connectSSE({
-            path: () => (byteOffset > 0 ? base + "?offset=" + String(byteOffset) : base),
-            eventTypes: ["message", "done", "metadata"],
+            path: () => {
+                const from = state.lastReceivedId >= 0 ? state.lastReceivedId + 1 : startFrom;
+                return base + "?from=" + String(from);
+            },
+            eventTypes: ["line", "rotated", "dropped", "done"],
             onOpen: () => {
                 logger.info(`Log stream connection opened: ${taskName}/${runId}`);
-                // On reconnect, discard any partial line from the previous connection.
-                // The server resumes from byteOffset, so line numbering stays valid.
-                buffer = "";
             },
             onError: (info) => {
-                if (finished) return;
+                if (state.finished) return;
                 logger.warn(
                     "Log stream error for " + taskName + "/" + runId + ":",
                     (info.message ?? "connection lost") +
@@ -82,67 +169,18 @@ export function createLogStreamer(taskName: string) {
                 );
             },
             onEvent: (eventType, data) => {
-                if (eventType === "message") {
-                    try {
-                        const chunk = parseStreamChunk(data);
-                        if (chunk === null) {
-                            throw new Error("log stream chunk was not a string");
-                        }
-                        byteOffset += new TextEncoder().encode(chunk).byteLength;
-                        buffer += chunk;
-                        const parts = buffer.split(/\r?\n/);
-
-                        const completeLines = parts.slice(0, -1);
-                        buffer = parts[parts.length - 1] ?? "";
-
-                        if (completeLines.length > 0) {
-                            const linesMap: Record<number, string> = {};
-                            completeLines.forEach((text, i) => {
-                                linesMap[lineCount + i] = text;
-                            });
-                            lineCount += completeLines.length;
-
-                            onEvent({
-                                lines: linesMap,
-                                sizeLines: lineCount,
-                                finished: false,
-                            });
-                        }
-                    } catch (err) {
-                        logger.error("Error parsing log stream chunk:", err);
+                try {
+                    if (eventType === "line") {
+                        handleLineEvent(state, data, onEvent);
+                    } else if (eventType === "rotated") {
+                        handleRotatedEvent(state, data, onEvent);
+                    } else if (eventType === "dropped") {
+                        handleDroppedEvent(data);
+                    } else if (eventType === "done" && handleDoneEvent(state, data, onEvent)) {
+                        connection.disconnect();
                     }
-                    return;
-                }
-                if (eventType === "done") {
-                    logger.info(
-                        'Log stream "done" event received: ' +
-                            taskName +
-                            "/" +
-                            runId +
-                            ", lineCount=" +
-                            String(lineCount) +
-                            ", bufferLen=" +
-                            String(buffer.length),
-                    );
-                    finished = true;
-                    if (buffer) {
-                        onEvent({
-                            lines: { [lineCount]: buffer },
-                            sizeLines: lineCount + 1,
-                            finished: true,
-                        });
-                    } else {
-                        onEvent({
-                            lines: {},
-                            sizeLines: lineCount,
-                            finished: true,
-                        });
-                    }
-                    connection.disconnect();
-                    return;
-                }
-                if (eventType === "metadata") {
-                    logger.info("Log stream metadata: " + taskName + "/" + runId, data);
+                } catch (err) {
+                    logger.error(`Failed to parse SSE ${eventType} payload`, err);
                 }
             },
             deps: {
@@ -152,7 +190,7 @@ export function createLogStreamer(taskName: string) {
         });
 
         return () => {
-            finished = true;
+            state.finished = true;
             connection.disconnect();
         };
     };

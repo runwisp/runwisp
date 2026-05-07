@@ -5,329 +5,259 @@ package server
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"time"
 
+	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"log/slog"
 )
 
-// runGetter abstracts fetching a run by ID for log streaming.
+// pendingBufferLimit is the max LogLineEvent payloads buffered between the
+// bus subscription and the disk-backfill drain. Once exceeded we synthesize
+// an `event: dropped` and evict from the head — the live tail stays correct
+// while old in-flight bursts are sacrificed first.
+const pendingBufferLimit = 4096
+
+// runGetter abstracts fetching a run by ID. Used by streamLoop to re-check
+// run state AFTER subscribing to the bus, closing the race where a run can
+// finish between the handler's initial GetRun and the bus subscription.
 type runGetter interface {
 	GetRun(string) (*model.Run, error)
 }
 
-// logStreamer manages SSE streaming of a log file, including rotation
-// detection and polling for new data on active runs.
+func lineEventFromBus(le events.LogLineEvent) LogLineSSEEvent {
+	return LogLineSSEEvent{
+		N:         le.LineNum,
+		Ts:        le.Timestamp,
+		Stream:    le.Stream,
+		Text:      le.Text,
+		Continued: le.Continued,
+	}
+}
+
+func lineEventFromRecord(rec logutil.LogLineRecord) LogLineSSEEvent {
+	return LogLineSSEEvent{
+		N:      rec.LineNum,
+		Stream: rec.Stream,
+		Text:   rec.Text,
+	}
+}
+
+// logStreamer drives a single SSE connection to a run's log. Lines are
+// canonical: each event carries one absolute line number `n`. The streamer
+// resolves the requested anchor (from / Last-Event-ID) against on-disk
+// backfill, then transitions into a live phase fed by the event bus.
 type logStreamer struct {
-	logPath  string
-	meta     logutil.LogMeta
-	file     *os.File
-	flusher  http.Flusher
-	resp     http.ResponseWriter
-	lastSize int64
+	logPath string
+	send    sse.Sender
+
+	lastSent int64
 }
 
-func newLogStreamer(ctx context.Context, resp http.ResponseWriter, flusher http.Flusher, logPath string) (*logStreamer, error) {
-	meta := logutil.ReadLogMeta(logPath)
-
-	file, err := openLogFile(ctx, logPath)
-	if err != nil {
-		return nil, fmt.Errorf("open log: %w", err)
-	}
-
+func newLogStreamer(send sse.Sender, logPath string) *logStreamer {
 	return &logStreamer{
-		logPath: logPath,
-		meta:    meta,
-		file:    file,
-		flusher: flusher,
-		resp:    resp,
-	}, nil
-}
-
-// openLogFile opens the log file at logPath, waiting up to LogFileWaitTimeout
-// for it to be created if it does not yet exist.
-func openLogFile(ctx context.Context, logPath string) (*os.File, error) {
-	file, err := os.Open(logPath)
-	if err == nil {
-		return file, nil
-	}
-	if !os.IsNotExist(err) {
-		return nil, err
-	}
-
-	// File doesn't exist yet — poll until it appears or the deadline passes.
-	timeout := time.NewTimer(LogFileWaitTimeout)
-	defer timeout.Stop()
-	ticker := time.NewTicker(LogStreamInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-timeout.C:
-			return nil, err
-		case <-ticker.C:
-			file, err = os.Open(logPath)
-			if err == nil {
-				return file, nil
-			}
-			if !os.IsNotExist(err) {
-				return nil, err
-			}
-		}
+		logPath:  logPath,
+		send:     send,
+		lastSent: -1,
 	}
 }
 
-func (s *logStreamer) Close() {
-	if s.file != nil {
-		s.file.Close()
-	}
-}
-
-func (s *logStreamer) fileSize() (int64, error) {
-	info, err := s.file.Stat()
-	if err != nil {
-		return 0, err
-	}
-	return info.Size(), nil
-}
-
-func (s *logStreamer) virtualFileSize() (int64, int64, error) {
-	physSize, err := s.fileSize()
-	if err != nil {
-		return 0, 0, err
-	}
-	return s.meta.RotatedBytes + physSize, physSize, nil
-}
-
-func (s *logStreamer) emitMetadata(virtualSize int64) {
-	fmt.Fprintf(s.resp, "event: metadata\ndata: {\"fileSize\":%d}\n\n", virtualSize)
-	s.flusher.Flush()
-}
-
-func (s *logStreamer) seekToOffset(offsetStr string, virtualSize, physSize int64) (int64, error) {
-	offset := logutil.ParseLogOffset(offsetStr, virtualSize)
-	fileOffset := offset - s.meta.RotatedBytes
-	if fileOffset < 0 {
-		fileOffset = 0
-	}
-	if fileOffset > physSize {
-		fileOffset = physSize
-	}
-	if _, err := s.file.Seek(fileOffset, io.SeekStart); err != nil {
-		return 0, err
-	}
-	return physSize - fileOffset, nil
-}
-
-func (s *logStreamer) emitInitialData(remaining int64) error {
-	if remaining > MaxLogBytes {
-		remaining = MaxLogBytes
-	}
-	buf := make([]byte, LogReadBufferSize)
-	for remaining > 0 {
-		toRead := int64(len(buf))
-		if toRead > remaining {
-			toRead = remaining
-		}
-		n, err := s.file.Read(buf[:toRead])
-		if n > 0 {
-			s.emitChunk(buf[:n])
-			remaining -= int64(n)
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	pos, err := s.file.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return err
-	}
-	s.lastSize = pos
-	return nil
-}
-
-func (s *logStreamer) emitChunk(data []byte) {
-	jsonData, err := json.Marshal(string(data))
-	if err != nil {
-		slog.Warn("Failed to marshal log chunk for SSE", "err", err)
-		return
-	}
-	fmt.Fprintf(s.resp, "data: %s\n\n", jsonData)
-	s.flusher.Flush()
-}
-
-func (s *logStreamer) emitDone() {
-	fmt.Fprintf(s.resp, "event: done\ndata: Run completed\n\n")
-	s.flusher.Flush()
-}
-
-// pollLoop polls the log file for new data while the run is active.
-// It uses EventBus to detect run completion in real-time, with a periodic
-// DB fallback for safety (in case the event was published before subscription).
-func (s *logStreamer) pollLoop(ctx context.Context, runID string, bus events.EventBus, db runGetter) {
-	doneCh := make(chan struct{}, 1)
-
-	unsubCompleted := bus.Subscribe(events.EventRunCompleted, func(e events.Event) {
-		if re, ok := e.Data.(events.RunEvent); ok && re.Run.ID == runID {
-			slog.Debug("SSE: EventRunCompleted received via bus", "runID", runID)
-			select {
-			case doneCh <- struct{}{}:
-			default:
-			}
-		}
-	})
-	defer unsubCompleted()
-
-	unsubFailed := bus.Subscribe(events.EventRunFailed, func(e events.Event) {
-		if re, ok := e.Data.(events.RunEvent); ok && re.Run.ID == runID {
-			slog.Debug("SSE: EventRunFailed received via bus", "runID", runID)
-			select {
-			case doneCh <- struct{}{}:
-			default:
-			}
-		}
-	})
-	defer unsubFailed()
-
-	ticker := time.NewTicker(LogStreamInterval)
-	defer ticker.Stop()
-
-	// DB fallback: check every 5s in case the event was published before we subscribed.
-	fallbackTicker := time.NewTicker(5 * time.Second)
-	defer fallbackTicker.Stop()
-
-	slog.Debug("SSE: pollLoop started, subscribed to EventBus", "runID", runID)
-
-	// Immediate check: the run may have completed between the initial GetRun
-	// in the handler and the EventBus subscription above, so the event was
-	// already published and we missed it. Without this, fast-completing runs
-	// would wait up to 5s for the fallback ticker.
-	if s.checkRunCompleted(runID, db) {
-		slog.Debug("SSE: immediate DB check triggered done", "runID", runID)
-		return
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Debug("SSE: pollLoop context cancelled", "runID", runID)
-			return
-		case <-doneCh:
-			slog.Debug("SSE: doneCh fired, emitting final data + done", "runID", runID, "lastSize", s.lastSize)
-			s.emitNewData()
-			s.emitDone()
-			slog.Debug("SSE: done event emitted", "runID", runID)
-			return
-		case <-ticker.C:
-			if s.handleRotation() {
-				continue
-			}
-			if err := s.emitNewData(); err != nil {
-				slog.Error("SSE: emitNewData error in pollLoop", "runID", runID, "err", err)
-				return
-			}
-		case <-fallbackTicker.C:
-			slog.Debug("SSE: fallback DB check", "runID", runID)
-			if s.checkRunCompleted(runID, db) {
-				slog.Debug("SSE: fallback DB check triggered done", "runID", runID)
-				return
-			}
-		}
-	}
-}
-
-func (s *logStreamer) handleRotation() bool {
-	pathInfo, pathErr := os.Stat(s.logPath)
-	openInfo, _ := s.file.Stat()
-	if pathErr != nil || os.SameFile(pathInfo, openInfo) {
-		return false
-	}
-
-	// Drain remaining bytes from the old file
-	oldEnd, seekErr := s.file.Seek(0, io.SeekEnd)
-	if seekErr != nil {
-		slog.Warn("Failed to seek to end of old log file during rotation", "err", seekErr)
-	} else if oldEnd > s.lastSize {
-		if _, seekErr := s.file.Seek(s.lastSize, io.SeekStart); seekErr == nil {
-			drainSize := oldEnd - s.lastSize
-			if drainSize > int64(LogStreamBufferSize) {
-				drainSize = int64(LogStreamBufferSize)
-			}
-			drainBuf := make([]byte, drainSize)
-			n, _ := s.file.Read(drainBuf)
-			if n > 0 {
-				s.emitChunk(drainBuf[:n])
-			}
-		}
-	}
-
-	s.file.Close()
-	newFile, err := os.Open(s.logPath)
-	if err != nil {
-		slog.Error("Failed to reopen log file after rotation", "err", err)
-		s.file = nil
-		return true
-	}
-	s.file = newFile
-	s.lastSize = 0
-	return true
-}
-
-func (s *logStreamer) emitNewData() error {
-	currentSize, err := s.file.Seek(0, io.SeekEnd)
-	if err != nil {
-		slog.Error("Failed to seek to end of log file", "err", err)
-		return err
-	}
-	if currentSize <= s.lastSize {
+// emitLine writes one line event and advances lastSent. Lines whose number
+// is <= lastSent are silently skipped (dedupe across backfill ↔ live).
+func (s *logStreamer) emitLine(line LogLineSSEEvent) error {
+	if line.N <= s.lastSent {
 		return nil
 	}
-
-	if _, err := s.file.Seek(s.lastSize, io.SeekStart); err != nil {
-		slog.Error("Failed to seek in log file", "err", err)
+	// safe: int == int64 on supported 64-bit platforms (linux/macOS/WSL on amd64/arm64).
+	if err := s.send(sse.Message{ID: int(line.N), Data: line}); err != nil {
 		return err
 	}
-
-	toRead := currentSize - s.lastSize
-	if toRead > int64(LogStreamBufferSize) {
-		toRead = int64(LogStreamBufferSize)
-	}
-	buf := make([]byte, toRead)
-	n, err := s.file.Read(buf)
-	if err != nil && err != io.EOF {
-		slog.Error("Failed to read log file", "err", err)
-		return err
-	}
-	if n > 0 {
-		s.emitChunk(buf[:n])
-	}
-	s.lastSize += int64(n)
+	s.lastSent = line.N
 	return nil
 }
 
-func (s *logStreamer) checkRunCompleted(runID string, db runGetter) bool {
-	updatedRun, err := db.GetRun(runID)
+func (s *logStreamer) emitDropped(after int64, count int64) error {
+	return s.send(sse.Message{Data: LogDroppedEvent{After: after, Count: count}})
+}
+
+func (s *logStreamer) emitDone(finalLine int64, status string) error {
+	return s.send(sse.Message{Data: LogDoneEvent{FinalLine: finalLine, Status: status}})
+}
+
+func (s *logStreamer) emitRotated(firstAvailable int64) error {
+	return s.send(sse.Message{Data: LogRotatedEvent{FirstAvailable: firstAvailable}})
+}
+
+// resolveBackfillAnchor turns the user-requested `from` into a concrete
+// starting line number. Negative values mean "tail from end". The result is
+// clamped against the available rotation window.
+func resolveBackfillAnchor(from, replayLimit, totalLines, firstAvailable int64) int64 {
+	if from < 0 {
+		anchor := totalLines + from
+		if anchor < firstAvailable {
+			anchor = firstAvailable
+		}
+		if anchor < 0 {
+			anchor = 0
+		}
+		return anchor
+	}
+	if from < firstAvailable {
+		from = firstAvailable
+	}
+	if replayLimit > 0 && totalLines-from > replayLimit {
+		from = totalLines - replayLimit
+		if from < firstAvailable {
+			from = firstAvailable
+		}
+	}
+	return from
+}
+
+// streamLoop drives the SSE connection through three phases:
+//  1. subscribe to the bus, draining published lines into a bounded buffer;
+//  2. backfill from disk starting at the resolved anchor;
+//  3. drain the buffer + follow live events until the run reaches a terminal
+//     state.
+//
+// db lets us re-check run state after subscribing to close the race where a
+// run completes between the caller's GetRun and Subscribe — without it we'd
+// hang on the bus until context timeout. Tests pass nil to skip the recheck.
+func (s *logStreamer) streamLoop(ctx context.Context, runID string, bus events.EventBus, db runGetter, anchorFrom, replayLimit int64, runEnded bool) {
+	pendingCh := make(chan events.LogLineEvent, pendingBufferLimit)
+	terminalCh := make(chan struct{}, 1)
+
+	dropAfter := int64(-1)
+	dropCount := int64(0)
+
+	signalTerminal := func() {
+		select {
+		case terminalCh <- struct{}{}:
+		default:
+		}
+	}
+
+	unsubLine := bus.Subscribe(events.EventLogLine, func(e events.Event) {
+		le, ok := e.Data.(events.LogLineEvent)
+		if !ok || le.RunID != runID {
+			return
+		}
+		select {
+		case pendingCh <- le:
+		default:
+			// Bounded buffer overflowed — drop the oldest queued event so we
+			// keep up with the live tail, then enqueue the newest.
+			select {
+			case dropped := <-pendingCh:
+				if dropped.LineNum > dropAfter {
+					dropAfter = dropped.LineNum
+				}
+				dropCount++
+			default:
+			}
+			select {
+			case pendingCh <- le:
+			default:
+				dropCount++
+				if le.LineNum > dropAfter {
+					dropAfter = le.LineNum
+				}
+			}
+		}
+	})
+	defer unsubLine()
+
+	terminalHandler := func(e events.Event) {
+		re, ok := e.Data.(events.RunEvent)
+		if !ok || re.Run == nil || re.Run.ID != runID {
+			return
+		}
+		signalTerminal()
+	}
+	unsubCompleted := bus.Subscribe(events.EventRunCompleted, terminalHandler)
+	defer unsubCompleted()
+	unsubFailed := bus.Subscribe(events.EventRunFailed, terminalHandler)
+	defer unsubFailed()
+
+	// Backfill from disk so subscribers see history that was published before
+	// they attached, plus everything between the anchor and the live cursor.
+	backfill, firstAvailable, totalLines, err := logutil.ReadLineRange(s.logPath, anchorFrom, replayLimit)
 	if err != nil {
-		slog.Error("Failed to fetch run status", "err", err)
-		return true
+		slog.Warn("SSE: backfill read failed", "runID", runID, "err", err)
 	}
-	if updatedRun != nil && updatedRun.Status == model.PhaseEnded {
-		s.emitNewData()
-		s.emitDone()
-		return true
+	resolvedAnchor := resolveBackfillAnchor(anchorFrom, replayLimit, totalLines, firstAvailable)
+	if firstAvailable > 0 {
+		if err := s.emitRotated(firstAvailable); err != nil {
+			return
+		}
 	}
-	return false
+	for _, rec := range backfill {
+		if rec.LineNum < resolvedAnchor {
+			continue
+		}
+		if err := s.emitLine(lineEventFromRecord(rec)); err != nil {
+			return
+		}
+	}
+
+	// Race recheck: if the caller saw a non-terminal status but the run
+	// completed before our Subscribe attached, the terminal event fired into
+	// the void. db reads finalize that case so we don't hang.
+	terminal := runEnded
+	if !terminal && db != nil {
+		if r, getErr := db.GetRun(runID); getErr == nil && r != nil && r.Status == model.PhaseEnded {
+			terminal = true
+		}
+	}
+	drainPending := func() error {
+		for {
+			select {
+			case le := <-pendingCh:
+				if err := s.emitLine(lineEventFromBus(le)); err != nil {
+					return err
+				}
+			default:
+				return nil
+			}
+		}
+	}
+
+	if terminal {
+		if err := drainPending(); err != nil {
+			return
+		}
+		if dropCount > 0 {
+			_ = s.emitDropped(dropAfter, dropCount)
+		}
+		_ = s.emitDone(s.lastSent, "ended")
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-terminalCh:
+			if err := drainPending(); err != nil {
+				return
+			}
+			if dropCount > 0 {
+				_ = s.emitDropped(dropAfter, dropCount)
+			}
+			_ = s.emitDone(s.lastSent, "ended")
+			return
+		case le := <-pendingCh:
+			if err := s.emitLine(lineEventFromBus(le)); err != nil {
+				return
+			}
+			if dropCount > 0 {
+				if err := s.emitDropped(dropAfter, dropCount); err != nil {
+					return
+				}
+				dropCount = 0
+				dropAfter = -1
+			}
+		}
+	}
 }

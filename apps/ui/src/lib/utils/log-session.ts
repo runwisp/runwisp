@@ -3,7 +3,7 @@
 
 import { createLogger } from "$lib/utils/logger";
 import type { LogEvent } from "@runwisp/ui";
-import { parseLogFetchResult, createLogStreamer } from "$lib/logs";
+import { parseLogPage, createLogStreamer, type LogStreamInitialState } from "$lib/logs";
 import { tasksApi } from "$lib/api";
 import type { Run } from "$lib/types";
 
@@ -16,7 +16,11 @@ interface LogSessionOptions {
 
 export interface LogSession {
     fetchLogs: (runId: string, from: number, to: number) => Promise<LogEvent>;
-    streamLogs: (runId: string, onEvent: (event: LogEvent) => void) => () => void;
+    streamLogs: (
+        runId: string,
+        onEvent: (event: LogEvent) => void,
+        initialState?: LogStreamInitialState,
+    ) => () => void;
 }
 
 /**
@@ -40,25 +44,30 @@ export function createLogSession(options: LogSessionOptions): LogSession {
         const finished = run ? run.status === "ended" : true;
 
         if (!run) {
-            return { lines: {}, sizeLines: 0, sizeBytes: 0, finished };
+            return { lines: {}, sizeLines: 0, finished };
         }
 
+        const limit = Math.max(1, to - from + 1);
         try {
-            const result = await tasksApi.getLog(options.getTaskName(run), runId, {
-                start: from,
-                end: to,
+            const page = await tasksApi.getLogPage(options.getTaskName(run), runId, {
+                from,
+                limit,
             });
-            return parseLogFetchResult(result, from, finished);
+            return parseLogPage(page);
         } catch (err) {
             logger.error("Failed to fetch logs", err);
-            return { lines: {}, sizeLines: 0, sizeBytes: 0, finished };
+            return { lines: {}, sizeLines: 0, finished };
         }
     }
 
-    function streamLogs(runId: string, onEvent: (event: LogEvent) => void): () => void {
+    function streamLogs(
+        runId: string,
+        onEvent: (event: LogEvent) => void,
+        initialState?: LogStreamInitialState,
+    ): () => void {
         const run = options.findRun(runId);
         if (!run) return () => {};
-        return getStreamer(options.getTaskName(run))(runId, onEvent);
+        return getStreamer(options.getTaskName(run))(runId, onEvent, initialState);
     }
 
     return { fetchLogs, streamLogs };

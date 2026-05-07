@@ -30,93 +30,59 @@ func newSizedExecView(w, h int) ExecView {
 	return ev
 }
 
-func TestExecView_AppendChunk_SingleLine(t *testing.T) {
+func appendLines(ev *ExecView, count int) {
+	for i := 0; i < count; i++ {
+		ev.pane.AppendLine(int64(i), "stdout", "line")
+	}
+}
+
+func TestExecView_AppendLine_SingleLine(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.AppendChunk("hello world\n")
+	ev.pane.AppendLine(0, "stdout", "hello world")
 
 	if len(ev.pane.lines) != 1 {
 		t.Fatalf("expected 1 line, got %d", len(ev.pane.lines))
 	}
-	if ev.pane.lines[0] != "hello world" {
-		t.Fatalf("expected 'hello world', got %q", ev.pane.lines[0])
+	if ev.pane.lines[0].text != "hello world" {
+		t.Fatalf("expected 'hello world', got %q", ev.pane.lines[0].text)
 	}
 }
 
-func TestExecView_AppendChunk_MultipleLines(t *testing.T) {
+func TestExecView_AppendLine_MultipleLines(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.AppendChunk("line1\nline2\nline3\n")
+	ev.pane.AppendLine(0, "stdout", "line1")
+	ev.pane.AppendLine(1, "stdout", "line2")
+	ev.pane.AppendLine(2, "stdout", "line3")
 
 	if len(ev.pane.lines) != 3 {
 		t.Fatalf("expected 3 lines, got %d", len(ev.pane.lines))
 	}
-	if ev.pane.lines[2] != "line3" {
-		t.Fatalf("expected 'line3', got %q", ev.pane.lines[2])
+	if ev.pane.lines[2].text != "line3" {
+		t.Fatalf("expected 'line3', got %q", ev.pane.lines[2].text)
 	}
 }
 
-func TestExecView_AppendChunk_PartialLine(t *testing.T) {
+func TestExecView_AppendLine_StreamPropagated(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.AppendChunk("partial")
-
-	if len(ev.pane.lines) != 0 {
-		t.Fatalf("expected 0 complete lines, got %d", len(ev.pane.lines))
-	}
-	if ev.pane.pendingLine != "partial" {
-		t.Fatalf("expected pending 'partial', got %q", ev.pane.pendingLine)
-	}
-
-	ev.AppendChunk(" rest\n")
-	if len(ev.pane.lines) != 1 {
-		t.Fatalf("expected 1 line after completing, got %d", len(ev.pane.lines))
-	}
-	if ev.pane.lines[0] != "partial rest" {
-		t.Fatalf("expected 'partial rest', got %q", ev.pane.lines[0])
+	ev.pane.AppendLine(0, "stderr", "err line")
+	if ev.pane.lines[0].stream != "stderr" {
+		t.Fatalf("expected stderr stream, got %q", ev.pane.lines[0].stream)
 	}
 }
 
-func TestExecView_FlushPending(t *testing.T) {
-	ev := newSizedExecView(80, 24)
-	ev.AppendChunk("unfinished")
-	ev.FlushPending()
-
-	if len(ev.pane.lines) != 1 {
-		t.Fatalf("expected 1 line after flush, got %d", len(ev.pane.lines))
-	}
-	if ev.pane.lines[0] != "unfinished" {
-		t.Fatalf("expected 'unfinished', got %q", ev.pane.lines[0])
-	}
-	if ev.pane.pendingLine != "" {
-		t.Fatal("expected empty pending after flush")
-	}
-}
-
-func TestExecView_AppendChunk_StripsCR(t *testing.T) {
-	ev := newSizedExecView(80, 24)
-	ev.AppendChunk("windows\r\nline\r\n")
-
-	if len(ev.pane.lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d", len(ev.pane.lines))
-	}
-	if ev.pane.lines[0] != "windows" {
-		t.Fatalf("expected 'windows', got %q", ev.pane.lines[0])
-	}
-}
-
-func TestExecView_AppendChunk_Eviction(t *testing.T) {
+func TestExecView_Append_Eviction(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 
-	// Add maxLogLines + 10 lines.
-	var b strings.Builder
-	for i := 0; i < maxLogLines+10; i++ {
-		b.WriteString("line\n")
+	count := maxLogLines + 10
+	for i := 0; i < count; i++ {
+		ev.pane.AppendLine(int64(i), "stdout", "line")
 	}
-	ev.AppendChunk(b.String())
 
 	if len(ev.pane.lines) != maxLogLines {
 		t.Fatalf("expected %d lines after eviction, got %d", maxLogLines, len(ev.pane.lines))
 	}
-	if ev.pane.totalLines != maxLogLines+10 {
-		t.Fatalf("expected totalLines=%d, got %d", maxLogLines+10, ev.pane.totalLines)
+	if ev.pane.totalLines < count {
+		t.Fatalf("expected totalLines>=%d, got %d", count, ev.pane.totalLines)
 	}
 }
 
@@ -126,10 +92,7 @@ func TestExecView_FollowMode(t *testing.T) {
 		t.Fatal("expected follow=true initially")
 	}
 
-	// Adding lines should keep scroll at bottom.
-	for i := 0; i < 50; i++ {
-		ev.AppendChunk("line\n")
-	}
+	appendLines(&ev, 50)
 	if ev.pane.scroll != ev.pane.maxScroll() {
 		t.Fatalf("expected scroll=%d (bottom), got %d", ev.pane.maxScroll(), ev.pane.scroll)
 	}
@@ -137,9 +100,7 @@ func TestExecView_FollowMode(t *testing.T) {
 
 func TestExecView_Update_ScrollUp(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	for i := 0; i < 50; i++ {
-		ev.AppendChunk("line\n")
-	}
+	appendLines(&ev, 50)
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
 
@@ -150,9 +111,7 @@ func TestExecView_Update_ScrollUp(t *testing.T) {
 
 func TestExecView_Update_ScrollToBottom(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	for i := 0; i < 50; i++ {
-		ev.AppendChunk("line\n")
-	}
+	appendLines(&ev, 50)
 	ev.pane.scroll = 0
 	ev.pane.follow = false
 
@@ -168,9 +127,7 @@ func TestExecView_Update_ScrollToBottom(t *testing.T) {
 
 func TestExecView_Update_ScrollToTop(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	for i := 0; i < 50; i++ {
-		ev.AppendChunk("line\n")
-	}
+	appendLines(&ev, 50)
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyHome})
 
@@ -222,8 +179,7 @@ func TestExecView_Update_HeaderFocusNavigation(t *testing.T) {
 
 func TestExecView_Update_HorizontalScroll(t *testing.T) {
 	ev := newSizedExecView(40, 24)
-	// Add a very long line.
-	ev.AppendChunk(strings.Repeat("x", 200) + "\n")
+	ev.pane.AppendLine(0, "stdout", strings.Repeat("x", 200))
 	ev.pane.scroll = 0
 	ev.pane.follow = false
 
@@ -240,9 +196,7 @@ func TestExecView_Update_HorizontalScroll(t *testing.T) {
 
 func TestExecView_Update_PageDown(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	for i := 0; i < 100; i++ {
-		ev.AppendChunk("line\n")
-	}
+	appendLines(&ev, 100)
 	ev.pane.scroll = 0
 	ev.pane.follow = false
 
@@ -404,7 +358,7 @@ func TestExecView_ToggleFullscreen(t *testing.T) {
 
 func TestExecView_Fullscreen_ViewHasNoHeader(t *testing.T) {
 	ev := newSizedExecView(80, 10)
-	ev.AppendChunk("hello world\n")
+	ev.pane.AppendLine(0, "stdout", "hello world")
 	ev.ToggleFullscreen()
 
 	out := ev.View()
@@ -434,9 +388,7 @@ func TestExecView_Fullscreen_UpDoesNotEnterHeader(t *testing.T) {
 
 func TestExecView_Fullscreen_StillScrollsWithKeys(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	for i := 0; i < 100; i++ {
-		ev.AppendChunk("line\n")
-	}
+	appendLines(&ev, 100)
 	ev.ToggleFullscreen()
 	ev.pane.scroll = 0
 	ev.pane.follow = false
@@ -451,9 +403,7 @@ func TestExecView_Fullscreen_StillScrollsWithKeys(t *testing.T) {
 func TestExecView_NotFocused_IgnoresInput(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	ev.SetFocused(false)
-	for i := 0; i < 50; i++ {
-		ev.AppendChunk("line\n")
-	}
+	appendLines(&ev, 50)
 	initialScroll := ev.pane.scroll
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyUp})

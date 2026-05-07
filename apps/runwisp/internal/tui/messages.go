@@ -39,12 +39,6 @@ const (
 	PanelMain
 )
 
-// logBatchMsg delivers multiple log lines at once for efficiency.
-type logBatchMsg struct {
-	RunID string
-	Lines []string
-}
-
 // TickMsg drives periodic polling/refresh.
 type TickMsg struct{}
 
@@ -118,21 +112,45 @@ type execWindowFetchedMsg struct {
 	Total  int
 }
 
+// logOlderLoadedMsg delivers the result of a scroll-up REST page fetch.
+type logOlderLoadedMsg struct {
+	RunID     string
+	Lines     []apiclient.LogLine
+	FirstLine int64
+	Total     int64
+}
+
 // logStreamConnectedMsg signals that the log SSE stream is connected.
 type logStreamConnectedMsg struct {
 	RunID string
-	Ch    <-chan string
+	Ch    <-chan apiclient.LogStreamMsg
 }
 
-// logChunkMsg delivers a raw log chunk from the SSE stream.
-type logChunkMsg struct {
+// logLineMsg delivers one absolute-numbered line from the SSE stream.
+type logLineMsg struct {
 	RunID string
-	Chunk string
+	Line  apiclient.LogLine
+}
+
+// logRotatedMsg signals server-side rotation; lines below FirstAvailable
+// have been dropped on disk.
+type logRotatedMsg struct {
+	RunID          string
+	FirstAvailable int64
+}
+
+// logDroppedMsg signals streamer-side backpressure; Count line events were
+// discarded after line After.
+type logDroppedMsg struct {
+	RunID string
+	After int64
+	Count int64
 }
 
 // logDoneMsg signals log streaming ended.
 type logDoneMsg struct {
-	RunID string
+	RunID     string
+	FinalLine int64
 }
 
 // reconnectLogMsg is a delayed signal to retry log streaming after a disconnect.

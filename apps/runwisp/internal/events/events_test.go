@@ -84,7 +84,7 @@ func TestEventBus(t *testing.T) {
 
 		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
 		eb.Publish(EventRunStarted, RunEvent{Run: &model.Run{ID: "2"}})
-		eb.Publish(EventLogLine, LogLineEvent{RunID: "3"})
+		eb.Publish(EventLogLine, LogLineEvent{RunID: "3", LineNum: 0, Stream: "stdout", Text: "hello"})
 
 		assert.Equal(t, 3, count)
 	})

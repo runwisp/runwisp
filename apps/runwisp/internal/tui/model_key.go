@@ -202,6 +202,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if cmd := m.execView.Update(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		if cmd := m.maybeLoadOlderLogs(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	} else if m.panelFocus == PanelSidebar {
 		prevPage := m.sidebar.ActivePage()
 		prevTask := m.sidebar.ActiveTask()

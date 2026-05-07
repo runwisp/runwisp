@@ -12,8 +12,10 @@ import (
 )
 
 // RenderLines renders the visible log lines into the given strings.Builder.
-// dimContent controls whether log text uses a dimmed color (e.g. during header focus).
-func (p *LogPane) RenderLines(b *strings.Builder, dimContent bool) {
+// dimContent controls whether log text uses a dimmed color (e.g. during header
+// focus). When loadingOlder is true, a "Loading older logs…" indicator is
+// shown at the top.
+func (p *LogPane) RenderLines(b *strings.Builder, dimContent, loadingOlder bool) {
 	w := p.width
 	visibleLines := p.VisibleLines()
 
@@ -31,16 +33,25 @@ func (p *LogPane) RenderLines(b *strings.Builder, dimContent bool) {
 		logFg = colorTextDim
 	}
 
-	textStyle := lipgloss.NewStyle().
-		Background(colorBg).
-		Foreground(logFg)
+	stdoutStyle := lipgloss.NewStyle().Background(colorBg).Foreground(logFg)
+	stderrStyle := lipgloss.NewStyle().Background(colorBg).Foreground(colorError)
+	systemStyle := lipgloss.NewStyle().Background(colorBg).Foreground(colorTextMuted).Italic(true)
 
 	padStyle := lipgloss.NewStyle().Background(colorBg)
 
+	if loadingOlder && p.scroll == 0 {
+		loadingStyle := lipgloss.NewStyle().
+			Background(colorBg).
+			Foreground(colorTextMuted).
+			Italic(true)
+		b.WriteString(padLine(loadingStyle.Render("  Loading older logs…"), w, colorBg))
+		b.WriteString("\n")
+	}
+
 	if p.cfg.LineNumbers {
-		p.renderLinesWithNumbers(b, start, end, w, textStyle, padStyle)
+		p.renderLinesWithNumbers(b, start, end, w, padStyle, stdoutStyle, stderrStyle, systemStyle)
 	} else {
-		p.renderLinesPlain(b, start, end, w, textStyle, padStyle)
+		p.renderLinesPlain(b, start, end, w, padStyle, stdoutStyle, stderrStyle, systemStyle)
 	}
 
 	rendered := end - start + p.headerH
@@ -51,8 +62,18 @@ func (p *LogPane) RenderLines(b *strings.Builder, dimContent bool) {
 	}
 }
 
-func (p *LogPane) renderLinesWithNumbers(b *strings.Builder, start, end, w int, textStyle, padStyle lipgloss.Style) {
-	droppedLines := p.totalLines - len(p.lines)
+func styleForStream(stream string, stdout, stderr, system lipgloss.Style) lipgloss.Style {
+	switch stream {
+	case "stderr":
+		return stderr
+	case "system":
+		return system
+	default:
+		return stdout
+	}
+}
+
+func (p *LogPane) renderLinesWithNumbers(b *strings.Builder, start, end, w int, padStyle, stdoutStyle, stderrStyle, systemStyle lipgloss.Style) {
 	lnw := p.lineNumWidth()
 
 	logContentWidth := p.LogContentWidth()
@@ -77,11 +98,11 @@ func (p *LogPane) renderLinesWithNumbers(b *strings.Builder, start, end, w int, 
 		Background(colorBg)
 
 	for i := start; i < end; i++ {
-		absLineNum := droppedLines + i + 1
+		absLineNum := p.absoluteLineNumber(i)
 		lineNum := lineNumStyle.Render(fmt.Sprintf("%*d ", lnw, absLineNum))
 
-		raw := p.lines[i]
-		sliced, clippedRight := sliceLineColumns(raw, p.hScroll, textAreaWidth)
+		row := p.lines[i]
+		sliced, clippedRight := sliceLineColumns(row.text, p.hScroll, textAreaWidth)
 
 		if clippedRight {
 			runes := []rune(sliced)
@@ -89,6 +110,8 @@ func (p *LogPane) renderLinesWithNumbers(b *strings.Builder, start, end, w int, 
 				sliced = string(runes[:len(runes)-1])
 			}
 		}
+
+		textStyle := styleForStream(row.stream, stdoutStyle, stderrStyle, systemStyle)
 
 		var lineContent string
 		if hasLeftIndicator {
@@ -110,7 +133,7 @@ func (p *LogPane) renderLinesWithNumbers(b *strings.Builder, start, end, w int, 
 	}
 }
 
-func (p *LogPane) renderLinesPlain(b *strings.Builder, start, end, w int, textStyle, padStyle lipgloss.Style) {
+func (p *LogPane) renderLinesPlain(b *strings.Builder, start, end, w int, padStyle, stdoutStyle, stderrStyle, systemStyle lipgloss.Style) {
 	logContentWidth := p.LogContentWidth()
 
 	hasLeftIndicator := p.cfg.HScroll && p.hScroll > 0
@@ -128,12 +151,12 @@ func (p *LogPane) renderLinesPlain(b *strings.Builder, start, end, w int, textSt
 		Background(colorBg)
 
 	for i := start; i < end; i++ {
-		raw := p.lines[i]
+		row := p.lines[i]
 
 		var sliced string
 		var clippedRight bool
 		if p.cfg.HScroll {
-			sliced, clippedRight = sliceLineColumns(raw, p.hScroll, textAreaWidth)
+			sliced, clippedRight = sliceLineColumns(row.text, p.hScroll, textAreaWidth)
 			if clippedRight {
 				runes := []rune(sliced)
 				if len(runes) > 0 {
@@ -141,8 +164,10 @@ func (p *LogPane) renderLinesPlain(b *strings.Builder, start, end, w int, textSt
 				}
 			}
 		} else {
-			sliced = raw
+			sliced = row.text
 		}
+
+		textStyle := styleForStream(row.stream, stdoutStyle, stderrStyle, systemStyle)
 
 		var lineContent string
 		if hasLeftIndicator {

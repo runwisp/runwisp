@@ -4,51 +4,55 @@
 package server
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/sse"
 )
 
-func (srv *Server) handleDaemonLogStream(resp http.ResponseWriter, req *http.Request) {
-	if srv.daemonLogBuffer == nil {
-		respondNotFound(resp, "Daemon log buffer not available")
-		return
-	}
-
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := resp.(http.Flusher)
-	if !ok {
-		respondError(resp, http.StatusInternalServerError, "Streaming unsupported", nil)
-		return
-	}
-
-	// Backfill recent lines.
-	for _, line := range srv.daemonLogBuffer.Lines(100) {
-		data, _ := json.Marshal(line)
-		fmt.Fprintf(resp, "data: %s\n\n", data)
-	}
-	flusher.Flush()
-
-	// Subscribe to new lines.
-	subID, ch := srv.daemonLogBuffer.Subscribe()
-	defer srv.daemonLogBuffer.Unsubscribe(subID)
-
-	ctx := req.Context()
-	for {
-		select {
-		case <-ctx.Done():
+func (srv *Server) registerDaemonLogSSE(api huma.API) {
+	sse.Register(api, huma.Operation{
+		OperationID: "streamDaemonLog",
+		Method:      http.MethodGet,
+		Path:        "/api/daemon/log-stream",
+		Summary:     "Stream the daemon's recent log output",
+		Description: "Server-Sent Events stream of daemon log lines. Replays the last 100 buffered lines, then emits new lines as they're written until the client disconnects.",
+		Tags:        []string{"System"},
+	}, map[string]any{
+		"line": DaemonLogLineEvent{},
+	}, func(ctx context.Context, _ *struct{}, send sse.Sender) {
+		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+		if !ok {
 			return
-		case line, ok := <-ch:
-			if !ok {
+		}
+		defer release()
+
+		if srv.daemonLogBuffer == nil {
+			return
+		}
+
+		for _, line := range srv.daemonLogBuffer.Lines(100) {
+			if err := send(sse.Message{Data: DaemonLogLineEvent{Line: line}}); err != nil {
 				return
 			}
-			data, _ := json.Marshal(line)
-			fmt.Fprintf(resp, "data: %s\n\n", data)
-			flusher.Flush()
 		}
-	}
+
+		subID, ch := srv.daemonLogBuffer.Subscribe()
+		defer srv.daemonLogBuffer.Unsubscribe(subID)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case line, ok := <-ch:
+				if !ok {
+					return
+				}
+				if err := send(sse.Message{Data: DaemonLogLineEvent{Line: line}}); err != nil {
+					return
+				}
+			}
+		}
+	})
 }

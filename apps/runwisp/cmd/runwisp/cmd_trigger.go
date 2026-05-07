@@ -9,6 +9,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/spf13/cobra"
@@ -65,8 +66,15 @@ func runTrigger(taskName string) (int, error) {
 	// Subscribe to log lines and completion before triggering
 	done := make(chan *events.RunEvent, 1)
 	unsubLog := eventBus.Subscribe(events.EventLogLine, func(e events.Event) {
-		if ll, ok := e.Data.(events.LogLineEvent); ok && ll.TaskName == taskName {
-			fmt.Fprintln(os.Stdout, ll.Line)
+		ll, ok := e.Data.(events.LogLineEvent)
+		if !ok || ll.TaskName != taskName {
+			return
+		}
+		switch ll.Stream {
+		case logutil.StreamStderr:
+			fmt.Fprintln(os.Stderr, ll.Text)
+		default:
+			fmt.Fprintln(os.Stdout, ll.Text)
 		}
 	})
 	defer unsubLog()

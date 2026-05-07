@@ -4,11 +4,9 @@
 package cloud
 
 import (
-	"encoding/base64"
 	"errors"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
@@ -17,19 +15,6 @@ import (
 	"github.com/runwisp/runwisp/internal/storage"
 	"log/slog"
 )
-
-// LogChunkInterval is the minimum gap between consecutive `log:chunk`
-// emissions to a single listener. Bytes that arrive within the window are
-// coalesced and emitted at the next opportunity.
-const LogChunkInterval = 2 * time.Second
-
-type logListener struct {
-	Offset    int64
-	Buffer    []byte
-	LastSent  time.Time
-	FlushTime time.Time
-	Timer     *time.Timer
-}
 
 // InboundHandler processes inbound WebSocket messages, encapsulating
 // domain logic for execution dispatch, stop, and log operations.
@@ -42,7 +27,7 @@ type InboundHandler struct {
 	uploader        *LogUploader
 
 	mu           sync.Mutex
-	logListeners map[string]*logListener
+	logListeners map[string]struct{}
 }
 
 func NewInboundHandler(
@@ -60,7 +45,7 @@ func NewInboundHandler(
 		availability:    availability,
 		queueExecUpdate: queueExecUpdate,
 		uploader:        uploader,
-		logListeners:    make(map[string]*logListener),
+		logListeners:    make(map[string]struct{}),
 	}
 }
 
@@ -141,43 +126,45 @@ func (h *InboundHandler) HandleExecutionStop(message protocol.ExecutionStopMessa
 	return &CloudError{Kind: CloudErrorKindConflict, Message: "execution is not currently running"}
 }
 
-func (h *InboundHandler) HandleLogRequest(message protocol.LogRequestMessage) (protocol.LogResponseMessage, error) {
+// HandleLogReplayRequest reads a bounded historical page of lines and returns
+// it as a single LogReplayChunkMessage. final is true when no more lines
+// remain beyond this page or the run has terminated.
+func (h *InboundHandler) HandleLogReplayRequest(message protocol.LogReplayRequestMessage) (protocol.LogReplayChunkMessage, error) {
 	executionID := strings.TrimSpace(message.ExecutionID)
 	if executionID == "" {
-		return NewLogResponseMessage(message.ID, message.ExecutionID, "", 0, true), &CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
+		return NewLogReplayChunkMessage(message.ID, message.ExecutionID, nil, true),
+			&CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
 	}
 
 	run, err := h.runRepo.GetRunByExternalExecutionID(executionID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return NewLogResponseMessage(message.ID, executionID, "", message.Offset, true), nil
+			return NewLogReplayChunkMessage(message.ID, executionID, nil, true), nil
 		}
-		return NewLogResponseMessage(message.ID, executionID, "", message.Offset, true), &CloudError{Kind: CloudErrorKindTransient, Message: "failed to query execution logs", Err: err}
+		return NewLogReplayChunkMessage(message.ID, executionID, nil, true),
+			&CloudError{Kind: CloudErrorKindTransient, Message: "failed to query execution logs", Err: err}
 	}
 
-	result, readErr := readExecutionLogChunk(run, h.logDir, message.Offset, message.Limit)
+	lines, final, readErr := readExecutionLogReplay(run, h.logDir, message.FromLine, message.Limit)
 	if readErr != nil {
-		return NewLogResponseMessage(message.ID, executionID, "", message.Offset, true), &CloudError{Kind: CloudErrorKindTransient, Message: "failed to read execution logs", Err: readErr}
+		return NewLogReplayChunkMessage(message.ID, executionID, nil, true),
+			&CloudError{Kind: CloudErrorKindTransient, Message: "failed to read execution logs", Err: readErr}
 	}
 
-	encoded := base64.StdEncoding.EncodeToString(result.Data)
-	return NewLogResponseMessage(message.ID, executionID, encoded, result.Offset, result.Final), nil
+	return NewLogReplayChunkMessage(message.ID, executionID, lines, final), nil
 }
 
+// HandleLogListen marks an execution for live log:line push events. Idempotent
+// — repeated calls keep a single subscription. Tracker-side memory cost is
+// O(set entry); the EventBridge does the actual fan-out + drop-on-full.
 func (h *InboundHandler) HandleLogListen(message protocol.LogListenMessage) error {
 	executionID := strings.TrimSpace(message.ExecutionID)
 	if executionID == "" {
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
 	}
 
-	var offset int64
-	run, err := h.runRepo.GetRunByExternalExecutionID(executionID)
-	if err == nil {
-		offset = getLogFileSize(run, h.logDir)
-	}
-
 	h.mu.Lock()
-	h.logListeners[executionID] = &logListener{Offset: offset}
+	h.logListeners[executionID] = struct{}{}
 	h.mu.Unlock()
 
 	return nil
@@ -193,117 +180,31 @@ func (h *InboundHandler) HandleLogStop(message protocol.LogStopMessage) {
 	h.mu.Unlock()
 }
 
-// PendingChunk is the result of buffering a log line for a listener.
-// When Ready is true the caller must emit a `log:chunk` message with the
-// returned Offset and Data; when false the bytes are coalesced into the
-// listener buffer and a deferred flush is scheduled.
-type PendingChunk struct {
-	Ready  bool
-	Offset int64
-	Data   []byte
-}
-
-// BufferLogChunk appends bytes for a listener and returns a chunk to emit
-// immediately (when more than LogChunkInterval has passed since the last
-// emission) or buffers them for later flush. Returns ok=false when no
-// listener is registered for the execution. flush, when non-nil, is invoked
-// from a timer goroutine for deferred emissions.
-func (h *InboundHandler) BufferLogChunk(executionID string, line []byte, flush func(executionID string, offset int64, data []byte)) (PendingChunk, bool) {
-	h.mu.Lock()
-	l, ok := h.logListeners[executionID]
-	if !ok {
-		h.mu.Unlock()
-		return PendingChunk{}, false
-	}
-
-	now := time.Now()
-	l.Buffer = append(l.Buffer, line...)
-	if l.LastSent.IsZero() || now.Sub(l.LastSent) >= LogChunkInterval {
-		offset := l.Offset
-		data := l.Buffer
-		l.Offset += int64(len(data))
-		l.Buffer = nil
-		l.LastSent = now
-		if l.Timer != nil {
-			l.Timer.Stop()
-			l.Timer = nil
-			l.FlushTime = time.Time{}
-		}
-		h.mu.Unlock()
-		return PendingChunk{Ready: true, Offset: offset, Data: data}, true
-	}
-
-	if l.Timer == nil && flush != nil {
-		fire := l.LastSent.Add(LogChunkInterval)
-		l.FlushTime = fire
-		delay := time.Until(fire)
-		if delay < 0 {
-			delay = 0
-		}
-		execID := executionID
-		l.Timer = time.AfterFunc(delay, func() {
-			h.flushLogChunk(execID, flush)
-		})
-	}
-	h.mu.Unlock()
-	return PendingChunk{}, true
-}
-
-func (h *InboundHandler) flushLogChunk(executionID string, flush func(executionID string, offset int64, data []byte)) {
-	h.mu.Lock()
-	l, ok := h.logListeners[executionID]
-	if !ok || len(l.Buffer) == 0 {
-		if ok {
-			l.Timer = nil
-			l.FlushTime = time.Time{}
-		}
-		h.mu.Unlock()
-		return
-	}
-	offset := l.Offset
-	data := l.Buffer
-	l.Offset += int64(len(data))
-	l.Buffer = nil
-	l.LastSent = time.Now()
-	l.Timer = nil
-	l.FlushTime = time.Time{}
-	h.mu.Unlock()
-
-	if flush != nil {
-		flush(executionID, offset, data)
-	}
-}
-
-// RemoveLogListener removes a log listener and returns its final offset
-// plus any buffered bytes that were waiting on the rate-limit window.
-func (h *InboundHandler) RemoveLogListener(executionID string) (offset int64, pending []byte, exists bool) {
+// IsLogListener reports whether the given execution has an active subscription.
+func (h *InboundHandler) IsLogListener(executionID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	l, ok := h.logListeners[executionID]
-	if !ok {
-		return 0, nil, false
+	_, ok := h.logListeners[executionID]
+	return ok
+}
+
+// RemoveLogListener removes a log listener (terminal-status cleanup or
+// log:stop). Returns true if the listener existed.
+func (h *InboundHandler) RemoveLogListener(executionID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.logListeners[executionID]; !ok {
+		return false
 	}
-	if l.Timer != nil {
-		l.Timer.Stop()
-	}
-	offset = l.Offset
-	pending = l.Buffer
-	l.Offset += int64(len(l.Buffer))
-	l.Buffer = nil
 	delete(h.logListeners, executionID)
-	return offset, pending, true
+	return true
 }
 
 // ClearLogListeners removes all active log listeners (e.g. on reconnect).
 func (h *InboundHandler) ClearLogListeners() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for _, l := range h.logListeners {
-		if l.Timer != nil {
-			l.Timer.Stop()
-		}
-	}
-	h.logListeners = make(map[string]*logListener)
+	h.logListeners = make(map[string]struct{})
 }
 
 func runtimeTriggerOptions(executionID string) runtime.TriggerRunOptions {

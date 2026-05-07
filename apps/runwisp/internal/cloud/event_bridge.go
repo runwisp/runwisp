@@ -5,7 +5,6 @@ package cloud
 
 import (
 	"context"
-	"encoding/base64"
 	"sync"
 
 	"github.com/runwisp/runwisp/internal/events"
@@ -16,7 +15,7 @@ import (
 )
 
 // EventBridge subscribes to runtime events and forwards execution status
-// and log data to the cloud connection.
+// and log lines to the cloud connection.
 type EventBridge struct {
 	eventBus      events.EventBus
 	handler       *InboundHandler
@@ -136,7 +135,7 @@ func (b *EventBridge) finalizeRun(run *model.Run, update protocol.ExecutionUpdat
 	}
 
 	b.tracker.QueueUpdate(update, b.sendReady)
-	b.sendTerminalLogChunk(executionID)
+	b.handler.RemoveLogListener(executionID)
 }
 
 func (b *EventBridge) handleLogLineEvent(event events.Event) {
@@ -144,44 +143,21 @@ func (b *EventBridge) handleLogLineEvent(event events.Event) {
 	if !ok || logEvent.ExternalExecutionID == "" {
 		return
 	}
-
-	chunk, exists := b.handler.BufferLogChunk(logEvent.ExternalExecutionID, []byte(logEvent.Line), b.emitLogChunk)
-	if !exists || !chunk.Ready {
+	if !b.handler.IsLogListener(logEvent.ExternalExecutionID) {
 		return
 	}
-	b.emitLogChunk(logEvent.ExternalExecutionID, chunk.Offset, chunk.Data)
-}
-
-func (b *EventBridge) emitLogChunk(executionID string, offset int64, data []byte) {
-	if len(data) == 0 {
-		return
-	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-	message := NewLogChunkMessage(executionID, encoded, offset, false)
-	if err := b.sendReady(message); err != nil {
-		slog.Warn("failed to send log chunk", "executionID", executionID, "offset", offset, "err", err)
-	}
-}
-
-func (b *EventBridge) sendTerminalLogChunk(executionID string) {
-	offset, pending, exists := b.handler.RemoveLogListener(executionID)
-	if !exists {
-		return
-	}
-
-	if len(pending) > 0 {
-		// Drain whatever was buffered for the rate-limit window. The final
-		// chunk follows with Final=true at the post-buffer offset.
-		encoded := base64.StdEncoding.EncodeToString(pending)
-		buffered := NewLogChunkMessage(executionID, encoded, offset, false)
-		if err := b.sendReady(buffered); err != nil {
-			slog.Info("failed to flush buffered log chunk", "executionID", executionID, "err", err)
-		}
-		offset += int64(len(pending))
-	}
-
-	message := NewLogChunkMessage(executionID, "", offset, true)
-	if err := b.sendReady(message); err != nil {
-		slog.Info("failed to send final log chunk", "executionID", executionID, "err", err)
-	}
+	message := NewLogLineMessage(
+		logEvent.ExternalExecutionID,
+		logEvent.LineNum,
+		logEvent.Timestamp,
+		logEvent.Stream,
+		logEvent.Text,
+		logEvent.Continued,
+	)
+	// Best-effort: a slow peer with a full outbound queue must not block the
+	// run. The handler caller (events.Bus.Publish) is sync — the outbound
+	// channel is bounded, so sendReady drops with an error rather than
+	// pushing back. We intentionally swallow that error: backpressure is
+	// surfaced as a "missed line" on the cloud side, never a stalled run.
+	_ = b.sendReady(message)
 }

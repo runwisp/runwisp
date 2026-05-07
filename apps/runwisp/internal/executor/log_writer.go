@@ -117,14 +117,37 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 	}, nil
 }
 
+// Write satisfies io.Writer. Each call must contain exactly one
+// '\n'-terminated line; the writer assigns one absolute line number per call.
+// Returns len(p) for silently-dropped lines (drop_new / kill_task / disk-low)
+// to keep upstream pipes from backing up.
 func (w *LogWriter) Write(p []byte) (n int, err error) {
+	_, written, err := w.writeOneLine(p)
+	return written, err
+}
+
+// WriteLineEvent appends a single line for the given stream and returns the
+// absolute line number assigned by the writer (rotated_lines + line_count).
+// Returns -1 when the line is silently dropped (writer stopped, drop_new,
+// kill_task, disk-low). The returned number is monotonically non-decreasing
+// across rotations and is the canonical `n` for log events on the bus.
+func (w *LogWriter) WriteLineEvent(text, stream string) (int64, error) {
+	formatted := []byte(logutil.FormatLine(text, stream))
+	lineNum, _, err := w.writeOneLine(formatted)
+	return lineNum, err
+}
+
+// writeOneLine is the single mutex-guarded write path. Returns the absolute
+// line number assigned (or -1 if the line was dropped) plus the io.Writer
+// `n` (always len(p) for drop cases, matching the prior contract).
+func (w *LogWriter) writeOneLine(p []byte) (lineNum int64, written int, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	w.totalProduced += int64(len(p))
 
 	if w.stopped {
-		return len(p), nil
+		return -1, len(p), nil
 	}
 
 	// Periodic disk-space check
@@ -136,7 +159,7 @@ func (w *LogWriter) Write(p []byte) (n int, err error) {
 				config.FormatByteSize(free), config.FormatByteSize(w.minFreeDisk)))
 			w.stopped = true
 			w.truncated = true
-			return len(p), nil
+			return -1, len(p), nil
 		}
 	}
 
@@ -149,7 +172,7 @@ func (w *LogWriter) Write(p []byte) (n int, err error) {
 				config.FormatByteSize(w.maxSize)))
 			w.stopped = true
 			w.truncated = true
-			return len(p), nil
+			return -1, len(p), nil
 
 		case model.LogOverflowKillTask:
 			w.writeSystemLine(fmt.Sprintf(
@@ -160,18 +183,22 @@ func (w *LogWriter) Write(p []byte) (n int, err error) {
 			if w.cancelFunc != nil {
 				w.cancelFunc()
 			}
-			return len(p), nil
+			return -1, len(p), nil
 
 		case model.LogOverflowDropOld:
-			if err := w.rotateTail(); err != nil {
-				slog.Error("Failed to rotate log file, continuing without rotation", "err", err)
+			if rotateErr := w.rotateTail(); rotateErr != nil {
+				slog.Error("Failed to rotate log file, continuing without rotation", "err", rotateErr)
 			}
 		}
 	}
 
-	n, err = w.file.Write(p)
+	// Capture the assigned line number AFTER any rotation (which may have
+	// reset lineCount and bumped rotatedLines), BEFORE the write+increment.
+	assignedN := w.rotatedLines + w.lineCount
+
+	n, err := w.file.Write(p)
 	if err != nil {
-		return n, err
+		return -1, n, err
 	}
 
 	if n > 0 {
@@ -187,7 +214,7 @@ func (w *LogWriter) Write(p []byte) (n int, err error) {
 		w.lineCount++
 	}
 
-	return n, nil
+	return assignedN, n, nil
 }
 
 func (w *LogWriter) writeSystemLine(msg string) {

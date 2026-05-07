@@ -9,6 +9,7 @@ import { getApiUrl } from "./utils/env";
 import { HTTP_STATUS } from "./config/constants";
 import { browserTokenStorage, browserAuthEventBus } from "$lib/adapters/browser";
 import { authStore } from "./stores/auth.svelte";
+import { logPageSchema, type LogPage } from "./logs";
 import {
     authChallengeResponseSchema,
     authLoginResponseSchema,
@@ -154,38 +155,47 @@ export const tasksApi = {
         if (error) throw new Error("Failed to stop run");
     },
 
-    getLog: async (
+    getLogPage: async (
         taskName: string,
         runId: string,
-        lines?: { start: number; end: number },
-    ): Promise<{ content: string; totalLines?: number; firstAvailableLine?: number }> => {
-        let url =
+        options?: { from?: number; limit?: number },
+    ): Promise<LogPage> => {
+        const params = new URLSearchParams();
+        if (options?.from !== undefined) params.set("from", String(options.from));
+        if (options?.limit !== undefined) params.set("limit", String(options.limit));
+        const qs = params.toString();
+        const url =
             API_BASE_URL +
             "/api/tasks/" +
             encodeURIComponent(taskName) +
             "/runs/" +
             encodeURIComponent(runId) +
-            "/log";
-        if (lines) {
-            url += "?start_line=" + String(lines.start) + "&end_line=" + String(lines.end);
-        }
+            "/log" +
+            (qs ? "?" + qs : "");
+        const headers: HeadersInit = { Accept: "application/json" };
+        const auth = authHeader();
+        if (auth) headers["Authorization"] = auth;
+
+        const response = await fetch(url, { headers });
+        if (!response.ok) throw new Error("Log page fetch failed: " + String(response.status));
+        return logPageSchema.parse(await response.json());
+    },
+
+    getLogRaw: async (taskName: string, runId: string): Promise<string> => {
+        const url =
+            API_BASE_URL +
+            "/api/tasks/" +
+            encodeURIComponent(taskName) +
+            "/runs/" +
+            encodeURIComponent(runId) +
+            "/log/raw";
         const headers: HeadersInit = {};
         const auth = authHeader();
         if (auth) headers["Authorization"] = auth;
 
         const response = await fetch(url, { headers });
-        if (!response.ok) throw new Error("Log fetch failed: " + String(response.status));
-
-        const content = await response.text();
-        const totalLinesHeader = response.headers.get("x-total-lines");
-        const firstAvailableHeader = response.headers.get("x-first-available-line");
-
-        const result: { content: string; totalLines?: number; firstAvailableLine?: number } = {
-            content,
-        };
-        if (totalLinesHeader) result.totalLines = parseInt(totalLinesHeader, 10);
-        if (firstAvailableHeader) result.firstAvailableLine = parseInt(firstAvailableHeader, 10);
-        return result;
+        if (!response.ok) throw new Error("Raw log fetch failed: " + String(response.status));
+        return await response.text();
     },
 };
 

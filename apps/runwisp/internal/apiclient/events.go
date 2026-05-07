@@ -63,61 +63,122 @@ func (c *Client) StreamRunEvents(ctx context.Context) (<-chan RunStreamEvent, er
 	return ch, nil
 }
 
-// StreamLog opens an SSE connection to the log-stream endpoint and delivers
-// raw log chunks on the returned channel.
-func (c *Client) StreamLog(ctx context.Context, taskName string, runID string) (<-chan string, error) {
-	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log-stream", taskName, runID)
+// LogStreamMsgKind discriminates the line-stream message types delivered to
+// callers of StreamLogLines.
+type LogStreamMsgKind int
+
+const (
+	LogStreamMsgKindLine LogStreamMsgKind = iota
+	LogStreamMsgKindRotated
+	LogStreamMsgKindDropped
+	LogStreamMsgKindDone
+	LogStreamMsgKindErr
+)
+
+// LogStreamMsg is a tagged union of events emitted on the line-based SSE
+// channel. Exactly one of the fields matching Kind is populated; others are
+// the zero value.
+type LogStreamMsg struct {
+	Kind     LogStreamMsgKind
+	Line     LogLine
+	Rotated  LogStreamRotated
+	Dropped  LogStreamDropped
+	Done     LogStreamDone
+	ErrValue error
+}
+
+type LogStreamRotated struct {
+	FirstAvailable int64 `json:"first_available"`
+}
+
+type LogStreamDropped struct {
+	After int64 `json:"after"`
+	Count int64 `json:"count"`
+}
+
+type LogStreamDone struct {
+	FinalLine int64  `json:"final_line"`
+	Status    string `json:"status"`
+}
+
+// StreamLogOpts tunes the line-stream subscription.
+type StreamLogOpts struct {
+	// FromLine is the absolute line anchor; negative values count from end
+	// (e.g. -1000 returns the last 1000 lines as backfill).
+	FromLine int64
+	// ReplayLimit caps the backfill page size; 0 lets the server pick.
+	ReplayLimit int64
+}
+
+// StreamLogLines opens the line-based SSE log stream. Each delivered message
+// is one of the documented kinds (line / rotated / dropped / done / err).
+// The channel is closed after a Done message, after Err, or after ctx is
+// cancelled.
+func (c *Client) StreamLogLines(ctx context.Context, taskName, runID string, opts StreamLogOpts) (<-chan LogStreamMsg, error) {
+	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log/stream?from=%d", taskName, runID, opts.FromLine)
+	if opts.ReplayLimit > 0 {
+		path += fmt.Sprintf("&replay_limit=%d", opts.ReplayLimit)
+	}
 	resp, err := c.doSSE(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 
-	ch := make(chan string, 64)
+	ch := make(chan LogStreamMsg, 64)
 	go func() {
 		defer close(ch)
 		defer resp.Body.Close()
 
 		scanner := bufio.NewScanner(resp.Body)
-		// JSON-encoding a 1 MB raw chunk adds overhead (newline escaping, etc.)
-		// so the SSE data line can exceed 1 MB.  Use 4 MB to be safe.
-		scanner.Buffer(make([]byte, 0, 4*1024*1024), 4*1024*1024)
+		// SSE data lines for backfill burst can carry up to a 64 KiB log
+		// line plus JSON overhead; 256 KiB is a comfortable headroom.
+		scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
-		skipNextData := false
+		var event string
+		var dataParts []string
+
+		flush := func() {
+			defer func() {
+				event = ""
+				dataParts = dataParts[:0]
+			}()
+			if len(dataParts) == 0 {
+				return
+			}
+			data := strings.Join(dataParts, "\n")
+			msg, ok := parseLogStreamFrame(event, data)
+			if !ok {
+				return
+			}
+			select {
+			case ch <- msg:
+			case <-ctx.Done():
+			}
+		}
+
 		for scanner.Scan() {
 			line := scanner.Text()
-
-			if strings.HasPrefix(line, "event: done") {
-				return
-			}
-
-			// Non-log SSE events (e.g. "event: metadata") should be skipped
-			// along with their subsequent data line.
-			if strings.HasPrefix(line, "event: ") && !strings.HasPrefix(line, "event: log") {
-				skipNextData = true
+			if line == "" {
+				flush()
 				continue
 			}
-
-			if !strings.HasPrefix(line, "data: ") {
+			if strings.HasPrefix(line, "id: ") {
 				continue
 			}
-
-			if skipNextData {
-				skipNextData = false
+			if strings.HasPrefix(line, "event: ") {
+				event = strings.TrimPrefix(line, "event: ")
 				continue
 			}
-
-			data := strings.TrimPrefix(line, "data: ")
-			// Log stream sends JSON-encoded strings.
-			var chunk string
-			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				// Treat as raw text if not valid JSON.
-				chunk = data
+			if strings.HasPrefix(line, "data: ") {
+				dataParts = append(dataParts, strings.TrimPrefix(line, "data: "))
+				continue
 			}
-
+			// retry: / : (comment) / unknown — ignore.
+		}
+		if err := scanner.Err(); err != nil {
 			select {
-			case ch <- chunk:
+			case ch <- LogStreamMsg{Kind: LogStreamMsgKindErr, ErrValue: err}:
 			case <-ctx.Done():
-				return
 			}
 		}
 	}()
@@ -125,23 +186,38 @@ func (c *Client) StreamLog(ctx context.Context, taskName string, runID string) (
 	return ch, nil
 }
 
-// GetLog fetches the full log content for a run.
-func (c *Client) GetLog(taskName string, runID string) (string, error) {
-	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log", taskName, runID)
-	resp, err := c.doRaw("GET", path)
-	if err != nil {
-		return "", err
+// parseLogStreamFrame decodes one SSE event into a LogStreamMsg. The default
+// (empty event name) is "line" per the SSE spec, but our server always names
+// events explicitly; an unrecognised event is silently dropped (returns
+// ok=false).
+func parseLogStreamFrame(event, data string) (LogStreamMsg, bool) {
+	switch event {
+	case "line", "":
+		var line LogLine
+		if err := json.Unmarshal([]byte(data), &line); err != nil {
+			return LogStreamMsg{}, false
+		}
+		return LogStreamMsg{Kind: LogStreamMsgKindLine, Line: line}, true
+	case "rotated":
+		var r LogStreamRotated
+		if err := json.Unmarshal([]byte(data), &r); err != nil {
+			return LogStreamMsg{}, false
+		}
+		return LogStreamMsg{Kind: LogStreamMsgKindRotated, Rotated: r}, true
+	case "dropped":
+		var d LogStreamDropped
+		if err := json.Unmarshal([]byte(data), &d); err != nil {
+			return LogStreamMsg{}, false
+		}
+		return LogStreamMsg{Kind: LogStreamMsgKindDropped, Dropped: d}, true
+	case "done":
+		var d LogStreamDone
+		if err := json.Unmarshal([]byte(data), &d); err != nil {
+			return LogStreamMsg{}, false
+		}
+		return LogStreamMsg{Kind: LogStreamMsgKindDone, Done: d}, true
 	}
-	defer resp.Body.Close()
-
-	var b strings.Builder
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024)
-	for scanner.Scan() {
-		b.WriteString(scanner.Text())
-		b.WriteByte('\n')
-	}
-	return b.String(), scanner.Err()
+	return LogStreamMsg{}, false
 }
 
 // RunStreamEvent represents a parsed SSE event from the runs stream.

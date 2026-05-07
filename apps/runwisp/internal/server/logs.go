@@ -5,14 +5,15 @@ package server
 
 import (
 	"context"
-	"fmt"
-	"io"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
@@ -20,220 +21,235 @@ import (
 )
 
 const (
-	MaxLogBytes         = 100 * 1024 * 1024 // 100MB max bytes per request
-	LogReadBufferSize   = 4 * 1024          // 4KB buffer for reading logs
-	LogStreamBufferSize = 1 * 1024 * 1024   // 1MB max per stream read
-	LogStreamInterval   = 500 * time.Millisecond
-	LogStreamTimeout    = 10 * time.Minute
-	LogFileWaitTimeout  = 30 * time.Second
+	// LogStreamTimeout caps a single SSE connection's lifetime. The TUI/UI
+	// reconnects automatically, so this isn't user-visible.
+	LogStreamTimeout = 10 * time.Minute
+
+	// LogPageDefaultLimit is the default `limit` for /log JSON pages.
+	LogPageDefaultLimit = 1000
+	// LogPageMaxLimit caps the JSON page size to prevent unbounded memory.
+	LogPageMaxLimit = 10000
+	// LogPageDefaultFrom is the default tail size when no `from` is given.
+	LogPageDefaultFrom = -1000
+
+	// LogStreamReplayDefault is the default replay window for /log/stream.
+	LogStreamReplayDefault = 5000
+	// LogStreamReplayMax caps the replay window.
+	LogStreamReplayMax = 50000
 )
 
-// resolveLogPath validates the run ID and computes the log path.
-func (srv *Server) resolveLogPath(resp http.ResponseWriter, req *http.Request) (string, *model.Run, bool) {
-	runIDStr := chi.URLParam(req, "runId")
-	if _, err := ulid.Parse(runIDStr); err != nil {
-		respondBadRequest(resp, "Invalid run ID")
-		return "", nil, false
-	}
+// LogPageInput drives GET /api/tasks/{taskName}/runs/{runId}/log.
+type LogPageInput struct {
+	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
+	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
+	From     int64  `query:"from" doc:"Anchor line number; negative values count from end (default -1000)"`
+	Limit    int64  `query:"limit" minimum:"1" maximum:"10000" doc:"Max lines returned (default 1000)"`
+}
 
+// LogLineEntry mirrors the line-event payload used on the SSE wire.
+type LogLineEntry struct {
+	N         int64  `json:"n" doc:"Absolute line number"`
+	Ts        int64  `json:"ts" doc:"Unix milliseconds timestamp; 0 if unavailable"`
+	Stream    string `json:"stream" doc:"Stream identifier (stdout/stderr/system)"`
+	Text      string `json:"text" doc:"Line content without trailing newline"`
+	Continued bool   `json:"continued,omitempty" doc:"True if this segment continues an oversized split line"`
+}
+
+// LogPageBody is the response shape for the line-page endpoint.
+type LogPageBody struct {
+	Lines          []LogLineEntry `json:"lines" doc:"Returned lines, ascending by n"`
+	FirstAvailable int64          `json:"first_available" doc:"Lowest line number still on disk; lines below were rotated away"`
+	TotalLines     int64          `json:"total_lines" doc:"Total lines produced across all segments"`
+	Truncated      bool           `json:"truncated" doc:"True if rotation has dropped lines below first_available"`
+	Finalized      bool           `json:"finalized" doc:"True if the run has ended and the log is final"`
+}
+
+type LogPageOutput struct {
+	Body LogPageBody
+}
+
+// LogRawInput drives GET /api/tasks/{taskName}/runs/{runId}/log/raw.
+type LogRawInput struct {
+	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
+	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
+}
+
+// LogRawOutput streams the rotated-away segment (.log.prev) followed by the
+// current segment, concatenated into one text/plain body.
+type LogRawOutput struct {
+	ContentType string `header:"Content-Type"`
+	Body        []byte
+}
+
+// resolveLogPath validates the run ID and computes the log path. Returns an
+// error suitable for huma to map to an HTTP status code.
+func (srv *Server) resolveLogPathFor(taskName, runIDStr string) (string, *model.Run, error) {
+	if _, err := ulid.Parse(runIDStr); err != nil {
+		return "", nil, huma.Error400BadRequest("Invalid run ID")
+	}
 	run, err := srv.db.GetRun(runIDStr)
 	if err != nil {
-		slog.Error("Failed to get run", "run", runIDStr, "err", err)
-		respondNotFound(resp, "Run not found")
-		return "", nil, false
+		return "", nil, huma.Error404NotFound("Run not found")
 	}
-
-	logPath := logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt)
-	return logPath, run, true
+	if run.TaskName != taskName {
+		return "", nil, huma.Error404NotFound("Run not found")
+	}
+	return logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt), run, nil
 }
 
-func (srv *Server) handleGetLog(resp http.ResponseWriter, req *http.Request) {
-	logPath, _, ok := srv.resolveLogPath(resp, req)
-	if !ok {
-		return
-	}
-
-	startLineStr := req.URL.Query().Get("start_line")
-	endLineStr := req.URL.Query().Get("end_line")
-
-	// Line-based serving with index
-	if startLineStr != "" {
-		srv.serveLogByLines(resp, logPath, startLineStr, endLineStr)
-		return
-	}
-
-	// Full file serving
-	http.ServeFile(resp, req, logPath)
-}
-
-func (srv *Server) serveLogByLines(resp http.ResponseWriter, logPath, startLineStr, endLineStr string) {
-	idxPath := logPath + ".idx"
-	indices, err := logutil.ReadLogIndex(idxPath)
+func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*LogPageOutput, error) {
+	logPath, run, err := srv.resolveLogPathFor(input.TaskName, input.RunID)
 	if err != nil {
-		slog.Warn("Failed to read log index", "path", idxPath, "err", err)
-		respondNotFound(resp, "Log index not found")
-		return
+		return nil, err
 	}
 
-	meta := logutil.ReadLogMeta(logPath)
-
-	startLine, err := strconv.Atoi(startLineStr)
-	if err != nil || startLine < 0 {
-		startLine = 0
+	from := input.From
+	if from == 0 {
+		from = LogPageDefaultFrom
+	}
+	limit := input.Limit
+	if limit <= 0 {
+		limit = LogPageDefaultLimit
+	}
+	if limit > LogPageMaxLimit {
+		limit = LogPageMaxLimit
 	}
 
-	file, err := os.Open(logPath)
-	if err != nil {
-		respondError(resp, http.StatusInternalServerError, "Failed to open log file", err)
-		return
-	}
-	defer file.Close()
-
-	stat, err := file.Stat()
-	if err != nil {
-		respondError(resp, http.StatusInternalServerError, "Failed to stat log file", err)
-		return
-	}
-	fileSize := stat.Size()
-
-	totalLines := logutil.CalculateTotalLines(file, indices, fileSize, meta)
-
-	// Clamp start to first available line when earlier lines were rotated away
-	firstAvailable := int(meta.RotatedLines)
-	if startLine < firstAvailable {
-		startLine = firstAvailable
+	lines, firstAvailable, totalLines, readErr := logutil.ReadLineRange(logPath, from, limit)
+	if readErr != nil {
+		slog.Error("Failed to read log line range", "path", logPath, "err", readErr)
+		return nil, huma.Error500InternalServerError("Failed to read log")
 	}
 
-	realStartOffset := logutil.CalculateLineOffset(file, indices, startLine, meta)
-	realEndOffset := fileSize
-	if endLineStr != "" {
-		endLine, err := strconv.Atoi(endLineStr)
-		if err == nil && endLine >= 0 && endLine < totalLines {
-			// end_line is inclusive; compute the start of the NEXT line
-			// to capture the full content of endLine.
-			realEndOffset = logutil.CalculateLineOffset(file, indices, endLine+1, meta)
+	entries := make([]LogLineEntry, len(lines))
+	for i, l := range lines {
+		entries[i] = LogLineEntry{
+			N:      l.LineNum,
+			Stream: l.Stream,
+			Text:   l.Text,
 		}
 	}
 
-	resp.Header().Set("X-Total-Lines", strconv.Itoa(totalLines))
-	if meta.RotatedLines > 0 {
-		resp.Header().Set("X-First-Available-Line", strconv.Itoa(firstAvailable))
-		resp.Header().Set("X-Truncated", "true")
-	}
-
-	length := realEndOffset - realStartOffset
-	if length < 0 {
-		length = 0
-	}
-
-	serveLogRange(resp, file, realStartOffset, length, fileSize)
+	return &LogPageOutput{Body: LogPageBody{
+		Lines:          entries,
+		FirstAvailable: firstAvailable,
+		TotalLines:     totalLines,
+		Truncated:      firstAvailable > 0,
+		Finalized:      run.Status.IsTerminal(),
+	}}, nil
 }
 
-func (srv *Server) handleLogStream(resp http.ResponseWriter, req *http.Request) {
-	runIDStr := chi.URLParam(req, "runId")
-	if _, err := ulid.Parse(runIDStr); err != nil {
-		respondBadRequest(resp, "Invalid run ID")
-		return
-	}
-
-	run, err := srv.db.GetRun(runIDStr)
+func (srv *Server) humaGetLogRaw(ctx context.Context, input *LogRawInput) (*LogRawOutput, error) {
+	logPath, _, err := srv.resolveLogPathFor(input.TaskName, input.RunID)
 	if err != nil {
-		slog.Error("Failed to get run", "run", runIDStr, "err", err)
-		respondNotFound(resp, "Run not found")
-		return
+		return nil, err
 	}
 
-	// Extend the write deadline for this long-lived SSE connection.
-	rc := http.NewResponseController(resp)
-	if err := rc.SetWriteDeadline(time.Now().Add(LogStreamTimeout + 30*time.Second)); err != nil {
-		slog.Warn("Failed to extend write deadline for SSE", "err", err)
+	body, readErr := readRawLog(logPath)
+	if readErr != nil {
+		slog.Error("Failed to read raw log", "path", logPath, "err", readErr)
+		return nil, huma.Error500InternalServerError("Failed to read log")
 	}
 
-	resp.Header().Set("Content-Type", "text/event-stream")
-	resp.Header().Set("Cache-Control", "no-cache")
-	resp.Header().Set("Connection", "keep-alive")
-	resp.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := resp.(http.Flusher)
-	if !ok {
-		respondError(resp, http.StatusInternalServerError, "Streaming unsupported", nil)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(req.Context(), LogStreamTimeout)
-	defer cancel()
-
-	logPath := logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt)
-
-	streamer, err := newLogStreamer(ctx, resp, flusher, logPath)
-	if err != nil {
-		slog.Error("SSE: failed to open log", "runID", run.ID, "logPath", logPath, "err", err)
-		fmt.Fprint(resp, "data: Error opening log\n\n")
-		flusher.Flush()
-		return
-	}
-	defer streamer.Close()
-
-	virtualSize, physSize, err := streamer.virtualFileSize()
-	if err != nil {
-		slog.Error("SSE: failed to stat log", "runID", run.ID, "logPath", logPath, "err", err)
-		fmt.Fprint(resp, "data: Error reading log\n\n")
-		flusher.Flush()
-		return
-	}
-
-	streamer.emitMetadata(virtualSize)
-
-	offsetStr := req.URL.Query().Get("offset")
-	remaining, err := streamer.seekToOffset(offsetStr, virtualSize, physSize)
-	if err != nil {
-		slog.Error("Failed to seek in log file", "err", err)
-		return
-	}
-
-	if err := streamer.emitInitialData(remaining); err != nil {
-		slog.Error("Failed to read log file", "err", err)
-		return
-	}
-
-	if run.Status != model.PhaseEnded {
-		slog.Debug("SSE: entering pollLoop", "runID", run.ID, "status", run.Status, "logPath", logPath, "initLastSize", streamer.lastSize)
-		streamer.pollLoop(ctx, run.ID, srv.eventBus, srv.db)
-		slog.Debug("SSE: pollLoop exited", "runID", run.ID)
-	} else {
-		slog.Debug("SSE: run already ended, emitting done immediately", "runID", run.ID, "logPath", logPath)
-		streamer.emitDone()
-	}
+	return &LogRawOutput{
+		ContentType: "text/plain; charset=utf-8",
+		Body:        body,
+	}, nil
 }
 
-func serveLogRange(w http.ResponseWriter, file *os.File, offset, maxBytes, fileSize int64) {
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		respondError(w, http.StatusInternalServerError, "Failed to seek in log file", err)
-		return
+// readRawLog concatenates the rotated-away segment (if any) and the current
+// segment so a single download contains the operator-visible byte stream.
+func readRawLog(logPath string) ([]byte, error) {
+	var body []byte
+	if prev, err := os.ReadFile(logPath + ".prev"); err == nil {
+		body = append(body, prev...)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
+	if cur, err := os.ReadFile(logPath); err == nil {
+		body = append(body, cur...)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	return body, nil
+}
 
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("X-File-Size", strconv.FormatInt(fileSize, 10))
-	w.Header().Set("X-Content-Offset", strconv.FormatInt(offset, 10))
+// LogStreamInput drives the SSE log endpoint. Huma performs path/query/header
+// validation against these tags so the handler only sees vetted values.
+type LogStreamInput struct {
+	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
+	RunID       string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
+	From        int64  `query:"from" doc:"Anchor line number; negative values count from end (default -1000)"`
+	ReplayLimit int64  `query:"replay_limit" minimum:"1" maximum:"50000" doc:"Cap on backfilled lines (default 5000)"`
+	LastEventID string `header:"Last-Event-ID" doc:"Native SSE resume cursor; takes precedence over the from query"`
+}
 
-	if maxBytes > 0 {
-		data, err := logutil.ReadWithLineBoundaries(file, maxBytes)
+func (srv *Server) registerLogSSE(api huma.API) {
+	sse.Register(api, huma.Operation{
+		OperationID: "streamLog",
+		Method:      http.MethodGet,
+		Path:        "/api/tasks/{taskName}/runs/{runId}/log/stream",
+		Summary:     "Stream a run's log lines as SSE",
+		Description: "Server-Sent Events stream of absolute-line-numbered log entries. Replays history starting at `from` (or `Last-Event-ID + 1`), then follows live output until the run terminates.",
+		Tags:        []string{"Logs"},
+	}, map[string]any{
+		"line":    LogLineSSEEvent{},
+		"rotated": LogRotatedEvent{},
+		"dropped": LogDroppedEvent{},
+		"done":    LogDoneEvent{},
+	}, func(ctx context.Context, input *LogStreamInput, send sse.Sender) {
+		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+		if !ok {
+			return
+		}
+		defer release()
+
+		if _, err := ulid.Parse(input.RunID); err != nil {
+			return
+		}
+		run, err := srv.db.GetRun(input.RunID)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "Failed to read log file", err)
+			slog.Error("Failed to get run", "run", input.RunID, "err", err)
+			return
+		}
+		if run.TaskName != input.TaskName {
 			return
 		}
 
-		if len(data) == 0 && offset >= fileSize {
-			w.WriteHeader(http.StatusNoContent)
-			return
+		logPath := logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt)
+
+		from := input.From
+		if from == 0 {
+			from = LogPageDefaultFrom
+		}
+		if resume, ok := parseResumeID(input.LastEventID); ok {
+			from = resume + 1
 		}
 
-		if _, err := w.Write(data); err != nil {
-			slog.Error("Failed to write log data", "err", err)
+		replay := input.ReplayLimit
+		if replay <= 0 {
+			replay = LogStreamReplayDefault
 		}
-	} else {
-		if _, err := io.Copy(w, file); err != nil {
-			slog.Error("Failed to copy log data", "err", err)
-		}
+
+		streamCtx, cancel := context.WithTimeout(ctx, LogStreamTimeout)
+		defer cancel()
+
+		streamer := newLogStreamer(send, logPath)
+		streamer.streamLoop(streamCtx, run.ID, srv.eventBus, srv.db, from, replay, run.Status.IsTerminal())
+	})
+}
+
+// parseResumeID extracts a non-negative line index from the SSE
+// `Last-Event-ID` header. Returns ok=false when the header is empty or
+// malformed.
+func parseResumeID(raw string) (int64, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
 	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
 }
