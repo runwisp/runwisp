@@ -113,7 +113,7 @@ ExecStart=/usr/local/bin/runwisp daemon \
   --host 127.0.0.1 \
   --port 9477
 Restart=on-failure
-RestartSec=2
+RestartSec=2s
 
 [Install]
 WantedBy=multi-user.target

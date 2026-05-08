@@ -48,10 +48,13 @@ restart — each replica's lifetime is one run.
 
 ## Exec
 
-`runwisp exec <task>` is a CLI alias for `runwisp trigger <task>`. The
-TOML schema and REST API both prefer **run** for the executed-instance
-noun; treat "exec" as the older verb form and "run" as the persistent
-record.
+`runwisp exec <task>` runs a task **in-process** from the CLI — it loads
+`runwisp.toml`, opens SQLite directly, and streams output to your
+terminal. It refuses if a daemon is already attached to the same data
+dir. Its sibling, `runwisp run-task <task>`, asks a running daemon to
+trigger the task via the REST API instead. The TOML schema and REST API
+both prefer **run** as the executed-instance noun; treat "exec" as the
+verb and "run" as the persistent record.
 
 ## Trigger vs schedule
 
