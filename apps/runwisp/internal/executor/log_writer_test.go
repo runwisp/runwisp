@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,6 +75,101 @@ func TestLogWriter_KillTaskOverflow(t *testing.T) {
 	require.NoError(t, w.Close())
 
 	assert.True(t, cancelled)
+	assert.True(t, w.Truncated())
+	assert.True(t, w.KilledByPolicy(),
+		"kill_task overflow must flag KilledByPolicy so the runtime records the run as failed, not stopped")
+}
+
+func TestLogWriter_DropNewDoesNotMarkKilledByPolicy(t *testing.T) {
+	opts := newTestOpts(t.TempDir())
+	opts.MaxSize = 100
+	opts.Overflow = "drop_new"
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	w.Write([]byte(strings.Repeat("x", 110) + "\n"))
+	require.NoError(t, w.Close())
+
+	assert.False(t, w.KilledByPolicy(),
+		"drop_new keeps the process alive — only kill_task should set KilledByPolicy")
+}
+
+// TestLogWriter_DiskPressure_DropNew_FiresCallback verifies the disk-pressure
+// path on a non-kill_task policy: log writes silently stop, the task keeps
+// running (cancelFunc is NOT called), and OnDiskPressure fires exactly once.
+func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
+	dir := t.TempDir()
+	opts := newTestOpts(dir)
+	opts.LogDir = dir
+	opts.Overflow = "drop_new"
+	opts.MinFreeDisk = math.MaxInt64 // any free space < this trips the threshold
+	opts.DiskCheckInterval = 1       // probe on every write past the first
+	cancelled := false
+	opts.CancelFunc = func() { cancelled = true }
+	hits := 0
+	var seenFree, seenMin int64
+	var seenKilled bool
+	opts.OnDiskPressure = func(free, min int64, killedTask bool) {
+		hits++
+		seenFree = free
+		seenMin = min
+		seenKilled = killedTask
+	}
+
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	// First write does not trip (currentOffset==0, gap not > interval).
+	_, err = w.Write([]byte("first line\n"))
+	require.NoError(t, err)
+	// Second write must probe and trip.
+	_, err = w.Write([]byte("second line — should be dropped\n"))
+	require.NoError(t, err)
+	// Third write also drops, must NOT re-fire callback.
+	_, err = w.Write([]byte("third line\n"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	assert.False(t, cancelled, "drop_new policy must not kill the task on disk pressure")
+	assert.True(t, w.Truncated(), "writer must mark the run truncated")
+	assert.Equal(t, 1, hits, "OnDiskPressure must fire exactly once per writer")
+	assert.False(t, seenKilled, "killedTask=false for drop_new")
+	assert.Equal(t, int64(math.MaxInt64), seenMin)
+	assert.GreaterOrEqual(t, seenFree, int64(0))
+
+	data, err := os.ReadFile(opts.LogPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "should be dropped")
+}
+
+// TestLogWriter_DiskPressure_KillTask_CancelsContext verifies that disk
+// pressure on a kill_task task actually kills the task (calls cancelFunc),
+// reports killedTask=true to OnDiskPressure, and stops further writes.
+func TestLogWriter_DiskPressure_KillTask_CancelsContext(t *testing.T) {
+	dir := t.TempDir()
+	opts := newTestOpts(dir)
+	opts.LogDir = dir
+	opts.Overflow = "kill_task"
+	opts.MinFreeDisk = math.MaxInt64
+	opts.DiskCheckInterval = 1
+	cancelled := false
+	opts.CancelFunc = func() { cancelled = true }
+	var seenKilled bool
+	opts.OnDiskPressure = func(free, min int64, killedTask bool) {
+		seenKilled = killedTask
+	}
+
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	_, err = w.Write([]byte("first\n"))
+	require.NoError(t, err)
+	_, err = w.Write([]byte("trigger\n"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	assert.True(t, cancelled, "kill_task must cancel the task context on disk pressure")
+	assert.True(t, seenKilled, "OnDiskPressure must report killedTask=true")
 	assert.True(t, w.Truncated())
 }
 

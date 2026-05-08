@@ -86,18 +86,21 @@ func GeneratePassword() (string, error) {
 // ResolvePassword reads or generates the daemon password.
 // Priority: RUNWISP_PASSWORD env > data/password file > generate new.
 // Returns isNew=true only when a fresh password was generated.
+//
+// When the env var is set, the value is used in-memory only — it is NOT
+// written to data/password. Operators using Docker secrets,
+// systemd LoadCredential, or sealed-secrets do so specifically to avoid a
+// plaintext copy on disk; persisting the env var would silently defeat
+// that. The TUI and CLI must read RUNWISP_PASSWORD themselves in those
+// shells; falling back to data/password from a TUI session whose env var
+// was set in the daemon's shell would be misleading anyway.
 func ResolvePassword(dataDir string) (password string, isNew bool, err error) {
 	pwPath := filepath.Join(dataDir, "password")
 
-	// Env var takes priority and is persisted for reconnect.
 	if envPw := os.Getenv("RUNWISP_PASSWORD"); envPw != "" {
-		if writeErr := writeSecretFile(pwPath, envPw); writeErr != nil {
-			return "", false, writeErr
-		}
 		return envPw, false, nil
 	}
 
-	// Read existing or generate new via the shared helper.
 	existing, _ := readSecretFile(pwPath)
 	if existing != "" {
 		return existing, false, nil

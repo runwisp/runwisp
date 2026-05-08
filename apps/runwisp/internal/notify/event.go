@@ -36,6 +36,7 @@ const (
 	KindRunTimeout           Kind = "run.timeout"
 	KindRunStopped           Kind = "run.stopped"
 	KindRunCrashed           Kind = "run.crashed"
+	KindLogDiskPressure      Kind = "log.disk_pressure"
 	KindNotifyDeliveryFailed Kind = "notify.delivery_failed"
 )
 
@@ -47,6 +48,7 @@ var AllKinds = []Kind{
 	KindRunTimeout,
 	KindRunStopped,
 	KindRunCrashed,
+	KindLogDiskPressure,
 	KindNotifyDeliveryFailed,
 }
 
@@ -65,6 +67,8 @@ func (k Kind) Title(ev *Event) string {
 		return fmt.Sprintf("%s stopped", ev.TaskName)
 	case KindRunCrashed:
 		return fmt.Sprintf("%s crashed", ev.TaskName)
+	case KindLogDiskPressure:
+		return fmt.Sprintf("%s log output paused: low disk", ev.TaskName)
 	case KindNotifyDeliveryFailed:
 		channel := ""
 		if ev.Extra != nil {
@@ -91,6 +95,7 @@ func (k Kind) FingerprintToken() string {
 		KindRunTimeout,
 		KindRunStopped,
 		KindRunCrashed,
+		KindLogDiskPressure,
 		KindNotifyDeliveryFailed:
 		return string(k)
 	default:

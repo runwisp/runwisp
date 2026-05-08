@@ -29,6 +29,7 @@ type Task struct {
 	Description string   `toml:"description,omitempty" json:"description,omitempty"`
 
 	Cron       string          `toml:"cron,omitempty"        json:"cron,omitempty"`
+	Timezone   string          `toml:"timezone,omitempty"    json:"timezone,omitempty" doc:"IANA timezone for cron evaluation; falls back to scheduler.timezone (default UTC)"`
 	APITrigger bool            `toml:"api_trigger,omitempty" json:"api_trigger"`
 	CatchUp    MissedRunPolicy `toml:"catch_up,omitempty"    json:"catch_up,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
 
@@ -39,11 +40,11 @@ type Task struct {
 
 	Instances      int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running replicas"`
 	RestartDelay   time.Duration `toml:"-"                        json:"restart_delay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
-	RestartBackoff string        `toml:"restart_backoff,omitempty" json:"restart_backoff,omitempty" enum:"none,exponential" doc:"Backoff curve between consecutive restarts"`
+	RestartBackoff string        `toml:"restart_backoff,omitempty" json:"restart_backoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
 
 	RetryAttempts int           `toml:"retry_attempts,omitempty" json:"retry_attempts,omitempty"`
 	RetryDelay    time.Duration `toml:"-"                        json:"retry_delay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
-	RetryBackoff  string        `toml:"retry_backoff,omitempty"  json:"retry_backoff,omitempty"`
+	RetryBackoff  string        `toml:"retry_backoff,omitempty"  json:"retry_backoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive retries"`
 
 	LogMaxSize int64  `toml:"-"                     json:"log_max_size,omitempty" doc:"Per-task log size cap, in bytes"`
 	LogOnFull  string `toml:"log_on_full,omitempty" json:"log_on_full,omitempty" enum:"drop_new,drop_old,kill_task" doc:"What to do when log output exceeds log_max_size"`
@@ -84,6 +85,18 @@ const (
 	ReasonStopped EndReason = "stopped"
 	ReasonTimeout EndReason = "timeout"
 	ReasonCrashed EndReason = "crashed"
+	// ReasonSkipped marks runs that the concurrency policy rejected before
+	// they ever executed (PolicySkip). Distinct from ReasonFailed so chronic
+	// overlap on a `* * * * *` health probe doesn't pose as a real failure
+	// to retries, notifications, or dashboards. Exit code is conventionally
+	// recorded as -1.
+	ReasonSkipped EndReason = "skipped"
+	// ReasonLogOverflow marks runs that log_on_full = "kill_task" cancelled
+	// because output exceeded log_max_size. Treated as a failure for retry,
+	// notification, and UI purposes — the run failed to stay inside its log
+	// budget — but recorded as a distinct reason so operators can see the
+	// specific cause without inspecting logs.
+	ReasonLogOverflow EndReason = "log_overflow"
 )
 
 // IsTerminal reports whether the phase represents a completed run.
@@ -129,11 +142,12 @@ const (
 // IsService reports whether the task is an always-on service.
 func (k TaskKind) IsService() bool { return k == KindService }
 
-// RestartBackoffNone applies a constant delay between restarts.
-const RestartBackoffNone = "none"
-
-// RestartBackoffExponential doubles the delay between consecutive restarts up to a cap.
-const RestartBackoffExponential = "exponential"
+// Backoff curves shared by retry_backoff (tasks) and restart_backoff (services).
+const (
+	BackoffConstant    = "constant"
+	BackoffLinear      = "linear"
+	BackoffExponential = "exponential"
+)
 
 // MissedRunPolicy controls what happens when cron ticks are missed (e.g. daemon downtime).
 type MissedRunPolicy string
@@ -157,7 +171,7 @@ type Run struct {
 	ExternalExecutionID *string     `json:"external_execution_id,omitempty"`
 	TaskName            string      `json:"task_name"`
 	Status              RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
-	EndReason           *EndReason  `json:"end_reason,omitempty" enum:"success,failed,stopped,timeout,crashed" doc:"Why the run ended (set when status=ended)"`
+	EndReason           *EndReason  `json:"end_reason,omitempty" enum:"success,failed,stopped,timeout,crashed,skipped,log_overflow" doc:"Why the run ended (set when status=ended)"`
 	ExitCode            int         `json:"exit_code"`
 	LogPath             string      `json:"-"`
 	StartAt             *time.Time  `json:"start_at,omitempty"`
@@ -206,9 +220,19 @@ func (r *Run) End(reason EndReason, exitCode int, endAt time.Time) {
 	r.EndAt = &endAt
 }
 
-// IsRetryable reports whether a run ended with a non-success reason.
+// IsRetryable reports whether a run ended with a reason that warrants
+// re-running it. Skipped runs are excluded — the policy already decided
+// the firing was redundant; another retry just races the original again.
 func (r *Run) IsRetryable() bool {
-	return r.Status == PhaseEnded && r.EndReason != nil && *r.EndReason != ReasonSuccess
+	if r.Status != PhaseEnded || r.EndReason == nil {
+		return false
+	}
+	switch *r.EndReason {
+	case ReasonSuccess, ReasonSkipped:
+		return false
+	default:
+		return true
+	}
 }
 
 // EndReasonPtr returns a pointer to the given EndReason value.

@@ -1,0 +1,174 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: "[[notification_route]]"
+description: Routing rules — match events on kind and task glob, fan them out to one or more notifiers.
+---
+
+A notification route says: "when an event matches this filter, deliver
+it to these notifiers." Routes are TOML's array-of-tables syntax, so
+the doubled brackets are intentional — every block is one rule.
+
+Routes are evaluated for each event the daemon emits. An event that
+matches multiple routes is delivered to the **union** of their notifier
+lists, with duplicates removed. Order of declaration doesn't change the
+delivery set, only the order events are walked through internally.
+
+## Shape
+
+```toml
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notify = ["slack-ops", "tg-oncall", "inapp"]
+```
+
+Equivalent in expanded form:
+
+```toml
+[[notification_route]]
+notify = ["slack-ops", "tg-oncall", "inapp"]
+
+[notification_route.match]
+kind = ["run.failed", "run.timeout", "run.crashed"]
+task = "backup-*"
+```
+
+Use whichever style is clearer for your file.
+
+## Fields
+
+### `match`
+
+| Field            | Type     | Required | What it does                                                                 |
+| ---------------- | -------- | -------- | ---------------------------------------------------------------------------- |
+| `match.kind`     | string[] | yes      | Event kinds that this route fires on. Empty list matches nothing.            |
+| `match.task`     | string   | no       | Shell-style glob (`path.Match`) on the task name. Omit to match every task.  |
+| `match.severity` | enum     | no       | Threshold: `"info"`, `"warn"`, `"error"`. `warn` matches `warn` and `error`. |
+
+Valid `kind` values:
+
+| Kind                     | Fires when                                                                  |
+| ------------------------ | --------------------------------------------------------------------------- |
+| `run.started`            | A run transitions to `running` (opt-in only — not on by default).           |
+| `run.succeeded`          | A run ends with `success`.                                                  |
+| `run.failed`             | A run ends with non-zero exit (`failed`).                                   |
+| `run.timeout`            | A run is killed for exceeding `timeout`.                                    |
+| `run.stopped`            | A run is cancelled (manual stop, or `on_overlap = "terminate"`).            |
+| `run.crashed`            | A run is reconciled as `crashed` after the daemon was killed mid-flight.    |
+| `notify.delivery_failed` | A notifier exhausted its retries trying to deliver. Synthetic, in-app only. |
+
+The `task` glob uses Go's `path.Match` semantics:
+
+- `*` matches any sequence except `/`
+- `?` matches any single character except `/`
+- `[abc]` matches one of the listed characters
+- Globs are **case-sensitive** — `Backup-*` won't match `backup-db`
+- Brace expansion (`{a,b}`) is **not** supported
+
+### `notify`
+
+| Field    | Type     | Required | What it does                                                         |
+| -------- | -------- | -------- | -------------------------------------------------------------------- |
+| `notify` | string[] | yes      | List of notifier IDs to deliver to. Must contain at least one entry. |
+
+Each entry is one of three forms:
+
+- A `[[notifier]] id` declared elsewhere in the file (e.g. `"slack-ops"`).
+- The literal `"inapp"` — the in-app notifications surface, always
+  available without a `[[notifier]]` block.
+- An **inline target override** of the form `"<id>:<target>"` — reuse
+  a parent notifier's credentials but post to a different
+  channel/chat. `"slack-ops:#deploys"` desugars to a synthetic notifier
+  cloned from `slack-ops` with the channel set to `#deploys`. For
+  Telegram the override is the chat id (`"tg-oncall:-1009998887"`).
+  Notifier IDs cannot themselves contain `:` because the colon is
+  reserved for this separator. See
+  [per-task sugar](/notifications/per-task/#inline-target-overrides)
+  for the worked example.
+
+The router **deduplicates** notifier IDs across all matching routes. If
+two routes both match an event and both list `slack-ops`, Slack
+receives the event once. This makes overlapping rules safe.
+
+## Per-task sugar
+
+Most projects don't need explicit `[[notification_route]]` blocks. The
+shorthand on each task and service —
+
+```toml
+[tasks.publish-feed]
+notify_on_failure = ["slack-ops"]
+notify_on_success = ["slack-ops"]
+```
+
+— desugars to synthetic routes at config load. See
+[Per-task notification sugar](/notifications/per-task/) for the exact
+expansion. You can mix sugar and explicit routes; the router walks
+every match and produces one delivery per unique notifier.
+
+## Delivery failures: the cycle break
+
+When an outbound notifier exhausts its retry budget, the daemon
+synthesises a `notify.delivery_failed` event. To prevent a Slack outage
+from triggering yet more attempts to notify Slack, this event is
+delivered **only to the in-app surface** — never back through the main
+router. The router itself still treats `notify.delivery_failed` as a
+valid `match.kind` so you can route delivery failures to a different
+channel:
+
+```toml
+# If Slack is down, page on-call via Telegram
+[[notification_route]]
+match  = { kind = ["notify.delivery_failed"] }
+notify = ["tg-oncall"]
+```
+
+This route works because the explicit user-defined path runs through
+the normal router; the implicit "always also deliver to in-app" sink is
+the cycle-safe fallback that fires regardless.
+
+## Worked example
+
+```toml
+# Every failed/timeout/crashed run lands in the team Slack
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["slack-ops"]
+
+# Backups specifically also page the on-call channel
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notify = ["tg-oncall"]
+
+# Send delivery failures only to the bell — they're often Slack's own outage
+[[notification_route]]
+match  = { kind = ["notify.delivery_failed"] }
+notify = ["inapp"]
+```
+
+A failure of `backup-postgres` triggers two outbound deliveries (one
+Slack, one Telegram) and one in-app row (added implicitly because
+`default_notifiers` includes `"inapp"`). A failure of `metrics-export`
+triggers only the Slack delivery — the in-app catch-all from
+`default_notifiers` lights up the bell on top of that.
+
+## What the loader rejects
+
+- A route that references a notifier `id` not declared in `[[notifier]]` (and isn't `"inapp"`).
+- An empty `notify` list.
+- A `match.kind` value that isn't one of the seven valid kinds above.
+- A `match.task` glob that `path.Match` can't parse (e.g., unmatched `[`).
+- A `match` block with no `kind` field at all.
+- An inline override token (`"<id>:<target>"`) whose parent id isn't
+  declared, or whose target is empty, or — for Slack — doesn't start
+  with `#` or `@`. Overriding `inapp` is also rejected (it has no
+  target).
+- A `[[notifier]] id` containing `:` — the colon is reserved as the
+  override separator.
+
+## Where to next
+
+- [Providers overview](/notifications/providers/overview/) — declaring the channels routes refer to.
+- [Per-task notification sugar](/notifications/per-task/) — the shortcut for the common case.
+- [`[notify]` reference](/notifications/global/) — global knobs (coalescing, queue size).
+- [Notifications model](/notifications/model/) — the conceptual overview.

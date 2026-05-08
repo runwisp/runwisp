@@ -676,7 +676,7 @@ export interface components {
              * @description Why the run ended (set when status=ended)
              * @enum {string}
              */
-            end_reason?: "success" | "failed" | "stopped" | "timeout" | "crashed";
+            end_reason?: "success" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow";
             /** Format: int64 */
             exit_code: number;
             external_execution_id?: string;
@@ -890,7 +890,7 @@ export interface components {
              * @description Backoff curve between consecutive restarts
              * @enum {string}
              */
-            restart_backoff?: "none" | "exponential";
+            restart_backoff?: "constant" | "linear" | "exponential";
             /**
              * Format: int64
              * @description Base delay before each restart, in nanoseconds
@@ -898,7 +898,11 @@ export interface components {
             restart_delay?: number;
             /** Format: int64 */
             retry_attempts?: number;
-            retry_backoff?: string;
+            /**
+             * @description Backoff curve between consecutive retries
+             * @enum {string}
+             */
+            retry_backoff?: "constant" | "linear" | "exponential";
             /**
              * Format: int64
              * @description Base delay before each retry, in nanoseconds
@@ -909,6 +913,8 @@ export interface components {
              * @description Per-run timeout in nanoseconds
              */
             timeout?: number;
+            /** @description IANA timezone for cron evaluation; falls back to scheduler.timezone (default UTC) */
+            timezone?: string;
         };
     };
     responses: never;

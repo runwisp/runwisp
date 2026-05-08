@@ -17,7 +17,6 @@ import (
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/version"
-	"github.com/spf13/cobra"
 	"log/slog"
 )
 
@@ -29,20 +28,9 @@ const (
 	modeCloud
 )
 
+// noTUI controls whether runDaemon attaches the interactive TUI.
+// `runwisp daemon` flips it to true; `runwisp cloud` exposes it as a flag.
 var noTUI bool
-
-var runCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Start the daemon (default)",
-	Long:  `Starts the scheduler, HTTP API, and web UI. Use --no-tui for headless/daemon mode.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runDaemon(modeStandalone)
-	},
-}
-
-func init() {
-	runCmd.Flags().BoolVar(&noTUI, "no-tui", false, "run in headless daemon mode (no interactive TUI)")
-}
 
 // demoTask is injected when no configuration file exists and cloud mode is disabled,
 // so that `./runwisp` works out of the box with zero setup.

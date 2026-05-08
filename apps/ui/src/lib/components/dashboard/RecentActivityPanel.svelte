@@ -5,7 +5,7 @@
     import { ArrowRight, History } from "@lucide/svelte";
     import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
     import { getRunStatusConfig, runDisplayStatus } from "@runwisp/ui";
-    import type { Run } from "@runwisp/common";
+    import { isFailureEndReason, type Run } from "@runwisp/common";
     import {
         formatRunDurationLabel,
         formatRunStartedLabel,
@@ -88,7 +88,7 @@
                             {formatRunStartedLabel(run)} &middot;
                             {formatRunDurationLabel(run)}
                             &middot; {formatTriggeredByLabel(run.triggered_by)}
-                            {#if run.end_reason === "failed"}
+                            {#if isFailureEndReason(run.end_reason)}
                                 <span class="text-danger-600">· Exit {run.exit_code}</span>
                             {/if}
                         </p>

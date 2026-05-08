@@ -5,7 +5,10 @@ package runtime
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/model"
@@ -21,6 +24,7 @@ type ScheduleResult struct {
 // Scheduler wraps robfig/cron to trigger tasks on a schedule.
 type Scheduler struct {
 	cron        *cron.Cron
+	location    *time.Location
 	taskManager TaskRunner
 	tasks       map[string]*model.Task
 	entryIDs    map[string]cron.EntryID
@@ -28,9 +32,16 @@ type Scheduler struct {
 	started     bool
 }
 
-func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task) *Scheduler {
+// NewScheduler creates a scheduler. location controls how task cron expressions
+// are interpreted; nil means UTC, which is the project default. Per-task
+// timezones are layered on via a CRON_TZ= prefix when scheduling.
+func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location *time.Location) *Scheduler {
+	if location == nil {
+		location = time.UTC
+	}
 	return &Scheduler{
-		cron:        cron.New(),
+		cron:        cron.New(cron.WithLocation(location)),
+		location:    location,
 		taskManager: taskManager,
 		tasks:       tasks,
 		entryIDs:    make(map[string]cron.EntryID),
@@ -54,6 +65,9 @@ func (scheduler *Scheduler) Start() (ScheduleResult, error) {
 			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("failed to schedule %s: %v", task.Name, err))
 			continue
+		}
+		if w := dstAmbiguityWarning(task, scheduler.location); w != "" {
+			result.Warnings = append(result.Warnings, w)
 		}
 		result.Scheduled++
 	}
@@ -79,7 +93,13 @@ func (scheduler *Scheduler) Stop() {
 
 func (scheduler *Scheduler) addTask(task *model.Task) error {
 	taskName := task.Name
-	entryID, err := scheduler.cron.AddFunc(task.Cron, func() {
+	spec := task.Cron
+	if task.Timezone != "" {
+		// CRON_TZ= prefix is honored by robfig/cron's standard parser and
+		// overrides the scheduler's default location for this entry.
+		spec = "CRON_TZ=" + task.Timezone + " " + task.Cron
+	}
+	entryID, err := scheduler.cron.AddFunc(spec, func() {
 		slog.Debug("Cron triggering task", "name", taskName)
 		if _, err := scheduler.taskManager.TriggerRun(taskName, model.TriggeredByCron); err != nil {
 			slog.Error("Failed to trigger task", "name", taskName, "err", err)
@@ -89,6 +109,96 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 		scheduler.entryIDs[taskName] = entryID
 	}
 	return err
+}
+
+// dstAmbiguityWarning returns a non-empty warning when a task's cron fires
+// at a fixed daily clock-time that overlaps the DST transition hour in the
+// task's effective timezone. Heuristic — false positives are acceptable
+// (operators can override the timezone or move the hour); false negatives
+// for exotic expressions (lists, ranges) are tolerated to keep this cheap.
+func dstAmbiguityWarning(task *model.Task, schedulerLoc *time.Location) string {
+	hour, ok := fixedDailyHour(task.Cron)
+	if !ok {
+		return ""
+	}
+	// Hours 1, 2, 3 cover the standard fall-back / spring-forward window in
+	// every IANA zone the author is aware of. Operators with truly exotic
+	// transition hours can ignore the warning.
+	if hour < 1 || hour > 3 {
+		return ""
+	}
+	loc := schedulerLoc
+	if task.Timezone != "" {
+		// Best-effort: if it doesn't parse, the addTask call would have
+		// already errored — treat as no warning.
+		if l, err := time.LoadLocation(task.Timezone); err == nil {
+			loc = l
+		}
+	}
+	if loc == nil || !zoneHasDST(loc) {
+		return ""
+	}
+	return fmt.Sprintf(
+		"task %q schedule %q fires at hour %02d in %s, which has DST transitions; "+
+			"on fall-back the run fires twice and on spring-forward it is skipped — "+
+			"set timezone = \"UTC\" or use @every 24h to avoid",
+		task.Name, task.Cron, hour, loc.String(),
+	)
+}
+
+// fixedDailyHour returns (h, true) when the standard 5-field cron expression
+// fires at exactly one clock-hour every day (e.g. "0 2 * * *"). Returns
+// (_, false) for `@every`, named aliases, ranges, lists, and step values —
+// all cases where reasoning about a single transition hour is unreliable.
+func fixedDailyHour(spec string) (int, bool) {
+	spec = strings.TrimSpace(spec)
+	if strings.HasPrefix(spec, "@") {
+		return 0, false
+	}
+	fields := strings.Fields(spec)
+	if len(fields) != 5 {
+		return 0, false
+	}
+	if !isSimpleNumeric(fields[0]) {
+		return 0, false
+	}
+	hour, err := strconv.Atoi(fields[1])
+	if err != nil || hour < 0 || hour > 23 {
+		return 0, false
+	}
+	return hour, true
+}
+
+func isSimpleNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// zoneHasDST reports whether loc has a UTC-offset transition somewhere in the
+// next twelve months. Cheap probe — twelve month-end samples is enough to
+// catch every IANA zone with seasonal DST, and the result is stable for the
+// lifetime of the daemon.
+func zoneHasDST(loc *time.Location) bool {
+	if loc == nil || loc == time.UTC {
+		return false
+	}
+	now := time.Now().In(loc)
+	_, baseOffset := now.Zone()
+	for month := 1; month <= 12; month++ {
+		t := now.AddDate(0, month, 0)
+		_, off := t.Zone()
+		if off != baseOffset {
+			return true
+		}
+	}
+	return false
 }
 
 // GetNextRun returns the next scheduled time for the task, if scheduled.

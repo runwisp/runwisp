@@ -1,0 +1,109 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Install
+description: Install RunWisp on Linux, macOS, or WSL with the one-liner installer, bunx/npx, or a manual tarball download.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+The RunWisp daemon ships as a single static Go binary. There is nothing
+to compile, no language runtime to install, and no database to provision.
+Pick whichever delivery method fits your workflow.
+
+:::note[Supported platforms]
+Linux, macOS, and WSL — both `x86_64` and `arm64`. Native Windows is not
+supported and is unlikely to be added; if you are on Windows, use WSL.
+:::
+
+## Install
+
+<Tabs syncKey="install-method">
+    <TabItem label="Install script" icon="seti:shell">
+        The installer fetches the right binary for your platform, verifies
+        its checksum, and puts `runwisp` on your `PATH`.
+
+        ```bash
+        curl -fsSL https://get.runwisp.com | sh
+        ```
+    </TabItem>
+    <TabItem label="Bun / npm" icon="seti:javascript">
+        If you already have Bun or Node, you can launch the prebuilt
+        binary without a global install. The npm package is a thin shim
+        that downloads the matching native binary — RunWisp itself is not
+        a Node application.
+
+        <Tabs syncKey="npm">
+        <TabItem label="Bun">
+        ```bash
+        bunx runwisp
+        ```
+        </TabItem>
+        <TabItem label="npm">
+        ```bash
+        npx runwisp
+        ```
+        </TabItem>
+        </Tabs>
+
+        This is also the recommended path for CI runners and ephemeral
+        environments where you do not want to keep a binary on disk.
+
+        Another option is installing it globally as a binary:
+
+        <Tabs syncKey="npm">
+        <TabItem label="Bun">
+        ```bash
+        bun add -g runwisp
+        ```
+        </TabItem>
+        <TabItem label="npm">
+        ```bash
+        npm install -g runwisp
+        ```
+        </TabItem>
+        </Tabs>
+
+    </TabItem>
+    <TabItem label="tar.gz" icon="download">
+        Grab a tarball from the [GitHub releases
+        page](https://github.com/runwisp/runwisp/releases). Assets are
+        named `runwisp-{linux,darwin}-{x64,arm64}.tar.gz`, with a matching
+        `checksums-sha256.txt` published alongside them. Verify the
+        checksum, then move the binary somewhere on your `PATH`.
+
+        ```bash
+        tar -xzf runwisp-linux-x64.tar.gz
+        sudo mv runwisp /usr/local/bin/runwisp
+        ```
+    </TabItem>
+    <TabItem label="From source" icon="seti:go">
+        Building requires Go 1.25+ and Bun. Clone the repo, install
+        dependencies, and run the workspace build.
+
+        ```bash
+        git clone https://github.com/runwisp/runwisp
+        cd runwisp
+        bun install
+        bun run build
+        ```
+
+        The compiled binary lands at `apps/runwisp/runwisp`.
+    </TabItem>
+
+</Tabs>
+
+## Verify the install
+
+```bash
+runwisp --version   # or: bunx runwisp --version
+```
+
+You should see the release version. If you get "command not found",
+make sure your installer's target directory is on `PATH` and reopen
+your shell.
+
+## Next step
+
+Continue to [Your first task](/getting-started/first-task/) to write a
+`runwisp.toml`, start the daemon, and watch a run stream live.

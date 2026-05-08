@@ -1,0 +1,196 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Data directory
+description: A complete map of what RunWisp writes under its data directory — SQLite database, log files, password, PID — with permissions, backup guidance, and what is intentionally not stored there.
+---
+
+The data directory is everything RunWisp persists. SQLite database,
+captured task output, the daemon's password, the PID file. It's set by
+the `--data` flag (default `data/`, relative to the working directory at
+startup).
+
+There is **no `RUNWISP_DATA_DIR` environment variable.** The location is
+controlled exclusively by `--data`. If the directory doesn't exist,
+the daemon creates it (and any missing parents) with `0700` permissions
+on first boot. If creation fails, the daemon refuses to start.
+
+## What the daemon writes
+
+```
+data/
+├── runwisp.db          # SQLite database (run history, config rows)
+├── runwisp.db-shm      # SQLite WAL shared-memory file
+├── runwisp.db-wal      # SQLite WAL log
+├── password            # 22-char base62 password, plaintext, 0600
+├── daemon.pid          # current PID, plaintext, 0600
+├── daemon.log          # only when self-spawned via the default TUI path
+└── logs/
+    └── <task-name>/
+        ├── 20260507_143022_a1b2.log
+        ├── 20260507_143022_a1b2.log.idx
+        ├── 20260507_143022_a1b2.log.tidx
+        └── 20260507_143022_a1b2.log.meta
+```
+
+| Path                                             | Format                | Perms | Created                                                                 |
+| ------------------------------------------------ | --------------------- | ----- | ----------------------------------------------------------------------- |
+| `runwisp.db`                                     | SQLite v3 + WAL       | 0644  | First boot.                                                             |
+| `runwisp.db-shm`, `-wal`                         | SQLite WAL sidecars   | 0644  | First write to the database.                                            |
+| `password`                                       | plaintext + newline   | 0600  | First boot if `RUNWISP_PASSWORD` unset; rewritten when env var changes. |
+| `daemon.pid`                                     | decimal PID + newline | 0600  | Daemon startup; removed on graceful shutdown.                           |
+| `daemon.log`                                     | plaintext (stderr)    | 0600  | Only when `runwisp` (no args) self-spawns a background daemon.          |
+| `logs/<task>/`                                   | directory tree        | 0700  | First run of that task.                                                 |
+| `*.log`, `*.log.idx`, `*.log.tidx`, `*.log.meta` | (see below)           | 0644  | Per-run, on each task firing.                                           |
+
+The daemon does **not** rely on the process umask — every file and
+directory creation passes an explicit mode. Inheriting a permissive
+umask from the parent shell won't loosen these.
+
+## Per-task log layout
+
+Each run writes one `.log` file plus three sidecars under
+`logs/<sanitized-task-name>/`:
+
+| File         | Format                                                                            | Used for                                              |
+| ------------ | --------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `*.log`      | UTF-8 text, stream-prefixed                                                       | The actual captured output.                           |
+| `*.log.idx`  | Binary: 8-byte little-endian uint64 offsets, one every 1024 lines                 | Fast `seek-by-line` for scrubbing huge logs.          |
+| `*.log.tidx` | Binary: 12-byte records (`uint32` line + `int64` ms) every 1024 lines or 1 second | Fast time-range queries in the Web UI.                |
+| `*.log.meta` | JSON                                                                              | Rotation bookkeeping when `log_on_full = "drop_old"`. |
+
+The naming convention is:
+
+```
+{YYYYMMDD}_{HHMMSS}_{run-id-suffix}.log
+```
+
+— `run-id-suffix` is the last four characters of the run's ULID. Sorted
+alphabetically, files are also sorted chronologically.
+
+Lines inside the `.log` file carry a stream prefix:
+
+| Prefix      | Stream                                                                |
+| ----------- | --------------------------------------------------------------------- |
+| _(none)_    | stdout                                                                |
+| `[ERR] `    | stderr                                                                |
+| `[SYSTEM] ` | system messages from the daemon (e.g., disk-pressure log-stop notice) |
+
+When a run rotates because it hit `log_max_size` with `drop_old`, the
+old file becomes `*.log.prev` (with `*.log.idx.prev` and
+`*.log.tidx.prev` companions) and `*.log.meta` records the cumulative
+rotated line / byte counts so the Web UI presents a continuous run-line
+numbering.
+
+## Secrets that aren't files
+
+A few things you might expect to find in the data dir live in SQLite
+instead, in the `config_entries` key-value table:
+
+| Row key         | What it is                                                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `jwt_secret`    | 32-byte HMAC key for [JWT signing](/operations/auth/#the-session-token). Generated on first boot.                            |
+| `password_hash` | Hash of `RUNWISP_PASSWORD` (only if it's currently set via env). Used to detect a deliberate password change → JWT rotation. |
+| `fingerprint`   | The daemon's instance fingerprint. Computed from machine-id + cwd, then cached.                                              |
+
+Treat `runwisp.db` itself as sensitive: if it leaks, so does the
+session-signing key.
+
+## What's _not_ in the data directory
+
+- **`runwisp.toml`** — the user's config lives wherever `--config`
+  points (default: `runwisp.toml` in the working directory). The
+  separation is deliberate: edit the config in your editor, version it
+  in git, deploy it via your usual sync mechanism.
+- **TLS certificates and keys** — RunWisp serves plain HTTP on
+  `127.0.0.1` and expects a reverse proxy to terminate TLS. Cert
+  storage is your proxy's problem.
+- **Notification templates referenced by `template_path`** — those live
+  wherever you put them; the daemon reads from the absolute path you
+  configured.
+
+## Backups
+
+A consistent snapshot of a running daemon needs **all three** SQLite
+files together. Copy them at the same moment:
+
+```bash
+cp -a data/runwisp.db{,-shm,-wal} /backups/runwisp-$(date +%F)/
+cp -a data/logs                  /backups/runwisp-$(date +%F)/logs/
+```
+
+If you only copy `runwisp.db` you may end up with a stale view —
+recent writes still in the WAL won't be there. The official
+[SQLite docs on backups][sqlite-backup] cover this in detail.
+
+[sqlite-backup]: https://www.sqlite.org/backup.html
+
+A few things to know:
+
+- The daemon is happy to keep writing while you copy. SQLite WAL mode
+  permits concurrent readers.
+- For atomicity, prefer the SQLite `.backup` API or `sqlite3 .dump`
+  over `cp` if your filesystem doesn't snapshot atomically.
+- Logs are append-only (until rotation) — copying them while a task is
+  running is safe but you may capture a half-line at the tail.
+
+## Things to never commit to git
+
+- `data/password` — plaintext credential.
+- `data/runwisp.db*` — contains the JWT secret and the password hash.
+- `data/daemon.pid`, `data/daemon.log` — process state, not source.
+
+If you keep the data dir alongside your config in a repo, add a
+`.gitignore`:
+
+```text
+/data/
+```
+
+## First-boot bootstrap
+
+On a fresh data directory, the daemon walks through this in order:
+
+1. **Ensure the directory exists.** `os.MkdirAll(--data, 0700)`.
+2. **Open the database.** Creates `runwisp.db`, runs the schema, sets
+   `journal_mode = WAL` and `busy_timeout = 5000`.
+3. **Resolve the fingerprint.** `RUNWISP_FINGERPRINT` env → DB row →
+   compute from machine-id + cwd, then store.
+4. **Resolve the password.** `RUNWISP_PASSWORD` env → `data/password`
+   file → generate fresh + write.
+5. **Resolve the JWT secret.** `config_entries.jwt_secret` → generate
+   fresh + store. Rotate if the env-supplied password changed since last
+   boot.
+6. **Reconcile last shutdown.** Any rows still marked `running` are
+   marked `crashed` with exit code `-2`. (See [crash safety][crash].)
+7. **Write `daemon.pid`.** With the current PID, `0600`.
+8. **Bind the HTTP listener** on `--host:--port`.
+
+[crash]: /concepts/retries/
+
+If any step fails, the daemon exits 1 before opening the port — you
+won't see a half-running daemon stuck somewhere in step 6.
+
+## Crash safety
+
+Killing the daemon (SIGKILL, power loss, OOM) won't corrupt the
+database — SQLite WAL mode is the durability story. On restart, the
+reconciliation step (above) marks any in-flight runs as `crashed` with
+exit code `-2`. They are **not resumed** — that's deliberate, see
+[How scheduling works][boot-semantics] for why "auto-resume" would be
+unsafe.
+
+[boot-semantics]: /concepts/scheduling/#boot-semantics-in-flight-runs-are-marked-crashed
+
+There are no temp files, lock files, or sockets that need cleaning up.
+The only cleanup is the stale `daemon.pid` after a hard crash; the next
+daemon overwrites it on startup.
+
+## Where to next
+
+- [Operations: auth (CHAP + JWT)](/operations/auth/) — the password
+  and JWT secret in detail.
+- [Operations: upgrading](/operations/upgrading/) — what stays, what
+  changes between versions.
+- [Concepts: logs & retention](/concepts/logs/) — the higher-level
+  picture of how output flows from a running task to the data dir.

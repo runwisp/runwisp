@@ -1,0 +1,213 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Telegram
+description: Telegram notifier — bot-token driver. Field reference plus an end-to-end walkthrough from creating the bot to routing failures into a chat or channel.
+---
+
+The `telegram` driver delivers via Telegram's Bot API. One bot token
+plus one `chat_id` maps to one destination — a personal chat, a group,
+or a channel. This page is both the field reference and the setup
+walkthrough. The pattern is the same shape as the
+[Slack provider](/notifications/providers/slack/); the wrinkles are
+around **finding your `chat_id`** and **`parse_mode = "MarkdownV2"`**,
+both of which trip people up the first time.
+
+## Fields
+
+```toml
+[[notifier]]
+id            = "tg-oncall"
+type          = "telegram"
+bot_token_env = "RUNWISP_TG_TOKEN"
+chat_id       = "-1001234567890"
+parse_mode    = "HTML"
+```
+
+| Key              | Type   | Required           | What it does                                                                  |
+| ---------------- | ------ | ------------------ | ----------------------------------------------------------------------------- |
+| `bot_token`      | string | one-of (see below) | Inline bot token.                                                             |
+| `bot_token_env`  | string | one-of             | Name of an env var holding the token.                                         |
+| `bot_token_file` | string | one-of             | Path to a file containing the token. Relative to the data dir.                |
+| `chat_id`        | string | yes                | Chat ID. Stored as a string so negative IDs (group chats) round-trip cleanly. |
+| `parse_mode`     | enum   | no                 | `"HTML"` (default — matches the embedded template) or `"MarkdownV2"`.         |
+| `template_path`  | string | no                 | Override the embedded message template.                                       |
+
+`id` and `type` are the
+[common fields](/notifications/providers/overview/#common-fields)
+shared with every driver. **Exactly one** of `bot_token`,
+`bot_token_env`, `bot_token_file` must be set; supplying two is a
+config-load error, supplying none is also an error.
+
+## 1. Create the bot
+
+Open Telegram and message [@BotFather](https://t.me/BotFather):
+
+1. Send `/newbot`.
+2. Pick a display name (humans see this).
+3. Pick a username — it must end in `bot`, e.g. `runwisp_ops_bot`.
+4. BotFather replies with an HTTP API token like
+   `123456789:AAEa-PXxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`. Save it.
+
+Treat the token as a secret. With it, anyone can post messages as
+your bot.
+
+## 2. Find the chat ID
+
+This is the part nobody documents well. The `chat_id` identifies
+where the bot will send messages — a personal chat, a group, or a
+channel.
+
+### A direct chat with the bot
+
+Message your bot from your account, then visit:
+
+```
+https://api.telegram.org/bot<TOKEN>/getUpdates
+```
+
+Look for `"chat": { "id": 123456789, … }` in the JSON. That number
+is your personal `chat_id`.
+
+### A group chat
+
+Add the bot to the group, then send any message in the group. Hit
+the same `getUpdates` URL. Group `chat_id`s are **negative** — they
+look like `-1001234567890`. RunWisp stores `chat_id` as a string
+exactly so negative IDs round-trip cleanly through TOML.
+
+### A channel
+
+Add the bot as an administrator (with "Post Messages" permission),
+post a message, hit `getUpdates`. Channel IDs also start with
+`-100`.
+
+## 3. Store the token outside `runwisp.toml`
+
+Same options as Slack — env, file, or (don't) inline:
+
+### Env (recommended)
+
+```bash
+# /etc/runwisp/runwisp.env
+RUNWISP_TG_TOKEN=123456789:AAEa-PXxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+### File
+
+```bash
+sudo install -d -o runwisp -g runwisp -m 0700 /etc/runwisp/secrets
+echo '123456789:AAEa-PXxx...' \
+  | sudo install -m 0600 -o runwisp -g runwisp /dev/stdin /etc/runwisp/secrets/tg-oncall.token
+```
+
+## 4. Declare the notifier
+
+```toml
+[[notifier]]
+id            = "tg-oncall"
+type          = "telegram"
+bot_token_env = "RUNWISP_TG_TOKEN"
+chat_id       = "-1001234567890"
+parse_mode    = "HTML"     # default — matches the embedded template
+```
+
+`parse_mode` defaults to `"HTML"` because the embedded message
+template ships in HTML. Leave it unset and you get sane formatting.
+
+For the file variant:
+
+```toml
+[[notifier]]
+id             = "tg-oncall"
+type           = "telegram"
+bot_token_file = "/etc/runwisp/secrets/tg-oncall.token"
+chat_id        = "-1001234567890"
+```
+
+## 5. Route failures to it
+
+Identical to Slack — the routing layer doesn't know or care which
+driver is on the other end:
+
+```toml
+# Per-task sugar:
+[tasks.backup-postgres]
+notify_on_failure = ["tg-oncall"]
+# …
+
+# Or an explicit route:
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["tg-oncall"]
+```
+
+You can list both notifiers in the same array — the router
+delivers to each, and an outage of one channel doesn't suppress
+delivery on the other:
+
+```toml
+[tasks.critical-job]
+notify_on_failure = ["slack-ops", "tg-oncall"]
+```
+
+## The `parse_mode = "MarkdownV2"` trap
+
+If you switch `parse_mode` to `"MarkdownV2"`, you **must** also set
+a `template_path` — the embedded default template uses HTML, and
+without your own template Telegram will render the literal `<b>…</b>`
+tags in your messages.
+
+```toml
+[[notifier]]
+id            = "tg-oncall"
+type          = "telegram"
+bot_token_env = "RUNWISP_TG_TOKEN"
+chat_id       = "-1001234567890"
+parse_mode    = "MarkdownV2"
+template_path = "/etc/runwisp/templates/telegram-mdv2.tmpl"
+```
+
+MarkdownV2 escaping is
+[notoriously painful][mdv2] — 18 characters require escaping with
+backslashes, including dots and parentheses. Stay on `HTML`
+unless you have a strong reason; HTML's "escape `<`, `>`, `&`"
+rule is much friendlier.
+
+[mdv2]: https://core.telegram.org/bots/api#markdownv2-style
+
+## Smoke-test
+
+```bash
+runwisp exec smoke-test       # something that exits non-zero
+```
+
+Telegram messages usually arrive in 1–2 seconds. If yours doesn't:
+
+- **Check the in-app bell** for a `notify.delivery_failed` event
+  with the underlying Telegram API error.
+- **Common causes**: wrong `chat_id` (Telegram answers
+  `400 Bad Request: chat not found`), bot not added to the group,
+  bot lacking permission to post in a channel.
+- **Token sanity check**: `curl https://api.telegram.org/bot<TOKEN>/getMe`
+  — returns the bot's profile if the token is valid.
+
+## Telegram-specific validation
+
+Caught at config load:
+
+- `parse_mode = "MarkdownV2"` set without a `template_path` — the
+  embedded template is HTML, so leaving it active emits literal
+  `<b>…</b>` tags.
+- All of the common
+  [provider rules](/notifications/providers/overview/#what-the-loader-rejects)
+  apply too.
+
+## Where to next
+
+- [Slack provider](/notifications/providers/slack/) — same shape, in
+  case you want both channels.
+- [`[[notification_route]]` reference](/notifications/routes/) —
+  more flexible routing than per-task sugar.
+- [Notifications model](/notifications/model/) — the cycle-break that
+  prevents Telegram outages from triggering more Telegram alerts.

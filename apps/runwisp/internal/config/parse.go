@@ -21,12 +21,26 @@ func parseDuration(raw string) (time.Duration, error) {
 }
 
 // parseKeepFor parses a retention window using the extended syntax that also
-// accepts day/week suffixes (e.g. "30d", "2w").
+// accepts day/week suffixes (e.g. "30d", "2w"). The literal token "unlimited"
+// (case-insensitive) maps to time.Duration(-1) — the explicit "no time-based
+// cap" sentinel that mirrors keep_runs = -1. Negative durations from the
+// underlying parser are rejected so the only path to -1 is the token.
 func parseKeepFor(raw string) (time.Duration, error) {
-	if strings.TrimSpace(raw) == "" {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
 		return 0, nil
 	}
-	return str2duration.ParseDuration(raw)
+	if strings.EqualFold(trimmed, "unlimited") {
+		return -1, nil
+	}
+	d, err := str2duration.ParseDuration(trimmed)
+	if err != nil {
+		return 0, err
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("negative duration %q is not allowed; use \"unlimited\" for no cap", raw)
+	}
+	return d, nil
 }
 
 func parseTaskDuration(taskName, field, raw string) (time.Duration, error) {

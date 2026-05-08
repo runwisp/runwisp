@@ -210,8 +210,8 @@ func (db *SQLiteDatabase) GetRunSummary() (*model.RunSummary, error) {
 	row := db.db.QueryRow(`
 SELECT COUNT(*),
 COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0),
-COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout') THEN 1 ELSE 0 END), 0),
-MAX(CASE WHEN end_reason IN ('failed','crashed','timeout') THEN end_at END)
+COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow') THEN 1 ELSE 0 END), 0),
+MAX(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow') THEN end_at END)
 FROM runs`)
 	summary := &model.RunSummary{}
 	if err := row.Scan(&summary.Total, &summary.Success, &summary.Failed, &summary.LastFailure); err != nil {
@@ -248,7 +248,7 @@ func applyStatusFilter(q *queryBuilder, status string) {
 		return
 	}
 	switch model.EndReason(status) {
-	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped, model.ReasonTimeout, model.ReasonCrashed:
+	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped, model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped, model.ReasonLogOverflow:
 		q.add("end_reason = ?", status)
 	default:
 		q.add("status = ?", status)

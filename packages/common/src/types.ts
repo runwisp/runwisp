@@ -20,8 +20,33 @@ export const END_REASONS = [
   "stopped",
   "timeout",
   "crashed",
+  "skipped",
+  "log_overflow",
 ] as const;
 export type EndReason = (typeof END_REASONS)[number];
+
+/**
+ * End reasons treated as failures by retry policy, dashboards, and the
+ * "Last run failed" UI surface. Mirrors `retry.IsFailureReason` in the Go
+ * runtime — keep them in sync.
+ */
+export const FAILURE_END_REASONS = [
+  "failed",
+  "crashed",
+  "timeout",
+  "log_overflow",
+] as const satisfies readonly EndReason[];
+export type FailureEndReason = (typeof FAILURE_END_REASONS)[number];
+
+export function isFailureEndReason(
+  reason: EndReason | null | undefined,
+): reason is FailureEndReason {
+  if (!reason) return false;
+  for (const candidate of FAILURE_END_REASONS) {
+    if (candidate === reason) return true;
+  }
+  return false;
+}
 
 /** Union of phases and end-reasons for UI display/filtering. */
 export const RUN_STATUSES = [...RUN_PHASES, ...END_REASONS] as const;

@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
@@ -16,14 +17,23 @@ import (
 	"log/slog"
 )
 
-var triggerCmd = &cobra.Command{
-	Use:     "trigger <task-name>",
-	Aliases: []string{"exec"},
-	Short:   "Trigger a single task and stream its output",
-	Long:    `Runs the specified task immediately from the CLI, streaming its log output to stdout. Exits with the task's exit code.`,
-	Args:    cobra.ExactArgs(1),
+// execCmd runs a task in-process from the CLI. It opens the SQLite store
+// directly, so it MUST refuse when a daemon is already attached to the same
+// data dir — two writers on one SQLite file is data corruption, not a
+// recoverable error. Operators who want to fire a task against a running
+// daemon should use `runwisp run-task` instead.
+var execCmd = &cobra.Command{
+	Use:   "exec <task-name>",
+	Short: "Run a task in-process and stream its output",
+	Long: `Loads runwisp.toml, runs the named task in this CLI process, and streams
+log lines to stdout/stderr. Exits with the task's exit code.
+
+This command opens the local SQLite store directly. If a daemon is already
+running against the same data dir, ` + "`runwisp exec`" + ` refuses with an error —
+use ` + "`runwisp run-task`" + ` to dispatch via the running daemon's REST API.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		exitCode, err := runTrigger(args[0])
+		exitCode, err := runExec(args[0])
 		if err != nil {
 			return err
 		}
@@ -34,7 +44,11 @@ var triggerCmd = &cobra.Command{
 	},
 }
 
-func runTrigger(taskName string) (int, error) {
+func runExec(taskName string) (int, error) {
+	if err := refuseIfDaemonRunning(taskName); err != nil {
+		return 0, err
+	}
+
 	cfg, err := config.Load(flags.CfgFile)
 	if err != nil {
 		return 0, fmt.Errorf("failed to load %s: %w", flags.CfgFile, err)
@@ -63,7 +77,6 @@ func runTrigger(taskName string) (int, error) {
 
 	taskManager.UpsertTask(target)
 
-	// Subscribe to log lines and completion before triggering
 	done := make(chan *events.RunEvent, 1)
 	unsubLog := eventBus.Subscribe(events.EventLogLine, func(e events.Event) {
 		ll, ok := e.Data.(events.LogLineEvent)
@@ -108,4 +121,24 @@ func runTrigger(taskName string) (int, error) {
 
 	slog.Info("Task completed", "name", taskName, "status", result.Run.Status)
 	return 0, nil
+}
+
+// refuseIfDaemonRunning errors out when an existing daemon owns the data
+// directory. Two writers on the same SQLite file silently corrupt state —
+// the operator must either stop the daemon or use `runwisp run-task` to
+// dispatch through the running daemon's API.
+func refuseIfDaemonRunning(taskName string) error {
+	pidPath := datadir.PidFilePath(flags.DataDir)
+	pid, err := datadir.ReadPidFile(flags.DataDir)
+	if err != nil {
+		return nil
+	}
+	if !processAlive(pid, pidPath) {
+		return nil
+	}
+	return fmt.Errorf(
+		"a daemon is already running on data dir %q (pid %d); refusing to open SQLite as a second writer. "+
+			"Run `runwisp run-task %s` to dispatch through the running daemon, or stop the daemon first",
+		flags.DataDir, pid, taskName,
+	)
 }

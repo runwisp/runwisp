@@ -1,0 +1,242 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Per-task notification sugar
+description: notify_on_failure and notify_on_success — shorthand that desugars to a synthetic notification route.
+---
+
+Most projects only need to say "ping these channels when this task
+fails." Writing a full `[[notification_route]]` for that is overkill,
+so RunWisp offers two shortcut fields on every `[tasks.*]` and
+`[services.*]`:
+
+- `notify_on_failure` — alert when a run ends with `failed`, `timeout`, or `crashed`.
+- `notify_on_success` — alert when a run ends with `success`.
+
+Both take a list of notifier IDs. At config load, each one is expanded
+into a synthetic `[[notification_route]]` that's indistinguishable from
+a hand-written one.
+
+## Basic usage
+
+```toml
+[tasks.nightly-db-backup]
+cron              = "30 2 * * *"
+run               = "/usr/local/bin/backup.sh"
+notify_on_failure = ["slack-ops"]
+```
+
+That's it. A failed backup pings Slack, lights up the in-app bell, and
+records the notification in the daemon's history.
+
+## What it expands to
+
+`notify_on_failure = ["slack-ops"]` on a task named `nightly-db-backup`
+expands at config load to:
+
+```toml
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "nightly-db-backup" }
+notify = ["slack-ops", "inapp"]
+```
+
+`notify_on_success = ["slack-ops"]` expands to:
+
+```toml
+[[notification_route]]
+match  = { kind = ["run.succeeded"], task = "nightly-db-backup" }
+notify = ["slack-ops", "inapp"]
+```
+
+A few details worth knowing about the expansion:
+
+- The `task` glob is the **literal task name**, not a pattern. Sugar
+  always targets exactly the task or service it's declared on.
+- The contents of [`[notify] default_notifiers`][defaults] (default
+  `["inapp"]`) are appended to your sugar list and deduplicated, so
+  the bell keeps working with zero config. Set `default_notifiers = []`
+  to opt out, or `["slack-ops"]` to make every task ping Slack on top
+  of (or instead of) the bell.
+
+[defaults]: /notifications/global/#in-app-surface
+
+- Synthetic routes coexist with hand-written ones. The router walks
+  every match, collects every notifier ID, deduplicates, and dispatches
+  once per unique notifier. So a task with sugar that happens to be
+  also covered by a wildcard route doesn't double-notify.
+
+## Both fields together
+
+```toml
+[services.payments-api]
+instances         = 2
+notify_on_failure = ["slack-ops", "tg-oncall"]
+notify_on_success = ["slack-ops"]
+run               = "/usr/local/bin/payments-api"
+```
+
+Failure pings two channels; clean shutdowns ping one. Independent
+`notify` lists.
+
+## Inline target overrides
+
+Each entry is one of three forms:
+
+- A bare notifier id (`"slack-ops"`) — the parent block's
+  default channel/chat is used.
+- The literal `"inapp"` — the always-available in-app surface; you
+  don't declare it.
+- An **inline override**, `"<id>:<target>"` — reuse the parent's
+  credentials but post to a different channel/chat for this route only.
+
+The override is the place where most projects can drop a route block
+entirely. One Slack workspace, many channels:
+
+```toml
+[[notifier]]
+id              = "slack"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_URL"
+# no `channel` set — each task picks one inline
+
+[tasks.nightly-db-backup]
+notify_on_failure = ["slack:#ops"]              # post to #ops
+
+[tasks.weekly-deploy]
+notify_on_failure = ["slack:#deploys"]
+notify_on_success = ["slack:#deploys"]
+
+[services.audit-stream]
+notify_on_failure = ["slack:#audit-alerts"]
+```
+
+For Slack, the override is a channel (`#name` or `@user`). For
+Telegram, it's the chat id:
+
+```toml
+[[notifier]]
+id            = "tg"
+type          = "telegram"
+bot_token_env = "RUNWISP_TG_TOKEN"
+chat_id       = "-1001"                         # default chat
+
+[tasks.payments-reconcile]
+notify_on_failure = ["tg:-1009998887"]          # different chat
+```
+
+What the loader does with `"slack:#ops"`:
+
+1. Splits on the first `:` — parent id `"slack"`, override `"#ops"`.
+2. Looks up the `[[notifier]] id = "slack"` block. Errors if it
+   doesn't exist.
+3. Synthesises a new notifier cloned from the parent, with
+   `channel = "#ops"` (or `chat_id` for Telegram).
+4. Routes the event to that synthetic notifier.
+
+Two facts worth knowing:
+
+- **Tokens are deduplicated.** Twenty tasks all using
+  `"slack:#ops"` share one synthetic notifier; the same channel isn't
+  hit twice for the same event.
+- **Notifier IDs cannot contain `:`.** The colon is reserved as the
+  override separator. The loader rejects `id = "slack:foo"`.
+- **`"inapp"` has no target,** so `"inapp:something"` is rejected.
+
+Reach for an explicit `[[notifier]]` block (with `channel = "#…"` set
+on the block itself) when the same channel is used by enough tasks
+that the override becomes repetitive — or when you want one named
+notifier id to point at one channel for the lifetime of the daemon.
+Reach for the inline override when each task has its own destination
+and you'd rather not invent ten notifier ids.
+
+## When to drop down to an explicit route
+
+Sugar covers maybe 90% of cases. Reach for `[[notification_route]]`
+directly when you need:
+
+- **A glob across multiple tasks.** `match.task = "backup-*"` covers
+  every task with the `backup-` prefix, instead of repeating
+  `notify_on_failure` on each.
+- **A custom set of `kind`s.** Sugar's failure list is always
+  `failed + timeout + crashed`. To alert only on `timeout`, you need a
+  route.
+- **Routing `run.started` or `run.stopped`.** Neither is included in
+  the sugar expansion.
+- **Routing `notify.delivery_failed`.** This is a synthetic event with
+  no associated task, so the per-task field doesn't apply to it.
+- **Different notifiers per kind.** "Slack on failure, Telegram on
+  timeout" needs two separate routes.
+
+You can mix sugar and explicit routes freely — they compose. The router
+deduplicates notifier IDs across all matches, so a task that gets
+covered by both its own sugar and a wildcard route still notifies each
+channel only once.
+
+## Worked examples
+
+### Different sugar per task
+
+```toml
+[[notifier]]
+id              = "slack-ops"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+
+[tasks.nightly-db-backup]
+cron              = "30 2 * * *"
+run               = "/usr/local/bin/backup.sh"
+notify_on_failure = ["slack-ops"]              # only on failure
+
+[tasks.weekly-deploy]
+cron              = "0 9 * * 1"
+run               = "/usr/local/bin/deploy.sh"
+notify_on_failure = ["slack-ops"]
+notify_on_success = ["slack-ops"]              # confirm Mondays went green
+```
+
+### Sugar plus an umbrella route
+
+```toml
+[tasks.audit-log]
+cron              = "0 0 * * *"
+run               = "/usr/local/bin/audit"
+notify_on_failure = ["slack-ops"]
+
+[tasks.process-event-queue]
+cron              = "*/10 * * * *"
+run               = "/usr/local/bin/process"
+notify_on_failure = ["slack-ops"]
+
+# Backups page on-call IN ADDITION to the per-task sugar
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "*-backup" }
+notify = ["tg-oncall"]
+```
+
+A failed `audit-log` run notifies `slack-ops` (and the in-app bell). A
+failed `*-backup` run notifies both `slack-ops` _and_ `tg-oncall`,
+once each.
+
+## What the loader rejects
+
+Same rules as explicit routes:
+
+- A notifier ID in `notify_on_failure` / `notify_on_success` that isn't
+  declared in `[[notifier]]` (and isn't `"inapp"`).
+- An inline override (`"<id>:<target>"`) whose parent isn't declared,
+  whose target is empty, or — for Slack — doesn't start with `#` or
+  `@`.
+- `"inapp:something"` — the in-app surface has no target.
+- An empty list — write `notify_on_failure = []` to be explicit about
+  "none," but you can also just omit the field.
+
+## Where to next
+
+- [Providers overview](/notifications/providers/overview/) — what
+  notifier IDs you can reference.
+- [`[[notification_route]]` reference](/notifications/routes/) — when
+  you need the full form.
+- [`[notify]` reference](/notifications/global/) — `default_notifiers`
+  and the other global knobs.
+- [Notifications model](/notifications/model/) — the conceptual
+  picture.

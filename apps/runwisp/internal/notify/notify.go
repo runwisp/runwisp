@@ -204,7 +204,7 @@ func (s *Service) Stop(ctx context.Context) error {
 // "running tasks" (must never block) and "delivering notifications" (best
 // effort).
 func (s *Service) onBusEvent(e events.Event) {
-	ev := MapRunEvent(e)
+	ev := MapEvent(e)
 	if ev == nil {
 		return
 	}

@@ -11,27 +11,42 @@ import (
 
 // Config is the in-memory representation of runwisp.toml after load + defaults.
 type Config struct {
-	Tasks    []model.Task
-	Defaults Defaults
-	Storage  Storage
-	Daemon   Daemon
-	Notify   NotifyConfig
+	Tasks     []model.Task
+	Defaults  Defaults
+	Storage   Storage
+	Daemon    Daemon
+	Notify    NotifyConfig
+	Scheduler Scheduler
+}
+
+// Scheduler holds scheduler-wide settings. Timezone defaults to UTC so that
+// cron expressions are not silently affected by DST in the daemon's local TZ.
+// Operators who want local-TZ scheduling set it explicitly.
+type Scheduler struct {
+	Timezone string
 }
 
 // NotifyConfig is the resolved notification configuration. Secrets are not
 // resolved at this stage — the configload helper in internal/notify/configload
 // reads NotifierSpecs and produces a runnable notify.Service. Values stored
 // here are plain types so the config package does not need to import notify.
+//
+// DefaultNotifiers is the unified successor to the old disable_inapp toggle.
+// It always reflects the operator's intent post-defaults: missing/omitted
+// resolves to ["inapp"], an explicit empty list disables the zero-config
+// safety net, and any list (e.g. ["slack-ops"]) becomes the channels that
+// fire on every failure plus get appended to per-task notify_* sugar.
 type NotifyConfig struct {
-	Notifiers      []NotifierSpec
-	Routes         []NotificationRoute
-	DisableInapp   bool
-	QueueSize      int
-	DefaultTimeout time.Duration
-	HistoryKeep    int
-	HistoryKeepFor time.Duration
-	CoalesceWindow time.Duration
-	OccurrenceRing int
+	Notifiers        []NotifierSpec
+	Routes           []NotificationRoute
+	DefaultNotifiers []string
+	QueueSize        int
+	DefaultTimeout   time.Duration
+	HistoryKeep      int
+	HistoryKeepFor   time.Duration
+	CoalesceWindow   time.Duration
+	OccurrenceRing   int
+	CoalesceOutbound bool
 }
 
 // NotifierSpec is one [[notifier]] block, post-decode but pre-secret-resolution.
@@ -107,6 +122,7 @@ type taskWire struct {
 	Description string `toml:"description,omitempty"`
 
 	Cron       string                `toml:"cron,omitempty"`
+	Timezone   string                `toml:"timezone,omitempty"`
 	APITrigger *bool                 `toml:"api_trigger,omitempty"`
 	CatchUp    model.MissedRunPolicy `toml:"catch_up,omitempty"`
 
@@ -180,26 +196,38 @@ type storageWire struct {
 
 // tomlConfig is the over-the-wire config shape used only during TOML decoding.
 type tomlConfig struct {
-	Daemon   Daemon                  `toml:"daemon,omitempty"`
-	Storage  storageWire             `toml:"storage,omitempty"`
-	Defaults defaultsWire            `toml:"defaults,omitempty"`
-	Tasks    map[string]*taskWire    `toml:"tasks,omitempty"`
-	Services map[string]*serviceWire `toml:"services,omitempty"`
-	Notify   notifyWire              `toml:"notify,omitempty"`
+	Daemon    Daemon                  `toml:"daemon,omitempty"`
+	Storage   storageWire             `toml:"storage,omitempty"`
+	Defaults  defaultsWire            `toml:"defaults,omitempty"`
+	Scheduler schedulerWire           `toml:"scheduler,omitempty"`
+	Tasks     map[string]*taskWire    `toml:"tasks,omitempty"`
+	Services  map[string]*serviceWire `toml:"services,omitempty"`
+	Notify    notifyWire              `toml:"notify,omitempty"`
 
 	Notifiers []notifierWire `toml:"notifier,omitempty"`
 	Routes    []routeWire    `toml:"notification_route,omitempty"`
 }
 
-// notifyWire mirrors the [notify] block before parsing.
+// schedulerWire mirrors [scheduler] before parsing.
+type schedulerWire struct {
+	Timezone string `toml:"timezone,omitempty"`
+}
+
+// notifyWire mirrors the [notify] block before parsing. DefaultNotifiers is a
+// pointer so we can distinguish "key omitted" (apply built-in default of
+// ["inapp"]) from "key set to []" (operator explicitly opted out of the
+// in-app safety net).
 type notifyWire struct {
-	QueueSize      int    `toml:"queue_size,omitempty"`
-	DefaultTimeout string `toml:"default_timeout,omitempty"`
-	DisableInapp   bool   `toml:"disable_inapp,omitempty"`
-	HistoryKeep    int    `toml:"history_keep,omitempty"`
-	HistoryKeepFor string `toml:"history_keep_for,omitempty"`
-	CoalesceWindow string `toml:"coalesce_window,omitempty"`
-	OccurrenceRing int    `toml:"occurrence_ring,omitempty"`
+	QueueSize        int       `toml:"queue_size,omitempty"`
+	DefaultTimeout   string    `toml:"default_timeout,omitempty"`
+	DefaultNotifiers *[]string `toml:"default_notifiers,omitempty"`
+	HistoryKeep      int       `toml:"history_keep,omitempty"`
+	HistoryKeepFor   string    `toml:"history_keep_for,omitempty"`
+	CoalesceWindow   string    `toml:"coalesce_window,omitempty"`
+	OccurrenceRing   int       `toml:"occurrence_ring,omitempty"`
+	// CoalesceOutbound is *bool so we can distinguish "unset" (default-on)
+	// from explicit `coalesce_outbound = false` (the rare opt-out).
+	CoalesceOutbound *bool `toml:"coalesce_outbound,omitempty"`
 }
 
 // notifierWire is one [[notifier]] block before secret resolution.
@@ -260,6 +288,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 		Group:         w.Group,
 		Description:   w.Description,
 		Cron:          w.Cron,
+		Timezone:      w.Timezone,
 		APITrigger:    apiTrigger,
 		CatchUp:       w.CatchUp,
 		Timeout:       timeout,

@@ -1,0 +1,117 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Your first task
+description: Write a runwisp.toml, start the daemon, and trigger your first scheduled task and long-running service.
+---
+
+This page takes you from "binary on disk" to "task running and streaming
+logs" in about five minutes. We will define one scheduled task, one
+long-running service, start the daemon, and explore the result in the TUI.
+
+## 1. Scaffold a `runwisp.toml`
+
+From your working directory:
+
+```bash
+runwisp init
+```
+
+This drops a `runwisp.toml` next to you with one task, one service, and
+inline comments next to every key. It is the fastest way to see the full
+schema without flipping between docs and an editor.
+
+Open it up — the relevant pieces look roughly like this:
+
+```toml
+# runwisp.toml
+
+[tasks.backup-db]
+cron       = "0 2 * * *"  # every night at 2 AM
+on_overlap = "skip"       # do not stack if the previous run is still going
+keep_runs  = 30
+run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
+
+[tasks.health-check]
+cron = "*/5 * * * *"      # every five minutes
+run  = "curl -sf https://myapp.example.com/health || exit 1"
+
+[services.worker]
+instances = 3             # keep three replicas always running
+run       = "node /app/worker.js"
+```
+
+**`[tasks.*]`** are units that run on a schedule (or on demand). Each task
+gets its own concurrency policy, retry settings, log retention, and timeout.
+
+**`[services.*]`** are always-on processes. RunWisp keeps them alive with
+exponential restart backoff, surfaces their stdout/stderr like any other
+run, and supports horizontal scaling with `instances = N`.
+
+Edit the scaffolded file to match the work you actually want to run, or
+paste the example above over it to follow along with this guide.
+
+## 2. Start RunWisp
+
+```bash
+runwisp
+```
+
+`runwisp` (with no subcommand) spawns the daemon in the background and
+drops you straight into the interactive **TUI**. The startup banner shows
+where it is reading config from, where data is being stored, what
+capabilities it detected (Docker, etc.), and — on first run — an
+auto-generated **login password** in a yellow box. Save that password; you
+will need it for the Web UI.
+
+Want a headless daemon for `systemd` or a Docker `CMD`? Use
+`runwisp daemon` instead.
+
+## 3. Watch it run
+
+Inside the TUI you can:
+
+- Browse all configured tasks and services in the sidebar.
+- Open a task to see its run history and stream live logs.
+- Press <kbd>r</kbd> to trigger a task manually without waiting for the
+  schedule.
+- Cancel an in-flight run, requeue it, or jump to the failure that woke
+  you up at 3 AM.
+
+To trigger from the command line instead, leave the TUI running and open
+another shell:
+
+```bash
+runwisp exec health-check
+```
+
+The output streams back to your terminal, and the run is recorded in the
+daemon's history exactly as if it had fired on schedule.
+
+## 4. Open the Web UI
+
+The TUI shows the dashboard URL in its footer (typically
+`http://localhost:9477`). Open it, log in with the password from step 2,
+and you will see the same task list, run history, and live log streaming
+from a browser. Set the `RUNWISP_PASSWORD` environment variable to pin a
+password of your own, or pass `--host` / `--port` to change the bind
+address.
+
+## What just happened
+
+- RunWisp parsed your TOML, set up scheduling for `backup-db` and
+  `health-check`, and started three replicas of `worker`.
+- Every run, scheduled or manual, gets a ULID, a row in embedded SQLite,
+  and a per-task log file on disk.
+- If you `kill -9` the daemon right now, restart it, and the in-flight
+  `worker` runs will be marked **crashed** with exit code `-2` — your
+  history stays intact and the next firing is a fresh execution.
+
+## Where to next
+
+- [The Web UI tour](/getting-started/web-ui-tour/) walks through the
+  dashboard.
+- [Configuration overview](/configuration/overview/) covers every TOML
+  section.
+- [Concurrency policies](/concepts/concurrency/) explains `on_overlap`
+  in depth.

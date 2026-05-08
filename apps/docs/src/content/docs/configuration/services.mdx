@@ -1,0 +1,158 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: "[services.*]"
+description: Long-running processes — instances, restart backoff, graceful shutdown, and what services share with tasks.
+---
+
+A service is an always-on process that RunWisp keeps alive. It exits, it
+gets restarted. It crashes, it gets restarted. The only way a service
+stops permanently is by you stopping it.
+
+The TOML key (`api-worker` in `[services.api-worker]`) is the **service
+name**. It shares one namespace with `[tasks.*]` — names must be unique
+across both kinds. Each replica's run shows up in the same history view
+as task runs, with its own ULID, log file, and lifecycle.
+
+## Minimum example
+
+```toml
+[services.metrics-collector]
+run = "/usr/local/bin/metrics-agent"
+```
+
+That's a complete service — one replica, restarted forever with
+exponential backoff capped at 60 seconds.
+
+## Identity & metadata
+
+| Key           | Type   | Default      | What it does                                                                               |
+| ------------- | ------ | ------------ | ------------------------------------------------------------------------------------------ |
+| _table key_   | string | required     | The service name. Used in CLI, API, log paths.                                             |
+| `run`         | string | required     | Shell command. Multi-line OK with TOML triple-quotes.                                      |
+| `description` | string | _(empty)_    | Human-readable description shown in the UI and TUI.                                        |
+| `group`       | string | `"Services"` | UI grouping label.                                                                         |
+| `api_trigger` | bool   | `true`       | Allow manual trigger from CLI / API / UI. (Restart is the usual interaction for services.) |
+
+## Replicas
+
+```toml
+[services.api-worker]
+instances = 3
+run       = "/usr/local/bin/worker"
+```
+
+| Key         | Type | Default | What it does                                                     |
+| ----------- | ---- | ------- | ---------------------------------------------------------------- |
+| `instances` | int  | `1`     | Number of concurrent replicas. Bounded **`1 ≤ instances ≤ 64`**. |
+
+Each replica is its own visible run with its own `replica_index`
+(`0`, `1`, `2`, …). They share configuration, logs are unified per
+service, and replicas are restarted independently when their process
+exits.
+
+## Restart behaviour
+
+| Key               | Type     | Default         | What it does                                                                                                 |
+| ----------------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `restart_delay`   | duration | `1s`            | Base delay between restarts. Go duration string.                                                             |
+| `restart_backoff` | enum     | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`). |
+
+Backoff is **capped at 60 seconds**, so even after a long flap session
+the next restart never waits more than a minute. A replica that stays
+up for 60 seconds resets its backoff counter, so transient flapping
+doesn't permanently slow restarts on a service that eventually
+stabilises.
+
+`restart = "always"` is implicit and **cannot be overridden** — that's
+the contract. If you want "run once and exit," use a task.
+
+## Concurrency
+
+| Key           | Type | Default  | What it does                                                             |
+| ------------- | ---- | -------- | ------------------------------------------------------------------------ |
+| `parallelism` | int  | `1`      | Maximum concurrent runs per replica. Must be `> 0`.                      |
+| `on_overlap`  | enum | `"skip"` | What happens when something tries to start a new run while one is going. |
+
+Services default to `on_overlap = "skip"` because the supervisor keeps
+the replica count steady and overlap is unusual. Manually triggering a
+service that's already running gets cleanly rejected.
+
+## Logs & retention
+
+The log story is identical to tasks — same fields, same defaults:
+
+| Key            | Type      | Default      |
+| -------------- | --------- | ------------ |
+| `log_max_size` | byte size | `100MB`      |
+| `log_on_full`  | enum      | `"drop_old"` |
+| `keep_runs`    | int       | inherited    |
+| `keep_for`     | duration  | inherited    |
+
+A service's run history can grow much faster than a task's because each
+crash is a new run row. Set `keep_runs` defensively — `200` is a
+reasonable starting point for a flap-prone service.
+
+See [Logs & retention](/concepts/logs/) for the underlying behaviour.
+
+## Notifications
+
+| Key                 | Type     | Default  | What it does                                                          |
+| ------------------- | -------- | -------- | --------------------------------------------------------------------- |
+| `notify_on_failure` | string[] | _(none)_ | Notifier IDs to alert when a replica exits with `failed` / `crashed`. |
+| `notify_on_success` | string[] | _(none)_ | Notifier IDs to alert on `run.succeeded` (a clean replica shutdown).  |
+
+Same shape as tasks. See
+[Per-task notification sugar](/notifications/per-task/).
+
+## Graceful shutdown
+
+When the daemon shuts down (`systemctl stop`, `docker stop`, Ctrl-C),
+the supervisor sends `SIGTERM` to each replica and waits for it to exit,
+then sends `SIGKILL` if it's still running after the grace period.
+
+In practice: trap `SIGTERM` in your `run` command and exit cleanly.
+The example file's pattern is a good starting point:
+
+```bash
+trap 'echo "SIGTERM — shutting down"; exit 0' TERM INT
+while true; do
+  # do work
+done
+```
+
+A replica that exits cleanly via `SIGTERM` records `end_reason = stopped`.
+
+## What's rejected on services
+
+- `cron`, `catch_up` — services aren't cron-driven.
+- `retry_attempts`, `retry_delay`, `retry_backoff` — services restart instead of retry. Use `restart_delay` / `restart_backoff`.
+- A name shared with a `[tasks.*]` entry.
+- Empty or missing `run`.
+- `instances` outside `[1, 64]`.
+
+## Worked example: 3 queue workers
+
+```toml
+[services.api-worker]
+description     = "Three always-on workers consuming the same job queue"
+instances       = 3
+restart_delay   = "2s"
+restart_backoff = "exponential"
+keep_runs       = 500
+notify_on_failure = ["slack-ops"]
+run = """
+trap 'echo "SIGTERM — draining and exiting"; exit 0' TERM INT
+echo "[$(date -Iseconds)] worker starting up..."
+while true; do
+  /usr/local/bin/consume-job
+done
+"""
+```
+
+## Where to next
+
+- [`[tasks.*]` reference](/configuration/tasks/) — the run-and-exit counterpart.
+- [Tasks vs Services](/concepts/tasks-vs-services/) — picking the right kind.
+- [Retries & timeouts](/concepts/retries/) — why retry and restart are different
+  things.

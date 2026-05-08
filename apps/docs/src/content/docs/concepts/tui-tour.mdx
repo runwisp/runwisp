@@ -1,0 +1,191 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: The TUI tour
+description: A guided walkthrough of the RunWisp Bubbletea terminal UI — layout, views, keybindings, and how to trigger / stop / restart from the keyboard without ever opening a browser.
+---
+
+The TUI is the keyboard-first half of RunWisp. It runs in a terminal,
+binds to whatever daemon is on the address you point it at (default
+`127.0.0.1:9477`), and lets you do almost everything the Web UI can —
+trigger tasks, follow logs, restart services, browse notifications —
+without leaving the shell.
+
+Two ways to start it:
+
+```bash
+runwisp           # spawn or attach to a local daemon, then attach the TUI
+runwisp tui       # attach a fresh TUI to an already-running daemon
+```
+
+The first form is the everyday one. The second is for SSHing in to
+inspect a daemon you started elsewhere — `runwisp tui --host …` lets
+you point at a remote instance.
+
+## The layout
+
+```
+┌────────────────────┬───────────────────────────────────────────────────┐
+│ RunWisp v0.4.0     │  Home                                             │
+│ host-fingerprint   │  ─────────────                                    │
+│                    │  Web UI:  http://127.0.0.1:9477                   │
+│ ▸ Home             │  Pwd:     **************  (Enter to copy)         │
+│   Info             │                                                   │
+│   Debug            │  🔔  3 new notifications  (n to expand)           │
+│                    │                                                   │
+│ TASKS              │  Recent activity                                  │
+│   backup-postgres  │  ─────────────                                    │
+│ ▸ deploy-hook      │  ✓ 14:30:22  backup-postgres   12s   success     │
+│   smoke-test       │  ✗ 14:25:10  smoke-test        2s    failed      │
+│                    │  ⏵ 14:24:00  api-worker#0      —     running     │
+│ SERVICES           │                                                   │
+│   api-worker (×3)  │                                                   │
+│                    │                                                   │
+├────────────────────┴───────────────────────────────────────────────────┤
+│ ↑↓ navigate · Enter open · r run · n notifications · q quit            │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+A 28-column **sidebar** on the left, the active view on the right,
+a **help bar** at the bottom that updates with the active context.
+The sidebar shows your daemon's identity at the top, navigation pages
+(Home / Info / Debug), then your tasks and services grouped by
+`group`. The triangle marker `▸` is the active selection; the
+highlighted row is the cursor (which can be different — moving the
+cursor doesn't activate anything until you press `Enter`).
+
+## The three pages
+
+### Home
+
+The default view. Two modes:
+
+- **Daemon overview** — shown when no task is selected. Web UI URL,
+  password (focus and `Enter` to copy), and a recent-activity feed
+  across all tasks.
+- **Task detail** — shown when a task or service is selected from the
+  sidebar. Schedule line, a "Run Now" / "Restart" button, and the run
+  history for that one task.
+
+Press `n` to expand the **notifications panel** at the top — a
+scrollable list of in-app notifications with read-state toggling.
+
+### Info
+
+System metrics: CPU and memory sparklines, run-count summary,
+uptime. Useful for "is the daemon healthy right now" without opening
+a browser.
+
+### Debug
+
+The daemon's own log stream. When you're attached to a remote daemon,
+this is also where the TUI surfaces SSE reconnect notices. Scrollable
+in both directions.
+
+## Keys you'll actually use
+
+These work everywhere.
+
+| Key                  | Action                                                         |
+| -------------------- | -------------------------------------------------------------- |
+| `q`, `Ctrl+C`        | Quit. Asks whether to keep the daemon running or shut it down. |
+| `Esc`                | Close current overlay (notifications, run detail, fullscreen). |
+| `↑` `↓` (or `k` `j`) | Move the cursor.                                               |
+| `←` `→` (or `h` `l`) | Switch focus between sidebar and main panel.                   |
+| `Enter`              | Open the focused item / activate the focused field.            |
+| `n`                  | Toggle the notifications panel. (Home page only.)              |
+| `PgUp` / `PgDn`      | Scroll a long list / log a page at a time.                     |
+| `g` / `G`            | Jump to top / bottom of the current scrollable.                |
+
+In the **sidebar** with a task focused:
+
+| Key | Action                                                                                            |
+| --- | ------------------------------------------------------------------------------------------------- |
+| `r` | Run now (for tasks) or restart (for services). Confirmation dialog opens before the action fires. |
+
+## Following a run
+
+`Enter` on a row in the recent-activity list (or in a task's run
+history) opens the **run detail view** — log streamed live from the
+daemon, line-numbered, with a four-line header above showing run ID,
+start time, duration, and either a "Retry" / "Run Again" button (for
+ended runs) or a "Stop" button (for in-flight runs).
+
+| Key                  | Action in run detail                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `↑` `↓` (or `k` `j`) | Scroll the log one line at a time.                                                                              |
+| `←` `→` (or `h` `l`) | Pan horizontally if a line is wider than the viewport.                                                          |
+| `PgUp` / `PgDn`      | Page through the log.                                                                                           |
+| `g` / `G`            | Jump to top / bottom.                                                                                           |
+| `f`                  | **Fullscreen** the log. Header and line numbers go away; native terminal selection works. `f` or `Esc` returns. |
+| `r`                  | Retry the run (only when retryable — failed / timeout / crashed).                                               |
+| `s`                  | Stop the run (only when running). Confirmation dialog.                                                          |
+| `Esc`                | Back to the previous view.                                                                                      |
+
+The log starts in **follow mode** — it auto-scrolls to the tail as
+new lines arrive. Any manual scroll (`↑`, `PgUp`, `g`, `G`)
+**pauses the follow**; press `G` to jump back to the tail and resume.
+
+The fullscreen toggle (`f`) is the right move when you want to copy a
+chunk of log to paste elsewhere — it removes the line-number gutter
+and lets your terminal's native selection work.
+
+## Authentication, briefly
+
+The TUI doesn't prompt for a password interactively. It reads the
+daemon's password from `RUNWISP_PASSWORD` → `<data-dir>/password` →
+the value the spawning daemon handed it directly (in the bare
+`runwisp` flow). On a remote `runwisp tui --host …` session, pass
+`--password` or set `RUNWISP_PASSWORD`.
+
+If auth fails (wrong password, rate-limited), the TUI surfaces the
+error and exits — see [Auth][auth] for the underlying flow.
+
+[auth]: /operations/auth/
+
+## Connection-lost handling
+
+When the daemon goes away (network blip, restart, SIGKILL), the TUI
+retries the log stream every 500 ms in the background. The Debug page
+shows the reconnect log; everything else freezes until the stream
+resumes. There's no manual "retry" key — when the daemon is back, the
+TUI catches up automatically.
+
+## Quitting
+
+Press `q` (or `Ctrl+C`). A dialog asks:
+
+- **Keep daemon running** — quit the TUI but leave the daemon up.
+  This is what you want if you started with bare `runwisp` and now
+  want to detach.
+- **Shut down daemon** — graceful daemon shutdown, then exit. Use
+  this for "I'm done; clean up."
+- **Cancel** — back to the TUI.
+
+If you're attached via `runwisp tui` to a daemon you didn't spawn,
+the dialog does not offer "shut down" — the TUI never stops a daemon
+it's a guest of.
+
+## What the TUI deliberately doesn't do
+
+- **No config editing.** `runwisp.toml` is the source of truth and is
+  loaded at daemon startup. Edit it in `$EDITOR` and restart.
+- **No notification settings.** Routes and notifiers are TOML-only.
+- **No user / role management.** RunWisp is single-operator by design.
+- **No task creation or deletion.** Same reason as config editing.
+- **No log file download.** Use the run detail's fullscreen mode
+  (`f`) to select-and-copy, or grab the file directly from
+  `data/logs/<task>/`.
+
+These are deliberate: the TUI is a control surface, not a
+configuration UI. Anything that mutates task definitions belongs in
+`runwisp.toml`.
+
+## Where to next
+
+- [Getting Started: the Web UI tour](/getting-started/web-ui-tour/) —
+  the same surface in a browser, with mouse and a permanent live tail.
+- [CLI reference](/cli/) — for operations the TUI deliberately
+  doesn't cover (validate, init, openapi).
+- [Configuration overview](/configuration/overview/) — what to put in
+  the TOML the TUI is reading.

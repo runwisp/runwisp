@@ -1,0 +1,224 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: How scheduling works
+description: Cron expressions, timezones, missed-tick catchup, and the determinism guarantees of the RunWisp scheduler.
+---
+
+The scheduler is the most boring part of RunWisp on purpose. It evaluates
+standard cron expressions in the daemon's local timezone, fires the
+matching tasks, and writes a row in SQLite. There is no DAG, no
+dependency graph, no leader election — one daemon owns its tasks.
+
+## The cron field
+
+```toml
+[tasks.heartbeat]
+cron = "*/5 * * * *"
+run  = "/usr/local/bin/heartbeat"
+```
+
+`cron` accepts standard 5-field syntax: **minute, hour, day-of-month,
+month, day-of-week**. RunWisp uses [`robfig/cron`](https://pkg.go.dev/github.com/robfig/cron/v3),
+which also recognises convenience aliases:
+
+| Expression              | Meaning                          |
+| ----------------------- | -------------------------------- |
+| `* * * * *`             | every minute                     |
+| `*/5 * * * *`           | every 5 minutes                  |
+| `0 * * * *`             | top of every hour                |
+| `0 2 * * *`             | every day at 02:00               |
+| `30 9 * * 1-5`          | weekdays at 09:30                |
+| `0 0 1 * *`             | first of every month at midnight |
+| `@hourly`               | top of every hour                |
+| `@daily` / `@midnight`  | every day at 00:00               |
+| `@weekly`               | Sundays at 00:00                 |
+| `@monthly`              | 1st at 00:00                     |
+| `@yearly` / `@annually` | January 1st at 00:00             |
+| `@every 1h30m`          | every 90 minutes (Go duration)   |
+
+Six-field syntax (with seconds) is **not** supported. If you need
+sub-minute granularity, use `@every 30s` or run a service.
+
+## Timezone
+
+Cron expressions are evaluated in the timezone configured by
+`[scheduler] timezone`. **The default is UTC**, on purpose — it's the
+only timezone with no DST transitions, so a generic
+`0 2 * * *` is unambiguous out of the box. Local-TZ scheduling is
+opt-in.
+
+```toml
+# Daemon-wide default for every task without its own timezone:
+[scheduler]
+timezone = "Europe/Prague"
+
+# Per-task override — the supervisor accepts any IANA name
+# (`time.LoadLocation`-compatible).
+[tasks.nightly-backup]
+cron     = "30 2 * * *"
+timezone = "America/New_York"
+```
+
+| Setting                   | Default      | What it controls                                                                            |
+| ------------------------- | ------------ | ------------------------------------------------------------------------------------------- |
+| `[scheduler] timezone`    | `"UTC"`      | The fallback for every task without an explicit `timezone`.                                 |
+| `[tasks.<name>] timezone` | _(inherits)_ | IANA name for this task's cron evaluation. Implemented via robfig/cron's `CRON_TZ=` prefix. |
+
+If the daemon resolves a name it doesn't recognise (typo, missing
+tzdata in a stripped container), the task is logged as a startup
+warning and its cron entry is **not** scheduled — the rest of the
+config still loads.
+
+### DST behaviour
+
+UTC has no DST. A daemon left on the default `timezone = "UTC"` never
+double-fires or skips around the clock change.
+
+A daemon configured with a DST-affected timezone inherits the same
+trade-off cron has had for 50 years: `0 2 * * *` fires **twice** on
+the fall-back night (a real 02:00 happens twice) and **zero** times on
+the spring-forward night (02:00 doesn't exist). If you need a fixed
+local time without that hazard, either:
+
+- keep the scheduler in UTC and write the cron in UTC, or
+- use `@every 24h` (which respects elapsed time, not wall-clock), or
+- pick an hour outside the DST transition window (e.g. `0 4 * * *`).
+
+Inside Docker, `tzdata` is required for non-UTC timezones — Alpine
+strips it by default:
+
+```dockerfile
+RUN apk add --no-cache tzdata
+ENV TZ=Europe/Prague          # only matters for the host's local clock
+```
+
+The daemon's own timezone setting is what scheduling actually uses;
+`TZ=` only affects log timestamps and shell commands inside `run`.
+
+## What "fired" means
+
+A cron tick triggers a **run**, not a side effect. Every firing produces:
+
+- A row in SQLite with a fresh ULID.
+- `triggered_by = "cron"`.
+- A captured stdout/stderr stream on disk.
+- A status of `pending → running → ended` with one of `success`,
+  `failed`, `stopped`, `timeout`, `crashed`, `skipped`, or
+  `log_overflow`.
+
+Whether the run actually starts immediately depends on the task's
+[concurrency policy](/concepts/concurrency/). With the default
+`on_overlap = "queue"`, a tick that fires while a previous run is still
+going gets queued. With `on_overlap = "skip"`, the firing is recorded
+as a failed run with a "task already running" message and the schedule
+moves on. Either way, the tick **always** appears in history — that's
+the prime directive: nothing fails silently, and nothing fires silently
+either.
+
+## Missed ticks: catchup
+
+When the daemon was down (host reboot, deploy, `kill -9`), some scheduled
+firings didn't happen. The `catch_up` field controls what to do about
+that on next startup:
+
+```toml
+[tasks.metrics-rollup]
+cron     = "*/15 * * * *"
+catch_up = "latest"      # default
+```
+
+| Policy   | Behaviour on startup                                                                         |
+| -------- | -------------------------------------------------------------------------------------------- |
+| `latest` | If any ticks were missed, fire **one** catch-up run. Default. Right for idempotent jobs.     |
+| `all`    | Fire **one run per missed tick**. Right when each tick processes a discrete slice.           |
+| `skip`   | Pretend the missed ticks never happened. Right for monitors and probes that just want fresh. |
+
+The anchor for "missed" is the timestamp of the last recorded run for
+the task. On the very first boot, the anchor is the `first_seen_at`
+recorded the moment RunWisp first parsed the task — so a fresh install
+never floods you with "catch-up" runs for ticks before the daemon
+existed.
+
+:::caution[`all` can be a flood]
+If a daily task uses `catch_up = "all"` and the daemon was down for two
+weeks, you'll get 14 runs queued at startup, governed by the task's
+`on_overlap` policy. That's the right answer for `pg_dump --since=...`
+where each day's slice matters. It's the wrong answer for `report.py`
+that summarises "today" — switch that one to `latest`.
+:::
+
+## Boot semantics: in-flight runs are marked crashed
+
+On a clean shutdown (SIGTERM), the daemon waits for its run manager to
+let in-flight runs finish or hit their timeout. On a crash (SIGKILL,
+power loss), it can't.
+
+When the daemon next starts, **any run still in the `running` phase
+without an `end_at` timestamp is reconciled to end reason `crashed`
+with exit code `-2`**. They are **not resumed** — that would require
+knowing where the process got to, and we don't. A fresh execution may
+then be created by the normal scheduling/catchup logic above.
+
+This means: every run row in your history reaches a terminal state. You
+never have a row that's stuck "running" because the daemon disappeared
+under it.
+
+## Determinism
+
+Given the same TOML and the same wall-clock, the scheduler produces the
+same firings. Randomness, time reads, and filesystem I/O are injected
+behind interfaces in `internal/runtime/`, never called inline in
+scheduling logic — that's how the scheduler tests stay deterministic.
+
+The practical consequence for you: there is no jitter. Two tasks with
+`cron = "0 2 * * *"` fire at exactly the same instant. If that's a
+problem (e.g. they hit the same downstream), stagger the schedule
+explicitly:
+
+```toml
+[tasks.backup-a]
+cron = "0 2 * * *"
+
+[tasks.backup-b]
+cron = "5 2 * * *"
+```
+
+## Reload semantics
+
+The scheduler reads `runwisp.toml` once, at startup. Live reload is not
+implemented — there is no file watcher, no `SIGHUP` handler, and no
+`runwisp reload` subcommand. To pick up edits, restart the daemon.
+
+A startup parse error fails the boot — the daemon exits non-zero before
+opening its port. The safe pattern is `runwisp validate` against the
+new file before you restart.
+
+When a task disappears from the file across a restart, its schedule
+entry is gone but its run history stays. When a new task appears, its
+schedule is added; catchup does **not** apply for tasks that didn't exist
+in the previous configuration.
+
+## What scheduling deliberately doesn't do
+
+- **No DAGs / dependencies.** Tasks don't reference each other. If `B`
+  depends on `A`, either chain them in one shell (`a && b`) or have `A`
+  trigger `B` via the REST API.
+- **No clustering / leader election.** One daemon owns its tasks. Two
+  daemons both reading the same TOML would both fire — that's a
+  multi-master mistake, not a feature.
+- **No "every Nth tick" semantics.** Cron is the surface area. If you
+  need every-other-Tuesday, encode it in the cron expression
+  (`30 9 */2 * 2`) or filter in your script.
+
+These are non-goals — RunWisp is a cron replacement for a single
+operator, not a workflow orchestrator.
+
+## Where to next
+
+- [Concurrency policies](/concepts/concurrency/) — what `on_overlap`
+  does when a tick fires into a still-running run.
+- [Retries & timeouts](/concepts/retries/) — what happens when a run
+  fails or hangs.
+- [`[tasks.*]` reference](/configuration/tasks/) — every cron-related
+  field.

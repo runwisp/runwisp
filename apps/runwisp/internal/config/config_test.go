@@ -149,7 +149,7 @@ run = "exec ./bin/web"
 		assert.Equal(t, model.PolicySkip, s.OnOverlap)
 		assert.Equal(t, 1, s.Instances)
 		assert.Equal(t, time.Second, s.RestartDelay)
-		assert.Equal(t, model.RestartBackoffExponential, s.RestartBackoff)
+		assert.Equal(t, model.BackoffExponential, s.RestartBackoff)
 		assert.True(t, s.APITrigger)
 	})
 
@@ -376,6 +376,99 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, "kill_task", overridden.LogOnFull)
 	assert.Equal(t, 5, overridden.KeepRuns)
 	assert.Equal(t, 14*24*time.Hour, overridden.KeepFor)
+}
+
+func TestKeepRunsTriState(t *testing.T) {
+	t.Run("explicit unlimited (-1) is preserved through defaults", func(t *testing.T) {
+		cfg := &Config{
+			Defaults: Defaults{KeepRuns: 50},
+			Tasks: []model.Task{{
+				Name: "uncapped", Run: "echo hi",
+				KeepRuns: -1,
+			}},
+		}
+		ApplyDefaults(cfg)
+		assert.Equal(t, -1, cfg.Tasks[0].KeepRuns,
+			"task that sets keep_runs = -1 must stay unlimited even when defaults specify a cap")
+	})
+
+	t.Run("zero inherits from defaults", func(t *testing.T) {
+		cfg := &Config{
+			Defaults: Defaults{KeepRuns: 50},
+			Tasks: []model.Task{{
+				Name: "inheritor", Run: "echo hi",
+				KeepRuns: 0,
+			}},
+		}
+		ApplyDefaults(cfg)
+		assert.Equal(t, 50, cfg.Tasks[0].KeepRuns)
+	})
+
+	t.Run("values below -1 are rejected", func(t *testing.T) {
+		err := validateKeepRuns("keep_runs for task foo", -2)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be -1")
+	})
+}
+
+func TestKeepForTriState(t *testing.T) {
+	t.Run("explicit unlimited survives a positive default", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+keep_for = "30d"
+
+[tasks.uncapped]
+keep_for = "unlimited"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		assert.Equal(t, time.Duration(-1), cfg.Tasks[0].KeepFor,
+			"task that sets keep_for = \"unlimited\" must stay uncapped even when defaults specify a window")
+	})
+
+	t.Run("omitted keep_for inherits from defaults", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+keep_for = "30d"
+
+[tasks.inheritor]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		assert.Equal(t, 30*24*time.Hour, cfg.Tasks[0].KeepFor)
+	})
+
+	t.Run("unlimited token is case-insensitive", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_for = "UNLIMITED"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, time.Duration(-1), cfg.Tasks[0].KeepFor)
+	})
+
+	t.Run("bare negative duration is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_for = "-30d"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "keep_for")
+	})
+
+	t.Run("validateKeepFor rejects values below -1", func(t *testing.T) {
+		err := validateKeepFor("keep_for for task foo", -2*time.Hour)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unlimited")
+	})
 }
 
 func TestApplyDefaultsBuiltinFallback(t *testing.T) {

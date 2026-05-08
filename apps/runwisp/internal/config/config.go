@@ -104,11 +104,12 @@ func decode(data []byte) (*Config, error) {
 	}
 
 	return &Config{
-		Tasks:    tasks,
-		Defaults: defaults,
-		Storage:  storage,
-		Daemon:   raw.Daemon,
-		Notify:   notifyCfg,
+		Tasks:     tasks,
+		Defaults:  defaults,
+		Storage:   storage,
+		Daemon:    raw.Daemon,
+		Notify:    notifyCfg,
+		Scheduler: Scheduler{Timezone: raw.Scheduler.Timezone},
 	}, nil
 }
 
@@ -119,8 +120,14 @@ func Validate(cfg *Config) error {
 	if err := requireOneOf("defaults.log_on_full", cfg.Defaults.LogOnFull, validLogOnFull, true); err != nil {
 		return err
 	}
-	if cfg.Defaults.KeepRuns < 0 {
-		return fmt.Errorf("invalid defaults.keep_runs: must be non-negative")
+	if err := validateKeepRuns("defaults.keep_runs", cfg.Defaults.KeepRuns); err != nil {
+		return err
+	}
+	if err := validateKeepFor("defaults.keep_for", cfg.Defaults.KeepFor); err != nil {
+		return err
+	}
+	if _, err := ResolveTimezone("scheduler.timezone", cfg.Scheduler.Timezone); err != nil {
+		return err
 	}
 
 	seen := make(map[string]struct{}, len(cfg.Tasks))
@@ -193,10 +200,55 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if task.RetryAttempts < 0 {
 		return fmt.Errorf("invalid retry_attempts for task %s: must be non-negative", task.Name)
 	}
-	if task.KeepRuns < 0 {
-		return fmt.Errorf("invalid keep_runs for task %s: must be non-negative", task.Name)
+	if err := validateKeepRuns(fmt.Sprintf("keep_runs for task %s", task.Name), task.KeepRuns); err != nil {
+		return err
+	}
+	if err := validateKeepFor(fmt.Sprintf("keep_for for task %s", task.Name), task.KeepFor); err != nil {
+		return err
+	}
+	if _, err := ResolveTimezone(fmt.Sprintf("timezone for task %s", task.Name), task.Timezone); err != nil {
+		return err
 	}
 
+	return nil
+}
+
+// ResolveTimezone returns the *time.Location for the given IANA name. An empty
+// string means "fall back to the scheduler default" — callers handle that.
+// Use this for both per-task timezone and the global scheduler timezone so
+// the same error shape is produced everywhere.
+func ResolveTimezone(scope, name string) (*time.Location, error) {
+	if name == "" {
+		return nil, nil
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s: %q is not a valid IANA timezone (e.g. \"UTC\", \"America/New_York\"): %w", scope, name, err)
+	}
+	return loc, nil
+}
+
+// validateKeepRuns enforces the tri-state semantics:
+//   - 0: inherit defaults
+//   - -1: explicit unlimited (no count-based cap)
+//   - >0: keep this many runs.
+//
+// Anything below -1 is a typo, not a value the user could mean.
+func validateKeepRuns(scope string, n int) error {
+	if n < -1 {
+		return fmt.Errorf("invalid %s: must be -1 (unlimited), 0 (inherit default), or a positive count", scope)
+	}
+	return nil
+}
+
+// validateKeepFor enforces the tri-state semantics for keep_for:
+//   - 0: inherit defaults
+//   - -1: explicit unlimited ("unlimited" token at parse time)
+//   - >0: retention window.
+func validateKeepFor(scope string, d time.Duration) error {
+	if d < -1 {
+		return fmt.Errorf("invalid %s: must be \"unlimited\", omitted (inherit default), or a positive duration", scope)
+	}
 	return nil
 }
 
@@ -229,8 +281,8 @@ var (
 		string(model.RestartAlways),
 		string(model.RestartOnFailure),
 	}
-	validRetryBackoff     = []string{"linear", "exponential"}
-	validRestartBackoff   = []string{model.RestartBackoffNone, model.RestartBackoffExponential}
+	validRetryBackoff     = []string{model.BackoffConstant, model.BackoffLinear, model.BackoffExponential}
+	validRestartBackoff   = []string{model.BackoffConstant, model.BackoffLinear, model.BackoffExponential}
 	validLogOnFull        = []string{model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKillTask}
 	validCatchUp          = []string{string(model.MissedRunLatest), string(model.MissedRunAll), string(model.MissedRunSkip)}
 	defaultTaskLogMaxSize = int64(100 * 1024 * 1024)
@@ -260,10 +312,18 @@ func ApplyDefaults(cfg *Config) {
 		if task.LogOnFull == "" && cfg.Defaults.LogOnFull != "" {
 			task.LogOnFull = cfg.Defaults.LogOnFull
 		}
-		if task.KeepRuns == 0 && cfg.Defaults.KeepRuns > 0 {
+		// keep_runs tri-state:
+		//   0  → inherit default
+		//  -1  → explicit unlimited (do not pull from defaults)
+		//  >0  → explicit cap
+		if task.KeepRuns == 0 && cfg.Defaults.KeepRuns != 0 {
 			task.KeepRuns = cfg.Defaults.KeepRuns
 		}
-		if task.KeepFor == 0 {
+		// keep_for tri-state mirrors keep_runs:
+		//   0  → inherit default
+		//  -1  → explicit unlimited (do not pull from defaults)
+		//  >0  → explicit window
+		if task.KeepFor == 0 && cfg.Defaults.KeepFor != 0 {
 			task.KeepFor = cfg.Defaults.KeepFor
 		}
 
@@ -305,6 +365,6 @@ func applyServiceDefaults(task *model.Task) {
 		task.RestartDelay = defaultRestartDelay
 	}
 	if task.RestartBackoff == "" {
-		task.RestartBackoff = model.RestartBackoffExponential
+		task.RestartBackoff = model.BackoffExponential
 	}
 }

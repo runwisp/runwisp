@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	// diskCheckInterval is how many bytes between disk-space probes.
-	diskCheckInterval int64 = 10 * 1024 * 1024 // 10 MB
+	// defaultDiskCheckInterval is how many bytes between disk-space probes.
+	defaultDiskCheckInterval int64 = 10 * 1024 * 1024 // 10 MB
 )
 
 // LogWriter writes log output to a file with an accompanying binary index,
@@ -42,16 +42,20 @@ type LogWriter struct {
 	cancelFunc func() // cancel context for kill_task mode
 
 	// Disk space monitoring
-	minFreeDisk   int64  // 0 = disabled
-	logDir        string // for statfs calls
-	lastDiskCheck int64  // offset at last disk check
+	minFreeDisk       int64  // 0 = disabled
+	logDir            string // for statfs calls
+	lastDiskCheck     int64  // offset at last disk check
+	diskCheckInterval int64  // bytes between probes; defaults to defaultDiskCheckInterval
+	diskPressureHit   bool   // set once after the first threshold crossing
+	onDiskPressure    func(free, min int64, killedTask bool)
 
 	// State
-	currentOffset int64
-	lineCount     int64
-	totalProduced int64 // total bytes the process output (before any truncation)
-	truncated     bool
-	stopped       bool // drop_new mode or disk-full: no more writes accepted
+	currentOffset  int64
+	lineCount      int64
+	totalProduced  int64 // total bytes the process output (before any truncation)
+	truncated      bool
+	stopped        bool // drop_new mode or disk-full: no more writes accepted
+	killedByPolicy bool // kill_task overflow tripped — distinguishes policy-kill from clean stop
 
 	// Rotation bookkeeping: cumulative counts from rotated-away files
 	rotatedLines int64
@@ -69,9 +73,16 @@ type LogWriterOpts struct {
 	TidxPath    string // timestamp index path (.tidx)
 	MaxSize     int64  // 0 = unlimited
 	Overflow    string // model.LogOverflow* constants; defaults to drop_old
-	CancelFunc  func() // for kill_task mode
+	CancelFunc  func() // for kill_task mode (log_max_size and disk-pressure)
 	MinFreeDisk int64  // 0 = disabled
 	LogDir      string
+	// OnDiskPressure fires once per writer when min_free_space first trips.
+	// killedTask reports whether the writer also cancelled the task because
+	// Overflow == kill_task. Invoked synchronously under the writer's mutex,
+	// so the callback must not block.
+	OnDiskPressure func(free, min int64, killedTask bool)
+	// DiskCheckInterval overrides the default 10MB probe interval. 0 = default.
+	DiskCheckInterval int64
 }
 
 func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
@@ -101,19 +112,26 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 		overflow = model.LogOverflowDropOld
 	}
 
+	interval := opts.DiskCheckInterval
+	if interval <= 0 {
+		interval = defaultDiskCheckInterval
+	}
+
 	return &LogWriter{
-		mainPath:    opts.LogPath,
-		idxPath:     opts.IdxPath,
-		tidxPath:    opts.TidxPath,
-		file:        f,
-		idxFile:     idx,
-		tidxFile:    tidx,
-		maxSize:     opts.MaxSize,
-		overflow:    overflow,
-		cancelFunc:  opts.CancelFunc,
-		minFreeDisk: opts.MinFreeDisk,
-		logDir:      opts.LogDir,
-		nowMs:       func() int64 { return time.Now().UnixMilli() },
+		mainPath:          opts.LogPath,
+		idxPath:           opts.IdxPath,
+		tidxPath:          opts.TidxPath,
+		file:              f,
+		idxFile:           idx,
+		tidxFile:          tidx,
+		maxSize:           opts.MaxSize,
+		overflow:          overflow,
+		cancelFunc:        opts.CancelFunc,
+		minFreeDisk:       opts.MinFreeDisk,
+		logDir:            opts.LogDir,
+		onDiskPressure:    opts.OnDiskPressure,
+		diskCheckInterval: interval,
+		nowMs:             func() int64 { return time.Now().UnixMilli() },
 	}, nil
 }
 
@@ -150,15 +168,35 @@ func (w *LogWriter) writeOneLine(p []byte) (lineNum int64, written int, err erro
 		return -1, len(p), nil
 	}
 
-	// Periodic disk-space check
-	if w.minFreeDisk > 0 && w.currentOffset-w.lastDiskCheck > diskCheckInterval {
+	// Periodic disk-space check. The check honours the task's log_on_full
+	// policy: kill_task tasks die when disk is critical (the operator chose
+	// loud failure over disk safety); other policies just stop logging. In
+	// both cases we fire OnDiskPressure once so the operator is notified —
+	// silent disk-pressure stop is a Prime Directive violation.
+	if w.minFreeDisk > 0 && w.currentOffset-w.lastDiskCheck > w.diskCheckInterval {
 		w.lastDiskCheck = w.currentOffset
 		if free := freeDiskSpace(w.logDir); free >= 0 && free < w.minFreeDisk {
-			w.writeSystemLine(fmt.Sprintf(
-				"Log output stopped: disk space critically low (%s free, minimum %s required).",
-				config.FormatByteSize(free), config.FormatByteSize(w.minFreeDisk)))
+			killed := w.overflow == model.LogOverflowKillTask
+			if killed {
+				w.writeSystemLine(fmt.Sprintf(
+					"Process killed: disk space critically low (%s free, minimum %s required); log_on_full=\"kill_task\".",
+					config.FormatByteSize(free), config.FormatByteSize(w.minFreeDisk)))
+			} else {
+				w.writeSystemLine(fmt.Sprintf(
+					"Log output stopped: disk space critically low (%s free, minimum %s required).",
+					config.FormatByteSize(free), config.FormatByteSize(w.minFreeDisk)))
+			}
 			w.stopped = true
 			w.truncated = true
+			if killed && w.cancelFunc != nil {
+				w.cancelFunc()
+			}
+			if !w.diskPressureHit {
+				w.diskPressureHit = true
+				if w.onDiskPressure != nil {
+					w.onDiskPressure(free, w.minFreeDisk, killed)
+				}
+			}
 			return -1, len(p), nil
 		}
 	}
@@ -180,6 +218,7 @@ func (w *LogWriter) writeOneLine(p []byte) (lineNum int64, written int, err erro
 				config.FormatByteSize(w.maxSize)))
 			w.truncated = true
 			w.stopped = true
+			w.killedByPolicy = true
 			if w.cancelFunc != nil {
 				w.cancelFunc()
 			}
@@ -433,6 +472,15 @@ func (w *LogWriter) TotalProduced() int64 {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.totalProduced
+}
+
+// KilledByPolicy reports whether the writer cancelled the run because the
+// task's log_on_full = "kill_task" policy tripped. Distinguishes a
+// policy-enforced kill from an operator-initiated stop.
+func (w *LogWriter) KilledByPolicy() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.killedByPolicy
 }
 
 // freeDiskSpace returns available bytes on the filesystem containing path,

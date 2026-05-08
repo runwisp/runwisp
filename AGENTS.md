@@ -35,7 +35,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 ## 🧭 INVARIANTS (violating any of these is a bug, regardless of what a test says)
 
 - **Supported platforms**: Linux, macOS, WSL. These are first-class — builds, tests, manual smoke. Native Windows is out of scope.
-- **Config is reloaded only on SIGHUP or an explicit `runwisp reload` command.** No file-watchers, no auto-reload. A running daemon keeps its in-memory task set until the operator asks.
+- **Config reload is restart-only.** A running daemon keeps its in-memory task set for its entire lifetime; to pick up TOML changes, the operator restarts the daemon. No file-watchers, no auto-reload, no SIGHUP handler, no `runwisp reload` command. (Reload-without-restart is on the roadmap; until it lands, do not assume it exists.)
 - **Crash safety**: Killing the daemon (SIGKILL, power loss) must not corrupt state. On restart, any run that was in-flight is marked **interrupted** with a terminal status — it is **not resumed**. A fresh execution may then be created by the normal scheduling/catchup logic.
 - **Determinism of scheduling**: Given the same TOML + clock, the scheduler produces the same firings. Randomness, wall-clock reads, and FS I/O are injected, never called inline in scheduling logic.
 - **No required network**: Daemon startup, task execution, UI serving, and TUI must all work with the NIC unplugged. Any outbound integration attempts happen in the background and never block the hot path.

@@ -1,0 +1,87 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Providers overview
+description: Common fields across [[notifier]] drivers — id, type, env > file > inline secret precedence, templates, validation rules.
+---
+
+Each `[[notifier]]` table defines one outbound channel. The current
+drivers are `slack` (incoming webhook) and `telegram` (bot API); more
+(Discord, SMTP/email, generic webhooks, …) will follow. This page
+covers what's true across **every** driver — the per-driver fields,
+walkthroughs, and quirks live on the dedicated provider pages:
+
+- [Slack](/notifications/providers/slack/)
+- [Telegram](/notifications/providers/telegram/)
+
+`[[notifier]]` is a **TOML array of tables**, so the doubled brackets
+are intentional — every block is one element of the array. Declare as
+many notifiers as you like, then wire them up with
+[`[[notification_route]]`](/notifications/routes/) or per-task
+[`notify_on_failure`](/notifications/per-task/).
+
+## Common fields
+
+| Key    | Type   | Required | What it does                                                                                                    |
+| ------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `id`   | string | yes      | Stable identifier referenced from routes and per-task sugar. Must be unique. The literal `"inapp"` is reserved. |
+| `type` | enum   | yes      | Driver name. Currently `"slack"` or `"telegram"`; the list grows as new providers ship.                         |
+
+Every driver layers its own fields on top — see the per-provider page
+for the full list.
+
+## Secret precedence
+
+Every driver that takes a credential (webhook URL, bot token, SMTP
+password, …) accepts it from one of three sources:
+
+- `…_env` — the name of an env var holding the value (recommended).
+- `…_file` — a path to a file holding the value.
+- the bare field (e.g. `webhook_url`, `bot_token`) — the value inline.
+
+The rule across drivers: **`env` > `file` > `inline`** in
+expressiveness, but **exactly one** source must be set per secret
+field. The validator does not silently pick a winner; supplying two
+sources is a config-load error, and supplying none is also an error.
+
+For files, paths are relative to the daemon's data directory unless
+absolute. So `webhook_url_file = "secrets/slack.url"` reads from
+`{data_dir}/secrets/slack.url`. Make sure those files have restrictive
+permissions (`chmod 600`).
+
+In delivery error messages, secrets are **redacted** before the error
+reaches your terminal or the in-app delivery-failed notification —
+webhook URLs are replaced with `[redacted]` so a 5xx response can't
+accidentally leak credentials into a log line.
+
+## Templates
+
+By default each driver uses an embedded template tuned to its channel
+type — Slack uses Block Kit, Telegram uses HTML. Override with
+`template_path` to a Go `text/template` file when you want a different
+message shape. The template receives the run, task, and event metadata
+as fields; see the embedded template files for the exact data
+structure.
+
+## What the loader rejects
+
+Caught at config load, regardless of driver:
+
+- A notifier with `id = "inapp"` (reserved).
+- A notifier with two of `inline` / `_env` / `_file` set for the same secret.
+- A notifier with no secret source set at all.
+- A duplicate `id` across `[[notifier]]` blocks.
+- Driver-specific validation — see the per-provider pages.
+
+## Where to next
+
+- [Slack provider](/notifications/providers/slack/) — webhook setup,
+  fields, routing, smoke-test.
+- [Telegram provider](/notifications/providers/telegram/) — bot setup,
+  finding `chat_id`, `parse_mode` quirks.
+- [`[[notification_route]]`](/notifications/routes/) — wiring notifiers
+  to events.
+- [Per-task sugar](/notifications/per-task/) — `notify_on_failure`
+  shortcuts.
+- [Notifications model](/notifications/model/) — the conceptual
+  overview.

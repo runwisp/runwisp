@@ -128,6 +128,7 @@
                         <option value="success">Success</option>
                         <option value="failed">Failed</option>
                         <option value="crashed">Crashed</option>
+                        <option value="skipped">Skipped</option>
                     </select>
                     <Funnel
                         class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-on-surface-faint"

@@ -1,0 +1,165 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: "[notify]"
+description: Global notification settings — disable in-app, queue size, default timeout, history retention, coalescing window.
+---
+
+`[notify]` configures how the notification subsystem behaves overall —
+in-app retention, delivery timeouts, coalescing, queue backpressure.
+Every key is optional; the defaults are tuned for a single-machine
+deployment.
+
+This is **not** the place to declare channels (use
+[`[[notifier]]`](/notifications/providers/overview/)) or routing rules
+(use [`[[notification_route]]`](/notifications/routes/)). It's the
+place for daemon-wide knobs that apply across all of them.
+
+## Keys
+
+```toml
+[notify]
+default_notifiers = ["inapp"]   # default — fire on every failure
+queue_size        = 1024        # default
+# default_timeout = "30s"       # unset — uses the built-in retry budget (5 min)
+# history_keep     = 500        # unset — no row-count cap
+# history_keep_for = "30d"      # unset — no age-based prune
+coalesce_window   = "1h"        # default
+occurrence_ring   = 10          # default
+```
+
+| Key                 | Type     | Default     | What it does                                                                                                                                                                          |
+| ------------------- | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default_notifiers` | string[] | `["inapp"]` | Channels that receive `run.failed` / `run.timeout` / `run.crashed` for every task without explicit per-task sugar, AND get appended (deduped) to per-task sugar. Set `[]` to disable. |
+| `queue_size`        | int      | `1024`      | Bound on the in-memory delivery queue. When full, the **new** event is dropped (non-blocking send).                                                                                   |
+| `default_timeout`   | duration | _(unset)_   | Caps the **total retry budget** for outbound deliveries (`MaxElapsedTime`). Unset = built-in 5-minute budget. Per-attempt HTTP timeout stays at 15s.                                  |
+| `history_keep`      | int      | _(unset)_   | Cap on the number of in-app notification rows kept in SQLite. Unset = no row-count prune; rows accumulate until you set this or `history_keep_for`.                                   |
+| `history_keep_for`  | duration | _(unset)_   | Maximum age for in-app notification rows. Unset = no age-based prune. Accepts `d` and `w` units.                                                                                      |
+| `coalesce_window`   | duration | `1h`        | Window during which repeat events with the same dedup key coalesce.                                                                                                                   |
+| `occurrence_ring`   | int      | `10`        | Number of occurrence timestamps kept on a coalesced row.                                                                                                                              |
+
+If both `history_keep` and `history_keep_for` are unset, the in-app
+notifications table grows unbounded — set at least one for any
+production deployment.
+
+## In-app surface
+
+```toml
+[notify]
+default_notifiers = []          # silence the bell entirely
+# default_notifiers = ["slack-ops"]   # or: route every failure to Slack instead
+```
+
+`default_notifiers = []` turns off the in-app notifications bell and the
+TUI footer alert line entirely — and stops `inapp` from being appended
+to per-task sugar, so `notify_on_failure = ["slack-ops"]` becomes
+Slack-only.
+
+Use the empty form when the daemon runs unattended (a build agent, a
+CI shard) where nobody opens the Web UI. Use a non-empty list (e.g.
+`["slack-ops"]`) when you want every failure to page the same channel
+without writing per-task sugar everywhere.
+
+## Backpressure: `queue_size`
+
+The notification subsystem uses an in-memory queue between the event
+producer (the run manager) and the dispatchers (Slack, Telegram, in-app).
+`queue_size` bounds it. Under sustained back-pressure — Slack rate-limits
+you, Telegram rejects your token — the queue fills up.
+
+When full, the **new** event is dropped: the producer's enqueue is a
+non-blocking send, so backpressure never reaches the run manager.
+Drops increment a counter (`droppedIngress`) reported in the daemon's
+shutdown log. They don't block task execution: backpressure is **never**
+allowed to slow the hot path.
+
+The default `1024` is comfortably more than a small daemon will ever
+generate. Bump it only if you genuinely have a fleet of high-volume
+tasks all firing at once.
+
+## `default_timeout`
+
+Outbound deliveries (Slack, Telegram) retry on transient failures with
+exponential backoff. `default_timeout` caps the **total** wall-clock time
+that retry loop is allowed to spend before giving up and synthesising a
+`notify.delivery_failed` event.
+
+Unset, the budget is the built-in **5 minutes** — a single delivery can
+spend up to 5 minutes retrying. Setting `default_timeout = "30s"` cuts
+that to 30 seconds; a hard outage surfaces in the in-app bell within
+half a minute instead of five.
+
+The per-attempt HTTP request timeout (15 seconds, hard-coded) is
+separate — `default_timeout` does not change it. If you set
+`default_timeout` smaller than 15s, the retry budget runs out during the
+first attempt and you effectively have a single-attempt delivery.
+
+## In-app history
+
+In-app notifications persist as rows in SQLite, separate from run
+rows. Two retention knobs apply:
+
+- `history_keep` — keep at most N rows. Older rows trimmed in batches.
+- `history_keep_for` — delete rows older than this duration.
+
+Both apply at once if both are set; the stricter one wins in practice.
+A retention sweeper runs every five minutes — there is no need to call
+it explicitly.
+
+## Coalescing: `coalesce_window` and `occurrence_ring`
+
+A flapping task that fails every minute would create 60 in-app rows
+per hour without protection. Instead, RunWisp coalesces by
+**dedup key**: task name + event kind + end reason. (This is unrelated
+to the daemon **fingerprint** in
+[`RUNWISP_FINGERPRINT`](/concepts/glossary/#fingerprint) — same English
+word, very different concept.)
+
+- `coalesce_window` — within this window, repeat firings sharing a
+  dedup key update the same in-app row instead of creating a new one.
+  The row's `count` increments and the latest occurrence timestamp is
+  recorded.
+- `occurrence_ring` — number of recent occurrence timestamps to keep
+  on the row. Used by the UI to render a sparkline of recent firings.
+
+In the Web UI you see one row that says "failed 14 times in the last
+30m" rather than 14 separate rows. Outbound notifiers receive
+deliveries on every event (no coalescing on Slack/Telegram by default)
+— `coalesce_window` quiets the in-app surface, where unbounded rows
+would otherwise grow without benefit.
+
+Set `coalesce_window = "0s"` to disable coalescing entirely (every
+event creates a new row). That's rarely useful in practice.
+
+## Worked example
+
+A small server that sends to Slack and wants delivery failures to
+surface within a minute:
+
+```toml
+[notify]
+default_notifiers = ["inapp"]   # keep the bell
+queue_size        = 1024
+default_timeout   = "30s"       # cap total retry budget at 30s
+history_keep      = 1000
+history_keep_for  = "60d"
+coalesce_window   = "30m"       # quieter rows for flap-prone tasks
+occurrence_ring   = 20
+```
+
+A headless build agent that ships everything off-host:
+
+```toml
+[notify]
+default_notifiers = []          # nobody's watching the bell
+queue_size        = 4096        # bursty: many tasks fire at once
+```
+
+## Where to next
+
+- [Providers overview](/notifications/providers/overview/) — declaring
+  channels.
+- [`[[notification_route]]` reference](/notifications/routes/) — wiring
+  events to channels.
+- [Notifications model](/notifications/model/) — the conceptual
+  picture, including how `notify.delivery_failed` is handled.

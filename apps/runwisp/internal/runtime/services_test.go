@@ -26,7 +26,7 @@ func serviceTask(name string, instances int) *model.Task {
 		OnOverlap:      model.PolicySkip,
 		Instances:      instances,
 		RestartDelay:   time.Millisecond,
-		RestartBackoff: model.RestartBackoffNone,
+		RestartBackoff: model.BackoffConstant,
 	}
 }
 

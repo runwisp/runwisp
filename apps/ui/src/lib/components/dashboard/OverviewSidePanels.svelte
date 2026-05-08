@@ -6,7 +6,7 @@
     import Badge from "@runwisp/ui/components/Badge.svelte";
     import { getRunStatusConfig } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
-    import type { Run } from "@runwisp/common";
+    import { isFailureEndReason, type Run } from "@runwisp/common";
     import {
         formatRunDurationLabel,
         formatStatusLabel,
@@ -89,9 +89,9 @@
                             class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-mist-500"
                         >
                             <span>Next {formatTaskNextRunLabel(task)}</span>
-                            {#if task.lastRun?.end_reason === "failed"}
+                            {#if isFailureEndReason(task.lastRun?.end_reason)}
                                 <span class="text-danger-600">
-                                    Exit {task.lastRun.exit_code}
+                                    Exit {task.lastRun?.exit_code}
                                 </span>
                             {/if}
                         </div>

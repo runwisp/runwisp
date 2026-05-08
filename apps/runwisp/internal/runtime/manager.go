@@ -225,7 +225,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	switch action {
 	case actionRejected:
-		run.End(model.ReasonFailed, -1, time.Now())
+		run.End(model.ReasonSkipped, -1, time.Now())
 		m.persistence.PersistExisting(run)
 		return run, actionErr
 	case actionQueued:
@@ -381,6 +381,12 @@ func resolveRunOutcome(result *executor.ExecuteResult) runOutcome {
 	switch {
 	case result.TimedOut:
 		reason = model.ReasonTimeout
+	case result.KilledByPolicy:
+		// log_on_full = "kill_task" tripped: the run failed to stay inside
+		// its log budget. Recorded as log_overflow so the cause is visible
+		// at a glance; still treated as a failure for retry and notification
+		// policy.
+		reason = model.ReasonLogOverflow
 	case result.Stopped:
 		reason = model.ReasonStopped
 	case result.ExitCode == 0:

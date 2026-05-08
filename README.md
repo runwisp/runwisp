@@ -16,7 +16,7 @@ One binary. One TOML file. Zero runtime dependencies. Full visibility into every
 [![Go Report Card](https://goreportcard.com/badge/github.com/runwisp/runwisp)](https://goreportcard.com/report/github.com/runwisp/runwisp)
 [![GitHub Stars](https://img.shields.io/github/stars/runwisp/runwisp?style=social)](https://github.com/runwisp/runwisp)
 
-[Quick Start](#quick-start) · [Why RunWisp?](#why-runwisp) · [Features](#features) · [Comparison](#comparison-with-crond-systemd-timers-and-supervisord) · [Docs](#documentation)
+[Quick Start](#quick-start) · [Why RunWisp?](#why-runwisp) · [Features](#features) · [Comparison](#comparison-with-crond-systemd-timers-and-supervisord) · [Docs](https://docs.runwisp.com)
 
 </div>
 
@@ -121,7 +121,8 @@ That's it — your tasks are scheduled, supervised, and observable through the W
 ```bash
 runwisp init                # scaffold runwisp.toml with annotated examples
 runwisp list                # show configured tasks and their schedules
-runwisp trigger backup-db   # run a task now, stream its output to stdout
+runwisp exec backup-db      # run a task in this CLI process (no daemon), stream output
+runwisp run-task backup-db  # trigger a run via the running daemon's REST API
 runwisp status              # check whether a daemon is alive
 runwisp tui                 # attach a fresh TUI to an already-running daemon
 runwisp validate            # parse and check runwisp.toml without starting anything
@@ -135,7 +136,7 @@ runwisp validate            # parse and check runwisp.toml without starting anyt
 
 - **Cron scheduling** — standard cron expressions, per-task concurrency policies (`queue`, `skip`, `terminate`)
 - **Process supervision** — long-running services with one or more `instances`, exponential restart backoff, crash recovery, and graceful shutdown
-- **Retries with backoff** — configurable `retry_attempts`, `retry_delay`, and `retry_backoff` (linear or exponential)
+- **Retries with backoff** — configurable `retry_attempts`, `retry_delay`, and `retry_backoff` (`constant` / `linear` / `exponential`, shared with services' `restart_backoff`)
 - **Timeouts** — per-task `timeout` enforcement, automatic kill on deadline
 - **Catchup policies** — configurable missed-run behaviour (`latest`, `all`, `skip`) via `catch_up`
 
@@ -199,58 +200,14 @@ If you need DAG pipelines or enterprise-grade orchestration, tools like Dagu, Ai
 
 ---
 
-## Configuration Reference
-
-RunWisp is configured through a single `runwisp.toml` file. Here's a complete example:
-
-```toml
-# Disk-usage safeguards
-[storage]
-max_size       = "5gb"
-min_free_space = "500mb"
-
-# Global defaults (applied to every task unless overridden)
-[defaults]
-timeout      = "1h"
-log_max_size = "100mb"
-log_on_full  = "drop_old"
-keep_runs    = 50
-keep_for     = "30d"
-
-[tasks.backup-db]
-group       = "Backups"
-description = "Nightly database backup"
-cron        = "0 2 * * *"
-timeout     = "30m"
-on_overlap  = "skip"
-keep_runs   = 30
-run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
-
-[tasks.process-event-queue]
-description    = "Worker that retries with exponential backoff"
-cron           = "*/10 * * * *"
-on_overlap     = "queue"
-retry_attempts = 3
-retry_delay    = "2s"
-retry_backoff  = "exponential"
-run = "/usr/local/bin/process-queue"
-
-[tasks.metrics-daemon]
-description = "Always-on metrics collector"
-restart     = "always"
-on_overlap  = "skip"
-run         = "/usr/local/bin/metrics-agent"
-```
-
----
-
 ## Documentation
 
-> Full-fledged documentation is coming soon. In the meantime, check out these resources:
+Full documentation lives at **[docs.runwisp.com](https://docs.runwisp.com)** — installation, the complete `runwisp.toml` schema, scheduling and concurrency policies, log rotation, the REST API, and operational guides.
 
 |                                                     |                                       |
 | --------------------------------------------------- | ------------------------------------- |
-| [Example Config](apps/runwisp/runwisp.example.toml) | Annotated example with all options    |
+| [docs.runwisp.com](https://docs.runwisp.com)        | Full user and operator documentation  |
+| [Example Config](apps/runwisp/runwisp.example.toml) | Annotated `runwisp.toml` with every option |
 | [Changelog](CHANGELOG.md)                           | Recent changes and version history    |
 | [Contributing](CONTRIBUTING.md)                     | How to contribute                     |
 | [Security Policy](SECURITY.md)                      | Reporting vulnerabilities             |

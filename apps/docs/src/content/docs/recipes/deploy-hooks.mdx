@@ -1,0 +1,187 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Deploy hooks
+description: Manual-only tasks triggered from CI via the REST API — schema migrations, blue/green flips, cache warmups — with terminate-on-overlap so a stale deploy never lingers.
+---
+
+A deploy hook is a manual-only task: no `cron`, fired from CI via
+RunWisp's REST API. Use it to give every deploy a stable, browsable
+log entry — without invoking SSH from your pipeline, without keeping
+shell scripts on the build runner, and with a single canonical
+"what happened" trail in the daemon's run history.
+
+## The task
+
+```toml
+[tasks.deploy-app]
+group       = "Deploys"
+description = "Pull the new image, run migrations, restart workers"
+# No `cron` — manual / API trigger only.
+on_overlap  = "terminate"   # a fresh deploy preempts an in-flight one
+timeout     = "10m"
+keep_runs   = 100
+keep_for    = "180d"
+notify_on_failure = ["slack-ops"]
+notify_on_success = ["slack-deploys"]
+
+run = """
+set -euo pipefail
+echo "[$(date -Iseconds)] starting deploy of $DEPLOY_VERSION"
+
+cd /srv/app
+
+# Pull the version that triggered the deploy.
+docker pull ghcr.io/example/app:$DEPLOY_VERSION
+
+# Schema migrations first — fail-fast if the new image is incompatible.
+docker run --rm \\
+  --env-file=/etc/app/migrate.env \\
+  ghcr.io/example/app:$DEPLOY_VERSION \\
+  /usr/local/bin/migrate up
+
+# Tag :current and restart workers. compose detects the image change.
+docker tag ghcr.io/example/app:$DEPLOY_VERSION ghcr.io/example/app:current
+docker compose up -d --no-deps app
+
+# Smoke-test before declaring victory.
+sleep 5
+curl --silent --show-error --fail-with-body --max-time 10 \\
+  https://app.example.com/healthz
+
+echo "[$(date -Iseconds)] deploy complete: $DEPLOY_VERSION"
+"""
+```
+
+The interesting choices:
+
+### No `cron`
+
+Omitting `cron` makes the task **manual-only**. It only runs when
+something explicitly triggers it: a `POST` to
+`/api/tasks/deploy-app/trigger`, the Web UI's "Run Now" button, the
+TUI's `r` key, or the local-only `runwisp exec deploy-app`.
+
+`runwisp list` shows it as `(manual)` in the SCHEDULE column.
+
+### `on_overlap = "terminate"`
+
+If a deploy is still running when a fresh one arrives, **kill the
+old one and start the new**. This matches what your team probably
+expects from a deploy: the freshest commit wins; nobody waits for
+yesterday's stuck migration to finish.
+
+The default of `"queue"` would lock you into a serial queue of
+deploys; `"skip"` would silently drop the new deploy on the floor
+while old one chugs. `"terminate"` is right for this scenario and
+almost no other.
+
+### `notify_on_success = ["slack-deploys"]`
+
+The only place we recommend success notifications. A deploy is a
+high-information event for a team channel — "v1.2.3 deployed at
+14:32" is exactly the kind of thing channel members want.
+
+For everything else, success notifications are noise. See the
+[notifications model][notif] discussion of why per-task success
+sugar is opt-in.
+
+[notif]: /notifications/model/
+
+## Triggering from CI
+
+The REST API trigger:
+
+```bash
+# Authenticate first (CHAP).
+TOKEN=$(curl -sSf https://runwisp.example.com/api/auth/challenge \\
+  | jq -r .nonce \\
+  | xargs -I {} sh -c '
+      RESP=$(printf "%s:%s" "$RUNWISP_PASSWORD" "{}" | sha256sum | cut -d" " -f1)
+      curl -sSf -X POST https://runwisp.example.com/api/auth \\
+        -H "Content-Type: application/json" \\
+        -d "$(jq -n --arg n "{}" --arg r "$RESP" "{nonce: \$n, response: \$r}")" \\
+      | jq -r .token
+  ')
+
+# Trigger the deploy.
+curl -sSf -X POST https://runwisp.example.com/api/tasks/deploy-app/trigger \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "X-Runwisp-Env: DEPLOY_VERSION=v1.2.3"
+```
+
+(The `X-Runwisp-Env` header above is illustrative — pass deploy
+metadata via the API as it suits your shape, or hardcode versioning
+into a wrapper script run by the task.)
+
+A typical GitHub Actions step:
+
+```yaml
+- name: Deploy to production
+  env:
+      RUNWISP_PASSWORD: ${{ secrets.RUNWISP_PASSWORD }}
+  run: ./bin/runwisp-trigger.sh deploy-app v${{ github.sha }}
+```
+
+Encapsulate the CHAP login dance in `bin/runwisp-trigger.sh` once,
+reuse across every deployable. The script is ~20 lines.
+
+## Why use a RunWisp task vs. SSH-from-CI?
+
+A running argument among ops folks. Three reasons RunWisp's model
+wins for deploys:
+
+1. **Audit trail** — every deploy is a row in the daemon with
+   start/end timestamps, exit code, captured stdout/stderr, and a
+   ULID you can quote in Slack. No more digging through GitHub
+   Actions logs to find what actually happened on the host.
+2. **No SSH keys for CI** — your pipeline talks to RunWisp over
+   HTTPS with a token. The actual production access — the ability
+   to run shell on the host — stays scoped to the daemon's user.
+3. **Re-runnable from a human** — when something goes wrong at 3am,
+   the on-call doesn't need to set up a CI rerun. They open the
+   Web UI / TUI and press "Run Now" with the same arguments the
+   last successful deploy used.
+
+The downside is that secrets the task needs (DB passwords,
+registry tokens) live on the RunWisp host's filesystem, not
+ephemerally in the pipeline. That's a real trade-off — make sure
+your data dir's permissions reflect it.
+
+## A migration-only variant
+
+Sometimes you want migrations and deploys decoupled: migrations
+during a maintenance window, the binary swap independently.
+
+```toml
+[tasks.migrate-app]
+group       = "Deploys"
+description = "Run pending schema migrations"
+# No cron. Triggered from the maintenance dashboard (a wrapper script).
+on_overlap  = "skip"   # never two migrations at once — even by accident
+timeout     = "30m"
+keep_runs   = 50
+notify_on_failure = ["slack-ops", "tg-oncall"]
+
+run = """
+set -euo pipefail
+docker run --rm --env-file=/etc/app/migrate.env \\
+  ghcr.io/example/app:current \\
+  /usr/local/bin/migrate up
+"""
+```
+
+Note `on_overlap = "skip"` here, not `terminate` — partial
+migrations are dangerous. A skipped manual trigger is recorded as
+a `failed` row with exit code `-1` and the message "task already
+running, skipping (policy: skip)" so the operator can see they
+were ignored.
+
+## Where to next
+
+- [`[tasks.*]` reference](/configuration/tasks/) — every key on
+  this task: `on_overlap`, `notify_on_failure`, `keep_runs`, etc.
+- [Slack provider](/notifications/providers/slack/) — wiring the
+  `slack-ops` and `slack-deploys` notifiers.
+- [Operations: auth](/operations/auth/) — the CHAP flow your CI
+  script is doing.

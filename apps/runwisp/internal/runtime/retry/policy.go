@@ -26,10 +26,12 @@ const BackoffResetThreshold = 60 * time.Second
 const retryDelayCap = 5 * time.Minute
 
 // IsFailureReason reports whether the given EndReason represents a failure
-// (and therefore makes the run a candidate for retry).
+// (and therefore makes the run a candidate for retry). ReasonSkipped is
+// excluded by design — a skip is the concurrency policy working as intended,
+// not a failure to retry.
 func IsFailureReason(reason model.EndReason) bool {
 	switch reason {
-	case model.ReasonFailed, model.ReasonTimeout, model.ReasonCrashed:
+	case model.ReasonFailed, model.ReasonTimeout, model.ReasonCrashed, model.ReasonLogOverflow:
 		return true
 	default:
 		return false
@@ -75,10 +77,10 @@ func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
 	}
 
 	switch task.RetryBackoff {
-	case "exponential":
+	case model.BackoffExponential:
 		delay := baseDelay * (1 << min(attempt, 30))
 		return min(delay, retryDelayCap)
-	case "linear":
+	case model.BackoffLinear:
 		delay := baseDelay * time.Duration(attempt+1)
 		return min(delay, retryDelayCap)
 	default:
@@ -94,12 +96,23 @@ func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
 	if base <= 0 {
 		base = time.Second
 	}
-	if attempt <= 0 || task.RestartBackoff != model.RestartBackoffExponential {
+	if attempt <= 0 {
 		return base
 	}
-	delay := base * (1 << min(attempt, 30))
-	if delay > RestartBackoffCap || delay <= 0 {
-		return RestartBackoffCap
+	switch task.RestartBackoff {
+	case model.BackoffExponential:
+		delay := base * (1 << min(attempt, 30))
+		if delay > RestartBackoffCap || delay <= 0 {
+			return RestartBackoffCap
+		}
+		return delay
+	case model.BackoffLinear:
+		delay := base * time.Duration(attempt+1)
+		if delay > RestartBackoffCap || delay <= 0 {
+			return RestartBackoffCap
+		}
+		return delay
+	default:
+		return base
 	}
-	return delay
 }

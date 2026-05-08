@@ -56,7 +56,13 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 	var catchUpResult runtime.CatchUpResult
 
 	if mode == modeStandalone {
-		scheduler = runtime.NewScheduler(taskManager, tasksMap)
+		// Scheduler timezone defaults to UTC unless [scheduler] timezone is set,
+		// so cron expressions don't silently shift with local DST.
+		schedLoc, locErr := config.ResolveTimezone("scheduler.timezone", cfg.Config.Scheduler.Timezone)
+		if locErr != nil {
+			return nil, locErr
+		}
+		scheduler = runtime.NewScheduler(taskManager, tasksMap, schedLoc)
 		schedResult, err = scheduler.Start()
 		if err != nil {
 			slog.Warn("Failed to start scheduler", "err", err)

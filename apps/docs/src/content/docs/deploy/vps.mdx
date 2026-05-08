@@ -1,0 +1,254 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Deploy on a VPS
+description: A practical end-to-end recipe for running RunWisp on a Linux VPS — install, dedicated user, persistent data directory, systemd, reverse proxy, and TLS.
+---
+
+This is the canonical "RunWisp on a Linux server" recipe. By the end
+you'll have a daemon running under its own non-root user, persisting
+to `/var/lib/runwisp`, supervised by systemd, fronted by a reverse
+proxy with HTTPS. Adjust the proxy section for your favourite
+(`nginx`, `Caddy`, `Traefik`); the rest is the same.
+
+## Prerequisites
+
+- A Linux VPS (Debian / Ubuntu / Fedora / Arch — anything with systemd).
+- Root access via SSH.
+- A DNS record pointing at the VPS, if you want HTTPS.
+
+## 1. Install the binary
+
+Use the installer from the [Install page][install]:
+
+```bash
+curl -fsSL https://get.runwisp.com | sh
+sudo install -m 0755 ./runwisp /usr/local/bin/runwisp
+runwisp --version
+```
+
+[install]: /getting-started/install/
+
+The binary is static and self-contained — no language runtime, no
+SQLite to install separately.
+
+## 2. Create a dedicated user
+
+Run RunWisp as a system user with no shell. The daemon executes the
+shell commands in `runwisp.toml` with this user's privileges, so keep
+its surface area small.
+
+```bash
+sudo useradd --system --home /var/lib/runwisp --shell /usr/sbin/nologin runwisp
+sudo install -d -o runwisp -g runwisp -m 0750 /var/lib/runwisp
+sudo install -d -o runwisp -g runwisp -m 0750 /etc/runwisp
+```
+
+If your tasks need to write somewhere outside `/var/lib/runwisp`,
+chmod those directories so the `runwisp` user can write — don't run
+RunWisp as root just to dodge that step.
+
+## 3. Drop in the config
+
+```bash
+sudo -u runwisp runwisp init --config /etc/runwisp/runwisp.toml
+sudo chmod 0640 /etc/runwisp/runwisp.toml
+```
+
+`runwisp init` writes an annotated TOML scaffold and prints a generated
+password. Edit the file in your editor; remove the demo task; add your
+real ones. See the [configuration reference][config] for every key.
+
+[config]: /configuration/tasks/
+
+## 4. Pick the auth strategy
+
+Either let RunWisp manage the password file, or hand it your own via
+the environment.
+
+### Auto-generated (default)
+
+The daemon will create `/var/lib/runwisp/password` on first start and
+print it on stdout. Look for it in `journalctl` after the first boot:
+
+```bash
+sudo journalctl -u runwisp --since '1 minute ago' | grep password
+```
+
+### Operator-supplied
+
+Drop the password into a `systemd` environment file:
+
+```bash
+sudo install -m 0640 -o root -g runwisp /dev/stdin /etc/runwisp/runwisp.env <<'EOF'
+RUNWISP_PASSWORD=<a long random string here>
+EOF
+```
+
+The systemd unit below loads it via `EnvironmentFile=`. The daemon
+also writes the env-supplied password to `/var/lib/runwisp/password`
+so the TUI and CLI work without re-typing it.
+
+## 5. Wire up systemd
+
+See the [systemd unit page][systemd] for a copy-paste drop-in. Quick
+version:
+
+[systemd]: /deploy/systemd/
+
+```ini
+# /etc/systemd/system/runwisp.service
+[Unit]
+Description=RunWisp daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=runwisp
+Group=runwisp
+EnvironmentFile=-/etc/runwisp/runwisp.env
+ExecStart=/usr/local/bin/runwisp daemon \
+  --config /etc/runwisp/runwisp.toml \
+  --data /var/lib/runwisp \
+  --host 127.0.0.1 \
+  --port 9477
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Bind to `127.0.0.1` (loopback) — the next step puts a reverse proxy in
+front to handle TLS and exposure. Bringing the daemon up:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now runwisp
+sudo systemctl status runwisp
+```
+
+`runwisp status` should now answer:
+
+```bash
+runwisp status
+# RunWisp is healthy at :9477
+```
+
+## 6. Reverse proxy + TLS
+
+Two example proxies. Pick one.
+
+### Caddy
+
+Caddy is the smallest path to TLS — it provisions a Let's Encrypt
+certificate automatically.
+
+```text
+# /etc/caddy/Caddyfile
+runwisp.example.com {
+    reverse_proxy 127.0.0.1:9477
+}
+```
+
+```bash
+sudo systemctl reload caddy
+```
+
+### nginx
+
+```nginx
+# /etc/nginx/conf.d/runwisp.conf
+server {
+    listen 443 ssl http2;
+    server_name runwisp.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/runwisp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/runwisp.example.com/privkey.pem;
+
+    location / {
+        proxy_pass         http://127.0.0.1:9477;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # SSE log streaming needs request body buffering off and a long timeout.
+        proxy_buffering    off;
+        proxy_read_timeout 24h;
+    }
+}
+```
+
+Use `certbot --nginx` (or your preferred tool) to provision the
+certificate.
+
+## 7. Tell the daemon to trust the proxy
+
+Setting `RUNWISP_TRUST_PROXY` is what lets the daemon honour
+`X-Forwarded-Proto` from your proxy and set the `Secure` cookie
+attribute correctly. Without it, the JWT cookie would not be marked
+`Secure` even on HTTPS — and the daemon would rate-limit by the
+proxy's loopback IP instead of the real client.
+
+Append to `/etc/runwisp/runwisp.env`:
+
+```bash
+RUNWISP_TRUST_PROXY=127.0.0.1/32,::1/128
+```
+
+Then restart:
+
+```bash
+sudo systemctl restart runwisp
+```
+
+If your proxy lives on another host (say a load balancer), use that
+host's IP / CIDR instead. **Never** set this to `0.0.0.0/0` —
+the daemon refuses that range explicitly.
+
+## 8. Smoke test
+
+```bash
+curl -sSf https://runwisp.example.com/health
+# OK
+runwisp status
+# RunWisp is healthy at :9477
+```
+
+Open the Web UI in a browser at `https://runwisp.example.com`, log in
+with the generated (or operator-supplied) password, and you should
+see the [Web UI tour][webui] in action.
+
+[webui]: /getting-started/web-ui-tour/
+
+## What to back up
+
+The data directory holds run history and on-disk logs. The
+authoritative reference is [Operations: data directory][datadir]; the
+short version for systemd:
+
+[datadir]: /operations/data-directory/
+
+```bash
+# Pause writes briefly with a service stop, snapshot, then resume.
+sudo systemctl stop runwisp
+sudo tar -czf /backups/runwisp-$(date +%F).tgz /var/lib/runwisp
+sudo systemctl start runwisp
+```
+
+Or, with the daemon running, copy the SQLite triplet
+(`runwisp.db`, `-shm`, `-wal`) atomically — see the
+[backups section][backup-section].
+
+[backup-section]: /operations/data-directory/#backups
+
+## Where to next
+
+- [Deploy with Docker](/deploy/docker/) — same idea, container edition.
+- [systemd unit](/deploy/systemd/) — the full unit file with
+  hardening directives.
+- [Operations: auth](/operations/auth/) — what
+  `RUNWISP_TRUST_PROXY` and the `Secure` cookie are doing.
+- [Operations: troubleshooting](/operations/troubleshooting/) — when
+  the install doesn't go to plan.

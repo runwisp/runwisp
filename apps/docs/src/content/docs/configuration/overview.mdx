@@ -1,0 +1,110 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Configuration overview
+description: How runwisp.toml is structured — storage safeguards, defaults, tasks, services, and notifications.
+---
+
+RunWisp is configured through a single `runwisp.toml` file. It is the
+**sole source of truth** for what runs and how — the REST API and Web UI
+are read-only and trigger-only, never mutate task definitions. To pick up
+edits, **restart the daemon** (live reload is on the roadmap, not yet
+implemented).
+
+The file is divided into a handful of sections. Most are optional; the only
+thing RunWisp truly needs is at least one `[tasks.*]` or `[services.*]`
+table with a `run` key.
+
+## A complete example
+
+```toml
+# Disk-usage safeguards
+[storage]
+max_size       = "5gb"
+min_free_space = "500mb"
+
+# Global defaults applied to every task unless overridden
+[defaults]
+timeout      = "1h"
+log_max_size = "100mb"
+log_on_full  = "drop_old"
+keep_runs    = 50
+keep_for     = "30d"
+
+[tasks.backup-db]
+group       = "Backups"
+description = "Nightly database backup"
+cron        = "0 2 * * *"
+timeout     = "30m"
+on_overlap  = "skip"
+keep_runs   = 30
+run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
+
+[tasks.process-event-queue]
+description    = "Worker that retries with exponential backoff"
+cron           = "*/10 * * * *"
+on_overlap     = "queue"
+retry_attempts = 3
+retry_delay    = "2s"
+retry_backoff  = "exponential"
+run = "/usr/local/bin/process-queue"
+
+[services.metrics-daemon]
+description = "Always-on metrics collector"
+run         = "/usr/local/bin/metrics-agent"
+```
+
+The fully annotated reference lives next to the binary at
+[`apps/runwisp/runwisp.example.toml`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/runwisp.example.toml)
+— or run `runwisp init` to drop it into your working directory.
+
+## Section by section
+
+| Section                     | Purpose                                                                                       | Reference                                                |
+| --------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `[storage]`                 | Disk-usage limits — caps total bytes used and reserves headroom on the data partition.        | [`[storage]`](/configuration/storage/)                   |
+| `[defaults]`                | Defaults inherited by every task and service unless explicitly overridden.                    | [`[defaults]`](/configuration/defaults/)                 |
+| `[tasks.<name>]`            | Scheduled or manual jobs. Cron expression, concurrency policy, retries, timeout, retention.   | [`[tasks.*]`](/configuration/tasks/)                     |
+| `[services.<name>]`         | Always-on processes. One or more `instances`, exponential restart backoff, graceful shutdown. | [`[services.*]`](/configuration/services/)               |
+| `[[notifier]]`              | Outbound channels (Slack, Telegram, more on the way). Repeated for each channel.              | [Providers overview](/notifications/providers/overview/) |
+| `[[notification_route]]`    | Routes events (`run.failed`, `run.timeout`, …) to one or more notifiers.                      | [`[[notification_route]]`](/notifications/routes/)       |
+| `[notify]`                  | Global notification settings — queue size, retention, in-app toggle.                          | [`[notify]`](/notifications/global/)                     |
+| `notify_on_failure` (sugar) | Per-task shorthand that desugars to a synthetic notification route.                           | [Per-task sugar](/notifications/per-task/)               |
+
+## Reload semantics
+
+RunWisp **does not currently support live reload** of `runwisp.toml`.
+There is no file watcher, no `SIGHUP` handler, and no `runwisp reload`
+subcommand. A running daemon keeps the config it parsed at startup until
+you restart it:
+
+```bash
+# systemd
+sudo systemctl restart runwisp
+
+# Docker
+docker restart runwisp
+
+# Manual (foreground)
+# Ctrl-C the daemon, edit the file, run `runwisp daemon` again.
+```
+
+Restart is fast — it cancels in-flight runs (which record as `stopped`
+if they exit within the daemon's 3-second graceful-shutdown window, or
+get reconciled as `crashed` on next boot if they don't), reopens the
+database, and re-applies the schedule from the new file. Live reload is
+on the roadmap; see [Operations: upgrading](/operations/upgrading/) for
+the current restart-based workflow.
+
+A startup parse error fails the boot — the daemon exits non-zero before
+opening its port. Your previous instance has already exited by then, so
+the safe pre-flight is `runwisp validate` against the new file before
+you restart.
+
+## What the schema considers a breaking change
+
+Pre-1.0, the TOML schema may receive breaking changes — they are flagged in
+the [CHANGELOG](https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md).
+The Go schema in
+[`apps/runwisp/internal/config/schema.go`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/config/schema.go)
+is the authoritative spec; these docs are the on-ramp.

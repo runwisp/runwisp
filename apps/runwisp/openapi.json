@@ -591,7 +591,9 @@
               "failed",
               "stopped",
               "timeout",
-              "crashed"
+              "crashed",
+              "skipped",
+              "log_overflow"
             ],
             "type": "string"
           },
@@ -1046,7 +1048,8 @@
           "restart_backoff": {
             "description": "Backoff curve between consecutive restarts",
             "enum": [
-              "none",
+              "constant",
+              "linear",
               "exponential"
             ],
             "type": "string"
@@ -1061,6 +1064,12 @@
             "type": "integer"
           },
           "retry_backoff": {
+            "description": "Backoff curve between consecutive retries",
+            "enum": [
+              "constant",
+              "linear",
+              "exponential"
+            ],
             "type": "string"
           },
           "retry_delay": {
@@ -1072,6 +1081,10 @@
             "description": "Per-run timeout in nanoseconds",
             "format": "int64",
             "type": "integer"
+          },
+          "timezone": {
+            "description": "IANA timezone for cron evaluation; falls back to scheduler.timezone (default UTC)",
+            "type": "string"
           }
         },
         "required": [

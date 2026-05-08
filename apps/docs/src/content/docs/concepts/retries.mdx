@@ -1,0 +1,145 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Retries & timeouts
+description: retry_attempts, retry_delay, retry_backoff, and timeout — how RunWisp handles transient failures and runaway tasks.
+---
+
+A task that exits non-zero can be retried automatically. A run that takes
+too long can be killed. Both are configured per-task, with sensible
+defaults from `[defaults]` if you leave them off.
+
+Retries apply only to **tasks**. Services don't retry — they
+[restart](#services-dont-retry-they-restart) instead.
+
+## `retry_attempts`
+
+```toml
+[tasks.publish-feed]
+cron           = "*/15 * * * *"
+run            = "/usr/local/bin/publish.sh"
+retry_attempts = 3
+retry_delay    = "30s"
+retry_backoff  = "exponential"
+```
+
+- **Default**: `0` (no retries).
+- **Semantics**: the number of **additional** attempts after the first
+  failure. `retry_attempts = 3` means up to **4 executions total** —
+  one initial run plus three retries.
+- **Triggers a retry**: the run ended with `failed` (non-zero exit),
+  `timeout`, `crashed`, or `log_overflow` (cancelled by
+  `log_on_full = "kill_task"` after exceeding `log_max_size`).
+- **Does _not_ trigger a retry**: `success`, `stopped` (manual stop via
+  the API/CLI/UI, or a sibling run cancelled it via
+  `on_overlap = "terminate"`), or `skipped` (`on_overlap = "skip"`
+  rejected the firing because another run was still in flight). Stopped
+  is a deliberate human action; skipped means the original run is still
+  running and another attempt would just race it.
+
+## `retry_delay` and `retry_backoff`
+
+`retry_delay` is parsed as a Go duration (`"5s"`, `"2m"`, `"1h"`).
+The default — used when retries are enabled but `retry_delay` is unset —
+is **5 seconds**.
+
+`retry_backoff` chooses the curve. The same enum is used by services'
+`restart_backoff`, so the values move between the two contexts cleanly.
+
+| Value                   | Wait before attempt _N_ (1-indexed retries) | With `retry_delay = "10s"`       |
+| ----------------------- | ------------------------------------------- | -------------------------------- |
+| `constant` _(or unset)_ | constant `delay`                            | 10s, 10s, 10s …                  |
+| `linear`                | `delay × N`                                 | 10s, 20s, 30s, 40s …             |
+| `exponential`           | `delay × 2^(N-1)`                           | 10s, 20s, 40s, 80s, 160s, 300s … |
+
+All curves are **capped at 5 minutes**. `exponential` with a 10-second
+base hits the cap on attempt 6 and stays there.
+
+## What retries look like in history
+
+Each attempt is its own run row in SQLite, with its own ULID, its own
+exit code, and its own captured log file. The retry chain links back via
+two fields:
+
+- `retry_attempt` — `0` for the first run, `1` for the first retry,
+  `2` for the second, and so on.
+- `retry_of_run_id` — the ULID of the immediate predecessor.
+
+In the Web UI you see each attempt as a separate entry in the task's run
+list. That's deliberate: if attempt 1 silently corrupted state and
+attempt 2 succeeded, you can still find attempt 1's stderr.
+
+:::caution[Each failed attempt notifies]
+A failure notification fires on **every** failed attempt, not only on the
+final one. A task that fails twice and then succeeds emits two failure
+notifications followed by one success. If that's noisy, lower
+`retry_attempts` or use the
+[coalescing window](/notifications/model/#coalescing) to quiet
+repeats.
+:::
+
+## `timeout`
+
+```toml
+[tasks.heavy-job]
+cron    = "0 3 * * *"
+run     = "/usr/local/bin/heavy-job.sh"
+timeout = "30m"
+```
+
+- Parsed as a Go duration (same syntax as `retry_delay`).
+- Default: inherited from `[defaults] timeout` if set; otherwise **no
+  timeout** — the run is allowed to take as long as it likes.
+- Scope: **per attempt**. A retry gets a fresh `timeout` window; the time
+  spent waiting in `retry_delay` doesn't count against it.
+
+When the deadline hits, the daemon cancels the run's context and the
+underlying process is killed. The run is recorded with end reason
+`timeout`. There is **no SIGTERM grace period** — the kill goes straight
+through. If your job needs to flush state cleanly before exiting, do it
+defensively (atomic temp-file rename, transactional commit) rather than
+relying on a graceful shutdown signal.
+
+## Interactions
+
+- **`on_overlap = "terminate"` plus retries.** If a new firing
+  terminates the running attempt, that attempt records end reason
+  `stopped` — which **blocks any further retries**. The new run from the
+  terminate policy is a fresh execution, not a retry.
+- **Manual stop.** Same story: stopping a run from the API/UI records
+  `stopped` and ends the retry chain.
+- **`parallelism > 1`.** Retries don't count against parallelism. Each
+  retry runs after its predecessor is already terminal, so there's no
+  overlap to evaluate.
+
+## Services don't retry — they restart
+
+Services have a different model because they're meant to stay up:
+
+Tasks and services share the same backoff vocabulary —
+`constant` / `linear` / `exponential` — so one rule is easier to
+remember. Tasks add `retry_attempts` (services run forever); services
+add `restart_delay` (the supervisor owns the cadence).
+
+| Field             | Tasks                                                        | Services                                                        |
+| ----------------- | ------------------------------------------------------------ | --------------------------------------------------------------- |
+| `retry_attempts`  | ✅ default `0`                                               | ❌ rejected                                                     |
+| `retry_delay`     | ✅ default `5s`                                              | ❌ rejected                                                     |
+| `retry_backoff`   | ✅ `constant` / `linear` / `exponential`, default `constant` | ❌ rejected                                                     |
+| `restart_delay`   | ❌ rejected                                                  | ✅ default `1s`                                                 |
+| `restart_backoff` | ❌ rejected                                                  | ✅ `constant` / `linear` / `exponential`, default `exponential` |
+
+A service supervisor restarts a replica forever (with exponential
+backoff capped at 60s) until you stop it explicitly. A
+replica that stays up for at least 60 seconds resets its backoff
+counter, so transient flapping doesn't permanently slow restarts on a
+service that eventually stabilises.
+
+## Where to next
+
+- [Concurrency policies](/concepts/concurrency/) — what stops a retry
+  chain when `on_overlap = "terminate"` fires.
+- [Notifications model](/notifications/model/) — coalescing repeated
+  failure alerts so retries don't spam your channel.
+- [`[tasks.*]` reference](/configuration/tasks/) — the exact schema for
+  every retry and timeout field.

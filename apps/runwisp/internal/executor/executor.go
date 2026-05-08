@@ -32,10 +32,11 @@ type Executor interface {
 
 // ExecuteResult summarizes a completed execution.
 type ExecuteResult struct {
-	ExitCode int
-	Error    error
-	TimedOut bool
-	Stopped  bool
+	ExitCode       int
+	Error          error
+	TimedOut       bool
+	Stopped        bool
+	KilledByPolicy bool // log_on_full = "kill_task" tripped — recorded as failed, not stopped
 }
 
 // RoutingExecutor dispatches task execution to the appropriate Backend
@@ -184,20 +185,23 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	}
 
 	timedOut := errors.Is(cancelCtx.Err(), context.DeadlineExceeded)
-	stopped := !timedOut && errors.Is(cancelCtx.Err(), context.Canceled)
+	killedByPolicy := writer.KilledByPolicy()
+	stopped := !timedOut && !killedByPolicy && errors.Is(cancelCtx.Err(), context.Canceled)
 
 	// Propagate unexpected wait errors; ignore them when context cancellation
-	// is the cause (timed out / stopped) since the OS error is expected then.
+	// is the cause (timed out / stopped / policy-killed) since the OS error
+	// is expected then.
 	var resultErr error
-	if waitErr != nil && !timedOut && !stopped {
+	if waitErr != nil && !timedOut && !stopped && !killedByPolicy {
 		resultErr = waitErr
 	}
 
 	return &ExecuteResult{
-		ExitCode: exitCode,
-		Error:    resultErr,
-		TimedOut: timedOut,
-		Stopped:  stopped,
+		ExitCode:       exitCode,
+		Error:          resultErr,
+		TimedOut:       timedOut,
+		Stopped:        stopped,
+		KilledByPolicy: killedByPolicy,
 	}
 }
 
@@ -211,6 +215,9 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 
 	cancelCtx, cancelFunc := context.WithCancel(ctx)
 
+	bus := r.eventBus
+	taskName := task.Name
+	runID := run.ID
 	writer, err := NewLogWriter(LogWriterOpts{
 		LogPath:     logPath,
 		IdxPath:     idxPath,
@@ -220,6 +227,18 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		CancelFunc:  cancelFunc,
 		MinFreeDisk: r.diskChecker.minFreeDisk,
 		LogDir:      r.logDir,
+		OnDiskPressure: func(free, min int64, killed bool) {
+			if bus == nil {
+				return
+			}
+			bus.Publish(events.EventLogDiskPressure, events.LogDiskPressureEvent{
+				TaskName:     taskName,
+				RunID:        runID,
+				FreeBytes:    free,
+				MinFreeBytes: min,
+				KilledTask:   killed,
+			})
+		},
 	})
 	if err != nil {
 		cancelFunc()

@@ -1,0 +1,273 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Troubleshooting
+description: Symptom-driven guide — daemon won't start, can't log in, tasks not firing, logs missing, notifications silent — with the exact remedies for each.
+---
+
+A symptom-driven map of the failure modes operators actually hit, with
+the messages the daemon emits when each one happens. If you're reading
+this with a problem in front of you, find the symptom that matches and
+work from there.
+
+For everything else, the daemon's own logs are the next stop:
+
+```bash
+sudo journalctl -u runwisp -n 200      # systemd
+docker logs --tail 200 runwisp         # docker
+tail -n 200 data/daemon.log            # self-spawned via the TUI
+```
+
+## Daemon won't start
+
+### `port 9477 on 127.0.0.1 is already in use by another process`
+
+Some other service holds the port. The daemon's error tells you which
+diagnostic command to run:
+
+```bash
+ss -ltnp 'sport = :9477'
+# or
+lsof -iTCP:9477 -sTCP:LISTEN
+```
+
+Either stop the offending process, or pass `--port 9478` (or any free
+port) to RunWisp. If you've changed the port, remember to update any
+`HEALTHCHECK`, reverse proxy, or `runwisp status` invocation that
+hardcodes it.
+
+### `another RunWisp daemon is already running on port 9477 with a different password`
+
+You have a second copy of `runwisp` running — likely from a different
+working directory with its own `data/` and `data/password`. The CLI you
+just started can't authenticate to that daemon because they hold
+different secrets.
+
+Three ways out:
+
+- **Stop the other daemon.** `pkill runwisp` or kill the PID listed in
+  the other dir's `daemon.pid`.
+- **Use the matching password.** `RUNWISP_PASSWORD=$(cat /other-data/password) runwisp tui`.
+- **Pick a different port.** `runwisp --port 9478 --data ./local-data`.
+
+### `daemon failed to start: health check timed out`
+
+Process started but didn't pass `/health` within 10 seconds. Look at
+`data/daemon.log` (when self-spawned) or your service manager's logs
+for the underlying cause — usually a config validation error printed
+before the listener bound.
+
+### `refusing to write data/password: path is a symlink`
+
+A defensive check. The daemon refuses to follow symlinks when writing
+secrets, to prevent a TOCTOU attack against the data directory.
+Replace the symlink with a real file (or a real directory) and restart.
+
+### "permission denied" on the data directory
+
+The user the daemon runs as can't `mkdir` or write under `--data`.
+Common when systemd's `User=` was changed but the data dir's owner
+wasn't updated:
+
+```bash
+sudo chown -R runwisp:runwisp /var/lib/runwisp
+sudo chmod 0700 /var/lib/runwisp
+```
+
+## Can't log in
+
+### `401 Invalid password`
+
+Either the password is wrong, or you typed it against the wrong daemon
+(see [different password](#another-runwisp-daemon-is-already-running-on-port-9477-with-a-different-password)).
+The canonical password is whatever's in `<data-dir>/password`.
+
+### `401 Invalid or expired challenge`
+
+The CHAP nonce expired (5-minute lifetime) or was already consumed by a
+parallel login attempt. Refresh the page or retry — the client fetches
+a new challenge automatically. If the error keeps repeating after a
+fresh tab, the host clock is likely skewed; check `date -u` against the
+daemon host.
+
+### `too many authentication attempts against the daemon on port 9477`
+
+You hit the **5 attempts per IP per 5 minutes** rate limit. Wait it out
+(the window slides automatically) or restart the daemon to clear the
+in-memory limiter. See [Auth: rate limiting][rate].
+
+[rate]: /operations/auth/#rate-limiting
+
+### "I lost the password"
+
+It's in `data/password`. If the file is also lost — delete the file
+and restart the daemon. RunWisp will generate a new one and print it
+on stdout. Existing JWTs become invalid (the daemon also rotates the
+JWT secret when a previously-explicit password disappears), so
+everyone re-logs in.
+
+### Web UI shows `401` after restart, then works after a re-login
+
+Your JWT expired (24-hour lifetime) **or** you changed
+`RUNWISP_PASSWORD` between restarts. The latter intentionally rotates
+the JWT secret to invalidate stale sessions. Re-login.
+
+## Tasks aren't running
+
+### A scheduled task never fires
+
+Check, in order:
+
+1. **Did the daemon load this task?** `runwisp list` prints every task
+   the config loader saw. If yours isn't there, the config didn't parse
+   or the task was renamed.
+2. **Is the cron expression what you expect?** `runwisp list` shows the
+   raw expression from the file. Compare against an external evaluator
+   like [crontab.guru].
+3. **Is the daemon's clock right?** Cron runs in the daemon's local
+   timezone; a host with a clock skewed by hours will fire at unexpected
+   times. `date -u` on the host.
+4. **Is `parallelism` saturated with `on_overlap = "skip"`?** Each
+   firing decides whether to start based on how many runs are currently
+   in-flight. A long-running task with `parallelism = 1` and
+   `on_overlap = "skip"` skips every firing while the first run is
+   still going. The Web UI's task detail shows this clearly — every
+   skipped firing is recorded as a `failed` row with exit code `-1`
+   and the message "task already running, skipping (policy: skip)".
+
+[crontab.guru]: https://crontab.guru/
+
+### A manual `runwisp exec` exits 0 but the daemon shows nothing
+
+`runwisp exec` runs the task **inline in the CLI process**, not
+against the running daemon — it is intentional. (Since 0.5, `exec`
+also refuses when a daemon is up, so this only happens in setups where
+the daemon is on a different host or `--data` directory.) To trigger
+via the daemon, use [`runwisp run-task <name>`][runtask], the Web UI,
+the TUI, or `POST /api/tasks/{name}/trigger`.
+
+[runtask]: /cli/#runwisp-run-task-task
+
+### A service replica keeps restarting
+
+The supervisor restarts crashed replicas with [exponential backoff][backoff]
+capped at 60 seconds. If your `run` exits within 60 seconds it never
+"stabilises" and the backoff keeps growing — open the run history,
+read the most recent log to see why the process is exiting.
+
+[backoff]: /configuration/services/#restart-behaviour
+
+A common cause: the binary in `run` doesn't exist on the target
+filesystem, or the user RunWisp runs as can't `exec` it. The log
+records `exec: <path>: no such file or directory` immediately.
+
+### Task fires but exits with code `-2`
+
+`-2` means **crashed**. The daemon was killed (SIGKILL, OOM, host
+reboot) while this run was in flight. On startup the reconciler marks
+all `running` rows as `crashed` and assigns exit `-2`. This is
+expected behaviour, not a bug — the run was real but not observed to
+completion.
+
+## Logs are missing
+
+### `Log output stopped: disk space critically low`
+
+Your `[storage] min_free_space` threshold has been crossed mid-run.
+The log writer silently drops further lines until disk pressure
+recovers. The task itself is **not** killed — see
+[`[storage]` reference][storage]. Free up disk and the next run will
+log normally.
+
+[storage]: /configuration/storage/#what-min_free_space-actually-does
+
+### Task logs cut off at `log_max_size`
+
+Per-task `log_max_size` reached. With `log_on_full = "drop_old"`
+(default) the head of the log is rotated to `*.log.prev` and new lines
+overwrite the file; with `drop_new` further lines are dropped; with
+`kill_task` the task is terminated. Increase the cap or reduce the
+volume.
+
+### A run row exists in history but its log pane is blank
+
+The retention sweeper deleted the underlying log file (the SQLite row
+outlives the on-disk file by design — metadata is cheap, log bytes
+are not). Check `[storage] max_size` and per-task `keep_runs` /
+`keep_for` — the sweeper deletes oldest completed runs (rows + log
+files) to enforce the cap.
+
+## Notifications are silent
+
+### A failure happened but Slack didn't fire
+
+Walk down the chain:
+
+1. **In-app got it?** Check the bell in the Web UI. If yes, the event
+   reached the notification subsystem; the problem is the outbound
+   channel.
+2. **Is there a route that matches?** Either an explicit
+   `[[notification_route]]` with `match.kind = ["run.failed", …]`, or a
+   `notify_on_failure = ["slack-ops"]` on the task itself.
+3. **Is the notifier ID spelled right?** The route refers to a
+   `[[notifier]]` block by `id`. Typos surface at config load — but
+   only if the route uses an unknown id; an unused notifier is fine.
+4. **Did the channel itself fail?** Look for an in-app row of kind
+   `notify.delivery_failed` with the reason. Slack outages, expired
+   webhooks, and revoked tokens all show up here.
+
+### `notify.delivery_failed` events keep arriving
+
+The outbound channel is broken. The daemon retries with exponential
+backoff inside a 5-minute total budget. If the channel stays down,
+each event ends up as one in-app delivery-failure row. Fix the channel;
+the synthetic events stop on their own.
+
+You can route `notify.delivery_failed` to an alternate channel — see
+the [route reference][routes].
+
+[routes]: /notifications/routes/#delivery-failures-the-cycle-break
+
+## Web UI / TUI quirks
+
+### "Connection lost" overlay
+
+Daemon is unreachable. The UI auto-reconnects with backoff; click
+**Retry** for an immediate attempt. If the daemon is genuinely down,
+your service manager's logs will tell you why.
+
+### `cannot reach daemon at <url> — is it running?`
+
+The TUI prints this when its API base URL can't reach a daemon. Almost
+always a `--host` / `--port` mismatch. The TUI inherits the flags you
+passed; double-check you're pointing at the same address as the daemon.
+
+### `runwisp openapi` differs from `apps/runwisp/openapi.json`
+
+That's fine — `runwisp openapi` reflects the binary you have
+installed; the file in the repo reflects the head of `main`. Use the
+binary's output as the source of truth for whatever client you're
+generating.
+
+## Diagnostics that always help
+
+A short checklist for any reported issue:
+
+- **Version**: `runwisp --version` (or check `runwisp status`).
+- **Status**: `runwisp status` — exit code, version, uptime.
+- **Config**: `runwisp validate` — confirms TOML parses against the
+  installed binary.
+- **Logs**: the daemon's stderr or `data/daemon.log`.
+- **Recent runs**: `data/logs/<task>/` for the last few `.log` files.
+
+If you're filing an issue, include all five and a redacted
+`runwisp.toml`. That's enough for someone to reproduce.
+
+## Where to next
+
+- [Operations: auth (CHAP + JWT)](/operations/auth/) — login failures
+  and rate limiting in detail.
+- [Operations: data directory](/operations/data-directory/) — where
+  to look on disk.
+- [Operations: upgrading](/operations/upgrading/) — when an upgrade
+  starts going sideways.

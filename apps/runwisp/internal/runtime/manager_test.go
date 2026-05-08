@@ -72,12 +72,16 @@ func TestPolicySkip(t *testing.T) {
 	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 
-	// Second run should skip
+	// Second run should skip and persist with end_reason="skipped" — the skip
+	// policy is working as intended, so it must not pose as a failure to
+	// retries, notifications, or stats.
 	run2, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.Error(t, err)
 	assert.Equal(t, "task already running, skipping (policy: skip)", err.Error())
 	assert.Equal(t, model.PhaseEnded, run2.Status)
-	assert.Equal(t, model.EndReasonPtr(model.ReasonFailed), run2.EndReason)
+	assert.Equal(t, model.EndReasonPtr(model.ReasonSkipped), run2.EndReason)
+	assert.Equal(t, -1, run2.ExitCode)
+	assert.False(t, run2.IsRetryable(), "skipped runs must not be flagged as retryable")
 }
 
 func TestPolicyQueue(t *testing.T) {
@@ -437,6 +441,25 @@ func TestLoadPendingRunsSkippedTaskNotFound(t *testing.T) {
 	assert.Equal(t, 0, result.Resumed)
 	assert.Equal(t, 0, result.Queued)
 	assert.Equal(t, 0, result.Failed)
+}
+
+func TestResolveRunOutcomeKilledByPolicy(t *testing.T) {
+	cases := []struct {
+		name       string
+		result     executor.ExecuteResult
+		wantReason model.EndReason
+	}{
+		{"policy kill records as log_overflow", executor.ExecuteResult{ExitCode: -1, Stopped: true, KilledByPolicy: true}, model.ReasonLogOverflow},
+		{"clean stop stays stopped", executor.ExecuteResult{ExitCode: -1, Stopped: true}, model.ReasonStopped},
+		{"timeout still wins over policy", executor.ExecuteResult{ExitCode: -1, TimedOut: true, KilledByPolicy: true}, model.ReasonTimeout},
+		{"success unaffected", executor.ExecuteResult{ExitCode: 0}, model.ReasonSuccess},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveRunOutcome(&tc.result)
+			assert.Equal(t, tc.wantReason, got.endReason)
+		})
+	}
 }
 
 func TestPersistAfterShutdownDoesNotPanic(t *testing.T) {

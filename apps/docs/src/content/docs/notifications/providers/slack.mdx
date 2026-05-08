@@ -1,0 +1,217 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Slack
+description: Slack notifier — incoming-webhook driver. Field reference plus an end-to-end walkthrough from creating the webhook to routing failures into a channel.
+---
+
+The `slack` driver delivers via Slack's [Incoming Webhooks][iw]. One
+webhook URL maps to one default channel; an optional `channel` override
+lets a single webhook target multiple destinations. This page is both
+the field reference and the setup walkthrough.
+
+[iw]: https://api.slack.com/messaging/webhooks
+
+## Fields
+
+```toml
+[[notifier]]
+id              = "slack-ops"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+channel         = "#ops"          # optional override
+```
+
+| Key                | Type   | Required           | What it does                                                                    |
+| ------------------ | ------ | ------------------ | ------------------------------------------------------------------------------- |
+| `webhook_url`      | string | one-of (see below) | Inline incoming-webhook URL.                                                    |
+| `webhook_url_env`  | string | one-of             | Name of an env var holding the URL.                                             |
+| `webhook_url_file` | string | one-of             | Path to a file containing the URL. Relative paths resolve under the data dir.   |
+| `channel`          | string | no                 | Override the default channel/user. Must start with `#` (channel) or `@` (user). |
+| `template_path`    | string | no                 | Path to a Go-template file overriding the embedded message format.              |
+
+`id` and `type` are the
+[common fields](/notifications/providers/overview/#common-fields)
+shared with every driver. **Exactly one** of `webhook_url`,
+`webhook_url_env`, `webhook_url_file` must be set. The validator
+rejects a notifier with two of three sources to make accidents
+impossible. Omitting all three is also an error.
+
+## 1. Create the incoming webhook
+
+In your Slack workspace:
+
+1. Open [api.slack.com/apps](https://api.slack.com/apps) and create a new
+   app (or pick an existing one) for the workspace you want notifications in.
+2. Under **Incoming Webhooks**, toggle the feature on.
+3. Click **Add New Webhook to Workspace**, pick the destination
+   channel (e.g. `#ops`), and authorise.
+4. Copy the resulting URL. It looks like
+   `https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX`.
+
+Treat that URL as a secret — anyone with it can post to your
+channel.
+
+## 2. Store the URL outside `runwisp.toml`
+
+Three options, ordered from "everywhere works" to "secret-store
+friendly." Mixing two sources is a config-load error.
+
+### Env var (recommended)
+
+```bash
+# /etc/runwisp/runwisp.env (loaded by systemd via EnvironmentFile=)
+RUNWISP_SLACK_OPS_URL=https://hooks.slack.com/services/T00.../B00.../XXX...
+```
+
+### File on disk
+
+```bash
+sudo install -d -o runwisp -g runwisp -m 0700 /etc/runwisp/secrets
+echo 'https://hooks.slack.com/services/...' \
+  | sudo install -m 0600 -o runwisp -g runwisp /dev/stdin /etc/runwisp/secrets/slack-ops.url
+```
+
+Useful when the URL flows from a tool like Vault or a secrets
+operator — write it to a known path, point RunWisp at the path.
+
+### Inline (don't)
+
+The notifier supports `webhook_url = "https://…"` directly in
+`runwisp.toml`. **Don't.** Your config probably lives in git or
+gets shared in a chat at some point; an inline secret will leak
+eventually.
+
+## 3. Declare the notifier
+
+```toml
+[[notifier]]
+id              = "slack-ops"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+channel         = "#ops"          # optional override of the webhook's default
+```
+
+For the file variant:
+
+```toml
+[[notifier]]
+id               = "slack-ops"
+type             = "slack"
+webhook_url_file = "/etc/runwisp/secrets/slack-ops.url"
+channel          = "#ops"
+```
+
+The `id` is what other parts of `runwisp.toml` refer to. Pick
+something readable — `slack-ops`, `slack-deploys`, `slack-marketing`
+are all reasonable. The `channel` field is optional; without it the
+webhook posts to whatever channel was selected when the webhook was
+created.
+
+## 4. Route failures to it
+
+Two equivalent ways. Pick whichever reads better in your file.
+
+### Per-task sugar (the easy way)
+
+```toml
+[tasks.backup-postgres]
+cron              = "30 2 * * *"
+notify_on_failure = ["slack-ops"]
+run               = "..."
+```
+
+That single line desugars to a synthetic route — see
+[Per-task notification sugar][sugar]. Behind the scenes:
+
+[sugar]: /notifications/per-task/
+
+```toml
+# Synthesised by the loader, you don't write this:
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-postgres" }
+notify = ["slack-ops", "inapp"]
+```
+
+The implicit `"inapp"` notifier means the bell in the Web UI also
+lights up — a redundant safety net if Slack itself is down.
+
+### Explicit route (when you want one rule covering many tasks)
+
+```toml
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["slack-ops"]
+```
+
+No `match.task` glob = match every task. Combine with task globs
+for finer control:
+
+```toml
+# Backup failures specifically also page the on-call channel
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notify = ["slack-ops", "tg-oncall"]
+```
+
+The router deduplicates — if a backup failure matches both a
+generic route and a backup-specific route, Slack receives one
+message, not two.
+
+## 5. Smoke-test
+
+The fastest way to verify everything is wired up: trigger a task
+that's expected to fail.
+
+```bash
+runwisp exec smoke-test       # whatever you have that exits non-zero
+```
+
+Within a few seconds you should see:
+
+- A message in `#ops` with the task name, end reason, and a
+  preview of the captured stderr.
+- An entry in the Web UI's notification bell.
+
+Both at once is the happy path. If only the bell lights up, the
+Slack delivery failed — open the bell and look for an event of
+kind `notify.delivery_failed` for the underlying error (expired
+webhook, rate limit, network).
+
+## Customising the message
+
+The default Slack message embeds the task name, the end reason, the
+duration, and a link back to the run in the Web UI. To customise,
+point at a Go-template file:
+
+```toml
+[[notifier]]
+id              = "slack-ops"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+template_path   = "/etc/runwisp/templates/slack.tmpl"
+```
+
+The template receives the full event struct — task name, run id,
+exit code, end reason, captured tail. For most teams the default is
+enough; the override is there for branded incident messages or
+team-specific routing keys.
+
+## Slack-specific validation
+
+Caught at config load:
+
+- `channel` set to a value that doesn't start with `#` (channel) or
+  `@` (user).
+- All of the common
+  [provider rules](/notifications/providers/overview/#what-the-loader-rejects)
+  apply too.
+
+## Where to next
+
+- [Telegram provider](/notifications/providers/telegram/) — same idea,
+  different chat platform.
+- [`[[notification_route]]` reference](/notifications/routes/) — the
+  full glob and severity-threshold semantics.
+- [Notifications model](/notifications/model/) — coalescing, the
+  delivery-failure cycle break, and the trust model.

@@ -1,0 +1,180 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: systemd unit
+description: A copy-paste systemd unit file for headless RunWisp — non-root user, environment file for the password, hardening directives, and what to put in ExecStart.
+---
+
+A drop-in systemd unit for running RunWisp headless on a Linux box.
+Pair it with the [VPS deploy guide][vps] for the full bring-up flow
+(create the user, install the binary, set up the data dir, then this
+unit).
+
+[vps]: /deploy/vps/
+
+## The unit
+
+```ini
+# /etc/systemd/system/runwisp.service
+[Unit]
+Description=RunWisp daemon
+Documentation=https://docs.runwisp.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=runwisp
+Group=runwisp
+
+# Optional environment file for RUNWISP_PASSWORD, RUNWISP_TRUST_PROXY,
+# RUNWISP_FINGERPRINT, etc. The leading `-` makes it optional —
+# systemd doesn't fail if the file is missing.
+EnvironmentFile=-/etc/runwisp/runwisp.env
+
+ExecStart=/usr/local/bin/runwisp daemon \
+  --config /etc/runwisp/runwisp.toml \
+  --data /var/lib/runwisp \
+  --host 127.0.0.1 \
+  --port 9477
+
+# Restart policy
+Restart=on-failure
+RestartSec=2s
+
+# Graceful shutdown. The daemon's own deadline is 3s (see
+# /operations/upgrading/#what-doesnt). TimeoutStopSec=10s gives systemd
+# 7s of headroom over that so a slow drain still finishes cleanly before
+# systemd escalates to SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+
+# The daemon needs to write to its data directory and read its config.
+# `ReadWritePaths` re-grants writes inside the strict ProtectSystem.
+ReadWritePaths=/var/lib/runwisp
+ReadOnlyPaths=/etc/runwisp
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Save it, then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now runwisp
+sudo systemctl status runwisp
+```
+
+## What the directives do
+
+A short justification for each non-obvious directive — feel free to
+strip the ones you don't want.
+
+| Directive              | Effect                                                                                                                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `User=` / `Group=`     | Run as a dedicated, shell-less system user. Tasks in `runwisp.toml` execute under this account.                                                                                                                         |
+| `EnvironmentFile=-…`   | Optional file with `RUNWISP_PASSWORD=…` etc. Leading `-` = "no error if missing".                                                                                                                                       |
+| `Restart=on-failure`   | Restart only when the daemon exits non-zero. A clean `systemctl stop` doesn't trigger restart.                                                                                                                          |
+| `TimeoutStopSec=10s`   | systemd waits 10s after `SIGTERM` before sending `SIGKILL`. The daemon's own shutdown deadline is **3 seconds** ([defined in upgrading][shutdown-deadline]); the extra 7s of headroom is for systemd's own bookkeeping. |
+| `NoNewPrivileges=true` | The daemon (and the tasks it spawns) cannot gain privileges via setuid binaries.                                                                                                                                        |
+| `ProtectSystem=strict` | The whole filesystem is read-only by default — only `/dev`, `/proc`, `/sys`, and the `ReadWritePaths` exception are writable.                                                                                           |
+| `ProtectHome=true`     | `/home`, `/root`, `/run/user` are inaccessible. Your tasks can't accidentally read someone's `~/.ssh`.                                                                                                                  |
+| `PrivateTmp=true`      | Per-service `/tmp`. Avoids collisions with anything else on the host.                                                                                                                                                   |
+| `ReadWritePaths=…`     | The data dir is writable.                                                                                                                                                                                               |
+| `ReadOnlyPaths=…`      | The config dir is read-only. RunWisp never mutates `runwisp.toml`, so this also enforces that.                                                                                                                          |
+
+If any of your tasks need to write outside `/var/lib/runwisp`, add
+those paths to `ReadWritePaths`. Otherwise the writes will silently
+fail with `EROFS`.
+
+## Env file template
+
+```bash
+# /etc/runwisp/runwisp.env
+# Permissions: chmod 0640, chown root:runwisp
+
+# The daemon's login password. If unset, RunWisp generates one and
+# writes it to /var/lib/runwisp/password on first boot.
+RUNWISP_PASSWORD=<a long random string>
+
+# Trust an upstream reverse proxy on loopback (Caddy, nginx).
+# Required for the JWT cookie to carry the Secure flag over HTTPS.
+RUNWISP_TRUST_PROXY=127.0.0.1/32,::1/128
+```
+
+```bash
+sudo install -m 0640 -o root -g runwisp /dev/stdin /etc/runwisp/runwisp.env <<'EOF'
+RUNWISP_PASSWORD=<paste-or-generate>
+EOF
+```
+
+## Reload behaviour
+
+There is no `ExecReload` directive in the unit above because RunWisp
+**does not currently support live reload** of `runwisp.toml`. To pick
+up config changes, restart:
+
+```bash
+sudo systemctl restart runwisp
+```
+
+Restart cancels in-flight runs. They're marked `stopped` if they exit
+within the daemon's [3-second graceful-shutdown window][shutdown-deadline]
+or `crashed` on the next boot if they don't — either way no run history
+is lost. See [Operations: upgrading][upgrade] for the full picture; live
+reload is on the roadmap.
+
+[upgrade]: /operations/upgrading/
+[shutdown-deadline]: /operations/upgrading/#what-doesnt
+
+## Logs
+
+The daemon writes its diagnostic logs to stderr; systemd captures them
+via the journal:
+
+```bash
+sudo journalctl -u runwisp -n 100 -f       # live tail
+sudo journalctl -u runwisp --since '1 hour ago'
+sudo journalctl -u runwisp -p warning      # warnings and above
+```
+
+Per-task output is captured to `/var/lib/runwisp/logs/<task>/` and is
+**not** in the journal — see [Operations: data directory][datadir].
+
+[datadir]: /operations/data-directory/
+
+## Health check
+
+systemd doesn't watch RunWisp's `/health` endpoint by default — but
+you can wire it in if you'd like systemd to react to liveness:
+
+```ini
+[Service]
+ExecStartPost=/bin/bash -c 'until /usr/local/bin/runwisp status; do sleep 1; done'
+```
+
+That makes `systemctl start runwisp` block until the daemon is
+healthy, which makes downstream `Requires=runwisp.service` / `After=`
+units behave correctly.
+
+## Where to next
+
+- [Deploy on a VPS](/deploy/vps/) — the end-to-end install, proxy,
+  and this unit, glued together.
+- [Operations: troubleshooting](/operations/troubleshooting/) — what
+  the daemon's exit codes mean when systemd marks it `failed`.
+- [CLI reference](/cli/) — every flag the `ExecStart` line accepts.

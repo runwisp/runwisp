@@ -86,12 +86,17 @@ func TestCountRunsFiltered(t *testing.T) {
 	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
 	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
 	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task2", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task3", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonLogOverflow), TriggeredBy: model.TriggeredByAPI}))
 
 	count, err := db.CountRunsFiltered("", "", "")
 	require.NoError(t, err)
-	assert.Equal(t, int64(3), count)
+	assert.Equal(t, int64(4), count)
 
 	count, err = db.CountRunsFiltered(string(model.ReasonSuccess), "", "")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	count, err = db.CountRunsFiltered(string(model.ReasonLogOverflow), "", "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 
@@ -102,6 +107,23 @@ func TestCountRunsFiltered(t *testing.T) {
 	count, err = db.CountRunsFiltered("", "", "task2")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
+}
+
+func TestRunSummaryGroupsLogOverflowAsFailed(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "ok", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "bad", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "noisy", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonLogOverflow), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "skipped", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSkipped), TriggeredBy: model.TriggeredByAPI}))
+
+	summary, err := db.GetRunSummary()
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), summary.Total)
+	assert.Equal(t, int64(1), summary.Success)
+	assert.Equal(t, int64(2), summary.Failed,
+		"log_overflow must count as a failure alongside failed/crashed/timeout")
 }
 
 func TestQueryRunsByTask(t *testing.T) {
