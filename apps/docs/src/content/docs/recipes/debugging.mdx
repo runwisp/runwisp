@@ -1,0 +1,303 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Debugging real failures
+description: Playbooks for the three failure shapes RunWisp operators actually hit — a flapping task, a crash-looping service, and a retry storm — with the exact knobs to turn.
+---
+
+The [troubleshooting][trouble] page covers "the daemon won't start" and
+"I can't log in." This page picks up where that one stops: your daemon
+is fine, your config parses, and one of your **tasks or services is
+misbehaving in production**. Three shapes account for almost everything
+operators report; this page walks each one end-to-end.
+
+[trouble]: /operations/troubleshooting/
+
+## The first 30 seconds of any incident
+
+Before you change a knob, look at what RunWisp already captured:
+
+1. **Open the task in the Web UI** (or `runwisp tui`, then select it).
+   The run history is the timeline of every attempt — exit codes,
+   durations, and end reasons sit one click away.
+2. **Read the failing run's log.** Click the row, scroll the log
+   pane. The captured stdout/stderr is on disk and survives daemon
+   restarts; if it's not telling you why, the script isn't logging
+   enough.
+3. **Note the end reason.** `failed` (non-zero exit), `timeout`
+   (cap hit), `crashed` (daemon was killed mid-run), `stopped` (you or
+   `on_overlap = "terminate"` cancelled it), `skipped`
+   (`on_overlap = "skip"` rejected it), `log_overflow`
+   (`log_on_full = "kill_task"` killed it). The end reason narrows the
+   cause more than the exit code does.
+
+Once you know which shape you're in, jump to the matching playbook.
+
+## A flapping task
+
+**Symptom**: the task fires on schedule, sometimes succeeds and
+sometimes fails, and the failures don't repeat under inspection. Your
+notifications channel is filling up with "failed → succeeded → failed
+→ succeeded" cycles.
+
+### Step 1 — confirm it's actually flapping, not consistently failing
+
+Open the task's run history. Sort by status. If the last 10 runs are
+**all** failures, you don't have a flap — you have a regression. Skip
+to the [retry storm playbook](#a-retry-storm) if a real outage is
+generating noise; otherwise treat it as a bug to fix.
+
+A real flap looks like a roughly even mix of success and failure rows,
+typically clustered on **transient external dependencies** (DNS,
+upstream APIs, slow disks).
+
+### Step 2 — read three failed logs side-by-side
+
+Pick three failure rows and open each one. You're looking for the
+same error message — the same line of stderr, the same exit code.
+
+- Same message every time? It's not a flap; it's a **deterministic bug
+  with a non-deterministic trigger** (a row that exists half the time,
+  a config flag that flips). Fix the trigger.
+- Different messages every time? You're hitting **multiple flaky
+  dependencies**. Add a retry; the next step covers the right shape.
+
+### Step 3 — make the failures self-heal
+
+Add a small, bounded retry. Two attempts at 30s, linear backoff, is
+the canonical "absorb a flap without hiding a real outage" recipe:
+
+```toml
+[tasks.flaky-thing]
+cron       = "*/5 * * * *"
+on_overlap = "skip"
+retry_attempts = 2          # forgive 2 transient blips before paging
+retry_delay    = "30s"
+retry_backoff  = "linear"   # 30s, 60s — total ~90s ceiling
+notify_on_failure = ["slack-ops"]
+run = "/usr/local/bin/flaky-thing"
+```
+
+A real outage shows up as **all three attempts failing**, which fires
+exactly one notification per firing. A single dropped packet shows up
+as one failure followed by a passing retry — silent.
+
+### Step 4 — make sure flapping itself is observable
+
+If your task can flap several times a minute, [coalescing][coalesce]
+will collapse the alerts into a single row with a sparkline so you can
+**see the pattern**. Default behaviour does the right thing. If you
+want a tighter window for the bell to update faster:
+
+```toml
+[notify]
+coalesce_window = "30m"
+```
+
+[coalesce]: /notifications/model/#coalescing-coalesce_window-and-occurrence_ring
+
+If you've turned coalescing off (or set it to a very short window),
+turn it back on for flap-prone tasks — that's exactly what it's for.
+
+### Step 5 — if the task is a probe, don't retry, dial down the noise
+
+A health-check whose job is to **detect** flapping shouldn't smooth
+it over with retries. The [Health checks recipe][health] has the
+flap-friendly variant: `retry_attempts = 0`, lean on coalescing, and
+read the bell instead of the channel.
+
+[health]: /recipes/healthcheck/#a-flap-friendly-variant
+
+## A crash-looping service
+
+**Symptom**: a service replica exits within seconds of starting,
+forever. The supervisor restarts it, it exits again, the supervisor
+waits longer, restarts it, exits again. Your run history for the
+service fills up with short-lived rows.
+
+### Step 1 — read the most recent run's log, not the schedule
+
+Open the service in the Web UI. Click the most recent run. The
+captured stderr almost always names the cause directly:
+
+- `exec: /usr/local/bin/worker: no such file or directory` — the binary
+  isn't on disk, isn't executable, or the daemon's `$PATH` doesn't
+  match yours. Check `which worker` as the daemon's user, or use an
+  absolute path.
+- `permission denied` — the file exists but isn't `+x` for the daemon's
+  user, or the daemon can't open something the script needs (a socket,
+  a config file, a writable directory).
+- `cannot connect to <upstream>` — the dependency the service needs at
+  boot isn't ready. The service isn't broken; its order-of-startup is.
+
+### Step 2 — confirm the supervisor's behaviour matches your expectation
+
+A service supervisor [restarts forever][backoff] with exponential
+backoff capped at **60 seconds**. A replica that stays up for at
+least 60 seconds resets the counter. So a service that takes 70
+seconds to fail looks worse than one that fails in 3:
+
+```
+0:00  start → exit (3s alive)        → wait 1s
+0:04  start → exit (3s alive)        → wait 2s
+0:09  start → exit (3s alive)        → wait 4s
+0:16  start → exit (3s alive)        → wait 8s
+…
+```
+
+If the run rows you see are **paced by your `restart_backoff`**, the
+supervisor is doing its job — you're looking at the symptom. The cause
+is in the log of any single failed run. If they're paced by something
+else (a fixed external timeout, a watchdog elsewhere), there's a layer
+above RunWisp doing the killing.
+
+[backoff]: /configuration/services/#restart-behaviour
+
+### Step 3 — separate "fails fast" from "fails after work"
+
+Two crash-loops look identical from the outside but have opposite
+fixes:
+
+- **Fails fast (under a second)**: usually a config or environment
+  issue — missing env var, unreadable file, syntax error in a script.
+  Fix the boot path; backoff is the wrong knob.
+- **Fails after doing real work** (50s, 90s, 5min): usually a memory
+  leak, a poison message, or an external call that eventually
+  fails. Add `restart_delay` headroom, then look at _what triggers
+  the exit_. If it's a poison message, the queue or workload itself
+  needs a fix — the supervisor will keep restarting forever otherwise.
+
+### Step 4 — make graceful shutdown observable
+
+A replica that exits during a daemon shutdown records `end_reason =
+stopped`, which is **not a crash**. If your run rows show
+`stopped` after a deploy, that's the supervisor cleaning up before
+the daemon exits. Trap `SIGTERM` in your `run` and exit cleanly so
+the operational signal is honest:
+
+```bash
+trap 'echo "SIGTERM — shutting down"; exit 0' TERM INT
+```
+
+Without the trap, an interrupted replica records `crashed` after the
+grace period — visually identical to a real crash, indistinguishable
+in alerts.
+
+### Step 5 — if it really won't stay up, take it offline visibly
+
+A service that's broken and will be broken for hours shouldn't keep
+restarting and filling your history. Comment out the `[services.<name>]`
+block (or rename it to `[services.foo-DISABLED]`) and **restart the
+daemon** — config reload is restart-only. The run history for the
+removed service stays in SQLite for forensics, but the supervisor stops
+fighting a battle it can't win.
+
+## A retry storm
+
+**Symptom**: a task or service is failing every attempt, every retry
+is also failing, and the notification channel is getting hit _for
+every attempt_. You've identified the real outage upstream, you know
+it's going to take a while to fix, and you don't want N alerts per
+firing while you work.
+
+This isn't a flap (the failures aren't transient) and it isn't a
+crash-loop (the schedule isn't the supervisor — it's the cron tick
+plus retries). It's a real outage that's announcing itself loudly.
+
+### Step 1 — accept that retries are paging on every attempt
+
+By design, a failure notification fires on **every** failed
+attempt — not only the final one. A task with `retry_attempts = 3`
+that fails completely emits **four** failure events per firing
+(initial + 3 retries). On a 5-minute cron schedule, that's 48 events
+per hour during an outage.
+
+This is correct behaviour for transient failures (so you see what's
+happening) and wrong only because the failure is no longer transient.
+
+### Step 2 — use coalescing as your primary defence
+
+The [notifications model][model] coalesces by `(task, kind, end
+reason)` inside a sliding window (default 1h). Slack, Telegram, and
+the in-app bell all show one **row** with a count and a sparkline,
+not 48 separate ones.
+
+[model]: /notifications/model/
+
+If your channel is still getting hit because operators have **turned
+the window down**, that's the wrong knob to tune for retry storms.
+Bring it back to the default (or longer) for tasks with retries:
+
+```toml
+[notify]
+coalesce_window = "1h"      # default; raise during a known outage
+```
+
+### Step 3 — drop retries while the upstream is known broken
+
+For a known multi-hour outage, edit the TOML and **restart the
+daemon**:
+
+```toml
+[tasks.publish-feed]
+cron           = "*/15 * * * *"
+retry_attempts = 0          # was 3 — upstream is down, don't pile on
+notify_on_failure = ["slack-ops"]
+run = "/usr/local/bin/publish.sh"
+```
+
+Now you get one notification per firing instead of four. The
+coalescing window absorbs _those_ into a single row. Roll the change
+back when the upstream recovers — config reload is restart-only.
+
+### Step 4 — check that retries aren't fighting `on_overlap`
+
+If a long retry chain is still going when the next cron tick fires,
+the next firing competes with the retry chain through `on_overlap`:
+
+- `queue` (default for tasks) — the next firing waits behind the retry
+  chain. If the chain takes longer than the cron interval, the queue
+  grows. The Web UI shows it; nothing else stops it.
+- `skip` — the next firing is skipped. The retry chain runs to
+  completion.
+- `terminate` — the next firing **kills the running attempt**, which
+  records as `stopped` and **ends the retry chain** (a deliberate
+  surprise; see [retries: interactions][retry-int]). The new firing
+  is a fresh execution, starting from attempt 0.
+
+[retry-int]: /concepts/retries/#interactions
+
+If you want the schedule to override retries during an outage, set
+`on_overlap = "terminate"` and accept that retries from the outage
+chain won't complete. If you want retries to finish before the next
+firing, use `skip`.
+
+### Step 5 — once it's over, audit how the alert read
+
+When the upstream recovers, look at how the outage _appeared_ in your
+notification stream:
+
+- One coalesced row that grew a sparkline → coalescing did its job.
+- A flood of individual messages → coalescing was off, the window was
+  too short, or you have multiple tasks all failing at once with
+  distinct dedup keys (each one is its own coalesced row).
+- A row that says "delivery failed" → your outbound channel itself
+  was knocked out. RunWisp recorded the events in-app; the channel
+  was the casualty. See
+  [notifications: delivery failures][delivery] for routing
+  `notify.delivery_failed` somewhere safer.
+
+[delivery]: /notifications/routes/#delivery-failures-the-cycle-break
+
+## Where to next
+
+- [Troubleshooting][trouble] — for "daemon won't start" and "I can't
+  log in," the symptoms that come _before_ a task or service is
+  running at all.
+- [Concurrency policies](/concepts/concurrency/) — `on_overlap` in
+  depth, including the `terminate`-kills-retries trap.
+- [Retries & timeouts](/concepts/retries/) — what triggers a retry,
+  what doesn't, and how `retry_backoff` schedules the wait.
+- [Notifications model](/notifications/model/) — coalescing, dedup
+  keys, and the rate-limiting that keeps a real outage from drowning
+  the channel.

@@ -147,6 +147,44 @@ and lets your terminal's native selection work.
 
 ![tui-run-fullscreen.png — TUI run detail in fullscreen mode: header and gutter hidden so native terminal selection works on the raw log.](../../../assets/screenshots/placeholder.svg)
 
+## The failure path
+
+Prime directive #1 is "nothing silently fails," so it's worth a beat
+on **where failures actually surface** in the TUI — exit code,
+captured output, and end reason are first-class fields, not buried.
+
+When you land on the run detail view for a failed run, three things
+tell you what went wrong without scrolling:
+
+- **The header status badge** carries the end reason — `failed`,
+  `timeout`, `crashed`, `stopped`, `skipped`, or `log_overflow`. Each
+  is a distinct status with a distinct colour, not a generic "error."
+- **The exit code** sits in the header next to duration. Sentinel
+  codes are real: `-1` is a skipped run that never ran (`on_overlap =
+"skip"` rejected it), `-2` is a `crashed` run the daemon was killed
+  during, `124` is the conventional code surfaced for `timeout`. A
+  positive code is whatever the script returned.
+- **The captured log** below is the raw stdout/stderr of the
+  attempt — the same bytes the script wrote, line-numbered, with
+  ANSI colours rendered. Press `f` to fullscreen it for a copy/paste.
+
+![tui-run-failed.png — TUI run detail for a failed run: red status badge, exit code in the header, captured stderr in the log pane.](../../../assets/screenshots/placeholder.svg)
+
+The sidebar's task entry also reflects status: a task whose **last
+run failed** shows up with a coloured marker, so a glance at the
+sidebar tells you which tasks need attention without opening each one.
+
+For a task with retries, every attempt is a separate row in the run
+history with its own end reason — attempt 0 might be `failed` and
+attempt 1 `success`. Read attempt 0's log to find out why the first
+try failed even when the retry recovered; that's the bug-hunting use
+of `keep_runs`.
+
+If a run never ran at all (`skipped` because of `on_overlap`,
+`stopped` because of `on_overlap = "terminate"`), the row is still
+there with the policy's reason in the log and a sentinel exit code.
+A skipped firing is not silence — it's a row.
+
 ## Authentication, briefly
 
 Run the TUI on the daemon's host and you're already in. Connecting
