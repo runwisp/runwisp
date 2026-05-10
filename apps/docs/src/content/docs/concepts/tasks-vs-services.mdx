@@ -72,6 +72,36 @@ share configuration, logs are unified per service, and each replica is
 restarted independently when its process exits. Bound: `instances` must
 be in `[1, 64]`.
 
+## `parallelism = N` (task) vs `instances = N` (service)
+
+Both spell "run N copies". They mean different things, and the
+schema enforces the difference: `parallelism` is task-only, `instances`
+is service-only. Pick by the **shape of the work**, not the count.
+
+| Question                                                              | Answer                                                                                                                       |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Does each copy **start fresh** when work arrives?                     | Bursty / scheduled fan-out → `[tasks.*]` with `parallelism = N`.                                                             |
+| Do copies need to **stay up** waiting for work?                       | Always-on replicas → `[services.*]` with `instances = N`.                                                                    |
+| Where does N come from?                                               | Task: peak concurrency you want to allow. Service: replica count you want to keep alive.                                     |
+| What triggers a new copy?                                             | Task: a `cron` firing or a manual trigger. Service: the supervisor, on every replica exit.                                   |
+| What happens when N copies are already running and another is wanted? | Task: `on_overlap` decides (`queue` / `skip` / `terminate`). Service: nothing — the supervisor only restarts existing slots. |
+| What happens when one copy exits?                                     | Task: the run is recorded; the slot is free for the next firing. Service: the supervisor restarts that replica with backoff. |
+| Per-copy retry on failure?                                            | Yes — `retry_attempts` retries the failing run. No — services restart instead.                                               |
+
+Concrete examples:
+
+- **`parallelism = 4`** on a `cron = "* * * * *"` thumbnail-render task.
+  Most ticks finish in seconds, but four can run at once if a backlog
+  arrives. The 5th concurrent firing waits on `on_overlap`.
+- **`instances = 4`** on a queue-worker service. Four worker processes
+  stay connected to the queue forever; if one crashes, the supervisor
+  brings it back. Cron is irrelevant — the workers pull work themselves.
+
+Mixing them up has predictable failure modes: `parallelism = 3` on a
+worker that loops forever turns into "one copy holds the slot, the
+queue fills up." `instances = 3` on a job that exits in 30s turns
+into "the supervisor restarts it 120 times an hour."
+
 ## Choosing on the edge cases
 
 A few patterns are easy to second-guess. Here's how to resolve them:

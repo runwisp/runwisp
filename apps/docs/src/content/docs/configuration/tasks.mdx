@@ -33,7 +33,7 @@ stdout/stderr to a log file, and persists each run to SQLite.
 | `run`         | string | required  | Shell command. Multi-line OK with TOML triple-quotes (`"""…"""`). Trusted input — see note.     |
 | `description` | string | _(empty)_ | Human-readable description shown in the UI and TUI.                                             |
 | `group`       | string | `"Tasks"` | UI grouping label. Set to share a section header with related tasks.                            |
-| `api_trigger` | bool   | `true`    | Allow manual triggers from CLI / API / UI. Set `false` to make the task cron-only.              |
+| `api_trigger` | bool   | `true`    | Allow manual triggers from CLI / API / UI. Set `false` to make the task **cron-only**.          |
 
 :::caution[`run` is trusted input]
 `runwisp.toml` is read from disk, never accepted from the network. The
@@ -60,6 +60,42 @@ forward and just discards backfill — see the
 
 See [How scheduling works](/concepts/scheduling/) for the full cron
 grammar and DST behaviour, and the catchup table.
+
+### `api_trigger = false` — cron-only tasks
+
+The default `api_trigger = true` lets you run the task on demand from
+the CLI (`runwisp run-task <name>`), the REST API
+(`POST /api/tasks/{name}/trigger`), the Web UI's **Run Task** button,
+and the TUI's `r` keybinding.
+
+Setting `api_trigger = false` says **only the scheduler may start this
+task**. Use it for tasks that are dangerous to fire off-schedule —
+overnight rebuilds, idempotency-fragile data jobs, anything that
+coordinates with another schedule and would do harm if double-fired by
+a curious operator.
+
+```toml
+[tasks.nightly-merge]
+cron        = "0 4 * * *"
+api_trigger = false        # only fires from cron, never from the UI / API / CLI
+run         = "/usr/local/bin/merge-shards"
+```
+
+What changes when `api_trigger = false`:
+
+- A `POST /api/tasks/{name}/trigger` returns **403 Forbidden** with the
+  message `API triggering disabled for this task`.
+- `runwisp run-task <name>` surfaces the same error and exits non-zero.
+- The Web UI's **Run Task** button and the TUI's `r` action still appear
+  on the task page; pressing them surfaces the daemon's 403 error
+  inline. (The buttons are not currently greyed out — the daemon is the
+  authority, not the client.)
+- Cron firings, retries, and `on_overlap` behaviour are **unaffected**:
+  the scheduler is not "API triggering" and runs the task normally.
+
+`api_trigger` is independent of `cron`. A task with `api_trigger = false`
+**and** no `cron` is a dead task — it can never start. The loader does
+not reject this combination today, but it's almost certainly a mistake.
 
 ## Concurrency
 

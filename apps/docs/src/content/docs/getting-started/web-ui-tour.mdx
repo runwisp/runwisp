@@ -137,6 +137,49 @@ that's still going, new lines stream in live.
 There's no download button in the UI. If you need a copy of the log,
 grab it from disk — `data/logs/<task>/...log` — or use the REST API.
 
+### The failure path
+
+Prime directive #1 is "nothing silently fails." That's not just a
+slogan — it's a UI rule, so failure information lives **in the same
+view as success information**, not behind a special "errors" tab.
+Open a failed run and you see, all on the same page:
+
+- **The end reason as a coloured status pill** in the run header —
+  `failed` (non-zero exit), `timeout` (cap hit), `crashed` (daemon
+  was killed mid-run), `stopped` (you or `on_overlap = "terminate"`
+  cancelled it), `skipped` (`on_overlap = "skip"` rejected it), or
+  `log_overflow` (`log_on_full = "kill_task"` killed it). Each gets
+  its own colour so a glance tells you which kind of bad day it was.
+- **The exit code next to the duration**. Positive codes come from
+  your script. Sentinel negatives are RunWisp's: `-1` for `skipped`
+  (the run never started), `-2` for `crashed` (the daemon went away
+  mid-run). `124` is the conventional code for a `timeout` kill.
+- **The captured stdout/stderr** — full log pane below the header,
+  with ANSI colours rendered, line numbers matching the on-disk
+  file, and a "log rotated" marker if `log_on_full = "drop_old"`
+  rolled the file mid-run.
+
+![web-ui-task-failed.png — Task detail for a failed run: red status pill in the header, exit code next to duration, captured stderr filling the log pane.](../../../assets/screenshots/placeholder.svg)
+
+The same surface backs every end reason. A `skipped` row is a real
+row with a real log line ("task already running, skipping (policy:
+skip)") — it's not silence. A `crashed` row tells you the daemon
+itself died while the run was in flight; the next firing is a fresh
+execution, not a resumption.
+
+The sidebar also reflects status: tasks whose **most recent run
+failed** carry a coloured marker, so you don't have to remember to
+visit each one. The Overview page's **Attention** filter tab pivots
+the whole task list around exactly that — anything not currently
+healthy.
+
+When a task has retries, every attempt is a separate row in the run
+history with its own end reason. Attempt 0 might be `failed` and
+attempt 1 `success` — read attempt 0's log to learn why the first
+try failed even when the retry recovered. That's why `keep_runs`
+matters: bury the failed attempts and you've taken away your own
+forensics.
+
 ## Notifications bell
 
 Top-right of the topbar. The badge shows your unread count.

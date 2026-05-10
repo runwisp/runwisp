@@ -15,6 +15,15 @@ The file is divided into a handful of sections. Most are optional; the only
 thing RunWisp truly needs is at least one `[tasks.*]` or `[services.*]`
 table with a `run` key.
 
+:::caution[`[tasks.*]` and `[services.*]` share one namespace]
+Each table key (`backup-db` in `[tasks.backup-db]`) becomes the unit's
+identity in the CLI, REST API, Web UI, log paths, and metrics. The
+loader rejects a startup where a `[tasks.<name>]` and a
+`[services.<name>]` use the **same name** — there is no "tasks/foo" vs
+"services/foo" disambiguation anywhere. Pick a unique name per unit
+across both kinds.
+:::
+
 ## A complete example
 
 ```toml

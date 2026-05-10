@@ -109,6 +109,7 @@ export default defineConfig({
                         { label: "Health checks", slug: "recipes/healthcheck" },
                         { label: "Deploy hooks", slug: "recipes/deploy-hooks" },
                         { label: "Docker patterns", slug: "recipes/docker" },
+                        { label: "Debugging real failures", slug: "recipes/debugging" },
                     ],
                 },
                 {

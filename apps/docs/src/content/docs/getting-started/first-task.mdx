@@ -48,6 +48,12 @@ gets its own concurrency policy, retry settings, log retention, and timeout.
 exponential restart backoff, surfaces their stdout/stderr like any other
 run, and supports horizontal scaling with `instances = N`.
 
+:::note[One namespace for both]
+Task and service names share a single namespace — `[tasks.worker]` and
+`[services.worker]` is rejected at startup. Pick a unique name per
+unit; the daemon refuses to boot if two collide.
+:::
+
 Edit the scaffolded file to match the work you actually want to run, or
 paste the example above over it to follow along with this guide.
 
