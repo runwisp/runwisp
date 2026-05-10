@@ -42,18 +42,18 @@ firings finer than a minute, use `@every 30s` or run a service.
 ## Timezone
 
 Cron expressions are evaluated in the timezone configured by
-`[scheduler] timezone`. **There is no implicit default** — if any task
-has a `cron` expression, the daemon refuses to start without either
-`[scheduler] timezone` or a per-task `timezone`. `0 2 * * *` silently
-running at 02:00 UTC when the operator pictured local time is exactly
-the kind of failure RunWisp won't allow.
+`[scheduler] timezone`. If you leave it unset, the daemon falls back
+to the host's system timezone — `runwisp init` writes the detected
+zone for you so a fresh install starts with explicit, visible config.
+
+The resolved zone (and whether it came from config or the system) is
+shown in the TUI startup banner and in the Web UI header, so there's
+no guessing about what the scheduler is actually using.
 
 ```toml
 # Daemon-wide default for every task without its own timezone.
-# UTC is DST-free and a safe baseline; pick a local IANA zone if 2 AM
-# should follow your wall clock.
 [scheduler]
-timezone = "Europe/Prague"
+timezone = "Europe/Bratislava"
 
 # Per-task override — any standard IANA timezone name works.
 [tasks.nightly-backup]
@@ -61,43 +61,29 @@ cron     = "30 2 * * *"
 timezone = "America/New_York"
 ```
 
-| Setting                   | Default      | What it controls                                                                                              |
-| ------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------- |
-| `[scheduler] timezone`    | _(required)_ | Fallback for every task without its own `timezone`. Required when at least one cron task lacks a per-task TZ. |
-| `[tasks.<name>] timezone` | _(inherits)_ | Timezone for this task's cron evaluation. Overrides the scheduler-wide default.                               |
-
-Manual-only tasks (no `cron`) and `[services.*]` are unaffected — they
-don't evaluate cron expressions, so a missing timezone never matters.
+| Setting                   | Default          | What it controls                                                                |
+| ------------------------- | ---------------- | ------------------------------------------------------------------------------- |
+| `[scheduler] timezone`    | _(system zone)_  | Fallback for every task without its own `timezone`.                             |
+| `[tasks.<name>] timezone` | _(inherits)_     | Timezone for this task's cron evaluation. Overrides the scheduler-wide default. |
 
 If the daemon doesn't recognise a name (typo, or missing timezone data
 in a minimal Docker image), config load fails with the offending
-scope — the daemon never silently falls back to UTC.
+scope — the daemon never silently falls back to UTC. See
+[Docker recipe](/recipes/docker/) for the Alpine `tzdata` note.
 
 ### DST behaviour
 
-UTC has no DST. A daemon configured with `timezone = "UTC"` never
-double-fires or skips around the clock change.
+RunWisp gives you a single-fire schedule across DST transitions:
 
-A daemon configured with a DST-affected timezone inherits the same
-trade-off cron has had for 50 years: `0 2 * * *` fires **twice** on
-the fall-back night (a real 02:00 happens twice) and **zero** times on
-the spring-forward night (02:00 doesn't exist). If you need a fixed
-local time without that hazard, either:
+- **Fall-back** (clocks go back). The wall-clock minute that repeats —
+  e.g. 02:30 — only fires once. The scheduler dedupes by
+  `(local-date, hour, minute)`; the suppressed firing is recorded with
+  `end_reason = "dst_skipped"` so it's still in history.
+- **Spring-forward** (clocks jump ahead). A cron like `0 2 * * *` whose
+  matching minute doesn't exist that day fires at the next valid time
+  — once.
 
-- keep the scheduler in UTC and write the cron in UTC, or
-- use `@every 24h` (which respects elapsed time, not the system clock), or
-- pick an hour outside the DST transition window (e.g. `0 4 * * *`).
-
-Inside Docker, the Alpine base image strips timezone data by default;
-add it back if you want non-UTC schedules:
-
-```dockerfile
-RUN apk add --no-cache tzdata
-ENV TZ=Europe/Prague          # only affects the container's clock
-```
-
-The daemon's own `timezone` setting is what scheduling actually uses;
-`TZ=` only affects log timestamps and shell commands inside `run`.
+UTC has no DST and is unaffected.
 
 ## What "fired" means
 
@@ -114,9 +100,9 @@ Whether the run actually starts immediately depends on the task's
 [concurrency policy](/concepts/concurrency/). With the default
 `on_overlap = "queue"`, a tick that fires while a previous run is still
 going gets queued. With `on_overlap = "skip"`, the firing is recorded
-as a failed run with a "task already running" message and the schedule
-moves on. Either way, the tick **always** appears in history — that's
-the rule: nothing fails or fires without leaving a record.
+as a skipped run and the schedule moves on. Either way, the tick
+**always** appears in history — that's the rule: nothing fails or
+fires without leaving a record.
 
 ## Missed ticks: catchup
 
@@ -155,45 +141,20 @@ catch_up          = "all"
 max_catch_up_runs = 200    # at most 200 missed ticks fire on startup
 ```
 
-| Value     | Meaning                                                          |
-| --------- | ---------------------------------------------------------------- |
-| _omitted_ | Inherit the built-in default of **100**.                         |
-| `0`       | Same as omitted — inherit the default.                           |
-| `-1`      | Explicit unlimited. Every missed tick fires, no matter how many. |
-| `N > 0`   | Cap the backfill at `N` runs; older missed ticks are dropped.    |
+| Value     | Meaning                                                                                |
+| --------- | -------------------------------------------------------------------------------------- |
+| _omitted_ | Inherit the built-in default of **100**. Tune up explicitly if each missed tick is real work. |
+| `N > 0`   | Cap the backfill at `N` runs; older missed ticks are dropped.                          |
+
+The cap is bounded by an internal hard cap of **10000** — values above
+that are rejected at config load with a clear error. Negative values
+and `0` are also rejected; omit the key to inherit the default. The
+cap only applies to `catch_up = "all"`: `latest` always triggers
+exactly one run by construction, and `skip` triggers zero.
 
 When the cap fires, the daemon logs a warning that names the task, the
 total `missed`, the cap, and how many were dropped — so the silenced
-ticks are never invisible (Prime Directive #1). The cap only applies
-to `catch_up = "all"`. `latest` always triggers exactly one run by
-construction, and `skip` triggers zero.
-
-:::caution[`all` without a cap is a foot-gun]
-If you set `max_catch_up_runs = -1` on a high-frequency task, accept
-that a long outage backfills _every_ tick — possibly thousands — into
-the queue at startup, governed by `on_overlap`. That's the right
-answer for `pg_dump --since=...` where each slice is real work. It's
-the wrong answer for `report.py` summarising "today" — switch that
-one to `latest`, or pick a cap your queue can drain inside one cron
-period.
-:::
-
-### Manual-only vs `catch_up = "skip"`
-
-These two configurations look identical when you read the run history
-("no backfill on startup"), but they're not the same thing — only one
-of them is still scheduled.
-
-| Configuration                        | When does it fire?                                  | Backfill on startup?             |
-| ------------------------------------ | --------------------------------------------------- | -------------------------------- |
-| **Manual-only** (no `cron` field)    | Only when triggered (`runwisp run-task`, REST, UI). | n/a — nothing to backfill        |
-| `cron = "..."` + `catch_up = "skip"` | On every cron tick going forward.                   | None — missed ticks are dropped. |
-
-If you don't want the task to run on a schedule at all, omit `cron`.
-If you want it on a schedule but **never** want a startup backlog
-("just resume the regular cadence"), set `catch_up = "skip"`. They
-are different controls — manual-only removes the schedule itself,
-`skip` keeps the schedule but discards the past.
+ticks are never invisible (Prime Directive #1).
 
 ## On startup: unfinished runs are marked crashed
 
@@ -245,8 +206,6 @@ in the previous configuration.
 
 A few things the scheduler doesn't try to do, on purpose:
 
-- **No DAGs / task dependencies.** If `B` depends on `A`, chain them
-  in one shell (`a && b`) or have `A` trigger `B` over the REST API.
 - **No clustering.** One daemon owns its tasks. Two daemons reading
   the same TOML would both fire — that's a setup mistake, not a
   feature.
@@ -254,8 +213,8 @@ A few things the scheduler doesn't try to do, on purpose:
   every other Tuesday, encode it in the cron (`30 9 */2 * 2`) or
   filter in your script.
 
-RunWisp is a cron replacement for a single operator, not a workflow
-orchestrator.
+For features still on the way (native task dependencies, log search,
+cloud control plane), see the [roadmap](/roadmap/).
 
 ## Where to next
 

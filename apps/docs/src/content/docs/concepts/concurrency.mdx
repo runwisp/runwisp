@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Concurrency policies
-description: queue, skip, and terminate — what each on_overlap mode does, when to use it, and how parallelism interacts with the policy.
+description: queue, skip, and terminate — what each on_overlap mode does, when to use it, and how max_concurrent interacts with the policy.
 ---
 
 When a task fires while a previous run is still going, RunWisp has to
@@ -13,12 +13,12 @@ nearly every realistic case: `queue`, `skip`, and `terminate`.
 
 There are really two knobs:
 
-- **`parallelism`** — the maximum number of concurrent runs allowed for a
-  task. Default `1`. Most cron-style work wants `1`.
+- **`max_concurrent`** — the maximum number of overlapping runs allowed
+  for a task. Default `1`. Most cron-style work wants `1`.
 - **`on_overlap`** — what to do when a new run is requested and
-  `parallelism` is already saturated.
+  `max_concurrent` is already saturated.
 
-If `len(active) < parallelism`, the new run **always starts
+If `len(active) < max_concurrent`, the new run **always starts
 immediately**, regardless of policy. `on_overlap` only kicks in when the
 task is at its concurrency limit.
 
@@ -26,9 +26,9 @@ task is at its concurrency limit.
 
 ### `queue` (the default for tasks)
 
-The new run goes onto a queue (first one queued runs first). As soon
-as a slot opens — an active run finishes — the next queued run starts.
-Order is preserved.
+**Use when each tick must eventually run.** New runs go onto a FIFO
+queue; as soon as a slot opens, the next queued run starts. Order is
+preserved.
 
 ```toml
 [tasks.process-uploads]
@@ -37,27 +37,24 @@ on_overlap = "queue"          # default — could be omitted
 run        = "/usr/local/bin/process"
 ```
 
-Use when:
+Good fit when:
 
 - Each tick must eventually run; missing one means missing work.
 - Runs are short relative to the schedule, so the queue normally stays
   empty.
 - Runs operate on disjoint inputs (a per-tick batch, a queue of jobs).
 
-Things to know:
-
-- **The queue can grow without limit.** If runs reliably take longer
-  than the schedule, the queue keeps growing. RunWisp does not cap
-  the queue — your run history is what tells you. If you see the queue
-  depth climbing, the task is over its budget; lower the cron frequency
-  or pick `skip`/`terminate`.
+The queue is bounded by `queue_max` (default `100`). Once it's full,
+the next firing is recorded with `end_reason = "queue_full"` and the
+existing queue keeps draining FIFO. If you see queue-full firings, the
+task is over its budget — lower the cron frequency, raise
+`max_concurrent`, or pick `skip` / `terminate`.
 
 ### `skip`
 
-The new run is **rejected** — it gets persisted to history with
-`end_reason = "skipped"` and exit code `-1`, with the message "task
-already running, skipping (policy: skip)" recorded against it. The
-run that's still going keeps going untouched.
+**Use when missing a tick is preferable to stacking.** The new run is
+rejected and recorded with `end_reason = "skipped"` and exit code `-1`.
+The run that's still going keeps going untouched.
 
 ```toml
 [tasks.health-probe]
@@ -66,7 +63,7 @@ on_overlap = "skip"
 run        = "curl -sf https://example.com/health"
 ```
 
-Use when:
+Good fit when:
 
 - The work is **safe to skip** — a probe, a poll, a status check.
   Missing a tick is fine; what matters is that the _next_ one runs.
@@ -90,8 +87,8 @@ Importantly, **`end_reason = "skipped"` is not a failure**:
 
 ### `terminate`
 
-The **oldest active run** is stopped. Once it exits, the new run
-starts.
+**Use when latest wins.** The oldest active run is stopped; once it
+exits, the new run starts.
 
 ```toml
 [tasks.deploy-hook]
@@ -99,64 +96,38 @@ on_overlap = "terminate"
 run        = "/usr/local/bin/deploy.sh"
 ```
 
-Use when:
+Good fit when:
 
 - **Latest wins** — for a deploy hook fired twice in quick succession,
   the second invocation is the one you actually want.
 - Long-running work that becomes obsolete the moment a new request
   arrives (rebuild a search index, regenerate a cached report).
 
-Things to know:
+When `on_overlap = "terminate"` kills the in-flight run, it gets
+`graceful_stop` seconds to clean up before SIGKILL, and is recorded
+with `end_reason = "stopped"` — same as a manual stop. Stopped runs
+don't retry. See [Retries](/concepts/retries/#interactions).
 
-- The stop is immediate — no grace period for the script to clean up.
-  A `pg_dump` interrupted mid-write leaves a corrupt file; write to a
-  temp file and rename it at the end so a killed run can't poison the
-  next one.
-- The cancelled run shows up in history with end reason `stopped`, so
-  you can audit how often the policy actually fires.
+## `max_concurrent > 1`
 
-:::caution[`terminate` ends any in-flight retry chain]
-A run cancelled by `terminate` records `end_reason = "stopped"`, and
-**stopped runs are never retried** — the system treats it the same as
-a manual stop from the CLI/UI. So `on_overlap = "terminate"` paired
-with `retry_attempts = 3` does **not** "stop the old, restart the new
-with 3 retries"; it stops the old (no retries) and starts the new as
-a fresh chain. If you depend on retries for transient failures, pick
-`queue` or `skip` instead, or model the work so the latest invocation
-is genuinely the only one that matters. See
-[Retries & timeouts](/concepts/retries/#interactions) for the
-end-reason rules.
-:::
-
-## Decision matrix
-
-| Situation                                             | Policy      |
-| ----------------------------------------------------- | ----------- |
-| Each tick processes a slice of work; ordering matters | `queue`     |
-| Probe where missing a tick is fine                    | `skip`      |
-| New work replaces older work; latest wins             | `terminate` |
-| Two things compete for a single resource              | `skip`      |
-| Backlog of small jobs to work through                 | `queue`     |
-| Long rebuild that re-runs from scratch each time      | `terminate` |
-
-## `parallelism > 1`
-
-Setting `parallelism = N` lets up to N runs of the same task execute at
-once. The `on_overlap` policy doesn't fire until you have N active runs.
+Setting `max_concurrent = N` lets up to N runs of the same task execute
+at once. The `on_overlap` policy doesn't fire until you have N active
+runs.
 
 ```toml
 [tasks.thumbnail-render]
-cron        = "* * * * *"
-parallelism = 4
-on_overlap  = "queue"
-run         = "/usr/local/bin/render"
+cron           = "* * * * *"
+max_concurrent = 4
+on_overlap     = "queue"
+run            = "/usr/local/bin/render"
 ```
 
 Now the queue policy only engages once 4 renders are running. With
-`parallelism = 4 + on_overlap = "skip"`, you'd get a hard cap of 4
+`max_concurrent = 4 + on_overlap = "skip"`, you'd get a hard cap of 4
 concurrent renders and any 5th tick rejected.
 
-For most cron-style work `parallelism = 1` is right. Bump it only when:
+For most cron-style work `max_concurrent = 1` is right. Bump it only
+when:
 
 - The runs are genuinely independent (no shared state, no shared
   resource).
@@ -166,19 +137,15 @@ For most cron-style work `parallelism = 1` is right. Bump it only when:
 For long-running parallel workers, prefer `[services.<name>]` with
 `instances = N` — that's what services are designed for.
 
-`parallelism > 1` is safe: the daemon serialises the overlap decision
-even when several runs are executing at once, so two runs never race
-to claim the same slot.
+`max_concurrent > 1` is safe: the daemon serialises the overlap
+decision even when several runs are executing at once, so two runs
+never race to claim the same slot.
 
-## Manual triggers, retries, and the queue
-
-A few interactions worth knowing:
+## Manual triggers and the queue
 
 - **A manual trigger** (CLI, REST, UI) goes through the same evaluation.
-  Trigger a `skip` task while it's running and your trigger gets the
-  skipped/failed result back, with a clear "task already running" reason.
-- **Retries don't count against `parallelism`.** A retry only fires
-  after its predecessor has finished, so it never overlaps with itself.
+  Trigger a `skip` task while it's running and the response says the
+  firing was skipped, with the same `end_reason = "skipped"` recorded.
 - **The queue runs in order**, no matter where the trigger came from.
   Cron and manual triggers compete fairly.
 
@@ -197,4 +164,4 @@ refuses.
 - [Retries & timeouts](/concepts/retries/) — how a failing run gets
   retried, and why retries don't conflict with `on_overlap`.
 - [`[tasks.*]` reference](/configuration/tasks/) — the `on_overlap` and
-  `parallelism` fields in the schema.
+  `max_concurrent` fields in the schema.

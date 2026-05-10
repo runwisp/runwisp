@@ -2,60 +2,53 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Logs & retention
-description: How RunWisp captures stdout/stderr, where logs live on disk, how rotation works, and how run history is bounded.
+description: How RunWisp captures stdout/stderr, where logs live on disk, how rotation and retention work, and how to follow or download a run's output.
 ---
 
-Every run's stdout and stderr is captured to its own log file under
-the data directory. The database stores run metadata — exit code,
-duration, timestamps — but **not** the log bodies. RunWisp isn't a log
-aggregator. It's a log archive for "what did this task print on
-2026-04-12 at 03:15?".
+RunWisp captures each run's stdout and stderr to disk. You can watch
+the live tail, scroll back through finished runs, and download the
+full log. The database stores run metadata — exit code, duration,
+timestamps — but **not** the log bodies; those live on disk, one file
+per run.
 
-## Where logs live on disk
+## Where logs live
 
 ```
 {data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id}.log
 ```
 
-- **One file per run**, not one per task. Each run gets its own
-  isolated log, named after its start time and ID so files are
-  sortable and unique even when runs start less than a second apart.
-- The daemon keeps tiny index files alongside each log so the Web UI
-  can jump around long logs without re-reading them; you don't need to
-  touch them.
+- **One file per run.** Each invocation gets its own isolated log,
+  named after its start time and ID so files are sortable and unique
+  even when runs start less than a second apart.
+- **Stdout and stderr are interleaved** in capture order — the same
+  bytes the script wrote, in the order it wrote them.
 - When a run is deleted by retention, the daemon removes the log file,
-  its index files, and any parent directory that becomes empty.
+  any helper files alongside it, and any parent directory that becomes
+  empty. There's no orphaning: a row never points at a missing log,
+  and a log file never lingers without a row.
 
-## `log_max_size`
+## Rotation: `log_max_size` and `log_on_full`
+
+Each run's log is capped — a runaway script doesn't fill the disk with
+output from a single tick.
 
 ```toml
 [tasks.bulky-job]
 cron         = "0 4 * * *"
 run          = "/usr/local/bin/bulky.sh"
 log_max_size = "50MB"
+log_on_full  = "drop_old"
 ```
 
-- **Default**: `100MB`.
-- **Scope**: per run. A task that runs hourly accumulates one fresh
-  capped file per run, not one shared file growing forever.
-- **Units**: `b`, `kb`, `mb`, `gb`, `tb` (case-insensitive). Bare
-  numbers are parsed as bytes. `"100MB"`, `"1.5gb"`, `"4096"` are all
-  valid.
-- **`log_max_size = "unlimited"` opts out of the cap.** No cap is
-  enforced, no lines are dropped. Use this only when you've thought
-  about your disk. Bare `0` (or `"0"`, `"0mb"`) is **rejected** at
-  config load — the keyword is the only way to spell it, so a misread
-  zero can't silently mean "no cap".
-
-## `log_on_full`
-
-What happens when a run's output hits `log_max_size`:
+- **`log_max_size`** — per-run cap. Default `100MB`. Units: `b`, `kb`,
+  `mb`, `gb`, `tb` (case-insensitive); bare numbers are bytes.
+- **`log_on_full`** — what to do when output hits the cap.
 
 | Value       | Behaviour                                                                                                                                                                                                                                                  |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `drop_old`  | Default. Rotates the current log to `.prev`, keeps writing fresh output. Earlier output preserved during the run; see [`.prev` lifecycle](#prev-lifecycle-under-drop_old) below.                                                                           |
-| `drop_new`  | Stops accepting new lines; the process keeps running. A system line records the truncation.                                                                                                                                                                |
-| `kill_task` | Cancels the run's context, terminating the process. The run records as `log_overflow` (exit code from the kill) — a dedicated end reason that's still treated as a failure for retries and notifications, so the cause is visible without inspecting logs. |
+| `drop_old`  | Default. Renames the current log to `.prev`, keeps writing fresh output. The end of the log (usually where the failure is) survives.                                                                                                                       |
+| `drop_new`  | Stops accepting new lines; the process keeps running. Right when the **start** is the interesting part (a startup banner, a long batch's preamble) and the rest is repetitive.                                                                             |
+| `kill_task` | Cancels the run's context, terminating the process. The run records as `log_overflow` (a dedicated end reason that's still treated as a failure for retries and notifications), so the cause is visible without inspecting the log.                       |
 
 Whichever policy fires, the daemon writes a synthetic line at the
 truncation point so someone skimming the log can see exactly when the
@@ -63,48 +56,15 @@ limit hit. Nothing is dropped without a record.
 
 `log_on_full` also controls what happens when `[storage] min_free_space`
 trips during a run: `kill_task` cancels the run on disk pressure;
-`drop_new` and `drop_old` quietly stop accepting lines (but the daemon
-always raises a `log.disk_pressure` notification so the operator
-discovers the dropped output). See
+`drop_new` and `drop_old` quietly stop accepting lines (and the daemon
+raises a `log.disk_pressure` notification so the operator discovers
+the dropped output). See
 [storage configuration](/configuration/storage/#what-min_free_space-actually-does).
-
-`drop_old` is the default because it preserves the **end** of the log —
-which is usually where the failure is. `drop_new` is right when the
-**start** is the interesting part (a daemon's startup banner, a long
-batch's preamble) and the rest is repetitive noise.
-
-### `.prev` lifecycle under `drop_old`
-
-When `drop_old` rotates, it renames the current log file to
-`<run>.log.prev` (and the matching `.idx.prev` / `.tidx.prev` index
-files), then opens a fresh empty `<run>.log` to keep writing into.
-This file shadow lets the operator still read the rotated-away segment
-while the run is in flight.
-
-Three rules govern the lifecycle, all enforced by the daemon:
-
-1. **At most one rotation generation is kept on disk.** If the run
-   rotates again, the existing `.prev` is deleted _before_ the current
-   file is renamed onto it. Two-rotations-back content is gone.
-2. **`.prev` is deleted when the run ends.** `Close` removes the
-   `.prev` files so the on-disk artifact for a finished run is the
-   single sealed `<run>.log`. The earlier output is not preserved into
-   retention.
-3. **Downloads stitch `.prev` + current.** The raw download endpoint
-   (`GET /api/tasks/{name}/runs/{id}/log/raw`) concatenates `.prev`
-   and the current segment so a `curl > out.log` taken mid-run captures
-   the full rotated-window-plus-tail bytestream. The Web UI's
-   line-numbered viewer treats the rotated-away region as truncated and
-   shows the system line `Log rotated: output exceeded …`.
-
-If you need every line of a chatty task, the right tool is
-**`drop_new`** (preserves the start) or piping the task's output to a
-log shipper. `drop_old` always trades older output for newer.
 
 ## Retention: `keep_runs` and `keep_for`
 
 Retention controls how long old run rows and their log files stick
-around.
+around. Both rules apply, and **whichever cuts first wins**.
 
 ```toml
 [tasks.metrics]
@@ -114,48 +74,60 @@ keep_runs = 500
 keep_for  = "7d"
 ```
 
-- **`keep_runs`** — keep the N most recent runs for this task. Older
-  runs are deleted (row + log files). Accepts a positive integer
-  (`keep_runs = 500`) or the keyword `keep_runs = "unlimited"`. Bare
-  `0` and negative integers are **rejected** at config load — omit the
-  key to inherit `[defaults]`, or use the keyword to opt out of any
-  inherited cap.
+- **`keep_runs`** — keep the N most recent runs for this task. A
+  positive integer. The internal hard cap is **1 000 000**; values
+  above it (and zero / negatives) are rejected at config load.
 - **`keep_for`** — delete runs whose `created_at` is older than the
   given duration. Accepts extended units, including days and weeks:
-  `"7d"`, `"2w"`, `"36h"`, `"30m"`. Use `keep_for = "unlimited"` to opt
-  out of any inherited window. Zero and negative durations are
-  **rejected**.
-- **Both at once**: both criteria contribute to deletion. A run is
-  removed if **either** rule says so. The stricter rule wins in
-  practice — set both if you want a hard floor _and_ a hard ceiling.
+  `"7d"`, `"2w"`, `"36h"`, `"30m"`. Zero and negative durations are
+  rejected.
 - **Per task**: each task's retention is evaluated independently using
   that task's own settings (or the inherited `[defaults]`).
+- Omit either field to inherit from `[defaults]`. Set both for a hard
+  floor _and_ a hard ceiling.
 
-Cleanup runs in the background on a **fixed one-hour cadence**. The
-interval is hard-coded — there is no `[storage] cleanup_interval` knob,
-and the rationale is "boring in prod": at one tick per hour the cleaner
-is invisible at idle and never piles up if the daemon was paused. So
-you may see slightly more than `keep_runs` rows briefly between sweeps.
-Runs that are still going are never deleted.
-
-When retention triggers, both the SQLite row **and** the log file (with
-all its index files) are removed. There's no orphaning: a row never
-points at a missing log, and a log file never lingers without a row.
+Cleanup runs in the background on a fixed one-hour cadence. Runs that
+are still going are never deleted; you may briefly see slightly more
+than `keep_runs` rows between sweeps. When retention triggers, both
+the SQLite row **and** the log file (with its sidecars) are removed.
 
 ## Live streaming
 
-The Web UI tails logs in real time as the run produces them — new
-lines appear within milliseconds. The stream first replays whatever's
-already on disk for the run, then switches to live, so you don't miss
-the start of the output.
+The Web UI and TUI tail logs in real time as the run produces them —
+new bytes appear within milliseconds. The stream first replays
+whatever's already on disk for the run, then switches to live, so you
+don't miss the start of the output.
 
-If the producer pushes lines faster than your browser can keep up, the
-oldest queued lines are dropped and the UI shows "N lines dropped"
-so the gap is visible. The on-disk file always has the complete log;
-the live stream is just a fast preview.
+Scrolling back works on finished runs too. The viewer jumps directly
+to the byte you asked for without re-reading the file from the top,
+so even multi-megabyte logs feel instant.
 
-Idle browser connections refresh automatically every few minutes —
-nothing for you to do.
+An idle viewer holds the connection open with no noticeable CPU or
+bandwidth use. The on-disk file is always the source of truth — the
+live stream is a fast preview of the same bytes.
+
+## Downloading
+
+The full log is downloadable as a single file:
+
+- **Web UI** — the **Download** button on the run detail panel.
+- **TUI** — press `d` on the run detail view. On a graphical session
+  this opens your browser straight to the download; on SSH it copies
+  the URL to your clipboard or shows it in a modal you can paste from.
+- **Raw endpoint** — `GET /api/tasks/{name}/runs/{id}/log/raw` returns
+  the same bytes; useful for `curl` and shell pipelines.
+
+If a run rotated mid-stream under `drop_old`, the download includes
+the rotated-out part and the current part as a single file — you get
+the full bytestream, not just the tail.
+
+## Sidecars (`.idx`, `.tidx`, `.meta`, `.prev`)
+
+RunWisp keeps small helper files next to each `.log` to make seeking
+and downloading fast. They're rebuilt as needed and removing them
+won't free notable disk; **don't delete them while a run is in
+progress.** They're cleaned up automatically with the parent log when
+retention deletes a run.
 
 ## Crash safety
 
@@ -170,19 +142,6 @@ If the daemon is killed mid-write (power loss, force kill):
   [scheduling: on startup](/concepts/scheduling/#on-startup-unfinished-runs-are-marked-crashed))
   and its log file is left exactly as it was — those last lines are
   usually the most useful debugging artifact.
-
-The result: every row in your run history finishes with a final
-result, and every finished run has a log file you can read.
-
-## Intentional scope
-
-RunWisp captures logs for the runs it supervises. It is **not** a log
-aggregator, ships nothing remotely, and does not match patterns
-against captured output. If you need fleet-wide search or log-based
-alerting, ship the per-run files (or your task's stdout) to a tool
-that's built for it — Loki, ELK, CloudWatch, etc. If you want "alert
-when stderr says ERROR", grep inside your task and exit non-zero;
-RunWisp will fire its normal failure notification.
 
 ## Where to next
 

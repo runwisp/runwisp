@@ -39,16 +39,8 @@ retry_backoff  = "exponential"
 
 ## `retry_delay` and `retry_backoff`
 
-`retry_delay` is a duration string (`"5s"`, `"2m"`, `"1h"`).
-
-:::note[Conditional default: 5 seconds]
-`retry_delay` only has a default when `retry_attempts > 0`. With
-retries off (the default), the field is unused. With retries on, an
-omitted `retry_delay` resolves to **`"5s"`** — set it explicitly if
-that's wrong for your task. The
-[`[tasks.*]` reference](/configuration/tasks/#retries--timeout)
-flags this in the schema table too.
-:::
+`retry_delay` is a duration string (`"5s"`, `"2m"`, `"1h"`). When
+retries are enabled, `retry_delay` defaults to `"5s"`.
 
 `retry_backoff` chooses how the wait between retries grows. The same
 values are used by services' `restart_backoff`, so they move between
@@ -96,12 +88,11 @@ timeout = "30m"
 - Scope: **per attempt**. A retry gets a fresh `timeout` window; time
   spent waiting in `retry_delay` doesn't count against it.
 
-When the deadline hits, the daemon stops the run immediately and
-records it with end reason `timeout`. The kill is abrupt — the script
-gets no grace period to clean up. If your job needs to leave its state
-in one piece, do that defensively (write to a temp file and rename it
-at the end, commit your transaction before exiting) rather than
-relying on a shutdown signal.
+When the deadline hits, the daemon SIGTERMs the run's process group,
+waits up to the task's `graceful_stop` (default `"5s"`), then SIGKILLs
+any survivors and records the run with end reason `timeout`. The same
+SIGTERM-then-wait flow applies to `on_overlap = "terminate"`, manual
+stops, and daemon shutdown — `graceful_stop` is the single knob.
 
 ## Interactions
 
@@ -111,8 +102,8 @@ relying on a shutdown signal.
   terminate policy is a fresh execution, not a retry.
 - **Manual stop.** Same story: stopping a run from the API/UI records
   `stopped` and ends the retry chain.
-- **`parallelism > 1`.** Retries don't count against parallelism. A
-  retry only fires after its predecessor has finished, so there's no
+- **`max_concurrent > 1`.** Retries don't count against `max_concurrent`.
+  A retry only fires after its predecessor has finished, so there's no
   overlap to evaluate.
 
 ## Services don't retry — they restart
@@ -133,33 +124,29 @@ add `restart_delay` (the supervisor owns the cadence).
 | `restart_backoff` | ❌ rejected                                                  | ✅ `constant` / `linear` / `exponential`, default `exponential` |
 
 A service supervisor restarts a replica forever (with exponential
-backoff capped at 60s) until you stop it explicitly. A
-replica that stays up for at least 60 seconds resets its backoff
-counter, so a service that fails repeatedly at first doesn't keep slow
-restart delays once it stabilises.
+backoff capped at 60s) until you stop it explicitly.
 
-### Why services reset backoff but task retries don't
+### Backoff reset: `backoff_reset_after`
 
-The two contexts have different shapes, and the cadence reflects that:
+A replica that stays up at least `backoff_reset_after` (default 60s)
+resets its restart counter, so a service that fails repeatedly at
+first doesn't keep slow restart delays once it stabilises. Configure
+it in `[defaults]` (applies to every service that doesn't override it)
+or per-service:
 
-- **Task retries are bounded.** `retry_attempts` defines a finite
-  chain; once you've exhausted the attempts (or one succeeds), the
-  chain ends and the next firing comes from cron. There's nothing for
-  an "uptime reset" to mean — the chain is at most a handful of
-  attempts long, and you usually want each subsequent retry to wait
-  longer than the last.
-- **Services are unbounded.** The supervisor restarts forever, so
-  without an uptime reset a service that finally stabilises after a
-  rough startup would be stuck waiting 60 seconds between hypothetical
-  future failures, even though the previous flap is ancient history.
-  The 60-second reset is the supervisor saying _"if it managed to
-  stay up that long, the previous failures are no longer the current
-  story."_
+```toml
+[defaults]
+backoff_reset_after = "30s"     # global default
 
-This is intentional asymmetry, not a missing knob. If you want
-"finite, escalating wait" semantics on a service, model it as a task
-with `cron`/`retry_attempts` instead. If you want "indefinite
-self-healing supervision" on a workload, that's `[services.*]`.
+[services.flaky-worker]
+run                 = "/usr/local/bin/worker"
+backoff_reset_after = "2m"      # this one needs longer to call "stable"
+```
+
+If you want "finite, escalating wait" semantics on a service, model it
+as a task with `cron`/`retry_attempts` instead. If you want
+"indefinite self-healing supervision" on a workload, that's
+`[services.*]`.
 
 ## Where to next
 

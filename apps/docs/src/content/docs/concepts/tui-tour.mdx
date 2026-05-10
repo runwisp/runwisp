@@ -93,29 +93,6 @@ directions.
 
 ![tui-debug.png — TUI Debug page streaming the daemon's own log lines.](../../../assets/screenshots/placeholder.svg)
 
-## Keys you'll actually use
-
-These work everywhere.
-
-| Key                  | Action                                                         |
-| -------------------- | -------------------------------------------------------------- |
-| `q`, `Ctrl+C`        | Quit. Asks whether to keep the daemon running or shut it down. |
-| `Esc`                | Close current overlay (notifications, run detail, fullscreen). |
-| `↑` `↓` (or `k` `j`) | Move the cursor.                                               |
-| `←` `→` (or `h` `l`) | Switch focus between sidebar and main panel.                   |
-| `Enter`              | Open the focused item / activate the focused field.            |
-| `n`                  | Toggle the notifications panel. (Home page only.)              |
-| `PgUp` / `PgDn`      | Scroll a long list / log a page at a time.                     |
-| `g` / `G`            | Jump to top / bottom of the current scrollable.                |
-
-In the **sidebar** with a task focused:
-
-| Key | Action                                                                                            |
-| --- | ------------------------------------------------------------------------------------------------- |
-| `r` | Run now (for tasks) or restart (for services). Confirmation dialog opens before the action fires. |
-
-![tui-confirm-run.png — TUI run-now confirmation dialog before triggering a task.](../../../assets/screenshots/placeholder.svg)
-
 ## Following a run
 
 `Enter` on a row in the recent-activity list (or in a task's run
@@ -124,26 +101,24 @@ daemon, line-numbered, with a header showing run ID, start time,
 duration, and either a "Run Again" button (for ended runs) or a
 "Stop" button (for runs that are still going).
 
+The keybindings live in the help bar at the bottom of the screen — the
+TUI footer is the source of truth, so look there for whatever's
+currently available.
+
 ![tui-run-detail.png — TUI run detail: header with run ID, start time, duration, Run Again button; line-numbered log below.](../../../assets/screenshots/placeholder.svg)
 
-| Key                  | Action in run detail                                                                                            |
-| -------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `↑` `↓` (or `k` `j`) | Scroll the log one line at a time.                                                                              |
-| `←` `→` (or `h` `l`) | Pan horizontally if a line is wider than the viewport.                                                          |
-| `PgUp` / `PgDn`      | Page through the log.                                                                                           |
-| `g` / `G`            | Jump to top / bottom.                                                                                           |
-| `f`                  | **Fullscreen** the log. Header and line numbers go away; native terminal selection works. `f` or `Esc` returns. |
-| `r`                  | Retry the run (only when retryable — failed / timeout / crashed).                                               |
-| `s`                  | Stop the run (only when running). Confirmation dialog.                                                          |
-| `Esc`                | Back to the previous view.                                                                                      |
+A few keys worth flagging since they aren't obvious:
+
+- `f` — **Fullscreen** the log. Header and line numbers go away;
+  native terminal selection works. Right move for copy-paste.
+- `d` — **Download** the run's full log. On a graphical session this
+  opens your browser to the download URL; on SSH it copies the URL to
+  your clipboard or shows it in a modal you can paste from.
+- `r` / `s` — Retry / Stop the run, depending on its current state.
 
 The log starts in **follow mode** — it auto-scrolls to the tail as
 new lines arrive. Any manual scroll (`↑`, `PgUp`, `g`, `G`)
 **pauses the follow**; press `G` to jump back to the tail and resume.
-
-The fullscreen toggle (`f`) is the right move when you want to copy a
-chunk of log to paste elsewhere — it removes the line-number gutter
-and lets your terminal's native selection work.
 
 ![tui-run-fullscreen.png — TUI run detail in fullscreen mode: header and gutter hidden so native terminal selection works on the raw log.](../../../assets/screenshots/placeholder.svg)
 
@@ -226,9 +201,6 @@ stop, restart, and observe — but it doesn't:
   TOML.
 - **Create or delete tasks.** Same reason — they live in TOML.
 - **Manage users or roles.** RunWisp is single-operator by design.
-- **Download log files.** Press `f` to fullscreen the log and use
-  your terminal's native copy, or grab the file directly from
-  `data/logs/<task>/`.
 
 ## Where to next
 
