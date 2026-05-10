@@ -236,26 +236,29 @@ file that `validate` accepts is a file the daemon will accept.
 On success it prints a one-line tick plus a short summary:
 
 ```
-✓ runwisp.toml is valid
-  3 tasks, 2 services, 2 notifiers, 1 route
-  scheduler timezone: Europe/Bratislava (config)
+✓ runwisp.toml is valid.
+  tasks:    3
+  services: 2
+  timezone: Europe/Bratislava (config)
 ```
 
-On failure it prints the offending key, value, and a hint when one
-applies:
+On failure the loader's first error is rendered as a styled
+`Error: …` block to stderr — the same shape every CLI subcommand
+uses. The body is whatever the loader returned: the offending key
+or table, the value, and (where applicable) a hint pointing at the
+right shape:
 
 ```
-✗ runwisp.toml: 2 errors
+Error: runwisp.toml is not valid
 
-  [tasks.health-probe] parallelism = 2
-    unknown key 'parallelism' — did you mean 'max_concurrent'?
-
-  [tasks.bulky-job] keep_runs = "unlimited"
-    keep_runs must be a positive integer; the "unlimited" keyword is
-    no longer accepted. Omit the field to disable the cap.
+invalid log_max_size for task "bulky-job": keyword "unlimited" is no
+longer accepted; pick a positive byte size or omit the field to
+inherit the default
 ```
 
-Pair it with a pre-commit hook or CI job:
+The loader stops at the first error rather than collecting them, so
+fixing one issue and re-running surfaces the next. Pair it with a
+pre-commit hook or CI job:
 
 ```bash
 runwisp validate --config ./runwisp.toml

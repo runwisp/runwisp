@@ -53,11 +53,11 @@ exits.
 
 ## Restart behaviour
 
-| Key                   | Type     | Default         | What it does                                                                                                                                          |
-| --------------------- | -------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `restart_delay`       | duration | `1s`            | Base delay between restarts. Go duration string.                                                                                                      |
-| `restart_backoff`     | enum     | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                          |
-| `backoff_reset_after` | duration | inherited       | Replica must stay up at least this long before its restart counter resets. Inherits from `[defaults] backoff_reset_after` (default `"60s"`).          |
+| Key                   | Type     | Default         | What it does                                                                                                                                 |
+| --------------------- | -------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restart_delay`       | duration | `1s`            | Base delay between restarts. Go duration string.                                                                                             |
+| `restart_backoff`     | enum     | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                 |
+| `backoff_reset_after` | duration | inherited       | Replica must stay up at least this long before its restart counter resets. Inherits from `[defaults] backoff_reset_after` (default `"60s"`). |
 
 Backoff is **capped at 60 seconds**, so even after a long flap session
 the next restart never waits more than a minute. A replica that stays
@@ -82,8 +82,8 @@ in-flight overlap.
 
 ## Graceful shutdown
 
-| Key             | Type     | Default | What it does                                                                                          |
-| --------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| Key             | Type     | Default | What it does                                                                                           |
+| --------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------ |
 | `graceful_stop` | duration | `"5s"`  | SIGTERM grace period per replica before SIGKILL — for manual stop, `Restart Service`, daemon shutdown. |
 
 `graceful_stop` is process-group-wide: SIGTERM goes to the replica's

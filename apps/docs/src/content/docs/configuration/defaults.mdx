@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: "[defaults]"
-description: Fallback values inherited by every task and service unless overridden — timeout, log_max_size, log_on_full, keep_runs, keep_for, graceful_stop, backoff_reset_after.
+description: Fallback values inherited by every task and service unless overridden — timeout, log_max_size, log_on_full, keep_runs, keep_for, backoff_reset_after.
 ---
 
 `[defaults]` is the one section in `runwisp.toml` that doesn't define
@@ -22,23 +22,25 @@ log_max_size        = "100mb"
 log_on_full         = "drop_old"
 keep_runs           = 50
 keep_for            = "30d"
-graceful_stop       = "5s"
 backoff_reset_after = "60s"
 ```
 
-| Key                   | Type      | Built-in default | Applies to | What it does                                                                                                                                |
-| --------------------- | --------- | ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `timeout`             | duration  | _(unset)_        | tasks      | Default per-attempt wall-clock cap. Unset means no timeout.                                                                                 |
-| `log_max_size`        | byte size | `100MB`          | both       | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                                                |
-| `log_on_full`         | enum      | `"drop_old"`     | both       | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                               |
-| `keep_runs`           | int       | _(unset)_        | both       | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected.                         |
-| `keep_for`            | duration  | _(unset)_        | both       | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected.                                         |
-| `graceful_stop`       | duration  | `"5s"`           | both       | Default SIGTERM grace period before SIGKILL on timeout, terminate, manual stop, daemon shutdown. `"0s"` = insta-kill.                       |
-| `backoff_reset_after` | duration  | `"60s"`          | services   | A service replica that stays up at least this long resets its restart counter. Per-service override supported.                              |
+| Key                   | Type      | Built-in default | Applies to | What it does                                                                                                        |
+| --------------------- | --------- | ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------------- |
+| `timeout`             | duration  | _(unset)_        | tasks      | Default per-attempt wall-clock cap. Unset means no timeout.                                                         |
+| `log_max_size`        | byte size | `100MB`          | both       | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                        |
+| `log_on_full`         | enum      | `"drop_old"`     | both       | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                       |
+| `keep_runs`           | int       | _(unset)_        | both       | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected. |
+| `keep_for`            | duration  | _(unset)_        | both       | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected.                 |
+| `backoff_reset_after` | duration  | `"60s"`          | services   | A service replica that stays up at least this long resets its restart counter. Per-service override supported.      |
 
 There is no default `cron`, no default `on_overlap`, no default
-`retry_*`, no default `max_concurrent`, no default `queue_max`. Those
-vary per task by intent; defaulting them would hide behaviour.
+`retry_*`, no default `max_concurrent`, no default `queue_max`, no
+default `graceful_stop`. Those vary per task by intent; defaulting
+them would hide behaviour. Per-task `graceful_stop` falls back to its
+own built-in `"5s"` when omitted (the same value docs and tests
+expect on every task and service); set it on each table that needs a
+different window.
 
 The daemon-wide `[daemon] shutdown_timeout` (default `"10s"`) is a
 separate top-level setting — it bounds the **whole-daemon** shutdown
@@ -67,19 +69,19 @@ timeout             = "30m"     # most tasks should die after 30 minutes
 log_max_size        = "50mb"    # smaller default, override for noisy tasks
 keep_runs           = 100
 keep_for            = "30d"
-graceful_stop       = "10s"     # most workloads need a touch more than 5s
 backoff_reset_after = "30s"     # services that stabilise in 30s reset
 
 [tasks.heartbeat]
 cron = "*/5 * * * *"
 run  = "/usr/local/bin/heartbeat"
-# inherits 30m timeout, 50mb log cap, 100 runs, 30d retention, 10s graceful_stop
+# inherits 30m timeout, 50mb log cap, 100 runs, 30d retention
 
 [tasks.nightly-export]
-cron         = "0 2 * * *"
-timeout      = "4h"      # overrides default — exports take longer
-log_max_size = "500mb"   # overrides default — output is large
-run          = "/usr/local/bin/export"
+cron          = "0 2 * * *"
+timeout       = "4h"      # overrides default — exports take longer
+log_max_size  = "500mb"   # overrides default — output is large
+graceful_stop = "20s"     # this one needs more than the built-in 5s
+run           = "/usr/local/bin/export"
 
 [services.flaky-worker]
 backoff_reset_after = "2m"     # overrides default — this one takes longer to stabilise

@@ -25,7 +25,7 @@ One binary. One TOML file. Zero runtime dependencies. Full visibility into every
 > **TL;DR** — RunWisp is a single-binary replacement for `crond`, `crontab`, and `supervisord`. Define your cron jobs and long-running processes in TOML, then get a web dashboard, terminal UI, REST API, real-time log streaming, and persistent execution history out of the box. No Python, no Node.js, no external database. Runs anywhere a static Go binary runs — VPS, Raspberry Pi, Docker, bare metal.
 
 > [!NOTE]
-> **Status: pre-1.0** — RunWisp is under active development and stable enough for personal and small-team production use. The TOML schema may receive breaking changes before 1.0; see the [CHANGELOG](CHANGELOG.md) for what changes in each release.
+> **Status: pre-1.0** — RunWisp runs scheduled jobs and small services on a single machine today. The TOML schema is still settling; expect breaking changes between minor versions until 1.0 — every change ships in [CHANGELOG.md](CHANGELOG.md). Several roadmap items (cloud control plane, log search, reload-without-restart) aren't here yet — see the [roadmap](https://docs.runwisp.com/roadmap/).
 
 ---
 
@@ -110,9 +110,9 @@ run       = "node /app/worker.js"
 runwisp
 ```
 
-**4. You're now in the Terminal UI.** `runwisp` spawns the daemon in the background and drops you straight into an interactive TUI — task list, live log streaming, run history, one-click triggering. The startup banner shows your config and data paths, detected capabilities (Docker, etc.), and — on first run — an auto-generated login password in a yellow box. Want headless instead? Use `runwisp daemon`.
+**4. You're now in the Terminal UI.** `runwisp` spawns the daemon in the background and attaches an interactive TUI — task list, live log streaming, run history, one-click triggering. The TUI's Home page shows the Web UI URL and — on first run — an auto-generated login password (press `Enter` on the password row to copy it to your clipboard). Want headless instead? Use `runwisp daemon`.
 
-**5. Open the web dashboard** through the TUI. Set `RUNWISP_PASSWORD` to pin a password of your own, or use `--host` / `--port` to change the bind address.
+**5. Pin a password or change the bind address (optional).** Set `RUNWISP_PASSWORD` to use your own password instead of the auto-generated one, or pass `--host` / `--port` to change where the daemon listens.
 
 That's it — your tasks are scheduled, supervised, and observable through the Web UI, TUI, and REST API.
 

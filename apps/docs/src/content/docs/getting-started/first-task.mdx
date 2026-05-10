@@ -97,11 +97,19 @@ To trigger from the command line instead, leave the TUI running and open
 another shell:
 
 ```bash
-runwisp exec health-check
+runwisp run-task health-check
 ```
 
-The output streams back to your terminal, and the run is recorded in the
-daemon's history exactly as if it had fired on schedule.
+`run-task` asks the running daemon to start a new run via the REST API
+and prints the new run's ULID. Watch the live log in the TUI (or the
+Web UI); `run-task` itself is a fire-and-print command and does not
+stream output.
+
+For one-off testing **without a daemon up**, `runwisp exec
+health-check` runs the task in-process and streams stdout/stderr to
+your terminal. It refuses when a daemon is already attached to the
+data dir — two writers on one SQLite file is a corruption hazard, so
+the CLI checks the PID file before opening the store.
 
 ## 4. Open the Web UI
 

@@ -59,7 +59,7 @@ The interesting choices:
 
 Omitting `cron` makes the task **manual-only**. It only runs when
 something explicitly triggers it: a `POST` to
-`/api/tasks/deploy-app/trigger`, the Web UI's "Run Now" button, the
+`/api/tasks/deploy-app/run`, the Web UI's "Run Now" button, the
 TUI's `r` key, or the local-only `runwisp exec deploy-app`.
 
 `runwisp list` shows it as `(manual)` in the SCHEDULE column.
@@ -105,7 +105,7 @@ TOKEN=$(curl -sSf https://runwisp.example.com/api/auth/challenge \\
   ')
 
 # Trigger the deploy.
-curl -sSf -X POST https://runwisp.example.com/api/tasks/deploy-app/trigger \\
+curl -sSf -X POST https://runwisp.example.com/api/tasks/deploy-app/run \\
   -H "Authorization: Bearer $TOKEN" \\
   -H "X-Runwisp-Env: DEPLOY_VERSION=v1.2.3"
 ```

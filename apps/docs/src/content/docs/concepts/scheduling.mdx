@@ -61,10 +61,10 @@ cron     = "30 2 * * *"
 timezone = "America/New_York"
 ```
 
-| Setting                   | Default          | What it controls                                                                |
-| ------------------------- | ---------------- | ------------------------------------------------------------------------------- |
-| `[scheduler] timezone`    | _(system zone)_  | Fallback for every task without its own `timezone`.                             |
-| `[tasks.<name>] timezone` | _(inherits)_     | Timezone for this task's cron evaluation. Overrides the scheduler-wide default. |
+| Setting                   | Default         | What it controls                                                                |
+| ------------------------- | --------------- | ------------------------------------------------------------------------------- |
+| `[scheduler] timezone`    | _(system zone)_ | Fallback for every task without its own `timezone`.                             |
+| `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the scheduler-wide default. |
 
 If the daemon doesn't recognise a name (typo, or missing timezone data
 in a minimal Docker image), config load fails with the offending
@@ -141,10 +141,10 @@ catch_up          = "all"
 max_catch_up_runs = 200    # at most 200 missed ticks fire on startup
 ```
 
-| Value     | Meaning                                                                                |
-| --------- | -------------------------------------------------------------------------------------- |
+| Value     | Meaning                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------- |
 | _omitted_ | Inherit the built-in default of **100**. Tune up explicitly if each missed tick is real work. |
-| `N > 0`   | Cap the backfill at `N` runs; older missed ticks are dropped.                          |
+| `N > 0`   | Cap the backfill at `N` runs; older missed ticks are dropped.                                 |
 
 The cap is bounded by an internal hard cap of **10000** — values above
 that are rejected at config load with a clear error. Negative values
@@ -194,8 +194,8 @@ reload — no file watcher, no reload command. To pick up edits, restart
 the daemon.
 
 A parse error at startup fails the boot — the daemon exits before
-opening its port. The safe pattern is to run `runwisp validate`
-against the new file before you restart.
+opening its port. The safe pattern is to run `runwisp validate
+--config <path>` against the new file before you restart.
 
 When a task disappears from the file across a restart, its schedule
 entry is gone but its run history stays. When a new task appears, its

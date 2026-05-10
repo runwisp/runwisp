@@ -180,7 +180,7 @@ exit code `-2`. They are **not resumed** — that's deliberate, see
 [How scheduling works][boot-semantics] for why "auto-resume" would be
 unsafe.
 
-[boot-semantics]: /concepts/scheduling/#boot-semantics-in-flight-runs-are-marked-crashed
+[boot-semantics]: /concepts/scheduling/#on-startup-unfinished-runs-are-marked-crashed
 
 There are no temp files, lock files, or sockets that need cleaning up.
 The only cleanup is the stale `daemon.pid` after a hard crash; the next

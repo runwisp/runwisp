@@ -44,11 +44,11 @@ log_on_full  = "drop_old"
   `mb`, `gb`, `tb` (case-insensitive); bare numbers are bytes.
 - **`log_on_full`** — what to do when output hits the cap.
 
-| Value       | Behaviour                                                                                                                                                                                                                                                  |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `drop_old`  | Default. Renames the current log to `.prev`, keeps writing fresh output. The end of the log (usually where the failure is) survives.                                                                                                                       |
-| `drop_new`  | Stops accepting new lines; the process keeps running. Right when the **start** is the interesting part (a startup banner, a long batch's preamble) and the rest is repetitive.                                                                             |
-| `kill_task` | Cancels the run's context, terminating the process. The run records as `log_overflow` (a dedicated end reason that's still treated as a failure for retries and notifications), so the cause is visible without inspecting the log.                       |
+| Value       | Behaviour                                                                                                                                                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `drop_old`  | Default. Renames the current log to `.prev`, keeps writing fresh output. The end of the log (usually where the failure is) survives.                                                                                                |
+| `drop_new`  | Stops accepting new lines; the process keeps running. Right when the **start** is the interesting part (a startup banner, a long batch's preamble) and the rest is repetitive.                                                      |
+| `kill_task` | Cancels the run's context, terminating the process. The run records as `log_overflow` (a dedicated end reason that's still treated as a failure for retries and notifications), so the cause is visible without inspecting the log. |
 
 Whichever policy fires, the daemon writes a synthetic line at the
 truncation point so someone skimming the log can see exactly when the

@@ -116,8 +116,9 @@ memory — make it a service.
 ### A one-off that you only want to trigger from the API or UI
 
 That's still a task. Omit `cron`. The task appears in the UI and accepts
-manual triggers via `runwisp exec <name>`, the REST API, or the TUI.
-Set `api_trigger = false` to make a task cron-only and not API-runnable.
+manual triggers via `runwisp run-task <name>`, the Web UI's **Run
+Task** button, the TUI, or `POST /api/tasks/{name}/run`. Set
+`api_trigger = false` to make a task cron-only and not API-runnable.
 
 ### A task that "should never overlap"
 

@@ -10,21 +10,23 @@ boot before the daemon opens its port — better than a silent wrong
 default at 03:00 in the morning. This page is the catalogue of every
 shape the loader refuses, grouped by where the failure surfaces.
 
-`runwisp validate <path>` runs the same checks without starting the
-daemon. Use it as a pre-flight before restarting in production; it's
-also what the test suite exercises.
+`runwisp validate --config <path>` runs the same checks without
+starting the daemon. (The path is consumed via the persistent
+`--config` flag — there is no positional path argument.) Use it as a
+pre-flight before restarting in production; it's also what the test
+suite exercises.
 
 ## Document-level rules
 
 These checks fire on the file as a whole, before any per-task work.
 
-| Rejected shape                              | Why                                                                                                                                       |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Unknown TOML key anywhere                   | The decoder runs in strict mode (`DisallowUnknownFields`). A typo like `keep_run = 5` or `tasks.foo.descripton` fails the parse.          |
-| Empty / whitespace-only task name           | `[tasks.""]` and `[tasks." "]` are rejected — the table key is the task identity used in CLI, API, log paths.                             |
-| Empty / whitespace-only service name        | Same rule for `[services.*]`.                                                                                                             |
-| Same name in `[tasks.*]` and `[services.*]` | The two tables share one namespace — the CLI, API, and log directory layout key off the name. Pick one or rename.                         |
-| Duplicate task name (post-decode)           | Defence-in-depth: if a future change introduces a path that bypasses the TOML map, validation still rejects two tasks with the same name. |
+| Rejected shape                                      | Why                                                                                                                                                                |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unknown TOML key anywhere                           | The decoder runs in strict mode (`DisallowUnknownFields`). A typo like `keep_run = 5` or `tasks.foo.descripton` fails the parse.                                   |
+| Empty / whitespace-only task name                   | `[tasks.""]` and `[tasks." "]` are rejected — the table key is the task identity used in CLI, API, log paths.                                                      |
+| Empty / whitespace-only service name                | Same rule for `[services.*]`.                                                                                                                                      |
+| Same name in `[tasks.*]` and `[services.*]`         | The two tables share one namespace — the CLI, API, and log directory layout key off the name. Pick one or rename.                                                  |
+| Duplicate task name (post-decode)                   | Defence-in-depth: if a future change introduces a path that bypasses the TOML map, validation still rejects two tasks with the same name.                          |
 | `graceful_stop` exceeds `[daemon] shutdown_timeout` | Not rejected — but the daemon emits a boot-time warning naming the task, since whole-daemon shutdown will SIGKILL the survivor before its per-task window expires. |
 
 ## Per-task / per-service rules
@@ -42,14 +44,14 @@ Both `[tasks.*]` and `[services.*]` are validated row by row.
 
 These are placed where a friendly redirect helps more than a generic "unknown key".
 
-| Rejected shape                      | Why                                                                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `restart = "always"` on `[tasks.*]` | Always-on processes belong in `[services.*]`. The error names the table to use.                                    |
-| `instances = N` on `[tasks.*]`      | `instances` is a service-only knob (replica count). Tasks already have `max_concurrent` for in-flight concurrency. |
-| `cron = "…"` on `[services.*]`      | Services are not cron-driven. Rejected as an unknown key by the strict decoder.                                    |
-| `catch_up = "…"` on `[services.*]`  | Same — services don't have a missed-firing concept.                                                                |
-| `max_concurrent = N` on `[services.*]` / `queue_max = N` on `[services.*]` | Services don't queue overlap; replica count is `instances`.                          |
-| `parallelism = N` (anywhere)        | Renamed to `max_concurrent` on tasks; removed entirely on services. The error suggests the new name.               |
+| Rejected shape                                                             | Why                                                                                                                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `restart = "always"` on `[tasks.*]`                                        | Always-on processes belong in `[services.*]`. The error names the table to use.                                    |
+| `instances = N` on `[tasks.*]`                                             | `instances` is a service-only knob (replica count). Tasks already have `max_concurrent` for in-flight concurrency. |
+| `cron = "…"` on `[services.*]`                                             | Services are not cron-driven. Rejected as an unknown key by the strict decoder.                                    |
+| `catch_up = "…"` on `[services.*]`                                         | Same — services don't have a missed-firing concept.                                                                |
+| `max_concurrent = N` on `[services.*]` / `queue_max = N` on `[services.*]` | Services don't queue overlap; replica count is `instances`.                                                        |
+| `parallelism = N` (anywhere)                                               | Renamed to `max_concurrent` on tasks; removed entirely on services. The error suggests the new name.               |
 
 ### Enum membership
 
@@ -73,22 +75,22 @@ zero, negatives are config errors, and "no cap" is spelled by omitting
 the field. Each field has an internal hard cap; values above the cap
 are rejected with a hint.
 
-| Field               | Rule                                                                                                                                |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Field               | Rule                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `max_concurrent`    | Tasks: `>= 1`; hard cap **1024**. Zero would mean "the task can never run", which is what omitting it (or removing the task) is for. |
-| `queue_max`         | Tasks with `on_overlap = "queue"`: `>= 1`; hard cap **10000**. Zero is rejected — use `on_overlap = "skip"` for "never queue".      |
-| `retry_attempts`    | `>= 0`; hard cap **100**.                                                                                                           |
-| `max_catch_up_runs` | `>= 1`; hard cap **10000**.                                                                                                         |
-| `keep_runs`         | `>= 1`; hard cap **1 000 000**. Bare `0` and negatives are rejected. Omit the field to inherit / disable the cap.                   |
-| `instances`         | Services only: `>= 1` and `<= 64`.                                                                                                  |
+| `queue_max`         | Tasks with `on_overlap = "queue"`: `>= 1`; hard cap **10000**. Zero is rejected — use `on_overlap = "skip"` for "never queue".       |
+| `retry_attempts`    | `>= 0`; hard cap **100**.                                                                                                            |
+| `max_catch_up_runs` | `>= 1`; hard cap **10000**.                                                                                                          |
+| `keep_runs`         | `>= 1`; hard cap **1 000 000**. Bare `0` and negatives are rejected. Omit the field to inherit / disable the cap.                    |
+| `instances`         | Services only: `>= 1` and `<= 64`.                                                                                                   |
 
 ### Retention and log size
 
-| Field          | Accepted                                              | Rejected                                                                  |
-| -------------- | ----------------------------------------------------- | ------------------------------------------------------------------------- |
-| `keep_runs`    | Positive integer (`50`); or omitted (no cap).         | `0`, negative integers, any string, the words `"unlimited"` / `"inherit"`. |
+| Field          | Accepted                                               | Rejected                                                                                                  |
+| -------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `keep_runs`    | Positive integer (`50`); or omitted (no cap).          | `0`, negative integers, any string, the words `"unlimited"` / `"inherit"`.                                |
 | `keep_for`     | Positive duration (`"30d"`, `"2w"`, `"36h"`); omitted. | Empty `""`, `"0"` / `"0s"`, negative durations, malformed strings, the words `"unlimited"` / `"inherit"`. |
-| `log_max_size` | Positive byte size (`"100mb"`, `"1.5gb"`); omitted.   | `0`, `"0"`, `"0mb"`, negative sizes, malformed strings, the words `"unlimited"` / `"inherit"`. |
+| `log_max_size` | Positive byte size (`"100mb"`, `"1.5gb"`); omitted.    | `0`, `"0"`, `"0mb"`, negative sizes, malformed strings, the words `"unlimited"` / `"inherit"`.            |
 
 The pre-0.5 `"unlimited"` and `"inherit"` keywords were dropped — they
 were ambiguous (was inherit pulling from defaults, or just "use the
@@ -127,9 +129,12 @@ zone for you so a fresh install starts with explicit, visible config.
 five-field form (`* * * * *`) as well as the descriptors `@hourly`,
 `@daily`, `@weekly`, `@monthly`, `@yearly`, and the interval form
 `@every 1h30m`. A malformed expression does **not** fail the config
-load — the scheduler emits a warning at startup and the task is left
-unscheduled (manual triggers still work). To catch a typo before
-production, run `runwisp validate <path>` and review the warning list.
+load — `runwisp validate` accepts it. The cron parser only runs at
+scheduler startup, where it emits a warning to stderr and leaves the
+task unscheduled (manual triggers still work). To catch a typo before
+production, boot the daemon against the new file (or `runwisp daemon
+--config <path>` in a scratch data dir) and watch the startup log;
+`runwisp validate` will not flag it.
 
 ## Notifications
 
