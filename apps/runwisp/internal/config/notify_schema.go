@@ -40,7 +40,7 @@ func parseNotifyToken(s string) (parentID, override string, hasOverride bool) {
 // resolved-but-not-secret-substituted NotifyConfig.
 func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*taskWire, serviceNames []string, serviceWires map[string]*serviceWire) (NotifyConfig, error) {
 	out := NotifyConfig{
-		DefaultNotifiers: resolveDefaultNotifiers(t.Notify.DefaultNotifiers),
+		AppendNotifiers:  resolveAppendNotifiers(t.Notify.AppendNotifiers),
 		QueueSize:        t.Notify.QueueSize,
 		HistoryKeep:      t.Notify.HistoryKeep,
 		OccurrenceRing:   t.Notify.OccurrenceRing,
@@ -107,7 +107,7 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 
 	desugarTaskNotify(taskNames, taskWires, &out)
 	desugarServiceNotify(serviceNames, serviceWires, &out)
-	appendDefaultRoute(&out)
+	appendCatchAllRoute(&out)
 
 	if err := expandInlineTokens(&out); err != nil {
 		return NotifyConfig{}, err
@@ -187,14 +187,14 @@ func cloneNotifierWithOverride(parent NotifierSpec, syntheticID, override string
 	return spec, nil
 }
 
-// resolveDefaultNotifiers applies the documented precedence:
+// resolveAppendNotifiers applies the documented precedence:
 //   - omitted: ["inapp"] (the zero-config safety net)
-//   - explicit []: no defaults — operator opted out of any built-in route
+//   - explicit []: no appended channels — operator opted out of any built-in route
 //   - explicit list: that list verbatim, deduped of empties
 //
 // The returned slice is always non-nil so downstream code can treat it
-// uniformly; an empty slice means "no defaults", not "use built-in".
-func resolveDefaultNotifiers(raw *[]string) []string {
+// uniformly; an empty slice means "nothing to append", not "use built-in".
+func resolveAppendNotifiers(raw *[]string) []string {
 	if raw == nil {
 		return []string{inappNotifierID}
 	}
@@ -208,26 +208,26 @@ func resolveDefaultNotifiers(raw *[]string) []string {
 	return out
 }
 
-// appendDefaultRoute installs the zero-config safety net: every failed,
-// timed-out, or crashed run fans out to every channel in default_notifiers.
+// appendCatchAllRoute installs the zero-config safety net: every failed,
+// timed-out, or crashed run fans out to every channel in append_notifiers.
 // With the default ["inapp"], the bell in the Web UI and the footer in the
 // TUI always light up. With ["slack-ops"], every failure pages Slack. With
 // [], no synthetic route is added at all. The router deduplicates channel
 // IDs across matching rules, so this is harmless when the same task also
 // has explicit notify_on_failure sugar.
-func appendDefaultRoute(out *NotifyConfig) {
-	if len(out.DefaultNotifiers) == 0 {
+func appendCatchAllRoute(out *NotifyConfig) {
+	if len(out.AppendNotifiers) == 0 {
 		return
 	}
 	out.Routes = append(out.Routes, NotificationRoute{
 		Kinds:      []string{"run.failed", "run.timeout", "run.crashed"},
-		NotifierID: append([]string(nil), out.DefaultNotifiers...),
+		NotifierID: append([]string(nil), out.AppendNotifiers...),
 	})
 }
 
 // desugarTaskNotify converts per-task notify_on_failure / notify_on_success
 // shorthands into synthetic routes appended to NotifyConfig.Routes.
-// DefaultNotifiers (typically ["inapp"]) are appended automatically so a
+// AppendNotifiers (typically ["inapp"]) are appended automatically so a
 // per-task slack route still lights up the in-app bell unless the operator
 // explicitly cleared the default.
 func desugarTaskNotify(taskNames []string, taskWires map[string]*taskWire, out *NotifyConfig) {
@@ -255,21 +255,21 @@ func appendSynthRoutes(out *NotifyConfig, taskName string, onFailure, onSuccess 
 		out.Routes = append(out.Routes, NotificationRoute{
 			Kinds:      []string{"run.failed", "run.timeout", "run.crashed"},
 			TaskGlob:   taskName,
-			NotifierID: mergeWithDefaults(onFailure, out.DefaultNotifiers),
+			NotifierID: mergeWithAppended(onFailure, out.AppendNotifiers),
 		})
 	}
 	if len(onSuccess) > 0 {
 		out.Routes = append(out.Routes, NotificationRoute{
 			Kinds:      []string{"run.succeeded"},
 			TaskGlob:   taskName,
-			NotifierID: mergeWithDefaults(onSuccess, out.DefaultNotifiers),
+			NotifierID: mergeWithAppended(onSuccess, out.AppendNotifiers),
 		})
 	}
 }
 
-func mergeWithDefaults(explicit, defaults []string) []string {
+func mergeWithAppended(explicit, appended []string) []string {
 	ids := append([]string(nil), explicit...)
-	for _, d := range defaults {
+	for _, d := range appended {
 		if !slices.Contains(ids, d) {
 			ids = append(ids, d)
 		}
@@ -327,9 +327,9 @@ func validateNotify(cfg *NotifyConfig) error {
 	}
 	known[inappNotifierID] = struct{}{}
 
-	for _, id := range cfg.DefaultNotifiers {
+	for _, id := range cfg.AppendNotifiers {
 		if _, ok := known[id]; !ok {
-			return fmt.Errorf("notify.default_notifiers: unknown notifier id %q (declare a [[notifier]] with this id, or use \"inapp\")", id)
+			return fmt.Errorf("notify.append_notifiers: unknown notifier id %q (declare a [[notifier]] with this id, or use \"inapp\")", id)
 		}
 	}
 

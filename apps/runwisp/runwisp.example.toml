@@ -146,9 +146,10 @@ done
 # In-app notifications are on by default — every failed, timed-out, or crashed
 # run lights up the bell in the Web UI and the footer line in the TUI, with
 # zero config required. Override the default fan-out with [notify]
-# default_notifiers — set it to [] to silence the in-app safety net, or to
+# append_notifiers — set it to [] to silence the in-app safety net, or to
 # ["slack-ops"] to make every failure page Slack instead of (or in addition
-# to) the in-app channel.
+# to) the in-app channel. The list is also appended (deduped) to every
+# notify_on_failure / notify_on_success on tasks and services.
 #
 # Notifiers describe optional outbound channels (Slack, Telegram). Routes pick
 # which notifiers fire for which events. Per-task sugar (notify_on_failure /
@@ -186,7 +187,7 @@ done
 # notify = ["inapp"]
 
 # [notify]
-# default_notifiers = ["inapp"]   # zero-config safety net; set [] to disable
+# append_notifiers  = ["inapp"]   # zero-config safety net; set [] to disable
 # queue_size        = 1024
 # default_timeout   = "10s"   # shrinks the retry budget — delivery failures surface faster
 # history_keep      = 500
@@ -196,7 +197,7 @@ done
 # coalesce_outbound = true    # default; set false to page on every single outbound event
 
 # Per-task sugar: implies a synthetic route with the listed notifiers plus
-# whatever is in default_notifiers (deduped). Mirrors notify_on_success.
+# whatever is in append_notifiers (deduped). Mirrors notify_on_success.
 #
 # [tasks.nightly-db-backup]
 # notify_on_failure = ["slack-ops"]

@@ -75,6 +75,41 @@ The order RunWisp checks on every startup (daemon, TUI, CLI):
    `<data-dir>/password`. Daemon only — interactive TUI/CLI calls
    stop here with an auth error, which is the right outcome.
 
+### Handling the password safely
+
+The password is the only thing standing between an attacker on the
+network and full control of the daemon. Every place it appears is a
+leak surface — pick the deployment path that puts it in the fewest of
+them.
+
+**Where the password leaks if you're not careful:**
+
+| Surface                         | What leaks it                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Shell history**               | `RUNWISP_PASSWORD=hunter2 runwisp daemon` is written verbatim to `~/.bash_history` / `~/.zsh_history` (often syncs to backups, dotfiles repos, or remote shell sessions). Prefix with a leading space when your shell is configured to skip such lines, or — better — never put the secret on the command line.                                                |
+| **Process listing (`ps`)**      | Args are world-readable on most systems. `runwisp tui --password=hunter2` shows up in `ps -ef` for every user on the box; same for any wrapper that exec's runwisp with the password as a flag. The `RUNWISP_PASSWORD` env var is **not** visible to other users on Linux (only to the same UID) — env is the safer transport.                                 |
+| **Docker image / `ENV` line**   | `ENV RUNWISP_PASSWORD=…` in a `Dockerfile` bakes the value into every layer of the published image. Anyone who can pull the image can read it back with `docker history --no-trunc`. Pass at run-time via `--env-file` (mode `0600`), `docker run -e` (still visible in `docker inspect` to anyone in the `docker` group), or — best — Docker / Swarm secrets. |
+| **systemd unit `Environment=`** | Lives in plain text under `/etc/systemd/system/`, world-readable by default and copied into journald logs on `systemctl status`. Use `EnvironmentFile=-/etc/runwisp/runwisp.env` with restrictive perms (`chmod 0640`, `chown root:runwisp`), or — better — `LoadCredential=` so the secret is exposed only to the started process via a unit-private path.    |
+| **Cloud-init / user-data**      | Most providers retain user-data on the metadata service for the lifetime of the VM, where any process inside the VM can fetch it. Drop the secret in via the provider's secret store (AWS SSM Parameter Store, Hetzner / DO secrets, etc.), not user-data.                                                                                                     |
+| **Backups of the data dir**     | The default `data/password` is plaintext. If you back up the data dir to S3, an unencrypted USB drive, or an off-site sync, the password rides along. Either pass `RUNWISP_PASSWORD` from a separate secret store (so `data/password` never gets created) or exclude `password` from the backup set.                                                           |
+| **CI logs**                     | `set -x`, GitHub Actions' default echo of env vars on `run:` failure, GitLab's masked-variable misconfigurations — any of these can paste the password into a job log. Mark the variable as masked / protected in the CI provider; never `echo $RUNWISP_PASSWORD`.                                                                                             |
+
+**The shortlist for production:**
+
+- **systemd:** `LoadCredential=runwisp_password:/etc/runwisp/credentials/password` keeps the secret off disk for non-root users and out of the unit file itself. Falling back to `EnvironmentFile=-/etc/runwisp/runwisp.env` with mode `0640` and group ownership of the daemon's group is the next-best step. See [Deploy: systemd](/deploy/systemd/).
+- **Docker / Compose:** mount via [Docker secrets](https://docs.docker.com/engine/swarm/secrets/) or pass `--env-file ./runwisp.env` with the file `chmod 0600` and excluded from the build context (`.dockerignore`). Avoid `-e RUNWISP_PASSWORD=…` on the command line. See [Deploy: Docker](/deploy/docker/).
+- **Bare metal / VPS:** keep `<data-dir>/password` (the auto-generated file with `0600` perms) and don't set `RUNWISP_PASSWORD` at all. The file is the simplest secure path when no orchestrator is involved — just don't back up the data dir to anywhere unencrypted.
+
+**What RunWisp does on its side:**
+
+- The password is held in memory only when supplied via env (it is **not** copied to `data/password`).
+- The challenge-response handshake never puts the password on the wire, even on plain HTTP behind a reverse proxy.
+- The daemon never logs the password and never echoes it back through the API.
+- The optional control-plane integration (`internal/cloud/`) never receives the password — outbound messages carry only run metadata.
+
+The rest is on the operator: keep the secret out of the surfaces above
+and rotate it whenever a leak is suspected (next subsection).
+
 ### Rotating the password
 
 Change the value of `RUNWISP_PASSWORD` (or update `data/password`)

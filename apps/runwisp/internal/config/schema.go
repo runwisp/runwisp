@@ -31,7 +31,7 @@ type Scheduler struct {
 // reads NotifierSpecs and produces a runnable notify.Service. Values stored
 // here are plain types so the config package does not need to import notify.
 //
-// DefaultNotifiers is the unified successor to the old disable_inapp toggle.
+// AppendNotifiers is the unified successor to the old disable_inapp toggle.
 // It always reflects the operator's intent post-defaults: missing/omitted
 // resolves to ["inapp"], an explicit empty list disables the zero-config
 // safety net, and any list (e.g. ["slack-ops"]) becomes the channels that
@@ -39,7 +39,7 @@ type Scheduler struct {
 type NotifyConfig struct {
 	Notifiers        []NotifierSpec
 	Routes           []NotificationRoute
-	DefaultNotifiers []string
+	AppendNotifiers  []string
 	QueueSize        int
 	DefaultTimeout   time.Duration
 	HistoryKeep      int
@@ -220,14 +220,14 @@ type schedulerWire struct {
 	Timezone string `toml:"timezone,omitempty"`
 }
 
-// notifyWire mirrors the [notify] block before parsing. DefaultNotifiers is a
+// notifyWire mirrors the [notify] block before parsing. AppendNotifiers is a
 // pointer so we can distinguish "key omitted" (apply built-in default of
 // ["inapp"]) from "key set to []" (operator explicitly opted out of the
 // in-app safety net).
 type notifyWire struct {
 	QueueSize        int       `toml:"queue_size,omitempty"`
 	DefaultTimeout   string    `toml:"default_timeout,omitempty"`
-	DefaultNotifiers *[]string `toml:"default_notifiers,omitempty"`
+	AppendNotifiers  *[]string `toml:"append_notifiers,omitempty"`
 	HistoryKeep      int       `toml:"history_keep,omitempty"`
 	HistoryKeepFor   string    `toml:"history_keep_for,omitempty"`
 	CoalesceWindow   string    `toml:"coalesce_window,omitempty"`

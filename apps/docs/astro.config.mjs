@@ -81,7 +81,7 @@ export default defineConfig({
                         { label: "Model", slug: "notifications/model" },
                         { label: "[notify]", slug: "notifications/global" },
                         { label: "[[notification_route]]", slug: "notifications/routes" },
-                        { label: "Per-task sugar", slug: "notifications/per-task" },
+                        { label: "Notification sugar", slug: "notifications/per-task" },
                         {
                             label: "Providers",
                             items: [

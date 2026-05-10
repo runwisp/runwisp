@@ -113,12 +113,19 @@ one-hour cleanup cadence.
 | `notify_on_success` | string[] | _(none)_ | Notifier IDs to alert on `run.succeeded`.                              |
 
 Each entry is a notifier `id` declared in a [`[[notifier]]`](/notifications/providers/overview/)
-block. Whatever channels are listed in `[notify] default_notifiers`
+block. Whatever channels are listed in `[notify] append_notifiers`
 (default: `["inapp"]`) are appended automatically — set
-`default_notifiers = []` to opt out, or `["slack-ops"]` to make every
+`append_notifiers = []` to opt out, or `["slack-ops"]` to make every
 failure page Slack instead. See
-[Per-task notification sugar](/notifications/per-task/)
+[Notification sugar](/notifications/per-task/)
 for how this expands.
+
+These two fields are **symmetric across `[tasks.*]` and `[services.*]`** —
+same field names, same expansion, same dedup rules. The
+[Notification sugar](/notifications/per-task/) page covers both surfaces
+and is the canonical reference; the
+[`[services.*]` notifications](/configuration/services/#notifications) section
+points back here.
 
 ## What's rejected on tasks
 

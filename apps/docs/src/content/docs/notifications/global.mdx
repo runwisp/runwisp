@@ -19,7 +19,7 @@ place for daemon-wide knobs that apply across all of them.
 
 ```toml
 [notify]
-default_notifiers = ["inapp"]   # default — fire on every failure
+append_notifiers  = ["inapp"]   # default — fire on every failure
 queue_size        = 1024        # default
 # default_timeout = "30s"       # unset — uses the built-in retry budget (5 min)
 # history_keep     = 500        # unset — no row-count cap
@@ -28,15 +28,15 @@ coalesce_window   = "1h"        # default
 occurrence_ring   = 10          # default
 ```
 
-| Key                 | Type     | Default     | What it does                                                                                                                                                                          |
-| ------------------- | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default_notifiers` | string[] | `["inapp"]` | Channels that receive `run.failed` / `run.timeout` / `run.crashed` for every task without explicit per-task sugar, AND get appended (deduped) to per-task sugar. Set `[]` to disable. |
-| `queue_size`        | int      | `1024`      | Bound on the in-memory delivery queue. When full, the **new** event is dropped (non-blocking send).                                                                                   |
-| `default_timeout`   | duration | _(unset)_   | Caps the **total retry budget** for outbound deliveries (`MaxElapsedTime`). Unset = built-in 5-minute budget. Per-attempt HTTP timeout stays at 15s.                                  |
-| `history_keep`      | int      | _(unset)_   | Cap on the number of in-app notification rows kept in SQLite. Unset = no row-count prune; rows accumulate until you set this or `history_keep_for`.                                   |
-| `history_keep_for`  | duration | _(unset)_   | Maximum age for in-app notification rows. Unset = no age-based prune. Accepts `d` and `w` units.                                                                                      |
-| `coalesce_window`   | duration | `1h`        | Window during which repeat events with the same dedup key coalesce.                                                                                                                   |
-| `occurrence_ring`   | int      | `10`        | Number of occurrence timestamps kept on a coalesced row.                                                                                                                              |
+| Key                | Type     | Default     | What it does                                                                                                                                                                          |
+| ------------------ | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `append_notifiers` | string[] | `["inapp"]` | Channels that receive `run.failed` / `run.timeout` / `run.crashed` for every task without explicit per-task sugar, AND get appended (deduped) to per-task sugar. Set `[]` to disable. |
+| `queue_size`       | int      | `1024`      | Bound on the in-memory delivery queue. When full, the **new** event is dropped (non-blocking send).                                                                                   |
+| `default_timeout`  | duration | _(unset)_   | Caps the **total retry budget** for outbound deliveries (`MaxElapsedTime`). Unset = built-in 5-minute budget. Per-attempt HTTP timeout stays at 15s.                                  |
+| `history_keep`     | int      | _(unset)_   | Cap on the number of in-app notification rows kept in SQLite. Unset = no row-count prune; rows accumulate until you set this or `history_keep_for`.                                   |
+| `history_keep_for` | duration | _(unset)_   | Maximum age for in-app notification rows. Unset = no age-based prune. Accepts `d` and `w` units.                                                                                      |
+| `coalesce_window`  | duration | `1h`        | Window during which repeat events with the same dedup key coalesce.                                                                                                                   |
+| `occurrence_ring`  | int      | `10`        | Number of occurrence timestamps kept on a coalesced row.                                                                                                                              |
 
 If both `history_keep` and `history_keep_for` are unset, the in-app
 notifications table grows unbounded — set at least one for any
@@ -46,11 +46,11 @@ production deployment.
 
 ```toml
 [notify]
-default_notifiers = []          # silence the bell entirely
-# default_notifiers = ["slack-ops"]   # or: route every failure to Slack instead
+append_notifiers = []                # silence the bell entirely
+# append_notifiers = ["slack-ops"]   # or: route every failure to Slack instead
 ```
 
-`default_notifiers = []` turns off the in-app notifications bell and the
+`append_notifiers = []` turns off the in-app notifications bell and the
 TUI footer alert line entirely — and stops `inapp` from being appended
 to per-task sugar, so `notify_on_failure = ["slack-ops"]` becomes
 Slack-only.
@@ -138,7 +138,7 @@ surface within a minute:
 
 ```toml
 [notify]
-default_notifiers = ["inapp"]   # keep the bell
+append_notifiers  = ["inapp"]   # keep the bell
 queue_size        = 1024
 default_timeout   = "30s"       # cap total retry budget at 30s
 history_keep      = 1000
@@ -151,7 +151,7 @@ A headless build agent that ships everything off-host:
 
 ```toml
 [notify]
-default_notifiers = []          # nobody's watching the bell
+append_notifiers  = []          # nobody's watching the bell
 queue_size        = 4096        # bursty: many tasks fire at once
 ```
 
