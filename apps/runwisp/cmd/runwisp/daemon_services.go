@@ -56,8 +56,9 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 	var catchUpResult runtime.CatchUpResult
 
 	if mode == modeStandalone {
-		// Scheduler timezone defaults to UTC unless [scheduler] timezone is set,
-		// so cron expressions don't silently shift with local DST.
+		// [scheduler] timezone is required at config-load time when any cron task
+		// lacks a per-task timezone, so by the point we get here it's either set
+		// explicitly or there are no cron expressions to interpret.
 		schedLoc, locErr := config.ResolveTimezone("scheduler.timezone", cfg.Config.Scheduler.Timezone)
 		if locErr != nil {
 			return nil, locErr

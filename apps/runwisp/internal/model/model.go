@@ -28,10 +28,11 @@ type Task struct {
 	Group       string   `toml:"group,omitempty"       json:"group,omitempty"`
 	Description string   `toml:"description,omitempty" json:"description,omitempty"`
 
-	Cron       string          `toml:"cron,omitempty"        json:"cron,omitempty"`
-	Timezone   string          `toml:"timezone,omitempty"    json:"timezone,omitempty" doc:"IANA timezone for cron evaluation; falls back to scheduler.timezone (default UTC)"`
-	APITrigger bool            `toml:"api_trigger,omitempty" json:"api_trigger"`
-	CatchUp    MissedRunPolicy `toml:"catch_up,omitempty"    json:"catch_up,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
+	Cron           string          `toml:"cron,omitempty"               json:"cron,omitempty"`
+	Timezone       string          `toml:"timezone,omitempty"           json:"timezone,omitempty" doc:"IANA timezone for cron evaluation; required (per-task or via scheduler.timezone) when cron is set"`
+	APITrigger     bool            `toml:"api_trigger,omitempty"        json:"api_trigger"`
+	CatchUp        MissedRunPolicy `toml:"catch_up,omitempty"           json:"catch_up,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
+	MaxCatchUpRuns int             `toml:"max_catch_up_runs,omitempty"  json:"max_catch_up_runs,omitempty" doc:"Cap on catch-up runs triggered when catch_up = all (0 inherits default, -1 means unlimited, positive caps)"`
 
 	Timeout     time.Duration     `toml:"-"                     json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
 	Restart     RestartPolicy     `toml:"restart,omitempty"     json:"restart,omitempty" enum:"never,always,on_failure" doc:"Whether and when a task is restarted after completion"`

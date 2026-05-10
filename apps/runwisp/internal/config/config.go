@@ -136,6 +136,9 @@ func Validate(cfg *Config) error {
 			return err
 		}
 	}
+	if err := validateSchedulerTimezone(cfg); err != nil {
+		return err
+	}
 	if err := validateNotify(&cfg.Notify); err != nil {
 		return err
 	}
@@ -200,6 +203,9 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if task.RetryAttempts < 0 {
 		return fmt.Errorf("invalid retry_attempts for task %s: must be non-negative", task.Name)
 	}
+	if task.MaxCatchUpRuns < -1 {
+		return fmt.Errorf("invalid max_catch_up_runs for task %s: must be -1 (unlimited), 0 (inherit default), or a positive count", task.Name)
+	}
 	if err := validateKeepRuns(fmt.Sprintf("keep_runs for task %s", task.Name), task.KeepRuns); err != nil {
 		return err
 	}
@@ -226,6 +232,30 @@ func ResolveTimezone(scope, name string) (*time.Location, error) {
 		return nil, fmt.Errorf("invalid %s: %q is not a valid IANA timezone (e.g. \"UTC\", \"America/New_York\"): %w", scope, name, err)
 	}
 	return loc, nil
+}
+
+// validateSchedulerTimezone enforces that any cron-driven task has an explicit
+// timezone available — either its own `timezone =` or `[scheduler] timezone`.
+// We refuse to silently default to UTC because "0 2 * * *" silently running at
+// 02:00 UTC instead of the operator's local 02:00 is the kind of failure
+// Prime Directive #1 forbids. Manual-only tasks (no cron) and services are
+// unaffected.
+func validateSchedulerTimezone(cfg *Config) error {
+	if cfg.Scheduler.Timezone != "" {
+		return nil
+	}
+	for i := range cfg.Tasks {
+		task := &cfg.Tasks[i]
+		if task.Cron == "" || task.Timezone != "" {
+			continue
+		}
+		return fmt.Errorf(
+			"task %q has cron = %q but neither [scheduler] timezone nor a per-task timezone is set; "+
+				"set [scheduler] timezone = \"UTC\" (or a specific IANA zone like \"America/New_York\") so cron firings are unambiguous",
+			task.Name, task.Cron,
+		)
+	}
+	return nil
 }
 
 // validateKeepRuns enforces the tri-state semantics:
@@ -289,6 +319,13 @@ var (
 	defaultRestartDelay   = time.Second
 )
 
+// DefaultMaxCatchUpRuns caps the per-task `catch_up = "all"` backfill at startup
+// when the operator hasn't picked their own number. A two-week outage on a
+// `* * * * *` task would otherwise queue 20,160 catch-up runs and bury the
+// scheduler; 100 keeps the backlog visible without serial-executing days of
+// it. Operators who want every tick set max_catch_up_runs = -1.
+const DefaultMaxCatchUpRuns = 100
+
 // ApplyDefaults fills in zero-valued fields with sensible defaults.
 func ApplyDefaults(cfg *Config) {
 	for i := range cfg.Tasks {
@@ -301,6 +338,13 @@ func ApplyDefaults(cfg *Config) {
 		}
 		if task.CatchUp == "" {
 			task.CatchUp = model.MissedRunLatest
+		}
+		// max_catch_up_runs tri-state mirrors keep_runs:
+		//   0  → inherit built-in default (DefaultMaxCatchUpRuns)
+		//  -1  → explicit unlimited (no cap)
+		//  >0  → explicit cap
+		if task.MaxCatchUpRuns == 0 {
+			task.MaxCatchUpRuns = DefaultMaxCatchUpRuns
 		}
 
 		if task.Timeout == 0 {

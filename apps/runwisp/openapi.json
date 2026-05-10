@@ -1017,6 +1017,11 @@
             ],
             "type": "string"
           },
+          "max_catch_up_runs": {
+            "description": "Cap on catch-up runs triggered when catch_up = all (0 inherits default, -1 means unlimited, positive caps)",
+            "format": "int64",
+            "type": "integer"
+          },
           "name": {
             "type": "string"
           },
@@ -1083,7 +1088,7 @@
             "type": "integer"
           },
           "timezone": {
-            "description": "IANA timezone for cron evaluation; falls back to scheduler.timezone (default UTC)",
+            "description": "IANA timezone for cron evaluation; required (per-task or via scheduler.timezone) when cron is set",
             "type": "string"
           }
         },

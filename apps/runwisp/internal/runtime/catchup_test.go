@@ -260,6 +260,56 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		runner.AssertNumberOfCalls(t, "TriggerRun", 4)
 	})
 
+	t.Run("policy=all caps at max_catch_up_runs", func(t *testing.T) {
+		db := new(testutil.MockRunRepository)
+		runner := new(mockTaskRunner)
+
+		now := time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC) // 12 missed ticks at */5
+		lastRun := &model.Run{
+			ID:        "last-run",
+			TaskName:  "my-task",
+			CreatedAt: time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
+		}
+
+		task := catchupTask(model.MissedRunAll)
+		task.MaxCatchUpRuns = 5
+		tasks := map[string]*model.Task{"my-task": task}
+
+		db.On("EnsureTaskRegistered", "my-task", now).Return(nil)
+		db.On("GetLastRunByTask", "my-task").Return(lastRun, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
+
+		result := RunMissedTickCatchUp(db, tasks, runner, now)
+
+		assert.Equal(t, 5, result.Triggered, "cap of 5 must clamp the 12-tick backlog")
+		runner.AssertNumberOfCalls(t, "TriggerRun", 5)
+	})
+
+	t.Run("policy=all with max_catch_up_runs=-1 backfills everything", func(t *testing.T) {
+		db := new(testutil.MockRunRepository)
+		runner := new(mockTaskRunner)
+
+		now := time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC) // 12 missed ticks at */5
+		lastRun := &model.Run{
+			ID:        "last-run",
+			TaskName:  "my-task",
+			CreatedAt: time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
+		}
+
+		task := catchupTask(model.MissedRunAll)
+		task.MaxCatchUpRuns = -1
+		tasks := map[string]*model.Task{"my-task": task}
+
+		db.On("EnsureTaskRegistered", "my-task", now).Return(nil)
+		db.On("GetLastRunByTask", "my-task").Return(lastRun, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
+
+		result := RunMissedTickCatchUp(db, tasks, runner, now)
+
+		assert.Equal(t, 12, result.Triggered, "explicit unlimited cap must let every missed tick through")
+		runner.AssertNumberOfCalls(t, "TriggerRun", 12)
+	})
+
 	t.Run("no missed ticks no trigger", func(t *testing.T) {
 		db := new(testutil.MockRunRepository)
 		runner := new(mockTaskRunner)

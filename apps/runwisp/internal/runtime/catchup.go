@@ -75,16 +75,31 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 		}
 
 		triggers := missedCount
+		capped := false
 		if task.CatchUp == model.MissedRunLatest {
 			triggers = 1
+		} else if task.CatchUp == model.MissedRunAll && task.MaxCatchUpRuns > 0 && triggers > task.MaxCatchUpRuns {
+			triggers = task.MaxCatchUpRuns
+			capped = true
 		}
 
-		slog.Info("Triggering missed run catch-up",
-			"task", task.Name,
-			"missed", missedCount,
-			"triggering", triggers,
-			"policy", task.CatchUp,
-		)
+		if capped {
+			slog.Warn("Catch-up backlog exceeded max_catch_up_runs; dropping older missed ticks",
+				"task", task.Name,
+				"missed", missedCount,
+				"max_catch_up_runs", task.MaxCatchUpRuns,
+				"triggering", triggers,
+				"dropped", missedCount-triggers,
+				"policy", task.CatchUp,
+			)
+		} else {
+			slog.Info("Triggering missed run catch-up",
+				"task", task.Name,
+				"missed", missedCount,
+				"triggering", triggers,
+				"policy", task.CatchUp,
+			)
+		}
 
 		for range triggers {
 			if _, err := runner.TriggerRun(task.Name, model.TriggeredByCron); err != nil {

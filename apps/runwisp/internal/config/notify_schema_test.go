@@ -10,8 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// schedulerTZHeader prefixes a `[scheduler] timezone = "UTC"` block so cron
+// tasks in test fixtures satisfy the post-#4 fail-closed timezone validation.
+const schedulerTZHeader = `
+[scheduler]
+timezone = "UTC"
+`
+
 func TestDecode_NotifierAndRoutes(t *testing.T) {
-	src := `
+	src := schedulerTZHeader + `
 [[notifier]]
 id = "ops"
 type = "slack"
@@ -66,7 +73,7 @@ notify_on_failure = ["ops"]
 }
 
 func TestNotifyConfig_DefaultInappRouteWithZeroConfig(t *testing.T) {
-	src := `
+	src := schedulerTZHeader + `
 [tasks.process-event-queue]
 cron        = "*/10 * * * *"
 parallelism = 1
@@ -183,7 +190,7 @@ func TestParseNotifyToken(t *testing.T) {
 }
 
 func TestInlineToken_SlackChannelOverride(t *testing.T) {
-	src := `
+	src := schedulerTZHeader + `
 [[notifier]]
 id              = "slack"
 type            = "slack"
@@ -222,7 +229,7 @@ notify_on_failure = ["slack:#ops"]
 }
 
 func TestInlineToken_TelegramChatIDOverride(t *testing.T) {
-	src := `
+	src := schedulerTZHeader + `
 [[notifier]]
 id            = "tg"
 type          = "telegram"
@@ -251,7 +258,7 @@ notify_on_success = ["tg:-3003"]
 }
 
 func TestInlineToken_DedupAcrossTasks(t *testing.T) {
-	src := `
+	src := schedulerTZHeader + `
 [[notifier]]
 id              = "slack"
 type            = "slack"
@@ -395,7 +402,7 @@ webhook_url_env = "URL"
 }
 
 func TestNotifyConfig_EmptyDefaultNotifiersDropsImplicitInappFromSugar(t *testing.T) {
-	src := `
+	src := schedulerTZHeader + `
 [[notifier]]
 id = "ops"
 type = "slack"
@@ -421,7 +428,7 @@ notify_on_failure = ["ops"]
 }
 
 func TestNotifyConfig_DefaultNotifiersWithCustomChannel(t *testing.T) {
-	src := `
+	src := schedulerTZHeader + `
 [[notifier]]
 id = "slack-ops"
 type = "slack"
