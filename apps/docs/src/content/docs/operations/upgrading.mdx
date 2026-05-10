@@ -197,11 +197,12 @@ is "back up the data directory."
 ## What doesn't
 
 - **In-flight runs** at the moment of restart are cancelled. They
-  record as `stopped` if they exit within the daemon's 3-second
-  graceful-shutdown window, or `crashed` with exit code `-2` (via
-  boot reconciliation) if they don't. Tasks fire fresh on their next
-  scheduled tick; services restart on their normal supervisor loop.
-  This is by design — see [Tasks vs Services / crashes][crashes].
+  record as `stopped` if they exit within the daemon's
+  `[daemon] shutdown_timeout` window (default `"10s"`), or `crashed`
+  with exit code `-2` (via boot reconciliation) if they don't. Tasks
+  fire fresh on their next scheduled tick; services restart on their
+  normal supervisor loop. This is by design — see
+  [Tasks vs Services / crashes][crashes].
 - **Open Web UI sessions** with cookies older than 24 hours need a fresh
   login (cookie expiry, not an upgrade artefact).
 - **Notification queue** — anything in flight when the daemon stops is

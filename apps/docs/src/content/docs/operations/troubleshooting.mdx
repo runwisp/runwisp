@@ -127,13 +127,13 @@ Check, in order:
 3. **Is the daemon's clock right?** Cron runs in the daemon's local
    timezone; a host with a clock skewed by hours will fire at unexpected
    times. `date -u` on the host.
-4. **Is `parallelism` saturated with `on_overlap = "skip"`?** Each
+4. **Is `max_concurrent` saturated with `on_overlap = "skip"`?** Each
    firing decides whether to start based on how many runs are currently
-   in-flight. A long-running task with `parallelism = 1` and
+   in-flight. A long-running task with `max_concurrent = 1` and
    `on_overlap = "skip"` skips every firing while the first run is
    still going. The Web UI's task detail shows this clearly — every
-   skipped firing is recorded as a `failed` row with exit code `-1`
-   and the message "task already running, skipping (policy: skip)".
+   rejected firing is recorded with `end_reason = "skipped"` and exit
+   code `-1`, distinct from a `failed` row.
 
 [crontab.guru]: https://crontab.guru/
 

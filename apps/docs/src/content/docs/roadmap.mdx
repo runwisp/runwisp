@@ -1,0 +1,95 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Roadmap
+description: What's planned for RunWisp — task dependencies, the cloud control plane, reload-without-restart, and log search — plus what's currently being explored.
+---
+
+RunWisp is pre-1.0 and the binary you're running today is the smallest
+useful version of it. This page is the public list of what's coming —
+not a calendar, not a promise, but enough that an operator can tell
+whether a feature they need is on the way or out of scope.
+
+For features that are explicitly **out of scope** (DAGs in the daemon,
+clustering, plugin systems, log aggregation, enterprise SSO), see the
+**Non-Goals** section of the project's
+[CLAUDE.md][claude-md] — they belong in a different tool.
+
+[claude-md]: https://github.com/runwisp/runwisp/blob/main/CLAUDE.md
+
+## Planned
+
+These are committed directions that the project will land before 1.0,
+in approximately this order. Schema changes will be flagged as
+breaking in the [CHANGELOG][changelog].
+
+[changelog]: https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md
+
+### Task dependencies — `on_finished_task`
+
+A task can declare another task as a trigger:
+
+```toml
+[tasks.publish-feed]
+on_finished_task = "build-index"
+run              = "/usr/local/bin/publish.sh"
+```
+
+When `build-index` finishes successfully, `publish-feed` fires.
+Strictly local, strictly one-step (no DAGs — that's a non-goal); the
+goal is **chaining a follow-up to a finished run**, not orchestrating
+a pipeline.
+
+### Reload without restart
+
+A `runwisp reload` CLI verb (and a corresponding HTTP endpoint) that
+re-reads `runwisp.toml` and applies the diff in-place: new tasks are
+added to the scheduler, removed tasks are unscheduled, and changed
+tasks pick up their new fields on the next firing. In-flight runs are
+unaffected. Until this lands, the daemon is restart-only — see
+[Operations: upgrading](/operations/upgrading/).
+
+### Cloud control plane
+
+A managed peer that speaks the optional control-plane protocol
+(`packages/asyncapi/asyncapi.yaml`) and gives operators:
+
+- A web dashboard that aggregates many daemons into one view.
+- Alerting that survives the local daemon being down.
+- Long-horizon run history beyond per-task `keep_runs` / `keep_for`.
+- Remote trigger and ad-hoc dispatch from anywhere.
+
+Strictly **opt-in**, strictly outbound: the local daemon is fully
+useful without it, and the protocol is documented so a third-party
+peer can implement it independently. Prime directive #4 (offline-complete)
+applies — the daemon must continue scheduling, running, and serving
+its UI when the cloud is unreachable.
+
+### Log search and query (cloud)
+
+Per-run log files stay on disk on the daemon — `keep_runs` /
+`keep_for` still bound them locally. The cloud peer adds full-text
+search across runs, structured query (e.g. "every `failed` run of
+`backup-db` in the last week, with the matching log line"), and
+exportable result sets. Strictly cloud-side: the daemon stays small.
+
+## Currently exploring
+
+Smaller items under active investigation that may or may not ship.
+None of these has a committed shape yet — they are listed here so an
+operator with a relevant use case knows the topic is on someone's
+mind.
+
+- **Per-task secret resolution from a credential helper** — letting
+  `run = …` pull secrets from `pass`, `bw`, `op`, or a host-side
+  helper without the operator having to write a wrapper script.
+- **First-class metric exposure** — `/metrics` endpoint speaking the
+  Prometheus text format for run counts, durations, end reasons.
+
+## Where to next
+
+- [CHANGELOG][changelog] — what each release actually shipped.
+- [Configuration overview](/configuration/overview/) — the schema as
+  it stands today.
+- [Tasks vs Services](/concepts/tasks-vs-services/) — the model the
+  roadmap is extending, not replacing.

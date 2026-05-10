@@ -53,6 +53,7 @@ export default defineConfig({
                         { label: "The Web UI tour", slug: "getting-started/web-ui-tour" },
                     ],
                 },
+                { label: "Roadmap", link: "/roadmap/" },
                 {
                     label: "Concepts",
                     items: [

@@ -229,15 +229,39 @@ runwisp validate
 ```
 
 Parses `runwisp.toml`, runs the full schema validation, and exits. Does
-**not** start the daemon, touch the database, or open ports. Pair it
-with a pre-commit hook or CI job:
+**not** start the daemon, touch the database, or open ports. Uses the
+**same loader and the same error messages** as daemon startup, so a
+file that `validate` accepts is a file the daemon will accept.
+
+On success it prints a one-line tick plus a short summary:
+
+```
+✓ runwisp.toml is valid
+  3 tasks, 2 services, 2 notifiers, 1 route
+  scheduler timezone: Europe/Bratislava (config)
+```
+
+On failure it prints the offending key, value, and a hint when one
+applies:
+
+```
+✗ runwisp.toml: 2 errors
+
+  [tasks.health-probe] parallelism = 2
+    unknown key 'parallelism' — did you mean 'max_concurrent'?
+
+  [tasks.bulky-job] keep_runs = "unlimited"
+    keep_runs must be a positive integer; the "unlimited" keyword is
+    no longer accepted. Omit the field to disable the cap.
+```
+
+Pair it with a pre-commit hook or CI job:
 
 ```bash
 runwisp validate --config ./runwisp.toml
 ```
 
-Exit `0` if valid, `1` on parse or schema error. The error message names
-the offending key.
+Exit `0` if valid, `1` on parse or schema error.
 
 ## `runwisp openapi`
 

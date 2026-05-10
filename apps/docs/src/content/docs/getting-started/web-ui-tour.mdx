@@ -104,7 +104,7 @@ here.
 - **Header** — task name, description, schedule line.
 - **Action button** — **Run Task** for tasks, **Restart Service** for
   services, **Stop Now** while a run is still going. The button is
-  disabled when the task is at its `parallelism` limit.
+  disabled when the task is at its `max_concurrent` limit.
 - **Run history** — the **50** most recent runs for this task,
   selectable.
 - **Log viewer** — the streaming log for the selected run, occupying
@@ -134,8 +134,12 @@ that's still going, new lines stream in live.
 - When `log_on_full = "drop_old"` rotates a log mid-run, you just see
   a small "log rotated" marker; line numbering stays continuous.
 
-There's no download button in the UI. If you need a copy of the log,
-grab it from disk — `data/logs/<task>/...log` — or use the REST API.
+A **Download log** button in the run header grabs the full log file
+— including the rotated-out part if `drop_old` fired mid-run — as a
+single download. Same bytes the on-disk file holds, served from the
+daemon's REST API.
+
+![web-ui-download-log.png — Run detail header with the Download log button highlighted next to the live-stream toggle.](../../../assets/screenshots/placeholder.svg)
 
 ### The failure path
 
@@ -162,10 +166,10 @@ Open a failed run and you see, all on the same page:
 ![web-ui-task-failed.png — Task detail for a failed run: red status pill in the header, exit code next to duration, captured stderr filling the log pane.](../../../assets/screenshots/placeholder.svg)
 
 The same surface backs every end reason. A `skipped` row is a real
-row with a real log line ("task already running, skipping (policy:
-skip)") — it's not silence. A `crashed` row tells you the daemon
-itself died while the run was in flight; the next firing is a fresh
-execution, not a resumption.
+row with a real log line explaining the policy that rejected it — it's
+not silence. A `crashed` row tells you the daemon itself died while
+the run was in flight; the next firing is a fresh execution, not a
+resumption.
 
 The sidebar also reflects status: tasks whose **most recent run
 failed** carry a coloured marker, so you don't have to remember to
@@ -240,8 +244,7 @@ trigger, stop, and restart things, and you can see everything that's
 happening — but the source of truth is `runwisp.toml`. To change
 _what_ the daemon does (add a task, edit a schedule, rename a group,
 set up a notifier, scale a service), open the file in your editor and
-restart the daemon. There's also no log download button — copy the
-file from `data/logs/<task>/` directly if you need an archive.
+restart the daemon.
 
 ## Where to next
 

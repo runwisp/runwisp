@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: "[defaults]"
-description: Fallback values inherited by every task and service unless overridden — timeout, log_max_size, log_on_full, keep_runs, keep_for.
+description: Fallback values inherited by every task and service unless overridden — timeout, log_max_size, log_on_full, keep_runs, keep_for, graceful_stop, backoff_reset_after.
 ---
 
 `[defaults]` is the one section in `runwisp.toml` that doesn't define
@@ -17,24 +17,34 @@ It exists because writing the same `keep_for = "30d"` and
 
 ```toml
 [defaults]
-timeout      = "1h"
-log_max_size = "100mb"
-log_on_full  = "drop_old"
-keep_runs    = 50
-keep_for     = "30d"
+timeout             = "1h"
+log_max_size        = "100mb"
+log_on_full         = "drop_old"
+keep_runs           = 50
+keep_for            = "30d"
+graceful_stop       = "5s"
+backoff_reset_after = "60s"
 ```
 
-| Key            | Type          | Built-in default  | What it does                                                                                                                 |
-| -------------- | ------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `timeout`      | duration      | `0` (no limit)    | Default per-attempt wall-clock cap. Go duration string.                                                                      |
-| `log_max_size` | byte size     | `100MB`           | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Use `"unlimited"` to opt out. Bare `0` is rejected.                  |
-| `log_on_full`  | enum          | `"drop_old"`      | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                |
-| `keep_runs`    | int / keyword | `0` (no row cap)  | Default row-count retention. Positive `N` keeps N runs; `"unlimited"` opts out. Bare `0` and negative integers are rejected. |
-| `keep_for`     | duration      | `0` (no time cap) | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. `"unlimited"` opts out. Zero / negative durations are rejected.  |
+| Key                   | Type      | Built-in default | Applies to | What it does                                                                                                                                |
+| --------------------- | --------- | ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`             | duration  | _(unset)_        | tasks      | Default per-attempt wall-clock cap. Unset means no timeout.                                                                                 |
+| `log_max_size`        | byte size | `100MB`          | both       | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                                                |
+| `log_on_full`         | enum      | `"drop_old"`     | both       | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                               |
+| `keep_runs`           | int       | _(unset)_        | both       | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected.                         |
+| `keep_for`            | duration  | _(unset)_        | both       | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected.                                         |
+| `graceful_stop`       | duration  | `"5s"`           | both       | Default SIGTERM grace period before SIGKILL on timeout, terminate, manual stop, daemon shutdown. `"0s"` = insta-kill.                       |
+| `backoff_reset_after` | duration  | `"60s"`          | services   | A service replica that stays up at least this long resets its restart counter. Per-service override supported.                              |
 
 There is no default `cron`, no default `on_overlap`, no default
-`retry_*`. Those vary per task by intent; defaulting them would hide
-behaviour.
+`retry_*`, no default `max_concurrent`, no default `queue_max`. Those
+vary per task by intent; defaulting them would hide behaviour.
+
+The daemon-wide `[daemon] shutdown_timeout` (default `"10s"`) is a
+separate top-level setting — it bounds the **whole-daemon** shutdown
+phase. Each task/service still gets its own `graceful_stop` window
+inside that cap. If a `graceful_stop` exceeds `[daemon] shutdown_timeout`
+the daemon emits a boot-time warning naming the task.
 
 ## Precedence
 
@@ -42,49 +52,28 @@ For each task or service:
 
 1. If the field is set on the `[tasks.*]` / `[services.*]` table, use that.
 2. Else if it's set in `[defaults]`, use that.
-3. Else fall back to the built-in default (`100MB`, `drop_old`, `0`, etc.).
+3. Else fall back to the built-in default (e.g. `100MB` for `log_max_size`).
 
-Both retention fields are tri-state, so the precedence is unambiguous
-even when `[defaults]` sets a value:
-
-| Per-task `keep_runs` | Effect                                                                  |
-| -------------------- | ----------------------------------------------------------------------- |
-| _omitted_            | Inherit `[defaults] keep_runs`; if that's also unset, no row-count cap. |
-| `"unlimited"`        | **Explicit unlimited** — overrides any positive default.                |
-| `N` (positive int)   | Cap at `N`. Wins over the default.                                      |
-
-| Per-task `keep_for` | Effect                                                                  |
-| ------------------- | ----------------------------------------------------------------------- |
-| _omitted_           | Inherit `[defaults] keep_for`; if that's also unset, no time-based cap. |
-| `"unlimited"`       | **Explicit unlimited** — overrides any positive default.                |
-| `"30d"` (duration)  | Delete runs older than this. Wins over the default.                     |
-
-| Per-task `log_max_size` | Effect                                                                            |
-| ----------------------- | --------------------------------------------------------------------------------- |
-| _omitted_               | Inherit `[defaults] log_max_size`; if that's also unset, the built-in 100 MB cap. |
-| `"unlimited"`           | **Explicit unlimited** — overrides any positive default.                          |
-| `"50mb"` (byte size)    | Cap at this size. Wins over the default.                                          |
-
-So a task that wants to opt out of an inherited cap writes the
-`"unlimited"` keyword on the field — there is no numeric sentinel.
-Bare `0` for `keep_runs` / `log_max_size`, the empty string for
-`keep_for`, and any negative value are rejected at config load. The
-keyword is the only way to spell "no cap", so a misread zero can never
-silently mean unlimited.
+Omitting a numeric retention field at every level means **no cap** —
+runs accumulate until you set a value somewhere. Bare `0`, negative
+values, and out-of-range strings are rejected at config load, so
+"forgot to cap" never silently means "deleted everything."
 
 ## Worked example
 
 ```toml
 [defaults]
-timeout      = "30m"     # most tasks should die after 30 minutes
-log_max_size = "50mb"    # smaller default, override for noisy tasks
-keep_runs    = 100
-keep_for     = "30d"
+timeout             = "30m"     # most tasks should die after 30 minutes
+log_max_size        = "50mb"    # smaller default, override for noisy tasks
+keep_runs           = 100
+keep_for            = "30d"
+graceful_stop       = "10s"     # most workloads need a touch more than 5s
+backoff_reset_after = "30s"     # services that stabilise in 30s reset
 
 [tasks.heartbeat]
 cron = "*/5 * * * *"
 run  = "/usr/local/bin/heartbeat"
-# inherits 30m timeout, 50mb log cap, 100 runs, 30d retention
+# inherits 30m timeout, 50mb log cap, 100 runs, 30d retention, 10s graceful_stop
 
 [tasks.nightly-export]
 cron         = "0 2 * * *"
@@ -92,17 +81,16 @@ timeout      = "4h"      # overrides default — exports take longer
 log_max_size = "500mb"   # overrides default — output is large
 run          = "/usr/local/bin/export"
 
-[tasks.audit-log]
-cron      = "0 0 * * *"
-keep_runs = "unlimited"  # explicit unlimited — override defaults' 100
-keep_for  = "unlimited"  # also opt out of the inherited 30d window
-run       = "/usr/local/bin/audit"
+[services.flaky-worker]
+backoff_reset_after = "2m"     # overrides default — this one takes longer to stabilise
+run                 = "/usr/local/bin/worker"
 ```
 
 ## What `[defaults]` doesn't do
 
 - It doesn't apply to `[storage]` — that's a global cap, not a per-task default.
 - It doesn't apply to `[notify]` settings (`coalesce_window`, `queue_size`, etc.).
+- It doesn't apply to `[daemon] shutdown_timeout` — that's a daemon-wide setting, not a per-task value to inherit.
 - Notification routing (`notify_on_failure`, `notify_on_success`) has no
   defaulting layer — you set it per task.
 

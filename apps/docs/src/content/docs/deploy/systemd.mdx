@@ -42,12 +42,12 @@ ExecStart=/usr/local/bin/runwisp daemon \
 Restart=on-failure
 RestartSec=2s
 
-# Graceful shutdown. The daemon's own deadline is 3s (see
-# /operations/upgrading/#what-doesnt). TimeoutStopSec=10s gives systemd
-# 7s of headroom over that so a slow drain still finishes cleanly before
-# systemd escalates to SIGKILL.
+# Graceful shutdown. The daemon's own bound is `[daemon] shutdown_timeout`
+# (default 10s — see /configuration/defaults/). 30s here gives systemd
+# generous headroom over that so a slow drain still finishes cleanly
+# before systemd escalates to SIGKILL.
 KillSignal=SIGTERM
-TimeoutStopSec=10s
+TimeoutStopSec=30s
 
 # Hardening
 NoNewPrivileges=true
@@ -89,7 +89,7 @@ strip the ones you don't want.
 | `User=` / `Group=`     | Run as a dedicated, shell-less system user. Tasks in `runwisp.toml` execute under this account.                                                                                                                         |
 | `EnvironmentFile=-…`   | Optional file with `RUNWISP_PASSWORD=…` etc. Leading `-` = "no error if missing".                                                                                                                                       |
 | `Restart=on-failure`   | Restart only when the daemon exits non-zero. A clean `systemctl stop` doesn't trigger restart.                                                                                                                          |
-| `TimeoutStopSec=10s`   | systemd waits 10s after `SIGTERM` before sending `SIGKILL`. The daemon's own shutdown deadline is **3 seconds** ([defined in upgrading][shutdown-deadline]); the extra 7s of headroom is for systemd's own bookkeeping. |
+| `TimeoutStopSec=30s`   | systemd waits 30s after `SIGTERM` before sending `SIGKILL`. The daemon's own shutdown bound is `[daemon] shutdown_timeout` (default `"10s"`, see [`[daemon]` defaults][shutdown-deadline]); the extra headroom covers any per-task `graceful_stop` that runs to its limit. |
 | `NoNewPrivileges=true` | The daemon (and the tasks it spawns) cannot gain privileges via setuid binaries.                                                                                                                                        |
 | `ProtectSystem=strict` | The whole filesystem is read-only by default — only `/dev`, `/proc`, `/sys`, and the `ReadWritePaths` exception are writable.                                                                                           |
 | `ProtectHome=true`     | `/home`, `/root`, `/run/user` are inaccessible. Your tasks can't accidentally read someone's `~/.ssh`.                                                                                                                  |
@@ -133,13 +133,13 @@ sudo systemctl restart runwisp
 ```
 
 Restart cancels in-flight runs. They're marked `stopped` if they exit
-within the daemon's [3-second graceful-shutdown window][shutdown-deadline]
-or `crashed` on the next boot if they don't — either way no run history
-is lost. See [Operations: upgrading][upgrade] for the full picture; live
-reload is on the roadmap.
+within the daemon's [`[daemon] shutdown_timeout`][shutdown-deadline]
+window (default 10s) or `crashed` on the next boot if they don't —
+either way no run history is lost. See [Operations: upgrading][upgrade]
+for the full picture; live reload is on the roadmap.
 
 [upgrade]: /operations/upgrading/
-[shutdown-deadline]: /operations/upgrading/#what-doesnt
+[shutdown-deadline]: /configuration/defaults/
 
 ## Logs
 

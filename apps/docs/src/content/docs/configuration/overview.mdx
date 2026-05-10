@@ -100,11 +100,12 @@ docker restart runwisp
 ```
 
 Restart is fast — it cancels in-flight runs (which record as `stopped`
-if they exit within the daemon's 3-second graceful-shutdown window, or
-get reconciled as `crashed` on next boot if they don't), reopens the
-database, and re-applies the schedule from the new file. Live reload is
-on the roadmap; see [Operations: upgrading](/operations/upgrading/) for
-the current restart-based workflow.
+if they exit within the `[daemon] shutdown_timeout` window (default
+`"10s"`), or get reconciled as `crashed` on next boot if they don't),
+reopens the database, and re-applies the schedule from the new file.
+Live reload is on the roadmap; see
+[Operations: upgrading](/operations/upgrading/) for the current
+restart-based workflow.
 
 A startup parse error fails the boot — the daemon exits non-zero before
 opening its port. Your previous instance has already exited by then, so

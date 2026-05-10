@@ -19,7 +19,13 @@ runwisp init
 
 This drops a `runwisp.toml` next to you with one task, one service, and
 inline comments next to every key. It is the fastest way to see the full
-schema without flipping between docs and an editor.
+schema without flipping between docs and an editor. The scaffold also
+writes `[scheduler] timezone = "<your-system-zone>"` so your cron
+expressions are evaluated in the timezone you actually live in (you can
+edit that to any IANA zone — `Europe/Bratislava`, `America/New_York`,
+`UTC` — or remove it to fall back to the host's system zone).
+
+![first-task-init.png — Terminal showing `runwisp init` output: a path to the new runwisp.toml, the detected system timezone, and a generated password.](../../../assets/screenshots/placeholder.svg)
 
 Open it up — the relevant pieces look roughly like this:
 
@@ -64,11 +70,12 @@ runwisp
 ```
 
 `runwisp` (with no subcommand) spawns the daemon in the background and
-drops you straight into the interactive **TUI**. The startup banner shows
-where it is reading config from, where data is being stored, what
-capabilities it detected (Docker, etc.), and — on first run — an
-auto-generated **login password** in a yellow box. Save that password; you
-will need it for the Web UI.
+attaches the interactive **TUI**. The TUI's Home page shows the Web UI
+URL and — on first run only — an auto-generated **login password** that
+the daemon wrote to disk for you. Press `Enter` on the password row to
+copy it to your clipboard; you will need it for the Web UI.
+
+![first-task-tui-home.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused at top, Web UI URL row with localhost:9477, and an auto-generated password row.](../../../assets/screenshots/placeholder.svg)
 
 Want it to run in the background, with no terminal UI (for `systemd`
 or a Docker `CMD`)? Use `runwisp daemon` instead.
@@ -84,6 +91,8 @@ Inside the TUI you can:
 - Cancel a run that's still going, requeue it, or jump to the failure
   that woke you up at 3 AM.
 
+![first-task-tui-run.png — TUI exec view mid-run for the `health-check` task: header with run ID and elapsed time, line-numbered log streaming live with each curl response.](../../../assets/screenshots/placeholder.svg)
+
 To trigger from the command line instead, leave the TUI running and open
 another shell:
 
@@ -96,12 +105,15 @@ daemon's history exactly as if it had fired on schedule.
 
 ## 4. Open the Web UI
 
-The TUI shows the dashboard URL in its footer (typically
-`http://localhost:9477`). Open it, log in with the password from step 2,
-and you will see the same task list, run history, and live log streaming
-from a browser. Set the `RUNWISP_PASSWORD` environment variable to pin a
-password of your own, or pass `--host` / `--port` to change the bind
-address.
+The TUI's Home page lists `▸ ⮕ Open Web UI` as its first focusable row
+— press `Enter` and your browser opens straight into the dashboard,
+already logged in. Or just point a browser at `http://localhost:9477`
+and paste the password from step 2. You will see the same task list,
+run history, and live log streaming from a browser. Set the
+`RUNWISP_PASSWORD` environment variable to pin a password of your own,
+or pass `--host` / `--port` to change the bind address.
+
+![first-task-web-ui.png — Web UI dashboard after login: sidebar with `backup-db` and `health-check` under Tasks plus `worker` under Services, recent activity feed showing a successful `health-check` run.](../../../assets/screenshots/placeholder.svg)
 
 ## What just happened
 

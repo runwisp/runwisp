@@ -62,8 +62,10 @@ back.
 A health check that takes 30 seconds because the service is
 struggling shouldn't fire a second probe while the first is still
 in flight — that just adds load. `skip` drops the new firing.
-The skipped firing is recorded as a `failed` row with exit code `-1`
-and the message "task already running, skipping (policy: skip)".
+The rejected firing is recorded with `end_reason = "skipped"` and
+exit code `-1` — a distinct status from `failed`, so your health
+metrics don't get polluted by overlap-induced rows and
+`notify_on_failure` stays quiet on skips.
 
 ### `timeout = "30s"` + `--max-time 25`
 

@@ -189,6 +189,23 @@ two choices:
 
 For one-shot tasks, prefer #2 — it's explicit at the call site.
 
+### Timezone data inside the container
+
+`[scheduler] timezone` (and any per-task `timezone =`) needs the host's
+IANA timezone database to resolve names like `Europe/Bratislava`. Most
+base images already include it: `debian-slim`, `ubuntu`, `fedora`,
+`distroless:base` — your TOML just works. **Alpine is the exception**:
+it ships without `tzdata` to stay small. If you base on Alpine, add it
+to your Dockerfile:
+
+```dockerfile
+RUN apk add --no-cache tzdata
+```
+
+Without `tzdata`, the daemon falls back to UTC (and the resolved zone
+shown in the TUI startup banner / Web UI header reflects that), so a
+mismatch is visible at boot rather than at the next 02:00 cron firing.
+
 ## Don't reinvent supervisord inside a task
 
 A common antipattern:
