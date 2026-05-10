@@ -379,35 +379,106 @@ func TestApplyDefaults(t *testing.T) {
 }
 
 func TestKeepRunsTriState(t *testing.T) {
-	t.Run("explicit unlimited (-1) is preserved through defaults", func(t *testing.T) {
-		cfg := &Config{
-			Defaults: Defaults{KeepRuns: 50},
-			Tasks: []model.Task{{
-				Name: "uncapped", Run: "echo hi",
-				KeepRuns: -1,
-			}},
-		}
-		ApplyDefaults(cfg)
+	t.Run("explicit unlimited keyword survives a positive default", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+keep_runs = 50
+
+[tasks.uncapped]
+keep_runs = "unlimited"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
 		assert.Equal(t, -1, cfg.Tasks[0].KeepRuns,
-			"task that sets keep_runs = -1 must stay unlimited even when defaults specify a cap")
+			"task that sets keep_runs = \"unlimited\" must stay unlimited even when defaults specify a cap")
 	})
 
-	t.Run("zero inherits from defaults", func(t *testing.T) {
-		cfg := &Config{
-			Defaults: Defaults{KeepRuns: 50},
-			Tasks: []model.Task{{
-				Name: "inheritor", Run: "echo hi",
-				KeepRuns: 0,
-			}},
-		}
-		ApplyDefaults(cfg)
+	t.Run("omitted keep_runs inherits from defaults", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+keep_runs = 50
+
+[tasks.inheritor]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
 		assert.Equal(t, 50, cfg.Tasks[0].KeepRuns)
 	})
 
-	t.Run("values below -1 are rejected", func(t *testing.T) {
-		err := validateKeepRuns("keep_runs for task foo", -2)
+	t.Run("unlimited keyword is case-insensitive", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_runs = "UNLIMITED"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, -1, cfg.Tasks[0].KeepRuns)
+	})
+
+	t.Run("zero is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_runs = 0
+run = "echo hi"
+`)
+		_, err := Load(path)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "must be -1")
+		assert.Contains(t, err.Error(), "keep_runs")
+		assert.Contains(t, err.Error(), "unlimited")
+	})
+
+	t.Run("negative integer is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_runs = -1
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "keep_runs")
+		assert.Contains(t, err.Error(), "unlimited")
+	})
+
+	t.Run("non-keyword string is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_runs = "forever"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "keep_runs")
+	})
+
+	t.Run("defaults reject zero", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+keep_runs = 0
+
+[tasks.t]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "defaults.keep_runs")
+	})
+
+	t.Run("defaults accept unlimited keyword", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+keep_runs = "unlimited"
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, -1, cfg.Tasks[0].KeepRuns)
 	})
 }
 
@@ -468,6 +539,95 @@ run = "echo hi"
 		err := validateKeepFor("keep_for for task foo", -2*time.Hour)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unlimited")
+	})
+
+	t.Run("zero duration is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_for = "0s"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "keep_for")
+		assert.Contains(t, err.Error(), "unlimited")
+	})
+}
+
+func TestLogMaxSizeKeyword(t *testing.T) {
+	t.Run("unlimited keyword maps to -1", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+log_max_size = "unlimited"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, int64(-1), cfg.Tasks[0].LogMaxSize)
+	})
+
+	t.Run("unlimited keyword survives a positive default", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+log_max_size = "100mb"
+
+[tasks.uncapped]
+log_max_size = "unlimited"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, int64(-1), cfg.Tasks[0].LogMaxSize)
+	})
+
+	t.Run("zero bytes are rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+log_max_size = "0"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "log_max_size")
+		assert.Contains(t, err.Error(), "unlimited")
+	})
+
+	t.Run("zero with unit is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+log_max_size = "0mb"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "log_max_size")
+		assert.Contains(t, err.Error(), "unlimited")
+	})
+
+	t.Run("defaults reject zero", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+log_max_size = "0"
+
+[tasks.t]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "defaults.log_max_size")
+	})
+
+	t.Run("defaults accept unlimited keyword", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+log_max_size = "unlimited"
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, int64(-1), cfg.Tasks[0].LogMaxSize)
 	})
 }
 

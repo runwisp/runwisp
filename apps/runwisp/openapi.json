@@ -987,11 +987,12 @@
             "type": "integer"
           },
           "keep_for": {
-            "description": "Retention window, in nanoseconds",
+            "description": "Retention window in nanoseconds. Positive values cap; -1 means \"unlimited\"; 0 means no cap was configured.",
             "format": "int64",
             "type": "integer"
           },
           "keep_runs": {
+            "description": "Row-count retention. Positive values cap; -1 means \"unlimited\"; 0 means no cap was configured.",
             "format": "int64",
             "type": "integer"
           },
@@ -1004,7 +1005,7 @@
             "type": "string"
           },
           "log_max_size": {
-            "description": "Per-task log size cap, in bytes",
+            "description": "Per-run log size cap in bytes. Positive values cap; -1 means \"unlimited\" (operator opted out).",
             "format": "int64",
             "type": "integer"
           },

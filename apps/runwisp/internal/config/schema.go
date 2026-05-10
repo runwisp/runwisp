@@ -142,7 +142,11 @@ type taskWire struct {
 	LogMaxSize string `toml:"log_max_size,omitempty"`
 	LogOnFull  string `toml:"log_on_full,omitempty"`
 
-	KeepRuns int    `toml:"keep_runs,omitempty"`
+	// KeepRuns is `any` so the loader can accept both a positive integer
+	// (`keep_runs = 50`) and the string keyword `keep_runs = "unlimited"`.
+	// Nil distinguishes "key absent" (inherit defaults) from any explicit
+	// value, including the rejected `0`.
+	KeepRuns any    `toml:"keep_runs,omitempty"`
 	KeepFor  string `toml:"keep_for,omitempty"`
 
 	Run string `toml:"run,omitempty"`
@@ -170,7 +174,8 @@ type serviceWire struct {
 	LogMaxSize string `toml:"log_max_size,omitempty"`
 	LogOnFull  string `toml:"log_on_full,omitempty"`
 
-	KeepRuns int    `toml:"keep_runs,omitempty"`
+	// See taskWire.KeepRuns for the accepted shapes.
+	KeepRuns any    `toml:"keep_runs,omitempty"`
 	KeepFor  string `toml:"keep_for,omitempty"`
 
 	Run string `toml:"run,omitempty"`
@@ -184,8 +189,9 @@ type defaultsWire struct {
 	Timeout    string `toml:"timeout,omitempty"`
 	LogMaxSize string `toml:"log_max_size,omitempty"`
 	LogOnFull  string `toml:"log_on_full,omitempty"`
-	KeepRuns   int    `toml:"keep_runs,omitempty"`
-	KeepFor    string `toml:"keep_for,omitempty"`
+	// See taskWire.KeepRuns for the accepted shapes.
+	KeepRuns any    `toml:"keep_runs,omitempty"`
+	KeepFor  string `toml:"keep_for,omitempty"`
 }
 
 // storageWire mirrors [storage] before parsing.
@@ -278,7 +284,11 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, err
 	}
-	logMaxSize, err := parseTaskByteSize(name, "log_max_size", w.LogMaxSize)
+	keepRuns, err := parseTaskKeepRuns(name, w.KeepRuns)
+	if err != nil {
+		return model.Task{}, err
+	}
+	logMaxSize, err := parseTaskLogMaxSize(name, w.LogMaxSize)
 	if err != nil {
 		return model.Task{}, err
 	}
@@ -300,7 +310,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 		RetryBackoff:  w.RetryBackoff,
 		LogMaxSize:    logMaxSize,
 		LogOnFull:     w.LogOnFull,
-		KeepRuns:      w.KeepRuns,
+		KeepRuns:      keepRuns,
 		KeepFor:       keepFor,
 		Run:           w.Run,
 	}, nil
@@ -323,7 +333,11 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, err
 	}
-	logMaxSize, err := parseTaskByteSize(name, "log_max_size", w.LogMaxSize)
+	keepRuns, err := parseTaskKeepRuns(name, w.KeepRuns)
+	if err != nil {
+		return model.Task{}, err
+	}
+	logMaxSize, err := parseTaskLogMaxSize(name, w.LogMaxSize)
 	if err != nil {
 		return model.Task{}, err
 	}
@@ -342,7 +356,7 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 		RestartBackoff: w.RestartBackoff,
 		LogMaxSize:     logMaxSize,
 		LogOnFull:      w.LogOnFull,
-		KeepRuns:       w.KeepRuns,
+		KeepRuns:       keepRuns,
 		KeepFor:        keepFor,
 		Run:            w.Run,
 	}, nil
@@ -357,7 +371,11 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	if err != nil {
 		return Defaults{}, err
 	}
-	logMaxSize, err := parseScopedByteSize("defaults.log_max_size", w.LogMaxSize)
+	keepRuns, err := parseScopedKeepRuns("defaults.keep_runs", w.KeepRuns)
+	if err != nil {
+		return Defaults{}, err
+	}
+	logMaxSize, err := parseScopedLogMaxSize("defaults.log_max_size", w.LogMaxSize)
 	if err != nil {
 		return Defaults{}, err
 	}
@@ -365,7 +383,7 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 		Timeout:    timeout,
 		LogMaxSize: logMaxSize,
 		LogOnFull:  w.LogOnFull,
-		KeepRuns:   w.KeepRuns,
+		KeepRuns:   keepRuns,
 		KeepFor:    keepFor,
 	}, nil
 }

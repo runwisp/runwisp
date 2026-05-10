@@ -24,13 +24,13 @@ keep_runs    = 50
 keep_for     = "30d"
 ```
 
-| Key            | Type      | Built-in default  | What it does                                                                          |
-| -------------- | --------- | ----------------- | ------------------------------------------------------------------------------------- |
-| `timeout`      | duration  | `0` (no limit)    | Default per-attempt wall-clock cap. Go duration string.                               |
-| `log_max_size` | byte size | `100MB`           | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`.                               |
-| `log_on_full`  | enum      | `"drop_old"`      | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                         |
-| `keep_runs`    | int       | `0` (no row cap)  | Default row-count retention. `-1` means **explicit unlimited**; positive `N` keeps N. |
-| `keep_for`     | duration  | `0` (no time cap) | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. `"unlimited"` opts out.   |
+| Key            | Type          | Built-in default  | What it does                                                                                                                 |
+| -------------- | ------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`      | duration      | `0` (no limit)    | Default per-attempt wall-clock cap. Go duration string.                                                                      |
+| `log_max_size` | byte size     | `100MB`           | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Use `"unlimited"` to opt out. Bare `0` is rejected.                  |
+| `log_on_full`  | enum          | `"drop_old"`      | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                |
+| `keep_runs`    | int / keyword | `0` (no row cap)  | Default row-count retention. Positive `N` keeps N runs; `"unlimited"` opts out. Bare `0` and negative integers are rejected. |
+| `keep_for`     | duration      | `0` (no time cap) | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. `"unlimited"` opts out. Zero / negative durations are rejected.  |
 
 There is no default `cron`, no default `on_overlap`, no default
 `retry_*`. Those vary per task by intent; defaulting them would hide
@@ -47,21 +47,30 @@ For each task or service:
 Both retention fields are tri-state, so the precedence is unambiguous
 even when `[defaults]` sets a value:
 
-| Per-task `keep_runs` | Effect                                                                |
-| -------------------- | --------------------------------------------------------------------- |
-| _omitted_ or `0`     | Inherit `[defaults] keep_runs`; if that's also `0`, no row-count cap. |
-| `-1`                 | **Explicit unlimited** — overrides any positive default.              |
-| `N` (positive)       | Cap at `N`. Wins over the default.                                    |
+| Per-task `keep_runs` | Effect                                                                  |
+| -------------------- | ----------------------------------------------------------------------- |
+| _omitted_            | Inherit `[defaults] keep_runs`; if that's also unset, no row-count cap. |
+| `"unlimited"`        | **Explicit unlimited** — overrides any positive default.                |
+| `N` (positive int)   | Cap at `N`. Wins over the default.                                      |
 
 | Per-task `keep_for` | Effect                                                                  |
 | ------------------- | ----------------------------------------------------------------------- |
-| _omitted_ or `""`   | Inherit `[defaults] keep_for`; if that's also unset, no time-based cap. |
+| _omitted_           | Inherit `[defaults] keep_for`; if that's also unset, no time-based cap. |
 | `"unlimited"`       | **Explicit unlimited** — overrides any positive default.                |
 | `"30d"` (duration)  | Delete runs older than this. Wins over the default.                     |
 
-So a task that wants to opt out of an inherited cap writes
-`keep_runs = -1` / `keep_for = "unlimited"`, not `0` / `""` (which
-would silently use the default).
+| Per-task `log_max_size` | Effect                                                                            |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| _omitted_               | Inherit `[defaults] log_max_size`; if that's also unset, the built-in 100 MB cap. |
+| `"unlimited"`           | **Explicit unlimited** — overrides any positive default.                          |
+| `"50mb"` (byte size)    | Cap at this size. Wins over the default.                                          |
+
+So a task that wants to opt out of an inherited cap writes the
+`"unlimited"` keyword on the field — there is no numeric sentinel.
+Bare `0` for `keep_runs` / `log_max_size`, the empty string for
+`keep_for`, and any negative value are rejected at config load. The
+keyword is the only way to spell "no cap", so a misread zero can never
+silently mean unlimited.
 
 ## Worked example
 
@@ -85,7 +94,7 @@ run          = "/usr/local/bin/export"
 
 [tasks.audit-log]
 cron      = "0 0 * * *"
-keep_runs = -1           # explicit unlimited — override defaults' 100
+keep_runs = "unlimited"  # explicit unlimited — override defaults' 100
 keep_for  = "unlimited"  # also opt out of the inherited 30d window
 run       = "/usr/local/bin/audit"
 ```

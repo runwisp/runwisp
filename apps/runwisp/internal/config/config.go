@@ -228,26 +228,28 @@ func ResolveTimezone(scope, name string) (*time.Location, error) {
 	return loc, nil
 }
 
-// validateKeepRuns enforces the tri-state semantics:
-//   - 0: inherit defaults
-//   - -1: explicit unlimited (no count-based cap)
+// validateKeepRuns is a defence-in-depth check on the post-parse sentinel.
+// Valid values after parseKeepRuns:
+//   - 0: omitted, inherit defaults
+//   - -1: explicit unlimited (parsed from the "unlimited" keyword)
 //   - >0: keep this many runs.
 //
-// Anything below -1 is a typo, not a value the user could mean.
+// Anything below -1 indicates the parser was bypassed or mis-used.
 func validateKeepRuns(scope string, n int) error {
 	if n < -1 {
-		return fmt.Errorf("invalid %s: must be -1 (unlimited), 0 (inherit default), or a positive count", scope)
+		return fmt.Errorf("invalid %s: must be a positive integer or \"unlimited\"", scope)
 	}
 	return nil
 }
 
-// validateKeepFor enforces the tri-state semantics for keep_for:
-//   - 0: inherit defaults
-//   - -1: explicit unlimited ("unlimited" token at parse time)
+// validateKeepFor is a defence-in-depth check on the post-parse sentinel.
+// Valid values after parseKeepFor:
+//   - 0: omitted, inherit defaults
+//   - -1: explicit unlimited (parsed from the "unlimited" keyword)
 //   - >0: retention window.
 func validateKeepFor(scope string, d time.Duration) error {
 	if d < -1 {
-		return fmt.Errorf("invalid %s: must be \"unlimited\", omitted (inherit default), or a positive duration", scope)
+		return fmt.Errorf("invalid %s: must be a positive duration or \"unlimited\"", scope)
 	}
 	return nil
 }

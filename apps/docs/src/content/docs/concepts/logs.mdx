@@ -41,8 +41,11 @@ log_max_size = "50MB"
 - **Units**: `b`, `kb`, `mb`, `gb`, `tb` (case-insensitive). Bare
   numbers are parsed as bytes. `"100MB"`, `"1.5gb"`, `"4096"` are all
   valid.
-- **`log_max_size = 0` means unbounded.** No cap is enforced, no lines
-  are dropped. Use this only when you've thought about your disk.
+- **`log_max_size = "unlimited"` opts out of the cap.** No cap is
+  enforced, no lines are dropped. Use this only when you've thought
+  about your disk. Bare `0` (or `"0"`, `"0mb"`) is **rejected** at
+  config load — the keyword is the only way to spell it, so a misread
+  zero can't silently mean "no cap".
 
 ## `log_on_full`
 
@@ -50,7 +53,7 @@ What happens when a run's output hits `log_max_size`:
 
 | Value       | Behaviour                                                                                                                                                                                                                                                  |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `drop_old`  | Default. Rotates the current log to `.prev`, keeps writing fresh output. Earlier output lost.                                                                                                                                                              |
+| `drop_old`  | Default. Rotates the current log to `.prev`, keeps writing fresh output. Earlier output preserved during the run; see [`.prev` lifecycle](#prev-lifecycle-under-drop_old) below.                                                                           |
 | `drop_new`  | Stops accepting new lines; the process keeps running. A system line records the truncation.                                                                                                                                                                |
 | `kill_task` | Cancels the run's context, terminating the process. The run records as `log_overflow` (exit code from the kill) — a dedicated end reason that's still treated as a failure for retries and notifications, so the cause is visible without inspecting logs. |
 
@@ -70,6 +73,34 @@ which is usually where the failure is. `drop_new` is right when the
 **start** is the interesting part (a daemon's startup banner, a long
 batch's preamble) and the rest is repetitive noise.
 
+### `.prev` lifecycle under `drop_old`
+
+When `drop_old` rotates, it renames the current log file to
+`<run>.log.prev` (and the matching `.idx.prev` / `.tidx.prev` index
+files), then opens a fresh empty `<run>.log` to keep writing into.
+This file shadow lets the operator still read the rotated-away segment
+while the run is in flight.
+
+Three rules govern the lifecycle, all enforced by the daemon:
+
+1. **At most one rotation generation is kept on disk.** If the run
+   rotates again, the existing `.prev` is deleted _before_ the current
+   file is renamed onto it. Two-rotations-back content is gone.
+2. **`.prev` is deleted when the run ends.** `Close` removes the
+   `.prev` files so the on-disk artifact for a finished run is the
+   single sealed `<run>.log`. The earlier output is not preserved into
+   retention.
+3. **Downloads stitch `.prev` + current.** The raw download endpoint
+   (`GET /api/tasks/{name}/runs/{id}/log/raw`) concatenates `.prev`
+   and the current segment so a `curl > out.log` taken mid-run captures
+   the full rotated-window-plus-tail bytestream. The Web UI's
+   line-numbered viewer treats the rotated-away region as truncated and
+   shows the system line `Log rotated: output exceeded …`.
+
+If you need every line of a chatty task, the right tool is
+**`drop_new`** (preserves the start) or piping the task's output to a
+log shipper. `drop_old` always trades older output for newer.
+
 ## Retention: `keep_runs` and `keep_for`
 
 Retention controls how long old run rows and their log files stick
@@ -84,19 +115,28 @@ keep_for  = "7d"
 ```
 
 - **`keep_runs`** — keep the N most recent runs for this task. Older
-  runs are deleted (row + log files).
+  runs are deleted (row + log files). Accepts a positive integer
+  (`keep_runs = 500`) or the keyword `keep_runs = "unlimited"`. Bare
+  `0` and negative integers are **rejected** at config load — omit the
+  key to inherit `[defaults]`, or use the keyword to opt out of any
+  inherited cap.
 - **`keep_for`** — delete runs whose `created_at` is older than the
   given duration. Accepts extended units, including days and weeks:
-  `"7d"`, `"2w"`, `"36h"`, `"30m"`.
+  `"7d"`, `"2w"`, `"36h"`, `"30m"`. Use `keep_for = "unlimited"` to opt
+  out of any inherited window. Zero and negative durations are
+  **rejected**.
 - **Both at once**: both criteria contribute to deletion. A run is
   removed if **either** rule says so. The stricter rule wins in
   practice — set both if you want a hard floor _and_ a hard ceiling.
 - **Per task**: each task's retention is evaluated independently using
   that task's own settings (or the inherited `[defaults]`).
 
-Cleanup runs in the background — by default once an hour — so you may
-see slightly more than `keep_runs` rows briefly between sweeps. That's
-fine. Runs that are still going are never deleted.
+Cleanup runs in the background on a **fixed one-hour cadence**. The
+interval is hard-coded — there is no `[storage] cleanup_interval` knob,
+and the rationale is "boring in prod": at one tick per hour the cleaner
+is invisible at idle and never piles up if the daemon was paused. So
+you may see slightly more than `keep_runs` rows briefly between sweeps.
+Runs that are still going are never deleted.
 
 When retention triggers, both the SQLite row **and** the log file (with
 all its index files) are removed. There's no orphaning: a row never
