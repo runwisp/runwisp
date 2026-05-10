@@ -1,8 +1,8 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
-title: Per-task notification sugar
-description: notify_on_failure and notify_on_success — shorthand that desugars to a synthetic notification route.
+title: Notification sugar
+description: notify_on_failure and notify_on_success — symmetric shorthand on tasks and services that desugars to a synthetic notification route.
 ---
 
 Most projects only need to say "ping these channels when this task
@@ -12,6 +12,15 @@ so RunWisp offers two shortcut fields on every `[tasks.*]` and
 
 - `notify_on_failure` — alert when a run ends with `failed`, `timeout`, or `crashed`.
 - `notify_on_success` — alert when a run ends with `success`.
+
+The two fields **work identically on tasks and on services** — same
+field names, same expansion, same dedup rules. The page calls the
+target a "task" throughout for brevity, but everything below applies
+unchanged to a `[services.*]` block: a failed replica fires the same
+synthetic route a failed task would. See the field tables in
+[`[tasks.*]`](/configuration/tasks/#notifications) and
+[`[services.*]`](/configuration/services/#notifications) for the
+context-specific event kinds.
 
 Both take a list of notifier IDs. At config load, each one is expanded
 into a synthetic `[[notification_route]]` that's indistinguishable from
@@ -52,9 +61,9 @@ A few details worth knowing about the expansion:
 
 - The `task` glob is the **literal task name**, not a pattern. Sugar
   always targets exactly the task or service it's declared on.
-- The contents of [`[notify] default_notifiers`][defaults] (default
+- The contents of [`[notify] append_notifiers`][defaults] (default
   `["inapp"]`) are appended to your sugar list and deduplicated, so
-  the bell keeps working with zero config. Set `default_notifiers = []`
+  the bell keeps working with zero config. Set `append_notifiers = []`
   to opt out, or `["slack-ops"]` to make every task ping Slack on top
   of (or instead of) the bell.
 
@@ -236,7 +245,7 @@ Same rules as explicit routes:
   notifier IDs you can reference.
 - [`[[notification_route]]` reference](/notifications/routes/) — when
   you need the full form.
-- [`[notify]` reference](/notifications/global/) — `default_notifiers`
+- [`[notify]` reference](/notifications/global/) — `append_notifiers`
   and the other global knobs.
 - [Notifications model](/notifications/model/) — the conceptual
   picture.

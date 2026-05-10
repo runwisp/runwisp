@@ -102,7 +102,7 @@ notify_on_success = ["slack-ops"]
 ```
 
 — desugars to synthetic routes at config load. See
-[Per-task notification sugar](/notifications/per-task/) for the exact
+[Notification sugar](/notifications/per-task/) for the exact
 expansion. You can mix sugar and explicit routes; the router walks
 every match and produces one delivery per unique notifier.
 
@@ -148,9 +148,9 @@ notify = ["inapp"]
 
 A failure of `backup-postgres` triggers two outbound deliveries (one
 Slack, one Telegram) and one in-app row (added implicitly because
-`default_notifiers` includes `"inapp"`). A failure of `metrics-export`
+`append_notifiers` includes `"inapp"`). A failure of `metrics-export`
 triggers only the Slack delivery — the in-app catch-all from
-`default_notifiers` lights up the bell on top of that.
+`append_notifiers` lights up the bell on top of that.
 
 ## What the loader rejects
 
@@ -169,6 +169,6 @@ triggers only the Slack delivery — the in-app catch-all from
 ## Where to next
 
 - [Providers overview](/notifications/providers/overview/) — declaring the channels routes refer to.
-- [Per-task notification sugar](/notifications/per-task/) — the shortcut for the common case.
+- [Notification sugar](/notifications/per-task/) — the shortcut for the common case (works on `[tasks.*]` and `[services.*]`).
 - [`[notify]` reference](/notifications/global/) — global knobs (coalescing, queue size).
 - [Notifications model](/notifications/model/) — the conceptual overview.

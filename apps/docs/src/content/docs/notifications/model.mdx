@@ -18,34 +18,41 @@ laptop with the network unplugged, you'll still see the bell light up.
 
 With **zero notification config**, every task and service that fails
 (`run.failed`, `run.timeout`, `run.crashed`) fans out to whatever is in
-`[notify] default_notifiers`. The built-in default is `["inapp"]`, so
+`[notify] append_notifiers`. The built-in default is `["inapp"]`, so
 out of the box every failure lights up the bell in the Web UI and the
 footer in the TUI. The notifications are stored as rows in SQLite and
 live-broadcast over SSE, so the badge count survives a daemon restart.
 
 There is no default outbound channel — the daemon doesn't ship Slack
 or Telegram messages until you declare a `[[notifier]]` and either add
-its id to `default_notifiers` or wire it up via per-task sugar /
+its id to `append_notifiers` or wire it up via per-task sugar /
 explicit routes.
 
-`default_notifiers` is the single dial that controls the zero-config
+`append_notifiers` is the single dial that controls the zero-config
 fan-out:
 
 ```toml
 [notify]
-default_notifiers = ["inapp"]      # the built-in default
-# default_notifiers = []           # silence the bell entirely
-# default_notifiers = ["slack-ops"] # route every failure to Slack instead
-# default_notifiers = ["inapp", "slack-ops"]  # both
+append_notifiers = ["inapp"]      # the built-in default
+# append_notifiers = []           # silence the bell entirely
+# append_notifiers = ["slack-ops"] # route every failure to Slack instead
+# append_notifiers = ["inapp", "slack-ops"]  # both
 ```
+
+The name is literal: every id in this list is **always added** to the
+notify list of every per-task `notify_on_failure` / `notify_on_success`
+(deduped against the explicit ids), and serves as the catch-all for
+failures of tasks that don't use the sugar at all. So
+`append_notifiers = ["inapp"] + notify_on_failure = ["slack-ops"]`
+fires Slack **and** the bell — not Slack instead of the bell.
 
 `inapp` is the only special token — it doesn't need a `[[notifier]]`
 block (in fact, declaring one with `id = "inapp"` is rejected). Every
-other id in `default_notifiers` must reference a declared notifier.
+other id in `append_notifiers` must reference a declared notifier.
 
 Scope is global. If you want a specific task to be silent, give it a
 [per-task sugar](#per-task-sugar) line that omits any notifier — or set
-`default_notifiers = []` globally and add explicit
+`append_notifiers = []` globally and add explicit
 `[[notification_route]]`s for the tasks you do care about.
 
 ## Notifier types
@@ -173,14 +180,17 @@ Internally, `notify_on_failure = ["slack-ops"]` for a task named
 [[notification_route]]
 match.kind = ["run.failed", "run.timeout", "run.crashed"]
 match.task = "publish-feed"
-notify     = ["slack-ops", "inapp"]   # default_notifiers appended (deduped)
+notify     = ["slack-ops", "inapp"]   # append_notifiers appended (deduped)
 ```
 
 The right-hand list is the explicit notifiers plus everything in
-`[notify] default_notifiers`, with duplicates removed. So if you set
-`default_notifiers = []`, the synthetic route would be just
-`["slack-ops"]`; if you set `default_notifiers = ["pagerduty"]`, it
-would be `["slack-ops", "pagerduty"]`.
+`[notify] append_notifiers`, with duplicates removed. So if you set
+`append_notifiers = []`, the synthetic route would be just
+`["slack-ops"]`; if you set `append_notifiers = ["pagerduty"]`, it
+would be `["slack-ops", "pagerduty"]`. **Dedup is by literal id,
+case-sensitive.** `["Slack-ops", "slack-ops"]` is not deduped (those
+are two different ids); the literal `"inapp"` appended to a sugar list
+that already contains `"inapp"` is.
 
 `notify_on_success` is the same but with `match.kind = ["run.succeeded"]`.
 
@@ -224,6 +234,42 @@ In the Web UI you see one row that says "failed 14 times in the last
 30m" rather than 14 separate rows. In Slack, you'll see the first
 failure, periodic check-ins (every Nth, where N = `occurrence_ring`),
 and one closing summary — not 14 messages.
+
+### Worked timeline
+
+A `*/1 * * * *` task that has started failing at `T+0`, with the
+defaults (`coalesce_window = 1h`, `occurrence_ring = 10`,
+`coalesce_outbound = true`):
+
+| When          | Failure #          | In-app row                     | Slack delivery                                                                                                             |
+| ------------- | ------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `T+0`         | 1                  | new row, `count=1`             | **immediate** — first event in the window                                                                                  |
+| `T+1m`        | 2                  | same row, `count=2`            | suppressed                                                                                                                 |
+| `T+2m..+9m`   | 3 … 10             | same row, `count` keeps rising | suppressed                                                                                                                 |
+| `T+10m`       | 11                 | same row, `count=11`           | **check-in** — `coalesced_count=10`, `coalesced_summary=false`                                                             |
+| `T+11m..+19m` | 12 … 20            | same row                       | suppressed                                                                                                                 |
+| `T+20m`       | 21                 | same row, `count=21`           | **check-in** — `coalesced_count=10`                                                                                        |
+| `T+30m`       | task stops failing |                                | (nothing yet)                                                                                                              |
+| `T+1h10m`     | —                  | row stays as-is                | **window-close summary** — `coalesced_summary=true`, `coalesced_count` = however many were pending since the last check-in |
+| `T+25h`       | (new failure)      | new row in the next window     | immediate again                                                                                                            |
+
+The window resets each time something is delivered. After a check-in
+or summary fires, the next failure starts a fresh window — so the
+"first ping" cadence repeats indefinitely as long as failures keep
+arriving.
+
+To predict the worst case for a flapping task: at most one outbound
+message every `coalesce_window / occurrence_ring`. Defaults give
+`60min / 10 = ~6min` between Slack messages while a task flaps
+continuously. Bump `occurrence_ring` higher (e.g. `60`) for one
+message per minute of sustained flap; drop `coalesce_window` (e.g.
+`5m`) for a faster recovery summary once flapping stops.
+
+If you'd rather page on every event — say, a CI build agent where
+each failure is independently meaningful — set
+`coalesce_outbound = false`. The in-app surface still coalesces (a
+flapping task should never produce 60 separate rows in the bell);
+only the outbound deliveries change.
 
 ## Delivery failures
 
@@ -276,7 +322,8 @@ Better to fail loudly at startup than silently drop alerts at 03:00.
   — per-provider reference + walkthrough.
 - [`[[notification_route]]` reference](/notifications/routes/) — the
   full match-and-fan-out schema.
-- [Per-task notification sugar](/notifications/per-task/) — exactly
-  how `notify_on_failure` and `notify_on_success` expand.
+- [Notification sugar](/notifications/per-task/) — exactly
+  how `notify_on_failure` and `notify_on_success` expand on
+  `[tasks.*]` and `[services.*]`.
 - [`[notify]` reference](/notifications/global/) — global knobs
   (coalescing, queue size, retention, in-app toggle).
