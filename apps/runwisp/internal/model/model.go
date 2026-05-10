@@ -269,13 +269,21 @@ func (r *Run) DisplayStatus() string {
 }
 
 // DaemonInfo holds static identity/config data exposed via /api/info.
+//
+// ResolvedTimezone is the IANA zone the scheduler is actually using; it equals
+// either the operator's explicit [scheduler] timezone or — when omitted — the
+// system zone the daemon detected at boot. TimezoneSource ("config" or
+// "system") tells the UI which path produced the value, so the Web UI header
+// can label the chip without re-implementing the resolver.
 type DaemonInfo struct {
-	Version      string      `json:"version"`
-	Fingerprint  string      `json:"fingerprint"`
-	Port         int         `json:"port"`
-	CloudEnabled bool        `json:"cloud_enabled"`
-	Tasks        []TaskBrief `json:"tasks"`
-	Capabilities []CapInfo   `json:"capabilities"`
+	Version          string      `json:"version"`
+	Fingerprint      string      `json:"fingerprint"`
+	Port             int         `json:"port"`
+	CloudEnabled     bool        `json:"cloud_enabled"`
+	ResolvedTimezone string      `json:"resolved_timezone"`
+	TimezoneSource   string      `json:"timezone_source" enum:"config,system"`
+	Tasks            []TaskBrief `json:"tasks"`
+	Capabilities     []CapInfo   `json:"capabilities"`
 }
 
 // TaskBrief is a trimmed task descriptor exposed via the API.

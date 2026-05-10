@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { untrack } from "svelte";
-    import { Server, Hash, Terminal as TerminalIcon } from "@lucide/svelte";
+    import { Server, Hash, Terminal as TerminalIcon, Download } from "@lucide/svelte";
     import Badge from "../Badge.svelte";
     import LogConsole from "../LogConsole.svelte";
     import type { Run } from "./types.js";
@@ -218,6 +218,17 @@
                         Pending
                     </div>
                 {/if}
+                <a
+                    href="/api/tasks/{encodeURIComponent(run.task_name)}/runs/{encodeURIComponent(
+                        run.id,
+                    )}/log/raw"
+                    download="{run.task_name}-{run.id}.log"
+                    class="flex items-center gap-1.5 rounded border border-slate-700 px-2 py-1 text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-800 hover:text-slate-100"
+                    title="Download the full log (rotated and current parts as one file)"
+                >
+                    <Download size={12} />
+                    Download
+                </a>
             </div>
         </div>
         {#key run.id}

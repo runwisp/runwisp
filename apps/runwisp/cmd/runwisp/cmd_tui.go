@@ -75,6 +75,8 @@ func buildStartupInfoFromDaemon(info *model.DaemonInfo, password string, passwor
 	si.Fingerprint = info.Fingerprint
 	si.Port = info.Port
 	si.CloudEnabled = info.CloudEnabled
+	si.Timezone = info.ResolvedTimezone
+	si.TimezoneSource = info.TimezoneSource
 
 	for _, t := range info.Tasks {
 		si.Tasks = append(si.Tasks, t)

@@ -412,7 +412,10 @@ export interface components {
             fingerprint: string;
             /** Format: int64 */
             port: number;
+            resolved_timezone: string;
             tasks: components["schemas"]["TaskBrief"][] | null;
+            /** @enum {string} */
+            timezone_source: "config" | "system";
             version: string;
         };
         DaemonLogLineEvent: {

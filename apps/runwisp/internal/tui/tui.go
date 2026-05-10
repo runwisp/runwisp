@@ -85,6 +85,12 @@ type PendingRunsSummary struct {
 }
 
 // StartupInfo gathers everything needed for the startup display.
+//
+// Timezone and TimezoneSource render the resolved scheduler zone in the
+// banner. TimezoneSource is "config" when the operator pinned [scheduler]
+// timezone explicitly, "system" when it was detected from the host. Empty
+// values omit the line so the trim-down `runwisp tui` invocation still
+// renders cleanly.
 type StartupInfo struct {
 	Version    string
 	ConfigPath string
@@ -93,10 +99,12 @@ type StartupInfo struct {
 	LogDir     string
 	Port       int
 
-	Fingerprint  string
-	UsingDemo    bool
-	Capabilities []model.CapInfo
-	Tasks        []model.TaskBrief
+	Fingerprint    string
+	UsingDemo      bool
+	Capabilities   []model.CapInfo
+	Tasks          []model.TaskBrief
+	Timezone       string
+	TimezoneSource string
 
 	PasswordGenerated bool
 	Password          string
@@ -156,6 +164,13 @@ func PrintStartup(info StartupInfo) {
 	printDotField(w, "Logs", info.LogDir)
 	if info.Fingerprint != "" {
 		printDotField(w, "Fingerprint", info.Fingerprint)
+	}
+	if info.Timezone != "" {
+		tz := info.Timezone
+		if info.TimezoneSource != "" {
+			tz = fmt.Sprintf("%s (%s)", info.Timezone, info.TimezoneSource)
+		}
+		printDotField(w, "Timezone", tz)
 	}
 	fmt.Fprintln(w)
 

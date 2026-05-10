@@ -155,6 +155,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.confirmAction(confirmActionStop)
 		}
 
+	case "d":
+		if m.execView != nil && !m.execView.Fullscreen() {
+			return m, m.downloadExecLog()
+		}
+
 	case "up", "k":
 		if m.notifications.IsExpanded() {
 			if m.notifications.MoveCursor(-1) {

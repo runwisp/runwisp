@@ -214,12 +214,14 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
 	capInfos := capInfosFromAvailability(svc.Executor.Availability())
 
 	return &model.DaemonInfo{
-		Version:      version.Version,
-		Fingerprint:  cfg.Fingerprint,
-		Port:         flags.Port,
-		CloudEnabled: cfg.CloudConfig.Enabled,
-		Tasks:        tasks,
-		Capabilities: capInfos,
+		Version:          version.Version,
+		Fingerprint:      cfg.Fingerprint,
+		Port:             flags.Port,
+		CloudEnabled:     cfg.CloudConfig.Enabled,
+		ResolvedTimezone: cfg.Config.Scheduler.Timezone,
+		TimezoneSource:   cfg.Config.Scheduler.Source,
+		Tasks:            tasks,
+		Capabilities:     capInfos,
 	}
 }
 

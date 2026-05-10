@@ -136,10 +136,12 @@ func runDaemon(mode daemonMode) error {
 		LogDir:     flags.LogDir(),
 		Port:       flags.Port,
 
-		Fingerprint:  cfg.Fingerprint,
-		UsingDemo:    cfg.UsingDemo,
-		Capabilities: daemonInfo.Capabilities,
-		Tasks:        daemonInfo.Tasks,
+		Fingerprint:    cfg.Fingerprint,
+		UsingDemo:      cfg.UsingDemo,
+		Capabilities:   daemonInfo.Capabilities,
+		Tasks:          daemonInfo.Tasks,
+		Timezone:       daemonInfo.ResolvedTimezone,
+		TimezoneSource: daemonInfo.TimezoneSource,
 
 		PasswordGenerated: cfg.PasswordGenerated,
 		Password:          cfg.Password,

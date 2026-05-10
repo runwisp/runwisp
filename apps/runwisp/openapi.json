@@ -48,6 +48,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "resolved_timezone": {
+            "type": "string"
+          },
           "tasks": {
             "items": {
               "$ref": "#/components/schemas/TaskBrief"
@@ -56,6 +59,13 @@
               "array",
               "null"
             ]
+          },
+          "timezone_source": {
+            "enum": [
+              "config",
+              "system"
+            ],
+            "type": "string"
           },
           "version": {
             "type": "string"
@@ -66,6 +76,8 @@
           "fingerprint",
           "port",
           "cloud_enabled",
+          "resolved_timezone",
+          "timezone_source",
           "tasks",
           "capabilities"
         ],

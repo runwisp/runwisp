@@ -103,6 +103,9 @@ func (m Model) buildHelpText() string {
 			case execViewActionRetry:
 				parts = append(parts, "r retry")
 			}
+			if m.hasLaunchTicket() {
+				parts = append(parts, "d download")
+			}
 		}
 		parts = append(parts, "q/^C quit")
 		return strings.Join(parts, "  ")

@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -411,8 +412,35 @@ func (m *Model) activateHomeField() tea.Cmd {
 // openWebUI generates a launch ticket and opens the browser (or offers the
 // URL for manual copy when no graphical session is available, e.g. SSH).
 func (m *Model) openWebUI() tea.Cmd {
+	return m.openLaunchURL("/")
+}
+
+// downloadExecLog opens the raw-log endpoint for the currently focused exec
+// view in the operator's browser via a single-use launch ticket. On a
+// non-graphical session (e.g. SSH) the URL is offered for clipboard copy
+// instead, with the modal dialog as the final fallback.
+func (m *Model) downloadExecLog() tea.Cmd {
+	if m.execView == nil || m.execView.run == nil {
+		return nil
+	}
+	run := m.execView.run
+	if run.TaskName == "" || run.ID == "" {
+		return nil
+	}
+	target := fmt.Sprintf("/api/tasks/%s/runs/%s/log/raw",
+		url.PathEscape(run.TaskName), url.PathEscape(run.ID))
+	return m.openLaunchURL(target)
+}
+
+// openLaunchURL builds a one-shot launch URL pointing the daemon at `target`
+// (a same-origin absolute path) and routes it through the existing browser
+// → clipboard → modal fallback. `target` defaults to "/" when empty.
+func (m *Model) openLaunchURL(target string) tea.Cmd {
 	if m.launchTicketFunc == nil {
 		return nil
+	}
+	if target == "" {
+		target = "/"
 	}
 	ticketFunc := m.launchTicketFunc
 	port := m.info.Port
@@ -421,14 +449,15 @@ func (m *Model) openWebUI() tea.Cmd {
 		if err != nil {
 			return openBrowserMsg{Err: err}
 		}
-		url := fmt.Sprintf("http://localhost:%d/api/auth/launch?ticket=%s", port, ticket)
+		launchURL := fmt.Sprintf("http://localhost:%d/api/auth/launch?ticket=%s&redirect=%s",
+			port, ticket, url.QueryEscape(target))
 		if !canOpenBrowser() {
-			return openBrowserMsg{URL: url}
+			return openBrowserMsg{URL: launchURL}
 		}
-		if err := openBrowser(url); err != nil {
-			return openBrowserMsg{URL: url, Err: err}
+		if err := openBrowser(launchURL); err != nil {
+			return openBrowserMsg{URL: launchURL, Err: err}
 		}
-		return openBrowserMsg{URL: url, BrowserOpened: true}
+		return openBrowserMsg{URL: launchURL, BrowserOpened: true}
 	}
 }
 
