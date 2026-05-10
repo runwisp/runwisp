@@ -5,12 +5,11 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "dev": "bun scripts/sync-openapi.ts && astro dev",
-        "build": "bun scripts/sync-openapi.ts && astro build",
-        "preview": "astro preview",
-        "check": "bun scripts/sync-openapi.ts && astro check && prettier --check . && eslint .",
-        "format": "prettier --write .",
-        "astro": "astro"
+        "dev": "bun scripts/sync-openapi.ts && bunx --bun astro dev",
+        "build": "bun scripts/sync-openapi.ts && bunx --bun astro build",
+        "preview": "bunx --bun astro preview",
+        "check": "bun scripts/sync-openapi.ts && bunx --bun astro check && prettier --check . && eslint .",
+        "format": "prettier --write ."
     },
     "nx": {
         "targets": {

@@ -5,31 +5,26 @@ title: Logs & retention
 description: How RunWisp captures stdout/stderr, where logs live on disk, how rotation works, and how run history is bounded.
 ---
 
-Every run's stdout and stderr is captured to a per-run log file under
-the data directory. SQLite stores run metadata — exit code, duration,
-timestamps — but **not** the log bodies. The daemon is not a log
-aggregator. It's a log _archive_ for "what did this task print on
+Every run's stdout and stderr is captured to its own log file under
+the data directory. The database stores run metadata — exit code,
+duration, timestamps — but **not** the log bodies. RunWisp isn't a log
+aggregator. It's a log archive for "what did this task print on
 2026-04-12 at 03:15?".
 
 ## Where logs live on disk
 
 ```
-{data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id-suffix}.log
-{data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id-suffix}.log.idx
-{data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id-suffix}.log.tidx
-{data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id-suffix}.log.meta
+{data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id}.log
 ```
 
 - **One file per run**, not one per task. Each run gets its own
-  isolated log, named after the run's start time and ULID suffix so
-  files are sortable and unique even at sub-second cadences.
-- The `.idx` and `.tidx` sidecars are byte and timestamp indices used
-  by the Web UI to scrub long logs efficiently.
-- The `.meta` sidecar tracks rotation accounting and a `finalized` flag
-  written when the run cleanly ends.
-- When a run is deleted by retention, the daemon removes the log,
-  sidecars, rotation artifacts (`.prev`, `.idx.prev`), and any newly
-  empty parent directory.
+  isolated log, named after its start time and ID so files are
+  sortable and unique even when runs start less than a second apart.
+- The daemon keeps tiny index files alongside each log so the Web UI
+  can jump around long logs without re-reading them; you don't need to
+  touch them.
+- When a run is deleted by retention, the daemon removes the log file,
+  its index files, and any parent directory that becomes empty.
 
 ## `log_max_size`
 
@@ -60,14 +55,14 @@ What happens when a run's output hits `log_max_size`:
 | `kill_task` | Cancels the run's context, terminating the process. The run records as `log_overflow` (exit code from the kill) — a dedicated end reason that's still treated as a failure for retries and notifications, so the cause is visible without inspecting logs. |
 
 Whichever policy fires, the daemon writes a synthetic line at the
-truncation point so a reader scrubbing the log can see exactly when the
-limit hit. There is no silent drop.
+truncation point so someone skimming the log can see exactly when the
+limit hit. Nothing is dropped without a record.
 
 `log_on_full` also controls what happens when `[storage] min_free_space`
 trips during a run: `kill_task` cancels the run on disk pressure;
-`drop_new` and `drop_old` silently stop accepting lines (but the daemon
+`drop_new` and `drop_old` quietly stop accepting lines (but the daemon
 always raises a `log.disk_pressure` notification so the operator
-discovers the silenced output). See
+discovers the dropped output). See
 [storage configuration](/configuration/storage/#what-min_free_space-actually-does).
 
 `drop_old` is the default because it preserves the **end** of the log —
@@ -101,70 +96,53 @@ keep_for  = "7d"
 
 Cleanup runs in the background — by default once an hour — so you may
 see slightly more than `keep_runs` rows briefly between sweeps. That's
-fine. In-flight runs are never deleted.
+fine. Runs that are still going are never deleted.
 
 When retention triggers, both the SQLite row **and** the log file (with
-all its sidecars) are removed. There's no orphaning: a row never points
-at a missing log, and a log file never lingers without a row.
+all its index files) are removed. There's no orphaning: a row never
+points at a missing log, and a log file never lingers without a row.
 
 ## Live streaming
 
-The Web UI's run page tails logs in real time. The endpoint:
+The Web UI tails logs in real time as the run produces them — new
+lines appear within milliseconds. The stream first replays whatever's
+already on disk for the run, then switches to live, so you don't miss
+the start of the output.
 
-```
-GET /api/tasks/{task-name}/runs/{run-id}/log/stream
-```
+If the producer pushes lines faster than your browser can keep up, the
+oldest queued lines are dropped and the UI shows "N lines dropped"
+so the gap is visible. The on-disk file always has the complete log;
+the live stream is just a fast preview.
 
-It's a Server-Sent Events stream pushed from the daemon's in-memory
-event bus, not a polling tail. New lines arrive within milliseconds of
-being written.
-
-A few details worth knowing:
-
-- The stream first replays the on-disk history, then transitions to
-  live events. You don't miss the start.
-- The event-bus buffer is bounded (4096 events). If a producer
-  outpaces a slow client, the **oldest** queued lines are dropped and
-  a `LogDroppedEvent` is sent so the client can show "N lines dropped".
-- Connections idle out after **10 minutes**. The browser auto-resumes
-  via the `Last-Event-ID` header.
-- The bus is in-process and best-effort. It is **not** a durability
-  mechanism — the source of truth for "what did this run print" is
-  always the on-disk file.
+Idle browser connections refresh automatically every few minutes —
+nothing for you to do.
 
 ## Crash safety
 
-Log writes flush and close cleanly on `Close()`, which fires when the
-run ends or on graceful daemon shutdown. The `.meta` sidecar's
-`finalized = true` flag is written at that point.
+Logs are flushed and closed cleanly when a run ends or when the daemon
+shuts down normally.
 
-If the daemon is killed mid-write (`SIGKILL`, power loss):
+If the daemon is killed mid-write (power loss, force kill):
 
-- The log file is **not truncated** — partial writes survive on disk.
-  Readers tolerate a partial last line.
-- On next startup, any run that was in `running` or `pending` state in
-  SQLite is reconciled to `crashed` with exit code `-2`. The log file
-  for that run is left as-is — it's the last thing that process said
-  before the daemon disappeared, and it's the most useful artifact for
-  debugging.
+- The log file is **not truncated** — partial writes survive on disk,
+  and the viewer tolerates a partial last line.
+- On the next startup, the run is marked `crashed` (see
+  [scheduling: on startup](/concepts/scheduling/#on-startup-unfinished-runs-are-marked-crashed))
+  and its log file is left exactly as it was — those last lines are
+  usually the most useful debugging artifact.
 
-Combined with the
-[boot semantics for in-flight runs](/concepts/scheduling/#boot-semantics-in-flight-runs-are-marked-crashed),
-this means: every run row in your history reaches a terminal state, and
-every terminal run has a log file you can read.
+The result: every row in your run history finishes with a final
+result, and every finished run has a log file you can read.
 
-## What the daemon deliberately doesn't do
+## Intentional scope
 
-- **No log aggregation.** RunWisp captures logs for the runs it
-  supervises. It does not collect, index, or search across hosts. If
-  you need that, ship the per-run files (or your task's stdout) to
-  Loki / ELK / CloudWatch / wherever — that's their job.
-- **No remote sinks built in.** No Fluent Bit, no syslog forwarder, no
-  S3 upload. The TOML schema doesn't have a place to configure them.
-- **No log-content notifications.** Notifications fire on run lifecycle
-  events (failed, timeout, crashed, etc.), not on patterns matched
-  against captured output. If you want "alert when stderr contains
-  ERROR", grep in your script and exit non-zero.
+RunWisp captures logs for the runs it supervises. It is **not** a log
+aggregator, ships nothing remotely, and does not match patterns
+against captured output. If you need fleet-wide search or log-based
+alerting, ship the per-run files (or your task's stdout) to a tool
+that's built for it — Loki, ELK, CloudWatch, etc. If you want "alert
+when stderr says ERROR", grep inside your task and exit non-zero;
+RunWisp will fire its normal failure notification.
 
 ## Where to next
 

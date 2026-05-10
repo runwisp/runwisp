@@ -17,9 +17,9 @@ know what you're committing to.
 > **Yes →** `[tasks.<name>]`. **No →** `[services.<name>]`.
 
 A nightly backup, a health probe, a deploy hook — they run, they exit.
-Those are tasks. A queue worker, a metrics agent, a long-poll listener — they
-hold a connection, they loop, they expect to be killed by you. Those are
-services.
+Those are tasks. A queue worker, a metrics agent, something that holds
+an open connection waiting for events — they hold a connection, they
+loop, they expect to be killed by you. Those are services.
 
 If you find yourself writing `while true; do ...; done` inside a `[tasks.*]`,
 that's a service in disguise — switch the section header.
@@ -46,19 +46,18 @@ Everything else — `timeout`, `parallelism`, `log_max_size`, `log_on_full`,
 
 ## What both share
 
-Both kinds are **first-class runs** in RunWisp. Each invocation gets:
+Both kinds produce real runs in RunWisp. Each invocation gets:
 
-- A monotonic ULID and a row in SQLite.
+- A unique ID and a row in the run history.
 - A captured stdout/stderr stream, written to a per-task log file and
-  available live via SSE in the Web UI.
-- Lifecycle status — `pending → running → ended` — with a terminal end
-  reason of `success`, `failed`, `stopped`, `timeout`, `crashed`,
-  `skipped`, or `log_overflow`.
+  tailed live in the Web UI.
+- An end reason — `success`, `failed`, `stopped`, `timeout`,
+  `crashed`, `skipped`, or `log_overflow`.
 - The same notification surface (per-task `notify_on_failure` /
   `notify_on_success`, plus full `[[notification_route]]` matching).
 
-That's the point: switching from task to service changes the lifecycle
-model, not what you can see or how you operate it.
+That's the point: switching from task to service changes how the
+process is run, not what you can see or how you operate it.
 
 ## Services scale horizontally with `instances`
 
@@ -79,30 +78,17 @@ A few patterns are easy to second-guess. Here's how to resolve them:
 
 ### A polling loop you'd rather express as cron
 
-If your "service" is just `while true; do work; sleep 60; done`, you
-almost certainly want a **task** with `cron = "* * * * *"` and
-`on_overlap = "skip"`. Reasons:
+A `while true; do work; sleep 60; done` is almost always a task with
+`cron = "* * * * *"` and `on_overlap = "skip"`. Each tick then gets
+its own run, exit code, and log file — you can see exactly when the
+04:32 poll failed, and a crashed tick gets retried instead of silently
+re-entering the loop with broken state.
 
-- Each tick gets its own captured run, with its own exit code and log file
-  — you can see exactly when the 04:32 poll failed.
-- A crashed run gets retried (`retry_attempts`) instead of silently
-  re-entering the loop with broken state.
-- The schedule is reviewable in one place; `sleep 60` buried in a script
-  is not.
-
-The deciding question isn't "does it loop" — it's **does each
-invocation start cold?**
-
-- **Yes — every tick can start fresh, do its work, and exit.** Use a
-  task. The supervisor isn't buying you anything.
-- **No — the process caches data, holds open connections, or maintains
-  consumer-group / subscription state you'd rather amortise across
-  restarts.** Use a service. Examples: a Kafka consumer (rebalance
-  cost), a long-poll websocket listener (handshake cost), an LSP host
-  (warm index).
-
-A polling loop with no in-memory cache is the first answer; a Kafka
-consumer is the second.
+The deciding question is **does each invocation start fresh?** If yes,
+make it a task. If the process holds state worth keeping across
+runs — a worker that's joined a queue and would have to re-join after
+every restart, a chat-server connection, a search index it built in
+memory — make it a service.
 
 ### A one-off that you only want to trigger from the API or UI
 
@@ -112,24 +98,20 @@ Set `api_trigger = false` to make a task cron-only and not API-runnable.
 
 ### A task that "should never overlap"
 
-Tasks already default to `on_overlap = "queue"` (FIFO). If overlap is
+Tasks already default to `on_overlap = "queue"` (in order). If overlap is
 genuinely impossible for your workload (e.g. competing for a single
 resource), use `on_overlap = "skip"` — the rejected firing is recorded
 in history as a failed run with the message "task already running", so
 you can see when the previous run took too long.
 
-## What you can't do (and why)
+## What you can't do
 
-- **A task with `restart = "always"`.** Rejected at config-load time —
-  use `[services.<name>]` instead. The schema refuses to let you
-  half-define an always-on process inside the task model.
-- **A service with `cron`.** The field doesn't exist on `[services.*]`.
-  Cron creates discrete firings; services already run continuously.
-- **A name shared between `[tasks.*]` and `[services.*]`.** Names are a
-  single namespace. The loader rejects duplicates with a clear error.
-
-These aren't arbitrary — they're the bits where the abstractions would
-leak. The error is the documentation.
+- **A task with `restart = "always"`.** Rejected at startup — use
+  `[services.<name>]` instead.
+- **A service with `cron`.** Not a field on services; they already run
+  continuously.
+- **The same name on both sides.** Names share one namespace; the
+  loader rejects duplicates with a clear error.
 
 ## Where to next
 

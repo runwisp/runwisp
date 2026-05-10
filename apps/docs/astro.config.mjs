@@ -62,7 +62,6 @@ export default defineConfig({
                         { label: "Retries & timeouts", slug: "concepts/retries" },
                         { label: "Logs & retention", slug: "concepts/logs" },
                         { label: "The TUI tour", slug: "concepts/tui-tour" },
-                        { label: "Glossary", slug: "concepts/glossary" },
                     ],
                 },
                 {

@@ -2,19 +2,19 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: The TUI tour
-description: A guided walkthrough of the RunWisp Bubbletea terminal UI — layout, views, keybindings, and how to trigger / stop / restart from the keyboard without ever opening a browser.
+description: A guided walkthrough of the RunWisp terminal UI — the Open Web UI shortcut, layout, views, keybindings, and how to trigger / stop / restart from the keyboard without ever opening a browser.
 ---
 
 The TUI is the keyboard-first half of RunWisp. It runs in a terminal,
 binds to whatever daemon is on the address you point it at (default
-`127.0.0.1:9477`), and lets you do almost everything the Web UI can —
+`localhost:9477`), and lets you do almost everything the Web UI can —
 trigger tasks, follow logs, restart services, browse notifications —
 without leaving the shell.
 
 Two ways to start it:
 
 ```bash
-runwisp           # spawn or attach to a local daemon, then attach the TUI
+runwisp           # spawn or attach to the local daemon, then attach the TUI
 runwisp tui       # attach a fresh TUI to an already-running daemon
 ```
 
@@ -22,37 +22,46 @@ The first form is the everyday one. The second is for SSHing in to
 inspect a daemon you started elsewhere — `runwisp tui --host …` lets
 you point at a remote instance.
 
-## The layout
+## The Home page (and "Open Web UI")
 
-```
-┌────────────────────┬───────────────────────────────────────────────────┐
-│ RunWisp v0.4.0     │  Home                                             │
-│ host-fingerprint   │  ─────────────                                    │
-│                    │  Web UI:  http://127.0.0.1:9477                   │
-│ ▸ Home             │  Pwd:     **************  (Enter to copy)         │
-│   Info             │                                                   │
-│   Debug            │  🔔  3 new notifications  (n to expand)           │
-│                    │                                                   │
-│ TASKS              │  Recent activity                                  │
-│   backup-postgres  │  ─────────────                                    │
-│ ▸ deploy-hook      │  ✓ 14:30:22  backup-postgres   12s   success     │
-│   smoke-test       │  ✗ 14:25:10  smoke-test        2s    failed      │
-│                    │  ⏵ 14:24:00  api-worker#0      —     running     │
-│ SERVICES           │                                                   │
-│   api-worker (×3)  │                                                   │
-│                    │                                                   │
-├────────────────────┴───────────────────────────────────────────────────┤
-│ ↑↓ navigate · Enter open · r run · n notifications · q quit            │
-└────────────────────────────────────────────────────────────────────────┘
-```
+The TUI lands on **Home**, with the focus already on
+`▸ ⮕ Open Web UI`:
 
-A 28-column **sidebar** on the left, the active view on the right,
-a **help bar** at the bottom that updates with the active context.
-The sidebar shows your daemon's identity at the top, navigation pages
-(Home / Info / Debug), then your tasks and services grouped by
-`group`. The triangle marker `▸` is the active selection; the
-highlighted row is the cursor (which can be different — moving the
-cursor doesn't activate anything until you press `Enter`).
+![tui-home-default.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused at top, Web UI URL row, auto-generated password row, recent activity below.](../../../assets/screenshots/placeholder.svg)
+
+Press `Enter` and the TUI opens your default browser straight into the
+dashboard, already logged in — no copy-pasting the password, no
+lockouts from typos. On a server with no browser available, it prints
+the URL instead so you can paste it from another machine.
+
+The other rows on Home:
+
+- **Web UI** — the daemon's URL. `Enter` copies it to the clipboard.
+- **Password** — only shown when the daemon **auto-generated** the
+  password on first run. `Enter` copies it.
+
+If you set the password yourself, the password row is hidden — the
+TUI doesn't have your secret in plaintext form to display:
+
+![tui-home-no-password.png — TUI Home page when the password is user-supplied: only Open Web UI and Web UI URL rows visible, no password row.](../../../assets/screenshots/placeholder.svg)
+
+Press `n` while on Home to expand the **notifications panel** at the
+top — a scrollable list of in-app notifications with read-state
+toggling.
+
+![tui-notifications.png — TUI notifications panel expanded over the Home view, showing severity, age, and read-state toggles.](../../../assets/screenshots/placeholder.svg)
+
+## The shell
+
+A **sidebar** on the left, the active view on the right, a **help
+bar** at the bottom that updates with whatever you're focused on. The
+sidebar lists three navigation pages (Home / Info / Debug), followed
+by your tasks and services bucketed by `group`. The triangle marker
+`▸` is what's currently showing in the right pane; the highlighted
+row is your cursor — move it freely, nothing changes until you press
+`Enter`.
+
+![tui-shell.png — Full TUI window: 28-column sidebar with daemon identity, Home/Info/Debug nav, grouped tasks and services; right pane Home; help bar at bottom.](../../../assets/screenshots/placeholder.svg)
 
 ## The three pages
 
@@ -60,15 +69,13 @@ cursor doesn't activate anything until you press `Enter`).
 
 The default view. Two modes:
 
-- **Daemon overview** — shown when no task is selected. Web UI URL,
-  password (focus and `Enter` to copy), and a recent-activity feed
-  across all tasks.
-- **Task detail** — shown when a task or service is selected from the
-  sidebar. Schedule line, a "Run Now" / "Restart" button, and the run
+- **Daemon overview** (no task selected) — the action and field rows
+  described above, plus a recent-activity feed across all tasks.
+- **Task detail** (a task or service selected from the sidebar) —
+  schedule line, a **Run Now** / **Restart** button, and the run
   history for that one task.
 
-Press `n` to expand the **notifications panel** at the top — a
-scrollable list of in-app notifications with read-state toggling.
+![tui-task-detail.png — TUI task detail mode: schedule line, Run Now button, recent run history for the selected task.](../../../assets/screenshots/placeholder.svg)
 
 ### Info
 
@@ -76,11 +83,15 @@ System metrics: CPU and memory sparklines, run-count summary,
 uptime. Useful for "is the daemon healthy right now" without opening
 a browser.
 
+![tui-info.png — TUI Info page: CPU and memory sparklines, run-count summary, uptime.](../../../assets/screenshots/placeholder.svg)
+
 ### Debug
 
 The daemon's own log stream. When you're attached to a remote daemon,
-this is also where the TUI surfaces SSE reconnect notices. Scrollable
-in both directions.
+this is also where reconnect notices show up. Scrollable in both
+directions.
+
+![tui-debug.png — TUI Debug page streaming the daemon's own log lines.](../../../assets/screenshots/placeholder.svg)
 
 ## Keys you'll actually use
 
@@ -103,13 +114,17 @@ In the **sidebar** with a task focused:
 | --- | ------------------------------------------------------------------------------------------------- |
 | `r` | Run now (for tasks) or restart (for services). Confirmation dialog opens before the action fires. |
 
+![tui-confirm-run.png — TUI run-now confirmation dialog before triggering a task.](../../../assets/screenshots/placeholder.svg)
+
 ## Following a run
 
 `Enter` on a row in the recent-activity list (or in a task's run
 history) opens the **run detail view** — log streamed live from the
-daemon, line-numbered, with a four-line header above showing run ID,
-start time, duration, and either a "Retry" / "Run Again" button (for
-ended runs) or a "Stop" button (for in-flight runs).
+daemon, line-numbered, with a header showing run ID, start time,
+duration, and either a "Run Again" button (for ended runs) or a
+"Stop" button (for runs that are still going).
+
+![tui-run-detail.png — TUI run detail: header with run ID, start time, duration, Run Again button; line-numbered log below.](../../../assets/screenshots/placeholder.svg)
 
 | Key                  | Action in run detail                                                                                            |
 | -------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -130,56 +145,52 @@ The fullscreen toggle (`f`) is the right move when you want to copy a
 chunk of log to paste elsewhere — it removes the line-number gutter
 and lets your terminal's native selection work.
 
+![tui-run-fullscreen.png — TUI run detail in fullscreen mode: header and gutter hidden so native terminal selection works on the raw log.](../../../assets/screenshots/placeholder.svg)
+
 ## Authentication, briefly
 
-The TUI doesn't prompt for a password interactively. It reads the
-daemon's password from `RUNWISP_PASSWORD` → `<data-dir>/password` →
-the value the spawning daemon handed it directly (in the bare
-`runwisp` flow). On a remote `runwisp tui --host …` session, pass
-`--password` or set `RUNWISP_PASSWORD`.
-
-If auth fails (wrong password, rate-limited), the TUI surfaces the
-error and exits — see [Auth][auth] for the underlying flow.
+Run the TUI on the daemon's host and you're already in. Connecting
+from elsewhere with `runwisp tui --host …`? Pass `--password` (same
+password as the Web UI) or set `RUNWISP_PASSWORD` in your shell. If
+the password is wrong or you've been rate-limited, the TUI prints the
+error and exits — see [Auth][auth] for the details.
 
 [auth]: /operations/auth/
 
 ## Connection-lost handling
 
-When the daemon goes away (network blip, restart, SIGKILL), the TUI
-retries the log stream every 500 ms in the background. The Debug page
-shows the reconnect log; everything else freezes until the stream
-resumes. There's no manual "retry" key — when the daemon is back, the
-TUI catches up automatically.
+When the daemon goes away (network blip, restart, hard crash), the
+TUI auto-retries in the background. The Debug page shows the
+reconnect log; everything else freezes until the stream resumes. No
+manual "retry" key needed — when the daemon is back, the TUI catches
+up on its own.
 
 ## Quitting
 
-Press `q` (or `Ctrl+C`). A dialog asks:
+Press `q` (or `Ctrl+C`). A two-button dialog asks **"Keep the daemon
+running in the background?"** with **Keep Running** and **Shut Down**.
+`Esc` closes the dialog without acting.
 
-- **Keep daemon running** — quit the TUI but leave the daemon up.
-  This is what you want if you started with bare `runwisp` and now
-  want to detach.
-- **Shut down daemon** — graceful daemon shutdown, then exit. Use
-  this for "I'm done; clean up."
-- **Cancel** — back to the TUI.
+![tui-quit-dialog.png — TUI quit dialog: two buttons, Keep Running and Shut Down, over the dimmed UI.](../../../assets/screenshots/placeholder.svg)
 
 If you're attached via `runwisp tui` to a daemon you didn't spawn,
-the dialog does not offer "shut down" — the TUI never stops a daemon
-it's a guest of.
+**Shut Down** is a no-op — the TUI never stops a daemon it's a guest
+of.
 
-## What the TUI deliberately doesn't do
+## Intentional scope
 
-- **No config editing.** `runwisp.toml` is the source of truth and is
-  loaded at daemon startup. Edit it in `$EDITOR` and restart.
-- **No notification settings.** Routes and notifiers are TOML-only.
-- **No user / role management.** RunWisp is single-operator by design.
-- **No task creation or deletion.** Same reason as config editing.
-- **No log file download.** Use the run detail's fullscreen mode
-  (`f`) to select-and-copy, or grab the file directly from
+The TUI is a control surface, not a configuration UI. It can trigger,
+stop, restart, and observe — but it doesn't:
+
+- **Edit config.** `runwisp.toml` is the source of truth. Open it in
+  your editor and restart the daemon to pick up changes.
+- **Set up notifications.** Routes and notifiers are configured in
+  TOML.
+- **Create or delete tasks.** Same reason — they live in TOML.
+- **Manage users or roles.** RunWisp is single-operator by design.
+- **Download log files.** Press `f` to fullscreen the log and use
+  your terminal's native copy, or grab the file directly from
   `data/logs/<task>/`.
-
-These are deliberate: the TUI is a control surface, not a
-configuration UI. Anything that mutates task definitions belongs in
-`runwisp.toml`.
 
 ## Where to next
 

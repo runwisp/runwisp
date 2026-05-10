@@ -1,124 +1,41 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
-title: Auth (CHAP + JWT)
-description: How RunWisp authenticates Web UI / TUI / REST clients — CHAP challenge-response at the login boundary, HS256 JWT for the session, and what is intentionally not supported.
+title: Auth
+description: How RunWisp authenticates Web UI / TUI / REST clients — one password, a 24-hour session, and a small set of safety nets (rate limiting, reverse-proxy trust, no logins on a few public health endpoints).
 ---
 
-RunWisp has one access boundary and one session token. The login uses
-**CHAP** — a challenge-response handshake that never puts the password
-on the wire, even over plaintext HTTP. Once you log in, you carry an
-**HS256 JWT** for the next 24 hours. Every protected REST endpoint, SSE
-stream, and TUI action checks that token.
-
-That's all the daemon's identity model. There are no users, no roles,
+RunWisp has one password and one session. Type the password, get a
+session that lasts 24 hours, and use that to drive the Web UI, TUI,
+and REST API. That's the whole identity model — no users, no roles,
 no API keys, no SSO. The trust model is "if you can log in, you
-control the daemon" — RunWisp is built for one operator on one
-machine, and the auth boundary is sized to that.
+control the daemon", and RunWisp is built for one operator on one
+machine.
 
-## The login flow
+## Logging in
 
-```
-Client                          Daemon
-  │                                │
-  │  GET /api/auth/challenge       │
-  │ ──────────────────────────────▶│
-  │                                │ generate 32-byte nonce
-  │  { nonce: "<64 hex>" }         │
-  │ ◀──────────────────────────────│
-  │                                │
-  │ compute response =             │
-  │   SHA256(password + ":" + nonce)│
-  │                                │
-  │  POST /api/auth                │
-  │  { nonce, response }           │
-  │ ──────────────────────────────▶│
-  │                                │ verify response;
-  │                                │ consume nonce (one-shot)
-  │  { token: "<JWT>" }            │
-  │ ◀──────────────────────────────│
-```
+The Web UI shows a single password field. The TUI just opens the
+browser straight in (when you start it locally with `runwisp`) or
+asks for the password via env var / CLI flag (when you connect to a
+remote daemon).
 
-- **Nonce** — 32 random bytes, hex-encoded (64 chars). Lives in an
-  in-memory LRU cache (1000 entries) for **5 minutes** then expires.
-  Each nonce is **single-use**: replaying it returns
-  `401 Invalid or expired challenge`.
-- **Response** — `hex(SHA256(password + ":" + nonce))`. The password
-  itself never leaves the client.
-- **Token** — issued on success; embedded in the response body and as a
-  `Set-Cookie: runwisp_jwt=…` header.
+Your password never travels over the network as plain text. The login
+uses a challenge-response handshake: the browser asks the daemon for
+a one-time challenge value, mixes it with your password, and sends
+back a hash the daemon can verify. Even on plain HTTP — say, a
+reverse proxy speaking HTTPS to clients but plain HTTP back to
+RunWisp on the same host — your password isn't on the wire.
 
-If the password is wrong, the daemon returns `401`. If your IP has
-exceeded its budget (see [rate limiting](#rate-limiting)), `429`.
-
-## The session token
-
-| Field        | Value                  |
-| ------------ | ---------------------- |
-| Algorithm    | HS256 (HMAC-SHA256)    |
-| Lifetime     | 24 hours from issuance |
-| `iss` claim  | `"runwisp"`            |
-| `aud` claim  | `"runwisp-api"`        |
-| Other claims | `iat`, `exp`           |
-
-Tokens with the wrong issuer or audience are rejected — so a token
-issued by daemon A cannot authenticate against daemon B even if they
-share a JWT secret by accident. Expired tokens are rejected exactly at
-their `exp` second; there is no grace period.
-
-The HMAC key (the **JWT secret**) lives in SQLite, not on disk —
-specifically the `config_entries` row keyed `jwt_secret`. It's a
-base64-URL-encoded 32-byte random string generated on first boot. Wipe
-that row (or delete the DB) and the daemon mints a new one on next
-start, invalidating every outstanding token.
-
-#### Rotating the JWT secret
-
-There is **no `runwisp rotate-jwt-secret` command**. Two supported
-ways to force a fresh JWT secret:
-
-1. **Rotate the password.** Set `RUNWISP_PASSWORD` to a new value (or
-   change `data/password` and restart). When the daemon detects the
-   change it rotates the JWT secret automatically and every
-   outstanding token is invalidated. This is the intended mechanism
-   for the "everyone re-logs in" workflow.
-2. **Wipe the row.** `DELETE FROM config_entries WHERE key = 'jwt_secret';`
-   on the daemon-shutdown SQLite file, then restart. The daemon
-   regenerates the secret on next boot. Use this when you want to
-   invalidate sessions without touching the password.
-
-### Two ways to present the token
-
-The daemon accepts the JWT via either header — whichever arrives first
-and validates wins:
-
-```http
-Authorization: Bearer <token>
-```
-
-```http
-Cookie: runwisp_jwt=<token>
-```
-
-The cookie is set automatically on a successful login with these flags:
-
-| Attribute  | Value                                                                                      |
-| ---------- | ------------------------------------------------------------------------------------------ |
-| `HttpOnly` | always — JS can't read it                                                                  |
-| `SameSite` | `Strict` — never sent on cross-site requests                                               |
-| `Secure`   | set to `true` only when the daemon detects HTTPS — see [reverse proxies](#reverse-proxies) |
-| `Path`     | `/api/`                                                                                    |
-| `Max-Age`  | `86400` (24 hours, matches token lifetime)                                                 |
-
-The cookie is the only way to authenticate the SSE log streaming
-endpoint — `EventSource` cannot set custom headers, so the browser must
-hold the cookie when it opens the stream.
+After a successful login the daemon issues a **session** that lasts
+24 hours. The browser holds it in a secure cookie. The CLI / TUI use
+the same handshake under the hood when they need a session.
 
 ## The password
 
-The password is the **only** secret guarding the daemon. On first run
-RunWisp generates a 22-character base62 string (≈131 bits of entropy)
-and writes it to `<data-dir>/password` with `0600` permissions:
+The password is the only secret guarding the daemon. On first run
+RunWisp generates a 22-character random password and writes it to
+`<data-dir>/password` with permissions that only the daemon's user
+can read:
 
 ```
 $ ls -l data/
@@ -128,79 +45,69 @@ $ ls -l data/
 …
 ```
 
-**The file is plaintext.** It has restrictive permissions but is not
-encrypted. Treat it as a credential — never commit it to git, never
-include it in a tarball you publish.
+The file is plain text — its protection is the file permissions.
+Treat it as a credential: never commit it to git, never bake it into
+a tarball you publish.
 
 ### Setting your own password
 
-`RUNWISP_PASSWORD` overrides the file at startup. The value is held in
-memory only — **the daemon does not write it back to `data/password`**.
-This matters for Docker secrets, systemd `LoadCredential=`, sealed
-secrets, and any deployment that deliberately keeps credentials out of
-the data dir.
+`RUNWISP_PASSWORD` overrides the file at startup. The value is held
+in memory only — the daemon **doesn't** write it back to
+`data/password`. This is what you want for Docker secrets, systemd's
+`LoadCredential=`, and any deployment that deliberately keeps
+credentials out of the data directory.
 
 ```bash
 export RUNWISP_PASSWORD='my-shared-secret'
 runwisp daemon
 ```
 
-Because the env var is not persisted, the TUI and CLI must obtain the
-password the same way the daemon did. In practice this means setting
-`RUNWISP_PASSWORD` in the same shell (or `--password` flag for one-off
-commands). If you start the daemon with `RUNWISP_PASSWORD` and try to
-launch the TUI from a fresh shell with no env var and no
-`data/password`, the TUI will generate its own password — which won't
-match the daemon's.
+Because the env var isn't persisted, the TUI and CLI need to find the
+password the same way. In practice that means setting
+`RUNWISP_PASSWORD` in the same shell, or passing `--password` to one-
+off commands.
 
-Resolution order on every startup (daemon, TUI, CLI):
+The order RunWisp checks on every startup (daemon, TUI, CLI):
 
-1. `RUNWISP_PASSWORD` env var (in-memory only).
-2. `data/password` file (read existing).
-3. Generate a fresh password and write it to `data/password` (daemon
-   only — interactive TUI/CLI will hit an auth failure here, which is
-   the correct outcome).
+1. `RUNWISP_PASSWORD` from the environment.
+2. `<data-dir>/password` file (read existing).
+3. Generate a fresh random password and write it to
+   `<data-dir>/password`. Daemon only — interactive TUI/CLI calls
+   stop here with an auth error, which is the right outcome.
 
-If you change `RUNWISP_PASSWORD` between restarts, the daemon notices —
-it stores a hash of the env-supplied password in SQLite (`config_entries`
-key `password_hash`) and **rotates the JWT secret** when the hash
-changes. That invalidates every outstanding token, forcing a fresh
-login. Auto-generated passwords don't track a hash, so the JWT secret
-survives restarts.
+### Rotating the password
+
+Change the value of `RUNWISP_PASSWORD` (or update `data/password`)
+and restart. Every existing session is invalidated and everyone has
+to log in again.
 
 ## Rate limiting
 
-Failed login attempts are rate-limited **per source IP**:
+Failed login attempts are rate-limited per source IP: **5 attempts
+per 5 minutes**. Cross that and you get `429 Too Many Requests` until
+the window slides past. Restarting the daemon also clears the
+counter.
 
-| Knob         | Value                   | Source                                                   |
-| ------------ | ----------------------- | -------------------------------------------------------- |
-| Window       | 5 minutes               | shared between challenge + auth                          |
-| Max attempts | 5                       | combined across both endpoints                           |
-| Response     | `429 Too Many Requests` | with standard `Retry-After` header                       |
-| IP source    | real TCP peer           | not `X-Forwarded-For` unless [trusted](#reverse-proxies) |
-
-The 429 lockout releases automatically when the window slides past. The
-limiter intentionally counts both the challenge fetch **and** the auth
-POST — so attackers can't grind nonces without using attempts.
-
-Separately, SSE streaming endpoints have their own concurrency caps:
-**64 global** and **8 per IP** open streams. Exceeding them returns
-`503 Service Unavailable`.
+Live log streams are limited too — at most a few dozen open at once,
+plus a small per-IP cap — so a buggy script can't accidentally
+exhaust the daemon. If you hit the limit, the response is
+`503 Service Unavailable`; close some open log views and try again.
 
 ## Reverse proxies
 
-By default RunWisp binds to `127.0.0.1:9477` and serves plain HTTP. To
-expose it publicly with TLS, run a reverse proxy in front and tell the
-daemon to trust it:
+RunWisp binds to `127.0.0.1:9477` by default and serves plain HTTP.
+To expose it publicly with TLS, run a reverse proxy in front (nginx,
+Caddy, Traefik, Cloudflare Tunnel, …) and tell the daemon which IP
+ranges that proxy lives on:
 
 ```bash
 export RUNWISP_TRUST_PROXY='10.0.0.0/8,2001:db8::/32'
 runwisp daemon --host 127.0.0.1 --port 9477
 ```
 
-`RUNWISP_TRUST_PROXY` is a comma-separated list of CIDRs whose
-`X-Forwarded-Proto` and `X-Forwarded-For` headers the daemon will
-honour. Common cases:
+`RUNWISP_TRUST_PROXY` is a comma-separated list of IP ranges
+(written in CIDR notation) whose `X-Forwarded-Proto` and
+`X-Forwarded-For` headers RunWisp will trust. Common cases:
 
 ```bash
 # Single nginx box on the same host
@@ -211,38 +118,40 @@ RUNWISP_TRUST_PROXY='10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
 ```
 
 The daemon **rejects** `0.0.0.0/0` and `::/0` — trusting the entire
-internet would let any client spoof its source IP for rate limiting.
+internet would let any client lie about its source IP and bypass rate
+limiting.
 
-When the request arrives from a trusted CIDR with
-`X-Forwarded-Proto: https`, the daemon treats it as a secure request
-and sets the `Secure` flag on the JWT cookie. The TCP peer address is
-captured before any proxy middleware runs, so rate limiting and
-loopback detection always see the **real** peer — not a spoofable
-header.
+When a request from a trusted range arrives with
+`X-Forwarded-Proto: https`, the daemon treats the connection as
+secure and marks the session cookie accordingly. Rate limiting always
+counts the real TCP peer, not the forwarded header — so even
+misconfigured proxies can't open a hole.
 
-## Endpoints that don't need auth
+## Endpoints that don't need a login
 
-| Path                      | Reason                                                             |
-| ------------------------- | ------------------------------------------------------------------ |
-| `GET /health`             | Used by `runwisp status`, Docker `HEALTHCHECK`, Kubernetes probes. |
-| `GET /api/auth/status`    | Lets a client check whether it's already authenticated.            |
-| `GET /api/auth/challenge` | Step one of CHAP. Rate-limited.                                    |
-| `POST /api/auth`          | Step two of CHAP. Rate-limited.                                    |
-| `GET /api/auth/launch`    | Loopback-only ticket redemption used by the TUI auto-login.        |
+A few endpoints are intentionally public:
 
-Every other path under `/api/` requires a valid JWT.
+| Path                      | Reason                                                              |
+| ------------------------- | ------------------------------------------------------------------- |
+| `GET /health`             | Used by `runwisp status`, Docker `HEALTHCHECK`, Kubernetes probes.  |
+| `GET /api/auth/status`    | Lets a client check whether it's already logged in.                 |
+| `GET /api/auth/challenge` | First step of the login handshake. Rate-limited.                    |
+| `POST /api/auth`          | Second step of the login handshake. Rate-limited.                   |
+| `GET /api/auth/launch`    | Loopback-only; used when the local TUI hands you off to the Web UI. |
+
+Everything else under `/api/` requires a session.
 
 ## What RunWisp deliberately doesn't ship
 
-- **No SSO / OIDC / SAML / OAuth2.** The daemon doesn't know how to
-  federate. Put it behind your identity-aware proxy (Cloudflare Access,
-  Pomerium, oauth2-proxy) if you need that.
-- **No LDAP / AD.**
+- **No SSO / OIDC / SAML / OAuth.** Put RunWisp behind an
+  identity-aware proxy (Cloudflare Access, Pomerium, oauth2-proxy)
+  if you need federated identity.
+- **No LDAP / AD / directory integration.**
 - **No multi-factor.** No TOTP, no WebAuthn, no SMS.
-- **No API keys.** Every client logs in via CHAP and carries a JWT.
+- **No API keys.** Every client logs in with the password.
 - **No multi-user model.** One password, one set of permissions: full
   control.
-- **No RBAC.** An authenticated client can do anything the API exposes.
+- **No RBAC.** A logged-in client can do anything the API exposes.
 
 These are choices, not omissions. RunWisp is for one operator on one
 machine; federated identity, multi-user, and RBAC are explicit
@@ -251,7 +160,7 @@ non-goals.
 ## Where to next
 
 - [Operations: data directory](/operations/data-directory/) — where
-  `password`, `runwisp.db`, and the JWT secret physically live.
+  `password`, `runwisp.db`, and other state live on disk.
 - [CLI reference](/cli/) — `runwisp tui --password`, environment
   variable precedence, `runwisp status`.
 - [Deploy: VPS](/deploy/vps/) — terminating TLS upstream and setting

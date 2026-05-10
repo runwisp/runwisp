@@ -64,8 +64,8 @@ capabilities it detected (Docker, etc.), and — on first run — an
 auto-generated **login password** in a yellow box. Save that password; you
 will need it for the Web UI.
 
-Want a headless daemon for `systemd` or a Docker `CMD`? Use
-`runwisp daemon` instead.
+Want it to run in the background, with no terminal UI (for `systemd`
+or a Docker `CMD`)? Use `runwisp daemon` instead.
 
 ## 3. Watch it run
 
@@ -75,8 +75,8 @@ Inside the TUI you can:
 - Open a task to see its run history and stream live logs.
 - Press <kbd>r</kbd> to trigger a task manually without waiting for the
   schedule.
-- Cancel an in-flight run, requeue it, or jump to the failure that woke
-  you up at 3 AM.
+- Cancel a run that's still going, requeue it, or jump to the failure
+  that woke you up at 3 AM.
 
 To trigger from the command line instead, leave the TUI running and open
 another shell:
@@ -103,9 +103,10 @@ address.
   `health-check`, and started three replicas of `worker`.
 - Every run, scheduled or manual, gets a ULID, a row in embedded SQLite,
   and a per-task log file on disk.
-- If you `kill -9` the daemon right now, restart it, and the in-flight
-  `worker` runs will be marked **crashed** with exit code `-2` — your
-  history stays intact and the next firing is a fresh execution.
+- If the daemon is force-killed right now (or the server crashes) and
+  you restart it, the `worker` runs that were still going will be marked
+  **crashed** with exit code `-2` — your history stays intact and the
+  next firing is a fresh execution.
 
 ## Where to next
 

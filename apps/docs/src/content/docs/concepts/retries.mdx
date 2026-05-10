@@ -33,18 +33,19 @@ retry_backoff  = "exponential"
 - **Does _not_ trigger a retry**: `success`, `stopped` (manual stop via
   the API/CLI/UI, or a sibling run cancelled it via
   `on_overlap = "terminate"`), or `skipped` (`on_overlap = "skip"`
-  rejected the firing because another run was still in flight). Stopped
+  rejected the firing because another run was still going). Stopped
   is a deliberate human action; skipped means the original run is still
   running and another attempt would just race it.
 
 ## `retry_delay` and `retry_backoff`
 
-`retry_delay` is parsed as a Go duration (`"5s"`, `"2m"`, `"1h"`).
-The default — used when retries are enabled but `retry_delay` is unset —
+`retry_delay` is a duration string (`"5s"`, `"2m"`, `"1h"`). The
+default — used when retries are enabled but `retry_delay` is unset —
 is **5 seconds**.
 
-`retry_backoff` chooses the curve. The same enum is used by services'
-`restart_backoff`, so the values move between the two contexts cleanly.
+`retry_backoff` chooses how the wait between retries grows. The same
+values are used by services' `restart_backoff`, so they move between
+the two contexts cleanly.
 
 | Value                   | Wait before attempt _N_ (1-indexed retries) | With `retry_delay = "10s"`       |
 | ----------------------- | ------------------------------------------- | -------------------------------- |
@@ -52,22 +53,17 @@ is **5 seconds**.
 | `linear`                | `delay × N`                                 | 10s, 20s, 30s, 40s …             |
 | `exponential`           | `delay × 2^(N-1)`                           | 10s, 20s, 40s, 80s, 160s, 300s … |
 
-All curves are **capped at 5 minutes**. `exponential` with a 10-second
-base hits the cap on attempt 6 and stays there.
+All schedules are **capped at 5 minutes**. `exponential` with a
+10-second base hits the cap on attempt 6 and stays there.
 
 ## What retries look like in history
 
-Each attempt is its own run row in SQLite, with its own ULID, its own
-exit code, and its own captured log file. The retry chain links back via
-two fields:
-
-- `retry_attempt` — `0` for the first run, `1` for the first retry,
-  `2` for the second, and so on.
-- `retry_of_run_id` — the ULID of the immediate predecessor.
-
-In the Web UI you see each attempt as a separate entry in the task's run
-list. That's deliberate: if attempt 1 silently corrupted state and
-attempt 2 succeeded, you can still find attempt 1's stderr.
+Each attempt is a separate run, with its own ID, exit code, and
+captured log file. The Web UI lists every attempt under the task's run
+history, numbered by `retry_attempt` (`0` for the first try, `1` for
+the first retry, and so on). That's deliberate: if attempt 1 silently
+corrupted state and attempt 2 succeeded, you can still go back and
+read attempt 1's stderr.
 
 :::caution[Each failed attempt notifies]
 A failure notification fires on **every** failed attempt, not only on the
@@ -87,18 +83,18 @@ run     = "/usr/local/bin/heavy-job.sh"
 timeout = "30m"
 ```
 
-- Parsed as a Go duration (same syntax as `retry_delay`).
+- Same duration syntax as `retry_delay` (`"30s"`, `"5m"`, `"1h"`).
 - Default: inherited from `[defaults] timeout` if set; otherwise **no
   timeout** — the run is allowed to take as long as it likes.
-- Scope: **per attempt**. A retry gets a fresh `timeout` window; the time
+- Scope: **per attempt**. A retry gets a fresh `timeout` window; time
   spent waiting in `retry_delay` doesn't count against it.
 
-When the deadline hits, the daemon cancels the run's context and the
-underlying process is killed. The run is recorded with end reason
-`timeout`. There is **no SIGTERM grace period** — the kill goes straight
-through. If your job needs to flush state cleanly before exiting, do it
-defensively (atomic temp-file rename, transactional commit) rather than
-relying on a graceful shutdown signal.
+When the deadline hits, the daemon stops the run immediately and
+records it with end reason `timeout`. The kill is abrupt — the script
+gets no grace period to clean up. If your job needs to leave its state
+in one piece, do that defensively (write to a temp file and rename it
+at the end, commit your transaction before exiting) rather than
+relying on a shutdown signal.
 
 ## Interactions
 
@@ -108,8 +104,8 @@ relying on a graceful shutdown signal.
   terminate policy is a fresh execution, not a retry.
 - **Manual stop.** Same story: stopping a run from the API/UI records
   `stopped` and ends the retry chain.
-- **`parallelism > 1`.** Retries don't count against parallelism. Each
-  retry runs after its predecessor is already terminal, so there's no
+- **`parallelism > 1`.** Retries don't count against parallelism. A
+  retry only fires after its predecessor has finished, so there's no
   overlap to evaluate.
 
 ## Services don't retry — they restart
@@ -132,8 +128,8 @@ add `restart_delay` (the supervisor owns the cadence).
 A service supervisor restarts a replica forever (with exponential
 backoff capped at 60s) until you stop it explicitly. A
 replica that stays up for at least 60 seconds resets its backoff
-counter, so transient flapping doesn't permanently slow restarts on a
-service that eventually stabilises.
+counter, so a service that fails repeatedly at first doesn't keep slow
+restart delays once it stabilises.
 
 ## Where to next
 

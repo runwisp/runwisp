@@ -193,8 +193,8 @@ deduplicates, and dispatches once per unique notifier.
 A flapping task can fire failures every minute. Without rate-limiting,
 that's a slack-storm. RunWisp coalesces repeated notifications by
 **dedup key**: task name + event kind + end reason. (Not to be
-confused with the daemon **fingerprint** — see the
-[glossary](/concepts/glossary/#fingerprint) — those are unrelated.)
+confused with the daemon's
+[fingerprint](/operations/data-directory/) — those are unrelated.)
 
 Within the **coalescing window** (default `1h`), repeated firings
 sharing a dedup key update the same in-app row. The row's `count`

@@ -2,136 +2,146 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: The Web UI tour
-description: A guided walkthrough of the embedded RunWisp Web dashboard — overview page, task detail, log viewer, notifications bell, and the connection-lost flow.
+description: A guided walkthrough of the embedded RunWisp Web dashboard — opening it from the TUI, the overview page, task detail, log viewer, notifications bell, and the connection-lost flow.
 ---
 
 The Web UI is the same control surface as the [TUI][tui], rendered in
-your browser and updated live over Server-Sent Events. It ships
-**inside the daemon binary** — no separate static-asset server, no CDN,
-no extra port. Browse to `http://<host>:<port>` (default
-`http://127.0.0.1:9477`) and you're there.
+your browser and updated live as runs happen. It ships **inside the
+daemon binary** — no separate web server, no CDN, no extra port.
+Browse to `http://<host>:<port>` (default `http://localhost:9477`)
+and you're there.
 
 [tui]: /concepts/tui-tour/
 
-The dashboard is intentionally small and read-mostly: trigger and
-restart are the only mutations. Everything else is observation —
-`runwisp.toml` stays the source of truth.
+The dashboard is intentionally small and read-mostly: **trigger,
+restart, and stop** are the only mutations. Everything else is
+observation — `runwisp.toml` stays the source of truth.
 
-## Logging in
+## The fast path: open it from the TUI
 
-You'll see a single password field on first visit. There's no username
-— RunWisp is single-operator. Type the password and submit.
+If you're already in the local TUI (just type `runwisp`), the **Open
+Web UI** entry on its Home page is the easiest way in:
 
-Behind the scenes the page does a [CHAP handshake][chap]: it asks the
-daemon for a nonce, computes `SHA256(password + ":" + nonce)`, sends
-the digest, and on success stores a JWT in `localStorage` under the
-key `runwisp_token`. The password itself never crosses the wire.
+1. `runwisp` starts the daemon and attaches the TUI.
+2. The Home page lists `▸ ⮕ Open Web UI` as its first focusable row.
+3. Press `Enter` and your default browser opens straight into the
+   dashboard, already logged in — no copy-pasting the password.
 
-[chap]: /operations/auth/#the-login-flow
+On a server with no browser available, the TUI prints the URL
+instead, so you can paste it from another machine.
 
-The token lasts **24 hours**. After that, you log in again. Five wrong
-passwords from your IP in five minutes triggers a [rate-limit
-lockout][rate] — wait it out or restart the daemon.
+![tui-home-default.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused, Web UI URL row, and auto-generated password row.](../../../assets/screenshots/placeholder.svg)
 
-[rate]: /operations/auth/#rate-limiting
+## The password modal (everything else)
 
-## The layout
+When you don't have local TUI access — a remote browser, a coworker's
+laptop, a bookmark you opened cold — you'll see the password modal.
 
-Three panes, like the TUI:
+![web-ui-login.png — Login modal centred on the dashboard: single password field, Submit button, no username.](../../../assets/screenshots/placeholder.svg)
 
-```
-┌──────────────────┬──────────────────────────────────────────────────────┐
-│  RunWisp         │  RunWisp / Overview                          🔔  3  │
-│  ─────           │  ────────────────────────────────────────────────   │
-│  Overview        │                                                     │
-│  All Runs        │  ┌─ Daemon ──────────────────┐ ┌─ Stats ──────┐    │
-│                  │  │ host  builder-01          │ │ active   12  │    │
-│  TASKS           │  │ ver   v0.4.0              │ │ success  98% │    │
-│  backup-postgres │  │ up    3h 12m              │ │ cpu      4%  │    │
-│  smoke-test      │  └───────────────────────────┘ └──────────────┘    │
-│                  │                                                     │
-│  SERVICES        │  Tasks ─ All · Attention · Running · Scheduled      │
-│  api-worker (×3) │  ─────────────                                      │
-│                  │  ✓ backup-postgres   12s   00:00 daily              │
-│                  │  ✗ smoke-test         2s   manual                   │
-│                  │  ⏵ api-worker#0      —    service                   │
-│  ● connected     │                                                     │
-└──────────────────┴──────────────────────────────────────────────────────┘
-```
+There's no username — RunWisp is single-operator. Type the password
+and submit. Your password never travels over the network: the login
+uses a challenge-response handshake. If you want the details, see
+[Auth][auth].
 
-- **Sidebar** — left, white, with the brand at the top, the two
-  primary links (**Overview**, **All Runs**), then your tasks and
-  services grouped by `group =`. The footer shows a live connection
-  indicator and the daemon URL.
-- **Header** — top, a breadcrumb (`RunWisp / <page>`), and a
-  notifications bell with unread count.
-- **Main pane** — everything else.
+[auth]: /operations/auth/
+
+Your session lasts **24 hours**. After that you log in again. Five
+wrong passwords in five minutes triggers a temporary lockout — wait it
+out or restart the daemon.
+
+## The shell
+
+A fixed-width sidebar on the left, a topbar above the content, the
+content area below.
+
+![web-ui-shell.png — Full dashboard window: sidebar on the left, topbar with breadcrumb and notifications bell, content area showing the Overview page.](../../../assets/screenshots/placeholder.svg)
+
+- **Sidebar** — left, white. Logo and "RunWisp" wordmark at the top,
+  the two primary links (**Overview**, **All Runs**), then your
+  tasks bucketed by `group =`. If every task shares one group (or
+  none), the heading collapses to a single "Tasks" section. The
+  sidebar footer shows a live connection indicator (green dot when
+  connected) and the daemon version. Click the indicator when it goes
+  red to force an immediate retry.
+- **Topbar** — `RunWisp / <page>` on the left as a static breadcrumb
+  (it doesn't navigate), notifications bell with unread count on the
+  right.
+- **Content area** — scrollable; the active page renders here.
+
+![web-ui-sidebar.png — Tight crop of the sidebar: brand at top, Overview and All Runs links, grouped tasks/services, Connected v0.4.0 indicator at the bottom.](../../../assets/screenshots/placeholder.svg)
 
 ## Overview (`/`)
 
-The landing page after login. Four panels:
+The landing page after login.
 
-1. **Daemon hero** — name, version, uptime, host, OS, CPU/RAM use.
-2. **Stats** — active task count, success rate over the recent
-   window, CPU and memory percentages.
-3. **Task overview** — filter tabs (All · Attention · Running ·
-   Scheduled · Manual) and a sort selector. Up to four tasks per
-   bucket so you see the most-relevant slice without scrolling.
-4. **Recent activity** — the six most recent runs across all tasks,
-   updated live as new ones complete.
+![web-ui-overview.png — Overview page: daemon hero with sparklines, stats card, task overview tabs (All · Attention · Running · Scheduled · Manual), recent activity feed.](../../../assets/screenshots/placeholder.svg)
 
-Below them, a small CPU / memory sparkline strip refreshes every
-two seconds.
+- **Daemon hero** — name, version, uptime, host, OS, CPU/RAM use.
+  The CPU and memory sparklines refresh every two seconds.
+- **Stats** — active task count, success rate over the recent
+  window, CPU and memory percentages.
+- **Task overview** — filter tabs (All · Attention · Running ·
+  Scheduled · Manual) with a sort selector, so you see the most
+  relevant slice without scrolling.
+- **Recent activity** — the six most recent runs across all tasks,
+  updated live.
 
 ## All runs (`/runs`)
 
 A flat history of the **200** most recent runs across every task,
-sorted newest-first. Useful for "what's been happening" — or if a
-notification points you at a run id and you want to find it without
-clicking into a specific task.
+sorted newest-first. Useful for "what's been happening lately" — or
+when a notification points you at a run id and you want to find it
+without picking the right task first.
 
-## Task detail (`/tasks/{name}`)
+![web-ui-runs.png — All Runs page: flat newest-first table of 200 runs across every task with status icons, durations, and timestamps.](../../../assets/screenshots/placeholder.svg)
+
+## Task detail (`/tasks/{id}`)
 
 Click a task in the sidebar (or any run in the activity feed) to land
 here.
 
 - **Header** — task name, description, schedule line.
-- **Action button** — **Run Now** for tasks, **Restart** for services,
-  **Stop** while a run is in flight. **Run Now** greys out when the
-  task is at its `parallelism` limit.
-- **Run history** — the 50 most recent runs for this task, selectable.
+- **Action button** — **Run Task** for tasks, **Restart Service** for
+  services, **Stop Now** while a run is still going. The button is
+  disabled when the task is at its `parallelism` limit.
+- **Run history** — the **50** most recent runs for this task,
+  selectable.
 - **Log viewer** — the streaming log for the selected run, occupying
   most of the pane.
 
-For a service, the detail also surfaces replica count and the
-**Restart** button cancels every replica — the supervisor refills
-the slots via its normal exit-handler path.
+![web-ui-task-detail.png — Task detail for a finished run: header with Run Task button, run history list on the side, log viewer occupying most of the pane.](../../../assets/screenshots/placeholder.svg)
+
+While a run is still going, the action becomes **Stop Now**:
+
+![web-ui-task-running.png — Task detail mid-run: Stop Now button visible, log streaming live with tail follow.](../../../assets/screenshots/placeholder.svg)
+
+For a **service**, the same page shows the replica count and the
+**Restart Service** button cancels every replica — the supervisor
+refills the slots via its normal exit-handler path.
+
+![web-ui-service-detail.png — Service detail page: replica count visible, Restart Service action button, per-replica run rows.](../../../assets/screenshots/placeholder.svg)
 
 ### The log viewer
 
-When you open a finished run, the log viewer lands at the **tail** in
-a single round-trip and lazy-loads older content as you scroll up. For
-an in-flight run it streams new lines live over SSE.
+When you open a finished run, the log viewer lands at the **end** of
+the log and lazy-loads earlier content as you scroll up. For a run
+that's still going, new lines stream in live.
 
-- Line numbers are absolute — they match what the underlying log file
-  records.
-- ANSI colour codes from the task's stdout/stderr are rendered
-  faithfully.
-- A line longer than 64 KB is split, with the continuation marked.
-- The viewer handles log rotation transparently — when a run with
-  `log_on_full = "drop_old"` rotates its file, you just see a small
-  "log rotated" marker and continuous line numbering.
+- Line numbers match the underlying log file exactly.
+- Terminal colours from the task's output are rendered.
+- Very long lines are split with a continuation marker.
+- When `log_on_full = "drop_old"` rotates a log mid-run, you just see
+  a small "log rotated" marker; line numbering stays continuous.
 
-There is no "download" button. The on-disk file lives at
-`data/logs/<task>/{timestamp}_{run-id-suffix}.log` — copy it from
-disk if you need a local archive. The REST API exposes
-`GET /api/tasks/{name}/runs/{id}/log/raw` for the same content as
-`text/plain`.
+There's no download button in the UI. If you need a copy of the log,
+grab it from disk — `data/logs/<task>/...log` — or use the REST API.
 
 ## Notifications bell
 
-Top-right of the header. The badge shows your unread count, coloured
-red if any of the unread events are errors, teal otherwise.
+Top-right of the topbar. The badge shows your unread count.
+
+![web-ui-notifications-popover.png — Bell clicked: popover open with ten recent notifications, severity dots, relative times, and a coalesced row showing a sparkline.](../../../assets/screenshots/placeholder.svg)
 
 Click the bell to open the **popover** — the ten most recent
 notifications, with read-state toggles, a "View all" link, and a
@@ -145,8 +155,8 @@ Each row carries:
 - The task name.
 - A small sparkline of recent occurrences when the row is **coalesced**.
 
-Coalescing is what the [notifications model][notif] does so a
-flapping task doesn't fill your bell with duplicates: events sharing
+Coalescing is what the [notifications model][notif] does so a task
+that fails over and over doesn't fill your bell with duplicates: events sharing
 a dedup key (`task + kind + end reason`) collapse into a single
 row with a count and a rhythm summary ("failed 12 times, latest 30s
 ago"). The sparkline reads at a glance.
@@ -160,54 +170,41 @@ Click a notification to land on the run it's about.
 The bell only shows ten. The page shows everything — paginated, with
 a "Load more" button. Same row layout, plus the unread count up top.
 
+![web-ui-notifications-page.png — /notifications full page: paginated history with unread count at the top and a Load more button at the bottom.](../../../assets/screenshots/placeholder.svg)
+
 ## Connection-lost overlay
 
-When the daemon stops responding (network blip, restart, SIGKILL),
+When the daemon stops responding (network blip, restart, hard crash),
 the UI overlays a **Connection Lost** panel:
+
+![web-ui-connection-lost.png — Connection Lost overlay: spinner, Down for: 14s, retry attempt counter, countdown to next retry, Retry now button, collapsible error details.](../../../assets/screenshots/placeholder.svg)
 
 - A spinning indicator while it retries.
 - Time since the disconnect (`Down for: 14s`).
-- Time since you were last reachable.
 - The retry attempt counter, plus a countdown to the next automatic
   retry.
 - A **Retry now** button.
 - A collapsible details section with the last error message.
 
-Auto-retry uses exponential backoff capped at 30 seconds. As soon as
-the daemon answers `/health`, the overlay dismisses itself and
+The retry interval grows after each failure (capped at 30 seconds).
+As soon as the daemon answers, the overlay dismisses itself and live
 streams resume.
 
-## One-click launch from the TUI
+## Intentional scope
 
-The TUI's **Open Web UI** button does more than print a URL — it asks
-the daemon for a short-lived launch ticket, opens
-`http://<host>:<port>/?ticket=<value>`, and the daemon converts the
-ticket into a session cookie. You arrive logged in, no password
-prompt. The cookie is `HttpOnly`, restricted to `/api/`, with
-`SameSite=Strict` — see [the auth page][auth-cookie] for the
-attribute set.
-
-[auth-cookie]: /operations/auth/#two-ways-to-present-the-token
-
-## What's intentionally not in the Web UI
-
-- **No config editor.** `runwisp.toml` is the source of truth and
-  loaded at daemon startup. Edit in `$EDITOR`, restart.
-- **No notifier setup.** Notifiers and routes are TOML.
-- **No user / role management.** Single-operator model.
-- **No schedule editor.** Tasks don't get rescheduled from the UI.
-- **No service scaling UI.** Change `instances` in TOML and restart.
-- **No log download / export.** Use the REST API or the on-disk file.
-
-The pattern, again: this is a control plane, not a configuration UI.
-The decisions live in TOML; the daemon enforces them; the dashboard
-shows the result.
+The Web UI is a control plane, not a configuration UI. You can
+trigger, stop, and restart things, and you can see everything that's
+happening — but the source of truth is `runwisp.toml`. To change
+_what_ the daemon does (add a task, edit a schedule, rename a group,
+set up a notifier, scale a service), open the file in your editor and
+restart the daemon. There's also no log download button — copy the
+file from `data/logs/<task>/` directly if you need an archive.
 
 ## Where to next
 
 - [Concepts: TUI tour](/concepts/tui-tour/) — the same surface, in
-  your terminal.
+  your terminal, including the Open Web UI shortcut.
 - [Configuration overview](/configuration/overview/) — what to put in
   the TOML the dashboard is observing.
-- [Operations: auth](/operations/auth/) — what the login is doing
-  under the hood.
+- [Operations: auth](/operations/auth/) — managing the password and
+  session.

@@ -111,8 +111,8 @@ it explicitly.
 A flapping task that fails every minute would create 60 in-app rows
 per hour without protection. Instead, RunWisp coalesces by
 **dedup key**: task name + event kind + end reason. (This is unrelated
-to the daemon **fingerprint** in
-[`RUNWISP_FINGERPRINT`](/concepts/glossary/#fingerprint) — same English
+to the daemon
+[`RUNWISP_FINGERPRINT`](/operations/data-directory/) — same English
 word, very different concept.)
 
 - `coalesce_window` — within this window, repeat firings sharing a
