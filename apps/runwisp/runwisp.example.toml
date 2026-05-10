@@ -8,26 +8,29 @@ max_size       = "5gb"
 min_free_space = "500mb"
 
 # Cron expressions are evaluated in this timezone unless a [tasks.*] entry
-# overrides it with its own timezone =. The daemon refuses to start when a
-# cron task has neither a per-task timezone nor a [scheduler] timezone, so
-# "0 2 * * *" is never silently bound to a timezone the operator didn't pick.
-# UTC is DST-free and a safe baseline; pick a local IANA zone if 2 AM should
-# follow your wall clock.
+# overrides it with timezone =. Omit the setting and RunWisp picks up the
+# host's system timezone (the resolved value is shown in the TUI startup
+# banner and the Web UI header). UTC is DST-free and a safe baseline.
 [scheduler]
-timezone = "UTC"
+timezone = "Europe/Bratislava"
+
+# Daemon-wide knobs. shutdown_timeout caps how long the daemon waits for
+# in-flight runs to drain after SIGTERM before forcing exit. The default
+# matches Docker's stop-grace so a containerised daemon never leaves
+# orphans.
+[daemon]
+shutdown_timeout = "10s"
 
 [defaults]
 timeout      = "1h"
-# log_max_size: positive size = cap; "unlimited" = no cap; omit = inherit
-# the built-in 100MB. Bare 0 / "0" / "0mb" are rejected at config load.
 log_max_size = "100mb"
 log_on_full  = "drop_old"
-# keep_runs: positive integer = cap; "unlimited" = no cap; omit = inherit.
-# Bare 0 and negative integers are rejected — use the keyword.
 keep_runs    = 50
-# keep_for: positive duration (d/w/h/m) = cap; "unlimited" = no cap;
-# omit = inherit. Empty "" and zero/negative durations are rejected.
 keep_for     = "30d"
+# Service replicas that survive at least this long reset their per-replica
+# restart counter — so a flapping service that eventually stabilises stops
+# accumulating exponential delay.
+backoff_reset_after = "60s"
 
 
 [tasks.network-heartbeat]
@@ -50,14 +53,17 @@ group       = "Infrastructure"
 description = "Simulates a database dump, compression, and upload"
 cron        = "30 2 * * *"
 # Pin this task to America/New_York so the 02:30 wake-up follows the
-# operator's local clock even though the daemon defaults to UTC.
+# operator's local clock even if the daemon is in a different zone.
 timezone    = "America/New_York"
 timeout     = "30m"
+# graceful_stop is the SIGTERM-to-SIGKILL window. Give pg_dump time to flush
+# its buffers and remove the partial archive before we force-kill it.
+graceful_stop = "20s"
 on_overlap  = "skip"
 keep_for    = "14d"
 # A two-week outage on a daily backup is "run the missed days, but cap so
-# weeks of backlog don't bury the queue". 0 (omit) inherits the 100-run
-# default; -1 backfills every missed tick; positive N caps at N.
+# weeks of backlog don't bury the queue". Default is 100; set higher to
+# accept more catch-up work, lower to drop more of it.
 catch_up          = "all"
 max_catch_up_runs = 14
 run = """
@@ -79,6 +85,12 @@ echo "[$(date)] Upload complete."
 [tasks.process-event-queue]
 description    = "Worker that retries with exponential backoff"
 cron           = "*/10 * * * *"
+# At most this many runs may be in flight at the same instant; further
+# firings respect on_overlap (queue here, the default).
+max_concurrent = 1
+# Cap the FIFO queue. The 101st firing while the queue is full gets recorded
+# with end_reason = "queue_full" so a wedged worker is visible at a glance.
+queue_max      = 100
 retry_attempts = 3
 retry_delay    = "2s"
 retry_backoff  = "exponential"
@@ -111,6 +123,10 @@ dd if=/dev/urandom bs=1M count=50 2>/dev/null | base64
 
 [services.metrics-collector]
 description = "Long-running metrics collector, supervised with exponential restart backoff"
+# Per-service override of the [defaults] backoff_reset_after — a noisy
+# collector that flaps for the first 10 seconds shouldn't sit in long
+# delays once it stabilises.
+backoff_reset_after = "30s"
 run = """
 trap 'echo "SIGTERM received — shutting down gracefully."; exit 0' TERM INT
 iteration=0
@@ -210,4 +226,3 @@ done
 #
 # [tasks.weekly-deploy]
 # notify_on_failure = ["slack-ops:#deploys"]    # parent slack-ops, channel #deploys
-

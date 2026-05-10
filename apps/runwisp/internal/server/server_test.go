@@ -36,11 +36,11 @@ func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.
 	jm := runtime.NewTaskManager(exec, eb)
 
 	task := &model.Task{
-		Name:        "task1",
-		Run:         "echo hi",
-		APITrigger:  true,
-		Parallelism: 1,
-		OnOverlap:   model.PolicyQueue,
+		Name:          "task1",
+		Run:           "echo hi",
+		APITrigger:    true,
+		MaxConcurrent: 1,
+		OnOverlap:     model.PolicyQueue,
 	}
 	jm.UpsertTask(task)
 	tasks := map[string]*model.Task{"task1": task}

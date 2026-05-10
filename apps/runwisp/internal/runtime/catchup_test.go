@@ -16,12 +16,12 @@ import (
 
 func catchupTask(policy model.MissedRunPolicy) *model.Task {
 	return &model.Task{
-		Name:        "my-task",
-		Cron:        "*/5 * * * *",
-		CatchUp:     policy,
-		Run:         "echo hi",
-		Parallelism: 1,
-		OnOverlap:   model.PolicyQueue,
+		Name:          "my-task",
+		Cron:          "*/5 * * * *",
+		CatchUp:       policy,
+		Run:           "echo hi",
+		MaxConcurrent: 1,
+		OnOverlap:     model.PolicyQueue,
 	}
 }
 

@@ -222,8 +222,8 @@ func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
 			task.RetryBackoff = t.RetryBackoff
 		}
 
-		if t.Parallelism > 0 {
-			limit := t.Parallelism
+		if t.MaxConcurrent > 0 {
+			limit := t.MaxConcurrent
 			task.ConcurrencyLimit = &limit
 		}
 

@@ -25,8 +25,7 @@
     "format": "nx run-many -t format --outputStyle=stream",
     "theme": "nx run @runwisp/ui:dev --outputStyle=stream",
     "web-ui": "nx run @runwisp/web-ui:dev --outputStyle=stream",
-    "test": "nx run-many -t test --outputStyle=stream"
-  },
+    "test": "nx run-many -t test --outputStyle=stream"  },
   "devDependencies": {
     "nx": "^22.6.5",
     "prettier": "^3.8.3",

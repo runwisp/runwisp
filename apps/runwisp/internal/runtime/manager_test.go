@@ -20,9 +20,9 @@ import (
 
 func testTask(name string, policy model.ConcurrencyPolicy, limit int) *model.Task {
 	return &model.Task{
-		Name:        name,
-		Parallelism: limit,
-		OnOverlap:   policy,
+		Name:          name,
+		MaxConcurrent: limit,
+		OnOverlap:     policy,
 	}
 }
 
@@ -213,7 +213,7 @@ func TestRetryFiresOnFailure(t *testing.T) {
 	task := &model.Task{
 		Name:          "task1",
 		Run:           "echo hi",
-		Parallelism:   1,
+		MaxConcurrent: 1,
 		OnOverlap:     model.PolicySkip,
 		RetryAttempts: 2,
 		RetryDelay:    5 * time.Millisecond,
@@ -276,7 +276,7 @@ func TestRetrySkippedForCloudRun(t *testing.T) {
 	task := &model.Task{
 		Name:          "task1",
 		Run:           "echo hi",
-		Parallelism:   1,
+		MaxConcurrent: 1,
 		OnOverlap:     model.PolicySkip,
 		RetryAttempts: 3,
 		RetryDelay:    5 * time.Millisecond,
@@ -308,7 +308,7 @@ func TestRetryNotFiredWhenRestartPolicySet(t *testing.T) {
 	task := &model.Task{
 		Name:          "task1",
 		Run:           "echo hi",
-		Parallelism:   1,
+		MaxConcurrent: 1,
 		OnOverlap:     model.PolicySkip,
 		Restart:       model.RestartOnFailure,
 		RestartDelay:  5 * time.Millisecond,

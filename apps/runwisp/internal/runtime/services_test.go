@@ -22,7 +22,7 @@ func serviceTask(name string, instances int) *model.Task {
 		Kind:           model.KindService,
 		Run:            "echo hi",
 		Restart:        model.RestartAlways,
-		Parallelism:    1,
+		MaxConcurrent:  1,
 		OnOverlap:      model.PolicySkip,
 		Instances:      instances,
 		RestartDelay:   time.Millisecond,
@@ -270,10 +270,10 @@ func TestRestartServiceReplicasRejectsNonService(t *testing.T) {
 	defer jm.Shutdown()
 
 	jm.UpsertTask(&model.Task{
-		Name:        "cron-job",
-		Run:         "echo hi",
-		Parallelism: 1,
-		OnOverlap:   model.PolicySkip,
+		Name:          "cron-job",
+		Run:           "echo hi",
+		MaxConcurrent: 1,
+		OnOverlap:     model.PolicySkip,
 	})
 
 	err := jm.RestartServiceReplicas("cron-job")

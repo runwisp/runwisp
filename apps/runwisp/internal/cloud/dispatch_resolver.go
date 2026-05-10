@@ -53,10 +53,10 @@ func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.Execution
 	}
 
 	task := &model.Task{
-		Name:         taskName,
-		ExecutionDef: execDef,
-		Parallelism:  1,
-		OnOverlap:    model.PolicyQueue,
+		Name:          taskName,
+		ExecutionDef:  execDef,
+		MaxConcurrent: 1,
+		OnOverlap:     model.PolicyQueue,
 	}
 
 	if dispatch.Timeout > 0 {

@@ -593,7 +593,10 @@
               "timeout",
               "crashed",
               "skipped",
-              "log_overflow"
+              "log_overflow",
+              "queue_full",
+              "dst_skipped",
+              "daemon_stopped"
             ],
             "type": "string"
           },
@@ -937,15 +940,15 @@
             ],
             "type": "string"
           },
+          "max_concurrent": {
+            "format": "int64",
+            "type": "integer"
+          },
           "name": {
             "type": "string"
           },
           "on_overlap": {
             "type": "string"
-          },
-          "parallelism": {
-            "format": "int64",
-            "type": "integer"
           },
           "restart": {
             "type": "string"
@@ -963,6 +966,11 @@
           "api_trigger": {
             "type": "boolean"
           },
+          "backoff_reset_after": {
+            "description": "For services: a replica that runs at least this long resets the restart counter, in nanoseconds",
+            "format": "int64",
+            "type": "integer"
+          },
           "catch_up": {
             "description": "What to do when cron ticks are missed during downtime",
             "enum": [
@@ -978,6 +986,11 @@
           "description": {
             "type": "string"
           },
+          "graceful_stop": {
+            "description": "Window between SIGTERM and SIGKILL when a run is stopped, in nanoseconds",
+            "format": "int64",
+            "type": "integer"
+          },
           "group": {
             "type": "string"
           },
@@ -987,12 +1000,12 @@
             "type": "integer"
           },
           "keep_for": {
-            "description": "Retention window in nanoseconds. Positive values cap; -1 means \"unlimited\"; 0 means no cap was configured.",
+            "description": "Retention window in nanoseconds; 0 means no cap was configured",
             "format": "int64",
             "type": "integer"
           },
           "keep_runs": {
-            "description": "Row-count retention. Positive values cap; -1 means \"unlimited\"; 0 means no cap was configured.",
+            "description": "Row-count retention cap; 0 means no cap was configured",
             "format": "int64",
             "type": "integer"
           },
@@ -1005,7 +1018,7 @@
             "type": "string"
           },
           "log_max_size": {
-            "description": "Per-run log size cap in bytes. Positive values cap; -1 means \"unlimited\" (operator opted out).",
+            "description": "Per-run log size cap in bytes",
             "format": "int64",
             "type": "integer"
           },
@@ -1019,7 +1032,12 @@
             "type": "string"
           },
           "max_catch_up_runs": {
-            "description": "Cap on catch-up runs triggered when catch_up = all (0 inherits default, -1 means unlimited, positive caps)",
+            "description": "Cap on catch-up runs triggered when catch_up = all",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_concurrent": {
+            "description": "Maximum overlapping runs allowed for this task",
             "format": "int64",
             "type": "integer"
           },
@@ -1038,7 +1056,8 @@
             ],
             "type": "string"
           },
-          "parallelism": {
+          "queue_max": {
+            "description": "Maximum runs that can wait when on_overlap = queue",
             "format": "int64",
             "type": "integer"
           },
@@ -1089,7 +1108,7 @@
             "type": "integer"
           },
           "timezone": {
-            "description": "IANA timezone for cron evaluation; required (per-task or via scheduler.timezone) when cron is set",
+            "description": "IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone",
             "type": "string"
           }
         },
@@ -1103,7 +1122,7 @@
   },
   "info": {
     "title": "RunWisp API",
-    "version": "dev"
+    "version": "0.0.0-dev"
   },
   "openapi": "3.1.0",
   "paths": {

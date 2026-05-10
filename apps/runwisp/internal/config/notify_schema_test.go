@@ -40,7 +40,7 @@ coalesce_window = "30m"
 
 [tasks.backup-db]
 cron = "0 3 * * *"
-parallelism = 1
+max_concurrent = 1
 on_overlap = "queue"
 run = "backup.sh"
 notify_on_failure = ["ops"]
@@ -76,7 +76,7 @@ func TestNotifyConfig_DefaultInappRouteWithZeroConfig(t *testing.T) {
 	src := schedulerTZHeader + `
 [tasks.process-event-queue]
 cron        = "*/10 * * * *"
-parallelism = 1
+max_concurrent = 1
 on_overlap  = "queue"
 run         = "exit 1"
 `
@@ -199,7 +199,7 @@ channel         = "#default"
 
 [tasks.audit]
 cron              = "0 4 * * *"
-parallelism       = 1
+max_concurrent    = 1
 on_overlap        = "queue"
 run               = "audit.sh"
 notify_on_failure = ["slack:#ops"]
@@ -238,7 +238,7 @@ chat_id       = "-1001"
 
 [tasks.deploy]
 cron              = "0 9 * * 1"
-parallelism       = 1
+max_concurrent    = 1
 on_overlap        = "queue"
 run               = "deploy.sh"
 notify_on_failure = ["tg:-2002"]
@@ -266,21 +266,21 @@ webhook_url_env = "URL"
 
 [tasks.a]
 cron              = "* * * * *"
-parallelism       = 1
+max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["slack:#ops"]
 
 [tasks.b]
 cron              = "* * * * *"
-parallelism       = 1
+max_concurrent    = 1
 on_overlap        = "queue"
 run               = "y"
 notify_on_failure = ["slack:#ops"]
 
 [tasks.c]
 cron              = "* * * * *"
-parallelism       = 1
+max_concurrent    = 1
 on_overlap        = "queue"
 run               = "z"
 notify_on_failure = ["slack:#ops", "slack:#fyi"]
@@ -327,7 +327,7 @@ func TestInlineToken_UnknownParent(t *testing.T) {
 	src := `
 [tasks.x]
 cron              = "* * * * *"
-parallelism       = 1
+max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["slack:#ops"]
@@ -341,7 +341,7 @@ func TestInlineToken_InappCannotBeOverridden(t *testing.T) {
 	src := `
 [tasks.x]
 cron              = "* * * * *"
-parallelism       = 1
+max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["inapp:foo"]
@@ -360,7 +360,7 @@ webhook_url_env = "URL"
 
 [tasks.x]
 cron              = "* * * * *"
-parallelism       = 1
+max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["slack:"]
@@ -379,7 +379,7 @@ webhook_url_env = "URL"
 
 [tasks.x]
 cron              = "* * * * *"
-parallelism       = 1
+max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["slack:ops"]
@@ -413,7 +413,7 @@ append_notifiers = []
 
 [tasks.backup-db]
 cron = "0 3 * * *"
-parallelism = 1
+max_concurrent = 1
 on_overlap = "queue"
 run = "backup.sh"
 notify_on_failure = ["ops"]
@@ -439,7 +439,7 @@ append_notifiers = ["slack-ops"]
 
 [tasks.backup-db]
 cron = "0 3 * * *"
-parallelism = 1
+max_concurrent = 1
 on_overlap = "queue"
 run = "backup.sh"
 `

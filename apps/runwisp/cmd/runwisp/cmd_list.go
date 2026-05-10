@@ -60,7 +60,7 @@ func runList() error {
 		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n",
 			task.Name,
 			schedule,
-			task.Parallelism,
+			task.MaxConcurrent,
 			task.OnOverlap,
 			api,
 			desc,

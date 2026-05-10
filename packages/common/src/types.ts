@@ -22,13 +22,18 @@ export const END_REASONS = [
   "crashed",
   "skipped",
   "log_overflow",
+  "queue_full",
+  "dst_skipped",
+  "daemon_stopped",
 ] as const;
 export type EndReason = (typeof END_REASONS)[number];
 
 /**
  * End reasons treated as failures by retry policy, dashboards, and the
  * "Last run failed" UI surface. Mirrors `retry.IsFailureReason` in the Go
- * runtime — keep them in sync.
+ * runtime — keep them in sync. queue_full / dst_skipped are policy outcomes,
+ * not failures, so they intentionally stay out of this list (alongside
+ * skipped). daemon_stopped is operator-driven shutdown, not a task fault.
  */
 export const FAILURE_END_REASONS = [
   "failed",

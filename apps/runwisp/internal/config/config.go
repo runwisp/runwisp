@@ -43,7 +43,7 @@ func decode(data []byte) (*Config, error) {
 	dec := toml.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&raw); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+		return nil, formatDecodeError(err)
 	}
 
 	taskNames := make([]string, 0, len(raw.Tasks))
@@ -97,6 +97,10 @@ func decode(data []byte) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	daemon, err := raw.Daemon.toDaemon()
+	if err != nil {
+		return nil, err
+	}
 
 	notifyCfg, err := raw.toNotifyConfig(taskNames, raw.Tasks, serviceNames, raw.Services)
 	if err != nil {
@@ -107,7 +111,7 @@ func decode(data []byte) (*Config, error) {
 		Tasks:     tasks,
 		Defaults:  defaults,
 		Storage:   storage,
-		Daemon:    raw.Daemon,
+		Daemon:    daemon,
 		Notify:    notifyCfg,
 		Scheduler: Scheduler{Timezone: raw.Scheduler.Timezone},
 	}, nil
@@ -126,6 +130,12 @@ func Validate(cfg *Config) error {
 	if err := validateKeepFor("defaults.keep_for", cfg.Defaults.KeepFor); err != nil {
 		return err
 	}
+	if cfg.Defaults.BackoffResetAfter < 0 {
+		return fmt.Errorf("invalid defaults.backoff_reset_after: must be a positive duration")
+	}
+	if cfg.Daemon.ShutdownTimeout < 0 {
+		return fmt.Errorf("invalid daemon.shutdown_timeout: must be a positive duration")
+	}
 	if _, err := ResolveTimezone("scheduler.timezone", cfg.Scheduler.Timezone); err != nil {
 		return err
 	}
@@ -135,9 +145,6 @@ func Validate(cfg *Config) error {
 		if err := validateTask(&cfg.Tasks[i], seen); err != nil {
 			return err
 		}
-	}
-	if err := validateSchedulerTimezone(cfg); err != nil {
-		return err
 	}
 	if err := validateNotify(&cfg.Notify); err != nil {
 		return err
@@ -162,8 +169,20 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 		return fmt.Errorf("task run command is required for task: %s", task.Name)
 	}
 
-	if task.Parallelism <= 0 {
-		return fmt.Errorf("invalid parallelism for task %s: must be greater than zero", task.Name)
+	if task.MaxConcurrent < 0 {
+		return fmt.Errorf("invalid max_concurrent for task %s: must be a positive integer", task.Name)
+	}
+	if task.MaxConcurrent > MaxConcurrentCap {
+		return fmt.Errorf("invalid max_concurrent for task %s: %d exceeds the cap of %d", task.Name, task.MaxConcurrent, MaxConcurrentCap)
+	}
+	if task.QueueMax < 0 {
+		return fmt.Errorf("invalid queue_max for task %s: must be a positive integer", task.Name)
+	}
+	if task.QueueMax > QueueMaxCap {
+		return fmt.Errorf("invalid queue_max for task %s: %d exceeds the cap of %d", task.Name, task.QueueMax, QueueMaxCap)
+	}
+	if task.GracefulStop < 0 {
+		return fmt.Errorf("invalid graceful_stop for task %s: must be zero or a positive duration", task.Name)
 	}
 
 	if err := requireOneOf(fmt.Sprintf("on_overlap for task %s", task.Name),
@@ -198,13 +217,22 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 			task.RestartBackoff, validRestartBackoff, true); err != nil {
 			return err
 		}
+		if task.BackoffResetAfter < 0 {
+			return fmt.Errorf("invalid backoff_reset_after for service %s: must be a positive duration", task.Name)
+		}
 	}
 
 	if task.RetryAttempts < 0 {
 		return fmt.Errorf("invalid retry_attempts for task %s: must be non-negative", task.Name)
 	}
-	if task.MaxCatchUpRuns < -1 {
-		return fmt.Errorf("invalid max_catch_up_runs for task %s: must be -1 (unlimited), 0 (inherit default), or a positive count", task.Name)
+	if task.RetryAttempts > RetryAttemptsCap {
+		return fmt.Errorf("invalid retry_attempts for task %s: %d exceeds the cap of %d", task.Name, task.RetryAttempts, RetryAttemptsCap)
+	}
+	if task.MaxCatchUpRuns < 0 {
+		return fmt.Errorf("invalid max_catch_up_runs for task %s: must be a positive integer", task.Name)
+	}
+	if task.MaxCatchUpRuns > MaxCatchUpRunsCap {
+		return fmt.Errorf("invalid max_catch_up_runs for task %s: %d exceeds the cap of %d", task.Name, task.MaxCatchUpRuns, MaxCatchUpRunsCap)
 	}
 	if err := validateKeepRuns(fmt.Sprintf("keep_runs for task %s", task.Name), task.KeepRuns); err != nil {
 		return err
@@ -234,52 +262,24 @@ func ResolveTimezone(scope, name string) (*time.Location, error) {
 	return loc, nil
 }
 
-// validateSchedulerTimezone enforces that any cron-driven task has an explicit
-// timezone available — either its own `timezone =` or `[scheduler] timezone`.
-// We refuse to silently default to UTC because "0 2 * * *" silently running at
-// 02:00 UTC instead of the operator's local 02:00 is the kind of failure
-// Prime Directive #1 forbids. Manual-only tasks (no cron) and services are
-// unaffected.
-func validateSchedulerTimezone(cfg *Config) error {
-	if cfg.Scheduler.Timezone != "" {
-		return nil
-	}
-	for i := range cfg.Tasks {
-		task := &cfg.Tasks[i]
-		if task.Cron == "" || task.Timezone != "" {
-			continue
-		}
-		return fmt.Errorf(
-			"task %q has cron = %q but neither [scheduler] timezone nor a per-task timezone is set; "+
-				"set [scheduler] timezone = \"UTC\" (or a specific IANA zone like \"America/New_York\") so cron firings are unambiguous",
-			task.Name, task.Cron,
-		)
-	}
-	return nil
-}
-
-// validateKeepRuns is a defence-in-depth check on the post-parse sentinel.
-// Valid values after parseKeepRuns:
-//   - 0: omitted, inherit defaults
-//   - -1: explicit unlimited (parsed from the "unlimited" keyword)
-//   - >0: keep this many runs.
-//
-// Anything below -1 indicates the parser was bypassed or mis-used.
+// validateKeepRuns rejects negative values and values above the keep_runs cap.
+// Zero is the post-parse sentinel for "omitted, inherit defaults"; any
+// positive integer up to KeepRunsCap is accepted.
 func validateKeepRuns(scope string, n int) error {
-	if n < -1 {
-		return fmt.Errorf("invalid %s: must be a positive integer or \"unlimited\"", scope)
+	if n < 0 {
+		return fmt.Errorf("invalid %s: must be a positive integer", scope)
+	}
+	if n > KeepRunsCap {
+		return fmt.Errorf("invalid %s: %d exceeds the cap of %d", scope, n, KeepRunsCap)
 	}
 	return nil
 }
 
-// validateKeepFor is a defence-in-depth check on the post-parse sentinel.
-// Valid values after parseKeepFor:
-//   - 0: omitted, inherit defaults
-//   - -1: explicit unlimited (parsed from the "unlimited" keyword)
-//   - >0: retention window.
+// validateKeepFor rejects negative durations. Zero is the post-parse sentinel
+// for "omitted, inherit defaults"; any positive duration is accepted.
 func validateKeepFor(scope string, d time.Duration) error {
-	if d < -1 {
-		return fmt.Errorf("invalid %s: must be a positive duration or \"unlimited\"", scope)
+	if d < 0 {
+		return fmt.Errorf("invalid %s: must be a positive duration", scope)
 	}
 	return nil
 }
@@ -321,32 +321,63 @@ var (
 	defaultRestartDelay   = time.Second
 )
 
-// DefaultMaxCatchUpRuns caps the per-task `catch_up = "all"` backfill at startup
-// when the operator hasn't picked their own number. A two-week outage on a
-// `* * * * *` task would otherwise queue 20,160 catch-up runs and bury the
-// scheduler; 100 keeps the backlog visible without serial-executing days of
-// it. Operators who want every tick set max_catch_up_runs = -1.
-const DefaultMaxCatchUpRuns = 100
+// Hard caps for integer config fields. Above-cap values fail config load with
+// a numeric error message — there's no silent clamping. The caps are
+// deliberately generous: any operator who needs more is almost certainly
+// configuring something pathological and should rethink, not raise the cap.
+const (
+	MaxConcurrentCap  = 1024
+	QueueMaxCap       = 10000
+	MaxCatchUpRunsCap = 10000
+	KeepRunsCap       = 1_000_000
+	RetryAttemptsCap  = 100
+)
 
-// ApplyDefaults fills in zero-valued fields with sensible defaults.
+// Built-in defaults applied by ApplyDefaults when a field is omitted entirely.
+const (
+	DefaultMaxCatchUpRuns    = 100
+	DefaultQueueMax          = 100
+	DefaultGracefulStop      = 5 * time.Second
+	DefaultDaemonShutdown    = 10 * time.Second
+	DefaultBackoffResetAfter = 60 * time.Second
+)
+
+// ApplyDefaults fills in zero-valued fields with sensible defaults. The
+// scheduler timezone, in particular, falls back to the host's system zone
+// when the operator left [scheduler] timezone unset — so a fresh install
+// just works without an explicit choice, while the resolved zone is still
+// surfaced in the TUI banner and Web UI header.
 func ApplyDefaults(cfg *Config) {
+	if cfg.Scheduler.Timezone == "" {
+		cfg.Scheduler.Timezone = ResolveSystemTimezone()
+		cfg.Scheduler.Source = TimezoneSourceSystem
+	} else {
+		cfg.Scheduler.Source = TimezoneSourceConfig
+	}
+
+	if cfg.Daemon.ShutdownTimeout == 0 {
+		cfg.Daemon.ShutdownTimeout = DefaultDaemonShutdown
+	}
+	if cfg.Defaults.BackoffResetAfter == 0 {
+		cfg.Defaults.BackoffResetAfter = DefaultBackoffResetAfter
+	}
+
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
 
 		if task.Kind.IsService() {
-			applyServiceDefaults(task)
+			applyServiceDefaults(task, cfg.Defaults.BackoffResetAfter)
 		} else {
 			applyTaskDefaults(task)
 		}
 		if task.CatchUp == "" {
 			task.CatchUp = model.MissedRunLatest
 		}
-		// max_catch_up_runs tri-state mirrors keep_runs:
-		//   0  → inherit built-in default (DefaultMaxCatchUpRuns)
-		//  -1  → explicit unlimited (no cap)
-		//  >0  → explicit cap
 		if task.MaxCatchUpRuns == 0 {
 			task.MaxCatchUpRuns = DefaultMaxCatchUpRuns
+		}
+		if task.GracefulStop == 0 {
+			task.GracefulStop = DefaultGracefulStop
 		}
 
 		if task.Timeout == 0 {
@@ -358,17 +389,9 @@ func ApplyDefaults(cfg *Config) {
 		if task.LogOnFull == "" && cfg.Defaults.LogOnFull != "" {
 			task.LogOnFull = cfg.Defaults.LogOnFull
 		}
-		// keep_runs tri-state:
-		//   0  → inherit default
-		//  -1  → explicit unlimited (do not pull from defaults)
-		//  >0  → explicit cap
 		if task.KeepRuns == 0 && cfg.Defaults.KeepRuns != 0 {
 			task.KeepRuns = cfg.Defaults.KeepRuns
 		}
-		// keep_for tri-state mirrors keep_runs:
-		//   0  → inherit default
-		//  -1  → explicit unlimited (do not pull from defaults)
-		//  >0  → explicit window
 		if task.KeepFor == 0 && cfg.Defaults.KeepFor != 0 {
 			task.KeepFor = cfg.Defaults.KeepFor
 		}
@@ -386,23 +409,26 @@ func applyTaskDefaults(task *model.Task) {
 	if task.Group == "" {
 		task.Group = "Tasks"
 	}
-	if task.Parallelism == 0 {
-		task.Parallelism = 1
+	if task.MaxConcurrent == 0 {
+		task.MaxConcurrent = 1
 	}
 	if task.OnOverlap == "" {
 		task.OnOverlap = model.PolicyQueue
 	}
+	if task.QueueMax == 0 {
+		task.QueueMax = DefaultQueueMax
+	}
 }
 
-func applyServiceDefaults(task *model.Task) {
+func applyServiceDefaults(task *model.Task, defaultBackoffReset time.Duration) {
 	if task.Group == "" {
 		task.Group = "Services"
 	}
 	if task.OnOverlap == "" {
 		task.OnOverlap = model.PolicySkip
 	}
-	if task.Parallelism == 0 {
-		task.Parallelism = 1
+	if task.MaxConcurrent == 0 {
+		task.MaxConcurrent = 1
 	}
 	if task.Instances == 0 {
 		task.Instances = 1
@@ -412,5 +438,8 @@ func applyServiceDefaults(task *model.Task) {
 	}
 	if task.RestartBackoff == "" {
 		task.RestartBackoff = model.BackoffExponential
+	}
+	if task.BackoffResetAfter == 0 {
+		task.BackoffResetAfter = defaultBackoffReset
 	}
 }

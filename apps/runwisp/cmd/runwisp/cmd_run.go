@@ -44,11 +44,11 @@ echo "This is a built-in demo task."
 echo "Create a runwisp.toml file to define your own tasks:"
 echo "  runwisp init"
 `,
-	Cron:        "* * * * *",
-	Timezone:    "UTC",
-	APITrigger:  true,
-	Parallelism: 1,
-	OnOverlap:   model.PolicySkip,
+	Cron:          "* * * * *",
+	Timezone:      "UTC",
+	APITrigger:    true,
+	MaxConcurrent: 1,
+	OnOverlap:     model.PolicySkip,
 }
 
 func runDaemon(mode daemonMode) error {

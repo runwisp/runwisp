@@ -14,7 +14,7 @@ import (
 	"github.com/runwisp/runwisp/internal/runtime/services"
 )
 
-// DefaultConcurrencyLimit is used when a task does not configure parallelism.
+// DefaultConcurrencyLimit is used when a task does not configure max_concurrent.
 const DefaultConcurrencyLimit = 1
 
 // ActiveRun holds context for an in-flight run.
@@ -97,10 +97,10 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 	}
 }
 
-// getConcurrencyLimit returns the configured parallelism, defaulting to 1.
+// getConcurrencyLimit returns the configured max_concurrent, defaulting to 1.
 func (m *defaultTaskManager) getConcurrencyLimit(task *model.Task) int {
-	if task.Parallelism == 0 {
+	if task.MaxConcurrent == 0 {
 		return DefaultConcurrencyLimit
 	}
-	return task.Parallelism
+	return task.MaxConcurrent
 }
