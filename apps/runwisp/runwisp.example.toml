@@ -15,11 +15,15 @@ timezone = "UTC"
 
 [defaults]
 timeout      = "1h"
+# log_max_size: positive size = cap; "unlimited" = no cap; omit = inherit
+# the built-in 100MB. Bare 0 / "0" / "0mb" are rejected at config load.
 log_max_size = "100mb"
 log_on_full  = "drop_old"
-# keep_runs: 0 (or omit) = inherit; -1 = unlimited; positive N = keep N.
+# keep_runs: positive integer = cap; "unlimited" = no cap; omit = inherit.
+# Bare 0 and negative integers are rejected — use the keyword.
 keep_runs    = 50
-# keep_for: omit/empty = inherit; "unlimited" = uncapped; duration = keep that long.
+# keep_for: positive duration (d/w/h/m) = cap; "unlimited" = no cap;
+# omit = inherit. Empty "" and zero/negative durations are rejected.
 keep_for     = "30d"
 
 

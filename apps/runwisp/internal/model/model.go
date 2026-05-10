@@ -46,11 +46,11 @@ type Task struct {
 	RetryDelay    time.Duration `toml:"-"                        json:"retry_delay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
 	RetryBackoff  string        `toml:"retry_backoff,omitempty"  json:"retry_backoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive retries"`
 
-	LogMaxSize int64  `toml:"-"                     json:"log_max_size,omitempty" doc:"Per-task log size cap, in bytes"`
+	LogMaxSize int64  `toml:"-"                     json:"log_max_size,omitempty" doc:"Per-run log size cap in bytes. Positive values cap; -1 means \"unlimited\" (operator opted out)."`
 	LogOnFull  string `toml:"log_on_full,omitempty" json:"log_on_full,omitempty" enum:"drop_new,drop_old,kill_task" doc:"What to do when log output exceeds log_max_size"`
 
-	KeepRuns int           `toml:"keep_runs,omitempty" json:"keep_runs,omitempty"`
-	KeepFor  time.Duration `toml:"-"                   json:"keep_for,omitempty" doc:"Retention window, in nanoseconds"`
+	KeepRuns int           `toml:"keep_runs,omitempty" json:"keep_runs,omitempty" doc:"Row-count retention. Positive values cap; -1 means \"unlimited\"; 0 means no cap was configured."`
+	KeepFor  time.Duration `toml:"-"                   json:"keep_for,omitempty" doc:"Retention window in nanoseconds. Positive values cap; -1 means \"unlimited\"; 0 means no cap was configured."`
 
 	Run          string       `toml:"run,omitempty" json:"-"`
 	ExecutionDef ExecutionDef `toml:"-"             json:"-"`

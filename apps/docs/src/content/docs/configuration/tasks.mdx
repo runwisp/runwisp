@@ -87,16 +87,17 @@ on the [Retries & timeouts](/concepts/retries/) page.
 
 ## Logs & retention
 
-| Key            | Type      | Default                     | What it does                                                                                                                              |
-| -------------- | --------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `log_max_size` | byte size | `100MB`                     | Per-run log cap. Units: `b`, `kb`, `mb`, `gb`, `tb`. `0` is unbounded.                                                                    |
-| `log_on_full`  | enum      | `"drop_old"`                | What to do at the cap: `drop_new`, `drop_old`, `kill_task`.                                                                               |
-| `keep_runs`    | int       | inherited from `[defaults]` | Keep the N most recent runs for this task. `0` (or omitted) inherits the default; `-1` is **explicit unlimited**; positive `N` keeps `N`. |
-| `keep_for`     | duration  | inherited from `[defaults]` | Delete runs older than this. Accepts `d` and `w` units (`30d`, `2w`). Omit to inherit; `"unlimited"` is **explicit unlimited**.           |
+| Key            | Type          | Default                     | What it does                                                                                                                                               |
+| -------------- | ------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `log_max_size` | byte size     | `100MB`                     | Per-run log cap. Units: `b`, `kb`, `mb`, `gb`, `tb`. Use `"unlimited"` to opt out; bare `0` is rejected.                                                   |
+| `log_on_full`  | enum          | `"drop_old"`                | What to do at the cap: `drop_new`, `drop_old`, `kill_task`.                                                                                                |
+| `keep_runs`    | int / keyword | inherited from `[defaults]` | Keep the N most recent runs for this task. Positive `N` caps; `"unlimited"` opts out; omit to inherit. Bare `0` and negatives are rejected at config load. |
+| `keep_for`     | duration      | inherited from `[defaults]` | Delete runs older than this. Accepts `d` and `w` units (`30d`, `2w`). `"unlimited"` opts out; omit to inherit. Zero and negatives are rejected.            |
 
 Both `keep_runs` and `keep_for` apply if both are set; the stricter one
 wins in practice. See [Logs & retention](/concepts/logs/) for the full
-picture.
+picture, including the `.prev` rotation lifecycle and the fixed
+one-hour cleanup cadence.
 
 ## Notifications
 

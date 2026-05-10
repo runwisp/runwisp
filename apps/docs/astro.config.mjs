@@ -72,6 +72,7 @@ export default defineConfig({
                         { label: "[defaults]", slug: "configuration/defaults" },
                         { label: "[tasks.*]", slug: "configuration/tasks" },
                         { label: "[services.*]", slug: "configuration/services" },
+                        { label: "Validation rules", slug: "configuration/validation" },
                     ],
                 },
                 {

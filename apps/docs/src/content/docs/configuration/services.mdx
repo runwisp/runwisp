@@ -82,12 +82,16 @@ service that's already running gets cleanly rejected.
 
 The log story is identical to tasks — same fields, same defaults:
 
-| Key            | Type      | Default      |
-| -------------- | --------- | ------------ |
-| `log_max_size` | byte size | `100MB`      |
-| `log_on_full`  | enum      | `"drop_old"` |
-| `keep_runs`    | int       | inherited    |
-| `keep_for`     | duration  | inherited    |
+| Key            | Type          | Default      |
+| -------------- | ------------- | ------------ |
+| `log_max_size` | byte size     | `100MB`      |
+| `log_on_full`  | enum          | `"drop_old"` |
+| `keep_runs`    | int / keyword | inherited    |
+| `keep_for`     | duration      | inherited    |
+
+The same accept/reject rules apply as on tasks: positive numbers cap,
+`"unlimited"` opts out, omitting inherits, and bare `0` / negative
+values are rejected at config load.
 
 A service's run history can grow much faster than a task's because each
 crash is a new run row. Set `keep_runs` defensively — `200` is a
