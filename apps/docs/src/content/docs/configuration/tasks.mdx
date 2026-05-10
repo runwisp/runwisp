@@ -44,15 +44,19 @@ the daemon as root unless you genuinely need it.
 
 ## Scheduling
 
-| Key        | Type   | Default    | What it does                                                                                                                                   |
-| ---------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cron`     | string | _(none)_   | 5-field cron expression. Supports `@hourly`, `@every 1h30m`.                                                                                   |
-| `timezone` | string | inherited  | IANA timezone for this task's cron evaluation (e.g. `"America/New_York"`). Falls back to `[scheduler] timezone`, which itself defaults to UTC. |
-| `catch_up` | enum   | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                          |
+| Key                 | Type   | Default    | What it does                                                                                                                                                                            |
+| ------------------- | ------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cron`              | string | _(none)_   | 5-field cron expression. Supports `@hourly`, `@every 1h30m`.                                                                                                                            |
+| `timezone`          | string | inherited  | IANA timezone for this task's cron evaluation (e.g. `"America/New_York"`). Falls back to `[scheduler] timezone`, which is **required** when at least one cron task lacks a per-task TZ. |
+| `catch_up`          | enum   | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                                   |
+| `max_catch_up_runs` | int    | `100`      | Cap on catch-up runs when `catch_up = "all"` (`0` inherits, `-1` unlimited). See [scheduling page](/concepts/scheduling/#capping-the-backfill-max_catch_up_runs).                       |
 
 Without a `cron`, the task is **manual-only** — it runs only when
 triggered explicitly. That's a valid pattern for one-shot deploy hooks
-and similar.
+and similar. **Manual-only is not the same as `catch_up = "skip"`**:
+the former is unscheduled, the latter still fires on cron going
+forward and just discards backfill — see the
+[comparison](/concepts/scheduling/#manual-only-vs-catch_up--skip).
 
 See [How scheduling works](/concepts/scheduling/) for the full cron
 grammar and DST behaviour, and the catchup table.
@@ -70,16 +74,18 @@ right.
 
 ## Retries & timeout
 
-| Key              | Type     | Default                     | What it does                                                            |
-| ---------------- | -------- | --------------------------- | ----------------------------------------------------------------------- |
-| `retry_attempts` | int      | `0`                         | Additional attempts after the initial failure. Must be `>= 0`.          |
-| `retry_delay`    | duration | `5s` (when retries are on)  | Base delay between attempts. Go duration string.                        |
-| `retry_backoff`  | enum     | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`. |
-| `timeout`        | duration | inherited from `[defaults]` | Per-attempt wall-clock cap. `0` or unset means no timeout.              |
+| Key              | Type     | Default                                 | What it does                                                                                                                                |
+| ---------------- | -------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `retry_attempts` | int      | `0`                                     | Additional attempts after the initial failure. Must be `>= 0`.                                                                              |
+| `retry_delay`    | duration | **`5s` only when `retry_attempts > 0`** | Base delay between attempts. Conditional default: with retries off the field is unused; with retries on, an omitted value resolves to `5s`. |
+| `retry_backoff`  | enum     | `"constant"`                            | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                     |
+| `timeout`        | duration | inherited from `[defaults]`             | Per-attempt wall-clock cap. `0` or unset means no timeout.                                                                                  |
 
 A retry only fires for `failed` / `timeout` / `crashed`. Manual stops
-and `on_overlap = "terminate"` end the chain. Full table of formulas
-on the [Retries & timeouts](/concepts/retries/) page.
+and `on_overlap = "terminate"` end the chain — see the
+[terminate ⇄ retries callout](/concepts/concurrency/#terminate). Full
+table of formulas on the
+[Retries & timeouts](/concepts/retries/) page.
 
 `restart` may be set to `"never"` (default) or `"on_failure"`. Setting
 `restart = "always"` on a task is **rejected** at config load — use

@@ -8,8 +8,11 @@ max_size       = "5gb"
 min_free_space = "500mb"
 
 # Cron expressions are evaluated in this timezone unless a [tasks.*] entry
-# overrides it. UTC is the default — local-TZ scheduling is opt-in so DST
-# can never silently double-fire or skip "0 2 * * *".
+# overrides it with its own timezone =. The daemon refuses to start when a
+# cron task has neither a per-task timezone nor a [scheduler] timezone, so
+# "0 2 * * *" is never silently bound to a timezone the operator didn't pick.
+# UTC is DST-free and a safe baseline; pick a local IANA zone if 2 AM should
+# follow your wall clock.
 [scheduler]
 timezone = "UTC"
 
@@ -52,6 +55,11 @@ timezone    = "America/New_York"
 timeout     = "30m"
 on_overlap  = "skip"
 keep_for    = "14d"
+# A two-week outage on a daily backup is "run the missed days, but cap so
+# weeks of backlog don't bury the queue". 0 (omit) inherits the 100-run
+# default; -1 backfills every missed tick; positive N caps at N.
+catch_up          = "all"
+max_catch_up_runs = 14
 run = """
 set -eu
 tables=("users" "transactions" "audit_logs" "sessions" "metadata")

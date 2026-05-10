@@ -115,6 +115,19 @@ Things to know:
 - The cancelled run shows up in history with end reason `stopped`, so
   you can audit how often the policy actually fires.
 
+:::caution[`terminate` ends any in-flight retry chain]
+A run cancelled by `terminate` records `end_reason = "stopped"`, and
+**stopped runs are never retried** — the system treats it the same as
+a manual stop from the CLI/UI. So `on_overlap = "terminate"` paired
+with `retry_attempts = 3` does **not** "stop the old, restart the new
+with 3 retries"; it stops the old (no retries) and starts the new as
+a fresh chain. If you depend on retries for transient failures, pick
+`queue` or `skip` instead, or model the work so the latest invocation
+is genuinely the only one that matters. See
+[Retries & timeouts](/concepts/retries/#interactions) for the
+end-reason rules.
+:::
+
 ## Decision matrix
 
 | Situation                                             | Policy      |

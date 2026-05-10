@@ -30,6 +30,12 @@ const starterConfig = `# RunWisp configuration.
 # Every task needs a name (the table key) and a "run" command.
 # Everything else has sensible defaults — add a key only when you need it.
 
+# Cron expressions need an explicit timezone so "0 2 * * *" can never silently
+# run at the wrong 2 AM. Set [scheduler] timezone once for every cron task, or
+# pin per-task with timezone = "...". UTC is DST-free and a safe baseline.
+[scheduler]
+timezone = "UTC"
+
 [tasks.hello]
 description = "A minimal example task you can trigger from the UI or CLI."
 run = "echo hello from runwisp"
@@ -50,6 +56,7 @@ run = "echo hello from runwisp"
 # Full list of per-task keys:
 #   group, description
 #   cron, api_trigger, catch_up          # latest | all | skip
+#   max_catch_up_runs                    # 0 inherit (100), -1 unlimited, N cap
 #   timeout, parallelism, on_overlap     # restart=always is rejected on tasks; use [services.*]
 #   retry_attempts, retry_delay, retry_backoff   # constant | linear | exponential
 #   log_max_size, log_on_full            # drop_new | drop_old | kill_task

@@ -39,6 +39,9 @@ func TestLoad(t *testing.T) {
 [daemon]
 allow_cloud_dispatch = true
 
+[scheduler]
+timezone = "UTC"
+
 [defaults]
 timeout = "30m"
 log_max_size = "200mb"
@@ -79,6 +82,9 @@ run = "echo hello"
 
 	t.Run("api_trigger explicit false is preserved", func(t *testing.T) {
 		path := writeTOML(t, `
+[scheduler]
+timezone = "UTC"
+
 [tasks.silent]
 api_trigger = false
 cron = "*/5 * * * *"
@@ -628,6 +634,127 @@ run = "echo hi"
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		assert.Equal(t, int64(-1), cfg.Tasks[0].LogMaxSize)
+	})
+}
+
+func TestSchedulerTimezoneRequiredForCron(t *testing.T) {
+	t.Run("cron task without any timezone is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.nightly]
+cron = "0 2 * * *"
+run  = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "[scheduler] timezone")
+	})
+
+	t.Run("scheduler timezone covers all cron tasks", func(t *testing.T) {
+		path := writeTOML(t, `
+[scheduler]
+timezone = "UTC"
+
+[tasks.nightly]
+cron = "0 2 * * *"
+run  = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		assert.Equal(t, "UTC", cfg.Scheduler.Timezone)
+	})
+
+	t.Run("per-task timezone is enough without scheduler default", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.nightly]
+cron     = "0 2 * * *"
+timezone = "America/New_York"
+run      = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+	})
+
+	t.Run("manual-only task without cron does not require timezone", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.deploy]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.NoError(t, err)
+	})
+
+	t.Run("services do not require scheduler timezone", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.web]
+run = "exec ./bin/web"
+`)
+		_, err := Load(path)
+		require.NoError(t, err)
+	})
+}
+
+func TestMaxCatchUpRunsTriState(t *testing.T) {
+	t.Run("omitted defaults to DefaultMaxCatchUpRuns", func(t *testing.T) {
+		path := writeTOML(t, `
+[scheduler]
+timezone = "UTC"
+
+[tasks.t]
+cron = "* * * * *"
+catch_up = "all"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, DefaultMaxCatchUpRuns, cfg.Tasks[0].MaxCatchUpRuns)
+	})
+
+	t.Run("explicit -1 means unlimited", func(t *testing.T) {
+		path := writeTOML(t, `
+[scheduler]
+timezone = "UTC"
+
+[tasks.t]
+cron              = "* * * * *"
+catch_up          = "all"
+max_catch_up_runs = -1
+run               = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, -1, cfg.Tasks[0].MaxCatchUpRuns)
+	})
+
+	t.Run("positive value is preserved", func(t *testing.T) {
+		path := writeTOML(t, `
+[scheduler]
+timezone = "UTC"
+
+[tasks.t]
+cron              = "* * * * *"
+max_catch_up_runs = 50
+run               = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 50, cfg.Tasks[0].MaxCatchUpRuns)
+	})
+
+	t.Run("values below -1 are rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[scheduler]
+timezone = "UTC"
+
+[tasks.t]
+cron              = "* * * * *"
+max_catch_up_runs = -2
+run               = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "max_catch_up_runs")
 	})
 }
 

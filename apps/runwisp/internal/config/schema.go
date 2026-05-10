@@ -121,10 +121,11 @@ type taskWire struct {
 	Group       string `toml:"group,omitempty"`
 	Description string `toml:"description,omitempty"`
 
-	Cron       string                `toml:"cron,omitempty"`
-	Timezone   string                `toml:"timezone,omitempty"`
-	APITrigger *bool                 `toml:"api_trigger,omitempty"`
-	CatchUp    model.MissedRunPolicy `toml:"catch_up,omitempty"`
+	Cron           string                `toml:"cron,omitempty"`
+	Timezone       string                `toml:"timezone,omitempty"`
+	APITrigger     *bool                 `toml:"api_trigger,omitempty"`
+	CatchUp        model.MissedRunPolicy `toml:"catch_up,omitempty"`
+	MaxCatchUpRuns int                   `toml:"max_catch_up_runs,omitempty"`
 
 	Timeout     string                  `toml:"timeout,omitempty"`
 	Restart     model.RestartPolicy     `toml:"restart,omitempty"`
@@ -293,26 +294,27 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 		return model.Task{}, err
 	}
 	return model.Task{
-		Name:          name,
-		Kind:          model.KindTask,
-		Group:         w.Group,
-		Description:   w.Description,
-		Cron:          w.Cron,
-		Timezone:      w.Timezone,
-		APITrigger:    apiTrigger,
-		CatchUp:       w.CatchUp,
-		Timeout:       timeout,
-		Restart:       w.Restart,
-		Parallelism:   w.Parallelism,
-		OnOverlap:     w.OnOverlap,
-		RetryAttempts: w.RetryAttempts,
-		RetryDelay:    retryDelay,
-		RetryBackoff:  w.RetryBackoff,
-		LogMaxSize:    logMaxSize,
-		LogOnFull:     w.LogOnFull,
-		KeepRuns:      keepRuns,
-		KeepFor:       keepFor,
-		Run:           w.Run,
+		Name:           name,
+		Kind:           model.KindTask,
+		Group:          w.Group,
+		Description:    w.Description,
+		Cron:           w.Cron,
+		Timezone:       w.Timezone,
+		APITrigger:     apiTrigger,
+		CatchUp:        w.CatchUp,
+		MaxCatchUpRuns: w.MaxCatchUpRuns,
+		Timeout:        timeout,
+		Restart:        w.Restart,
+		Parallelism:    w.Parallelism,
+		OnOverlap:      w.OnOverlap,
+		RetryAttempts:  w.RetryAttempts,
+		RetryDelay:     retryDelay,
+		RetryBackoff:   w.RetryBackoff,
+		LogMaxSize:     logMaxSize,
+		LogOnFull:      w.LogOnFull,
+		KeepRuns:       keepRuns,
+		KeepFor:        keepFor,
+		Run:            w.Run,
 	}, nil
 }
 

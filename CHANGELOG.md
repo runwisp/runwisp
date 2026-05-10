@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`max_catch_up_runs` caps the `catch_up = "all"` backfill (default 100).** A high-frequency task on `catch_up = "all"` plus a long outage used to queue every missed tick at startup — a `* * * * *` task down for a day produced 1 440 runs queued instantly. The new per-task `max_catch_up_runs` keeps the backlog visible without burying the scheduler: `0` (or omitted) inherits the built-in default of 100, `-1` is explicit unlimited (the old behaviour), and a positive `N` caps at `N`. When the cap fires the daemon logs a warning naming the task, the total missed count, and how many were dropped, so silenced ticks are never invisible.
+
+### Changed
+
+- **`[scheduler] timezone` is required for cron tasks (BREAKING).** Configs that include a cron task without a per-task `timezone` and without `[scheduler] timezone` are rejected at load. The previous silent default to UTC let `0 2 * * *` quietly run at 02:00 UTC when the operator pictured local time — exactly the kind of failure RunWisp won't allow. Manual-only tasks (no `cron`) and `[services.*]` are unaffected. The starter config and the example config both set `[scheduler] timezone = "UTC"` explicitly.
+
 - **Inline notification targets in `notify_on_failure` / `notify_on_success`.** A token of the form `"<id>:<target>"` overrides the parent notifier's channel (Slack) or chat_id (Telegram) for that route only — `notify_on_failure = ["slack-ops:#deploys"]` reuses the credentials of `slack-ops` but posts to `#deploys`. Bare ids and the literal `"inapp"` keep working unchanged. Tokens are deduplicated, so the same `"slack:#ops"` referenced from twenty tasks costs one synthetic spec. Notifier ids are now disallowed from containing `:` (the new separator); rename any existing colon-bearing ids before upgrading.
 
 ### Fixed
