@@ -21,18 +21,19 @@ import (
 
 // daemonServices holds all long-lived services created during daemon startup.
 type daemonServices struct {
-	DB               storage.Database
-	EventBus         events.EventBus
-	Executor         executor.Executor
-	TaskManager      runtime.TaskManager
-	TasksMap         map[string]*model.Task
-	Scheduler        *runtime.Scheduler
-	RetentionCleaner *runtime.RetentionCleaner
-	Notify           notifyBundle
-	ScheduleResult   runtime.ScheduleResult
-	CrashedRuns      int64
-	PendingSummary   tui.PendingRunsSummary
-	CatchUpResult    runtime.CatchUpResult
+	DB                  storage.Database
+	EventBus            events.EventBus
+	Executor            executor.Executor
+	TaskManager         runtime.TaskManager
+	TasksMap            map[string]*model.Task
+	Scheduler           *runtime.Scheduler
+	RetentionCleaner    *runtime.RetentionCleaner
+	Notify              notifyBundle
+	ScheduleResult      runtime.ScheduleResult
+	CrashedRuns         int64
+	PendingSummary      tui.PendingRunsSummary
+	CatchUpResult       runtime.CatchUpResult
+	TaskShutdownTimeout time.Duration
 }
 
 // initDaemonServices creates and wires together the core daemon services.
@@ -92,18 +93,19 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 	}
 
 	return &daemonServices{
-		DB:               db,
-		EventBus:         eventBus,
-		Executor:         exec,
-		TaskManager:      taskManager,
-		TasksMap:         tasksMap,
-		Scheduler:        scheduler,
-		RetentionCleaner: retentionCleaner,
-		Notify:           notifyB,
-		ScheduleResult:   schedResult,
-		CrashedRuns:      crashed,
-		PendingSummary:   pendingSummary,
-		CatchUpResult:    catchUpResult,
+		DB:                  db,
+		EventBus:            eventBus,
+		Executor:            exec,
+		TaskManager:         taskManager,
+		TasksMap:            tasksMap,
+		Scheduler:           scheduler,
+		RetentionCleaner:    retentionCleaner,
+		Notify:              notifyB,
+		ScheduleResult:      schedResult,
+		CrashedRuns:         crashed,
+		PendingSummary:      pendingSummary,
+		CatchUpResult:       catchUpResult,
+		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
 	}, nil
 }
 

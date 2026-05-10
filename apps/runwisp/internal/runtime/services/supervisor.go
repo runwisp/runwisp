@@ -14,27 +14,37 @@ package services
 import (
 	"fmt"
 	"time"
-
-	"github.com/runwisp/runwisp/internal/runtime/retry"
 )
+
+// defaultBackoffReset is the fallback "healthy run" threshold when a caller
+// constructs a Supervisor without a configured value. The config layer
+// applies a default during load; this only protects direct test usage.
+const defaultBackoffReset = 60 * time.Second
 
 // Supervisor tracks the live replica slots for one service task and the
 // consecutive-restart attempt counter per slot.
 type Supervisor struct {
-	taskName  string
-	instances int
-	live      map[int]struct{}
-	attempts  map[int]int
+	taskName     string
+	instances    int
+	live         map[int]struct{}
+	attempts     map[int]int
+	backoffReset time.Duration
 }
 
 // NewSupervisor creates a Supervisor for a service with the given desired
-// replica count. instances < 1 is normalised to 1.
-func NewSupervisor(taskName string, instances int) *Supervisor {
+// replica count. instances < 1 is normalised to 1. backoffReset is the
+// minimum live duration that resets a replica's consecutive-restart counter;
+// non-positive values fall back to the package default.
+func NewSupervisor(taskName string, instances int, backoffReset time.Duration) *Supervisor {
+	if backoffReset <= 0 {
+		backoffReset = defaultBackoffReset
+	}
 	return &Supervisor{
-		taskName:  taskName,
-		instances: clampInstances(instances),
-		live:      make(map[int]struct{}),
-		attempts:  make(map[int]int),
+		taskName:     taskName,
+		instances:    clampInstances(instances),
+		live:         make(map[int]struct{}),
+		attempts:     make(map[int]int),
+		backoffReset: backoffReset,
 	}
 }
 
@@ -43,6 +53,15 @@ func NewSupervisor(taskName string, instances int) *Supervisor {
 // them out again.
 func (s *Supervisor) SetInstances(instances int) {
 	s.instances = clampInstances(instances)
+}
+
+// SetBackoffReset updates the "run was healthy" threshold for restart
+// counter resets. A non-positive value reverts to the package default.
+func (s *Supervisor) SetBackoffReset(backoffReset time.Duration) {
+	if backoffReset <= 0 {
+		backoffReset = defaultBackoffReset
+	}
+	s.backoffReset = backoffReset
 }
 
 // Instances returns the configured replica count (always >= 1).
@@ -75,11 +94,11 @@ func (s *Supervisor) Reserve(requested *int) (int, error) {
 // RecordExit releases a replica slot and advances the consecutive-restart
 // counter for that slot. The returned int is the attempt index to feed into
 // retry.ComputeRestartDelay for the *next* restart (0 means "first restart in
-// this backoff cycle"). Runs that lasted at least retry.BackoffResetThreshold
-// reset the counter before the return value is captured.
+// this backoff cycle"). Runs that lasted at least the supervisor's configured
+// backoff_reset_after reset the counter before the return value is captured.
 func (s *Supervisor) RecordExit(idx int, runDuration time.Duration) int {
 	delete(s.live, idx)
-	if runDuration >= retry.BackoffResetThreshold {
+	if runDuration >= s.backoffReset {
 		s.attempts[idx] = 0
 	}
 	next := s.attempts[idx]

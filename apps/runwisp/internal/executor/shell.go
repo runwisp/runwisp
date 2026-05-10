@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"syscall"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -16,7 +18,7 @@ type ShellBackend struct{}
 
 func (b *ShellBackend) Available(_ context.Context) bool { return true }
 
-func (b *ShellBackend) Start(ctx context.Context, def model.ExecutionDef) (*Process, error) {
+func (b *ShellBackend) Start(ctx context.Context, task *model.Task, def model.ExecutionDef) (*Process, error) {
 	shell, ok := def.(*model.ShellExecution)
 	if !ok {
 		return nil, fmt.Errorf("ShellBackend received non-shell execution: %s", def.ExecType())
@@ -27,10 +29,32 @@ func (b *ShellBackend) Start(ctx context.Context, def model.ExecutionDef) (*Proc
 	}
 
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", shell.Script)
+	// Setpgid puts the child in its own process group so SIGTERM/SIGKILL can
+	// be delivered to the entire group (including grandchildren spawned by
+	// the script) rather than just the /bin/sh leader.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	grace := task.GracefulStop
+	done := make(chan struct{})
 	cmd.Cancel = func() error {
-		if cmd.Process != nil {
-			return cmd.Process.Kill()
+		if cmd.Process == nil {
+			return nil
 		}
+		pgid := cmd.Process.Pid
+		if grace <= 0 {
+			return syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+		// Politely ask the group to exit; escalate to SIGKILL if it overstays
+		// its grace period. The done channel cancels the SIGKILL when the
+		// process exits cleanly during the grace window.
+		_ = syscall.Kill(-pgid, syscall.SIGTERM)
+		go func() {
+			select {
+			case <-time.After(grace):
+				_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			case <-done:
+			}
+		}()
 		return nil
 	}
 
@@ -53,7 +77,13 @@ func (b *ShellBackend) Start(ctx context.Context, def model.ExecutionDef) (*Proc
 		Stderr: stderr,
 		Wait: func() (int, error) {
 			err := cmd.Wait()
+			close(done)
 			return exitCodeFromError(err), err
+		},
+		ForceKill: func() {
+			if cmd.Process != nil {
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			}
 		},
 	}, nil
 }

@@ -47,7 +47,12 @@ type defaultTaskManager struct {
 	eventBus    events.EventBus
 	mu          sync.RWMutex
 	isShutdown  atomic.Bool
-	wg          sync.WaitGroup
+	// deadlineExceeded latches when the daemon-wide shutdown deadline fires.
+	// Set BEFORE survivors are force-killed so each goroutine, on resolving
+	// its run outcome, sees the flag and records ReasonDaemonStopped instead
+	// of the per-task outcome.
+	deadlineExceeded atomic.Bool
+	wg               sync.WaitGroup
 }
 
 func NewTaskManager(exec executor.Executor, bus events.EventBus) TaskManager {
@@ -60,8 +65,36 @@ func NewTaskManager(exec executor.Executor, bus events.EventBus) TaskManager {
 }
 
 // BindPersistenceHook wires persistence to both the manager and executor.
+// Also wires the executor's process-started callback so the manager can
+// reach each active run's ForceKill closure during shutdown.
 func (m *defaultTaskManager) BindPersistenceHook(hook RunPersistenceHook) {
 	m.persistence.BindHook(hook, m.executor)
+
+	type onStartedSetter interface {
+		SetOnProcessStarted(func(runID string, forceKill func()))
+	}
+	if setter, ok := m.executor.(onStartedSetter); ok {
+		setter.SetOnProcessStarted(m.registerForceKill)
+	}
+}
+
+// registerForceKill stores the executor's ForceKill closure on the matching
+// ActiveRun so the daemon shutdown coordinator can reach it later. Called
+// from the executor goroutine right after the backend starts the process.
+func (m *defaultTaskManager) registerForceKill(runID string, forceKill func()) {
+	if forceKill == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ts := range m.tasks {
+		for _, ar := range ts.active {
+			if ar.Run.ID == runID {
+				ar.ForceKill = forceKill
+				return
+			}
+		}
+	}
 }
 
 // UpsertTask adds a task if missing or replaces the existing definition.
@@ -79,9 +112,10 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 
 	if task.Kind.IsService() {
 		if ts.supervisor == nil {
-			ts.supervisor = services.NewSupervisor(task.Name, task.Instances)
+			ts.supervisor = services.NewSupervisor(task.Name, task.Instances, task.BackoffResetAfter)
 		} else {
 			ts.supervisor.SetInstances(task.Instances)
+			ts.supervisor.SetBackoffReset(task.BackoffResetAfter)
 		}
 	}
 
@@ -140,6 +174,13 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 		}
 
 		if ts.task.OnOverlap == model.PolicyQueue {
+			queueMax := getQueueMax(ts.task)
+			if queueMax > 0 && len(ts.queue) >= queueMax {
+				r.End(model.ReasonQueueFull, -1, time.Now())
+				m.persistence.PersistExisting(&r)
+				result.Failed++
+				continue
+			}
 			ts.queue = append(ts.queue, &r)
 			ts.cond.Signal()
 			result.Queued++
@@ -228,6 +269,11 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		run.End(model.ReasonSkipped, -1, time.Now())
 		m.persistence.PersistExisting(run)
 		return run, actionErr
+	case actionQueueFull:
+		run.End(model.ReasonQueueFull, -1, time.Now())
+		m.persistence.PersistExisting(run)
+		m.publishRun(events.EventRunFailed, run)
+		return run, actionErr
 	case actionQueued:
 		return run, nil
 	case actionStart:
@@ -239,6 +285,34 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	m.startRun(ts.task, run)
 	return run, nil
+}
+
+// RecordSkippedFiring persists a run that the runtime suppressed before any
+// executor work (e.g. a DST wall-clock duplicate). The run lives only as an
+// audit row — no process is started, no streams open. The run is created and
+// then immediately ended with the supplied reason.
+func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.tasks[taskName]; !exists {
+		return fmt.Errorf("task not found: %s", taskName)
+	}
+
+	now := time.Now()
+	run := &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    taskName,
+		Status:      model.PhasePending,
+		TriggeredBy: triggeredBy,
+		CreatedAt:   now,
+	}
+	m.persistence.PersistNew(run)
+	m.publishRun(events.EventRunCreated, run)
+	run.End(reason, -1, now)
+	m.persistence.PersistExisting(run)
+	m.publishRun(events.EventRunFailed, run)
+	return nil
 }
 
 // StartServiceReplicas brings every replica of a service up to its desired
@@ -325,6 +399,13 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 
 	endTime := time.Now()
 	outcome := resolveRunOutcome(result)
+	if m.deadlineExceeded.Load() {
+		// Daemon shutdown ran past its bound — the run was force-killed by
+		// the shutdown coordinator. Override the per-task outcome so the
+		// audit row reflects the reason the operator cares about.
+		outcome.endReason = model.ReasonDaemonStopped
+		outcome.eventType = events.EventRunFailed
+	}
 	run.End(outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)
@@ -460,8 +541,19 @@ func (m *defaultTaskManager) cancelActiveRun(match func(*ActiveRun) bool, notFou
 	return errors.New(notFoundMsg)
 }
 
-// Shutdown terminates all active runs and prepares for exit.
+// Shutdown terminates all active runs and waits for them to drain. Equivalent
+// to ShutdownWithDeadline(0) — no upper bound, runs settle on their own
+// per-task graceful_stop ladders.
 func (m *defaultTaskManager) Shutdown() {
+	m.ShutdownWithDeadline(0)
+}
+
+// ShutdownWithDeadline cancels every active run, waits up to deadline for
+// goroutines to exit cleanly, and on timeout SIGKILLs survivors so the
+// daemon can exit without leaving orphaned processes behind. Surviving runs
+// are recorded with ReasonDaemonStopped via the deadlineExceeded flag.
+// deadline <= 0 means "wait indefinitely" (matches old behaviour).
+func (m *defaultTaskManager) ShutdownWithDeadline(deadline time.Duration) {
 	m.isShutdown.Store(true)
 	m.mu.Lock()
 	for _, ts := range m.tasks {
@@ -474,6 +566,50 @@ func (m *defaultTaskManager) Shutdown() {
 	}
 	m.mu.Unlock()
 
-	m.wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+
+	if deadline <= 0 {
+		<-done
+		m.persistence.Shutdown()
+		return
+	}
+
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+		// All goroutines exited within the deadline.
+	case <-timer.C:
+		// Set the latch BEFORE force-killing so any goroutine that observes
+		// its own outcome after the kill records ReasonDaemonStopped.
+		m.deadlineExceeded.Store(true)
+		m.forceKillSurvivors()
+		<-done
+	}
+
 	m.persistence.Shutdown()
+}
+
+// forceKillSurvivors fires the ForceKill closure on every active run so the
+// underlying processes die immediately, unblocking their executor.Wait
+// goroutines. Must be called only after m.deadlineExceeded is set.
+func (m *defaultTaskManager) forceKillSurvivors() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ts := range m.tasks {
+		for _, ar := range ts.active {
+			if ar.ForceKill == nil {
+				continue
+			}
+			slog.Warn("Daemon shutdown deadline exceeded — force-killing run",
+				"task", ts.task.Name, "run", ar.Run.ID,
+			)
+			ar.ForceKill()
+		}
+	}
 }

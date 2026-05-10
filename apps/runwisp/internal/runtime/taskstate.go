@@ -19,8 +19,13 @@ const DefaultConcurrencyLimit = 1
 
 // ActiveRun holds context for an in-flight run.
 type ActiveRun struct {
-	Run       *model.Run
-	Cancel    context.CancelFunc
+	Run    *model.Run
+	Cancel context.CancelFunc
+	// ForceKill, when non-nil, immediately SIGKILLs the underlying process.
+	// Set by the executor after the backend has started; nil for backends
+	// without an OS-level process (e.g. HTTP). Used by the daemon shutdown
+	// coordinator to bound total shutdown time.
+	ForceKill func()
 	StartedAt time.Time
 }
 
@@ -44,9 +49,10 @@ type taskState struct {
 type concurrencyAction int
 
 const (
-	actionStart    concurrencyAction = iota // start the run immediately
-	actionQueued                            // run was enqueued; do not start
-	actionRejected                          // run was rejected (policy: skip)
+	actionStart     concurrencyAction = iota // start the run immediately
+	actionQueued                             // run was enqueued; do not start
+	actionRejected                           // run was rejected (policy: skip)
+	actionQueueFull                          // queue at queue_max; drop new firing
 )
 
 // evaluateConcurrency decides whether a run can start and mutates queue state
@@ -60,6 +66,10 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 	case model.PolicySkip:
 		return actionRejected, fmt.Errorf("task already running, skipping (policy: skip)")
 	case model.PolicyQueue:
+		queueMax := getQueueMax(ts.task)
+		if queueMax > 0 && len(ts.queue) >= queueMax {
+			return actionQueueFull, fmt.Errorf("queue full (%d pending) for task %s", queueMax, ts.task.Name)
+		}
 		ts.queue = append(ts.queue, run)
 		ts.cond.Signal()
 		slog.Debug("Task queued", "name", ts.task.Name, "active", len(ts.active), "limit", concurrencyLimit, "queue", len(ts.queue))
@@ -103,4 +113,11 @@ func (m *defaultTaskManager) getConcurrencyLimit(task *model.Task) int {
 		return DefaultConcurrencyLimit
 	}
 	return task.MaxConcurrent
+}
+
+// getQueueMax returns the configured queue_max for a queue-policy task. The
+// config layer applies a default; the zero return means "unbounded" only if
+// the operator deliberately sets queue_max=0 (which the validator rejects).
+func getQueueMax(task *model.Task) int {
+	return task.QueueMax
 }

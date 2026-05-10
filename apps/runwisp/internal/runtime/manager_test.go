@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -110,6 +111,41 @@ func TestPolicyQueue(t *testing.T) {
 	exec.AssertNumberOfCalls(t, "Execute", 2)
 }
 
+// TestPolicyQueueDropsAtCap exercises the new queue_max bound: once the
+// pending queue holds queue_max runs, the next firing is recorded with
+// end_reason = "queue_full" rather than growing the queue without bound.
+func TestPolicyQueueDropsAtCap(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+
+	task := testTask("task1", model.PolicyQueue, 1)
+	task.QueueMax = 1
+	jm.UpsertTask(task)
+
+	// The single executor slot stays busy long enough for the queue to fill.
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 500*time.Millisecond)
+
+	first, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	require.Equal(t, model.PhasePending, first.Status)
+
+	// Second slot occupies the queue.
+	queued, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	require.Equal(t, model.PhasePending, queued.Status)
+
+	// Third firing trips queue_max and is dropped immediately.
+	dropped, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.Error(t, err, "third firing should be rejected")
+	assert.Contains(t, err.Error(), "queue full")
+	assert.Equal(t, model.PhaseEnded, dropped.Status)
+	require.NotNil(t, dropped.EndReason)
+	assert.Equal(t, model.ReasonQueueFull, *dropped.EndReason)
+
+	jm.Shutdown()
+}
+
 func TestPolicyTerminate(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
@@ -173,6 +209,98 @@ func TestShutdown(t *testing.T) {
 
 	jm.Shutdown()
 	// Should not panic and cancel runs
+}
+
+// stuckExecutor blocks Execute until its ForceKill closure runs, ignoring
+// context cancellation. Used to drive the daemon-shutdown deadline path:
+// the manager's per-task Cancel has no effect, so the only way out is the
+// deadline-triggered ForceKill.
+type stuckExecutor struct {
+	onStarted     func(runID string, forceKill func())
+	startedCh     chan struct{}
+	forceKilledCh chan struct{}
+	startOnce     sync.Once
+	killOnce      sync.Once
+}
+
+func (s *stuckExecutor) SetOnProcessStarted(cb func(runID string, forceKill func())) {
+	s.onStarted = cb
+}
+
+func (s *stuckExecutor) Availability() executor.Availability { return executor.Availability{} }
+
+func (s *stuckExecutor) Execute(_ context.Context, _ *model.Task, run *model.Run) *executor.ExecuteResult {
+	released := make(chan struct{})
+	if s.onStarted != nil {
+		s.onStarted(run.ID, func() {
+			s.killOnce.Do(func() {
+				close(s.forceKilledCh)
+				close(released)
+			})
+		})
+	}
+	s.startOnce.Do(func() { close(s.startedCh) })
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+	}
+	return &executor.ExecuteResult{ExitCode: -1, Stopped: true}
+}
+
+// TestShutdownWithDeadlineMarksSurvivorsDaemonStopped verifies the daemon
+// shutdown coordinator: when a run ignores context cancellation, the
+// shutdown deadline must fire ForceKill and the surviving run must be
+// recorded with end_reason = "daemon_stopped".
+func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
+	exec := &stuckExecutor{
+		startedCh:     make(chan struct{}),
+		forceKilledCh: make(chan struct{}),
+	}
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+
+	var mu sync.Mutex
+	var persisted []*model.Run
+	jm.BindPersistenceHook(func(run *model.Run, _ bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		persisted = append(persisted, run)
+	})
+
+	task := testTask("stuck", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+
+	_, err := jm.TriggerRun("stuck", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	select {
+	case <-exec.startedCh:
+	case <-time.After(time.Second):
+		t.Fatal("executor never reached the running state")
+	}
+
+	jm.ShutdownWithDeadline(50 * time.Millisecond)
+
+	select {
+	case <-exec.forceKilledCh:
+	case <-time.After(time.Second):
+		t.Fatal("ForceKill must have been invoked by the shutdown deadline")
+	}
+
+	// Allow the persistence worker a moment to drain the final daemon_stopped
+	// update before we read the slice.
+	time.Sleep(20 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	var sawDaemonStopped bool
+	for _, r := range persisted {
+		if r.EndReason != nil && *r.EndReason == model.ReasonDaemonStopped {
+			sawDaemonStopped = true
+			break
+		}
+	}
+	assert.True(t, sawDaemonStopped, "shutdown survivor must be recorded with ReasonDaemonStopped")
 }
 
 func TestPersistenceHook(t *testing.T) {

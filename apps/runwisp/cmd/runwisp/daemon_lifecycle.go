@@ -63,22 +63,31 @@ func startCloudClient(
 	return cancelCloud, &cloudWG
 }
 
-// gracefulShutdown tears down all daemon subsystems under a 3-second deadline.
-// Layered: stop the input layer (HTTP server, cloud connection) first so no
-// new requests can enter, then drain the workers (scheduler, notifications,
-// task manager) once nothing can call into them. Within each layer subsystems
-// run in parallel. Both runHeadless and runWithTUI funnel through here.
+// gracefulShutdown tears down all daemon subsystems in two layers. The input
+// layer (HTTP server, cloud connection) drains under a short fixed deadline
+// so no new requests can enter; the worker layer (scheduler, notifications,
+// task manager) drains under [daemon] shutdown_timeout so per-task graceful
+// stop windows can complete. Both runHeadless and runWithTUI funnel through
+// here.
 func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices, srv *server.Server) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
 	cancelCloud()
 	// RetentionCleaner.Stop only cancels its loop's context — non-blocking,
 	// so it's safe to call outside the deadline-bounded waits below.
 	svc.RetentionCleaner.Stop()
 
-	waitInput(ctx, cloudWG, srv)
-	waitDrain(ctx, svc)
+	inputCtx, cancelInput := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelInput()
+	waitInput(inputCtx, cloudWG, srv)
+
+	taskTimeout := svc.TaskShutdownTimeout
+	if taskTimeout <= 0 {
+		// Operator hasn't configured one — fall back to the historical 3s
+		// to keep developer setups responsive.
+		taskTimeout = 3 * time.Second
+	}
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), taskTimeout)
+	defer cancelDrain()
+	waitDrain(drainCtx, svc, taskTimeout)
 }
 
 // waitInput waits for the request-accepting layer to quiesce: HTTP server
@@ -108,8 +117,10 @@ func waitInput(ctx context.Context, cloudWG *sync.WaitGroup, srv *server.Server)
 }
 
 // waitDrain stops worker subsystems. Order within is irrelevant — they don't
-// call into each other — but they all share the global deadline.
-func waitDrain(ctx context.Context, svc *daemonServices) {
+// call into each other — but they all share the global deadline. The task
+// manager drain is bounded by taskTimeout so survivors get SIGKILLed and
+// recorded as ReasonDaemonStopped if their per-task graceful_stop overruns.
+func waitDrain(ctx context.Context, svc *daemonServices, taskTimeout time.Duration) {
 	var wg sync.WaitGroup
 
 	if svc.Scheduler != nil {
@@ -131,7 +142,7 @@ func waitDrain(ctx context.Context, svc *daemonServices) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		svc.TaskManager.Shutdown()
+		svc.TaskManager.ShutdownWithDeadline(taskTimeout)
 	}()
 
 	awaitOrLog(ctx, &wg, "drain layer")

@@ -5,8 +5,6 @@ package runtime
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,15 +19,44 @@ type ScheduleResult struct {
 	Warnings  []string
 }
 
-// Scheduler wraps robfig/cron to trigger tasks on a schedule.
+// Scheduler wraps robfig/cron to trigger tasks on a schedule. On fall-back
+// DST days, when the wall clock revisits a minute, the second firing is
+// suppressed and recorded with end_reason = "dst_skipped" — there's no warning
+// at boot.
 type Scheduler struct {
 	cron        *cron.Cron
 	location    *time.Location
 	taskManager TaskRunner
 	tasks       map[string]*model.Task
 	entryIDs    map[string]cron.EntryID
-	mutex       sync.Mutex
-	started     bool
+	// lastFired stores the wall-clock minute (in the task's effective TZ) of
+	// the last firing for each task. A second firing whose tuple matches is
+	// the DST duplicate to suppress.
+	lastFired map[string]wallMinute
+	now       func() time.Time
+	mutex     sync.Mutex
+	started   bool
+}
+
+// wallMinute is a (date, hour, minute) tuple that lets us compare two
+// firings as "the same wall-clock minute" without depending on UTC offsets,
+// which is the whole point on DST fall-back days.
+type wallMinute struct {
+	year   int
+	month  time.Month
+	day    int
+	hour   int
+	minute int
+}
+
+func newWallMinute(t time.Time) wallMinute {
+	return wallMinute{
+		year:   t.Year(),
+		month:  t.Month(),
+		day:    t.Day(),
+		hour:   t.Hour(),
+		minute: t.Minute(),
+	}
 }
 
 // NewScheduler creates a scheduler. location controls how task cron expressions
@@ -45,6 +72,8 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		taskManager: taskManager,
 		tasks:       tasks,
 		entryIDs:    make(map[string]cron.EntryID),
+		lastFired:   make(map[string]wallMinute),
+		now:         time.Now,
 	}
 }
 
@@ -65,9 +94,6 @@ func (scheduler *Scheduler) Start() (ScheduleResult, error) {
 			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("failed to schedule %s: %v", task.Name, err))
 			continue
-		}
-		if w := dstAmbiguityWarning(task, scheduler.location); w != "" {
-			result.Warnings = append(result.Warnings, w)
 		}
 		result.Scheduled++
 	}
@@ -94,16 +120,20 @@ func (scheduler *Scheduler) Stop() {
 func (scheduler *Scheduler) addTask(task *model.Task) error {
 	taskName := task.Name
 	spec := task.Cron
+	loc := scheduler.location
 	if task.Timezone != "" {
 		// CRON_TZ= prefix is honored by robfig/cron's standard parser and
 		// overrides the scheduler's default location for this entry.
 		spec = "CRON_TZ=" + task.Timezone + " " + task.Cron
+		// Best-effort resolve: if it doesn't parse the AddFunc below will
+		// fail and we surface a warning. On success, use the task TZ as the
+		// reference for wall-clock dedup.
+		if l, err := time.LoadLocation(task.Timezone); err == nil {
+			loc = l
+		}
 	}
 	entryID, err := scheduler.cron.AddFunc(spec, func() {
-		slog.Debug("Cron triggering task", "name", taskName)
-		if _, err := scheduler.taskManager.TriggerRun(taskName, model.TriggeredByCron); err != nil {
-			slog.Error("Failed to trigger task", "name", taskName, "err", err)
-		}
+		scheduler.fireOnce(taskName, loc)
 	})
 	if err == nil {
 		scheduler.entryIDs[taskName] = entryID
@@ -111,94 +141,37 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 	return err
 }
 
-// dstAmbiguityWarning returns a non-empty warning when a task's cron fires
-// at a fixed daily clock-time that overlaps the DST transition hour in the
-// task's effective timezone. Heuristic — false positives are acceptable
-// (operators can override the timezone or move the hour); false negatives
-// for exotic expressions (lists, ranges) are tolerated to keep this cheap.
-func dstAmbiguityWarning(task *model.Task, schedulerLoc *time.Location) string {
-	hour, ok := fixedDailyHour(task.Cron)
-	if !ok {
-		return ""
-	}
-	// Hours 1, 2, 3 cover the standard fall-back / spring-forward window in
-	// every IANA zone the author is aware of. Operators with truly exotic
-	// transition hours can ignore the warning.
-	if hour < 1 || hour > 3 {
-		return ""
-	}
-	loc := schedulerLoc
-	if task.Timezone != "" {
-		// Best-effort: if it doesn't parse, the addTask call would have
-		// already errored — treat as no warning.
-		if l, err := time.LoadLocation(task.Timezone); err == nil {
-			loc = l
-		}
-	}
-	if loc == nil || !zoneHasDST(loc) {
-		return ""
-	}
-	return fmt.Sprintf(
-		"task %q schedule %q fires at hour %02d in %s, which has DST transitions; "+
-			"on fall-back the run fires twice and on spring-forward it is skipped — "+
-			"set timezone = \"UTC\" or use @every 24h to avoid",
-		task.Name, task.Cron, hour, loc.String(),
-	)
-}
+// fireOnce is the cron callback for a scheduled task. It dedupes wall-clock
+// duplicates (DST fall-back) by tracking the task's last firing minute in
+// the task's effective TZ; a duplicate is recorded as ReasonDSTSkipped and
+// never reaches the executor.
+func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
+	nowLocal := scheduler.now().In(loc)
+	wm := newWallMinute(nowLocal)
 
-// fixedDailyHour returns (h, true) when the standard 5-field cron expression
-// fires at exactly one clock-hour every day (e.g. "0 2 * * *"). Returns
-// (_, false) for `@every`, named aliases, ranges, lists, and step values —
-// all cases where reasoning about a single transition hour is unreliable.
-func fixedDailyHour(spec string) (int, bool) {
-	spec = strings.TrimSpace(spec)
-	if strings.HasPrefix(spec, "@") {
-		return 0, false
+	scheduler.mutex.Lock()
+	last, hadLast := scheduler.lastFired[taskName]
+	duplicate := hadLast && last == wm
+	if !duplicate {
+		scheduler.lastFired[taskName] = wm
 	}
-	fields := strings.Fields(spec)
-	if len(fields) != 5 {
-		return 0, false
-	}
-	if !isSimpleNumeric(fields[0]) {
-		return 0, false
-	}
-	hour, err := strconv.Atoi(fields[1])
-	if err != nil || hour < 0 || hour > 23 {
-		return 0, false
-	}
-	return hour, true
-}
+	scheduler.mutex.Unlock()
 
-func isSimpleNumeric(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
+	if duplicate {
+		slog.Info("Suppressed duplicate cron firing on DST fall-back",
+			"task", taskName,
+			"wall_clock", nowLocal.Format("2006-01-02 15:04 MST"),
+		)
+		if err := scheduler.taskManager.RecordSkippedFiring(taskName, model.ReasonDSTSkipped, model.TriggeredByCron); err != nil {
+			slog.Error("Failed to record DST-skipped firing", "task", taskName, "err", err)
 		}
+		return
 	}
-	return true
-}
 
-// zoneHasDST reports whether loc has a UTC-offset transition somewhere in the
-// next twelve months. Cheap probe — twelve month-end samples is enough to
-// catch every IANA zone with seasonal DST, and the result is stable for the
-// lifetime of the daemon.
-func zoneHasDST(loc *time.Location) bool {
-	if loc == nil || loc == time.UTC {
-		return false
+	slog.Debug("Cron triggering task", "name", taskName)
+	if _, err := scheduler.taskManager.TriggerRun(taskName, model.TriggeredByCron); err != nil {
+		slog.Error("Failed to trigger task", "name", taskName, "err", err)
 	}
-	now := time.Now().In(loc)
-	_, baseOffset := now.Zone()
-	for month := 1; month <= 12; month++ {
-		t := now.AddDate(0, month, 0)
-		_, off := t.Zone()
-		if off != baseOffset {
-			return true
-		}
-	}
-	return false
 }
 
 // GetNextRun returns the next scheduled time for the task, if scheduled.

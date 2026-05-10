@@ -16,12 +16,13 @@ import (
 
 func catchupTask(policy model.MissedRunPolicy) *model.Task {
 	return &model.Task{
-		Name:          "my-task",
-		Cron:          "*/5 * * * *",
-		CatchUp:       policy,
-		Run:           "echo hi",
-		MaxConcurrent: 1,
-		OnOverlap:     model.PolicyQueue,
+		Name:           "my-task",
+		Cron:           "*/5 * * * *",
+		CatchUp:        policy,
+		Run:            "echo hi",
+		MaxConcurrent:  1,
+		OnOverlap:      model.PolicyQueue,
+		MaxCatchUpRuns: 100,
 	}
 }
 
@@ -62,6 +63,10 @@ func (m *mockTaskRunner) TerminateRunByExternalExecutionID(externalExecutionID s
 
 func (m *mockTaskRunner) RestartServiceReplicas(taskName string) error {
 	return m.Called(taskName).Error(0)
+}
+
+func (m *mockTaskRunner) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
+	return m.Called(taskName, reason, triggeredBy).Error(0)
 }
 
 func TestCountMissedTicks(t *testing.T) {
@@ -285,7 +290,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		runner.AssertNumberOfCalls(t, "TriggerRun", 5)
 	})
 
-	t.Run("policy=all with max_catch_up_runs=-1 backfills everything", func(t *testing.T) {
+	t.Run("policy=all under max_catch_up_runs backfills everything", func(t *testing.T) {
 		db := new(testutil.MockRunRepository)
 		runner := new(mockTaskRunner)
 
@@ -297,7 +302,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		}
 
 		task := catchupTask(model.MissedRunAll)
-		task.MaxCatchUpRuns = -1
+		task.MaxCatchUpRuns = 100
 		tasks := map[string]*model.Task{"my-task": task}
 
 		db.On("EnsureTaskRegistered", "my-task", now).Return(nil)
@@ -306,7 +311,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		result := RunMissedTickCatchUp(db, tasks, runner, now)
 
-		assert.Equal(t, 12, result.Triggered, "explicit unlimited cap must let every missed tick through")
+		assert.Equal(t, 12, result.Triggered, "backlog under the cap must be backfilled in full")
 		runner.AssertNumberOfCalls(t, "TriggerRun", 12)
 	})
 

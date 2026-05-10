@@ -28,6 +28,28 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// GracefulStopWarnings reports tasks whose graceful_stop exceeds the daemon
+// shutdown_timeout. The daemon will SIGKILL such tasks before their grace
+// window completes during a daemon-wide shutdown — operators usually want
+// to either lengthen [daemon] shutdown_timeout or shorten the per-task value.
+func GracefulStopWarnings(cfg *Config) []string {
+	limit := cfg.Daemon.ShutdownTimeout
+	if limit <= 0 {
+		return nil
+	}
+	var warnings []string
+	for i := range cfg.Tasks {
+		task := &cfg.Tasks[i]
+		if task.GracefulStop > limit {
+			warnings = append(warnings, fmt.Sprintf(
+				"task %q has graceful_stop=%s but [daemon] shutdown_timeout=%s; the daemon will SIGKILL this task before its grace window completes during shutdown",
+				task.Name, task.GracefulStop, limit,
+			))
+		}
+	}
+	return warnings
+}
+
 // LoadRaw reads and decodes a runwisp.toml file without applying defaults or
 // running validation.
 func LoadRaw(path string) (*Config, error) {

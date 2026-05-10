@@ -16,12 +16,6 @@ import (
 // RestartBackoffCap caps the exponential restart delay for service replicas.
 const RestartBackoffCap = 60 * time.Second
 
-// BackoffResetThreshold is the minimum run duration that resets a service's
-// per-replica restart attempt counter. Runs that last at least this long are
-// treated as "the service was healthy" — the next failure starts the backoff
-// over from the base delay.
-const BackoffResetThreshold = 60 * time.Second
-
 // retryDelayCap caps the retry delay regardless of backoff curve.
 const retryDelayCap = 5 * time.Minute
 
@@ -90,7 +84,8 @@ func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
 
 // ComputeRestartDelay calculates the delay before a service replica is
 // re-spawned after exiting. attempt is the number of consecutive prior
-// restarts without a healthy (>= BackoffResetThreshold) run.
+// restarts without a healthy run (a run that lived past the supervisor's
+// configured backoff_reset_after).
 func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
 	base := task.RestartDelay
 	if base <= 0 {

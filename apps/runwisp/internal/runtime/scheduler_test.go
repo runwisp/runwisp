@@ -77,39 +77,76 @@ func TestSchedulerHonorsTaskTimezone(t *testing.T) {
 		"next run must be 02:00 in America/New_York regardless of the daemon's UTC default")
 }
 
-func TestSchedulerWarnsOnDSTAmbiguousCron(t *testing.T) {
+func TestSchedulerDSTWallClockDedup(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb)
 
-	// `0 2 * * *` in America/New_York is the textbook DST footgun: the
-	// schedule double-fires every fall-back and is skipped every spring-forward.
-	risky := &model.Task{Name: "ny-2am", Cron: "0 2 * * *", Timezone: "America/New_York", Run: "echo"}
-	// `0 4 * * *` is outside the DST transition window.
-	safe := &model.Task{Name: "ny-4am", Cron: "0 4 * * *", Timezone: "America/New_York", Run: "echo"}
-	// UTC has no DST, so even hour 2 is fine.
-	utc := &model.Task{Name: "utc-2am", Cron: "0 2 * * *", Timezone: "UTC", Run: "echo"}
-
-	for _, task := range []*model.Task{risky, safe, utc} {
-		jm.UpsertTask(task)
+	task := &model.Task{
+		Name:     "eu-2am",
+		Cron:     "0 2 * * *",
+		Timezone: "Europe/Bratislava",
+		Run:      "echo",
 	}
-	tasks := map[string]*model.Task{"ny-2am": risky, "ny-4am": safe, "utc-2am": utc}
+	jm.UpsertTask(task)
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
-	sched := NewScheduler(jm, tasks, time.UTC)
-	res, err := sched.Start()
-	assert.NoError(t, err)
-	defer sched.Stop()
+	sched := NewScheduler(jm, map[string]*model.Task{"eu-2am": task}, time.UTC)
 
-	combined := ""
-	for _, w := range res.Warnings {
-		combined += w + "\n"
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+
+	// 2026-10-25 is the European fall-back day: at 03:00 CEST clocks rewind
+	// to 02:00 CET, so wall-clock 02:00 happens twice. Anchor in UTC to
+	// dodge time.Date's documented ambiguity for fold instants:
+	//   * UTC 00:00 → 02:00 CEST (first 02:00)
+	//   * UTC 01:00 → 02:00 CET  (second 02:00, just after fall-back)
+	firstFire := time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)
+	secondFire := firstFire.Add(time.Hour)
+
+	require.Equal(t, 2, firstFire.In(loc).Hour(), "anchoring sanity: first fire must read 02:00 in Bratislava")
+	require.Equal(t, 2, secondFire.In(loc).Hour(), "anchoring sanity: second fire must also read 02:00 (post fall-back)")
+
+	sched.now = func() time.Time { return firstFire }
+	sched.fireOnce("eu-2am", loc)
+	sched.now = func() time.Time { return secondFire }
+	sched.fireOnce("eu-2am", loc)
+
+	wm := wallMinute{year: 2026, month: time.October, day: 25, hour: 2, minute: 0}
+	assert.Equal(t, wm, sched.lastFired["eu-2am"], "lastFired must hold the 02:00 wall-clock minute on the fall-back day")
+}
+
+func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb)
+
+	task := &model.Task{
+		Name:     "eu-mins",
+		Cron:     "* * * * *",
+		Timezone: "Europe/Bratislava",
+		Run:      "echo",
 	}
-	assert.Contains(t, combined, "ny-2am",
-		"the 02:00 New York task must produce a DST warning")
-	assert.NotContains(t, combined, "ny-4am",
-		"a 04:00 cron is outside the DST window — no warning expected")
-	assert.NotContains(t, combined, "utc-2am",
-		"UTC has no DST — no warning expected even at hour 2")
+	jm.UpsertTask(task)
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
+
+	sched := NewScheduler(jm, map[string]*model.Task{"eu-mins": task}, time.UTC)
+
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+
+	// Two firings one wall-minute apart must both go through — the dedup
+	// only rejects identical (date, hour, minute) tuples.
+	first := time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)
+	second := first.Add(time.Minute)
+
+	sched.now = func() time.Time { return first }
+	sched.fireOnce("eu-mins", loc)
+	sched.now = func() time.Time { return second }
+	sched.fireOnce("eu-mins", loc)
+
+	wm := wallMinute{year: 2026, month: time.October, day: 25, hour: 2, minute: 1}
+	assert.Equal(t, wm, sched.lastFired["eu-mins"], "lastFired must advance when wall-clock minute differs")
 }
 
 func TestSchedulerRejectsBadTaskTimezone(t *testing.T) {

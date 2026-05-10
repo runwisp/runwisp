@@ -78,7 +78,7 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 		capped := false
 		if task.CatchUp == model.MissedRunLatest {
 			triggers = 1
-		} else if task.CatchUp == model.MissedRunAll && task.MaxCatchUpRuns > 0 && triggers > task.MaxCatchUpRuns {
+		} else if task.CatchUp == model.MissedRunAll && triggers > task.MaxCatchUpRuns {
 			triggers = task.MaxCatchUpRuns
 			capped = true
 		}

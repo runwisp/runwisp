@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
@@ -190,6 +191,9 @@ func logSecurityWarnings(cfg *daemonConfig) {
 	}
 	if flags.Host != "127.0.0.1" && flags.Host != "::1" && flags.Host != "localhost" {
 		printNonLoopbackBanner(flags.Host)
+	}
+	for _, w := range config.GracefulStopWarnings(cfg.Config) {
+		slog.Warn(w)
 	}
 }
 

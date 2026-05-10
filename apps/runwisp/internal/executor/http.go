@@ -112,7 +112,7 @@ type HTTPBackend struct {
 
 func (b *HTTPBackend) Available(_ context.Context) bool { return true }
 
-func (b *HTTPBackend) Start(ctx context.Context, def model.ExecutionDef) (*Process, error) {
+func (b *HTTPBackend) Start(ctx context.Context, _ *model.Task, def model.ExecutionDef) (*Process, error) {
 	httpDef, ok := def.(*model.HTTPExecution)
 	if !ok {
 		return nil, fmt.Errorf("HTTPBackend received non-http execution: %s", def.ExecType())
