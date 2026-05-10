@@ -225,13 +225,13 @@ type schedulerWire struct {
 // ["inapp"]) from "key set to []" (operator explicitly opted out of the
 // in-app safety net).
 type notifyWire struct {
-	QueueSize        int       `toml:"queue_size,omitempty"`
-	DefaultTimeout   string    `toml:"default_timeout,omitempty"`
-	AppendNotifiers  *[]string `toml:"append_notifiers,omitempty"`
-	HistoryKeep      int       `toml:"history_keep,omitempty"`
-	HistoryKeepFor   string    `toml:"history_keep_for,omitempty"`
-	CoalesceWindow   string    `toml:"coalesce_window,omitempty"`
-	OccurrenceRing   int       `toml:"occurrence_ring,omitempty"`
+	QueueSize       int       `toml:"queue_size,omitempty"`
+	DefaultTimeout  string    `toml:"default_timeout,omitempty"`
+	AppendNotifiers *[]string `toml:"append_notifiers,omitempty"`
+	HistoryKeep     int       `toml:"history_keep,omitempty"`
+	HistoryKeepFor  string    `toml:"history_keep_for,omitempty"`
+	CoalesceWindow  string    `toml:"coalesce_window,omitempty"`
+	OccurrenceRing  int       `toml:"occurrence_ring,omitempty"`
 	// CoalesceOutbound is *bool so we can distinguish "unset" (default-on)
 	// from explicit `coalesce_outbound = false` (the rare opt-out).
 	CoalesceOutbound *bool `toml:"coalesce_outbound,omitempty"`
