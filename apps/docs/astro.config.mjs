@@ -95,28 +95,15 @@ export default defineConfig({
                     ],
                 },
                 {
-                    label: "CLI Reference",
-                    items: [{ label: "Commands", slug: "cli" }],
-                },
-                {
                     label: "Recipes",
                     items: [
                         { label: "Nightly backup", slug: "recipes/backup" },
                         { label: "Health checks", slug: "recipes/healthcheck" },
                         { label: "Deploy hooks", slug: "recipes/deploy-hooks" },
                         { label: "Docker patterns", slug: "recipes/docker" },
-                        { label: "Debugging real failures", slug: "recipes/debugging" },
                     ],
                 },
-                {
-                    label: "Operations",
-                    items: [
-                        { label: "Auth (CHAP + JWT)", slug: "operations/auth" },
-                        { label: "Data directory", slug: "operations/data-directory" },
-                        { label: "Upgrading", slug: "operations/upgrading" },
-                        { label: "Troubleshooting", slug: "operations/troubleshooting" },
-                    ],
-                },
+                { label: "Auth", slug: "operations/auth" },
                 // ...openAPISidebarGroups,
             ],
         }),

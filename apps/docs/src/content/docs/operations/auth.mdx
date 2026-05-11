@@ -2,130 +2,57 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Auth
-description: How RunWisp authenticates Web UI / TUI / REST clients — one password, one session, and a small set of safety nets (rate limiting, reverse-proxy trust, no logins on a few public health endpoints).
+description: How RunWisp authenticates Web UI, TUI, and REST clients — one password, one session, rate limiting, and reverse-proxy trust.
 ---
 
 RunWisp has one password and one session. Type the password, get a
-session, and use that to drive the Web UI, TUI, and REST API. That's
-the whole identity model — no users, no roles, no API keys, no SSO.
-The trust model is "if you can log in, you control the daemon", and
-RunWisp is built for one operator on one machine.
+session, and use that to drive the Web UI, TUI, and REST API. No
+users, no roles, no API keys. The trust model is "if you can log in,
+you control the daemon", and RunWisp is built for one operator on one
+machine.
 
 ## Logging in
 
-The Web UI shows a single password field. The TUI just opens the
-browser straight in (when you start it locally with `runwisp`) or
-asks for the password via env var / CLI flag (when you connect to a
-remote daemon).
+The Web UI shows a single password field. The TUI opens the browser
+straight in when you start it locally with `runwisp`, or asks for the
+password via env var / CLI flag when you connect to a remote daemon.
 
 Your password never travels over the network as plain text. The login
-uses a challenge-response handshake: the browser asks the daemon for
-a one-time challenge value, mixes it with your password, and sends
-back a hash the daemon can verify. Even on plain HTTP — say, a
-reverse proxy speaking HTTPS to clients but plain HTTP back to
-RunWisp on the same host — your password isn't on the wire.
+uses a challenge-response handshake: the browser asks the daemon for a
+one-time challenge, mixes it with your password, and sends back a hash
+the daemon can verify. Even on plain HTTP behind a TLS-terminating
+proxy, the password stays out of the wire.
 
-After a successful login the daemon issues a **session** held in a
-secure cookie. Restart the daemon to invalidate every session at
-once. The CLI / TUI use the same handshake under the hood when they
-need a session.
+After a successful login the daemon issues a session in a secure
+cookie. Restart the daemon to invalidate every session at once.
 
 ## The password
 
-The password is the only secret guarding the daemon. On first run
-RunWisp generates a random password and writes it to
-`<data-dir>/password` with permissions that only the daemon's user
-can read:
+The password lives in the daemon's SQLite database, inside the data
+directory (which is created with `0700` perms — only the daemon's
+user can read it). On first run RunWisp generates a random password,
+stores it in SQLite, and prints it once to stdout.
 
-```
-$ ls -l data/
--rw-------  1 runwisp runwisp   23 May  7 14:30 password
--rw-------  1 runwisp runwisp    6 May  7 14:30 daemon.pid
--rw-r--r--  1 runwisp runwisp 28 KB May  7 14:30 runwisp.db
-…
-```
+`RUNWISP_PASSWORD` overrides the stored value. When set, RunWisp uses
+the env value in memory only — it is **not** written to SQLite. That
+is what you want for Docker secrets, systemd's `LoadCredential=`, or
+sealed-secrets workflows that deliberately keep credentials out of the
+data directory.
 
-The file is plain text — its protection is the file permissions.
-Treat it as a credential: never commit it to git, never bake it into
-a tarball you publish.
-
-### Setting your own password
-
-`RUNWISP_PASSWORD` overrides the file at startup. The value is held
-in memory only — the daemon **doesn't** write it back to
-`data/password`. This is what you want for Docker secrets, systemd's
-`LoadCredential=`, and any deployment that deliberately keeps
-credentials out of the data directory.
-
-```bash
-export RUNWISP_PASSWORD='my-shared-secret'
-runwisp daemon
-```
-
-Because the env var isn't persisted, the TUI and CLI need to find the
-password the same way. In practice that means setting
-`RUNWISP_PASSWORD` in the same shell, or passing `--password` to one-
-off commands.
-
-The order RunWisp checks on every startup (daemon, TUI, CLI):
-
-1. `RUNWISP_PASSWORD` from the environment.
-2. `<data-dir>/password` file (read existing).
-3. Generate a fresh random password and write it to
-   `<data-dir>/password`. Daemon only — interactive TUI/CLI calls
-   stop here with an auth error, which is the right outcome.
-
-### Handling the password safely
-
-The password is the only thing standing between an attacker on the
-network and full control of the daemon. Every place it appears is a
-leak surface — pick the deployment path that puts it in the fewest of
-them.
-
-**Where the password leaks if you're not careful:**
-
-| Surface                         | What leaks it                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Shell history**               | `RUNWISP_PASSWORD=hunter2 runwisp daemon` is written verbatim to `~/.bash_history` / `~/.zsh_history` (often syncs to backups, dotfiles repos, or remote shell sessions). Prefix with a leading space when your shell is configured to skip such lines, or — better — never put the secret on the command line.                                                |
-| **Process listing (`ps`)**      | Args are world-readable on most systems. `runwisp tui --password=hunter2` shows up in `ps -ef` for every user on the box; same for any wrapper that exec's runwisp with the password as a flag. The `RUNWISP_PASSWORD` env var is **not** visible to other users on Linux (only to the same UID) — env is the safer transport.                                 |
-| **Docker image / `ENV` line**   | `ENV RUNWISP_PASSWORD=…` in a `Dockerfile` bakes the value into every layer of the published image. Anyone who can pull the image can read it back with `docker history --no-trunc`. Pass at run-time via `--env-file` (mode `0600`), `docker run -e` (still visible in `docker inspect` to anyone in the `docker` group), or — best — Docker / Swarm secrets. |
-| **systemd unit `Environment=`** | Lives in plain text under `/etc/systemd/system/`, world-readable by default and copied into journald logs on `systemctl status`. Use `EnvironmentFile=-/etc/runwisp/runwisp.env` with restrictive perms (`chmod 0640`, `chown root:runwisp`), or — better — `LoadCredential=` so the secret is exposed only to the started process via a unit-private path.    |
-| **Cloud-init / user-data**      | Most providers retain user-data on the metadata service for the lifetime of the VM, where any process inside the VM can fetch it. Drop the secret in via the provider's secret store (AWS SSM Parameter Store, Hetzner / DO secrets, etc.), not user-data.                                                                                                     |
-| **Backups of the data dir**     | The default `data/password` is plaintext. If you back up the data dir to S3, an unencrypted USB drive, or an off-site sync, the password rides along. Either pass `RUNWISP_PASSWORD` from a separate secret store (so `data/password` never gets created) or exclude `password` from the backup set.                                                           |
-| **CI logs**                     | `set -x`, GitHub Actions' default echo of env vars on `run:` failure, GitLab's masked-variable misconfigurations — any of these can paste the password into a job log. Mark the variable as masked / protected in the CI provider; never `echo $RUNWISP_PASSWORD`.                                                                                             |
-
-**The shortlist for production:**
-
-- **systemd:** `LoadCredential=runwisp_password:/etc/runwisp/credentials/password` keeps the secret off disk for non-root users and out of the unit file itself. Falling back to `EnvironmentFile=-/etc/runwisp/runwisp.env` with mode `0640` and group ownership of the daemon's group is the next-best step.
-- **Docker / Compose:** mount via [Docker secrets](https://docs.docker.com/engine/swarm/secrets/) or pass `--env-file ./runwisp.env` with the file `chmod 0600` and excluded from the build context (`.dockerignore`). Avoid `-e RUNWISP_PASSWORD=…` on the command line.
-- **Bare metal / VPS:** keep `<data-dir>/password` (the auto-generated file with `0600` perms) and don't set `RUNWISP_PASSWORD` at all. The file is the simplest secure path when no orchestrator is involved — just don't back up the data dir to anywhere unencrypted.
-
-**What RunWisp does on its side:**
-
-- The password is held in memory only when supplied via env (it is **not** copied to `data/password`).
-- The challenge-response handshake never puts the password on the wire, even on plain HTTP behind a reverse proxy.
-- The daemon never logs the password and never echoes it back through the API.
-- The optional control-plane integration (`internal/cloud/`) never receives the password — outbound messages carry only run metadata.
-
-The rest is on the operator: keep the secret out of the surfaces above
-and rotate it whenever a leak is suspected (next subsection).
-
-### Rotating the password
-
-Change the value of `RUNWISP_PASSWORD` (or update `data/password`)
-and restart. Every existing session is invalidated and everyone has
-to log in again.
+To rotate the password, delete the `config_entries` row with key
+`password` (or set `RUNWISP_PASSWORD` to a new value) and restart the
+daemon. Every existing session is invalidated.
 
 ## Rate limiting
 
 Failed login attempts are rate-limited per source IP. Cross the limit
-and you get `429 Too Many Requests` until the window slides past.
-Restarting the daemon also clears the counter.
+and you get `429 Too Many Requests` until the window slides past;
+restarting the daemon clears the counter.
 
 Live log streams are limited too — at most a few dozen open at once,
-plus a small per-IP cap — so a buggy script can't accidentally
-exhaust the daemon. If you hit the limit, the response is
-`503 Service Unavailable`; close some open log views and try again.
+plus a small per-IP cap — so a buggy script can't accidentally exhaust
+the daemon. If you hit the limit, the response is `503 Service
+Unavailable`; close some open log views and try again.
 
 ## Reverse proxies
 
@@ -139,61 +66,13 @@ export RUNWISP_TRUST_PROXY='10.0.0.0/8,2001:db8::/32'
 runwisp daemon --host 127.0.0.1 --port 9477
 ```
 
-`RUNWISP_TRUST_PROXY` is a comma-separated list of IP ranges
-(written in CIDR notation) whose `X-Forwarded-Proto` and
-`X-Forwarded-For` headers RunWisp will trust. Common cases:
+`RUNWISP_TRUST_PROXY` is a comma-separated list of CIDR ranges whose
+`X-Forwarded-Proto` and `X-Forwarded-For` headers RunWisp will trust.
+When a request from a trusted range arrives with `X-Forwarded-Proto:
+https`, the daemon treats the connection as secure and marks the
+session cookie accordingly. Rate limiting always counts the real TCP
+peer, not the forwarded header, so a misconfigured proxy can't open a
+hole.
 
-```bash
-# Single nginx box on the same host
-RUNWISP_TRUST_PROXY='127.0.0.1/32,::1/128'
-
-# Anywhere on a private LAN
-RUNWISP_TRUST_PROXY='10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
-```
-
-The daemon **rejects** `0.0.0.0/0` and `::/0` — trusting the entire
-internet would let any client lie about its source IP and bypass rate
-limiting.
-
-When a request from a trusted range arrives with
-`X-Forwarded-Proto: https`, the daemon treats the connection as
-secure and marks the session cookie accordingly. Rate limiting always
-counts the real TCP peer, not the forwarded header — so even
-misconfigured proxies can't open a hole.
-
-## Endpoints that don't need a login
-
-A few endpoints are intentionally public:
-
-| Path                      | Reason                                                              |
-| ------------------------- | ------------------------------------------------------------------- |
-| `GET /health`             | Used by `runwisp status`, Docker `HEALTHCHECK`, Kubernetes probes.  |
-| `GET /api/auth/status`    | Lets a client check whether it's already logged in.                 |
-| `GET /api/auth/challenge` | First step of the login handshake. Rate-limited.                    |
-| `POST /api/auth`          | Second step of the login handshake. Rate-limited.                   |
-| `GET /api/auth/launch`    | Loopback-only; used when the local TUI hands you off to the Web UI. |
-
-Everything else under `/api/` requires a session.
-
-## What RunWisp deliberately doesn't ship
-
-- **No SSO / OIDC / SAML / OAuth.** Put RunWisp behind an
-  identity-aware proxy (Cloudflare Access, Pomerium, oauth2-proxy)
-  if you need federated identity.
-- **No LDAP / AD / directory integration.**
-- **No multi-factor.** No TOTP, no WebAuthn, no SMS.
-- **No API keys.** Every client logs in with the password.
-- **No multi-user model.** One password, one set of permissions: full
-  control.
-- **No RBAC.** A logged-in client can do anything the API exposes.
-
-These are choices, not omissions. RunWisp is for one operator on one
-machine; federated identity, multi-user, and RBAC are explicit
-non-goals.
-
-## Where to next
-
-- [Operations: data directory](/operations/data-directory/) — where
-  `password`, `runwisp.db`, and other state live on disk.
-- [CLI reference](/cli/) — `runwisp tui --password`, environment
-  variable precedence, `runwisp status`.
+The daemon rejects `0.0.0.0/0` and `::/0` — trusting the entire
+internet would let any client lie about its source IP.
