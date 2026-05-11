@@ -64,14 +64,12 @@ dir, in two places:
   threshold, the run's log writer stops accepting new lines and the
   daemon raises a `log.disk_pressure` notification (severity `warn`)
   so the operator discovers the silenced output. What happens to the
-  process depends on the task's `log_on_full`:
-    - `drop_new` / `drop_old`: a system line `"Log output stopped:
-      disk space critically low"` is recorded; the process keeps
-      running.
-    - `kill_task`: the run is cancelled (`end_reason = "stopped"`)
-      with a system line `"Process killed: disk space critically low
-      …; log_on_full=\"kill_task\""`. The operator chose loud failure
-      over disk safety; we honour that.
+  process depends on the task's `log_on_full`: - `drop_new` / `drop_old`: a system line `"Log output stopped:
+disk space critically low"` is recorded; the process keeps
+  running. - `kill_task`: the run is cancelled (`end_reason = "stopped"`)
+  with a system line `"Process killed: disk space critically low
+…; log_on_full=\"kill_task\""`. The operator chose loud failure
+  over disk safety; we honour that.
 
 The notification fires once per run, not once per check, and includes
 `free_bytes`, `min_free_bytes`, and `killed_task` so dashboards can

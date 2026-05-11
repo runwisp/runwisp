@@ -3,7 +3,7 @@
 
 import type { FullConfig } from "@playwright/test";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,7 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     const binaryPath = join(runnerRoot, "runwisp");
     const configPath = resolve(__dirname, "fixtures/runwisp.e2e.toml");
     const dataDir = await mkdtemp(join(tmpdir(), "runwisp-e2e-"));
+    const password = generatePassword();
 
     const daemon = spawn(
         binaryPath,
@@ -26,6 +27,7 @@ async function globalSetup(_config: FullConfig): Promise<void> {
             cwd: runnerRoot,
             stdio: ["ignore", "pipe", "pipe"],
             detached: true,
+            env: { ...process.env, RUNWISP_PASSWORD: password },
         },
     );
 
@@ -57,8 +59,6 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     console.log(`[e2e] PID: ${daemon.pid}`);
 
     await waitForHealth(baseURL, 15_000);
-
-    const password = await waitForPassword(dataDir, 10_000);
 
     // Obtain a JWT once to avoid rate-limit issues across tests
     const token = await obtainToken(baseURL, password);
@@ -113,22 +113,12 @@ async function waitForHealth(baseURL: string, timeout: number): Promise<void> {
     throw new Error(`Daemon did not become healthy within ${timeout}ms at ${baseURL}`);
 }
 
-async function waitForPassword(dataDir: string, timeout: number): Promise<string> {
-    const passwordPath = join(dataDir, "password");
-    const deadline = Date.now() + timeout;
-
-    while (Date.now() < deadline) {
-        try {
-            const content = await readFile(passwordPath, "utf-8");
-            const password = content.trim();
-            if (password) return password;
-        } catch {
-            // file not created yet
-        }
-        await sleep(100);
-    }
-
-    throw new Error(`Password file not created within ${timeout}ms at ${passwordPath}`);
+function generatePassword(): string {
+    const bytes = new Uint8Array(24);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
 }
 
 function sleep(ms: number): Promise<void> {

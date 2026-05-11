@@ -145,6 +145,9 @@ func writeE2EConfig(t *testing.T, dir string) string {
 
 	configPath := filepath.Join(dir, "runwisp.e2e.toml")
 	config := `
+[daemon]
+shutdown_timeout = "500ms"
+
 [tasks.alpha-stream]
 run = """
 set -eu

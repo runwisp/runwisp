@@ -96,7 +96,7 @@ func isDaemonRunning() bool {
 // runExecViaDaemon dispatches the run through the running daemon's REST API
 // and follows its SSE log stream until the run reaches a terminal state.
 func runExecViaDaemon(taskName string) (int, error) {
-	password, _, err := datadir.ResolvePassword(flags.DataDir)
+	password, err := resolveClientPassword()
 	if err != nil {
 		return 0, fmt.Errorf("resolve password: %w", err)
 	}
