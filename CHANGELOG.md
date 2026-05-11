@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Validation rules docs page removed.** The strict-loader rules are still enforced in code — the docs page was a redundant catalogue that didn't help anyone configure RunWisp.
+
 - **`runwisp init` is gone.** Running `runwisp` in a directory without a `runwisp.toml` now offers to scaffold a small starter for you (`Create a starter with one example task? [Y/n]`) and continues straight into the TUI. The previous flow — a separate `runwisp init` command that wrote a 60-line file dominated by a commented schema reference, plus a "Generated password" that the daemon never actually used — is replaced by one prompt and a smaller, sharper starter file. Headless launches (`runwisp daemon`, Docker, systemd) skip the prompt; if `runwisp.toml` is missing they now exit with an error instead of falling back to a demo task.
 
 - **`runwisp run-task` is gone.** `runwisp exec <task>` now handles both modes: it auto-detects whether a daemon is running on the data dir and dispatches through its REST API (streaming the live log to your terminal) or, with no daemon up, runs the task in-process. Both paths produce the same visible output and propagate the run's exit code. Use `--daemon` to require a running daemon, or `--standalone` to require none.
@@ -16,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp.example.toml` is gone.** The starter `runwisp.toml` and the [docs site](https://docs.runwisp.com/configuration/overview/) are the single reference; the parallel annotated example file is no longer maintained.
 
 ### Added
+
+- **New `[daemon]` configuration reference page.** Documents `shutdown_timeout` and `allow_cloud_dispatch` plus the `--data` / `--host` / `--port` CLI flags in one place.
 
 - **Download a run's full log from the Web UI and the TUI.** The Web UI's run detail panel gains a **Download log** button next to the live-stream toggle; the TUI binds `d` to the same action on the exec view. The download is the rotated-out segment plus the current segment as one `text/plain` file — what you'd get from `cat *.log.prev *.log`, but in one click. The TUI download works over SSH and tmux, not just graphical sessions.
 
@@ -26,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Inline notification targets in `notify_on_failure` / `notify_on_success`.** A token of the form `"<id>:<target>"` overrides the parent notifier's channel (Slack) or chat_id (Telegram) for that route only — `notify_on_failure = ["slack-ops:#deploys"]` reuses the credentials of `slack-ops` but posts to `#deploys`. Bare ids and the literal `"inapp"` keep working unchanged. Notifier ids are now disallowed from containing `:` (the new separator); rename any existing colon-bearing ids before upgrading.
 
 ### Changed
+
+- **`max_catch_up_runs` no longer capped at 10000.** Pick any positive integer that suits your workload — the daemon trusts you.
+
+- **Run log file paths now use UTC timestamps.** A host that flips DST (or relocates) no longer shifts where new runs land on disk.
 
 - **`parallelism` → `max_concurrent` on `[tasks.*]` (BREAKING).** The new name matches what the field actually means: the maximum number of overlapping runs of a task. The field is **removed entirely from `[services.*]`** — replica count is `instances`, and there is no other concurrency knob on a service. Configs that still spell `parallelism` are rejected at config load with a `did you mean 'max_concurrent'?` hint.
 

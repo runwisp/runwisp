@@ -253,9 +253,6 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if task.MaxCatchUpRuns < 0 {
 		return fmt.Errorf("invalid max_catch_up_runs for task %s: must be a positive integer", task.Name)
 	}
-	if task.MaxCatchUpRuns > MaxCatchUpRunsCap {
-		return fmt.Errorf("invalid max_catch_up_runs for task %s: %d exceeds the cap of %d", task.Name, task.MaxCatchUpRuns, MaxCatchUpRunsCap)
-	}
 	if err := validateKeepRuns(fmt.Sprintf("keep_runs for task %s", task.Name), task.KeepRuns); err != nil {
 		return err
 	}
@@ -348,11 +345,10 @@ var (
 // deliberately generous: any operator who needs more is almost certainly
 // configuring something pathological and should rethink, not raise the cap.
 const (
-	MaxConcurrentCap  = 1024
-	QueueMaxCap       = 10000
-	MaxCatchUpRunsCap = 10000
-	KeepRunsCap       = 1_000_000
-	RetryAttemptsCap  = 100
+	MaxConcurrentCap = 1024
+	QueueMaxCap      = 10000
+	KeepRunsCap      = 1_000_000
+	RetryAttemptsCap = 100
 )
 
 // Built-in defaults applied by ApplyDefaults when a field is omitted entirely.

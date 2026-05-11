@@ -14,15 +14,6 @@ The file is divided into a handful of sections. Most are optional; the only
 thing RunWisp truly needs is at least one `[tasks.*]` or `[services.*]`
 table with a `run` key.
 
-:::caution[`[tasks.*]` and `[services.*]` share one namespace]
-Each table key (`backup-db` in `[tasks.backup-db]`) becomes the unit's
-identity in the CLI, REST API, Web UI, log paths, and metrics. The
-loader rejects a startup where a `[tasks.<name>]` and a
-`[services.<name>]` use the **same name** — there is no "tasks/foo" vs
-"services/foo" disambiguation anywhere. Pick a unique name per unit
-across both kinds.
-:::
-
 ## A complete example
 
 ```toml
@@ -62,25 +53,22 @@ description = "Always-on metrics collector"
 run         = "/usr/local/bin/metrics-agent"
 ```
 
-The fully annotated reference lives next to the binary at
-[`apps/runwisp/runwisp.example.toml`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/runwisp.example.toml).
 If you run `runwisp` in a directory without a `runwisp.toml`, it
 offers to write a minimal starter for you — see
 [Your first task](/getting-started/first-task/).
 
 ## Section by section
 
-| Section                  | Purpose                                                                                       | Reference                                                                  |
-| ------------------------ | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `[storage]`              | Disk-usage limits — caps total bytes used and reserves headroom on the data partition.        | [`[storage]`](/configuration/storage/)                                     |
-| `[defaults]`             | Defaults inherited by every task and service unless explicitly overridden.                    | [`[defaults]`](/configuration/defaults/)                                   |
+| Section                  | Purpose                                                                                                   | Reference                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `[storage]`              | Disk-usage limits — caps total bytes used and reserves headroom on the data partition.                    | [`[storage]`](/configuration/storage/)                                     |
+| `[defaults]`             | Defaults inherited by every task and service unless explicitly overridden.                                | [`[defaults]`](/configuration/defaults/)                                   |
 | `[tasks.<name>]`         | Scheduled or manually-triggered units of work. Cron expression, concurrency, retries, timeout, retention. | [`[tasks.*]`](/configuration/tasks/)                                       |
-| `[services.<name>]`      | Always-on processes. One or more `instances`, exponential restart backoff, graceful shutdown. | [`[services.*]`](/configuration/services/)                                 |
-| `[[notifier]]`           | Declares one outbound channel. Repeated for each channel.                                     | [Notifications model](/notifications/model/#notifier--declaring-a-channel) |
-| `[[notification_route]]` | Sends events (`run.failed`, `run.timeout`, …) to one or more channels. One rule, many tasks.  | [Notification rules](/notifications/routes/)                               |
-| `[notify]`               | Global notification settings — queue size, retention, in-app toggle.                          | [Global settings](/notifications/global/)                                  |
-| `notify_on_failure`      | Sets the channels to notify when one specific task ends `failed`, `timeout`, or `crashed`.    | [Per-task notifications](/notifications/per-task/)                         |
-| _(reference)_            | Catalogue of every shape the strict loader rejects at boot.                                   | [Validation rules](/configuration/validation/)                             |
+| `[services.<name>]`      | Always-on processes. One or more `instances`, exponential restart backoff, graceful shutdown.             | [`[services.*]`](/configuration/services/)                                 |
+| `[[notifier]]`           | Declares one outbound channel. Repeated for each channel.                                                 | [Notifications model](/notifications/model/#notifier--declaring-a-channel) |
+| `[[notification_route]]` | Sends events (`run.failed`, `run.timeout`, …) to one or more channels. One rule, many tasks.              | [Notification rules](/notifications/routes/)                               |
+| `[notify]`               | Global notification settings — queue size, retention, in-app toggle.                                      | [Global settings](/notifications/global/)                                  |
+| `notify_on_failure`      | Sets the channels to notify when one specific task ends `failed`, `timeout`, or `crashed`.                | [Per-task notifications](/notifications/per-task/)                         |
 
 ## Reload semantics
 
@@ -107,6 +95,3 @@ you restart.
 
 Pre-1.0, the TOML schema may receive breaking changes — they are flagged in
 the [CHANGELOG](https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md).
-The Go schema in
-[`apps/runwisp/internal/config/schema.go`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/config/schema.go)
-is the authoritative spec; these docs are the on-ramp.

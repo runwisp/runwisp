@@ -19,8 +19,10 @@ const LogIndexInterval = 1024
 
 // RunLogPath generates a human-readable, filesystem-friendly log path.
 // Format: {logDir}/{sanitizedTask}/{YYYYMMDD}_{HHMMSS}_{ulidSuffix}.log
+// Timestamps are formatted in UTC so the on-disk cadence stays stable when
+// the host timezone changes (DST flips, traveling laptops, container moves).
 func RunLogPath(logDir, sanitizedTaskName, runID string, createdAt time.Time) string {
-	ts := createdAt.Format("20060102_150405")
+	ts := createdAt.UTC().Format("20060102_150405")
 	suffix := runID[len(runID)-4:]
 	return filepath.Join(logDir, sanitizedTaskName, fmt.Sprintf("%s_%s.log", ts, suffix))
 }

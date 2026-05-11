@@ -115,11 +115,11 @@ cron     = "*/15 * * * *"
 catch_up = "latest"      # default
 ```
 
-| Policy   | Behaviour on startup                                                                                              |
-| -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `latest` | If any ticks were missed, fire **one** catch-up run. Default. Right for jobs where running twice is harmless.     |
-| `all`    | Fire **one run per missed tick**, capped by `max_catch_up_runs`. Right when each tick processes a discrete slice. |
-| `skip`   | Pretend the missed ticks never happened. Right for monitors and probes that just want fresh.                      |
+| Policy   | Behaviour on startup                                                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `latest` | If any ticks were missed, fire **one** catch-up run. Default. Right for jobs where running twice is harmless.                                                |
+| `all`    | Fire **one run per missed tick**, capped by [`max_catch_up_runs`](#capping-the-backfill-max_catch_up_runs). Right when each tick processes a discrete slice. |
+| `skip`   | Pretend the missed ticks never happened. Right for monitors and probes that just want fresh.                                                                 |
 
 The anchor for "missed" is the timestamp of the last recorded run for
 the task. On the very first boot, the anchor is set the first time
@@ -144,11 +144,9 @@ max_catch_up_runs = 200    # at most 200 missed ticks fire on startup
 | _omitted_ | Inherit the built-in default of **100**. Tune up explicitly if each missed tick is real work. |
 | `N > 0`   | Cap the backfill at `N` runs; older missed ticks are dropped.                                 |
 
-The cap is bounded by a built-in maximum (`10000`) — values above
-that are rejected at config load with a clear error. Negative values
-and `0` are also rejected; omit the key to inherit the default. The
-cap only applies to `catch_up = "all"`: `latest` always triggers
-exactly one run by construction, and `skip` triggers zero.
+Negative values and `0` are rejected; omit the key to inherit the
+default. The cap only applies to `catch_up = "all"`: `latest` always
+triggers exactly one run by construction, and `skip` triggers zero.
 
 When the cap fires, the daemon logs a warning that names the task, the
 total `missed`, the cap, and how many were dropped — so the silenced
