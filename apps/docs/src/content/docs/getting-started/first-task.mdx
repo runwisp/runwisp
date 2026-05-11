@@ -37,7 +37,6 @@ The starter file looks like this:
 ```toml
 # runwisp.toml
 # Docs: https://docs.runwisp.com/configuration/overview/
-# Full reference: see runwisp.example.toml in the repo or the docs site.
 
 [tasks.hello]
 description = "Example task. Trigger it from the TUI (press r) or the Web UI."
@@ -55,8 +54,10 @@ run = "echo hello from runwisp"
 ```
 
 To run without the TUI — any time stdin is not a terminal — use
-`runwisp daemon`. In that mode there's no prompt: if no `runwisp.toml`
-exists, the daemon logs a warning and runs a built-in demo task.
+`runwisp daemon`. There's no prompt in that mode: if no `runwisp.toml`
+exists, the daemon exits with a non-zero status. Create the file
+first (or run `runwisp` interactively once to scaffold it) and start
+the daemon again.
 
 ## 2. Add your real tasks
 
@@ -109,17 +110,14 @@ In the TUI you can:
 To start a run from another shell:
 
 ```bash
-runwisp run-task health-check
+runwisp exec health-check
 ```
 
-`run-task` asks the daemon to start a new run and prints its ULID.
-Watch the live log in the TUI or Web UI — `run-task` itself does not
-stream output.
-
-For a quick test **without a daemon running**, `runwisp exec
-health-check` runs the task in your terminal and streams its output.
-It refuses to run when a daemon is already using the same data dir:
-two writers on one SQLite file would corrupt it.
+`exec` streams the run's stdout and stderr straight to your terminal
+and exits with the run's exit code. If a daemon is already running
+against this data dir, the run goes through its REST API and you see
+the same live log the Web UI is showing; with no daemon up, the task
+executes in your shell directly from `runwisp.toml`.
 
 ## 4. Open the Web UI
 

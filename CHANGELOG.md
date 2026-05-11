@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **`runwisp init` is gone.** Running `runwisp` in a directory without a `runwisp.toml` now offers to scaffold a small starter for you (`Create a starter with one example task? [Y/n]`) and continues straight into the TUI. The previous flow — a separate `runwisp init` command that wrote a 60-line file dominated by a commented schema reference, plus a "Generated password" that the daemon never actually used — is replaced by one prompt and a smaller, sharper starter file. Headless launches (`runwisp daemon`, Docker, systemd) skip the prompt and fall back to a built-in demo task with a warning, same as before; write `runwisp.toml` yourself (see `runwisp.example.toml`) to define real tasks.
+- **`runwisp init` is gone.** Running `runwisp` in a directory without a `runwisp.toml` now offers to scaffold a small starter for you (`Create a starter with one example task? [Y/n]`) and continues straight into the TUI. The previous flow — a separate `runwisp init` command that wrote a 60-line file dominated by a commented schema reference, plus a "Generated password" that the daemon never actually used — is replaced by one prompt and a smaller, sharper starter file. Headless launches (`runwisp daemon`, Docker, systemd) skip the prompt; if `runwisp.toml` is missing they now exit with an error instead of falling back to a demo task.
+
+- **`runwisp run-task` is gone.** `runwisp exec <task>` now handles both modes: it auto-detects whether a daemon is running on the data dir and dispatches through its REST API (streaming the live log to your terminal) or, with no daemon up, runs the task in-process. Both paths produce the same visible output and propagate the run's exit code. Use `--daemon` to require a running daemon, or `--standalone` to require none.
+
+- **`runwisp.example.toml` is gone.** The starter `runwisp.toml` and the [docs site](https://docs.runwisp.com/configuration/overview/) are the single reference; the parallel annotated example file is no longer maintained.
 
 ### Added
 
@@ -45,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Schema and CLI tidy-up before 1.0 (BREAKING).** A coordinated rename pass that removes accumulated naming inconsistencies. None of these change what the daemon can do — only how you spell it.
   - `retry_backoff` and `restart_backoff` now share the same enum: `constant` / `linear` / `exponential`. The old `""` (constant) and `"none"` (constant) values are rejected. Services gain `linear` as a valid restart curve.
-  - The CLI is reorganised around two clear verbs: `runwisp exec <task>` runs in-process (and now refuses with an error when a daemon is already attached to the same data dir, instead of silently opening SQLite as a second writer); `runwisp run-task <task>` triggers via the running daemon's REST API. The old `runwisp trigger` and `runwisp run` are removed; `runwisp daemon` remains the headless launcher for systemd/Docker.
+  - The CLI is reorganised around one verb for ad-hoc runs: `runwisp exec <task>` auto-detects whether a daemon is running on the data dir and either dispatches through its REST API (streaming the live log to your terminal) or runs in-process when no daemon is up. The old `runwisp trigger`, `runwisp run`, and `runwisp run-task` are removed; `runwisp daemon` remains the headless launcher for systemd/Docker.
   - Notification model: `[notify] disable_inapp = true` is replaced by `[notify] append_notifiers = []`. The same setting now also lets you redirect the zero-config catch-all (e.g. `append_notifiers = ["slack-ops"]` to make every failure page Slack instead of, or alongside, the in-app bell). Per-task `notify_on_failure` / `notify_on_success` continue to work; the contents of `append_notifiers` are appended to each per-task list (deduped against the explicit ids), so the bell keeps lighting up unless you opt out.
 
 - **Log streaming redesigned around absolute line numbers (BREAKING).** The REST and SSE log surface now speaks lines, not bytes. New endpoints:

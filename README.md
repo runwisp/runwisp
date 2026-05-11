@@ -207,13 +207,12 @@ If you need DAG pipelines or enterprise-grade orchestration, tools like Dagu, Ai
 
 Full documentation lives at **[docs.runwisp.com](https://docs.runwisp.com)** — installation, the complete `runwisp.toml` schema, scheduling and concurrency policies, log rotation, the REST API, and operational guides.
 
-|                                                     |                                       |
-| --------------------------------------------------- | ------------------------------------- |
-| [docs.runwisp.com](https://docs.runwisp.com)        | Full user and operator documentation  |
-| [Example Config](apps/runwisp/runwisp.example.toml) | Annotated `runwisp.toml` with every option |
-| [Changelog](CHANGELOG.md)                           | Recent changes and version history    |
-| [Contributing](CONTRIBUTING.md)                     | How to contribute                     |
-| [Security Policy](SECURITY.md)                      | Reporting vulnerabilities             |
+|                                              |                                      |
+| -------------------------------------------- | ------------------------------------ |
+| [docs.runwisp.com](https://docs.runwisp.com) | Full user and operator documentation |
+| [Changelog](CHANGELOG.md)                    | Recent changes and version history   |
+| [Contributing](CONTRIBUTING.md)              | How to contribute                    |
+| [Security Policy](SECURITY.md)               | Reporting vulnerabilities            |
 
 ---
 
