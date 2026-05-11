@@ -4,9 +4,9 @@
 package storage
 
 const (
-	ConfigKeyJWTSecret    = "jwt_secret"
-	ConfigKeyFingerprint  = "fingerprint"
-	ConfigKeyPasswordHash = "password_hash"
+	ConfigKeyJWTSecret   = "jwt_secret"
+	ConfigKeyFingerprint = "fingerprint"
+	ConfigKeyPassword    = "password"
 )
 
 // ConfigRepository stores and retrieves named daemon configuration values.

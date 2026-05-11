@@ -11,14 +11,13 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/tui"
 	"log/slog"
 )
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.
 func runDefault() error {
-	password, _, err := datadir.ResolvePassword(flags.DataDir)
+	password, err := resolveClientPassword()
 	if err != nil {
 		return err
 	}

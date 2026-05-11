@@ -18,6 +18,21 @@ import (
 	"log/slog"
 )
 
+// PasswordStore reads and writes the daemon password from persistent storage.
+// The plaintext password must be retrievable by the server to verify
+// CHAP challenge-response logins (sha256(password + nonce)), so the SQLite
+// `config_entries` row holds the cleartext value protected by the data dir's
+// 0700 perms (the directory only the daemon's user can read).
+type PasswordStore interface {
+	GetConfigValue(key string) (string, bool, error)
+	SetConfigValue(key, value string) error
+}
+
+// passwordKey duplicates storage.ConfigKeyPassword. We keep a local copy
+// rather than importing storage to avoid a circular dependency: storage
+// imports nothing from datadir today, and we want to keep it that way.
+const passwordKey = "password"
+
 // EnsureDir creates dir (and parents) with mode 0700 so that secrets stored
 // inside are not exposed to other local users via directory traversal.
 func EnsureDir(dir string) error {
@@ -84,25 +99,26 @@ func GeneratePassword() (string, error) {
 }
 
 // ResolvePassword reads or generates the daemon password.
-// Priority: RUNWISP_PASSWORD env > data/password file > generate new.
+// Priority: RUNWISP_PASSWORD env > SQLite config row > generate new (and persist).
 // Returns isNew=true only when a fresh password was generated.
 //
 // When the env var is set, the value is used in-memory only — it is NOT
-// written to data/password. Operators using Docker secrets,
-// systemd LoadCredential, or sealed-secrets do so specifically to avoid a
-// plaintext copy on disk; persisting the env var would silently defeat
+// written back to SQLite. Operators using Docker secrets, systemd
+// LoadCredential, or sealed-secrets do so specifically to keep credentials
+// out of the data directory; persisting the env var would silently defeat
 // that. The TUI and CLI must read RUNWISP_PASSWORD themselves in those
-// shells; falling back to data/password from a TUI session whose env var
-// was set in the daemon's shell would be misleading anyway.
-func ResolvePassword(dataDir string) (password string, isNew bool, err error) {
-	pwPath := filepath.Join(dataDir, "password")
-
+// shells; falling back to the stored value from a different shell would be
+// misleading anyway.
+func ResolvePassword(store PasswordStore) (password string, isNew bool, err error) {
 	if envPw := os.Getenv("RUNWISP_PASSWORD"); envPw != "" {
 		return envPw, false, nil
 	}
 
-	existing, _ := readSecretFile(pwPath)
-	if existing != "" {
+	existing, found, err := store.GetConfigValue(passwordKey)
+	if err != nil {
+		return "", false, err
+	}
+	if found && existing != "" {
 		return existing, false, nil
 	}
 
@@ -110,17 +126,10 @@ func ResolvePassword(dataDir string) (password string, isNew bool, err error) {
 	if genErr != nil {
 		return "", false, genErr
 	}
-	if writeErr := writeSecretFile(pwPath, pw); writeErr != nil {
-		return "", false, writeErr
+	if err := store.SetConfigValue(passwordKey, pw); err != nil {
+		return "", false, err
 	}
 	return pw, true, nil
-}
-
-// CleanPasswordFile removes the stored password file.
-func CleanPasswordFile(dataDir string) {
-	if err := os.Remove(filepath.Join(dataDir, "password")); err != nil && !os.IsNotExist(err) {
-		slog.Warn("Failed to remove password file", "err", err)
-	}
 }
 
 // PidFilePath returns the path to the daemon PID file.
@@ -145,22 +154,4 @@ func CleanPidFile(dataDir string) {
 	if err := os.Remove(PidFilePath(dataDir)); err != nil && !os.IsNotExist(err) {
 		slog.Warn("Failed to remove PID file", "err", err)
 	}
-}
-
-// readSecretFile reads and trims a single-value secret file.
-func readSecretFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
-// writeSecretFile persists a secret value with mode 0600. Refuses to follow
-// symlinks; see writeFileNoFollow.
-func writeSecretFile(path, value string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	return writeFileNoFollow(path, []byte(value+"\n"))
 }

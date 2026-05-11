@@ -5,11 +5,13 @@ title: Telegram
 description: Set up the Telegram notifier end-to-end — create a bot, find your chat_id, store the token safely, declare the channel, route failures to it, and test it.
 ---
 
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
 The Telegram driver posts via Telegram's Bot API. One bot token plus
 one `chat_id` maps to one destination — a personal chat, a group, or
 a channel. The setup is the same shape as the
-[Slack provider](/notifications/providers/slack/). Two things catch
-people out the first time: finding your `chat_id`, and `parse_mode`.
+[Slack provider](/notifications/providers/slack/); the one thing that
+catches people out the first time is finding their `chat_id`.
 
 ## Fields
 
@@ -19,21 +21,19 @@ id            = "tg-oncall"
 type          = "telegram"
 bot_token_env = "RUNWISP_TG_TOKEN"
 chat_id       = "-1001234567890"
-parse_mode    = "HTML"
 ```
 
 `id` and `type` are required on every notifier. Exactly one of
 `bot_token`, `bot_token_env`, `bot_token_file` must be set —
 [the secret rule](/notifications/model/#storing-the-secret).
 
-| Key              | Type   | Required           | What it does                                                                    |
-| ---------------- | ------ | ------------------ | ------------------------------------------------------------------------------- |
-| `bot_token`      | string | one-of (see below) | Inline bot token.                                                               |
-| `bot_token_env`  | string | one-of             | Name of an env var holding the token.                                           |
-| `bot_token_file` | string | one-of             | Path to a file containing the token. Relative paths resolve under the data dir. |
-| `chat_id`        | string | yes                | Chat ID. Stored as a string so negative IDs (groups) round-trip cleanly.        |
-| `parse_mode`     | enum   | no                 | `"HTML"` (default — matches the embedded template) or `"MarkdownV2"`.           |
-| `template_path`  | string | no                 | Override the embedded message template.                                         |
+| Key              | Required           | What it does                                                                    |
+| ---------------- | ------------------ | ------------------------------------------------------------------------------- |
+| `bot_token`      | one-of (see below) | Inline bot token.                                                               |
+| `bot_token_env`  | one-of             | Name of an env var holding the token.                                           |
+| `bot_token_file` | one-of             | Path to a file containing the token. Relative paths resolve under the data dir. |
+| `chat_id`        | yes                | Chat ID. Stored as a string so negative IDs (groups) round-trip cleanly.        |
+| `template_path`  | no                 | Override the embedded HTML message template.                                    |
 
 ## 1. Create the bot
 
@@ -77,53 +77,65 @@ a message, hit `getUpdates`. Channel IDs also start with `-100`.
 
 ## 3. Store the token
 
-Three options. Pick one — setting two of them is a config-load error.
+Pick one of the three options below. Setting more than one is a
+config-load error.
 
-### Env var (recommended)
+<Tabs syncKey="telegram-secret">
+    <TabItem label="Env var" icon="seti:shell">
+        The simplest option for any deployment — Docker, systemd,
+        bare metal. Set the variable in whatever already manages
+        your environment.
 
-```bash
-# /etc/runwisp/runwisp.env
-RUNWISP_TG_TOKEN=123456789:AAEa-PXxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+        ```bash
+        export RUNWISP_TG_TOKEN=123456789:AAEa-PXxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        runwisp daemon
+        ```
 
-### File on disk
+        ```toml
+        [[notifier]]
+        id            = "tg-oncall"
+        type          = "telegram"
+        bot_token_env = "RUNWISP_TG_TOKEN"
+        chat_id       = "-1001234567890"
+        ```
+    </TabItem>
+    <TabItem label="File on disk" icon="document">
+        Useful when a secrets manager (Vault agent, sops, Docker
+        secrets at `/run/secrets/...`) writes the token to a known
+        path for you. Relative paths resolve under the data dir.
 
-```bash
-sudo install -d -o runwisp -g runwisp -m 0700 /etc/runwisp/secrets
-echo '123456789:AAEa-PXxx...' \
-  | sudo install -m 0600 -o runwisp -g runwisp /dev/stdin /etc/runwisp/secrets/tg-oncall.token
-```
+        ```bash
+        mkdir -p ~/.config/runwisp
+        chmod 0700 ~/.config/runwisp
+        printf '%s\n' '123456789:AAEa-PXxx...' > ~/.config/runwisp/tg-oncall.token
+        chmod 0600 ~/.config/runwisp/tg-oncall.token
+        ```
 
-### Inline (don't)
+        ```toml
+        [[notifier]]
+        id             = "tg-oncall"
+        type           = "telegram"
+        bot_token_file = "/home/you/.config/runwisp/tg-oncall.token"
+        chat_id        = "-1001234567890"
+        ```
+    </TabItem>
+    <TabItem label="Inline (don't)" icon="warning">
+        The notifier accepts `bot_token = "123456789:..."` directly.
+        Avoid it — config files are often committed to git or shared
+        in chat.
 
-The notifier accepts `bot_token = "123456789:..."` directly. Avoid
-it — config files are often committed to git or shared in chat.
+        ```toml
+        [[notifier]]
+        id        = "tg-oncall"
+        type      = "telegram"
+        bot_token = "123456789:AAEa-PXxx..."
+        chat_id   = "-1001234567890"
+        ```
+    </TabItem>
 
-## 4. Declare the notifier
+</Tabs>
 
-```toml
-[[notifier]]
-id            = "tg-oncall"
-type          = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
-chat_id       = "-1001234567890"
-parse_mode    = "HTML"     # default — matches the embedded template
-```
-
-`parse_mode` defaults to `"HTML"` because the embedded message
-template uses HTML. Leave it unset and formatting works out of the box.
-
-For the file variant:
-
-```toml
-[[notifier]]
-id             = "tg-oncall"
-type           = "telegram"
-bot_token_file = "/etc/runwisp/secrets/tg-oncall.token"
-chat_id        = "-1001234567890"
-```
-
-## 5. Route failures to it
+## 4. Route failures to it
 
 Identical to Slack — the routing layer does not care which driver is on
 the other end:
@@ -148,7 +160,7 @@ and an outage of one channel does not stop delivery on the other:
 notify_on_failure = ["slack-ops", "tg-oncall"]
 ```
 
-## 6. Test it
+## 5. Test it
 
 ```bash
 runwisp exec smoke-test       # something that exits non-zero
@@ -165,33 +177,8 @@ Telegram messages usually arrive in 1–2 seconds. If yours doesn't:
   `curl https://api.telegram.org/bot<TOKEN>/getMe` — returns the
   bot's profile if the token is valid.
 
-## The `parse_mode = "MarkdownV2"` trap
-
-If you switch `parse_mode` to `"MarkdownV2"`, you **must** also set
-a `template_path`. The embedded default template is HTML, and without
-your own template Telegram will render the literal `<b>…</b>` tags
-in your messages. The loader catches this and refuses to start.
-
-```toml
-[[notifier]]
-id            = "tg-oncall"
-type          = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
-chat_id       = "-1001234567890"
-parse_mode    = "MarkdownV2"
-template_path = "/etc/runwisp/templates/telegram-mdv2.tmpl"
-```
-
-MarkdownV2 escaping is [tricky][mdv2] — 18 characters need a
-backslash, including dots and parentheses. Stay on `HTML` unless you
-have a strong reason; HTML's "escape `<`, `>`, `&`" rule is much
-friendlier.
-
-[mdv2]: https://core.telegram.org/bots/api#markdownv2-style
-
 ## What the loader rejects
 
-- `parse_mode = "MarkdownV2"` without a `template_path`.
 - Two of `bot_token`, `bot_token_env`, `bot_token_file` set at the
   same time, or none of them set.
 - An `id` containing `:` (reserved for inline target overrides) or

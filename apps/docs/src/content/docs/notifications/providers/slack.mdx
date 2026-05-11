@@ -5,6 +5,8 @@ title: Slack
 description: Set up the Slack notifier end-to-end — create a webhook, store the URL safely, declare the channel, route failures to it, and test it.
 ---
 
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
 The Slack driver posts via Slack's [Incoming Webhooks][iw]. One
 webhook URL maps to one default channel. An optional `channel`
 override lets a single webhook target several destinations.
@@ -25,13 +27,13 @@ channel         = "#ops"          # optional override
 `webhook_url`, `webhook_url_env`, `webhook_url_file` must be set —
 [the secret rule](/notifications/model/#storing-the-secret).
 
-| Key                | Type   | Required           | What it does                                                                  |
-| ------------------ | ------ | ------------------ | ----------------------------------------------------------------------------- |
-| `webhook_url`      | string | one-of (see below) | Inline webhook URL.                                                           |
-| `webhook_url_env`  | string | one-of             | Name of an env var holding the URL.                                           |
-| `webhook_url_file` | string | one-of             | Path to a file containing the URL. Relative paths resolve under the data dir. |
-| `channel`          | string | no                 | Override the webhook's default. Must start with `#` (channel) or `@` (user).  |
-| `template_path`    | string | no                 | Path to a Go-template file overriding the embedded message format.            |
+| Key                | Required           | What it does                                                                  |
+| ------------------ | ------------------ | ----------------------------------------------------------------------------- |
+| `webhook_url`      | one-of (see below) | Inline webhook URL.                                                           |
+| `webhook_url_env`  | one-of             | Name of an env var holding the URL.                                           |
+| `webhook_url_file` | one-of             | Path to a file containing the URL. Relative paths resolve under the data dir. |
+| `channel`          | no                 | Override the webhook's default. Must start with `#` (channel) or `@` (user).  |
+| `template_path`    | no                 | Path to a Go-template file overriding the embedded message format.            |
 
 ## 1. Create the webhook in Slack
 
@@ -50,57 +52,70 @@ Treat the URL as a secret — anyone with it can post to your channel.
 
 ## 2. Store the URL
 
-Three options. Pick one — setting two of them is a config-load error.
+Pick one of the three options below. Setting more than one is a
+config-load error.
 
-### Env var (recommended)
+<Tabs syncKey="slack-secret">
+    <TabItem label="Env var" icon="seti:shell">
+        The simplest option for any deployment — Docker, systemd,
+        bare metal. Set the variable in whatever already manages
+        your environment.
 
-```bash
-# /etc/runwisp/runwisp.env (loaded by systemd via EnvironmentFile=)
-RUNWISP_SLACK_OPS_URL=https://hooks.slack.com/services/T00.../B00.../XXX...
-```
+        ```bash
+        export RUNWISP_SLACK_OPS_URL=https://hooks.slack.com/services/T00.../B00.../XXX...
+        runwisp daemon
+        ```
 
-### File on disk
+        ```toml
+        [[notifier]]
+        id              = "slack-ops"
+        type            = "slack"
+        webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+        channel         = "#ops"
+        ```
+    </TabItem>
+    <TabItem label="File on disk" icon="document">
+        Useful when a secrets manager (Vault agent, sops, Docker
+        secrets at `/run/secrets/...`) writes the URL to a known
+        path for you. Relative paths resolve under the data dir.
 
-```bash
-sudo install -d -o runwisp -g runwisp -m 0700 /etc/runwisp/secrets
-echo 'https://hooks.slack.com/services/...' \
-  | sudo install -m 0600 -o runwisp -g runwisp /dev/stdin /etc/runwisp/secrets/slack-ops.url
-```
+        ```bash
+        mkdir -p ~/.config/runwisp
+        chmod 0700 ~/.config/runwisp
+        printf '%s\n' 'https://hooks.slack.com/services/...' > ~/.config/runwisp/slack-ops.url
+        chmod 0600 ~/.config/runwisp/slack-ops.url
+        ```
 
-Useful when a secrets manager writes the URL to a known path for you.
+        ```toml
+        [[notifier]]
+        id               = "slack-ops"
+        type             = "slack"
+        webhook_url_file = "/home/you/.config/runwisp/slack-ops.url"
+        channel          = "#ops"
+        ```
+    </TabItem>
+    <TabItem label="Inline (don't)" icon="warning">
+        The notifier accepts `webhook_url = "https://…"` directly.
+        Avoid it — config files are often committed to git or shared
+        in chat, and an inline URL will leak.
 
-### Inline (don't)
+        ```toml
+        [[notifier]]
+        id          = "slack-ops"
+        type        = "slack"
+        webhook_url = "https://hooks.slack.com/services/T.../B.../X..."
+        channel     = "#ops"
+        ```
+    </TabItem>
 
-The notifier accepts `webhook_url = "https://…"` directly. Avoid it —
-config files are often committed to git or shared in chat, and an inline
-URL will leak.
-
-## 3. Declare the notifier
-
-```toml
-[[notifier]]
-id              = "slack-ops"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
-channel         = "#ops"          # optional
-```
-
-For the file variant:
-
-```toml
-[[notifier]]
-id               = "slack-ops"
-type             = "slack"
-webhook_url_file = "/etc/runwisp/secrets/slack-ops.url"
-channel          = "#ops"
-```
+</Tabs>
 
 The `id` is what other parts of `runwisp.toml` refer to. Pick
 something readable — `slack-ops`, `slack-deploys`, `slack-marketing`
 all work. Without `channel`, the webhook posts to whatever channel
 was selected when it was created.
 
-## 4. Route failures to it
+## 3. Route failures to it
 
 There are two places this channel id can appear. Pick whichever reads
 better in your file.
@@ -141,7 +156,7 @@ The router removes duplicates — if a backup failure matches both a
 generic rule and a backup-specific rule, the channel receives one
 message.
 
-## 5. Test it
+## 4. Test it
 
 Trigger a task you know will fail:
 
@@ -149,33 +164,50 @@ Trigger a task you know will fail:
 runwisp exec smoke-test       # whatever you have that exits non-zero
 ```
 
-Within a few seconds you should see:
-
-- A message in `#ops` with the task name, end reason, and a preview
-  of the captured stderr.
-- A new row in the Web UI's bell.
-
-Both at once is the success case. If only the bell shows a row, Slack
-delivery failed — open the bell and look for a `notify.delivery_failed`
-event. The payload tells you why (expired webhook, rate limit, network).
+Within a few seconds you should see a message in `#ops` with the task
+name, end reason, and a preview of the captured stderr, plus a new
+row in the Web UI's bell. If only the bell shows a row, Slack
+delivery failed — open the bell and look for a
+`notify.delivery_failed` event with the underlying reason.
 
 ## Customising the message
 
-The default Slack message embeds the task name, end reason, duration,
-and a link back to the run in the Web UI. Point at a Go-template file
-to change it:
+Point `template_path` at a Go-template file to override the embedded
+message format. The default template is JSON for Slack's Block Kit:
 
-```toml
-[[notifier]]
-id              = "slack-ops"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
-template_path   = "/etc/runwisp/templates/slack.tmpl"
+```json
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "{{ emoji .Severity }} {{ .TaskName }} — {{ .Kind }}"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Reason:* {{ jsonStr .Reason }}\n*Severity:* `{{ .Severity }}`"
+      }
+    }{{- if .Run }},
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Run `{{ .Run.ID }}` triggered by `{{ .Run.TriggeredBy }}` at {{ timeRFC .Timestamp }}"
+        }
+      ]
+    }{{- end }}
+  ]
+}
 ```
 
-The template receives the full event struct — task name, run id,
-exit code, end reason, captured tail. For most teams the default is
-enough.
+Copy this as your starting point and modify what you need. The
+template receives the full event struct — task name, run id, exit
+code, end reason, captured tail.
 
 ## What the loader rejects
 
