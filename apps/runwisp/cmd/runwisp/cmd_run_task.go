@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +19,8 @@ var runTaskCmd = &cobra.Command{
 	Short: "Trigger a run against a running daemon via the REST API",
 	Long: `Asks the running daemon to start a new run for the named task. Requires
 the daemon to be reachable at the configured host:port and the operator's
-password to be available (via RUNWISP_PASSWORD or data/password).
+password to be available (via RUNWISP_PASSWORD or the daemon-managed
+SQLite store).
 
 For in-process execution without a daemon, use ` + "`runwisp exec`" + ` instead.`,
 	Args: cobra.ExactArgs(1),
@@ -30,7 +30,7 @@ For in-process execution without a daemon, use ` + "`runwisp exec`" + ` instead.
 }
 
 func runRunTask(taskName string) error {
-	password, _, err := datadir.ResolvePassword(flags.DataDir)
+	password, err := resolveClientPassword()
 	if err != nil {
 		return fmt.Errorf("resolve password: %w", err)
 	}

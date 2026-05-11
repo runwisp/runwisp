@@ -96,9 +96,6 @@ func runDaemon(mode daemonMode) error {
 		slog.Warn("Failed to write PID file", "err", pidErr)
 	}
 	defer datadir.CleanPidFile(flags.DataDir)
-	if cfg.PasswordGenerated {
-		defer datadir.CleanPasswordFile(flags.DataDir)
-	}
 
 	daemonInfo := buildDaemonInfo(cfg, svc)
 
