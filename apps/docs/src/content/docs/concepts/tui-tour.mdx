@@ -137,8 +137,9 @@ tell you what went wrong without scrolling:
 - **The exit code** sits in the header next to duration. Sentinel
   codes are real: `-1` is a skipped run that never ran (`on_overlap =
 "skip"` rejected it), `-2` is a `crashed` run the daemon was killed
-  during, `124` is the conventional code surfaced for `timeout`. A
-  positive code is whatever the script returned.
+  during. A `timeout` shows whatever exit the OS produced when the
+  killed process gave up — typically `143` (SIGTERM) or `137` (SIGKILL).
+  Any other positive code is whatever the script returned.
 - **The captured log** below is the raw stdout/stderr of the
   attempt — the same bytes the script wrote, line-numbered, with
   ANSI colours rendered. Press `f` to fullscreen it for a copy/paste.
@@ -207,6 +208,6 @@ stop, restart, and observe — but it doesn't:
 - [Getting Started: the Web UI tour](/getting-started/web-ui-tour/) —
   the same surface in a browser, with mouse and a permanent live tail.
 - [CLI reference](/cli/) — for operations the TUI deliberately
-  doesn't cover (validate, init, openapi).
+  doesn't cover (`validate`, `openapi`, `run-task`, `exec`).
 - [Configuration overview](/configuration/overview/) — what to put in
   the TOML the TUI is reading.

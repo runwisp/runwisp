@@ -10,7 +10,7 @@ too long can be killed. Both are configured per-task, with sensible
 defaults from `[defaults]` if you leave them off.
 
 Retries apply only to **tasks**. Services don't retry — they
-[restart](#services-dont-retry-they-restart) instead.
+[restart](#services-dont-retry) instead.
 
 ## `retry_attempts`
 
@@ -25,8 +25,7 @@ retry_backoff  = "exponential"
 
 - **Default**: `0` (no retries).
 - **Semantics**: the number of **additional** attempts after the first
-  failure. `retry_attempts = 3` means up to **4 executions total** —
-  one initial run plus three retries.
+  failure.
 - **Triggers a retry**: the run ended with `failed` (non-zero exit),
   `timeout`, `crashed`, or `log_overflow` (cancelled by
   `log_on_full = "kill_task"` after exceeding `log_max_size`).
@@ -52,8 +51,8 @@ the two contexts cleanly.
 | `linear`                | `delay × N`                                 | 10s, 20s, 30s, 40s …             |
 | `exponential`           | `delay × 2^(N-1)`                           | 10s, 20s, 40s, 80s, 160s, 300s … |
 
-All schedules are **capped at 5 minutes**. `exponential` with a
-10-second base hits the cap on attempt 6 and stays there.
+All schedules are **capped at 5 minutes**. `exponential` with a short
+base hits the cap and stays there.
 
 ## What retries look like in history
 
@@ -106,7 +105,7 @@ stops, and daemon shutdown — `graceful_stop` is the single knob.
   A retry only fires after its predecessor has finished, so there's no
   overlap to evaluate.
 
-## Services don't retry — they restart
+## Services don't retry
 
 Services have a different model because they're meant to stay up:
 
@@ -123,8 +122,8 @@ add `restart_delay` (the supervisor owns the cadence).
 | `restart_delay`   | ❌ rejected                                                  | ✅ default `1s`                                                 |
 | `restart_backoff` | ❌ rejected                                                  | ✅ `constant` / `linear` / `exponential`, default `exponential` |
 
-A service supervisor restarts a replica forever (with exponential
-backoff capped at 60s) until you stop it explicitly.
+A service supervisor restarts a replica forever (with bounded
+exponential backoff) until you stop it explicitly.
 
 ### Backoff reset: `backoff_reset_after`
 

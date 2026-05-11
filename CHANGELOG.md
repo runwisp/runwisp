@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **`runwisp init` is gone.** Running `runwisp` in a directory without a `runwisp.toml` now offers to scaffold a small starter for you (`Create a starter with one example task? [Y/n]`) and continues straight into the TUI. The previous flow — a separate `runwisp init` command that wrote a 60-line file dominated by a commented schema reference, plus a "Generated password" that the daemon never actually used — is replaced by one prompt and a smaller, sharper starter file. Headless launches (`runwisp daemon`, Docker, systemd) skip the prompt and fall back to a built-in demo task with a warning, same as before; write `runwisp.toml` yourself (see `runwisp.example.toml`) to define real tasks.
+
 ### Added
 
 - **Download a run's full log from the Web UI and the TUI.** The Web UI's run detail panel gains a **Download log** button next to the live-stream toggle; the TUI binds `d` to the same action on the exec view. The download is the rotated-out segment plus the current segment as one `text/plain` file — what you'd get from `cat *.log.prev *.log`, but in one click. The TUI download works over SSH and tmux, not just graphical sessions.
@@ -31,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **DST fall-back days no longer double-fire (BREAKING).** On the autumn transition, `0 2 * * *` used to fire twice — once before the rewind, once after. The scheduler now dedupes by wall-clock minute: a firing whose minute matches the previous one is recorded with `end_reason = "dst_skipped"` and the underlying command is not run. Spring-forward firings continue to fire at the next valid local time.
 
-- **`[scheduler] timezone` defaults to the host's system timezone.** When the field is omitted, the daemon picks up the host's IANA zone and falls back to `UTC` only if it can't be detected. `runwisp init` writes the detected timezone into the scaffold so it's visible. Per-task `timezone` overrides still work.
+- **`[scheduler] timezone` defaults to the host's system timezone.** When the field is omitted, the daemon picks up the host's IANA zone and falls back to `UTC` only if it can't be detected. The resolved zone is surfaced in the TUI banner and the Web UI header so the operator can see what's in effect. Per-task `timezone` overrides still work.
 
 - **Numeric config fields take literal values; no more keywords or sentinels (BREAKING).** Every numeric field — `keep_runs`, `keep_for`, `log_max_size`, `max_concurrent`, `queue_max`, `max_catch_up_runs`, `retry_attempts`, `instances` — accepts an integer (or duration / size). The `"unlimited"` and `"inherit"` keywords are gone; the magic-int sentinels (`0` = inherit, `-1` = unlimited) are gone; **omit the field to inherit the default**. Each field has a hard internal cap (`max_concurrent` 1024; `queue_max` and `max_catch_up_runs` 10 000; `retry_attempts` 100; `keep_runs` 1 000 000; `instances` 1–64). Out-of-range values are rejected at config load with a `did you mean N?` hint.
 

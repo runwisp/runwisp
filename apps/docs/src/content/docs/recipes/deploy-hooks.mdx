@@ -19,29 +19,34 @@ group       = "Deploys"
 description = "Pull the new image, run migrations, restart workers"
 # No `cron` — manual / API trigger only.
 on_overlap  = "terminate"   # a fresh deploy preempts an in-flight one
-timeout     = "10m"
-keep_runs   = 100
-keep_for    = "180d"
+keep_for    = "180d"        # six months of deploy history
 notify_on_failure = ["slack-ops"]
 notify_on_success = ["slack-deploys"]
 
+# timeout = "..."           # see below — size to your worst deploy
+
 run = """
 set -euo pipefail
-echo "[$(date -Iseconds)] starting deploy of $DEPLOY_VERSION"
+echo "[$(date -Iseconds)] starting deploy"
 
 cd /srv/app
 
-# Pull the version that triggered the deploy.
-docker pull ghcr.io/example/app:$DEPLOY_VERSION
+# Resolve the version to deploy. We pull whatever CI just pushed as
+# :next; the task itself decides what's current — there's no per-trigger
+# env-var injection over HTTP, so the source of truth is a registry tag
+# (or a file on disk) that CI updates before triggering this task.
+docker pull ghcr.io/example/app:next
+VERSION=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' ghcr.io/example/app:next)
+echo "deploying $VERSION"
 
 # Schema migrations first — fail-fast if the new image is incompatible.
 docker run --rm \\
   --env-file=/etc/app/migrate.env \\
-  ghcr.io/example/app:$DEPLOY_VERSION \\
+  ghcr.io/example/app:next \\
   /usr/local/bin/migrate up
 
-# Tag :current and restart workers. compose detects the image change.
-docker tag ghcr.io/example/app:$DEPLOY_VERSION ghcr.io/example/app:current
+# Promote :next → :current and restart workers. compose detects the image change.
+docker tag ghcr.io/example/app:next ghcr.io/example/app:current
 docker compose up -d --no-deps app
 
 # Smoke-test before declaring victory.
@@ -49,7 +54,7 @@ sleep 5
 curl --silent --show-error --fail-with-body --max-time 10 \\
   https://app.example.com/healthz
 
-echo "[$(date -Iseconds)] deploy complete: $DEPLOY_VERSION"
+echo "[$(date -Iseconds)] deploy complete: $VERSION"
 """
 ```
 
@@ -60,7 +65,8 @@ The interesting choices:
 Omitting `cron` makes the task **manual-only**. It only runs when
 something explicitly triggers it: a `POST` to
 `/api/tasks/deploy-app/run`, the Web UI's "Run Now" button, the
-TUI's `r` key, or the local-only `runwisp exec deploy-app`.
+TUI's `r` key, or `runwisp run-task deploy-app` from a shell on
+the host (which calls the same REST endpoint).
 
 `runwisp list` shows it as `(manual)` in the SCHEDULE column.
 
@@ -84,35 +90,42 @@ high-information event for a team channel — "v1.2.3 deployed at
 
 For everything else, success notifications are noise. See the
 [notifications model][notif] discussion of why per-task success
-sugar is opt-in.
+notifications are opt-in.
 
 [notif]: /notifications/model/
 
 ## Triggering from CI
 
-The REST API trigger:
+CHAP login is a two-step exchange: GET a nonce, POST back
+`sha256(password:nonce)`, receive a JWT.
 
 ```bash
-# Authenticate first (CHAP).
-TOKEN=$(curl -sSf https://runwisp.example.com/api/auth/challenge \\
-  | jq -r .nonce \\
-  | xargs -I {} sh -c '
-      RESP=$(printf "%s:%s" "$RUNWISP_PASSWORD" "{}" | sha256sum | cut -d" " -f1)
-      curl -sSf -X POST https://runwisp.example.com/api/auth \\
-        -H "Content-Type: application/json" \\
-        -d "$(jq -n --arg n "{}" --arg r "$RESP" "{nonce: \$n, response: \$r}")" \\
-      | jq -r .token
-  ')
+set -euo pipefail
+BASE=https://runwisp.example.com
 
-# Trigger the deploy.
-curl -sSf -X POST https://runwisp.example.com/api/tasks/deploy-app/run \\
-  -H "Authorization: Bearer $TOKEN" \\
-  -H "X-Runwisp-Env: DEPLOY_VERSION=v1.2.3"
+# 1. Get a one-shot nonce.
+NONCE=$(curl -sSf "$BASE/api/auth/challenge" | jq -r .nonce)
+
+# 2. Compute the response and POST it back.
+RESP=$(printf '%s:%s' "$RUNWISP_PASSWORD" "$NONCE" | sha256sum | cut -d' ' -f1)
+TOKEN=$(curl -sSf -X POST "$BASE/api/auth" \\
+  -H 'Content-Type: application/json' \\
+  -d "$(jq -nc --arg n "$NONCE" --arg r "$RESP" '{nonce:$n, response:$r}')" \\
+  | jq -r .token)
+
+# 3. Trigger the deploy.
+curl -sSf -X POST "$BASE/api/tasks/deploy-app/run" \\
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-(The `X-Runwisp-Env` header above is illustrative — pass deploy
-metadata via the API as it suits your shape, or hardcode versioning
-into a wrapper script run by the task.)
+The trigger endpoint does **not** accept per-call env injection —
+RunWisp does not currently let CI pass a `DEPLOY_VERSION` over HTTP
+into the task's environment. Either let the task resolve the version
+itself (as the example does, by reading a registry tag's
+`org.opencontainers.image.revision` label), or have CI write a
+`/srv/app/current-version` file before triggering and have the task
+read it. The TOML is still the source of truth for _what_ runs;
+HTTP only decides _when_.
 
 A typical GitHub Actions step:
 
@@ -120,11 +133,11 @@ A typical GitHub Actions step:
 - name: Deploy to production
   env:
       RUNWISP_PASSWORD: ${{ secrets.RUNWISP_PASSWORD }}
-  run: ./bin/runwisp-trigger.sh deploy-app v${{ github.sha }}
+  run: ./bin/runwisp-trigger.sh deploy-app
 ```
 
 Encapsulate the CHAP login dance in `bin/runwisp-trigger.sh` once,
-reuse across every deployable. The script is ~20 lines.
+and reuse it across every deployable.
 
 ## Why use a RunWisp task vs. SSH-from-CI?
 
@@ -159,9 +172,13 @@ group       = "Deploys"
 description = "Run pending schema migrations"
 # No cron. Triggered from the maintenance dashboard (a wrapper script).
 on_overlap  = "skip"   # never two migrations at once — even by accident
-timeout     = "30m"
-keep_runs   = 50
+keep_for    = "180d"
 notify_on_failure = ["slack-ops", "tg-oncall"]
+
+# timeout = "..."      # set above your longest migration if you want a
+                       # hard ceiling. A killed migration mid-statement is
+                       # dangerous — this is a last-resort guardrail, not a
+                       # fast-fail target.
 
 run = """
 set -euo pipefail
@@ -173,9 +190,9 @@ docker run --rm --env-file=/etc/app/migrate.env \\
 
 Note `on_overlap = "skip"` here, not `terminate` — partial
 migrations are dangerous. A skipped manual trigger is recorded as
-a `failed` row with exit code `-1` and the message "task already
-running, skipping (policy: skip)" so the operator can see they
-were ignored.
+a `skipped` row (end reason, not `failed`) with exit code `-1`
+and the message "task already running, skipping (policy: skip)"
+so the operator can see they were ignored.
 
 ## Where to next
 

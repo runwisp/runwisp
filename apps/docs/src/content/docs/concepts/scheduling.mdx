@@ -43,8 +43,7 @@ firings finer than a minute, use `@every 30s` or run a service.
 
 Cron expressions are evaluated in the timezone configured by
 `[scheduler] timezone`. If you leave it unset, the daemon falls back
-to the host's system timezone — `runwisp init` writes the detected
-zone for you so a fresh install starts with explicit, visible config.
+to the host's system timezone.
 
 The resolved zone (and whether it came from config or the system) is
 shown in the TUI startup banner and in the Web UI header, so there's
@@ -58,7 +57,7 @@ timezone = "Europe/Bratislava"
 # Per-task override — any standard IANA timezone name works.
 [tasks.nightly-backup]
 cron     = "30 2 * * *"
-timezone = "America/New_York"
+timezone = "Atlantic/Faroe"
 ```
 
 | Setting                   | Default         | What it controls                                                                |
@@ -66,10 +65,10 @@ timezone = "America/New_York"
 | `[scheduler] timezone`    | _(system zone)_ | Fallback for every task without its own `timezone`.                             |
 | `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the scheduler-wide default. |
 
-If the daemon doesn't recognise a name (typo, or missing timezone data
-in a minimal Docker image), config load fails with the offending
-scope — the daemon never silently falls back to UTC. See
-[Docker recipe](/recipes/docker/) for the Alpine `tzdata` note.
+If the daemon doesn't recognise a name (typo, or missing IANA
+timezone data on the host — e.g. a minimal container image without
+`tzdata`), config load fails with the offending scope — the daemon
+never silently falls back to UTC.
 
 ### DST behaviour
 
@@ -77,8 +76,8 @@ RunWisp gives you a single-fire schedule across DST transitions:
 
 - **Fall-back** (clocks go back). The wall-clock minute that repeats —
   e.g. 02:30 — only fires once. The scheduler dedupes by
-  `(local-date, hour, minute)`; the suppressed firing is recorded with
-  `end_reason = "dst_skipped"` so it's still in history.
+  `(local-date, hour, minute)`; the suppressed firing is still
+  recorded in history.
 - **Spring-forward** (clocks jump ahead). A cron like `0 2 * * *` whose
   matching minute doesn't exist that day fires at the next valid time
   — once.
@@ -123,16 +122,15 @@ catch_up = "latest"      # default
 | `skip`   | Pretend the missed ticks never happened. Right for monitors and probes that just want fresh.                      |
 
 The anchor for "missed" is the timestamp of the last recorded run for
-the task. On the very first boot, the anchor is the `first_seen_at`
-recorded the moment RunWisp first parsed the task — so a fresh install
-doesn't queue up a big batch of "catch-up" runs for ticks before the
-daemon existed.
+the task. On the very first boot, the anchor is set the first time
+RunWisp sees the task — so a fresh install doesn't queue up a big
+batch of "catch-up" runs for ticks before the daemon existed.
 
 ### Capping the backfill: `max_catch_up_runs`
 
-`catch_up = "all"` on a `* * * * *` task and a daemon that was down for
-a day means **1 440** runs queued at startup. The cap exists so a long
-outage doesn't bury the scheduler.
+`catch_up = "all"` on a `* * * * *` task and a daemon that was down
+for a day means a large backlog queued at startup. The cap exists so
+a long outage doesn't bury the scheduler.
 
 ```toml
 [tasks.metrics-rollup]
@@ -146,7 +144,7 @@ max_catch_up_runs = 200    # at most 200 missed ticks fire on startup
 | _omitted_ | Inherit the built-in default of **100**. Tune up explicitly if each missed tick is real work. |
 | `N > 0`   | Cap the backfill at `N` runs; older missed ticks are dropped.                                 |
 
-The cap is bounded by an internal hard cap of **10000** — values above
+The cap is bounded by a built-in maximum (`10000`) — values above
 that are rejected at config load with a clear error. Negative values
 and `0` are also rejected; omit the key to inherit the default. The
 cap only applies to `catch_up = "all"`: `latest` always triggers
@@ -212,9 +210,6 @@ A few things the scheduler doesn't try to do, on purpose:
 - **No "every Nth tick" semantics.** Cron is the surface; if you need
   every other Tuesday, encode it in the cron (`30 9 */2 * 2`) or
   filter in your script.
-
-For features still on the way (native task dependencies, log search,
-cloud control plane), see the [roadmap](/roadmap/).
 
 ## Where to next
 

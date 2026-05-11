@@ -92,9 +92,9 @@ daemon host.
 
 ### `too many authentication attempts against the daemon on port 9477`
 
-You hit the **5 attempts per IP per 5 minutes** rate limit. Wait it out
-(the window slides automatically) or restart the daemon to clear the
-in-memory limiter. See [Auth: rate limiting][rate].
+You hit the per-IP rate limit. Wait it out (the window slides
+automatically) or restart the daemon to clear the in-memory limiter.
+See [Auth: rate limiting][rate].
 
 [rate]: /operations/auth/#rate-limiting
 
@@ -108,8 +108,8 @@ everyone re-logs in.
 
 ### Web UI shows `401` after restart, then works after a re-login
 
-Your JWT expired (24-hour lifetime) **or** you changed
-`RUNWISP_PASSWORD` between restarts. The latter intentionally rotates
+Your session expired **or** you changed `RUNWISP_PASSWORD` between
+restarts. The latter intentionally rotates
 the JWT secret to invalidate stale sessions. Re-login.
 
 ## Tasks aren't running
@@ -150,10 +150,11 @@ the TUI, or `POST /api/tasks/{name}/run`.
 
 ### A service replica keeps restarting
 
-The supervisor restarts crashed replicas with [exponential backoff][backoff]
-capped at 60 seconds. If your `run` exits within 60 seconds it never
-"stabilises" and the backoff keeps growing — open the run history,
-read the most recent log to see why the process is exiting.
+The supervisor restarts crashed replicas with bounded
+[exponential backoff][backoff]. If your `run` exits before it
+"stabilises" (see `backoff_reset_after`) the backoff keeps growing —
+open the run history, read the most recent log to see why the process
+is exiting.
 
 [backoff]: /configuration/services/#restart-behaviour
 
@@ -226,7 +227,7 @@ the synthetic events stop on their own.
 You can route `notify.delivery_failed` to an alternate channel — see
 the [route reference][routes].
 
-[routes]: /notifications/routes/#delivery-failures-the-cycle-break
+[routes]: /notifications/routes/#delivery-failures
 
 ## Web UI / TUI quirks
 

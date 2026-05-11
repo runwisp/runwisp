@@ -218,7 +218,7 @@ func PrintStartup(info StartupInfo) {
 	// --- Demo notice ---
 	if info.UsingDemo {
 		fmt.Fprintf(w, "  %s\n", yellowSt.Render("No config found — running with built-in demo task"))
-		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Run 'runwisp init' to create runwisp.toml"))
+		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Create runwisp.toml to define your own tasks (see github.com/runwisp/runwisp)"))
 		fmt.Fprintln(w)
 	}
 

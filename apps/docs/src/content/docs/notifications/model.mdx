@@ -2,213 +2,159 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Notifications model
-description: In-app notifications, outbound notifiers, routes, per-task sugar, and coalescing — how RunWisp tells you something broke.
+description: How RunWisp tells you something broke — the in-app bell, optional outbound channels, routing, and coalescing.
 ---
 
-Notifications are layered. The in-app notifications surface — the bell
-in the Web UI — is on by default and requires zero configuration.
-Outbound channels (Slack, Telegram, …) are explicitly opt-in via
-`[[notifier]]` blocks and routed with `[[notification_route]]` rules.
+When a task fails, you want to know. RunWisp has two layers for that:
 
-Everything below is shipped in the binary. There are no plugins, no
-extensions, no remote services to enrol with. If a task fails on a
-laptop with the network unplugged, you'll still see the bell light up.
+1. **The bell** in the Web UI and the alert line in the TUI. Always on, no
+   config required.
+2. **Outbound channels** — off by default. Add one with a `[[notifier]]`
+   block. See the **Providers** section for the channels that ship today.
 
-## The defaults
+Everything below ships in the binary. No plugins, no remote service to
+sign up for. A laptop with the network unplugged still shows a row in the
+bell when a task fails.
 
-With **zero notification config**, every task and service that fails
-(`run.failed`, `run.timeout`, `run.crashed`) fans out to whatever is in
-`[notify] append_notifiers`. The built-in default is `["inapp"]`, so
-out of the box every failure lights up the bell in the Web UI and the
-footer in the TUI. The notifications are stored as rows in SQLite and
-live-broadcast over SSE, so the badge count survives a daemon restart.
+## What you get with zero config
 
-There is no default outbound channel — the daemon doesn't ship Slack
-or Telegram messages until you declare a `[[notifier]]` and either add
-its id to `append_notifiers` or wire it up via per-task sugar /
-explicit routes.
+Every task and service that ends with `run.failed`, `run.timeout`, or
+`run.crashed` writes one row in SQLite and streams it to the Web UI bell
+and the TUI footer. The row survives a daemon restart, so the badge
+count is still right after a reboot.
 
-`append_notifiers` is the single dial that controls the zero-config
-fan-out:
+That's the default. You don't write any TOML to get it.
+
+## Adding an outbound channel
+
+Three steps, the same shape for every provider:
+
+1. **Declare the channel** in a `[[notifier]]` block. One per channel.
+2. **Wire it up** in one of two ways:
+    - [Per-task notifications](/notifications/per-task/) —
+      `notify_on_failure` directly on the task. Best when one task has its
+      own destination.
+    - [Notification rules](/notifications/routes/) — a
+      `[[notification_route]]` block. Best when one rule covers many tasks.
+3. **Test it** by triggering a task that fails on purpose.
 
 ```toml
-[notify]
-append_notifiers = ["inapp"]      # the built-in default
-# append_notifiers = []           # silence the bell entirely
-# append_notifiers = ["slack-ops"] # route every failure to Slack instead
-# append_notifiers = ["inapp", "slack-ops"]  # both
+[[notifier]]
+id              = "slack-ops"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+
+[tasks.backup-postgres]
+cron              = "30 2 * * *"
+run               = "/usr/local/bin/backup.sh"
+notify_on_failure = ["slack-ops"]
 ```
 
-The name is literal: every id in this list is **always added** to the
-notify list of every per-task `notify_on_failure` / `notify_on_success`
-(deduped against the explicit ids), and serves as the catch-all for
-failures of tasks that don't use the sugar at all. So
-`append_notifiers = ["inapp"] + notify_on_failure = ["slack-ops"]`
-fires Slack **and** the bell — not Slack instead of the bell.
-
-`inapp` is the only special token — it doesn't need a `[[notifier]]`
-block (in fact, declaring one with `id = "inapp"` is rejected). Every
-other id in `append_notifiers` must reference a declared notifier.
-
-Scope is global. If you want a specific task to be silent, give it a
-[per-task sugar](#per-task-sugar) line that omits any notifier — or set
-`append_notifiers = []` globally and add explicit
-`[[notification_route]]`s for the tasks you do care about.
-
-## Notifier types
-
-The currently shipped drivers are:
-
-- `slack` — Incoming Webhook style.
-- `telegram` — Bot Token + Chat ID.
-
-This is the first wave; more drivers (Discord, SMTP/email, generic
-webhooks, and others) will land in subsequent releases. New types are
-added when there's a clear "a solo dev would expect this in the binary"
-case — see the project tracker for what's queued up next.
+That is a working setup. The same shape works for every provider — see the
+**Providers** section: [Slack](/notifications/providers/slack/) ·
+[Telegram](/notifications/providers/telegram/).
 
 ## `[[notifier]]` — declaring a channel
 
-Each notifier needs a stable `id` (used to reference it from routes)
-and a `type`. Beyond that, the fields depend on the type. The full
-field reference for each driver lives on its own page; see
-[Providers overview](/notifications/providers/overview/) for the
-common rules and the per-driver pages for everything else.
+Every notifier needs:
 
-### Slack
+| Key    | Type   | Required | What it does                                                                                                                                                                                                                |
+| ------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`   | string | yes      | Name you use to refer to the channel from routes and per-task fields. Must be unique. `"inapp"` is reserved. Cannot contain `:` (reserved for [inline target overrides](/notifications/per-task/#inline-target-overrides)). |
+| `type` | enum   | yes      | `"slack"` or `"telegram"` for now. More drivers will land later.                                                                                                                                                            |
+
+The rest of the fields depend on the type — see the provider page for
+the full list.
 
 ```toml
 [[notifier]]
-id   = "slack-ops"
-type = "slack"
+id              = "slack-ops"
+type            = "slack"
 webhook_url_env = "RUNWISP_SLACK_OPS_URL"
-channel         = "#ops-alerts"   # optional override
-```
+channel         = "#ops-alerts"   # optional
 
-Full reference and walkthrough: [Slack provider](/notifications/providers/slack/).
-
-### Telegram
-
-```toml
 [[notifier]]
-id   = "tg-oncall"
-type = "telegram"
+id            = "tg-oncall"
+type          = "telegram"
 bot_token_env = "RUNWISP_TG_TOKEN"
 chat_id       = "-1001234567890"
 ```
 
-Full reference and walkthrough: [Telegram provider](/notifications/providers/telegram/).
+## Storing the secret
 
-### Secret precedence
+Each notifier needs a credential — for example a webhook URL or a bot
+token. You can supply it three ways:
 
-For both notifier types, the rule is **env > file > inline** in
-expressiveness, but **exactly one** source must be set. The validator
-rejects a notifier with two of three sources to make accidents
-impossible. File paths are relative to the data dir unless absolute.
+- **Env var** (recommended): set `webhook_url_env = "RUNWISP_SLACK_URL"`
+  and put the value in your shell or systemd unit. Works the same
+  everywhere.
+- **File**: set `webhook_url_file = "secrets/slack.url"`. Relative paths
+  resolve under the data directory. Useful when a secrets manager
+  writes the value to disk for you. Make the file `chmod 600`.
+- **Inline**: put the value straight in `runwisp.toml`. Convenient,
+  but TOML files are often committed to git or shared in chat. Use
+  inline values only for local experiments.
 
-In delivery error logs, secret values are **redacted** — the webhook URL
-is replaced with `[redacted]` before the error reaches your terminal or
-the in-app delivery-failed notification.
+Set **exactly one** of the three per secret. Setting two of them is a
+config-load error — the loader does not pick a winner; it stops the
+daemon.
 
-## `[[notification_route]]` — wiring events to channels
+In any delivery error reported in the bell or the daemon log, the secret
+is replaced with `[redacted]` before the message is written. A 5xx
+response from the provider will not leak your webhook URL into a log
+file.
 
-A route describes "when this kind of event happens for these tasks,
-fan out to these notifiers."
+## Routing events to channels
 
-```toml
-[[notification_route]]
-match.kind = ["run.failed", "run.timeout", "run.crashed"]
-match.task = "backup-*"
-notify     = ["slack-ops", "tg-oncall"]
-```
+There are two ways to point events at a channel. Both are first-class TOML;
+neither is a derivative of the other. They can be used together.
 
-### Match fields
+- **[Per-task notifications](/notifications/per-task/)** —
+  `notify_on_failure = ["slack-ops"]` on one `[tasks.*]` or
+  `[services.*]` block. Best when one task has its own destination, and
+  you want the setting to live next to the task definition.
+- **[Notification rules](/notifications/routes/)** — a
+  `[[notification_route]]` block matches many tasks by name pattern and
+  matches any combination of event kinds. Best when one rule should cover
+  many tasks.
 
-| Field            | Meaning                                                                             |
-| ---------------- | ----------------------------------------------------------------------------------- |
-| `match.kind`     | List of event kinds (see below). Required. Empty list matches nothing.              |
-| `match.severity` | Optional threshold: `info`, `warn`, `error`. `warn` matches `warn` and `error`.     |
-| `match.task`     | Optional shell-style glob (`path.Match`). Case-sensitive. Omit to match every task. |
+The two work together. A task with `notify_on_failure = ["slack-ops"]`
+that is also matched by a rule ending in `slack-ops` still sends one
+message — duplicate channels are removed.
 
-Valid `kind` values:
+### `append_notifiers` — the always-on list
 
-- `run.started` — _not_ in the in-app default; opt-in only.
-- `run.succeeded`
-- `run.failed`
-- `run.timeout`
-- `run.stopped`
-- `run.crashed`
-- `log.disk_pressure` — fired once per run when `[storage] min_free_space`
-  trips during execution. Severity `warn`. Carries `run_id`, `free_bytes`,
-  `min_free_bytes`, and `killed_task` (true when the run was cancelled
-  because its `log_on_full = "kill_task"`).
-- `notify.delivery_failed` — synthetic event, see below.
-
-### `notify` list
-
-Each entry is one of:
-
-- A notifier `id` declared in `[[notifier]]` (`"slack-ops"`).
-- The literal `"inapp"` — the always-available in-app surface.
-- An inline override of the form `"<id>:<target>"` — reuse the parent
-  notifier's credentials with the channel (Slack) or chat id
-  (Telegram) replaced for this route only. See
-  [Per-task: inline target overrides](/notifications/per-task/#inline-target-overrides).
-
-At least one entry is required. The router **deduplicates** notifier
-IDs across rules — even if two routes both match the same event and
-both include `slack-ops`, Slack receives one message, not two.
-
-## Per-task sugar
-
-Most of the time you want "ping me on Slack when this task fails."
-Writing a full `[[notification_route]]` for that is overkill. So both
-`[tasks.*]` and `[services.*]` accept:
+`[notify] append_notifiers` is the single setting that controls which
+channels receive every failure regardless of what is on the task. The
+built-in default is `["inapp"]`, which is why the bell works with zero
+TOML.
 
 ```toml
-[tasks.publish-feed]
-cron              = "*/15 * * * *"
-run               = "/usr/local/bin/publish.sh"
-notify_on_failure = ["slack-ops"]
-notify_on_success = ["slack-ops"]   # optional
+[notify]
+append_notifiers = ["inapp"]                # default — bell on
+# append_notifiers = []                     # silence the bell
+# append_notifiers = ["slack-ops"]          # send every failure to this channel
+# append_notifiers = ["inapp", "slack-ops"] # both
 ```
 
-Internally, `notify_on_failure = ["slack-ops"]` for a task named
-`publish-feed` expands to a synthetic route equivalent to:
+Every id in this list is added to the channels named on each task, with
+duplicates removed. It also acts as the catch-all for tasks that do not
+name any channel. So `append_notifiers = ["inapp"]` plus
+`notify_on_failure = ["slack-ops"]` sends to `slack-ops` **and** adds a
+row to the bell — not `slack-ops` instead of the bell.
 
-```toml
-[[notification_route]]
-match.kind = ["run.failed", "run.timeout", "run.crashed"]
-match.task = "publish-feed"
-notify     = ["slack-ops", "inapp"]   # append_notifiers appended (deduped)
-```
-
-The right-hand list is the explicit notifiers plus everything in
-`[notify] append_notifiers`, with duplicates removed. So if you set
-`append_notifiers = []`, the synthetic route would be just
-`["slack-ops"]`; if you set `append_notifiers = ["pagerduty"]`, it
-would be `["slack-ops", "pagerduty"]`. **Dedup is by literal id,
-case-sensitive.** `["Slack-ops", "slack-ops"]` is not deduped (those
-are two different ids); the literal `"inapp"` appended to a sugar list
-that already contains `"inapp"` is.
-
-`notify_on_success` is the same but with `match.kind = ["run.succeeded"]`.
-
-You can mix sugar with explicit `[[notification_route]]` blocks. Routes
-compose — the router walks every match, collects every notifier ID,
-deduplicates, and dispatches once per unique notifier.
+`"inapp"` is the only id that does not need a `[[notifier]]` block.
+Every other id in `append_notifiers` must point at a declared notifier.
 
 ## Coalescing
 
-A flapping task can fire failures every minute. Without rate-limiting,
-that's a slack-storm. RunWisp coalesces repeated notifications by
-**dedup key**: task name + event kind + end reason. (Not to be
-confused with the daemon's
-[fingerprint](/operations/data-directory/) — those are unrelated.)
+A task that fails every minute could send 60 messages an hour without
+help. RunWisp groups repeated failures by **dedup key** — the
+combination of task name, event kind, and end reason.
 
-Within the **coalescing window** (default `1h`), repeated firings
-sharing a dedup key update the same in-app row. The row's `count`
-increments and the last N occurrence timestamps are kept in an
+Inside the **coalescing window** (default `1h`), repeats with the same
+dedup key update the same bell row instead of writing a new one. The
+row's `count` goes up, and the last N timestamps are kept in an
 **occurrence ring** (default size `10`).
 
 ```toml
@@ -217,113 +163,90 @@ coalesce_window = "30m"
 occurrence_ring = 5
 ```
 
-Outbound notifiers (Slack, Telegram, …) coalesce on the same fingerprint
-**by default**: the first event in a window is delivered immediately,
-subsequent events are suppressed until either `occurrence_ring`
-accumulate (the Nth event ships with `coalesced_count`) or the window
-expires while suppressed events are still buffered (a
-`coalesced_summary = true` summary fires). Slack stays quiet, the
-operator stays informed.
+Outbound channels coalesce on the same key by default: the first failure
+in a window is sent immediately. The next ones are held back until either
+`occurrence_ring` events accumulate (the Nth is sent as a "check-in") or
+the window expires (one closing "summary" is sent). In the channel you
+see the first failure, periodic check-ins, and one summary — not 60
+separate messages.
 
 ```toml
 [notify]
-# coalesce_outbound = false   # rare: page on every single event
+# coalesce_outbound = false   # send one message per event
 ```
-
-In the Web UI you see one row that says "failed 14 times in the last
-30m" rather than 14 separate rows. In Slack, you'll see the first
-failure, periodic check-ins (every Nth, where N = `occurrence_ring`),
-and one closing summary — not 14 messages.
 
 ### Worked timeline
 
-A `*/1 * * * *` task that has started failing at `T+0`, with the
-defaults (`coalesce_window = 1h`, `occurrence_ring = 10`,
+A `*/1 * * * *` task that starts failing at `T+0`, with defaults
+(`coalesce_window = 1h`, `occurrence_ring = 10`,
 `coalesce_outbound = true`):
 
-| When          | Failure #          | In-app row                     | Slack delivery                                                                                                             |
-| ------------- | ------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `T+0`         | 1                  | new row, `count=1`             | **immediate** — first event in the window                                                                                  |
-| `T+1m`        | 2                  | same row, `count=2`            | suppressed                                                                                                                 |
-| `T+2m..+9m`   | 3 … 10             | same row, `count` keeps rising | suppressed                                                                                                                 |
-| `T+10m`       | 11                 | same row, `count=11`           | **check-in** — `coalesced_count=10`, `coalesced_summary=false`                                                             |
-| `T+11m..+19m` | 12 … 20            | same row                       | suppressed                                                                                                                 |
-| `T+20m`       | 21                 | same row, `count=21`           | **check-in** — `coalesced_count=10`                                                                                        |
-| `T+30m`       | task stops failing |                                | (nothing yet)                                                                                                              |
-| `T+1h10m`     | —                  | row stays as-is                | **window-close summary** — `coalesced_summary=true`, `coalesced_count` = however many were pending since the last check-in |
-| `T+25h`       | (new failure)      | new row in the next window     | immediate again                                                                                                            |
+| When          | Failure #          | Bell row                       | Outbound delivery                                                               |
+| ------------- | ------------------ | ------------------------------ | ------------------------------------------------------------------------------- |
+| `T+0`         | 1                  | new row, `count=1`             | **first** — sent immediately                                                    |
+| `T+1m`        | 2                  | same row, `count=2`            | held                                                                            |
+| `T+2m..+9m`   | 3 … 10             | same row, `count` keeps rising | held                                                                            |
+| `T+10m`       | 11                 | same row, `count=11`           | **check-in** — `coalesced_count=10`                                             |
+| `T+11m..+19m` | 12 … 20            | same row                       | held                                                                            |
+| `T+20m`       | 21                 | same row, `count=21`           | **check-in** — `coalesced_count=10`                                             |
+| `T+30m`       | task stops failing |                                | (nothing yet)                                                                   |
+| `T+1h10m`     | —                  | row stays as-is                | **summary** — `coalesced_summary=true`, count = events held since last check-in |
+| `T+25h`       | (new failure)      | new row in the next window     | first again                                                                     |
 
-The window resets each time something is delivered. After a check-in
-or summary fires, the next failure starts a fresh window — so the
-"first ping" cadence repeats indefinitely as long as failures keep
-arriving.
+The window resets each time something is sent. After a check-in or
+summary, the next failure starts a fresh window — the "first" cadence
+repeats as long as failures keep arriving.
 
-To predict the worst case for a flapping task: at most one outbound
-message every `coalesce_window / occurrence_ring`. Defaults give
-`60min / 10 = ~6min` between Slack messages while a task flaps
-continuously. Bump `occurrence_ring` higher (e.g. `60`) for one
-message per minute of sustained flap; drop `coalesce_window` (e.g.
-`5m`) for a faster recovery summary once flapping stops.
+Rule of thumb for a task that fails repeatedly: at most one outbound
+message every `coalesce_window / occurrence_ring`. Defaults give one
+message every six minutes. Raise `occurrence_ring` for fewer messages,
+lower `coalesce_window` for a faster recovery summary.
 
-If you'd rather page on every event — say, a CI build agent where
-each failure is independently meaningful — set
-`coalesce_outbound = false`. The in-app surface still coalesces (a
-flapping task should never produce 60 separate rows in the bell);
-only the outbound deliveries change.
+If every failure is independently meaningful — for example a CI build
+agent — set `coalesce_outbound = false`. The bell still coalesces (the
+row count would otherwise grow without bound); only outbound deliveries
+change.
 
 ## Delivery failures
 
-If a webhook is down or returns a 5xx, the notifier client retries
-internally with exponential backoff (1s base, 60s max, 5-minute
-budget) and respects the `Retry-After` header on 429 responses.
+If the channel returns a 5xx or the network is down, the notifier retries
+with exponential backoff (1s base, 60s cap, 5-minute total budget) and
+respects `Retry-After` on 429 responses.
 
-When retries exhaust, the daemon synthesises a `notify.delivery_failed`
-event carrying the original event's metadata. That event is **routed
-only to the in-app surface** — never back through the outbound router —
-so a Slack outage can't trigger a notification storm targeting the
-same broken Slack endpoint. You see a yellow warning notification with
-the original task and kind in its payload.
+When retries run out, the daemon creates a `notify.delivery_failed` event
+carrying the original event's metadata. That event is sent **only to the
+bell** — never back through the outbound router. Retrying the same
+channel to tell you that channel is down would just make things worse.
+You see a yellow warning in the bell with the original task and kind.
 
-You can subscribe to `notify.delivery_failed` from a separate notifier
-in `[[notification_route]]` if you want, e.g. delivery failures of
-`slack-ops` paged to Telegram.
+You can still route `notify.delivery_failed` through a _different_
+channel — for example, "if one channel is down, send a message to the
+on-call channel on another":
 
-## Validation: what the loader rejects
-
-These are caught at config load and prevent the daemon from booting:
-
-- A route or per-task sugar referencing a notifier `id` that isn't
-  declared in `[[notifier]]`.
-- A notifier with more than one of `inline`, `_env`, or `_file` secret
-  sources set at the same time.
-- A notifier with no secret source set at all.
-- A Slack notifier with `channel` that doesn't start with `#` or `@`.
-- A route with an empty `notify` list, or a `match.kind` value not in
-  the valid set above.
-- A route's `match.task` glob that `path.Match` can't parse.
-
-Better to fail loudly at startup than silently drop alerts at 03:00.
+```toml
+[[notification_route]]
+match  = { kind = ["notify.delivery_failed"] }
+notify = ["tg-oncall"]
+```
 
 ## Trust model
 
 - **Secrets stay local.** They live in env vars, files under the data
-  dir, or inline TOML — and they never travel anywhere except in the
-  HTTPS request body to the configured channel endpoint.
+  dir, or inline TOML — and they never travel anywhere except the
+  HTTPS request body to the channel endpoint.
 - **Secrets are never logged.** Webhook URLs and bot tokens are
-  redacted from any error message before it's written to the daemon
-  log or surfaced in a delivery-failed notification.
+  redacted from any error message before it reaches the daemon log or
+  the bell.
 - **Secrets are never sent to the optional control-plane integration.**
 
 ## Where to next
 
-- [Providers overview](/notifications/providers/overview/) — common
-  fields and rules across every driver.
-- [Slack](/notifications/providers/slack/), [Telegram](/notifications/providers/telegram/)
-  — per-provider reference + walkthrough.
-- [`[[notification_route]]` reference](/notifications/routes/) — the
-  full match-and-fan-out schema.
-- [Notification sugar](/notifications/per-task/) — exactly
-  how `notify_on_failure` and `notify_on_success` expand on
-  `[tasks.*]` and `[services.*]`.
-- [`[notify]` reference](/notifications/global/) — global knobs
-  (coalescing, queue size, retention, in-app toggle).
+- **Providers** — declare an outbound channel:
+  [Slack](/notifications/providers/slack/) ·
+  [Telegram](/notifications/providers/telegram/).
+- [Per-task notifications](/notifications/per-task/) —
+  `notify_on_failure` and `notify_on_success` on one task.
+- [Notification rules](/notifications/routes/) — one rule covering many
+  tasks.
+- [Global settings](/notifications/global/) — coalescing, retention,
+  queue size.

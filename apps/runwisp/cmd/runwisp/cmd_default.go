@@ -41,10 +41,18 @@ func runDefault() error {
 		return err
 	}
 
-	// Health check failed. Before paying the cost of spawning a background
-	// daemon (which would then silently fail to bind), probe the port
-	// ourselves. If something is holding it but it is not a RunWisp daemon
-	// we can surface a clear, actionable error immediately.
+	// Health check failed — we're about to spawn a daemon. Before that, if
+	// there's no runwisp.toml and we're at a terminal, offer to create one.
+	// A spawned background daemon has no TTY, so the prompt must happen
+	// here in the foreground process.
+	if err := scaffoldIfMissing(flags.CfgFile); err != nil {
+		return err
+	}
+
+	// Before paying the cost of spawning a background daemon (which would
+	// then silently fail to bind), probe the port ourselves. If something
+	// is holding it but it is not a RunWisp daemon we can surface a clear,
+	// actionable error immediately.
 	if bindErr := probePortAvailable(flags.Host, flags.Port); bindErr != nil {
 		return portConflictError(flags.Host, flags.Port, bindErr)
 	}

@@ -38,12 +38,11 @@ There is no default `cron`, no default `on_overlap`, no default
 `retry_*`, no default `max_concurrent`, no default `queue_max`, no
 default `graceful_stop`. Those vary per task by intent; defaulting
 them would hide behaviour. Per-task `graceful_stop` falls back to its
-own built-in `"5s"` when omitted (the same value docs and tests
-expect on every task and service); set it on each table that needs a
+built-in default when omitted; set it on each table that needs a
 different window.
 
-The daemon-wide `[daemon] shutdown_timeout` (default `"10s"`) is a
-separate top-level setting — it bounds the **whole-daemon** shutdown
+The daemon-wide `[daemon] shutdown_timeout` is a separate top-level
+setting — it bounds the **whole-daemon** shutdown
 phase. Each task/service still gets its own `graceful_stop` window
 inside that cap. If a `graceful_stop` exceeds `[daemon] shutdown_timeout`
 the daemon emits a boot-time warning naming the task.

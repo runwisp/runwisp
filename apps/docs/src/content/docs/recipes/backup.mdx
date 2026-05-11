@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Nightly backup
-description: A complete worked example for a nightly Postgres backup — pg_dump with skip-on-overlap, log retention, generous timeout, and Slack alerting on failure.
+description: A complete worked example for a nightly Postgres backup — pg_dump with skip-on-overlap, 90-day retention, no retries (failures should reach a human), and Slack alerting on failure.
 ---
 
 A nightly database backup is the canonical RunWisp task. It runs on a
@@ -21,12 +21,10 @@ group       = "Backups"
 description = "Nightly logical dump of the production database"
 cron        = "30 2 * * *"          # 02:30 every day, daemon-local time
 on_overlap  = "skip"                 # never two dumps at once
-timeout     = "45m"                  # die before the next firing
-retry_attempts = 1                   # one quick retry on transient failure
-retry_delay    = "5m"
-keep_runs   = 30
-keep_for    = "60d"
+keep_for    = "90d"                  # three months of forensic history
 notify_on_failure = ["slack-ops"]
+
+# timeout = "..."                    # see below — size to your DB, or omit
 
 run = """
 set -euo pipefail
@@ -49,8 +47,9 @@ echo "Wrote $DEST/app_production-$TS.dump.gz ($(du -h "$DEST/app_production-$TS.
 ```
 
 The matching `[[notifier]]` block — described on the
-[Slack provider page][slack] — listens for `run.failed`, `run.timeout`,
-and `run.crashed` because that's what `notify_on_failure` desugars to.
+[Slack provider page][slack] — receives `run.failed`, `run.timeout`, and
+`run.crashed`, because those are the run-end kinds that
+`notify_on_failure` covers.
 
 [slack]: /notifications/providers/slack/
 
@@ -70,42 +69,54 @@ up overlapping firings; for a nightly task that doesn't help and
 can cause a backup pile-up if a slow night extends past 02:30 the
 next morning.
 
-### `timeout = "45m"`
+### No `timeout`
 
-A backup that takes 45 minutes is broken — kill it. The cron is
-24 hours apart so this is a safe ceiling. See
-[Retries & timeouts][retries] for what `timeout` actually does
+We deliberately don't set one. A "safe ceiling" depends entirely
+on your database size — a 10 MB schema dumps in seconds, a 500 GB
+warehouse can take hours. Picking a number on your behalf would
+either kill legitimate dumps or pretend to be a guardrail without
+being one. The cron interval (24 h) is the implicit ceiling: if a
+dump is still running when the next firing arrives, `on_overlap =
+"skip"` drops the new one and your alerting will notice you have
+no fresh artefact.
+
+If you want an explicit hard kill — e.g. "no single dump should
+ever take more than 4 h on this database" — uncomment the
+`timeout` line and size it to **worst-case observed dump × ~1.5**.
+See [Retries & timeouts][retries] for what `timeout` actually does
 (per-attempt, hard kill, no grace period).
 
 [retries]: /concepts/retries/
 
-### `retry_attempts = 1` + `retry_delay = "5m"`
+### No retries
 
-A transient network blip (database briefly unreachable, an
-intermittent DNS hiccup) shouldn't trigger an alert. One retry
-five minutes later forgives that. **Two** retries is rarely the
-right call here — if the real cause persists, you want the alert
-to fire so a human looks at it.
+Tempting, but wrong for backups. A retry five minutes later
+papers over the symptom (one failed dump) and erases the signal
+(the database was unreachable at 02:30). If the cause is
+transient you'll get a fresh dump 24 h from now; if it isn't,
+you want the alert to fire so a human investigates _now_. Retries
+belong on probes and idempotent fetches — see
+[health checks](/recipes/healthcheck/) for that shape.
 
-### `keep_runs = 30` + `keep_for = "60d"`
+### `keep_for = "90d"`
 
-Two months of nightly dumps is enough for both forensics ("when
+Three months of nightly dumps is enough for both forensics ("when
 did the schema change?") and to outlast a long incident
-("we discovered the data corruption a month later"). The retention
-sweeper deletes the oldest completed runs (rows + log files) when
-either limit is exceeded — see [Logs & retention][logs].
+("we discovered the data corruption a month later"). We use
+`keep_for` rather than `keep_runs` because a time window is what
+operators actually reason about; the row count falls out of the
+cadence. See [Logs & retention][logs].
 
 [logs]: /concepts/logs/
 
 ### `notify_on_failure`
 
-Sugar that desugars to a route firing on
-`run.failed` / `run.timeout` / `run.crashed`. Per-task notification
-sugar [is documented separately][sugar]. The "in-app" notifier is
-implicitly added — even without Slack, the bell in the Web UI
-lights up.
+Sends a message on `run.failed`, `run.timeout`, and `run.crashed`. See
+[Per-task notifications][pertask] for the full behaviour. The bell is
+added by default, so even without Slack you still see the failure in
+the Web UI.
 
-[sugar]: /notifications/per-task/
+[pertask]: /notifications/per-task/
 
 ### `set -euo pipefail` inside `run`
 
@@ -145,9 +156,8 @@ Run a periodic restore-test as its own task:
 [tasks.backup-restore-test]
 group       = "Backups"
 description = "Restore last night's dump into a scratch DB and run a smoke query"
-cron        = "0 5 * * *"            # 03:00 dump → 05:00 restore-test
+cron        = "0 5 * * *"            # 02:30 dump → 05:00 restore-test
 on_overlap  = "skip"
-timeout     = "1h"
 notify_on_failure = ["slack-ops"]
 
 run = """

@@ -154,18 +154,18 @@ one-hour cleanup cadence.
 | `notify_on_failure` | string[] | _(none)_ | Notifier IDs to alert on `run.failed` / `run.timeout` / `run.crashed`. |
 | `notify_on_success` | string[] | _(none)_ | Notifier IDs to alert on `run.succeeded`.                              |
 
-Each entry is a notifier `id` declared in a [`[[notifier]]`](/notifications/providers/overview/)
+Each entry is a notifier `id` declared in a [`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
 block. Whatever channels are listed in `[notify] append_notifiers`
-(default: `["inapp"]`) are appended automatically — set
-`append_notifiers = []` to opt out, or `["slack-ops"]` to make every
-failure page Slack instead. See
-[Notification sugar](/notifications/per-task/)
-for how this expands.
+(default: `["inapp"]`) are added automatically — set
+`append_notifiers = []` to opt out, or `["slack-ops"]` to send every
+failure to that channel instead. See
+[Per-task notifications](/notifications/per-task/) for the field's full
+behaviour.
 
 These two fields are **symmetric across `[tasks.*]` and `[services.*]`** —
-same field names, same expansion, same dedup rules. The
-[Notification sugar](/notifications/per-task/) page covers both surfaces
-and is the canonical reference; the
+same field names, same semantics, same duplicate-removal rules. The
+[Per-task notifications](/notifications/per-task/) page covers both
+surfaces and is the canonical reference; the
 [`[services.*]` notifications](/configuration/services/#notifications) section
 points back here.
 
@@ -204,8 +204,9 @@ echo "Draining queue at $(date -Iseconds)"
 ```
 
 The full annotated example file lives at
-[`apps/runwisp/runwisp.example.toml`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/runwisp.example.toml)
-or you can drop a fresh copy with `runwisp init`.
+[`apps/runwisp/runwisp.example.toml`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/runwisp.example.toml).
+For a quick start, run `runwisp` in an empty directory — it offers to
+scaffold a minimal `runwisp.toml` for you.
 
 ## Where to next
 

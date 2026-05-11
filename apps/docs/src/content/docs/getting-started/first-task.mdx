@@ -2,39 +2,71 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Your first task
-description: Write a runwisp.toml, start the daemon, and trigger your first scheduled task and long-running service.
+description: Start the daemon, scaffold a runwisp.toml on first run, and watch your first task in the TUI.
 ---
 
-This page takes you from "binary on disk" to "task running and streaming
-logs" in about five minutes. We will define one scheduled task, one
-long-running service, start the daemon, and explore the result in the TUI.
+You'll start the daemon, scaffold a `runwisp.toml`, trigger your first
+task, and watch it stream logs in the TUI.
 
-## 1. Scaffold a `runwisp.toml`
+## 1. Start RunWisp
 
 From your working directory:
 
 ```bash
-runwisp init
+runwisp
 ```
 
-This drops a `runwisp.toml` next to you with one task, one service, and
-inline comments next to every key. It is the fastest way to see the full
-schema without flipping between docs and an editor. The scaffold also
-writes `[scheduler] timezone = "<your-system-zone>"` so your cron
-expressions are evaluated in the timezone you actually live in (you can
-edit that to any IANA zone — `Europe/Bratislava`, `America/New_York`,
-`UTC` — or remove it to fall back to the host's system zone).
+The first time you run it in a directory without a `runwisp.toml`,
+RunWisp asks:
 
-![first-task-init.png — Terminal showing `runwisp init` output: a path to the new runwisp.toml, the detected system timezone, and a generated password.](../../../assets/screenshots/placeholder.svg)
+```
+No runwisp.toml at runwisp.toml.
+Create a starter with one example task? [Y/n]
+```
 
-Open it up — the relevant pieces look roughly like this:
+Press `Enter`. RunWisp writes a starter `runwisp.toml`, starts the
+daemon, and opens the **TUI**. The Home page shows the Web UI URL and,
+on first start, a **login password** that the daemon wrote to disk.
+Press `Enter` on the password row to copy it — you'll need it for the
+Web UI.
+
+![first-task-tui-home.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused at top, Web UI URL row with localhost:9477, and an auto-generated password row.](../../../assets/screenshots/placeholder.svg)
+
+The starter file looks like this:
 
 ```toml
 # runwisp.toml
+# Docs: https://docs.runwisp.com/configuration/overview/
+# Full reference: see runwisp.example.toml in the repo or the docs site.
 
+[tasks.hello]
+description = "Example task. Trigger it from the TUI (press r) or the Web UI."
+run = "echo hello from runwisp"
+
+# Schedule a task with cron:
+# [tasks.heartbeat]
+# cron = "* * * * *"
+# run  = "date"
+
+# Long-running service (auto-restart, supports replicas):
+# [services.worker]
+# instances = 1
+# run       = "node ./worker.js"
+```
+
+To run without the TUI — any time stdin is not a terminal — use
+`runwisp daemon`. In that mode there's no prompt: if no `runwisp.toml`
+exists, the daemon logs a warning and runs a built-in demo task.
+
+## 2. Add your real tasks
+
+Open `runwisp.toml` and replace `[tasks.hello]` with the work you
+actually want to schedule. A fuller example:
+
+```toml
 [tasks.backup-db]
 cron       = "0 2 * * *"  # every night at 2 AM
-on_overlap = "skip"       # do not stack if the previous run is still going
+on_overlap = "skip"       # don't start a new run while the previous one is still running
 keep_runs  = 30
 run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
 
@@ -43,96 +75,71 @@ cron = "*/5 * * * *"      # every five minutes
 run  = "curl -sf https://myapp.example.com/health || exit 1"
 
 [services.worker]
-instances = 3             # keep three replicas always running
+instances = 3             # keep three copies running at all times
 run       = "node /app/worker.js"
 ```
 
-**`[tasks.*]`** are units that run on a schedule (or on demand). Each task
-gets its own concurrency policy, retry settings, log retention, and timeout.
+**`[tasks.*]`** run on a schedule or on demand. Each task has its own
+concurrency policy, retries, log retention, and timeout.
 
-**`[services.*]`** are always-on processes. RunWisp keeps them alive with
-exponential restart backoff, surfaces their stdout/stderr like any other
-run, and supports horizontal scaling with `instances = N`.
+**`[services.*]`** run all the time. RunWisp restarts them when they
+exit, captures their output like any other run, and can keep multiple
+copies alive with `instances = N`.
 
 :::note[One namespace for both]
-Task and service names share a single namespace — `[tasks.worker]` and
-`[services.worker]` is rejected at startup. Pick a unique name per
-unit; the daemon refuses to boot if two collide.
+Tasks and services share names. Defining both `[tasks.worker]` and
+`[services.worker]` stops the daemon from starting. Pick a unique name
+for each.
 :::
 
-Edit the scaffolded file to match the work you actually want to run, or
-paste the example above over it to follow along with this guide.
-
-## 2. Start RunWisp
-
-```bash
-runwisp
-```
-
-`runwisp` (with no subcommand) spawns the daemon in the background and
-attaches the interactive **TUI**. The TUI's Home page shows the Web UI
-URL and — on first run only — an auto-generated **login password** that
-the daemon wrote to disk for you. Press `Enter` on the password row to
-copy it to your clipboard; you will need it for the Web UI.
-
-![first-task-tui-home.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused at top, Web UI URL row with localhost:9477, and an auto-generated password row.](../../../assets/screenshots/placeholder.svg)
-
-Want it to run in the background, with no terminal UI (for `systemd`
-or a Docker `CMD`)? Use `runwisp daemon` instead.
+RunWisp doesn't auto-reload — restart the daemon (quit the TUI, run
+`runwisp` again) to pick up your edits.
 
 ## 3. Watch it run
 
-Inside the TUI you can:
+In the TUI you can:
 
-- Browse all configured tasks and services in the sidebar.
+- Browse all tasks and services in the sidebar.
 - Open a task to see its run history and stream live logs.
-- Press <kbd>r</kbd> to trigger a task manually without waiting for the
-  schedule.
-- Cancel a run that's still going, requeue it, or jump to the failure
-  that woke you up at 3 AM.
+- Press <kbd>r</kbd> to run a task now, without waiting for its schedule.
+- Cancel a running task, run it again, or open a failed run.
 
 ![first-task-tui-run.png — TUI exec view mid-run for the `health-check` task: header with run ID and elapsed time, line-numbered log streaming live with each curl response.](../../../assets/screenshots/placeholder.svg)
 
-To trigger from the command line instead, leave the TUI running and open
-another shell:
+To start a run from another shell:
 
 ```bash
 runwisp run-task health-check
 ```
 
-`run-task` asks the running daemon to start a new run via the REST API
-and prints the new run's ULID. Watch the live log in the TUI (or the
-Web UI); `run-task` itself is a fire-and-print command and does not
+`run-task` asks the daemon to start a new run and prints its ULID.
+Watch the live log in the TUI or Web UI — `run-task` itself does not
 stream output.
 
-For one-off testing **without a daemon up**, `runwisp exec
-health-check` runs the task in-process and streams stdout/stderr to
-your terminal. It refuses when a daemon is already attached to the
-data dir — two writers on one SQLite file is a corruption hazard, so
-the CLI checks the PID file before opening the store.
+For a quick test **without a daemon running**, `runwisp exec
+health-check` runs the task in your terminal and streams its output.
+It refuses to run when a daemon is already using the same data dir:
+two writers on one SQLite file would corrupt it.
 
 ## 4. Open the Web UI
 
-The TUI's Home page lists `▸ ⮕ Open Web UI` as its first focusable row
-— press `Enter` and your browser opens straight into the dashboard,
-already logged in. Or just point a browser at `http://localhost:9477`
-and paste the password from step 2. You will see the same task list,
-run history, and live log streaming from a browser. Set the
-`RUNWISP_PASSWORD` environment variable to pin a password of your own,
-or pass `--host` / `--port` to change the bind address.
+In the TUI, the first row on the Home page is `▸ ⮕ Open Web UI` — press
+`Enter` and your browser opens the dashboard, already logged in. Or
+open `http://localhost:9477` and paste the password from step 1.
+You'll see the same tasks, runs, and live logs in the browser. Set
+`RUNWISP_PASSWORD` to choose your own password, or pass `--host` /
+`--port` to change the address.
 
 ![first-task-web-ui.png — Web UI dashboard after login: sidebar with `backup-db` and `health-check` under Tasks plus `worker` under Services, recent activity feed showing a successful `health-check` run.](../../../assets/screenshots/placeholder.svg)
 
 ## What just happened
 
-- RunWisp parsed your TOML, set up scheduling for `backup-db` and
-  `health-check`, and started three replicas of `worker`.
-- Every run, scheduled or manual, gets a ULID, a row in embedded SQLite,
-  and a per-task log file on disk.
-- If the daemon is force-killed right now (or the server crashes) and
-  you restart it, the `worker` runs that were still going will be marked
-  **crashed** with exit code `-2` — your history stays intact and the
-  next firing is a fresh execution.
+- RunWisp scaffolded a `runwisp.toml`, read it, scheduled your tasks,
+  and started any services you defined.
+- Every run gets a ULID, a row in SQLite, and a log file on disk.
+- If the daemon is killed right now and you restart it, the runs that
+  were in progress are marked **crashed** with exit code `-2`. Your
+  history is kept, and the next scheduled run starts fresh.
 
 ## Where to next
 
@@ -141,4 +148,4 @@ or pass `--host` / `--port` to change the bind address.
 - [Configuration overview](/configuration/overview/) covers every TOML
   section.
 - [Concurrency policies](/concepts/concurrency/) explains `on_overlap`
-  in depth.
+  in detail.

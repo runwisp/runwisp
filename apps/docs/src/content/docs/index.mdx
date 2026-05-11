@@ -7,15 +7,12 @@ description: Reference documentation for the RunWisp daemon — installation, TO
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-These docs cover every part of running the RunWisp daemon — from
-installing the binary on a laptop to deploying it under systemd with a
-reverse proxy. RunWisp is a single Go binary that replaces `crond` plus
-a small supervisor: tasks and services in one `runwisp.toml`, run
-history and live logs in an embedded Web UI, and a REST API for
-automation.
-
-This site is reference material. For the project pitch, blog, and
-release announcements, head to [runwisp.com](https://runwisp.com).
+These docs cover every part of running the RunWisp daemon — installing
+the binary, writing a `runwisp.toml`, and operating the resulting
+single-machine cron + supervisor. RunWisp is a single Go binary that
+replaces `crond` plus a small supervisor: tasks and services in one
+`runwisp.toml`, run history and live logs in an embedded Web UI, and a
+REST API for automation.
 
 ## Start here
 
@@ -47,12 +44,12 @@ release announcements, head to [runwisp.com](https://runwisp.com).
     />
     <LinkCard
         title="Notifications"
-        description="The model, [[notifier]] providers (Slack, Telegram, …), routing, and per-task sugar."
+        description="The notifications model, outbound providers, routing rules, and per-task notifications."
         href="/notifications/model/"
     />
     <LinkCard
         title="CLI reference"
-        description="Every subcommand and flag — daemon, exec, run-task, list, status, init."
+        description="Every subcommand and flag — daemon, exec, run-task, list, status, validate."
         href="/cli/"
     />
     <LinkCard
@@ -65,11 +62,6 @@ release announcements, head to [runwisp.com](https://runwisp.com).
 ## In production
 
 <CardGrid>
-    <LinkCard
-        title="Deploy"
-        description="VPS, Docker, and a hardened systemd unit — the canonical bring-up flows."
-        href="/deploy/vps/"
-    />
     <LinkCard
         title="Operations"
         description="Auth, data directory, upgrades between versions, and troubleshooting."

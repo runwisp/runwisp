@@ -14,12 +14,13 @@ per run.
 ## Where logs live
 
 ```
-{data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id}.log
+{data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id-suffix}.log
 ```
 
 - **One file per run.** Each invocation gets its own isolated log,
-  named after its start time and ID so files are sortable and unique
-  even when runs start less than a second apart.
+  named after its start time and a short suffix of the run's ULID so
+  files are sortable and unique. Task names are sanitised — anything
+  outside `[a-zA-Z0-9_-]` becomes `_`.
 - **Stdout and stderr are interleaved** in capture order — the same
   bytes the script wrote, in the order it wrote them.
 - When a run is deleted by retention, the daemon removes the log file,
@@ -86,7 +87,7 @@ keep_for  = "7d"
 - Omit either field to inherit from `[defaults]`. Set both for a hard
   floor _and_ a hard ceiling.
 
-Cleanup runs in the background on a fixed one-hour cadence. Runs that
+Cleanup runs in the background periodically. Runs that
 are still going are never deleted; you may briefly see slightly more
 than `keep_runs` rows between sweeps. When retention triggers, both
 the SQLite row **and** the log file (with its sidecars) are removed.

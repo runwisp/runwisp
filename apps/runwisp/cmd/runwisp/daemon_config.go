@@ -180,6 +180,7 @@ func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error
 		return cfg, false, nil
 	}
 
+	slog.Warn("no runwisp.toml found — running with the built-in demo task; create a config to define your own (docs: https://github.com/runwisp/runwisp)", "path", path)
 	demo := demoTask
 	cfg = &config.Config{
 		Tasks: []model.Task{demo},

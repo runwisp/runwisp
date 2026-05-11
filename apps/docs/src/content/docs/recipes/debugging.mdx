@@ -78,9 +78,13 @@ notify_on_failure = ["slack-ops"]
 run = "/usr/local/bin/flaky-thing"
 ```
 
-A real outage shows up as **all three attempts failing**, which fires
-exactly one notification per firing. A single dropped packet shows up
-as one failure followed by a passing retry — silent.
+A real outage shows up as **all three attempts failing**. Each
+failed attempt fires a `run.failed` event, but the default 1 h
+coalescing window collapses them into a single Slack/Telegram row
+with a count and a sparkline — see the
+[retry storm playbook](#a-retry-storm) for the full picture. A
+single dropped packet shows up as one failure followed by a passing
+retry — silent.
 
 ### Step 4 — make sure flapping itself is observable
 
@@ -94,7 +98,7 @@ want a tighter window for the bell to update faster:
 coalesce_window = "30m"
 ```
 
-[coalesce]: /notifications/model/#coalescing-coalesce_window-and-occurrence_ring
+[coalesce]: /notifications/global/#coalescing
 
 If you've turned coalescing off (or set it to a very short window),
 turn it back on for flap-prone tasks — that's exactly what it's for.
@@ -132,10 +136,10 @@ captured stderr almost always names the cause directly:
 
 ### Step 2 — confirm the supervisor's behaviour matches your expectation
 
-A service supervisor [restarts forever][backoff] with exponential
-backoff capped at **60 seconds**. A replica that stays up for at
-least 60 seconds resets the counter. So a service that takes 70
-seconds to fail looks worse than one that fails in 3:
+A service supervisor [restarts forever][backoff] with bounded
+exponential backoff. A replica that stays up past `backoff_reset_after`
+resets the counter. So a service that fails slowly looks worse than
+one that fails fast:
 
 ```
 0:00  start → exit (3s alive)        → wait 1s
@@ -287,7 +291,7 @@ notification stream:
   [notifications: delivery failures][delivery] for routing
   `notify.delivery_failed` somewhere safer.
 
-[delivery]: /notifications/routes/#delivery-failures-the-cycle-break
+[delivery]: /notifications/routes/#delivery-failures
 
 ## Where to next
 

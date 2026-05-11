@@ -53,7 +53,6 @@ export default defineConfig({
                         { label: "The Web UI tour", slug: "getting-started/web-ui-tour" },
                     ],
                 },
-                { label: "Roadmap", link: "/roadmap/" },
                 {
                     label: "Concepts",
                     items: [
@@ -80,16 +79,9 @@ export default defineConfig({
                     label: "Notifications",
                     items: [
                         { label: "Model", slug: "notifications/model" },
-                        { label: "[notify]", slug: "notifications/global" },
-                        { label: "[[notification_route]]", slug: "notifications/routes" },
-                        { label: "Notification sugar", slug: "notifications/per-task" },
                         {
                             label: "Providers",
                             items: [
-                                {
-                                    label: "Overview",
-                                    slug: "notifications/providers/overview",
-                                },
                                 { label: "Slack", slug: "notifications/providers/slack" },
                                 {
                                     label: "Telegram",
@@ -97,6 +89,9 @@ export default defineConfig({
                                 },
                             ],
                         },
+                        { label: "Per-task notifications", slug: "notifications/per-task" },
+                        { label: "Notification rules", slug: "notifications/routes" },
+                        { label: "Global settings", slug: "notifications/global" },
                     ],
                 },
                 {
@@ -114,14 +109,6 @@ export default defineConfig({
                     ],
                 },
                 {
-                    label: "Deploy",
-                    items: [
-                        { label: "VPS", slug: "deploy/vps" },
-                        { label: "Docker", slug: "deploy/docker" },
-                        { label: "systemd unit", slug: "deploy/systemd" },
-                    ],
-                },
-                {
                     label: "Operations",
                     items: [
                         { label: "Auth (CHAP + JWT)", slug: "operations/auth" },
@@ -130,7 +117,7 @@ export default defineConfig({
                         { label: "Troubleshooting", slug: "operations/troubleshooting" },
                     ],
                 },
-                ...openAPISidebarGroups,
+                // ...openAPISidebarGroups,
             ],
         }),
     ],

@@ -22,7 +22,7 @@ run = "/usr/local/bin/metrics-agent"
 ```
 
 That's a complete service — one replica, restarted forever with
-exponential backoff capped at 60 seconds.
+bounded exponential backoff.
 
 ## Identity & metadata
 
@@ -59,11 +59,11 @@ exits.
 | `restart_backoff`     | enum     | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                 |
 | `backoff_reset_after` | duration | inherited       | Replica must stay up at least this long before its restart counter resets. Inherits from `[defaults] backoff_reset_after` (default `"60s"`). |
 
-Backoff is **capped at 60 seconds**, so even after a long flap session
-the next restart never waits more than a minute. A replica that stays
-up for `backoff_reset_after` resets its backoff counter, so transient
-flapping doesn't permanently slow restarts on a service that eventually
-stabilises.
+Backoff is bounded, so even after a long flap session the next
+restart doesn't keep growing forever. A replica that stays up for
+`backoff_reset_after` resets its backoff counter, so transient
+flapping doesn't permanently slow restarts on a service that
+eventually stabilises.
 
 `restart = "always"` is implicit and **cannot be overridden** — that's
 the contract. If you want "run once and exit," use a task.
@@ -121,13 +121,13 @@ See [Logs & retention](/concepts/logs/) for the underlying behaviour.
 | `notify_on_failure` | string[] | _(none)_ | Notifier IDs to alert when a replica exits with `failed` / `crashed`. |
 | `notify_on_success` | string[] | _(none)_ | Notifier IDs to alert on `run.succeeded` (a clean replica shutdown).  |
 
-**Identical shape, expansion, and semantics as on `[tasks.*]`** —
-including the implicit append of `[notify] append_notifiers` (default
-`["inapp"]`). The shared reference lives at
-[Notification sugar](/notifications/per-task/); the
+**Identical shape and semantics as on `[tasks.*]`** — including the
+implicit addition of `[notify] append_notifiers` (default `["inapp"]`).
+The shared reference lives at
+[Per-task notifications](/notifications/per-task/); the
 [`[tasks.*]` notifications](/configuration/tasks/#notifications) section
-is the mirror entry. A failed replica in a `[services.*]` block fires
-the same synthetic route a failed `[tasks.*]` run would.
+is the mirror entry. A failed replica in a `[services.*]` block notifies
+the same channels a failed `[tasks.*]` run would.
 
 ## Cooperating with `graceful_stop`
 

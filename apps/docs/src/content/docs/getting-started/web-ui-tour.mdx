@@ -2,70 +2,68 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: The Web UI tour
-description: A guided walkthrough of the embedded RunWisp Web dashboard — opening it from the TUI, the overview page, task detail, log viewer, notifications bell, and the connection-lost flow.
+description: A tour of the embedded RunWisp Web dashboard — opening it from the TUI, the overview page, task detail, log viewer, notifications bell, and the connection-lost overlay.
 ---
 
-The Web UI is the same control surface as the [TUI][tui], rendered in
-your browser and updated live as runs happen. It ships **inside the
-daemon binary** — no separate web server, no CDN, no extra port.
-Browse to `http://<host>:<port>` (default `http://localhost:9477`)
-and you're there.
+The Web UI is the same dashboard as the [TUI][tui], in your browser
+and updated live as runs happen. It lives **inside the daemon
+binary** — no separate web server, no CDN, no extra port. Go to
+`http://<host>:<port>` (default `http://localhost:9477`) and you're
+there.
 
 [tui]: /concepts/tui-tour/
 
-The dashboard is intentionally small and read-mostly: **trigger,
-restart, and stop** are the only mutations. Everything else is
-observation — `runwisp.toml` stays the source of truth.
+The dashboard is small and mostly read-only: **trigger, restart, and
+stop** are the only actions that change anything. Everything else is
+viewing — `runwisp.toml` stays the source of truth.
 
-## The fast path: open it from the TUI
+## Open from the TUI
 
 If you're already in the local TUI (just type `runwisp`), the **Open
-Web UI** entry on its Home page is the easiest way in:
+Web UI** row on the Home page is the easiest way in:
 
-1. `runwisp` starts the daemon and attaches the TUI.
-2. The Home page lists `▸ ⮕ Open Web UI` as its first focusable row.
-3. Press `Enter` and your default browser opens straight into the
-   dashboard, already logged in — no copy-pasting the password.
+1. `runwisp` starts the daemon and opens the TUI.
+2. The Home page lists `▸ ⮕ Open Web UI` as its first row.
+3. Press `Enter` and your browser opens the dashboard, already logged
+   in — no need to paste the password.
 
-On a server with no browser available, the TUI prints the URL
-instead, so you can paste it from another machine.
+On a server with no browser, the TUI prints the URL instead, so you
+can paste it on another machine.
 
 ![tui-home-default.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused, Web UI URL row, and auto-generated password row.](../../../assets/screenshots/placeholder.svg)
 
-## The password modal (everything else)
+## Open from a browser
 
-When you don't have local TUI access — a remote browser, a coworker's
-laptop, a bookmark you opened cold — you'll see the password modal.
+When you don't have the local TUI — a remote browser, a coworker's
+laptop, a cold bookmark — you'll see the login modal.
 
 ![web-ui-login.png — Login modal centred on the dashboard: single password field, Submit button, no username.](../../../assets/screenshots/placeholder.svg)
 
 There's no username — RunWisp is single-operator. Type the password
-and submit. Your password never travels over the network: the login
-uses a challenge-response handshake. If you want the details, see
-[Auth][auth].
+and submit. The password never goes over the network: login uses a
+challenge-response handshake. For details, see [Auth][auth].
 
 [auth]: /operations/auth/
 
-Your session lasts **24 hours**. After that you log in again. Five
-wrong passwords in five minutes triggers a temporary lockout — wait it
-out or restart the daemon.
+Your session expires after a while; after that, log in again. Too
+many bad password attempts trigger a temporary lockout — wait it out
+or restart the daemon. See [Auth][auth] for the exact limits.
 
-## The shell
+## Layout
 
-A fixed-width sidebar on the left, a topbar above the content, the
-content area below.
+A sidebar on the left, a top bar above the content, the content area
+below.
 
 ![web-ui-shell.png — Full dashboard window: sidebar on the left, topbar with breadcrumb and notifications bell, content area showing the Overview page.](../../../assets/screenshots/placeholder.svg)
 
-- **Sidebar** — left, white. Logo and "RunWisp" wordmark at the top,
-  the two primary links (**Overview**, **All Runs**), then your
-  tasks bucketed by `group =`. If every task shares one group (or
-  none), the heading collapses to a single "Tasks" section. The
-  sidebar footer shows a live connection indicator (green dot when
-  connected) and the daemon version. Click the indicator when it goes
-  red to force an immediate retry.
-- **Topbar** — `RunWisp / <page>` on the left as a static breadcrumb
-  (it doesn't navigate), notifications bell with unread count on the
+- **Sidebar** — left, white. Logo and "RunWisp" name at the top, two
+  main links (**Overview**, **All Runs**), then your tasks grouped by
+  `group =`. If every task shares one group (or none), the heading
+  becomes a single "Tasks" section. The footer shows a live
+  connection indicator (green dot when connected) and the daemon
+  version. Click the indicator when it turns red to retry now.
+- **Top bar** — `RunWisp / <page>` on the left as a breadcrumb (it
+  doesn't navigate); notifications bell with unread count on the
   right.
 - **Content area** — scrollable; the active page renders here.
 
@@ -77,182 +75,177 @@ The landing page after login.
 
 ![web-ui-overview.png — Overview page: daemon hero with sparklines, stats card, task overview tabs (All · Attention · Running · Scheduled · Manual), recent activity feed.](../../../assets/screenshots/placeholder.svg)
 
-- **Daemon hero** — name, version, uptime, host, OS, CPU/RAM use.
-  The CPU and memory sparklines refresh every two seconds.
-- **Stats** — active task count, success rate over the recent
-  window, CPU and memory percentages.
+- **Daemon header** — name, version, uptime, host, OS, CPU/RAM use.
+  CPU and memory sparklines update live.
+- **Stats** — active task count, recent success rate, CPU and memory
+  percentages.
 - **Task overview** — filter tabs (All · Attention · Running ·
-  Scheduled · Manual) with a sort selector, so you see the most
-  relevant slice without scrolling.
-- **Recent activity** — the six most recent runs across all tasks,
-  updated live. Sits next to a side-panel trio (Needs attention,
-  Running now, Up next), each capped at four entries, so live state
-  is on screen alongside history without scrolling.
+  Scheduled · Manual) with a sort selector, so you see the part you
+  care about without scrolling.
+- **Recent activity** — the most recent runs across all tasks,
+  updated live. Next to it, three side panels (Needs attention,
+  Running now, Up next).
 
 ## All runs (`/runs`)
 
-A flat history of the **200** most recent runs across every task,
-sorted newest-first. Useful for "what's been happening lately" — or
-when a notification points you at a run id and you want to find it
-without picking the right task first.
+A flat, newest-first list of recent runs across every task.
+Useful for "what's been happening lately" — or when a notification
+gives you a run ID and you want to find it without picking the right
+task first.
 
-![web-ui-runs.png — All Runs page: flat newest-first table of 200 runs across every task with status icons, durations, and timestamps.](../../../assets/screenshots/placeholder.svg)
+![web-ui-runs.png — All Runs page: flat newest-first table of recent runs across every task with status icons, durations, and timestamps.](../../../assets/screenshots/placeholder.svg)
 
 ## Task detail (`/tasks/{id}`)
 
-Click a task in the sidebar (or any run in the activity feed) to land
-here.
+Click a task in the sidebar (or any run in the activity feed) to open
+this page.
 
 - **Header** — task name, description, schedule line.
 - **Action button** — **Run Task** for tasks, **Restart Service** for
-  services, **Stop Now** while a run is still going. The button is
-  disabled when the task is at its `max_concurrent` limit.
-- **Run history** — the **50** most recent runs for this task,
-  selectable.
-- **Log viewer** — the streaming log for the selected run, occupying
+  services, **Stop Now** while a run is active. Disabled when the
+  task is at its `max_concurrent` limit.
+- **Run history** — the most recent runs for this task. Click one to
+  open it.
+- **Log viewer** — the streaming log for the selected run, filling
   most of the pane.
 
 ![web-ui-task-detail.png — Task detail for a finished run: header with Run Task button, run history list on the side, log viewer occupying most of the pane.](../../../assets/screenshots/placeholder.svg)
 
-While a run is still going, the action becomes **Stop Now**:
+While a run is active, the button becomes **Stop Now**:
 
 ![web-ui-task-running.png — Task detail mid-run: Stop Now button visible, log streaming live with tail follow.](../../../assets/screenshots/placeholder.svg)
 
 For a **service**, the same page shows the replica count and the
-**Restart Service** button cancels every replica — the supervisor
-refills the slots via its normal exit-handler path.
+**Restart Service** button cancels every replica — RunWisp then
+starts new replicas as usual.
 
 ![web-ui-service-detail.png — Service detail page: replica count visible, Restart Service action button, per-replica run rows.](../../../assets/screenshots/placeholder.svg)
 
 ### The log viewer
 
-When you open a finished run, the log viewer lands at the **end** of
-the log and lazy-loads earlier content as you scroll up. For a run
-that's still going, new lines stream in live.
+When you open a finished run, the log viewer opens at the **end** of
+the log and loads earlier content as you scroll up. For a run still
+in progress, new lines stream in live.
 
-- Line numbers match the underlying log file exactly.
+- Line numbers match the log file exactly.
 - Terminal colours from the task's output are rendered.
 - Very long lines are split with a continuation marker.
-- When `log_on_full = "drop_old"` rotates a log mid-run, you just see
-  a small "log rotated" marker; line numbering stays continuous.
+- When `log_on_full = "drop_old"` rotates a log mid-run, you see a
+  small "log rotated" marker; line numbering stays continuous.
 
-A **Download log** button in the run header grabs the full log file
-— including the rotated-out part if `drop_old` fired mid-run — as a
-single download. Same bytes the on-disk file holds, served from the
+A **Download log** button in the run header downloads the full log
+file — including the rotated-out part if `drop_old` fired mid-run —
+in one file. Same bytes as the file on disk, served through the
 daemon's REST API.
 
 ![web-ui-download-log.png — Run detail header with the Download log button highlighted next to the live-stream toggle.](../../../assets/screenshots/placeholder.svg)
 
-### The failure path
+### Failed runs
 
-Prime directive #1 is "nothing silently fails." That's not just a
-slogan — it's a UI rule, so failure information lives **in the same
-view as success information**, not behind a special "errors" tab.
-Open a failed run and you see, all on the same page:
+Nothing silently fails — failure details live in the **same view as
+success details**, not behind a separate "errors" tab. Open a failed
+run and you see, on one page:
 
-- **The end reason as a coloured status pill** in the run header —
-  `failed` (non-zero exit), `timeout` (cap hit), `crashed` (daemon
-  was killed mid-run), `stopped` (you or `on_overlap = "terminate"`
-  cancelled it), `skipped` (`on_overlap = "skip"` rejected it), or
-  `log_overflow` (`log_on_full = "kill_task"` killed it). Each gets
-  its own colour so a glance tells you which kind of bad day it was.
+- **A coloured status pill** in the run header — `failed` (non-zero
+  exit), `timeout` (hit the time limit), `crashed` (daemon was killed
+  mid-run), `stopped` (you or `on_overlap = "terminate"` cancelled
+  it), `skipped` (`on_overlap = "skip"` rejected it), or
+  `log_overflow` (`log_on_full = "kill_task"` killed it). Each has
+  its own colour so you can tell at a glance what happened.
 - **The exit code next to the duration**. Positive codes come from
-  your script. Sentinel negatives are RunWisp's: `-1` for `skipped`
-  (the run never started), `-2` for `crashed` (the daemon went away
-  mid-run). `124` is the conventional code for a `timeout` kill.
-- **The captured stdout/stderr** — full log pane below the header,
-  with ANSI colours rendered, line numbers matching the on-disk
-  file, and a "log rotated" marker if `log_on_full = "drop_old"`
+  your script. RunWisp uses negative codes for its own outcomes: `-1`
+  for `skipped` (the run never started), `-2` for `crashed` (the
+  daemon died mid-run). A `timeout` reports whatever exit the OS
+  produced when the process was killed — typically `143` (SIGTERM)
+  or `137` (SIGKILL) after the `graceful_stop` window elapsed.
+- **The captured stdout/stderr** in the log pane below the header,
+  with ANSI colours rendered, line numbers matching the file on
+  disk, and a "log rotated" marker if `log_on_full = "drop_old"`
   rolled the file mid-run.
 
 ![web-ui-task-failed.png — Task detail for a failed run: red status pill in the header, exit code next to duration, captured stderr filling the log pane.](../../../assets/screenshots/placeholder.svg)
 
-The same surface backs every end reason. A `skipped` row is a real
-row with a real log line explaining the policy that rejected it — it's
-not silence. A `crashed` row tells you the daemon itself died while
-the run was in flight; the next firing is a fresh execution, not a
-resumption.
+The same view handles every outcome. A `skipped` run is a real row
+with a log line explaining why it was rejected — never silent. A
+`crashed` row tells you the daemon itself died while the run was
+active; the next firing starts fresh, it does not resume.
 
-The sidebar also reflects status: tasks whose **most recent run
-failed** carry a coloured marker, so you don't have to remember to
-visit each one. The Overview page's **Attention** filter tab pivots
-the whole task list around exactly that — anything not currently
+The sidebar also shows status: tasks whose **last run failed** get a
+coloured marker, so you don't have to check each one. The Overview
+page's **Attention** tab shows everything that isn't currently
 healthy.
 
-When a task has retries, every attempt is a separate row in the run
-history with its own end reason. Attempt 0 might be `failed` and
-attempt 1 `success` — read attempt 0's log to learn why the first
-try failed even when the retry recovered. That's why `keep_runs`
-matters: bury the failed attempts and you've taken away your own
-forensics.
+When a task retries, every attempt is its own row with its own
+status. Attempt 0 might be `failed` and attempt 1 `success` — open
+attempt 0's log to see why the first try failed, even when the retry
+worked. Keep `keep_runs` high enough to hold the failed attempts;
+drop them and you lose the evidence.
 
 ## Notifications bell
 
-Top-right of the topbar. The badge shows your unread count.
+Top-right of the top bar. The badge shows your unread count.
 
-![web-ui-notifications-popover.png — Bell clicked: popover open with ten recent notifications, severity dots, relative times, and a coalesced row showing a sparkline.](../../../assets/screenshots/placeholder.svg)
+![web-ui-notifications-popover.png — Bell clicked: popover open with recent notifications, severity dots, relative times, and a coalesced row showing a sparkline.](../../../assets/screenshots/placeholder.svg)
 
-Click the bell to open the **popover** — the ten most recent
-notifications, with read-state toggles, a "View all" link, and a
-"Mark all read" button.
+Click the bell to open a panel with recent notifications, read
+toggles, a "View all" link, and a "Mark all read" button.
 
-Each row carries:
+Each row shows:
 
-- A coloured dot for severity (red error, orange warn, teal info).
+- A coloured dot for severity (red error, orange warning, teal info).
 - The event headline.
 - Relative time (`5 seconds ago`).
 - The task name.
-- A small sparkline of recent occurrences when the row is **coalesced**.
+- A small sparkline of recent occurrences when the row is **grouped**.
 
-Coalescing is what the [notifications model][notif] does so a task
-that fails over and over doesn't fill your bell with duplicates: events sharing
-a dedup key (`task + kind + end reason`) collapse into a single
-row with a count and a rhythm summary ("failed 12 times, latest 30s
-ago"). The sparkline reads at a glance.
+The [notifications model][notif] groups duplicate events so a task
+that fails over and over doesn't flood your bell: events sharing the
+same key (`task + kind + outcome`) collapse into one row with a count
+and a short summary ("failed 12 times, latest 30s ago"). The
+sparkline shows the pattern at a glance.
 
 [notif]: /notifications/model/
 
-Click a notification to land on the run it's about.
+Click a notification to open the run it's about.
 
 ### Full notifications page (`/notifications`)
 
-The bell only shows ten. The page shows everything — paginated, with
-a "Load more" button. Same row layout, plus the unread count up top.
+The bell shows a preview. This page shows everything — paginated,
+with a "Load more" button. Same row layout, with the unread count at
+the top.
 
 ![web-ui-notifications-page.png — /notifications full page: paginated history with unread count at the top and a Load more button at the bottom.](../../../assets/screenshots/placeholder.svg)
 
 ## Connection-lost overlay
 
-When the daemon stops responding (network blip, restart, hard crash),
-the UI overlays a **Connection Lost** panel:
+When the daemon stops responding (network glitch, restart, crash), a
+**Connection Lost** panel covers the UI:
 
 ![web-ui-connection-lost.png — Connection Lost overlay: spinner, Down for: 14s, retry attempt counter, countdown to next retry, Retry now button, collapsible error details.](../../../assets/screenshots/placeholder.svg)
 
 - A spinning indicator while it retries.
 - Time since the disconnect (`Down for: 14s`).
-- The retry attempt counter, plus a countdown to the next automatic
-  retry.
+- The retry attempt counter, plus a countdown to the next retry.
 - A **Retry now** button.
 - A collapsible details section with the last error message.
 
-The retry interval grows after each failure (capped at 30 seconds).
-As soon as the daemon answers, the overlay dismisses itself and live
-streams resume.
+The wait between retries grows after each failure. As soon as the
+daemon answers, the overlay closes and live streams resume.
 
-## Intentional scope
+## What it doesn't do
 
-The Web UI is a control plane, not a configuration UI. You can
-trigger, stop, and restart things, and you can see everything that's
-happening — but the source of truth is `runwisp.toml`. To change
+The Web UI is for viewing and controlling, not configuring. You can
+trigger, stop, and restart, and you can see everything that's
+happening — but `runwisp.toml` is the source of truth. To change
 _what_ the daemon does (add a task, edit a schedule, rename a group,
-set up a notifier, scale a service), open the file in your editor and
-restart the daemon.
+set up a notifier, scale a service), edit the file and restart the
+daemon.
 
 ## Where to next
 
-- [Concepts: TUI tour](/concepts/tui-tour/) — the same surface, in
+- [Concepts: TUI tour](/concepts/tui-tour/) — the same dashboard in
   your terminal, including the Open Web UI shortcut.
 - [Configuration overview](/configuration/overview/) — what to put in
-  the TOML the dashboard is observing.
+  the TOML.
 - [Operations: auth](/operations/auth/) — managing the password and
   session.

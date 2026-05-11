@@ -2,15 +2,14 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Auth
-description: How RunWisp authenticates Web UI / TUI / REST clients — one password, a 24-hour session, and a small set of safety nets (rate limiting, reverse-proxy trust, no logins on a few public health endpoints).
+description: How RunWisp authenticates Web UI / TUI / REST clients — one password, one session, and a small set of safety nets (rate limiting, reverse-proxy trust, no logins on a few public health endpoints).
 ---
 
 RunWisp has one password and one session. Type the password, get a
-session that lasts 24 hours, and use that to drive the Web UI, TUI,
-and REST API. That's the whole identity model — no users, no roles,
-no API keys, no SSO. The trust model is "if you can log in, you
-control the daemon", and RunWisp is built for one operator on one
-machine.
+session, and use that to drive the Web UI, TUI, and REST API. That's
+the whole identity model — no users, no roles, no API keys, no SSO.
+The trust model is "if you can log in, you control the daemon", and
+RunWisp is built for one operator on one machine.
 
 ## Logging in
 
@@ -26,14 +25,15 @@ back a hash the daemon can verify. Even on plain HTTP — say, a
 reverse proxy speaking HTTPS to clients but plain HTTP back to
 RunWisp on the same host — your password isn't on the wire.
 
-After a successful login the daemon issues a **session** that lasts
-24 hours. The browser holds it in a secure cookie. The CLI / TUI use
-the same handshake under the hood when they need a session.
+After a successful login the daemon issues a **session** held in a
+secure cookie. Restart the daemon to invalidate every session at
+once. The CLI / TUI use the same handshake under the hood when they
+need a session.
 
 ## The password
 
 The password is the only secret guarding the daemon. On first run
-RunWisp generates a 22-character random password and writes it to
+RunWisp generates a random password and writes it to
 `<data-dir>/password` with permissions that only the daemon's user
 can read:
 
@@ -96,8 +96,8 @@ them.
 
 **The shortlist for production:**
 
-- **systemd:** `LoadCredential=runwisp_password:/etc/runwisp/credentials/password` keeps the secret off disk for non-root users and out of the unit file itself. Falling back to `EnvironmentFile=-/etc/runwisp/runwisp.env` with mode `0640` and group ownership of the daemon's group is the next-best step. See [Deploy: systemd](/deploy/systemd/).
-- **Docker / Compose:** mount via [Docker secrets](https://docs.docker.com/engine/swarm/secrets/) or pass `--env-file ./runwisp.env` with the file `chmod 0600` and excluded from the build context (`.dockerignore`). Avoid `-e RUNWISP_PASSWORD=…` on the command line. See [Deploy: Docker](/deploy/docker/).
+- **systemd:** `LoadCredential=runwisp_password:/etc/runwisp/credentials/password` keeps the secret off disk for non-root users and out of the unit file itself. Falling back to `EnvironmentFile=-/etc/runwisp/runwisp.env` with mode `0640` and group ownership of the daemon's group is the next-best step.
+- **Docker / Compose:** mount via [Docker secrets](https://docs.docker.com/engine/swarm/secrets/) or pass `--env-file ./runwisp.env` with the file `chmod 0600` and excluded from the build context (`.dockerignore`). Avoid `-e RUNWISP_PASSWORD=…` on the command line.
 - **Bare metal / VPS:** keep `<data-dir>/password` (the auto-generated file with `0600` perms) and don't set `RUNWISP_PASSWORD` at all. The file is the simplest secure path when no orchestrator is involved — just don't back up the data dir to anywhere unencrypted.
 
 **What RunWisp does on its side:**
@@ -118,10 +118,9 @@ to log in again.
 
 ## Rate limiting
 
-Failed login attempts are rate-limited per source IP: **5 attempts
-per 5 minutes**. Cross that and you get `429 Too Many Requests` until
-the window slides past. Restarting the daemon also clears the
-counter.
+Failed login attempts are rate-limited per source IP. Cross the limit
+and you get `429 Too Many Requests` until the window slides past.
+Restarting the daemon also clears the counter.
 
 Live log streams are limited too — at most a few dozen open at once,
 plus a small per-IP cap — so a buggy script can't accidentally
@@ -198,5 +197,3 @@ non-goals.
   `password`, `runwisp.db`, and other state live on disk.
 - [CLI reference](/cli/) — `runwisp tui --password`, environment
   variable precedence, `runwisp status`.
-- [Deploy: VPS](/deploy/vps/) — terminating TLS upstream and setting
-  `RUNWISP_TRUST_PROXY` correctly.

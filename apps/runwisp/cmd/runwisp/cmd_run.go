@@ -42,8 +42,8 @@ var demoTask = model.Task{
 echo "Current time: $(date)"
 echo ""
 echo "This is a built-in demo task."
-echo "Create a runwisp.toml file to define your own tasks:"
-echo "  runwisp init"
+echo "Create a runwisp.toml to define your own tasks — see runwisp.example.toml"
+echo "or https://github.com/runwisp/runwisp"
 `,
 	Cron:          "* * * * *",
 	Timezone:      "UTC",

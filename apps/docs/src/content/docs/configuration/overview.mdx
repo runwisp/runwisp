@@ -8,8 +8,7 @@ description: How runwisp.toml is structured — storage safeguards, defaults, ta
 RunWisp is configured through a single `runwisp.toml` file. It is the
 **sole source of truth** for what runs and how — the REST API and Web UI
 are read-only and trigger-only, never mutate task definitions. To pick up
-edits, **restart the daemon** (live reload is on the roadmap, not yet
-implemented).
+edits, **restart the daemon**.
 
 The file is divided into a handful of sections. Most are optional; the only
 thing RunWisp truly needs is at least one `[tasks.*]` or `[services.*]`
@@ -64,48 +63,40 @@ run         = "/usr/local/bin/metrics-agent"
 ```
 
 The fully annotated reference lives next to the binary at
-[`apps/runwisp/runwisp.example.toml`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/runwisp.example.toml)
-— or run `runwisp init` to drop it into your working directory.
+[`apps/runwisp/runwisp.example.toml`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/runwisp.example.toml).
+If you run `runwisp` in a directory without a `runwisp.toml`, it
+offers to write a minimal starter for you — see
+[Your first task](/getting-started/first-task/).
 
 ## Section by section
 
-| Section                     | Purpose                                                                                       | Reference                                                |
-| --------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `[storage]`                 | Disk-usage limits — caps total bytes used and reserves headroom on the data partition.        | [`[storage]`](/configuration/storage/)                   |
-| `[defaults]`                | Defaults inherited by every task and service unless explicitly overridden.                    | [`[defaults]`](/configuration/defaults/)                 |
-| `[tasks.<name>]`            | Scheduled or manual jobs. Cron expression, concurrency policy, retries, timeout, retention.   | [`[tasks.*]`](/configuration/tasks/)                     |
-| `[services.<name>]`         | Always-on processes. One or more `instances`, exponential restart backoff, graceful shutdown. | [`[services.*]`](/configuration/services/)               |
-| `[[notifier]]`              | Outbound channels (Slack, Telegram, more on the way). Repeated for each channel.              | [Providers overview](/notifications/providers/overview/) |
-| `[[notification_route]]`    | Routes events (`run.failed`, `run.timeout`, …) to one or more notifiers.                      | [`[[notification_route]]`](/notifications/routes/)       |
-| `[notify]`                  | Global notification settings — queue size, retention, in-app toggle.                          | [`[notify]`](/notifications/global/)                     |
-| `notify_on_failure` (sugar) | Per-task shorthand that desugars to a synthetic notification route.                           | [Per-task sugar](/notifications/per-task/)               |
-| _(reference)_               | Catalogue of every shape the strict loader rejects at boot.                                   | [Validation rules](/configuration/validation/)           |
+| Section                  | Purpose                                                                                       | Reference                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `[storage]`              | Disk-usage limits — caps total bytes used and reserves headroom on the data partition.        | [`[storage]`](/configuration/storage/)                                     |
+| `[defaults]`             | Defaults inherited by every task and service unless explicitly overridden.                    | [`[defaults]`](/configuration/defaults/)                                   |
+| `[tasks.<name>]`         | Scheduled or manually-triggered units of work. Cron expression, concurrency, retries, timeout, retention. | [`[tasks.*]`](/configuration/tasks/)                                       |
+| `[services.<name>]`      | Always-on processes. One or more `instances`, exponential restart backoff, graceful shutdown. | [`[services.*]`](/configuration/services/)                                 |
+| `[[notifier]]`           | Declares one outbound channel. Repeated for each channel.                                     | [Notifications model](/notifications/model/#notifier--declaring-a-channel) |
+| `[[notification_route]]` | Sends events (`run.failed`, `run.timeout`, …) to one or more channels. One rule, many tasks.  | [Notification rules](/notifications/routes/)                               |
+| `[notify]`               | Global notification settings — queue size, retention, in-app toggle.                          | [Global settings](/notifications/global/)                                  |
+| `notify_on_failure`      | Sets the channels to notify when one specific task ends `failed`, `timeout`, or `crashed`.    | [Per-task notifications](/notifications/per-task/)                         |
+| _(reference)_            | Catalogue of every shape the strict loader rejects at boot.                                   | [Validation rules](/configuration/validation/)                             |
 
 ## Reload semantics
 
 RunWisp **does not currently support live reload** of `runwisp.toml`.
 There is no file watcher, no `SIGHUP` handler, and no `runwisp reload`
-subcommand. A running daemon keeps the config it parsed at startup until
-you restart it:
+subcommand. A running daemon keeps the config it parsed at startup
+until you restart it — `Ctrl-C` the daemon, edit the file, and run
+`runwisp daemon` again (or restart it through whatever supervisor you
+have managing the process).
 
-```bash
-# systemd
-sudo systemctl restart runwisp
-
-# Docker
-docker restart runwisp
-
-# Manual (foreground)
-# Ctrl-C the daemon, edit the file, run `runwisp daemon` again.
-```
-
-Restart is fast — it cancels in-flight runs (which record as `stopped`
-if they exit within the `[daemon] shutdown_timeout` window (default
-`"10s"`), or get reconciled as `crashed` on next boot if they don't),
-reopens the database, and re-applies the schedule from the new file.
-Live reload is on the roadmap; see
-[Operations: upgrading](/operations/upgrading/) for the current
-restart-based workflow.
+Restart is fast: in-flight runs are cancelled (they record as
+`stopped` if they exit within the `[daemon] shutdown_timeout` window,
+or get reconciled as `crashed` on next boot if they don't), the
+database is reopened, and the schedule is re-applied from the new
+file. See [Operations: upgrading](/operations/upgrading/) for the
+current restart-based workflow.
 
 A startup parse error fails the boot — the daemon exits non-zero before
 opening its port. Your previous instance has already exited by then, so

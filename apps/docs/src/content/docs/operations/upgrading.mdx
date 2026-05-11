@@ -148,21 +148,17 @@ now rejected at config load. Rename them before upgrading:
 
 Update any references in `notify_on_failure`, `notify_on_success`, and
 `[[notification_route]] notify` lists to match. See
-[Per-task: inline target overrides][overrides] for the new sugar.
+[Per-task: inline target overrides][overrides] for the new syntax.
 
 [overrides]: /notifications/per-task/#inline-target-overrides
 
 ### Unreleased: log streaming endpoints redesigned
 
-Coming in the next release: `/api/tasks/{name}/runs/{id}/log/stream`
-emits SSE events with absolute line numbers, and the legacy
-`?start_line` / `?tail` shape is removed. If you wrote custom code
-against the SSE log surface, it will need updates — the
-[`Unreleased`][unreleased] section of the CHANGELOG documents the new
-shape. Web UI and CLI tooling shipped in the binary update
-automatically.
-
-[unreleased]: https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md#unreleased
+`/api/tasks/{name}/runs/{id}/log/stream` emits SSE events with
+absolute line numbers, and the legacy `?start_line` / `?tail` shape is
+removed. If you wrote custom code against the SSE log surface, it will
+need updates — see the CHANGELOG for the new shape. Web UI and CLI
+tooling shipped in the binary update automatically.
 
 ## Rolling back
 
@@ -198,17 +194,17 @@ is "back up the data directory."
 
 - **In-flight runs** at the moment of restart are cancelled. They
   record as `stopped` if they exit within the daemon's
-  `[daemon] shutdown_timeout` window (default `"10s"`), or `crashed`
-  with exit code `-2` (via boot reconciliation) if they don't. Tasks
-  fire fresh on their next scheduled tick; services restart on their
-  normal supervisor loop. This is by design — see
-  [Tasks vs Services / crashes][crashes].
-- **Open Web UI sessions** with cookies older than 24 hours need a fresh
+  `[daemon] shutdown_timeout` window, or `crashed` with exit code
+  `-2` (via boot reconciliation) if they don't. Tasks fire fresh on
+  their next scheduled tick; services restart on their normal
+  supervisor loop. This is by design — see
+  [scheduling: on startup][crashes].
+- **Open Web UI sessions** past their cookie expiry need a fresh
   login (cookie expiry, not an upgrade artefact).
 - **Notification queue** — anything in flight when the daemon stops is
   lost. The queue is in-memory and not durable.
 
-[crashes]: /concepts/tasks-vs-services/
+[crashes]: /concepts/scheduling/#on-startup-unfinished-runs-are-marked-crashed
 
 ## CI / automation tip
 

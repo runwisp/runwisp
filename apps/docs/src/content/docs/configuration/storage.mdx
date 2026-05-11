@@ -37,7 +37,7 @@ Both accept the same units as `log_max_size`: `b`, `kb`, `mb`, `gb`,
 secret, the PID file, and other artifacts under the data dir are **not**
 counted.
 
-A background sweeper checks the total once an hour. If it's over the
+A background sweeper checks the total periodically. If it's over the
 cap, the sweeper deletes the **oldest completed runs** (rows + log
 files) in `created_at` order until the total is back under the cap.
 The daemon writes:
@@ -60,15 +60,18 @@ dir, in two places:
   the threshold, the run is recorded with exit code `-1` and the
   message `insufficient disk space: X free, minimum Y required`.
   The daemon itself stays up — only the run fails.
-- **During every run, every ~10 MB of log writes.** If free space
-  drops below the threshold, the run's log writer stops accepting
-  new lines and the daemon raises a `log.disk_pressure` notification
-  (severity `warn`) so the operator discovers the silenced output.
-  What happens to the process depends on the task's `log_on_full`: - `drop_new` / `drop_old`: a system line `"Log output stopped: disk
-space critically low"` is recorded; the process keeps running. - `kill_task`: the run is cancelled (`end_reason = "stopped"`) with a
-  system line `"Process killed: disk space critically low ...
-log_on_full=\"kill_task\""`. The operator chose loud failure over
-  disk safety; we honour that.
+- **During every run, as logs grow.** If free space drops below the
+  threshold, the run's log writer stops accepting new lines and the
+  daemon raises a `log.disk_pressure` notification (severity `warn`)
+  so the operator discovers the silenced output. What happens to the
+  process depends on the task's `log_on_full`:
+    - `drop_new` / `drop_old`: a system line `"Log output stopped:
+      disk space critically low"` is recorded; the process keeps
+      running.
+    - `kill_task`: the run is cancelled (`end_reason = "stopped"`)
+      with a system line `"Process killed: disk space critically low
+      …; log_on_full=\"kill_task\""`. The operator chose loud failure
+      over disk safety; we honour that.
 
 The notification fires once per run, not once per check, and includes
 `free_bytes`, `min_free_bytes`, and `killed_task` so dashboards can

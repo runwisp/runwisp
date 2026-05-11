@@ -18,9 +18,9 @@ There are really two knobs:
 - **`on_overlap`** — what to do when a new run is requested and
   `max_concurrent` is already saturated.
 
-If `len(active) < max_concurrent`, the new run **always starts
-immediately**, regardless of policy. `on_overlap` only kicks in when the
-task is at its concurrency limit.
+If `len(active) < max_concurrent`, the new run starts immediately,
+regardless of policy. `on_overlap` only kicks in when the task is at
+its concurrency limit.
 
 ## The three policies
 
@@ -44,7 +44,7 @@ Good fit when:
   empty.
 - Runs operate on disjoint inputs (a per-tick batch, a queue of jobs).
 
-The queue is bounded by `queue_max` (default `100`). Once it's full,
+The queue is bounded by `queue_max`. Once it's full,
 the next firing is recorded with `end_reason = "queue_full"` and the
 existing queue keeps draining FIFO. If you see queue-full firings, the
 task is over its budget — lower the cron frequency, raise

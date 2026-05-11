@@ -119,7 +119,6 @@ That's it — your tasks are scheduled, supervised, and observable through the W
 #### Useful next steps
 
 ```bash
-runwisp init                # scaffold runwisp.toml with annotated examples
 runwisp list                # show configured tasks and their schedules
 runwisp exec backup-db      # run a task in this CLI process (no daemon), stream output
 runwisp run-task backup-db  # trigger a run via the running daemon's REST API
@@ -127,6 +126,10 @@ runwisp status              # check whether a daemon is alive
 runwisp tui                 # attach a fresh TUI to an already-running daemon
 runwisp validate            # parse and check runwisp.toml without starting anything
 ```
+
+Starting `runwisp` in an empty directory prompts to scaffold a minimal
+`runwisp.toml` for you — press `Enter` and the daemon writes a starter
+file before booting the TUI.
 
 ---
 

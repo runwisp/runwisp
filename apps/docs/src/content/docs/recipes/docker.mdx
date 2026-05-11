@@ -2,17 +2,12 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Docker patterns
-description: Running tasks that invoke Docker — one-shot containers, image pruning, registry pulls — including the `--rm` discipline that prevents zombie containers when RunWisp itself runs in a container.
+description: Running tasks that invoke Docker — one-shot containers, image pruning, registry pulls — and the `--rm` discipline that prevents zombie containers.
 ---
 
 This recipe is about **using Docker from inside a RunWisp task** —
 e.g. running an analytics job in a one-shot container, pruning unused
 images, or pre-pulling the next deploy's image.
-
-If you're looking for "how do I run RunWisp _itself_ in a container,"
-go to [Deploy with Docker][deploy-docker] instead.
-
-[deploy-docker]: /deploy/docker/
 
 :::caution[Always use `docker run --rm`]
 Every `docker run` invocation in this recipe — and every one you write —
@@ -55,15 +50,13 @@ docker run --rm \\
 """
 ```
 
-The non-obvious bits — beyond the mandatory [`--rm`](#always-use-docker-run---rm)
-called out above:
+The non-obvious bits — beyond the mandatory `--rm` called out above:
 
 ### `--memory` and `--cpus`
 
-Bound the container's resource use. RunWisp itself is RAM-frugal
-(~22 MB at idle); a runaway analytics job that eats all available
-memory will OOM-kill the daemon along with itself if you don't
-cap it.
+Bound the container's resource use. RunWisp itself is RAM-frugal,
+but a runaway analytics job that eats all available memory will
+OOM-kill the daemon along with itself if you don't cap it.
 
 ### `--env-file` over `-e`
 
@@ -83,7 +76,11 @@ you've chosen.
 ## Pattern 2: pulling the next image ahead of time
 
 A "pre-pull" task that warms the local image cache so a deploy is
-fast. Pair with the [deploy-hooks recipe][deploy].
+fast. Only worth doing if your `:current` (or `:next`) tag actually
+moves often enough to matter — once an hour is the sweet spot for
+teams that deploy multiple times a day; for everyone else, just let
+the deploy task itself do the pull. Pair with the
+[deploy-hooks recipe][deploy].
 
 [deploy]: /recipes/deploy-hooks/
 
@@ -91,10 +88,8 @@ fast. Pair with the [deploy-hooks recipe][deploy].
 [tasks.docker-prefetch]
 group       = "Deploys"
 description = "Pull the latest production image so deploys are quick"
-cron        = "*/30 * * * *"
+cron        = "@hourly"
 on_overlap  = "skip"
-timeout     = "10m"
-keep_runs   = 30
 # No failure alerts — a missed prefetch is not interesting.
 
 run = """
@@ -105,19 +100,22 @@ docker pull ghcr.io/example/worker:current
 ```
 
 A failure here is harmless (the next deploy just pays the pull
-cost), so we deliberately skip notifications.
+cost), so we deliberately skip notifications. Watch your registry's
+rate limits — GHCR, Docker Hub, and ECR all count pulls; a hot
+prefetch loop across many hosts can blow through the budget for
+nothing.
 
-## Pattern 3: image and volume pruning
+## Pattern 3: image pruning
 
-Disks fill up when nobody's looking. Schedule a periodic prune.
+Disks fill up when nobody's looking. Schedule a periodic prune of
+the things that are always safe to drop.
 
 ```toml
 [tasks.docker-prune]
 group       = "Maintenance"
-description = "Reclaim disk: dangling images, stopped containers, unused volumes"
+description = "Reclaim disk: dangling images and stopped containers"
 cron        = "0 5 * * 0"      # Sunday 05:00
 on_overlap  = "skip"
-timeout     = "30m"
 notify_on_failure = ["slack-ops"]
 
 run = """
@@ -127,84 +125,30 @@ set -euo pipefail
 docker image prune --force
 docker container prune --force
 
-# Volumes — only those literally not referenced anywhere.
-# DOUBLE-CHECK this in your environment before enabling.
-docker volume prune --force --filter 'label!=keep'
-
 # Show what we ended up with.
 df -h /var/lib/docker
 """
 ```
 
-The `--filter 'label!=keep'` exception lets you tag any volume
-you want preserved with `docker volume create --label keep
-my-precious-volume`. **Test this against your dev environment
-first** — `docker volume prune` is irreversible.
+### Volumes: do this manually, not on a cron
 
-## When RunWisp itself is in a container
+`docker volume prune` will delete any volume not currently
+referenced by a container — including the volume that holds your
+database between restarts, if its container happens to be stopped
+when the prune runs. This has burned enough people that we don't
+include it in the scheduled recipe.
 
-Two extra rules apply when the daemon runs inside Docker:
+If you really want it, run it interactively, with a label filter
+to protect volumes you've explicitly tagged:
 
-### Mount the Docker socket
-
-RunWisp's container needs `/var/run/docker.sock` mounted in to
-talk to the host's Docker daemon:
-
-```yaml
-services:
-    runwisp:
-        image: ghcr.io/runwisp/runwisp:latest
-        volumes:
-            - /var/run/docker.sock:/var/run/docker.sock
-            - runwisp-data:/data
-        # …
+```bash
+docker volume create --label keep app-pgdata
+docker volume prune --filter 'label!=keep'   # run this BY HAND
 ```
 
-This grants the RunWisp container **root-equivalent access** to
-the host Docker daemon — anything that can talk to that socket can
-escape its container. Treat the RunWisp host's auth surface
-accordingly.
-
-### Use the host's docker CLI
-
-The daemon's container needs the `docker` binary on PATH. The
-prebuilt RunWisp image has it pre-installed; if you're rolling
-your own image, install it explicitly:
-
-```dockerfile
-RUN apk add --no-cache docker-cli
-```
-
-The CLI is a thin client over the socket — no extra daemon needed.
-
-### Network namespaces
-
-If your tasks need to be on a particular Docker network, you have
-two choices:
-
-1. **Run the launching container on that network.**
-   The `docker run` invocations inherit it.
-2. **Pass `--network` explicitly** in every `docker run` call. More
-   typing but less surprise.
-
-For one-shot tasks, prefer #2 — it's explicit at the call site.
-
-### Timezone data inside the container
-
-`[scheduler] timezone` (and any per-task `timezone =`) needs the host's
-IANA timezone database to resolve names like `Europe/Bratislava`. Most
-base images already include it: `debian-slim`, `ubuntu`, `fedora`,
-`distroless:base` — your TOML just works. **Alpine is the exception**:
-it ships without `tzdata` to stay small. If you base on Alpine, add it
-to your Dockerfile:
-
-```dockerfile
-RUN apk add --no-cache tzdata
-```
-
-Without `tzdata`, the daemon falls back to UTC (and the resolved zone
-shown in the TUI startup banner / Web UI header reflects that), so a
-mismatch is visible at boot rather than at the next 02:00 cron firing.
+…and only after you've audited what's currently labelled in your
+environment. Putting this in a weekly task is a footgun waiting
+to fire.
 
 ## Don't reinvent supervisord inside a task
 
@@ -248,5 +192,3 @@ is replaced and signals propagate cleanly.
 - [Concepts: Tasks vs Services](/concepts/tasks-vs-services/) —
   why "long-running container" is a service, not a 1-minute cron
   task.
-- [Deploy with Docker](/deploy/docker/) — running RunWisp itself
-  in a container.

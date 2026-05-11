@@ -25,7 +25,7 @@ timeout     = "30s"           # 30s for one HTTP round-trip is generous
 retry_attempts = 2            # forgive 2 transient blips before escalating
 retry_delay    = "30s"
 retry_backoff  = "linear"     # 30s, 60s — total ~90s of probe-and-wait
-keep_runs   = 500             # ~1.7 days of 5-minute checks for forensics
+keep_runs   = 500             # several days of 5-minute checks for forensics
 notify_on_failure = ["slack-ops"]
 
 run = """
@@ -92,7 +92,7 @@ seconds, the retries will sometimes mask it. The
 flapping shows up as a single coalesced row with a count and a
 sparkline, rather than dozens of separate alerts.
 
-[coalescing]: /notifications/global/#coalescing-coalesce_window-and-occurrence_ring
+[coalescing]: /notifications/global/#coalescing
 
 ### `keep_runs = 500`
 
@@ -111,15 +111,16 @@ The `curl` flags that matter:
   print the response body. Without this, curl returns 0 on a
   500 with body content; the task would silently report success.
 
-`--fail-with-body` is curl 7.76+ (Ubuntu 22.04, Debian 12+,
-macOS native). On older systems use plain `--fail` and accept
-that 4xx/5xx response bodies aren't captured.
+`--fail-with-body` is available on modern curl builds. On older
+systems use plain `--fail` and accept that 4xx/5xx response bodies
+aren't captured.
 
 ## A flap-friendly variant
 
 If your service is known to be flaky and you only want to be paged
 on a sustained outage (say "5 failures in the last 30 minutes"),
-turn down `retry_attempts` to 0 and lean on the
+**replace** the task above (don't define both — the TOML key would
+collide) with this one, which drops retries and leans on the
 [notifications model][notifications] to do the rate-limiting:
 
 ```toml
@@ -148,18 +149,12 @@ get a Slack barrage.
 
 ## Probing internal services
 
-For internal-network checks you don't always have a public URL —
-just probe a TCP port:
+For internal-network checks you don't always have a public URL.
+**Probe something that exercises the service, not just the
+listener** — a passing TCP-connect against a database that's
+refusing queries is the classic cause of an undetected outage.
 
-```bash
-# Replace the curl line with:
-exec 3<>/dev/tcp/db.internal/5432
-echo -e "" >&3
-read -t 5 -u 3 RESP || { echo "no response from db.internal:5432"; exit 1; }
-```
-
-Or run a real query that exercises the database, not just the
-listener:
+For Postgres specifically:
 
 ```bash
 PGPASSWORD="$HEALTHCHECK_PG_PWD" psql \\
@@ -170,9 +165,19 @@ PGPASSWORD="$HEALTHCHECK_PG_PWD" psql \\
   > /dev/null
 ```
 
-A passing port-only check on a database that won't accept
-connections is the classic cause of an undetected outage. Probe
-something real.
+`pg_isready` is even cheaper if you only care that the server is
+accepting connections (it doesn't run a query, but it does check
+authentication won't immediately reject).
+
+If all you have is "is this port open?" — e.g. probing a
+third-party appliance you can't authenticate to — `nc` is the
+honest tool:
+
+```bash
+nc -zw5 host.internal 5432 || { echo "host.internal:5432 not reachable"; exit 1; }
+```
+
+Just don't dress it up as a health check it isn't.
 
 ## Where to next
 

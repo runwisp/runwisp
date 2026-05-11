@@ -20,23 +20,21 @@ needed); **`run-task`** asks a running daemon to start one. They never
 collide — `exec` refuses if a daemon is already attached to the data
 dir, and `run-task` requires one.
 
-| Command                                             | What it does                                                              |
-| --------------------------------------------------- | ------------------------------------------------------------------------- |
-| `runwisp` _(no args)_                               | Spawn the daemon if not running and attach the TUI. The everyday command. |
-| [`runwisp daemon`](#runwisp-daemon)                 | Headless start for systemd / Docker.                                      |
-| [`runwisp cloud`](#runwisp-cloud)                   | Headless start in cloud mode. Requires `RUNWISP_CLOUD_TOKEN`.             |
-| [`runwisp tui`](#runwisp-tui)                       | Attach a fresh TUI to an already-running daemon.                          |
-| [`runwisp exec <task>`](#runwisp-exec-task)         | Run a task **in this process** (no daemon), stream its output.            |
-| [`runwisp run-task <task>`](#runwisp-run-task-task) | Trigger a run via the running daemon's REST API.                          |
-| [`runwisp list`](#runwisp-list)                     | Print configured tasks as a table. Reads `runwisp.toml` only.             |
-| [`runwisp status`](#runwisp-status)                 | Hit the daemon's `/health` endpoint. Exit 0 = alive.                      |
-| [`runwisp init`](#runwisp-init)                     | Scaffold an annotated `runwisp.toml` and a random password.               |
-| [`runwisp validate`](#runwisp-validate)             | Parse and check `runwisp.toml` without starting anything.                 |
-| [`runwisp openapi`](#runwisp-openapi)               | Print the OpenAPI 3.1 spec for the daemon's REST API to stdout.           |
+| Command                                             | What it does                                                                                                                |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `runwisp` _(no args)_                               | Spawn the daemon if not running and attach the TUI. Offers to scaffold a `runwisp.toml` on first run. The everyday command. |
+| [`runwisp daemon`](#runwisp-daemon)                 | Headless start — no TUI attached.                                                                                           |
+| [`runwisp cloud`](#runwisp-cloud)                   | Headless start in cloud mode. Requires `RUNWISP_CLOUD_TOKEN`.                                                               |
+| [`runwisp tui`](#runwisp-tui)                       | Attach a fresh TUI to an already-running daemon.                                                                            |
+| [`runwisp exec <task>`](#runwisp-exec-task)         | Run a task **in this process** (no daemon), stream its output.                                                              |
+| [`runwisp run-task <task>`](#runwisp-run-task-task) | Trigger a run via the running daemon's REST API.                                                                            |
+| [`runwisp list`](#runwisp-list)                     | Print configured tasks as a table. Reads `runwisp.toml` only.                                                               |
+| [`runwisp status`](#runwisp-status)                 | Hit the daemon's `/health` endpoint. Exit 0 = alive.                                                                        |
+| [`runwisp validate`](#runwisp-validate)             | Parse and check `runwisp.toml` without starting anything.                                                                   |
+| [`runwisp openapi`](#runwisp-openapi)               | Print the OpenAPI 3.1 spec for the daemon's REST API to stdout.                                                             |
 
 There is **no** `runwisp reload`. To pick up changes to `runwisp.toml`,
-restart the daemon. The reload-without-restart story is on the roadmap;
-today it is restart-only.
+restart the daemon.
 
 ## Default — `runwisp` with no args
 
@@ -51,8 +49,16 @@ What it does, in order:
 2. Pings `http://<host>:<port>/health`.
     - **Already running**: connects and attaches the TUI.
     - **Port held by something else**: prints what's holding it and exits 1.
-    - **Port free**: spawns a background daemon, waits up to 10s for it to
-      become healthy, then attaches the TUI.
+    - **Port free**: if `runwisp.toml` is missing and stdin is a terminal,
+      prompts `Create a starter with one example task? [Y/n]` and writes
+      a 13-line scaffold on `Y`. Then spawns a background daemon, waits
+      for it to become healthy, and attaches the TUI.
+
+If stdin is not a terminal (piped input, non-interactive shell), the
+scaffold prompt is skipped — the daemon falls back to its built-in
+demo task and logs a warning. To pre-create a config in that case,
+write `runwisp.toml` yourself; the example file lives at
+[`apps/runwisp/runwisp.example.toml`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/runwisp.example.toml).
 
 Quitting the TUI does **not** stop the daemon — the daemon was spawned in
 the background and keeps running. Use `Ctrl+C` while the daemon is
@@ -62,12 +68,11 @@ explicitly. The TUI's own status footer tells you which mode you're in.
 ## `runwisp daemon`
 
 Headless start. Runs the scheduler, REST API, and Web UI without an
-attached TUI — the right verb for systemd `ExecStart`, Docker `CMD`, and
-anywhere else stdin isn't a terminal. For an attached TUI, run `runwisp`
-with no subcommand instead.
+attached TUI — the right verb whenever stdin isn't a terminal. For an
+attached TUI, run `runwisp` with no subcommand instead.
 
 ```bash
-ExecStart=/usr/local/bin/runwisp daemon --config /etc/runwisp/runwisp.toml --data /var/lib/runwisp
+runwisp daemon --config /etc/runwisp/runwisp.toml --data /var/lib/runwisp
 ```
 
 Exits with status `1` on startup error (port in use, invalid config,
@@ -87,7 +92,7 @@ runwisp cloud [--token <token>] [--url <url>] [--env-file <path>] [--no-tui]
 | Flag         | Type   | Default | What it does                                                                        |
 | ------------ | ------ | ------- | ----------------------------------------------------------------------------------- |
 | `--token`    | string | _(env)_ | Cloud token (overrides `RUNWISP_CLOUD_TOKEN`).                                      |
-| `--url`      | string | _(env)_ | Cloud API URL (overrides `RUNWISP_CLOUD_URL`). Defaults to the production endpoint. |
+| `--url`      | string | _(env)_ | Cloud API URL (overrides `RUNWISP_CLOUD_URL`).                                      |
 | `--env-file` | string | `.env`  | Path to a dotenv file. Loaded into the process environment before flag resolution.  |
 | `--no-tui`   | bool   | `false` | Run headless. Logs to stderr instead of attaching a UI.                             |
 
@@ -166,7 +171,7 @@ Loads `runwisp.toml` (no daemon required) and prints a table:
 ```
 NAME              SCHEDULE          CONCURRENCY  POLICY  API   DESCRIPTION
 backup-postgres   0 3 * * *         1            queue   yes   Nightly logical dump
-api-worker        (service x3)      1            skip    yes   Three workers consuming the job queue
+api-worker        (service x3)      1            skip    yes   Three workers consuming the queue
 deploy-hook       (manual)          1            skip    yes   Triggered after each release
 ```
 
@@ -204,23 +209,6 @@ Docker `HEALTHCHECK` lines:
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD runwisp status || exit 1
 ```
-
-## `runwisp init`
-
-Scaffold a `runwisp.toml` with worked examples and generate a one-time
-random password.
-
-```
-runwisp init [--force]
-```
-
-| Flag      | Short | Type | Default | What it does                          |
-| --------- | ----- | ---- | ------- | ------------------------------------- |
-| `--force` | `-f`  | bool | `false` | Overwrite an existing `runwisp.toml`. |
-
-Refuses to clobber an existing file without `--force`. The generated
-password is printed once on stdout — copy it somewhere safe; the daemon
-also writes it to `data/password` on first run.
 
 ## `runwisp validate`
 
@@ -315,7 +303,7 @@ directory.
 | `RUNWISP_PASSWORD`    | The login password used by Web UI / TUI / API.  | Highest precedence: env > `data/password` > generated.                         |
 | `RUNWISP_FINGERPRINT` | The daemon's instance fingerprint.              | Otherwise read from SQLite, then computed from machine-id + cwd.               |
 | `RUNWISP_TRUST_PROXY` | Trust `X-Forwarded-Proto` from a reverse proxy. | Comma-separated CIDR list (e.g. `127.0.0.1/32,::1/128`). `0.0.0.0/0` rejected. |
-| `GOMEMLIMIT`          | Go runtime soft heap limit.                     | Defaults to `128MiB` to keep the daemon RAM-frugal on small VPSes.             |
+| `GOMEMLIMIT`          | Go runtime soft heap limit.                     | Defaults to a conservative limit to keep the daemon RAM-frugal on small VPSes. |
 
 ## Exit codes
 
