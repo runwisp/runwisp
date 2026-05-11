@@ -1,14 +1,14 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
-title: "[notify]"
-description: Global notification settings — bell on/off, queue size, retry budget, history retention, coalescing window.
+title: Global settings
+description: Global notification settings — bell on/off, retry budget, history retention, coalescing window.
 ---
 
-`[notify]` holds daemon-wide knobs: how many events to buffer, how
-long to retry a delivery, how long to keep history, how aggressively
-to coalesce. Every key is optional and the defaults suit a
-single-machine setup.
+The `[notify]` table holds daemon-wide knobs: which channels every
+failure lands in, how long to retry an outbound delivery, how long to
+keep bell history, how aggressively to coalesce. Every key is optional
+and the defaults suit a single-machine setup.
 
 This page is not where you declare channels or routing rules — see
 [`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
@@ -18,38 +18,35 @@ and [`[[notification_route]]`](/notifications/routes/).
 
 ```toml
 [notify]
-append_notifiers  = ["inapp"]   # default — bell on
-queue_size        = 1024        # default
+global_notifiers  = ["inapp"]   # default — bell on
 # default_timeout = "30s"       # unset — uses the built-in 5-min retry budget
-# history_keep     = 500        # unset — no row-count cap
-# history_keep_for = "30d"      # unset — no age-based prune
+history_keep      = 1024        # default
+history_keep_for  = "90d"       # default
 coalesce_window   = "1h"        # default
 occurrence_ring   = 10          # default
 ```
 
-| Key                | Type     | Default     | What it does                                                                                                                    |
-| ------------------ | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `append_notifiers` | string[] | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell. |
-| `queue_size`       | int      | `1024`      | Max events buffered in memory. When full, the new event is dropped — task execution never blocks.                               |
-| `default_timeout`  | duration | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = a few minutes.                                                   |
-| `history_keep`     | int      | _(unset)_   | Cap on bell rows kept in SQLite. Unset = no cap; rows accumulate.                                                               |
-| `history_keep_for` | duration | _(unset)_   | Maximum age of bell rows. Unset = no age-based prune. Accepts `d` and `w` units.                                                |
-| `coalesce_window`  | duration | `1h`        | Window during which repeats with the same dedup key update one row instead of writing a new one.                                |
-| `occurrence_ring`  | int      | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
+| Key                | Default     | What it does                                                                                                                    |
+| ------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `global_notifiers` | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell. |
+| `default_timeout`  | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = a few minutes.                                                   |
+| `history_keep`     | `1024`      | Cap on bell rows kept in SQLite. Older rows are trimmed in batches.                                                             |
+| `history_keep_for` | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                            |
+| `coalesce_window`  | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one.                   |
+| `occurrence_ring`  | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
 
-Leave both `history_keep` and `history_keep_for` unset and the bell
-table grows forever. For any deployment you plan to leave running,
-set at least one.
+Both `history_keep` and `history_keep_for` apply at once when set, and
+the stricter one wins.
 
-## The bell — `append_notifiers`
+## The bell — `global_notifiers`
 
 ```toml
 [notify]
-append_notifiers = []                # silence the bell entirely
-# append_notifiers = ["slack-ops"]   # or: every failure goes to that channel
+global_notifiers = []                # silence the bell entirely
+# global_notifiers = ["slack-ops"]   # or: every failure goes to that channel
 ```
 
-`append_notifiers = []` turns off the bell in the Web UI and the TUI
+`global_notifiers = []` turns off the bell in the Web UI and the TUI
 footer line, and also stops `"inapp"` being added to the per-task
 fields. With it empty, `notify_on_failure = ["slack-ops"]` sends to
 `slack-ops` only.
@@ -58,19 +55,6 @@ Use the empty form when the daemon runs unattended (a build agent, a
 CI shard) and nobody opens the Web UI. Use a non-empty list when you
 want every failure to go to the same channel without writing per-task
 fields everywhere.
-
-## Backpressure — `queue_size`
-
-There's an in-memory queue between the run manager and the channel
-dispatchers. `queue_size` bounds it. If a channel rate-limits you, or
-refuses the credential, the queue fills up and the **new** event is
-dropped. The producer's send is non-blocking — backpressure never
-reaches the run manager, and task execution stays on schedule.
-
-Dropped events increment a counter (`droppedIngress`) printed in the
-daemon's shutdown log. The default is comfortably more than a small
-daemon will ever produce. Raise it only if you genuinely have a fleet
-of high-volume tasks firing at once.
 
 ## Retry budget — `default_timeout`
 
@@ -95,20 +79,17 @@ them:
   batches.
 - `history_keep_for` — delete rows older than this duration.
 
-Both apply at once if set; the stricter wins. A background sweeper
-applies them — you don't trigger it.
+Both apply at once; the stricter wins. A background sweeper applies
+them — you don't trigger it.
 
 ## Coalescing
 
-A task that fails every minute would create 60 bell rows in an hour
-without help. RunWisp groups repeats by **dedup key**: task name +
-event kind + end reason. (Unrelated to the daemon
-[`RUNWISP_FINGERPRINT`](/operations/data-directory/); same word,
-different concept.)
+RunWisp groups repeat events of the same kind for the same task so
+you aren't paged twice for the same thing. A task that fails every
+minute creates one bell row that ticks up, not 60 separate rows.
 
-- `coalesce_window` — within this window, repeats with the same dedup
-  key update the same row. `count` goes up; latest timestamp is
-  recorded.
+- `coalesce_window` — within this window, repeats update the same
+  row. `count` goes up; the latest timestamp is recorded.
 - `occurrence_ring` — how many recent timestamps to keep on the row.
   Used by the UI to render a sparkline.
 
@@ -128,10 +109,9 @@ failures to surface fast:
 
 ```toml
 [notify]
-append_notifiers  = ["inapp"]   # keep the bell
-queue_size        = 1024
+global_notifiers  = ["inapp"]   # keep the bell
 default_timeout   = "30s"       # cap retry budget at 30s
-history_keep      = 1000
+history_keep      = 2000
 history_keep_for  = "60d"
 coalesce_window   = "30m"
 occurrence_ring   = 20
@@ -141,8 +121,7 @@ A headless build agent that sends everything off-host:
 
 ```toml
 [notify]
-append_notifiers  = []          # nobody reads the bell
-queue_size        = 4096        # bursty: many tasks trigger at once
+global_notifiers  = []          # nobody reads the bell
 ```
 
 ## Where to next
