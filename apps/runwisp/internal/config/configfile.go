@@ -36,7 +36,7 @@ run = "echo hello from runwisp"
 # cron = "* * * * *"
 # run  = "date"
 
-# Long-running service (auto-restart, supports replicas):
+# Long-running service (auto-restart, supports multiple instances):
 # [services.worker]
 # instances = 1
 # run       = "node ./worker.js"

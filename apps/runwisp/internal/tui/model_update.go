@@ -69,6 +69,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleStopRun(msg)
 	case RestartServiceMsg:
 		return m.handleRestartService(msg)
+	case StopServiceMsg:
+		return m.handleStopService(msg)
 	case reconnectLogMsg:
 		return m.handleReconnectLog(msg)
 	case TickMsg:
@@ -404,6 +406,17 @@ func (m Model) handleStopRun(msg StopRunMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleRestartService(msg RestartServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Restarted service", msg.TaskName, msg.Err)
+	if msg.Err == nil && m.execView != nil && m.execView.run != nil && m.execView.run.TaskName == msg.TaskName {
+		m.execView.SetServiceStopped(false)
+	}
+	return m, nil
+}
+
+func (m Model) handleStopService(msg StopServiceMsg) (tea.Model, tea.Cmd) {
+	m.logActionResult("Stopped service", msg.TaskName, msg.Err)
+	if msg.Err == nil && m.execView != nil && m.execView.run != nil && m.execView.run.TaskName == msg.TaskName {
+		m.execView.SetServiceStopped(true)
+	}
 	return m, nil
 }
 

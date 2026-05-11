@@ -112,7 +112,6 @@ func initNotify(
 		Channels:       channels,
 		Rules:          resolved.Rules,
 		FailureSink:    failureSink,
-		IngressSize:    notifyCfg.QueueSize,
 		Logger:         logger,
 		RetentionEvery: 5 * time.Minute,
 		RetentionFn:    retentionFn,

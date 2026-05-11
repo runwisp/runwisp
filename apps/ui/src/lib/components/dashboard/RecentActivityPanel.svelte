@@ -68,8 +68,8 @@
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex min-w-0 items-center gap-1.5">
                                 <span class="truncate text-sm font-medium text-mist-950">
-                                    {run.task_name}{#if run.replica_index > 0}<span
-                                            class="text-mist-500">#{run.replica_index}</span
+                                    {run.task_name}{#if run.instance_index > 0}<span
+                                            class="text-mist-500">#{run.instance_index}</span
                                         >{/if}
                                 </span>
                                 <span

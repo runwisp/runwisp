@@ -61,7 +61,11 @@ func (m *mockTaskRunner) TerminateRunByExternalExecutionID(externalExecutionID s
 	return m.Called(externalExecutionID).Error(0)
 }
 
-func (m *mockTaskRunner) RestartServiceReplicas(taskName string) error {
+func (m *mockTaskRunner) RestartServiceInstances(taskName string) error {
+	return m.Called(taskName).Error(0)
+}
+
+func (m *mockTaskRunner) StopService(taskName string) error {
 	return m.Called(taskName).Error(0)
 }
 

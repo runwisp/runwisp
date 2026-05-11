@@ -39,7 +39,7 @@ type taskState struct {
 	// cond signals the queue-drain goroutine. Allocated alongside queue.
 	cond *sync.Cond
 
-	// supervisor tracks replica slots and restart-attempt counters; non-nil
+	// supervisor tracks instance slots and restart-attempt counters; non-nil
 	// only when task.Kind.IsService().
 	supervisor *services.Supervisor
 }

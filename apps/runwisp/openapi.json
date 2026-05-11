@@ -622,7 +622,7 @@
           "id": {
             "type": "string"
           },
-          "replica_index": {
+          "instance_index": {
             "format": "int64",
             "type": "integer"
           },
@@ -667,7 +667,7 @@
           "triggered_by",
           "created_at",
           "retry_attempt",
-          "replica_index"
+          "instance_index"
         ],
         "type": "object"
       },
@@ -979,7 +979,7 @@
             "type": "boolean"
           },
           "backoff_reset_after": {
-            "description": "For services: a replica that runs at least this long resets the restart counter, in nanoseconds",
+            "description": "For services: an instance that runs at least this long resets the restart counter, in nanoseconds",
             "format": "int64",
             "type": "integer"
           },
@@ -1007,7 +1007,7 @@
             "type": "string"
           },
           "instances": {
-            "description": "For services: number of always-running replicas",
+            "description": "For services: number of always-running instances",
             "format": "int64",
             "type": "integer"
           },
@@ -2053,7 +2053,54 @@
             "description": "Error"
           }
         },
-        "summary": "Restart all replicas of a service",
+        "summary": "Restart all instances of a service",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/tasks/{taskName}/stop": {
+      "post": {
+        "description": "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
+        "operationId": "stopService",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopRunOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stop a service for the daemon's lifetime",
         "tags": [
           "Runs"
         ]

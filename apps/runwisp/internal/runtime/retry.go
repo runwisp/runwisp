@@ -39,7 +39,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 }
 
 // scheduleRestart waits for the restart delay and respawns the previous
-// replica (services) or re-triggers the task (non-services).
+// instance (services) or re-triggers the task (non-services).
 func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *model.Run, attempt int) {
 	if m.isShutdown.Load() {
 		return
@@ -54,18 +54,35 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 		return
 	}
 
+	if task.Kind.IsService() && m.isServiceStopped(task.Name) {
+		return
+	}
+
 	options := TriggerRunOptions{
 		TriggeredBy: previousRun.TriggeredBy,
 	}
 	if task.Kind.IsService() {
-		idx := previousRun.ReplicaIndex
-		options.ReplicaIndex = &idx
+		idx := previousRun.InstanceIndex
+		options.InstanceIndex = &idx
 	}
 
 	_, err := m.TriggerRunWithOptions(task.Name, options)
 	if err != nil {
-		slog.Error("Restart failed", "task", task.Name, "replica", previousRun.ReplicaIndex, "err", err)
+		slog.Error("Restart failed", "task", task.Name, "instance", previousRun.InstanceIndex, "err", err)
 	}
+}
+
+// isServiceStopped reports whether an operator has flagged this service as
+// stopped via the REST / TUI controls. The flag is in-memory only and is
+// cleared on daemon restart.
+func (m *defaultTaskManager) isServiceStopped(taskName string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	ts, exists := m.tasks[taskName]
+	if !exists || ts.supervisor == nil {
+		return false
+	}
+	return ts.supervisor.IsStopped()
 }
 
 // waitForDelay sleeps for the given duration, returning false if the daemon

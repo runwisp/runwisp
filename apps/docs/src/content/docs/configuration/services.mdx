@@ -7,11 +7,14 @@ description: Long-running processes — instances, restart backoff, graceful shu
 
 A service is an always-on process that RunWisp keeps alive. It exits, it
 gets restarted. It crashes, it gets restarted. The only way a service
-stops permanently is by you stopping it.
+stops permanently is by you stopping it from the Web UI (the **Stop
+Service** button) or the TUI (`s` on a service execution). That stop
+flag lives in memory only; restart the daemon and the service comes
+back up on its own.
 
 The TOML key (`api-worker` in `[services.api-worker]`) is the **service
 name**. It shares one namespace with `[tasks.*]` — names must be unique
-across both kinds. Each replica's run shows up in the same history view
+across both kinds. Each instance's run shows up in the same history view
 as task runs, with its own ULID, log file, and lifecycle.
 
 ## Minimum example
@@ -21,20 +24,20 @@ as task runs, with its own ULID, log file, and lifecycle.
 run = "/usr/local/bin/metrics-agent"
 ```
 
-That's a complete service — one replica, restarted forever with
+That's a complete service — one instance, restarted forever with
 bounded exponential backoff.
 
 ## Identity & metadata
 
-| Key           | Type   | Default      | What it does                                                                               |
-| ------------- | ------ | ------------ | ------------------------------------------------------------------------------------------ |
-| _table key_   | string | required     | The service name. Used in CLI, API, log paths.                                             |
-| `run`         | string | required     | Shell command. Multi-line OK with TOML triple-quotes.                                      |
-| `description` | string | _(empty)_    | Human-readable description shown in the UI and TUI.                                        |
-| `group`       | string | `"Services"` | UI grouping label.                                                                         |
-| `api_trigger` | bool   | `true`       | Allow manual trigger from CLI / API / UI. (Restart is the usual interaction for services.) |
+| Key            | Default      | What it does                                                                               |
+| -------------- | ------------ | ------------------------------------------------------------------------------------------ |
+| `[services.*]` | required     | The service name (the TOML table key). Used in CLI, API, and log paths.                    |
+| `run`          | required     | Shell command. Multi-line OK with TOML triple-quotes.                                      |
+| `description`  | _(empty)_    | Human-readable description shown in the UI and TUI.                                        |
+| `group`        | `"Services"` | UI grouping label.                                                                         |
+| `api_trigger`  | `true`       | Allow manual trigger from CLI / API / UI. (Restart is the usual interaction for services.) |
 
-## Replicas
+## Instances
 
 ```toml
 [services.api-worker]
@@ -42,25 +45,25 @@ instances = 3
 run       = "/usr/local/bin/worker"
 ```
 
-| Key         | Type | Default | What it does                                                     |
-| ----------- | ---- | ------- | ---------------------------------------------------------------- |
-| `instances` | int  | `1`     | Number of concurrent replicas. Bounded **`1 ≤ instances ≤ 64`**. |
+| Key         | Default | What it does                                                      |
+| ----------- | ------- | ----------------------------------------------------------------- |
+| `instances` | `1`     | Number of concurrent instances. Bounded **`1 ≤ instances ≤ 64`**. |
 
-Each replica is its own visible run with its own `replica_index`
+Each instance is its own visible run with its own `instance_index`
 (`0`, `1`, `2`, …). They share configuration, logs are unified per
-service, and replicas are restarted independently when their process
+service, and instances are restarted independently when their process
 exits.
 
 ## Restart behaviour
 
-| Key                   | Type     | Default         | What it does                                                                                                                                 |
-| --------------------- | -------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `restart_delay`       | duration | `1s`            | Base delay between restarts. Go duration string.                                                                                             |
-| `restart_backoff`     | enum     | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                 |
-| `backoff_reset_after` | duration | inherited       | Replica must stay up at least this long before its restart counter resets. Inherits from `[defaults] backoff_reset_after` (default `"60s"`). |
+| Key                   | Default         | What it does                                                                                                                                                        |
+| --------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restart_delay`       | `1s`            | Base delay between restarts. Go duration string.                                                                                                                    |
+| `restart_backoff`     | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                                        |
+| `backoff_reset_after` | inherited       | Instance must stay up at least this long before its restart counter resets. See [`[defaults]`](/configuration/defaults/) for the inherited value (default `"60s"`). |
 
 Backoff is bounded, so even after a long flap session the next
-restart doesn't keep growing forever. A replica that stays up for
+restart doesn't keep growing forever. An instance that stays up for
 `backoff_reset_after` resets its backoff counter, so transient
 flapping doesn't permanently slow restarts on a service that
 eventually stabilises.
@@ -70,39 +73,42 @@ the contract. If you want "run once and exit," use a task.
 
 ## Concurrency
 
-| Key          | Type | Default  | What it does                                                             |
-| ------------ | ---- | -------- | ------------------------------------------------------------------------ |
-| `on_overlap` | enum | `"skip"` | What happens when something tries to start a new run while one is going. |
+| Key          | Default  | What it does                                                             |
+| ------------ | -------- | ------------------------------------------------------------------------ |
+| `on_overlap` | `"skip"` | What happens when something tries to start a new run while one is going. |
 
 Services default to `on_overlap = "skip"` because the supervisor keeps
-the replica count steady and overlap is unusual. Manually triggering a
+the instance count steady and overlap is unusual. Manually triggering a
 service that's already running gets cleanly rejected. Services don't
-have `max_concurrent` — replica count is governed by `instances`, not
+have `max_concurrent` — instance count is governed by `instances`, not
 in-flight overlap.
 
 ## Graceful shutdown
 
-| Key             | Type     | Default | What it does                                                                                           |
-| --------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `graceful_stop` | duration | `"5s"`  | SIGTERM grace period per replica before SIGKILL — for manual stop, `Restart Service`, daemon shutdown. |
+| Key             | Default | What it does                                                                                            |
+| --------------- | ------- | ------------------------------------------------------------------------------------------------------- |
+| `graceful_stop` | `"5s"`  | SIGTERM grace period per instance before SIGKILL — for manual stop, `Restart Service`, daemon shutdown. |
 
-`graceful_stop` is process-group-wide: SIGTERM goes to the replica's
+`graceful_stop` is process-group-wide: SIGTERM goes to the instance's
 process group, every descendant gets the same window, and any
 survivors are SIGKILL'd together. If `graceful_stop` exceeds
-`[daemon] shutdown_timeout` the daemon emits a boot-time warning;
-during whole-daemon shutdown each replica is bounded by the daemon
-cap regardless of its own setting.
+[`[daemon] shutdown_timeout`](/configuration/daemon#shutdown_timeout)
+the daemon emits a boot-time warning; during whole-daemon shutdown
+each instance is bounded by the daemon cap regardless of its own
+setting.
 
 ## Logs & retention
 
-The log story is identical to tasks — same fields, same defaults:
+The log story is identical to tasks — same fields, same defaults. The
+[`[defaults]`](/configuration/defaults/) section is what `keep_runs`
+and `keep_for` inherit from when omitted here.
 
-| Key            | Type      | Default      |
-| -------------- | --------- | ------------ |
-| `log_max_size` | byte size | `100MB`      |
-| `log_on_full`  | enum      | `"drop_old"` |
-| `keep_runs`    | int       | inherited    |
-| `keep_for`     | duration  | inherited    |
+| Key            | Default                         |
+| -------------- | ------------------------------- |
+| `log_max_size` | `100MB`                         |
+| `log_on_full`  | `"drop_old"`                    |
+| `keep_runs`    | inherits `[defaults] keep_runs` |
+| `keep_for`     | inherits `[defaults] keep_for`  |
 
 The same accept/reject rules apply as on tasks: positive numbers cap,
 omitting inherits, and bare `0` / negative values are rejected at
@@ -116,17 +122,17 @@ See [Logs & retention](/concepts/logs/) for the underlying behaviour.
 
 ## Notifications
 
-| Key                 | Type     | Default  | What it does                                                          |
-| ------------------- | -------- | -------- | --------------------------------------------------------------------- |
-| `notify_on_failure` | string[] | _(none)_ | Notifier IDs to alert when a replica exits with `failed` / `crashed`. |
-| `notify_on_success` | string[] | _(none)_ | Notifier IDs to alert on `run.succeeded` (a clean replica shutdown).  |
+| Key                 | Default  | What it does                                                            |
+| ------------------- | -------- | ----------------------------------------------------------------------- |
+| `notify_on_failure` | _(none)_ | Notifier IDs to alert when an instance exits with `failed` / `crashed`. |
+| `notify_on_success` | _(none)_ | Notifier IDs to alert on `run.succeeded` (a clean instance shutdown).   |
 
 **Identical shape and semantics as on `[tasks.*]`** — including the
-implicit addition of `[notify] append_notifiers` (default `["inapp"]`).
+implicit addition of `[notify] global_notifiers` (default `["inapp"]`).
 The shared reference lives at
 [Per-task notifications](/notifications/per-task/); the
 [`[tasks.*]` notifications](/configuration/tasks/#notifications) section
-is the mirror entry. A failed replica in a `[services.*]` block notifies
+is the mirror entry. A failed instance in a `[services.*]` block notifies
 the same channels a failed `[tasks.*]` run would.
 
 ## Cooperating with `graceful_stop`
@@ -141,13 +147,13 @@ while true; do
 done
 ```
 
-A replica that exits cleanly via `SIGTERM` records `end_reason = stopped`.
+An instance that exits cleanly via `SIGTERM` records `end_reason = stopped`.
 
 ## What's rejected on services
 
 - `cron`, `catch_up` — services aren't cron-driven.
 - `retry_attempts`, `retry_delay`, `retry_backoff` — services restart instead of retry. Use `restart_delay` / `restart_backoff`.
-- `max_concurrent`, `queue_max` — replica count is `instances`; services don't queue.
+- `max_concurrent`, `queue_max` — instance count is `instances`; services don't queue.
 - A name shared with a `[tasks.*]` entry.
 - Empty or missing `run`.
 - `instances` outside `[1, 64]`.

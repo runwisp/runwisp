@@ -100,8 +100,12 @@ func (m Model) buildHelpText() string {
 			switch m.execView.Action() {
 			case execViewActionStop:
 				parts = append(parts, "s stop")
+			case execViewActionStopService:
+				parts = append(parts, "s stop service")
 			case execViewActionRetry:
 				parts = append(parts, "r retry")
+			case execViewActionRestartService:
+				parts = append(parts, "r restart")
 			}
 			if m.hasLaunchTicket() {
 				parts = append(parts, "d download")

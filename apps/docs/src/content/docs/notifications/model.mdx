@@ -122,29 +122,29 @@ The two work together. A task with `notify_on_failure = ["slack-ops"]`
 that is also matched by a rule ending in `slack-ops` still sends one
 message — duplicate channels are removed.
 
-### `append_notifiers` — the always-on list
+### `global_notifiers` — the always-on list
 
-`[notify] append_notifiers` is the single setting that controls which
+`[notify] global_notifiers` is the single setting that controls which
 channels receive every failure regardless of what is on the task. The
 built-in default is `["inapp"]`, which is why the bell works with zero
 TOML.
 
 ```toml
 [notify]
-append_notifiers = ["inapp"]                # default — bell on
-# append_notifiers = []                     # silence the bell
-# append_notifiers = ["slack-ops"]          # send every failure to this channel
-# append_notifiers = ["inapp", "slack-ops"] # both
+global_notifiers = ["inapp"]                # default — bell on
+# global_notifiers = []                     # silence the bell
+# global_notifiers = ["slack-ops"]          # send every failure to this channel
+# global_notifiers = ["inapp", "slack-ops"] # both
 ```
 
 Every id in this list is added to the channels named on each task, with
 duplicates removed. It also acts as the catch-all for tasks that do not
-name any channel. So `append_notifiers = ["inapp"]` plus
+name any channel. So `global_notifiers = ["inapp"]` plus
 `notify_on_failure = ["slack-ops"]` sends to `slack-ops` **and** adds a
 row to the bell — not `slack-ops` instead of the bell.
 
 `"inapp"` is the only id that does not need a `[[notifier]]` block.
-Every other id in `append_notifiers` must point at a declared notifier.
+Every other id in `global_notifiers` must point at a declared notifier.
 
 ## Coalescing
 
@@ -248,5 +248,4 @@ notify = ["tg-oncall"]
   `notify_on_failure` and `notify_on_success` on one task.
 - [Notification rules](/notifications/routes/) — one rule covering many
   tasks.
-- [Global settings](/notifications/global/) — coalescing, retention,
-  queue size.
+- [Global settings](/notifications/global/) — coalescing and retention.

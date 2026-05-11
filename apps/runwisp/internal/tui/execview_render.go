@@ -36,7 +36,7 @@ func (v *ExecView) renderBackButton() string {
 
 func (v *ExecView) renderActionButtons() string {
 	switch v.Action() {
-	case execViewActionStop:
+	case execViewActionStop, execViewActionStopService:
 		style := btnStopStyle
 		if v.hoveredHeader == headerFocusAction || v.headerFocus == headerFocusAction {
 			style = btnStopHoverStyle
@@ -48,6 +48,12 @@ func (v *ExecView) renderActionButtons() string {
 			style = btnRetryHoverStyle
 		}
 		return style.Render("↻ Retry (r)")
+	case execViewActionRestartService:
+		style := btnRetryStyle
+		if v.hoveredHeader == headerFocusAction || v.headerFocus == headerFocusAction {
+			style = btnRetryHoverStyle
+		}
+		return style.Render("↻ Restart (r)")
 	default:
 		return ""
 	}
@@ -89,8 +95,8 @@ func (v *ExecView) View() string {
 	idTag := idStyle.Render("#" + v.run.ID[len(v.run.ID)-8:])
 
 	taskLabel := v.run.TaskName
-	if v.run.ReplicaIndex > 0 {
-		taskLabel = fmt.Sprintf("%s#%d", taskLabel, v.run.ReplicaIndex)
+	if v.run.InstanceIndex > 0 {
+		taskLabel = fmt.Sprintf("%s#%d", taskLabel, v.run.InstanceIndex)
 	}
 	headerLeft := bgLight.Render("  ") +
 		backBtn +

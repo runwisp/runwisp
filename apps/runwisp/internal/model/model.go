@@ -41,10 +41,10 @@ type Task struct {
 	QueueMax      int               `toml:"queue_max,omitempty"     json:"queue_max,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
 	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"on_overlap,omitempty" enum:"queue,skip,terminate" doc:"How overlapping runs are handled"`
 
-	Instances         int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running replicas"`
+	Instances         int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
 	RestartDelay      time.Duration `toml:"-"                        json:"restart_delay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
 	RestartBackoff    string        `toml:"restart_backoff,omitempty" json:"restart_backoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
-	BackoffResetAfter time.Duration `toml:"-"                        json:"backoff_reset_after,omitempty" doc:"For services: a replica that runs at least this long resets the restart counter, in nanoseconds"`
+	BackoffResetAfter time.Duration `toml:"-"                        json:"backoff_reset_after,omitempty" doc:"For services: an instance that runs at least this long resets the restart counter, in nanoseconds"`
 
 	RetryAttempts int           `toml:"retry_attempts,omitempty" json:"retry_attempts,omitempty"`
 	RetryDelay    time.Duration `toml:"-"                        json:"retry_delay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
@@ -199,7 +199,7 @@ type Run struct {
 	CreatedAt           time.Time   `json:"created_at"`
 	RetryAttempt        int         `json:"retry_attempt"`
 	RetryOfRunID        *string     `json:"retry_of_run_id,omitempty"`
-	ReplicaIndex        int         `json:"replica_index"`
+	InstanceIndex       int         `json:"instance_index"`
 }
 
 // Copy creates a deep copy of the Run to prevent data races.

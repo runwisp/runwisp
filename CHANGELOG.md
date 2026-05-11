@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (services, UI/TUI, notifications)
+
+- **`replica_index` is now `instance_index` everywhere.** The Run JSON field, the SQL column, the Web UI rendering, and the TUI labels all use the new name. Operators upgrading an existing data directory have the column renamed in place by an idempotent migration; fresh installs see no migration. The terminology now matches `instances` on `[services.*]`.
+- **`append_notifiers` is now `global_notifiers`.** The same precedence applies (`["inapp"]` default; explicit `[]` silences the bell) but the name finally reflects what the key does: define the channels that fire for every failure. TOML using the old key is rejected at load time.
+- **`queue_size` is gone from `[notify]`.** The notify ingress and per-action worker buffers are now fixed internal defaults. Configs that still set `queue_size` are rejected as an unknown key.
+- **`history_keep` defaults to `1024` and `history_keep_for` defaults to `90d`.** The bell history is bounded out of the box — leave both unset and you get a sensible cap. Override either explicitly to lift or lower the limits.
+- **Services can be stopped permanently from the Web UI and TUI.** A new **Stop Service** button (`s` in the TUI) cancels every instance and tells the supervisor not to refill the slots. **Restart Service** (`r` in the TUI) brings everything back. The stop flag is in memory only — restart the daemon and the service comes back up on its own.
+- **Run / Stop / Restart buttons are contextual.** On a service execution the Web UI and TUI show Stop while the service is up and Restart once it's been stopped. On a task that isn't launchable (API-trigger disabled, max concurrency reached) the **Run Task** button is now greyed out with a tooltip instead of failing on click.
+
 ### Removed
 
 - **Validation rules docs page removed.** The strict-loader rules are still enforced in code — the docs page was a redundant catalogue that didn't help anyone configure RunWisp.

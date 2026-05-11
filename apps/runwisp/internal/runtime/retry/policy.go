@@ -13,7 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// RestartBackoffCap caps the exponential restart delay for service replicas.
+// RestartBackoffCap caps the exponential restart delay for service instances.
 const RestartBackoffCap = 60 * time.Second
 
 // retryDelayCap caps the retry delay regardless of backoff curve.
@@ -37,7 +37,7 @@ func IsFailureReason(reason model.EndReason) bool {
 func ShouldRestart(task *model.Task, run *model.Run) bool {
 	switch task.Restart {
 	case model.RestartAlways:
-		// Services are supervisor-managed: every replica exit refills the slot,
+		// Services are supervisor-managed: every instance exit refills the slot,
 		// including manual stops and service-restart cancellations. The
 		// daemon-wide shutdown guard prevents restart loops during teardown.
 		if task.Kind.IsService() {
@@ -82,7 +82,7 @@ func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
 	}
 }
 
-// ComputeRestartDelay calculates the delay before a service replica is
+// ComputeRestartDelay calculates the delay before a service instance is
 // re-spawned after exiting. attempt is the number of consecutive prior
 // restarts without a healthy run (a run that lived past the supervisor's
 // configured backoff_reset_after).

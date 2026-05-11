@@ -55,7 +55,7 @@ func TestReserveAutoAssignFailsWhenFull(t *testing.T) {
 	require.NoError(t, err)
 	_, err = s.Reserve(nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no free replica slots")
+	assert.Contains(t, err.Error(), "no free instance slots")
 }
 
 func TestReservePinnedIndexOutOfRange(t *testing.T) {

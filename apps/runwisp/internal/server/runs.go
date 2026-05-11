@@ -104,9 +104,18 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		OperationID: "restartService",
 		Method:      http.MethodPost,
 		Path:        "/api/tasks/{taskName}/restart",
-		Summary:     "Restart all replicas of a service",
+		Summary:     "Restart all instances of a service",
 		Tags:        []string{"Runs"},
 	}, srv.humaRestartService)
+
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "stopService",
+		Method:      http.MethodPost,
+		Path:        "/api/tasks/{taskName}/stop",
+		Summary:     "Stop a service for the daemon's lifetime",
+		Description: "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
+		Tags:        []string{"Runs"},
+	}, srv.humaStopService)
 
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "deleteRun",
@@ -208,7 +217,23 @@ func (srv *Server) humaRestartService(ctx context.Context, input *TaskNameInput)
 		}
 	}
 	out := &StopRunOutput{}
-	out.Body.Message = "Service replicas restarting"
+	out.Body.Message = "Service instances restarting"
+	return out, nil
+}
+
+func (srv *Server) humaStopService(ctx context.Context, input *TaskNameInput) (*StopRunOutput, error) {
+	if err := srv.runService.StopService(input.TaskName); err != nil {
+		switch {
+		case errors.Is(err, ErrTaskNotFound):
+			return nil, huma.Error404NotFound(err.Error())
+		case errors.Is(err, ErrNotAService):
+			return nil, huma.Error400BadRequest(err.Error())
+		default:
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+	}
+	out := &StopRunOutput{}
+	out.Body.Message = "Service stopped"
 	return out, nil
 }
 

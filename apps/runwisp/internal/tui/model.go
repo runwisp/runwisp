@@ -281,7 +281,7 @@ func (m *Model) taskDisplayByName(name string) *model.TaskBrief {
 	return nil
 }
 
-// isSingleInstanceService reports whether the task is a service with exactly one replica.
+// isSingleInstanceService reports whether the task is a service with exactly one instance.
 // Used to decide whether to auto-open its log view on start.
 func (m *Model) isSingleInstanceService(name string) bool {
 	task := m.taskDisplayByName(name)
@@ -294,7 +294,7 @@ func (m *Model) isService(name string) bool {
 	return task != nil && task.Kind.IsService()
 }
 
-// serviceInstances returns the configured replica count for a service, or 0 if not a service.
+// serviceInstances returns the configured instance count for a service, or 0 if not a service.
 func (m *Model) serviceInstances(name string) int {
 	task := m.taskDisplayByName(name)
 	if task == nil || !task.Kind.IsService() {
