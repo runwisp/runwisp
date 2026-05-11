@@ -103,7 +103,18 @@ func (s *runService) RestartService(taskName string) error {
 	if !task.Kind.IsService() {
 		return ErrNotAService
 	}
-	return s.taskManager.RestartServiceReplicas(taskName)
+	return s.taskManager.RestartServiceInstances(taskName)
+}
+
+func (s *runService) StopService(taskName string) error {
+	task, exists := s.tasks[taskName]
+	if !exists {
+		return ErrTaskNotFound
+	}
+	if !task.Kind.IsService() {
+		return ErrNotAService
+	}
+	return s.taskManager.StopService(taskName)
 }
 
 func (s *runService) DeleteRun(runID string) error {

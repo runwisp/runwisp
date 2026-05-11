@@ -31,9 +31,9 @@ type TriggerRunOptions struct {
 	ExternalExecutionID string
 	RetryAttempt        int
 	RetryOfRunID        *string
-	// ReplicaIndex pins the run to a specific replica slot. Required for
+	// InstanceIndex pins the run to a specific instance slot. Required for
 	// supervisor-driven restarts of services; nil for cron/API/retry runs.
-	ReplicaIndex *int
+	InstanceIndex *int
 }
 
 // Compile-time check: *defaultTaskManager satisfies TaskManager.
@@ -150,7 +150,7 @@ type PendingRunsResult struct {
 }
 
 // LoadPendingRuns re-queues runs that were pending when the system stopped.
-// Service replicas are never resumed — the supervisor spawns fresh runs at
+// Service instances are never resumed — the supervisor spawns fresh runs at
 // the configured Instances count instead. Pending service rows are marked
 // failed so they don't linger in the database.
 func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult {
@@ -226,7 +226,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	}
 
 	if ts.task.Kind.IsService() {
-		idx, err := ts.supervisor.Reserve(options.ReplicaIndex)
+		idx, err := ts.supervisor.Reserve(options.InstanceIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +239,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 			CreatedAt:           time.Now(),
 			RetryAttempt:        options.RetryAttempt,
 			RetryOfRunID:        options.RetryOfRunID,
-			ReplicaIndex:        idx,
+			InstanceIndex:       idx,
 		}
 		m.persistence.PersistNew(run)
 		m.publishRun(events.EventRunCreated, run)
@@ -315,9 +315,9 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 	return nil
 }
 
-// StartServiceReplicas brings every replica of a service up to its desired
-// count. Idempotent — already-running replicas are left untouched.
-func (m *defaultTaskManager) StartServiceReplicas(taskName string) error {
+// StartServiceInstances brings every instance of a service up to its desired
+// count. Idempotent — already-running instances are left untouched.
+func (m *defaultTaskManager) StartServiceInstances(taskName string) error {
 	m.mu.RLock()
 	ts, exists := m.tasks[taskName]
 	if !exists {
@@ -328,24 +328,57 @@ func (m *defaultTaskManager) StartServiceReplicas(taskName string) error {
 		m.mu.RUnlock()
 		return fmt.Errorf("task %s is not a service", taskName)
 	}
+	if ts.supervisor.IsStopped() {
+		m.mu.RUnlock()
+		return nil
+	}
 	missing := ts.supervisor.MissingSlots()
 	m.mu.RUnlock()
 
 	for _, idx := range missing {
 		i := idx
 		if _, err := m.TriggerRunWithOptions(taskName, TriggerRunOptions{
-			TriggeredBy:  model.TriggeredByAPI,
-			ReplicaIndex: &i,
+			TriggeredBy:   model.TriggeredByAPI,
+			InstanceIndex: &i,
 		}); err != nil {
-			slog.Error("Failed to start service replica", "task", taskName, "replica", i, "err", err)
+			slog.Error("Failed to start service instance", "task", taskName, "instance", i, "err", err)
 		}
 	}
 	return nil
 }
 
-// RestartServiceReplicas cancels every active replica of a service. The exit
-// handler refills each freed slot via the supervisor.
-func (m *defaultTaskManager) RestartServiceReplicas(taskName string) error {
+// RestartServiceInstances brings a service back to its desired instance count.
+// If the service was operator-stopped, the stop flag is cleared and missing
+// slots are spawned. If the service is already running, every active instance
+// is cancelled and the exit handler refills the freed slots via the supervisor.
+func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
+	m.mu.Lock()
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		m.mu.Unlock()
+		return fmt.Errorf("task not found: %s", taskName)
+	}
+	if !ts.task.Kind.IsService() {
+		m.mu.Unlock()
+		return fmt.Errorf("task %s is not a service", taskName)
+	}
+	wasStopped := ts.supervisor.IsStopped()
+	ts.supervisor.MarkRunning()
+	for _, ar := range ts.active {
+		ar.Cancel()
+	}
+	m.mu.Unlock()
+
+	if wasStopped {
+		return m.StartServiceInstances(taskName)
+	}
+	return nil
+}
+
+// StopService marks the service as operator-stopped (in-memory only, cleared
+// on daemon restart) and cancels every live instance. The exit handler honours
+// the flag and stops refilling slots.
+func (m *defaultTaskManager) StopService(taskName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -356,6 +389,7 @@ func (m *defaultTaskManager) RestartServiceReplicas(taskName string) error {
 	if !ts.task.Kind.IsService() {
 		return fmt.Errorf("task %s is not a service", taskName)
 	}
+	ts.supervisor.MarkStopped()
 	for _, ar := range ts.active {
 		ar.Cancel()
 	}
@@ -423,7 +457,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	}
 	var nextRestartAttempt int
 	if task.Kind.IsService() {
-		nextRestartAttempt = ts.supervisor.RecordExit(run.ReplicaIndex, runDuration)
+		nextRestartAttempt = ts.supervisor.RecordExit(run.InstanceIndex, runDuration)
 	}
 	if ts.cond != nil {
 		ts.cond.Signal()

@@ -134,8 +134,8 @@
                                         ></span>
                                     </span>
                                     <span class="truncate text-sm font-medium text-mist-950">
-                                        {run.task_name}{#if run.replica_index > 0}<span
-                                                class="text-mist-500">#{run.replica_index}</span
+                                        {run.task_name}{#if run.instance_index > 0}<span
+                                                class="text-mist-500">#{run.instance_index}</span
                                             >{/if}
                                     </span>
                                 </div>

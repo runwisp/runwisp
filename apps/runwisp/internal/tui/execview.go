@@ -29,6 +29,12 @@ const (
 	execViewActionNone execViewAction = iota
 	execViewActionStop
 	execViewActionRetry
+	// execViewActionStopService cancels every instance of a service and marks
+	// it operator-stopped (in-memory for the daemon's lifetime).
+	execViewActionStopService
+	// execViewActionRestartService re-spawns a stopped service or restarts a
+	// running one.
+	execViewActionRestartService
 )
 
 type headerHitBox struct {
@@ -65,15 +71,16 @@ func (l *execHeaderLayout) hitAt(x, y int) headerFocusItem {
 }
 
 type ExecView struct {
-	run           *model.Run
-	pane          LogPane
-	focused       bool
-	fullscreen    bool
-	headerFocus   headerFocusItem
-	hoveredHeader headerFocusItem
-	headerLayout  execHeaderLayout
-	taskIsService bool
-	loadingOlder  bool
+	run            *model.Run
+	pane           LogPane
+	focused        bool
+	fullscreen     bool
+	headerFocus    headerFocusItem
+	hoveredHeader  headerFocusItem
+	headerLayout   execHeaderLayout
+	taskIsService  bool
+	serviceStopped bool
+	loadingOlder   bool
 }
 
 // execHeaderHeight is the number of header lines drawn above the log in normal mode.
@@ -224,19 +231,31 @@ func (v *ExecView) Action() execViewAction {
 	if v.run == nil {
 		return execViewActionNone
 	}
+	if v.taskIsService {
+		// Per-instance retry is not a thing — the supervisor owns the lifecycle
+		// (manual retry of a single instance is not a valid operation).
+		// The button toggles between stop-the-service and restart-the-service
+		// based on the operator-stopped flag.
+		if v.serviceStopped {
+			return execViewActionRestartService
+		}
+		return execViewActionStopService
+	}
 	if v.run.Status == model.PhaseRunning {
 		return execViewActionStop
-	}
-	if v.taskIsService {
-		// Services manage their own restarts via the supervisor; manual
-		// retry of a single replica is not a valid operation.
-		return execViewActionNone
 	}
 	if v.run.IsRetryable() {
 		return execViewActionRetry
 	}
 	return execViewActionNone
 }
+
+// SetServiceStopped tells the view whether the parent service has been
+// operator-stopped. The view uses this to flip the Stop/Restart button.
+func (v *ExecView) SetServiceStopped(stopped bool) { v.serviceStopped = stopped }
+
+// ServiceStopped reports the cached operator-stopped state for the parent service.
+func (v *ExecView) ServiceStopped() bool { return v.serviceStopped }
 
 func (v *ExecView) hasActionButton() bool {
 	return v.Action() != execViewActionNone

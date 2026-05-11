@@ -42,16 +42,15 @@ const (
 // reads NotifierSpecs and produces a runnable notify.Service. Values stored
 // here are plain types so the config package does not need to import notify.
 //
-// AppendNotifiers is the unified successor to the old disable_inapp toggle.
-// It always reflects the operator's intent post-defaults: missing/omitted
-// resolves to ["inapp"], an explicit empty list disables the zero-config
-// safety net, and any list (e.g. ["slack-ops"]) becomes the channels that
-// fire on every failure plus get appended to per-task notify_* sugar.
+// GlobalNotifiers always reflects the operator's intent post-defaults:
+// missing/omitted resolves to ["inapp"], an explicit empty list disables the
+// zero-config safety net, and any list (e.g. ["slack-ops"]) becomes the
+// channels that fire on every failure plus get appended to per-task
+// notify_* sugar.
 type NotifyConfig struct {
 	Notifiers        []NotifierSpec
 	Routes           []NotificationRoute
-	AppendNotifiers  []string
-	QueueSize        int
+	GlobalNotifiers  []string
 	DefaultTimeout   time.Duration
 	HistoryKeep      int
 	HistoryKeepFor   time.Duration
@@ -109,8 +108,8 @@ type Daemon struct {
 // All durations / sizes are parsed from their TOML string form (e.g. "1h",
 // "100mb") at config load time and stored as native Go types.
 //
-// BackoffResetAfter is the minimum service-replica run duration that resets
-// the per-replica restart counter. Replicas that survive at least this long
+// BackoffResetAfter is the minimum service-instance run duration that resets
+// the per-instance restart counter. Instances that survive at least this long
 // are treated as healthy; the next failure starts the backoff curve over.
 type Defaults struct {
 	Timeout           time.Duration
@@ -132,7 +131,7 @@ func (cfg *Config) IsCloudShellEnabled() bool {
 	return cfg.Daemon.AllowCloudDispatch
 }
 
-// MaxServiceInstances caps the number of replicas a single service can request.
+// MaxServiceInstances caps the number of instances a single service can request.
 const MaxServiceInstances = 64
 
 // taskWire is the over-the-wire task shape used only during TOML decoding.
@@ -177,7 +176,7 @@ type taskWire struct {
 
 // serviceWire is the over-the-wire shape for [services.*] entries. Cron and
 // catch_up are intentionally omitted — services are not cron-driven. Services
-// have no max_concurrent or queue_max: replica count is governed by `instances`
+// have no max_concurrent or queue_max: instance count is governed by `instances`
 // and overlap behaviour by `on_overlap`.
 type serviceWire struct {
 	Group       string `toml:"group,omitempty"`
@@ -248,14 +247,13 @@ type schedulerWire struct {
 	Timezone string `toml:"timezone,omitempty"`
 }
 
-// notifyWire mirrors the [notify] block before parsing. AppendNotifiers is a
+// notifyWire mirrors the [notify] block before parsing. GlobalNotifiers is a
 // pointer so we can distinguish "key omitted" (apply built-in default of
 // ["inapp"]) from "key set to []" (operator explicitly opted out of the
 // in-app safety net).
 type notifyWire struct {
-	QueueSize       int       `toml:"queue_size,omitempty"`
 	DefaultTimeout  string    `toml:"default_timeout,omitempty"`
-	AppendNotifiers *[]string `toml:"append_notifiers,omitempty"`
+	GlobalNotifiers *[]string `toml:"global_notifiers,omitempty"`
 	HistoryKeep     int       `toml:"history_keep,omitempty"`
 	HistoryKeepFor  string    `toml:"history_keep_for,omitempty"`
 	CoalesceWindow  string    `toml:"coalesce_window,omitempty"`

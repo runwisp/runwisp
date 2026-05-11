@@ -35,7 +35,7 @@ match = { kind = ["run.failed"], task = "backup-*" }
 notify = ["ops", "oncall", "inapp"]
 
 [notify]
-append_notifiers = ["inapp"]
+global_notifiers = ["inapp"]
 coalesce_window = "30m"
 
 [tasks.backup-db]
@@ -52,7 +52,7 @@ notify_on_failure = ["ops"]
 	assert.Len(t, cfg.Notify.Notifiers, 2)
 	assert.Equal(t, "ops", cfg.Notify.Notifiers[0].ID)
 	assert.Equal(t, "telegram", cfg.Notify.Notifiers[1].Type)
-	assert.Equal(t, []string{"inapp"}, cfg.Notify.AppendNotifiers)
+	assert.Equal(t, []string{"inapp"}, cfg.Notify.GlobalNotifiers)
 
 	require.Len(t, cfg.Notify.Routes, 3, "explicit route + per-task sugar + default inapp catch-all")
 	explicit := cfg.Notify.Routes[0]
@@ -401,7 +401,7 @@ webhook_url_env = "URL"
 	assert.Contains(t, err.Error(), "must not contain")
 }
 
-func TestNotifyConfig_EmptyAppendNotifiersDropsImplicitInappFromSugar(t *testing.T) {
+func TestNotifyConfig_EmptyGlobalNotifiersDropsImplicitInappFromSugar(t *testing.T) {
 	src := schedulerTZHeader + `
 [[notifier]]
 id = "ops"
@@ -409,7 +409,7 @@ type = "slack"
 webhook_url = "https://example/x"
 
 [notify]
-append_notifiers = []
+global_notifiers = []
 
 [tasks.backup-db]
 cron = "0 3 * * *"
@@ -422,12 +422,12 @@ notify_on_failure = ["ops"]
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
-	require.Len(t, cfg.Notify.Routes, 1, "no default catch-all when append_notifiers = []")
+	require.Len(t, cfg.Notify.Routes, 1, "no default catch-all when global_notifiers = []")
 	assert.NotContains(t, cfg.Notify.Routes[0].NotifierID, "inapp",
-		"per-task sugar must not implicitly add inapp once the operator has cleared append_notifiers")
+		"per-task sugar must not implicitly add inapp once the operator has cleared global_notifiers")
 }
 
-func TestNotifyConfig_AppendNotifiersWithCustomChannel(t *testing.T) {
+func TestNotifyConfig_GlobalNotifiersWithCustomChannel(t *testing.T) {
 	src := schedulerTZHeader + `
 [[notifier]]
 id = "slack-ops"
@@ -435,7 +435,7 @@ type = "slack"
 webhook_url = "https://example/x"
 
 [notify]
-append_notifiers = ["slack-ops"]
+global_notifiers = ["slack-ops"]
 
 [tasks.backup-db]
 cron = "0 3 * * *"
@@ -456,11 +456,11 @@ run = "backup.sh"
 func TestValidate_RejectsUnknownAppendNotifier(t *testing.T) {
 	src := `
 [notify]
-append_notifiers = ["does-not-exist"]
+global_notifiers = ["does-not-exist"]
 `
 	cfg, err := decode([]byte(src))
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "append_notifiers")
+	assert.Contains(t, err.Error(), "global_notifiers")
 }

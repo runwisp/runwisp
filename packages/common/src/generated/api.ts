@@ -255,8 +255,28 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Restart all replicas of a service */
+        /** Restart all instances of a service */
         post: operations["restartService"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskName}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a service for the daemon's lifetime
+         * @description Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.
+         */
+        post: operations["stopService"];
         delete?: never;
         options?: never;
         head?: never;
@@ -685,7 +705,7 @@ export interface components {
             external_execution_id?: string;
             id: string;
             /** Format: int64 */
-            replica_index: number;
+            instance_index: number;
             /** Format: int64 */
             retry_attempt: number;
             retry_of_run_id?: string;
@@ -842,7 +862,7 @@ export interface components {
             api_trigger: boolean;
             /**
              * Format: int64
-             * @description For services: a replica that runs at least this long resets the restart counter, in nanoseconds
+             * @description For services: an instance that runs at least this long resets the restart counter, in nanoseconds
              */
             backoff_reset_after?: number;
             /**
@@ -860,7 +880,7 @@ export interface components {
             group?: string;
             /**
              * Format: int64
-             * @description For services: number of always-running replicas
+             * @description For services: number of always-running instances
              */
             instances?: number;
             /**
@@ -1502,6 +1522,38 @@ export interface operations {
         };
     };
     restartService: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopRunOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    stopService: {
         parameters: {
             query?: never;
             header?: never;

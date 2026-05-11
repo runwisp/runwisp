@@ -187,8 +187,12 @@ func (m Model) handleExecViewClick(x, y int) (tea.Model, tea.Cmd) {
 		switch m.execView.Action() {
 		case execViewActionStop:
 			return m, m.confirmAction(confirmActionStop)
+		case execViewActionStopService:
+			return m, m.confirmAction(confirmActionStopService)
 		case execViewActionRetry:
 			return m, m.confirmAction(confirmActionRetry)
+		case execViewActionRestartService:
+			return m, m.confirmAction(confirmActionRestartService)
 		}
 	}
 

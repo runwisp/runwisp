@@ -252,8 +252,8 @@ func (e *ExecList) View() string {
 				}
 				statusCell := statusBadge + rowStyle.Render(strings.Repeat(" ", statPad))
 				taskLabel := item.Run.TaskName
-				if item.Run.ReplicaIndex > 0 {
-					taskLabel = fmt.Sprintf("%s#%d", taskLabel, item.Run.ReplicaIndex)
+				if item.Run.InstanceIndex > 0 {
+					taskLabel = fmt.Sprintf("%s#%d", taskLabel, item.Run.InstanceIndex)
 				}
 				text = rowStyle.Render("  "+padCell(taskLabel, taskW)+" ") +
 					statusCell +

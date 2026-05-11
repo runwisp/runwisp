@@ -19,6 +19,8 @@
     let triggering = $state(false);
     let stopping = $state(false);
     let restarting = $state(false);
+    let stoppingService = $state(false);
+    let serviceStopped = $state(false);
     let selectRunId = $state<string | null>(null);
 
     const DEFAULT_CONCURRENCY_LIMIT = 1;
@@ -123,11 +125,26 @@
         restarting = true;
         try {
             await tasksApi.restartService(taskName);
+            serviceStopped = false;
             toast.success(`Restarting "${taskName}"`);
         } catch {
             toast.error(`Failed to restart "${taskName}"`);
         } finally {
             restarting = false;
+        }
+    }
+
+    async function handleStopService() {
+        if (!taskName) return;
+        stoppingService = true;
+        try {
+            await tasksApi.stopService(taskName);
+            serviceStopped = true;
+            toast.success(`Stopped "${taskName}"`);
+        } catch {
+            toast.error(`Failed to stop "${taskName}"`);
+        } finally {
+            stoppingService = false;
         }
     }
 </script>
@@ -141,9 +158,12 @@
             {triggering}
             {stopping}
             {restarting}
+            {stoppingService}
+            {serviceStopped}
             onRun={handleRun}
             onStop={handleStop}
             onRestart={handleRestart}
+            onStopService={handleStopService}
             fetchLogs={logSession.fetchLogs}
             streamLogs={logSession.streamLogs}
             initialRunId={$page.url.searchParams.get("runId")}

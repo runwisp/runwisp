@@ -89,13 +89,13 @@
                     <div class="mb-1 flex items-center gap-3">
                         <h2 class="text-xl font-bold text-on-surface">
                             {#if showTaskName}
-                                {run.task_name}{#if run.replica_index > 0}<span
-                                        class="text-on-surface-muted">#{run.replica_index}</span
+                                {run.task_name}{#if run.instance_index > 0}<span
+                                        class="text-on-surface-muted">#{run.instance_index}</span
                                     >{/if}
                             {:else}
-                                Run #{formatShortId(run.id)}{#if run.replica_index > 0}
+                                Run #{formatShortId(run.id)}{#if run.instance_index > 0}
                                     <span class="text-on-surface-muted"
-                                        >· replica #{run.replica_index}</span
+                                        >· instance #{run.instance_index}</span
                                     >
                                 {/if}
                             {/if}
