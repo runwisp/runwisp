@@ -26,7 +26,6 @@ func WriteInitForce(path string) error {
 
 const starterConfig = `# runwisp.toml
 # Docs: https://docs.runwisp.com/configuration/overview/
-# Full reference: see runwisp.example.toml in the repo or the docs site.
 
 [tasks.hello]
 description = "Example task. Trigger it from the TUI (press r) or the Web UI."

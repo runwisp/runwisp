@@ -57,7 +57,7 @@ When a design question isn't answered by the above, resolve it in this order:
 
 1. **Does it make a failure more visible?** → Yes = lean toward it.
 2. **Does it add a runtime dependency or a required network call?** → Yes = reject or make it strictly optional.
-3. **Does it change the TOML schema?** → Treat as breaking; document in CHANGELOG, update `runwisp.example.toml`, update OpenAPI.
+3. **Does it change the TOML schema?** → Treat as breaking; document in CHANGELOG and the docs, and update OpenAPI.
 4. **Does it add state that must survive restart?** → It goes through `internal/storage/` (GORM + SQLite), gets a ULID, and has a reconciliation path on boot.
 5. **Does it touch the control-plane protocol?** → Edit `packages/asyncapi/asyncapi.yaml` first, regenerate, then consume the generated types. Never the other way round.
 6. **Can a solo dev understand it by reading `runwisp.toml` + the web UI?** → If no, simplify or document.
@@ -152,6 +152,6 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 2. Before finalizing **Go** changes: `bun run build && bun run test` (and `bun run check` if lint/TS is adjacent).
 3. Before finalizing **TypeScript/Svelte** changes: `bun run check && bun run test`.
 4. Changes to `packages/asyncapi/asyncapi.yaml` **require regeneration** before commit; downstream Go types must compile.
-5. Changes to the TOML config schema **require** updating: `runwisp.example.toml`, OpenAPI (`apps/runwisp/openapi.json`), CHANGELOG, and the README config reference if behavior is user-visible.
+5. Changes to the TOML config schema **require** updating: the docs (`apps/docs/src/content/docs/configuration/`), OpenAPI (`apps/runwisp/openapi.json`), CHANGELOG, and the README config reference if behavior is user-visible.
 6. When a judgment call arises that Prime Directives / Non-Goals / Invariants don't clearly resolve: **stop and ask the user**. Do not silently pick a direction that might violate vision.
 7. If you introduced a user-facing change, add or modify CHANGELOG.md. Changelog is "marketing-facing", it's made to tell users what they can expect from the new version, not how devs can configure the new feature. Try to be concise but informative about it.

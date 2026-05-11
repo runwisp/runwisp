@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/fingerprint"
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/version"
 )
@@ -180,11 +180,5 @@ func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error
 		return cfg, false, nil
 	}
 
-	slog.Warn("no runwisp.toml found — running with the built-in demo task; create a config to define your own (docs: https://github.com/runwisp/runwisp)", "path", path)
-	demo := demoTask
-	cfg = &config.Config{
-		Tasks: []model.Task{demo},
-	}
-	config.ApplyDefaults(cfg)
-	return cfg, true, nil
+	return nil, false, fmt.Errorf("no runwisp.toml found at %s — create one to define your tasks (docs: https://docs.runwisp.com/configuration/overview/)", path)
 }

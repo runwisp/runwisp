@@ -60,7 +60,6 @@ func init() {
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(execCmd)
-	rootCmd.AddCommand(runTaskCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(openapiCmd)
 }

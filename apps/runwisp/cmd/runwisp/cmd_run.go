@@ -33,8 +33,10 @@ const (
 // `runwisp daemon` flips it to true; `runwisp cloud` exposes it as a flag.
 var noTUI bool
 
-// demoTask is injected when no configuration file exists and cloud mode is disabled,
-// so that `./runwisp` works out of the box with zero setup.
+// demoTask is kept available for cloud-managed and other explicit branches
+// that need a built-in task when no configuration file is present. The
+// standalone daemon path errors out instead — missing config is a setup bug
+// the operator must see.
 var demoTask = model.Task{
 	Name:        "hello-world",
 	Description: "Demo task — runs every minute. Create a runwisp.toml to define your own tasks.",
@@ -42,8 +44,7 @@ var demoTask = model.Task{
 echo "Current time: $(date)"
 echo ""
 echo "This is a built-in demo task."
-echo "Create a runwisp.toml to define your own tasks — see runwisp.example.toml"
-echo "or https://github.com/runwisp/runwisp"
+echo "Create a runwisp.toml to define your own tasks — see https://docs.runwisp.com/configuration/overview/"
 `,
 	Cron:          "* * * * *",
 	Timezone:      "UTC",
