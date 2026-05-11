@@ -20,7 +20,9 @@ per run.
 - **One file per run.** Each invocation gets its own isolated log,
   named after its start time and a short suffix of the run's ULID so
   files are sortable and unique. Task names are sanitised — anything
-  outside `[a-zA-Z0-9_-]` becomes `_`.
+  outside `[a-zA-Z0-9_-]` becomes `_`. The timestamp in the filename
+  is in **UTC** so the on-disk cadence stays stable across host
+  timezone changes.
 - **Stdout and stderr are interleaved** in capture order — the same
   bytes the script wrote, in the order it wrote them.
 - When a run is deleted by retention, the daemon removes the log file,
@@ -103,9 +105,8 @@ Scrolling back works on finished runs too. The viewer jumps directly
 to the byte you asked for without re-reading the file from the top,
 so even multi-megabyte logs feel instant.
 
-An idle viewer holds the connection open with no noticeable CPU or
-bandwidth use. The on-disk file is always the source of truth — the
-live stream is a fast preview of the same bytes.
+The on-disk file is always the source of truth — the live stream is a
+fast preview of the same bytes.
 
 ## Downloading
 

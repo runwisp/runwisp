@@ -69,10 +69,10 @@ export default defineConfig({
                     items: [
                         { label: "Overview", slug: "configuration/overview" },
                         { label: "[storage]", slug: "configuration/storage" },
+                        { label: "[daemon]", slug: "configuration/daemon" },
                         { label: "[defaults]", slug: "configuration/defaults" },
                         { label: "[tasks.*]", slug: "configuration/tasks" },
                         { label: "[services.*]", slug: "configuration/services" },
-                        { label: "Validation rules", slug: "configuration/validation" },
                     ],
                 },
                 {
