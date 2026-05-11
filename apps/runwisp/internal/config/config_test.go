@@ -387,19 +387,6 @@ func TestValidate(t *testing.T) {
 			wantErr: "retry_attempts",
 		},
 		{
-			name: "max_catch_up_runs above cap",
-			cfg: &Config{
-				Tasks: []model.Task{{
-					Name:           "task1",
-					Run:            "echo hello",
-					MaxConcurrent:  1,
-					OnOverlap:      model.PolicyQueue,
-					MaxCatchUpRuns: MaxCatchUpRunsCap + 1,
-				}},
-			},
-			wantErr: "max_catch_up_runs",
-		},
-		{
 			name: "negative graceful_stop",
 			cfg: &Config{
 				Tasks: []model.Task{{
@@ -754,19 +741,19 @@ run               = "echo hi"
 		assert.Contains(t, err.Error(), "max_catch_up_runs")
 	})
 
-	t.Run("above cap is rejected", func(t *testing.T) {
+	t.Run("large value is accepted", func(t *testing.T) {
 		path := writeTOML(t, `
 [scheduler]
 timezone = "UTC"
 
 [tasks.t]
 cron              = "* * * * *"
-max_catch_up_runs = 10001
+max_catch_up_runs = 100000
 run               = "echo hi"
 `)
-		_, err := Load(path)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "max_catch_up_runs")
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 100000, cfg.Tasks[0].MaxCatchUpRuns)
 	})
 }
 
