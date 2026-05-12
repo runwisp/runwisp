@@ -1,0 +1,134 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Global settings
+description: Global notification settings — bell on/off, retry budget, history retention, coalescing window.
+---
+
+The `[notify]` table holds daemon-wide knobs: which channels every
+failure lands in, how long to retry an outbound delivery, how long to
+keep bell history, how aggressively to coalesce. Every key is optional
+and the defaults suit a single-machine setup.
+
+This page is not where you declare channels or routing rules — see
+[`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
+and [`[[notification_route]]`](/notifications/routes/).
+
+## Keys
+
+```toml
+[notify]
+global_notifiers  = ["inapp"]   # default — bell on
+# default_timeout = "30s"       # unset — uses the built-in 5-min retry budget
+history_keep      = 1024        # default
+history_keep_for  = "90d"       # default
+coalesce_window   = "1h"        # default
+occurrence_ring   = 10          # default
+```
+
+| Key                | Default     | What it does                                                                                                                    |
+| ------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `global_notifiers` | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell. |
+| `default_timeout`  | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = a few minutes.                                                   |
+| `history_keep`     | `1024`      | Cap on bell rows kept in SQLite. Older rows are trimmed in batches.                                                             |
+| `history_keep_for` | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                            |
+| `coalesce_window`  | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one.                   |
+| `occurrence_ring`  | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
+
+Both `history_keep` and `history_keep_for` apply at once when set, and
+the stricter one wins.
+
+## The bell — `global_notifiers`
+
+```toml
+[notify]
+global_notifiers = []                # silence the bell entirely
+# global_notifiers = ["slack-ops"]   # or: every failure goes to that channel
+```
+
+`global_notifiers = []` turns off the bell in the Web UI and the TUI
+footer line, and also stops `"inapp"` being added to the per-task
+fields. With it empty, `notify_on_failure = ["slack-ops"]` sends to
+`slack-ops` only.
+
+Use the empty form when the daemon runs unattended (a build agent, a
+CI shard) and nobody opens the Web UI. Use a non-empty list when you
+want every failure to go to the same channel without writing per-task
+fields everywhere.
+
+## Retry budget — `default_timeout`
+
+Outbound deliveries retry on transient failures with exponential
+backoff. `default_timeout` caps the total wall-clock time the retry
+loop is allowed to spend.
+
+Unset, the budget is **5 minutes** — a delivery can keep retrying
+that long. Setting `default_timeout = "30s"` cuts that to 30 seconds,
+so a hard outage surfaces in the bell within half a minute.
+
+The per-attempt HTTP timeout is independent of this budget. Set
+`default_timeout` shorter than one attempt and you effectively get a
+single try.
+
+## Bell history
+
+Bell rows live in SQLite, separate from run rows. Two knobs prune
+them:
+
+- `history_keep` — keep at most N rows. Older rows are trimmed in
+  batches.
+- `history_keep_for` — delete rows older than this duration.
+
+Both apply at once; the stricter wins. A background sweeper applies
+them — you don't trigger it.
+
+## Coalescing
+
+RunWisp groups repeat events of the same kind for the same task so
+you aren't paged twice for the same thing. A task that fails every
+minute creates one bell row that ticks up, not 60 separate rows.
+
+- `coalesce_window` — within this window, repeats update the same
+  row. `count` goes up; the latest timestamp is recorded.
+- `occurrence_ring` — how many recent timestamps to keep on the row.
+  Used by the UI to render a sparkline.
+
+In the Web UI you see one row that says "failed 14 times in the last
+30m" instead of 14 rows. Outbound channels coalesce on the same key
+by default — see
+[Coalescing in the model page](/notifications/model/#coalescing) for
+the full timeline.
+
+Set `coalesce_window = "0s"` to disable coalescing (every event makes
+a new row). Rarely useful.
+
+## Worked examples
+
+A small server that uses one outbound channel and wants delivery
+failures to surface fast:
+
+```toml
+[notify]
+global_notifiers  = ["inapp"]   # keep the bell
+default_timeout   = "30s"       # cap retry budget at 30s
+history_keep      = 2000
+history_keep_for  = "60d"
+coalesce_window   = "30m"
+occurrence_ring   = 20
+```
+
+A headless build agent that sends everything off-host:
+
+```toml
+[notify]
+global_notifiers  = []          # nobody reads the bell
+```
+
+## Where to next
+
+- [Notifications model](/notifications/model/) — the picture this
+  page configures.
+- [Notification rules](/notifications/routes/) — `[[notification_route]]`
+  matches many tasks in one rule.
+- [Per-task notifications](/notifications/per-task/) —
+  `notify_on_failure` / `notify_on_success` on one task.

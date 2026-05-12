@@ -1,0 +1,191 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Nightly backup
+description: A complete worked example for a nightly Postgres backup — pg_dump with skip-on-overlap, 90-day retention, no retries (failures should reach a human), and Slack alerting on failure.
+---
+
+A nightly database backup is the canonical RunWisp task. It runs on a
+schedule, writes a timestamped artefact, takes long enough that you
+care about overlap, and you absolutely want to know when it fails.
+
+This recipe covers Postgres; the shape is the same for MySQL,
+SQLite, MongoDB, or any external service you can drive from a shell
+script.
+
+## The task
+
+```toml
+[tasks.backup-postgres]
+group       = "Backups"
+description = "Nightly logical dump of the production database"
+cron        = "30 2 * * *"          # 02:30 every day, daemon-local time
+on_overlap  = "skip"                 # never two dumps at once
+keep_for    = "90d"                  # three months of forensic history
+notify_on_failure = ["slack-ops"]
+
+# timeout = "..."                    # see below — size to your DB, or omit
+
+run = """
+set -euo pipefail
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+DEST=/srv/backups/postgres
+mkdir -p "$DEST"
+
+PGPASSWORD="$BACKUP_DB_PASSWORD" pg_dump \\
+  --host=db.internal \\
+  --username=backup \\
+  --format=custom \\
+  --no-owner --no-privileges \\
+  app_production \\
+| gzip --best > "$DEST/app_production-$TS.dump.gz"
+
+# Verify the archive is at least readable end-to-end.
+gzip -t "$DEST/app_production-$TS.dump.gz"
+echo "Wrote $DEST/app_production-$TS.dump.gz ($(du -h "$DEST/app_production-$TS.dump.gz" | cut -f1))"
+"""
+```
+
+The matching `[[notifier]]` block — described on the
+[Slack provider page][slack] — receives `run.failed`, `run.timeout`, and
+`run.crashed`, because those are the run-end kinds that
+`notify_on_failure` covers.
+
+[slack]: /notifications/providers/slack/
+
+## Why each knob
+
+### `cron = "30 2 * * *"`
+
+Off-peak. Avoid landing on the hour or half-hour — a host running
+many cron daemons at exactly `0 2 * * *` and `0 3 * * *` will
+serialise its own writes and cause backup contention.
+
+### `on_overlap = "skip"`
+
+If a previous dump is still running at the next firing,
+**don't start a second one**. The default of `"queue"` would line
+up overlapping firings; for a nightly task that doesn't help and
+can cause a backup pile-up if a slow night extends past 02:30 the
+next morning.
+
+### No `timeout`
+
+We deliberately don't set one. A "safe ceiling" depends entirely
+on your database size — a 10 MB schema dumps in seconds, a 500 GB
+warehouse can take hours. Picking a number on your behalf would
+either kill legitimate dumps or pretend to be a guardrail without
+being one. The cron interval (24 h) is the implicit ceiling: if a
+dump is still running when the next firing arrives, `on_overlap =
+"skip"` drops the new one and your alerting will notice you have
+no fresh artefact.
+
+If you want an explicit hard kill — e.g. "no single dump should
+ever take more than 4 h on this database" — uncomment the
+`timeout` line and size it to **worst-case observed dump × ~1.5**.
+See [Retries & timeouts][retries] for what `timeout` actually does
+(per-attempt, hard kill, no grace period).
+
+[retries]: /concepts/retries/
+
+### No retries
+
+Tempting, but wrong for backups. A retry five minutes later
+papers over the symptom (one failed dump) and erases the signal
+(the database was unreachable at 02:30). If the cause is
+transient you'll get a fresh dump 24 h from now; if it isn't,
+you want the alert to fire so a human investigates _now_. Retries
+belong on probes and idempotent fetches — see
+[health checks](/recipes/healthcheck/) for that shape.
+
+### `keep_for = "90d"`
+
+Three months of nightly dumps is enough for both forensics ("when
+did the schema change?") and to outlast a long incident
+("we discovered the data corruption a month later"). We use
+`keep_for` rather than `keep_runs` because a time window is what
+operators actually reason about; the row count falls out of the
+cadence. See [Logs & retention][logs].
+
+[logs]: /concepts/logs/
+
+### `notify_on_failure`
+
+Sends a message on `run.failed`, `run.timeout`, and `run.crashed`. See
+[Per-task notifications][pertask] for the full behaviour. The bell is
+added by default, so even without Slack you still see the failure in
+the Web UI.
+
+[pertask]: /notifications/per-task/
+
+### `set -euo pipefail` inside `run`
+
+Bash's `-e` exits on the first failed command, `-u` errors on
+unset variables, `-o pipefail` propagates the exit code from any
+stage of a pipeline. Without these, a `pg_dump` that fails
+mid-stream will still produce a "successful" gzipped file (gzip
+exits 0 on truncated input) and your backup task will quietly
+return success.
+
+This is the pattern for **every** non-trivial `run` block.
+RunWisp itself has no opinion on shell flags — the burden is on
+your script.
+
+## Off-host copy
+
+Local backups die with the host. Append a sync to S3, B2, or your
+NAS:
+
+```bash
+aws s3 cp "$DEST/app_production-$TS.dump.gz" \\
+  "s3://my-backups/postgres/$(hostname)/app_production-$TS.dump.gz" \\
+  --storage-class GLACIER_IR
+```
+
+Or split it into a second task that depends on the first having
+landed something on disk — one cron-fired backup task plus a
+separate cron-fired sync task is simpler than wiring up a
+multi-step DAG (which RunWisp deliberately doesn't do).
+
+## Verifying the dump
+
+A backup you've never restored is a hopeful filename, not a backup.
+Run a periodic restore-test as its own task:
+
+```toml
+[tasks.backup-restore-test]
+group       = "Backups"
+description = "Restore last night's dump into a scratch DB and run a smoke query"
+cron        = "0 5 * * *"            # 02:30 dump → 05:00 restore-test
+on_overlap  = "skip"
+notify_on_failure = ["slack-ops"]
+
+run = """
+set -euo pipefail
+LATEST=$(ls -1t /srv/backups/postgres/app_production-*.dump.gz | head -n1)
+test -n "$LATEST" || { echo "no dump found"; exit 1; }
+
+# Restore into a scratch database the daemon can drop and recreate.
+psql -h db.internal -U backup -d postgres -c 'DROP DATABASE IF EXISTS app_restore_test'
+psql -h db.internal -U backup -d postgres -c 'CREATE DATABASE app_restore_test'
+
+gunzip -c "$LATEST" | pg_restore --no-owner --no-privileges --dbname=app_restore_test
+
+# Smoke query — adjust to something cheap that proves the schema is real.
+psql -h db.internal -U backup -d app_restore_test -c 'SELECT count(*) FROM users LIMIT 1'
+"""
+```
+
+Two cron rows in the daemon, two log streams, two failure paths.
+You'll know within 24 hours if a backup file isn't restorable —
+which is the only failure mode that actually matters.
+
+## Where to next
+
+- [Slack provider](/notifications/providers/slack/) — wiring up the
+  `slack-ops` notifier this recipe references.
+- [Concepts: retries & timeouts](/concepts/retries/) — what
+  `retry_attempts` and `timeout` actually do, and which end reasons
+  trigger retries.
+- [`[storage]`](/configuration/storage/) — the daemon-wide cap that
+  sits above `keep_runs`. Don't let on-disk dumps fill the data dir.

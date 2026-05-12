@@ -1,0 +1,78 @@
+{
+    "name": "@runwisp/docs",
+    "version": "0.0.0",
+    "license": "Apache-2.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "bun scripts/sync-openapi.ts && bunx --bun astro dev",
+        "build": "bun scripts/sync-openapi.ts && bunx --bun astro build",
+        "preview": "bunx --bun astro preview",
+        "check": "bun scripts/sync-openapi.ts && bunx --bun astro check && prettier --check . && eslint .",
+        "format": "prettier --write ."
+    },
+    "nx": {
+        "targets": {
+            "build": {
+                "dependsOn": [
+                    "^build"
+                ],
+                "cache": true,
+                "inputs": [
+                    "production",
+                    "^production",
+                    "{workspaceRoot}/apps/runwisp/openapi.json",
+                    "{projectRoot}/.env*"
+                ],
+                "outputs": [
+                    "{projectRoot}/dist/**",
+                    "{projectRoot}/.astro/**"
+                ]
+            },
+            "build-dev": {
+                "dependsOn": [
+                    "^build"
+                ],
+                "cache": true,
+                "inputs": [
+                    "default",
+                    "^production",
+                    "{workspaceRoot}/apps/runwisp/openapi.json",
+                    "{projectRoot}/.env*"
+                ],
+                "outputs": [
+                    "{projectRoot}/dist/**",
+                    "{projectRoot}/.astro/**"
+                ]
+            },
+            "check": {
+                "inputs": [
+                    "default",
+                    "^production",
+                    "{workspaceRoot}/apps/runwisp/openapi.json"
+                ]
+            },
+            "format": {
+                "cache": false
+            }
+        }
+    },
+    "dependencies": {
+        "@astrojs/starlight": "^0.39.0",
+        "@fontsource/jetbrains-mono": "^5.2.8",
+        "@fontsource/tasa-orbiter": "^5.2.2",
+        "astro": "^6.2.2",
+        "sharp": "^0.34.5",
+        "starlight-openapi": "^0.25.0"
+    },
+    "devDependencies": {
+        "@astrojs/check": "^0.9.4",
+        "@eslint/compat": "^1.4.0",
+        "@runwisp/eslint-config": "workspace:*",
+        "eslint": "^9.39.1",
+        "eslint-plugin-astro": "^1.3.1",
+        "prettier": "^3.7.4",
+        "prettier-plugin-astro": "^0.14.1",
+        "typescript": "5.9.2"
+    }
+}

@@ -11,26 +11,53 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// MapRunEvent converts an internal events.Event carrying a RunEvent payload
-// into a notify.Event. Returns nil when the event is not run-shaped (log
-// lines, etc.) — the caller should drop those silently.
-func MapRunEvent(e events.Event) *Event {
-	re, ok := e.Data.(events.RunEvent)
-	if !ok || re.Run == nil {
+// MapEvent converts an internal events.Event into a notify.Event. Returns nil
+// for events the notification subsystem ignores (log lines, run.created /
+// run.updated). Currently handles RunEvent and LogDiskPressureEvent payloads.
+func MapEvent(e events.Event) *Event {
+	switch d := e.Data.(type) {
+	case events.RunEvent:
+		if d.Run == nil {
+			return nil
+		}
+		kind, severity, ok := mapRunEventType(e.Type, d.Run)
+		if !ok {
+			return nil
+		}
+		return &Event{
+			Kind:      kind,
+			Severity:  severity,
+			Timestamp: e.Timestamp,
+			TaskName:  d.Run.TaskName,
+			Run:       d.Run,
+			Reason:    runReasonString(d.Run, d.Error),
+		}
+	case events.LogDiskPressureEvent:
+		return &Event{
+			Kind:      KindLogDiskPressure,
+			Severity:  SevWarn,
+			Timestamp: e.Timestamp,
+			TaskName:  d.TaskName,
+			Reason:    diskPressureReason(d),
+			Extra: map[string]any{
+				"run_id":         d.RunID,
+				"free_bytes":     d.FreeBytes,
+				"min_free_bytes": d.MinFreeBytes,
+				"killed_task":    d.KilledTask,
+			},
+		}
+	default:
 		return nil
 	}
-	kind, severity, ok := mapRunEventType(e.Type, re.Run)
-	if !ok {
-		return nil
+}
+
+func diskPressureReason(d events.LogDiskPressureEvent) string {
+	if d.KilledTask {
+		return fmt.Sprintf("disk space below %d bytes (free %d); task killed by log_on_full=\"kill_task\"",
+			d.MinFreeBytes, d.FreeBytes)
 	}
-	return &Event{
-		Kind:      kind,
-		Severity:  severity,
-		Timestamp: e.Timestamp,
-		TaskName:  re.Run.TaskName,
-		Run:       re.Run,
-		Reason:    runReasonString(re.Run, re.Error),
-	}
+	return fmt.Sprintf("disk space below %d bytes (free %d); log output paused",
+		d.MinFreeBytes, d.FreeBytes)
 }
 
 // mapRunEventType collapses (events.EventType, run state) into the public Kind
@@ -47,7 +74,7 @@ func mapRunEventType(t events.EventType, run *model.Run) (Kind, Severity, bool) 
 			return KindRunFailed, SevError, true
 		}
 		switch *run.EndReason {
-		case model.ReasonFailed:
+		case model.ReasonFailed, model.ReasonLogOverflow:
 			return KindRunFailed, SevError, true
 		case model.ReasonTimeout:
 			return KindRunTimeout, SevError, true
@@ -55,6 +82,11 @@ func mapRunEventType(t events.EventType, run *model.Run) (Kind, Severity, bool) 
 			return KindRunStopped, SevWarn, true
 		case model.ReasonCrashed:
 			return KindRunCrashed, SevError, true
+		case model.ReasonSkipped:
+			// PolicySkip is the policy doing its job, not a failure: never
+			// route it through the notification system. Operators who care
+			// about chronic skips read the run history.
+			return "", "", false
 		default:
 			return KindRunFailed, SevError, true
 		}

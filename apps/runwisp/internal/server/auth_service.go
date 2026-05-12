@@ -282,6 +282,12 @@ func isLoopbackRequest(r *http.Request) bool {
 
 // handleLaunchTicket redeems a single-use launch ticket and redirects to the
 // UI with a session cookie. Only accepts requests from loopback addresses.
+//
+// An optional `redirect` query parameter targets a same-origin path (must
+// start with `/` and not `//`) — used by the TUI's "download log" action so
+// the operator's browser lands directly on the raw-log endpoint with a fresh
+// session cookie. Cross-origin or scheme-relative redirects are rejected to
+// avoid an open-redirect surface.
 func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
 	if !isLoopbackRequest(r) {
 		respondForbidden(w, "Launch tickets are only valid from localhost")
@@ -311,5 +317,19 @@ func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	srv.auth.setAuthCookie(w, r, tokenString, JWTTokenDuration)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, sanitizeLaunchRedirect(r.URL.Query().Get("redirect")), http.StatusSeeOther)
+}
+
+// sanitizeLaunchRedirect returns the requested redirect target if it is a
+// safe same-origin absolute path; otherwise it falls back to "/". A safe
+// target starts with a single "/" (so "/api/..." is allowed) but not "//"
+// (which would be scheme-relative and could escape the origin).
+func sanitizeLaunchRedirect(target string) string {
+	if target == "" || len(target) < 1 || target[0] != '/' {
+		return "/"
+	}
+	if len(target) >= 2 && target[1] == '/' {
+		return "/"
+	}
+	return target
 }

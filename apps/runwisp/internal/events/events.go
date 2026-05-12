@@ -15,12 +15,13 @@ import (
 type EventType string
 
 const (
-	EventRunCreated   EventType = "run.created"
-	EventRunStarted   EventType = "run.started"
-	EventRunCompleted EventType = "run.completed"
-	EventRunFailed    EventType = "run.failed"
-	EventRunUpdated   EventType = "run.updated"
-	EventLogLine      EventType = "log.line"
+	EventRunCreated      EventType = "run.created"
+	EventRunStarted      EventType = "run.started"
+	EventRunCompleted    EventType = "run.completed"
+	EventRunFailed       EventType = "run.failed"
+	EventRunUpdated      EventType = "run.updated"
+	EventLogLine         EventType = "log.line"
+	EventLogDiskPressure EventType = "log.disk_pressure"
 )
 
 // AllEventTypes is the single source of truth for all known event types.
@@ -32,6 +33,7 @@ var AllEventTypes = []EventType{
 	EventRunFailed,
 	EventRunUpdated,
 	EventLogLine,
+	EventLogDiskPressure,
 }
 
 // EventData is the type constraint for event payloads.
@@ -46,13 +48,26 @@ type Event struct {
 	Data      EventData `json:"data"`
 }
 
-func (RunEvent) eventData()     {}
-func (LogLineEvent) eventData() {}
+func (RunEvent) eventData()             {}
+func (LogLineEvent) eventData()         {}
+func (LogDiskPressureEvent) eventData() {}
 
 // RunEvent tracks lifecycle updates for a run.
 type RunEvent struct {
 	Run   *model.Run `json:"run"`
 	Error string     `json:"error,omitempty"`
+}
+
+// LogDiskPressureEvent fires once per run when min_free_space crosses the
+// configured threshold during execution. KilledTask is true when the daemon
+// also cancelled the run because its log_on_full was "kill_task". For other
+// overflow policies the run keeps executing but its log writer is stopped.
+type LogDiskPressureEvent struct {
+	TaskName     string `json:"task_name"`
+	RunID        string `json:"run_id"`
+	FreeBytes    int64  `json:"free_bytes"`
+	MinFreeBytes int64  `json:"min_free_bytes"`
+	KilledTask   bool   `json:"killed_task"`
 }
 
 // LogLineEvent carries one log line's worth of state. Each event represents

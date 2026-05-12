@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
+	"github.com/runwisp/runwisp/internal/notify/coalesce"
 	"github.com/runwisp/runwisp/internal/notify/configload"
 	"github.com/runwisp/runwisp/internal/notify/render"
 	"github.com/runwisp/runwisp/internal/storage"
@@ -20,7 +21,8 @@ import (
 
 // notifyBundle owns the runtime objects the rest of the daemon needs after
 // notify is wired: the Service (for lifecycle) and the inapp Hub (for the SSE
-// handler in internal/server). Hub may be nil when DisableInapp is set.
+// handler in internal/server). Hub may be nil when no route targets the
+// inapp channel.
 type notifyBundle struct {
 	Service *notify.Service
 	Hub     *inapp.Hub
@@ -36,7 +38,8 @@ func initNotify(
 	logger *slog.Logger,
 ) (notifyBundle, error) {
 	notifyCfg := cfg.Config.Notify
-	if len(notifyCfg.Notifiers) == 0 && len(notifyCfg.Routes) == 0 && notifyCfg.DisableInapp {
+	inappWanted := routesReferenceInapp(notifyCfg.Routes)
+	if len(notifyCfg.Notifiers) == 0 && len(notifyCfg.Routes) == 0 && !inappWanted {
 		return notifyBundle{}, nil
 	}
 
@@ -62,7 +65,7 @@ func initNotify(
 
 	var hub *inapp.Hub
 	var inappCh *inapp.Channel
-	if !notifyCfg.DisableInapp {
+	if inappWanted {
 		hub = inapp.NewHub(32, 50)
 
 		coalescerCfg := inapp.CoalescerConfig{
@@ -80,10 +83,19 @@ func initNotify(
 		channels = append(channels, inappCh)
 	}
 
+	outboundCoalesce := notifyCfg.CoalesceOutbound
+	coalesceCfg := coalesce.Config{
+		Window: notifyCfg.CoalesceWindow,
+		EveryN: notifyCfg.OccurrenceRing,
+	}
+
 	for _, spec := range resolved.Notifiers {
 		ch, err := channel.Build(spec)
 		if err != nil {
 			return notifyBundle{}, fmt.Errorf("build notifier %q: %w", spec.ID, err)
+		}
+		if outboundCoalesce {
+			ch = coalesce.New(ch, coalesceCfg, notify.RealClock(), logger)
 		}
 		channels = append(channels, ch)
 	}
@@ -100,7 +112,6 @@ func initNotify(
 		Channels:       channels,
 		Rules:          resolved.Rules,
 		FailureSink:    failureSink,
-		IngressSize:    notifyCfg.QueueSize,
 		Logger:         logger,
 		RetentionEvery: 5 * time.Minute,
 		RetentionFn:    retentionFn,
@@ -130,6 +141,20 @@ func backoffOverride(d time.Duration, logger *slog.Logger) func() *notify.HTTPPr
 		t.Backoff = bo
 		return t
 	}
+}
+
+// routesReferenceInapp reports whether any resolved route targets the
+// special "inapp" channel. The inapp Hub and Channel only need to exist if
+// something is actually going to be delivered to them.
+func routesReferenceInapp(routes []config.NotificationRoute) bool {
+	for _, r := range routes {
+		for _, id := range r.NotifierID {
+			if id == "inapp" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func buildInappRenderer() (render.Renderer, error) {

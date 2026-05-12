@@ -8,6 +8,7 @@
     import Input from "@runwisp/ui/components/Input.svelte";
     import Select from "@runwisp/ui/components/Select.svelte";
     import { getRunStatusConfig } from "@runwisp/ui";
+    import { isFailureEndReason } from "@runwisp/common";
     import type {
         OverviewTaskFilter,
         OverviewTaskSortKey,
@@ -259,11 +260,11 @@
                         />
                     </div>
 
-                    {#if task.lastRun?.end_reason === "failed"}
+                    {#if isFailureEndReason(task.lastRun?.end_reason)}
                         <div
                             class="mt-2 rounded-lg border border-danger-100 bg-danger-50/80 px-3 py-2 text-xs text-danger-700"
                         >
-                            Last run exited with code {task.lastRun.exit_code}
+                            Last run exited with code {task.lastRun?.exit_code}
                         </div>
                     {/if}
                 </button>

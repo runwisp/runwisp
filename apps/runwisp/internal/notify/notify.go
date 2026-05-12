@@ -43,40 +43,29 @@ type Service struct {
 	stopped        atomic.Bool
 }
 
-// DefaultIngressSize is the default capacity of the bus → service buffer.
-// Operators tune it via TOML notify.queue_size.
-const DefaultIngressSize = 1024
-
-// DefaultActionQueueSize is the per-action worker queue capacity. Held
-// internal by design — operators rarely need to think about it.
+// DefaultActionQueueSize is the per-action worker queue capacity and also the
+// size of the bus → service ingress buffer. Held internal by design —
+// operators don't tune these.
 const DefaultActionQueueSize = 256
 
 // Config bundles everything Service.New needs that isn't already on the
 // dispatcher / router.
 type Config struct {
-	Bus             events.EventBus
-	Channels        []Channel     // includes inapp + each configured provider
-	Rules           []Rule        // routing predicates
-	FailureSink     FailureSink   // typically the inapp.Channel
-	IngressSize     int           // bus → service buffer; 0 → DefaultIngressSize
-	ActionQueueSize int           // per-action worker queue; 0 → DefaultActionQueueSize
-	Clock           Clock         // 0 → RealClock
-	Logger          *slog.Logger  // 0 → slog.Default
-	RetentionEvery  time.Duration // 0 → 5min
-	RetentionFn     func()        // executed on each tick; injected by Service builder
+	Bus            events.EventBus
+	Channels       []Channel     // includes inapp + each configured provider
+	Rules          []Rule        // routing predicates
+	FailureSink    FailureSink   // typically the inapp.Channel
+	Clock          Clock         // 0 → RealClock
+	Logger         *slog.Logger  // 0 → slog.Default
+	RetentionEvery time.Duration // 0 → 5min
+	RetentionFn    func()        // executed on each tick; injected by Service builder
 }
 
 // New constructs a Service from already-built channels and pre-compiled rules.
 // It does not touch any I/O — all start-time work happens in Start.
 func New(cfg Config) *Service {
-	ingressSize := cfg.IngressSize
-	if ingressSize <= 0 {
-		ingressSize = DefaultIngressSize
-	}
-	actionQueueSize := cfg.ActionQueueSize
-	if actionQueueSize <= 0 {
-		actionQueueSize = DefaultActionQueueSize
-	}
+	ingressSize := DefaultActionQueueSize
+	actionQueueSize := DefaultActionQueueSize
 	clock := cfg.Clock
 	if clock == nil {
 		clock = RealClock()
@@ -204,7 +193,7 @@ func (s *Service) Stop(ctx context.Context) error {
 // "running tasks" (must never block) and "delivering notifications" (best
 // effort).
 func (s *Service) onBusEvent(e events.Event) {
-	ev := MapRunEvent(e)
+	ev := MapEvent(e)
 	if ev == nil {
 		return
 	}

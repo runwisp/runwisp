@@ -13,23 +13,19 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// RestartBackoffCap caps the exponential restart delay for service replicas.
+// RestartBackoffCap caps the exponential restart delay for service instances.
 const RestartBackoffCap = 60 * time.Second
-
-// BackoffResetThreshold is the minimum run duration that resets a service's
-// per-replica restart attempt counter. Runs that last at least this long are
-// treated as "the service was healthy" — the next failure starts the backoff
-// over from the base delay.
-const BackoffResetThreshold = 60 * time.Second
 
 // retryDelayCap caps the retry delay regardless of backoff curve.
 const retryDelayCap = 5 * time.Minute
 
 // IsFailureReason reports whether the given EndReason represents a failure
-// (and therefore makes the run a candidate for retry).
+// (and therefore makes the run a candidate for retry). ReasonSkipped is
+// excluded by design — a skip is the concurrency policy working as intended,
+// not a failure to retry.
 func IsFailureReason(reason model.EndReason) bool {
 	switch reason {
-	case model.ReasonFailed, model.ReasonTimeout, model.ReasonCrashed:
+	case model.ReasonFailed, model.ReasonTimeout, model.ReasonCrashed, model.ReasonLogOverflow:
 		return true
 	default:
 		return false
@@ -41,7 +37,7 @@ func IsFailureReason(reason model.EndReason) bool {
 func ShouldRestart(task *model.Task, run *model.Run) bool {
 	switch task.Restart {
 	case model.RestartAlways:
-		// Services are supervisor-managed: every replica exit refills the slot,
+		// Services are supervisor-managed: every instance exit refills the slot,
 		// including manual stops and service-restart cancellations. The
 		// daemon-wide shutdown guard prevents restart loops during teardown.
 		if task.Kind.IsService() {
@@ -75,10 +71,10 @@ func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
 	}
 
 	switch task.RetryBackoff {
-	case "exponential":
+	case model.BackoffExponential:
 		delay := baseDelay * (1 << min(attempt, 30))
 		return min(delay, retryDelayCap)
-	case "linear":
+	case model.BackoffLinear:
 		delay := baseDelay * time.Duration(attempt+1)
 		return min(delay, retryDelayCap)
 	default:
@@ -86,20 +82,32 @@ func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
 	}
 }
 
-// ComputeRestartDelay calculates the delay before a service replica is
+// ComputeRestartDelay calculates the delay before a service instance is
 // re-spawned after exiting. attempt is the number of consecutive prior
-// restarts without a healthy (>= BackoffResetThreshold) run.
+// restarts without a healthy run (a run that lived past the supervisor's
+// configured backoff_reset_after).
 func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
 	base := task.RestartDelay
 	if base <= 0 {
 		base = time.Second
 	}
-	if attempt <= 0 || task.RestartBackoff != model.RestartBackoffExponential {
+	if attempt <= 0 {
 		return base
 	}
-	delay := base * (1 << min(attempt, 30))
-	if delay > RestartBackoffCap || delay <= 0 {
-		return RestartBackoffCap
+	switch task.RestartBackoff {
+	case model.BackoffExponential:
+		delay := base * (1 << min(attempt, 30))
+		if delay > RestartBackoffCap || delay <= 0 {
+			return RestartBackoffCap
+		}
+		return delay
+	case model.BackoffLinear:
+		delay := base * time.Duration(attempt+1)
+		if delay > RestartBackoffCap || delay <= 0 {
+			return RestartBackoffCap
+		}
+		return delay
+	default:
+		return base
 	}
-	return delay
 }

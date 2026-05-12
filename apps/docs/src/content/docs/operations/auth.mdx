@@ -1,0 +1,78 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Auth
+description: How RunWisp authenticates Web UI, TUI, and REST clients — one password, one session, rate limiting, and reverse-proxy trust.
+---
+
+RunWisp has one password and one session. Type the password, get a
+session, and use that to drive the Web UI, TUI, and REST API. No
+users, no roles, no API keys. The trust model is "if you can log in,
+you control the daemon", and RunWisp is built for one operator on one
+machine.
+
+## Logging in
+
+The Web UI shows a single password field. The TUI opens the browser
+straight in when you start it locally with `runwisp`, or asks for the
+password via env var / CLI flag when you connect to a remote daemon.
+
+Your password never travels over the network as plain text. The login
+uses a challenge-response handshake: the browser asks the daemon for a
+one-time challenge, mixes it with your password, and sends back a hash
+the daemon can verify. Even on plain HTTP behind a TLS-terminating
+proxy, the password stays out of the wire.
+
+After a successful login the daemon issues a session in a secure
+cookie. Restart the daemon to invalidate every session at once.
+
+## The password
+
+The password lives in the daemon's SQLite database, inside the data
+directory (which is created with `0700` perms — only the daemon's
+user can read it). On first run RunWisp generates a random password,
+stores it in SQLite, and prints it once to stdout.
+
+`RUNWISP_PASSWORD` overrides the stored value. When set, RunWisp uses
+the env value in memory only — it is **not** written to SQLite. That
+is what you want for Docker secrets, systemd's `LoadCredential=`, or
+sealed-secrets workflows that deliberately keep credentials out of the
+data directory.
+
+To rotate the password, delete the `config_entries` row with key
+`password` (or set `RUNWISP_PASSWORD` to a new value) and restart the
+daemon. Every existing session is invalidated.
+
+## Rate limiting
+
+Failed login attempts are rate-limited per source IP. Cross the limit
+and you get `429 Too Many Requests` until the window slides past;
+restarting the daemon clears the counter.
+
+Live log streams are limited too — at most a few dozen open at once,
+plus a small per-IP cap — so a buggy script can't accidentally exhaust
+the daemon. If you hit the limit, the response is `503 Service
+Unavailable`; close some open log views and try again.
+
+## Reverse proxies
+
+RunWisp binds to `127.0.0.1:9477` by default and serves plain HTTP.
+To expose it publicly with TLS, run a reverse proxy in front (nginx,
+Caddy, Traefik, Cloudflare Tunnel, …) and tell the daemon which IP
+ranges that proxy lives on:
+
+```bash
+export RUNWISP_TRUST_PROXY='10.0.0.0/8,2001:db8::/32'
+runwisp daemon --host 127.0.0.1 --port 9477
+```
+
+`RUNWISP_TRUST_PROXY` is a comma-separated list of CIDR ranges whose
+`X-Forwarded-Proto` and `X-Forwarded-For` headers RunWisp will trust.
+When a request from a trusted range arrives with `X-Forwarded-Proto:
+https`, the daemon treats the connection as secure and marks the
+session cookie accordingly. Rate limiting always counts the real TCP
+peer, not the forwarded header, so a misconfigured proxy can't open a
+hole.
+
+The daemon rejects `0.0.0.0/0` and `::/0` — trusting the entire
+internet would let any client lie about its source IP.

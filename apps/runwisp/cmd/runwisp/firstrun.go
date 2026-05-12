@@ -1,0 +1,53 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"github.com/mattn/go-isatty"
+	"github.com/runwisp/runwisp/internal/config"
+)
+
+// scaffoldIfMissing checks for a runwisp.toml at path. If it is absent and
+// stdin is attached to a terminal, prompts the operator to create a starter
+// config and writes one on confirmation. Non-TTY callers (background daemon,
+// systemd, Docker) are a no-op — the daemon falls back to the built-in demo
+// task and emits a warning.
+func scaffoldIfMissing(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		return nil
+	}
+	return promptAndScaffold(path, os.Stdin, os.Stderr)
+}
+
+func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
+	fmt.Fprintf(out, "No runwisp.toml at %s.\n", path)
+	fmt.Fprint(out, "Create a starter with one example task? [Y/n] ")
+
+	answer, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("read prompt response: %w", err)
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "", "y", "yes":
+		if err := config.WriteInit(path); err != nil {
+			return fmt.Errorf("write starter: %w", err)
+		}
+		fmt.Fprintf(out, "Created %s\n", path)
+		return nil
+	default:
+		return fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://github.com/runwisp/runwisp)", path)
+	}
+}

@@ -87,11 +87,12 @@ func (t *ExecutionTracker) FlushPending(send func(any) error) {
 }
 
 var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
-	model.ReasonSuccess: protocol.ExecutionStatusOk,
-	model.ReasonStopped: protocol.ExecutionStatusStopped,
-	model.ReasonTimeout: protocol.ExecutionStatusTimeout,
-	model.ReasonFailed:  protocol.ExecutionStatusErr,
-	model.ReasonCrashed: protocol.ExecutionStatusErr,
+	model.ReasonSuccess:     protocol.ExecutionStatusOk,
+	model.ReasonStopped:     protocol.ExecutionStatusStopped,
+	model.ReasonTimeout:     protocol.ExecutionStatusTimeout,
+	model.ReasonFailed:      protocol.ExecutionStatusErr,
+	model.ReasonCrashed:     protocol.ExecutionStatusErr,
+	model.ReasonLogOverflow: protocol.ExecutionStatusErr,
 }
 
 func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {

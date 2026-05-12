@@ -28,7 +28,13 @@ export interface OverviewSummary {
 
 export type OverviewTaskCounts = Record<OverviewTaskFilter, number>;
 
-const ATTENTION_STATUSES = new Set<RunStatus>(["failed", "crashed", "stopped", "timeout"]);
+const ATTENTION_STATUSES = new Set<RunStatus>([
+    "failed",
+    "crashed",
+    "stopped",
+    "timeout",
+    "log_overflow",
+]);
 const TASK_STATE_ORDER: Record<OverviewTaskState, number> = {
     attention: 0,
     running: 1,

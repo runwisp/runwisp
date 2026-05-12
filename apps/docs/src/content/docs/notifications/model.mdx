@@ -1,0 +1,251 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Notifications model
+description: How RunWisp tells you something broke — the in-app bell, optional outbound channels, routing, and coalescing.
+---
+
+When a task fails, you want to know. RunWisp has two layers for that:
+
+1. **The bell** in the Web UI and the alert line in the TUI. Always on, no
+   config required.
+2. **Outbound channels** — off by default. Add one with a `[[notifier]]`
+   block. See the **Providers** section for the channels that ship today.
+
+Everything below ships in the binary. No plugins, no remote service to
+sign up for. A laptop with the network unplugged still shows a row in the
+bell when a task fails.
+
+## What you get with zero config
+
+Every task and service that ends with `run.failed`, `run.timeout`, or
+`run.crashed` writes one row in SQLite and streams it to the Web UI bell
+and the TUI footer. The row survives a daemon restart, so the badge
+count is still right after a reboot.
+
+That's the default. You don't write any TOML to get it.
+
+## Adding an outbound channel
+
+Three steps, the same shape for every provider:
+
+1. **Declare the channel** in a `[[notifier]]` block. One per channel.
+2. **Wire it up** in one of two ways:
+    - [Per-task notifications](/notifications/per-task/) —
+      `notify_on_failure` directly on the task. Best when one task has its
+      own destination.
+    - [Notification rules](/notifications/routes/) — a
+      `[[notification_route]]` block. Best when one rule covers many tasks.
+3. **Test it** by triggering a task that fails on purpose.
+
+```toml
+[[notifier]]
+id              = "slack-ops"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+
+[tasks.backup-postgres]
+cron              = "30 2 * * *"
+run               = "/usr/local/bin/backup.sh"
+notify_on_failure = ["slack-ops"]
+```
+
+That is a working setup. The same shape works for every provider — see the
+**Providers** section: [Slack](/notifications/providers/slack/) ·
+[Telegram](/notifications/providers/telegram/).
+
+## `[[notifier]]` — declaring a channel
+
+Every notifier needs:
+
+| Key    | Type   | Required | What it does                                                                                                                                                                                                                |
+| ------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`   | string | yes      | Name you use to refer to the channel from routes and per-task fields. Must be unique. `"inapp"` is reserved. Cannot contain `:` (reserved for [inline target overrides](/notifications/per-task/#inline-target-overrides)). |
+| `type` | enum   | yes      | `"slack"` or `"telegram"` for now. More drivers will land later.                                                                                                                                                            |
+
+The rest of the fields depend on the type — see the provider page for
+the full list.
+
+```toml
+[[notifier]]
+id              = "slack-ops"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+channel         = "#ops-alerts"   # optional
+
+[[notifier]]
+id            = "tg-oncall"
+type          = "telegram"
+bot_token_env = "RUNWISP_TG_TOKEN"
+chat_id       = "-1001234567890"
+```
+
+## Storing the secret
+
+Each notifier needs a credential — for example a webhook URL or a bot
+token. You can supply it three ways:
+
+- **Env var** (recommended): set `webhook_url_env = "RUNWISP_SLACK_URL"`
+  and put the value in your shell or systemd unit. Works the same
+  everywhere.
+- **File**: set `webhook_url_file = "secrets/slack.url"`. Relative paths
+  resolve under the data directory. Useful when a secrets manager
+  writes the value to disk for you. Make the file `chmod 600`.
+- **Inline**: put the value straight in `runwisp.toml`. Convenient,
+  but TOML files are often committed to git or shared in chat. Use
+  inline values only for local experiments.
+
+Set **exactly one** of the three per secret. Setting two of them is a
+config-load error — the loader does not pick a winner; it stops the
+daemon.
+
+In any delivery error reported in the bell or the daemon log, the secret
+is replaced with `[redacted]` before the message is written. A 5xx
+response from the provider will not leak your webhook URL into a log
+file.
+
+## Routing events to channels
+
+There are two ways to point events at a channel. Both are first-class TOML;
+neither is a derivative of the other. They can be used together.
+
+- **[Per-task notifications](/notifications/per-task/)** —
+  `notify_on_failure = ["slack-ops"]` on one `[tasks.*]` or
+  `[services.*]` block. Best when one task has its own destination, and
+  you want the setting to live next to the task definition.
+- **[Notification rules](/notifications/routes/)** — a
+  `[[notification_route]]` block matches many tasks by name pattern and
+  matches any combination of event kinds. Best when one rule should cover
+  many tasks.
+
+The two work together. A task with `notify_on_failure = ["slack-ops"]`
+that is also matched by a rule ending in `slack-ops` still sends one
+message — duplicate channels are removed.
+
+### `global_notifiers` — the always-on list
+
+`[notify] global_notifiers` is the single setting that controls which
+channels receive every failure regardless of what is on the task. The
+built-in default is `["inapp"]`, which is why the bell works with zero
+TOML.
+
+```toml
+[notify]
+global_notifiers = ["inapp"]                # default — bell on
+# global_notifiers = []                     # silence the bell
+# global_notifiers = ["slack-ops"]          # send every failure to this channel
+# global_notifiers = ["inapp", "slack-ops"] # both
+```
+
+Every id in this list is added to the channels named on each task, with
+duplicates removed. It also acts as the catch-all for tasks that do not
+name any channel. So `global_notifiers = ["inapp"]` plus
+`notify_on_failure = ["slack-ops"]` sends to `slack-ops` **and** adds a
+row to the bell — not `slack-ops` instead of the bell.
+
+`"inapp"` is the only id that does not need a `[[notifier]]` block.
+Every other id in `global_notifiers` must point at a declared notifier.
+
+## Coalescing
+
+A task that fails every minute could send 60 messages an hour without
+help. RunWisp groups repeated failures by **dedup key** — the
+combination of task name, event kind, and end reason.
+
+Inside the **coalescing window** (default `1h`), repeats with the same
+dedup key update the same bell row instead of writing a new one. The
+row's `count` goes up, and the last N timestamps are kept in an
+**occurrence ring** (default size `10`).
+
+```toml
+[notify]
+coalesce_window = "30m"
+occurrence_ring = 5
+```
+
+Outbound channels coalesce on the same key by default: the first failure
+in a window is sent immediately. The next ones are held back until either
+`occurrence_ring` events accumulate (the Nth is sent as a "check-in") or
+the window expires (one closing "summary" is sent). In the channel you
+see the first failure, periodic check-ins, and one summary — not 60
+separate messages.
+
+```toml
+[notify]
+# coalesce_outbound = false   # send one message per event
+```
+
+### Worked timeline
+
+A `*/1 * * * *` task that starts failing at `T+0`, with defaults
+(`coalesce_window = 1h`, `occurrence_ring = 10`,
+`coalesce_outbound = true`):
+
+| When          | Failure #          | Bell row                       | Outbound delivery                                                               |
+| ------------- | ------------------ | ------------------------------ | ------------------------------------------------------------------------------- |
+| `T+0`         | 1                  | new row, `count=1`             | **first** — sent immediately                                                    |
+| `T+1m`        | 2                  | same row, `count=2`            | held                                                                            |
+| `T+2m..+9m`   | 3 … 10             | same row, `count` keeps rising | held                                                                            |
+| `T+10m`       | 11                 | same row, `count=11`           | **check-in** — `coalesced_count=10`                                             |
+| `T+11m..+19m` | 12 … 20            | same row                       | held                                                                            |
+| `T+20m`       | 21                 | same row, `count=21`           | **check-in** — `coalesced_count=10`                                             |
+| `T+30m`       | task stops failing |                                | (nothing yet)                                                                   |
+| `T+1h10m`     | —                  | row stays as-is                | **summary** — `coalesced_summary=true`, count = events held since last check-in |
+| `T+25h`       | (new failure)      | new row in the next window     | first again                                                                     |
+
+The window resets each time something is sent. After a check-in or
+summary, the next failure starts a fresh window — the "first" cadence
+repeats as long as failures keep arriving.
+
+Rule of thumb for a task that fails repeatedly: at most one outbound
+message every `coalesce_window / occurrence_ring`. Defaults give one
+message every six minutes. Raise `occurrence_ring` for fewer messages,
+lower `coalesce_window` for a faster recovery summary.
+
+If every failure is independently meaningful — for example a CI build
+agent — set `coalesce_outbound = false`. The bell still coalesces (the
+row count would otherwise grow without bound); only outbound deliveries
+change.
+
+## Delivery failures
+
+If the channel returns a 5xx or the network is down, the notifier retries
+with exponential backoff (1s base, 60s cap, 5-minute total budget) and
+respects `Retry-After` on 429 responses.
+
+When retries run out, the daemon creates a `notify.delivery_failed` event
+carrying the original event's metadata. That event is sent **only to the
+bell** — never back through the outbound router. Retrying the same
+channel to tell you that channel is down would just make things worse.
+You see a yellow warning in the bell with the original task and kind.
+
+You can still route `notify.delivery_failed` through a _different_
+channel — for example, "if one channel is down, send a message to the
+on-call channel on another":
+
+```toml
+[[notification_route]]
+match  = { kind = ["notify.delivery_failed"] }
+notify = ["tg-oncall"]
+```
+
+## Trust model
+
+- **Secrets stay local.** They live in env vars, files under the data
+  dir, or inline TOML — and they never travel anywhere except the
+  HTTPS request body to the channel endpoint.
+- **Secrets are never logged.** Webhook URLs and bot tokens are
+  redacted from any error message before it reaches the daemon log or
+  the bell.
+- **Secrets are never sent to the optional control-plane integration.**
+
+## Where to next
+
+- **Providers** — declare an outbound channel:
+  [Slack](/notifications/providers/slack/) ·
+  [Telegram](/notifications/providers/telegram/).
+- [Per-task notifications](/notifications/per-task/) —
+  `notify_on_failure` and `notify_on_success` on one task.
+- [Notification rules](/notifications/routes/) — one rule covering many
+  tasks.
+- [Global settings](/notifications/global/) — coalescing and retention.

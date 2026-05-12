@@ -31,9 +31,9 @@ type TriggerRunOptions struct {
 	ExternalExecutionID string
 	RetryAttempt        int
 	RetryOfRunID        *string
-	// ReplicaIndex pins the run to a specific replica slot. Required for
+	// InstanceIndex pins the run to a specific instance slot. Required for
 	// supervisor-driven restarts of services; nil for cron/API/retry runs.
-	ReplicaIndex *int
+	InstanceIndex *int
 }
 
 // Compile-time check: *defaultTaskManager satisfies TaskManager.
@@ -47,7 +47,12 @@ type defaultTaskManager struct {
 	eventBus    events.EventBus
 	mu          sync.RWMutex
 	isShutdown  atomic.Bool
-	wg          sync.WaitGroup
+	// deadlineExceeded latches when the daemon-wide shutdown deadline fires.
+	// Set BEFORE survivors are force-killed so each goroutine, on resolving
+	// its run outcome, sees the flag and records ReasonDaemonStopped instead
+	// of the per-task outcome.
+	deadlineExceeded atomic.Bool
+	wg               sync.WaitGroup
 }
 
 func NewTaskManager(exec executor.Executor, bus events.EventBus) TaskManager {
@@ -60,8 +65,36 @@ func NewTaskManager(exec executor.Executor, bus events.EventBus) TaskManager {
 }
 
 // BindPersistenceHook wires persistence to both the manager and executor.
+// Also wires the executor's process-started callback so the manager can
+// reach each active run's ForceKill closure during shutdown.
 func (m *defaultTaskManager) BindPersistenceHook(hook RunPersistenceHook) {
 	m.persistence.BindHook(hook, m.executor)
+
+	type onStartedSetter interface {
+		SetOnProcessStarted(func(runID string, forceKill func()))
+	}
+	if setter, ok := m.executor.(onStartedSetter); ok {
+		setter.SetOnProcessStarted(m.registerForceKill)
+	}
+}
+
+// registerForceKill stores the executor's ForceKill closure on the matching
+// ActiveRun so the daemon shutdown coordinator can reach it later. Called
+// from the executor goroutine right after the backend starts the process.
+func (m *defaultTaskManager) registerForceKill(runID string, forceKill func()) {
+	if forceKill == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ts := range m.tasks {
+		for _, ar := range ts.active {
+			if ar.Run.ID == runID {
+				ar.ForceKill = forceKill
+				return
+			}
+		}
+	}
 }
 
 // UpsertTask adds a task if missing or replaces the existing definition.
@@ -79,9 +112,10 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 
 	if task.Kind.IsService() {
 		if ts.supervisor == nil {
-			ts.supervisor = services.NewSupervisor(task.Name, task.Instances)
+			ts.supervisor = services.NewSupervisor(task.Name, task.Instances, task.BackoffResetAfter)
 		} else {
 			ts.supervisor.SetInstances(task.Instances)
+			ts.supervisor.SetBackoffReset(task.BackoffResetAfter)
 		}
 	}
 
@@ -116,7 +150,7 @@ type PendingRunsResult struct {
 }
 
 // LoadPendingRuns re-queues runs that were pending when the system stopped.
-// Service replicas are never resumed — the supervisor spawns fresh runs at
+// Service instances are never resumed — the supervisor spawns fresh runs at
 // the configured Instances count instead. Pending service rows are marked
 // failed so they don't linger in the database.
 func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult {
@@ -140,6 +174,13 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 		}
 
 		if ts.task.OnOverlap == model.PolicyQueue {
+			queueMax := getQueueMax(ts.task)
+			if queueMax > 0 && len(ts.queue) >= queueMax {
+				r.End(model.ReasonQueueFull, -1, time.Now())
+				m.persistence.PersistExisting(&r)
+				result.Failed++
+				continue
+			}
 			ts.queue = append(ts.queue, &r)
 			ts.cond.Signal()
 			result.Queued++
@@ -185,7 +226,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	}
 
 	if ts.task.Kind.IsService() {
-		idx, err := ts.supervisor.Reserve(options.ReplicaIndex)
+		idx, err := ts.supervisor.Reserve(options.InstanceIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -198,7 +239,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 			CreatedAt:           time.Now(),
 			RetryAttempt:        options.RetryAttempt,
 			RetryOfRunID:        options.RetryOfRunID,
-			ReplicaIndex:        idx,
+			InstanceIndex:       idx,
 		}
 		m.persistence.PersistNew(run)
 		m.publishRun(events.EventRunCreated, run)
@@ -225,8 +266,13 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	switch action {
 	case actionRejected:
-		run.End(model.ReasonFailed, -1, time.Now())
+		run.End(model.ReasonSkipped, -1, time.Now())
 		m.persistence.PersistExisting(run)
+		return run, actionErr
+	case actionQueueFull:
+		run.End(model.ReasonQueueFull, -1, time.Now())
+		m.persistence.PersistExisting(run)
+		m.publishRun(events.EventRunFailed, run)
 		return run, actionErr
 	case actionQueued:
 		return run, nil
@@ -241,9 +287,37 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	return run, nil
 }
 
-// StartServiceReplicas brings every replica of a service up to its desired
-// count. Idempotent — already-running replicas are left untouched.
-func (m *defaultTaskManager) StartServiceReplicas(taskName string) error {
+// RecordSkippedFiring persists a run that the runtime suppressed before any
+// executor work (e.g. a DST wall-clock duplicate). The run lives only as an
+// audit row — no process is started, no streams open. The run is created and
+// then immediately ended with the supplied reason.
+func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.tasks[taskName]; !exists {
+		return fmt.Errorf("task not found: %s", taskName)
+	}
+
+	now := time.Now()
+	run := &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    taskName,
+		Status:      model.PhasePending,
+		TriggeredBy: triggeredBy,
+		CreatedAt:   now,
+	}
+	m.persistence.PersistNew(run)
+	m.publishRun(events.EventRunCreated, run)
+	run.End(reason, -1, now)
+	m.persistence.PersistExisting(run)
+	m.publishRun(events.EventRunFailed, run)
+	return nil
+}
+
+// StartServiceInstances brings every instance of a service up to its desired
+// count. Idempotent — already-running instances are left untouched.
+func (m *defaultTaskManager) StartServiceInstances(taskName string) error {
 	m.mu.RLock()
 	ts, exists := m.tasks[taskName]
 	if !exists {
@@ -254,24 +328,57 @@ func (m *defaultTaskManager) StartServiceReplicas(taskName string) error {
 		m.mu.RUnlock()
 		return fmt.Errorf("task %s is not a service", taskName)
 	}
+	if ts.supervisor.IsStopped() {
+		m.mu.RUnlock()
+		return nil
+	}
 	missing := ts.supervisor.MissingSlots()
 	m.mu.RUnlock()
 
 	for _, idx := range missing {
 		i := idx
 		if _, err := m.TriggerRunWithOptions(taskName, TriggerRunOptions{
-			TriggeredBy:  model.TriggeredByAPI,
-			ReplicaIndex: &i,
+			TriggeredBy:   model.TriggeredByAPI,
+			InstanceIndex: &i,
 		}); err != nil {
-			slog.Error("Failed to start service replica", "task", taskName, "replica", i, "err", err)
+			slog.Error("Failed to start service instance", "task", taskName, "instance", i, "err", err)
 		}
 	}
 	return nil
 }
 
-// RestartServiceReplicas cancels every active replica of a service. The exit
-// handler refills each freed slot via the supervisor.
-func (m *defaultTaskManager) RestartServiceReplicas(taskName string) error {
+// RestartServiceInstances brings a service back to its desired instance count.
+// If the service was operator-stopped, the stop flag is cleared and missing
+// slots are spawned. If the service is already running, every active instance
+// is cancelled and the exit handler refills the freed slots via the supervisor.
+func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
+	m.mu.Lock()
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		m.mu.Unlock()
+		return fmt.Errorf("task not found: %s", taskName)
+	}
+	if !ts.task.Kind.IsService() {
+		m.mu.Unlock()
+		return fmt.Errorf("task %s is not a service", taskName)
+	}
+	wasStopped := ts.supervisor.IsStopped()
+	ts.supervisor.MarkRunning()
+	for _, ar := range ts.active {
+		ar.Cancel()
+	}
+	m.mu.Unlock()
+
+	if wasStopped {
+		return m.StartServiceInstances(taskName)
+	}
+	return nil
+}
+
+// StopService marks the service as operator-stopped (in-memory only, cleared
+// on daemon restart) and cancels every live instance. The exit handler honours
+// the flag and stops refilling slots.
+func (m *defaultTaskManager) StopService(taskName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -282,6 +389,7 @@ func (m *defaultTaskManager) RestartServiceReplicas(taskName string) error {
 	if !ts.task.Kind.IsService() {
 		return fmt.Errorf("task %s is not a service", taskName)
 	}
+	ts.supervisor.MarkStopped()
 	for _, ar := range ts.active {
 		ar.Cancel()
 	}
@@ -325,6 +433,13 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 
 	endTime := time.Now()
 	outcome := resolveRunOutcome(result)
+	if m.deadlineExceeded.Load() {
+		// Daemon shutdown ran past its bound — the run was force-killed by
+		// the shutdown coordinator. Override the per-task outcome so the
+		// audit row reflects the reason the operator cares about.
+		outcome.endReason = model.ReasonDaemonStopped
+		outcome.eventType = events.EventRunFailed
+	}
 	run.End(outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)
@@ -342,7 +457,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	}
 	var nextRestartAttempt int
 	if task.Kind.IsService() {
-		nextRestartAttempt = ts.supervisor.RecordExit(run.ReplicaIndex, runDuration)
+		nextRestartAttempt = ts.supervisor.RecordExit(run.InstanceIndex, runDuration)
 	}
 	if ts.cond != nil {
 		ts.cond.Signal()
@@ -381,6 +496,12 @@ func resolveRunOutcome(result *executor.ExecuteResult) runOutcome {
 	switch {
 	case result.TimedOut:
 		reason = model.ReasonTimeout
+	case result.KilledByPolicy:
+		// log_on_full = "kill_task" tripped: the run failed to stay inside
+		// its log budget. Recorded as log_overflow so the cause is visible
+		// at a glance; still treated as a failure for retry and notification
+		// policy.
+		reason = model.ReasonLogOverflow
 	case result.Stopped:
 		reason = model.ReasonStopped
 	case result.ExitCode == 0:
@@ -454,8 +575,19 @@ func (m *defaultTaskManager) cancelActiveRun(match func(*ActiveRun) bool, notFou
 	return errors.New(notFoundMsg)
 }
 
-// Shutdown terminates all active runs and prepares for exit.
+// Shutdown terminates all active runs and waits for them to drain. Equivalent
+// to ShutdownWithDeadline(0) — no upper bound, runs settle on their own
+// per-task graceful_stop ladders.
 func (m *defaultTaskManager) Shutdown() {
+	m.ShutdownWithDeadline(0)
+}
+
+// ShutdownWithDeadline cancels every active run, waits up to deadline for
+// goroutines to exit cleanly, and on timeout SIGKILLs survivors so the
+// daemon can exit without leaving orphaned processes behind. Surviving runs
+// are recorded with ReasonDaemonStopped via the deadlineExceeded flag.
+// deadline <= 0 means "wait indefinitely" (matches old behaviour).
+func (m *defaultTaskManager) ShutdownWithDeadline(deadline time.Duration) {
 	m.isShutdown.Store(true)
 	m.mu.Lock()
 	for _, ts := range m.tasks {
@@ -468,6 +600,50 @@ func (m *defaultTaskManager) Shutdown() {
 	}
 	m.mu.Unlock()
 
-	m.wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+
+	if deadline <= 0 {
+		<-done
+		m.persistence.Shutdown()
+		return
+	}
+
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+		// All goroutines exited within the deadline.
+	case <-timer.C:
+		// Set the latch BEFORE force-killing so any goroutine that observes
+		// its own outcome after the kill records ReasonDaemonStopped.
+		m.deadlineExceeded.Store(true)
+		m.forceKillSurvivors()
+		<-done
+	}
+
 	m.persistence.Shutdown()
+}
+
+// forceKillSurvivors fires the ForceKill closure on every active run so the
+// underlying processes die immediately, unblocking their executor.Wait
+// goroutines. Must be called only after m.deadlineExceeded is set.
+func (m *defaultTaskManager) forceKillSurvivors() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ts := range m.tasks {
+		for _, ar := range ts.active {
+			if ar.ForceKill == nil {
+				continue
+			}
+			slog.Warn("Daemon shutdown deadline exceeded — force-killing run",
+				"task", ts.task.Name, "run", ar.Run.ID,
+			)
+			ar.ForceKill()
+		}
+	}
 }

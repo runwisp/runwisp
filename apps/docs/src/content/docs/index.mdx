@@ -1,0 +1,102 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: RunWisp documentation
+description: Reference documentation for the RunWisp daemon — installation, TOML configuration, operations, the embedded Web UI, and the REST API.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+These docs cover every part of running the RunWisp daemon — installing
+the binary, writing a `runwisp.toml`, and operating the resulting
+single-machine cron + supervisor. RunWisp is a single Go binary that
+replaces `crond` plus a small supervisor: tasks and services in one
+`runwisp.toml`, run history and live logs in an embedded Web UI, and a
+REST API for automation.
+
+## Start here
+
+<CardGrid>
+    <LinkCard
+        title="Install"
+        description="One-liner installer, bunx, or a tarball — Linux / macOS / WSL."
+        href="/getting-started/install/"
+    />
+    <LinkCard
+        title="Your first task"
+        description="Write a runwisp.toml, start the daemon, watch a run stream live."
+        href="/getting-started/first-task/"
+    />
+</CardGrid>
+
+## Reference
+
+<CardGrid>
+    <LinkCard
+        title="Concepts"
+        description="How scheduling, concurrency, retries, logs, and notifications fit together."
+        href="/concepts/tasks-vs-services/"
+    />
+    <LinkCard
+        title="Configuration"
+        description="Every key in runwisp.toml — tasks, services, storage, defaults."
+        href="/configuration/overview/"
+    />
+    <LinkCard
+        title="Notifications"
+        description="The notifications model, outbound providers, routing rules, and per-task notifications."
+        href="/notifications/model/"
+    />
+    <LinkCard
+        title="CLI reference"
+        description="Every subcommand and flag — daemon, exec, run-task, list, status, validate."
+        href="/cli/"
+    />
+    <LinkCard
+        title="API reference"
+        description="REST endpoints and SSE log streams — generated from the OpenAPI schema."
+        href="/api/"
+    />
+</CardGrid>
+
+## In production
+
+<CardGrid>
+    <LinkCard
+        title="Operations"
+        description="Auth, data directory, upgrades between versions, and troubleshooting."
+        href="/operations/auth/"
+    />
+    <LinkCard
+        title="Recipes"
+        description="Worked examples — nightly backups, health checks, Slack alerts, deploy hooks."
+        href="/recipes/backup/"
+    />
+    <LinkCard
+        title="The Web UI tour"
+        description="Login, runs, tasks, notifications — what the embedded dashboard does."
+        href="/getting-started/web-ui-tour/"
+    />
+</CardGrid>
+
+## Looking for something specific?
+
+- **A TOML field you saw in an example** — search this site or jump
+  straight to [Configuration overview](/configuration/overview/).
+- **A subcommand or flag** — [CLI reference](/cli/) lists every one.
+- **A REST endpoint** — [API reference](/api/) is generated from the
+  OpenAPI schema; the same schema ships as `/openapi.json` from a
+  running daemon.
+- **An error message** —
+  [Troubleshooting](/operations/troubleshooting/) is organised by
+  symptom and lists the exact strings the daemon emits.
+- **A version's breaking changes** —
+  [Upgrading](/operations/upgrading/) maps each bump (0.1 → 0.2 → 0.3 → 0.4).
+
+## Source and contributing
+
+RunWisp is open source under Apache-2.0 and developed at
+[github.com/runwisp/runwisp](https://github.com/runwisp/runwisp). Every
+docs page has an "Edit this page" link in its footer that points at the
+source MDX file — typo fixes and clarifications welcome as PRs against
+[`main`](https://github.com/runwisp/runwisp/tree/main/apps/docs).

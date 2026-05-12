@@ -5,7 +5,7 @@
     import { ArrowRight, History } from "@lucide/svelte";
     import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
     import { getRunStatusConfig, runDisplayStatus } from "@runwisp/ui";
-    import type { Run } from "@runwisp/common";
+    import { isFailureEndReason, type Run } from "@runwisp/common";
     import {
         formatRunDurationLabel,
         formatRunStartedLabel,
@@ -68,8 +68,8 @@
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex min-w-0 items-center gap-1.5">
                                 <span class="truncate text-sm font-medium text-mist-950">
-                                    {run.task_name}{#if run.replica_index > 0}<span
-                                            class="text-mist-500">#{run.replica_index}</span
+                                    {run.task_name}{#if run.instance_index > 0}<span
+                                            class="text-mist-500">#{run.instance_index}</span
                                         >{/if}
                                 </span>
                                 <span
@@ -88,7 +88,7 @@
                             {formatRunStartedLabel(run)} &middot;
                             {formatRunDurationLabel(run)}
                             &middot; {formatTriggeredByLabel(run.triggered_by)}
-                            {#if run.end_reason === "failed"}
+                            {#if isFailureEndReason(run.end_reason)}
                                 <span class="text-danger-600">· Exit {run.exit_code}</span>
                             {/if}
                         </p>

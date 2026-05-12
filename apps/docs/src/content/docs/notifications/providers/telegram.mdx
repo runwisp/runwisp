@@ -1,0 +1,194 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Telegram
+description: Set up the Telegram notifier end-to-end — create a bot, find your chat_id, store the token safely, declare the channel, route failures to it, and test it.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+The Telegram driver posts via Telegram's Bot API. One bot token plus
+one `chat_id` maps to one destination — a personal chat, a group, or
+a channel. The setup is the same shape as the
+[Slack provider](/notifications/providers/slack/); the one thing that
+catches people out the first time is finding their `chat_id`.
+
+## Fields
+
+```toml
+[[notifier]]
+id            = "tg-oncall"
+type          = "telegram"
+bot_token_env = "RUNWISP_TG_TOKEN"
+chat_id       = "-1001234567890"
+```
+
+`id` and `type` are required on every notifier. Exactly one of
+`bot_token`, `bot_token_env`, `bot_token_file` must be set —
+[the secret rule](/notifications/model/#storing-the-secret).
+
+| Key              | Required           | What it does                                                                    |
+| ---------------- | ------------------ | ------------------------------------------------------------------------------- |
+| `bot_token`      | one-of (see below) | Inline bot token.                                                               |
+| `bot_token_env`  | one-of             | Name of an env var holding the token.                                           |
+| `bot_token_file` | one-of             | Path to a file containing the token. Relative paths resolve under the data dir. |
+| `chat_id`        | yes                | Chat ID. Stored as a string so negative IDs (groups) round-trip cleanly.        |
+| `template_path`  | no                 | Override the embedded HTML message template.                                    |
+
+## 1. Create the bot
+
+Open Telegram and message [@BotFather](https://t.me/BotFather):
+
+1. Send `/newbot`.
+2. Pick a display name (humans see this).
+3. Pick a username — it must end in `bot`, e.g. `runwisp_ops_bot`.
+4. BotFather replies with an HTTP API token like
+   `123456789:AAEa-PXxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`. Save it.
+
+Treat the token as a secret. With it, anyone can post as your bot.
+
+## 2. Find the chat ID
+
+The `chat_id` identifies where the bot will send messages — a
+personal chat, a group, or a channel.
+
+### A direct chat with the bot
+
+Message your bot from your account, then visit:
+
+```
+https://api.telegram.org/bot<TOKEN>/getUpdates
+```
+
+Look for `"chat": { "id": 123456789, … }` in the JSON. That number
+is your personal `chat_id`.
+
+### A group chat
+
+Add the bot to the group, send any message in the group, hit the
+same `getUpdates` URL. Group IDs are **negative** — they look like
+`-1001234567890`. RunWisp stores `chat_id` as a string so the
+negative number round-trips through TOML cleanly.
+
+### A channel
+
+Add the bot as an administrator with "Post Messages" permission, post
+a message, hit `getUpdates`. Channel IDs also start with `-100`.
+
+## 3. Store the token
+
+Pick one of the three options below. Setting more than one is a
+config-load error.
+
+<Tabs syncKey="telegram-secret">
+    <TabItem label="Env var" icon="seti:shell">
+        The simplest option for any deployment — Docker, systemd,
+        bare metal. Set the variable in whatever already manages
+        your environment.
+
+        ```bash
+        export RUNWISP_TG_TOKEN=123456789:AAEa-PXxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        runwisp daemon
+        ```
+
+        ```toml
+        [[notifier]]
+        id            = "tg-oncall"
+        type          = "telegram"
+        bot_token_env = "RUNWISP_TG_TOKEN"
+        chat_id       = "-1001234567890"
+        ```
+    </TabItem>
+    <TabItem label="File on disk" icon="document">
+        Useful when a secrets manager (Vault agent, sops, Docker
+        secrets at `/run/secrets/...`) writes the token to a known
+        path for you. Relative paths resolve under the data dir.
+
+        ```bash
+        mkdir -p ~/.config/runwisp
+        chmod 0700 ~/.config/runwisp
+        printf '%s\n' '123456789:AAEa-PXxx...' > ~/.config/runwisp/tg-oncall.token
+        chmod 0600 ~/.config/runwisp/tg-oncall.token
+        ```
+
+        ```toml
+        [[notifier]]
+        id             = "tg-oncall"
+        type           = "telegram"
+        bot_token_file = "/home/you/.config/runwisp/tg-oncall.token"
+        chat_id        = "-1001234567890"
+        ```
+    </TabItem>
+    <TabItem label="Inline (don't)" icon="warning">
+        The notifier accepts `bot_token = "123456789:..."` directly.
+        Avoid it — config files are often committed to git or shared
+        in chat.
+
+        ```toml
+        [[notifier]]
+        id        = "tg-oncall"
+        type      = "telegram"
+        bot_token = "123456789:AAEa-PXxx..."
+        chat_id   = "-1001234567890"
+        ```
+    </TabItem>
+
+</Tabs>
+
+## 4. Route failures to it
+
+Identical to Slack — the routing layer does not care which driver is on
+the other end:
+
+```toml
+# On one task:
+[tasks.backup-postgres]
+notify_on_failure = ["tg-oncall"]
+# …
+
+# Or in a notification rule:
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["tg-oncall"]
+```
+
+You can list two notifiers in the same array — the router sends to both,
+and an outage of one channel does not stop delivery on the other:
+
+```toml
+[tasks.critical-job]
+notify_on_failure = ["slack-ops", "tg-oncall"]
+```
+
+## 5. Test it
+
+```bash
+runwisp exec smoke-test       # something that exits non-zero
+```
+
+Telegram messages usually arrive in 1–2 seconds. If yours doesn't:
+
+- **Check the bell** for a `notify.delivery_failed` event with the
+  underlying Telegram API error.
+- **Common causes:** wrong `chat_id` (Telegram answers
+  `400 Bad Request: chat not found`), bot not added to the group,
+  bot lacking permission to post in a channel.
+- **Token sanity check:**
+  `curl https://api.telegram.org/bot<TOKEN>/getMe` — returns the
+  bot's profile if the token is valid.
+
+## What the loader rejects
+
+- Two of `bot_token`, `bot_token_env`, `bot_token_file` set at the
+  same time, or none of them set.
+- An `id` containing `:` (reserved for inline target overrides) or
+  equal to `"inapp"` (reserved).
+
+## Where to next
+
+- [Slack](/notifications/providers/slack/) — same shape, in case you
+  want both channels.
+- [Notification rules](/notifications/routes/) — one rule covering many
+  tasks.
+- [Notifications model](/notifications/model/) — coalescing,
+  delivery failures, the trust model.

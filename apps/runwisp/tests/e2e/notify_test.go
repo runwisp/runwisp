@@ -23,8 +23,11 @@ import (
 
 // TestNotificationsOutboundFiresAndCoalesces covers the success path: a
 // failing run produces a Slack webhook POST, an in-app row, and an SSE
-// notification.created event. A second failure coalesces into the same row
-// (count==2) and emits a notification.updated event.
+// notification.created event. A second failure within the coalescing window
+// folds into the same in-app row (count==2) AND must NOT fire a second
+// outbound webhook — outbound coalescing protects the paging surface from
+// flapping-task storms. A separate test below verifies the
+// `coalesce_outbound = false` opt-out.
 func TestNotificationsOutboundFiresAndCoalesces(t *testing.T) {
 	received := make(chan []byte, 8)
 	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +88,10 @@ notify = ["ops", "inapp"]
 	require.Equal(t, "run.failed", page.Items[0].Kind)
 	require.Equal(t, 1, page.Items[0].Count)
 
-	// Second failure on the same task within the window should coalesce.
+	// Second failure on the same task within the window:
+	//   - the in-app row must coalesce (notification.updated, count >= 2);
+	//   - the outbound webhook must NOT fire — that's the whole point of
+	//     outbound coalescing.
 	_, err = client.TriggerRun("fail-task")
 	require.NoError(t, err)
 
@@ -93,8 +99,65 @@ notify = ["ops", "inapp"]
 	require.Equal(t, created.ID, updated.ID, "must reuse the same row id")
 	require.GreaterOrEqual(t, updated.Count, 2)
 
-	// And the second slack POST must still arrive.
-	waitForWebhook(t, received, 5*time.Second)
+	// Drain anything that might have raced into the channel before the
+	// in-app coalescer fired, then assert the webhook stays silent for the
+	// rest of the window.
+	select {
+	case <-received:
+		t.Fatal("outbound webhook fired a second time within the coalescing window — outbound coalescing is broken")
+	case <-time.After(2 * time.Second):
+	}
+}
+
+// TestNotificationsOutboundCoalesceOptOut verifies the rare opt-out path:
+// `coalesce_outbound = false` restores per-event delivery for users who
+// genuinely want a webhook hit per failure (e.g., piping into their own
+// aggregator).
+func TestNotificationsOutboundCoalesceOptOut(t *testing.T) {
+	received := make(chan []byte, 8)
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		select {
+		case received <- body:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(webhook.Close)
+
+	configPath := writeNotifyConfig(t, fmt.Sprintf(`
+[notify]
+coalesce_window   = "1m"
+coalesce_outbound = false
+
+[tasks.fail-task]
+run = "exit 1"
+
+[[notifier]]
+id          = "ops"
+type        = "slack"
+webhook_url = "%s"
+
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["ops"]
+`, webhook.URL))
+
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+
+	password := waitForPassword(t, daemon.dataDir)
+	client := apiclient.New(daemon.baseURL, password)
+	require.NoError(t, client.Authenticate())
+
+	_, err := client.TriggerRun("fail-task")
+	require.NoError(t, err)
+	waitForWebhook(t, received, 10*time.Second)
+
+	_, err = client.TriggerRun("fail-task")
+	require.NoError(t, err)
+	waitForWebhook(t, received, 10*time.Second)
 }
 
 // TestNotificationsDeliveryFailureSurfacesInApp covers the dispatcher's

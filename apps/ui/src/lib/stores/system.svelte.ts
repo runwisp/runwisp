@@ -17,6 +17,8 @@ function createSystemStore() {
     let arch = $state("—");
     let workDir = $state("—");
     let fingerprint = $state("—");
+    let timezone = $state("");
+    let timezoneSource = $state("");
 
     async function refresh() {
         if (connectionStore.status === "disconnected") return;
@@ -34,6 +36,8 @@ function createSystemStore() {
             arch = sys.arch;
             workDir = sys.work_dir;
             fingerprint = info.fingerprint;
+            timezone = info.resolved_timezone;
+            timezoneSource = info.timezone_source;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
             // silent — system stats are secondary
@@ -76,6 +80,12 @@ function createSystemStore() {
         },
         get fingerprint() {
             return fingerprint;
+        },
+        get timezone() {
+            return timezone;
+        },
+        get timezoneSource() {
+            return timezoneSource;
         },
         refresh,
     };

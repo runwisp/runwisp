@@ -10,8 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// schedulerTZHeader prefixes a `[scheduler] timezone = "UTC"` block so cron
+// tasks in test fixtures satisfy the post-#4 fail-closed timezone validation.
+const schedulerTZHeader = `
+[scheduler]
+timezone = "UTC"
+`
+
 func TestDecode_NotifierAndRoutes(t *testing.T) {
-	src := `
+	src := schedulerTZHeader + `
 [[notifier]]
 id = "ops"
 type = "slack"
@@ -28,12 +35,12 @@ match = { kind = ["run.failed"], task = "backup-*" }
 notify = ["ops", "oncall", "inapp"]
 
 [notify]
-disable_inapp = false
+global_notifiers = ["inapp"]
 coalesce_window = "30m"
 
 [tasks.backup-db]
 cron = "0 3 * * *"
-parallelism = 1
+max_concurrent = 1
 on_overlap = "queue"
 run = "backup.sh"
 notify_on_failure = ["ops"]
@@ -45,7 +52,7 @@ notify_on_failure = ["ops"]
 	assert.Len(t, cfg.Notify.Notifiers, 2)
 	assert.Equal(t, "ops", cfg.Notify.Notifiers[0].ID)
 	assert.Equal(t, "telegram", cfg.Notify.Notifiers[1].Type)
-	assert.False(t, cfg.Notify.DisableInapp)
+	assert.Equal(t, []string{"inapp"}, cfg.Notify.GlobalNotifiers)
 
 	require.Len(t, cfg.Notify.Routes, 3, "explicit route + per-task sugar + default inapp catch-all")
 	explicit := cfg.Notify.Routes[0]
@@ -66,10 +73,10 @@ notify_on_failure = ["ops"]
 }
 
 func TestNotifyConfig_DefaultInappRouteWithZeroConfig(t *testing.T) {
-	src := `
+	src := schedulerTZHeader + `
 [tasks.process-event-queue]
 cron        = "*/10 * * * *"
-parallelism = 1
+max_concurrent = 1
 on_overlap  = "queue"
 run         = "exit 1"
 `
@@ -158,19 +165,255 @@ notify = ["inapp"]
 	assert.Contains(t, err.Error(), "match.kind")
 }
 
-func TestNotifyConfig_DisableInappDropsImplicitInappFromSugar(t *testing.T) {
+func TestParseNotifyToken(t *testing.T) {
+	cases := []struct {
+		in              string
+		wantParent      string
+		wantOverride    string
+		wantHasOverride bool
+	}{
+		{"slack-ops", "slack-ops", "", false},
+		{"inapp", "inapp", "", false},
+		{"slack:#ops", "slack", "#ops", true},
+		{"slack-ops:#alerts", "slack-ops", "#alerts", true},
+		{"tg:-1001234", "tg", "-1001234", true},
+		{"  slack  :  #ops  ", "slack", "#ops", true},
+		{":#ops", "", "#ops", true},
+		{"slack:", "slack", "", true},
+	}
+	for _, c := range cases {
+		gotParent, gotOverride, gotHas := parseNotifyToken(c.in)
+		assert.Equal(t, c.wantParent, gotParent, "parent for %q", c.in)
+		assert.Equal(t, c.wantOverride, gotOverride, "override for %q", c.in)
+		assert.Equal(t, c.wantHasOverride, gotHas, "hasOverride for %q", c.in)
+	}
+}
+
+func TestInlineToken_SlackChannelOverride(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id              = "slack"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_URL"
+channel         = "#default"
+
+[tasks.audit]
+cron              = "0 4 * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "audit.sh"
+notify_on_failure = ["slack:#ops"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	require.Len(t, cfg.Notify.Notifiers, 2, "parent + synthesised override")
+	parent := cfg.Notify.Notifiers[0]
+	synth := cfg.Notify.Notifiers[1]
+	assert.Equal(t, "slack", parent.ID)
+	assert.Equal(t, "#default", parent.SlackChannel)
+	assert.Equal(t, "slack:#ops", synth.ID)
+	assert.Equal(t, "slack", synth.Type)
+	assert.Equal(t, "#ops", synth.SlackChannel, "override replaces parent channel")
+	assert.Equal(t, parent.WebhookURLEnv, synth.WebhookURLEnv, "creds cloned from parent")
+
+	var taskRoute NotificationRoute
+	for _, r := range cfg.Notify.Routes {
+		if r.TaskGlob == "audit" {
+			taskRoute = r
+			break
+		}
+	}
+	assert.Contains(t, taskRoute.NotifierID, "slack:#ops")
+}
+
+func TestInlineToken_TelegramChatIDOverride(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id            = "tg"
+type          = "telegram"
+bot_token_env = "RUNWISP_TG_TOKEN"
+chat_id       = "-1001"
+
+[tasks.deploy]
+cron              = "0 9 * * 1"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "deploy.sh"
+notify_on_failure = ["tg:-2002"]
+notify_on_success = ["tg:-3003"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	ids := make(map[string]string, len(cfg.Notify.Notifiers))
+	for _, n := range cfg.Notify.Notifiers {
+		ids[n.ID] = n.ChatID
+	}
+	assert.Equal(t, "-1001", ids["tg"])
+	assert.Equal(t, "-2002", ids["tg:-2002"])
+	assert.Equal(t, "-3003", ids["tg:-3003"])
+}
+
+func TestInlineToken_DedupAcrossTasks(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id              = "slack"
+type            = "slack"
+webhook_url_env = "URL"
+
+[tasks.a]
+cron              = "* * * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "x"
+notify_on_failure = ["slack:#ops"]
+
+[tasks.b]
+cron              = "* * * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "y"
+notify_on_failure = ["slack:#ops"]
+
+[tasks.c]
+cron              = "* * * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "z"
+notify_on_failure = ["slack:#ops", "slack:#fyi"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	count := 0
+	for _, n := range cfg.Notify.Notifiers {
+		if n.ID == "slack:#ops" || n.ID == "slack:#fyi" {
+			count++
+		}
+	}
+	assert.Equal(t, 2, count, "each unique token produces one synthetic notifier")
+}
+
+func TestInlineToken_InRouteNotifyList(t *testing.T) {
 	src := `
+[[notifier]]
+id              = "slack"
+type            = "slack"
+webhook_url_env = "URL"
+
+[[notification_route]]
+match  = { kind = ["run.failed"], task = "backup-*" }
+notify = ["slack:#ops"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	found := false
+	for _, n := range cfg.Notify.Notifiers {
+		if n.ID == "slack:#ops" {
+			found = true
+			assert.Equal(t, "#ops", n.SlackChannel)
+		}
+	}
+	assert.True(t, found, "explicit-route token must also synthesise a spec")
+}
+
+func TestInlineToken_UnknownParent(t *testing.T) {
+	src := `
+[tasks.x]
+cron              = "* * * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "x"
+notify_on_failure = ["slack:#ops"]
+`
+	_, err := decode([]byte(src))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown parent notifier id")
+}
+
+func TestInlineToken_InappCannotBeOverridden(t *testing.T) {
+	src := `
+[tasks.x]
+cron              = "* * * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "x"
+notify_on_failure = ["inapp:foo"]
+`
+	_, err := decode([]byte(src))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no target to override")
+}
+
+func TestInlineToken_EmptyOverride(t *testing.T) {
+	src := `
+[[notifier]]
+id              = "slack"
+type            = "slack"
+webhook_url_env = "URL"
+
+[tasks.x]
+cron              = "* * * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "x"
+notify_on_failure = ["slack:"]
+`
+	_, err := decode([]byte(src))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "target override is empty")
+}
+
+func TestInlineToken_SlackOverrideMustStartWithHashOrAt(t *testing.T) {
+	src := `
+[[notifier]]
+id              = "slack"
+type            = "slack"
+webhook_url_env = "URL"
+
+[tasks.x]
+cron              = "* * * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "x"
+notify_on_failure = ["slack:ops"]
+`
+	_, err := decode([]byte(src))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must start with # or @")
+}
+
+func TestValidate_RejectsColonInNotifierID(t *testing.T) {
+	src := `
+[[notifier]]
+id              = "slack:foo"
+type            = "slack"
+webhook_url_env = "URL"
+`
+	_, err := decode([]byte(src))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must not contain")
+}
+
+func TestNotifyConfig_EmptyGlobalNotifiersDropsImplicitInappFromSugar(t *testing.T) {
+	src := schedulerTZHeader + `
 [[notifier]]
 id = "ops"
 type = "slack"
 webhook_url = "https://example/x"
 
 [notify]
-disable_inapp = true
+global_notifiers = []
 
 [tasks.backup-db]
 cron = "0 3 * * *"
-parallelism = 1
+max_concurrent = 1
 on_overlap = "queue"
 run = "backup.sh"
 notify_on_failure = ["ops"]
@@ -179,6 +422,45 @@ notify_on_failure = ["ops"]
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
-	require.Len(t, cfg.Notify.Routes, 1)
-	assert.NotContains(t, cfg.Notify.Routes[0].NotifierID, "inapp")
+	require.Len(t, cfg.Notify.Routes, 1, "no default catch-all when global_notifiers = []")
+	assert.NotContains(t, cfg.Notify.Routes[0].NotifierID, "inapp",
+		"per-task sugar must not implicitly add inapp once the operator has cleared global_notifiers")
+}
+
+func TestNotifyConfig_GlobalNotifiersWithCustomChannel(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "slack-ops"
+type = "slack"
+webhook_url = "https://example/x"
+
+[notify]
+global_notifiers = ["slack-ops"]
+
+[tasks.backup-db]
+cron = "0 3 * * *"
+max_concurrent = 1
+on_overlap = "queue"
+run = "backup.sh"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	require.Len(t, cfg.Notify.Routes, 1, "default catch-all uses operator-chosen channels, not inapp")
+	r := cfg.Notify.Routes[0]
+	assert.Equal(t, []string{"slack-ops"}, r.NotifierID)
+	assert.NotContains(t, r.NotifierID, "inapp")
+}
+
+func TestValidate_RejectsUnknownAppendNotifier(t *testing.T) {
+	src := `
+[notify]
+global_notifiers = ["does-not-exist"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "global_notifiers")
 }

@@ -75,7 +75,9 @@ func (cleaner *RetentionCleaner) cleanOldRuns() {
 
 	totalDeleted := 0
 	for _, task := range cleaner.tasks {
-		if task.KeepFor == 0 && task.KeepRuns == 0 {
+		// KeepRuns: 0 = inherited "no cap"; -1 = explicit unlimited; >0 = cap.
+		// KeepFor:  0 = inherited "no cap"; >0 = cap. Either positive enables retention.
+		if task.KeepFor <= 0 && task.KeepRuns <= 0 {
 			continue
 		}
 

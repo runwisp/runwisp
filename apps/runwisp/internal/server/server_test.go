@@ -36,17 +36,17 @@ func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.
 	jm := runtime.NewTaskManager(exec, eb)
 
 	task := &model.Task{
-		Name:        "task1",
-		Run:         "echo hi",
-		APITrigger:  true,
-		Parallelism: 1,
-		OnOverlap:   model.PolicyQueue,
+		Name:          "task1",
+		Run:           "echo hi",
+		APITrigger:    true,
+		MaxConcurrent: 1,
+		OnOverlap:     model.PolicyQueue,
 	}
 	jm.UpsertTask(task)
 	tasks := map[string]*model.Task{"task1": task}
 
 	// Create scheduler (nil is fine for most tests)
-	scheduler := runtime.NewScheduler(jm, tasks)
+	scheduler := runtime.NewScheduler(jm, tasks, time.UTC)
 
 	// Create temp directory for logs
 	tmpDir, err := os.MkdirTemp("", "runwisp-test-logs-*")
@@ -278,7 +278,7 @@ func TestAuth(t *testing.T) {
 	tasks := map[string]*model.Task{}
 
 	// Create scheduler (nil is fine for this test)
-	scheduler := runtime.NewScheduler(jm, tasks)
+	scheduler := runtime.NewScheduler(jm, tasks, time.UTC)
 
 	s, err := New(Options{
 		DB:          repo,

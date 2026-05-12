@@ -11,13 +11,13 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/version"
-	"github.com/spf13/cobra"
 	"log/slog"
 )
 
@@ -29,23 +29,14 @@ const (
 	modeCloud
 )
 
+// noTUI controls whether runDaemon attaches the interactive TUI.
+// `runwisp daemon` flips it to true; `runwisp cloud` exposes it as a flag.
 var noTUI bool
 
-var runCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Start the daemon (default)",
-	Long:  `Starts the scheduler, HTTP API, and web UI. Use --no-tui for headless/daemon mode.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runDaemon(modeStandalone)
-	},
-}
-
-func init() {
-	runCmd.Flags().BoolVar(&noTUI, "no-tui", false, "run in headless daemon mode (no interactive TUI)")
-}
-
-// demoTask is injected when no configuration file exists and cloud mode is disabled,
-// so that `./runwisp` works out of the box with zero setup.
+// demoTask is kept available for cloud-managed and other explicit branches
+// that need a built-in task when no configuration file is present. The
+// standalone daemon path errors out instead — missing config is a setup bug
+// the operator must see.
 var demoTask = model.Task{
 	Name:        "hello-world",
 	Description: "Demo task — runs every minute. Create a runwisp.toml to define your own tasks.",
@@ -53,13 +44,13 @@ var demoTask = model.Task{
 echo "Current time: $(date)"
 echo ""
 echo "This is a built-in demo task."
-echo "Create a runwisp.toml file to define your own tasks:"
-echo "  runwisp init"
+echo "Create a runwisp.toml to define your own tasks — see https://docs.runwisp.com/configuration/overview/"
 `,
-	Cron:        "* * * * *",
-	APITrigger:  true,
-	Parallelism: 1,
-	OnOverlap:   model.PolicySkip,
+	Cron:          "* * * * *",
+	Timezone:      "UTC",
+	APITrigger:    true,
+	MaxConcurrent: 1,
+	OnOverlap:     model.PolicySkip,
 }
 
 func runDaemon(mode daemonMode) error {
@@ -106,9 +97,6 @@ func runDaemon(mode daemonMode) error {
 		slog.Warn("Failed to write PID file", "err", pidErr)
 	}
 	defer datadir.CleanPidFile(flags.DataDir)
-	if cfg.PasswordGenerated {
-		defer datadir.CleanPasswordFile(flags.DataDir)
-	}
 
 	daemonInfo := buildDaemonInfo(cfg, svc)
 
@@ -146,10 +134,12 @@ func runDaemon(mode daemonMode) error {
 		LogDir:     flags.LogDir(),
 		Port:       flags.Port,
 
-		Fingerprint:  cfg.Fingerprint,
-		UsingDemo:    cfg.UsingDemo,
-		Capabilities: daemonInfo.Capabilities,
-		Tasks:        daemonInfo.Tasks,
+		Fingerprint:    cfg.Fingerprint,
+		UsingDemo:      cfg.UsingDemo,
+		Capabilities:   daemonInfo.Capabilities,
+		Tasks:          daemonInfo.Tasks,
+		Timezone:       daemonInfo.ResolvedTimezone,
+		TimezoneSource: daemonInfo.TimezoneSource,
 
 		PasswordGenerated: cfg.PasswordGenerated,
 		Password:          cfg.Password,
@@ -201,6 +191,9 @@ func logSecurityWarnings(cfg *daemonConfig) {
 	}
 	if flags.Host != "127.0.0.1" && flags.Host != "::1" && flags.Host != "localhost" {
 		printNonLoopbackBanner(flags.Host)
+	}
+	for _, w := range config.GracefulStopWarnings(cfg.Config) {
+		slog.Warn(w)
 	}
 }
 

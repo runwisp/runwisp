@@ -32,22 +32,24 @@ type Executor interface {
 
 // ExecuteResult summarizes a completed execution.
 type ExecuteResult struct {
-	ExitCode int
-	Error    error
-	TimedOut bool
-	Stopped  bool
+	ExitCode       int
+	Error          error
+	TimedOut       bool
+	Stopped        bool
+	KilledByPolicy bool // log_on_full = "kill_task" tripped — recorded as failed, not stopped
 }
 
 // RoutingExecutor dispatches task execution to the appropriate Backend
 // based on the task's execution type, while managing log files and events.
 type RoutingExecutor struct {
-	logDir       string
-	onUpdate     func(*model.Run)
-	eventBus     events.EventBus
-	backends     map[string]Backend
-	availability Availability
-	diskChecker  *DiskChecker
-	streamer     *StreamManager
+	logDir           string
+	onUpdate         func(*model.Run)
+	onProcessStarted func(runID string, forceKill func())
+	eventBus         events.EventBus
+	backends         map[string]Backend
+	availability     Availability
+	diskChecker      *DiskChecker
+	streamer         *StreamManager
 }
 
 // Options configures the RoutingExecutor at startup.
@@ -115,6 +117,14 @@ func (r *RoutingExecutor) SetRunUpdateCallback(callback func(*model.Run)) {
 	r.onUpdate = callback
 }
 
+// SetOnProcessStarted registers a hook fired immediately after a backend
+// successfully starts a process. The hook receives the run ID and the
+// process's ForceKill closure (when present), letting the manager wire a
+// daemon-shutdown SIGKILL path. Late-binding mirrors SetRunUpdateCallback.
+func (r *RoutingExecutor) SetOnProcessStarted(callback func(runID string, forceKill func())) {
+	r.onProcessStarted = callback
+}
+
 // Execute resolves the execution backend and runs the task, streaming output.
 func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult {
 	if err := r.diskChecker.Check(); err != nil {
@@ -150,11 +160,14 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 		return &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
 	}
 
-	proc, err := backend.Start(cancelCtx, execDef)
+	proc, err := backend.Start(cancelCtx, task, execDef)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to start %s execution: %v", execDef.ExecType(), err)
 		writer.WriteLineEvent(errMsg, logutil.StreamSystem)
 		return &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
+	}
+	if r.onProcessStarted != nil {
+		r.onProcessStarted(run.ID, proc.ForceKill)
 	}
 
 	var wg sync.WaitGroup
@@ -184,20 +197,23 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	}
 
 	timedOut := errors.Is(cancelCtx.Err(), context.DeadlineExceeded)
-	stopped := !timedOut && errors.Is(cancelCtx.Err(), context.Canceled)
+	killedByPolicy := writer.KilledByPolicy()
+	stopped := !timedOut && !killedByPolicy && errors.Is(cancelCtx.Err(), context.Canceled)
 
 	// Propagate unexpected wait errors; ignore them when context cancellation
-	// is the cause (timed out / stopped) since the OS error is expected then.
+	// is the cause (timed out / stopped / policy-killed) since the OS error
+	// is expected then.
 	var resultErr error
-	if waitErr != nil && !timedOut && !stopped {
+	if waitErr != nil && !timedOut && !stopped && !killedByPolicy {
 		resultErr = waitErr
 	}
 
 	return &ExecuteResult{
-		ExitCode: exitCode,
-		Error:    resultErr,
-		TimedOut: timedOut,
-		Stopped:  stopped,
+		ExitCode:       exitCode,
+		Error:          resultErr,
+		TimedOut:       timedOut,
+		Stopped:        stopped,
+		KilledByPolicy: killedByPolicy,
 	}
 }
 
@@ -211,6 +227,9 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 
 	cancelCtx, cancelFunc := context.WithCancel(ctx)
 
+	bus := r.eventBus
+	taskName := task.Name
+	runID := run.ID
 	writer, err := NewLogWriter(LogWriterOpts{
 		LogPath:     logPath,
 		IdxPath:     idxPath,
@@ -220,6 +239,18 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		CancelFunc:  cancelFunc,
 		MinFreeDisk: r.diskChecker.minFreeDisk,
 		LogDir:      r.logDir,
+		OnDiskPressure: func(free, min int64, killed bool) {
+			if bus == nil {
+				return
+			}
+			bus.Publish(events.EventLogDiskPressure, events.LogDiskPressureEvent{
+				TaskName:     taskName,
+				RunID:        runID,
+				FreeBytes:    free,
+				MinFreeBytes: min,
+				KilledTask:   killed,
+			})
+		},
 	})
 	if err != nil {
 		cancelFunc()

@@ -99,26 +99,102 @@ func TestWritePidFile_RefusesSymlink(t *testing.T) {
 	}
 }
 
-func TestWriteSecretFile_RefusesSymlink(t *testing.T) {
-	dataDir := t.TempDir()
-	target := filepath.Join(t.TempDir(), "victim")
-	if err := os.WriteFile(target, []byte("untouched"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	pwPath := filepath.Join(dataDir, "password")
-	if err := os.Symlink(target, pwPath); err != nil {
-		t.Fatal(err)
-	}
+// fakePasswordStore is an in-memory PasswordStore for tests.
+type fakePasswordStore struct {
+	values map[string]string
+}
 
-	if err := writeSecretFile(pwPath, "newpw"); err == nil {
-		t.Fatal("expected writeSecretFile to refuse a symlinked path")
-	}
+func newFakeStore() *fakePasswordStore {
+	return &fakePasswordStore{values: map[string]string{}}
+}
 
-	got, err := os.ReadFile(target)
+func (f *fakePasswordStore) GetConfigValue(key string) (string, bool, error) {
+	v, ok := f.values[key]
+	return v, ok, nil
+}
+
+func (f *fakePasswordStore) SetConfigValue(key, value string) error {
+	f.values[key] = value
+	return nil
+}
+
+// TestResolvePassword_EnvVarNotPersisted guards the prime-directive contract:
+// when an operator sets RUNWISP_PASSWORD (Docker secret, systemd
+// LoadCredential, sealed-secrets), the daemon must use the value in memory
+// only. Writing it to SQLite defeats the operator's whole reason for using a
+// secret manager.
+func TestResolvePassword_EnvVarNotPersisted(t *testing.T) {
+	store := newFakeStore()
+	t.Setenv("RUNWISP_PASSWORD", "from-env-secret")
+
+	got, isNew, err := ResolvePassword(store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "untouched" {
-		t.Fatalf("symlink target was modified: %q", got)
+	if got != "from-env-secret" {
+		t.Fatalf("expected env value, got %q", got)
+	}
+	if isNew {
+		t.Fatal("env-supplied password must not be reported as newly generated")
+	}
+	if _, ok := store.values[passwordKey]; ok {
+		t.Fatal("env-supplied password must not be written to the store")
+	}
+}
+
+// TestResolvePassword_EnvVarDoesNotOverwriteStoredRow verifies that an
+// existing stored password row is left untouched when RUNWISP_PASSWORD is set.
+func TestResolvePassword_EnvVarDoesNotOverwriteStoredRow(t *testing.T) {
+	store := newFakeStore()
+	if err := store.SetConfigValue(passwordKey, "old-stored-secret"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RUNWISP_PASSWORD", "from-env-secret")
+
+	got, _, err := ResolvePassword(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "from-env-secret" {
+		t.Fatalf("env must take precedence in-memory, got %q", got)
+	}
+	if store.values[passwordKey] != "old-stored-secret" {
+		t.Fatalf("stored password must not be rewritten when env var is set; got %q", store.values[passwordKey])
+	}
+}
+
+// TestResolvePassword_StoreFallbackUnchanged verifies the unchanged path:
+// no env var, stored row present → use it.
+func TestResolvePassword_StoreFallbackUnchanged(t *testing.T) {
+	store := newFakeStore()
+	if err := store.SetConfigValue(passwordKey, "from-store"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RUNWISP_PASSWORD", "")
+
+	got, isNew, err := ResolvePassword(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "from-store" || isNew {
+		t.Fatalf("expected stored password; got=%q isNew=%v", got, isNew)
+	}
+}
+
+// TestResolvePassword_GeneratesAndPersistsWhenEmpty verifies that absent
+// both env var and stored row, a new password is generated AND written.
+func TestResolvePassword_GeneratesAndPersistsWhenEmpty(t *testing.T) {
+	store := newFakeStore()
+	t.Setenv("RUNWISP_PASSWORD", "")
+
+	got, isNew, err := ResolvePassword(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isNew || got == "" {
+		t.Fatalf("expected freshly generated password; got=%q isNew=%v", got, isNew)
+	}
+	if store.values[passwordKey] != got {
+		t.Fatalf("stored value does not match returned password: store=%q returned=%q", store.values[passwordKey], got)
 	}
 }

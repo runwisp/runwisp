@@ -1,0 +1,194 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Docker patterns
+description: Running tasks that invoke Docker — one-shot containers, image pruning, registry pulls — and the `--rm` discipline that prevents zombie containers.
+---
+
+This recipe is about **using Docker from inside a RunWisp task** —
+e.g. running an analytics job in a one-shot container, pruning unused
+images, or pre-pulling the next deploy's image.
+
+:::caution[Always use `docker run --rm`]
+Every `docker run` invocation in this recipe — and every one you write —
+must include `--rm`. Without it, RunWisp's `timeout` killing a long
+container leaves it stuck in `Created` or `Exited` state, and those
+silently accumulate until the host runs out of disk or container slots.
+
+```bash
+docker run --rm  …    # ✅ correct
+docker run        …   # ❌ leaks containers on timeout / kill
+```
+
+This is the single most common Docker-from-task footgun. Treat `--rm` as
+non-negotiable.
+:::
+
+## Pattern 1: one-shot container as a task
+
+The cleanest case. RunWisp fires a task; the task runs a container
+that does its thing and exits.
+
+```toml
+[tasks.crunch-numbers]
+group       = "Analytics"
+description = "Nightly aggregation of yesterday's events"
+cron        = "0 4 * * *"
+on_overlap  = "skip"
+timeout     = "2h"
+keep_runs   = 60
+notify_on_failure = ["slack-ops"]
+
+run = """
+set -euo pipefail
+docker run --rm \\
+  --env-file=/etc/analytics/secrets.env \\
+  --network=internal \\
+  --memory=2g \\
+  ghcr.io/example/analytics:current \\
+  --date=$(date -u -d 'yesterday' +%Y-%m-%d)
+"""
+```
+
+The non-obvious bits — beyond the mandatory `--rm` called out above:
+
+### `--memory` and `--cpus`
+
+Bound the container's resource use. RunWisp itself is RAM-frugal,
+but a runaway analytics job that eats all available memory will
+OOM-kill the daemon along with itself if you don't cap it.
+
+### `--env-file` over `-e`
+
+Putting secrets on the `docker run` command line leaks them into
+`ps`-readable form, into the daemon's run log, and into journald.
+`--env-file` keeps them in a file you can `chmod 0600` and audit
+separately.
+
+### `--network=internal`
+
+Make sure the container can reach what it needs (your database,
+internal service mesh) without granting it general internet access
+unless the task actually needs it. The `internal` network is
+defined in your `docker network create` setup; pick whatever name
+you've chosen.
+
+## Pattern 2: pulling the next image ahead of time
+
+A "pre-pull" task that warms the local image cache so a deploy is
+fast. Only worth doing if your `:current` (or `:next`) tag actually
+moves often enough to matter — once an hour is the sweet spot for
+teams that deploy multiple times a day; for everyone else, just let
+the deploy task itself do the pull. Pair with the
+[deploy-hooks recipe][deploy].
+
+[deploy]: /recipes/deploy-hooks/
+
+```toml
+[tasks.docker-prefetch]
+group       = "Deploys"
+description = "Pull the latest production image so deploys are quick"
+cron        = "@hourly"
+on_overlap  = "skip"
+# No failure alerts — a missed prefetch is not interesting.
+
+run = """
+set -euo pipefail
+docker pull ghcr.io/example/app:current
+docker pull ghcr.io/example/worker:current
+"""
+```
+
+A failure here is harmless (the next deploy just pays the pull
+cost), so we deliberately skip notifications. Watch your registry's
+rate limits — GHCR, Docker Hub, and ECR all count pulls; a hot
+prefetch loop across many hosts can blow through the budget for
+nothing.
+
+## Pattern 3: image pruning
+
+Disks fill up when nobody's looking. Schedule a periodic prune of
+the things that are always safe to drop.
+
+```toml
+[tasks.docker-prune]
+group       = "Maintenance"
+description = "Reclaim disk: dangling images and stopped containers"
+cron        = "0 5 * * 0"      # Sunday 05:00
+on_overlap  = "skip"
+notify_on_failure = ["slack-ops"]
+
+run = """
+set -euo pipefail
+
+# Dangling images and stopped containers — always safe.
+docker image prune --force
+docker container prune --force
+
+# Show what we ended up with.
+df -h /var/lib/docker
+"""
+```
+
+### Volumes: do this manually, not on a cron
+
+`docker volume prune` will delete any volume not currently
+referenced by a container — including the volume that holds your
+database between restarts, if its container happens to be stopped
+when the prune runs. This has burned enough people that we don't
+include it in the scheduled recipe.
+
+If you really want it, run it interactively, with a label filter
+to protect volumes you've explicitly tagged:
+
+```bash
+docker volume create --label keep app-pgdata
+docker volume prune --filter 'label!=keep'   # run this BY HAND
+```
+
+…and only after you've audited what's currently labelled in your
+environment. Putting this in a weekly task is a footgun waiting
+to fire.
+
+## Don't reinvent supervisord inside a task
+
+A common antipattern:
+
+```toml
+# DON'T DO THIS
+[tasks.run-worker-forever]
+run = "docker run --rm ghcr.io/example/worker:current"
+cron = "* * * * *"          # restart every minute if dead??
+```
+
+If you want "run forever, restart on exit," that's what
+[`[services.*]`][services] is for. A long-running container is just
+a long-running shell command:
+
+[services]: /configuration/services/
+
+```toml
+[services.worker]
+description = "Long-running queue worker; supervised by RunWisp"
+restart_delay = "2s"
+restart_backoff = "exponential"
+run = """
+exec docker run --rm \\
+  --env-file=/etc/worker/.env \\
+  --network=internal \\
+  ghcr.io/example/worker:current
+"""
+```
+
+The `exec` is important — without it, the shell stays alive after
+`docker run` and the SIGTERM that RunWisp sends on shutdown lands
+on the shell, not the container. With `exec`, the shell process
+is replaced and signals propagate cleanly.
+
+## Where to next
+
+- [Recipes: deploy hooks](/recipes/deploy-hooks/) — the manual
+  trigger pattern, including the CHAP-from-CI dance.
+- [Concepts: Tasks vs Services](/concepts/tasks-vs-services/) —
+  why "long-running container" is a service, not a 1-minute cron
+  task.

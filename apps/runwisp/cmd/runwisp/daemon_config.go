@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/fingerprint"
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/version"
 )
@@ -63,10 +63,14 @@ func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*da
 		return nil, err
 	}
 
-	password, _, pwErr := datadir.ResolvePassword(flags.DataDir)
+	password, _, pwErr := datadir.ResolvePassword(configRepo)
 	if pwErr != nil && !cloudCfg.Enabled {
 		return nil, pwErr
 	}
+	// "Generated" here means the daemon owns the password (auto-generated and
+	// stored in SQLite). It is safe — and expected — to disclose to the
+	// operator on startup. An operator-supplied RUNWISP_PASSWORD is never
+	// disclosed.
 	passwordGenerated := os.Getenv("RUNWISP_PASSWORD") == "" && password != ""
 
 	jwtSecret, err := resolveJWTSecret(configRepo, os.Getenv("RUNWISP_PASSWORD"))
@@ -117,25 +121,27 @@ func resolveConfigValue(
 // resolveJWTSecret ensures a JWT secret exists in the DB and rotates it when
 // the explicit password (RUNWISP_PASSWORD) changes. Auto-generated passwords
 // are excluded from tracking so that session tokens survive daemon restarts.
+//
+// Change detection compares a SHA-256 fingerprint of the env-supplied
+// password against the previous boot's fingerprint. The plaintext env
+// password is intentionally never persisted — operators set RUNWISP_PASSWORD
+// specifically to keep credentials out of the data directory.
 func resolveJWTSecret(configRepo storage.ConfigRepository, envPassword string) (string, error) {
 	secret, secretFound, err := configRepo.GetConfigValue(storage.ConfigKeyJWTSecret)
 	if err != nil {
 		return "", err
 	}
 
-	// Only track password changes when RUNWISP_PASSWORD is explicitly set.
-	// Auto-generated passwords change on every restart and must not
-	// invalidate existing sessions.
 	passwordChanged := false
 	if envPassword != "" {
 		pwHash := hashPassword(envPassword)
-		storedHash, hashFound, err := configRepo.GetConfigValue(storage.ConfigKeyPasswordHash)
+		storedHash, hashFound, err := configRepo.GetConfigValue(configKeyPasswordHash)
 		if err != nil {
 			return "", err
 		}
 		passwordChanged = hashFound && storedHash != pwHash
 		if !hashFound || passwordChanged {
-			if err := configRepo.SetConfigValue(storage.ConfigKeyPasswordHash, pwHash); err != nil {
+			if err := configRepo.SetConfigValue(configKeyPasswordHash, pwHash); err != nil {
 				return "", err
 			}
 		}
@@ -159,6 +165,12 @@ func resolveJWTSecret(configRepo storage.ConfigRepository, envPassword string) (
 	return secret, nil
 }
 
+// configKeyPasswordHash holds a fingerprint of the env-supplied
+// RUNWISP_PASSWORD used solely for JWT-rotation change detection. It is
+// distinct from storage.ConfigKeyPassword (the plaintext daemon-owned
+// password) and is only written when RUNWISP_PASSWORD is set.
+const configKeyPasswordHash = "env_password_hash"
+
 func hashPassword(password string) string {
 	h := sha256.Sum256([]byte(password))
 	return hex.EncodeToString(h[:])
@@ -180,10 +192,5 @@ func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error
 		return cfg, false, nil
 	}
 
-	demo := demoTask
-	cfg = &config.Config{
-		Tasks: []model.Task{demo},
-	}
-	config.ApplyDefaults(cfg)
-	return cfg, true, nil
+	return nil, false, fmt.Errorf("no runwisp.toml found at %s — create one to define your tasks (docs: https://docs.runwisp.com/configuration/overview/)", path)
 }

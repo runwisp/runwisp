@@ -255,7 +255,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Restart all replicas of a service */
+        /** Restart all instances of a service */
         post: operations["restartService"];
         delete?: never;
         options?: never;
@@ -392,6 +392,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskName}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a service for the daemon's lifetime
+         * @description Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.
+         */
+        post: operations["stopService"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -412,7 +432,10 @@ export interface components {
             fingerprint: string;
             /** Format: int64 */
             port: number;
+            resolved_timezone: string;
             tasks: components["schemas"]["TaskBrief"][] | null;
+            /** @enum {string} */
+            timezone_source: "config" | "system";
             version: string;
         };
         DaemonLogLineEvent: {
@@ -676,13 +699,13 @@ export interface components {
              * @description Why the run ended (set when status=ended)
              * @enum {string}
              */
-            end_reason?: "success" | "failed" | "stopped" | "timeout" | "crashed";
+            end_reason?: "success" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped";
             /** Format: int64 */
             exit_code: number;
             external_execution_id?: string;
             id: string;
             /** Format: int64 */
-            replica_index: number;
+            instance_index: number;
             /** Format: int64 */
             retry_attempt: number;
             retry_of_run_id?: string;
@@ -829,14 +852,19 @@ export interface components {
             instances?: number;
             /** @enum {string} */
             kind?: "task" | "service";
+            /** Format: int64 */
+            max_concurrent?: number;
             name: string;
             on_overlap?: string;
-            /** Format: int64 */
-            parallelism?: number;
             restart?: string;
         };
         TaskResponse: {
             api_trigger: boolean;
+            /**
+             * Format: int64
+             * @description For services: an instance that runs at least this long resets the restart counter, in nanoseconds
+             */
+            backoff_reset_after?: number;
             /**
              * @description What to do when cron ticks are missed during downtime
              * @enum {string}
@@ -844,18 +872,26 @@ export interface components {
             catch_up?: "latest" | "all" | "skip";
             cron?: string;
             description?: string;
+            /**
+             * Format: int64
+             * @description Window between SIGTERM and SIGKILL when a run is stopped, in nanoseconds
+             */
+            graceful_stop?: number;
             group?: string;
             /**
              * Format: int64
-             * @description For services: number of always-running replicas
+             * @description For services: number of always-running instances
              */
             instances?: number;
             /**
              * Format: int64
-             * @description Retention window, in nanoseconds
+             * @description Retention window in nanoseconds; 0 means no cap was configured
              */
             keep_for?: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Row-count retention cap; 0 means no cap was configured
+             */
             keep_runs?: number;
             /**
              * @description Whether this is a scheduled task or an always-on service
@@ -864,7 +900,7 @@ export interface components {
             kind?: "task" | "service";
             /**
              * Format: int64
-             * @description Per-task log size cap, in bytes
+             * @description Per-run log size cap in bytes
              */
             log_max_size?: number;
             /**
@@ -872,6 +908,16 @@ export interface components {
              * @enum {string}
              */
             log_on_full?: "drop_new" | "drop_old" | "kill_task";
+            /**
+             * Format: int64
+             * @description Cap on catch-up runs triggered when catch_up = all
+             */
+            max_catch_up_runs?: number;
+            /**
+             * Format: int64
+             * @description Maximum overlapping runs allowed for this task
+             */
+            max_concurrent?: number;
             name: string;
             next_run_at?: string;
             /**
@@ -879,8 +925,11 @@ export interface components {
              * @enum {string}
              */
             on_overlap?: "queue" | "skip" | "terminate";
-            /** Format: int64 */
-            parallelism?: number;
+            /**
+             * Format: int64
+             * @description Maximum runs that can wait when on_overlap = queue
+             */
+            queue_max?: number;
             /**
              * @description Whether and when a task is restarted after completion
              * @enum {string}
@@ -890,7 +939,7 @@ export interface components {
              * @description Backoff curve between consecutive restarts
              * @enum {string}
              */
-            restart_backoff?: "none" | "exponential";
+            restart_backoff?: "constant" | "linear" | "exponential";
             /**
              * Format: int64
              * @description Base delay before each restart, in nanoseconds
@@ -898,7 +947,11 @@ export interface components {
             restart_delay?: number;
             /** Format: int64 */
             retry_attempts?: number;
-            retry_backoff?: string;
+            /**
+             * @description Backoff curve between consecutive retries
+             * @enum {string}
+             */
+            retry_backoff?: "constant" | "linear" | "exponential";
             /**
              * Format: int64
              * @description Base delay before each retry, in nanoseconds
@@ -909,6 +962,8 @@ export interface components {
              * @description Per-run timeout in nanoseconds
              */
             timeout?: number;
+            /** @description IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone */
+            timezone?: string;
         };
     };
     responses: never;
@@ -1812,6 +1867,38 @@ export interface operations {
                 taskName: string;
                 /** @description Run ULID */
                 runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopRunOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    stopService: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
             };
             cookie?: never;
         };

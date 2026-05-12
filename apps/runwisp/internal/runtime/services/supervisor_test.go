@@ -7,22 +7,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/runtime/retry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func newSupervisorForTest(name string, instances int) *Supervisor {
+	return NewSupervisor(name, instances, 0)
+}
+
 func TestNewSupervisorClampsInstances(t *testing.T) {
 	for _, raw := range []int{-3, 0, 1} {
-		s := NewSupervisor("svc", raw)
+		s := newSupervisorForTest("svc", raw)
 		assert.GreaterOrEqualf(t, s.Instances(), 1, "instances input %d should clamp to >=1", raw)
 	}
-	s := NewSupervisor("svc", 5)
+	s := newSupervisorForTest("svc", 5)
 	assert.Equal(t, 5, s.Instances())
 }
 
 func TestReserveAutoAssignPicksLowestFreeIndex(t *testing.T) {
-	s := NewSupervisor("svc", 3)
+	s := newSupervisorForTest("svc", 3)
 	idx, err := s.Reserve(nil)
 	require.NoError(t, err)
 	assert.Equal(t, 0, idx)
@@ -32,7 +35,7 @@ func TestReserveAutoAssignPicksLowestFreeIndex(t *testing.T) {
 }
 
 func TestReserveAutoAssignSkipsTakenSlots(t *testing.T) {
-	s := NewSupervisor("svc", 3)
+	s := newSupervisorForTest("svc", 3)
 	pin0, pin2 := 0, 2
 	_, err := s.Reserve(&pin0)
 	require.NoError(t, err)
@@ -45,18 +48,18 @@ func TestReserveAutoAssignSkipsTakenSlots(t *testing.T) {
 }
 
 func TestReserveAutoAssignFailsWhenFull(t *testing.T) {
-	s := NewSupervisor("svc", 2)
+	s := newSupervisorForTest("svc", 2)
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
 	_, err = s.Reserve(nil)
 	require.NoError(t, err)
 	_, err = s.Reserve(nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no free replica slots")
+	assert.Contains(t, err.Error(), "no free instance slots")
 }
 
 func TestReservePinnedIndexOutOfRange(t *testing.T) {
-	s := NewSupervisor("svc", 3)
+	s := newSupervisorForTest("svc", 3)
 	bad := 5
 	_, err := s.Reserve(&bad)
 	require.Error(t, err)
@@ -69,7 +72,7 @@ func TestReservePinnedIndexOutOfRange(t *testing.T) {
 }
 
 func TestReservePinnedIndexAlreadyTaken(t *testing.T) {
-	s := NewSupervisor("svc", 3)
+	s := newSupervisorForTest("svc", 3)
 	taken := 1
 	_, err := s.Reserve(&taken)
 	require.NoError(t, err)
@@ -79,7 +82,7 @@ func TestReservePinnedIndexAlreadyTaken(t *testing.T) {
 }
 
 func TestReserveLimitBelowOneDefaultsToOne(t *testing.T) {
-	s := NewSupervisor("svc", 0)
+	s := newSupervisorForTest("svc", 0)
 	idx, err := s.Reserve(nil)
 	require.NoError(t, err)
 	assert.Equal(t, 0, idx)
@@ -88,7 +91,7 @@ func TestReserveLimitBelowOneDefaultsToOne(t *testing.T) {
 }
 
 func TestRecordExitIncrementsCounter(t *testing.T) {
-	s := NewSupervisor("svc", 1)
+	s := newSupervisorForTest("svc", 1)
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
 
@@ -105,7 +108,8 @@ func TestRecordExitIncrementsCounter(t *testing.T) {
 }
 
 func TestRecordExitResetsCounterAfterHealthyRun(t *testing.T) {
-	s := NewSupervisor("svc", 1)
+	const threshold = 50 * time.Millisecond
+	s := NewSupervisor("svc", 1, threshold)
 
 	// Build up some attempts via two quick exits.
 	for i := 0; i < 2; i++ {
@@ -115,17 +119,36 @@ func TestRecordExitResetsCounterAfterHealthyRun(t *testing.T) {
 	}
 	require.Equal(t, 2, s.Attempts(0))
 
-	// A run that lasted past the reset threshold zeroes the counter before
-	// reading it: the next restart should start over.
+	// A run that lasted past the configured threshold zeroes the counter
+	// before reading it: the next restart should start over.
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
-	next := s.RecordExit(0, retry.BackoffResetThreshold)
+	next := s.RecordExit(0, threshold)
 	assert.Equal(t, 0, next, "post-healthy exit returns 0 (base delay)")
 	assert.Equal(t, 1, s.Attempts(0))
 }
 
+func TestSetBackoffResetTakesEffect(t *testing.T) {
+	const lowThreshold = 5 * time.Millisecond
+	s := NewSupervisor("svc", 1, time.Hour)
+
+	_, err := s.Reserve(nil)
+	require.NoError(t, err)
+	// Brief run under the original 1-hour threshold accumulates.
+	first := s.RecordExit(0, lowThreshold)
+	assert.Equal(t, 0, first)
+	require.Equal(t, 1, s.Attempts(0))
+
+	// Lowering the threshold means the same brief run now counts as healthy.
+	s.SetBackoffReset(lowThreshold)
+	_, err = s.Reserve(nil)
+	require.NoError(t, err)
+	next := s.RecordExit(0, lowThreshold)
+	assert.Equal(t, 0, next, "lowered threshold should make this exit count as healthy")
+}
+
 func TestRecordExitReleasesSlot(t *testing.T) {
-	s := NewSupervisor("svc", 1)
+	s := newSupervisorForTest("svc", 1)
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
 	require.True(t, s.IsLive(0))
@@ -135,7 +158,7 @@ func TestRecordExitReleasesSlot(t *testing.T) {
 }
 
 func TestMissingSlots(t *testing.T) {
-	s := NewSupervisor("svc", 4)
+	s := newSupervisorForTest("svc", 4)
 	pin1 := 1
 	_, err := s.Reserve(&pin1)
 	require.NoError(t, err)
@@ -145,7 +168,7 @@ func TestMissingSlots(t *testing.T) {
 }
 
 func TestSetInstancesAffectsSubsequentReserve(t *testing.T) {
-	s := NewSupervisor("svc", 1)
+	s := newSupervisorForTest("svc", 1)
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
 	_, err = s.Reserve(nil)

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"strings"
 	"testing"
 	"time"
@@ -436,6 +437,44 @@ func TestHandleLaunchTicket_SingleUse(t *testing.T) {
 	w = httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+// TestHandleLaunchTicket_RedirectsToSafePath ensures the optional `redirect`
+// query parameter steers the post-launch redirect at a same-origin path —
+// used by the TUI's "download log" action to drop the operator straight on
+// the raw-log endpoint after the cookie is set.
+func TestHandleLaunchTicket_RedirectsToSafePath(t *testing.T) {
+	cases := []struct {
+		name       string
+		redirect   string
+		wantTarget string
+	}{
+		{name: "absolute-path", redirect: "/api/tasks/foo/runs/bar/log/raw", wantTarget: "/api/tasks/foo/runs/bar/log/raw"},
+		{name: "empty-falls-back-to-root", redirect: "", wantTarget: "/"},
+		{name: "scheme-relative-rejected", redirect: "//evil.example.com/x", wantTarget: "/"},
+		{name: "non-absolute-rejected", redirect: "evil", wantTarget: "/"},
+		{name: "external-url-rejected", redirect: "https://evil.example.com/", wantTarget: "/"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, _, _ := setupServer(t)
+
+			ticket, err := s.auth.CreateLaunchTicket()
+			require.NoError(t, err)
+
+			url := "/api/auth/launch?ticket=" + ticket
+			if tc.redirect != "" {
+				url += "&redirect=" + neturl.QueryEscape(tc.redirect)
+			}
+			req := httptest.NewRequest("GET", url, nil)
+			req.RemoteAddr = "127.0.0.1:54321"
+			w := httptest.NewRecorder()
+			s.router.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusSeeOther, w.Code)
+			assert.Equal(t, tc.wantTarget, w.Header().Get("Location"))
+		})
+	}
 }
 
 func TestHandleLaunchTicket_NonLoopbackRejected(t *testing.T) {

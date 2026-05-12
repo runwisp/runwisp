@@ -247,7 +247,7 @@ func TestAvailable(t *testing.T) {
 
 func TestStartRejectsNonContainerExecution(t *testing.T) {
 	b := NewContainerBackendFromClient(&mockDockerClient{})
-	_, err := b.Start(context.Background(), &model.ShellExecution{Script: "echo hi"})
+	_, err := b.Start(context.Background(), &model.Task{}, &model.ShellExecution{Script: "echo hi"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "non-container execution")
 }
@@ -260,7 +260,7 @@ func TestStartBuildFailure(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	_, err := b.Start(context.Background(), &model.ContainerExecution{
+	_, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
 	})
@@ -279,7 +279,7 @@ func TestStartBuildOutputError(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	_, err := b.Start(context.Background(), &model.ContainerExecution{
+	_, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
 	})
@@ -306,7 +306,7 @@ func TestStartContainerCreateFailure(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	_, err := b.Start(context.Background(), &model.ContainerExecution{
+	_, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
 	})
@@ -338,7 +338,7 @@ func TestStartContainerAttachFailure(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	_, err := b.Start(context.Background(), &model.ContainerExecution{
+	_, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
 	})
@@ -374,7 +374,7 @@ func TestStartContainerStartFailure(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	_, err := b.Start(context.Background(), &model.ContainerExecution{
+	_, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
 	})
@@ -403,7 +403,7 @@ func TestStartSuccess(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	proc, err := b.Start(context.Background(), &model.ContainerExecution{
+	proc, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo hello",
 		BaseImage: "alpine",
 	})
@@ -440,7 +440,7 @@ func TestStartWaitError(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	proc, err := b.Start(context.Background(), &model.ContainerExecution{
+	proc, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "exit 1",
 		BaseImage: "alpine",
 	})
@@ -471,7 +471,7 @@ func TestStartNonZeroExitCode(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	proc, err := b.Start(context.Background(), &model.ContainerExecution{
+	proc, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "exit 42",
 		BaseImage: "alpine",
 	})
@@ -608,7 +608,7 @@ func TestStartBuildOutputMultipleMessages(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	proc, err := b.Start(context.Background(), &model.ContainerExecution{
+	proc, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo ok",
 		BaseImage: "alpine",
 	})
@@ -634,7 +634,7 @@ func TestStartPassesBuildOptions(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	proc, err := b.Start(context.Background(), &model.ContainerExecution{
+	proc, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
 	})
@@ -660,7 +660,7 @@ func TestContainerAttachOptions(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	proc, err := b.Start(context.Background(), &model.ContainerExecution{
+	proc, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo hello",
 		BaseImage: "alpine",
 	})
@@ -726,7 +726,7 @@ func TestStartCleanupBuildError(t *testing.T) {
 	}
 	b := NewContainerBackendFromClient(mock)
 
-	_, err := b.Start(context.Background(), &model.ContainerExecution{
+	_, err := b.Start(context.Background(), &model.Task{}, &model.ContainerExecution{
 		Script:    "echo test",
 		BaseImage: "alpine",
 	})

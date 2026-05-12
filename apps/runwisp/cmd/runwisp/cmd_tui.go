@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/spf13/cobra"
@@ -35,7 +34,7 @@ func runTUIClient() error {
 	passwordExplicit := tuiPassword != "" || os.Getenv("RUNWISP_PASSWORD") != ""
 	password := tuiPassword
 	if password == "" {
-		resolved, _, err := datadir.ResolvePassword(flags.DataDir)
+		resolved, err := resolveClientPassword()
 		if err != nil || resolved == "" {
 			return fmt.Errorf("password required: use --password or RUNWISP_PASSWORD env var")
 		}
@@ -75,6 +74,8 @@ func buildStartupInfoFromDaemon(info *model.DaemonInfo, password string, passwor
 	si.Fingerprint = info.Fingerprint
 	si.Port = info.Port
 	si.CloudEnabled = info.CloudEnabled
+	si.Timezone = info.ResolvedTimezone
+	si.TimezoneSource = info.TimezoneSource
 
 	for _, t := range info.Tasks {
 		si.Tasks = append(si.Tasks, t)

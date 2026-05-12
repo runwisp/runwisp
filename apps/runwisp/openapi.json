@@ -48,6 +48,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "resolved_timezone": {
+            "type": "string"
+          },
           "tasks": {
             "items": {
               "$ref": "#/components/schemas/TaskBrief"
@@ -56,6 +59,13 @@
               "array",
               "null"
             ]
+          },
+          "timezone_source": {
+            "enum": [
+              "config",
+              "system"
+            ],
+            "type": "string"
           },
           "version": {
             "type": "string"
@@ -66,6 +76,8 @@
           "fingerprint",
           "port",
           "cloud_enabled",
+          "resolved_timezone",
+          "timezone_source",
           "tasks",
           "capabilities"
         ],
@@ -591,7 +603,12 @@
               "failed",
               "stopped",
               "timeout",
-              "crashed"
+              "crashed",
+              "skipped",
+              "log_overflow",
+              "queue_full",
+              "dst_skipped",
+              "daemon_stopped"
             ],
             "type": "string"
           },
@@ -605,7 +622,7 @@
           "id": {
             "type": "string"
           },
-          "replica_index": {
+          "instance_index": {
             "format": "int64",
             "type": "integer"
           },
@@ -650,7 +667,7 @@
           "triggered_by",
           "created_at",
           "retry_attempt",
-          "replica_index"
+          "instance_index"
         ],
         "type": "object"
       },
@@ -935,15 +952,15 @@
             ],
             "type": "string"
           },
+          "max_concurrent": {
+            "format": "int64",
+            "type": "integer"
+          },
           "name": {
             "type": "string"
           },
           "on_overlap": {
             "type": "string"
-          },
-          "parallelism": {
-            "format": "int64",
-            "type": "integer"
           },
           "restart": {
             "type": "string"
@@ -961,6 +978,11 @@
           "api_trigger": {
             "type": "boolean"
           },
+          "backoff_reset_after": {
+            "description": "For services: an instance that runs at least this long resets the restart counter, in nanoseconds",
+            "format": "int64",
+            "type": "integer"
+          },
           "catch_up": {
             "description": "What to do when cron ticks are missed during downtime",
             "enum": [
@@ -976,20 +998,26 @@
           "description": {
             "type": "string"
           },
+          "graceful_stop": {
+            "description": "Window between SIGTERM and SIGKILL when a run is stopped, in nanoseconds",
+            "format": "int64",
+            "type": "integer"
+          },
           "group": {
             "type": "string"
           },
           "instances": {
-            "description": "For services: number of always-running replicas",
+            "description": "For services: number of always-running instances",
             "format": "int64",
             "type": "integer"
           },
           "keep_for": {
-            "description": "Retention window, in nanoseconds",
+            "description": "Retention window in nanoseconds; 0 means no cap was configured",
             "format": "int64",
             "type": "integer"
           },
           "keep_runs": {
+            "description": "Row-count retention cap; 0 means no cap was configured",
             "format": "int64",
             "type": "integer"
           },
@@ -1002,7 +1030,7 @@
             "type": "string"
           },
           "log_max_size": {
-            "description": "Per-task log size cap, in bytes",
+            "description": "Per-run log size cap in bytes",
             "format": "int64",
             "type": "integer"
           },
@@ -1014,6 +1042,16 @@
               "kill_task"
             ],
             "type": "string"
+          },
+          "max_catch_up_runs": {
+            "description": "Cap on catch-up runs triggered when catch_up = all",
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_concurrent": {
+            "description": "Maximum overlapping runs allowed for this task",
+            "format": "int64",
+            "type": "integer"
           },
           "name": {
             "type": "string"
@@ -1030,7 +1068,8 @@
             ],
             "type": "string"
           },
-          "parallelism": {
+          "queue_max": {
+            "description": "Maximum runs that can wait when on_overlap = queue",
             "format": "int64",
             "type": "integer"
           },
@@ -1046,7 +1085,8 @@
           "restart_backoff": {
             "description": "Backoff curve between consecutive restarts",
             "enum": [
-              "none",
+              "constant",
+              "linear",
               "exponential"
             ],
             "type": "string"
@@ -1061,6 +1101,12 @@
             "type": "integer"
           },
           "retry_backoff": {
+            "description": "Backoff curve between consecutive retries",
+            "enum": [
+              "constant",
+              "linear",
+              "exponential"
+            ],
             "type": "string"
           },
           "retry_delay": {
@@ -1072,6 +1118,10 @@
             "description": "Per-run timeout in nanoseconds",
             "format": "int64",
             "type": "integer"
+          },
+          "timezone": {
+            "description": "IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone",
+            "type": "string"
           }
         },
         "required": [
@@ -2003,7 +2053,7 @@
             "description": "Error"
           }
         },
-        "summary": "Restart all replicas of a service",
+        "summary": "Restart all instances of a service",
         "tags": [
           "Runs"
         ]
@@ -2710,6 +2760,53 @@
           }
         },
         "summary": "Stop a running task",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/tasks/{taskName}/stop": {
+      "post": {
+        "description": "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
+        "operationId": "stopService",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopRunOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stop a service for the daemon's lifetime",
         "tags": [
           "Runs"
         ]

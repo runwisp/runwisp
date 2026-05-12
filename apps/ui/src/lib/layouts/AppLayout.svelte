@@ -2,12 +2,13 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Activity, Box, History } from "@lucide/svelte";
+    import { Activity, Box, History, Globe } from "@lucide/svelte";
     import Logo from "@runwisp/ui/components/Logo.svelte";
     import { type Snippet, type Component } from "svelte";
     import { resolve } from "$app/paths";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
+    import { systemStore } from "$lib/stores/system.svelte";
 
     let {
         activePage,
@@ -166,7 +167,23 @@
                     >{activePage.replace("task_", "").replace(/_/g, " ")}</span
                 >
             </div>
-            <NotificationBell />
+            <div class="flex items-center gap-3">
+                {#if systemStore.timezone}
+                    <span
+                        class="flex items-center gap-1.5 rounded-full border border-mist-200 bg-mist-50 px-2.5 py-1 text-xs font-medium text-mist-600"
+                        title={systemStore.timezoneSource === "system"
+                            ? "Detected from the host system; pin [scheduler] timezone in runwisp.toml to make it explicit."
+                            : "Set in runwisp.toml under [scheduler] timezone."}
+                    >
+                        <Globe size={12} class="text-mist-400" />
+                        {systemStore.timezone}
+                        {#if systemStore.timezoneSource}
+                            <span class="text-mist-400">({systemStore.timezoneSource})</span>
+                        {/if}
+                    </span>
+                {/if}
+                <NotificationBell />
+            </div>
         </header>
 
         <!-- Scrollable Area -->

@@ -20,6 +20,7 @@ const (
 	confirmActionStop
 	confirmActionRetry
 	confirmActionRestartService
+	confirmActionStopService
 )
 
 func (m *Model) focusSidebar() tea.Cmd {
@@ -141,7 +142,7 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 		instances := m.serviceInstances(taskName)
 		var prompt string
 		if instances > 1 {
-			prompt = fmt.Sprintf("Cancel and restart all %d replicas of\n'%s'?", instances, taskName)
+			prompt = fmt.Sprintf("Cancel and restart all %d instances of\n'%s'?", instances, taskName)
 		} else {
 			prompt = fmt.Sprintf("Cancel and restart\n'%s'?", taskName)
 		}
@@ -151,6 +152,20 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 			func() tea.Msg {
 				err := client.RestartService(taskName)
 				return RestartServiceMsg{TaskName: taskName, Err: err}
+			},
+		)
+	case confirmActionStopService:
+		taskName := m.resolveTaskName()
+		if taskName == "" {
+			return nil
+		}
+		client := m.client
+		return m.showConfirmDialog(
+			"Stop Service",
+			fmt.Sprintf("Stop service\n'%s'?\nThe daemon will not restart it until you click Restart\nor the daemon itself restarts.", taskName),
+			func() tea.Msg {
+				err := client.StopService(taskName)
+				return StopServiceMsg{TaskName: taskName, Err: err}
 			},
 		)
 	case confirmActionStop:

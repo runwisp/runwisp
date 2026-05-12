@@ -1,0 +1,193 @@
+/* SPDX-FileCopyrightText: PoppyCake, s.r.o. */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Maps Starlight's documented --sl-* CSS variables onto the RunWisp design
+ * tokens defined in runwisp-tokens.css. Covers chrome (sidebar, nav,
+ * accent links, code blocks) AND the semantic palette Starlight uses for
+ * asides, badges, and other content widgets — so nothing falls back to
+ * the stock blue/green/red Starlight ships with.
+ *
+ * Starlight ships its theme variables inside @layer starlight.base. Our
+ * neutral-scale flip needs to win the cascade against Starlight's own
+ * [data-theme='light'] block, so we declare runwisp as the last layer
+ * (this also stacks on top of starlight.utils) and put the critical
+ * neutrals there. Other bridges stay unlayered (they already win because
+ * unlayered beats layered).
+ */
+
+@layer starlight.base, starlight.reset, starlight.core, starlight.content,
+    starlight.components, starlight.utils, runwisp;
+
+:root {
+    /* Accent — wisp violet */
+    --sl-color-accent: var(--rw-primary);
+    --sl-color-accent-low: var(--rw-primary-soft);
+    --sl-color-accent-high: var(--rw-primary-active);
+    --sl-color-bg-accent: var(--rw-primary);
+
+    /* Text and surfaces */
+    --sl-color-text: var(--rw-on-surface);
+    --sl-color-text-accent: var(--rw-primary);
+    --sl-color-text-invert: var(--rw-on-primary);
+    --sl-color-bg: var(--rw-surface);
+    --sl-color-bg-nav: var(--rw-surface-raised);
+    --sl-color-bg-sidebar: var(--rw-surface-raised);
+    --sl-color-bg-inline-code: var(--rw-surface-sunken);
+
+    /* Hairlines */
+    --sl-color-hairline: var(--rw-outline);
+    --sl-color-hairline-light: var(--rw-outline);
+    --sl-color-hairline-shade: var(--rw-outline-hover);
+
+    /* Semantic palette (asides, badges) — pin every triplet so neither
+     * the dark default nor the light override leaks the stock palette. */
+    --sl-color-green: var(--rw-success);
+    --sl-color-green-low: var(--rw-success-soft);
+    --sl-color-green-high: var(--rw-success-soft-text);
+
+    --sl-color-red: var(--rw-danger);
+    --sl-color-red-low: var(--rw-danger-soft);
+    --sl-color-red-high: var(--rw-danger-soft-text);
+
+    --sl-color-orange: var(--rw-warning);
+    --sl-color-orange-low: var(--rw-warning-soft);
+    --sl-color-orange-high: var(--rw-warning-soft-text);
+
+    --sl-color-blue: var(--rw-info);
+    --sl-color-blue-low: var(--rw-info-soft);
+    --sl-color-blue-high: var(--rw-info-soft-text);
+
+    --sl-color-purple: var(--rw-primary);
+    --sl-color-purple-low: var(--rw-primary-soft);
+    --sl-color-purple-high: var(--rw-primary-soft-text);
+
+    /* Typography */
+    --sl-font: "TASA Orbiter", system-ui, -apple-system, sans-serif;
+    --sl-font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Mist-tinted neutrals — declared in the runwisp layer so they always win
+ * against Starlight's own [data-theme='light'] block in starlight.base.
+ * Starlight uses "white" for highest-contrast text and "black" for page bg
+ * and inverts the whole scale under [data-theme='light'] — we mirror that. */
+
+@layer runwisp {
+    :root {
+        --sl-color-white: var(--color-mist-50);
+        --sl-color-gray-1: var(--color-mist-200);
+        --sl-color-gray-2: var(--color-mist-300);
+        --sl-color-gray-3: var(--color-mist-400);
+        --sl-color-gray-4: var(--color-mist-500);
+        --sl-color-gray-5: var(--color-mist-700);
+        --sl-color-gray-6: var(--color-mist-800);
+        --sl-color-gray-7: var(--color-mist-900);
+        --sl-color-black: var(--color-mist-950);
+    }
+
+    :root[data-theme="light"] {
+        --sl-color-white: var(--color-mist-900);
+        --sl-color-gray-1: var(--color-mist-800);
+        --sl-color-gray-2: var(--color-mist-700);
+        --sl-color-gray-3: var(--color-mist-500);
+        --sl-color-gray-4: var(--color-mist-400);
+        --sl-color-gray-5: var(--color-mist-300);
+        --sl-color-gray-6: var(--color-mist-200);
+        --sl-color-gray-7: var(--color-mist-100);
+        --sl-color-black: var(--color-mist-50);
+    }
+}
+
+/* ─── Chrome parity with the dashboard (apps/ui/src/lib/layouts/AppLayout.svelte)
+ * Soft wisp-tinted shadow on the fixed top header + sidebar right edge so the
+ * chrome reads with the same depth as the dashboard's bg-white + shadow-sm. */
+
+header.header {
+    box-shadow:
+        0 1px 3px 0 oklch(0.18 0.02 280 / 0.08),
+        0 1px 2px -1px oklch(0.18 0.02 280 / 0.08);
+}
+
+@media (min-width: 50rem) {
+    nav.sidebar .sidebar-pane {
+        box-shadow:
+            1px 0 3px 0 oklch(0.18 0.02 280 / 0.05),
+            1px 0 2px -1px oklch(0.18 0.02 280 / 0.05);
+    }
+}
+
+/* Site title — match the dashboard sidebar brand (apps/ui/src/lib/layouts/AppLayout.svelte:50-61):
+ * 32px logo, 12px gap to the wordmark, bold neutral text. */
+.site-title {
+    color: var(--rw-on-surface);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    font-size: var(--sl-text-base);
+    gap: 0.75rem;
+}
+
+.site-title img {
+    height: 2rem;
+    width: 2rem;
+}
+
+/* Header padding-inline-start: 20px on desktop to match the dashboard's px-5
+ * brand area, so the logo lands at the same offset from the screen edge. */
+@media (min-width: 50rem) {
+    header.header {
+        padding-inline-start: 1.25rem;
+    }
+}
+
+/* ─── Sidebar nav: pill-shaped items, mist hover, wisp-soft active.
+ * Mirrors the dashboard's `bg-wisp-50 text-wisp-700` active pill and
+ * `text-mist-600 hover:bg-mist-50 hover:text-mist-900` baseline. */
+
+nav.sidebar .sidebar-content a {
+    color: var(--rw-on-surface-muted);
+    border-radius: var(--radius-lg, 0.5rem);
+    font-weight: 500;
+    transition:
+        background-color 150ms ease-out,
+        color 150ms ease-out;
+}
+
+nav.sidebar .sidebar-content a:hover,
+nav.sidebar .sidebar-content a:focus {
+    color: var(--rw-on-surface);
+    background-color: var(--rw-surface-sunken);
+}
+
+nav.sidebar .sidebar-content a[aria-current="page"],
+nav.sidebar .sidebar-content a[aria-current="page"]:hover,
+nav.sidebar .sidebar-content a[aria-current="page"]:focus {
+    background-color: var(--rw-primary-soft);
+    color: var(--rw-primary-soft-text);
+    font-weight: 600;
+    box-shadow: 0 1px 2px 0 oklch(0.5 0.18 268 / 0.08);
+}
+
+/* Top-level direct links (Welcome, API Reference): same pill, no oversized text. */
+nav.sidebar .sidebar-content a.large {
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+    color: var(--rw-on-surface);
+}
+
+/* Section headers — the small uppercase "TASKS"-style label from the dashboard. */
+nav.sidebar .sidebar-content .group-label .large {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--rw-on-surface-faint);
+}
+
+/* ─── Splash hero brand flourish — mirrors .rw-text-gradient from theme.css. */
+
+.hero h1 {
+    background: linear-gradient(135deg, var(--color-wisp-600), var(--color-aurora-500));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    color: transparent;
+}

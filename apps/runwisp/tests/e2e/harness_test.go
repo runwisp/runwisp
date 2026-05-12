@@ -7,6 +7,7 @@ package e2e
 
 import (
 	"bytes"
+	"database/sql"
 	"net"
 	"os"
 	"os/exec"
@@ -23,6 +24,7 @@ import (
 	"github.com/hinshun/vt10x"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 const (
@@ -143,6 +145,9 @@ func writeE2EConfig(t *testing.T, dir string) string {
 
 	configPath := filepath.Join(dir, "runwisp.e2e.toml")
 	config := `
+[daemon]
+shutdown_timeout = "500ms"
+
 [tasks.alpha-stream]
 run = """
 set -eu
@@ -475,22 +480,39 @@ func (s *tuiSession) forceStop() {
 func waitForPassword(t testing.TB, dataDir string) string {
 	t.Helper()
 
-	passwordPath := filepath.Join(dataDir, "password")
+	dbPath := filepath.Join(dataDir, "runwisp.db")
 	deadline := time.Now().Add(5 * time.Second)
 
 	for time.Now().Before(deadline) {
-		contents, err := os.ReadFile(passwordPath)
-		if err == nil {
-			password := strings.TrimSpace(string(contents))
-			if password != "" {
-				return password
-			}
+		if password := tryReadStoredPassword(dbPath); password != "" {
+			return password
 		}
 		time.Sleep(screenPollInterval)
 	}
 
-	require.FailNowf(t, "password file not created", "path: %s", passwordPath)
+	require.FailNowf(t, "password row not written to SQLite", "db path: %s", dbPath)
 	return ""
+}
+
+// tryReadStoredPassword opens the daemon's SQLite read-only and returns the
+// stored password, or "" if the row isn't present yet (or the file isn't
+// readable). Errors are deliberately swallowed because this is a polling
+// helper that races startup.
+func tryReadStoredPassword(dbPath string) string {
+	if _, err := os.Stat(dbPath); err != nil {
+		return ""
+	}
+	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
+	if err != nil {
+		return ""
+	}
+	defer db.Close()
+
+	var value string
+	if err := db.QueryRow(`SELECT value FROM config_entries WHERE key = ?`, "password").Scan(&value); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
 }
 
 func waitForRunCount(t testing.TB, client *apiclient.Client, taskName string, expectedTotal int64, timeout time.Duration) int64 {

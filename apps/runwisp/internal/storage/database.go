@@ -63,7 +63,7 @@ triggered_by          VARCHAR(20) NOT NULL,
 created_at            DATETIME,
 retry_attempt         INTEGER DEFAULT 0,
 retry_of_run_id       TEXT,
-replica_index         INTEGER NOT NULL DEFAULT 0
+instance_index        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_runs_external_execution_id ON runs(external_execution_id);
 CREATE INDEX IF NOT EXISTS idx_runs_task_name ON runs(task_name);
@@ -129,15 +129,29 @@ func New(dbPath string, logOutput io.Writer) (Database, error) {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
-	if err := migrateAddReplicaIndex(db); err != nil {
-		return nil, fmt.Errorf("failed to migrate replica_index: %w", err)
+	if err := migrateAddInstanceIndex(db); err != nil {
+		return nil, fmt.Errorf("failed to migrate instance_index: %w", err)
 	}
 
 	return &SQLiteDatabase{db: db}, nil
 }
 
-func migrateAddReplicaIndex(db *sql.DB) error {
-	_, err := db.Exec(`ALTER TABLE runs ADD COLUMN replica_index INTEGER NOT NULL DEFAULT 0`)
+// migrateAddInstanceIndex is idempotent and works on three shapes of the
+// runs table:
+//   - Fresh install: the CREATE TABLE above already added instance_index, so
+//     both ALTERs below fail with "duplicate column" / "no such column" and
+//     we return nil.
+//   - Pre-rename install (old daemon left a replica_index column): we rename
+//     it to instance_index in place.
+//   - Pre-column install (very old daemon, neither column present): we ADD
+//     instance_index with a zero default.
+func migrateAddInstanceIndex(db *sql.DB) error {
+	if _, err := db.Exec(`ALTER TABLE runs RENAME COLUMN replica_index TO instance_index`); err == nil {
+		return nil
+	} else if !strings.Contains(err.Error(), "no such column") {
+		return err
+	}
+	_, err := db.Exec(`ALTER TABLE runs ADD COLUMN instance_index INTEGER NOT NULL DEFAULT 0`)
 	if err == nil {
 		return nil
 	}
@@ -148,14 +162,14 @@ func migrateAddReplicaIndex(db *sql.DB) error {
 }
 
 const runColumns = `id, external_execution_id, task_name, status, end_reason, exit_code,
-start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, replica_index`
+start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index`
 
 func (db *SQLiteDatabase) CreateRun(run *model.Run) error {
 	_, err := db.db.Exec(
 		`INSERT INTO runs (`+runColumns+`)
  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		run.ID, run.ExternalExecutionID, run.TaskName, run.Status, run.EndReason, run.ExitCode,
-		run.StartAt, run.EndAt, run.TriggeredBy, run.CreatedAt, run.RetryAttempt, run.RetryOfRunID, run.ReplicaIndex,
+		run.StartAt, run.EndAt, run.TriggeredBy, run.CreatedAt, run.RetryAttempt, run.RetryOfRunID, run.InstanceIndex,
 	)
 	return err
 }
@@ -165,11 +179,11 @@ func (db *SQLiteDatabase) UpdateRun(run *model.Run) error {
 		`UPDATE runs SET
 external_execution_id = ?, task_name = ?, status = ?, end_reason = ?, exit_code = ?,
 start_at = ?, end_at = ?, triggered_by = ?, created_at = ?,
-retry_attempt = ?, retry_of_run_id = ?, replica_index = ?
+retry_attempt = ?, retry_of_run_id = ?, instance_index = ?
  WHERE id = ?`,
 		run.ExternalExecutionID, run.TaskName, run.Status, run.EndReason, run.ExitCode,
 		run.StartAt, run.EndAt, run.TriggeredBy, run.CreatedAt,
-		run.RetryAttempt, run.RetryOfRunID, run.ReplicaIndex,
+		run.RetryAttempt, run.RetryOfRunID, run.InstanceIndex,
 		run.ID,
 	)
 	return err
@@ -181,7 +195,7 @@ func scanRun(scanner interface {
 	var run model.Run
 	err := scanner.Scan(
 		&run.ID, &run.ExternalExecutionID, &run.TaskName, &run.Status, &run.EndReason, &run.ExitCode,
-		&run.StartAt, &run.EndAt, &run.TriggeredBy, &run.CreatedAt, &run.RetryAttempt, &run.RetryOfRunID, &run.ReplicaIndex,
+		&run.StartAt, &run.EndAt, &run.TriggeredBy, &run.CreatedAt, &run.RetryAttempt, &run.RetryOfRunID, &run.InstanceIndex,
 	)
 	if err != nil {
 		return nil, err
@@ -210,8 +224,8 @@ func (db *SQLiteDatabase) GetRunSummary() (*model.RunSummary, error) {
 	row := db.db.QueryRow(`
 SELECT COUNT(*),
 COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0),
-COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout') THEN 1 ELSE 0 END), 0),
-MAX(CASE WHEN end_reason IN ('failed','crashed','timeout') THEN end_at END)
+COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow') THEN 1 ELSE 0 END), 0),
+MAX(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow') THEN end_at END)
 FROM runs`)
 	summary := &model.RunSummary{}
 	if err := row.Scan(&summary.Total, &summary.Success, &summary.Failed, &summary.LastFailure); err != nil {
@@ -248,7 +262,7 @@ func applyStatusFilter(q *queryBuilder, status string) {
 		return
 	}
 	switch model.EndReason(status) {
-	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped, model.ReasonTimeout, model.ReasonCrashed:
+	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped, model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped, model.ReasonLogOverflow:
 		q.add("end_reason = ?", status)
 	default:
 		q.add("status = ?", status)

@@ -9,6 +9,8 @@ import {
     CircleStop,
     TimerOff,
     CircleDashed,
+    SkipForward,
+    FileExclamationPoint,
 } from "@lucide/svelte";
 import type { Component } from "svelte";
 import { displayStatus, type RunStatus } from "@runwisp/common";
@@ -66,6 +68,46 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
     },
     timeout: {
         icon: TimerOff,
+        color: "text-warning-surface",
+        bg: "bg-warning-soft",
+        border: "border-warning-soft",
+        dot: "bg-warning-surface",
+        badge: "bg-warning-soft text-warning-soft-text",
+    },
+    skipped: {
+        icon: SkipForward,
+        color: "text-on-surface-muted",
+        bg: "bg-surface-sunken",
+        border: "border-outline-faint",
+        dot: "bg-on-surface-faint",
+        badge: "bg-surface-sunken text-on-surface",
+    },
+    log_overflow: {
+        icon: FileExclamationPoint,
+        color: "text-danger-surface",
+        bg: "bg-danger-soft",
+        border: "border-danger-soft",
+        dot: "bg-danger-surface",
+        badge: "bg-danger-soft text-danger-soft-text",
+    },
+    queue_full: {
+        icon: SkipForward,
+        color: "text-warning-surface",
+        bg: "bg-warning-soft",
+        border: "border-warning-soft",
+        dot: "bg-warning-surface",
+        badge: "bg-warning-soft text-warning-soft-text",
+    },
+    dst_skipped: {
+        icon: SkipForward,
+        color: "text-on-surface-muted",
+        bg: "bg-surface-sunken",
+        border: "border-outline-faint",
+        dot: "bg-on-surface-faint",
+        badge: "bg-surface-sunken text-on-surface",
+    },
+    daemon_stopped: {
+        icon: CircleStop,
         color: "text-warning-surface",
         bg: "bg-warning-soft",
         border: "border-warning-soft",

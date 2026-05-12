@@ -54,14 +54,12 @@ func init() {
 	rootCmd.PersistentFlags().IntVarP(&flags.Port, "port", "p", 9477, "HTTP server port")
 	rootCmd.PersistentFlags().StringVar(&flags.Host, "host", "127.0.0.1", "HTTP server bind address (use 0.0.0.0 to listen on all interfaces)")
 
-	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(cloudCmd)
 	rootCmd.AddCommand(tuiCmd)
-	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(triggerCmd)
+	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(openapiCmd)
 }

@@ -1,0 +1,189 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Health checks
+description: An every-N-minutes HTTP health check that skips on overlap, escalates on repeated failures via notification coalescing, and doesn't page you for a single transient blip.
+---
+
+A health check is a one-line `curl` wrapped in cron. The interesting
+parts are the failure semantics: how do you avoid paging on a single
+flaky probe, and how do you make sure the alert actually arrives when
+the underlying service is genuinely down?
+
+This recipe walks through a Postgres-backed web app's external
+health check, but the shape is the same for any HTTP service.
+
+## The task
+
+```toml
+[tasks.healthcheck-api]
+group       = "Health checks"
+description = "External probe of the public API every 5 minutes"
+cron        = "*/5 * * * *"
+on_overlap  = "skip"          # don't pile up if the probe stalls
+timeout     = "30s"           # 30s for one HTTP round-trip is generous
+retry_attempts = 2            # forgive 2 transient blips before escalating
+retry_delay    = "30s"
+retry_backoff  = "linear"     # 30s, 60s — total ~90s of probe-and-wait
+keep_runs   = 500             # several days of 5-minute checks for forensics
+notify_on_failure = ["slack-ops"]
+
+run = """
+set -euo pipefail
+curl --silent --show-error --fail-with-body \\
+     --max-time 25 \\
+     --connect-timeout 5 \\
+     --user-agent 'runwisp-healthcheck/1.0' \\
+     https://api.example.com/health
+"""
+```
+
+That's the whole task. Two minutes of reading; ten minutes if you
+care about the rationale below.
+
+## Why each knob
+
+### `cron = "*/5 * * * *"`
+
+Every five minutes is the sweet spot for human-driven services:
+
+- fine-grained enough that "down for 5 minutes" is the worst-case
+  detection delay, which most teams can tolerate;
+- coarse enough that a slightly slow service doesn't generate
+  load you'd notice.
+
+Drop to `*/1 * * * *` for tighter SLAs, or `*/15 * * * *` for
+internal tools. Keep an eye on the run history in the Web UI —
+if probes regularly take longer than the cron interval, dial it
+back.
+
+### `on_overlap = "skip"`
+
+A health check that takes 30 seconds because the service is
+struggling shouldn't fire a second probe while the first is still
+in flight — that just adds load. `skip` drops the new firing.
+The rejected firing is recorded with `end_reason = "skipped"` and
+exit code `-1` — a distinct status from `failed`, so your health
+metrics don't get polluted by overlap-induced rows and
+`notify_on_failure` stays quiet on skips.
+
+### `timeout = "30s"` + `--max-time 25`
+
+Belt and braces. The shell-side `curl --max-time` exits
+non-zero before the daemon's `timeout` kicks in — so the run
+exits with a real curl error and a useful message in the log,
+rather than the daemon's terse "killed by timeout".
+
+### `retry_attempts = 2` + `retry_delay = "30s"` + `retry_backoff = "linear"`
+
+The trick: a real outage shows up as **all three attempts
+failing**, which fires the notification. A single dropped packet
+shows up as one failure followed by a passing retry — silent.
+
+Math: with `linear` and `delay = 30s`, attempts wait `30s, 60s`
+between them. Total alert latency from start of first probe to
+notification: ~90s. That's faster than most humans-on-call
+expect, and it eliminates the "alert bot pages me at 3am for one
+flaky probe" failure mode.
+
+The trade-off: if your service is genuinely flapping every 90
+seconds, the retries will sometimes mask it. The
+[notification coalescing][coalescing] window catches that case —
+flapping shows up as a single coalesced row with a count and a
+sparkline, rather than dozens of separate alerts.
+
+[coalescing]: /notifications/global/#coalescing
+
+### `keep_runs = 500`
+
+Five-minute checks generate ~288 rows per day. 500 keeps not
+quite two days of probes — usually enough to correlate "the
+service was unhappy from 14:30 onwards" without flooding the run
+list. Bump it for finer-grained probes.
+
+### `--silent --show-error --fail-with-body`
+
+The `curl` flags that matter:
+
+- `--silent` — no progress bar in the captured log.
+- `--show-error` — but show the error if one happens.
+- `--fail-with-body` — exit non-zero on HTTP 4xx/5xx **and**
+  print the response body. Without this, curl returns 0 on a
+  500 with body content; the task would silently report success.
+
+`--fail-with-body` is available on modern curl builds. On older
+systems use plain `--fail` and accept that 4xx/5xx response bodies
+aren't captured.
+
+## A flap-friendly variant
+
+If your service is known to be flaky and you only want to be paged
+on a sustained outage (say "5 failures in the last 30 minutes"),
+**replace** the task above (don't define both — the TOML key would
+collide) with this one, which drops retries and leans on the
+[notifications model][notifications] to do the rate-limiting:
+
+```toml
+[tasks.healthcheck-api]
+cron       = "*/5 * * * *"
+on_overlap = "skip"
+timeout    = "30s"
+retry_attempts = 0
+keep_runs  = 500
+
+run = "curl --silent --show-error --fail-with-body --max-time 25 https://api.example.com/health"
+
+# No notify_on_failure here — every failure goes only to in-app.
+```
+
+```toml
+[notify]
+coalesce_window = "30m"
+```
+
+Now an outage that lasts 30 minutes is one in-app row with
+`count = 6` and a sparkline. The bell glows red, but you don't
+get a Slack barrage.
+
+[notifications]: /notifications/model/
+
+## Probing internal services
+
+For internal-network checks you don't always have a public URL.
+**Probe something that exercises the service, not just the
+listener** — a passing TCP-connect against a database that's
+refusing queries is the classic cause of an undetected outage.
+
+For Postgres specifically:
+
+```bash
+PGPASSWORD="$HEALTHCHECK_PG_PWD" psql \\
+  --host=db.internal --username=healthcheck \\
+  --dbname=app_production \\
+  --command='SELECT 1' \\
+  --quiet --no-psqlrc \\
+  > /dev/null
+```
+
+`pg_isready` is even cheaper if you only care that the server is
+accepting connections (it doesn't run a query, but it does check
+authentication won't immediately reject).
+
+If all you have is "is this port open?" — e.g. probing a
+third-party appliance you can't authenticate to — `nc` is the
+honest tool:
+
+```bash
+nc -zw5 host.internal 5432 || { echo "host.internal:5432 not reachable"; exit 1; }
+```
+
+Just don't dress it up as a health check it isn't.
+
+## Where to next
+
+- [Slack provider](/notifications/providers/slack/) — wiring the
+  `slack-ops` notifier the task references.
+- [Notifications model](/notifications/model/) — coalescing,
+  delivery failure handling, and the in-app default.
+- [Concepts: retries & timeouts](/concepts/retries/) — what
+  `retry_backoff = "linear"` actually computes.

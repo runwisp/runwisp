@@ -18,9 +18,12 @@
         triggering = false,
         stopping = false,
         restarting = false,
+        serviceStopped = false,
+        stoppingService = false,
         onRun,
         onStop,
         onRestart,
+        onStopService,
         fetchLogs,
         streamLogs,
         initialRunId = null,
@@ -32,9 +35,12 @@
         triggering?: boolean;
         stopping?: boolean;
         restarting?: boolean;
+        serviceStopped?: boolean;
+        stoppingService?: boolean;
         onRun: () => void;
         onStop?: (runId: string) => void;
         onRestart?: () => void;
+        onStopService?: () => void;
         fetchLogs: (
             runId: string,
             from: number,
@@ -56,6 +62,17 @@
     let confirmOpen = $state(false);
     let stopConfirmOpen = $state(false);
     let restartConfirmOpen = $state(false);
+    let stopServiceConfirmOpen = $state(false);
+
+    const runLaunchable = $derived(
+        !taskIsService && (task.api_trigger ?? true) && !triggering && !concurrencyReached,
+    );
+    const runDisabledReason = $derived.by(() => {
+        if (taskIsService) return "Services are managed by the supervisor";
+        if (!(task.api_trigger ?? true)) return "API triggering is disabled for this task";
+        if (concurrencyReached) return "Max concurrency reached";
+        return "";
+    });
 
     let sortedRuns: Run[] = $derived(sortByCreatedAtDesc(runs));
 
@@ -119,17 +136,36 @@
                 </Button>
             {/if}
             {#if taskIsService}
+                {#if serviceStopped}
+                    <Button
+                        variant="primary"
+                        onclick={() => (restartConfirmOpen = true)}
+                        loading={restarting}
+                        disabled={!onRestart}
+                    >
+                        {#snippet icon()}<RefreshCcw size={16} />{/snippet}
+                        Restart Service
+                    </Button>
+                {:else}
+                    <Button
+                        variant="danger"
+                        onclick={() => (stopServiceConfirmOpen = true)}
+                        loading={stoppingService}
+                        disabled={!onStopService}
+                        title="Stops the service for the rest of the daemon's lifetime"
+                    >
+                        {#snippet icon()}<Square size={16} />{/snippet}
+                        Stop Service
+                    </Button>
+                {/if}
+            {:else}
                 <Button
                     variant="primary"
-                    onclick={() => (restartConfirmOpen = true)}
-                    loading={restarting}
-                    disabled={!onRestart}
+                    onclick={() => (confirmOpen = true)}
+                    loading={triggering}
+                    disabled={!runLaunchable}
+                    title={runDisabledReason}
                 >
-                    {#snippet icon()}<RefreshCcw size={16} />{/snippet}
-                    Restart Service
-                </Button>
-            {:else}
-                <Button variant="primary" onclick={() => (confirmOpen = true)} loading={triggering}>
                     {#snippet icon()}<Play size={16} />{/snippet}
                     Run Task
                 </Button>
@@ -211,7 +247,7 @@
         bind:open={restartConfirmOpen}
         title="Restart Service"
         description={instanceCount > 1
-            ? `Cancel and restart all ${instanceCount} replicas of ${task.name}?`
+            ? `Cancel and restart all ${instanceCount} instances of ${task.name}?`
             : `Cancel and restart ${task.name}?`}
         size="sm"
     >
@@ -225,6 +261,26 @@
                 "Restart Now",
                 "primary",
                 RefreshCcw,
+            )}
+        {/snippet}
+    </Modal>
+
+    <Modal
+        bind:open={stopServiceConfirmOpen}
+        title="Stop Service"
+        description={`Stop ${task.name}? The daemon will not restart it until you click Restart or the daemon itself restarts.`}
+        size="sm"
+    >
+        {#snippet footer()}
+            {@render confirmFooter(
+                () => (stopServiceConfirmOpen = false),
+                () => {
+                    stopServiceConfirmOpen = false;
+                    onStopService?.();
+                },
+                "Stop Now",
+                "danger",
+                Square,
             )}
         {/snippet}
     </Modal>

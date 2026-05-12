@@ -114,8 +114,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				switch m.execView.Action() {
 				case execViewActionStop:
 					return m, m.confirmAction(confirmActionStop)
+				case execViewActionStopService:
+					return m, m.confirmAction(confirmActionStopService)
 				case execViewActionRetry:
 					return m, m.confirmAction(confirmActionRetry)
+				case execViewActionRestartService:
+					return m, m.confirmAction(confirmActionRestartService)
 				}
 			case headerFocusStarted, headerFocusDuration, headerFocusID:
 				return m, m.copyExecField()
@@ -146,13 +150,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		if m.execView != nil {
-			return m, m.confirmAction(confirmActionRetry)
+			switch m.execView.Action() {
+			case execViewActionRetry:
+				return m, m.confirmAction(confirmActionRetry)
+			case execViewActionRestartService:
+				return m, m.confirmAction(confirmActionRestartService)
+			}
+			return m, nil
 		}
 		return m, m.confirmAction(confirmActionTrigger)
 
 	case "s":
 		if m.execView != nil {
-			return m, m.confirmAction(confirmActionStop)
+			switch m.execView.Action() {
+			case execViewActionStop:
+				return m, m.confirmAction(confirmActionStop)
+			case execViewActionStopService:
+				return m, m.confirmAction(confirmActionStopService)
+			}
+			return m, nil
+		}
+
+	case "d":
+		if m.execView != nil && !m.execView.Fullscreen() {
+			return m, m.downloadExecLog()
 		}
 
 	case "up", "k":

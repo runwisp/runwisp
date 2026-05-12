@@ -3,7 +3,11 @@
 
 package runtime
 
-import "github.com/runwisp/runwisp/internal/model"
+import (
+	"time"
+
+	"github.com/runwisp/runwisp/internal/model"
+)
 
 // TaskRunner is the subset of TaskManager consumed by the cloud and server packages.
 // Using this interface instead of the concrete implementation makes those packages
@@ -15,7 +19,15 @@ type TaskRunner interface {
 	UpsertTask(task *model.Task)
 	TerminateRun(runID string) error
 	TerminateRunByExternalExecutionID(externalExecutionID string) error
-	RestartServiceReplicas(taskName string) error
+	RestartServiceInstances(taskName string) error
+	// StopService marks a service as operator-stopped (in-memory only, cleared
+	// on daemon restart) and cancels every live instance. The supervisor will
+	// not refill slots until StartServiceInstances is called.
+	StopService(taskName string) error
+	// RecordSkippedFiring persists a run that was suppressed before the
+	// executor started — currently used by the scheduler to log DST wall-clock
+	// duplicates with end_reason = "dst_skipped".
+	RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error
 }
 
 // TaskManager is the full lifecycle interface for task management.
@@ -25,8 +37,14 @@ type TaskManager interface {
 	BindPersistenceHook(hook RunPersistenceHook)
 	GetActiveRuns(taskName string) []*ActiveRun
 	LoadPendingRuns(runs []model.Run) PendingRunsResult
-	StartServiceReplicas(taskName string) error
+	StartServiceInstances(taskName string) error
+	// Shutdown cancels every active run and waits for all goroutines to
+	// drain. Equivalent to ShutdownWithDeadline(0).
 	Shutdown()
+	// ShutdownWithDeadline cancels every active run and waits up to the
+	// supplied deadline for goroutines to exit. Survivors are SIGKILLed and
+	// recorded with end_reason = "daemon_stopped".
+	ShutdownWithDeadline(deadline time.Duration)
 }
 
 // ScheduleSource is the subset of Scheduler consumed by the server package.

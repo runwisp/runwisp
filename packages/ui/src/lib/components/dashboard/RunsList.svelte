@@ -128,6 +128,7 @@
                         <option value="success">Success</option>
                         <option value="failed">Failed</option>
                         <option value="crashed">Crashed</option>
+                        <option value="skipped">Skipped</option>
                     </select>
                     <Funnel
                         class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-on-surface-faint"
@@ -209,8 +210,8 @@
                                 />
                             </div>
                             <span class="truncate text-sm font-semibold text-on-surface">
-                                {run.task_name}{#if run.replica_index > 0}<span
-                                        class="text-on-surface-muted">#{run.replica_index}</span
+                                {run.task_name}{#if run.instance_index > 0}<span
+                                        class="text-on-surface-muted">#{run.instance_index}</span
                                     >{/if}
                             </span>
                         </div>
@@ -266,9 +267,9 @@
                     <div class="flex items-center justify-between text-xs">
                         <div class="flex items-center gap-2 text-on-surface-muted">
                             <span class="capitalize">{runDisplayStatus(run)}</span>
-                            {#if run.replica_index > 0}
+                            {#if run.instance_index > 0}
                                 <span class="font-mono text-[11px] text-on-surface-faint"
-                                    >replica #{run.replica_index}</span
+                                    >instance #{run.instance_index}</span
                                 >
                             {/if}
                         </div>

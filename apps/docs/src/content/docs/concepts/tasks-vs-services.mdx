@@ -1,0 +1,146 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Tasks vs Services
+description: When to model a unit of work as a [tasks.*] vs a [services.*] in runwisp.toml.
+---
+
+RunWisp models work as one of two things: a **task** that runs and exits,
+or a **service** that stays up. Picking the right one is almost always
+straightforward — but the schema enforces real differences, so it pays to
+know what you're committing to.
+
+## The one-line rule
+
+> Does the command **exit on its own** when it's done its job?
+>
+> **Yes →** `[tasks.<name>]`. **No →** `[services.<name>]`.
+
+A nightly backup, a health probe, a deploy hook — they run, they exit.
+Those are tasks. A queue worker, a metrics agent, something that holds
+an open connection waiting for events — they hold a connection, they
+loop, they expect to be killed by you. Those are services.
+
+If you find yourself writing `while true; do ...; done` inside a `[tasks.*]`,
+that's a service in disguise — switch the section header.
+
+## What changes when you switch the header
+
+| Field             | `[tasks.*]`                                            | `[services.*]`                                                  |
+| ----------------- | ------------------------------------------------------ | --------------------------------------------------------------- |
+| `cron`            | ✅ schedule firings                                    | ❌ rejected (services aren't cron-driven)                       |
+| `catch_up`        | ✅ `latest` / `all` / `skip` for missed ticks          | ❌ N/A                                                          |
+| `instances`       | ❌ rejected                                            | ✅ N replicas, default `1`, max `64`                            |
+| `restart`         | ✅ `never` / `on_failure`; `always` is rejected        | Forced to `always` — that's the contract                        |
+| `restart_delay`   | ❌ N/A                                                 | ✅ base delay before restart, default `1s`                      |
+| `restart_backoff` | ❌ N/A                                                 | ✅ `constant` / `linear` / `exponential`, default `exponential` |
+| `retry_attempts`  | ✅ retry the failing run before recording final status | ❌ services restart instead of retry                            |
+| `retry_delay`     | ✅ base delay between retries                          | ❌ N/A                                                          |
+| `retry_backoff`   | ✅ `constant` / `linear` / `exponential`               | ❌ N/A                                                          |
+| `on_overlap`      | ✅ default `queue`                                     | ✅ default `skip` (overlap is unusual for an always-on service) |
+| `group`           | ✅ default `"Tasks"`                                   | ✅ default `"Services"`                                         |
+
+Everything else — `timeout`, `graceful_stop`, `log_max_size`,
+`log_on_full`, `keep_runs`, `keep_for`, `notify_on_failure`,
+`notify_on_success`, `description`, `api_trigger` — works the same for
+both. `max_concurrent` and `queue_max` are task-only;
+`backoff_reset_after` is service-only.
+
+## What both share
+
+Both kinds produce real runs in RunWisp. Each invocation gets:
+
+- A unique ID and a row in the run history.
+- A captured stdout/stderr stream, written to a per-task log file and
+  tailed live in the Web UI.
+- An end reason — `success`, `failed`, `stopped`, `timeout`,
+  `crashed`, `skipped`, or `log_overflow`.
+- The same notification surface (per-task `notify_on_failure` /
+  `notify_on_success`, plus full `[[notification_route]]` matching).
+
+That's the point: switching from task to service changes how the
+process is run, not what you can see or how you operate it.
+
+## Services scale horizontally with `instances`
+
+```toml
+[services.api-worker]
+instances = 3
+run       = "/usr/local/bin/worker"
+```
+
+Each replica is its own visible run with `replica_index` 0, 1, 2. They
+share configuration, logs are unified per service, and each replica is
+restarted independently when its process exits.
+
+## "Run N copies" on tasks vs services
+
+Tasks scale with `max_concurrent` (cap on overlapping runs); services
+scale with `instances` (always-on replicas). Pick by the **shape of
+the work**, not the count.
+
+- **`max_concurrent = 4`** on a `cron = "* * * * *"` thumbnail-render
+  task. Most ticks finish in seconds, but up to four can run at once
+  if a backlog arrives. The 5th concurrent firing goes through
+  `on_overlap`.
+- **`instances = 4`** on a queue-worker service. Four worker processes
+  stay connected to the queue forever; if one crashes, the supervisor
+  brings it back. Cron is irrelevant — the workers pull work
+  themselves.
+
+Mixing them up has predictable failure modes: a long-lived worker
+modelled as a task with `max_concurrent = 3` turns into "one copy
+holds the slot, the queue fills up." A 30-second job modelled as a
+service with `instances = 3` turns into "the supervisor restarts it
+120 times an hour."
+
+## Choosing on the edge cases
+
+A few patterns are easy to second-guess. Here's how to resolve them:
+
+### A polling loop you'd rather express as cron
+
+A `while true; do work; sleep 60; done` is almost always a task with
+`cron = "* * * * *"` and `on_overlap = "skip"`. Each tick then gets
+its own run, exit code, and log file — you can see exactly when the
+04:32 poll failed, and a crashed tick gets retried instead of silently
+re-entering the loop with broken state.
+
+The deciding question is **does each invocation start fresh?** If yes,
+make it a task. If the process holds state worth keeping across
+runs — a worker that's joined a queue and would have to re-join after
+every restart, a chat-server connection, a search index it built in
+memory — make it a service.
+
+### A one-off that you only want to trigger from the API or UI
+
+That's still a task. Omit `cron`. The task appears in the UI and accepts
+manual triggers via `runwisp run-task <name>`, the Web UI's **Run
+Task** button, the TUI, or `POST /api/tasks/{name}/run`. Set
+`api_trigger = false` to make a task cron-only and not API-runnable.
+
+### A task that "should never overlap"
+
+Tasks already default to `on_overlap = "queue"` (in order). If overlap is
+genuinely impossible for your workload (e.g. competing for a single
+resource), use `on_overlap = "skip"` — the rejected firing is recorded
+in history with `end_reason = "skipped"`, so you can see when the
+previous run took too long.
+
+## What you can't do
+
+- **A task with `restart = "always"`.** Rejected at startup — use
+  `[services.<name>]` instead.
+- **A service with `cron`.** Not a field on services; they already run
+  continuously.
+- **The same name on both sides.** Names share one namespace; the
+  loader rejects duplicates with a clear error.
+
+## Where to next
+
+- [How scheduling works](/concepts/scheduling/) — what `cron` actually
+  parses and how missed ticks are handled.
+- [Concurrency policies](/concepts/concurrency/) — `on_overlap` in depth.
+- [`[tasks.*]` reference](/configuration/tasks/) — every task field.
+- [`[services.*]` reference](/configuration/services/) — every service
+  field.

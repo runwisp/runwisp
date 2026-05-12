@@ -1,0 +1,157 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: The Web UI tour
+description: A tour of the embedded RunWisp Web dashboard — opening it from the TUI, the overview page, task detail, log viewer, and the notifications bell.
+---
+
+The Web UI is the same dashboard as the [TUI][tui], in your browser
+and updated live as runs happen. It lives **inside the daemon
+binary** — no separate web server, no CDN, no extra port. Go to
+`http://<host>:<port>` (default `http://localhost:9477`) and you're
+there.
+
+[tui]: /concepts/tui-tour/
+
+The dashboard is small and mostly read-only: **trigger, restart, and
+stop** are the only actions that change anything. Everything else is
+viewing — `runwisp.toml` stays the source of truth.
+
+## Open from the TUI
+
+If you're already in the local TUI (just type `runwisp`), the **Open
+Web UI** row on the Home page is the easiest way in:
+
+1. `runwisp` starts the daemon and opens the TUI.
+2. The Home page lists `▸ ⮕ Open Web UI` as its first row.
+3. Press `Enter` and your browser opens the dashboard, already logged
+   in — no need to paste the password.
+
+On a server with no browser, the TUI prints the URL instead, so you
+can paste it on another machine.
+
+![tui-home-default.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused, Web UI URL row, and auto-generated password row.](../../../assets/screenshots/placeholder.svg)
+
+## Open from a browser
+
+When you don't have the local TUI — a remote browser, a coworker's
+laptop, a cold bookmark — you'll see the login modal.
+
+![web-ui-login.png — Login modal centred on the dashboard: single password field, Submit button, no username.](../../../assets/screenshots/placeholder.svg)
+
+There's no username — RunWisp is single-operator. Type the password
+and submit. The password never goes over the network: login uses a
+challenge-response handshake. For details, see [Auth][auth].
+
+[auth]: /operations/auth/
+
+Your session expires after a while; after that, log in again. Too
+many bad password attempts trigger a temporary lockout — wait it out
+or restart the daemon. See [Auth][auth] for the exact limits.
+
+## Overview (`/`)
+
+The landing page after login.
+
+![web-ui-overview.png — Overview page: daemon hero with sparklines, stats card, task overview tabs (All · Attention · Running · Scheduled · Manual), recent activity feed.](../../../assets/screenshots/placeholder.svg)
+
+- **Daemon header** — name, version, uptime, host, OS, CPU/RAM use.
+  CPU and memory sparklines update live.
+- **Stats** — active task count, recent success rate, CPU and memory
+  percentages.
+- **Task overview** — filter tabs (All · Attention · Running ·
+  Scheduled · Manual) with a sort selector, so you see the part you
+  care about without scrolling.
+- **Recent activity** — the most recent runs across all tasks,
+  updated live. Next to it, three side panels (Needs attention,
+  Running now, Up next).
+
+## All runs (`/runs`)
+
+A flat, newest-first list of recent runs across every task. Useful
+for "what's been happening lately" when you don't already know which
+task to open.
+
+![web-ui-runs.png — All Runs page: flat newest-first table of recent runs across every task with status icons, durations, and timestamps.](../../../assets/screenshots/placeholder.svg)
+
+## Task detail (`/tasks/{id}`)
+
+Click a task in the sidebar (or any run in the activity feed) to open
+its detail page. The header names the task and shows its schedule;
+next to it sits the page's one action button — **Run Task** for a
+task, **Stop Now** while a run is active, or **Restart Service** for
+a service (which cancels every running instance and lets RunWisp
+spawn fresh ones). Underneath the header you'll find the run history
+for this task and, taking up most of the pane, the log for whichever
+run you have selected. New lines stream in live while the run is
+going.
+
+![web-ui-task-detail.png — Task detail for a finished run: header with Run Task button, run history list on the side, log viewer occupying most of the pane.](../../../assets/screenshots/placeholder.svg)
+
+### The log viewer
+
+When you open a finished run, the log viewer opens at the **end** of
+the log and loads earlier content as you scroll up. For a run still
+in progress, new lines stream in live. Line numbers match exactly,
+so anything you grep for in the file on disk is at the same line
+number in the browser. A **Download log** button in the run header
+gives you the whole file as a single download.
+
+### Failed runs
+
+Nothing silently fails. A failed run shows up in the same run history
+as a successful one, marked with a coloured status pill — `failed`,
+`timeout`, `crashed`, `stopped`, `skipped`, or `log_overflow` —
+alongside its exit code and duration. Click the row to open the run,
+and the captured stdout/stderr appears in the same log pane you'd
+use for any other run. The sidebar flags tasks whose last run
+failed, and the Overview page's **Attention** tab gathers everything
+that isn't currently healthy so you can spot trouble without
+checking each task by hand.
+
+![web-ui-task-failed.png — Task detail for a failed run: red status pill in the header, exit code next to duration, captured stderr filling the log pane.](../../../assets/screenshots/placeholder.svg)
+
+## Notifications bell
+
+Top-right of the top bar. The badge shows your unread count.
+
+![web-ui-notifications-popover.png — Bell clicked: popover open with recent notifications, severity dots, relative times, and a coalesced row showing a sparkline.](../../../assets/screenshots/placeholder.svg)
+
+Click the bell to open a panel with recent notifications, read
+toggles, a "View all" link, and a "Mark all read" button. Each row
+carries a severity dot, the event headline, when it happened, and
+the task name; grouped rows get a small sparkline showing the
+rhythm.
+
+The [notifications model][notif] groups duplicate events so a task
+that fails over and over doesn't flood your bell — repeats collapse
+into one row with a short summary ("failed 12 times, latest 30s
+ago"). Click a notification to open the run it's about.
+
+[notif]: /notifications/model/
+
+### Full notifications page (`/notifications`)
+
+The bell shows a preview. This page shows everything — paginated,
+with a "Load more" button. Same row layout, with the unread count at
+the top.
+
+![web-ui-notifications-page.png — /notifications full page: paginated history with unread count at the top and a Load more button at the bottom.](../../../assets/screenshots/placeholder.svg)
+
+## What it doesn't do
+
+The Web UI is for viewing and controlling, not configuring. You can
+trigger, stop, and restart, and you can see everything that's
+happening — but `runwisp.toml` is the source of truth. To change
+_what_ the daemon does (add a task, edit a schedule, rename a group,
+set up a notifier, scale a service), edit the file and restart the
+daemon.
+
+## Where to next
+
+- [Concepts: TUI tour](/concepts/tui-tour/) — the same dashboard in
+  your terminal, including the Open Web UI shortcut.
+- [Configuration overview](/configuration/overview/) — what to put in
+  the TOML.
+- [Operations: auth](/operations/auth/) — managing the password and
+  session.

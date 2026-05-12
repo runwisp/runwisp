@@ -6,6 +6,7 @@ package runtime
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/model"
@@ -18,22 +19,61 @@ type ScheduleResult struct {
 	Warnings  []string
 }
 
-// Scheduler wraps robfig/cron to trigger tasks on a schedule.
+// Scheduler wraps robfig/cron to trigger tasks on a schedule. On fall-back
+// DST days, when the wall clock revisits a minute, the second firing is
+// suppressed and recorded with end_reason = "dst_skipped" — there's no warning
+// at boot.
 type Scheduler struct {
 	cron        *cron.Cron
+	location    *time.Location
 	taskManager TaskRunner
 	tasks       map[string]*model.Task
 	entryIDs    map[string]cron.EntryID
-	mutex       sync.Mutex
-	started     bool
+	// lastFired stores the wall-clock minute (in the task's effective TZ) of
+	// the last firing for each task. A second firing whose tuple matches is
+	// the DST duplicate to suppress.
+	lastFired map[string]wallMinute
+	now       func() time.Time
+	mutex     sync.Mutex
+	started   bool
 }
 
-func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task) *Scheduler {
+// wallMinute is a (date, hour, minute) tuple that lets us compare two
+// firings as "the same wall-clock minute" without depending on UTC offsets,
+// which is the whole point on DST fall-back days.
+type wallMinute struct {
+	year   int
+	month  time.Month
+	day    int
+	hour   int
+	minute int
+}
+
+func newWallMinute(t time.Time) wallMinute {
+	return wallMinute{
+		year:   t.Year(),
+		month:  t.Month(),
+		day:    t.Day(),
+		hour:   t.Hour(),
+		minute: t.Minute(),
+	}
+}
+
+// NewScheduler creates a scheduler. location controls how task cron expressions
+// are interpreted; nil means UTC, which is the project default. Per-task
+// timezones are layered on via a CRON_TZ= prefix when scheduling.
+func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location *time.Location) *Scheduler {
+	if location == nil {
+		location = time.UTC
+	}
 	return &Scheduler{
-		cron:        cron.New(),
+		cron:        cron.New(cron.WithLocation(location)),
+		location:    location,
 		taskManager: taskManager,
 		tasks:       tasks,
 		entryIDs:    make(map[string]cron.EntryID),
+		lastFired:   make(map[string]wallMinute),
+		now:         time.Now,
 	}
 }
 
@@ -79,16 +119,59 @@ func (scheduler *Scheduler) Stop() {
 
 func (scheduler *Scheduler) addTask(task *model.Task) error {
 	taskName := task.Name
-	entryID, err := scheduler.cron.AddFunc(task.Cron, func() {
-		slog.Debug("Cron triggering task", "name", taskName)
-		if _, err := scheduler.taskManager.TriggerRun(taskName, model.TriggeredByCron); err != nil {
-			slog.Error("Failed to trigger task", "name", taskName, "err", err)
+	spec := task.Cron
+	loc := scheduler.location
+	if task.Timezone != "" {
+		// CRON_TZ= prefix is honored by robfig/cron's standard parser and
+		// overrides the scheduler's default location for this entry.
+		spec = "CRON_TZ=" + task.Timezone + " " + task.Cron
+		// Best-effort resolve: if it doesn't parse the AddFunc below will
+		// fail and we surface a warning. On success, use the task TZ as the
+		// reference for wall-clock dedup.
+		if l, err := time.LoadLocation(task.Timezone); err == nil {
+			loc = l
 		}
+	}
+	entryID, err := scheduler.cron.AddFunc(spec, func() {
+		scheduler.fireOnce(taskName, loc)
 	})
 	if err == nil {
 		scheduler.entryIDs[taskName] = entryID
 	}
 	return err
+}
+
+// fireOnce is the cron callback for a scheduled task. It dedupes wall-clock
+// duplicates (DST fall-back) by tracking the task's last firing minute in
+// the task's effective TZ; a duplicate is recorded as ReasonDSTSkipped and
+// never reaches the executor.
+func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
+	nowLocal := scheduler.now().In(loc)
+	wm := newWallMinute(nowLocal)
+
+	scheduler.mutex.Lock()
+	last, hadLast := scheduler.lastFired[taskName]
+	duplicate := hadLast && last == wm
+	if !duplicate {
+		scheduler.lastFired[taskName] = wm
+	}
+	scheduler.mutex.Unlock()
+
+	if duplicate {
+		slog.Info("Suppressed duplicate cron firing on DST fall-back",
+			"task", taskName,
+			"wall_clock", nowLocal.Format("2006-01-02 15:04 MST"),
+		)
+		if err := scheduler.taskManager.RecordSkippedFiring(taskName, model.ReasonDSTSkipped, model.TriggeredByCron); err != nil {
+			slog.Error("Failed to record DST-skipped firing", "task", taskName, "err", err)
+		}
+		return
+	}
+
+	slog.Debug("Cron triggering task", "name", taskName)
+	if _, err := scheduler.taskManager.TriggerRun(taskName, model.TriggeredByCron); err != nil {
+		slog.Error("Failed to trigger task", "name", taskName, "err", err)
+	}
 }
 
 // GetNextRun returns the next scheduled time for the task, if scheduled.

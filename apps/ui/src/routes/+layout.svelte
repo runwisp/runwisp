@@ -7,6 +7,7 @@
     import { page } from "$app/stores";
     import { preloadCode } from "$app/navigation";
     import { runUpdatesStore, authStore, taskStore, notificationStore } from "$lib/stores";
+    import { systemStore } from "$lib/stores/system.svelte";
     import { browserAuthEventBus } from "$lib/adapters/browser";
     import AuthModal from "$lib/components/AuthModal.svelte";
     import AppLayout from "$lib/layouts/AppLayout.svelte";
@@ -49,6 +50,7 @@
             runUpdatesStore.connect();
             void taskStore.loadIfNeeded();
             void notificationStore.init();
+            void systemStore.refresh();
         }
     });
 

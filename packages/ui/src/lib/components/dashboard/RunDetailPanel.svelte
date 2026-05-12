@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { untrack } from "svelte";
-    import { Server, Hash, Terminal as TerminalIcon } from "@lucide/svelte";
+    import { Server, Hash, Terminal as TerminalIcon, Download } from "@lucide/svelte";
     import Badge from "../Badge.svelte";
     import LogConsole from "../LogConsole.svelte";
     import type { Run } from "./types.js";
@@ -89,13 +89,13 @@
                     <div class="mb-1 flex items-center gap-3">
                         <h2 class="text-xl font-bold text-on-surface">
                             {#if showTaskName}
-                                {run.task_name}{#if run.replica_index > 0}<span
-                                        class="text-on-surface-muted">#{run.replica_index}</span
+                                {run.task_name}{#if run.instance_index > 0}<span
+                                        class="text-on-surface-muted">#{run.instance_index}</span
                                     >{/if}
                             {:else}
-                                Run #{formatShortId(run.id)}{#if run.replica_index > 0}
+                                Run #{formatShortId(run.id)}{#if run.instance_index > 0}
                                     <span class="text-on-surface-muted"
-                                        >· replica #{run.replica_index}</span
+                                        >· instance #{run.instance_index}</span
                                     >
                                 {/if}
                             {/if}
@@ -218,6 +218,17 @@
                         Pending
                     </div>
                 {/if}
+                <a
+                    href="/api/tasks/{encodeURIComponent(run.task_name)}/runs/{encodeURIComponent(
+                        run.id,
+                    )}/log/raw"
+                    download="{run.task_name}-{run.id}.log"
+                    class="flex items-center gap-1.5 rounded border border-slate-700 px-2 py-1 text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-800 hover:text-slate-100"
+                    title="Download the full log (rotated and current parts as one file)"
+                >
+                    <Download size={12} />
+                    Download
+                </a>
             </div>
         </div>
         {#key run.id}

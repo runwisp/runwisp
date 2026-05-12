@@ -1,0 +1,167 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Concurrency policies
+description: queue, skip, and terminate — what each on_overlap mode does, when to use it, and how max_concurrent interacts with the policy.
+---
+
+When a task fires while a previous run is still going, RunWisp has to
+decide what to do. That decision is `on_overlap`. Three policies cover
+nearly every realistic case: `queue`, `skip`, and `terminate`.
+
+## The shape of the question
+
+There are really two knobs:
+
+- **`max_concurrent`** — the maximum number of overlapping runs allowed
+  for a task. Default `1`. Most cron-style work wants `1`.
+- **`on_overlap`** — what to do when a new run is requested and
+  `max_concurrent` is already saturated.
+
+If `len(active) < max_concurrent`, the new run starts immediately,
+regardless of policy. `on_overlap` only kicks in when the task is at
+its concurrency limit.
+
+## The three policies
+
+### `queue` (the default for tasks)
+
+**Use when each tick must eventually run.** New runs go onto a FIFO
+queue; as soon as a slot opens, the next queued run starts. Order is
+preserved.
+
+```toml
+[tasks.process-uploads]
+cron       = "*/5 * * * *"
+on_overlap = "queue"          # default — could be omitted
+run        = "/usr/local/bin/process"
+```
+
+Good fit when:
+
+- Each tick must eventually run; missing one means missing work.
+- Runs are short relative to the schedule, so the queue normally stays
+  empty.
+- Runs operate on disjoint inputs (a per-tick batch, a queue of jobs).
+
+The queue is bounded by `queue_max`. Once it's full,
+the next firing is recorded with `end_reason = "queue_full"` and the
+existing queue keeps draining FIFO. If you see queue-full firings, the
+task is over its budget — lower the cron frequency, raise
+`max_concurrent`, or pick `skip` / `terminate`.
+
+### `skip`
+
+**Use when missing a tick is preferable to stacking.** The new run is
+rejected and recorded with `end_reason = "skipped"` and exit code `-1`.
+The run that's still going keeps going untouched.
+
+```toml
+[tasks.health-probe]
+cron       = "* * * * *"
+on_overlap = "skip"
+run        = "curl -sf https://example.com/health"
+```
+
+Good fit when:
+
+- The work is **safe to skip** — a probe, a poll, a status check.
+  Missing a tick is fine; what matters is that the _next_ one runs.
+- Stacking would be actively harmful (e.g. you only want one `pg_dump`
+  process at a time, and a missed tick is preferable to two competing
+  dumps).
+
+The rejected runs _are_ visible in history — that's the point.
+You'll see them in the Web UI under the **skipped** status (a distinct
+end-reason, not "failed"), so a task that keeps overlapping shows up
+as a pattern, not silence.
+
+Importantly, **`end_reason = "skipped"` is not a failure**:
+
+- `notify_on_failure` does not fire for skipped runs, so a
+  `* * * * *` health probe with overlap doesn't spam Slack.
+- The retry policy never retries a skip — the original run is still
+  going; another retry just races it.
+- Stats counters separate it from `failed`/`crashed`/`timeout`, so your
+  failure rate stays honest.
+
+### `terminate`
+
+**Use when latest wins.** The oldest active run is stopped; once it
+exits, the new run starts.
+
+```toml
+[tasks.deploy-hook]
+on_overlap = "terminate"
+run        = "/usr/local/bin/deploy.sh"
+```
+
+Good fit when:
+
+- **Latest wins** — for a deploy hook fired twice in quick succession,
+  the second invocation is the one you actually want.
+- Long-running work that becomes obsolete the moment a new request
+  arrives (rebuild a search index, regenerate a cached report).
+
+When `on_overlap = "terminate"` kills the in-flight run, it gets
+`graceful_stop` seconds to clean up before SIGKILL, and is recorded
+with `end_reason = "stopped"` — same as a manual stop. Stopped runs
+don't retry. See [Retries](/concepts/retries/#interactions).
+
+## `max_concurrent > 1`
+
+Setting `max_concurrent = N` lets up to N runs of the same task execute
+at once. The `on_overlap` policy doesn't fire until you have N active
+runs.
+
+```toml
+[tasks.thumbnail-render]
+cron           = "* * * * *"
+max_concurrent = 4
+on_overlap     = "queue"
+run            = "/usr/local/bin/render"
+```
+
+Now the queue policy only engages once 4 renders are running. With
+`max_concurrent = 4 + on_overlap = "skip"`, you'd get a hard cap of 4
+concurrent renders and any 5th tick rejected.
+
+For most cron-style work `max_concurrent = 1` is right. Bump it only
+when:
+
+- The runs are genuinely independent (no shared state, no shared
+  resource).
+- You have an uneven schedule (`* * * * *` against work that _usually_
+  finishes in seconds but occasionally takes much longer).
+
+For long-running parallel workers, prefer `[services.<name>]` with
+`instances = N` — that's what services are designed for.
+
+`max_concurrent > 1` is safe: the daemon serialises the overlap
+decision even when several runs are executing at once, so two runs
+never race to claim the same slot.
+
+## Manual triggers and the queue
+
+- **A manual trigger** (CLI, REST, UI) goes through the same evaluation.
+  Trigger a `skip` task while it's running and the response says the
+  firing was skipped, with the same `end_reason = "skipped"` recorded.
+- **The queue runs in order**, no matter where the trigger came from.
+  Cron and manual triggers compete fairly.
+
+## Services and `on_overlap`
+
+Services default to `on_overlap = "skip"` and are usually fine with that
+default. The service supervisor keeps `instances` replicas alive, each
+in its own slot — overlap doesn't really happen unless you trigger a
+service manually while it's already running, which `skip` correctly
+refuses.
+
+## Where to next
+
+- [How scheduling works](/concepts/scheduling/) — how cron firings turn
+  into runs that the policy evaluates.
+- [Retries & timeouts](/concepts/retries/) — how a failing run gets
+  retried, and why retries don't conflict with `on_overlap`.
+- [`[tasks.*]` reference](/configuration/tasks/) — the `on_overlap` and
+  `max_concurrent` fields in the schema.

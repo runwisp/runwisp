@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Screenshot placeholder">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="700" fill="#f8fafc"/>
+  <rect width="1200" height="700" fill="url(#grid)"/>
+  <rect x="2" y="2" width="1196" height="696" fill="none" stroke="#cbd5e1" stroke-width="3" stroke-dasharray="12 8"/>
+  <g font-family="ui-sans-serif, system-ui, sans-serif" text-anchor="middle" fill="#64748b">
+    <text x="600" y="330" font-size="44" font-weight="700" fill="#475569">Screenshot pending</text>
+    <text x="600" y="380" font-size="20">Screenshot will appear here in the future,</text>
+    <text x="600" y="410" font-size="20">the docs are still being worked on.</text>
+  </g>
+</svg>

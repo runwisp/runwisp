@@ -35,7 +35,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 ## 🧭 INVARIANTS (violating any of these is a bug, regardless of what a test says)
 
 - **Supported platforms**: Linux, macOS, WSL. These are first-class — builds, tests, manual smoke. Native Windows is out of scope.
-- **Config is reloaded only on SIGHUP or an explicit `runwisp reload` command.** No file-watchers, no auto-reload. A running daemon keeps its in-memory task set until the operator asks.
+- **Config reload is restart-only.** A running daemon keeps its in-memory task set for its entire lifetime; to pick up TOML changes, the operator restarts the daemon. No file-watchers, no auto-reload, no SIGHUP handler, no `runwisp reload` command. (Reload-without-restart is on the roadmap; until it lands, do not assume it exists.)
 - **Crash safety**: Killing the daemon (SIGKILL, power loss) must not corrupt state. On restart, any run that was in-flight is marked **interrupted** with a terminal status — it is **not resumed**. A fresh execution may then be created by the normal scheduling/catchup logic.
 - **Determinism of scheduling**: Given the same TOML + clock, the scheduler produces the same firings. Randomness, wall-clock reads, and FS I/O are injected, never called inline in scheduling logic.
 - **No required network**: Daemon startup, task execution, UI serving, and TUI must all work with the NIC unplugged. Any outbound integration attempts happen in the background and never block the hot path.
@@ -57,7 +57,7 @@ When a design question isn't answered by the above, resolve it in this order:
 
 1. **Does it make a failure more visible?** → Yes = lean toward it.
 2. **Does it add a runtime dependency or a required network call?** → Yes = reject or make it strictly optional.
-3. **Does it change the TOML schema?** → Treat as breaking; document in CHANGELOG, update `runwisp.example.toml`, update OpenAPI.
+3. **Does it change the TOML schema?** → Treat as breaking; document in CHANGELOG and the docs, and update OpenAPI.
 4. **Does it add state that must survive restart?** → It goes through `internal/storage/` (GORM + SQLite), gets a ULID, and has a reconciliation path on boot.
 5. **Does it touch the control-plane protocol?** → Edit `packages/asyncapi/asyncapi.yaml` first, regenerate, then consume the generated types. Never the other way round.
 6. **Can a solo dev understand it by reading `runwisp.toml` + the web UI?** → If no, simplify or document.
@@ -152,6 +152,6 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 2. Before finalizing **Go** changes: `bun run build && bun run test` (and `bun run check` if lint/TS is adjacent).
 3. Before finalizing **TypeScript/Svelte** changes: `bun run check && bun run test`.
 4. Changes to `packages/asyncapi/asyncapi.yaml` **require regeneration** before commit; downstream Go types must compile.
-5. Changes to the TOML config schema **require** updating: `runwisp.example.toml`, OpenAPI (`apps/runwisp/openapi.json`), CHANGELOG, and the README config reference if behavior is user-visible.
+5. Changes to the TOML config schema **require** updating: the docs (`apps/docs/src/content/docs/configuration/`), OpenAPI (`apps/runwisp/openapi.json`), CHANGELOG, and the README config reference if behavior is user-visible.
 6. When a judgment call arises that Prime Directives / Non-Goals / Invariants don't clearly resolve: **stop and ask the user**. Do not silently pick a direction that might violate vision.
 7. If you introduced a user-facing change, add or modify CHANGELOG.md. Changelog is "marketing-facing", it's made to tell users what they can expect from the new version, not how devs can configure the new feature. Try to be concise but informative about it.

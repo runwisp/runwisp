@@ -21,18 +21,19 @@ import (
 
 // daemonServices holds all long-lived services created during daemon startup.
 type daemonServices struct {
-	DB               storage.Database
-	EventBus         events.EventBus
-	Executor         executor.Executor
-	TaskManager      runtime.TaskManager
-	TasksMap         map[string]*model.Task
-	Scheduler        *runtime.Scheduler
-	RetentionCleaner *runtime.RetentionCleaner
-	Notify           notifyBundle
-	ScheduleResult   runtime.ScheduleResult
-	CrashedRuns      int64
-	PendingSummary   tui.PendingRunsSummary
-	CatchUpResult    runtime.CatchUpResult
+	DB                  storage.Database
+	EventBus            events.EventBus
+	Executor            executor.Executor
+	TaskManager         runtime.TaskManager
+	TasksMap            map[string]*model.Task
+	Scheduler           *runtime.Scheduler
+	RetentionCleaner    *runtime.RetentionCleaner
+	Notify              notifyBundle
+	ScheduleResult      runtime.ScheduleResult
+	CrashedRuns         int64
+	PendingSummary      tui.PendingRunsSummary
+	CatchUpResult       runtime.CatchUpResult
+	TaskShutdownTimeout time.Duration
 }
 
 // initDaemonServices creates and wires together the core daemon services.
@@ -56,7 +57,14 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 	var catchUpResult runtime.CatchUpResult
 
 	if mode == modeStandalone {
-		scheduler = runtime.NewScheduler(taskManager, tasksMap)
+		// [scheduler] timezone is required at config-load time when any cron task
+		// lacks a per-task timezone, so by the point we get here it's either set
+		// explicitly or there are no cron expressions to interpret.
+		schedLoc, locErr := config.ResolveTimezone("scheduler.timezone", cfg.Config.Scheduler.Timezone)
+		if locErr != nil {
+			return nil, locErr
+		}
+		scheduler = runtime.NewScheduler(taskManager, tasksMap, schedLoc)
 		schedResult, err = scheduler.Start()
 		if err != nil {
 			slog.Warn("Failed to start scheduler", "err", err)
@@ -69,7 +77,7 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 			slog.Info("Missed-tick catch-up completed", "triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
 		}
 
-		startServiceReplicas(taskManager, tasksMap)
+		startServiceInstances(taskManager, tasksMap)
 	}
 
 	retentionCleaner := initRetentionCleaner(cfg, db, tasksMap)
@@ -85,18 +93,19 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 	}
 
 	return &daemonServices{
-		DB:               db,
-		EventBus:         eventBus,
-		Executor:         exec,
-		TaskManager:      taskManager,
-		TasksMap:         tasksMap,
-		Scheduler:        scheduler,
-		RetentionCleaner: retentionCleaner,
-		Notify:           notifyB,
-		ScheduleResult:   schedResult,
-		CrashedRuns:      crashed,
-		PendingSummary:   pendingSummary,
-		CatchUpResult:    catchUpResult,
+		DB:                  db,
+		EventBus:            eventBus,
+		Executor:            exec,
+		TaskManager:         taskManager,
+		TasksMap:            tasksMap,
+		Scheduler:           scheduler,
+		RetentionCleaner:    retentionCleaner,
+		Notify:              notifyB,
+		ScheduleResult:      schedResult,
+		CrashedRuns:         crashed,
+		PendingSummary:      pendingSummary,
+		CatchUpResult:       catchUpResult,
+		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
 	}, nil
 }
 
@@ -146,13 +155,13 @@ func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap 
 	return cleaner
 }
 
-func startServiceReplicas(taskManager runtime.TaskManager, tasksMap map[string]*model.Task) {
+func startServiceInstances(taskManager runtime.TaskManager, tasksMap map[string]*model.Task) {
 	for _, task := range tasksMap {
 		if !task.Kind.IsService() {
 			continue
 		}
-		if err := taskManager.StartServiceReplicas(task.Name); err != nil {
-			slog.Error("Failed to start service replicas", "task", task.Name, "err", err)
+		if err := taskManager.StartServiceInstances(task.Name); err != nil {
+			slog.Error("Failed to start service instances", "task", task.Name, "err", err)
 		}
 	}
 }
@@ -189,28 +198,30 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
 	for _, name := range taskNames {
 		j := svc.TasksMap[name]
 		tasks = append(tasks, model.TaskBrief{
-			Name:        j.Name,
-			Kind:        j.Kind,
-			Group:       j.Group,
-			Cron:        j.Cron,
-			APITrigger:  j.APITrigger,
-			CatchUp:     j.CatchUp,
-			Restart:     j.Restart,
-			Parallelism: j.Parallelism,
-			OnOverlap:   j.OnOverlap,
-			Instances:   j.Instances,
+			Name:          j.Name,
+			Kind:          j.Kind,
+			Group:         j.Group,
+			Cron:          j.Cron,
+			APITrigger:    j.APITrigger,
+			CatchUp:       j.CatchUp,
+			Restart:       j.Restart,
+			MaxConcurrent: j.MaxConcurrent,
+			OnOverlap:     j.OnOverlap,
+			Instances:     j.Instances,
 		})
 	}
 
 	capInfos := capInfosFromAvailability(svc.Executor.Availability())
 
 	return &model.DaemonInfo{
-		Version:      version.Version,
-		Fingerprint:  cfg.Fingerprint,
-		Port:         flags.Port,
-		CloudEnabled: cfg.CloudConfig.Enabled,
-		Tasks:        tasks,
-		Capabilities: capInfos,
+		Version:          version.Version,
+		Fingerprint:      cfg.Fingerprint,
+		Port:             flags.Port,
+		CloudEnabled:     cfg.CloudConfig.Enabled,
+		ResolvedTimezone: cfg.Config.Scheduler.Timezone,
+		TimezoneSource:   cfg.Config.Scheduler.Source,
+		Tasks:            tasks,
+		Capabilities:     capInfos,
 	}
 }
 

@@ -19,8 +19,10 @@ func TestIsFailureReason(t *testing.T) {
 		{model.ReasonFailed, true},
 		{model.ReasonTimeout, true},
 		{model.ReasonCrashed, true},
+		{model.ReasonLogOverflow, true},
 		{model.ReasonSuccess, false},
 		{model.ReasonStopped, false},
+		{model.ReasonSkipped, false},
 	} {
 		assert.Equalf(t, tc.want, IsFailureReason(tc.reason),
 			"IsFailureReason(%q)", tc.reason)
@@ -165,15 +167,15 @@ func TestComputeRestartDelay(t *testing.T) {
 	t.Run("first attempt returns base delay", func(t *testing.T) {
 		task := &model.Task{
 			RestartDelay:   time.Second,
-			RestartBackoff: model.RestartBackoffExponential,
+			RestartBackoff: model.BackoffExponential,
 		}
 		assert.Equal(t, time.Second, ComputeRestartDelay(task, 0))
 	})
 
-	t.Run("none backoff stays at base", func(t *testing.T) {
+	t.Run("constant backoff stays at base", func(t *testing.T) {
 		task := &model.Task{
 			RestartDelay:   500 * time.Millisecond,
-			RestartBackoff: model.RestartBackoffNone,
+			RestartBackoff: model.BackoffConstant,
 		}
 		for attempt := 0; attempt < 10; attempt++ {
 			assert.Equalf(t, 500*time.Millisecond, ComputeRestartDelay(task, attempt),
@@ -192,7 +194,7 @@ func TestComputeRestartDelay(t *testing.T) {
 	t.Run("exponential doubles each attempt up to cap", func(t *testing.T) {
 		task := &model.Task{
 			RestartDelay:   time.Second,
-			RestartBackoff: model.RestartBackoffExponential,
+			RestartBackoff: model.BackoffExponential,
 		}
 		want := []time.Duration{
 			time.Second,       // attempt 0 → base
@@ -214,7 +216,7 @@ func TestComputeRestartDelay(t *testing.T) {
 	t.Run("zero base delay falls back to one second", func(t *testing.T) {
 		task := &model.Task{
 			RestartDelay:   0,
-			RestartBackoff: model.RestartBackoffExponential,
+			RestartBackoff: model.BackoffExponential,
 		}
 		assert.Equal(t, time.Second, ComputeRestartDelay(task, 0))
 	})
@@ -222,7 +224,7 @@ func TestComputeRestartDelay(t *testing.T) {
 	t.Run("large attempt clamps to cap", func(t *testing.T) {
 		task := &model.Task{
 			RestartDelay:   time.Second,
-			RestartBackoff: model.RestartBackoffExponential,
+			RestartBackoff: model.BackoffExponential,
 		}
 		assert.Equal(t, RestartBackoffCap, ComputeRestartDelay(task, 100))
 	})

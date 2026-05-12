@@ -1,0 +1,179 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Per-task notifications
+description: Use notify_on_failure and notify_on_success on a [tasks.*] or [services.*] block to send notifications when one task ends a certain way.
+---
+
+When you only need to alert on one task, put the channel names directly on
+that task. The setting lives next to the task definition, so it is easy to
+see which task sends to which channel.
+
+Every `[tasks.*]` and `[services.*]` block accepts two fields:
+`notify_on_failure` (run ended as `failed`, `timeout`, or `crashed`) and
+`notify_on_success` (run ended as `succeeded`). They behave the same on
+tasks and services. The field tables in
+[`[tasks.*]`](/configuration/tasks/#notifications) and
+[`[services.*]`](/configuration/services/#notifications) list the event
+kinds that apply in each context.
+
+## Basic usage
+
+```toml
+[tasks.nightly-db-backup]
+cron              = "30 2 * * *"
+run               = "/usr/local/bin/backup.sh"
+notify_on_failure = ["slack-ops"]
+```
+
+That is the whole setup. A failed backup sends a message to the `slack-ops`
+channel, adds a row to the bell, and is recorded in the notification
+history.
+
+A failed run on this task lights up Slack and adds a row to the bell —
+the bell is on because `"inapp"` is in `[notify] global_notifiers` by
+default. Set `global_notifiers = []` to silence it (see
+[Global settings](/notifications/global/#the-bell--global_notifiers)).
+If a notification rule also matches the same event, each channel still
+receives one message — duplicates are dropped.
+
+## Both fields together
+
+```toml
+[services.payments-api]
+instances         = 2
+run               = "/usr/local/bin/payments-api"
+notify_on_failure = ["slack-ops", "tg-oncall"]
+notify_on_success = ["slack-ops"]
+```
+
+A failure sends to two channels. A clean shutdown sends to one. The two
+lists are independent.
+
+## Inline target overrides
+
+Each entry in the list is one of three forms: a bare notifier id
+(`"slack-ops"`), the literal `"inapp"`, or an **inline override** of
+the form `"<id>:<target>"` that reuses the credentials of the named
+notifier but sends to a different target. The override form is useful
+when one workspace or one bot serves several destinations — one Slack
+workspace covering several channels:
+
+```toml
+[[notifier]]
+id              = "slack"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_URL"
+# no `channel` set — each task picks one inline
+
+[tasks.nightly-db-backup]
+notify_on_failure = ["slack:#ops"]
+
+[tasks.weekly-deploy]
+notify_on_failure = ["slack:#deploys"]
+notify_on_success = ["slack:#deploys"]
+
+[services.audit-stream]
+notify_on_failure = ["slack:#audit-alerts"]
+```
+
+The form of `<target>` depends on the provider: for Slack it is a
+channel (`#name` or `@user`); for Telegram it is the chat id.
+
+```toml
+[[notifier]]
+id            = "tg"
+type          = "telegram"
+bot_token_env = "RUNWISP_TG_TOKEN"
+chat_id       = "-1001"
+
+[tasks.payments-reconcile]
+notify_on_failure = ["tg:-1009998887"]
+```
+
+Notifier ids cannot contain `:` — the colon separates the id from the
+target, so `id = "slack:foo"` is rejected at load time. `"inapp"` has
+no target and `"inapp:anything"` is rejected. Twenty tasks all writing
+`"slack:#ops"` share one connection — `#ops` is not messaged twice
+for the same event.
+
+Use an explicit `[[notifier]]` block (with `channel = "#…"` set on
+the block itself) when the same channel is used by enough tasks that
+the override gets repetitive. Use the inline override when each task
+has its own destination.
+
+## When to use a notification rule instead
+
+A per-task field is for one task; a [`[[notification_route]]`
+block](/notifications/routes/) is for one rule covering many tasks.
+Reach for a rule when you need a pattern across many tasks
+(`match.task = "backup-*"`), a custom set of event kinds (the
+per-task failure list is always `failed + timeout + crashed`), or
+routing for kinds that have no task — for example
+`notify.delivery_failed`. Per-task fields and rules mix freely: the
+router collects every channel that matches and sends one message per
+unique channel.
+
+## Worked examples
+
+### Different settings per task
+
+```toml
+[[notifier]]
+id              = "slack-ops"
+type            = "slack"
+webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+
+[tasks.nightly-db-backup]
+cron              = "30 2 * * *"
+run               = "/usr/local/bin/backup.sh"
+notify_on_failure = ["slack-ops"]
+
+[tasks.weekly-deploy]
+cron              = "0 9 * * 1"
+run               = "/usr/local/bin/deploy.sh"
+notify_on_failure = ["slack-ops"]
+notify_on_success = ["slack-ops"]   # confirm Mondays went green
+```
+
+### Per-task field plus a wildcard rule
+
+```toml
+[tasks.audit-log]
+cron              = "0 0 * * *"
+run               = "/usr/local/bin/audit"
+notify_on_failure = ["slack-ops"]
+
+[tasks.process-event-queue]
+cron              = "*/10 * * * *"
+run               = "/usr/local/bin/process"
+notify_on_failure = ["slack-ops"]
+
+# Backups also send to the on-call channel, in addition to the per-task setting
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "*-backup" }
+notify = ["tg-oncall"]
+```
+
+A failed `audit-log` run sends one message to `slack-ops` and adds one row
+to the bell. A failed `*-backup` run sends one message to `slack-ops`, one
+to `tg-oncall`, and adds one row to the bell.
+
+## What the config loader rejects
+
+The loader rejects unknown notifier ids in `notify_on_failure` /
+`notify_on_success` (anything that isn't declared in `[[notifier]]`
+and isn't `"inapp"`); inline overrides whose parent doesn't exist,
+whose target is empty, or — for Slack — doesn't start with `#` or
+`@`; and `"inapp:something"`. An empty list (`notify_on_failure = []`)
+is fine — it's equivalent to omitting the field, and
+`[notify] global_notifiers` still fires.
+
+## Where to next
+
+- [Providers](/notifications/providers/slack/) — declaring the channels
+  these fields refer to.
+- [Notification rules](/notifications/routes/) — one rule covering many
+  tasks.
+- [Global settings](/notifications/global/) — `global_notifiers` and the
+  other daemon-wide knobs.
