@@ -4,6 +4,7 @@
 package main
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -170,10 +171,11 @@ func resolveConfigValue(
 // the explicit password (RUNWISP_PASSWORD) changes. Auto-generated passwords
 // are excluded from tracking so that session tokens survive daemon restarts.
 //
-// Change detection compares a SHA-256 fingerprint of the env-supplied
-// password against the previous boot's fingerprint. The plaintext env
-// password is intentionally never persisted — operators set RUNWISP_PASSWORD
-// specifically to keep credentials out of the data directory.
+// Change detection compares an HMAC-SHA256 fingerprint of the env-supplied
+// password (keyed by the JWT secret) against the previous boot's fingerprint.
+// HMAC-with-a-secret-key resists offline brute force if the row leaks — the
+// attacker still needs the per-installation JWT secret. The plaintext env
+// password is intentionally never persisted.
 func resolveJWTSecret(store storage.SecretStore, envPassword string) (string, error) {
 	secret, secretFound, err := store.GetSecret(storage.ConfigKeyJWTSecret)
 	if err != nil {
@@ -185,9 +187,23 @@ func resolveJWTSecret(store storage.SecretStore, envPassword string) (string, er
 		secretFound = false
 	}
 
+	// Generate the JWT secret first when missing, so the password-change
+	// hash is keyed by a stable per-installation value.
+	if !secretFound {
+		newSecret, genErr := datadir.GenerateJWTSecret()
+		if genErr != nil {
+			return "", genErr
+		}
+		if err := store.SetSecret(storage.ConfigKeyJWTSecret, newSecret); err != nil {
+			return "", err
+		}
+		secret = newSecret
+		secretFound = true
+	}
+
 	passwordChanged := false
 	if envPassword != "" {
-		pwHash := hashPassword(envPassword)
+		pwHash := hashEnvPassword(secret, envPassword)
 		storedHash, hashFound, err := store.GetSecret(storage.ConfigKeyEnvPasswordSum)
 		if err != nil {
 			return "", err
@@ -202,14 +218,16 @@ func resolveJWTSecret(store storage.SecretStore, envPassword string) (string, er
 
 	if passwordChanged {
 		slog.Info("Password changed — rotating JWT secret to invalidate existing sessions")
-	}
-
-	if !secretFound || passwordChanged {
 		newSecret, genErr := datadir.GenerateJWTSecret()
 		if genErr != nil {
 			return "", genErr
 		}
 		if err := store.SetSecret(storage.ConfigKeyJWTSecret, newSecret); err != nil {
+			return "", err
+		}
+		// Rewrite the env-password hash under the new secret so the next
+		// boot's comparison reads as unchanged when the password is unchanged.
+		if err := store.SetSecret(storage.ConfigKeyEnvPasswordSum, hashEnvPassword(newSecret, envPassword)); err != nil {
 			return "", err
 		}
 		secret = newSecret
@@ -218,9 +236,13 @@ func resolveJWTSecret(store storage.SecretStore, envPassword string) (string, er
 	return secret, nil
 }
 
-func hashPassword(password string) string {
-	h := sha256.Sum256([]byte(password))
-	return hex.EncodeToString(h[:])
+// hashEnvPassword fingerprints an env-supplied password keyed by the current
+// JWT secret. The HMAC binds the hash to a per-installation key so a leaked
+// row cannot be brute-forced offline without also leaking the JWT secret.
+func hashEnvPassword(jwtSecret, password string) string {
+	mac := hmac.New(sha256.New, []byte(jwtSecret))
+	mac.Write([]byte(password))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error) {

@@ -4,6 +4,9 @@
 package storage
 
 import (
+	"database/sql"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -291,4 +294,59 @@ func TestSearchAndSort(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)
 	assert.Equal(t, "beta", runs[0].TaskName)
+}
+
+// TestDatabaseFilesAreLockedDown guards against a regression where the
+// SQLite database or its WAL/shm sidecars are world-readable. A leaked WAL
+// can briefly hold copies of secret rows mid-transaction; perms on those
+// files matter as much as perms on the main DB.
+func TestDatabaseFilesAreLockedDown(t *testing.T) {
+	// Pre-create a runwisp.db with a loose mode so the chmod-on-open path
+	// actually has work to do. Then open via New() and verify all three
+	// files come out locked down.
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "runwisp.db")
+
+	// Seed with deliberately wrong perms so we know the chmod tightened
+	// them rather than relying on a friendly umask.
+	if err := os.WriteFile(dbPath, []byte{}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := New(dbPath, nil, nil)
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Write a real row so SQLite is forced to flush the WAL frame to disk
+	// and the -wal/-shm sidecars actually exist for the stat below.
+	require.NoError(t, db.CreateRun(&model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    "perms-test",
+		Status:      model.PhasePending,
+		TriggeredBy: model.TriggeredByAPI,
+		CreatedAt:   time.Now(),
+	}))
+
+	// Cycle the WAL into the main db so the sidecars are guaranteed to
+	// exist on every supported SQLite build.
+	raw, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer raw.Close()
+	_, _ = raw.Exec("PRAGMA wal_checkpoint(PASSIVE);")
+
+	for _, name := range []string{"runwisp.db", "runwisp.db-wal", "runwisp.db-shm"} {
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			// -shm is created only when journal_mode=WAL is active; a
+			// build/runtime variant that skips it is acceptable, but the
+			// main DB and -wal must always be present here.
+			if name == "runwisp.db-shm" {
+				continue
+			}
+			t.Fatalf("expected %s to exist: %v", name, err)
+		}
+		require.NoError(t, err, name)
+		assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "perm on %s", name)
+	}
 }

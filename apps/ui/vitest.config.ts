@@ -17,7 +17,11 @@ export default defineConfig({
         environment: "node",
         server: {
             deps: {
-                inline: [/\.svelte\.ts$/, /\.svelte$/],
+                // @mzattahri/srp ships extensionless ESM imports that node's
+                // resolver rejects; inlining routes the module through vite's
+                // bundler, which handles the missing extensions like Vite
+                // does for the production build.
+                inline: [/\.svelte\.ts$/, /\.svelte$/, /@mzattahri\/srp/],
             },
         },
     },

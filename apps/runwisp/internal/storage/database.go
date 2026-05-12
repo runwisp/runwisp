@@ -121,11 +121,14 @@ func New(dbPath string, logOutput io.Writer, cipher *secretcipher.Cipher) (Datab
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Tighten file perms on the DB itself. The umask set in main covers the
-	// -wal/-shm sidecars going forward; the explicit chmod handles existing
-	// files that may predate the new umask. In-memory and URI-style paths
-	// (":memory:", "file::memory:") have no on-disk file — skip the chmod.
-	if !strings.HasPrefix(dbPath, ":") && !strings.HasPrefix(dbPath, "file:") {
+	onDisk := !strings.HasPrefix(dbPath, ":") && !strings.HasPrefix(dbPath, "file:")
+
+	// Tighten file perms on the DB itself before any pragmas run. The umask
+	// set in main covers fresh writes; this catches files left behind by
+	// older binaries that may predate the umask tightening. In-memory and
+	// URI-style paths (":memory:", "file::memory:") have no on-disk file —
+	// skip the chmod.
+	if onDisk {
 		if chmodErr := os.Chmod(dbPath, 0600); chmodErr != nil && !os.IsNotExist(chmodErr) {
 			return nil, fmt.Errorf("failed to chmod database: %w", chmodErr)
 		}
@@ -139,6 +142,17 @@ func New(dbPath string, logOutput io.Writer, cipher *secretcipher.Cipher) (Datab
 	}
 	if _, err := db.Exec("PRAGMA busy_timeout=" + strconv.Itoa(SQLiteBusyTimeout) + ";"); err != nil {
 		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
+	}
+
+	// Now that WAL mode is on (which materialises -wal/-shm next to the DB)
+	// tighten the sidecar perms too. Sidecars are created lazily on the
+	// first write, so chmodIfExists ignores ENOENT.
+	if onDisk {
+		for _, suffix := range []string{"-wal", "-shm"} {
+			if chmodErr := chmodIfExists(dbPath+suffix, 0600); chmodErr != nil {
+				return nil, fmt.Errorf("failed to chmod %s sidecar: %w", suffix, chmodErr)
+			}
+		}
 	}
 
 	if _, err := db.Exec(schemaSQL); err != nil {
@@ -155,6 +169,16 @@ func New(dbPath string, logOutput io.Writer, cipher *secretcipher.Cipher) (Datab
 		return nil, err
 	}
 	return sdb, nil
+}
+
+// chmodIfExists tightens path to mode, treating absent files as a no-op.
+// Used for the SQLite WAL/shm sidecars which SQLite creates lazily on the
+// first write — they may legitimately not exist yet at boot.
+func chmodIfExists(path string, mode os.FileMode) error {
+	if err := os.Chmod(path, mode); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // reconcileSecretEncryption verifies that the on-disk encryption state of

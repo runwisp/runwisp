@@ -13,9 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Plaintext `password` row removed from SQLite.** First boot with the new binary refuses to start if a legacy `password` row is present; delete the row (or set `RUNWISP_PASSWORD` to a known value) and try again. No silent migration.
 
+### Security
+
+- **`env_password_hash` is now HMAC-SHA256 keyed by the JWT secret**, replacing the previous unsalted SHA-256 fingerprint. A leaked row no longer enables an offline dictionary attack against `RUNWISP_PASSWORD` — the attacker also needs the per-installation JWT secret. First boot after the upgrade triggers one JWT rotation (and therefore one web-session invalidation) for any daemon that has `RUNWISP_PASSWORD` set; subsequent boots are stable.
+- **SRP parameters are guarded by a cross-language drift vector.** Both the Go and TypeScript verifier paths derive the same value from a checked-in `(identity, password, salt, iterations)` tuple. CI fails immediately if the KDF, group, or identity binding drifts on either side, so login can't silently break in production.
+
 ### Added
 
-- **Optional at-rest encryption for daemon secrets (`RUNWISP_DATA_KEY`).** Set `RUNWISP_DATA_KEY` to a base64-encoded 32-byte key and the daemon AES-256-GCM-encrypts every secret row in SQLite (SRP verifier, JWT signing secret, env-password fingerprint) under an `enc:v1:` prefix. Without the key, file perms (`0700` data dir, `0600` `runwisp.db`) remain the only protection — same as before. Generate a key with `runwisp keygen` and store it in your secrets manager. **Losing the key bricks the data directory.** Existing data dirs are migrated transparently on first boot when the key is provided; unsetting the key with encrypted rows present causes the daemon to refuse to start.
+- **Optional at-rest encryption for daemon secrets (`RUNWISP_DATA_KEY`).** Set `RUNWISP_DATA_KEY` to a base64-encoded 32-byte key and the daemon AES-256-GCM-encrypts every secret row in SQLite (SRP verifier, JWT signing secret, env-password fingerprint) under an `enc:v1:` prefix. Without the key, file perms (`0700` data dir, `0600` `runwisp.db` and its `-wal`/`-shm` sidecars) remain the only protection — same as before. Generate a key with `runwisp keygen` and store it in your secrets manager. **Losing the key bricks the data directory.** Existing data dirs are migrated transparently on first boot when the key is provided; unsetting the key with encrypted rows present causes the daemon to refuse to start.
 
 - **`runwisp keygen` subcommand.** Prints a base64-encoded 32-byte random key suitable for `RUNWISP_DATA_KEY`. Use it once, save the output, and you're done.
 
