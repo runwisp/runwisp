@@ -1,75 +1,134 @@
 # Contributing to RunWisp
 
-## Getting Started
+Thanks for taking the time to look at the code. RunWisp is Apache-2.0 and there is no CLA — your contribution stays yours, licensed under the same terms.
 
-### Prerequisites
+> RunWisp is **pre-1.0**. Breaking changes are permitted; back-compat shims are not. Read [AGENTS.md](AGENTS.md) for the project's design principles, prime directives, and non-goals before proposing significant changes.
 
-- **Go 1.25+** (for the binary)
-- **[Bun](https://bun.sh/) 1.3+** (for TypeScript packages and UI)
-- **Docker** (optional, for containerized binary builds)
+## Prerequisites
 
-### Setup
+- **Go 1.25+** — the daemon
+- **[Bun](https://bun.sh/) 1.3+** — workspace manager, TS/Svelte builds, codegen
+
+That's it. No Docker, no Postgres, no Redis required. The repo bootstraps with one `bun install`.
+
+## Setup
 
 ```bash
 git clone https://github.com/runwisp/runwisp
 cd runwisp
 
-# Install TypeScript dependencies
-bun install
-
-# Build everything
-bun run build
+bun install                # install JS/TS workspace deps
+bun run build              # builds the web UI, then the daemon
+./apps/runwisp/runwisp     # smoke-test the binary
 ```
 
-### Project Areas
+## Repository layout
 
-| Area        | Path               | Language   |
-| ----------- | ------------------ | ---------- |
-| Go binary   | `apps/runwisp/`    | Go         |
-| Web UI      | `apps/ui/`         | Svelte/TS  |
-| Design      | `packages/ui/`     | Svelte/TS  |
-| Common code | `packages/common/` | TypeScript |
+| Path                                   | What lives there                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------- |
+| `apps/runwisp/`                        | Go daemon — scheduler, supervisor, REST API, TUI, embedded UI server      |
+| `apps/ui/`                             | Svelte 5 web dashboard (embedded into the daemon at build time)           |
+| `apps/docs/`                           | [docs.runwisp.com](https://docs.runwisp.com) — Astro / Starlight          |
+| `packages/asyncapi/`                   | AsyncAPI spec for the optional control-plane protocol — codegen source    |
+| `packages/common/`                     | Shared TypeScript types and constants                                     |
+| `packages/ui/`                         | Shared Svelte component library                                           |
+| `packages/{eslint,typescript}-config/` | Shared tooling configs                                                    |
+| `packages/assets/`                     | Repo binary assets (README screenshots)                                   |
 
-## Development Workflow
+Daemon internals live under `apps/runwisp/internal/`:
+`runtime/` (scheduler + run manager), `executor/` (process spawning, stdio capture),
+`server/` (REST, CHAP auth, JWT, SSE), `storage/` (GORM + SQLite),
+`notify/` (notification routing), `cloud/` (optional outbound control plane),
+`tui/` (Bubbletea TUI), `events/` (in-memory pub/sub bus).
 
-1. **Fork** the repository and create a feature branch from `main`.
-2. **Make your changes** with clear, focused commits.
-3. **Test your changes**:
-   - Build: `bun run build`
-   - Test: `bun run test`
-   - Check and lint: `bun run check`
-4. **Submit a Pull Request** with a clear description of what changed and why.
+## Development workflow
 
-## Code Style
+Branch off `main`. One PR per logical change.
 
-### TypeScript
+Before pushing, run the full pipeline from the repo root:
 
-- No `any` types, `as` casts, or `!` non-null assertions — use type guards.
-- Use `if (!x)` for falsy checks.
-- Run `bun run check` before committing.
+```bash
+bun run precommit    # generate + format + check + test
+bun run build        # Go binary build — required for daemon changes
+```
+
+`precommit` chains `bun run generate` (regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`), `bun run format`, `bun run check` (Go vet/lint + TS/Svelte type checks), and `bun run test`. Run the individual steps directly when iterating — they're all valid Nx targets.
+
+Iterating on the UI:
+
+- `bun run dev` — dev build + launches the daemon
+- `bun run web-ui` — Svelte dev server against an already-running daemon
+- `bun run theme` — the shared component library playground
+
+## Making changes
+
+### TOML schema (`runwisp.toml`)
+
+User-visible. Requires **all** of:
+
+1. Schema + validator update under `apps/runwisp/internal/config/`.
+2. `bun run precommit` (refreshes `apps/runwisp/openapi.json` as part of `generate`).
+3. Docs update in `apps/docs/src/content/docs/configuration/`.
+4. A [CHANGELOG.md](CHANGELOG.md) entry under the unreleased section.
+5. README config reference update if user-visible.
+
+### Control-plane protocol (`packages/asyncapi/asyncapi.yaml`)
+
+The AsyncAPI YAML is the **single source of truth**. Workflow:
+
+1. Edit `packages/asyncapi/asyncapi.yaml`.
+2. Run `bun run generate` (or `precommit`) — regenerates Go types into `apps/runwisp/internal/generated/protocol/`.
+3. Implement the new messages on the consumer side (`apps/runwisp/internal/cloud/`).
+
+Never hand-edit anything under `internal/generated/protocol/` — it's regenerated.
+
+### REST API (`apps/runwisp/internal/server/`)
+
+Routes are registered with [huma](https://huma.rocks/). `bun run generate` refreshes `apps/runwisp/openapi.json` from the registered routes. Auth-touching changes need a smoke test against a real daemon — exercise both the local Unix-socket path (CLI/TUI) and the password + session-cookie path (Web UI / remote REST), not just unit tests.
+
+### Web UI (`apps/ui/`)
+
+The dashboard is embedded into the binary at build time. REST in `src/lib/api.ts`, SSE in `src/lib/logs.ts`, rune-based stores under `src/lib/stores/`, components under `src/lib/components/`.
+
+## Code style
 
 ### Go
 
-- Follow standard Go conventions (`gofmt`, `go vet`).
-- Verify Go changes with `bun run build`, `bun run test`, and `bun run check`.
+- `gofmt` and `go vet` clean — `bun run check` enforces both.
+- Inject clocks, randomness, and FS dependencies into the scheduler. Never call `time.Now()` inline in scheduling logic.
+- Group mutable state with its lifecycle (a struct with start/stop). Avoid package-level mutable state.
+- IDs on user-visible entities are monotonic ULIDs — no auto-increment integers, no UUIDv4.
+
+### TypeScript / Svelte
+
+- No `any`. No `as` casts. No `!` non-null assertions. Use type guards.
+- Use `if (!x)` for falsy checks. Never write `x === null || x === undefined`.
+- Svelte 5 runes only — no legacy reactive `$:` syntax.
 
 ### General
 
-- Comment _why_, not _what_. Code should be self-documenting.
-- Keep functions small and testable.
-- Avoid global mutable state.
+- Comments explain **why**, not **what**. Default to no comment.
+- Keep functions small and pure where possible.
+- Fix adjacent violations in files you touch — the Boy Scout Rule.
 
-## Architecture Guidelines
+## Testing
 
-- **`packages/common`**: Shared types and utilities (Apache-2.0). Don't duplicate these in apps.
-- **`packages/asyncapi`**: Single source of truth for WebSocket protocol schemas.
-- **`apps/runwisp`**: Standalone Go binary. All daemon logic lives here.
+- **Unit tests** must not touch real time, real network, real SQLite files, or real filesystems. Use the fakes in `apps/runwisp/internal/testutil/` (and the notify-specific fakes in `apps/runwisp/internal/notify/testutil/`).
+- **End-to-end tests** in `apps/runwisp/tests/e2e/` exercise the real binary. They're hermetic — isolated data dir and ephemeral ports per test.
+- **Bug fixes ship with a test** that would have caught the bug before the fix. No exceptions.
 
-## Reporting Issues
+## Commits and pull requests
 
-- Use [GitHub Issues](https://github.com/runwisp/runwisp/issues) for bugs and feature requests.
-- For security vulnerabilities, see [SECURITY.md](SECURITY.md).
+- Write commit messages that explain **why** the change is needed. The reviewer reads `git log`, not your inner monologue.
+- Plain commit messages — no `Co-Authored-By: Claude` (or other tool) trailers.
+- Pre-1.0 means no deprecation shims, no "tolerate the old shape" branches, no migration warnings. Reject wrong shapes with errors and move on.
+- PR description should call out anything user-visible (TOML schema, REST API, CLI flags) so it lands correctly in [CHANGELOG.md](CHANGELOG.md).
+
+## Reporting bugs
+
+- [GitHub Issues](https://github.com/runwisp/runwisp/issues) for bugs and feature requests.
+- For security vulnerabilities, see [SECURITY.md](SECURITY.md) — **do not file a public issue**.
 
 ## License
 
-RunWisp is licensed under [Apache-2.0](LICENSE). By submitting a pull request, you agree that your contribution is licensed under the same terms. You keep your copyright — we don't require a CLA.
+Apache-2.0. By submitting a pull request you agree your contribution is licensed under those terms. You keep your copyright; we don't require a CLA.
