@@ -5,13 +5,14 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
-	"log/slog"
+	"golang.org/x/crypto/hkdf"
 
 	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/config"
@@ -21,6 +22,12 @@ import (
 	"github.com/runwisp/runwisp/internal/version"
 )
 
+// jwtKDFInfo is the HKDF info string that namespaces the JWT signing-key
+// derivation. Bumping it is the way to force every existing browser session
+// to be invalidated on the next restart without changing the operator's
+// RUNWISP_PASSWORD.
+const jwtKDFInfo = "runwisp-jwt-v1"
+
 // daemonConfig holds resolved configuration and secrets for the daemon.
 type daemonConfig struct {
 	Fingerprint       string
@@ -28,7 +35,7 @@ type daemonConfig struct {
 	Config            *config.Config
 	UsingDemo         bool
 	Password          string
-	PasswordGenerated bool
+	PasswordEphemeral bool
 	JWTSecret         string
 }
 
@@ -63,17 +70,12 @@ func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*da
 		return nil, err
 	}
 
-	password, _, pwErr := datadir.ResolvePassword(configRepo)
-	if pwErr != nil && !cloudCfg.Enabled {
-		return nil, pwErr
+	password, ephemeral, err := resolvePassword()
+	if err != nil {
+		return nil, err
 	}
-	// "Generated" here means the daemon owns the password (auto-generated and
-	// stored in SQLite). It is safe — and expected — to disclose to the
-	// operator on startup. An operator-supplied RUNWISP_PASSWORD is never
-	// disclosed.
-	passwordGenerated := os.Getenv("RUNWISP_PASSWORD") == "" && password != ""
 
-	jwtSecret, err := resolveJWTSecret(configRepo, os.Getenv("RUNWISP_PASSWORD"))
+	jwtSecret, err := deriveJWTSecret(password, fp)
 	if err != nil {
 		return nil, err
 	}
@@ -84,9 +86,49 @@ func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*da
 		Config:            cfg,
 		UsingDemo:         usingDemo,
 		Password:          password,
-		PasswordGenerated: passwordGenerated,
+		PasswordEphemeral: ephemeral,
 		JWTSecret:         jwtSecret,
 	}, nil
+}
+
+// resolvePassword returns the daemon password. If RUNWISP_PASSWORD is set, the
+// env value is used and ephemeral=false (sessions stay stable across restarts
+// because deriveJWTSecret will produce the same JWT key). Otherwise a fresh
+// random password is minted in memory for this boot only; ephemeral=true.
+//
+// The password is never read from or written to disk. Persisting it would
+// undo the whole point of the env-var path (operators set RUNWISP_PASSWORD
+// specifically to keep credentials out of the data directory) and would
+// expose a durable credential to anyone with a momentary read of the data
+// directory.
+func resolvePassword() (password string, ephemeral bool, err error) {
+	if envPw := os.Getenv("RUNWISP_PASSWORD"); envPw != "" {
+		return envPw, false, nil
+	}
+	pw, err := datadir.GeneratePassword()
+	if err != nil {
+		return "", false, err
+	}
+	return pw, true, nil
+}
+
+// deriveJWTSecret produces the HS256 JWT signing key by HKDF-expanding the
+// daemon password, salted by the per-install fingerprint. Properties:
+//
+//   - Stable across restarts when both inputs are stable, so a browser
+//     session backed by RUNWISP_PASSWORD survives a daemon restart.
+//   - Rotates automatically when the password rotates — including the
+//     ephemeral-password case, where each boot mints a new password and
+//     thus invalidates any prior session.
+//   - Different per machine/cwd thanks to the fingerprint salt; the same
+//     password on another host does not yield the same signing key.
+func deriveJWTSecret(password, fp string) (string, error) {
+	kdf := hkdf.New(sha256.New, []byte(password), []byte(fp), []byte(jwtKDFInfo))
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(kdf, key); err != nil {
+		return "", fmt.Errorf("derive JWT secret: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(key), nil
 }
 
 // resolveConfigValue resolves a config value with the following priority:
@@ -116,64 +158,6 @@ func resolveConfigValue(
 		return "", err
 	}
 	return v, nil
-}
-
-// resolveJWTSecret ensures a JWT secret exists in the DB and rotates it when
-// the explicit password (RUNWISP_PASSWORD) changes. Auto-generated passwords
-// are excluded from tracking so that session tokens survive daemon restarts.
-//
-// Change detection compares a SHA-256 fingerprint of the env-supplied
-// password against the previous boot's fingerprint. The plaintext env
-// password is intentionally never persisted — operators set RUNWISP_PASSWORD
-// specifically to keep credentials out of the data directory.
-func resolveJWTSecret(configRepo storage.ConfigRepository, envPassword string) (string, error) {
-	secret, secretFound, err := configRepo.GetConfigValue(storage.ConfigKeyJWTSecret)
-	if err != nil {
-		return "", err
-	}
-
-	passwordChanged := false
-	if envPassword != "" {
-		pwHash := hashPassword(envPassword)
-		storedHash, hashFound, err := configRepo.GetConfigValue(configKeyPasswordHash)
-		if err != nil {
-			return "", err
-		}
-		passwordChanged = hashFound && storedHash != pwHash
-		if !hashFound || passwordChanged {
-			if err := configRepo.SetConfigValue(configKeyPasswordHash, pwHash); err != nil {
-				return "", err
-			}
-		}
-	}
-
-	if passwordChanged {
-		slog.Info("Password changed — rotating JWT secret to invalidate existing sessions")
-	}
-
-	if !secretFound || passwordChanged {
-		newSecret, genErr := datadir.GenerateJWTSecret()
-		if genErr != nil {
-			return "", genErr
-		}
-		if err := configRepo.SetConfigValue(storage.ConfigKeyJWTSecret, newSecret); err != nil {
-			return "", err
-		}
-		secret = newSecret
-	}
-
-	return secret, nil
-}
-
-// configKeyPasswordHash holds a fingerprint of the env-supplied
-// RUNWISP_PASSWORD used solely for JWT-rotation change detection. It is
-// distinct from storage.ConfigKeyPassword (the plaintext daemon-owned
-// password) and is only written when RUNWISP_PASSWORD is set.
-const configKeyPasswordHash = "env_password_hash"
-
-func hashPassword(password string) string {
-	h := sha256.Sum256([]byte(password))
-	return hex.EncodeToString(h[:])
 }
 
 func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error) {

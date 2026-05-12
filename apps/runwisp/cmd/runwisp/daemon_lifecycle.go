@@ -183,16 +183,11 @@ func runWithTUI(
 	cancelCloud context.CancelFunc,
 	cloudWG *sync.WaitGroup,
 ) error {
+	client := apiclient.NewUnix(localAPISocketPath())
 	if srv != nil {
-		localClient := apiclient.New(localAPIBaseURL(), "")
-		if err := pollHealth(localClient, 3*time.Second); err != nil {
+		if err := pollHealth(client, 3*time.Second); err != nil {
 			slog.Warn("Health check did not pass before TUI start", "err", err)
 		}
-	}
-
-	client := apiclient.New(localAPIBaseURL(), info.Password)
-	if authErr := client.Authenticate(); authErr != nil {
-		slog.Warn("TUI auth failed", "err", authErr)
 	}
 
 	if debugWriter != nil {

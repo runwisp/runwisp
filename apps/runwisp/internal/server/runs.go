@@ -152,6 +152,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		Tags:        []string{"Logs"},
 	}, srv.humaGetLogRaw)
 
+	srv.registerLocalCredentialsRoute(protectedAPI)
 	srv.registerRunsSSE(protectedAPI)
 	srv.registerLogSSE(protectedAPI)
 	srv.registerDaemonLogSSE(protectedAPI)

@@ -36,6 +36,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/local/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieve the daemon's ephemeral password (Unix socket only)
+         * @description Returns the in-memory ephemeral password to a local CLI/TUI client arriving on the Unix socket. Always 403 over TCP — even with a valid JWT. Always 404 when the daemon is configured with RUNWISP_PASSWORD.
+         */
+        get: operations["getLocalCredentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications": {
         parameters: {
             query?: never;
@@ -488,6 +508,18 @@ export interface components {
              * @example https://example.com/errors/example
              */
             type: string;
+        };
+        LocalCredentialsBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/LocalCredentialsBody.json
+             */
+            readonly $schema?: string;
+            /** @description Always true on success — the endpoint refuses to return env-var-supplied passwords. */
+            ephemeral: boolean;
+            /** @description Ephemeral password generated in memory at boot. Omitted unless ephemeral=true. */
+            password: string;
         };
         LogDoneEvent: {
             /**
@@ -1030,6 +1062,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DaemonInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getLocalCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalCredentialsBody"];
                 };
             };
             /** @description Error */

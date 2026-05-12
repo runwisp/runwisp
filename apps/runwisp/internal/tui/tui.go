@@ -106,7 +106,7 @@ type StartupInfo struct {
 	Timezone       string
 	TimezoneSource string
 
-	PasswordGenerated bool
+	PasswordEphemeral bool
 	Password          string
 
 	CloudEnabled  bool
@@ -145,8 +145,13 @@ func SetLogOutput(w io.Writer) {
 
 // PrintStartup renders the polished startup display to stderr.
 func PrintStartup(info StartupInfo) {
-	w := os.Stderr
+	printStartupTo(os.Stderr, info)
+}
 
+// printStartupTo renders the polished startup display to the given writer.
+// Exposed as a writer-injecting seam so tests can capture the banner without
+// reaching into os.Stderr.
+func printStartupTo(w io.Writer, info StartupInfo) {
 	// --- Banner ---
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "  %s %s %s\n",
@@ -267,21 +272,14 @@ func PrintStartup(info StartupInfo) {
 		fmt.Fprintln(w)
 	}
 
-	// --- Password box ---
-	if info.PasswordGenerated && info.Password != "" {
-		content := fmt.Sprintf(
-			"🔑  Password: %s\n\n%s",
-			boldStyle.Render(info.Password),
-			dimStyle.Render("Set RUNWISP_PASSWORD to use your own password."),
-		)
-		box := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(yellow).
-			Padding(1, 2).
-			Render(content)
-		for _, line := range strings.Split(box, "\n") {
-			fmt.Fprintf(w, "  %s\n", line)
-		}
+	// --- Ephemeral password hint ---
+	// The plaintext password is never rendered in the banner — operators
+	// retrieve it via `runwisp password` (CLI) or by selecting Home →
+	// Password in the TUI. Anything that captures stderr (journald, log
+	// shippers, screen-share recordings) therefore never sees the value.
+	if info.PasswordEphemeral {
+		fmt.Fprintf(w, "  %s\n", dimStyle.Render("🔑  Ephemeral password generated in memory."))
+		fmt.Fprintf(w, "    %s\n", dimStyle.Render("Run `runwisp password` to retrieve it, or open Home in the TUI."))
 		fmt.Fprintln(w)
 	}
 
@@ -297,7 +295,7 @@ func PrintStartup(info StartupInfo) {
 	fmt.Fprintln(w)
 }
 
-func printDotField(w *os.File, label, value string) {
+func printDotField(w io.Writer, label, value string) {
 	dots := strings.Repeat("·", max(1, fieldPad-len(label)))
 	fmt.Fprintf(w, "  %s %s %s\n",
 		dimStyle.Render(label),

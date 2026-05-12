@@ -100,31 +100,28 @@ func runDaemon(mode daemonMode) error {
 
 	daemonInfo := buildDaemonInfo(cfg, svc)
 
-	var srv *server.Server
-	if cfg.Password != "" {
-		srv, err = server.New(server.Options{
-			DB:              svc.DB,
-			NotificationDB:  svc.DB,
-			NotificationHub: svc.Notify.Hub,
-			TaskManager:     svc.TaskManager,
-			Tasks:           svc.TasksMap,
-			Scheduler:       svc.Scheduler,
-			Host:            flags.Host,
-			Port:            flags.Port,
-			LogDir:          flags.LogDir(),
-			EventBus:        svc.EventBus,
-			Password:        cfg.Password,
-			JWTSecret:       cfg.JWTSecret,
-			DaemonInfo:      daemonInfo,
-			DaemonLogBuffer: logBuffer,
-			LogOutput:       logOutput,
-		})
-		if err != nil {
-			return err
-		}
+	srv, err := server.New(server.Options{
+		DB:                svc.DB,
+		NotificationDB:    svc.DB,
+		NotificationHub:   svc.Notify.Hub,
+		TaskManager:       svc.TaskManager,
+		Tasks:             svc.TasksMap,
+		Scheduler:         svc.Scheduler,
+		Host:              flags.Host,
+		Port:              flags.Port,
+		SocketPath:        datadir.SocketPath(flags.DataDir),
+		LogDir:            flags.LogDir(),
+		EventBus:          svc.EventBus,
+		Password:          cfg.Password,
+		PasswordEphemeral: cfg.PasswordEphemeral,
+		JWTSecret:         cfg.JWTSecret,
+		DaemonInfo:        daemonInfo,
+		DaemonLogBuffer:   logBuffer,
+		LogOutput:         logOutput,
+	})
+	if err != nil {
+		return err
 	}
-
-	webUIDisabled := srv == nil && cfg.CloudConfig.Enabled
 
 	startupInfo := tui.StartupInfo{
 		Version:    version.Version,
@@ -141,11 +138,10 @@ func runDaemon(mode daemonMode) error {
 		Timezone:       daemonInfo.ResolvedTimezone,
 		TimezoneSource: daemonInfo.TimezoneSource,
 
-		PasswordGenerated: cfg.PasswordGenerated,
+		PasswordEphemeral: cfg.PasswordEphemeral,
 		Password:          cfg.Password,
 
-		CloudEnabled:  cfg.CloudConfig.Enabled,
-		WebUIDisabled: webUIDisabled,
+		CloudEnabled: cfg.CloudConfig.Enabled,
 
 		ScheduleWarnings: svc.ScheduleResult.Warnings,
 		CrashedRuns:      svc.CrashedRuns,
@@ -165,9 +161,6 @@ func runDaemon(mode daemonMode) error {
 	defer cancelCloud()
 
 	go func() {
-		if srv == nil {
-			return
-		}
 		if startErr := srv.Start(); startErr != nil {
 			slog.Error("Server failed", "err", startErr)
 			p, _ := os.FindProcess(os.Getpid())

@@ -6,7 +6,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -15,58 +14,35 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var tuiPassword string
-
 var tuiCmd = &cobra.Command{
 	Use:   "tui",
 	Short: "Connect a TUI to a running daemon",
-	Long:  `Launches the interactive terminal UI and connects it to an already-running RunWisp daemon via its HTTP API.`,
+	Long:  `Launches the interactive terminal UI and connects it to an already-running RunWisp daemon via its Unix socket (no password required — access is gated by data-dir filesystem permissions).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runTUIClient()
 	},
 }
 
-func init() {
-	tuiCmd.Flags().StringVar(&tuiPassword, "password", "", "authentication password (or set RUNWISP_PASSWORD)")
-}
-
 func runTUIClient() error {
-	passwordExplicit := tuiPassword != "" || os.Getenv("RUNWISP_PASSWORD") != ""
-	password := tuiPassword
-	if password == "" {
-		resolved, err := resolveClientPassword()
-		if err != nil || resolved == "" {
-			return fmt.Errorf("password required: use --password or RUNWISP_PASSWORD env var")
-		}
-		password = resolved
-	}
-
-	client := apiclient.New(localAPIBaseURL(), password)
+	client := apiclient.NewUnix(localAPISocketPath())
 
 	if err := pollHealth(client, 5*time.Second); err != nil {
-		return fmt.Errorf("cannot reach daemon at %s — is it running? (%w)", localAPIBaseURL(), err)
+		return fmt.Errorf("cannot reach daemon at %s — is it running? (%w)", localAPISocketPath(), err)
 	}
 
-	err := runTUIConnect(client, password, passwordExplicit)
-	if err != nil {
-		if errors.Is(err, apiclient.ErrUnauthorized) {
-			return tuiPasswordMismatchError(flags.Port, passwordExplicit)
-		}
-		if errors.Is(err, apiclient.ErrRateLimited) {
-			return authRateLimitedError(flags.Port)
-		}
+	err := runTUIConnect(client)
+	if err != nil && errors.Is(err, apiclient.ErrRateLimited) {
+		return authRateLimitedError(flags.Port)
 	}
 	return err
 }
 
 // buildStartupInfoFromDaemon converts DaemonInfo into the TUI's StartupInfo.
-// passwordExplicit means the user supplied the password themselves; when false
-// the password was auto-generated and should be disclosed in the TUI.
-func buildStartupInfoFromDaemon(info *model.DaemonInfo, password string, passwordExplicit bool) tui.StartupInfo {
-	si := tui.StartupInfo{
-		Password:          password,
-		PasswordGenerated: !passwordExplicit,
-	}
+// The local TUI no longer displays a password — it connects over the Unix
+// socket and the daemon's password is either operator-supplied (already
+// known to them) or ephemeral (never disclosed by this client).
+func buildStartupInfoFromDaemon(info *model.DaemonInfo) tui.StartupInfo {
+	si := tui.StartupInfo{}
 	if info == nil {
 		return si
 	}

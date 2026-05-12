@@ -27,7 +27,7 @@ One binary. One TOML file. Zero runtime dependencies. Full visibility into every
 > **TL;DR** — RunWisp is a single-binary replacement for `crond`, `crontab`, and `supervisord`. Define your cron jobs and long-running processes in TOML, then get a web dashboard, terminal UI, REST API, real-time log streaming, and persistent execution history out of the box. No Python, no Node.js, no external database. Runs anywhere a static Go binary runs — VPS, Raspberry Pi, Docker, bare metal.
 
 > [!NOTE]
-> **Status: pre-1.0** — RunWisp runs scheduled jobs and small services on a single machine today. The TOML schema is still settling; expect breaking changes between minor versions until 1.0 — every change ships in [CHANGELOG.md](CHANGELOG.md). Several roadmap items (cloud control plane, log search, reload-without-restart) aren't here yet — see the [roadmap](https://docs.runwisp.com/roadmap/).
+> **Status: pre-1.0** — RunWisp runs scheduled jobs and small services on a single machine today. Any pre-1.0 bump may ship breaking changes and reset run history; check [CHANGELOG.md](CHANGELOG.md) before upgrading. Several roadmap items (cloud control plane, log search, reload-without-restart) aren't here yet — see the [roadmap](https://docs.runwisp.com/roadmap/).
 
 ---
 

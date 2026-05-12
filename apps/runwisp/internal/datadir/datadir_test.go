@@ -10,25 +10,6 @@ import (
 	"testing"
 )
 
-func TestGenerateJWTSecret_Unique(t *testing.T) {
-	a, err := GenerateJWTSecret()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(a) < 20 {
-		t.Fatalf("expected JWT secret of reasonable length, got %d chars", len(a))
-	}
-
-	b, err := GenerateJWTSecret()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a == b {
-		t.Fatal("two generated secrets should not be identical")
-	}
-}
-
 func TestGeneratePassword_Base62Alphabet(t *testing.T) {
 	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -99,102 +80,10 @@ func TestWritePidFile_RefusesSymlink(t *testing.T) {
 	}
 }
 
-// fakePasswordStore is an in-memory PasswordStore for tests.
-type fakePasswordStore struct {
-	values map[string]string
-}
-
-func newFakeStore() *fakePasswordStore {
-	return &fakePasswordStore{values: map[string]string{}}
-}
-
-func (f *fakePasswordStore) GetConfigValue(key string) (string, bool, error) {
-	v, ok := f.values[key]
-	return v, ok, nil
-}
-
-func (f *fakePasswordStore) SetConfigValue(key, value string) error {
-	f.values[key] = value
-	return nil
-}
-
-// TestResolvePassword_EnvVarNotPersisted guards the prime-directive contract:
-// when an operator sets RUNWISP_PASSWORD (Docker secret, systemd
-// LoadCredential, sealed-secrets), the daemon must use the value in memory
-// only. Writing it to SQLite defeats the operator's whole reason for using a
-// secret manager.
-func TestResolvePassword_EnvVarNotPersisted(t *testing.T) {
-	store := newFakeStore()
-	t.Setenv("RUNWISP_PASSWORD", "from-env-secret")
-
-	got, isNew, err := ResolvePassword(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "from-env-secret" {
-		t.Fatalf("expected env value, got %q", got)
-	}
-	if isNew {
-		t.Fatal("env-supplied password must not be reported as newly generated")
-	}
-	if _, ok := store.values[passwordKey]; ok {
-		t.Fatal("env-supplied password must not be written to the store")
-	}
-}
-
-// TestResolvePassword_EnvVarDoesNotOverwriteStoredRow verifies that an
-// existing stored password row is left untouched when RUNWISP_PASSWORD is set.
-func TestResolvePassword_EnvVarDoesNotOverwriteStoredRow(t *testing.T) {
-	store := newFakeStore()
-	if err := store.SetConfigValue(passwordKey, "old-stored-secret"); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("RUNWISP_PASSWORD", "from-env-secret")
-
-	got, _, err := ResolvePassword(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "from-env-secret" {
-		t.Fatalf("env must take precedence in-memory, got %q", got)
-	}
-	if store.values[passwordKey] != "old-stored-secret" {
-		t.Fatalf("stored password must not be rewritten when env var is set; got %q", store.values[passwordKey])
-	}
-}
-
-// TestResolvePassword_StoreFallbackUnchanged verifies the unchanged path:
-// no env var, stored row present → use it.
-func TestResolvePassword_StoreFallbackUnchanged(t *testing.T) {
-	store := newFakeStore()
-	if err := store.SetConfigValue(passwordKey, "from-store"); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("RUNWISP_PASSWORD", "")
-
-	got, isNew, err := ResolvePassword(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "from-store" || isNew {
-		t.Fatalf("expected stored password; got=%q isNew=%v", got, isNew)
-	}
-}
-
-// TestResolvePassword_GeneratesAndPersistsWhenEmpty verifies that absent
-// both env var and stored row, a new password is generated AND written.
-func TestResolvePassword_GeneratesAndPersistsWhenEmpty(t *testing.T) {
-	store := newFakeStore()
-	t.Setenv("RUNWISP_PASSWORD", "")
-
-	got, isNew, err := ResolvePassword(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !isNew || got == "" {
-		t.Fatalf("expected freshly generated password; got=%q isNew=%v", got, isNew)
-	}
-	if store.values[passwordKey] != got {
-		t.Fatalf("stored value does not match returned password: store=%q returned=%q", store.values[passwordKey], got)
+func TestSocketPath_UnderDataDir(t *testing.T) {
+	dir := "/tmp/runwisp-test"
+	want := filepath.Join(dir, "runwisp.sock")
+	if got := SocketPath(dir); got != want {
+		t.Fatalf("SocketPath(%q) = %q, want %q", dir, got, want)
 	}
 }

@@ -7,7 +7,6 @@ package e2e
 
 import (
 	"bytes"
-	"database/sql"
 	"net"
 	"os"
 	"os/exec"
@@ -23,8 +22,8 @@ import (
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
 )
 
 const (
@@ -91,11 +90,26 @@ func buildRunwispBinary(t testing.TB, projectDir string) string {
 func (s *tuiSuite) client(t *testing.T) *apiclient.Client {
 	t.Helper()
 
-	password := waitForPassword(t, s.daemon.dataDir)
-	client := apiclient.New(s.daemon.baseURL, password)
-	require.NoError(t, client.Authenticate())
+	return socketClient(t, s.daemon.dataDir)
+}
 
-	return client
+// socketClient builds a Unix-socket apiclient pointed at the daemon's data
+// dir, waiting briefly for the socket file to appear so it works across the
+// race window between daemon start and listener bind. No password or
+// authentication step is needed: the daemon trusts local-socket peers.
+func socketClient(t testing.TB, dataDir string) *apiclient.Client {
+	t.Helper()
+
+	socketPath := filepath.Join(dataDir, "runwisp.sock")
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(socketPath); err == nil {
+			break
+		}
+		time.Sleep(screenPollInterval)
+	}
+	require.FileExists(t, socketPath, "runwisp.sock should be created by the daemon")
+	return apiclient.NewUnix(socketPath)
 }
 
 func (s *tuiSuite) selectAlphaTask(t *testing.T) string {
@@ -201,7 +215,7 @@ type daemonProcess struct {
 func startDaemon(t *testing.T, projectDir string, binaryPath string, configPath string) *daemonProcess {
 	t.Helper()
 
-	dataDir := t.TempDir()
+	dataDir := testutil.ShortTempDir(t)
 	port := reserveTCPPort(t)
 	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
 
@@ -339,7 +353,7 @@ func startRemoteTUI(t *testing.T, projectDir string, binaryPath string, configPa
 	session.waitForAll(t, 10*time.Second,
 		"Home",
 		"Web UI",
-		"Password",
+		"Open Web UI",
 	)
 
 	return session
@@ -475,44 +489,6 @@ func (s *tuiSession) forceStop() {
 		case <-time.After(processExitTimeout):
 		}
 	})
-}
-
-func waitForPassword(t testing.TB, dataDir string) string {
-	t.Helper()
-
-	dbPath := filepath.Join(dataDir, "runwisp.db")
-	deadline := time.Now().Add(5 * time.Second)
-
-	for time.Now().Before(deadline) {
-		if password := tryReadStoredPassword(dbPath); password != "" {
-			return password
-		}
-		time.Sleep(screenPollInterval)
-	}
-
-	require.FailNowf(t, "password row not written to SQLite", "db path: %s", dbPath)
-	return ""
-}
-
-// tryReadStoredPassword opens the daemon's SQLite read-only and returns the
-// stored password, or "" if the row isn't present yet (or the file isn't
-// readable). Errors are deliberately swallowed because this is a polling
-// helper that races startup.
-func tryReadStoredPassword(dbPath string) string {
-	if _, err := os.Stat(dbPath); err != nil {
-		return ""
-	}
-	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
-	if err != nil {
-		return ""
-	}
-	defer db.Close()
-
-	var value string
-	if err := db.QueryRow(`SELECT value FROM config_entries WHERE key = ?`, "password").Scan(&value); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(value)
 }
 
 func waitForRunCount(t testing.TB, client *apiclient.Client, taskName string, expectedTotal int64, timeout time.Duration) int64 {

@@ -177,6 +177,33 @@
         },
         "type": "object"
       },
+      "LocalCredentialsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/LocalCredentialsBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "ephemeral": {
+            "description": "Always true on success — the endpoint refuses to return env-var-supplied passwords.",
+            "type": "boolean"
+          },
+          "password": {
+            "description": "Ephemeral password generated in memory at boot. Omitted unless ephemeral=true.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "ephemeral"
+        ],
+        "type": "object"
+      },
       "LogDoneEvent": {
         "additionalProperties": false,
         "properties": {
@@ -1228,6 +1255,45 @@
           }
         },
         "summary": "Get daemon info",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/local/credentials": {
+      "get": {
+        "description": "Returns the in-memory ephemeral password to a local CLI/TUI client arriving on the Unix socket. Always 403 over TCP — even with a valid JWT. Always 404 when the daemon is configured with RUNWISP_PASSWORD.",
+        "operationId": "getLocalCredentials",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalCredentialsBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Retrieve the daemon's ephemeral password (Unix socket only)",
         "tags": [
           "System"
         ]

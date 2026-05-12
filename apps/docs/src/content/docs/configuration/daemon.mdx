@@ -44,20 +44,44 @@ These three flags govern where state lives and where the HTTP/Web UI
 listens. They apply to every `runwisp` subcommand (`daemon`, `tui`,
 `exec`, …):
 
-| Flag     | Default     | What it does                                                                               |
-| -------- | ----------- | ------------------------------------------------------------------------------------------ |
-| `--data` | `data`      | Directory for all persistent state — SQLite database, per-task logs, JWT secret, PID file. |
-| `--host` | `127.0.0.1` | Bind address for the HTTP server. Use `0.0.0.0` to listen on every interface.              |
-| `--port` | `9477`      | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                           |
+| Flag     | Default     | What it does                                                                                              |
+| -------- | ----------- | --------------------------------------------------------------------------------------------------------- |
+| `--data` | `data`      | Directory for all persistent state — SQLite database, per-task logs, PID file, and the local Unix socket. |
+| `--host` | `127.0.0.1` | Bind address for the HTTP server. Use `0.0.0.0` to listen on every interface.                             |
+| `--port` | `9477`      | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                                          |
 
 ```sh
 runwisp daemon --data /var/lib/runwisp --host 0.0.0.0 --port 9477
 ```
 
 Picking `--data` once and using it consistently matters: the database
-file (`runwisp.db`), the JWT secret, and every task's log files all
-live under that directory. Moving it after the fact is a directory
-move, not a configuration change.
+file (`runwisp.db`), the local Unix socket (`runwisp.sock`), and every
+task's log files all live under that directory. Moving it after the
+fact is a directory move, not a configuration change.
+
+The daemon **does not persist** the daemon password or the JWT signing
+key. The password comes from `RUNWISP_PASSWORD` if set, otherwise a
+fresh ephemeral one is generated every boot. The JWT key is derived
+deterministically from the password — set `RUNWISP_PASSWORD` (e.g.
+via a Docker secret or systemd `LoadCredential=`) to keep browser
+sessions stable across daemon restarts. See [Auth](/operations/auth/)
+for details.
+
+## Environment variables
+
+| Variable              | What it does                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `RUNWISP_PASSWORD`    | Sets the daemon password in memory. When unset, a fresh ephemeral password is minted every boot (and every session rotates with it). |
+| `RUNWISP_TRUST_PROXY` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                     |
+| `RUNWISP_CLOUD_TOKEN` | Used by `runwisp cloud` to connect to a control plane. Ignored in standalone mode.                                                   |
+
+## Local Unix socket
+
+The daemon creates `<datadir>/runwisp.sock` on startup. Local CLI
+commands and the TUI connect over this socket and do not require a
+password — access is gated by the data dir's `0700` mode, the
+socket's `0600` mode, and a `SO_PEERCRED` check at accept time. The
+socket file is removed on graceful shutdown.
 
 ## Where to next
 

@@ -5,12 +5,14 @@ package apiclient
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -18,13 +20,22 @@ import (
 
 // Client communicates with the RunWisp daemon HTTP API.
 // It is used by the TUI and CLI commands to interact with a running daemon.
+//
+// Construct it with New for remote (TCP) daemons, or NewUnix to talk to a
+// local daemon over its Unix socket. Unix-socket clients skip CHAP/JWT
+// entirely: the daemon trusts the connection based on filesystem
+// permissions plus a PEERCRED check at accept time.
 type Client struct {
-	baseURL    string
-	password   string
-	token      string
-	httpClient *http.Client
+	baseURL      string
+	password     string
+	token        string
+	httpClient   *http.Client
+	streamClient *http.Client
+	local        bool
 }
 
+// New constructs a Client for a remote daemon. baseURL must be an http(s)
+// URL; the client will run CHAP via Authenticate to obtain a JWT.
 func New(baseURL, password string) *Client {
 	return &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
@@ -32,11 +43,46 @@ func New(baseURL, password string) *Client {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		streamClient: &http.Client{},
+	}
+}
+
+// NewUnix constructs a Client that talks to the daemon over a Unix socket.
+// The local CLI/TUI use this path: the socket already gates access via 0700
+// datadir + 0600 socket-file perms + PEERCRED, so no password is required
+// and Authenticate is a no-op (IsAuthenticated returns true immediately).
+func NewUnix(socketPath string) *Client {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "unix", socketPath)
+		},
+		// Disable keep-alive defaults that don't help for a local socket and
+		// can confuse io.Copy on streaming endpoints.
+		DisableKeepAlives: false,
+	}
+	// "http://runwisp" is a placeholder host; the dialer ignores the address
+	// and connects to socketPath. Using a literal hostname keeps the URL
+	// well-formed for the standard library's URL parser.
+	return &Client{
+		baseURL: "http://runwisp",
+		local:   true,
+		httpClient: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: transport,
+		},
+		streamClient: &http.Client{Transport: transport},
 	}
 }
 
 // Authenticate performs CHAP authentication and stores the JWT token.
+// On Unix-socket clients this is a no-op — the daemon does not require a
+// JWT for socket-delivered requests.
 func (c *Client) Authenticate() error {
+	if c.local {
+		return nil
+	}
+
 	// Step 1: Get challenge nonce.
 	var challenge struct {
 		Nonce string `json:"nonce"`
@@ -71,8 +117,17 @@ func (c *Client) Authenticate() error {
 	return nil
 }
 
+// IsAuthenticated reports whether the client is ready to make protected
+// API calls. Unix-socket clients are always authenticated.
 func (c *Client) IsAuthenticated() bool {
-	return c.token != ""
+	return c.local || c.token != ""
+}
+
+// IsLocal reports whether this client talks over a Unix socket. Callers can
+// use this to skip work (login prompts, password validation) that doesn't
+// apply on the local path.
+func (c *Client) IsLocal() bool {
+	return c.local
 }
 
 // BaseURL returns the base URL the client connects to.
@@ -145,10 +200,36 @@ func (c *Client) doRequest(method, path string, body io.Reader, isJSON bool) (*h
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		resp.Body.Close()
-		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
+		return nil, &HTTPStatusError{
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(errBody)),
+		}
 	}
 
 	return resp, nil
+}
+
+// HTTPStatusError carries the daemon's response status and body for non-2xx
+// responses. Callers can recover the code via errors.As to make decisions
+// based on the daemon's intent (e.g. 404 → "ephemeral password unavailable").
+type HTTPStatusError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("API error %d: %s", e.StatusCode, e.Body)
+}
+
+// IsHTTPStatus reports whether err is (or wraps) an HTTPStatusError with the
+// given code. It is a convenience for status-code dispatch in callers that
+// otherwise would have to call errors.As at every site.
+func IsHTTPStatus(err error, code int) bool {
+	var se *HTTPStatusError
+	if !errors.As(err, &se) {
+		return false
+	}
+	return se.StatusCode == code
 }
 
 // CreateLaunchTicket requests a single-use launch ticket from the daemon.

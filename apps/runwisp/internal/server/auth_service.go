@@ -133,6 +133,14 @@ func (a *AuthService) JWTAuth() *jwtauth.JWTAuth {
 	return a.jwtAuth
 }
 
+// Password returns the in-memory daemon password. The accessor exists so the
+// local-credentials endpoint can return the ephemeral value to the local
+// CLI/TUI; callers MUST gate disclosure on the local-trusted flag and on the
+// ephemeral nature of the password.
+func (a *AuthService) Password() string {
+	return a.password
+}
+
 // isSecureRequest reports whether the connection delivering r used TLS. We
 // trust X-Forwarded-Proto only when the immediate peer is in the operator's
 // configured trusted-proxy set; otherwise any client could falsely claim TLS
@@ -247,9 +255,10 @@ func (a *AuthService) CreateLaunchTicket() (string, error) {
 }
 
 // handleCreateLaunchTicket generates a launch ticket via the authenticated API.
-// Restricted to loopback so that only local TUI/CLI clients can request tickets.
+// Restricted to local origins (Unix socket peer or TCP loopback) so only local
+// TUI/CLI clients can mint tickets.
 func (srv *Server) handleCreateLaunchTicket(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
+	if !isLocalRequest(r) {
 		respondForbidden(w, "Launch tickets can only be created from localhost")
 		return
 	}
@@ -263,11 +272,17 @@ func (srv *Server) handleCreateLaunchTicket(w http.ResponseWriter, r *http.Reque
 	respondJSON(w, http.StatusOK, map[string]string{"ticket": ticket})
 }
 
-// isLoopbackRequest returns true if the request originates from a loopback address.
-// Uses the original TCP peer address stored by savePeerAddr middleware to prevent
-// bypass via spoofed X-Real-IP / X-Forwarded-For headers (middleware.RealIP
-// overwrites r.RemoteAddr with those values).
-func isLoopbackRequest(r *http.Request) bool {
+// isLocalRequest returns true if the request was either delivered on the
+// daemon's Unix socket (PEERCRED-verified at accept time) or originates from
+// a TCP loopback address.
+//
+// The TCP path uses the original peer address stored by savePeerAddr
+// middleware to prevent bypass via spoofed X-Real-IP / X-Forwarded-For
+// headers (middleware.RealIP overwrites r.RemoteAddr with those values).
+func isLocalRequest(r *http.Request) bool {
+	if IsLocalTrusted(r) {
+		return true
+	}
 	addr := r.RemoteAddr
 	if peerAddr, ok := r.Context().Value(peerAddrContextKey).(string); ok {
 		addr = peerAddr
@@ -281,7 +296,8 @@ func isLoopbackRequest(r *http.Request) bool {
 }
 
 // handleLaunchTicket redeems a single-use launch ticket and redirects to the
-// UI with a session cookie. Only accepts requests from loopback addresses.
+// UI with a session cookie. Only accepts requests from local origins (Unix
+// socket peer or TCP loopback).
 //
 // An optional `redirect` query parameter targets a same-origin path (must
 // start with `/` and not `//`) — used by the TUI's "download log" action so
@@ -289,7 +305,7 @@ func isLoopbackRequest(r *http.Request) bool {
 // session cookie. Cross-origin or scheme-relative redirects are rejected to
 // avoid an open-redirect surface.
 func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
+	if !isLocalRequest(r) {
 		respondForbidden(w, "Launch tickets are only valid from localhost")
 		return
 	}
