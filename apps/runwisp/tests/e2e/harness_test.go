@@ -22,6 +22,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -214,7 +215,7 @@ type daemonProcess struct {
 func startDaemon(t *testing.T, projectDir string, binaryPath string, configPath string) *daemonProcess {
 	t.Helper()
 
-	dataDir := t.TempDir()
+	dataDir := testutil.ShortTempDir(t)
 	port := reserveTCPPort(t)
 	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
 

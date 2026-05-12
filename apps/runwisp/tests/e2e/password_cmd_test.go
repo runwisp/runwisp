@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -113,7 +114,7 @@ func runPasswordCmd(
 func startDaemonWithEnv(t *testing.T, projectDir, binaryPath, configPath string, extraEnv ...string) *daemonProcess {
 	t.Helper()
 
-	dataDir := t.TempDir()
+	dataDir := testutil.ShortTempDir(t)
 	port := reserveTCPPort(t)
 	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
 

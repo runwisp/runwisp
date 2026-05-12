@@ -158,7 +158,7 @@ func setupServerWithSocket(t *testing.T) (*Server, *testutil.MockRunRepository, 
 	tasks := map[string]*model.Task{"task1": task}
 
 	scheduler := runtime.NewScheduler(jm, tasks, time.UTC)
-	tmpDir := t.TempDir()
+	tmpDir := testutil.ShortTempDir(t)
 
 	s, err := New(Options{
 		DB:          repo,
