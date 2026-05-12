@@ -21,13 +21,13 @@
     "build": "nx run @runwisp/app:build --outputStyle=stream",
     "build:all": "nx run @runwisp/app:build-all --outputStyle=stream",
     "build-dev": "nx run @runwisp/app:build-dev --outputStyle=stream",
-    "build:openapi": "cd apps/runwisp && bun openapi",
+    "generate": "cd packages/asyncapi && bun run generate && cd ../common && bun run generate:api && cd ../../apps/runwisp && bun openapi",
     "check": "nx run-many -t check --outputStyle=stream",
     "format": "nx run-many -t format --outputStyle=stream",
     "theme": "nx run @runwisp/ui:dev --outputStyle=stream",
     "web-ui": "nx run @runwisp/web-ui:dev --outputStyle=stream",
     "test": "nx run-many -t test --outputStyle=stream",
-    "precommit": "bun run build:openapi && bun run format && bun run check && bun run test"
+    "precommit": "bun run generate && bun run format && bun run check && bun run test"
   },
   "devDependencies": {
     "nx": "^22.6.5",

@@ -263,26 +263,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tasks/{taskName}/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stop a service for the daemon's lifetime
-         * @description Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.
-         */
-        post: operations["stopService"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/tasks/{taskName}/run": {
         parameters: {
             query?: never;
@@ -406,6 +386,26 @@ export interface paths {
         put?: never;
         /** Stop a running task */
         post: operations["stopRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskName}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a service for the daemon's lifetime
+         * @description Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.
+         */
+        post: operations["stopService"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1553,38 +1553,6 @@ export interface operations {
             };
         };
     };
-    stopService: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task name */
-                taskName: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StopRunOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
     triggerRun: {
         parameters: {
             query?: never;
@@ -1899,6 +1867,38 @@ export interface operations {
                 taskName: string;
                 /** @description Run ULID */
                 runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopRunOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    stopService: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
             };
             cookie?: never;
         };
