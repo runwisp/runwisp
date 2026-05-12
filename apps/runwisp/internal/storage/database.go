@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/secretcipher"
 )
 
 const (
@@ -46,7 +48,8 @@ type RunRepository interface {
 
 // SQLiteDatabase wraps persistence concerns for runs and configuration.
 type SQLiteDatabase struct {
-	db *sql.DB
+	db     *sql.DB
+	cipher *secretcipher.Cipher
 }
 
 const schemaSQL = `
@@ -108,11 +111,24 @@ inserted_at           INTEGER NOT NULL
 
 // New opens (and migrates) the SQLite database.
 // logOutput is accepted for API compatibility but no longer used (we rely on slog).
-func New(dbPath string, logOutput io.Writer) (Database, error) {
+// cipher, when non-nil, transparently AES-GCM-encrypts the values of the
+// keys listed in SecretKeys when written via SecretStore and decrypts them on
+// read. Pass nil for plaintext-default mode.
+func New(dbPath string, logOutput io.Writer, cipher *secretcipher.Cipher) (Database, error) {
 	_ = logOutput
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Tighten file perms on the DB itself. The umask set in main covers the
+	// -wal/-shm sidecars going forward; the explicit chmod handles existing
+	// files that may predate the new umask. In-memory and URI-style paths
+	// (":memory:", "file::memory:") have no on-disk file — skip the chmod.
+	if !strings.HasPrefix(dbPath, ":") && !strings.HasPrefix(dbPath, "file:") {
+		if chmodErr := os.Chmod(dbPath, 0600); chmodErr != nil && !os.IsNotExist(chmodErr) {
+			return nil, fmt.Errorf("failed to chmod database: %w", chmodErr)
+		}
 	}
 
 	// SQLite uses single-writer serialized mode, limit to 1 connection.
@@ -133,7 +149,82 @@ func New(dbPath string, logOutput io.Writer) (Database, error) {
 		return nil, fmt.Errorf("failed to migrate instance_index: %w", err)
 	}
 
-	return &SQLiteDatabase{db: db}, nil
+	sdb := &SQLiteDatabase{db: db, cipher: cipher}
+	if err := sdb.reconcileSecretEncryption(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return sdb, nil
+}
+
+// reconcileSecretEncryption verifies that the on-disk encryption state of
+// every secret-bearing config row matches the configured cipher mode:
+//
+//   - If cipher is set and a secret row is plaintext, encrypt in place
+//     inside one BEGIN IMMEDIATE transaction (operator just enabled Tier 2).
+//   - If cipher is nil and any secret row is encrypted, refuse to start —
+//     the data dir was encrypted by a previous boot; the operator forgot
+//     RUNWISP_DATA_KEY and we must not silently strip protection.
+//   - If cipher is set but decryption fails on any secret row, refuse to
+//     start — the operator likely supplied the wrong key.
+func (db *SQLiteDatabase) reconcileSecretEncryption() error {
+	if db.cipher == nil {
+		// Refuse to start if any secret row is encrypted but we have no key.
+		for key := range SecretKeys {
+			val, found, err := db.GetConfigValue(key)
+			if err != nil {
+				return err
+			}
+			if !found {
+				continue
+			}
+			if secretcipher.IsEncrypted(val) {
+				return fmt.Errorf("config row %q is encrypted at rest but %s is not set — set the key or remove the row", key, secretcipher.DataKeyEnv)
+			}
+		}
+		return nil
+	}
+
+	tx, err := db.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin secret reconcile tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for key := range SecretKeys {
+		var val string
+		err := tx.QueryRow(`SELECT value FROM config_entries WHERE key = ?`, key).Scan(&val)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read %q: %w", key, err)
+		}
+
+		if secretcipher.IsEncrypted(val) {
+			// Verify the configured key actually decrypts it. Surfacing the
+			// failure here gives the operator a clear message instead of an
+			// opaque error later from a consumer.
+			if _, err := db.cipher.Decrypt(val); err != nil {
+				return fmt.Errorf("config row %q: %w", key, err)
+			}
+			continue
+		}
+
+		// Plaintext row + cipher present → encrypt in place.
+		enc, err := db.cipher.Encrypt([]byte(val))
+		if err != nil {
+			return fmt.Errorf("encrypt %q: %w", key, err)
+		}
+		if _, err := tx.Exec(`UPDATE config_entries SET value = ? WHERE key = ?`, enc, key); err != nil {
+			return fmt.Errorf("rewrite %q: %w", key, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit secret reconcile tx: %w", err)
+	}
+	return nil
 }
 
 // migrateAddInstanceIndex is idempotent and works on three shapes of the
@@ -484,6 +575,56 @@ func (db *SQLiteDatabase) SetConfigValue(key, value string) error {
 		key, value,
 	)
 	return err
+}
+
+// DeleteConfigValue removes the row for key. Absent rows are silently ignored.
+func (db *SQLiteDatabase) DeleteConfigValue(key string) error {
+	_, err := db.db.Exec(`DELETE FROM config_entries WHERE key = ?`, key)
+	return err
+}
+
+// GetSecret returns the (decrypted) value for key. For secret keys with a
+// cipher configured, the on-disk value is AES-GCM-decrypted before return.
+// Non-secret keys are returned verbatim.
+func (db *SQLiteDatabase) GetSecret(key string) (string, bool, error) {
+	raw, found, err := db.GetConfigValue(key)
+	if err != nil || !found {
+		return "", found, err
+	}
+	if !IsSecretKey(key) {
+		return raw, true, nil
+	}
+	if db.cipher == nil {
+		if secretcipher.IsEncrypted(raw) {
+			return "", false, fmt.Errorf("config row %q is encrypted but %s is not set", key, secretcipher.DataKeyEnv)
+		}
+		return raw, true, nil
+	}
+	if !secretcipher.IsEncrypted(raw) {
+		// Row predates cipher activation and reconcileSecretEncryption
+		// hasn't run yet, or this is a fresh row whose write went through
+		// the legacy SetConfigValue. Treat as a plaintext value.
+		return raw, true, nil
+	}
+	pt, err := db.cipher.Decrypt(raw)
+	if err != nil {
+		return "", false, fmt.Errorf("decrypt %q: %w", key, err)
+	}
+	return string(pt), true, nil
+}
+
+// SetSecret persists key=value. For secret keys with a cipher configured,
+// the value is AES-GCM-encrypted before storage so the on-disk row carries
+// the "enc:v1:" prefix. Non-secret keys go through the regular config write.
+func (db *SQLiteDatabase) SetSecret(key, value string) error {
+	if !IsSecretKey(key) || db.cipher == nil {
+		return db.SetConfigValue(key, value)
+	}
+	enc, err := db.cipher.Encrypt([]byte(value))
+	if err != nil {
+		return fmt.Errorf("encrypt %q: %w", key, err)
+	}
+	return db.SetConfigValue(key, enc)
 }
 
 func (db *SQLiteDatabase) Close() error {

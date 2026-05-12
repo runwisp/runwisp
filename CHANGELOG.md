@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Optional at-rest encryption for daemon secrets (`RUNWISP_DATA_KEY`).** Set `RUNWISP_DATA_KEY` to a base64-encoded 32-byte key and the daemon AES-256-GCM-encrypts every secret row in SQLite (password, JWT signing secret, env-password fingerprint) under an `enc:v1:` prefix. Without the key, file perms (`0700` data dir, `0600` `runwisp.db`) remain the only protection — same as before. Generate a key with `runwisp keygen` and store it in your secrets manager. **Losing the key bricks the data directory.** Existing data dirs are migrated transparently on first boot when the key is provided; unsetting the key with encrypted rows present causes the daemon to refuse to start.
+
+- **`runwisp keygen` subcommand.** Prints a base64-encoded 32-byte random key suitable for `RUNWISP_DATA_KEY`. Use it once, save the output, and you're done.
+
 - **Download a run's full log from the Web UI and the TUI.** The Web UI's run detail panel gains a **Download log** button next to the live-stream toggle; the TUI binds `d` to the same action on the exec view. The download is the rotated-out segment plus the current segment as one `text/plain` file — what you'd get from `cat *.log.prev *.log`, but in one click. The TUI download works over SSH and tmux, not just graphical sessions.
 
 - **`runwisp validate <path>` now uses the same loader as the daemon.** A file the validator accepts is a file the daemon will accept — same parser, same rule set, same error messages. The success path prints `✓` and a summary (task / service / notifier counts plus the resolved scheduler timezone); the failure path prints each error with its TOML key and a `did you mean…?` hint where the migration is mechanical. Exits 0 on success, 1 on any error.

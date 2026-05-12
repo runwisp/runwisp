@@ -17,7 +17,7 @@ import (
 
 func newDB(t *testing.T) storage.Database {
 	t.Helper()
-	db, err := storage.New(":memory:", nil)
+	db, err := storage.New(":memory:", nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	return db

@@ -9,6 +9,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/secretcipher"
 )
 
 // resolveClientPassword resolves the daemon password for a client process
@@ -21,7 +22,11 @@ func resolveClientPassword() (string, error) {
 		return envPw, nil
 	}
 
-	db, err := storage.New(flags.DBPath(), io.Discard)
+	cipher, err := secretcipher.FromEnv()
+	if err != nil {
+		return "", err
+	}
+	db, err := storage.New(flags.DBPath(), io.Discard, cipher)
 	if err != nil {
 		return "", err
 	}

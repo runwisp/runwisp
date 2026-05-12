@@ -14,7 +14,7 @@ import (
 
 func setupNotificationDB(t *testing.T) Database {
 	t.Helper()
-	db, err := New(":memory:", nil)
+	db, err := New(":memory:", nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	return db

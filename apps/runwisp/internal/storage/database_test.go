@@ -14,7 +14,7 @@ import (
 )
 
 func setupTestDB(t *testing.T) RunRepository {
-	db, err := New(":memory:", nil)
+	db, err := New(":memory:", nil, nil)
 	require.NoError(t, err)
 	return db
 }

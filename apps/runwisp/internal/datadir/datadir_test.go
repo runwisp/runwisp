@@ -108,12 +108,12 @@ func newFakeStore() *fakePasswordStore {
 	return &fakePasswordStore{values: map[string]string{}}
 }
 
-func (f *fakePasswordStore) GetConfigValue(key string) (string, bool, error) {
+func (f *fakePasswordStore) GetSecret(key string) (string, bool, error) {
 	v, ok := f.values[key]
 	return v, ok, nil
 }
 
-func (f *fakePasswordStore) SetConfigValue(key, value string) error {
+func (f *fakePasswordStore) SetSecret(key, value string) error {
 	f.values[key] = value
 	return nil
 }
@@ -146,7 +146,7 @@ func TestResolvePassword_EnvVarNotPersisted(t *testing.T) {
 // existing stored password row is left untouched when RUNWISP_PASSWORD is set.
 func TestResolvePassword_EnvVarDoesNotOverwriteStoredRow(t *testing.T) {
 	store := newFakeStore()
-	if err := store.SetConfigValue(passwordKey, "old-stored-secret"); err != nil {
+	if err := store.SetSecret(passwordKey, "old-stored-secret"); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("RUNWISP_PASSWORD", "from-env-secret")
@@ -167,7 +167,7 @@ func TestResolvePassword_EnvVarDoesNotOverwriteStoredRow(t *testing.T) {
 // no env var, stored row present → use it.
 func TestResolvePassword_StoreFallbackUnchanged(t *testing.T) {
 	store := newFakeStore()
-	if err := store.SetConfigValue(passwordKey, "from-store"); err != nil {
+	if err := store.SetSecret(passwordKey, "from-store"); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("RUNWISP_PASSWORD", "")

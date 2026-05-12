@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	rdebug "runtime/debug"
+	"syscall"
 
 	"log/slog"
 )
@@ -24,6 +25,12 @@ func applyDefaultMemoryLimit() {
 }
 
 func main() {
+	// Restrict perms on every file the daemon creates from now on (data dir,
+	// SQLite -wal/-shm sidecars, PID file, logs). 0077 leaves owner full
+	// access and denies group/other. The DB main file is also chmod'd
+	// explicitly inside storage.New for cases where it predates this umask.
+	syscall.Umask(0077)
+
 	applyDefaultMemoryLimit()
 	if err := rootCmd.Execute(); err != nil {
 		if ufe, ok := isUserFacing(err); ok {

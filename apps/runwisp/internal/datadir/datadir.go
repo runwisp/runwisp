@@ -20,12 +20,13 @@ import (
 
 // PasswordStore reads and writes the daemon password from persistent storage.
 // The plaintext password must be retrievable by the server to verify
-// CHAP challenge-response logins (sha256(password + nonce)), so the SQLite
-// `config_entries` row holds the cleartext value protected by the data dir's
-// 0700 perms (the directory only the daemon's user can read).
+// CHAP challenge-response logins (sha256(password + nonce)). The store
+// routes through the secret-encryption wrapper, so when RUNWISP_DATA_KEY is
+// set the on-disk value carries the "enc:v1:" prefix and is transparently
+// decrypted on read.
 type PasswordStore interface {
-	GetConfigValue(key string) (string, bool, error)
-	SetConfigValue(key, value string) error
+	GetSecret(key string) (string, bool, error)
+	SetSecret(key, value string) error
 }
 
 // passwordKey duplicates storage.ConfigKeyPassword. We keep a local copy
@@ -114,7 +115,7 @@ func ResolvePassword(store PasswordStore) (password string, isNew bool, err erro
 		return envPw, false, nil
 	}
 
-	existing, found, err := store.GetConfigValue(passwordKey)
+	existing, found, err := store.GetSecret(passwordKey)
 	if err != nil {
 		return "", false, err
 	}
@@ -126,7 +127,7 @@ func ResolvePassword(store PasswordStore) (password string, isNew bool, err erro
 	if genErr != nil {
 		return "", false, genErr
 	}
-	if err := store.SetConfigValue(passwordKey, pw); err != nil {
+	if err := store.SetSecret(passwordKey, pw); err != nil {
 		return "", false, err
 	}
 	return pw, true, nil

@@ -32,9 +32,13 @@ type daemonConfig struct {
 	JWTSecret         string
 }
 
-func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*daemonConfig, error) {
+func loadDaemonConfig(store storage.SecretStore, mode daemonMode) (*daemonConfig, error) {
+	if err := bumpSchemaVersion(store); err != nil {
+		return nil, err
+	}
+
 	fp, err := resolveConfigValue(
-		configRepo,
+		store,
 		storage.ConfigKeyFingerprint,
 		"RUNWISP_FINGERPRINT",
 		func() (string, error) { return fingerprint.Generate(), nil },
@@ -63,7 +67,7 @@ func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*da
 		return nil, err
 	}
 
-	password, _, pwErr := datadir.ResolvePassword(configRepo)
+	password, _, pwErr := datadir.ResolvePassword(store)
 	if pwErr != nil && !cloudCfg.Enabled {
 		return nil, pwErr
 	}
@@ -73,7 +77,7 @@ func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*da
 	// disclosed.
 	passwordGenerated := os.Getenv("RUNWISP_PASSWORD") == "" && password != ""
 
-	jwtSecret, err := resolveJWTSecret(configRepo, os.Getenv("RUNWISP_PASSWORD"))
+	jwtSecret, err := resolveJWTSecret(store, os.Getenv("RUNWISP_PASSWORD"))
 	if err != nil {
 		return nil, err
 	}
@@ -89,12 +93,53 @@ func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*da
 	}, nil
 }
 
+// bumpSchemaVersion records storage.CurrentSchemaVersion in the DB the first
+// time a binary of this version boots against the data dir. A version bump
+// also rotates the JWT secret (handled below) so any web-UI sessions issued
+// by the previous binary are invalidated cleanly.
+func bumpSchemaVersion(store storage.SecretStore) error {
+	prev, _, err := store.GetConfigValue(storage.ConfigKeySchemaVersion)
+	if err != nil {
+		return err
+	}
+	if prev == storage.CurrentSchemaVersion {
+		return nil
+	}
+	if err := store.SetConfigValue(storage.ConfigKeySchemaVersion, storage.CurrentSchemaVersion); err != nil {
+		return err
+	}
+	// Drop the JWT secret. resolveJWTSecret will regenerate one. We can't
+	// just call SetConfigValue("") because GetConfigValue treats "" as
+	// present-with-empty-value; deleting is the only unambiguous signal.
+	if err := dropJWTSecret(store); err != nil {
+		return err
+	}
+	if prev != "" {
+		slog.Info("Schema version bumped — rotating JWT secret to invalidate existing sessions",
+			"from", prev, "to", storage.CurrentSchemaVersion)
+	}
+	return nil
+}
+
+// dropJWTSecret deletes the stored JWT secret row so resolveJWTSecret will
+// generate a fresh one on the same boot. Kept on SecretStore-cast types via
+// the underlying ConfigRepository interface so we don't need a public Delete
+// method just for this single use.
+func dropJWTSecret(store storage.SecretStore) error {
+	if deleter, ok := store.(interface{ DeleteConfigValue(string) error }); ok {
+		return deleter.DeleteConfigValue(storage.ConfigKeyJWTSecret)
+	}
+	// Fall back to writing an empty marker that resolveJWTSecret treats as
+	// missing. Production *SQLiteDatabase implements the deleter above.
+	return store.SetConfigValue(storage.ConfigKeyJWTSecret, "")
+}
+
 // resolveConfigValue resolves a config value with the following priority:
 //  1. Environment variable override (not persisted to DB)
 //  2. Database (canonical store)
 //  3. Generated via generate() and persisted to DB
 func resolveConfigValue(
-	configRepo storage.ConfigRepository,
+	store storage.ConfigRepository,
 	dbKey, envKey string,
 	generate func() (string, error),
 ) (string, error) {
@@ -102,7 +147,7 @@ func resolveConfigValue(
 		return v, nil
 	}
 
-	if v, found, err := configRepo.GetConfigValue(dbKey); err != nil {
+	if v, found, err := store.GetConfigValue(dbKey); err != nil {
 		return "", err
 	} else if found {
 		return v, nil
@@ -112,7 +157,7 @@ func resolveConfigValue(
 	if err != nil {
 		return "", err
 	}
-	if err := configRepo.SetConfigValue(dbKey, v); err != nil {
+	if err := store.SetConfigValue(dbKey, v); err != nil {
 		return "", err
 	}
 	return v, nil
@@ -126,22 +171,27 @@ func resolveConfigValue(
 // password against the previous boot's fingerprint. The plaintext env
 // password is intentionally never persisted — operators set RUNWISP_PASSWORD
 // specifically to keep credentials out of the data directory.
-func resolveJWTSecret(configRepo storage.ConfigRepository, envPassword string) (string, error) {
-	secret, secretFound, err := configRepo.GetConfigValue(storage.ConfigKeyJWTSecret)
+func resolveJWTSecret(store storage.SecretStore, envPassword string) (string, error) {
+	secret, secretFound, err := store.GetSecret(storage.ConfigKeyJWTSecret)
 	if err != nil {
 		return "", err
+	}
+	// Treat empty-but-present (left behind by dropJWTSecret's fallback) as
+	// missing so we regenerate.
+	if secretFound && secret == "" {
+		secretFound = false
 	}
 
 	passwordChanged := false
 	if envPassword != "" {
 		pwHash := hashPassword(envPassword)
-		storedHash, hashFound, err := configRepo.GetConfigValue(configKeyPasswordHash)
+		storedHash, hashFound, err := store.GetSecret(storage.ConfigKeyEnvPasswordSum)
 		if err != nil {
 			return "", err
 		}
 		passwordChanged = hashFound && storedHash != pwHash
 		if !hashFound || passwordChanged {
-			if err := configRepo.SetConfigValue(configKeyPasswordHash, pwHash); err != nil {
+			if err := store.SetSecret(storage.ConfigKeyEnvPasswordSum, pwHash); err != nil {
 				return "", err
 			}
 		}
@@ -156,7 +206,7 @@ func resolveJWTSecret(configRepo storage.ConfigRepository, envPassword string) (
 		if genErr != nil {
 			return "", genErr
 		}
-		if err := configRepo.SetConfigValue(storage.ConfigKeyJWTSecret, newSecret); err != nil {
+		if err := store.SetSecret(storage.ConfigKeyJWTSecret, newSecret); err != nil {
 			return "", err
 		}
 		secret = newSecret
@@ -164,12 +214,6 @@ func resolveJWTSecret(configRepo storage.ConfigRepository, envPassword string) (
 
 	return secret, nil
 }
-
-// configKeyPasswordHash holds a fingerprint of the env-supplied
-// RUNWISP_PASSWORD used solely for JWT-rotation change detection. It is
-// distinct from storage.ConfigKeyPassword (the plaintext daemon-owned
-// password) and is only written when RUNWISP_PASSWORD is set.
-const configKeyPasswordHash = "env_password_hash"
 
 func hashPassword(password string) string {
 	h := sha256.Sum256([]byte(password))

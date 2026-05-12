@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/secretcipher"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/version"
 	"log/slog"
@@ -67,8 +68,15 @@ func runDaemon(mode daemonMode) error {
 	logBuffer := server.NewDaemonLogBuffer(1000)
 	logOutput = io.MultiWriter(logOutput, logBuffer)
 
+	// Construct the at-rest cipher from RUNWISP_DATA_KEY (or nil if unset);
+	// the daemon refuses to start if the DB is encrypted but no key is set.
+	cipher, err := secretcipher.FromEnv()
+	if err != nil {
+		return err
+	}
+
 	// Open database first — config values (fingerprint, jwt_secret) live there.
-	db, err := storage.New(flags.DBPath(), logOutput)
+	db, err := storage.New(flags.DBPath(), logOutput, cipher)
 	if err != nil {
 		return err
 	}

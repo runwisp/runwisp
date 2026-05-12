@@ -76,3 +76,32 @@ hole.
 
 The daemon rejects `0.0.0.0/0` and `::/0` — trusting the entire
 internet would let any client lie about its source IP.
+
+## Encrypting secrets at rest (`RUNWISP_DATA_KEY`)
+
+By default the daemon protects its SQLite secrets with filesystem perms
+alone — the data directory is `0700` and the `runwisp.db` file is
+`0600`. That's enough for the typical single-tenant box. If you want
+defense against a stolen drive image, leaked backup, or co-tenant root,
+encrypt the secret rows at rest.
+
+Generate a key:
+
+```bash
+export RUNWISP_DATA_KEY=$(runwisp keygen)
+```
+
+`runwisp keygen` prints a base64-encoded 32-byte key. Save it somewhere
+your secrets manager owns — **not** in the data directory it protects.
+Once the daemon boots with `RUNWISP_DATA_KEY` set, every secret row in
+SQLite (password, JWT signing secret, env-password fingerprint) is
+re-written with AES-256-GCM ciphertext under the `enc:v1:` prefix.
+
+The daemon refuses to start when the data dir is encrypted and
+`RUNWISP_DATA_KEY` is missing or wrong. **Losing the key bricks the
+data directory** — there is no recovery short of wiping the secrets
+and re-deriving them.
+
+To stop encrypting at rest, you must first manually decrypt the rows
+(or wipe them) before unsetting `RUNWISP_DATA_KEY`. The daemon will
+not silently downgrade.
