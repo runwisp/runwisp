@@ -43,9 +43,36 @@ func maxBodySize(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
+// authOrLocalTrusted short-circuits JWT verification for requests delivered
+// on the Unix socket. Filesystem permissions (0600 socket + 0700 datadir)
+// and SO_PEERCRED at accept time already gated access; running CHAP/JWT on
+// top would add no security and would force the local CLI/TUI to keep a
+// password around just to talk to the daemon that owns its data dir.
+//
+// For TCP requests (no local-trusted flag), the usual jwtauth verifier and
+// authenticator chain runs unchanged.
+func authOrLocalTrusted(auth *AuthService) func(http.Handler) http.Handler {
+	verify := jwtauth.Verify(
+		auth.JWTAuth(),
+		jwtauth.TokenFromHeader,
+		tokenFromCookie(authCookieName),
+	)
+	authenticator := jwtauth.Authenticator(auth.JWTAuth())
+	return func(next http.Handler) http.Handler {
+		fallback := verify(authenticator(next))
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if IsLocalTrusted(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			fallback.ServeHTTP(w, r)
+		})
+	}
+}
+
 // savePeerAddr captures the original TCP peer address into context.
 // Must be registered before middleware.RealIP so that security-critical
-// loopback checks (isLoopbackRequest) use the real connection address
+// loopback checks (isLocalRequest) use the real connection address
 // instead of the potentially-spoofed X-Real-IP / X-Forwarded-For value.
 func savePeerAddr(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -129,12 +156,7 @@ func (srv *Server) setupRoutes() {
 	// Protected routes
 	srv.router.Group(func(r chi.Router) {
 		r.Use(maxBodySize(maxProtectedBodySize))
-		r.Use(jwtauth.Verify(
-			srv.auth.JWTAuth(),
-			jwtauth.TokenFromHeader,
-			tokenFromCookie(authCookieName),
-		))
-		r.Use(jwtauth.Authenticator(srv.auth.JWTAuth()))
+		r.Use(authOrLocalTrusted(srv.auth))
 
 		// Huma operations (registered on the chi sub-router group)
 		srv.registerProtectedHumaRoutes(r)

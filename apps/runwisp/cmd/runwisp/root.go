@@ -61,5 +61,6 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(passwordCmd)
 	rootCmd.AddCommand(openapiCmd)
 }

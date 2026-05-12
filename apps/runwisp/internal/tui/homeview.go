@@ -23,6 +23,11 @@ const (
 	homeFieldPassword
 )
 
+// passwordMaskWidth matches datadir.GeneratePassword's 22-char base62 output
+// so the rendered bullets visually line up with what the operator will see
+// in the copy modal.
+const passwordMaskWidth = 22
+
 // homeFields returns the list of active fields based on the startup info.
 // hasLaunchTicket indicates whether the one-click browser open action is available.
 func homeFields(info StartupInfo, hasLaunchTicket bool) []homeField {
@@ -33,7 +38,7 @@ func homeFields(info StartupInfo, hasLaunchTicket bool) []homeField {
 		}
 		fields = append(fields, homeFieldWebUI)
 	}
-	if info.PasswordGenerated && info.Password != "" {
+	if info.PasswordEphemeral && info.Password != "" {
 		fields = append(fields, homeFieldPassword)
 	}
 	return fields
@@ -102,11 +107,11 @@ func renderHomeHeader(info StartupInfo, hasLaunchTicket bool, w int, homeCursor 
 		case homeFieldWebUI:
 			renderHomeFieldRow(&b, "Web UI", fmt.Sprintf("http://localhost:%d", info.Port), colorText, w, selected, hovered)
 		case homeFieldPassword:
+			masked := strings.Repeat("•", passwordMaskWidth)
 			if selected {
-				renderHomeFieldRow(&b, "Password", info.Password, colorWarning, w, selected, hovered)
-			} else {
-				renderHomeFieldRow(&b, "Password", info.Password+"  (auto-generated)", colorWarning, w, selected, hovered)
+				masked += "  (press Enter to copy)"
 			}
+			renderHomeFieldRow(&b, "Password", masked, colorWarning, w, selected, hovered)
 		}
 	}
 

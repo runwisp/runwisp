@@ -5,8 +5,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -17,22 +15,12 @@ import (
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.
 func runDefault() error {
-	password, err := resolveClientPassword()
-	if err != nil {
-		return err
-	}
-
-	client := apiclient.New(localAPIBaseURL(), password)
-
-	passwordExplicit := os.Getenv("RUNWISP_PASSWORD") != ""
+	client := apiclient.NewUnix(localAPISocketPath())
 
 	if client.HealthCheck() == nil {
-		err := runTUIConnect(client, password, passwordExplicit)
+		err := runTUIConnect(client)
 		if err == nil {
 			return nil
-		}
-		if errors.Is(err, apiclient.ErrUnauthorized) {
-			return passwordMismatchError(flags.Port)
 		}
 		if errors.Is(err, apiclient.ErrRateLimited) {
 			return authRateLimitedError(flags.Port)
@@ -66,23 +54,31 @@ func runDefault() error {
 		return err
 	}
 
-	return runTUIConnect(client, password, passwordExplicit)
+	return runTUIConnect(client)
 }
 
-// runTUIConnect launches the TUI as a client connected to a running daemon.
-// passwordExplicit indicates the user supplied the password via env/flag
-// (meaning we should NOT disclose it in the UI).
-func runTUIConnect(client *apiclient.Client, password string, passwordExplicit bool) error {
-	if err := client.Authenticate(); err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
-	}
-
+// runTUIConnect launches the TUI against an already-healthy daemon client.
+// The client is expected to already be wired (socket transport for local
+// access; no Authenticate call is needed in that mode).
+func runTUIConnect(client *apiclient.Client) error {
 	info, err := client.GetDaemonInfo()
 	if err != nil {
 		slog.Warn("Could not fetch daemon info", "err", err)
 	}
 
-	startupInfo := buildStartupInfoFromDaemon(info, password, passwordExplicit)
+	startupInfo := buildStartupInfoFromDaemon(info)
+
+	// Fetch the ephemeral password over the local socket so the TUI's
+	// "Password" home field can copy it to the clipboard. The env-var case
+	// (ErrLocalCredentialsUnavailable) is expected, not an error — the
+	// operator already knows the value they configured, and the TUI simply
+	// hides the field.
+	if creds, credErr := client.GetLocalCredentials(); credErr == nil && creds != nil {
+		startupInfo.Password = creds.Password
+		startupInfo.PasswordEphemeral = creds.Ephemeral
+	} else if credErr != nil && !errors.Is(credErr, apiclient.ErrLocalCredentialsUnavailable) {
+		slog.Warn("Could not fetch local credentials", "err", credErr)
+	}
 
 	_, tuiErr := tui.StartTUI(startupInfo, client, nil, shutdownDaemon, client.CreateLaunchTicket)
 	if tuiErr != nil {

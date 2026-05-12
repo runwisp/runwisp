@@ -22,9 +22,7 @@ func (c *Client) doSSE(ctx context.Context, path string) (*http.Response, error)
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	// Use a client without timeout for streaming connections.
-	sseClient := &http.Client{}
-	resp, err := sseClient.Do(req)
+	resp, err := c.streamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("SSE connection failed: %w", err)
 	}

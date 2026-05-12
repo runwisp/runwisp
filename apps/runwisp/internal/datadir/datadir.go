@@ -5,7 +5,6 @@ package datadir
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/big"
@@ -17,21 +16,6 @@ import (
 
 	"log/slog"
 )
-
-// PasswordStore reads and writes the daemon password from persistent storage.
-// The plaintext password must be retrievable by the server to verify
-// CHAP challenge-response logins (sha256(password + nonce)), so the SQLite
-// `config_entries` row holds the cleartext value protected by the data dir's
-// 0700 perms (the directory only the daemon's user can read).
-type PasswordStore interface {
-	GetConfigValue(key string) (string, bool, error)
-	SetConfigValue(key, value string) error
-}
-
-// passwordKey duplicates storage.ConfigKeyPassword. We keep a local copy
-// rather than importing storage to avoid a circular dependency: storage
-// imports nothing from datadir today, and we want to keep it that way.
-const passwordKey = "password"
 
 // EnsureDir creates dir (and parents) with mode 0700 so that secrets stored
 // inside are not exposed to other local users via directory traversal.
@@ -68,15 +52,6 @@ func writeFileNoFollow(path string, data []byte) error {
 	return f.Close()
 }
 
-// GenerateJWTSecret returns a cryptographically random base64-encoded 32-byte secret.
-func GenerateJWTSecret() (string, error) {
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(key), nil
-}
-
 // RandBase62 returns a cryptographically random base62 string of n characters.
 // Each character contributes ~5.954 bits of entropy.
 func RandBase62(n int) (string, error) {
@@ -96,40 +71,6 @@ func RandBase62(n int) (string, error) {
 // GeneratePassword returns a cryptographically random base62 password (128+ bits of entropy).
 func GeneratePassword() (string, error) {
 	return RandBase62(22)
-}
-
-// ResolvePassword reads or generates the daemon password.
-// Priority: RUNWISP_PASSWORD env > SQLite config row > generate new (and persist).
-// Returns isNew=true only when a fresh password was generated.
-//
-// When the env var is set, the value is used in-memory only — it is NOT
-// written back to SQLite. Operators using Docker secrets, systemd
-// LoadCredential, or sealed-secrets do so specifically to keep credentials
-// out of the data directory; persisting the env var would silently defeat
-// that. The TUI and CLI must read RUNWISP_PASSWORD themselves in those
-// shells; falling back to the stored value from a different shell would be
-// misleading anyway.
-func ResolvePassword(store PasswordStore) (password string, isNew bool, err error) {
-	if envPw := os.Getenv("RUNWISP_PASSWORD"); envPw != "" {
-		return envPw, false, nil
-	}
-
-	existing, found, err := store.GetConfigValue(passwordKey)
-	if err != nil {
-		return "", false, err
-	}
-	if found && existing != "" {
-		return existing, false, nil
-	}
-
-	pw, genErr := GeneratePassword()
-	if genErr != nil {
-		return "", false, genErr
-	}
-	if err := store.SetConfigValue(passwordKey, pw); err != nil {
-		return "", false, err
-	}
-	return pw, true, nil
 }
 
 // PidFilePath returns the path to the daemon PID file.
@@ -154,4 +95,12 @@ func CleanPidFile(dataDir string) {
 	if err := os.Remove(PidFilePath(dataDir)); err != nil && !os.IsNotExist(err) {
 		slog.Warn("Failed to remove PID file", "err", err)
 	}
+}
+
+// SocketPath returns the path to the daemon's Unix domain socket. The socket
+// lives inside the (0700) data dir, so its existence and reachability are
+// gated by filesystem permissions on the directory; the daemon additionally
+// chmod's the socket itself to 0600 and verifies peer UID at accept time.
+func SocketPath(dataDir string) string {
+	return filepath.Join(dataDir, "runwisp.sock")
 }

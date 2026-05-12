@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -338,4 +340,40 @@ func TestStreamRunEvents(t *testing.T) {
 func TestBaseURL(t *testing.T) {
 	c := New("http://localhost:9477/", "")
 	assert.Equal(t, "http://localhost:9477", c.BaseURL())
+}
+
+func TestNewUnix_LocalShortCircuitsAuth(t *testing.T) {
+	c := NewUnix("/tmp/runwisp-test.sock")
+	assert.True(t, c.IsLocal(), "NewUnix client must be flagged as local")
+	assert.True(t, c.IsAuthenticated(), "local client must report authenticated before any call")
+	// Authenticate is a no-op on the local path; it must not error even
+	// without a daemon at the socket path.
+	require.NoError(t, c.Authenticate())
+}
+
+// TestNewUnix_DialsSocket exercises the Unix-socket transport against a real
+// HTTP handler bound to a socket file. It is the smoke test that proves the
+// custom dialer, the URL placeholder host, and the JSON round-trip all
+// cooperate correctly.
+func TestNewUnix_DialsSocket(t *testing.T) {
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "runwisp.sock")
+
+	ln, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+
+	handler := http.NewServeMux()
+	handler.HandleFunc("/api/system", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(model.SystemStats{CPUUsage: 7.0, Version: "test"})
+	})
+	srv := &http.Server{Handler: handler}
+	go srv.Serve(ln)
+	t.Cleanup(func() { _ = srv.Close() })
+
+	c := NewUnix(socketPath)
+	stats, err := c.GetSystemStats()
+	require.NoError(t, err)
+	assert.Equal(t, "test", stats.Version)
+	assert.Equal(t, 7.0, stats.CPUUsage)
 }

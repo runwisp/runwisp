@@ -61,9 +61,7 @@ notify = ["ops", "inapp"]
 	binaryPath := buildRunwispBinary(t, projectDir)
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
-	password := waitForPassword(t, daemon.dataDir)
-	client := apiclient.New(daemon.baseURL, password)
-	require.NoError(t, client.Authenticate())
+	client := socketClient(t, daemon.dataDir)
 
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)
@@ -147,9 +145,7 @@ notify = ["ops"]
 	binaryPath := buildRunwispBinary(t, projectDir)
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
-	password := waitForPassword(t, daemon.dataDir)
-	client := apiclient.New(daemon.baseURL, password)
-	require.NoError(t, client.Authenticate())
+	client := socketClient(t, daemon.dataDir)
 
 	_, err := client.TriggerRun("fail-task")
 	require.NoError(t, err)
@@ -194,9 +190,7 @@ notify = ["broken", "inapp"]
 	binaryPath := buildRunwispBinary(t, projectDir)
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
-	password := waitForPassword(t, daemon.dataDir)
-	client := apiclient.New(daemon.baseURL, password)
-	require.NoError(t, client.Authenticate())
+	client := socketClient(t, daemon.dataDir)
 
 	_, err := client.TriggerRun("fail-task")
 	require.NoError(t, err)
@@ -233,9 +227,7 @@ run = "exit 1"
 	binaryPath := buildRunwispBinary(t, projectDir)
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
-	password := waitForPassword(t, daemon.dataDir)
-	client := apiclient.New(daemon.baseURL, password)
-	require.NoError(t, client.Authenticate())
+	client := socketClient(t, daemon.dataDir)
 
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)
@@ -357,9 +349,7 @@ run = "exit 1"
 	binaryPath := buildRunwispBinary(t, projectDir)
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
-	password := waitForPassword(t, daemon.dataDir)
-	client := apiclient.New(daemon.baseURL, password)
-	require.NoError(t, client.Authenticate())
+	client := socketClient(t, daemon.dataDir)
 
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)

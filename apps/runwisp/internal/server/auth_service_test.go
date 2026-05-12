@@ -341,7 +341,7 @@ func TestAuthService_CreateLaunchTicket(t *testing.T) {
 	assert.False(t, auth.launchTickets.consume(ticket))
 }
 
-func TestIsLoopbackRequest(t *testing.T) {
+func TestIsLocalRequest(t *testing.T) {
 	tests := []struct {
 		name     string
 		addr     string
@@ -356,15 +356,15 @@ func TestIsLoopbackRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := httptest.NewRequest("GET", "/", nil)
 			r.RemoteAddr = tt.addr
-			assert.Equal(t, tt.expected, isLoopbackRequest(r))
+			assert.Equal(t, tt.expected, isLocalRequest(r))
 		})
 	}
 }
 
-func TestIsLoopbackRequest_UsesPeerAddrContext(t *testing.T) {
+func TestIsLocalRequest_UsesPeerAddrContext(t *testing.T) {
 	// Simulates what happens when middleware.RealIP overwrites RemoteAddr
 	// with a spoofed X-Real-IP header. The savePeerAddr middleware stores
-	// the original TCP address in context, so isLoopbackRequest should use
+	// the original TCP address in context, so isLocalRequest should use
 	// that instead of the spoofed RemoteAddr.
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "127.0.0.1:1234" // After RealIP spoofing
@@ -373,19 +373,32 @@ func TestIsLoopbackRequest_UsesPeerAddrContext(t *testing.T) {
 	ctx := context.WithValue(r.Context(), peerAddrContextKey, "203.0.113.50:5678")
 	r = r.WithContext(ctx)
 
-	assert.False(t, isLoopbackRequest(r),
+	assert.False(t, isLocalRequest(r),
 		"should use the real peer address from context, not the spoofed RemoteAddr")
 }
 
-func TestIsLoopbackRequest_ContextLoopbackAllowed(t *testing.T) {
+func TestIsLocalRequest_ContextLoopbackAllowed(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "203.0.113.50:5678" // After RealIP might change it
 
 	ctx := context.WithValue(r.Context(), peerAddrContextKey, "127.0.0.1:1234")
 	r = r.WithContext(ctx)
 
-	assert.True(t, isLoopbackRequest(r),
+	assert.True(t, isLocalRequest(r),
 		"should allow when real peer address is loopback")
+}
+
+func TestIsLocalRequest_UnixSocketTrustedFlag(t *testing.T) {
+	// A request delivered on the Unix socket carries the local-trusted flag
+	// even when its synthetic RemoteAddr is non-loopback ("@" for an abstract
+	// unix peer, or the socket path).
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "@"
+	ctx := context.WithValue(r.Context(), localTrustedKey{}, true)
+	r = r.WithContext(ctx)
+
+	assert.True(t, isLocalRequest(r),
+		"local-trusted flag must override the non-loopback peer address")
 }
 
 // --- Launch ticket endpoint integration tests ---
