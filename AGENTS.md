@@ -5,9 +5,7 @@
 
 ## 🎯 PRODUCT VISION (read this first — it outranks everything below)
 
-RunWisp replaces **crond + supervisord** with one small Go binary that a single developer can drop on a VPS, a Raspberry Pi, or into a Docker image and immediately see *what ran, when, why it failed, and what it printed*. Every design decision must serve that sentence.
-
-**Who we're for**: the solo dev / small ops team whose current options are "edit crontab over SSH" or "stand up Airflow". We meet them in the middle.
+RunWisp replaces **crond + supervisord** with one small Go binary that a single developer can drop on a VPS, a Raspberry Pi, or into a Docker image and immediately see *what ran, when, why it failed, and what it printed*.
 
 **Prime directives** (in priority order; when they conflict, the higher one wins):
 
@@ -15,12 +13,10 @@ RunWisp replaces **crond + supervisord** with one small Go binary that a single 
 2. **One binary, zero runtime deps.** No Python, Node, external DB, systemd, or sidecars required to run RunWisp. SQLite and the web UI are *embedded*. Do not add runtime deps; prefer a vendored Go lib over a service.
 3. **TOML is the sole source of truth.** `runwisp.toml` defines every task. The REST API and Web UI are **read-only + trigger** — they never mutate task definitions. Schema changes are user-visible breaking changes; treat the TOML surface as an API even pre-1.0. Never add a feature that *requires* the UI or API to configure.
 4. **Local-first, offline-complete.** The daemon must work fully offline. Any network integration (`internal/cloud/`) is strictly optional — no feature may degrade when it's disabled or unreachable.
-5. **Built for the individual and the small team.** Every core capability ships in the binary: scheduling, supervision, observability, web UI, TUI, REST. No artificial limits, no feature flags gating basics. If it helps one operator run their tasks well, it belongs in the binary.
-6. **Boring in prod.** Predictable resource use, graceful shutdown, recoverable state after crash or kill -9. Prefer a simple mechanism that's easy to reason about over a clever one that saves 5%. *(Perf target: ~15 MB RAM idle is aspirational at v0.1.x; it will harden into a CI-enforced budget before 1.0. Don't regress it casually.)*
+5. **Built for the individual and the small team.** Every core capability ships in the binary: scheduling, supervision, observability, web UI, TUI, REST. No artificial limits, no feature flags gating basics.
+6. **Boring in prod.** Predictable resource use, graceful shutdown, recoverable state after crash or kill -9. Prefer a simple mechanism that's easy to reason about over a clever one that saves 5%.
 
 ## 🚫 NON-GOALS
-
-These are **not** bugs to fix or features to add. If a user/issue/PR asks for them in the daemon, push back — they belong in a different tool, or at most in an external integration that speaks to RunWisp over its documented protocol.
 
 - **DAGs / workflow orchestration** — that's Dagu/Airflow/Temporal. RunWisp tasks are independent units.
 - **Clustering, leader election, HA failover, cross-instance coordination** — one daemon owns its tasks. Anything involving multiple daemons acting in concert is out of scope for the daemon itself; operators who want that can build it on top of the REST API / control-plane protocol.
@@ -35,8 +31,8 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 ## 🧭 INVARIANTS (violating any of these is a bug, regardless of what a test says)
 
 - **Supported platforms**: Linux, macOS, WSL. These are first-class — builds, tests, manual smoke. Native Windows is out of scope.
-- **Config reload is restart-only.** A running daemon keeps its in-memory task set for its entire lifetime; to pick up TOML changes, the operator restarts the daemon. No file-watchers, no auto-reload, no SIGHUP handler, no `runwisp reload` command. (Reload-without-restart is on the roadmap; until it lands, do not assume it exists.)
-- **Crash safety**: Killing the daemon (SIGKILL, power loss) must not corrupt state. On restart, any run that was in-flight is marked **interrupted** with a terminal status — it is **not resumed**. A fresh execution may then be created by the normal scheduling/catchup logic.
+- **Config reload is restart-only.** A running daemon keeps its in-memory task set for its entire lifetime; to pick up TOML changes, the operator restarts the daemon. No file-watchers, no auto-reload, no SIGHUP handler, no `runwisp reload` command.
+- **Crash safety**: Killing the daemon (SIGKILL, power loss) must not corrupt state. On restart, any run that was in-flight is marked **interrupted** with a terminal status — it is **not resumed**.
 - **Determinism of scheduling**: Given the same TOML + clock, the scheduler produces the same firings. Randomness, wall-clock reads, and FS I/O are injected, never called inline in scheduling logic.
 - **No required network**: Daemon startup, task execution, UI serving, and TUI must all work with the NIC unplugged. Any outbound integration attempts happen in the background and never block the hot path.
 - **Single writer per task**: Exactly one goroutine/run-manager owns a task's run lifecycle. Any other code observing state does so via `internal/events/` or read-only storage queries.
@@ -45,7 +41,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 
 ## 🔐 TRUST MODEL
 
-- The daemon runs **with the privilege of whoever started it**, executing **user-authored shell** from TOML. This is intentional — it's a cron replacement — but it means:
+- The daemon runs **with the privilege of whoever started it**, executing **user-authored shell** from TOML. Therefore:
   - TOML is trusted input; the REST API / UI is not.
   - Never execute user-provided strings from HTTP/WS bodies as shell. `run =` comes from disk only.
   - Secrets (JWT secret, passwords) live under the data dir (`internal/datadir/`) with restrictive perms; never log them; never transmit them over any outbound integration.
@@ -53,61 +49,50 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 
 ## 🧠 DECISION HEURISTICS (use when the spec is silent)
 
-When a design question isn't answered by the above, resolve it in this order:
-
 1. **Does it make a failure more visible?** → Yes = lean toward it.
 2. **Does it add a runtime dependency or a required network call?** → Yes = reject or make it strictly optional.
-3. **Does it change the TOML schema?** → Treat as breaking; document in CHANGELOG and the docs, and update OpenAPI.
-4. **Does it add state that must survive restart?** → It goes through `internal/storage/` (GORM + SQLite), gets a ULID, and has a reconciliation path on boot.
-5. **Does it touch the control-plane protocol?** → Edit `packages/asyncapi/asyncapi.yaml` first, regenerate, then consume the generated types. Never the other way round.
-6. **Can a solo dev understand it by reading `runwisp.toml` + the web UI?** → If no, simplify or document.
+3. **Does it add state that must survive restart?** → It goes through `internal/storage/` (GORM + SQLite), gets a ULID, and has a reconciliation path on boot.
+4. **Can a solo dev understand it by reading `runwisp.toml` + the web UI?** → If no, simplify or document.
 
 ## 🚨 TECHNICAL DEBT & HYGIENE (HIGHEST PRIORITY)
 
-1. **Boy Scout Rule**: When modifying a file, you MUST fix existing violations (broken naming, dead code, leaked concerns, missing types). **Never increase technical debt.**
-2. **Aggressive Extraction**: Extract duplicated logic across 2+ files immediately. Place in the most specific shared location or `packages/common`.
-3. **No Reinvention**: Before writing utilities (slug, cron parse, retry, ID gen), use existing `packages/common` functions or install an npm/Go package with >1k GitHub stars.
-4. **Code Quality**:
-   - NO `any` types. NO `as` casts. NO `!` non-null assertions. Use type guards.
+1. **Boy Scout Rule**: When modifying a file, fix adjacent violations (broken naming, dead code, leaked concerns, missing types).
+2. **Aggressive Extraction**: Duplicated logic across 2+ files lands in the most specific shared location — `internal/<closest>`, `packages/common`, or a new `internal/` package if scope is wider than one caller.
+3. **No Reinvention**: Before writing utilities (slug, cron parse, retry, ID gen), check `packages/common` and the Go standard library. For new deps, prefer a vendored Go lib with real usage over a hand-rolled abstraction.
+4. **TypeScript-only rules** (apply in `apps/ui` and `packages/*/src`):
+   - NO `any`. NO `as` casts. NO `!` non-null assertions. Use type guards.
    - Use `if (!x)` for falsy checks. NEVER write `x === null || x === undefined`.
-   - NO redundant comments. Comment _why_, never _what_. Code must be self-documenting.
 
 ## 🏗 ARCHITECTURE & BOUNDARIES
 
-**Code Location Rules:**
-
 - `packages/common`: Shared types, constants (Apache-2.0). _No duplicating these in apps._
 - `packages/asyncapi`: `asyncapi.yaml` is the **single source of truth** for the optional control-plane WebSocket protocol. Generates Go types into `apps/runwisp/internal/generated/protocol/`. **Never hand-write message types.**
-- `packages/ui`: Svelte 5 UI component library & layouts (shared between `web-ui` and other frontends).
-- `packages/eslint-config` / `packages/typescript-config`: Shared tooling configs.
+- `packages/{ui, eslint-config, typescript-config}`: Shared Svelte component library and tooling configs.
 - `apps/runwisp`: Go standalone cron daemon binary. Single binary with embedded SQLite, REST API, SSE log streaming, and optional outbound control-plane integration (`internal/cloud/`).
-  - `cmd/runwisp/`: CLI entry point — daemon lifecycle, run/trigger/status/list/tui commands.
+  - `cmd/runwisp/`: CLI entry point. Root command boots the TUI; subcommands: `daemon`, `validate`, `status`, `list`, `exec`, `tui`, `cloud`, `openapi`. Also: first-run setup, password handling, port checks, daemon spawn/lifecycle.
+  - `cmd/e2e-fake-daemon/`: Test-only binary that impersonates a daemon for cloud E2E tests. Not shipped.
   - `internal/model/`: Core domain types (`Task`, `Run`, enums, concurrency/restart/missed-run policies).
-  - `internal/server/`: HTTP server, REST routes, CHAP auth, SSE log streaming.
+  - `internal/server/`: HTTP server (huma), REST routes, CHAP auth, SSE log streaming.
   - `internal/runtime/`: Task scheduler, run manager (concurrency policies, queuing), catchup, retention, retry.
-  - `internal/executor/`: Low-level process execution engine.
-  - `internal/cloud/`: Optional outbound control-plane client (WebSocket protocol defined in `packages/asyncapi`, connection lifecycle, ad-hoc dispatch handling).
-  - `internal/config/`: TOML config parsing.
-  - `internal/storage/`: SQLite persistence (GORM).
+  - `internal/executor/`: Low-level process execution engine (spawn, stdio capture, signal, exit reaping).
+  - `internal/notify/`: Notification subsystem. Subscribes to the event bus, evaluates routing rules against per-event predicates, dispatches to channels (in-app, Slack, Telegram) via per-action workers, retries with backoff, coalesces in-app bursts, and emits a `notify_delivery_failed` synthetic event on permanent failure (in-app only — cycle guard). See `channel/`, `coalesce/`, `kinds/`, `render/`, `configload/`.
+  - `internal/cloud/`: Optional outbound control-plane client (see section below).
+  - `internal/config/`
+  - `internal/storage/`
   - `internal/events/`: In-memory pub/sub event bus for run lifecycle and log-line events.
   - `internal/apiclient/`: HTTP client used by CLI commands and TUI to talk to a running daemon.
-  - `internal/tui/`: Bubbletea terminal UI (home view, exec list, log pane, dialogs).
+  - `internal/tui/`: Bubbletea TUI.
   - `internal/datadir/`: Data directory helpers — PID file, password resolution, JWT secret generation.
   - `internal/fingerprint/`: Deterministic human-readable instance fingerprint (machine-id + cwd).
   - `internal/logutil/`: Log file indexing and metadata helpers.
-  - `internal/ui/`: Serves the embedded Svelte dashboard static assets.
-  - `internal/testutil/`: Shared test helpers (in-memory fakes, fixtures).
-  - `internal/generated/protocol/`: Auto-generated from `packages/asyncapi`. **Do not edit manually.**
-- `apps/ui`: Svelte 5 embedded web dashboard (`@runwisp/web-ui`; built as static assets, served by the daemon).
-  - `src/lib/components/`: UI components (auth modal, dashboard views, error panel).
-  - `src/lib/stores/`: Svelte rune stores for auth and server data.
-  - `src/lib/adapters/`: Browser-side SSE/API adapter.
-  - `src/lib/layouts/`: Shared page layout components.
-  - `src/lib/types/`: TypeScript type definitions.
-  - `src/lib/utils/`: Utility functions (async-data, SSE, log session, sorting, env, task ID).
-  - `src/lib/config/`: Shared constants.
-
-**Single Responsibility**: A file must do one thing. If it defines a schema AND a handler, split it.
+  - `internal/ui/`: Serves the embedded Svelte dashboard static assets (`dist/` is populated by the build script — do not commit).
+  - `internal/version/`: Single `Version` string, overridden at build time via ldflags from `CHANGELOG.md`.
+  - `internal/testutil/`
+  - `internal/generated/protocol/`
+  - `tests/e2e/`
+- `apps/ui`: Svelte 5 embedded web dashboard (`@runwisp/web-ui`; built as static assets, served by the daemon). REST in `src/lib/api.ts`, SSE in `src/lib/logs.ts`, rune stores under `src/lib/stores/`, components under `src/lib/components/`.
+- `apps/docs`: Astro/Starlight docs site (`apps/docs/src/content/docs/`).
+- `packages/assets`: Repo-level binary assets (README screenshots). Not a TS package.
 
 ## 💾 DATA MODEL & I/O
 
@@ -119,7 +104,7 @@ When a design question isn't answered by the above, resolve it in this order:
 
 ## 🛰 OPTIONAL CONTROL-PLANE INTEGRATION (`internal/cloud/`)
 
-The daemon can optionally connect outbound to a control-plane peer that speaks the protocol in `packages/asyncapi/asyncapi.yaml`. This is a generic mechanism — any service that implements the protocol can play that role. The daemon's rules for it:
+The daemon can optionally connect outbound to a control-plane peer that speaks the protocol in `packages/asyncapi/asyncapi.yaml`. Rules:
 
 - **Strictly opt-in.** Daemon must boot, schedule, run, and serve UI with the integration disabled, unconfigured, or unreachable. Connection failures are logged, retried with backoff, and never user-visible as errors in the hot path.
 - **Protocol only via generated types.** Messages come from `packages/asyncapi/asyncapi.yaml`; `internal/generated/protocol/` is the only consumer-facing surface. Never hand-roll a message.
@@ -127,31 +112,32 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
   1. **Observability push** — run status, logs, history, health snapshots sent outbound.
   2. **Trigger/stop commands** against tasks defined in `runwisp.toml`.
   3. **Ad-hoc task execution** — the peer may request an ephemeral task run, **only** when explicitly opted-in via TOML (`daemon.allow_cloud_dispatch`). Default is off. Ad-hoc runs never modify the TOML task set — they are one-shot executions, logged like any other run.
-- **TOML remains canonical.** The integration never edits, replaces, or shadows the configured task set.
 - **Backpressure.** If the peer is slow or disconnected, bound the buffer and drop — never block task execution or local event delivery.
 
-## ⚙️ FUNCTION, CLASS & STATE DESIGN
+## ⚙️ FUNCTION & STATE DESIGN
 
-1. **No Global State**: No file-level mutable state (`let cache = ...`). Pass dependencies via parameters/constructors.
-2. **Pure Functions**: Use standalone pure functions for small ops (validators, mappers).
-3. **Classes**:
-   - Use for grouping related ops with shared context/dependencies (even if stateless) to define clear boundaries.
-   - Use for **mutable state**, but only if the state has a clear lifecycle (connections, caches). The class must own the state.
-4. **Testability**: Every new service function/method must be testable WITHOUT a server, real DB, or network. Accept interfaces, not concretes.
-5. **Side Effects**: I/O, time, and randomness must be injected/behind an interface, not called directly in business logic. (If a function is hard to test, split it).
+1. **No global mutable state.** Pass dependencies via constructors / function parameters. Package-level constants and immutable defaults are fine.
+2. **Pure where possible.** Validators, mappers, predicates, formatters: standalone pure functions.
+3. **Group state with its lifecycle.** Mutable state lives on a struct (Go) or class (TS) that owns it and has a clear start/stop or open/close — connections, caches, schedulers, dispatchers. Other code observes via interfaces, never reaches in.
 
 ## 🧪 TESTING PHILOSOPHY
 
-- Unit tests must run without a server, real SQLite file, real network, real clock, or real filesystem. Use `internal/testutil/` fakes. If a new component can't be tested that way, split it until it can.
-- Integration tests that need the real binary go under `apps/runwisp/tests/` and must be hermetic (isolated data dir, ephemeral ports).
-- A feature isn't done until there's a test that would have caught the bug *before* the fix.
+- **Unit tests**: no server, no real SQLite file, no real network, no real clock, no real FS. Use `internal/testutil/` fakes. The notify package keeps its own fakes under `internal/notify/testutil/`.
+- **E2E tests**: `apps/runwisp/tests/e2e/` exercises the real binary. Hermetic — isolated data dir and ephemeral ports per test.
+- **Bug-first**: a fix isn't done until there's a test that would have caught the bug before the fix.
 
 ## 🤖 AGENT EXECUTION RULES
 
-1. Use the built-in file tools (`view`, `grep`, `glob`, `edit`) — not shell `cat`/`find`/`grep`.
-2. Before finalizing **Go** changes: `bun run build && bun run test` (and `bun run check` if lint/TS is adjacent).
-3. Before finalizing **TypeScript/Svelte** changes: `bun run check && bun run test`.
-4. Changes to `packages/asyncapi/asyncapi.yaml` **require regeneration** before commit; downstream Go types must compile.
-5. Changes to the TOML config schema **require** updating: the docs (`apps/docs/src/content/docs/configuration/`), OpenAPI (`apps/runwisp/openapi.json`), CHANGELOG, and the README config reference if behavior is user-visible.
-6. When a judgment call arises that Prime Directives / Non-Goals / Invariants don't clearly resolve: **stop and ask the user**. Do not silently pick a direction that might violate vision.
-7. If you introduced a user-facing change, add or modify CHANGELOG.md. Changelog is "marketing-facing", it's made to tell users what they can expect from the new version, not how devs can configure the new feature. Try to be concise but informative about it.
+1. **Validation commands** (run from repo root via `bun run …`):
+   - `bun run build` — builds the daemon (depends on web UI build via Nx).
+   - `bun run test` — `nx run-many -t test` across the workspace; in `apps/runwisp` this is `go test -v ./...`.
+   - `bun run check` — Go vet/lint via `scripts/check-go.sh` plus TS/Svelte checks. Run when touching either side.
+   - `bun run generate` — regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`. Run after editing `packages/asyncapi/asyncapi.yaml` *before* committing — downstream Go types must compile.
+   - **Before finalizing Go changes**: `bun run build && bun run test`.
+   - **Before finalizing TS/Svelte changes**: `bun run check && bun run test`.
+2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, and the README config reference if user-visible.
+3. **AsyncAPI changes**: edit `packages/asyncapi/asyncapi.yaml` first, then `bun run generate`, then consume the regenerated types in `internal/generated/protocol/`. Never the other way round.
+4. **User-facing changes** require a `CHANGELOG.md` entry. The changelog is marketing-facing — tell users what they can do, not how it was implemented. Concise but informative.
+5. **Stop and ask** when Prime Directives / Non-Goals / Invariants don't resolve a judgment call. Do not silently pick a direction that might violate the vision.
+6. **Pre-1.0, no back-compat hedges.** No deprecation shims, no "tolerate old shape", no migration warnings — reject wrong shapes with errors and move on. (There are no users yet.)
+7. **Commits**: Do not add `Co-Authored-By: Claude` trailers. Plain commit messages only.
