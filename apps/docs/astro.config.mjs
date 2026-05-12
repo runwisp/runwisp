@@ -20,7 +20,7 @@ export default defineConfig({
             ],
             title: "RunWisp",
             logo: {
-                src: "./src/assets/runwisp-logo.svg",
+                src: "@runwisp/ui/assets/runwisp-logo.svg",
             },
             social: [
                 {
@@ -33,7 +33,7 @@ export default defineConfig({
                 baseUrl: "https://github.com/runwisp/runwisp/edit/main/apps/docs/",
             },
             customCss: [
-                "./src/styles/runwisp-tokens.css",
+                "@runwisp/ui/theme-tokens.css",
                 "./src/styles/theme-bridge.css",
                 "@fontsource/tasa-orbiter/400.css",
                 "@fontsource/tasa-orbiter/500.css",

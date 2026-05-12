@@ -51,7 +51,13 @@
             "style": "./src/lib/theme.css",
             "default": "./src/lib/theme.css"
         },
+        "./theme-tokens.css": {
+            "style": "./src/lib/theme-tokens.css",
+            "default": "./src/lib/theme-tokens.css"
+        },
         "./src/lib/theme.css": "./src/lib/theme.css",
+        "./assets/*": "./src/lib/assets/*",
+        "./astro/*": "./src/astro/*",
         "./*": "./src/lib/*"
     },
     "peerDependencies": {

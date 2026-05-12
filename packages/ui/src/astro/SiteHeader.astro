@@ -1,0 +1,46 @@
+---
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+import { Logo } from "@runwisp/ui";
+
+interface Props {
+    homeHref?: string;
+    wordmark?: string;
+    class?: string;
+}
+
+const { homeHref = "/", wordmark = "RunWisp", class: className = "" } = Astro.props;
+
+const hasNav = Astro.slots.has("nav");
+const hasActions = Astro.slots.has("actions");
+---
+
+<header class:list={["rw-bg-glass sticky top-0 z-40 border-b border-outline-faint", className]}>
+    <div class="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3">
+        <a
+            href={homeHref}
+            class="text-on-surface flex items-center gap-2"
+            aria-label={`${wordmark} home`}
+        >
+            <Logo size="md" />
+            <span class="font-bold tracking-tight">{wordmark}</span>
+        </a>
+        {
+            hasNav && (
+                <nav
+                    class="text-on-surface-muted hidden gap-6 text-sm font-medium sm:flex"
+                    aria-label="Primary"
+                >
+                    <slot name="nav" />
+                </nav>
+            )
+        }
+        {
+            hasActions && (
+                <div class="flex items-center gap-2">
+                    <slot name="actions" />
+                </div>
+            )
+        }
+    </div>
+</header>

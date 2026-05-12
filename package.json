@@ -30,6 +30,7 @@
     "precommit": "bun run generate && bun run format && bun run check && bun run test"
   },
   "devDependencies": {
+    "@astrojs/svelte": "^8.0.0",
     "nx": "^22.6.5",
     "prettier": "^3.8.3",
     "prettier-plugin-svelte": "^3.5.1",
