@@ -96,20 +96,12 @@ func isDaemonRunning() bool {
 // runExecViaDaemon dispatches the run through the running daemon's REST API
 // and follows its SSE log stream until the run reaches a terminal state.
 func runExecViaDaemon(taskName string) (int, error) {
-	password, err := resolveClientPassword()
+	client, err := newLocalAuthedClient()
 	if err != nil {
-		return 0, fmt.Errorf("resolve password: %w", err)
+		return 0, fmt.Errorf("authentication setup failed: %w", err)
 	}
-
-	client := apiclient.New(localAPIBaseURL(), password)
 	if err := client.HealthCheck(); err != nil {
 		return 0, fmt.Errorf("daemon is not reachable at %s: %w", localAPIBaseURL(), err)
-	}
-	if err := client.Authenticate(); err != nil {
-		if errors.Is(err, apiclient.ErrUnauthorized) {
-			return 0, passwordMismatchError(flags.Port)
-		}
-		return 0, fmt.Errorf("authenticate: %w", err)
 	}
 
 	run, err := client.TriggerRun(taskName)

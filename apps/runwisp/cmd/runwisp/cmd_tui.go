@@ -6,7 +6,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -15,58 +14,47 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var tuiPassword string
-
 var tuiCmd = &cobra.Command{
 	Use:   "tui",
 	Short: "Connect a TUI to a running daemon",
-	Long:  `Launches the interactive terminal UI and connects it to an already-running RunWisp daemon via its HTTP API.`,
+	Long: `Launches the interactive terminal UI and connects it to an already-running
+RunWisp daemon via its HTTP API.
+
+Authentication uses the local-JWT shortcut: anyone who can read the data dir
+can mint a short-lived token directly from the daemon's signing secret. No
+password prompt — your filesystem perms are the trust boundary.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runTUIClient()
 	},
 }
 
-func init() {
-	tuiCmd.Flags().StringVar(&tuiPassword, "password", "", "authentication password (or set RUNWISP_PASSWORD)")
-}
-
 func runTUIClient() error {
-	passwordExplicit := tuiPassword != "" || os.Getenv("RUNWISP_PASSWORD") != ""
-	password := tuiPassword
-	if password == "" {
-		resolved, err := resolveClientPassword()
-		if err != nil || resolved == "" {
-			return fmt.Errorf("password required: use --password or RUNWISP_PASSWORD env var")
-		}
-		password = resolved
+	client, err := newLocalAuthedClient()
+	if err != nil {
+		return fmt.Errorf("authentication setup failed: %w", err)
 	}
-
-	client := apiclient.New(localAPIBaseURL(), password)
 
 	if err := pollHealth(client, 5*time.Second); err != nil {
 		return fmt.Errorf("cannot reach daemon at %s — is it running? (%w)", localAPIBaseURL(), err)
 	}
 
-	err := runTUIConnect(client, password, passwordExplicit)
-	if err != nil {
+	if err := runTUIConnect(client); err != nil {
 		if errors.Is(err, apiclient.ErrUnauthorized) {
-			return tuiPasswordMismatchError(flags.Port, passwordExplicit)
+			return tuiPasswordMismatchError(flags.Port, false)
 		}
 		if errors.Is(err, apiclient.ErrRateLimited) {
 			return authRateLimitedError(flags.Port)
 		}
+		return err
 	}
-	return err
+	return nil
 }
 
 // buildStartupInfoFromDaemon converts DaemonInfo into the TUI's StartupInfo.
-// passwordExplicit means the user supplied the password themselves; when false
-// the password was auto-generated and should be disclosed in the TUI.
-func buildStartupInfoFromDaemon(info *model.DaemonInfo, password string, passwordExplicit bool) tui.StartupInfo {
-	si := tui.StartupInfo{
-		Password:          password,
-		PasswordGenerated: !passwordExplicit,
-	}
+// With the local-JWT shortcut the TUI never holds a password, so the
+// PasswordGenerated/Password fields stay zero.
+func buildStartupInfoFromDaemon(info *model.DaemonInfo) tui.StartupInfo {
+	si := tui.StartupInfo{}
 	if info == nil {
 		return si
 	}

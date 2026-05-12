@@ -110,9 +110,9 @@ run       = "node /app/worker.js"
 runwisp
 ```
 
-**4. You're now in the Terminal UI.** `runwisp` spawns the daemon in the background and attaches an interactive TUI — task list, live log streaming, run history, one-click triggering. The TUI's Home page shows the Web UI URL and — on first run — an auto-generated login password (press `Enter` on the password row to copy it to your clipboard). Want headless instead? Use `runwisp daemon`.
+**4. You're now in the Terminal UI.** `runwisp` spawns the daemon in the background and attaches an interactive TUI — task list, live log streaming, run history, one-click triggering. **On first run** the TUI prints the auto-generated Web UI password exactly once — copy it then, the daemon stores only an SRP verifier and cannot recover it afterwards. Want headless instead? Use `runwisp daemon`.
 
-**5. Pin a password or change the bind address (optional).** Set `RUNWISP_PASSWORD` to use your own password instead of the auto-generated one, or pass `--host` / `--port` to change where the daemon listens.
+**5. Pin a password or change the bind address (optional).** Set `RUNWISP_PASSWORD` to use your own password instead of the auto-generated one, or pass `--host` / `--port` to change where the daemon listens. For at-rest encryption of secrets (verifier, JWT signing key) set `RUNWISP_DATA_KEY=$(runwisp keygen)` — see [Auth](https://docs.runwisp.com/operations/auth/) for details.
 
 That's it — your tasks are scheduled, supervised, and observable through the Web UI, TUI, and REST API.
 

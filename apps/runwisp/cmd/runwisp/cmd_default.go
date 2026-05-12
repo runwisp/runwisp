@@ -6,7 +6,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -16,28 +15,29 @@ import (
 )
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.
+//
+// Authentication uses the local-JWT shortcut: the CLI reads the daemon's
+// JWT signing secret straight off disk (the same trust boundary that
+// already lets us read everything else in the data dir) and mints a
+// short-lived token. No password prompt, no SRP roundtrip.
 func runDefault() error {
-	password, err := resolveClientPassword()
+	client, err := newLocalAuthedClient()
 	if err != nil {
 		return err
 	}
 
-	client := apiclient.New(localAPIBaseURL(), password)
-
-	passwordExplicit := os.Getenv("RUNWISP_PASSWORD") != ""
-
 	if client.HealthCheck() == nil {
-		err := runTUIConnect(client, password, passwordExplicit)
-		if err == nil {
+		tuiErr := runTUIConnect(client)
+		if tuiErr == nil {
 			return nil
 		}
-		if errors.Is(err, apiclient.ErrUnauthorized) {
+		if errors.Is(tuiErr, apiclient.ErrUnauthorized) {
 			return passwordMismatchError(flags.Port)
 		}
-		if errors.Is(err, apiclient.ErrRateLimited) {
+		if errors.Is(tuiErr, apiclient.ErrRateLimited) {
 			return authRateLimitedError(flags.Port)
 		}
-		return err
+		return tuiErr
 	}
 
 	// Health check failed — we're about to spawn a daemon. Before that, if
@@ -66,23 +66,34 @@ func runDefault() error {
 		return err
 	}
 
-	return runTUIConnect(client, password, passwordExplicit)
+	// The freshly spawned daemon may have rotated the JWT secret on its
+	// first boot (schema_version bump). Re-mint so we authenticate with
+	// the current secret instead of the one we read before the spawn.
+	client, err = newLocalAuthedClient()
+	if err != nil {
+		return err
+	}
+	return runTUIConnect(client)
+}
+
+// newLocalAuthedClient returns an apiclient pre-loaded with a freshly-minted
+// local JWT. Callers must not assume the token is long-lived (5 min TTL).
+func newLocalAuthedClient() (*apiclient.Client, error) {
+	token, err := mintLocalJWT(flags.DBPath())
+	if err != nil {
+		return nil, fmt.Errorf("mint local JWT: %w", err)
+	}
+	return apiclient.New(localAPIBaseURL(), "", apiclient.WithBearerToken(token)), nil
 }
 
 // runTUIConnect launches the TUI as a client connected to a running daemon.
-// passwordExplicit indicates the user supplied the password via env/flag
-// (meaning we should NOT disclose it in the UI).
-func runTUIConnect(client *apiclient.Client, password string, passwordExplicit bool) error {
-	if err := client.Authenticate(); err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
-	}
-
+func runTUIConnect(client *apiclient.Client) error {
 	info, err := client.GetDaemonInfo()
 	if err != nil {
 		slog.Warn("Could not fetch daemon info", "err", err)
 	}
 
-	startupInfo := buildStartupInfoFromDaemon(info, password, passwordExplicit)
+	startupInfo := buildStartupInfoFromDaemon(info)
 
 	_, tuiErr := tui.StartTUI(startupInfo, client, nil, shutdownDaemon, client.CreateLaunchTicket)
 	if tuiErr != nil {

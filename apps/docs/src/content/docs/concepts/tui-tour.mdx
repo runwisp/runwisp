@@ -31,19 +31,18 @@ The TUI lands on **Home**, with the focus already on
 
 Press `Enter` and the TUI opens your default browser straight into the
 dashboard, already logged in — no copy-pasting the password, no
-lockouts from typos. On a server with no browser available, it prints
-the URL instead so you can paste it from another machine.
+lockouts from typos. The TUI mints a single-use launch ticket and
+hands it to the browser; the password never appears in the URL or
+shell history. On a server with no browser available, it prints the
+URL instead so you can paste it from another machine.
 
 The other rows on Home:
 
 - **Web UI** — the daemon's URL. `Enter` copies it to the clipboard.
 - **Password** — only shown when the daemon **auto-generated** the
-  password on first run. `Enter` copies it.
-
-If you set the password yourself, the password row is hidden — the
-TUI doesn't have your secret in plaintext form to display:
-
-![tui-home-no-password.png — TUI Home page when the password is user-supplied: only Open Web UI and Web UI URL rows visible, no password row.](../../../assets/screenshots/placeholder.svg)
+  password on first run, and only at that one moment. After the first
+  successful boot the password is no longer recoverable; save it then
+  or rotate it from the [Auth][auth] guide.
 
 Press `n` while on Home to expand the **notifications panel** at the
 top — a scrollable list of in-app notifications with read-state
@@ -163,11 +162,16 @@ A skipped firing is not silence — it's a row.
 
 ## Authentication, briefly
 
-Run the TUI on the daemon's host and you're already in. Connecting
-from elsewhere with `runwisp tui --host …`? Pass `--password` (same
-password as the Web UI) or set `RUNWISP_PASSWORD` in your shell. If
-the password is wrong or you've been rate-limited, the TUI prints the
-error and exits — see [Auth][auth] for the details.
+Run the TUI on the daemon's host and you're already in — no password
+prompt. The TUI reads the daemon's JWT signing secret from the data
+directory (which it already needs access to) and mints a short-lived
+session token directly. Filesystem perms are the trust boundary:
+`0700` on the data dir, `0600` on `runwisp.db`.
+
+For remote operation (`runwisp tui --host …` against a daemon on a
+different machine), use the Web UI or `runwisp auth-token` — the local
+shortcut depends on shared data-dir access. See [Auth][auth] for the
+details.
 
 [auth]: /operations/auth/
 

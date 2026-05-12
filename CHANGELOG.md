@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`runwisp auth-token` subcommand.** Replaces the deploy-hooks recipe that previously composed `curl + sha256sum` by hand. `runwisp auth-token --remote https://daemon.example.com --password env` performs the full SRP login and prints the JWT to stdout — pipe it into curl, an env file, or a deploy hook.
 
+- **Local CLI authentication is now password-less.** `runwisp`, `runwisp exec`, and `runwisp tui` authenticate by minting a short-lived (5 min) JWT directly from the daemon's on-disk signing secret. No `--password` flag, no `RUNWISP_PASSWORD` prompt. The trust boundary stays where it has always been: if you can read the data dir, you control the daemon. The `--password` flag on `runwisp tui` is removed.
+
 - **Download a run's full log from the Web UI and the TUI.** The Web UI's run detail panel gains a **Download log** button next to the live-stream toggle; the TUI binds `d` to the same action on the exec view. The download is the rotated-out segment plus the current segment as one `text/plain` file — what you'd get from `cat *.log.prev *.log`, but in one click. The TUI download works over SSH and tmux, not just graphical sessions.
 
 - **`runwisp validate <path>` now uses the same loader as the daemon.** A file the validator accepts is a file the daemon will accept — same parser, same rule set, same error messages. The success path prints `✓` and a summary (task / service / notifier counts plus the resolved scheduler timezone); the failure path prints each error with its TOML key and a `did you mean…?` hint where the migration is mechanical. Exits 0 on success, 1 on any error.

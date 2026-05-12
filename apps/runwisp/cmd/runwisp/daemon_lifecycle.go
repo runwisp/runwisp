@@ -190,9 +190,10 @@ func runWithTUI(
 		}
 	}
 
-	client := apiclient.New(localAPIBaseURL(), info.Password)
-	if authErr := client.Authenticate(); authErr != nil {
-		slog.Warn("TUI auth failed", "err", authErr)
+	client, err := newLocalAuthedClient()
+	if err != nil {
+		slog.Warn("TUI auth setup failed", "err", err)
+		client = apiclient.New(localAPIBaseURL(), "")
 	}
 
 	if debugWriter != nil {
