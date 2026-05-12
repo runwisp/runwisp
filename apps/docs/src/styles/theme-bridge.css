@@ -115,7 +115,8 @@ header.header {
 }
 
 /* Site title — match the dashboard sidebar brand: 32px logo, 12px gap to the
- * wordmark, bold neutral text. */
+ * wordmark, bold neutral text. A "D O C S" sub-label sits under the wordmark,
+ * left-aligned with it (icon stays vertically centered against the stack). */
 .site-title {
     color: var(--rw-on-surface);
     font-weight: 700;
@@ -127,6 +128,21 @@ header.header {
 .site-title img {
     height: 2rem;
     width: 2rem;
+}
+
+.site-title > span {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+
+.site-title > span::after {
+    content: "DOCS";
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: var(--rw-on-surface-muted);
+    margin-top: 0.125rem;
 }
 
 /* Header padding-inline-start: 20px on desktop to match the dashboard's px-5
