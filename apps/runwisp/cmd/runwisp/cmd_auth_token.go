@@ -4,12 +4,9 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"strings"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/spf13/cobra"
@@ -53,7 +50,7 @@ func init() {
 }
 
 func runAuthToken(out io.Writer) error {
-	password, err := readRemotePassword(authTokenFlags.Password)
+	password, err := readRemotePasswordFrom("RUNWISP_REMOTE_PASSWORD", authTokenFlags.Password)
 	if err != nil {
 		return err
 	}
@@ -67,38 +64,10 @@ func runAuthToken(out io.Writer) error {
 		}
 		return fmt.Errorf("auth-token: %w", err)
 	}
-	// We can't read c.token (unexported). The transport already stored it; we
-	// expose it through a helper for this use case.
 	tok := client.Token()
 	if tok == "" {
 		return errors.New("auth-token: empty token returned")
 	}
 	_, err = fmt.Fprintln(out, tok)
 	return err
-}
-
-// readRemotePassword resolves the operator-supplied password using one of the
-// supported input sources.
-func readRemotePassword(source string) (string, error) {
-	switch source {
-	case "env", "":
-		v := os.Getenv("RUNWISP_REMOTE_PASSWORD")
-		if v == "" {
-			return "", errors.New("RUNWISP_REMOTE_PASSWORD is not set; either export it or pass --password -")
-		}
-		return v, nil
-	case "-":
-		r := bufio.NewReader(os.Stdin)
-		line, err := r.ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return "", fmt.Errorf("read password from stdin: %w", err)
-		}
-		v := strings.TrimRight(line, "\r\n")
-		if v == "" {
-			return "", errors.New("stdin yielded an empty password")
-		}
-		return v, nil
-	default:
-		return "", fmt.Errorf("unsupported --password source %q (expected env or -)", source)
-	}
 }

@@ -168,10 +168,21 @@ directory (which it already needs access to) and mints a short-lived
 session token directly. Filesystem perms are the trust boundary:
 `0700` on the data dir, `0600` on `runwisp.db`.
 
-For remote operation (`runwisp tui --host …` against a daemon on a
-different machine), use the Web UI or `runwisp auth-token` — the local
-shortcut depends on shared data-dir access. See [Auth][auth] for the
-details.
+When the data dir is not reachable (different user, different
+container, different machine), pass the password explicitly and the
+TUI authenticates via SRP instead:
+
+```bash
+# Read the password from an environment variable
+RUNWISP_PASSWORD='…' runwisp tui
+
+# Or pipe it on stdin (no echo, single line)
+echo '…' | runwisp tui --password-stdin
+```
+
+Both forms produce a normal session — same UI, same keybindings. The
+password never appears on the command line, so it's safe in shell
+history and `ps` output. See [Auth][auth] for the details.
 
 [auth]: /operations/auth/
 
