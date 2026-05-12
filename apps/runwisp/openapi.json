@@ -1134,7 +1134,7 @@
   },
   "info": {
     "title": "RunWisp API",
-    "version": "0.0.0-dev"
+    "version": "dev"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2059,53 +2059,6 @@
         ]
       }
     },
-    "/api/tasks/{taskName}/stop": {
-      "post": {
-        "description": "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
-        "operationId": "stopService",
-        "parameters": [
-          {
-            "description": "Task name",
-            "in": "path",
-            "name": "taskName",
-            "required": true,
-            "schema": {
-              "description": "Task name",
-              "maxLength": 100,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StopRunOutputBody"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Stop a service for the daemon's lifetime",
-        "tags": [
-          "Runs"
-        ]
-      }
-    },
     "/api/tasks/{taskName}/run": {
       "post": {
         "operationId": "triggerRun",
@@ -2807,6 +2760,53 @@
           }
         },
         "summary": "Stop a running task",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/tasks/{taskName}/stop": {
+      "post": {
+        "description": "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
+        "operationId": "stopService",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopRunOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stop a service for the daemon's lifetime",
         "tags": [
           "Runs"
         ]

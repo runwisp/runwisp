@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: "[daemon]"
-description: Daemon-wide settings — shutdown_timeout, allow_cloud_dispatch — plus the CLI flags that pick the data directory and listen address.
+description: Daemon-wide settings — shutdown_timeout — plus the CLI flags that pick the data directory and listen address.
 ---
 
 `[daemon]` carries the small set of settings that apply to the daemon
@@ -19,14 +19,12 @@ think of them together.
 
 ```toml
 [daemon]
-shutdown_timeout     = "10s"
-allow_cloud_dispatch = false
+shutdown_timeout = "10s"
 ```
 
-| Key                    | Default | What it does                                                                                                                                                              |
-| ---------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shutdown_timeout`     | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.            |
-| `allow_cloud_dispatch` | `false` | Opt-in flag for ad-hoc task execution requested by a connected control-plane peer. Off by default — the daemon never accepts peer-dispatched shell unless this is `true`. |
+| Key                | Default | What it does                                                                                                                                                   |
+| ------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shutdown_timeout` | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit. |
 
 ### `shutdown_timeout`
 
@@ -39,17 +37,6 @@ will SIGKILL the survivor before its per-task grace window completes.
 Either raise `shutdown_timeout`, lower the per-task `graceful_stop`, or
 accept that the task's cleanup hook may be interrupted on daemon
 shutdown.
-
-### `allow_cloud_dispatch`
-
-Set this to `true` only if you've connected the daemon to a
-control-plane peer and want that peer to be able to fire ad-hoc shell
-runs that aren't declared in `runwisp.toml`. Ad-hoc runs are logged
-and persisted like any normal run; they just bypass the TOML task set.
-
-Even with `allow_cloud_dispatch = true`, the daemon never executes
-strings from regular REST or Web UI traffic — only authenticated
-control-plane messages over the WebSocket protocol can dispatch them.
 
 ## CLI flags: data directory & listen address
 

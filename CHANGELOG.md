@@ -7,32 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed (services, UI/TUI, notifications)
-
-- **`replica_index` is now `instance_index` everywhere.** The Run JSON field, the SQL column, the Web UI rendering, and the TUI labels all use the new name. Operators upgrading an existing data directory have the column renamed in place by an idempotent migration; fresh installs see no migration. The terminology now matches `instances` on `[services.*]`.
-- **`append_notifiers` is now `global_notifiers`.** The same precedence applies (`["inapp"]` default; explicit `[]` silences the bell) but the name finally reflects what the key does: define the channels that fire for every failure. TOML using the old key is rejected at load time.
-- **`queue_size` is gone from `[notify]`.** The notify ingress and per-action worker buffers are now fixed internal defaults. Configs that still set `queue_size` are rejected as an unknown key.
-- **`history_keep` defaults to `1024` and `history_keep_for` defaults to `90d`.** The bell history is bounded out of the box — leave both unset and you get a sensible cap. Override either explicitly to lift or lower the limits.
-- **Services can be stopped permanently from the Web UI and TUI.** A new **Stop Service** button (`s` in the TUI) cancels every instance and tells the supervisor not to refill the slots. **Restart Service** (`r` in the TUI) brings everything back. The stop flag is in memory only — restart the daemon and the service comes back up on its own.
-- **Run / Stop / Restart buttons are contextual.** On a service execution the Web UI and TUI show Stop while the service is up and Restart once it's been stopped. On a task that isn't launchable (API-trigger disabled, max concurrency reached) the **Run Task** button is now greyed out with a tooltip instead of failing on click.
-
-### Removed
-
-- **Validation rules docs page removed.** The strict-loader rules are still enforced in code — the docs page was a redundant catalogue that didn't help anyone configure RunWisp.
-
-- **CLI reference, troubleshooting, upgrading, data directory, and debugging recipe docs removed.** The pages were drifting from the binary and out of scope for the MVP. The Web UI and TUI cover day-to-day operations; the auth page covers the one thing operators still need a write-up for.
-
-- **`data/password` file removed.** The auto-generated daemon password now lives in SQLite under the `password` config row, protected by the data directory's `0700` perms. Backups of the data dir still need to be kept private (the DB itself contains the secret), but there is one less file to track. `RUNWISP_PASSWORD` still overrides the stored value and is still in-memory-only.
-
-- **`runwisp init` is gone.** Running `runwisp` in a directory without a `runwisp.toml` now offers to scaffold a small starter for you (`Create a starter with one example task? [Y/n]`) and continues straight into the TUI. The previous flow — a separate `runwisp init` command that wrote a 60-line file dominated by a commented schema reference, plus a "Generated password" that the daemon never actually used — is replaced by one prompt and a smaller, sharper starter file. Headless launches (`runwisp daemon`, Docker, systemd) skip the prompt; if `runwisp.toml` is missing they now exit with an error instead of falling back to a demo task.
-
-- **`runwisp run-task` is gone.** `runwisp exec <task>` now handles both modes: it auto-detects whether a daemon is running on the data dir and dispatches through its REST API (streaming the live log to your terminal) or, with no daemon up, runs the task in-process. Both paths produce the same visible output and propagate the run's exit code. Use `--daemon` to require a running daemon, or `--standalone` to require none.
-
-- **`runwisp.example.toml` is gone.** The starter `runwisp.toml` and the [docs site](https://docs.runwisp.com/configuration/overview/) are the single reference; the parallel annotated example file is no longer maintained.
-
 ### Added
-
-- **New `[daemon]` configuration reference page.** Documents `shutdown_timeout` and `allow_cloud_dispatch` plus the `--data` / `--host` / `--port` CLI flags in one place.
 
 - **Download a run's full log from the Web UI and the TUI.** The Web UI's run detail panel gains a **Download log** button next to the live-stream toggle; the TUI binds `d` to the same action on the exec view. The download is the rotated-out segment plus the current segment as one `text/plain` file — what you'd get from `cat *.log.prev *.log`, but in one click. The TUI download works over SSH and tmux, not just graphical sessions.
 
@@ -42,7 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Inline notification targets in `notify_on_failure` / `notify_on_success`.** A token of the form `"<id>:<target>"` overrides the parent notifier's channel (Slack) or chat_id (Telegram) for that route only — `notify_on_failure = ["slack-ops:#deploys"]` reuses the credentials of `slack-ops` but posts to `#deploys`. Bare ids and the literal `"inapp"` keep working unchanged. Notifier ids are now disallowed from containing `:` (the new separator); rename any existing colon-bearing ids before upgrading.
 
+### Removed
+
+- **`data/password` file removed.** The auto-generated daemon password now lives in SQLite under the `password` config row, protected by the data directory's `0700` perms. Backups of the data dir still need to be kept private (the DB itself contains the secret), but there is one less file to track. `RUNWISP_PASSWORD` still overrides the stored value and is still in-memory-only.
+
+- **`runwisp init` is gone.** Running `runwisp` in a directory without a `runwisp.toml` now offers to scaffold a small starter for you (`Create a starter with one example task? [Y/n]`) and continues straight into the TUI. The previous flow — a separate `runwisp init` command that wrote a 60-line file dominated by a commented schema reference, plus a "Generated password" that the daemon never actually used — is replaced by one prompt and a smaller, sharper starter file. Headless launches (`runwisp daemon`, Docker, systemd) skip the prompt; if `runwisp.toml` is missing they now exit with an error instead of falling back to a demo task.
+
+- **`runwisp run-task` is gone.** `runwisp exec <task>` now handles both modes: it auto-detects whether a daemon is running on the data dir and dispatches through its REST API (streaming the live log to your terminal) or, with no daemon up, runs the task in-process. Both paths produce the same visible output and propagate the run's exit code. Use `--daemon` to require a running daemon, or `--standalone` to require none.
+
+- **`runwisp.example.toml` is gone.** The starter `runwisp.toml` and the [docs site](https://docs.runwisp.com/configuration/overview/) are the single reference; the parallel annotated example file is no longer maintained.
+
 ### Changed
+
+- **`replica_index` is now `instance_index` everywhere.** The Run JSON field, the SQL column, the Web UI rendering, and the TUI labels all use the new name. Operators upgrading an existing data directory have the column renamed in place by an idempotent migration; fresh installs see no migration. The terminology now matches `instances` on `[services.*]`.
+- **`append_notifiers` is now `global_notifiers`.** The same precedence applies (`["inapp"]` default; explicit `[]` silences the bell) but the name finally reflects what the key does: define the channels that fire for every failure. TOML using the old key is rejected at load time.
+- **`queue_size` is gone from `[notify]`.** The notify ingress and per-action worker buffers are now fixed internal defaults. Configs that still set `queue_size` are rejected as an unknown key.
+- **`history_keep` defaults to `1024` and `history_keep_for` defaults to `90d`.** The bell history is bounded out of the box — leave both unset and you get a sensible cap. Override either explicitly to lift or lower the limits.
+- **Services can be stopped permanently from the Web UI and TUI.** A new **Stop Service** button (`s` in the TUI) cancels every instance and tells the supervisor not to refill the slots. **Restart Service** (`r` in the TUI) brings everything back. The stop flag is in memory only — restart the daemon and the service comes back up on its own.
+- **Run / Stop / Restart buttons are contextual.** On a service execution the Web UI and TUI show Stop while the service is up and Restart once it's been stopped. On a task that isn't launchable (API-trigger disabled, max concurrency reached) the **Run Task** button is now greyed out with a tooltip instead of failing on click.
 
 - **`max_catch_up_runs` no longer capped at 10000.** Pick any positive integer that suits your workload — the daemon trusts you.
 
@@ -54,11 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Daemon shutdown is bounded by `[daemon] shutdown_timeout`.** New top-level field, default `"10s"` (matches Docker's stop grace period). On `SIGTERM` the daemon fans out per-task shutdown in parallel, waits up to `shutdown_timeout` for everything to settle, then `SIGKILL`s the rest and exits. Boot emits a warning if any task's `graceful_stop` exceeds `shutdown_timeout`, since that task can never finish its grace window during a daemon stop. Unfinished runs are recorded with `end_reason = "daemon_stopped"`.
 
-- **Queue depth is bounded by `queue_max`.** New per-task field, default `100`. When `on_overlap = "queue"` and `max_concurrent` is saturated, the queue accepts new firings up to `queue_max`; further firings are recorded with `end_reason = "queue_full"` (and exit code `-1`) instead of the queue growing without bound. `queue_max = 0` is rejected — use `on_overlap = "skip"` if that's what you want.
-
 - **Service restart backoff is configurable.** New `[defaults] backoff_reset_after = "60s"` plus per-service override. A replica that runs at least this long resets its restart counter, so a service that finally stabilises returns to fast-restart behaviour on its next failure. Replaces the previously hardcoded 60-second threshold.
 
-- **DST fall-back days no longer double-fire (BREAKING).** On the autumn transition, `0 2 * * *` used to fire twice — once before the rewind, once after. The scheduler now dedupes by wall-clock minute: a firing whose minute matches the previous one is recorded with `end_reason = "dst_skipped"` and the underlying command is not run. Spring-forward firings continue to fire at the next valid local time.
+- **DST fall-back days no longer double-fire** On the autumn transition, `0 2 * * *` used to fire twice — once before the rewind, once after. The scheduler now dedupes by wall-clock minute: a firing whose minute matches the previous one is recorded with `end_reason = "dst_skipped"` and the underlying command is not run. Spring-forward firings continue to fire at the next valid local time.
 
 - **`[scheduler] timezone` defaults to the host's system timezone.** When the field is omitted, the daemon picks up the host's IANA zone and falls back to `UTC` only if it can't be detected. The resolved zone is surfaced in the TUI banner and the Web UI header so the operator can see what's in effect. Per-task `timezone` overrides still work.
 
@@ -83,7 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Outbound notifiers (Slack, Telegram) now coalesce by default.** A flapping task used to translate to one Slack message per failure — exactly the surface that pages humans and gets rate-limited by the provider. Outbound deliveries now share the in-app coalescer's fingerprint (task name + event kind + end reason): the first event in `coalesce_window` (default `1h`) is delivered immediately, repeats are suppressed, and either the Nth event (`occurrence_ring`, default `10`) or a window-close summary fires with `coalesced_count` so the operator still sees the rhythm. Set `[notify] coalesce_outbound = false` to opt out.
 - **Skipped runs are now recorded as `end_reason = "skipped"`.** A run that `on_overlap = "skip"` rejects used to be persisted as `end_reason = "failed"`, which made a `* * * * *` health probe with chronic overlap pose as a real failure to dashboards, retries, and `notify_on_failure` (Slack/Telegram). The new `skipped` end-reason is terminal, distinct from `failed`/`stopped`/`crashed`, never triggers retries, and never fires failure notifications.
-- **Slack and Telegram setup docs no longer require root.** The provider pages used to walk readers through `sudo install -d -o runwisp …` for a system-wide secrets directory. The recommended path is now a user-owned `~/.config/runwisp/` (or an env var managed by Docker / systemd), matching how a solo operator actually deploys RunWisp.
 - **`RUNWISP_PASSWORD` is no longer written back to `data/password`.** Operators who pass the password via Docker secrets, systemd `LoadCredential=`, or sealed-secrets do so specifically to keep credentials off disk; the daemon used to mirror the env var into `data/password` on every start, defeating that intent. The env var is now in-memory only. The TUI and CLI must obtain the password the same way (env var or `--password`) when no `data/password` file is present — falling back to the file from a different shell would have been misleading anyway.
 - **`notify.history_keep_for` now accepts day and week units.** The docs and the example config advertised `"30d"` for in-app notification retention, but the parser rejected anything beyond Go's stock duration syntax (`h`/`m`/`s`). The field now uses the same extended parser as `keep_for`, so `d` and `w` work everywhere a duration sets a retention window.
 - **`min_free_space` no longer silently overrides `log_on_full = "kill_task"`.** When the disk-pressure threshold trips during a run, the daemon now honours the task's overflow policy: `kill_task` cancels the run (loud failure, as the operator chose); `drop_new` and `drop_old` keep running but stop logging. In all cases the daemon raises a new `log.disk_pressure` notification (severity `warn`, fired once per run, with `free_bytes` / `min_free_bytes` / `killed_task` in the payload) so the silenced output is never invisible.
