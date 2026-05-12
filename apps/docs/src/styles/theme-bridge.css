@@ -1,13 +1,12 @@
 /* SPDX-FileCopyrightText: PoppyCake, s.r.o. */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Maps Starlight's documented --sl-* CSS variables onto the RunWisp design
- * tokens defined in runwisp-tokens.css. Covers chrome (sidebar, nav,
- * accent links, code blocks) AND the semantic palette Starlight uses for
- * asides, badges, and other content widgets — so nothing falls back to
- * the stock blue/green/red Starlight ships with.
+/* Maps Starlight's --sl-* CSS variables onto the RunWisp semantic tokens
+ * declared in @runwisp/ui/theme-tokens.css. Also overrides Starlight's
+ * neutral gray scale with the mist palette so chrome reads in the wisp
+ * design language.
  *
- * Starlight ships its theme variables inside @layer starlight.base. Our
+ * Starlight ships its theme variables inside @layer starlight.base. The
  * neutral-scale flip needs to win the cascade against Starlight's own
  * [data-theme='light'] block, so we declare runwisp as the last layer
  * (this also stacks on top of starlight.utils) and put the critical
@@ -69,31 +68,31 @@
 /* Mist-tinted neutrals — declared in the runwisp layer so they always win
  * against Starlight's own [data-theme='light'] block in starlight.base.
  * Starlight uses "white" for highest-contrast text and "black" for page bg
- * and inverts the whole scale under [data-theme='light'] — we mirror that. */
+ * by default (dark theme); the [data-theme="light"] block inverts the scale. */
 
 @layer runwisp {
     :root {
-        --sl-color-white: var(--color-mist-50);
-        --sl-color-gray-1: var(--color-mist-200);
-        --sl-color-gray-2: var(--color-mist-300);
-        --sl-color-gray-3: var(--color-mist-400);
-        --sl-color-gray-4: var(--color-mist-500);
-        --sl-color-gray-5: var(--color-mist-700);
-        --sl-color-gray-6: var(--color-mist-800);
-        --sl-color-gray-7: var(--color-mist-900);
-        --sl-color-black: var(--color-mist-950);
+        --sl-color-white: var(--rw-color-mist-50);
+        --sl-color-gray-1: var(--rw-color-mist-200);
+        --sl-color-gray-2: var(--rw-color-mist-300);
+        --sl-color-gray-3: var(--rw-color-mist-400);
+        --sl-color-gray-4: var(--rw-color-mist-500);
+        --sl-color-gray-5: var(--rw-color-mist-700);
+        --sl-color-gray-6: var(--rw-color-mist-800);
+        --sl-color-gray-7: var(--rw-color-mist-900);
+        --sl-color-black: var(--rw-color-mist-950);
     }
 
     :root[data-theme="light"] {
-        --sl-color-white: var(--color-mist-900);
-        --sl-color-gray-1: var(--color-mist-800);
-        --sl-color-gray-2: var(--color-mist-700);
-        --sl-color-gray-3: var(--color-mist-500);
-        --sl-color-gray-4: var(--color-mist-400);
-        --sl-color-gray-5: var(--color-mist-300);
-        --sl-color-gray-6: var(--color-mist-200);
-        --sl-color-gray-7: var(--color-mist-100);
-        --sl-color-black: var(--color-mist-50);
+        --sl-color-white: var(--rw-color-mist-900);
+        --sl-color-gray-1: var(--rw-color-mist-800);
+        --sl-color-gray-2: var(--rw-color-mist-700);
+        --sl-color-gray-3: var(--rw-color-mist-500);
+        --sl-color-gray-4: var(--rw-color-mist-400);
+        --sl-color-gray-5: var(--rw-color-mist-300);
+        --sl-color-gray-6: var(--rw-color-mist-200);
+        --sl-color-gray-7: var(--rw-color-mist-100);
+        --sl-color-black: var(--rw-color-mist-50);
     }
 }
 
@@ -115,8 +114,9 @@ header.header {
     }
 }
 
-/* Site title — match the dashboard sidebar brand (apps/ui/src/lib/layouts/AppLayout.svelte:50-61):
- * 32px logo, 12px gap to the wordmark, bold neutral text. */
+/* Site title — match the dashboard sidebar brand: 32px logo, 12px gap to the
+ * wordmark, bold neutral text. A "D O C S" sub-label sits under the wordmark,
+ * left-aligned with it (icon stays vertically centered against the stack). */
 .site-title {
     color: var(--rw-on-surface);
     font-weight: 700;
@@ -128,6 +128,21 @@ header.header {
 .site-title img {
     height: 2rem;
     width: 2rem;
+}
+
+.site-title > span {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+
+.site-title > span::after {
+    content: "DOCS";
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: var(--rw-on-surface-muted);
+    margin-top: 0.125rem;
 }
 
 /* Header padding-inline-start: 20px on desktop to match the dashboard's px-5
@@ -185,7 +200,7 @@ nav.sidebar .sidebar-content .group-label .large {
 /* ─── Splash hero brand flourish — mirrors .rw-text-gradient from theme.css. */
 
 .hero h1 {
-    background: linear-gradient(135deg, var(--color-wisp-600), var(--color-aurora-500));
+    background: linear-gradient(135deg, var(--rw-color-wisp-600), var(--rw-color-aurora-500));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;

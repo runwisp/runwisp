@@ -1,0 +1,58 @@
+---
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+interface Props {
+    headline: string;
+    sub?: string;
+    eyebrow?: string;
+    align?: "left" | "center";
+    size?: "md" | "lg";
+    class?: string;
+}
+
+const { headline, sub, eyebrow, align = "left", size = "lg", class: className = "" } = Astro.props;
+
+const padding = size === "lg" ? "py-20 sm:py-24 lg:py-32" : "py-14 sm:py-16 lg:py-20";
+const headlineSize =
+    size === "lg" ? "text-4xl sm:text-5xl lg:text-6xl" : "text-3xl sm:text-4xl lg:text-5xl";
+const hasMedia = Astro.slots.has("media");
+const hasCtas = Astro.slots.has("ctas");
+const layout = hasMedia ? "grid items-center gap-12 lg:grid-cols-2 lg:gap-16" : "mx-auto max-w-3xl";
+const textAlign = align === "center" && !hasMedia ? "text-center" : "";
+const ctaAlign = align === "center" && !hasMedia ? "justify-center" : "";
+---
+
+<section class:list={["relative isolate overflow-hidden", className]}>
+    <div class:list={["mx-auto max-w-6xl px-6", padding]}>
+        <div class={layout}>
+            <div class={textAlign}>
+                {
+                    eyebrow && (
+                        <p class="text-primary-soft-text mb-4 text-sm font-semibold tracking-wider uppercase">
+                            {eyebrow}
+                        </p>
+                    )
+                }
+                <h1 class:list={["text-on-surface font-bold tracking-tight", headlineSize]}>
+                    {headline}
+                </h1>
+                {sub && <p class="text-on-surface-muted mt-6 text-lg sm:text-xl">{sub}</p>}
+                {
+                    hasCtas && (
+                        <div class:list={["mt-8 flex flex-wrap items-center gap-3", ctaAlign]}>
+                            <slot name="ctas" />
+                        </div>
+                    )
+                }
+            </div>
+            {
+                hasMedia && (
+                    <div class="lg:justify-self-end">
+                        <slot name="media" />
+                    </div>
+                )
+            }
+        </div>
+    </div>
+</section>

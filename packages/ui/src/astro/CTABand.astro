@@ -1,0 +1,32 @@
+---
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+interface Props {
+    heading: string;
+    sub?: string;
+    tone?: "default" | "primary";
+    class?: string;
+}
+
+const { heading, sub, tone = "default", class: className = "" } = Astro.props;
+
+const surface =
+    tone === "primary" ? "bg-primary text-on-primary" : "bg-surface-sunken text-on-surface";
+const subTone = tone === "primary" ? "text-on-primary/80" : "text-on-surface-muted";
+const hasCtas = Astro.slots.has("ctas");
+---
+
+<section class:list={[surface, className]}>
+    <div class="mx-auto max-w-5xl px-6 py-16 text-center sm:py-20">
+        <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">{heading}</h2>
+        {sub && <p class:list={[subTone, "mt-4 text-lg"]}>{sub}</p>}
+        {
+            hasCtas && (
+                <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+                    <slot name="ctas" />
+                </div>
+            )
+        }
+    </div>
+</section>

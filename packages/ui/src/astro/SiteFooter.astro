@@ -1,0 +1,47 @@
+---
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+interface Props {
+    tagline?: string;
+    class?: string;
+}
+
+const { tagline = "Apache-2.0 · Built by operators, for operators.", class: className = "" } =
+    Astro.props;
+
+const hasTeaser = Astro.slots.has("teaser");
+const hasColumns = Astro.slots.has("columns");
+const hasBadges = Astro.slots.has("badges");
+---
+
+<footer class:list={["bg-surface-sunken border-t border-outline", className]}>
+    <div class="mx-auto max-w-6xl px-6 py-12">
+        {
+            hasTeaser && (
+                <div class="bg-surface-raised mb-10 rounded-2xl border border-outline p-6">
+                    <slot name="teaser" />
+                </div>
+            )
+        }
+        {
+            hasColumns && (
+                <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+                    <slot name="columns" />
+                </div>
+            )
+        }
+        <div
+            class="text-on-surface-muted mt-10 flex flex-col items-start justify-between gap-4 border-t border-outline-faint pt-6 text-sm sm:flex-row sm:items-center"
+        >
+            <p>{tagline}</p>
+            {
+                hasBadges && (
+                    <div class="flex flex-wrap items-center gap-3">
+                        <slot name="badges" />
+                    </div>
+                )
+            }
+        </div>
+    </div>
+</footer>
