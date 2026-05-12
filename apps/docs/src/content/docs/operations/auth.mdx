@@ -18,30 +18,64 @@ straight in when you start it locally with `runwisp`, or asks for the
 password via env var / CLI flag when you connect to a remote daemon.
 
 Your password never travels over the network as plain text. The login
-uses a challenge-response handshake: the browser asks the daemon for a
-one-time challenge, mixes it with your password, and sends back a hash
-the daemon can verify. Even on plain HTTP behind a TLS-terminating
-proxy, the password stays out of the wire.
+uses **SRP** (RFC 5054 / RFC 2945), a password-authenticated key
+agreement protocol: the browser and daemon exchange ephemeral keys and
+zero-knowledge proofs, and at the end of the exchange they have each
+verified the other knows the password — without either side disclosing
+it. Even on plain HTTP behind a TLS-terminating proxy, a passive
+eavesdropper sees no material brute-forceable against the password.
+
+The daemon **does not store your password.** Only a verifier — a
+one-way function of the password and a per-installation salt —
+lives on disk. Forgetting the password means resetting it (see
+"Rotating the password" below), not recovering it.
 
 After a successful login the daemon issues a session in a secure
 cookie. Restart the daemon to invalidate every session at once.
 
 ## The password
 
-The password lives in the daemon's SQLite database, inside the data
-directory (which is created with `0700` perms — only the daemon's
-user can read it). On first run RunWisp generates a random password,
-stores it in SQLite, and prints it once to stdout.
+The data directory is created with `0700` perms and `runwisp.db` is
+`0600` — only the daemon's user can read it. **What lives in SQLite is
+the SRP verifier and salt, not the password itself.** On first run
+RunWisp generates a random password, computes a verifier, stores the
+verifier+salt, and prints the password once to stdout.
 
-`RUNWISP_PASSWORD` overrides the stored value. When set, RunWisp uses
-the env value in memory only — it is **not** written to SQLite. That
-is what you want for Docker secrets, systemd's `LoadCredential=`, or
-sealed-secrets workflows that deliberately keep credentials out of the
-data directory.
+> **Save the password the first time you boot.** It is shown exactly
+> once. RunWisp cannot recover it later — the daemon never had it.
 
-To rotate the password, delete the `config_entries` row with key
-`password` (or set `RUNWISP_PASSWORD` to a new value) and restart the
-daemon. Every existing session is invalidated.
+`RUNWISP_PASSWORD` overrides the on-disk verifier with one derived
+in memory. The env-supplied verifier is **not** persisted, matching
+the contract you expect from Docker secrets, systemd's
+`LoadCredential=`, or sealed-secrets workflows.
+
+### Rotating the password
+
+To set a new password you can either:
+
+- Export `RUNWISP_PASSWORD` to the new value and restart the daemon.
+  The env-supplied verifier overrides the stored one in memory only.
+- Delete the `srp_verifier` and `srp_salt` rows from `config_entries`
+  and restart. The daemon will generate a fresh random password on
+  next boot.
+
+Either path invalidates every existing session, because changing
+`RUNWISP_PASSWORD` rotates the JWT signing secret.
+
+### Trust boundary
+
+The daemon's filesystem is the trust boundary. Anyone who can read
+the data directory can:
+
+- Read the JWT signing secret and mint admin tokens (the CLI does
+  exactly this to authenticate locally without prompting for the
+  password).
+- Read the SRP verifier, which is brute-forceable in principle but is
+  also PBKDF2-stretched with 600 000 iterations.
+
+That is why the data directory ships with `0700` perms, the DB with
+`0600`, and why `RUNWISP_DATA_KEY` exists for operators who need at-
+rest encryption on top.
 
 ## Rate limiting
 

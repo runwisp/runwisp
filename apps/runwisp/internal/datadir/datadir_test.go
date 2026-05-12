@@ -4,10 +4,14 @@
 package datadir
 
 import (
+	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	srp "mz.attahri.com/code/srp/v3"
 )
 
 func TestGenerateJWTSecret_Unique(t *testing.T) {
@@ -99,102 +103,207 @@ func TestWritePidFile_RefusesSymlink(t *testing.T) {
 	}
 }
 
-// fakePasswordStore is an in-memory PasswordStore for tests.
-type fakePasswordStore struct {
+// fakeSecretStore is an in-memory SecretStore for tests.
+type fakeSecretStore struct {
 	values map[string]string
 }
 
-func newFakeStore() *fakePasswordStore {
-	return &fakePasswordStore{values: map[string]string{}}
+func newFakeStore() *fakeSecretStore {
+	return &fakeSecretStore{values: map[string]string{}}
 }
 
-func (f *fakePasswordStore) GetSecret(key string) (string, bool, error) {
+func (f *fakeSecretStore) GetSecret(key string) (string, bool, error) {
 	v, ok := f.values[key]
 	return v, ok, nil
 }
 
-func (f *fakePasswordStore) SetSecret(key, value string) error {
+func (f *fakeSecretStore) SetSecret(key, value string) error {
 	f.values[key] = value
 	return nil
 }
 
-// TestResolvePassword_EnvVarNotPersisted guards the prime-directive contract:
-// when an operator sets RUNWISP_PASSWORD (Docker secret, systemd
+func (f *fakeSecretStore) DeleteConfigValue(key string) error {
+	delete(f.values, key)
+	return nil
+}
+
+// TestResolveSRPCredentials_EnvVarNotPersisted guards the prime-directive
+// contract: when an operator sets RUNWISP_PASSWORD (Docker secret, systemd
 // LoadCredential, sealed-secrets), the daemon must use the value in memory
 // only. Writing it to SQLite defeats the operator's whole reason for using a
 // secret manager.
-func TestResolvePassword_EnvVarNotPersisted(t *testing.T) {
+func TestResolveSRPCredentials_EnvVarNotPersisted(t *testing.T) {
 	store := newFakeStore()
 	t.Setenv("RUNWISP_PASSWORD", "from-env-secret")
 
-	got, isNew, err := ResolvePassword(store)
+	creds, generated, err := ResolveSRPCredentials(store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "from-env-secret" {
-		t.Fatalf("expected env value, got %q", got)
+	if len(creds.Verifier) == 0 || len(creds.Salt) == 0 {
+		t.Fatal("env-supplied password must still produce SRP credentials in memory")
 	}
-	if isNew {
-		t.Fatal("env-supplied password must not be reported as newly generated")
+	if generated != "" {
+		t.Fatal("env-supplied password must not be reported as generated")
 	}
-	if _, ok := store.values[passwordKey]; ok {
-		t.Fatal("env-supplied password must not be written to the store")
+	if _, ok := store.values[srpVerifierKey]; ok {
+		t.Fatal("env-supplied verifier must not be persisted")
 	}
-}
-
-// TestResolvePassword_EnvVarDoesNotOverwriteStoredRow verifies that an
-// existing stored password row is left untouched when RUNWISP_PASSWORD is set.
-func TestResolvePassword_EnvVarDoesNotOverwriteStoredRow(t *testing.T) {
-	store := newFakeStore()
-	if err := store.SetSecret(passwordKey, "old-stored-secret"); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("RUNWISP_PASSWORD", "from-env-secret")
-
-	got, _, err := ResolvePassword(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "from-env-secret" {
-		t.Fatalf("env must take precedence in-memory, got %q", got)
-	}
-	if store.values[passwordKey] != "old-stored-secret" {
-		t.Fatalf("stored password must not be rewritten when env var is set; got %q", store.values[passwordKey])
+	if _, ok := store.values[srpSaltKey]; ok {
+		t.Fatal("env-supplied salt must not be persisted")
 	}
 }
 
-// TestResolvePassword_StoreFallbackUnchanged verifies the unchanged path:
-// no env var, stored row present → use it.
-func TestResolvePassword_StoreFallbackUnchanged(t *testing.T) {
-	store := newFakeStore()
-	if err := store.SetSecret(passwordKey, "from-store"); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("RUNWISP_PASSWORD", "")
-
-	got, isNew, err := ResolvePassword(store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "from-store" || isNew {
-		t.Fatalf("expected stored password; got=%q isNew=%v", got, isNew)
-	}
-}
-
-// TestResolvePassword_GeneratesAndPersistsWhenEmpty verifies that absent
-// both env var and stored row, a new password is generated AND written.
-func TestResolvePassword_GeneratesAndPersistsWhenEmpty(t *testing.T) {
+// TestResolveSRPCredentials_GeneratesAndPersistsWhenEmpty verifies that
+// absent both env var and stored rows, fresh credentials are generated AND
+// the password is returned for one-shot disclosure.
+func TestResolveSRPCredentials_GeneratesAndPersistsWhenEmpty(t *testing.T) {
 	store := newFakeStore()
 	t.Setenv("RUNWISP_PASSWORD", "")
 
-	got, isNew, err := ResolvePassword(store)
+	creds, generated, err := ResolveSRPCredentials(store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !isNew || got == "" {
-		t.Fatalf("expected freshly generated password; got=%q isNew=%v", got, isNew)
+	if generated == "" {
+		t.Fatal("expected generated password to be returned on first boot")
 	}
-	if store.values[passwordKey] != got {
-		t.Fatalf("stored value does not match returned password: store=%q returned=%q", store.values[passwordKey], got)
+	if len(creds.Verifier) == 0 || len(creds.Salt) == 0 {
+		t.Fatal("expected verifier and salt to be generated")
+	}
+	if store.values[srpVerifierKey] != hex.EncodeToString(creds.Verifier) {
+		t.Fatal("verifier was not persisted in the store")
+	}
+	if store.values[srpSaltKey] != hex.EncodeToString(creds.Salt) {
+		t.Fatal("salt was not persisted in the store")
 	}
 }
+
+// TestResolveSRPCredentials_ReusesStored verifies that an existing stored
+// pair is read back verbatim and no fresh password is generated.
+func TestResolveSRPCredentials_ReusesStored(t *testing.T) {
+	store := newFakeStore()
+	t.Setenv("RUNWISP_PASSWORD", "")
+
+	// Seed via a first call.
+	first, generated, err := ResolveSRPCredentials(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generated == "" {
+		t.Fatal("expected first call to generate")
+	}
+
+	// Second call should be a no-op load.
+	second, generated, err := ResolveSRPCredentials(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generated != "" {
+		t.Fatal("second call must not generate a fresh password")
+	}
+	if hex.EncodeToString(first.Verifier) != hex.EncodeToString(second.Verifier) {
+		t.Fatal("verifier was not preserved")
+	}
+	if hex.EncodeToString(first.Salt) != hex.EncodeToString(second.Salt) {
+		t.Fatal("salt was not preserved")
+	}
+}
+
+// TestResolveSRPCredentials_RefusesLegacyPasswordRow guarantees no silent
+// migration from a plaintext password row to SRP credentials.
+func TestResolveSRPCredentials_RefusesLegacyPasswordRow(t *testing.T) {
+	store := newFakeStore()
+	if err := store.SetSecret(passwordKey, "legacy-secret"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := ResolveSRPCredentials(store)
+	if err == nil {
+		t.Fatal("expected refusal when legacy password row present")
+	}
+	if !strings.Contains(err.Error(), "legacy plaintext password row") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestDeriveSRPVerifier_RoundTrip exercises the verifier/salt pair against
+// the SRP library's own client to confirm interoperability with our params.
+func TestDeriveSRPVerifier_RoundTrip(t *testing.T) {
+	salt, err := GenerateSRPSalt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := DeriveSRPVerifier("p@ssw0rd!", salt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := srp.NewServer(SRPParams(), SRPIdentity, salt, verifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := srp.NewClient(SRPParams(), SRPIdentity, "p@ssw0rd!", salt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SetB(server.B()); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SetA(client.A()); err != nil {
+		t.Fatal(err)
+	}
+	M1, err := client.ComputeM1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err := server.CheckM1(M1)
+	if err != nil || !ok {
+		t.Fatalf("server failed to verify client proof: ok=%v err=%v", ok, err)
+	}
+	M2, err := server.ComputeM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err = client.CheckM2(M2)
+	if err != nil || !ok {
+		t.Fatal("client failed to verify server proof")
+	}
+}
+
+// TestDeriveSRPVerifier_WrongPasswordFails confirms a different password
+// produces a non-matching verifier and the handshake fails.
+func TestDeriveSRPVerifier_WrongPasswordFails(t *testing.T) {
+	salt, err := GenerateSRPSalt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := DeriveSRPVerifier("right-password", salt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := srp.NewServer(SRPParams(), SRPIdentity, salt, verifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := srp.NewClient(SRPParams(), SRPIdentity, "wrong-password", salt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SetB(server.B()); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SetA(client.A()); err != nil {
+		t.Fatal(err)
+	}
+	M1, err := client.ComputeM1()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, _ := server.CheckM1(M1)
+	if ok {
+		t.Fatal("server accepted wrong password — verifier comparison is broken")
+	}
+}
+
+// silence "errors" unused if Compile drops branches.
+var _ = errors.New

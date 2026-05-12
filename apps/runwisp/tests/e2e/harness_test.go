@@ -7,7 +7,6 @@ package e2e
 
 import (
 	"bytes"
-	"database/sql"
 	"net"
 	"os"
 	"os/exec"
@@ -24,7 +23,6 @@ import (
 	"github.com/hinshun/vt10x"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
 )
 
 const (
@@ -214,7 +212,14 @@ func startDaemon(t *testing.T, projectDir string, binaryPath string, configPath 
 		"daemon",
 	)
 	cmd.Dir = projectDir
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = append(os.Environ(),
+		"TERM=xterm-256color",
+		// E2E tests pin the daemon password so the harness doesn't need to
+		// scrape stdout for an auto-generated value. The daemon treats
+		// RUNWISP_PASSWORD as in-memory-only (per ResolveSRPCredentials),
+		// so no row is written and there is nothing for the test to clean up.
+		"RUNWISP_PASSWORD="+e2eDaemonPassword,
+	)
 	cmd.Stdout = output
 	cmd.Stderr = output
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -309,7 +314,13 @@ func startRemoteTUI(t *testing.T, projectDir string, binaryPath string, configPa
 		"tui",
 	)
 	cmd.Dir = projectDir
-	cmd.Env = append(os.Environ(), "TERM=dumb")
+	cmd.Env = append(os.Environ(),
+		"TERM=dumb",
+		// Remote TUI subprocess uses the same fixed password the daemon
+		// was given. SRP removed the SQLite fallback that previously let
+		// the TUI auto-recover the password.
+		"RUNWISP_PASSWORD="+e2eDaemonPassword,
+	)
 
 	ptyFile, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: screenCols,
@@ -336,10 +347,12 @@ func startRemoteTUI(t *testing.T, projectDir string, binaryPath string, configPa
 		session.forceStop()
 	})
 
+	// With SRP the daemon never redisplays an operator-supplied password,
+	// so the TUI home screen no longer shows a "Password" row when
+	// RUNWISP_PASSWORD is set (which the harness always does).
 	session.waitForAll(t, 10*time.Second,
 		"Home",
 		"Web UI",
-		"Password",
 	)
 
 	return session
@@ -477,42 +490,19 @@ func (s *tuiSession) forceStop() {
 	})
 }
 
+// e2eDaemonPassword is the fixed password the e2e harness injects via
+// RUNWISP_PASSWORD. With SRP the daemon no longer stores the raw password
+// — only the verifier — so the tests pin it explicitly rather than scrape
+// stdout for an auto-generated value.
+const e2eDaemonPassword = "e2e-test-password"
+
+// waitForPassword returns the pinned daemon password the harness injected.
+// Kept as a function (rather than a constant) so existing tests keep their
+// call sites; the dataDir argument is unused.
 func waitForPassword(t testing.TB, dataDir string) string {
-	t.Helper()
-
-	dbPath := filepath.Join(dataDir, "runwisp.db")
-	deadline := time.Now().Add(5 * time.Second)
-
-	for time.Now().Before(deadline) {
-		if password := tryReadStoredPassword(dbPath); password != "" {
-			return password
-		}
-		time.Sleep(screenPollInterval)
-	}
-
-	require.FailNowf(t, "password row not written to SQLite", "db path: %s", dbPath)
-	return ""
-}
-
-// tryReadStoredPassword opens the daemon's SQLite read-only and returns the
-// stored password, or "" if the row isn't present yet (or the file isn't
-// readable). Errors are deliberately swallowed because this is a polling
-// helper that races startup.
-func tryReadStoredPassword(dbPath string) string {
-	if _, err := os.Stat(dbPath); err != nil {
-		return ""
-	}
-	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
-	if err != nil {
-		return ""
-	}
-	defer db.Close()
-
-	var value string
-	if err := db.QueryRow(`SELECT value FROM config_entries WHERE key = ?`, "password").Scan(&value); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(value)
+	_ = t
+	_ = dataDir
+	return e2eDaemonPassword
 }
 
 func waitForRunCount(t testing.TB, client *apiclient.Client, taskName string, expectedTotal int64, timeout time.Duration) int64 {

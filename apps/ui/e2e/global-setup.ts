@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { FullConfig } from "@playwright/test";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -61,7 +61,7 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     await waitForHealth(baseURL, 15_000);
 
     // Obtain a JWT once to avoid rate-limit issues across tests
-    const token = await obtainToken(baseURL, password);
+    const token = obtainToken(binaryPath, runnerRoot, baseURL, password);
 
     const state: DaemonState = {
         pid: daemon.pid!,
@@ -73,28 +73,24 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     await writeFile(STATE_PATH, JSON.stringify(state));
 }
 
-async function obtainToken(baseURL: string, password: string): Promise<string> {
-    const challengeRes = await fetch(`${baseURL}/api/auth/challenge`);
-    if (!challengeRes.ok) throw new Error(`Challenge request failed: ${challengeRes.status}`);
-    const { nonce } = (await challengeRes.json()) as { nonce: string };
-
-    const enc = new TextEncoder();
-    const hashBuf = await globalThis.crypto.subtle.digest(
-        "SHA-256",
-        enc.encode(`${password}:${nonce}`),
-    );
-    const response = Array.from(new Uint8Array(hashBuf))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
-
-    const authRes = await fetch(`${baseURL}/api/auth`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nonce, response }),
+// obtainToken delegates SRP to the runwisp binary's auth-token subcommand.
+// We do this rather than re-implementing SRP in Node because the npm
+// @mzattahri/srp package's "./groups" (no extension) imports trip up Node's
+// strict ESM resolver outside a Vite/Webpack bundle.
+function obtainToken(binaryPath: string, cwd: string, baseURL: string, password: string): string {
+    const result = spawnSync(binaryPath, ["auth-token", "--remote", baseURL, "--password", "env"], {
+        cwd,
+        env: { ...process.env, RUNWISP_REMOTE_PASSWORD: password },
+        encoding: "utf8",
     });
-    if (!authRes.ok) throw new Error(`Auth request failed: ${authRes.status}`);
-    const data = (await authRes.json()) as { token: string };
-    return data.token;
+    if (result.status !== 0) {
+        throw new Error(
+            `auth-token failed with code ${result.status}: ${result.stderr || result.stdout}`,
+        );
+    }
+    const token = result.stdout.trim();
+    if (!token) throw new Error("auth-token produced empty output");
+    return token;
 }
 
 async function waitForHealth(baseURL: string, timeout: number): Promise<void> {

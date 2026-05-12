@@ -26,13 +26,14 @@ var openapiCmd = &cobra.Command{
 func runOpenAPI() error {
 	// Construct a server with minimal dependencies — only route registration matters.
 	srv, err := server.New(server.Options{
-		Tasks:      map[string]*model.Task{},
-		Port:       9477,
-		LogDir:     os.TempDir(),
-		EventBus:   events.NewEventBus(),
-		Password:   "openapi-generation",
-		JWTSecret:  "openapi-generation",
-		DaemonInfo: &model.DaemonInfo{},
+		Tasks:       map[string]*model.Task{},
+		Port:        9477,
+		LogDir:      os.TempDir(),
+		EventBus:    events.NewEventBus(),
+		SRPVerifier: []byte("openapi-generation-placeholder"),
+		SRPSalt:     []byte("openapi-salt-placeholder"),
+		JWTSecret:   "openapi-generation",
+		DaemonInfo:  &model.DaemonInfo{},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to construct server for OpenAPI generation: %w", err)

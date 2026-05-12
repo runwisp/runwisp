@@ -19,17 +19,24 @@ export interface AuthState {
     authenticated: boolean;
 }
 
-export const authChallengeResponseSchema = z.object({ nonce: z.string() });
-export type AuthChallengeResponse = z.infer<typeof authChallengeResponseSchema>;
-
 export const authStatusResponseSchema = z.object({
     auth_required: z.boolean(),
     authenticated: z.boolean(),
 });
 export type AuthStatusResponse = z.infer<typeof authStatusResponseSchema>;
 
-export const authLoginResponseSchema = z.object({ token: z.string() });
-export type AuthLoginResponse = z.infer<typeof authLoginResponseSchema>;
+export const srpStartResponseSchema = z.object({
+    sessionID: z.string(),
+    salt: z.string(),
+    B: z.string(),
+});
+export type SRPStartResponse = z.infer<typeof srpStartResponseSchema>;
+
+export const srpFinishResponseSchema = z.object({
+    M2: z.string(),
+    token: z.string(),
+});
+export type SRPFinishResponse = z.infer<typeof srpFinishResponseSchema>;
 
 const runPhaseSchema = z.enum(RUN_PHASES);
 const endReasonSchema = z.enum(END_REASONS);

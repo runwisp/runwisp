@@ -102,12 +102,23 @@ type AuthStatusBody struct {
 	Authenticated bool `json:"authenticated" doc:"Whether the current request is already authenticated via cookie"`
 }
 
-type AuthChallengeOutput struct {
-	Body AuthChallengeBody
+// ---------- SRP types ----------
+
+type SRPStartResponseBody struct {
+	SessionID string `json:"sessionID" doc:"Single-use SRP session id"`
+	Salt      string `json:"salt" doc:"Server-stored SRP salt (hex)"`
+	B         string `json:"B" doc:"Server ephemeral public key B (hex)"`
 }
 
-type AuthChallengeBody struct {
-	Nonce string `json:"nonce" doc:"Challenge nonce (hex)"`
+type SRPFinishRequestBody struct {
+	SessionID string `json:"sessionID" doc:"Session id returned by /srp/start"`
+	A         string `json:"A" doc:"Client ephemeral public key A (hex)"`
+	M1        string `json:"M1" doc:"Client proof M1 (hex)"`
+}
+
+type SRPFinishResponseBody struct {
+	M2    string `json:"M2" doc:"Server proof M2 (hex)"`
+	Token string `json:"token" doc:"Signed session JWT"`
 }
 
 // ---------- SSE event wrapper types ----------

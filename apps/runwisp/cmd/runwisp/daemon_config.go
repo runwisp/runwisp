@@ -23,13 +23,21 @@ import (
 
 // daemonConfig holds resolved configuration and secrets for the daemon.
 type daemonConfig struct {
-	Fingerprint       string
-	CloudConfig       cloud.Config
-	Config            *config.Config
-	UsingDemo         bool
-	Password          string
-	PasswordGenerated bool
-	JWTSecret         string
+	Fingerprint string
+	CloudConfig cloud.Config
+	Config      *config.Config
+	UsingDemo   bool
+
+	// SRPCreds is the verifier+salt pair the auth service uses to verify
+	// login proofs. The raw operator password is never carried here.
+	SRPCreds datadir.SRPCredentials
+
+	// GeneratedPassword is non-empty only on first boot when the daemon
+	// auto-generated a password. The TUI/startup banner shows it exactly
+	// once; the password is not retrievable afterwards.
+	GeneratedPassword string
+
+	JWTSecret string
 }
 
 func loadDaemonConfig(store storage.SecretStore, mode daemonMode) (*daemonConfig, error) {
@@ -67,15 +75,10 @@ func loadDaemonConfig(store storage.SecretStore, mode daemonMode) (*daemonConfig
 		return nil, err
 	}
 
-	password, _, pwErr := datadir.ResolvePassword(store)
-	if pwErr != nil && !cloudCfg.Enabled {
-		return nil, pwErr
+	srpCreds, generatedPassword, srpErr := datadir.ResolveSRPCredentials(store)
+	if srpErr != nil && !cloudCfg.Enabled {
+		return nil, srpErr
 	}
-	// "Generated" here means the daemon owns the password (auto-generated and
-	// stored in SQLite). It is safe — and expected — to disclose to the
-	// operator on startup. An operator-supplied RUNWISP_PASSWORD is never
-	// disclosed.
-	passwordGenerated := os.Getenv("RUNWISP_PASSWORD") == "" && password != ""
 
 	jwtSecret, err := resolveJWTSecret(store, os.Getenv("RUNWISP_PASSWORD"))
 	if err != nil {
@@ -87,8 +90,8 @@ func loadDaemonConfig(store storage.SecretStore, mode daemonMode) (*daemonConfig
 		CloudConfig:       cloudCfg,
 		Config:            cfg,
 		UsingDemo:         usingDemo,
-		Password:          password,
-		PasswordGenerated: passwordGenerated,
+		SRPCreds:          srpCreds,
+		GeneratedPassword: generatedPassword,
 		JWTSecret:         jwtSecret,
 	}, nil
 }

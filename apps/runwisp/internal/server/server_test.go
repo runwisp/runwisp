@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/logutil"
@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	srp "mz.attahri.com/code/srp/v3"
 )
 
 func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.MockExecutor, string) {
@@ -53,6 +54,11 @@ func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
 
+	salt, err := datadir.GenerateSRPSalt()
+	require.NoError(t, err)
+	verifier, err := datadir.DeriveSRPVerifier("secret", salt)
+	require.NoError(t, err)
+
 	s, err := New(Options{
 		DB:          repo,
 		TaskManager: jm,
@@ -61,7 +67,8 @@ func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.
 		Port:        9477,
 		LogDir:      tmpDir,
 		EventBus:    eb,
-		Password:    "secret",
+		SRPVerifier: verifier,
+		SRPSalt:     salt,
 		JWTSecret:   "test-jwt-secret",
 	})
 	require.NoError(t, err)
@@ -270,15 +277,18 @@ func TestInvalidRunID(t *testing.T) {
 }
 
 func TestAuth(t *testing.T) {
-	// Setup server with auth enabled
 	repo := new(testutil.MockRunRepository)
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
 	jm := runtime.NewTaskManager(exec, eb)
 	tasks := map[string]*model.Task{}
 
-	// Create scheduler (nil is fine for this test)
 	scheduler := runtime.NewScheduler(jm, tasks, time.UTC)
+
+	salt, err := datadir.GenerateSRPSalt()
+	require.NoError(t, err)
+	verifier, err := datadir.DeriveSRPVerifier("secret", salt)
+	require.NoError(t, err)
 
 	s, err := New(Options{
 		DB:          repo,
@@ -288,75 +298,74 @@ func TestAuth(t *testing.T) {
 		Port:        9477,
 		LogDir:      "/tmp/logs",
 		EventBus:    eb,
-		Password:    "secret",
+		SRPVerifier: verifier,
+		SRPSalt:     salt,
 		JWTSecret:   "test-jwt-secret",
 	})
 	require.NoError(t, err)
 
-	// Test Auth Status
+	// Auth status: unauthenticated.
 	req := httptest.NewRequest("GET", "/api/auth/status", nil)
 	w := httptest.NewRecorder()
-
 	s.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"auth_required":true`)
 
-	// Test Login Success
-	// Step 1: Get challenge nonce
-	req = httptest.NewRequest("GET", "/api/auth/challenge", nil)
+	// /srp/start.
+	startReq := httptest.NewRequest("POST", "/api/auth/srp/start", strings.NewReader(`{}`))
+	startW := httptest.NewRecorder()
+	s.router.ServeHTTP(startW, startReq)
+	require.Equal(t, http.StatusOK, startW.Code)
+	var startBody SRPStartResponseBody
+	require.NoError(t, json.NewDecoder(startW.Body).Decode(&startBody))
+
+	serverSalt, _ := hex.DecodeString(startBody.Salt)
+	B, _ := hex.DecodeString(startBody.B)
+	client, err := srp.NewClient(datadir.SRPParams(), datadir.SRPIdentity, "secret", serverSalt)
+	require.NoError(t, err)
+	require.NoError(t, client.SetB(B))
+	M1, _ := client.ComputeM1()
+
+	finishBody := fmt.Sprintf(`{"sessionID":%q,"A":%q,"M1":%q}`,
+		startBody.SessionID, hex.EncodeToString(client.A()), hex.EncodeToString(M1))
+	finishReq := httptest.NewRequest("POST", "/api/auth/srp/finish", strings.NewReader(finishBody))
+	finishReq.Header.Set("Content-Type", "application/json")
+	finishW := httptest.NewRecorder()
+	s.router.ServeHTTP(finishW, finishReq)
+	require.Equal(t, http.StatusOK, finishW.Code)
+	var finishResp SRPFinishResponseBody
+	require.NoError(t, json.NewDecoder(finishW.Body).Decode(&finishResp))
+	require.NotEmpty(t, finishResp.Token)
+
+	// Wrong password → 401.
+	startReq = httptest.NewRequest("POST", "/api/auth/srp/start", strings.NewReader(`{}`))
+	startW = httptest.NewRecorder()
+	s.router.ServeHTTP(startW, startReq)
+	require.NoError(t, json.NewDecoder(startW.Body).Decode(&startBody))
+	serverSalt, _ = hex.DecodeString(startBody.Salt)
+	B, _ = hex.DecodeString(startBody.B)
+	wrongClient, err := srp.NewClient(datadir.SRPParams(), datadir.SRPIdentity, "wrong-password", serverSalt)
+	require.NoError(t, err)
+	require.NoError(t, wrongClient.SetB(B))
+	wrongM1, _ := wrongClient.ComputeM1()
+	wrongBody := fmt.Sprintf(`{"sessionID":%q,"A":%q,"M1":%q}`,
+		startBody.SessionID, hex.EncodeToString(wrongClient.A()), hex.EncodeToString(wrongM1))
+	finishReq = httptest.NewRequest("POST", "/api/auth/srp/finish", strings.NewReader(wrongBody))
+	finishReq.Header.Set("Content-Type", "application/json")
+	finishW = httptest.NewRecorder()
+	s.router.ServeHTTP(finishW, finishReq)
+	assert.Equal(t, http.StatusUnauthorized, finishW.Code)
+
+	// Protected route without token → 401.
+	req = httptest.NewRequest("GET", "/api/tasks", nil)
 	w = httptest.NewRecorder()
-
-	s.router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
-	var challengeResp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &challengeResp)
-	nonce := challengeResp["nonce"]
-	assert.NotEmpty(t, nonce)
-
-	// Step 2: Compute SHA-256(password:nonce) and send
-	h := sha256.Sum256([]byte("secret:" + nonce))
-	challengeResponse := hex.EncodeToString(h[:])
-	loginBody := fmt.Sprintf(`{"nonce":%q,"response":%q}`, nonce, challengeResponse)
-	req = httptest.NewRequest("POST", "/api/auth", strings.NewReader(loginBody))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-
-	s.router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
-	var resp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	token := resp["token"]
-	assert.NotEmpty(t, token)
-
-	// Test Login Failure — wrong password
-	req = httptest.NewRequest("GET", "/api/auth/challenge", nil)
-	w = httptest.NewRecorder()
-
-	s.router.ServeHTTP(w, req)
-	json.Unmarshal(w.Body.Bytes(), &challengeResp)
-	nonce = challengeResp["nonce"]
-	wrongH := sha256.Sum256([]byte("wrong:" + nonce))
-	wrongResponse := hex.EncodeToString(wrongH[:])
-	loginBody = fmt.Sprintf(`{"nonce":%q,"response":%q}`, nonce, wrongResponse)
-	req = httptest.NewRequest("POST", "/api/auth", strings.NewReader(loginBody))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-
 	s.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
-	// Test Protected Route without Token
+	// Protected route with token → 200.
 	req = httptest.NewRequest("GET", "/api/tasks", nil)
+	req.Header.Set("Authorization", "Bearer "+finishResp.Token)
 	w = httptest.NewRecorder()
-
-	s.router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-
-	// Test Protected Route with Token
-	req = httptest.NewRequest("GET", "/api/tasks", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w = httptest.NewRecorder()
-
 	s.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 }

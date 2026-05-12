@@ -4,34 +4,20 @@
 package main
 
 import (
-	"io"
+	"errors"
 	"os"
-
-	"github.com/runwisp/runwisp/internal/datadir"
-	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/storage/secretcipher"
 )
 
 // resolveClientPassword resolves the daemon password for a client process
-// (TUI, CLI) that itself does not run the daemon. RUNWISP_PASSWORD is checked
-// first; otherwise the value is read from SQLite. The DB is opened, queried,
-// and closed before returning so a subsequently-spawned daemon can take the
-// write lock cleanly.
+// (TUI, CLI) that itself does not run the daemon. The password is read from
+// RUNWISP_PASSWORD; with SRP storing only a verifier, the daemon no longer
+// retains the original password and the CLI has no way to recover it from
+// SQLite. Use the local-JWT shortcut (mintLocalJWT) for password-less local
+// operation; this function exists for the remote case where the operator
+// supplies the password explicitly.
 func resolveClientPassword() (string, error) {
 	if envPw := os.Getenv("RUNWISP_PASSWORD"); envPw != "" {
 		return envPw, nil
 	}
-
-	cipher, err := secretcipher.FromEnv()
-	if err != nil {
-		return "", err
-	}
-	db, err := storage.New(flags.DBPath(), io.Discard, cipher)
-	if err != nil {
-		return "", err
-	}
-	defer db.Close()
-
-	password, _, err := datadir.ResolvePassword(db)
-	return password, err
+	return "", errors.New("RUNWISP_PASSWORD is not set; the daemon stores only an SRP verifier and cannot recover the original password")
 }

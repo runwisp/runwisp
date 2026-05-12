@@ -15,6 +15,7 @@
     let password = $state("");
     let error = $state("");
     let loading = $state(false);
+    let stretching = $state(false);
     let authRequired = $state(true);
 
     $effect(() => {
@@ -62,6 +63,9 @@
         e.preventDefault();
         error = "";
         loading = true;
+        // SRP login pays a ~300–500ms PBKDF2 stretch in the browser; surface
+        // it as a visible state so the operator doesn't think the page froze.
+        stretching = true;
 
         try {
             const data = await authApi.login(password);
@@ -77,6 +81,7 @@
             logger.error("Authentication failed", err);
         } finally {
             loading = false;
+            stretching = false;
         }
     }
 </script>
@@ -112,7 +117,7 @@
                 {loading}
                 disabled={loading || !password}
             >
-                Login
+                {stretching ? "Stretching key…" : "Login"}
             </Button>
         </form>
     </div>

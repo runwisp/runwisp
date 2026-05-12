@@ -119,11 +119,14 @@ func (srv *Server) setupRoutes() {
 	// Public auth endpoints (huma — only authStatus; challenge is raw chi below)
 	srv.registerAuthRoutes()
 
-	// Rate-limited auth endpoints: both challenge and login share the same limit
-	// to prevent nonce-store flooding (DoS on the auth flow).
+	// Rate-limited auth endpoints. The /srp/start endpoint allocates the
+	// per-login server state and is the more expensive of the two; we share
+	// the same per-IP limiter across both so an attacker can't bypass it by
+	// shuttling between routes. The launch endpoint sits on the same bucket
+	// since it is also a credential-equivalent flow.
 	authLimiter := httprate.LimitByIP(MaxAuthAttempts, AuthRateWindow)
-	srv.router.With(authLimiter).Get("/api/auth/challenge", srv.handleAuthChallenge)
-	srv.router.With(authLimiter).Post("/api/auth", srv.auth.handleAuth)
+	srv.router.With(authLimiter).Post("/api/auth/srp/start", srv.auth.handleSRPStart)
+	srv.router.With(authLimiter).Post("/api/auth/srp/finish", srv.auth.handleSRPFinish)
 	srv.router.With(authLimiter).Get("/api/auth/launch", srv.handleLaunchTicket)
 
 	// Protected routes

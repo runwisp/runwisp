@@ -17,7 +17,6 @@ func TestRemoteTUINavigatesAcrossPrimaryScreens(t *testing.T) {
 	homeScreen := suite.tui.currentScreen(t)
 	require.Contains(t, homeScreen, "Home")
 	require.Contains(t, homeScreen, "Web UI")
-	require.Contains(t, homeScreen, "Password")
 
 	taskScreen := suite.selectAlphaTask(t)
 	require.Contains(t, taskScreen, "No executions yet. Waiting for tasks to run...")

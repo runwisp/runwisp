@@ -109,7 +109,7 @@ func runDaemon(mode daemonMode) error {
 	daemonInfo := buildDaemonInfo(cfg, svc)
 
 	var srv *server.Server
-	if cfg.Password != "" {
+	if len(cfg.SRPCreds.Verifier) > 0 {
 		srv, err = server.New(server.Options{
 			DB:              svc.DB,
 			NotificationDB:  svc.DB,
@@ -121,7 +121,8 @@ func runDaemon(mode daemonMode) error {
 			Port:            flags.Port,
 			LogDir:          flags.LogDir(),
 			EventBus:        svc.EventBus,
-			Password:        cfg.Password,
+			SRPVerifier:     cfg.SRPCreds.Verifier,
+			SRPSalt:         cfg.SRPCreds.Salt,
 			JWTSecret:       cfg.JWTSecret,
 			DaemonInfo:      daemonInfo,
 			DaemonLogBuffer: logBuffer,
@@ -149,8 +150,8 @@ func runDaemon(mode daemonMode) error {
 		Timezone:       daemonInfo.ResolvedTimezone,
 		TimezoneSource: daemonInfo.TimezoneSource,
 
-		PasswordGenerated: cfg.PasswordGenerated,
-		Password:          cfg.Password,
+		PasswordGenerated: cfg.GeneratedPassword != "",
+		Password:          cfg.GeneratedPassword,
 
 		CloudEnabled:  cfg.CloudConfig.Enabled,
 		WebUIDisabled: webUIDisabled,

@@ -96,26 +96,33 @@ notifications are opt-in.
 
 ## Triggering from CI
 
-CHAP login is a two-step exchange: GET a nonce, POST back
-`sha256(password:nonce)`, receive a JWT.
+Login is an SRP exchange: the daemon never sees your raw password,
+and you don't have to handle it on the shell. The `runwisp auth-token`
+subcommand performs the handshake and prints a JWT you can pass to
+`curl`.
 
 ```bash
 set -euo pipefail
 BASE=https://runwisp.example.com
 
-# 1. Get a one-shot nonce.
-NONCE=$(curl -sSf "$BASE/api/auth/challenge" | jq -r .nonce)
+# 1. Obtain a session token via SRP. RUNWISP_REMOTE_PASSWORD never
+#    leaves this shell; only proofs derived from it cross the wire.
+TOKEN=$(runwisp auth-token --remote "$BASE" --password env)
 
-# 2. Compute the response and POST it back.
-RESP=$(printf '%s:%s' "$RUNWISP_PASSWORD" "$NONCE" | sha256sum | cut -d' ' -f1)
-TOKEN=$(curl -sSf -X POST "$BASE/api/auth" \\
-  -H 'Content-Type: application/json' \\
-  -d "$(jq -nc --arg n "$NONCE" --arg r "$RESP" '{nonce:$n, response:$r}')" \\
-  | jq -r .token)
-
-# 3. Trigger the deploy.
+# 2. Trigger the deploy.
 curl -sSf -X POST "$BASE/api/tasks/deploy-app/run" \\
   -H "Authorization: Bearer $TOKEN"
+```
+
+If you don't have the binary on your runner, pipe the password from
+stdin and call the daemon directly with two POSTs. Most CI systems do
+have the binary available (it's a single static file), so the
+subcommand approach is usually simpler.
+
+Alternate password input:
+
+```bash
+TOKEN=$(printf '%s\n' "$RUNWISP_REMOTE_PASSWORD" | runwisp auth-token --remote "$BASE" --password -)
 ```
 
 The trigger endpoint does **not** accept per-call env injection —

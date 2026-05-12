@@ -4,11 +4,10 @@
 package server
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -20,6 +19,8 @@ import (
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/sebest/xff"
 	"log/slog"
+
+	srp "mz.attahri.com/code/srp/v3"
 )
 
 const (
@@ -28,41 +29,50 @@ const (
 	JWTTokenDuration   = 24 * time.Hour
 	JWTIssuer          = "runwisp"
 	JWTAudience        = "runwisp-api"
-	MaxRequestBodySize = 1024 // 1 KB for auth requests
+	MaxRequestBodySize = 8 * 1024 // 8 KB — SRP exchanges carry hex-encoded big ints
 	authCookieName     = "runwisp_jwt"
 	authCookiePath     = "/api/"
-	nonceTTL           = 5 * time.Minute
+	srpSessionTTL      = 60 * time.Second
+	srpSessionCapacity = 1000
 	launchTicketTTL    = 60 * time.Second
 )
 
-// nonceStore holds single-use challenge nonces with TTL expiry.
-type nonceStore struct {
-	entries *expirable.LRU[string, time.Time]
+// srpSession holds the per-login server state between /srp/start and
+// /srp/finish. Single-use — popped from the store as soon as /finish
+// consumes it (whether the proof verifies or not).
+type srpSession struct {
+	server *srp.Server
 }
 
-func newNonceStore() *nonceStore {
-	return &nonceStore{
-		entries: expirable.NewLRU[string, time.Time](1000, nil, nonceTTL),
+// srpSessionStore is a TTL- and capacity-bounded map of in-flight SRP
+// handshakes. Bounding the capacity prevents a stranger from
+// memory-exhausting the daemon with bogus /srp/start calls; the
+// per-IP rate limit on the route is the primary defense.
+type srpSessionStore struct {
+	entries *expirable.LRU[string, *srpSession]
+}
+
+func newSRPSessionStore() *srpSessionStore {
+	return &srpSessionStore{
+		entries: expirable.NewLRU[string, *srpSession](srpSessionCapacity, nil, srpSessionTTL),
 	}
 }
 
-func (s *nonceStore) create() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	nonce := hex.EncodeToString(buf)
-	s.entries.Add(nonce, time.Now().Add(nonceTTL))
-	return nonce, nil
+func (s *srpSessionStore) put(id string, session *srpSession) {
+	s.entries.Add(id, session)
 }
 
-func (s *nonceStore) consume(nonce string) bool {
-	exp, ok := s.entries.Get(nonce)
-	if !ok || time.Now().After(exp) {
-		return false
+// pop atomically removes and returns a session by id. Single-use: a
+// second pop for the same id always returns nil. Combined with
+// expirable.LRU's TTL, this rules out replay both within and after the
+// session window.
+func (s *srpSessionStore) pop(id string) *srpSession {
+	v, ok := s.entries.Get(id)
+	if !ok {
+		return nil
 	}
-	s.entries.Remove(nonce)
-	return true
+	s.entries.Remove(id)
+	return v
 }
 
 // launchTicketStore holds single-use launch tickets with TTL expiry.
@@ -98,21 +108,26 @@ func (s *launchTicketStore) consume(ticket string) bool {
 	return true
 }
 
-// AuthService handles challenge-response authentication and JWT token issuance.
+// AuthService handles SRP authentication and JWT token issuance.
 type AuthService struct {
 	jwtAuth        *jwtauth.JWTAuth
-	password       string
-	nonces         *nonceStore
+	verifier       []byte
+	salt           []byte
+	srpSessions    *srpSessionStore
 	launchTickets  *launchTicketStore
 	trustedProxies *xff.Options
 }
 
-// NewAuthService creates an AuthService with the given password and JWT signing secret.
-// trustedProxies is consulted when deciding whether to honor X-Forwarded-Proto on
-// cookie issuance; pass nil if the daemon sits directly on the network.
-func NewAuthService(password, jwtSecret string, trustedProxies *xff.Options) *AuthService {
+// NewAuthService creates an AuthService with the given SRP credentials and
+// JWT signing secret. trustedProxies is consulted when deciding whether to
+// honor X-Forwarded-Proto on cookie issuance; pass nil if the daemon sits
+// directly on the network.
+func NewAuthService(verifier, salt []byte, jwtSecret string, trustedProxies *xff.Options) (*AuthService, error) {
 	if jwtSecret == "" {
-		panic("jwtSecret must not be empty; it should be resolved from the database before creating AuthService")
+		return nil, errors.New("jwtSecret must not be empty; resolve it from the database before creating AuthService")
+	}
+	if len(verifier) == 0 || len(salt) == 0 {
+		return nil, errors.New("SRP verifier and salt must be provided")
 	}
 
 	return &AuthService{
@@ -121,11 +136,12 @@ func NewAuthService(password, jwtSecret string, trustedProxies *xff.Options) *Au
 			jwt.WithIssuer(JWTIssuer),
 			jwt.WithAudience(JWTAudience),
 		),
-		password:       password,
-		nonces:         newNonceStore(),
+		verifier:       verifier,
+		salt:           salt,
+		srpSessions:    newSRPSessionStore(),
 		launchTickets:  newLaunchTicketStore(),
 		trustedProxies: trustedProxies,
-	}
+	}, nil
 }
 
 // JWTAuth returns the underlying jwtauth instance for use in middleware.
@@ -159,6 +175,22 @@ func (a *AuthService) setAuthCookie(w http.ResponseWriter, r *http.Request, toke
 	})
 }
 
+// IssueJWT mints a JWT with the standard daemon claims (iss, aud, iat, exp).
+// Used both by the SRP finish flow and by the local-JWT shortcut path.
+func (a *AuthService) IssueJWT(ttl time.Duration, extra map[string]any) (string, error) {
+	claims := map[string]any{
+		"exp": time.Now().Add(ttl).Unix(),
+		"iat": time.Now().Unix(),
+		"iss": JWTIssuer,
+		"aud": JWTAudience,
+	}
+	for k, v := range extra {
+		claims[k] = v
+	}
+	_, ts, err := a.jwtAuth.Encode(claims)
+	return ts, err
+}
+
 // registerAuthRoutes registers public auth endpoints as huma operations.
 func (srv *Server) registerAuthRoutes() {
 	// authStatus is a raw chi handler so it can inspect the request cookie.
@@ -182,63 +214,93 @@ func (srv *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleAuthChallenge is a raw chi handler (not huma) so it can sit under the
-// rate-limiter that also protects the auth POST, preventing nonce-store flooding.
-func (srv *Server) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
-	nonce, err := srv.auth.nonces.create()
+// handleSRPStart allocates a session and returns the SRP salt and server
+// ephemeral B. The client cannot send A yet because its 'x' value (and
+// therefore its proofs M1/M2) depends on the salt the server holds — A is
+// independent of salt but binding the rest of the handshake to a specific
+// A requires the salt first. So we hand the salt over in the response and
+// receive A together with M1 in /srp/finish.
+func (a *AuthService) handleSRPStart(resp http.ResponseWriter, req *http.Request) {
+	req.Body = http.MaxBytesReader(resp, req.Body, MaxRequestBodySize)
+
+	server, err := srp.NewServer(datadir.SRPParams(), datadir.SRPIdentity, a.salt, a.verifier)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Failed to generate challenge", err)
+		respondError(resp, http.StatusInternalServerError, "Failed to start SRP session", err)
 		return
 	}
-	respondJSON(w, http.StatusOK, AuthChallengeBody{Nonce: nonce})
+
+	sessionID, err := datadir.RandBase62(43)
+	if err != nil {
+		respondError(resp, http.StatusInternalServerError, "Failed to allocate session id", err)
+		return
+	}
+	a.srpSessions.put(sessionID, &srpSession{server: server})
+
+	respondJSON(resp, http.StatusOK, SRPStartResponseBody{
+		SessionID: sessionID,
+		Salt:      hex.EncodeToString(a.salt),
+		B:         hex.EncodeToString(server.B()),
+	})
 }
 
-// handleAuth stays as a raw chi handler because it needs httprate middleware
-// and sets cookies directly on the response writer.
-func (a *AuthService) handleAuth(resp http.ResponseWriter, req *http.Request) {
-	var reqBody struct {
-		Nonce    string `json:"nonce"`
-		Response string `json:"response"`
-	}
-
+// handleSRPFinish consumes the session, sets the client's ephemeral A,
+// verifies the client proof, issues the JWT, and returns the server proof
+// so the client can authenticate the daemon back. Failures destroy the
+// session — no second attempt against the same session id.
+func (a *AuthService) handleSRPFinish(resp http.ResponseWriter, req *http.Request) {
 	req.Body = http.MaxBytesReader(resp, req.Body, MaxRequestBodySize)
-	if err := json.NewDecoder(req.Body).Decode(&reqBody); err != nil {
-		slog.Warn("Failed to decode auth request", "err", err)
+	var body struct {
+		SessionID string `json:"sessionID"`
+		A         string `json:"A"`
+		M1        string `json:"M1"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		respondBadRequest(resp, "Invalid request")
 		return
 	}
 
-	if !a.nonces.consume(reqBody.Nonce) {
-		respondUnauthorized(resp, "Invalid or expired challenge")
+	session := a.srpSessions.pop(body.SessionID)
+	if session == nil {
+		respondUnauthorized(resp, "Unknown or expired session")
 		return
 	}
-
-	h := sha256.Sum256([]byte(a.password + ":" + reqBody.Nonce))
-	expected := hex.EncodeToString(h[:])
-
-	if subtle.ConstantTimeCompare([]byte(reqBody.Response), []byte(expected)) != 1 {
+	A, err := hex.DecodeString(body.A)
+	if err != nil || len(A) == 0 {
+		respondBadRequest(resp, "Invalid A")
+		return
+	}
+	if err := session.server.SetA(A); err != nil {
+		// SetA validates A; an invalid public ephemeral is a client error.
+		respondBadRequest(resp, "Invalid A")
+		return
+	}
+	M1, err := hex.DecodeString(body.M1)
+	if err != nil {
+		respondUnauthorized(resp, "Invalid M1")
+		return
+	}
+	ok, err := session.server.CheckM1(M1)
+	if err != nil || !ok {
 		respondUnauthorized(resp, "Invalid password")
 		return
 	}
+	M2, err := session.server.ComputeM2()
+	if err != nil {
+		respondError(resp, http.StatusInternalServerError, "Failed to compute server proof", err)
+		return
+	}
 
-	_, tokenString, err := a.jwtAuth.Encode(map[string]any{
-		"exp": time.Now().Add(JWTTokenDuration).Unix(),
-		"iat": time.Now().Unix(),
-		"iss": JWTIssuer,
-		"aud": JWTAudience,
-	})
-
+	tokenString, err := a.IssueJWT(JWTTokenDuration, nil)
 	if err != nil {
 		respondError(resp, http.StatusInternalServerError, "Failed to generate token", err)
 		return
 	}
 
 	a.setAuthCookie(resp, req, tokenString, JWTTokenDuration)
-	resp.Header().Set("Content-Type", "application/json")
-	resp.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(resp).Encode(map[string]string{"token": tokenString}); err != nil {
-		slog.Error("Failed to encode auth response", "err", err)
-	}
+	respondJSON(resp, http.StatusOK, SRPFinishResponseBody{
+		M2:    hex.EncodeToString(M2),
+		Token: tokenString,
+	})
 }
 
 // CreateLaunchTicket generates a single-use, short-lived launch ticket.
@@ -305,12 +367,7 @@ func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, tokenString, err := srv.auth.jwtAuth.Encode(map[string]any{
-		"exp": time.Now().Add(JWTTokenDuration).Unix(),
-		"iat": time.Now().Unix(),
-		"iss": JWTIssuer,
-		"aud": JWTAudience,
-	})
+	tokenString, err := srv.auth.IssueJWT(JWTTokenDuration, nil)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate token", err)
 		return
@@ -332,4 +389,15 @@ func sanitizeLaunchRedirect(target string) string {
 		return "/"
 	}
 	return target
+}
+
+// formatSRPError centralises the slog of upstream srp library failures so
+// caller code stays terse. Currently unused but reserved for richer error
+// reporting before 1.0.
+func formatSRPError(stage string, err error) string {
+	if err == nil {
+		return ""
+	}
+	slog.Debug("SRP stage failed", "stage", stage, "err", err)
+	return fmt.Sprintf("%s failed", stage)
 }

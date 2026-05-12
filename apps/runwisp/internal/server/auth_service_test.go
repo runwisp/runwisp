@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -15,79 +14,138 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/datadir"
+	srp "mz.attahri.com/code/srp/v3"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewAuthService_PanicsOnEmptySecret(t *testing.T) {
-	assert.Panics(t, func() {
-		NewAuthService("pass", "", nil)
-	})
+const testPassword = "test-password"
+
+// newAuthFixture builds an AuthService bound to a fresh SRP credential pair
+// derived from testPassword. Returned alongside the salt so tests can stand
+// up matching clients without recomputing the credentials inline.
+func newAuthFixture(t *testing.T) (*AuthService, []byte) {
+	t.Helper()
+	salt, err := datadir.GenerateSRPSalt()
+	require.NoError(t, err)
+	verifier, err := datadir.DeriveSRPVerifier(testPassword, salt)
+	require.NoError(t, err)
+	auth, err := NewAuthService(verifier, salt, "test-jwt-secret", nil)
+	require.NoError(t, err)
+	return auth, salt
 }
 
-func TestNewAuthService_ExplicitSecret(t *testing.T) {
-	auth := NewAuthService("pass", "my-secret", nil)
+func TestNewAuthService_RejectsEmptyJWTSecret(t *testing.T) {
+	salt, _ := datadir.GenerateSRPSalt()
+	verifier, _ := datadir.DeriveSRPVerifier(testPassword, salt)
+	_, err := NewAuthService(verifier, salt, "", nil)
+	assert.Error(t, err)
+}
+
+func TestNewAuthService_RejectsEmptyVerifier(t *testing.T) {
+	_, err := NewAuthService(nil, []byte("salt"), "jwt", nil)
+	assert.Error(t, err)
+}
+
+func TestNewAuthService_Ok(t *testing.T) {
+	auth, _ := newAuthFixture(t)
 	assert.NotNil(t, auth.JWTAuth())
 }
 
-func TestNonceStore_CreateAndConsume(t *testing.T) {
-	store := newNonceStore()
-
-	nonce, err := store.create()
-	require.NoError(t, err)
-	assert.Len(t, nonce, 64) // 32 bytes hex-encoded
-
-	// First consume succeeds
-	assert.True(t, store.consume(nonce))
-	// Second consume fails (single-use)
-	assert.False(t, store.consume(nonce))
-}
-
-func TestNonceStore_InvalidNonce(t *testing.T) {
-	store := newNonceStore()
-	assert.False(t, store.consume("nonexistent"))
-}
-
-func TestNonceStore_MultipleConcurrentNonces(t *testing.T) {
-	store := newNonceStore()
-
-	nonce1, err := store.create()
-	require.NoError(t, err)
-	nonce2, err := store.create()
-	require.NoError(t, err)
-	assert.NotEqual(t, nonce1, nonce2)
-
-	// Both should be independently consumable
-	assert.True(t, store.consume(nonce1))
-	assert.True(t, store.consume(nonce2))
-}
-
-func computeChallenge(password, nonce string) string {
-	h := sha256.Sum256([]byte(password + ":" + nonce))
-	return hex.EncodeToString(h[:])
-}
-
-func TestHandleAuth_Success(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret", nil)
-
-	nonce, err := auth.nonces.create()
+func TestSRPSessionStore_PopIsSingleUse(t *testing.T) {
+	store := newSRPSessionStore()
+	srv, err := srp.NewServer(datadir.SRPParams(), datadir.SRPIdentity,
+		mustSalt(t), mustVerifier(t, "x", mustSalt(t)))
 	require.NoError(t, err)
 
-	body := `{"nonce":"` + nonce + `","response":"` + computeChallenge("secret", nonce) + `"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+	store.put("sess-1", &srpSession{server: srv})
+	assert.NotNil(t, store.pop("sess-1"))
+	assert.Nil(t, store.pop("sess-1"), "second pop must miss")
+}
 
-	auth.handleAuth(w, req)
+func mustSalt(t *testing.T) []byte {
+	t.Helper()
+	s, err := datadir.GenerateSRPSalt()
+	require.NoError(t, err)
+	return s
+}
 
-	assert.Equal(t, http.StatusOK, w.Code)
+func mustVerifier(t *testing.T, password string, salt []byte) []byte {
+	t.Helper()
+	v, err := datadir.DeriveSRPVerifier(password, salt)
+	require.NoError(t, err)
+	return v
+}
 
-	var resp map[string]string
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
-	assert.NotEmpty(t, resp["token"])
+// driveSRPHandshake runs the full /srp/start + /srp/finish flow against the
+// supplied AuthService using the given password, and returns the response
+// bodies. Tests use this to assert success and to introspect the recorder
+// (cookies, statuses) after.
+type srpResult struct {
+	StartCode  int
+	FinishCode int
+	StartBody  SRPStartResponseBody
+	FinishBody SRPFinishResponseBody
+	FinishRec  *httptest.ResponseRecorder
+}
 
-	// Verify cookie is set
-	cookies := w.Result().Cookies()
+func driveSRP(t *testing.T, auth *AuthService, password string) srpResult {
+	t.Helper()
+
+	startReq := httptest.NewRequest("POST", "/api/auth/srp/start", strings.NewReader(`{}`))
+	startReq.Header.Set("Content-Type", "application/json")
+	startRec := httptest.NewRecorder()
+	auth.handleSRPStart(startRec, startReq)
+
+	res := srpResult{StartCode: startRec.Code, FinishRec: nil}
+	if startRec.Code != http.StatusOK {
+		return res
+	}
+	require.NoError(t, json.NewDecoder(startRec.Body).Decode(&res.StartBody))
+
+	salt, err := hex.DecodeString(res.StartBody.Salt)
+	require.NoError(t, err)
+	B, err := hex.DecodeString(res.StartBody.B)
+	require.NoError(t, err)
+
+	client, err := srp.NewClient(datadir.SRPParams(), datadir.SRPIdentity, password, salt)
+	require.NoError(t, err)
+	require.NoError(t, client.SetB(B))
+	M1, err := client.ComputeM1()
+	require.NoError(t, err)
+
+	finishBody := map[string]string{
+		"sessionID": res.StartBody.SessionID,
+		"A":         hex.EncodeToString(client.A()),
+		"M1":        hex.EncodeToString(M1),
+	}
+	bodyJSON, _ := json.Marshal(finishBody)
+
+	finishReq := httptest.NewRequest("POST", "/api/auth/srp/finish", strings.NewReader(string(bodyJSON)))
+	finishReq.Header.Set("Content-Type", "application/json")
+	finishRec := httptest.NewRecorder()
+	auth.handleSRPFinish(finishRec, finishReq)
+
+	res.FinishCode = finishRec.Code
+	res.FinishRec = finishRec
+	if finishRec.Code == http.StatusOK {
+		require.NoError(t, json.NewDecoder(finishRec.Body).Decode(&res.FinishBody))
+	}
+	return res
+}
+
+func TestSRPHandshake_Success(t *testing.T) {
+	auth, _ := newAuthFixture(t)
+	res := driveSRP(t, auth, testPassword)
+
+	require.Equal(t, http.StatusOK, res.StartCode)
+	require.Equal(t, http.StatusOK, res.FinishCode)
+	assert.NotEmpty(t, res.FinishBody.Token)
+	assert.NotEmpty(t, res.FinishBody.M2)
+
+	cookies := res.FinishRec.Result().Cookies()
 	var found *http.Cookie
 	for _, c := range cookies {
 		if c.Name == authCookieName {
@@ -102,111 +160,114 @@ func TestHandleAuth_Success(t *testing.T) {
 	assert.Equal(t, int(JWTTokenDuration.Seconds()), found.MaxAge)
 }
 
-func TestHandleAuth_WrongPassword(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret", nil)
+func TestSRPHandshake_WrongPassword(t *testing.T) {
+	auth, _ := newAuthFixture(t)
+	res := driveSRP(t, auth, "wrong-password")
+	assert.Equal(t, http.StatusUnauthorized, res.FinishCode)
+}
 
-	nonce, err := auth.nonces.create()
+func TestSRPHandshake_ServerProofVerifiesOnClient(t *testing.T) {
+	auth, _ := newAuthFixture(t)
+
+	startReq := httptest.NewRequest("POST", "/api/auth/srp/start", strings.NewReader(`{}`))
+	startReq.Header.Set("Content-Type", "application/json")
+	startRec := httptest.NewRecorder()
+	auth.handleSRPStart(startRec, startReq)
+	require.Equal(t, http.StatusOK, startRec.Code)
+
+	var start SRPStartResponseBody
+	require.NoError(t, json.NewDecoder(startRec.Body).Decode(&start))
+	salt, _ := hex.DecodeString(start.Salt)
+	B, _ := hex.DecodeString(start.B)
+
+	client, err := srp.NewClient(datadir.SRPParams(), datadir.SRPIdentity, testPassword, salt)
 	require.NoError(t, err)
+	require.NoError(t, client.SetB(B))
+	M1, _ := client.ComputeM1()
 
-	body := `{"nonce":"` + nonce + `","response":"` + computeChallenge("wrong-password", nonce) + `"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+	finishBody := map[string]string{
+		"sessionID": start.SessionID,
+		"A":         hex.EncodeToString(client.A()),
+		"M1":        hex.EncodeToString(M1),
+	}
+	bodyJSON, _ := json.Marshal(finishBody)
+	finishReq := httptest.NewRequest("POST", "/api/auth/srp/finish", strings.NewReader(string(bodyJSON)))
+	finishReq.Header.Set("Content-Type", "application/json")
+	finishRec := httptest.NewRecorder()
+	auth.handleSRPFinish(finishRec, finishReq)
+	require.Equal(t, http.StatusOK, finishRec.Code)
 
-	auth.handleAuth(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), "Invalid password")
-}
-
-func TestHandleAuth_InvalidNonce(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret", nil)
-
-	body := `{"nonce":"deadbeef","response":"anything"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	auth.handleAuth(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), "Invalid or expired challenge")
-}
-
-func TestHandleAuth_NonceReplay(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret", nil)
-
-	nonce, err := auth.nonces.create()
+	var finish SRPFinishResponseBody
+	require.NoError(t, json.NewDecoder(finishRec.Body).Decode(&finish))
+	M2, err := hex.DecodeString(finish.M2)
 	require.NoError(t, err)
-	response := computeChallenge("secret", nonce)
-
-	// First attempt should succeed
-	body := `{"nonce":"` + nonce + `","response":"` + response + `"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	auth.handleAuth(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	// Replay the same nonce — should fail
-	req = httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	auth.handleAuth(w, req)
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
-func TestHandleAuth_MalformedBody(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret", nil)
-
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader("not-json"))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	auth.handleAuth(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-func TestHandleAuth_OversizedBody(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret", nil)
-
-	// MaxRequestBodySize is 1024 bytes; send a body larger than that
-	bigBody := strings.Repeat("x", MaxRequestBodySize+100)
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(bigBody))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	auth.handleAuth(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-func TestHandleAuth_JWTContainsExpAndIat(t *testing.T) {
-	auth := NewAuthService("secret", "test-jwt-secret", nil)
-
-	nonce, err := auth.nonces.create()
+	ok, err := client.CheckM2(M2)
 	require.NoError(t, err)
+	assert.True(t, ok, "client must verify the server's M2")
+}
 
-	body := `{"nonce":"` + nonce + `","response":"` + computeChallenge("secret", nonce) + `"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+func TestSRPHandshake_ReplayedSessionIDRejected(t *testing.T) {
+	auth, _ := newAuthFixture(t)
 
-	auth.handleAuth(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
+	startReq := httptest.NewRequest("POST", "/api/auth/srp/start", strings.NewReader(`{}`))
+	startRec := httptest.NewRecorder()
+	auth.handleSRPStart(startRec, startReq)
+	require.Equal(t, http.StatusOK, startRec.Code)
+	var start SRPStartResponseBody
+	require.NoError(t, json.NewDecoder(startRec.Body).Decode(&start))
+	salt, _ := hex.DecodeString(start.Salt)
+	B, _ := hex.DecodeString(start.B)
+	client, _ := srp.NewClient(datadir.SRPParams(), datadir.SRPIdentity, testPassword, salt)
+	_ = client.SetB(B)
+	M1, _ := client.ComputeM1()
+	finishBody := map[string]string{
+		"sessionID": start.SessionID,
+		"A":         hex.EncodeToString(client.A()),
+		"M1":        hex.EncodeToString(M1),
+	}
+	bodyJSON, _ := json.Marshal(finishBody)
+	// First finish: success.
+	req1 := httptest.NewRequest("POST", "/api/auth/srp/finish", strings.NewReader(string(bodyJSON)))
+	rec1 := httptest.NewRecorder()
+	auth.handleSRPFinish(rec1, req1)
+	assert.Equal(t, http.StatusOK, rec1.Code)
 
-	var resp map[string]string
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	// Replay: same session ID + M1, server has popped the session.
+	req2 := httptest.NewRequest("POST", "/api/auth/srp/finish", strings.NewReader(string(bodyJSON)))
+	rec2 := httptest.NewRecorder()
+	auth.handleSRPFinish(rec2, req2)
+	assert.Equal(t, http.StatusUnauthorized, rec2.Code)
+}
 
-	// Decode the token to verify it has exp and iat
-	tok, err := auth.jwtAuth.Decode(resp["token"])
+func TestSRPHandshake_MalformedBody(t *testing.T) {
+	auth, _ := newAuthFixture(t)
+	req := httptest.NewRequest("POST", "/api/auth/srp/finish", strings.NewReader("not-json"))
+	rec := httptest.NewRecorder()
+	auth.handleSRPFinish(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestSRPHandshake_UnknownSessionID(t *testing.T) {
+	auth, _ := newAuthFixture(t)
+	body := `{"sessionID":"does-not-exist","A":"deadbeef","M1":"deadbeef"}`
+	req := httptest.NewRequest("POST", "/api/auth/srp/finish", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	auth.handleSRPFinish(rec, req)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestSRPHandshake_TokenContainsExpAndIat(t *testing.T) {
+	auth, _ := newAuthFixture(t)
+	res := driveSRP(t, auth, testPassword)
+	require.Equal(t, http.StatusOK, res.FinishCode)
+
+	tok, err := auth.jwtAuth.Decode(res.FinishBody.Token)
 	require.NoError(t, err)
 	exp, ok := tok.Expiration()
-	assert.True(t, ok, "token should have expiration")
+	assert.True(t, ok)
 	assert.False(t, exp.IsZero())
 	iat, ok := tok.IssuedAt()
-	assert.True(t, ok, "token should have issued-at")
+	assert.True(t, ok)
 	assert.False(t, iat.IsZero())
 }
 
@@ -247,9 +308,9 @@ func TestProtectedRoute_RejectsTokenWithWrongIssuer(t *testing.T) {
 }
 
 func TestSetAuthCookie_HTTP(t *testing.T) {
-	auth := NewAuthService("pass", "test-jwt-secret", nil)
+	auth, _ := newAuthFixture(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r := httptest.NewRequest("POST", "/api/auth/srp/finish", nil)
 	auth.setAuthCookie(w, r, "test-token", JWTTokenDuration)
 
 	cookies := w.Result().Cookies()
@@ -265,12 +326,9 @@ func TestSetAuthCookie_HTTP(t *testing.T) {
 }
 
 func TestSetAuthCookie_XForwardedProtoFromUntrustedClientIgnored(t *testing.T) {
-	// With no trusted proxies configured, X-Forwarded-Proto must be ignored
-	// — otherwise any client could spoof "https" and trick us into setting
-	// the Secure flag on a cookie that travels in cleartext.
-	auth := NewAuthService("pass", "test-jwt-secret", nil)
+	auth, _ := newAuthFixture(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r := httptest.NewRequest("POST", "/api/auth/srp/finish", nil)
 	r.RemoteAddr = "203.0.113.50:1234"
 	r.Header.Set("X-Forwarded-Proto", "https")
 	auth.setAuthCookie(w, r, "test-token", JWTTokenDuration)
@@ -283,10 +341,13 @@ func TestSetAuthCookie_XForwardedProtoFromUntrustedClientIgnored(t *testing.T) {
 func TestSetAuthCookie_XForwardedProtoFromTrustedProxyHonored(t *testing.T) {
 	trusted, err := parseTrustedProxies("127.0.0.1/32")
 	require.NoError(t, err)
-	auth := NewAuthService("pass", "test-jwt-secret", trusted)
+	salt, _ := datadir.GenerateSRPSalt()
+	verifier, _ := datadir.DeriveSRPVerifier(testPassword, salt)
+	auth, err := NewAuthService(verifier, salt, "test-jwt-secret", trusted)
+	require.NoError(t, err)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r := httptest.NewRequest("POST", "/api/auth/srp/finish", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.Header.Set("X-Forwarded-Proto", "https")
 	auth.setAuthCookie(w, r, "test-token", JWTTokenDuration)
@@ -330,7 +391,7 @@ func TestLaunchTicketStore_InvalidTicket(t *testing.T) {
 }
 
 func TestAuthService_CreateLaunchTicket(t *testing.T) {
-	auth := NewAuthService("pass", "test-jwt-secret", nil)
+	auth, _ := newAuthFixture(t)
 
 	ticket, err := auth.CreateLaunchTicket()
 	require.NoError(t, err)
@@ -362,14 +423,9 @@ func TestIsLoopbackRequest(t *testing.T) {
 }
 
 func TestIsLoopbackRequest_UsesPeerAddrContext(t *testing.T) {
-	// Simulates what happens when middleware.RealIP overwrites RemoteAddr
-	// with a spoofed X-Real-IP header. The savePeerAddr middleware stores
-	// the original TCP address in context, so isLoopbackRequest should use
-	// that instead of the spoofed RemoteAddr.
 	r := httptest.NewRequest("GET", "/", nil)
-	r.RemoteAddr = "127.0.0.1:1234" // After RealIP spoofing
+	r.RemoteAddr = "127.0.0.1:1234"
 
-	// Context has the real peer address (set by savePeerAddr before RealIP)
 	ctx := context.WithValue(r.Context(), peerAddrContextKey, "203.0.113.50:5678")
 	r = r.WithContext(ctx)
 
@@ -379,7 +435,7 @@ func TestIsLoopbackRequest_UsesPeerAddrContext(t *testing.T) {
 
 func TestIsLoopbackRequest_ContextLoopbackAllowed(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
-	r.RemoteAddr = "203.0.113.50:5678" // After RealIP might change it
+	r.RemoteAddr = "203.0.113.50:5678"
 
 	ctx := context.WithValue(r.Context(), peerAddrContextKey, "127.0.0.1:1234")
 	r = r.WithContext(ctx)
@@ -405,7 +461,6 @@ func TestHandleLaunchTicket_Success(t *testing.T) {
 	assert.Equal(t, http.StatusSeeOther, w.Code)
 	assert.Equal(t, "/", w.Header().Get("Location"))
 
-	// Verify auth cookie was set.
 	var cookie *http.Cookie
 	for _, c := range w.Result().Cookies() {
 		if c.Name == authCookieName {
@@ -424,14 +479,12 @@ func TestHandleLaunchTicket_SingleUse(t *testing.T) {
 	ticket, err := s.auth.CreateLaunchTicket()
 	require.NoError(t, err)
 
-	// First request succeeds.
 	req := httptest.NewRequest("GET", "/api/auth/launch?ticket="+ticket, nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusSeeOther, w.Code)
 
-	// Second request with same ticket fails.
 	req = httptest.NewRequest("GET", "/api/auth/launch?ticket="+ticket, nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	w = httptest.NewRecorder()
@@ -439,10 +492,6 @@ func TestHandleLaunchTicket_SingleUse(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-// TestHandleLaunchTicket_RedirectsToSafePath ensures the optional `redirect`
-// query parameter steers the post-launch redirect at a same-origin path —
-// used by the TUI's "download log" action to drop the operator straight on
-// the raw-log endpoint after the cookie is set.
 func TestHandleLaunchTicket_RedirectsToSafePath(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -532,7 +581,6 @@ func TestAuthStatus_Unauthenticated(t *testing.T) {
 func TestAuthStatus_AuthenticatedViaCookie(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	// First, get a valid JWT by redeeming a launch ticket.
 	ticket, err := s.auth.CreateLaunchTicket()
 	require.NoError(t, err)
 
@@ -542,7 +590,6 @@ func TestAuthStatus_AuthenticatedViaCookie(t *testing.T) {
 	s.router.ServeHTTP(launchW, launchReq)
 	require.Equal(t, http.StatusSeeOther, launchW.Code)
 
-	// Extract the cookie from the launch response.
 	var authCookie *http.Cookie
 	for _, c := range launchW.Result().Cookies() {
 		if c.Name == authCookieName {
@@ -552,7 +599,6 @@ func TestAuthStatus_AuthenticatedViaCookie(t *testing.T) {
 	}
 	require.NotNil(t, authCookie)
 
-	// Now check auth status with the cookie.
 	statusReq := httptest.NewRequest("GET", "/api/auth/status", nil)
 	statusReq.AddCookie(authCookie)
 	statusW := httptest.NewRecorder()

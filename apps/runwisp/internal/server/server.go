@@ -59,7 +59,8 @@ type Options struct {
 	Port            int
 	LogDir          string
 	EventBus        events.EventBus
-	Password        string            // Authentication password (required)
+	SRPVerifier     []byte            // SRP verifier (required)
+	SRPSalt         []byte            // SRP salt that clients receive at login
 	JWTSecret       string            // JWT signing secret (persisted in DB)
 	DaemonInfo      *model.DaemonInfo // Static identity/config info for /api/info
 	DaemonLogBuffer *DaemonLogBuffer  // Ring buffer for daemon log streaming (optional)
@@ -67,8 +68,8 @@ type Options struct {
 }
 
 func New(opts Options) (*Server, error) {
-	if opts.Password == "" {
-		return nil, errors.New("password must be provided to start the web server")
+	if len(opts.SRPVerifier) == 0 || len(opts.SRPSalt) == 0 {
+		return nil, errors.New("SRP verifier and salt must be provided to start the web server")
 	}
 
 	trustedProxies, err := parseTrustedProxies(os.Getenv("RUNWISP_TRUST_PROXY"))
@@ -76,7 +77,10 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("parse trusted proxies: %w", err)
 	}
 
-	authSvc := NewAuthService(opts.Password, opts.JWTSecret, trustedProxies)
+	authSvc, err := NewAuthService(opts.SRPVerifier, opts.SRPSalt, opts.JWTSecret, trustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("init auth service: %w", err)
+	}
 
 	router := chi.NewRouter()
 

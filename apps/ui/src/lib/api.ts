@@ -11,11 +11,88 @@ import { browserTokenStorage, browserAuthEventBus } from "$lib/adapters/browser"
 import { authStore } from "./stores/auth.svelte";
 import { logPageSchema, type LogPage } from "./logs";
 import {
-    authChallengeResponseSchema,
-    authLoginResponseSchema,
     authStatusResponseSchema,
+    srpStartResponseSchema,
+    srpFinishResponseSchema,
     type AuthStatusResponse,
 } from "./types";
+import { Client as SRPClient, RFC5054Group4096, type Params } from "@mzattahri/srp";
+
+// SRP_IDENTITY must match the Go-side datadir.SRPIdentity constant. RunWisp
+// has no user model — the SRP "username" is a placeholder needed only to bind
+// the verifier and proofs to a constant value.
+const SRP_IDENTITY = "runwisp";
+
+// SRP_PBKDF2_ITERATIONS must match the Go-side datadir.pbkdf2Iterations
+// constant. Changing it on either side breaks existing verifiers.
+const SRP_PBKDF2_ITERATIONS = 600_000;
+
+function concatU8(...parts: Uint8Array[]): Uint8Array {
+    const len = parts.reduce((n, p) => n + p.length, 0);
+    const out = new Uint8Array(len);
+    let off = 0;
+    for (const p of parts) {
+        out.set(p, off);
+        off += p.length;
+    }
+    return out;
+}
+
+function hexToU8(hex: string): Uint8Array {
+    if (hex.length % 2 !== 0) throw new Error("invalid hex");
+    const out = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < out.length; i++) {
+        out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    }
+    return out;
+}
+
+function u8ToHex(buf: Uint8Array): string {
+    return Array.from(buf)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+}
+
+// srpParams mirrors the Go-side datadir.srpParams: RFC5054 group 16 (4096-bit),
+// SHA-256 hash, PBKDF2-SHA256 (600 000 iter) KDF. Drift on either side breaks
+// authentication.
+const srpParams: Params = {
+    name: "DH16-SHA256-PBKDF2-600k",
+    group: RFC5054Group4096,
+    hash: async (...inputs: Uint8Array[]) => {
+        const data = concatU8(...inputs);
+        // Copy into a fresh ArrayBuffer so WebCrypto's BufferSource type
+        // accepts it across all browsers; some Uint8Array variants are typed
+        // over SharedArrayBuffer which subtle.digest disallows.
+        const buf = new ArrayBuffer(data.byteLength);
+        new Uint8Array(buf).set(data);
+        return new Uint8Array(await crypto.subtle.digest("SHA-256", buf));
+    },
+    kdf: async (_username: string, password: string, salt: Uint8Array) => {
+        // Match the Go KDF exactly: ignore username, pass password bytes
+        // (not username:password) into PBKDF2-SHA256 with the server-provided
+        // salt and a fixed iteration count.
+        const pwBytes = new TextEncoder().encode(password);
+        const pwBuf = new ArrayBuffer(pwBytes.byteLength);
+        new Uint8Array(pwBuf).set(pwBytes);
+        const passwordKey = await crypto.subtle.importKey("raw", pwBuf, { name: "PBKDF2" }, false, [
+            "deriveBits",
+        ]);
+        const saltBuf = new ArrayBuffer(salt.byteLength);
+        new Uint8Array(saltBuf).set(salt);
+        const bits = await crypto.subtle.deriveBits(
+            {
+                name: "PBKDF2",
+                hash: "SHA-256",
+                salt: saltBuf,
+                iterations: SRP_PBKDF2_ITERATIONS,
+            },
+            passwordKey,
+            32 * 8,
+        );
+        return new Uint8Array(bits);
+    },
+};
 
 export * from "./types";
 
@@ -62,27 +139,45 @@ function authHeader(): string | undefined {
 
 export const authApi = {
     login: async (password: string): Promise<{ token: string }> => {
-        const challengeRes = await fetch(`${API_BASE_URL}/api/auth/challenge`);
-        if (!challengeRes.ok) throw new Error("Failed to get auth challenge");
-        const { nonce } = authChallengeResponseSchema.parse(await challengeRes.json());
-
-        const enc = new TextEncoder();
-        const hashBuf = await globalThis.crypto.subtle.digest(
-            "SHA-256",
-            enc.encode(password + ":" + nonce),
-        );
-        const response = Array.from(new Uint8Array(hashBuf))
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
-
-        const res = await fetch(`${API_BASE_URL}/api/auth`, {
+        // 1. Ask the server for a fresh SRP session: salt, B, sessionID.
+        const startRes = await fetch(`${API_BASE_URL}/api/auth/srp/start`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nonce, response }),
+            body: "{}",
         });
-        if (!res.ok) throw new Error("Authentication failed");
+        if (!startRes.ok) throw new Error("Failed to start SRP session");
+        const start = srpStartResponseSchema.parse(await startRes.json());
 
-        return authLoginResponseSchema.parse(await res.json());
+        // 2. PBKDF2-stretch the password against the server's salt (~300–500ms
+        //    in modern browsers), construct an SRP client, and compute M1.
+        const salt = hexToU8(start.salt);
+        const B = hexToU8(start.B);
+        const srpClient = await SRPClient.initialize(srpParams, SRP_IDENTITY, password, salt);
+        await srpClient.setB(B);
+        const M1 = srpClient.M1;
+        const A = srpClient.A;
+
+        // 3. Send A + M1 against the sessionID. Receive M2 + JWT.
+        const finishRes = await fetch(`${API_BASE_URL}/api/auth/srp/finish`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sessionID: start.sessionID,
+                A: u8ToHex(A),
+                M1: u8ToHex(M1),
+            }),
+        });
+        if (!finishRes.ok) throw new Error("Authentication failed");
+        const finish = srpFinishResponseSchema.parse(await finishRes.json());
+
+        // 4. Verify the server's proof M2 — mutual authentication. If this
+        //    fails the daemon is impersonating, never use the token.
+        const M2 = hexToU8(finish.M2);
+        if (!srpClient.checkM2(M2)) {
+            throw new Error("Server proof verification failed");
+        }
+
+        return { token: finish.token };
     },
 
     status: async (): Promise<AuthStatusResponse> => {

@@ -5,6 +5,7 @@ package apiclient
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,9 +13,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	srp "mz.attahri.com/code/srp/v3"
 )
 
 func TestEncodeRunsParams(t *testing.T) {
@@ -67,25 +70,61 @@ func TestEncodeRunsParams(t *testing.T) {
 	}
 }
 
-func TestAuthenticate(t *testing.T) {
-	nonce := "test-nonce-123"
+// startStubSRPServer stands up an SRP-aware HTTP test server that uses the
+// supplied password to derive verifier+salt. Tests exercise the full
+// /srp/start + /srp/finish flow without spinning up the full daemon stack.
+func startStubSRPServer(t *testing.T, password string) *httptest.Server {
+	t.Helper()
+	salt, err := datadir.GenerateSRPSalt()
+	require.NoError(t, err)
+	verifier, err := datadir.DeriveSRPVerifier(password, salt)
+	require.NoError(t, err)
+	var session *srp.Server
+	var sessionID string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/auth/challenge":
-			json.NewEncoder(w).Encode(map[string]string{"nonce": nonce})
-		case "/api/auth":
-			var body map[string]string
-			json.NewDecoder(r.Body).Decode(&body)
-			if body["nonce"] != nonce {
-				http.Error(w, "bad nonce", http.StatusBadRequest)
+		case "/api/auth/srp/start":
+			s, err := srp.NewServer(datadir.SRPParams(), datadir.SRPIdentity, salt, verifier)
+			require.NoError(t, err)
+			session = s
+			sessionID = "test-session"
+			json.NewEncoder(w).Encode(map[string]string{
+				"sessionID": sessionID,
+				"salt":      hex.EncodeToString(salt),
+				"B":         hex.EncodeToString(s.B()),
+			})
+		case "/api/auth/srp/finish":
+			var body struct {
+				SessionID, A, M1 string
+			}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			if body.SessionID != sessionID {
+				http.Error(w, "unknown session", http.StatusUnauthorized)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]string{"token": "jwt-token-xyz"})
+			A, _ := hex.DecodeString(body.A)
+			require.NoError(t, session.SetA(A))
+			M1, _ := hex.DecodeString(body.M1)
+			ok, _ := session.CheckM1(M1)
+			if !ok {
+				http.Error(w, "bad proof", http.StatusUnauthorized)
+				return
+			}
+			M2, _ := session.ComputeM2()
+			json.NewEncoder(w).Encode(map[string]string{
+				"M2":    hex.EncodeToString(M2),
+				"token": "jwt-token-xyz",
+			})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
+	return srv
+}
+
+func TestAuthenticate(t *testing.T) {
+	srv := startStubSRPServer(t, "my-password")
 	defer srv.Close()
 
 	c := New(srv.URL, "my-password")
@@ -96,7 +135,7 @@ func TestAuthenticate(t *testing.T) {
 	assert.True(t, c.IsAuthenticated())
 }
 
-func TestAuthenticate_ChallengeError(t *testing.T) {
+func TestAuthenticate_StartError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 	}))
@@ -105,21 +144,14 @@ func TestAuthenticate_ChallengeError(t *testing.T) {
 	c := New(srv.URL, "pw")
 	err := c.Authenticate()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "auth challenge")
+	assert.Contains(t, err.Error(), "auth srp start")
 }
 
-func TestAuthenticate_AuthError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/auth/challenge":
-			json.NewEncoder(w).Encode(map[string]string{"nonce": "n"})
-		case "/api/auth":
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-		}
-	}))
+func TestAuthenticate_WrongPassword(t *testing.T) {
+	srv := startStubSRPServer(t, "right-password")
 	defer srv.Close()
 
-	c := New(srv.URL, "pw")
+	c := New(srv.URL, "wrong-password")
 	err := c.Authenticate()
 	assert.ErrorIs(t, err, ErrUnauthorized)
 }
@@ -133,6 +165,18 @@ func TestAuthenticate_RateLimited(t *testing.T) {
 	c := New(srv.URL, "pw")
 	err := c.Authenticate()
 	assert.ErrorIs(t, err, ErrRateLimited)
+}
+
+func TestBearerTokenInjection(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer pre-issued-token", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "", WithBearerToken("pre-issued-token"))
+	assert.True(t, c.IsAuthenticated())
+	require.NoError(t, c.doJSON("GET", "/api/anything", nil, nil))
 }
 
 func TestListTasks(t *testing.T) {

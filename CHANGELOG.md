@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- **Login protocol replaced with SRP (RFC 5054).** The daemon no longer stores your password — only an SRP verifier and salt. The Web UI's login flow takes ~300–500ms longer the first time (PBKDF2-SHA256 stretch on 600 000 iterations) and shows a "Stretching key…" spinner. The auto-generated password is now displayed **exactly once** on first boot; save it. **External clients that drove the old CHAP endpoints (`GET /api/auth/challenge`, `POST /api/auth`) must update** — use `runwisp auth-token --remote <url> --password env` or implement the new `/api/auth/srp/start` + `/api/auth/srp/finish` exchange. Web sessions issued by the old binary are invalidated on first boot with the new binary.
+
+- **Plaintext `password` row removed from SQLite.** First boot with the new binary refuses to start if a legacy `password` row is present; delete the row (or set `RUNWISP_PASSWORD` to a known value) and try again. No silent migration.
+
 ### Added
 
-- **Optional at-rest encryption for daemon secrets (`RUNWISP_DATA_KEY`).** Set `RUNWISP_DATA_KEY` to a base64-encoded 32-byte key and the daemon AES-256-GCM-encrypts every secret row in SQLite (password, JWT signing secret, env-password fingerprint) under an `enc:v1:` prefix. Without the key, file perms (`0700` data dir, `0600` `runwisp.db`) remain the only protection — same as before. Generate a key with `runwisp keygen` and store it in your secrets manager. **Losing the key bricks the data directory.** Existing data dirs are migrated transparently on first boot when the key is provided; unsetting the key with encrypted rows present causes the daemon to refuse to start.
+- **Optional at-rest encryption for daemon secrets (`RUNWISP_DATA_KEY`).** Set `RUNWISP_DATA_KEY` to a base64-encoded 32-byte key and the daemon AES-256-GCM-encrypts every secret row in SQLite (SRP verifier, JWT signing secret, env-password fingerprint) under an `enc:v1:` prefix. Without the key, file perms (`0700` data dir, `0600` `runwisp.db`) remain the only protection — same as before. Generate a key with `runwisp keygen` and store it in your secrets manager. **Losing the key bricks the data directory.** Existing data dirs are migrated transparently on first boot when the key is provided; unsetting the key with encrypted rows present causes the daemon to refuse to start.
 
 - **`runwisp keygen` subcommand.** Prints a base64-encoded 32-byte random key suitable for `RUNWISP_DATA_KEY`. Use it once, save the output, and you're done.
+
+- **`runwisp auth-token` subcommand.** Replaces the deploy-hooks recipe that previously composed `curl + sha256sum` by hand. `runwisp auth-token --remote https://daemon.example.com --password env` performs the full SRP login and prints the JWT to stdout — pipe it into curl, an env file, or a deploy hook.
 
 - **Download a run's full log from the Web UI and the TUI.** The Web UI's run detail panel gains a **Download log** button next to the live-stream toggle; the TUI binds `d` to the same action on the exec view. The download is the rotated-out segment plus the current segment as one `text/plain` file — what you'd get from `cat *.log.prev *.log`, but in one click. The TUI download works over SSH and tmux, not just graphical sessions.
 

@@ -57,6 +57,8 @@ type SecretStore interface {
 	// SetSecret writes value for key, encrypting it when key is secret and a
 	// cipher is configured.
 	SetSecret(key, value string) error
+	// DeleteConfigValue removes the row for key. Absent rows are no-ops.
+	DeleteConfigValue(key string) error
 }
 
 // Database is the full persistent store for the daemon: runs + configuration + notifications.

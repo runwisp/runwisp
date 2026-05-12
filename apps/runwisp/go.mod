@@ -112,4 +112,5 @@ require (
 	modernc.org/opt v0.1.3 // indirect
 	modernc.org/strutil v1.1.3 // indirect
 	modernc.org/token v1.0.1 // indirect
+	mz.attahri.com/code/srp/v3 v3.0.1 // indirect
 )
