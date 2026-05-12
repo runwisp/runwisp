@@ -89,11 +89,11 @@ TUI frame. Instead:
   `runwisp password` to print it to stdout. The output is a single
   line so you can pipe it into a clipboard tool:
 
-  ```bash
-  runwisp password | wl-copy          # Wayland
-  runwisp password | pbcopy           # macOS
-  runwisp password | xclip -selection clipboard
-  ```
+    ```bash
+    runwisp password | wl-copy          # Wayland
+    runwisp password | pbcopy           # macOS
+    runwisp password | xclip -selection clipboard
+    ```
 
 The endpoint that backs `runwisp password` lives on the daemon's local
 Unix socket only — it is **403 Forbidden** over the network even with a
