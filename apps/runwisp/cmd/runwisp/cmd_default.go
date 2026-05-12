@@ -20,30 +20,25 @@ import (
 // JWT signing secret straight off disk (the same trust boundary that
 // already lets us read everything else in the data dir) and mints a
 // short-lived token. No password prompt, no SRP roundtrip.
+//
+// Probe with an unauthenticated client first: /health is public, and on a
+// blank slate the JWT secret has not yet been seeded — minting before
+// spawn would error out before we ever get the chance to start the daemon
+// that would have created the secret.
 func runDefault() error {
-	client, err := newLocalAuthedClient()
-	if err != nil {
-		return err
+	probe := apiclient.New(localAPIBaseURL(), "")
+
+	if probe.HealthCheck() == nil {
+		client, err := newLocalAuthedClient()
+		if err != nil {
+			return fmt.Errorf("daemon is reachable on port %d but local auth failed: %w", flags.Port, err)
+		}
+		return tuiConnectMappingAuthErrors(client)
 	}
 
-	if client.HealthCheck() == nil {
-		tuiErr := runTUIConnect(client)
-		if tuiErr == nil {
-			return nil
-		}
-		if errors.Is(tuiErr, apiclient.ErrUnauthorized) {
-			return passwordMismatchError(flags.Port)
-		}
-		if errors.Is(tuiErr, apiclient.ErrRateLimited) {
-			return authRateLimitedError(flags.Port)
-		}
-		return tuiErr
-	}
-
-	// Health check failed — we're about to spawn a daemon. Before that, if
-	// there's no runwisp.toml and we're at a terminal, offer to create one.
-	// A spawned background daemon has no TTY, so the prompt must happen
-	// here in the foreground process.
+	// No daemon reachable. Before spawning, if there's no runwisp.toml and
+	// we're at a terminal, offer to create one. A spawned background
+	// daemon has no TTY, so the prompt must happen here in the foreground.
 	if err := scaffoldIfMissing(flags.CfgFile); err != nil {
 		return err
 	}
@@ -62,18 +57,34 @@ func runDefault() error {
 	}
 
 	logPath := filepath.Join(flags.DataDir, "daemon.log")
-	if err := waitForDaemon(client, logPath, 10*time.Second); err != nil {
+	if err := waitForDaemon(probe, logPath, 10*time.Second); err != nil {
 		return err
 	}
 
-	// The freshly spawned daemon may have rotated the JWT secret on its
-	// first boot (schema_version bump). Re-mint so we authenticate with
-	// the current secret instead of the one we read before the spawn.
-	client, err = newLocalAuthedClient()
+	// Daemon is up and resolveJWTSecret has seeded jwt_secret before the
+	// HTTP server started taking requests, so the mint will succeed.
+	client, err := newLocalAuthedClient()
 	if err != nil {
-		return err
+		return fmt.Errorf("daemon started but local auth failed: %w", err)
 	}
 	return runTUIConnect(client)
+}
+
+// tuiConnectMappingAuthErrors runs the TUI and maps the two auth-flavored
+// errors the daemon-already-running branch can surface (a stale or rotated
+// JWT secret on disk) into actionable CLI errors.
+func tuiConnectMappingAuthErrors(client *apiclient.Client) error {
+	tuiErr := runTUIConnect(client)
+	if tuiErr == nil {
+		return nil
+	}
+	if errors.Is(tuiErr, apiclient.ErrUnauthorized) {
+		return passwordMismatchError(flags.Port)
+	}
+	if errors.Is(tuiErr, apiclient.ErrRateLimited) {
+		return authRateLimitedError(flags.Port)
+	}
+	return tuiErr
 }
 
 // newLocalAuthedClient returns an apiclient pre-loaded with a freshly-minted

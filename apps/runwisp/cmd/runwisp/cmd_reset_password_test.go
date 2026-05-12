@@ -14,8 +14,8 @@ import (
 
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/storage"
-	srp "mz.attahri.com/code/srp/v3"
 	"github.com/stretchr/testify/require"
+	srp "mz.attahri.com/code/srp/v3"
 )
 
 // setupResetPasswordTempDir wires flags.DataDir to a fresh temp dir for the
