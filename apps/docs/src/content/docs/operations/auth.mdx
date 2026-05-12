@@ -55,12 +55,44 @@ To set a new password you can either:
 
 - Export `RUNWISP_PASSWORD` to the new value and restart the daemon.
   The env-supplied verifier overrides the stored one in memory only.
-- Delete the `srp_verifier` and `srp_salt` rows from `config_entries`
-  and restart. The daemon will generate a fresh random password on
-  next boot.
+- Run `runwisp reset-password` while the daemon is stopped. The
+  command generates a fresh random password and prints it once; or
+  pipe a chosen password in via `runwisp reset-password --password-stdin`.
+  Either form writes a new verifier and salt to SQLite and deletes the
+  JWT signing secret so all existing sessions die on the next boot.
 
-Either path invalidates every existing session, because changing
-`RUNWISP_PASSWORD` rotates the JWT signing secret.
+Either path invalidates every existing session, because changing the
+password rotates the JWT signing secret.
+
+### Forgot the password
+
+```bash
+# Stop the daemon first — a running daemon would race the new verifier.
+runwisp reset-password
+```
+
+You'll see the new password printed once. Start the daemon again and
+log in with it.
+
+### Lost the data key
+
+When `RUNWISP_DATA_KEY` is missing or wrong, the daemon refuses to
+start so it doesn't strip the at-rest encryption you opted into. The
+recovery path is destructive: every encrypted secret row is wiped and
+the next boot regenerates a fresh password and JWT signing secret.
+
+```bash
+# Without flags: a diagnostic listing the rows that cannot be decrypted.
+runwisp recover
+
+# With --wipe-secrets: deletes every storage.SecretKeys row. Prompts on
+# a TTY; pass --yes for scripted use.
+runwisp recover --wipe-secrets
+```
+
+Encrypted secrets cannot be recovered without the key — that's the
+point of encryption. `runwisp recover` is the bailout when the key is
+gone and the operator just wants a working data dir back.
 
 ### Trust boundary
 

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **`env_password_hash` is now HMAC-SHA256 keyed by the JWT secret**, replacing the previous unsalted SHA-256 fingerprint. A leaked row no longer enables an offline dictionary attack against `RUNWISP_PASSWORD` — the attacker also needs the per-installation JWT secret. First boot after the upgrade triggers one JWT rotation (and therefore one web-session invalidation) for any daemon that has `RUNWISP_PASSWORD` set; subsequent boots are stable.
+- **`srp_verifier` and `srp_salt` rows are now encrypted at rest** when `RUNWISP_DATA_KEY` is set, matching what the documentation has always claimed. Existing rows on a key-protected data dir are re-encrypted in place on first boot; daemons without a data key are unaffected.
 - **SRP parameters are guarded by a cross-language drift vector.** Both the Go and TypeScript verifier paths derive the same value from a checked-in `(identity, password, salt, iterations)` tuple. CI fails immediately if the KDF, group, or identity binding drifts on either side, so login can't silently break in production.
 
 ### Added
@@ -25,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp keygen` subcommand.** Prints a base64-encoded 32-byte random key suitable for `RUNWISP_DATA_KEY`. Use it once, save the output, and you're done.
 
 - **`runwisp auth-token` subcommand.** Replaces the deploy-hooks recipe that previously composed `curl + sha256sum` by hand. `runwisp auth-token --remote https://daemon.example.com --password env` performs the full SRP login and prints the JWT to stdout — pipe it into curl, an env file, or a deploy hook.
+
+- **`runwisp reset-password` subcommand.** Replaces the "delete the `srp_verifier` and `srp_salt` rows from SQLite" recipe operators used to need. Stop the daemon, run `runwisp reset-password`, get a freshly generated password printed once; or pipe one in with `--password-stdin`. The command also drops the JWT secret so existing web sessions die on the next boot.
+
+- **`runwisp recover` subcommand.** Escape hatch for a data directory whose at-rest secrets cannot be decrypted (lost or rotated `RUNWISP_DATA_KEY`). Without flags, prints a diagnostic of which secret rows are encrypted; with `--wipe-secrets` (confirmation prompt on a TTY, or `--yes` for scripted use), deletes every row in `storage.SecretKeys` so the next daemon boot regenerates fresh credentials. Bypasses the daemon's refuse-to-start check by talking to SQLite directly. Encrypted secrets are not recovered — they cannot be.
 
 - **Local CLI authentication is now password-less.** `runwisp`, `runwisp exec`, and `runwisp tui` authenticate by minting a short-lived (5 min) JWT directly from the daemon's on-disk signing secret. No `--password` flag, no `RUNWISP_PASSWORD` prompt. The trust boundary stays where it has always been: if you can read the data dir, you control the daemon. The `--password` flag on `runwisp tui` is removed. When the data dir is not reachable (different user, different machine), `runwisp tui --password-stdin` reads a single line from stdin and authenticates via SRP; setting `RUNWISP_PASSWORD` has the same effect.
 

@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { webcrypto } from "node:crypto";
 import { Triplet, RFC5054Group4096, type Params } from "@mzattahri/srp";
 import vector from "../../../../packages/common/src/srp-test-vector.json" with { type: "json" };
 
-// The vitest node environment doesn't expose WebCrypto on `crypto.subtle` the
-// same way browsers do; the SRP params below call `crypto.subtle.digest`, so
-// we hoist node's webcrypto onto the global before the params are used.
-if (typeof (globalThis as unknown as { crypto?: Crypto }).crypto === "undefined") {
-    (globalThis as unknown as { crypto: Crypto }).crypto = webcrypto as unknown as Crypto;
+// Node 18+ exposes WebCrypto on globalThis.crypto/crypto.subtle by default,
+// which is all the SRP params below need. If a future Node downgrade lands
+// in CI, surface that explicitly so the cause is obvious.
+if (typeof globalThis.crypto.subtle === "undefined") {
+    throw new Error("globalThis.crypto.subtle is unavailable — needs Node 18+");
 }
 
 function concatU8(...parts: Uint8Array[]): Uint8Array {

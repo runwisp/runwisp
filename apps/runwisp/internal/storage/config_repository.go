@@ -9,6 +9,8 @@ const (
 	ConfigKeyPassword       = "password"
 	ConfigKeyEnvPasswordSum = "env_password_hash"
 	ConfigKeySchemaVersion  = "schema_version"
+	ConfigKeySRPVerifier    = "srp_verifier"
+	ConfigKeySRPSalt        = "srp_salt"
 )
 
 // CurrentSchemaVersion is the schema_version value written by this binary.
@@ -25,6 +27,8 @@ var SecretKeys = map[string]struct{}{
 	ConfigKeyJWTSecret:      {},
 	ConfigKeyPassword:       {},
 	ConfigKeyEnvPasswordSum: {},
+	ConfigKeySRPVerifier:    {},
+	ConfigKeySRPSalt:        {},
 }
 
 // IsSecretKey reports whether key is a secret-bearing config row.
