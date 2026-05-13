@@ -48,11 +48,11 @@ Branch off `main`. One PR per logical change.
 Before pushing, run the full pipeline from the repo root:
 
 ```bash
-make precommit       # generate + format + check + test
+make ci              # generate + format + check + test + test-e2e
 make build           # Go binary build — required for daemon changes
 ```
 
-`precommit` chains `make generate` (regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`), `make format`, `make check` (Go vet/lint + TS/Svelte type checks), and `make test`. Run the individual steps directly when iterating — they're all valid Make targets (or `bun run <name>` aliases). Slow lint (svelte-check, eslint) is cached at `<pkg>/.cache/*.stamp`; `make clean` or branch switches invalidate.
+`ci` chains `make generate` (regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`), `make format`, `make check` (Go vet/lint + TS/Svelte type checks), `make test`, and `make test-e2e` (playwright against the built binary). Run the individual steps directly when iterating — they're all valid Make targets (or `bun run <name>` aliases). Slow lint (svelte-check, eslint) is cached at `<pkg>/.cache/*.stamp`; `make clean` or branch switches invalidate.
 
 Iterating on the UI:
 
@@ -67,7 +67,7 @@ Iterating on the UI:
 User-visible. Requires **all** of:
 
 1. Schema + validator update under `apps/runwisp/internal/config/`.
-2. `bun run precommit` (refreshes `apps/runwisp/openapi.json` as part of `generate`).
+2. `bun run ci` (refreshes `apps/runwisp/openapi.json` as part of `generate`).
 3. Docs update in `apps/docs/src/content/docs/configuration/`.
 4. A [CHANGELOG.md](CHANGELOG.md) entry under the unreleased section.
 5. README config reference update if user-visible.
@@ -77,7 +77,7 @@ User-visible. Requires **all** of:
 The AsyncAPI YAML is the **single source of truth**. Workflow:
 
 1. Edit `packages/asyncapi/asyncapi.yaml`.
-2. Run `bun run generate` (or `precommit`) — regenerates Go types into `apps/runwisp/internal/generated/protocol/`.
+2. Run `bun run generate` (or `ci`) — regenerates Go types into `apps/runwisp/internal/generated/protocol/`.
 3. Implement the new messages on the consumer side (`apps/runwisp/internal/cloud/`).
 
 Never hand-edit anything under `internal/generated/protocol/` — it's regenerated.

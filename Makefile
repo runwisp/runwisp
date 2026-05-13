@@ -138,7 +138,7 @@ $(DOCS_LINT_STAMP): $(DOCS_SOURCES) apps/docs/package.json $(OPENAPI_JSON) $(UI_
 # Phony orchestration targets ---------------------------------------------
 
 .PHONY: build build-dev build-all dev generate check check-go format test \
-	test-e2e precommit web-ui theme docs dev-docs clean help \
+	test-e2e ci web-ui theme docs dev-docs clean help \
 	format-runwisp format-ui-app format-docs format-ui \
 	test-runwisp test-ui-unit
 
@@ -184,13 +184,14 @@ test-ui-unit:
 test-e2e: $(RUNWISP_BIN) ## playwright e2e against the built binary
 	$(call step,playwright e2e,cd apps/ui && bun run test)
 
-# precommit chains the full pipeline in order. Each submake parallelizes
+# ci chains the full pipeline in order. Each submake parallelizes
 # internally via MAKEFLAGS.
-precommit: ## generate -> format -> check -> test
+ci: ## generate -> format -> check -> test -> test-e2e
 	$(MAKE) generate
 	$(MAKE) format
 	$(MAKE) check
 	$(MAKE) test
+	$(MAKE) test-e2e
 
 web-ui: ## vite dev server for apps/ui
 	cd apps/ui && bun run dev
