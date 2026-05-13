@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-13
+
 ### Added
 
 - **Local CLI/TUI connects over a Unix socket — no password needed.** The daemon now exposes `<datadir>/runwisp.sock` (mode `0600` inside the `0700` data dir). `runwisp`, `runwisp tui`, `runwisp list`, and `runwisp exec` automatically connect over the socket and bypass the password/JWT flow entirely. Access is gated by filesystem permissions and a `SO_PEERCRED` / `LOCAL_PEERCRED` check at accept time, so only the user that started the daemon can drive it locally. The browser launch-ticket flow keeps working: the TUI mints a ticket via the socket; the browser redeems it on `127.0.0.1`. Remote network clients (the Web UI, remote REST) still use the password + JWT cookie path; nothing changes for them.
@@ -171,7 +173,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/runwisp/runwisp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/runwisp/runwisp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/runwisp/runwisp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/runwisp/runwisp/compare/v0.1.2...v0.2.0
