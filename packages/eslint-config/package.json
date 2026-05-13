@@ -1,8 +1,18 @@
 {
     "name": "@runwisp/eslint-config",
+    "description": "Shared ESLint configurations for the RunWisp monorepo.",
     "version": "0.0.0",
     "license": "Apache-2.0",
     "type": "module",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/runwisp/runwisp.git",
+        "directory": "packages/eslint-config"
+    },
+    "homepage": "https://github.com/runwisp/runwisp/tree/main/packages/eslint-config#readme",
+    "bugs": {
+        "url": "https://github.com/runwisp/runwisp/issues"
+    },
     "publishConfig": {
         "access": "public"
     },

@@ -187,7 +187,34 @@ jobs:
             echo "NPM_TAG=latest" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Skip publish if package unchanged since last published version
+        id: changes
+        env:
+          PKG_DIR: ${{ matrix.package }}
+        run: |
+          pkg_name=$(node -p "require('./${PKG_DIR}/package.json').name")
+          prev_version=$(npm view "${pkg_name}" version 2>/dev/null || true)
+          if [ -z "${prev_version}" ]; then
+            echo "No previously published version of ${pkg_name}; will publish."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          prev_tag="v${prev_version}"
+          if ! git fetch --depth=1 origin "refs/tags/${prev_tag}:refs/tags/${prev_tag}" 2>/dev/null; then
+            echo "Previous tag ${prev_tag} could not be fetched; will publish."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet "${prev_tag}" HEAD -- "${PKG_DIR}"; then
+            echo "No changes in ${PKG_DIR} since ${prev_tag}; skipping publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changes detected in ${PKG_DIR} since ${prev_tag}; will publish."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Stamp version and replace workspace deps
+        if: steps.changes.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
           PKG_DIR: ${{ matrix.package }}
@@ -215,6 +242,7 @@ jobs:
           "
 
       - name: Publish
+        if: steps.changes.outputs.skip != 'true'
         env:
           NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
           PKG_DIR: ${{ matrix.package }}
