@@ -7,6 +7,7 @@ import starlight from "@astrojs/starlight";
 import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 
 export default defineConfig({
+    site: "https://docs.runwisp.com",
     integrations: [
         starlight({
             plugins: [
