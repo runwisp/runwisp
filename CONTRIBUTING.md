@@ -48,17 +48,17 @@ Branch off `main`. One PR per logical change.
 Before pushing, run the full pipeline from the repo root:
 
 ```bash
-bun run precommit    # generate + format + check + test
-bun run build        # Go binary build — required for daemon changes
+make precommit       # generate + format + check + test
+make build           # Go binary build — required for daemon changes
 ```
 
-`precommit` chains `bun run generate` (regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`), `bun run format`, `bun run check` (Go vet/lint + TS/Svelte type checks), and `bun run test`. Run the individual steps directly when iterating — they're all valid Nx targets.
+`precommit` chains `make generate` (regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`), `make format`, `make check` (Go vet/lint + TS/Svelte type checks), and `make test`. Run the individual steps directly when iterating — they're all valid Make targets (or `bun run <name>` aliases). Slow lint (svelte-check, eslint) is cached at `<pkg>/.cache/*.stamp`; `make clean` or branch switches invalidate.
 
 Iterating on the UI:
 
-- `bun run dev` — dev build + launches the daemon
-- `bun run web-ui` — Svelte dev server against an already-running daemon
-- `bun run theme` — the shared component library playground
+- `make dev` — dev build + launches the daemon
+- `make web-ui` — Svelte dev server against an already-running daemon
+- `make theme` — the shared component library playground
 
 ## Making changes
 

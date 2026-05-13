@@ -21,22 +21,9 @@
   },
   "scripts": {
     "generate": "node scripts/generate.js",
-    "check": "tsc --noEmit && eslint ."
-  },
-  "nx": {
-    "targets": {
-      "generate": {
-        "cache": true,
-        "inputs": [
-          "{projectRoot}/asyncapi.yaml",
-          "{projectRoot}/scripts/generate.js"
-        ],
-        "outputs": [
-          "{projectRoot}/src/generated/protocol-messages.ts",
-          "{workspaceRoot}/apps/runwisp/internal/generated/protocol"
-        ]
-      }
-    }
+    "check": "bun run check:types && bun run check:lint",
+    "check:types": "tsc --noEmit",
+    "check:lint": "eslint ."
   },
   "dependencies": {
     "zod": "^3.25.76"

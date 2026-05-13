@@ -1,7 +1,7 @@
 # RunWisp — Agent Directives
 
 **License**: Apache-2.0 · **Status**: Pre-1.0 (breaking changes permitted)
-**Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun + Nx monorepo, embedded SQLite (GORM), AsyncAPI-defined optional control-plane protocol.
+**Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + Make, embedded SQLite (GORM), AsyncAPI-defined optional control-plane protocol.
 
 ## 🎯 PRODUCT VISION (read this first — it outranks everything below)
 
@@ -128,13 +128,13 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 
 ## 🤖 AGENT EXECUTION RULES
 
-1. **Validation commands** (run from repo root via `bun run …`):
-   - `bun run build` — builds the daemon (depends on web UI build via Nx).
-   - `bun run test` — `nx run-many -t test` across the workspace; in `apps/runwisp` this is `go test -v ./...`.
-   - `bun run check` — Go vet/lint via `scripts/check-go.sh` plus TS/Svelte checks. Run when touching either side.
-   - `bun run generate` — regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`. Run after editing `packages/asyncapi/asyncapi.yaml` *before* committing — downstream Go types must compile.
-   - **Before finalizing Go changes**: `bun run build && bun run test`.
-   - **Before finalizing TS/Svelte changes**: `bun run check && bun run test`.
+1. **Validation commands** (run from repo root via `make …` or the equivalent `bun run …` alias):
+   - `make build` — builds the daemon (Makefile orchestrates web UI build → embed → go build).
+   - `make test` — `make test` across the workspace (per-package `go test` / `vitest`). Excludes Playwright; use `make test-e2e` after a real build for browser tests.
+   - `make check` — Go vet/lint via `scripts/check-go.sh` plus TS/Svelte checks. Slow lint (svelte-check, eslint) is cached at root `.cache/*.stamp`; `make clean` or branch switches invalidate.
+   - `make generate` — regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`. Run after editing `packages/asyncapi/asyncapi.yaml` *before* committing — downstream Go types must compile.
+   - **Before finalizing Go changes**: `make build && make test`.
+   - **Before finalizing TS/Svelte changes**: `make check && make test`.
 2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, and the README config reference if user-visible.
 3. **AsyncAPI changes**: edit `packages/asyncapi/asyncapi.yaml` first, then `bun run generate`, then consume the regenerated types in `internal/generated/protocol/`. Never the other way round.
 4. **User-facing changes** require a `CHANGELOG.md` entry. The changelog is marketing-facing — tell users what they can do, not how it was implemented. Concise but informative.

@@ -8,54 +8,10 @@
         "dev": "bun scripts/sync-openapi.ts && bunx --bun astro dev",
         "build": "bun scripts/sync-openapi.ts && bunx --bun astro build",
         "preview": "bunx --bun astro preview",
-        "check": "bun scripts/sync-openapi.ts && bunx --bun astro check && prettier --check . && eslint .",
+        "check": "bun run check:types && bun run check:lint",
+        "check:types": "bun scripts/sync-openapi.ts && bunx --bun astro check",
+        "check:lint": "prettier --check . && eslint .",
         "format": "prettier --write ."
-    },
-    "nx": {
-        "targets": {
-            "build": {
-                "dependsOn": [
-                    "^build"
-                ],
-                "cache": true,
-                "inputs": [
-                    "production",
-                    "^production",
-                    "{workspaceRoot}/apps/runwisp/openapi.json",
-                    "{projectRoot}/.env*"
-                ],
-                "outputs": [
-                    "{projectRoot}/dist/**",
-                    "{projectRoot}/.astro/**"
-                ]
-            },
-            "build-dev": {
-                "dependsOn": [
-                    "^build"
-                ],
-                "cache": true,
-                "inputs": [
-                    "default",
-                    "^production",
-                    "{workspaceRoot}/apps/runwisp/openapi.json",
-                    "{projectRoot}/.env*"
-                ],
-                "outputs": [
-                    "{projectRoot}/dist/**",
-                    "{projectRoot}/.astro/**"
-                ]
-            },
-            "check": {
-                "inputs": [
-                    "default",
-                    "^production",
-                    "{workspaceRoot}/apps/runwisp/openapi.json"
-                ]
-            },
-            "format": {
-                "cache": false
-            }
-        }
     },
     "dependencies": {
         "@astrojs/starlight": "^0.39.0",

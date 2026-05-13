@@ -28,15 +28,6 @@ jobs:
         with:
           bun-version-file: package.json
 
-      - name: Cache Nx
-        uses: actions/cache@v4
-        with:
-          path: .nx/cache
-          key: nx-${{ runner.os }}-check-generated-${{ github.sha }}
-          restore-keys: |
-            nx-${{ runner.os }}-check-generated-
-            nx-${{ runner.os }}-
-
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
@@ -95,15 +86,6 @@ jobs:
         with:
           bun-version-file: package.json
 
-      - name: Cache Nx
-        uses: actions/cache@v4
-        with:
-          path: .nx/cache
-          key: nx-${{ runner.os }}-build-${{ github.sha }}
-          restore-keys: |
-            nx-${{ runner.os }}-build-
-            nx-${{ runner.os }}-
-
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
@@ -145,7 +127,7 @@ jobs:
           echo '<!-- placeholder for go:embed -->' > apps/runwisp/internal/ui/dist/index.html
 
       - name: Test
-        run: bunx nx run-many -t test --exclude=@runwisp/web-ui --outputStyle=stream
+        run: bun run test
 
   e2e:
     name: Browser E2E Tests (${{ matrix.os }})

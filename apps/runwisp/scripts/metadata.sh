@@ -9,7 +9,13 @@ runner_version() {
   changelog="${metadata_script_dir}/../../../CHANGELOG.md"
   version=$(awk '
     /^## \[Unreleased\]/ { next }
-    match($0, /^## \[([0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.+-]*)\]/, m) { print m[1]; exit }
+    /^## \[[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.+-]*\]/ {
+      v = $0
+      sub(/^## \[/, "", v)
+      sub(/\].*$/, "", v)
+      print v
+      exit
+    }
   ' "${changelog}")
   if [[ -z "${version}" ]]; then
     printf 'metadata.sh: no released version found in %s\n' "${changelog}" >&2

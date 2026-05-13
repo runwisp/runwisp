@@ -21,31 +21,10 @@
   },
   "scripts": {
     "build": "echo '@runwisp/common: no build step (raw source)'",
-    "check": "tsc --noEmit && eslint .",
+    "check": "bun run check:types && bun run check:lint",
+    "check:types": "tsc --noEmit",
+    "check:lint": "eslint .",
     "generate:api": "bun run scripts/generate-api.ts"
-  },
-  "nx": {
-    "targets": {
-      "build": {
-        "cache": true,
-        "inputs": [
-          "production"
-        ],
-        "outputs": []
-      },
-      "generate:api": {
-        "dependsOn": [
-          "@runwisp/app:openapi"
-        ],
-        "cache": true,
-        "inputs": [
-          "{workspaceRoot}/apps/runwisp/openapi.json"
-        ],
-        "outputs": [
-          "{projectRoot}/src/generated/api.ts"
-        ]
-      }
-    }
   },
   "dependencies": {
     "ulidx": "^2.4.1"

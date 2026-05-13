@@ -16,9 +16,8 @@ data/
 # Testing
 coverage
 
-# Nx
-.nx/cache
-.nx/workspace-data
+# Build cache (Makefile stamps)
+.cache/
 
 # Build Outputs
 build
