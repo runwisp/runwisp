@@ -17,21 +17,21 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "nx run @runwisp/app:build-dev --outputStyle=stream && cd apps/runwisp && ./runwisp",
-    "build": "nx run @runwisp/app:build --outputStyle=stream",
-    "build:all": "nx run @runwisp/app:build-all --outputStyle=stream",
-    "build-dev": "nx run @runwisp/app:build-dev --outputStyle=stream",
-    "generate": "cd packages/asyncapi && bun run generate && cd ../common && bun run generate:api && cd ../../apps/runwisp && bun openapi",
-    "check": "nx run-many -t check --outputStyle=stream",
-    "format": "nx run-many -t format --outputStyle=stream",
-    "theme": "nx run @runwisp/ui:dev --outputStyle=stream",
-    "web-ui": "nx run @runwisp/web-ui:dev --outputStyle=stream",
-    "test": "nx run-many -t test --outputStyle=stream",
-    "precommit": "bun run generate && bun run format && bun run check && bun run test"
+    "dev": "make dev",
+    "build": "make build",
+    "build:all": "make build-all",
+    "build-dev": "make build-dev",
+    "generate": "make generate",
+    "check": "make check",
+    "format": "make format",
+    "theme": "make theme",
+    "web-ui": "make web-ui",
+    "test": "make test",
+    "ci": "make ci"
   },
   "devDependencies": {
     "@astrojs/svelte": "^8.0.0",
-    "nx": "^22.6.5",
+    "ajv": "^8.17.1",
     "prettier": "^3.8.3",
     "prettier-plugin-svelte": "^3.5.1",
     "prettier-plugin-tailwindcss": "^0.7.2",

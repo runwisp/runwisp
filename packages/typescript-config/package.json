@@ -1,8 +1,10 @@
 {
   "name": "@runwisp/typescript-config",
   "version": "0.0.0",
-  "private": true,
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     "./base.json": "./base.json"
   }

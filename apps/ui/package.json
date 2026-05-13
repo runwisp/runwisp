@@ -8,49 +8,12 @@
         "build": "vite build",
         "build-dev": "vite build --mode development",
         "prepare": "bunx @sveltejs/kit sync",
-        "check": "bunx @sveltejs/kit sync && bunx svelte-check --tsconfig ./tsconfig.json && bunx prettier --check . && bunx eslint .",
+        "check": "bun run check:types && bun run check:lint",
+        "check:types": "bunx @sveltejs/kit sync && bunx svelte-check --tsconfig ./tsconfig.json",
+        "check:lint": "bunx prettier --check . && bunx eslint .",
         "format": "prettier --write .",
         "test": "playwright test",
         "test:unit": "vitest run"
-    },
-    "nx": {
-        "targets": {
-            "build": {
-                "dependsOn": [
-                    "^build"
-                ],
-                "cache": true,
-                "inputs": [
-                    "production",
-                    "^production",
-                    "{projectRoot}/.env*"
-                ],
-                "outputs": [
-                    "{projectRoot}/.svelte-kit/**",
-                    "{projectRoot}/build/**"
-                ]
-            },
-            "build-dev": {
-                "dependsOn": [
-                    "^build"
-                ],
-                "cache": true,
-                "inputs": [
-                    "default",
-                    "^production",
-                    "{projectRoot}/.env*"
-                ],
-                "outputs": [
-                    "{projectRoot}/.svelte-kit/**",
-                    "{projectRoot}/build/**"
-                ]
-            },
-            "test": {
-                "dependsOn": [
-                    "@runwisp/app:build-dev"
-                ]
-            }
-        }
     },
     "devDependencies": {
         "@eslint/compat": "^1.4.0",

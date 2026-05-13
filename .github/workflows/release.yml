@@ -1,10 +1,20 @@
 # Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
 
-# Builds cross-platform binaries and publishes them as:
-#   1. GitHub Release draft with assets (tar.gz + checksums)
-#   2. npm packages on release publish (`bunx runwisp` / `npx runwisp`)
+# Two-stage release pipeline:
 #
-# Flow: push tag → build + draft release → review → publish → npm publish
+#   1. Push a `v*` tag → build cross-platform binaries and create a GitHub Release
+#      **draft** containing the tarballs, sha256 checksums, and the matching
+#      CHANGELOG.md section as the body. Nothing is published to npm at this stage.
+#
+#   2. Publish the GitHub Release (human clicks "Publish release" on the draft)
+#      → publish every npm package at the release's tag version:
+#        - workspace TS packages (@runwisp/{typescript-config,eslint-config,common,ui}) in parallel
+#        - binary platform packages (@runwisp/{linux,darwin}-{x64,arm64}) in parallel
+#        - main `runwisp` package (waits for the platform packages to be live first)
+#
+# Auth is OIDC Trusted Publisher (per-package, configured on npmjs.com).
+# Each package must already exist with a Trusted Publisher row pointing at this repo
+# + workflow before CI can publish to it.
 
 name: Release
 
@@ -22,8 +32,11 @@ permissions:
 jobs:
   build:
     if: github.event_name == 'push'
-    name: Build all platforms
+    name: Build binaries
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      is_prerelease: ${{ steps.npm_tag.outputs.PRERELEASE }}
     steps:
       - uses: actions/checkout@v6
 
@@ -40,20 +53,37 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build web UI
-        run: bunx nx run @runwisp/web-ui:build
+        run: bun run build
+        working-directory: apps/ui
 
       - name: Sync UI assets into Go embed directory
         run: ./scripts/sync-ui-dist.sh
         working-directory: apps/runwisp
 
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Determine prerelease flag
+        id: npm_tag
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          if [[ "${VERSION}" == *-* ]]; then
+            echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "PRERELEASE=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Verify CHANGELOG matches release tag
         working-directory: apps/runwisp
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          tag_version="${GITHUB_REF_NAME#v}"
           changelog_version=$(./scripts/metadata.sh version)
-          if [[ "${tag_version}" != "${changelog_version}" ]]; then
+          if [[ "${VERSION}" != "${changelog_version}" ]]; then
             printf 'Tag %s does not match top CHANGELOG entry %s\n' \
-              "${tag_version}" "${changelog_version}" >&2
+              "${VERSION}" "${changelog_version}" >&2
             exit 1
           fi
 
@@ -71,7 +101,7 @@ jobs:
 
   github-release:
     if: github.event_name == 'push'
-    name: Create GitHub Release (draft)
+    name: Create GitHub Release draft
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -81,11 +111,12 @@ jobs:
 
       - name: Extract release notes from CHANGELOG
         id: notes
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
           {
             echo "BODY<<RELEASE_NOTES_EOF"
-            awk -v ver="${version}" '
+            awk -v ver="${VERSION}" '
               $0 ~ "^## \\[" ver "\\]" { found=1; next }
               /^## \[/ { if (found) exit }
               found
@@ -113,87 +144,181 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
+          prerelease: ${{ needs.build.outputs.is_prerelease == 'true' }}
           body: ${{ steps.notes.outputs.BODY }}
           files: |
             runwisp-*.tar.gz
             checksums-sha256.txt
 
-  npm-publish:
+  npm-publish-workspace:
     if: github.event_name == 'release'
-    name: Publish npm packages
+    name: Publish ${{ matrix.package }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - packages/typescript-config
+          - packages/eslint-config
+          - packages/common
+          - packages/ui
     steps:
       - uses: actions/checkout@v6
         with:
-          sparse-checkout: npm
+          ref: ${{ github.event.release.tag_name }}
+          sparse-checkout: ${{ matrix.package }}
 
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Download release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p dist
-          gh release download "${{ github.event.release.tag_name }}" \
-            --pattern 'runwisp-*.tar.gz' --dir dist
-          for archive in dist/runwisp-*.tar.gz; do
-            target=$(basename "${archive}" .tar.gz)
-            target="${target#runwisp-}"
-            mkdir -p "dist/${target}"
-            tar xzf "${archive}" -C "dist/${target}"
-          done
-
-      - name: Extract version from tag
+      - name: Compute version and dist-tag
         id: version
-        run: echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
         env:
           TAG: ${{ github.event.release.tag_name }}
-
-      - name: Determine npm dist-tag
-        id: npm_tag
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
+          VERSION="${TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
           if [[ "${VERSION}" == *-* ]]; then
             prerelease="${VERSION#*-}"
-            echo "TAG=${prerelease%%.*}" >> "$GITHUB_OUTPUT"
+            echo "NPM_TAG=${prerelease%%.*}" >> "$GITHUB_OUTPUT"
           else
-            echo "TAG=latest" >> "$GITHUB_OUTPUT"
+            echo "NPM_TAG=latest" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Copy binaries into npm package dirs
-        run: |
-          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
-            cp "dist/${target}/runwisp" "npm/${target}/runwisp"
-            chmod +x "npm/${target}/runwisp"
-          done
-
-      - name: Stamp versions & publish platform packages
+      - name: Stamp version and replace workspace deps
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PKG_DIR: ${{ matrix.package }}
         run: |
-          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
-            pkg_dir="npm/${platform}"
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const version = process.env.VERSION;
+            const file = path.join(process.env.PKG_DIR, 'package.json');
+            const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+            pkg.version = version;
+            const replaceWorkspace = (deps) => {
+              if (!deps) return;
+              for (const k of Object.keys(deps)) {
+                if (typeof deps[k] === 'string' && deps[k].startsWith('workspace:')) {
+                  deps[k] = version;
+                }
+              }
+            };
+            replaceWorkspace(pkg.dependencies);
+            replaceWorkspace(pkg.devDependencies);
+            replaceWorkspace(pkg.peerDependencies);
+            replaceWorkspace(pkg.optionalDependencies);
+            fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
+          "
 
-            echo "::group::Publish @runwisp/${platform}@${VERSION}"
-            node -e "
-              const fs = require('fs');
-              const pkg = JSON.parse(fs.readFileSync('${pkg_dir}/package.json', 'utf8'));
-              pkg.version = process.env.VERSION;
-              fs.writeFileSync('${pkg_dir}/package.json', JSON.stringify(pkg, null, 2) + '\n');
-            "
-            npm publish "./${pkg_dir}" --access public --tag "${{ steps.npm_tag.outputs.TAG }}" --provenance
-            echo "::endgroup::"
-          done
+      - name: Publish
+        env:
+          NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
+          PKG_DIR: ${{ matrix.package }}
+        run: npm publish "./${PKG_DIR}" --access public --tag "${NPM_TAG}" --provenance
 
-      - name: Publish main runwisp package
+  npm-publish-platform:
+    if: github.event_name == 'release'
+    name: Publish @runwisp/${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux-x64, linux-arm64, darwin-x64, darwin-arm64]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          sparse-checkout: npm/${{ matrix.platform }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Compute version and dist-tag
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${VERSION}" == *-* ]]; then
+            prerelease="${VERSION#*-}"
+            echo "NPM_TAG=${prerelease%%.*}" >> "$GITHUB_OUTPUT"
+          else
+            echo "NPM_TAG=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download binary from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p dist
+          gh release download "${TAG}" --pattern "runwisp-${PLATFORM}.tar.gz" --dir dist
+          mkdir -p "dist/${PLATFORM}"
+          tar xzf "dist/runwisp-${PLATFORM}.tar.gz" -C "dist/${PLATFORM}"
+          cp "dist/${PLATFORM}/runwisp" "npm/${PLATFORM}/runwisp"
+          chmod +x "npm/${PLATFORM}/runwisp"
+
+      - name: Stamp version
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PKG_DIR: npm/${{ matrix.platform }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const file = path.join(process.env.PKG_DIR, 'package.json');
+            const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Publish
+        env:
+          NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
+          PKG_DIR: npm/${{ matrix.platform }}
+        run: npm publish "./${PKG_DIR}" --access public --tag "${NPM_TAG}" --provenance
+
+  npm-publish-runwisp:
+    if: github.event_name == 'release'
+    name: Publish runwisp
+    needs: npm-publish-platform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          sparse-checkout: npm/runwisp
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Compute version and dist-tag
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${VERSION}" == *-* ]]; then
+            prerelease="${VERSION#*-}"
+            echo "NPM_TAG=${prerelease%%.*}" >> "$GITHUB_OUTPUT"
+          else
+            echo "NPM_TAG=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stamp version and platform optionalDependencies
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         working-directory: npm/runwisp
         run: |
           node -e "
@@ -205,4 +330,9 @@ jobs:
             }
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          npm publish --access public --tag "${{ steps.npm_tag.outputs.TAG }}" --provenance
+
+      - name: Publish
+        env:
+          NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
+        working-directory: npm/runwisp
+        run: npm publish --access public --tag "${NPM_TAG}" --provenance

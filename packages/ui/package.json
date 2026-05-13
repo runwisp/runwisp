@@ -18,19 +18,10 @@
     "scripts": {
         "dev": "storybook dev -p 6006 --no-open",
         "build": "echo '@runwisp/ui: no build step (raw source)'",
-        "check": "svelte-check --tsconfig ./tsconfig.json && prettier --check . && eslint .",
+        "check": "bun run check:types && bun run check:lint",
+        "check:types": "svelte-check --tsconfig ./tsconfig.json",
+        "check:lint": "prettier --check . && eslint .",
         "format": "prettier --write ."
-    },
-    "nx": {
-        "targets": {
-            "build": {
-                "cache": true,
-                "inputs": [
-                    "production"
-                ],
-                "outputs": []
-            }
-        }
     },
     "files": [
         "src"

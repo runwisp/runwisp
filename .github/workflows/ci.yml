@@ -46,8 +46,29 @@ jobs:
       - name: Fail if generated files are stale
         run: git diff --exit-code
 
+  check:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/runwisp/go.mod
+          cache-dependency-path: apps/runwisp/go.sum
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check
+        run: bun run check
+
   build:
-    name: Check & Build (${{ matrix.os }})
+    name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -68,25 +89,19 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
-      - name: Check
-        if: matrix.os == 'ubuntu-latest'
-        run: bun run check
-
       - name: Build
         run: bun run build
 
       - name: Upload binary
-        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
         with:
-          name: runwisp-binary
+          name: runwisp-binary-${{ matrix.os }}
           path: apps/runwisp/runwisp
           retention-days: 1
 
   test:
     name: Unit Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -112,12 +127,18 @@ jobs:
           echo '<!-- placeholder for go:embed -->' > apps/runwisp/internal/ui/dist/index.html
 
       - name: Test
-        run: bunx nx run-many -t test --exclude=@runwisp/web-ui --outputStyle=stream
+        run: bun run test
 
   e2e:
-    name: Browser E2E Tests
-    runs-on: ubuntu-latest
+    name: Browser E2E Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     steps:
       - uses: actions/checkout@v6
 
@@ -131,14 +152,27 @@ jobs:
       - name: Download binary
         uses: actions/download-artifact@v7
         with:
-          name: runwisp-binary
+          name: runwisp-binary-${{ matrix.os }}
           path: apps/runwisp
 
       - name: Make binary executable
         run: chmod +x apps/runwisp/runwisp
 
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: bunx playwright install --with-deps chromium
+        working-directory: apps/ui
+
+      - name: Install Playwright system deps
+        if: steps.playwright-cache.outputs.cache-hit == 'true' && runner.os == 'Linux'
+        run: bunx playwright install-deps chromium
         working-directory: apps/ui
 
       - name: Run E2E tests
@@ -149,6 +183,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.os }}
           path: apps/ui/test-results/
           retention-days: 7
