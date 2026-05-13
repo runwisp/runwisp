@@ -1,10 +1,10 @@
 <div align="center">
 
-<img alt="RunWisp logo — open-source cron job manager and process supervisor with a web dashboard" src="packages/ui/static/runwisp_c.svg" width="120">
+<img alt="RunWisp logo - open-source cron job manager and process supervisor with a web dashboard" src="packages/ui/static/runwisp_c.svg" width="120">
 
 # RunWisp
 
-**The open-source, self-hosted cron job manager and process supervisor — with a built-in web dashboard, terminal UI, and REST API.**
+**The open-source, self-hosted cron job manager and process supervisor. Built-in web dashboard, terminal UI, and REST API.**
 
 [runwisp.com](https://runwisp.com) · [Documentation](https://docs.runwisp.com) · [Install](#install) · [Quick Start](#quick-start) · [Why RunWisp](#why-runwisp)
 
@@ -17,20 +17,20 @@
 
 ---
 
-**RunWisp** is a single-binary replacement for `crond` and `supervisord`. Define your scheduled jobs — database backups, health checks, log rotation, ETL scripts — and long-running services like queue workers and background daemons in one `runwisp.toml` file. Get a built-in web dashboard, terminal UI, REST API, real-time log streaming, and persistent run history out of the box. Zero runtime dependencies. Embedded SQLite. Embedded UI. Runs anywhere a static Go binary runs: Linux, macOS, WSL, Docker, a Raspberry Pi, or a $5 VPS.
+**RunWisp** is a single-binary replacement for `crond` and `supervisord`. Define your scheduled jobs (database backups, health checks, log rotation, ETL scripts) and long-running services like queue workers and background daemons in one `runwisp.toml` file. Get a built-in web dashboard, terminal UI, REST API, real-time log streaming, and persistent run history out of the box. Zero runtime dependencies. Embedded SQLite. Embedded UI. Runs anywhere a static Go binary runs: Linux, macOS, WSL, Docker, a Raspberry Pi, or a $5 VPS.
 
 If you've ever SSH'd into a server at 3 AM to figure out *why* a cron job silently failed, RunWisp is for you.
 
 <div align="center">
-<img alt="RunWisp web dashboard screenshot — cron job list, execution history, and live log streaming in a self-hosted UI" src="packages/assets/webui-screenshot.png" width="780">
-<p><em>Web dashboard — task overview, execution history, and live log streaming, all served by the daemon itself.</em></p>
+<img alt="RunWisp web dashboard screenshot: cron job list, execution history, and live log streaming in a self-hosted UI" src="packages/assets/webui-screenshot.png" width="780">
+<p><em>Web dashboard: task overview, execution history, and live log streaming, all served by the daemon itself.</em></p>
 </div>
 
 ---
 
 ## Install
 
-One-line installer — drops the `runwisp` binary on your `PATH`:
+One-line installer that drops the `runwisp` binary on your `PATH`:
 
 ```bash
 curl -fsSL https://get.runwisp.com | sh
@@ -39,11 +39,11 @@ curl -fsSL https://get.runwisp.com | sh
 Or via your favourite package manager:
 
 ```bash
-bunx runwisp           # try it without installing — runs the prebuilt Go binary via npm
+bunx runwisp           # try it without installing; runs the prebuilt Go binary via npm
 bun add -g runwisp     # or: npm install -g runwisp
 ```
 
-Prefer manual? Grab a tarball from [GitHub Releases](https://github.com/runwisp/runwisp/releases) — assets are named `runwisp-{linux,darwin}-{x64,arm64}.tar.gz` with a matching `checksums-sha256.txt`. **Supported platforms:** Linux, macOS, WSL — x86_64 and arm64.
+Prefer manual? Grab a tarball from [GitHub Releases](https://github.com/runwisp/runwisp/releases); assets are named `runwisp-{linux,darwin}-{x64,arm64}.tar.gz` with a matching `checksums-sha256.txt`. **Supported platforms:** Linux, macOS, WSL (x86_64 and arm64).
 
 ---
 
@@ -67,7 +67,7 @@ instances = 3              # keep three replicas always running
 run       = "node /app/worker.js"
 ```
 
-`[tasks.*]` are scheduled or manually triggered jobs. `[services.*]` are always-on processes that RunWisp keeps alive with exponential restart backoff — each replica is its own visible run with its own exit code, duration, and captured logs.
+`[tasks.*]` are scheduled or manually triggered jobs. `[services.*]` are always-on processes that RunWisp keeps alive with exponential restart backoff; each replica is its own visible run with its own exit code, duration, and captured logs.
 
 **2. Run it:**
 
@@ -75,7 +75,7 @@ run       = "node /app/worker.js"
 runwisp
 ```
 
-That's it. `runwisp` starts the daemon and drops you straight into the **terminal UI** — task list, live logs, run history, one-click triggering. The web dashboard URL appears on the TUI's Home page, secured by an auto-generated password (press `Enter` to copy it). Want headless? `runwisp daemon`. Want your own password? Set `RUNWISP_PASSWORD`.
+That's it. `runwisp` starts the daemon and drops you straight into the **terminal UI**: task list, live logs, run history, one-click triggering. The web dashboard URL appears on the TUI's Home page, secured by an auto-generated password (press `Enter` to copy it). Want headless? `runwisp daemon`. Want your own password? Set `RUNWISP_PASSWORD`.
 
 Full configuration reference, REST API docs, and operational guides live at **[docs.runwisp.com](https://docs.runwisp.com)**.
 
@@ -85,10 +85,10 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 
 | If you currently use…           | The pain                                                              | RunWisp fixes it by…                                                                                          |
 | ------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **crond / crontab**             | Silent failures, no history, no output capture, no overlap handling   | Persisting every run (exit code, duration, stdout/stderr) to embedded SQLite — browsable, streamable, searchable. |
+| **crond / crontab**             | Silent failures, no history, no output capture, no overlap handling   | Persisting every run (exit code, duration, stdout/stderr) to embedded SQLite: browsable, streamable, and searchable. |
 | **systemd timers**              | One `.timer` + one `.service` per job, OS-locked, painful in Docker   | One TOML file. Cross-platform. Same binary on your MacBook, in CI, and in production.                          |
 | **supervisord**                 | No scheduling, Python install, dated XML-RPC API, basic web UI        | Cron scheduling and process supervision in one binary. Modern REST API. Svelte dashboard. Built-in log rotation. |
-| **supercronic / Ofelia**        | Logs to stdout only — no history, no UI                               | Same Docker-friendly footprint, plus per-run logs, persistent history, live streaming, and one-click re-trigger. |
+| **supercronic / Ofelia**        | Logs to stdout only; no history, no UI                                | Same Docker-friendly footprint, plus per-run logs, persistent history, live streaming, and one-click re-trigger. |
 | **Airflow / Cronicle / Dagu**   | Heavy, multi-process, requires an external DB and a team to operate   | Single binary. ~25 MB RAM idle. No external DB. Set it up in five minutes, forget it for a year.               |
 
 ---
@@ -105,27 +105,27 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 
 **Observability**
 
-- Real-time stdout/stderr streaming over SSE — viewable in the web UI and TUI
+- Real-time stdout/stderr streaming over SSE, viewable in the web UI and TUI
 - Every run recorded in SQLite with exit code, duration, and timestamps
 - Built-in per-task log rotation with overflow policies (`drop_new` · `drop_old` · `kill_task`)
 
 **Interfaces**
 
-- **Web dashboard** — Svelte 5 SPA with dark mode, embedded in the binary
-- **Terminal UI** — full Bubbletea TUI for headless servers and SSH sessions
-- **REST API** — authenticated endpoints for triggering, listing, and managing tasks
+- **Web dashboard**: Svelte 5 SPA with dark mode, embedded in the binary
+- **Terminal UI**: full Bubbletea TUI for headless servers and SSH sessions
+- **REST API**: authenticated endpoints for triggering, listing, and managing tasks
 
 **Operations**
 
-- Single Go binary, zero runtime dependencies — no Python, no Node.js, no external database
-- ~25 MB RAM idle — happy on a $5 VPS, a Raspberry Pi, or alongside your real workload
-- Crash-safe — `kill -9` and power loss are recoverable; in-flight runs are marked **interrupted** on restart, never silently lost
-- Local-first, offline-complete — no signup, no telemetry, no account required
-- TOML configuration — one file, version-controllable, reviewable in pull requests
+- Single Go binary, zero runtime dependencies. No Python, no Node.js, no external database.
+- ~25 MB RAM idle, happy on a $5 VPS, a Raspberry Pi, or alongside your real workload
+- Crash-safe: `kill -9` and power loss are recoverable; in-flight runs are marked **interrupted** on restart, never silently lost
+- Local-first, offline-complete. No signup, no telemetry, no account required.
+- TOML configuration: one file, version-controllable, reviewable in pull requests
 
 <div align="center">
-<img alt="RunWisp terminal UI screenshot — task sidebar, live log output, and execution controls over SSH" src="packages/assets/tui-screenshot.png" width="780">
-<p><em>Terminal UI — full task management from your terminal, over SSH, without leaving the session.</em></p>
+<img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="packages/assets/tui-screenshot.png" width="780">
+<p><em>Terminal UI: full task management from your terminal, over SSH, without leaving the session.</em></p>
 </div>
 
 ---
@@ -150,26 +150,26 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 
 ## Documentation
 
-Full user and operator documentation lives at **[docs.runwisp.com](https://docs.runwisp.com)** — installation, the complete `runwisp.toml` schema, scheduling and concurrency policies, retries, log rotation, the REST API, and operational guides.
+Full user and operator documentation lives at **[docs.runwisp.com](https://docs.runwisp.com)**: installation, the complete `runwisp.toml` schema, scheduling and concurrency policies, retries, log rotation, the REST API, and operational guides.
 
-- [Changelog](CHANGELOG.md) — recent changes and version history
-- [Contributing](CONTRIBUTING.md) — development setup and contribution guidelines
-- [Security Policy](SECURITY.md) — responsible disclosure
-- [Issue tracker](https://github.com/runwisp/runwisp/issues) — bug reports and feature requests
+- [Changelog](CHANGELOG.md) - recent changes and version history
+- [Contributing](CONTRIBUTING.md) - development setup and contribution guidelines
+- [Security Policy](SECURITY.md) - responsible disclosure
+- [Issue tracker](https://github.com/runwisp/runwisp/issues) - bug reports and feature requests
 
-> **Status: pre-1.0.** RunWisp is stable for single-machine workloads today. Any pre-1.0 bump may ship breaking changes and reset run history — check [CHANGELOG.md](CHANGELOG.md) before upgrading. Some roadmap items (cloud control plane, log search, reload-without-restart) aren't here yet — see the [roadmap](https://docs.runwisp.com/roadmap/).
+> **Status: pre-1.0.** RunWisp is stable for single-machine workloads today. Any pre-1.0 bump may ship breaking changes and reset run history, so check [CHANGELOG.md](CHANGELOG.md) before upgrading. Some roadmap items (cloud control plane, log search, reload-without-restart) aren't here yet; see the [roadmap](https://docs.runwisp.com/roadmap/).
 
 ---
 
 ## License
 
-Apache-2.0. Use it however you want — personal projects, startups, enterprises. No CLA, no dual-licensing, no strings attached. See [LICENSE](LICENSE).
+Apache-2.0. Use it however you want: personal projects, startups, enterprises. No CLA, no dual-licensing, no strings attached. See [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
 
-**RunWisp** — cron and supervisord, replaced.
+**RunWisp** - cron and supervisord, replaced.
 
 [runwisp.com](https://runwisp.com) · [Documentation](https://docs.runwisp.com) · [Releases](https://github.com/runwisp/runwisp/releases) · [Report a bug](https://github.com/runwisp/runwisp/issues)
 
