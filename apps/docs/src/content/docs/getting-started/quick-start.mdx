@@ -235,7 +235,7 @@ them when they exit and keeps `instances = N` copies running in
 parallel.
 
 :::note[One namespace for both]
-Tasks and services share names. Define `[tasks.worker]` *and*
+Tasks and services share names. Define `[tasks.worker]` _and_
 `[services.worker]` in the same file and the daemon refuses to
 start.
 :::
@@ -247,24 +247,24 @@ and run `runwisp` again — your edits take effect on the next boot.
 ---
 
 <CardGrid>
-  <LinkCard
-    title="Web UI tour"
-    href="/getting-started/web-ui-tour/"
-    description="Every panel in the dashboard and what it shows you."
-  />
-  <LinkCard
-    title="Config overview"
-    href="/configuration/overview/"
-    description="Every key you can put in runwisp.toml."
-  />
-  <LinkCard
-    title="Concurrency"
-    href="/concepts/concurrency/"
-    description="What on_overlap actually does when runs collide."
-  />
-  <LinkCard
-    title="Operations: auth"
-    href="/operations/auth/"
-    description="Managing the password and session."
-  />
+    <LinkCard
+        title="Web UI tour"
+        href="/getting-started/web-ui-tour/"
+        description="Every panel in the dashboard and what it shows you."
+    />
+    <LinkCard
+        title="Config overview"
+        href="/configuration/overview/"
+        description="Every key you can put in runwisp.toml."
+    />
+    <LinkCard
+        title="Concurrency"
+        href="/concepts/concurrency/"
+        description="What on_overlap actually does when runs collide."
+    />
+    <LinkCard
+        title="Operations: auth"
+        href="/operations/auth/"
+        description="Managing the password and session."
+    />
 </CardGrid>
