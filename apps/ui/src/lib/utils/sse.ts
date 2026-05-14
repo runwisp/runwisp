@@ -4,7 +4,12 @@
 import { SSE_CONFIG } from "$lib/config/constants";
 import type { EventSourceFactory, SSEStream } from "$lib/adapters/browser";
 import { browserEventSourceFactory } from "$lib/adapters/browser";
-import { type SSEErrorInfo, extractErrorInfo, formatErrorInfo, getMessageEventData } from "$lib/utils/event-source";
+import {
+    type SSEErrorInfo,
+    extractErrorInfo,
+    formatErrorInfo,
+    getMessageEventData,
+} from "$lib/utils/event-source";
 import { getApiUrl } from "$lib/utils/env";
 import { createLogger } from "$lib/utils/logger";
 

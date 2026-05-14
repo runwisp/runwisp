@@ -15,6 +15,7 @@ ifeq ($(shell [ -t 1 ] && echo tty),tty)
 C_BOLD := \033[1;36m
 C_DIM := \033[2;37m
 C_OK := \033[1;32m
+C_FAIL := \033[1;31m
 C_OFF := \033[0m
 endif
 endif
@@ -29,6 +30,23 @@ define step
 	else \
 		exit $$rc; \
 	fi
+endef
+
+# $(call ci-run,label,command...) runs a command silently, printing one line
+# on success/failure.  Captured output is shown only when the command fails.
+define ci-run
+@out=$$(mktemp); \
+printf '  %-24s ' "$(1)"; \
+if $(2) >"$$out" 2>&1; then \
+	printf '$(C_OK)ok$(C_OFF)\n'; \
+	rm -f "$$out"; \
+else \
+	rc=$$?; \
+	printf '$(C_FAIL)FAIL$(C_OFF)\n'; \
+	cat "$$out"; \
+	rm -f "$$out"; \
+	exit $$rc; \
+fi
 endef
 
 # Source globs -------------------------------------------------------------
@@ -184,14 +202,14 @@ test-ui-unit:
 test-e2e: $(RUNWISP_BIN) ## playwright e2e against the built binary
 	$(call step,playwright e2e,cd apps/ui && bun run test)
 
-# ci chains the full pipeline in order. Each submake parallelizes
-# internally via MAKEFLAGS.
-ci: ## generate -> format -> check -> test -> test-e2e
-	$(MAKE) generate
-	$(MAKE) format
-	$(MAKE) check
-	$(MAKE) test
-	$(MAKE) test-e2e
+ci: ## generate -> format -> check -> test -> test-e2e (silent, one line per stage)
+	@echo "CI pipeline"
+	$(call ci-run,generate,$(MAKE) generate)
+	$(call ci-run,format,$(MAKE) format)
+	$(call ci-run,check,$(MAKE) check)
+	$(call ci-run,test,$(MAKE) test)
+	$(call ci-run,test-e2e,$(MAKE) test-e2e)
+	@echo "$(C_OK)All stages passed.$(C_OFF)"
 
 web-ui: ## vite dev server for apps/ui
 	cd apps/ui && bun run dev

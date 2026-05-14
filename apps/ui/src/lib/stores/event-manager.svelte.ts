@@ -8,7 +8,12 @@ import {
     type EventSourceFactory,
     type SSEStream,
 } from "$lib/adapters/browser";
-import { type SSEErrorInfo, extractErrorInfo, formatErrorInfo, getMessageEventData } from "$lib/utils/event-source";
+import {
+    type SSEErrorInfo,
+    extractErrorInfo,
+    formatErrorInfo,
+    getMessageEventData,
+} from "$lib/utils/event-source";
 import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
 import { createLogger } from "$lib/utils/logger";
 
@@ -218,5 +223,4 @@ export class EventManager {
             }
         }
     }
-
 }
