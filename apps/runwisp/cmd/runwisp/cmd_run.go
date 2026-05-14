@@ -19,6 +19,7 @@ import (
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/version"
 	"log/slog"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // daemonMode controls which subsystems runDaemon initializes.
@@ -123,7 +124,7 @@ func runDaemon(mode daemonMode) error {
 		return err
 	}
 
-	startupInfo := tui.StartupInfo{
+	startupInfo := uikit.StartupInfo{
 		Version:    version.Version,
 		ConfigPath: flags.CfgFile,
 		DataDir:    flags.DataDir,

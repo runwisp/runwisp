@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package execlist
 
 import (
 	"strings"
@@ -11,6 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/tui/views/logpane"
 )
 
 func newTestRun() *model.Run {
@@ -32,69 +34,69 @@ func newSizedExecView(w, h int) ExecView {
 
 func appendLines(ev *ExecView, count int) {
 	for i := 0; i < count; i++ {
-		ev.pane.AppendLine(int64(i), "stdout", "line")
+		ev.Pane.AppendLine(int64(i), "stdout", "line")
 	}
 }
 
 func TestExecView_AppendLine_SingleLine(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.pane.AppendLine(0, "stdout", "hello world")
+	ev.Pane.AppendLine(0, "stdout", "hello world")
 
-	if len(ev.pane.lines) != 1 {
-		t.Fatalf("expected 1 line, got %d", len(ev.pane.lines))
+	if len(ev.Pane.Lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(ev.Pane.Lines))
 	}
-	if ev.pane.lines[0].text != "hello world" {
-		t.Fatalf("expected 'hello world', got %q", ev.pane.lines[0].text)
+	if ev.Pane.Lines[0].Text != "hello world" {
+		t.Fatalf("expected 'hello world', got %q", ev.Pane.Lines[0].Text)
 	}
 }
 
 func TestExecView_AppendLine_MultipleLines(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.pane.AppendLine(0, "stdout", "line1")
-	ev.pane.AppendLine(1, "stdout", "line2")
-	ev.pane.AppendLine(2, "stdout", "line3")
+	ev.Pane.AppendLine(0, "stdout", "line1")
+	ev.Pane.AppendLine(1, "stdout", "line2")
+	ev.Pane.AppendLine(2, "stdout", "line3")
 
-	if len(ev.pane.lines) != 3 {
-		t.Fatalf("expected 3 lines, got %d", len(ev.pane.lines))
+	if len(ev.Pane.Lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(ev.Pane.Lines))
 	}
-	if ev.pane.lines[2].text != "line3" {
-		t.Fatalf("expected 'line3', got %q", ev.pane.lines[2].text)
+	if ev.Pane.Lines[2].Text != "line3" {
+		t.Fatalf("expected 'line3', got %q", ev.Pane.Lines[2].Text)
 	}
 }
 
 func TestExecView_AppendLine_StreamPropagated(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.pane.AppendLine(0, "stderr", "err line")
-	if ev.pane.lines[0].stream != "stderr" {
-		t.Fatalf("expected stderr stream, got %q", ev.pane.lines[0].stream)
+	ev.Pane.AppendLine(0, "stderr", "err line")
+	if ev.Pane.Lines[0].Stream != "stderr" {
+		t.Fatalf("expected stderr stream, got %q", ev.Pane.Lines[0].Stream)
 	}
 }
 
 func TestExecView_Append_Eviction(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 
-	count := maxLogLines + 10
+	count := MaxLogLines + 10
 	for i := 0; i < count; i++ {
-		ev.pane.AppendLine(int64(i), "stdout", "line")
+		ev.Pane.AppendLine(int64(i), "stdout", "line")
 	}
 
-	if len(ev.pane.lines) != maxLogLines {
-		t.Fatalf("expected %d lines after eviction, got %d", maxLogLines, len(ev.pane.lines))
+	if len(ev.Pane.Lines) != MaxLogLines {
+		t.Fatalf("expected %d lines after eviction, got %d", MaxLogLines, len(ev.Pane.Lines))
 	}
-	if ev.pane.totalLines < count {
-		t.Fatalf("expected totalLines>=%d, got %d", count, ev.pane.totalLines)
+	if ev.Pane.TotalLines < count {
+		t.Fatalf("expected totalLines>=%d, got %d", count, ev.Pane.TotalLines)
 	}
 }
 
 func TestExecView_FollowMode(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	if !ev.pane.follow {
+	if !ev.Pane.Follow {
 		t.Fatal("expected follow=true initially")
 	}
 
 	appendLines(&ev, 50)
-	if ev.pane.scroll != ev.pane.maxScroll() {
-		t.Fatalf("expected scroll=%d (bottom), got %d", ev.pane.maxScroll(), ev.pane.scroll)
+	if ev.Pane.Scroll != ev.Pane.MaxScroll() {
+		t.Fatalf("expected scroll=%d (bottom), got %d", ev.Pane.MaxScroll(), ev.Pane.Scroll)
 	}
 }
 
@@ -104,7 +106,7 @@ func TestExecView_Update_ScrollUp(t *testing.T) {
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
 
-	if ev.pane.follow {
+	if ev.Pane.Follow {
 		t.Fatal("expected follow=false after scrolling up")
 	}
 }
@@ -112,16 +114,16 @@ func TestExecView_Update_ScrollUp(t *testing.T) {
 func TestExecView_Update_ScrollToBottom(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	appendLines(&ev, 50)
-	ev.pane.scroll = 0
-	ev.pane.follow = false
+	ev.Pane.Scroll = 0
+	ev.Pane.Follow = false
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyEnd})
 
-	if !ev.pane.follow {
+	if !ev.Pane.Follow {
 		t.Fatal("expected follow=true after G/end")
 	}
-	if ev.pane.scroll != ev.pane.maxScroll() {
-		t.Fatalf("expected scroll=%d, got %d", ev.pane.maxScroll(), ev.pane.scroll)
+	if ev.Pane.Scroll != ev.Pane.MaxScroll() {
+		t.Fatalf("expected scroll=%d, got %d", ev.Pane.MaxScroll(), ev.Pane.Scroll)
 	}
 }
 
@@ -131,95 +133,95 @@ func TestExecView_Update_ScrollToTop(t *testing.T) {
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyHome})
 
-	if ev.pane.scroll != 0 {
-		t.Fatalf("expected scroll=0, got %d", ev.pane.scroll)
+	if ev.Pane.Scroll != 0 {
+		t.Fatalf("expected scroll=0, got %d", ev.Pane.Scroll)
 	}
-	if ev.pane.hScroll != 0 {
-		t.Fatalf("expected hScroll=0, got %d", ev.pane.hScroll)
+	if ev.Pane.HScroll != 0 {
+		t.Fatalf("expected hScroll=0, got %d", ev.Pane.HScroll)
 	}
-	if ev.pane.follow {
+	if ev.Pane.Follow {
 		t.Fatal("expected follow=false after g/home")
 	}
 }
 
 func TestExecView_Update_HeaderFocusNavigation(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.run.Status = model.PhaseRunning
+	ev.Run.Status = model.PhaseRunning
 
 	// Scroll up from log area should enter header focus.
-	ev.pane.scroll = 0
-	ev.headerFocus = headerFocusNone
+	ev.Pane.Scroll = 0
+	ev.HeaderFocus = HeaderFocusNone
 	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if ev.headerFocus != headerFocusStarted {
-		t.Fatalf("expected headerFocusStarted, got %d", ev.headerFocus)
+	if ev.HeaderFocus != HeaderFocusStarted {
+		t.Fatalf("expected HeaderFocusStarted, got %d", ev.HeaderFocus)
 	}
 
 	// Up again should go to ID row.
 	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if ev.headerFocus != headerFocusID {
-		t.Fatalf("expected headerFocusID, got %d", ev.headerFocus)
+	if ev.HeaderFocus != HeaderFocusID {
+		t.Fatalf("expected HeaderFocusID, got %d", ev.HeaderFocus)
 	}
 
 	// Right from ID should go to Back, then to Action.
 	ev.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	if ev.headerFocus != headerFocusBack {
-		t.Fatalf("expected headerFocusBack, got %d", ev.headerFocus)
+	if ev.HeaderFocus != HeaderFocusBack {
+		t.Fatalf("expected HeaderFocusBack, got %d", ev.HeaderFocus)
 	}
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
-	if ev.headerFocus != headerFocusID {
-		t.Fatalf("expected headerFocusID after right from back, got %d", ev.headerFocus)
+	if ev.HeaderFocus != HeaderFocusID {
+		t.Fatalf("expected HeaderFocusID after right from back, got %d", ev.HeaderFocus)
 	}
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
-	if ev.headerFocus != headerFocusAction {
-		t.Fatalf("expected headerFocusAction, got %d", ev.headerFocus)
+	if ev.HeaderFocus != HeaderFocusAction {
+		t.Fatalf("expected HeaderFocusAction, got %d", ev.HeaderFocus)
 	}
 }
 
 func TestExecView_Update_HorizontalScroll(t *testing.T) {
 	ev := newSizedExecView(40, 24)
-	ev.pane.AppendLine(0, "stdout", strings.Repeat("x", 200))
-	ev.pane.scroll = 0
-	ev.pane.follow = false
+	ev.Pane.AppendLine(0, "stdout", strings.Repeat("x", 200))
+	ev.Pane.Scroll = 0
+	ev.Pane.Follow = false
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
-	if ev.pane.hScroll != hScrollStep {
-		t.Fatalf("expected hScroll=%d, got %d", hScrollStep, ev.pane.hScroll)
+	if ev.Pane.HScroll != logpane.HScrollStep {
+		t.Fatalf("expected hScroll=%d, got %d", logpane.HScrollStep, ev.Pane.HScroll)
 	}
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyShiftLeft})
-	if ev.pane.hScroll != 0 {
-		t.Fatalf("expected hScroll=0 after shift+left, got %d", ev.pane.hScroll)
+	if ev.Pane.HScroll != 0 {
+		t.Fatalf("expected hScroll=0 after shift+left, got %d", ev.Pane.HScroll)
 	}
 }
 
 func TestExecView_Update_PageDown(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	appendLines(&ev, 100)
-	ev.pane.scroll = 0
-	ev.pane.follow = false
+	ev.Pane.Scroll = 0
+	ev.Pane.Follow = false
 
-	visible := ev.pane.VisibleLines()
+	visible := ev.Pane.VisibleLines()
 	ev.Update(tea.KeyMsg{Type: tea.KeyPgDown})
-	if ev.pane.scroll != visible {
-		t.Fatalf("expected scroll=%d after pgdown, got %d", visible, ev.pane.scroll)
+	if ev.Pane.Scroll != visible {
+		t.Fatalf("expected scroll=%d after pgdown, got %d", visible, ev.Pane.Scroll)
 	}
 }
 
 func TestExecView_CopyableValue(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 
-	ev.headerFocus = headerFocusID
+	ev.HeaderFocus = HeaderFocusID
 	val := ev.CopyableValue()
-	if val != ev.run.ID {
+	if val != ev.Run.ID {
 		t.Fatalf("expected run ID, got %q", val)
 	}
 
-	ev.headerFocus = headerFocusNone
+	ev.HeaderFocus = HeaderFocusNone
 	val = ev.CopyableValue()
 	if val != "" {
-		t.Fatalf("expected empty for headerFocusNone, got %q", val)
+		t.Fatalf("expected empty for HeaderFocusNone, got %q", val)
 	}
 }
 
@@ -238,14 +240,14 @@ func TestExecView_RunID(t *testing.T) {
 
 func TestExecView_VisibleLines(t *testing.T) {
 	ev := newSizedExecView(80, 10)
-	vis := ev.pane.VisibleLines()
+	vis := ev.Pane.VisibleLines()
 	// height=10, header=4 → 6 visible
 	if vis != 6 {
 		t.Fatalf("expected 6 visible lines, got %d", vis)
 	}
 
 	ev.SetSize(80, 3)
-	vis = ev.pane.VisibleLines()
+	vis = ev.Pane.VisibleLines()
 	if vis != 1 {
 		t.Fatalf("expected 1 visible line for tiny height, got %d", vis)
 	}
@@ -275,12 +277,12 @@ func TestSliceLineColumns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, clipped := sliceLineColumns(tt.input, tt.start, tt.cols)
+			got, clipped := uikit.SliceLineColumns(tt.input, tt.start, tt.cols)
 			if got != tt.expected {
-				t.Errorf("sliceLineColumns(%q, %d, %d) = %q, want %q", tt.input, tt.start, tt.cols, got, tt.expected)
+				t.Errorf("uikit.SliceLineColumns(%q, %d, %d) = %q, want %q", tt.input, tt.start, tt.cols, got, tt.expected)
 			}
 			if clipped != tt.clipped {
-				t.Errorf("sliceLineColumns(%q, %d, %d) clipped = %v, want %v", tt.input, tt.start, tt.cols, clipped, tt.clipped)
+				t.Errorf("uikit.SliceLineColumns(%q, %d, %d) clipped = %v, want %v", tt.input, tt.start, tt.cols, clipped, tt.clipped)
 			}
 		})
 	}
@@ -289,19 +291,19 @@ func TestSliceLineColumns(t *testing.T) {
 func TestExecView_HasActionButton(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 
-	ev.run.Status = model.PhaseRunning
+	ev.Run.Status = model.PhaseRunning
 	if !ev.hasActionButton() {
 		t.Fatal("expected action button for running status")
 	}
 
-	ev.run.Status = model.PhaseEnded
-	ev.run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
+	ev.Run.Status = model.PhaseEnded
+	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
 	if ev.hasActionButton() {
 		t.Fatal("expected no action button for success status")
 	}
 
-	ev.run.Status = model.PhaseEnded
-	ev.run.EndReason = model.EndReasonPtr(model.ReasonFailed)
+	ev.Run.Status = model.PhaseEnded
+	ev.Run.EndReason = model.EndReasonPtr(model.ReasonFailed)
 	if !ev.hasActionButton() {
 		t.Fatal("expected action button for failed status")
 	}
@@ -312,35 +314,35 @@ func TestExecView_ToggleFullscreen(t *testing.T) {
 	if ev.Fullscreen() {
 		t.Fatal("expected fullscreen=false initially")
 	}
-	if !ev.pane.cfg.LineNumbers {
+	if !ev.Pane.Cfg.LineNumbers {
 		t.Fatal("expected line numbers enabled initially")
 	}
 	// Normal mode: header takes 4 lines of the 24-high viewport.
-	if got := ev.pane.VisibleLines(); got != 20 {
+	if got := ev.Pane.VisibleLines(); got != 20 {
 		t.Fatalf("expected 20 visible lines in normal mode, got %d", got)
 	}
 
-	ev.headerFocus = headerFocusID
-	ev.hoveredHeader = headerFocusBack
+	ev.HeaderFocus = HeaderFocusID
+	ev.HoveredHeader = HeaderFocusBack
 	ev.ToggleFullscreen()
 
 	if !ev.Fullscreen() {
 		t.Fatal("expected fullscreen=true after toggle")
 	}
-	if ev.pane.cfg.LineNumbers {
+	if ev.Pane.Cfg.LineNumbers {
 		t.Fatal("expected line numbers disabled in fullscreen")
 	}
-	if ev.headerFocus != headerFocusNone {
-		t.Fatalf("expected headerFocus cleared, got %d", ev.headerFocus)
+	if ev.HeaderFocus != HeaderFocusNone {
+		t.Fatalf("expected headerFocus cleared, got %d", ev.HeaderFocus)
 	}
-	if ev.hoveredHeader != headerFocusNone {
-		t.Fatalf("expected hoveredHeader cleared, got %d", ev.hoveredHeader)
+	if ev.HoveredHeader != HeaderFocusNone {
+		t.Fatalf("expected hoveredHeader cleared, got %d", ev.HoveredHeader)
 	}
 	// Fullscreen: header height 0, so full 24 lines visible.
-	if got := ev.pane.VisibleLines(); got != 24 {
+	if got := ev.Pane.VisibleLines(); got != 24 {
 		t.Fatalf("expected 24 visible lines in fullscreen, got %d", got)
 	}
-	if hit := ev.hitAt(5, 1); hit != headerFocusNone {
+	if hit := ev.HitAt(5, 1); hit != HeaderFocusNone {
 		t.Fatalf("expected no header hitbox in fullscreen, got %d", hit)
 	}
 
@@ -348,17 +350,17 @@ func TestExecView_ToggleFullscreen(t *testing.T) {
 	if ev.Fullscreen() {
 		t.Fatal("expected fullscreen=false after second toggle")
 	}
-	if !ev.pane.cfg.LineNumbers {
+	if !ev.Pane.Cfg.LineNumbers {
 		t.Fatal("expected line numbers re-enabled after exiting fullscreen")
 	}
-	if got := ev.pane.VisibleLines(); got != 20 {
+	if got := ev.Pane.VisibleLines(); got != 20 {
 		t.Fatalf("expected 20 visible lines after exit, got %d", got)
 	}
 }
 
 func TestExecView_Fullscreen_ViewHasNoHeader(t *testing.T) {
 	ev := newSizedExecView(80, 10)
-	ev.pane.AppendLine(0, "stdout", "hello world")
+	ev.Pane.AppendLine(0, "stdout", "hello world")
 	ev.ToggleFullscreen()
 
 	out := ev.View()
@@ -377,12 +379,12 @@ func TestExecView_Fullscreen_ViewHasNoHeader(t *testing.T) {
 func TestExecView_Fullscreen_UpDoesNotEnterHeader(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	ev.ToggleFullscreen()
-	ev.pane.scroll = 0
+	ev.Pane.Scroll = 0
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
 
-	if ev.headerFocus != headerFocusNone {
-		t.Fatalf("fullscreen up must not enter header; got focus=%d", ev.headerFocus)
+	if ev.HeaderFocus != HeaderFocusNone {
+		t.Fatalf("fullscreen up must not enter header; got focus=%d", ev.HeaderFocus)
 	}
 }
 
@@ -390,12 +392,12 @@ func TestExecView_Fullscreen_StillScrollsWithKeys(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	appendLines(&ev, 100)
 	ev.ToggleFullscreen()
-	ev.pane.scroll = 0
-	ev.pane.follow = false
+	ev.Pane.Scroll = 0
+	ev.Pane.Follow = false
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 
-	if ev.pane.scroll == 0 {
+	if ev.Pane.Scroll == 0 {
 		t.Fatal("expected pgdown to advance scroll in fullscreen")
 	}
 }
@@ -404,10 +406,10 @@ func TestExecView_NotFocused_IgnoresInput(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	ev.SetFocused(false)
 	appendLines(&ev, 50)
-	initialScroll := ev.pane.scroll
+	initialScroll := ev.Pane.Scroll
 
 	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if ev.pane.scroll != initialScroll {
+	if ev.Pane.Scroll != initialScroll {
 		t.Fatal("expected no scroll change when not focused")
 	}
 }

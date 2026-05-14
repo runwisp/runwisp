@@ -1,13 +1,14 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package execlist
 
 import (
 	"sync"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // windowSize is the number of items loaded into the sliding window.
@@ -31,7 +32,7 @@ type ExecWindow struct {
 	filterTask  string
 	totalCount  int // server-reported total
 	windowStart int // offset of items[0] in the full virtual list
-	items       []ExecListItem
+	items       []uikit.ExecListItem
 	idSet       map[string]struct{} // dedup for SSE upserts
 	loading     bool
 }
@@ -43,17 +44,17 @@ func NewExecWindow(client *apiclient.Client) *ExecWindow {
 	}
 }
 
-func newExecListItem(run model.Run) ExecListItem {
-	return ExecListItem{
+func newExecListItem(run model.Run) uikit.ExecListItem {
+	return uikit.ExecListItem{
 		Run:      run,
-		Duration: formatDuration(run),
-		TimeAgo:  formatTimeAgo(run.CreatedAt),
+		Duration: uikit.FormatDuration(run),
+		TimeAgo:  uikit.FormatTimeAgo(run.CreatedAt),
 	}
 }
 
-func refreshExecListItem(item *ExecListItem) {
-	item.Duration = formatDuration(item.Run)
-	item.TimeAgo = formatTimeAgo(item.Run.CreatedAt)
+func refreshExecListItem(item *uikit.ExecListItem) {
+	item.Duration = uikit.FormatDuration(item.Run)
+	item.TimeAgo = uikit.FormatTimeAgo(item.Run.CreatedAt)
 }
 
 func (w *ExecWindow) TotalCount() int {
@@ -83,8 +84,8 @@ func (w *ExecWindow) FilterTask() string {
 	return w.filterTask
 }
 
-// Item returns the ExecListItem at virtual index i, or nil if outside the loaded window.
-func (w *ExecWindow) Item(i int) *ExecListItem {
+// Item returns the uikit.ExecListItem at virtual index i, or nil if outside the loaded window.
+func (w *ExecWindow) Item(i int) *uikit.ExecListItem {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	local := i - w.windowStart
@@ -128,7 +129,7 @@ func (w *ExecWindow) NeedsFetch(scroll, vpH int) bool {
 
 // FetchAroundCmd returns a tea.Msg-producing function that loads items centered
 // on the given scroll position. Safe to call from a tea.Cmd goroutine.
-func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]ExecListItem, int, int, error) {
+func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]uikit.ExecListItem, int, int, error) {
 	w.mu.Lock()
 	if w.loading {
 		w.mu.Unlock()
@@ -138,7 +139,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]ExecListItem, int
 	filter := w.filterTask
 	w.mu.Unlock()
 
-	return func() ([]ExecListItem, int, int, error) {
+	return func() ([]uikit.ExecListItem, int, int, error) {
 		// Center the window on the current scroll position.
 		offset := scroll - windowSize/2
 		if offset < 0 {
@@ -164,7 +165,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]ExecListItem, int
 			return nil, 0, 0, err
 		}
 
-		items := make([]ExecListItem, len(runs))
+		items := make([]uikit.ExecListItem, len(runs))
 		for i, run := range runs {
 			items[i] = newExecListItem(run)
 		}
@@ -174,7 +175,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]ExecListItem, int
 }
 
 // ApplyFetch sets the window to the result of a successful fetch.
-func (w *ExecWindow) ApplyFetch(items []ExecListItem, offset, total int) {
+func (w *ExecWindow) ApplyFetch(items []uikit.ExecListItem, offset, total int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.items = items
@@ -216,7 +217,7 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 	// New run — prepend when window starts at 0 (i.e. viewing the top).
 	if w.windowStart == 0 {
 		item := newExecListItem(run)
-		w.items = append([]ExecListItem{item}, w.items...)
+		w.items = append([]uikit.ExecListItem{item}, w.items...)
 		w.idSet[run.ID] = struct{}{}
 		// Trim window if it grew beyond capacity.
 		if len(w.items) > windowSize+50 {
@@ -273,9 +274,9 @@ func (w *ExecWindow) UpdateVisibleTimes(scroll, vpH int) {
 		if local < 0 || local >= len(w.items) {
 			continue
 		}
-		w.items[local].TimeAgo = formatTimeAgo(w.items[local].Run.CreatedAt)
+		w.items[local].TimeAgo = uikit.FormatTimeAgo(w.items[local].Run.CreatedAt)
 		if !w.items[local].Run.Status.IsTerminal() {
-			w.items[local].Duration = formatDuration(w.items[local].Run)
+			w.items[local].Duration = uikit.FormatDuration(w.items[local].Run)
 		}
 	}
 }

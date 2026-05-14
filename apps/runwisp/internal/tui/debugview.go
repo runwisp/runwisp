@@ -8,16 +8,18 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/tui/views/logpane"
 )
 
 type DebugView struct {
-	pane    LogPane
+	pane    logpane.Pane
 	lineSeq int64
 }
 
 func NewDebugView() DebugView {
 	return DebugView{
-		pane: NewLogPane(LogPaneConfig{
+		pane: logpane.NewPane(logpane.Config{
 			MaxLines:    maxDebugLines,
 			LineNumbers: false,
 			HScroll:     true,
@@ -48,44 +50,44 @@ func (v *DebugView) ScrollDown(n int) { v.pane.ScrollDown(n) }
 
 func (v *DebugView) View() string {
 	var b strings.Builder
-	w := v.pane.width
+	w := v.pane.Width
 
-	b.WriteString(padLine("", w, colorBgLight))
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
 	title := lipgloss.NewStyle().
-		Background(colorBgLight).
-		Foreground(colorTextBright).
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorTextBright).
 		Bold(true).
 		Render("  Debug Log")
-	b.WriteString(padLine(title, w, colorBgLight))
+	b.WriteString(uikit.PadLine(title, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
 	subtitle := lipgloss.NewStyle().
-		Background(colorBgLight).
-		Foreground(colorTextMuted).
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorTextMuted).
 		Render("  Internal events and diagnostics")
 	followIndicator := ""
-	if v.pane.follow {
+	if v.pane.Follow {
 		followIndicator = lipgloss.NewStyle().
-			Background(colorBgLight).
-			Foreground(colorSecondary).
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorSecondary).
 			Bold(true).
 			Render("  ● FOLLOW")
 	}
-	b.WriteString(padLine(subtitle+followIndicator, w, colorBgLight))
+	b.WriteString(uikit.PadLine(subtitle+followIndicator, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
-	b.WriteString(padLine("", w, colorBgLight))
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
-	if len(v.pane.lines) == 0 {
+	if len(v.pane.Lines) == 0 {
 		emptyMsg := lipgloss.NewStyle().
-			Background(colorBg).
-			Foreground(colorTextMuted).
+			Background(uikit.ColorBg).
+			Foreground(uikit.ColorTextMuted).
 			PaddingLeft(2).
 			Render("Waiting for events...")
-		b.WriteString(padLine(emptyMsg, w, colorBg))
+		b.WriteString(uikit.PadLine(emptyMsg, w, uikit.ColorBg))
 		b.WriteString("\n")
 	}
 

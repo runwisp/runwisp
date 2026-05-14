@@ -10,8 +10,8 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/spf13/cobra"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 var tuiCmd = &cobra.Command{
@@ -41,8 +41,8 @@ func runTUIClient() error {
 // The local TUI no longer displays a password — it connects over the Unix
 // socket and the daemon's password is either operator-supplied (already
 // known to them) or ephemeral (never disclosed by this client).
-func buildStartupInfoFromDaemon(info *model.DaemonInfo) tui.StartupInfo {
-	si := tui.StartupInfo{}
+func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
+	si := uikit.StartupInfo{}
 	if info == nil {
 		return si
 	}
