@@ -5,6 +5,8 @@ title: Logs & retention
 description: How RunWisp captures stdout/stderr, where logs live on disk, how rotation and retention work, and how to follow or download a run's output.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 RunWisp captures each run's stdout and stderr to disk. You can watch
 the live tail, scroll back through finished runs, and download the
 full log. The database stores run metadata — exit code, duration,
@@ -145,11 +147,27 @@ If the daemon is killed mid-write (power loss, force kill):
   and its log file is left exactly as it was — those last lines are
   usually the most useful debugging artifact.
 
-## Where to next
+---
 
-- [Notifications model](/notifications/model/) — how a failed run
-  ends up in your inbox or chat.
-- [How scheduling works](/concepts/scheduling/) — what creates the run
-  rows that retention later trims.
-- [`[tasks.*]` reference](/configuration/tasks/) — `log_max_size`,
-  `log_on_full`, `keep_runs`, `keep_for`.
+<CardGrid>
+  <LinkCard
+    title="Notifications model"
+    href="/notifications/model/"
+    description="How a failed run ends up in your inbox or chat."
+  />
+  <LinkCard
+    title="Scheduling"
+    href="/concepts/scheduling/"
+    description="What creates the run rows that retention later trims."
+  />
+  <LinkCard
+    title="[tasks.*] ref"
+    href="/configuration/tasks/"
+    description="log_max_size, log_on_full, keep_runs, keep_for."
+  />
+  <LinkCard
+    title="[storage] ref"
+    href="/configuration/storage/"
+    description="The daemon-wide cap that sits above per-task log_max_size."
+  />
+</CardGrid>

@@ -5,7 +5,7 @@ title: Slack
 description: Set up the Slack notifier end-to-end — create a webhook, store the URL safely, declare the channel, route failures to it, and test it.
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 The Slack driver posts via Slack's [Incoming Webhooks][iw]. One
 webhook URL maps to one default channel. An optional `channel`
@@ -217,11 +217,27 @@ code, end reason, captured tail.
 - An `id` containing `:` (reserved for inline target overrides) or
   equal to `"inapp"` (reserved).
 
-## Where to next
+---
 
-- [Telegram](/notifications/providers/telegram/) — same shape, a
-  different chat platform.
-- [Notification rules](/notifications/routes/) — one rule covering many
-  tasks.
-- [Notifications model](/notifications/model/) — coalescing,
-  delivery-failure handling, the trust model.
+<CardGrid>
+  <LinkCard
+    title="Telegram"
+    href="/notifications/providers/telegram/"
+    description="Same shape, a different chat platform."
+  />
+  <LinkCard
+    title="Notification rules"
+    href="/notifications/routes/"
+    description="One rule covering many tasks."
+  />
+  <LinkCard
+    title="Notifications model"
+    href="/notifications/model/"
+    description="Coalescing, delivery-failure handling, the trust model."
+  />
+  <LinkCard
+    title="Per-task notifications"
+    href="/notifications/per-task/"
+    description="notify_on_failure and notify_on_success on one task."
+  />
+</CardGrid>

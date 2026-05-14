@@ -5,6 +5,8 @@ title: Deploy hooks
 description: Manual-only tasks triggered from CI via the REST API — schema migrations, blue/green flips, cache warmups — with terminate-on-overlap so a stale deploy never lingers.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 A deploy hook is a manual-only task: no `cron`, fired from CI via
 RunWisp's REST API. Use it to give every deploy a stable, browsable
 log entry — without invoking SSH from your pipeline, without keeping
@@ -194,11 +196,27 @@ a `skipped` row (end reason, not `failed`) with exit code `-1`
 and the message "task already running, skipping (policy: skip)"
 so the operator can see they were ignored.
 
-## Where to next
+---
 
-- [`[tasks.*]` reference](/configuration/tasks/) — every key on
-  this task: `on_overlap`, `notify_on_failure`, `keep_runs`, etc.
-- [Slack provider](/notifications/providers/slack/) — wiring the
-  `slack-ops` and `slack-deploys` notifiers.
-- [Operations: auth](/operations/auth/) — the CHAP flow your CI
-  script is doing.
+<CardGrid>
+  <LinkCard
+    title="[tasks.*] ref"
+    href="/configuration/tasks/"
+    description="Every key on this task."
+  />
+  <LinkCard
+    title="Slack provider"
+    href="/notifications/providers/slack/"
+    description="Wiring the slack-ops and slack-deploys notifiers."
+  />
+  <LinkCard
+    title="Operations: auth"
+    href="/operations/auth/"
+    description="The CHAP flow your CI script is doing."
+  />
+  <LinkCard
+    title="Docker recipe"
+    href="/recipes/docker/"
+    description="Running tasks that invoke Docker with the --rm discipline."
+  />
+</CardGrid>

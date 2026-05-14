@@ -5,6 +5,8 @@ title: "[storage]"
 description: max_size and min_free_space — the two daemon-wide disk safeguards that keep RunWisp from filling your partition.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 `[storage]` is the daemon-wide safety net for disk usage. It sits one
 level above per-task [`log_max_size`](/concepts/logs/#log_max_size):
 that field caps an individual run's log; this section caps the daemon's
@@ -110,11 +112,27 @@ If a single task can produce gigabytes of output per run, size
 will be deleting runs as fast as they accumulate, and your history
 becomes useless.
 
-## Where to next
+---
 
-- [`[defaults]` reference](/configuration/defaults/) — the per-task
-  fallback layer (`log_max_size`, `keep_runs`, etc.).
-- [Logs & retention](/concepts/logs/) — how on-disk logs are organised
-  and rotated.
-- [Operations: data directory](/operations/data-directory/) — what the
-  data dir actually contains.
+<CardGrid>
+  <LinkCard
+    title="[defaults] ref"
+    href="/configuration/defaults/"
+    description="The per-task fallback layer."
+  />
+  <LinkCard
+    title="Logs & retention"
+    href="/concepts/logs/"
+    description="How on-disk logs are organised and rotated."
+  />
+  <LinkCard
+    title="Daemon ref"
+    href="/configuration/daemon/"
+    description="Daemon-wide settings and CLI flags."
+  />
+  <LinkCard
+    title="Config overview"
+    href="/configuration/overview/"
+    description="Every key you can put in runwisp.toml."
+  />
+</CardGrid>

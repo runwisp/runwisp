@@ -5,7 +5,7 @@ title: Quick start
 description: Install RunWisp, scaffold a starter runwisp.toml, watch your first task stream live, and open the Web UI.
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 RunWisp is one small Go binary that runs the shell commands you
 list in a `runwisp.toml` — scheduling jobs on cron, restarting
@@ -244,11 +244,27 @@ RunWisp doesn't watch `runwisp.toml` for changes. When you've
 edited the file, quit the TUI with <kbd>Ctrl</kbd>+<kbd>C</kbd>
 and run `runwisp` again — your edits take effect on the next boot.
 
-## Where to next
+---
 
-- [The Web UI tour](/getting-started/web-ui-tour/) — every panel
-  in the dashboard, and what it shows you.
-- [Configuration reference](/configuration/overview/) — every key
-  you can put in `runwisp.toml`.
-- [Concurrency policies](/concepts/concurrency/) — what
-  `on_overlap` actually does when runs collide.
+<CardGrid>
+  <LinkCard
+    title="Web UI tour"
+    href="/getting-started/web-ui-tour/"
+    description="Every panel in the dashboard and what it shows you."
+  />
+  <LinkCard
+    title="Config overview"
+    href="/configuration/overview/"
+    description="Every key you can put in runwisp.toml."
+  />
+  <LinkCard
+    title="Concurrency"
+    href="/concepts/concurrency/"
+    description="What on_overlap actually does when runs collide."
+  />
+  <LinkCard
+    title="Operations: auth"
+    href="/operations/auth/"
+    description="Managing the password and session."
+  />
+</CardGrid>

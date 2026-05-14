@@ -5,6 +5,8 @@ title: "[daemon]"
 description: Daemon-wide settings — shutdown_timeout — plus the CLI flags that pick the data directory and listen address.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 `[daemon]` carries the small set of settings that apply to the daemon
 as a whole rather than to any individual task or service. It is optional;
 omit the section and the built-in defaults below take over.
@@ -83,10 +85,17 @@ password — access is gated by the data dir's `0700` mode, the
 socket's `0600` mode, and a `SO_PEERCRED` check at accept time. The
 socket file is removed on graceful shutdown.
 
-## Where to next
+---
 
-- [`[tasks.*]` reference](/configuration/tasks/) — per-task
-  `graceful_stop`, which lives inside the daemon-wide
-  `shutdown_timeout`.
-- [`[storage]` reference](/configuration/storage/) — the disk-usage
-  safeguards that protect the data dir.
+<CardGrid>
+  <LinkCard
+    title="[tasks.*] ref"
+    href="/configuration/tasks/"
+    description="Per-task graceful_stop, which lives inside the daemon-wide shutdown_timeout."
+  />
+  <LinkCard
+    title="[storage] ref"
+    href="/configuration/storage/"
+    description="The disk-usage safeguards that protect the data dir."
+  />
+</CardGrid>

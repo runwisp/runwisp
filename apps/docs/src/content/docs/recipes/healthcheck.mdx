@@ -5,6 +5,8 @@ title: Health checks
 description: An every-N-minutes HTTP health check that skips on overlap, escalates on repeated failures via notification coalescing, and doesn't page you for a single transient blip.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 A health check is a one-line `curl` wrapped in cron. The interesting
 parts are the failure semantics: how do you avoid paging on a single
 flaky probe, and how do you make sure the alert actually arrives when
@@ -179,11 +181,27 @@ nc -zw5 host.internal 5432 || { echo "host.internal:5432 not reachable"; exit 1;
 
 Just don't dress it up as a health check it isn't.
 
-## Where to next
+---
 
-- [Slack provider](/notifications/providers/slack/) — wiring the
-  `slack-ops` notifier the task references.
-- [Notifications model](/notifications/model/) — coalescing,
-  delivery failure handling, and the in-app default.
-- [Concepts: retries & timeouts](/concepts/retries/) — what
-  `retry_backoff = "linear"` actually computes.
+<CardGrid>
+  <LinkCard
+    title="Slack provider"
+    href="/notifications/providers/slack/"
+    description="Wiring the slack-ops notifier the task references."
+  />
+  <LinkCard
+    title="Notifications model"
+    href="/notifications/model/"
+    description="Coalescing, delivery failure handling, and the in-app default."
+  />
+  <LinkCard
+    title="Retries"
+    href="/concepts/retries/"
+    description="What retry_backoff = linear actually computes."
+  />
+  <LinkCard
+    title="Backup recipe"
+    href="/recipes/backup/"
+    description="A complete worked example for a nightly Postgres backup."
+  />
+</CardGrid>

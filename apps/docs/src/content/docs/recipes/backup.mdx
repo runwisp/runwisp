@@ -5,6 +5,8 @@ title: Nightly backup
 description: A complete worked example for a nightly Postgres backup — pg_dump with skip-on-overlap, 90-day retention, no retries (failures should reach a human), and Slack alerting on failure.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 A nightly database backup is the canonical RunWisp task. It runs on a
 schedule, writes a timestamped artefact, takes long enough that you
 care about overlap, and you absolutely want to know when it fails.
@@ -180,12 +182,27 @@ Two cron rows in the daemon, two log streams, two failure paths.
 You'll know within 24 hours if a backup file isn't restorable —
 which is the only failure mode that actually matters.
 
-## Where to next
+---
 
-- [Slack provider](/notifications/providers/slack/) — wiring up the
-  `slack-ops` notifier this recipe references.
-- [Concepts: retries & timeouts](/concepts/retries/) — what
-  `retry_attempts` and `timeout` actually do, and which end reasons
-  trigger retries.
-- [`[storage]`](/configuration/storage/) — the daemon-wide cap that
-  sits above `keep_runs`. Don't let on-disk dumps fill the data dir.
+<CardGrid>
+  <LinkCard
+    title="Slack provider"
+    href="/notifications/providers/slack/"
+    description="Wiring up the slack-ops notifier this recipe references."
+  />
+  <LinkCard
+    title="Retries"
+    href="/concepts/retries/"
+    description="What retry_attempts and timeout actually do."
+  />
+  <LinkCard
+    title="[storage] ref"
+    href="/configuration/storage/"
+    description="The daemon-wide cap that sits above keep_runs."
+  />
+  <LinkCard
+    title="Healthcheck recipe"
+    href="/recipes/healthcheck/"
+    description="An every-N-minutes HTTP health check with retries."
+  />
+</CardGrid>

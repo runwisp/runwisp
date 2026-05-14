@@ -5,6 +5,8 @@ title: Concurrency policies
 description: queue, skip, and terminate — what each on_overlap mode does, when to use it, and how max_concurrent interacts with the policy.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 When a task fires while a previous run is still going, RunWisp has to
 decide what to do. That decision is `on_overlap`. Three policies cover
 nearly every realistic case: `queue`, `skip`, and `terminate`.
@@ -157,11 +159,27 @@ in its own slot — overlap doesn't really happen unless you trigger a
 service manually while it's already running, which `skip` correctly
 refuses.
 
-## Where to next
+---
 
-- [How scheduling works](/concepts/scheduling/) — how cron firings turn
-  into runs that the policy evaluates.
-- [Retries & timeouts](/concepts/retries/) — how a failing run gets
-  retried, and why retries don't conflict with `on_overlap`.
-- [`[tasks.*]` reference](/configuration/tasks/) — the `on_overlap` and
-  `max_concurrent` fields in the schema.
+<CardGrid>
+  <LinkCard
+    title="Scheduling"
+    href="/concepts/scheduling/"
+    description="How cron firings turn into runs that the policy evaluates."
+  />
+  <LinkCard
+    title="Retries"
+    href="/concepts/retries/"
+    description="How a failing run gets retried, and why retries don't conflict with on_overlap."
+  />
+  <LinkCard
+    title="[tasks.*] ref"
+    href="/configuration/tasks/"
+    description="The on_overlap and max_concurrent fields in the schema."
+  />
+  <LinkCard
+    title="Tasks vs Services"
+    href="/concepts/tasks-vs-services/"
+    description="Picking the right kind."
+  />
+</CardGrid>

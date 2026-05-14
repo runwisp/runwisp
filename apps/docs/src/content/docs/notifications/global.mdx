@@ -5,6 +5,8 @@ title: Global settings
 description: Global notification settings — bell on/off, retry budget, history retention, coalescing window.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 The `[notify]` table holds daemon-wide knobs: which channels every
 failure lands in, how long to retry an outbound delivery, how long to
 keep bell history, how aggressively to coalesce. Every key is optional
@@ -124,11 +126,27 @@ A headless build agent that sends everything off-host:
 global_notifiers  = []          # nobody reads the bell
 ```
 
-## Where to next
+---
 
-- [Notifications model](/notifications/model/) — the picture this
-  page configures.
-- [Notification rules](/notifications/routes/) — `[[notification_route]]`
-  matches many tasks in one rule.
-- [Per-task notifications](/notifications/per-task/) —
-  `notify_on_failure` / `notify_on_success` on one task.
+<CardGrid>
+  <LinkCard
+    title="Notifications model"
+    href="/notifications/model/"
+    description="The picture this page configures."
+  />
+  <LinkCard
+    title="Notification rules"
+    href="/notifications/routes/"
+    description="One rule covering many tasks."
+  />
+  <LinkCard
+    title="Per-task"
+    href="/notifications/per-task/"
+    description="notify_on_failure / notify_on_success on one task."
+  />
+  <LinkCard
+    title="Slack provider"
+    href="/notifications/providers/slack/"
+    description="Declare an outbound Slack channel."
+  />
+</CardGrid>

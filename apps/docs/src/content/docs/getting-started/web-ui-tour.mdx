@@ -5,6 +5,8 @@ title: The Web UI tour
 description: A tour of the embedded RunWisp Web dashboard — opening it from the TUI, the overview page, task detail, log viewer, and the notifications bell.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 The Web UI is the same dashboard as the [TUI][tui], in your browser
 and updated live as runs happen. It lives **inside the daemon
 binary** — no separate web server, no CDN, no extra port. Go to
@@ -147,11 +149,27 @@ _what_ the daemon does (add a task, edit a schedule, rename a group,
 set up a notifier, scale a service), edit the file and restart the
 daemon.
 
-## Where to next
+---
 
-- [Concepts: TUI tour](/concepts/tui-tour/) — the same dashboard in
-  your terminal, including the Open Web UI shortcut.
-- [Configuration overview](/configuration/overview/) — what to put in
-  the TOML.
-- [Operations: auth](/operations/auth/) — managing the password and
-  session.
+<CardGrid>
+  <LinkCard
+    title="TUI tour"
+    href="/concepts/tui-tour/"
+    description="The same dashboard in your terminal, with keyboard shortcuts."
+  />
+  <LinkCard
+    title="Config overview"
+    href="/configuration/overview/"
+    description="What to put in the TOML."
+  />
+  <LinkCard
+    title="Operations: auth"
+    href="/operations/auth/"
+    description="Managing the password and session."
+  />
+  <LinkCard
+    title="Quick start"
+    href="/getting-started/quick-start/"
+    description="Install RunWisp, scaffold a runwisp.toml, and watch your first task."
+  />
+</CardGrid>

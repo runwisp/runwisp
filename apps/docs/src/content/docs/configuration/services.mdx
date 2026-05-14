@@ -5,6 +5,8 @@ title: "[services.*]"
 description: Long-running processes — instances, restart backoff, graceful shutdown, and what services share with tasks.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 A service is an always-on process that RunWisp keeps alive. It exits, it
 gets restarted. It crashes, it gets restarted. The only way a service
 stops permanently is by you stopping it from the Web UI (the **Stop
@@ -179,9 +181,27 @@ done
 """
 ```
 
-## Where to next
+---
 
-- [`[tasks.*]` reference](/configuration/tasks/) — the run-and-exit counterpart.
-- [Tasks vs Services](/concepts/tasks-vs-services/) — picking the right kind.
-- [Retries & timeouts](/concepts/retries/) — why retry and restart are different
-  things.
+<CardGrid>
+  <LinkCard
+    title="[tasks.*] ref"
+    href="/configuration/tasks/"
+    description="The run-and-exit counterpart."
+  />
+  <LinkCard
+    title="Tasks vs Services"
+    href="/concepts/tasks-vs-services/"
+    description="Picking the right kind."
+  />
+  <LinkCard
+    title="Retries"
+    href="/concepts/retries/"
+    description="Why retry and restart are different things."
+  />
+  <LinkCard
+    title="Scheduling"
+    href="/concepts/scheduling/"
+    description="How cron firings turn into runs."
+  />
+</CardGrid>
