@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // ConfirmDialog renders a centered modal asking the user to confirm an action.
@@ -135,7 +136,7 @@ func (d *ConfirmDialog) StartShutdown() tea.Cmd {
 	d.message = "Stopping daemon..."
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(colorPrimary)
+	s.Style = lipgloss.NewStyle().Foreground(uikit.ColorPrimary)
 	d.spinner = s
 	return d.spinnerTick()
 }
@@ -156,14 +157,14 @@ func (d *ConfirmDialog) spinnerTick() tea.Cmd {
 
 func (d *ConfirmDialog) wrapSpinnerCmd(cmd tea.Cmd) tea.Cmd {
 	return func() tea.Msg {
-		return spinnerTickMsg{Inner: cmd()}
+		return uikit.SpinnerTickMsg{Inner: cmd()}
 	}
 }
 
 func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 	dialogWidth, innerWidth := modalDimensions(screenWidth, 46, 46)
-	titleStr := modalSurfaceLine(d.title, innerWidth, colorTextBright, true)
-	msgStr := modalSurfaceLine(d.message, innerWidth, colorText, false)
+	titleStr := modalSurfaceLine(d.title, innerWidth, uikit.ColorTextBright, true)
+	msgStr := modalSurfaceLine(d.message, innerWidth, uikit.ColorText, false)
 
 	var lines []string
 	var yesBtnW, noBtnW int
@@ -172,11 +173,11 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 		// spinner's internal ANSI reset doesn't kill the outer background.
 		spinnerPart := d.spinner.View()
 		msgPart := lipgloss.NewStyle().
-			Foreground(colorText).
-			Background(colorBgLight).
+			Foreground(uikit.ColorText).
+			Background(uikit.ColorBgLight).
 			Render(" " + d.message)
 		spinnerLine := lipgloss.NewStyle().
-			Background(colorBgLight).
+			Background(uikit.ColorBgLight).
 			Width(innerWidth).
 			Align(lipgloss.Center).
 			Render(spinnerPart + msgPart)
@@ -186,7 +187,7 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 			modalEmptyLine(innerWidth),
 			spinnerLine,
 			modalEmptyLine(innerWidth),
-			modalSurfaceLine("ctrl+c force quit", innerWidth, colorTextMuted, false),
+			modalSurfaceLine("ctrl+c force quit", innerWidth, uikit.ColorTextMuted, false),
 			modalEmptyLine(innerWidth),
 		}
 	} else {
@@ -202,32 +203,32 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 		noHover := d.hovered == 1
 
 		if d.selected == 0 || yesHover {
-			bg := colorError
+			bg := uikit.ColorError
 			if yesHover {
 				bg = lipgloss.Color("#f99aae")
 			}
-			yesStyle = yesStyle.Background(bg).Foreground(colorWhite)
+			yesStyle = yesStyle.Background(bg).Foreground(uikit.ColorWhite)
 		} else {
-			yesStyle = yesStyle.Background(colorSidebarBg).Foreground(colorTextMuted)
+			yesStyle = yesStyle.Background(uikit.ColorSidebarBg).Foreground(uikit.ColorTextMuted)
 		}
 
 		if d.selected == 1 || noHover {
-			bg := colorPrimary
+			bg := uikit.ColorPrimary
 			if noHover {
 				bg = lipgloss.Color("#6b85f0")
 			}
-			noStyle = noStyle.Background(bg).Foreground(colorWhite)
+			noStyle = noStyle.Background(bg).Foreground(uikit.ColorWhite)
 		} else {
-			noStyle = noStyle.Background(colorSidebarBg).Foreground(colorTextMuted)
+			noStyle = noStyle.Background(uikit.ColorSidebarBg).Foreground(uikit.ColorTextMuted)
 		}
 
 		yesBtn := yesStyle.Render(d.yesLabel)
 		noBtn := noStyle.Render(d.noLabel)
-		btnGap := lipgloss.NewStyle().Background(colorBgLight).Render("   ")
+		btnGap := lipgloss.NewStyle().Background(uikit.ColorBgLight).Render("   ")
 		buttons := lipgloss.JoinHorizontal(lipgloss.Center, yesBtn, btnGap, noBtn)
 		buttonsLine := lipgloss.NewStyle().
 			Width(innerWidth).
-			Background(colorBgLight).
+			Background(uikit.ColorBgLight).
 			Align(lipgloss.Center).
 			Render(buttons)
 
@@ -243,7 +244,7 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 			modalEmptyLine(innerWidth),
 			buttonsLine,
 			modalEmptyLine(innerWidth),
-			modalSurfaceLine(hintText, innerWidth, colorTextMuted, false),
+			modalSurfaceLine(hintText, innerWidth, uikit.ColorTextMuted, false),
 			modalEmptyLine(innerWidth),
 		}
 
@@ -251,7 +252,7 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 		noBtnW = lipgloss.Width(noBtn)
 	}
 
-	box := renderModalBox(screenWidth, screenHeight, dialogWidth, colorPrimary, lines)
+	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
 
 	if !d.shuttingDown {
 		msgH := lipgloss.Height(msgStr)
@@ -295,7 +296,7 @@ func modalDimensions(screenWidth, desiredWidth, minWidth int) (int, int) {
 func renderModalBox(screenWidth, screenHeight, dialogWidth int, accent lipgloss.Color, lines []string) modalBox {
 	card := lipgloss.NewStyle().
 		Width(dialogWidth).
-		Background(colorBgLight).
+		Background(uikit.ColorBgLight).
 		Padding(0, 2).
 		Render(strings.Join(lines, "\n"))
 	accentBar := lipgloss.NewStyle().
@@ -313,14 +314,14 @@ func renderModalBox(screenWidth, screenHeight, dialogWidth int, accent lipgloss.
 		view: lipgloss.Place(screenWidth, screenHeight,
 			lipgloss.Center, lipgloss.Center,
 			box,
-			lipgloss.WithWhitespaceBackground(colorBg),
+			lipgloss.WithWhitespaceBackground(uikit.ColorBg),
 		),
 	}
 }
 
 func modalSurfaceLine(text string, innerWidth int, fg lipgloss.Color, bold bool) string {
 	style := lipgloss.NewStyle().
-		Background(colorBgLight).
+		Background(uikit.ColorBgLight).
 		Foreground(fg).
 		Width(innerWidth).
 		Align(lipgloss.Center)
@@ -332,15 +333,7 @@ func modalSurfaceLine(text string, innerWidth int, fg lipgloss.Color, bold bool)
 
 func modalEmptyLine(innerWidth int) string {
 	return lipgloss.NewStyle().
-		Background(colorBgLight).
+		Background(uikit.ColorBgLight).
 		Width(innerWidth).
 		Render("")
-}
-
-func padLine(content string, width int, bg lipgloss.Color) string {
-	contentWidth := lipgloss.Width(content)
-	if contentWidth >= width {
-		return content
-	}
-	return content + lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", width-contentWidth))
 }

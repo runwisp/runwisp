@@ -1,9 +1,15 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package uikit
 
-// walkANSISegments splits s into segments and calls fn for each one.
+import (
+	"strings"
+
+	"github.com/charmbracelet/x/ansi"
+)
+
+// WalkANSISegments splits s into segments and calls fn for each one.
 //
 // fn receives the raw segment text and whether the segment is printable content
 // (printable=true) or an ANSI/C1 escape sequence (printable=false). Escape
@@ -15,7 +21,7 @@ package tui
 //   - OSC: ESC ] … BEL or ESC ]  … ST
 //   - DCS / APC / PM / SOS: ESC P/_ ^/X … ST
 //   - Any other two-byte ESC + char sequence
-func walkANSISegments(s string, fn func(seg string, printable bool)) {
+func WalkANSISegments(s string, fn func(seg string, printable bool)) {
 	runes := []rune(s)
 	n := len(runes)
 	segStart := 0
@@ -87,4 +93,65 @@ func walkANSISegments(s string, fn func(seg string, printable bool)) {
 	if segStart < n {
 		fn(string(runes[segStart:n]), true)
 	}
+}
+
+// SliceLineColumns returns a substring of s starting at column offset `start`
+// spanning at most `cols` visible columns. Tabs are expanded to 4 spaces.
+// The second return value reports whether content extends beyond the visible window.
+//
+// The function is ANSI-aware: escape sequences are treated as zero-width and
+// any colour-setting sequences that appear before the visible window are
+// included in the result so that the visible slice renders with the correct
+// inherited colour state.
+func SliceLineColumns(s string, start, cols int) (string, bool) {
+	if cols <= 0 {
+		return "", false
+	}
+	s = strings.ReplaceAll(s, "\t", "    ")
+
+	var (
+		buf    strings.Builder
+		col    int  // current visual column (printable chars only)
+		beyond bool // content extends past start+cols
+		done   bool // stop processing further segments
+	)
+
+	WalkANSISegments(s, func(seg string, printable bool) {
+		if done {
+			return
+		}
+		if !printable {
+			// Always include ANSI sequences up to the end of the visible window
+			// so that colour state set before the window is inherited correctly.
+			if !beyond {
+				buf.WriteString(seg)
+			}
+			return
+		}
+		for _, r := range seg {
+			if done {
+				break
+			}
+			w := ansi.StringWidth(string(r))
+			if w == 0 {
+				// Zero-width characters (combining marks etc.) tag along with
+				// the preceding visible character.
+				if col > start && col <= start+cols {
+					buf.WriteRune(r)
+				}
+				continue
+			}
+			if col+w > start+cols {
+				beyond = true
+				done = true
+				break
+			}
+			if col >= start {
+				buf.WriteRune(r)
+			}
+			col += w
+		}
+	})
+
+	return buf.String(), beyond
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/tui/views/home"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,7 +23,7 @@ func TestPrintStartup_NeverLeaksPassword(t *testing.T) {
 	t.Run("ephemeral renders hint and never the value", func(t *testing.T) {
 		const secret = "Kj2x9pQ7mN4vL8rT5wYz1c"
 		var buf bytes.Buffer
-		printStartupTo(&buf, StartupInfo{
+		printStartupTo(&buf, uikit.StartupInfo{
 			Version:           "0.0.0-test",
 			Port:              9477,
 			PasswordEphemeral: true,
@@ -33,14 +35,14 @@ func TestPrintStartup_NeverLeaksPassword(t *testing.T) {
 			"ephemeral mode must surface the locating hint")
 		assert.NotContains(t, out, secret,
 			"plaintext ephemeral password must never appear in the banner")
-		assert.NotContains(t, out, strings.Repeat("•", passwordMaskWidth),
+		assert.NotContains(t, out, strings.Repeat("•", home.PasswordMaskWidth),
 			"bullet mask belongs on the Home page; the banner has no Password field at all")
 	})
 
 	t.Run("operator-supplied password produces no hint and no value", func(t *testing.T) {
 		const secret = "operator-supplied-secret"
 		var buf bytes.Buffer
-		printStartupTo(&buf, StartupInfo{
+		printStartupTo(&buf, uikit.StartupInfo{
 			Version:           "0.0.0-test",
 			Port:              9477,
 			PasswordEphemeral: false,
@@ -59,7 +61,7 @@ func TestPrintStartup_NeverLeaksPassword(t *testing.T) {
 	t.Run("empty ephemeral password still renders hint cleanly", func(t *testing.T) {
 		var buf bytes.Buffer
 		assert.NotPanics(t, func() {
-			printStartupTo(&buf, StartupInfo{
+			printStartupTo(&buf, uikit.StartupInfo{
 				Version:           "0.0.0-test",
 				Port:              9477,
 				PasswordEphemeral: true,

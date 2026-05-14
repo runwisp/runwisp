@@ -5,6 +5,10 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/tui/views/execlist"
+	"github.com/runwisp/runwisp/internal/tui/views/home"
+	"github.com/runwisp/runwisp/internal/tui/views/notifications"
 )
 
 // handleKey processes keyboard input. Recognised global shortcuts (quit, esc,
@@ -19,7 +23,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "n":
-		if m.execView == nil && m.sidebar.ActivePage() == PageHome {
+		if m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome {
 			m.notifications.Toggle()
 			m.updateLayout()
 			return m, nil
@@ -39,7 +43,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.closeExecView()
 		}
-		if m.panelFocus == PanelMain {
+		if m.panelFocus == uikit.PanelMain {
 			return m, m.focusSidebar()
 		}
 
@@ -57,7 +61,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.execView != nil {
 			m.execView.ToggleFullscreen()
 			if m.execView.Fullscreen() {
-				m.panelFocus = PanelMain
+				m.panelFocus = uikit.PanelMain
 				m.execView.SetFocused(true)
 			}
 			m.updateLayout()
@@ -66,7 +70,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "left", "h":
 		if m.execView == nil {
-			if m.panelFocus == PanelMain && m.sidebar.ActivePage() == PageDebug && m.debugView.pane.hScroll > 0 {
+			if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug && m.debugView.pane.HScroll > 0 {
 				break
 			}
 			return m, m.focusSidebar()
@@ -77,15 +81,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// In fullscreen the sidebar is hidden; left just scrolls the pane.
 			break
 		}
-		atEdge := ev.headerFocus == headerFocusBack || ev.headerFocus == headerFocusStarted ||
-			(ev.headerFocus == headerFocusNone && ev.pane.hScroll <= 0)
+		atEdge := ev.HeaderFocus == execlist.HeaderFocusBack || ev.HeaderFocus == execlist.HeaderFocusStarted ||
+			(ev.HeaderFocus == execlist.HeaderFocusNone && ev.Pane.HScroll <= 0)
 		if atEdge {
 			return m, m.focusSidebar()
 		}
 
 	case "right", "l":
 		if m.execView == nil {
-			if m.panelFocus == PanelMain && m.sidebar.ActivePage() == PageDebug {
+			if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug {
 				break
 			}
 			return m, m.focusMainPanel()
@@ -93,7 +97,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.execView.Fullscreen() {
 			break
 		}
-		if m.panelFocus == PanelSidebar {
+		if m.panelFocus == uikit.PanelSidebar {
 			return m, m.focusMainPanel()
 		}
 
@@ -106,27 +110,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.execView != nil && m.panelFocus == PanelMain && m.execView.headerFocus != headerFocusNone {
-			switch m.execView.headerFocus {
-			case headerFocusBack:
+		if m.execView != nil && m.panelFocus == uikit.PanelMain && m.execView.HeaderFocus != execlist.HeaderFocusNone {
+			switch m.execView.HeaderFocus {
+			case execlist.HeaderFocusBack:
 				return m, m.closeExecView()
-			case headerFocusAction:
+			case execlist.HeaderFocusAction:
 				switch m.execView.Action() {
-				case execViewActionStop:
+				case execlist.ActionStop:
 					return m, m.confirmAction(confirmActionStop)
-				case execViewActionStopService:
+				case execlist.ActionStopService:
 					return m, m.confirmAction(confirmActionStopService)
-				case execViewActionRetry:
+				case execlist.ActionRetry:
 					return m, m.confirmAction(confirmActionRetry)
-				case execViewActionRestartService:
+				case execlist.ActionRestartService:
 					return m, m.confirmAction(confirmActionRestartService)
 				}
-			case headerFocusStarted, headerFocusDuration, headerFocusID:
+			case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration, execlist.HeaderFocusID:
 				return m, m.copyExecField()
 			}
 			return m, nil
 		}
-		if m.panelFocus == PanelMain && m.execView == nil {
+		if m.panelFocus == uikit.PanelMain && m.execView == nil {
 			if m.homeCursor >= 0 {
 				return m, m.activateHomeField()
 			}
@@ -136,7 +140,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Enter on sidebar commits the cursor item as the main view;
 		// close any open exec view so the user lands on that view.
-		if m.panelFocus == PanelSidebar && m.execView != nil {
+		if m.panelFocus == uikit.PanelSidebar && m.execView != nil {
 			if cmd := m.closeExecView(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
@@ -151,9 +155,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.execView != nil {
 			switch m.execView.Action() {
-			case execViewActionRetry:
+			case execlist.ActionRetry:
 				return m, m.confirmAction(confirmActionRetry)
-			case execViewActionRestartService:
+			case execlist.ActionRestartService:
 				return m, m.confirmAction(confirmActionRestartService)
 			}
 			return m, nil
@@ -163,9 +167,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		if m.execView != nil {
 			switch m.execView.Action() {
-			case execViewActionStop:
+			case execlist.ActionStop:
 				return m, m.confirmAction(confirmActionStop)
-			case execViewActionStopService:
+			case execlist.ActionStopService:
 				return m, m.confirmAction(confirmActionStopService)
 			}
 			return m, nil
@@ -182,11 +186,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.notifications.BumpBoundaryFlash()
-			return m, scheduleNotificationFlashClear()
+			return m, notifications.ScheduleFlashClear()
 		}
-		if m.panelFocus == PanelMain && m.execView == nil && m.sidebar.ActivePage() == PageHome && m.sidebar.ActiveTask() == "" {
-			if m.execList.Cursor() == 0 || m.execList.totalCount() == 0 {
-				fields := homeFields(m.info, m.hasLaunchTicket())
+		if m.panelFocus == uikit.PanelMain && m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome && m.sidebar.ActiveTask() == "" {
+			if m.execList.Cursor() == 0 || m.execList.TotalCount() == 0 {
+				fields := home.Fields(m.info, m.hasLaunchTicket())
 				if len(fields) > 0 {
 					if m.homeCursor < 0 {
 						return m, m.focusHomeField(len(fields) - 1)
@@ -204,10 +208,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.notifications.BumpBoundaryFlash()
-			return m, scheduleNotificationFlashClear()
+			return m, notifications.ScheduleFlashClear()
 		}
-		if m.panelFocus == PanelMain && m.execView == nil && m.homeCursor >= 0 {
-			fields := homeFields(m.info, m.hasLaunchTicket())
+		if m.panelFocus == uikit.PanelMain && m.execView == nil && m.homeCursor >= 0 {
+			fields := home.Fields(m.info, m.hasLaunchTicket())
 			if m.homeCursor < len(fields)-1 {
 				m.homeCursor++
 			} else {
@@ -219,25 +223,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Delegate to focused sub-component.
-	if m.execView != nil && m.panelFocus != PanelSidebar {
+	if m.execView != nil && m.panelFocus != uikit.PanelSidebar {
 		if cmd := m.execView.Update(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 		if cmd := m.maybeLoadOlderLogs(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	} else if m.panelFocus == PanelSidebar {
+	} else if m.panelFocus == uikit.PanelSidebar {
 		prevPage := m.sidebar.ActivePage()
 		prevTask := m.sidebar.ActiveTask()
 		m.sidebar.Update(msg)
 		if cmd := m.applySidebarSelectionChange(prevPage, prevTask); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	} else if m.panelFocus == PanelMain && m.sidebar.ActivePage() == PageInfo {
+	} else if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageInfo {
 		m.infoView.Update(msg)
-	} else if m.panelFocus == PanelMain && m.sidebar.ActivePage() == PageDebug {
+	} else if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug {
 		m.debugView.Update(msg)
-	} else if m.panelFocus == PanelMain && m.homeCursor < 0 {
+	} else if m.panelFocus == uikit.PanelMain && m.homeCursor < 0 {
 		if cmd := m.execList.Update(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}

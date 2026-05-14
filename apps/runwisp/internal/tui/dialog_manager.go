@@ -8,6 +8,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // DialogManager owns dialog lifecycle, flash messages, and mouse-state sync.
@@ -120,7 +121,7 @@ func (dm *DialogManager) CopyToClipboard(value string) tea.Cmd {
 		dm.flashMessage = "✓ Copied!"
 		dm.flashExpiry = time.Now().Add(2 * time.Second)
 		return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-			return flashExpiredMsg{}
+			return uikit.FlashExpiredMsg{}
 		})
 	}
 	dm.ShowCopy("Copy", value)
@@ -132,7 +133,7 @@ func (dm *DialogManager) Flash(msg string, duration time.Duration) tea.Cmd {
 	dm.flashMessage = msg
 	dm.flashExpiry = time.Now().Add(duration)
 	return tea.Tick(duration, func(time.Time) tea.Msg {
-		return flashExpiredMsg{}
+		return uikit.FlashExpiredMsg{}
 	})
 }
 

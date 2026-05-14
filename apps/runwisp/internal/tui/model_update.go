@@ -11,6 +11,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/tui/views/execlist"
+	"github.com/runwisp/runwisp/internal/tui/views/logpane"
 )
 
 // Update processes messages by delegating to per-type handlers.
@@ -33,84 +36,84 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouse(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
-	case execWindowFetchedMsg:
+	case uikit.ExecWindowFetchedMsg:
 		return m.handleExecWindowFetched(msg)
-	case sseConnectedMsg:
+	case uikit.SSEConnectedMsg:
 		return m.handleSSEConnected(msg)
-	case sseEventMsg:
+	case uikit.SSEEventMsg:
 		return m.handleSSEEventMsg(msg)
-	case sseDisconnectedMsg:
+	case uikit.SSEDisconnectedMsg:
 		return m.handleSSEDisconnected()
-	case logOlderLoadedMsg:
+	case uikit.LogOlderLoadedMsg:
 		return m.handleLogOlderLoaded(msg)
-	case logStreamConnectedMsg:
+	case uikit.LogStreamConnectedMsg:
 		return m.handleLogStreamConnected(msg)
-	case logLineMsg:
+	case uikit.LogLineMsg:
 		return m.handleLogLine(msg)
-	case logRotatedMsg:
+	case uikit.LogRotatedMsg:
 		return m.handleLogRotated(msg)
-	case logDroppedMsg:
+	case uikit.LogDroppedMsg:
 		return m.handleLogDropped(msg)
-	case logDoneMsg:
+	case uikit.LogDoneMsg:
 		return m.handleLogDone(msg)
-	case DebugLogMsg:
+	case uikit.DebugLogMsg:
 		return m.handleDebugLog(msg)
-	case openBrowserMsg:
+	case uikit.OpenBrowserMsg:
 		return m.handleOpenBrowser(msg)
-	case daemonLogConnectedMsg:
+	case uikit.DaemonLogConnectedMsg:
 		return m.handleDaemonLogConnected(msg)
-	case daemonLogLineMsg:
+	case uikit.DaemonLogLineMsg:
 		return m.handleDaemonLogLine(msg)
-	case daemonLogDisconnectedMsg:
+	case uikit.DaemonLogDisconnectedMsg:
 		return m.handleDaemonLogDisconnected()
-	case TriggerRunMsg:
+	case uikit.TriggerRunMsg:
 		return m.handleTriggerRun(msg)
-	case StopRunMsg:
+	case uikit.StopRunMsg:
 		return m.handleStopRun(msg)
-	case RestartServiceMsg:
+	case uikit.RestartServiceMsg:
 		return m.handleRestartService(msg)
-	case StopServiceMsg:
+	case uikit.StopServiceMsg:
 		return m.handleStopService(msg)
-	case reconnectLogMsg:
+	case uikit.ReconnectLogMsg:
 		return m.handleReconnectLog(msg)
-	case TickMsg:
+	case uikit.TickMsg:
 		return m.handleTick()
-	case quitMsg:
+	case uikit.QuitMsg:
 		return m.handleQuit(msg)
-	case flashExpiredMsg:
+	case uikit.FlashExpiredMsg:
 		return m.handleFlashExpired()
-	case systemStatsMsg:
+	case uikit.SystemStatsMsg:
 		return m.handleSystemStats(msg)
-	case metricsHistoryMsg:
+	case uikit.MetricsHistoryMsg:
 		return m.handleMetricsHistory(msg)
-	case runSummaryMsg:
+	case uikit.RunSummaryMsg:
 		return m.handleRunSummary(msg)
-	case notificationStreamConnectedMsg:
+	case uikit.NotificationStreamConnectedMsg:
 		return m.handleNotificationStreamConnected(msg)
-	case notificationEventMsg:
+	case uikit.NotificationEventMsg:
 		return m.handleNotificationEvent(msg)
-	case notificationStreamDisconnectedMsg:
+	case uikit.NotificationStreamDisconnectedMsg:
 		return m.handleNotificationStreamDisconnected()
-	case notificationUnreadCountMsg:
+	case uikit.NotificationUnreadCountMsg:
 		return m.handleNotificationUnreadCount(msg)
-	case notificationsLoadedMsg:
+	case uikit.NotificationsLoadedMsg:
 		return m.handleNotificationsLoaded(msg)
-	case notificationReadStateMsg:
+	case uikit.NotificationReadStateMsg:
 		return m.handleNotificationReadState(msg)
-	case notificationBoundaryFlashClearedMsg:
+	case uikit.NotificationBoundaryFlashClearedMsg:
 		m.notifications.ClearBoundaryFlash()
 		return m, nil
-	case openRunMsg:
+	case uikit.OpenRunMsg:
 		return m.handleOpenRun(msg)
 	}
 	return m, nil
 }
 
-func (m Model) handleNotificationStreamConnected(msg notificationStreamConnectedMsg) (tea.Model, tea.Cmd) {
-	return m, m.streams.OnNotificationConnected(msg.ch)
+func (m Model) handleNotificationStreamConnected(msg uikit.NotificationStreamConnectedMsg) (tea.Model, tea.Cmd) {
+	return m, m.streams.OnNotificationConnected(msg.Ch)
 }
 
-func (m Model) handleNotificationEvent(msg notificationEventMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleNotificationEvent(msg uikit.NotificationEventMsg) (tea.Model, tea.Cmd) {
 	switch msg.Event.Type {
 	case "notification.created", "notification.updated":
 		env, err := apiclient.DecodeNotificationEnvelope(msg.Event.Data)
@@ -139,7 +142,7 @@ func (m Model) handleNotificationStreamDisconnected() (tea.Model, tea.Cmd) {
 	return m, m.streams.SubscribeNotifications()
 }
 
-func (m Model) handleNotificationUnreadCount(msg notificationUnreadCountMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleNotificationUnreadCount(msg uikit.NotificationUnreadCountMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		m.debugView.AppendLine("Failed to load unread count: " + msg.Err.Error())
 		return m, nil
@@ -149,7 +152,7 @@ func (m Model) handleNotificationUnreadCount(msg notificationUnreadCountMsg) (te
 	return m, nil
 }
 
-func (m Model) handleNotificationsLoaded(msg notificationsLoadedMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleNotificationsLoaded(msg uikit.NotificationsLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		m.debugView.AppendLine("Failed to load notifications: " + msg.Err.Error())
 		return m, nil
@@ -160,14 +163,14 @@ func (m Model) handleNotificationsLoaded(msg notificationsLoadedMsg) (tea.Model,
 	return m, nil
 }
 
-func (m Model) handleOpenRun(msg openRunMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleOpenRun(msg uikit.OpenRunMsg) (tea.Model, tea.Cmd) {
 	if msg.Run == nil {
 		return m, nil
 	}
 	return m, m.openExecView(msg.Run)
 }
 
-func (m Model) handleNotificationReadState(msg notificationReadStateMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleNotificationReadState(msg uikit.NotificationReadStateMsg) (tea.Model, tea.Cmd) {
 	if msg.Err == nil {
 		// Local state was already applied optimistically — nothing to do.
 		// The server publishes notification.updated so other surfaces sync.
@@ -197,14 +200,14 @@ func (m Model) interceptConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		case tea.KeyMsg:
 			if msg.String() == "ctrl+c" {
 				m.streams.Shutdown()
-				m.quitAction = QuitKeepDaemon
+				m.quitAction = uikit.QuitKeepDaemon
 				return m, tea.Quit, true
 			}
 			return m, nil, true
-		case spinnerTickMsg:
+		case uikit.SpinnerTickMsg:
 			cmd := m.dialogs.UpdateSpinner(msg.Inner)
 			return m, cmd, true
-		case shutdownDoneMsg:
+		case uikit.ShutdownDoneMsg:
 			return m, tea.Quit, true
 		case tea.MouseMsg:
 			return m, nil, true
@@ -216,7 +219,7 @@ func (m Model) interceptConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			m.streams.Shutdown()
-			m.quitAction = QuitKeepDaemon
+			m.quitAction = uikit.QuitKeepDaemon
 			return m, tea.Quit, true
 		}
 		cmd, closed := m.dialogs.UpdateConfirmKeep(msg)
@@ -271,16 +274,16 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleExecWindowFetched(msg execWindowFetchedMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleExecWindowFetched(msg uikit.ExecWindowFetchedMsg) (tea.Model, tea.Cmd) {
 	m.execWindow.ApplyFetch(msg.Items, msg.Offset, msg.Total)
 	return m, nil
 }
 
-func (m Model) handleSSEConnected(msg sseConnectedMsg) (tea.Model, tea.Cmd) {
-	return m, m.streams.OnSSEConnected(msg.ch)
+func (m Model) handleSSEConnected(msg uikit.SSEConnectedMsg) (tea.Model, tea.Cmd) {
+	return m, m.streams.OnSSEConnected(msg.Ch)
 }
 
-func (m Model) handleSSEEventMsg(msg sseEventMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleSSEEventMsg(msg uikit.SSEEventMsg) (tea.Model, tea.Cmd) {
 	cmd := m.handleSSEEvent(msg.Event)
 	return m, tea.Batch(cmd, m.streams.ContinueListeningSSE())
 }
@@ -290,30 +293,30 @@ func (m Model) handleSSEDisconnected() (tea.Model, tea.Cmd) {
 	return m, m.streams.SubscribeEvents()
 }
 
-func (m Model) handleLogStreamConnected(msg logStreamConnectedMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleLogStreamConnected(msg uikit.LogStreamConnectedMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, nil
 	}
 	return m, m.streams.OnLogConnected(msg.RunID, msg.Ch)
 }
 
-func (m Model) handleLogLine(msg logLineMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleLogLine(msg uikit.LogLineMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, m.streams.ContinueListeningLog(msg.RunID)
 	}
-	m.execView.pane.AppendLine(msg.Line.N, msg.Line.Stream, msg.Line.Text)
+	m.execView.Pane.AppendLine(msg.Line.N, msg.Line.Stream, msg.Line.Text)
 	return m, m.streams.ContinueListeningLog(msg.RunID)
 }
 
-func (m Model) handleLogRotated(msg logRotatedMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleLogRotated(msg uikit.LogRotatedMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, m.streams.ContinueListeningLog(msg.RunID)
 	}
-	m.execView.pane.EvictBelow(int(msg.FirstAvailable))
+	m.execView.Pane.EvictBelow(int(msg.FirstAvailable))
 	return m, m.streams.ContinueListeningLog(msg.RunID)
 }
 
-func (m Model) handleLogDropped(msg logDroppedMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleLogDropped(msg uikit.LogDroppedMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, m.streams.ContinueListeningLog(msg.RunID)
 	}
@@ -321,38 +324,38 @@ func (m Model) handleLogDropped(msg logDroppedMsg) (tea.Model, tea.Cmd) {
 	return m, m.streams.ContinueListeningLog(msg.RunID)
 }
 
-func (m Model) handleLogDone(msg logDoneMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleLogDone(msg uikit.LogDoneMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, nil
 	}
-	if m.execView.run.Status == model.PhaseRunning {
+	if m.execView.Run.Status == model.PhaseRunning {
 		return m, m.scheduleLogReconnect(msg.RunID)
 	}
 	return m, nil
 }
 
-func (m Model) handleLogOlderLoaded(msg logOlderLoadedMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleLogOlderLoaded(msg uikit.LogOlderLoadedMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, nil
 	}
-	m.execView.loadingOlder = false
-	pane := make([]paneLine, len(msg.Lines))
+	m.execView.LoadingOlder = false
+	pane := make([]logpane.Line, len(msg.Lines))
 	for i, l := range msg.Lines {
-		pane[i] = paneLine{stream: l.Stream, text: l.Text}
+		pane[i] = logpane.Line{Stream: l.Stream, Text: l.Text}
 	}
-	m.execView.pane.PrependLines(pane, int(msg.FirstLine))
+	m.execView.Pane.PrependLines(pane, int(msg.FirstLine))
 	if msg.Total > 0 {
-		m.execView.pane.SetTotalLines(int(msg.Total))
+		m.execView.Pane.SetTotalLines(int(msg.Total))
 	}
 	return m, nil
 }
 
-func (m Model) handleDebugLog(msg DebugLogMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleDebugLog(msg uikit.DebugLogMsg) (tea.Model, tea.Cmd) {
 	m.debugView.AppendLine(msg.Message)
 	return m, nil
 }
 
-func (m Model) handleOpenBrowser(msg openBrowserMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleOpenBrowser(msg uikit.OpenBrowserMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		m.debugView.AppendLine("Failed to open browser: " + msg.Err.Error())
 	}
@@ -366,11 +369,11 @@ func (m Model) handleOpenBrowser(msg openBrowserMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleDaemonLogConnected(msg daemonLogConnectedMsg) (tea.Model, tea.Cmd) {
-	return m, m.streams.OnDaemonLogConnected(msg.ch)
+func (m Model) handleDaemonLogConnected(msg uikit.DaemonLogConnectedMsg) (tea.Model, tea.Cmd) {
+	return m, m.streams.OnDaemonLogConnected(msg.Ch)
 }
 
-func (m Model) handleDaemonLogLine(msg daemonLogLineMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleDaemonLogLine(msg uikit.DaemonLogLineMsg) (tea.Model, tea.Cmd) {
 	m.debugView.AppendLine(msg.Line)
 	return m, m.streams.ContinueListeningDaemonLog()
 }
@@ -380,7 +383,7 @@ func (m Model) handleDaemonLogDisconnected() (tea.Model, tea.Cmd) {
 	return m, m.streams.SubscribeDaemonLogs()
 }
 
-func (m Model) handleTriggerRun(msg TriggerRunMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleTriggerRun(msg uikit.TriggerRunMsg) (tea.Model, tea.Cmd) {
 	action := "Triggered run for"
 	if msg.Retry {
 		action = "Retried run for"
@@ -399,42 +402,42 @@ func (m Model) handleTriggerRun(msg TriggerRunMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleStopRun(msg StopRunMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleStopRun(msg uikit.StopRunMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Stopped run for", msg.TaskName, msg.Err)
 	return m, nil
 }
 
-func (m Model) handleRestartService(msg RestartServiceMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Restarted service", msg.TaskName, msg.Err)
-	if msg.Err == nil && m.execView != nil && m.execView.run != nil && m.execView.run.TaskName == msg.TaskName {
+	if msg.Err == nil && m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
 		m.execView.SetServiceStopped(false)
 	}
 	return m, nil
 }
 
-func (m Model) handleStopService(msg StopServiceMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleStopService(msg uikit.StopServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Stopped service", msg.TaskName, msg.Err)
-	if msg.Err == nil && m.execView != nil && m.execView.run != nil && m.execView.run.TaskName == msg.TaskName {
+	if msg.Err == nil && m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
 		m.execView.SetServiceStopped(true)
 	}
 	return m, nil
 }
 
-func (m Model) handleReconnectLog(msg reconnectLogMsg) (tea.Model, tea.Cmd) {
-	if !m.viewingRun(msg.RunID) || m.execView.run.Status != model.PhaseRunning {
+func (m Model) handleReconnectLog(msg uikit.ReconnectLogMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) || m.execView.Run.Status != model.PhaseRunning {
 		return m, nil
 	}
-	resumeFrom := int64(m.execView.pane.firstLoadedLine + len(m.execView.pane.lines))
-	return m, m.streams.StartLogStream(m.execView.run, resumeFrom)
+	resumeFrom := int64(m.execView.Pane.FirstLoadedLine + len(m.execView.Pane.Lines))
+	return m, m.streams.StartLogStream(m.execView.Run, resumeFrom)
 }
 
 func (m Model) handleTick() (tea.Model, tea.Cmd) {
-	m.execWindow.UpdateVisibleTimes(m.execList.scroll, m.execList.viewportHeight())
+	m.execWindow.UpdateVisibleTimes(m.execList.Scroll, m.execList.ViewportHeight())
 	cmds := []tea.Cmd{m.tickCmd()}
 	if m.execList.NeedsFetch() {
 		cmds = append(cmds, m.fetchExecWindow())
 	}
-	if m.sidebar.ActivePage() == PageInfo {
+	if m.sidebar.ActivePage() == uikit.PageInfo {
 		cmds = append(cmds, m.streams.FetchSystemStats())
 	}
 	if m.notifications.PanelHeight() > 0 {
@@ -443,10 +446,10 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m Model) handleQuit(msg quitMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleQuit(msg uikit.QuitMsg) (tea.Model, tea.Cmd) {
 	m.streams.Shutdown()
 	m.quitAction = msg.Action
-	if msg.Action == QuitShutdownDaemon && m.shutdownFunc != nil {
+	if msg.Action == uikit.QuitShutdownDaemon && m.shutdownFunc != nil {
 		return m, m.startShutdownSpinner()
 	}
 	return m, tea.Quit
@@ -457,21 +460,21 @@ func (m Model) handleFlashExpired() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleSystemStats(msg systemStatsMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleSystemStats(msg uikit.SystemStatsMsg) (tea.Model, tea.Cmd) {
 	if msg.Err == nil && msg.Stats != nil {
 		m.infoView.UpdateStats(msg.Stats)
 	}
 	return m, nil
 }
 
-func (m Model) handleMetricsHistory(msg metricsHistoryMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleMetricsHistory(msg uikit.MetricsHistoryMsg) (tea.Model, tea.Cmd) {
 	if msg.Err == nil && msg.Samples != nil {
 		m.infoView.LoadHistory(msg.Samples)
 	}
 	return m, nil
 }
 
-func (m Model) handleRunSummary(msg runSummaryMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleRunSummary(msg uikit.RunSummaryMsg) (tea.Model, tea.Cmd) {
 	if msg.Err == nil && msg.Summary != nil {
 		m.infoView.UpdateRunSummary(msg.Summary)
 	}
@@ -486,18 +489,18 @@ func (m *Model) viewingRun(runID string) bool {
 // maybeLoadOlderLogs checks if the user scrolled to the top of the loaded buffer
 // and dispatches a fetch for older lines if available.
 func (m *Model) maybeLoadOlderLogs() tea.Cmd {
-	if m.execView == nil || m.execView.loadingOlder {
+	if m.execView == nil || m.execView.LoadingOlder {
 		return nil
 	}
-	if !m.execView.pane.NeedsOlder() {
+	if !m.execView.Pane.NeedsOlder() {
 		return nil
 	}
-	m.execView.loadingOlder = true
+	m.execView.LoadingOlder = true
 	return m.streams.FetchOlderLogs(
-		m.execView.run.TaskName,
-		m.execView.run.ID,
-		int64(m.execView.pane.FirstLoadedLine()),
-		int64(logTailLines),
+		m.execView.Run.TaskName,
+		m.execView.Run.ID,
+		int64(m.execView.Pane.FirstLoadedLineNum()),
+		int64(execlist.LogTailLines),
 	)
 }
 
@@ -518,10 +521,10 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 
 		// Update exec view if watching this run.
 		if m.execView != nil && m.execView.RunID() == runEvt.Run.ID {
-			prevStatus := m.execView.run.Status
-			m.execView.run = runEvt.Run
+			prevStatus := m.execView.Run.Status
+			m.execView.Run = runEvt.Run
 			if runEvt.Run.Status == model.PhaseRunning && prevStatus != model.PhaseRunning {
-				return m.streams.StartLogStream(runEvt.Run, -int64(logTailLines))
+				return m.streams.StartLogStream(runEvt.Run, -int64(execlist.LogTailLines))
 			}
 		}
 
@@ -555,10 +558,10 @@ func (m *Model) execConfirmCmd(cmd tea.Cmd, closed bool) tea.Cmd {
 		}
 		return nil
 	}
-	if qm, ok := result.(quitMsg); ok {
+	if qm, ok := result.(uikit.QuitMsg); ok {
 		m.streams.Shutdown()
 		m.quitAction = qm.Action
-		if qm.Action == QuitShutdownDaemon && m.shutdownFunc != nil {
+		if qm.Action == uikit.QuitShutdownDaemon && m.shutdownFunc != nil {
 			return m.startShutdownSpinner()
 		}
 		m.dialogs.DismissConfirm()
@@ -572,7 +575,7 @@ func (m *Model) execConfirmCmd(cmd tea.Cmd, closed bool) tea.Cmd {
 
 // startShutdownSpinner transitions the confirm dialog into the shutting-down
 // spinner state and fires the shutdown function as a background command.
-// If no dialog is open (e.g. quitMsg arrived without a confirm), a new one is
+// If no dialog is open (e.g. uikit.QuitMsg arrived without a confirm), a new one is
 // created so the spinner has somewhere to render.
 func (m *Model) startShutdownSpinner() tea.Cmd {
 	if !m.dialogs.HasConfirm() {
@@ -583,7 +586,7 @@ func (m *Model) startShutdownSpinner() tea.Cmd {
 	shutdownFn := m.shutdownFunc
 	shutdownCmd := func() tea.Msg {
 		err := shutdownFn()
-		return shutdownDoneMsg{Err: err}
+		return uikit.ShutdownDoneMsg{Err: err}
 	}
 	return tea.Batch(tea.ClearScreen, spinnerCmd, shutdownCmd)
 }
@@ -593,6 +596,6 @@ func (m *Model) startShutdownSpinner() tea.Cmd {
 // timeout or transient disconnect).
 func (m *Model) scheduleLogReconnect(runID string) tea.Cmd {
 	return tea.Tick(logReconnectDelay, func(time.Time) tea.Msg {
-		return reconnectLogMsg{RunID: runID}
+		return uikit.ReconnectLogMsg{RunID: runID}
 	})
 }

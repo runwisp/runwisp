@@ -6,6 +6,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // CopyDialog renders a centered modal that displays selectable text for manual
@@ -40,13 +41,13 @@ func (d *CopyDialog) Update(msg tea.Msg) bool {
 func (d *CopyDialog) View(screenWidth, screenHeight int) string {
 	valueLen := len([]rune(d.value))
 	dialogWidth, innerWidth := modalDimensions(screenWidth, valueLen+8, 44)
-	titleStr := modalSurfaceLine(d.title, innerWidth, colorTextBright, true)
+	titleStr := modalSurfaceLine(d.title, innerWidth, uikit.ColorTextBright, true)
 
 	// Value rendered as bright text on a slightly distinct background
 	// so the user can visually identify and triple-click to select.
-	valueBg := colorSidebarBg
+	valueBg := uikit.ColorSidebarBg
 	valueStr := lipgloss.NewStyle().
-		Foreground(colorWhite).
+		Foreground(uikit.ColorWhite).
 		Background(valueBg).
 		Bold(true).
 		Padding(0, 1).
@@ -54,13 +55,13 @@ func (d *CopyDialog) View(screenWidth, screenHeight int) string {
 		Align(lipgloss.Center).
 		Render(d.value)
 
-	box := renderModalBox(screenWidth, screenHeight, dialogWidth, colorSecondary, []string{
+	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, []string{
 		modalEmptyLine(innerWidth),
 		titleStr,
 		modalEmptyLine(innerWidth),
 		valueStr,
 		modalEmptyLine(innerWidth),
-		modalSurfaceLine("select text above · esc/enter close", innerWidth, colorTextMuted, false),
+		modalSurfaceLine("select text above · esc/enter close", innerWidth, uikit.ColorTextMuted, false),
 		modalEmptyLine(innerWidth),
 	})
 	return box.view

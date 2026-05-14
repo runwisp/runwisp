@@ -10,9 +10,10 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/tui/views/execlist"
+	"github.com/runwisp/runwisp/internal/tui/views/notifications"
 )
-
-const logTailLines = 1000
 
 // StreamManager owns SSE event subscriptions, log streaming, and data fetching.
 // Extracted from Model to isolate I/O and async concerns.
@@ -51,9 +52,9 @@ func (sm *StreamManager) SubscribeEvents() tea.Cmd {
 		}
 		ch, err := sm.client.StreamRunEvents(sm.ctx)
 		if err != nil {
-			return DebugLogMsg{Message: "Events stream failed: " + err.Error()}
+			return uikit.DebugLogMsg{Message: "Events stream failed: " + err.Error()}
 		}
-		return sseConnectedMsg{ch: ch}
+		return uikit.SSEConnectedMsg{Ch: ch}
 	}
 }
 
@@ -72,7 +73,7 @@ func (sm *StreamManager) ContinueListeningSSE() tea.Cmd {
 }
 
 // StartLogStream opens a single line-based SSE stream for the run. fromLine
-// is an absolute line anchor; pass a negative value (e.g. -logTailLines) to
+// is an absolute line anchor; pass a negative value (e.g. -execlist.LogTailLines) to
 // land at the end of the log immediately. Cancels any previous stream owned
 // by this manager.
 func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd {
@@ -93,9 +94,9 @@ func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd 
 	return func() tea.Msg {
 		ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: fromLine})
 		if err != nil {
-			return logDoneMsg{RunID: runID}
+			return uikit.LogDoneMsg{RunID: runID}
 		}
-		return logStreamConnectedMsg{RunID: runID, Ch: ch}
+		return uikit.LogStreamConnectedMsg{RunID: runID, Ch: ch}
 	}
 }
 
@@ -121,13 +122,13 @@ func (sm *StreamManager) FetchOlderLogs(taskName, runID string, beforeLine, coun
 	return func() tea.Msg {
 		page, err := client.GetLogPage(taskName, runID, startLine, limit)
 		if err != nil {
-			return DebugLogMsg{Message: "Failed to load older logs: " + err.Error()}
+			return uikit.DebugLogMsg{Message: "Failed to load older logs: " + err.Error()}
 		}
 		first := startLine
 		if len(page.Lines) > 0 {
 			first = page.Lines[0].N
 		}
-		return logOlderLoadedMsg{
+		return uikit.LogOlderLoadedMsg{
 			RunID:     runID,
 			Lines:     page.Lines,
 			FirstLine: first,
@@ -160,7 +161,7 @@ func (sm *StreamManager) CancelLogStream() {
 }
 
 // FetchExecWindow returns a command that loads execution data for the viewport.
-func (sm *StreamManager) FetchExecWindow(window *ExecWindow, scroll, vpH int) tea.Cmd {
+func (sm *StreamManager) FetchExecWindow(window *execlist.ExecWindow, scroll, vpH int) tea.Cmd {
 	fn := window.FetchAroundCmd(scroll, vpH)
 	if fn == nil {
 		return nil
@@ -168,9 +169,9 @@ func (sm *StreamManager) FetchExecWindow(window *ExecWindow, scroll, vpH int) te
 	return func() tea.Msg {
 		items, offset, total, err := fn()
 		if err != nil {
-			return DebugLogMsg{Message: "Failed to load runs: " + err.Error()}
+			return uikit.DebugLogMsg{Message: "Failed to load runs: " + err.Error()}
 		}
-		return execWindowFetchedMsg{Items: items, Offset: offset, Total: total}
+		return uikit.ExecWindowFetchedMsg{Items: items, Offset: offset, Total: total}
 	}
 }
 
@@ -182,7 +183,7 @@ func (sm *StreamManager) FetchSystemStats() tea.Cmd {
 	client := sm.client
 	return func() tea.Msg {
 		stats, err := client.GetSystemStats()
-		return systemStatsMsg{Stats: stats, Err: err}
+		return uikit.SystemStatsMsg{Stats: stats, Err: err}
 	}
 }
 
@@ -194,7 +195,7 @@ func (sm *StreamManager) FetchRunSummary() tea.Cmd {
 	client := sm.client
 	return func() tea.Msg {
 		summary, err := client.GetRunSummary()
-		return runSummaryMsg{Summary: summary, Err: err}
+		return uikit.RunSummaryMsg{Summary: summary, Err: err}
 	}
 }
 
@@ -206,15 +207,15 @@ func (sm *StreamManager) FetchMetricsHistory() tea.Cmd {
 	client := sm.client
 	return func() tea.Msg {
 		samples, err := client.GetMetricsHistory()
-		return metricsHistoryMsg{Samples: samples, Err: err}
+		return uikit.MetricsHistoryMsg{Samples: samples, Err: err}
 	}
 }
 
 // listenSSE waits for the next event from the SSE channel.
 func listenSSE(ch <-chan apiclient.RunStreamEvent) tea.Cmd {
 	return listenChannel(ch, func(event apiclient.RunStreamEvent) tea.Msg {
-		return sseEventMsg{Event: event}
-	}, sseDisconnectedMsg{})
+		return uikit.SSEEventMsg{Event: event}
+	}, uikit.SSEDisconnectedMsg{})
 }
 
 // listenLogStream waits for the next message from the line-based SSE channel.
@@ -223,18 +224,18 @@ func listenLogStream(runID string, ch <-chan apiclient.LogStreamMsg) tea.Cmd {
 	return listenChannel(ch, func(msg apiclient.LogStreamMsg) tea.Msg {
 		switch msg.Kind {
 		case apiclient.LogStreamMsgKindLine:
-			return logLineMsg{RunID: runID, Line: msg.Line}
+			return uikit.LogLineMsg{RunID: runID, Line: msg.Line}
 		case apiclient.LogStreamMsgKindRotated:
-			return logRotatedMsg{RunID: runID, FirstAvailable: msg.Rotated.FirstAvailable}
+			return uikit.LogRotatedMsg{RunID: runID, FirstAvailable: msg.Rotated.FirstAvailable}
 		case apiclient.LogStreamMsgKindDropped:
-			return logDroppedMsg{RunID: runID, After: msg.Dropped.After, Count: msg.Dropped.Count}
+			return uikit.LogDroppedMsg{RunID: runID, After: msg.Dropped.After, Count: msg.Dropped.Count}
 		case apiclient.LogStreamMsgKindDone:
-			return logDoneMsg{RunID: runID, FinalLine: msg.Done.FinalLine}
+			return uikit.LogDoneMsg{RunID: runID, FinalLine: msg.Done.FinalLine}
 		case apiclient.LogStreamMsgKindErr:
-			return logDoneMsg{RunID: runID}
+			return uikit.LogDoneMsg{RunID: runID}
 		}
 		return nil
-	}, logDoneMsg{RunID: runID})
+	}, uikit.LogDoneMsg{RunID: runID})
 }
 
 // SubscribeDaemonLogs connects to the daemon log SSE stream.
@@ -247,9 +248,9 @@ func (sm *StreamManager) SubscribeDaemonLogs() tea.Cmd {
 	return func() tea.Msg {
 		ch, err := client.StreamDaemonLogs(ctx)
 		if err != nil {
-			return DebugLogMsg{Message: "Daemon log stream failed: " + err.Error()}
+			return uikit.DebugLogMsg{Message: "Daemon log stream failed: " + err.Error()}
 		}
-		return daemonLogConnectedMsg{ch: ch}
+		return uikit.DaemonLogConnectedMsg{Ch: ch}
 	}
 }
 
@@ -277,9 +278,9 @@ func (sm *StreamManager) SubscribeNotifications() tea.Cmd {
 	return func() tea.Msg {
 		ch, err := client.StreamNotifications(ctx)
 		if err != nil {
-			return DebugLogMsg{Message: "Notifications stream failed: " + err.Error()}
+			return uikit.DebugLogMsg{Message: "Notifications stream failed: " + err.Error()}
 		}
-		return notificationStreamConnectedMsg{ch: ch}
+		return uikit.NotificationStreamConnectedMsg{Ch: ch}
 	}
 }
 
@@ -305,7 +306,7 @@ func (sm *StreamManager) FetchUnreadCount() tea.Cmd {
 	client := sm.client
 	return func() tea.Msg {
 		count, err := client.UnreadNotificationCount()
-		return notificationUnreadCountMsg{Count: count, Err: err}
+		return uikit.NotificationUnreadCountMsg{Count: count, Err: err}
 	}
 }
 
@@ -318,11 +319,11 @@ func (sm *StreamManager) FetchNotifications() tea.Cmd {
 	}
 	client := sm.client
 	return func() tea.Msg {
-		page, err := client.ListNotifications(notificationsInitialPageSize, "")
+		page, err := client.ListNotifications(notifications.InitialPageSize, "")
 		if err != nil {
-			return notificationsLoadedMsg{Err: err}
+			return uikit.NotificationsLoadedMsg{Err: err}
 		}
-		return notificationsLoadedMsg{Items: page.Items}
+		return uikit.NotificationsLoadedMsg{Items: page.Items}
 	}
 }
 
@@ -334,7 +335,7 @@ func (sm *StreamManager) MarkNotificationRead(id string) tea.Cmd {
 	client := sm.client
 	return func() tea.Msg {
 		err := client.MarkNotificationRead(id)
-		return notificationReadStateMsg{ID: id, Read: true, Err: err}
+		return uikit.NotificationReadStateMsg{ID: id, Read: true, Err: err}
 	}
 }
 
@@ -346,20 +347,20 @@ func (sm *StreamManager) MarkNotificationUnread(id string) tea.Cmd {
 	client := sm.client
 	return func() tea.Msg {
 		err := client.MarkNotificationUnread(id)
-		return notificationReadStateMsg{ID: id, Read: false, Err: err}
+		return uikit.NotificationReadStateMsg{ID: id, Read: false, Err: err}
 	}
 }
 
 func listenNotifications(ch <-chan apiclient.NotificationStreamEvent) tea.Cmd {
 	return listenChannel(ch, func(event apiclient.NotificationStreamEvent) tea.Msg {
-		return notificationEventMsg{Event: event}
-	}, notificationStreamDisconnectedMsg{})
+		return uikit.NotificationEventMsg{Event: event}
+	}, uikit.NotificationStreamDisconnectedMsg{})
 }
 
 func listenDaemonLog(ch <-chan string) tea.Cmd {
 	return listenChannel(ch, func(line string) tea.Msg {
-		return daemonLogLineMsg{Line: line}
-	}, daemonLogDisconnectedMsg{})
+		return uikit.DaemonLogLineMsg{Line: line}
+	}, uikit.DaemonLogDisconnectedMsg{})
 }
 
 func listenChannel[T any](ch <-chan T, onValue func(T) tea.Msg, onClosed tea.Msg) tea.Cmd {

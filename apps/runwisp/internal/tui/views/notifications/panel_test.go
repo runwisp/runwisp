@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package notifications
 
 import (
 	"strings"
@@ -29,7 +29,7 @@ func readNotification(id string, sev string, occurredAt time.Time, title string)
 }
 
 func TestNotificationsPanel_UpsertNew(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 
 	changed := p.Upsert(unreadNotification("01HX", "error", time.Now(), "backup-db failed"))
 	if !changed {
@@ -45,7 +45,7 @@ func TestNotificationsPanel_UpsertNew(t *testing.T) {
 }
 
 func TestNotificationsPanel_UpsertSameTimestampNoOp(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	now := time.Now()
 	n := unreadNotification("x", "info", now, "t")
 	if !p.Upsert(n) {
@@ -57,7 +57,7 @@ func TestNotificationsPanel_UpsertSameTimestampNoOp(t *testing.T) {
 }
 
 func TestNotificationsPanel_OrderedDescending(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	now := time.Now()
 
 	p.Upsert(unreadNotification("01AAAA", "info", now.Add(-time.Hour), "old"))
@@ -70,7 +70,7 @@ func TestNotificationsPanel_OrderedDescending(t *testing.T) {
 }
 
 func TestNotificationsPanel_PanelHeightEmpty(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	if got := p.PanelHeight(); got != 0 {
 		t.Fatalf("empty panel should not reserve space; got %d", got)
 	}
@@ -80,14 +80,14 @@ func TestNotificationsPanel_PanelHeightEmpty(t *testing.T) {
 }
 
 func TestNotificationsPanel_CollapsedView(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(120)
 	n := unreadNotification("01HX", "error", time.Now(), "backup-db failed")
 	n.Count = 3
 	p.Upsert(n)
 
-	if p.PanelHeight() != notificationsCollapsedH {
-		t.Fatalf("collapsed PanelHeight: want %d, got %d", notificationsCollapsedH, p.PanelHeight())
+	if p.PanelHeight() != CollapsedH {
+		t.Fatalf("collapsed PanelHeight: want %d, got %d", CollapsedH, p.PanelHeight())
 	}
 	view := p.View()
 	if !strings.Contains(view, "backup-db failed") {
@@ -101,7 +101,7 @@ func TestNotificationsPanel_CollapsedView(t *testing.T) {
 // The collapsed preview is a "you have something to look at" hint, so a newer
 // already-read row must not eclipse the freshest unread one.
 func TestNotificationsPanel_CollapsedPreviewSkipsReadNewerItem(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(120)
 	now := time.Now()
 	p.Upsert(unreadNotification("01A", "warn", now.Add(-time.Hour), "older-unread"))
@@ -119,7 +119,7 @@ func TestNotificationsPanel_CollapsedPreviewSkipsReadNewerItem(t *testing.T) {
 // When every tracked row is read, the collapsed line falls back to the bare
 // header — no severity tag, no title — instead of advertising stale state.
 func TestNotificationsPanel_CollapsedPreviewEmptyWhenAllRead(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(120)
 	now := time.Now()
 	p.Upsert(readNotification("01A", "error", now.Add(-time.Hour), "first-read"))
@@ -141,7 +141,7 @@ func TestNotificationsPanel_CollapsedPreviewEmptyWhenAllRead(t *testing.T) {
 }
 
 func TestNotificationsPanel_UpsertCoalesceRepaints(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	now := time.Now()
 	p.Upsert(unreadNotification("x", "warn", now, "t"))
 	updated := unreadNotification("x", "warn", now.Add(time.Minute), "t")
@@ -155,7 +155,7 @@ func TestNotificationsPanel_UpsertCoalesceRepaints(t *testing.T) {
 }
 
 func TestNotificationsPanel_ToggleAndExpandedHeight(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(80)
 	p.Upsert(unreadNotification("01H1", "error", time.Now(), "boom"))
 
@@ -166,8 +166,8 @@ func TestNotificationsPanel_ToggleAndExpandedHeight(t *testing.T) {
 	if !p.IsExpanded() {
 		t.Fatal("Toggle should expand the panel")
 	}
-	if p.PanelHeight() != notificationsExpandedH {
-		t.Fatalf("expanded PanelHeight: want %d, got %d", notificationsExpandedH, p.PanelHeight())
+	if p.PanelHeight() != ExpandedH {
+		t.Fatalf("expanded PanelHeight: want %d, got %d", ExpandedH, p.PanelHeight())
 	}
 	view := p.View()
 	if !strings.Contains(view, "boom") {
@@ -179,7 +179,7 @@ func TestNotificationsPanel_ToggleAndExpandedHeight(t *testing.T) {
 }
 
 func TestNotificationsPanel_MoveCursorBounded(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(80)
 	now := time.Now()
 	p.Upsert(unreadNotification("01A", "info", now.Add(-2*time.Hour), "first"))
@@ -214,7 +214,7 @@ func TestNotificationsPanel_MoveCursorBounded(t *testing.T) {
 }
 
 func TestNotificationsPanel_MarkReadLocalFlipsReadAt(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	now := time.Now()
 	p.Upsert(unreadNotification("x", "warn", now, "t"))
 	p.SetUnread(3) // server-driven badge unaffected by local action
@@ -235,7 +235,7 @@ func TestNotificationsPanel_MarkReadLocalFlipsReadAt(t *testing.T) {
 }
 
 func TestNotificationsPanel_MarkUnreadLocalClearsReadAt(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	now := time.Now()
 	p.Upsert(readNotification("x", "warn", now, "t"))
 	p.SetUnread(0)
@@ -252,12 +252,12 @@ func TestNotificationsPanel_MarkUnreadLocalClearsReadAt(t *testing.T) {
 }
 
 func TestNotificationsPanel_SetUnread(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetUnread(7)
 	if p.Unread() != 7 {
 		t.Fatalf("SetUnread: want 7, got %d", p.Unread())
 	}
-	if p.PanelHeight() != notificationsCollapsedH {
+	if p.PanelHeight() != CollapsedH {
 		t.Fatal("SetUnread alone should make the panel visible at collapsed height")
 	}
 	// Negative values are the "server query failed" sentinel; the badge must
@@ -272,7 +272,7 @@ func TestNotificationsPanel_SetUnread(t *testing.T) {
 // fix: a stream of SSE upserts (created/updated) plus local mark-read/unread
 // must never make the badge drift away from the server's last-shipped count.
 func TestNotificationsPanel_BadgeIsServerAuthoritative(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	now := time.Now()
 
 	p.SetUnread(5)
@@ -292,7 +292,7 @@ func TestNotificationsPanel_BadgeIsServerAuthoritative(t *testing.T) {
 }
 
 func TestNotificationsPanel_LoadHistoricalDoesNotTouchUnread(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	now := time.Now()
 	items := []apiclient.Notification{
 		readNotification("01A", "info", now.Add(-time.Hour), "old-read"),
@@ -323,7 +323,7 @@ func TestNotificationsPanel_LoadHistoricalDoesNotTouchUnread(t *testing.T) {
 }
 
 func TestNotificationsPanel_UnreadIDsForRun(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	now := time.Now()
 	a := unreadNotification("01A", "error", now, "fail-1")
 	a.RunID = "run-1"
@@ -357,7 +357,7 @@ func TestNotificationsPanel_UnreadIDsForRun(t *testing.T) {
 }
 
 func TestNotificationsPanel_MoveCursorBoundaryDoesNotMove(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(80)
 	p.Upsert(unreadNotification("01H1", "error", time.Now(), "only"))
 	p.Toggle()
@@ -370,7 +370,7 @@ func TestNotificationsPanel_MoveCursorBoundaryDoesNotMove(t *testing.T) {
 }
 
 func TestNotificationsPanel_BumpBoundaryFlashSetsTimestamp(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(80)
 	p.Upsert(unreadNotification("01H1", "error", time.Now(), "only"))
 	p.Toggle()
@@ -383,7 +383,7 @@ func TestNotificationsPanel_BumpBoundaryFlashSetsTimestamp(t *testing.T) {
 		t.Fatal("flashActive should be true immediately after BumpBoundaryFlash")
 	}
 	// Wait past the flash window and verify it has elapsed.
-	time.Sleep(notificationsBoundaryFlashDuration + 50*time.Millisecond)
+	time.Sleep(boundaryFlashDuration + 50*time.Millisecond)
 	if p.flashActive() {
 		t.Fatal("flashActive should be false after the duration elapses")
 	}
@@ -395,7 +395,7 @@ func TestNotificationsPanel_BumpBoundaryFlashSetsTimestamp(t *testing.T) {
 }
 
 func TestNotificationsPanel_ClearBoundaryFlashIdempotent(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	// Never bumped — clearing must be a safe no-op.
 	p.ClearBoundaryFlash()
 	if !p.flashCursorUntil.IsZero() {
@@ -416,7 +416,7 @@ func TestNotificationsPanel_ClearBoundaryFlashIdempotent(t *testing.T) {
 }
 
 func TestNotificationsPanel_BumpBoundaryFlashNoOpWhenCollapsedOrEmpty(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(80)
 	// Empty + collapsed → bump must be a no-op.
 	p.BumpBoundaryFlash()
@@ -432,7 +432,7 @@ func TestNotificationsPanel_BumpBoundaryFlashNoOpWhenCollapsedOrEmpty(t *testing
 }
 
 func TestNotificationsPanel_CountLabelShowsUnreadCountOnly(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(80)
 	now := time.Now()
 	p.LoadHistorical([]apiclient.Notification{
@@ -460,7 +460,7 @@ func TestNotificationsPanel_CountLabelShowsUnreadCountOnly(t *testing.T) {
 }
 
 func TestNotificationsPanel_ReadItemHidesSeverityDot(t *testing.T) {
-	p := newNotificationsPanel()
+	p := NewPanel()
 	p.SetWidth(80)
 	t0 := time.Now()
 	p.Upsert(readNotification("01A", "error", t0.Add(-time.Hour), "old"))

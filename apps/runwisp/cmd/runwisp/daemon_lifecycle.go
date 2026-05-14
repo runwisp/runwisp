@@ -15,6 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"log/slog"
 )
 
@@ -178,7 +179,7 @@ func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *d
 func runWithTUI(
 	srv *server.Server,
 	svc *daemonServices,
-	info tui.StartupInfo,
+	info uikit.StartupInfo,
 	debugWriter *tui.DebugLogWriter,
 	cancelCloud context.CancelFunc,
 	cloudWG *sync.WaitGroup,
@@ -211,7 +212,7 @@ func runWithTUI(
 	}
 	tui.SetLogOutput(os.Stderr)
 
-	if quitAction == tui.QuitKeepDaemon {
+	if quitAction == uikit.QuitKeepDaemon {
 		slog.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
 		return runHeadless(cancelCloud, cloudWG, svc, srv)
 	}

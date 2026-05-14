@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package home
 
 import (
 	"fmt"
@@ -11,60 +11,61 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
-// homeField identifies a focusable field in the home header.
-type homeField int
+// Field identifies a focusable field in the home header.
+type Field int
 
 const (
-	homeFieldNone homeField = iota
-	homeFieldOpenWebUI
-	homeFieldWebUI
-	homeFieldPassword
+	FieldNone Field = iota
+	FieldOpenWebUI
+	FieldWebUI
+	FieldPassword
 )
 
-// passwordMaskWidth matches datadir.GeneratePassword's 22-char base62 output
+// PasswordMaskWidth matches datadir.GeneratePassword's 22-char base62 output
 // so the rendered bullets visually line up with what the operator will see
 // in the copy modal.
-const passwordMaskWidth = 22
+const PasswordMaskWidth = 22
 
-// homeFields returns the list of active fields based on the startup info.
+// Fields returns the list of active fields based on the startup info.
 // hasLaunchTicket indicates whether the one-click browser open action is available.
-func homeFields(info StartupInfo, hasLaunchTicket bool) []homeField {
-	var fields []homeField
+func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
+	var fields []Field
 	if !info.WebUIDisabled && info.Port > 0 {
 		if hasLaunchTicket {
-			fields = append(fields, homeFieldOpenWebUI)
+			fields = append(fields, FieldOpenWebUI)
 		}
-		fields = append(fields, homeFieldWebUI)
+		fields = append(fields, FieldWebUI)
 	}
 	if info.PasswordEphemeral && info.Password != "" {
-		fields = append(fields, homeFieldPassword)
+		fields = append(fields, FieldPassword)
 	}
 	return fields
 }
 
-// renderHomeHeader renders the server info section for the Home page.
+// RenderHeader renders the server info section for the Home page.
 // homeCursor is the index into the focusable fields; -1 means none focused.
 // homeHover is the index of the hovered field; -1 means none.
 // Returns the rendered string and the 0-based Y line offset where interactive
 // field rows begin (used for mouse hit-testing).
-func renderHomeHeader(info StartupInfo, hasLaunchTicket bool, w int, homeCursor int, homeHover int) (string, int) {
+func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w int, homeCursor int, homeHover int) (string, int) {
 	var b strings.Builder
-	fields := homeFields(info, hasLaunchTicket)
+	fields := Fields(info, hasLaunchTicket)
 	lineCount := 0
 
 	// Header top padding.
-	b.WriteString(padLine("", w, colorBgLight))
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
 	title := lipgloss.NewStyle().
-		Background(colorBgLight).
-		Foreground(colorTextBright).
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorTextBright).
 		Bold(true).
 		Render("  Home")
-	b.WriteString(padLine(title, w, colorBgLight))
+	b.WriteString(uikit.PadLine(title, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
@@ -78,20 +79,20 @@ func renderHomeHeader(info StartupInfo, hasLaunchTicket bool, w int, homeCursor 
 	}
 	if len(parts) > 0 {
 		sub := lipgloss.NewStyle().
-			Background(colorBgLight).
-			Foreground(colorTextMuted).
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorTextMuted).
 			Render("  " + strings.Join(parts, "  \u00b7  "))
-		b.WriteString(padLine(sub, w, colorBgLight))
+		b.WriteString(uikit.PadLine(sub, w, uikit.ColorBgLight))
 		b.WriteString("\n")
 		lineCount++
 	}
 
-	b.WriteString(padLine("", w, colorBgLight))
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
 	// Spacer between header and fields.
-	b.WriteString(padLine("", w, colorBg))
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 	b.WriteString("\n")
 	lineCount++
 
@@ -102,35 +103,35 @@ func renderHomeHeader(info StartupInfo, hasLaunchTicket bool, w int, homeCursor 
 		selected := i == homeCursor
 		hovered := i == homeHover && !selected
 		switch f {
-		case homeFieldOpenWebUI:
-			renderHomeActionRow(&b, "Open Web UI", colorSecondary, w, selected, hovered)
-		case homeFieldWebUI:
-			renderHomeFieldRow(&b, "Web UI", fmt.Sprintf("http://localhost:%d", info.Port), colorText, w, selected, hovered)
-		case homeFieldPassword:
-			masked := strings.Repeat("•", passwordMaskWidth)
+		case FieldOpenWebUI:
+			renderActionRow(&b, "Open Web UI", uikit.ColorSecondary, w, selected, hovered)
+		case FieldWebUI:
+			renderFieldRow(&b, "Web UI", fmt.Sprintf("http://localhost:%d", info.Port), uikit.ColorText, w, selected, hovered)
+		case FieldPassword:
+			masked := strings.Repeat("•", PasswordMaskWidth)
 			if selected {
 				masked += "  (press Enter to copy)"
 			}
-			renderHomeFieldRow(&b, "Password", masked, colorWarning, w, selected, hovered)
+			renderFieldRow(&b, "Password", masked, uikit.ColorWarning, w, selected, hovered)
 		}
 	}
 
 	// Trailing spacer after fields.
 	if len(fields) > 0 {
-		b.WriteString(padLine("", w, colorBg))
+		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 		b.WriteString("\n")
 	}
 
 	return b.String(), fieldsStartY
 }
 
-// renderHomeFieldRow renders a single focusable field row with optional selection highlight.
-func renderHomeFieldRow(b *strings.Builder, label, value string, valueColor lipgloss.Color, w int, selected bool, hovered bool) {
-	bg := colorBg
+// renderFieldRow renders a single focusable field row with optional selection highlight.
+func renderFieldRow(b *strings.Builder, label, value string, valueColor lipgloss.Color, w int, selected bool, hovered bool) {
+	bg := uikit.ColorBg
 	if selected {
-		bg = colorBgLight
+		bg = uikit.ColorBgLight
 	} else if hovered {
-		bg = colorExecRowHover
+		bg = uikit.ColorExecRowHover
 	}
 
 	indicator := "  "
@@ -140,7 +141,7 @@ func renderHomeFieldRow(b *strings.Builder, label, value string, valueColor lipg
 
 	l := lipgloss.NewStyle().
 		Background(bg).
-		Foreground(colorTextMuted).
+		Foreground(uikit.ColorTextMuted).
 		Render(indicator + label)
 
 	sep := lipgloss.NewStyle().
@@ -153,17 +154,17 @@ func renderHomeFieldRow(b *strings.Builder, label, value string, valueColor lipg
 		Bold(selected).
 		Render(value)
 
-	b.WriteString(padLine(l+sep+v, w, bg))
+	b.WriteString(uikit.PadLine(l+sep+v, w, bg))
 	b.WriteString("\n")
 }
 
-// renderHomeActionRow renders a primary action row (button-like) with no value — just a label.
-func renderHomeActionRow(b *strings.Builder, label string, labelColor lipgloss.Color, w int, selected bool, hovered bool) {
-	bg := colorBg
+// renderActionRow renders a primary action row (button-like) with no value — just a label.
+func renderActionRow(b *strings.Builder, label string, labelColor lipgloss.Color, w int, selected bool, hovered bool) {
+	bg := uikit.ColorBg
 	if selected {
-		bg = colorBgLight
+		bg = uikit.ColorBgLight
 	} else if hovered {
-		bg = colorExecRowHover
+		bg = uikit.ColorExecRowHover
 	}
 
 	indicator := "  "
@@ -177,29 +178,29 @@ func renderHomeActionRow(b *strings.Builder, label string, labelColor lipgloss.C
 		Bold(true).
 		Render(indicator + "⮕  " + label)
 
-	b.WriteString(padLine(l, w, bg))
+	b.WriteString(uikit.PadLine(l, w, bg))
 	b.WriteString("\n")
 }
 
-// renderTaskHeader renders the task info header with a Run Now button.
+// RenderTaskHeader renders the task info header with a Run Now button.
 // The runNowBtnY output is the screen-relative Y offset of the Run Now button row
 // within this header (0-based from header start).
-func renderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHovered bool) (string, int) {
+func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHovered bool) (string, int) {
 	var b strings.Builder
 	lineCount := 0
 
 	// Header top padding.
-	b.WriteString(padLine("", w, colorBgLight))
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
 	// Task name.
 	name := lipgloss.NewStyle().
-		Background(colorBgLight).
-		Foreground(colorTextBright).
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorTextBright).
 		Bold(true).
 		Render("  " + taskName)
-	b.WriteString(padLine(name, w, colorBgLight))
+	b.WriteString(uikit.PadLine(name, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
@@ -218,13 +219,13 @@ func renderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 		}
 	}
 	schedText := lipgloss.NewStyle().
-		Background(colorBgLight).
-		Foreground(colorTextMuted).
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorTextMuted).
 		Render(schedInfo)
 
-	style := btnRunNowStyle
+	style := uikit.BtnRunNowStyle
 	if runNowHovered {
-		style = btnRunNowHoverStyle
+		style = uikit.BtnRunNowHoverStyle
 	}
 	btnLabel := "▶ Run Now (r)"
 	if task != nil && task.Kind.IsService() {
@@ -240,15 +241,15 @@ func renderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 	}
 
 	schedLine := schedText +
-		lipgloss.NewStyle().Background(colorBgLight).Render(strings.Repeat(" ", gap)) +
+		lipgloss.NewStyle().Background(uikit.ColorBgLight).Render(strings.Repeat(" ", gap)) +
 		btn
 	btnLineY := lineCount
-	b.WriteString(padLine(schedLine, w, colorBgLight))
+	b.WriteString(uikit.PadLine(schedLine, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
 	// Bottom padding.
-	b.WriteString(padLine("", w, colorBgLight))
+	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
 	return b.String(), btnLineY
