@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **OpenAPI now exposes `EndReason` as a named schema.** The set of end-reason values (`success`, `failed`, `timeout`, …) is now a single `components/schemas/EndReason` enum referenced from every place a run's `end_reason` appears, instead of an inline enum repeated at each call site. Generated clients pick this up as one shared type/constant — no behavior or wire-format change.
+
 ## [0.5.0] - 2026-05-13
 
 ### Added

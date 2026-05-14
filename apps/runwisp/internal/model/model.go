@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 var taskNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
@@ -149,6 +151,45 @@ const (
 	ReasonDaemonStopped EndReason = "daemon_stopped"
 )
 
+// AllEndReasons is the canonical, ordered list of end-reason values. The order
+// is load-bearing: it determines the enum order in the generated OpenAPI
+// schema and downstream TypeScript types (`packages/common`). Keep new values
+// at the end unless intentionally reordering the API surface.
+var AllEndReasons = []EndReason{
+	ReasonSuccess,
+	ReasonFailed,
+	ReasonStopped,
+	ReasonTimeout,
+	ReasonCrashed,
+	ReasonSkipped,
+	ReasonLogOverflow,
+	ReasonQueueFull,
+	ReasonDSTSkipped,
+	ReasonDaemonStopped,
+}
+
+const endReasonSchemaName = "EndReason"
+
+// Schema implements huma.SchemaProvider so EndReason appears as a named enum
+// (`components.schemas.EndReason`) in the generated OpenAPI document instead
+// of an inline `enum` repeated at every usage site. Downstream codegen
+// (openapi-typescript → packages/common) picks this up as a single shared
+// type alias.
+func (EndReason) Schema(r huma.Registry) *huma.Schema {
+	if _, ok := r.Map()[endReasonSchemaName]; !ok {
+		enum := make([]any, len(AllEndReasons))
+		for i, v := range AllEndReasons {
+			enum[i] = string(v)
+		}
+		r.Map()[endReasonSchemaName] = &huma.Schema{
+			Type:        huma.TypeString,
+			Description: "Why a run ended. Set when status=ended.",
+			Enum:        enum,
+		}
+	}
+	return &huma.Schema{Ref: "#/components/schemas/" + endReasonSchemaName}
+}
+
 // IsTerminal reports whether the phase represents a completed run.
 func (p RunPhase) IsTerminal() bool {
 	return p == PhaseEnded
@@ -221,7 +262,7 @@ type Run struct {
 	ExternalExecutionID *string     `json:"external_execution_id,omitempty"`
 	TaskName            string      `json:"task_name"`
 	Status              RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
-	EndReason           *EndReason  `json:"end_reason,omitempty" enum:"success,failed,stopped,timeout,crashed,skipped,log_overflow,queue_full,dst_skipped,daemon_stopped" doc:"Why the run ended (set when status=ended)"`
+	EndReason           *EndReason  `json:"end_reason,omitempty"`
 	ExitCode            int         `json:"exit_code"`
 	LogPath             string      `json:"-"`
 	StartAt             *time.Time  `json:"start_at,omitempty"`
