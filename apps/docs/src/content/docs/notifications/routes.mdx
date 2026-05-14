@@ -5,6 +5,8 @@ title: Notification rules
 description: A [[notification_route]] block matches events by kind and task name, and sends them to one or more channels. Use it when one rule should cover many tasks.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 A `[[notification_route]]` block defines one rule: when an event
 matches the filter, send it to the listed channels. If an event
 matches more than one rule, the router collects every channel from
@@ -126,12 +128,27 @@ overrides whose parent isn't declared, whose target is empty, or —
 for Slack — doesn't start with `#` or `@`; `"inapp:something"` (the
 bell has no target); and `[[notifier]]` ids containing `:`.
 
-## Where to next
+---
 
-- [Per-task notifications](/notifications/per-task/) — set channels
-  directly on one task.
-- [Slack](/notifications/providers/slack/) ·
-  [Telegram](/notifications/providers/telegram/) — declaring the
-  channels rules point at.
-- [Global settings](/notifications/global/) — coalescing, history,
-  retry budget.
+<CardGrid>
+    <LinkCard
+        title="Per-task"
+        href="/notifications/per-task/"
+        description="Set channels directly on one task."
+    />
+    <LinkCard
+        title="Slack"
+        href="/notifications/providers/slack/"
+        description="Declaring the channels rules point at."
+    />
+    <LinkCard
+        title="Telegram"
+        href="/notifications/providers/telegram/"
+        description="Declaring the channels rules point at."
+    />
+    <LinkCard
+        title="Global"
+        href="/notifications/global/"
+        description="Coalescing, history, retry budget."
+    />
+</CardGrid>

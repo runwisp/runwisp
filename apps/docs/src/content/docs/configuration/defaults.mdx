@@ -5,6 +5,8 @@ title: "[defaults]"
 description: Fallback values inherited by every task and service unless overridden — timeout, log_max_size, log_on_full, keep_runs, keep_for, backoff_reset_after.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 `[defaults]` is the one section in `runwisp.toml` that doesn't define
 something to run. It defines fallback values that **every** `[tasks.*]`
 and `[services.*]` inherits unless they override the field themselves.
@@ -95,10 +97,23 @@ run                 = "/usr/local/bin/worker"
 - Notification routing (`notify_on_failure`, `notify_on_success`) has no
   defaulting layer — you set it per task.
 
-## Where to next
+---
 
-- [`[tasks.*]` reference](/configuration/tasks/) — the per-task
-  overrides this defaults.
-- [`[services.*]` reference](/configuration/services/) — same.
-- [`[storage]` reference](/configuration/storage/) — the daemon-wide
-  disk safeguards (separate from per-task `log_max_size`).
+<CardGrid>
+    <LinkCard
+        title="[tasks.*] ref"
+        href="/configuration/tasks/"
+        description="The per-task overrides this defaults."
+    />
+    <LinkCard title="[services.*] ref" href="/configuration/services/" description="Same." />
+    <LinkCard
+        title="[storage] ref"
+        href="/configuration/storage/"
+        description="The daemon-wide disk safeguards."
+    />
+    <LinkCard
+        title="Daemon ref"
+        href="/configuration/daemon/"
+        description="Daemon-wide settings and CLI flags."
+    />
+</CardGrid>

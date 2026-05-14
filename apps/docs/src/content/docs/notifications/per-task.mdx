@@ -5,6 +5,8 @@ title: Per-task notifications
 description: Use notify_on_failure and notify_on_success on a [tasks.*] or [services.*] block to send notifications when one task ends a certain way.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 When you only need to alert on one task, put the channel names directly on
 that task. The setting lives next to the task definition, so it is easy to
 see which task sends to which channel.
@@ -169,11 +171,27 @@ whose target is empty, or — for Slack — doesn't start with `#` or
 is fine — it's equivalent to omitting the field, and
 `[notify] global_notifiers` still fires.
 
-## Where to next
+---
 
-- [Providers](/notifications/providers/slack/) — declaring the channels
-  these fields refer to.
-- [Notification rules](/notifications/routes/) — one rule covering many
-  tasks.
-- [Global settings](/notifications/global/) — `global_notifiers` and the
-  other daemon-wide knobs.
+<CardGrid>
+    <LinkCard
+        title="Slack provider"
+        href="/notifications/providers/slack/"
+        description="Declaring the channels these fields refer to."
+    />
+    <LinkCard
+        title="Notification rules"
+        href="/notifications/routes/"
+        description="One rule covering many tasks."
+    />
+    <LinkCard
+        title="Global settings"
+        href="/notifications/global/"
+        description="global_notifiers and the other daemon-wide knobs."
+    />
+    <LinkCard
+        title="Notifications model"
+        href="/notifications/model/"
+        description="The picture this page is part of."
+    />
+</CardGrid>

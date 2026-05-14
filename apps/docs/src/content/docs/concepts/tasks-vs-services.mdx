@@ -5,6 +5,8 @@ title: Tasks vs Services
 description: When to model a unit of work as a [tasks.*] vs a [services.*] in runwisp.toml.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 RunWisp models work as one of two things: a **task** that runs and exits,
 or a **service** that stays up. Picking the right one is almost always
 straightforward — but the schema enforces real differences, so it pays to
@@ -136,11 +138,23 @@ previous run took too long.
 - **The same name on both sides.** Names share one namespace; the
   loader rejects duplicates with a clear error.
 
-## Where to next
+---
 
-- [How scheduling works](/concepts/scheduling/) — what `cron` actually
-  parses and how missed ticks are handled.
-- [Concurrency policies](/concepts/concurrency/) — `on_overlap` in depth.
-- [`[tasks.*]` reference](/configuration/tasks/) — every task field.
-- [`[services.*]` reference](/configuration/services/) — every service
-  field.
+<CardGrid>
+    <LinkCard
+        title="Scheduling"
+        href="/concepts/scheduling/"
+        description="What cron actually parses and how missed ticks are handled."
+    />
+    <LinkCard
+        title="Concurrency"
+        href="/concepts/concurrency/"
+        description="on_overlap in depth."
+    />
+    <LinkCard title="[tasks.*] ref" href="/configuration/tasks/" description="Every task field." />
+    <LinkCard
+        title="[services.*] ref"
+        href="/configuration/services/"
+        description="Every service field."
+    />
+</CardGrid>

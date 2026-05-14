@@ -5,6 +5,8 @@ title: Notifications model
 description: How RunWisp tells you something broke — the in-app bell, optional outbound channels, routing, and coalescing.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 When a task fails, you want to know. RunWisp has two layers for that:
 
 1. **The bell** in the Web UI and the alert line in the TUI. Always on, no
@@ -239,13 +241,27 @@ notify = ["tg-oncall"]
   the bell.
 - **Secrets are never sent to the optional control-plane integration.**
 
-## Where to next
+---
 
-- **Providers** — declare an outbound channel:
-  [Slack](/notifications/providers/slack/) ·
-  [Telegram](/notifications/providers/telegram/).
-- [Per-task notifications](/notifications/per-task/) —
-  `notify_on_failure` and `notify_on_success` on one task.
-- [Notification rules](/notifications/routes/) — one rule covering many
-  tasks.
-- [Global settings](/notifications/global/) — coalescing and retention.
+<CardGrid>
+    <LinkCard
+        title="Per-task"
+        href="/notifications/per-task/"
+        description="notify_on_failure and notify_on_success on one task."
+    />
+    <LinkCard
+        title="Notification rules"
+        href="/notifications/routes/"
+        description="One rule covering many tasks."
+    />
+    <LinkCard
+        title="Slack"
+        href="/notifications/providers/slack/"
+        description="Declare an outbound Slack channel."
+    />
+    <LinkCard
+        title="Telegram"
+        href="/notifications/providers/telegram/"
+        description="Declare an outbound Telegram channel."
+    />
+</CardGrid>

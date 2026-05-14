@@ -5,6 +5,8 @@ title: How scheduling works
 description: Cron expressions, timezones, missed-tick catchup, and the determinism guarantees of the RunWisp scheduler.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 The scheduler is meant to be predictable and unsurprising. It reads
 standard cron expressions, fires the matching tasks at the right
 moments, and records a row for every firing. There is no dependency
@@ -209,11 +211,27 @@ A few things the scheduler doesn't try to do, on purpose:
   every other Tuesday, encode it in the cron (`30 9 */2 * 2`) or
   filter in your script.
 
-## Where to next
+---
 
-- [Concurrency policies](/concepts/concurrency/) — what `on_overlap`
-  does when a tick fires into a still-running run.
-- [Retries & timeouts](/concepts/retries/) — what happens when a run
-  fails or hangs.
-- [`[tasks.*]` reference](/configuration/tasks/) — every cron-related
-  field.
+<CardGrid>
+    <LinkCard
+        title="Concurrency"
+        href="/concepts/concurrency/"
+        description="What on_overlap does when a tick fires into a still-running run."
+    />
+    <LinkCard
+        title="Retries"
+        href="/concepts/retries/"
+        description="What happens when a run fails or hangs."
+    />
+    <LinkCard
+        title="[tasks.*] ref"
+        href="/configuration/tasks/"
+        description="Every cron-related field."
+    />
+    <LinkCard
+        title="Tasks vs Services"
+        href="/concepts/tasks-vs-services/"
+        description="Picking the right kind."
+    />
+</CardGrid>

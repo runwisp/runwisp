@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mattn/go-isatty"
@@ -32,8 +33,23 @@ func scaffoldIfMissing(path string) error {
 	return promptAndScaffold(path, os.Stdin, os.Stderr)
 }
 
+// configLocation returns a human-readable location for path. When the file has
+// the default name "runwisp.toml", the directory is returned to avoid the
+// redundant "No runwisp.toml at runwisp.toml" phrasing.
+func configLocation(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	if filepath.Base(abs) == "runwisp.toml" {
+		return filepath.Dir(abs)
+	}
+	return abs
+}
+
 func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
-	fmt.Fprintf(out, "No runwisp.toml at %s.\n", path)
+	loc := configLocation(path)
+	fmt.Fprintf(out, "No runwisp.toml at %s.\n", loc)
 	fmt.Fprint(out, "Create a starter with one example task? [Y/n] ")
 
 	answer, err := bufio.NewReader(in).ReadString('\n')
@@ -48,6 +64,6 @@ func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 		fmt.Fprintf(out, "Created %s\n", path)
 		return nil
 	default:
-		return fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://github.com/runwisp/runwisp)", path)
+		return fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://github.com/runwisp/runwisp)", loc)
 	}
 }

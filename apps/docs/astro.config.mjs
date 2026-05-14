@@ -49,8 +49,7 @@ export default defineConfig({
                 {
                     label: "Getting Started",
                     items: [
-                        { label: "Install", slug: "getting-started/install" },
-                        { label: "Your first task", slug: "getting-started/first-task" },
+                        { label: "Quick start", slug: "getting-started/quick-start" },
                         { label: "The Web UI tour", slug: "getting-started/web-ui-tour" },
                     ],
                 },

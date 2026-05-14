@@ -5,7 +5,7 @@ title: Telegram
 description: Set up the Telegram notifier end-to-end — create a bot, find your chat_id, store the token safely, declare the channel, route failures to it, and test it.
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 The Telegram driver posts via Telegram's Bot API. One bot token plus
 one `chat_id` maps to one destination — a personal chat, a group, or
@@ -184,11 +184,27 @@ Telegram messages usually arrive in 1–2 seconds. If yours doesn't:
 - An `id` containing `:` (reserved for inline target overrides) or
   equal to `"inapp"` (reserved).
 
-## Where to next
+---
 
-- [Slack](/notifications/providers/slack/) — same shape, in case you
-  want both channels.
-- [Notification rules](/notifications/routes/) — one rule covering many
-  tasks.
-- [Notifications model](/notifications/model/) — coalescing,
-  delivery failures, the trust model.
+<CardGrid>
+    <LinkCard
+        title="Slack"
+        href="/notifications/providers/slack/"
+        description="Same shape, in case you want both channels."
+    />
+    <LinkCard
+        title="Notification rules"
+        href="/notifications/routes/"
+        description="One rule covering many tasks."
+    />
+    <LinkCard
+        title="Notifications model"
+        href="/notifications/model/"
+        description="Coalescing, delivery failures, the trust model."
+    />
+    <LinkCard
+        title="Per-task notifications"
+        href="/notifications/per-task/"
+        description="notify_on_failure and notify_on_success on one task."
+    />
+</CardGrid>

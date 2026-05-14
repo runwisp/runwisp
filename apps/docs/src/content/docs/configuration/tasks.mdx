@@ -5,6 +5,8 @@ title: "[tasks.*]"
 description: Every key accepted by a [tasks.<name>] table — cron, run, on_overlap, retries, timeout, retention, notifications.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 A task is a unit of work that runs and exits. The TOML key (`backup-db`
 in `[tasks.backup-db]`) is the **task name** — it appears in the CLI,
 the API, the Web UI, and the on-disk log path. Names must be unique
@@ -196,9 +198,27 @@ echo "Draining queue at $(date -Iseconds)"
 For a quick start, run `runwisp` in an empty directory — it offers to
 scaffold a minimal `runwisp.toml` for you.
 
-## Where to next
+---
 
-- [`[services.*]` reference](/configuration/services/) — the always-on counterpart.
-- [`[defaults]` reference](/configuration/defaults/) — what fields fall through.
-- [Concurrency policies](/concepts/concurrency/), [Retries & timeouts](/concepts/retries/),
-  [Logs & retention](/concepts/logs/) — the conceptual pages behind the keys.
+<CardGrid>
+    <LinkCard
+        title="[services.*] ref"
+        href="/configuration/services/"
+        description="The always-on counterpart."
+    />
+    <LinkCard
+        title="[defaults] ref"
+        href="/configuration/defaults/"
+        description="What fields fall through."
+    />
+    <LinkCard
+        title="Concurrency"
+        href="/concepts/concurrency/"
+        description="The conceptual page behind the keys."
+    />
+    <LinkCard
+        title="Retries"
+        href="/concepts/retries/"
+        description="The conceptual page behind the keys."
+    />
+</CardGrid>

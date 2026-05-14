@@ -5,6 +5,8 @@ title: Docker patterns
 description: Running tasks that invoke Docker — one-shot containers, image pruning, registry pulls — and the `--rm` discipline that prevents zombie containers.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 This recipe is about **using Docker from inside a RunWisp task** —
 e.g. running an analytics job in a one-shot container, pruning unused
 images, or pre-pulling the next deploy's image.
@@ -185,10 +187,17 @@ The `exec` is important — without it, the shell stays alive after
 on the shell, not the container. With `exec`, the shell process
 is replaced and signals propagate cleanly.
 
-## Where to next
+---
 
-- [Recipes: deploy hooks](/recipes/deploy-hooks/) — the manual
-  trigger pattern, including the CHAP-from-CI dance.
-- [Concepts: Tasks vs Services](/concepts/tasks-vs-services/) —
-  why "long-running container" is a service, not a 1-minute cron
-  task.
+<CardGrid>
+    <LinkCard
+        title="Deploy hooks"
+        href="/recipes/deploy-hooks/"
+        description="The manual trigger pattern, including the CHAP-from-CI dance."
+    />
+    <LinkCard
+        title="Tasks vs Services"
+        href="/concepts/tasks-vs-services/"
+        description="Why long-running container is a service, not a cron task."
+    />
+</CardGrid>
