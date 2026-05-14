@@ -1,0 +1,254 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Quick start
+description: Install RunWisp, scaffold a starter runwisp.toml, watch your first task stream live, and open the Web UI.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+RunWisp is one small Go binary that runs the shell commands you
+list in a `runwisp.toml` — scheduling jobs on cron, restarting
+services when they crash, and capturing every line of stdout and
+stderr along the way. A TUI in your terminal and a Web UI in your
+browser let you poke at the result. No external database, no
+agent, no sidecar.
+
+It runs on Linux, macOS, and WSL, on `x86_64` or `arm64`. There
+is no native Windows binary — if that's where you are, run
+RunWisp inside WSL.
+
+## 1. Install
+
+Pick whichever channel matches how you usually install software.
+The binary is statically linked and has no runtime dependencies,
+so once it's on your `PATH` you're done.
+
+<Tabs syncKey="install-method">
+    <TabItem label="Install script" icon="seti:shell">
+        Detects your OS and arch, downloads the matching release,
+        verifies its SHA-256, and drops `runwisp` on your `PATH`.
+
+        ```bash
+        curl -fsSL https://get.runwisp.com | sh
+        ```
+    </TabItem>
+    <TabItem label="Bun / npm" icon="seti:javascript">
+        Already have Bun or Node around? The npm package is a thin
+        shim that pulls the matching native binary on first run.
+
+        Try it without installing globally:
+
+        <Tabs syncKey="npm">
+        <TabItem label="Bun">
+        ```bash
+        bunx runwisp
+        ```
+        </TabItem>
+        <TabItem label="npm">
+        ```bash
+        npx runwisp
+        ```
+        </TabItem>
+        </Tabs>
+
+        That's the cleanest path for CI runners and other
+        short-lived environments. For a permanent install:
+
+        <Tabs syncKey="npm">
+        <TabItem label="Bun">
+        ```bash
+        bun add -g runwisp
+        ```
+        </TabItem>
+        <TabItem label="npm">
+        ```bash
+        npm install -g runwisp
+        ```
+        </TabItem>
+        </Tabs>
+    </TabItem>
+    <TabItem label="tar.gz" icon="download">
+        Grab the right `runwisp-{linux,darwin}-{x64,arm64}.tar.gz`
+        from the [GitHub releases page][releases]; a matching
+        `checksums-sha256.txt` is published next to it.
+
+        ```bash
+        tar -xzf runwisp-linux-x64.tar.gz
+        sudo mv runwisp /usr/local/bin/runwisp
+        ```
+
+        [releases]: https://github.com/runwisp/runwisp/releases
+    </TabItem>
+    <TabItem label="From source" icon="seti:go">
+        Requires Go 1.25+ and Bun.
+
+        ```bash
+        git clone https://github.com/runwisp/runwisp
+        cd runwisp
+        bun install
+        bun run build
+        ```
+
+        The binary lands at `apps/runwisp/runwisp`.
+    </TabItem>
+
+</Tabs>
+
+## 2. First run
+
+Pick a directory you'd like your tasks to live in — a project
+root, your home folder, somewhere you'd happily keep a config
+file — and run:
+
+```bash
+runwisp
+```
+
+The first time you do this without a `runwisp.toml` nearby,
+RunWisp won't assume anything; it'll ask:
+
+```
+No runwisp.toml at runwisp.toml.
+Create a starter with one example task? [Y/n]
+```
+
+Press <kbd>Enter</kbd>. RunWisp writes a starter file, starts its
+daemon in the background, and drops you into the **TUI**.
+
+![tui-home-default.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused at the top, with the Web UI URL and an auto-generated password row below it.](../../../assets/screenshots/placeholder.svg)
+
+The Home page surfaces two things worth remembering: the **Web UI
+URL** (`http://localhost:9477` by default) and an **auto-generated
+password** for logging in from a browser. You won't need the
+password to open the dashboard from this TUI — it hands the
+browser a logged-in session directly — but if you'll ever reach
+the dashboard from a different machine or a fresh browser,
+highlight the password row now and press <kbd>Enter</kbd> to copy
+it to your clipboard.
+
+Here's the `runwisp.toml` that was just written next to you: one
+runnable task, plus two commented hints for the most common next
+moves.
+
+```toml
+# runwisp.toml
+# Docs: https://docs.runwisp.com/configuration/overview/
+
+[tasks.hello]
+description = "Example task. Trigger it from the TUI (press r) or the Web UI."
+run = "echo hello from runwisp"
+
+# Schedule a task with cron:
+# [tasks.heartbeat]
+# cron = "* * * * *"
+# run  = "date"
+
+# Long-running service (auto-restart, supports replicas):
+# [services.worker]
+# instances = 1
+# run       = "node ./worker.js"
+```
+
+:::tip[Headless boxes]
+On a host with no terminal — cron, systemd, Docker — start the
+daemon with `runwisp daemon` instead of bare `runwisp`. It skips
+the scaffold prompt entirely and exits non-zero when no
+`runwisp.toml` is present, so missing config fails loudly in your
+init scripts rather than hanging on a prompt nobody can answer.
+:::
+
+## 3. Run the example task
+
+The left sidebar lists every task and service in your config.
+Press <kbd>←</kbd> (or click) to focus the sidebar, arrow down to
+`hello`, and press <kbd>r</kbd>. The exec view opens and
+`hello from runwisp` streams in live.
+
+![tui-exec-running.png — TUI exec view mid-run for the `hello` task: run ID and elapsed time in the header, line-numbered log output streaming below.](../../../assets/screenshots/placeholder.svg)
+
+From here, <kbd>r</kbd> re-runs the task, <kbd>s</kbd> stops a
+running one, <kbd>d</kbd> downloads the full log, <kbd>f</kbd>
+expands the pane to fullscreen, and <kbd>Esc</kbd> closes the view
+and hands focus back to the sidebar. Every previous run sits in
+the list above the active one — scroll up to replay any of them.
+
+There's a shell equivalent if you'd rather not leave your prompt:
+
+```bash
+runwisp exec hello
+```
+
+`runwisp exec` streams stdout and stderr straight to your terminal
+and exits with the run's exit code, so it slots cleanly into a
+script or a one-off command. With a daemon running it routes the
+request through the REST API; without one, it runs the task
+in-process straight from `runwisp.toml`.
+
+## 4. Open the Web UI
+
+Press <kbd>Esc</kbd> to leave the exec view, arrow back up to
+`Home` in the sidebar, then highlight `⮕  Open Web UI` on the
+Home page and press <kbd>Enter</kbd>. Your default browser opens
+the dashboard, already logged in — under the hood the TUI mints a
+single-use launch ticket for the browser, so the password never
+travels through the URL. On a host without a browser the TUI
+prints the URL instead; open it from another machine and sign in
+with the password you copied in step 2.
+
+![web-ui-overview.png — Web UI dashboard: sidebar with tasks and services, daemon header with sparklines, recent activity feed below.](../../../assets/screenshots/placeholder.svg)
+
+Two knobs worth knowing about while you're here:
+
+- Set `RUNWISP_PASSWORD` to pick your own password instead of the
+  generated one. It's read in memory only and never written to
+  disk, so it plays nicely with Docker secrets and systemd
+  `LoadCredential`.
+- Pass `--host` and `--port` to move the dashboard somewhere else.
+  The defaults are `127.0.0.1` and `9477` — loopback only — which
+  is usually what you want.
+
+## 5. Make it yours
+
+That's the loop, end to end. Replace `[tasks.hello]` with the work
+you actually came here for. A few patterns to crib from:
+
+```toml
+[tasks.backup-db]
+cron       = "0 2 * * *"      # nightly at 2 AM
+on_overlap = "skip"           # don't pile up if a run is still going
+keep_runs  = 30               # keep the last 30 runs on disk
+run        = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
+
+[tasks.health-check]
+cron = "*/5 * * * *"          # every five minutes
+run  = "curl -sf https://myapp.example.com/health || exit 1"
+
+[services.worker]
+instances = 3                 # keep three copies alive at all times
+run       = "node /app/worker.js"
+```
+
+`[tasks.*]` run on a schedule or on demand and exit when they're
+done. `[services.*]` are expected to stay up — RunWisp restarts
+them when they exit and keeps `instances = N` copies running in
+parallel.
+
+:::note[One namespace for both]
+Tasks and services share names. Define `[tasks.worker]` *and*
+`[services.worker]` in the same file and the daemon refuses to
+start.
+:::
+
+RunWisp doesn't watch `runwisp.toml` for changes. When you've
+edited the file, quit the TUI with <kbd>Ctrl</kbd>+<kbd>C</kbd>
+and run `runwisp` again — your edits take effect on the next boot.
+
+## Where to next
+
+- [The Web UI tour](/getting-started/web-ui-tour/) — every panel
+  in the dashboard, and what it shows you.
+- [Configuration reference](/configuration/overview/) — every key
+  you can put in `runwisp.toml`.
+- [Concurrency policies](/concepts/concurrency/) — what
+  `on_overlap` actually does when runs collide.
