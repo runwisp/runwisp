@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { ArrowRight, CircleAlert, Clock3, ShieldCheck, Sparkles, Zap } from "@lucide/svelte";
+    import { ArrowRight, CircleAlert, ShieldCheck, Sparkles, Zap } from "@lucide/svelte";
     import Badge from "@runwisp/ui/components/Badge.svelte";
     import { formatBytes, Sparkline } from "@runwisp/ui";
     import { type Component } from "svelte";
@@ -79,13 +79,6 @@
         createSummaryCards(summary, stats, completedRunsCount, healthyTasksCount),
     );
     let daemonFacts = $derived(createDaemonFacts(daemonState));
-    let resourceFootprint = $derived.by(() => {
-        if (!latestSample) {
-            return "Waiting for metrics";
-        }
-
-        return `${formatBytes(latestSample.mem_used)} / ${formatBytes(latestSample.mem_total)}`;
-    });
 
     function createSummaryCards(
         currentSummary: OverviewSummary,
@@ -334,36 +327,25 @@
             </div>
 
             <div>
-                <div class="mb-1.5 flex items-center justify-between text-sm">
+                <div class="mb-1.5 flex items-baseline justify-between text-sm">
                     <span class="text-mist-500">Memory</span>
-                    <span class="font-semibold text-mist-950">{formatUsage(stats.memUsage)}</span>
+                    <span class="flex items-baseline gap-2">
+                        {#if latestSample}
+                            <span class="text-xs text-mist-400">
+                                {formatBytes(latestSample.mem_used)} / {formatBytes(
+                                    latestSample.mem_total,
+                                )}
+                            </span>
+                        {/if}
+                        <span class="font-semibold text-mist-950"
+                            >{formatUsage(stats.memUsage)}</span
+                        >
+                    </span>
                 </div>
                 <div class="overflow-hidden rounded-lg border border-mist-100 bg-mist-50/50">
                     <Sparkline data={memData} color="#0284c7" height={44} />
                 </div>
             </div>
         </div>
-
-        <div class="mt-4 border-t border-mist-100 pt-3">
-            <div class="grid grid-cols-3 gap-2 text-center text-xs">
-                <div>
-                    <p class="font-medium text-mist-500">Cores</p>
-                    <p class="mt-0.5 font-semibold text-mist-950">{daemonState.cpus}</p>
-                </div>
-                <div>
-                    <p class="font-medium text-mist-500">RAM</p>
-                    <p class="mt-0.5 font-semibold text-mist-950">{daemonState.memory}</p>
-                </div>
-                <div>
-                    <p class="font-medium text-mist-500">Samples</p>
-                    <p class="mt-0.5 font-semibold text-mist-950">{metricsHistory.length}</p>
-                </div>
-            </div>
-        </div>
-
-        <p class="mt-3 flex items-center gap-1.5 text-xs text-mist-400">
-            <Clock3 size={12} />
-            {resourceFootprint}
-        </p>
     </div>
 </section>

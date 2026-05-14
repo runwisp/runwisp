@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **OpenAPI now exposes `EndReason` as a named schema.** The set of end-reason values (`success`, `failed`, `timeout`, …) is now a single `components/schemas/EndReason` enum referenced from every place a run's `end_reason` appears, instead of an inline enum repeated at each call site. Generated clients pick this up as one shared type/constant — no behavior or wire-format change.
+- **System resources panel shows live memory bytes inline.** The Memory sparkline header now displays `used / total` (e.g. `1.2 GB / 8.0 GB`) next to the percentage, replacing the separate Cores / RAM / Samples grid and the footer clock line that previously sat below the sparklines.
 
 ## [0.5.0] - 2026-05-13
 
