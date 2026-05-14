@@ -6,6 +6,7 @@ package server
 import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage"
 )
 
 // ---------- Path / query inputs ----------
@@ -29,14 +30,21 @@ type RunsQueryInput struct {
 	Search        string `query:"search" doc:"Search query"`
 }
 
+// toPaginationParams parses the raw query strings into the typed storage
+// sort handles. Unknown sort values are silently coerced to defaults — the
+// huma enum tag on RunsQueryInput already rejects values outside the allow
+// list at the HTTP boundary, so any error here means a programming bug
+// (e.g. enum drift) and we fall back to the safe default.
 func (q *RunsQueryInput) toPaginationParams() PaginationParams {
+	sortCol, _ := storage.ParseSortColumn(q.SortField)
+	sortDir, _ := storage.ParseSortDirection(q.SortDirection)
 	return PaginationParams{
 		Limit:         q.Limit,
 		Offset:        q.Offset,
 		Status:        q.Status,
 		TaskName:      q.TaskName,
-		SortField:     q.SortField,
-		SortDirection: q.SortDirection,
+		SortField:     sortCol,
+		SortDirection: sortDir,
 		SearchQuery:   q.Search,
 	}
 }

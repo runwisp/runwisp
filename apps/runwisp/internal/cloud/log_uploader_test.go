@@ -81,7 +81,7 @@ func (r *fakeRunRepo) CountRuns(string) (int64, error)   { return 0, nil }
 func (r *fakeRunRepo) CountRunsFiltered(string, string, string) (int64, error) {
 	return 0, nil
 }
-func (r *fakeRunRepo) QueryRuns(string, int, int, string, string, string, string) ([]model.Run, error) {
+func (r *fakeRunRepo) QueryRuns(string, int, int, string, storage.SortColumn, storage.SortDirection, string) ([]model.Run, error) {
 	return nil, nil
 }
 func (r *fakeRunRepo) DeleteRun(string) error                         { return nil }

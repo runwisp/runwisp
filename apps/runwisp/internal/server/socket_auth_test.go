@@ -21,6 +21,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,7 +78,7 @@ func TestSocketServer_EndToEnd(t *testing.T) {
 	s, repo, _, _ := setupServerWithSocket(t)
 
 	runs := []model.Run{}
-	repo.On("QueryRuns", "", 50, 0, "", "", "", "").Return(runs, nil)
+	repo.On("QueryRuns", "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
 	repo.On("CountRunsFiltered", "", "", "").Return(int64(0), nil)
 
 	// --- TCP path: no JWT, no local flag → 401 ---

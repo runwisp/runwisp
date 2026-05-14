@@ -14,12 +14,15 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/storage"
 	"log/slog"
 )
 
 type PaginationParams struct {
-	Limit, Offset                                           int
-	Status, TaskName, SortField, SortDirection, SearchQuery string
+	Limit, Offset                 int
+	Status, TaskName, SearchQuery string
+	SortField                     storage.SortColumn
+	SortDirection                 storage.SortDirection
 }
 
 func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
