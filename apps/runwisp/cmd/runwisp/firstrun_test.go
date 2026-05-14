@@ -24,7 +24,7 @@ func TestPromptAndScaffoldAcceptsYes(t *testing.T) {
 			require.NoError(t, promptAndScaffold(path, strings.NewReader(answer), &out))
 
 			assert.FileExists(t, path)
-			assert.Contains(t, out.String(), "No runwisp.toml at "+path)
+			assert.Contains(t, out.String(), "No runwisp.toml at "+filepath.Dir(path))
 			assert.Contains(t, out.String(), "Created "+path)
 		})
 	}
@@ -39,7 +39,7 @@ func TestPromptAndScaffoldDeclines(t *testing.T) {
 			err := promptAndScaffold(path, strings.NewReader(answer), &out)
 
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "no runwisp.toml at "+path)
+			assert.Contains(t, err.Error(), "no runwisp.toml at "+filepath.Dir(path))
 			assert.NoFileExists(t, path)
 		})
 	}
