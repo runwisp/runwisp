@@ -227,7 +227,6 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 		fmt.Fprintln(w)
 	}
 
-	// --- Ephemeral password hint ---
 	// The plaintext password is never rendered in the banner — operators
 	// retrieve it via `runwisp password` (CLI) or by selecting Home →
 	// Password in the TUI. Anything that captures stderr (journald, log

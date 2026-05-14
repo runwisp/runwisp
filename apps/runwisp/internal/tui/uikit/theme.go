@@ -33,7 +33,6 @@ var (
 	ColorTextDim       = lipgloss.Color("#a8b2d8")
 )
 
-// Sidebar styles.
 var (
 	SidebarBrandStyle = lipgloss.NewStyle().
 				Background(ColorSidebarBg).
@@ -101,7 +100,6 @@ var (
 				Bold(true)
 )
 
-// Main content styles.
 var (
 	MainHeaderStyle = lipgloss.NewStyle().
 			Background(ColorBg).
@@ -160,7 +158,6 @@ var HelpBarStyle = lipgloss.NewStyle().
 	PaddingLeft(1).
 	PaddingRight(1)
 
-// Action button styles.
 var (
 	BtnRunNowStyle = lipgloss.NewStyle().
 			Background(ColorPrimary).
@@ -180,7 +177,6 @@ var (
 			Bold(true).
 			Padding(0, 1)
 
-	// Hover variants — slightly lighter/different background.
 	BtnRunNowHoverStyle = lipgloss.NewStyle().
 				Background(lipgloss.Color("#6b85f0")).
 				Foreground(ColorWhite).
@@ -212,7 +208,6 @@ var (
 				Padding(0, 1)
 )
 
-// Info view styles.
 var (
 	InfoLabelStyle = lipgloss.NewStyle().
 			Background(ColorBg).

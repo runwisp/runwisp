@@ -55,7 +55,6 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w int, homeCurso
 	fields := Fields(info, hasLaunchTicket)
 	lineCount := 0
 
-	// Header top padding.
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
@@ -69,7 +68,6 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w int, homeCurso
 	b.WriteString("\n")
 	lineCount++
 
-	// Status subtitle.
 	var parts []string
 	if info.WebUIDisabled {
 		parts = append(parts, "Web UI disabled")
@@ -91,14 +89,12 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w int, homeCurso
 	b.WriteString("\n")
 	lineCount++
 
-	// Spacer between header and fields.
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 	b.WriteString("\n")
 	lineCount++
 
 	fieldsStartY := lineCount
 
-	// Interactive fields.
 	for i, f := range fields {
 		selected := i == homeCursor
 		hovered := i == homeHover && !selected
@@ -116,7 +112,6 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w int, homeCurso
 		}
 	}
 
-	// Trailing spacer after fields.
 	if len(fields) > 0 {
 		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 		b.WriteString("\n")
@@ -189,12 +184,10 @@ func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 	var b strings.Builder
 	lineCount := 0
 
-	// Header top padding.
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
-	// Task name.
 	name := lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(uikit.ColorTextBright).
@@ -204,7 +197,6 @@ func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 	b.WriteString("\n")
 	lineCount++
 
-	// Schedule + Run Now button.
 	schedule := "manual"
 	switch {
 	case task != nil && task.Kind.IsService():
@@ -248,7 +240,6 @@ func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 	b.WriteString("\n")
 	lineCount++
 
-	// Bottom padding.
 	b.WriteString(uikit.PadLine("", w, uikit.ColorBgLight))
 	b.WriteString("\n")
 

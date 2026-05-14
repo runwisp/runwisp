@@ -73,6 +73,5 @@ export const browserAuthEventSourceFactory: EventSourceFactory = (url) => {
             headers: { Authorization: `Bearer ${token}` },
         });
     }
-    // Cookie-based auth: let the browser send the HttpOnly cookie.
     return new EventSourcePolyfill(url, { withCredentials: true });
 };

@@ -38,9 +38,6 @@ func runTUIClient() error {
 }
 
 // buildStartupInfoFromDaemon converts DaemonInfo into the TUI's StartupInfo.
-// The local TUI no longer displays a password — it connects over the Unix
-// socket and the daemon's password is either operator-supplied (already
-// known to them) or ephemeral (never disclosed by this client).
 func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
 	si := uikit.StartupInfo{}
 	if info == nil {

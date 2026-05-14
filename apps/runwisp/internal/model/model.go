@@ -30,7 +30,6 @@ const TaskNameMaxLength = 100
 // the API for the same name.
 const TaskNamePatternString = `^[a-zA-Z0-9._-]+$`
 
-// TaskNamePattern is the compiled form of TaskNamePatternString.
 var TaskNamePattern = regexp.MustCompile(TaskNamePatternString)
 
 // ValidateTaskName checks that a name is non-empty, within the length cap,

@@ -66,7 +66,6 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// home.Sidebar click.
 	if x < uikit.SidebarWidth {
 		prevPage := m.sidebar.ActivePage()
 		prevTask := m.sidebar.ActiveTask()
@@ -128,7 +127,6 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // updateHoverState computes hover highlights for all UI zones based on mouse position.
 func (m *Model) updateHoverState(x, y int) {
-	// home.Sidebar hover.
 	if x < uikit.SidebarWidth {
 		m.sidebar.SetHovered(m.sidebar.RowIndexAt(y))
 		m.execList.SetHovered(-1)

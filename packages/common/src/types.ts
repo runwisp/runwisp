@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-// Re-export generated API types (single source of truth from Go OpenAPI spec)
 export type {
   Task,
   Run,
@@ -59,9 +58,8 @@ void _endReasonsExhaustive;
 
 /**
  * End reasons treated as failures by retry policy, dashboards, and the
- * "Last run failed" UI surface.
- *
- * // mirrors retry.IsFailureReason
+ * "Last run failed" UI surface. Mirrors `retry.IsFailureReason` in Go —
+ * keep them in sync.
  *
  * queue_full / dst_skipped are policy outcomes, not failures, so they
  * intentionally stay out of this list (alongside skipped). daemon_stopped

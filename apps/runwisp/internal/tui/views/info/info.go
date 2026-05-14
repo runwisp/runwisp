@@ -175,17 +175,12 @@ func (v *InfoView) View() string {
 	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 	v.contentHeight = len(lines)
 
-	// Apply scrolling.
 	if v.scroll > 0 && v.scroll < len(lines) {
 		lines = lines[v.scroll:]
 	}
-
-	// Truncate to viewport.
 	if len(lines) > v.height {
 		lines = lines[:v.height]
 	}
-
-	// Pad to fill remaining height.
 	for len(lines) < v.height {
 		lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 	}
@@ -200,8 +195,6 @@ func (v *InfoView) maxScroll() int {
 	}
 	return max
 }
-
-// ── Render Sections ──
 
 func (v *InfoView) renderHealthSection(w int) []string {
 	var lines []string
@@ -460,8 +453,6 @@ func (v *InfoView) renderWarningsSection(w int) []string {
 
 	return lines
 }
-
-// ── Helpers ──
 
 func (v *InfoView) sectionDivider(w int) []string {
 	divider := uikit.InfoDividerStyle.Render("  " + strings.Repeat("─", w-4))

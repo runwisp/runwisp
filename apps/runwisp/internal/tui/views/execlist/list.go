@@ -317,8 +317,6 @@ func (e *ExecList) View() string {
 	return b.String()
 }
 
-// --- Internal helpers ---
-
 func (e *ExecList) totalCount() int {
 	return e.window.TotalCount()
 }
@@ -405,8 +403,6 @@ func (e *ExecList) ScrollBy(delta int) {
 func (e *ExecList) NeedsFetch() bool {
 	return e.window.NeedsFetch(e.Scroll, e.ViewportHeight())
 }
-
-// --- Utilities ---
 
 // padCell truncates or pads a string to exactly the given visible width.
 func padCell(s string, w int) string {

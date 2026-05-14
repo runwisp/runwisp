@@ -57,9 +57,6 @@ func NewUnix(socketPath string) *Client {
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "unix", socketPath)
 		},
-		// Disable keep-alive defaults that don't help for a local socket and
-		// can confuse io.Copy on streaming endpoints.
-		DisableKeepAlives: false,
 	}
 	// "http://runwisp" is a placeholder host; the dialer ignores the address
 	// and connects to socketPath. Using a literal hostname keeps the URL
@@ -83,7 +80,6 @@ func (c *Client) Authenticate() error {
 		return nil
 	}
 
-	// Step 1: Get challenge nonce.
 	var challenge struct {
 		Nonce string `json:"nonce"`
 	}
@@ -94,11 +90,9 @@ func (c *Client) Authenticate() error {
 		return fmt.Errorf("auth challenge: %w", err)
 	}
 
-	// Step 2: Compute HMAC response.
 	hash := sha256.Sum256([]byte(c.password + ":" + challenge.Nonce))
 	response := hex.EncodeToString(hash[:])
 
-	// Step 3: Send response.
 	body := map[string]string{
 		"nonce":    challenge.Nonce,
 		"response": response,
@@ -168,7 +162,6 @@ func (c *Client) doRaw(method, path string) (*http.Response, error) {
 }
 
 // doRequest is the shared transport helper for all HTTP calls.
-// It sets auth headers, executes the request, and checks for errors.
 func (c *Client) doRequest(method, path string, body io.Reader, isJSON bool) (*http.Response, error) {
 	req, err := http.NewRequest(method, c.baseURL+path, body)
 	if err != nil {
