@@ -65,7 +65,7 @@ The interesting choices:
 Omitting `cron` makes the task **manual-only**. It only runs when
 something explicitly triggers it: a `POST` to
 `/api/tasks/deploy-app/run`, the Web UI's "Run Now" button, the
-TUI's `r` key, or `runwisp run-task deploy-app` from a shell on
+TUI's `r` key, or `runwisp exec deploy-app` from a shell on
 the host (which calls the same REST endpoint).
 
 `runwisp list` shows it as `(manual)` in the SCHEDULE column.

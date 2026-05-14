@@ -64,7 +64,7 @@ function createConnectionStore() {
     function markConnected() {
         // Only fire reconnect listeners when we've actually recovered from a
         // previous successful connection — not on the very first success.
-        const wasDown = lastConnectedAt !== null && status !== "connected";
+        const wasDown = Boolean(lastConnectedAt) && status !== "connected";
         status = "connected";
         lastConnectedAt = Date.now();
         disconnectedSince = null;
@@ -92,7 +92,7 @@ function createConnectionStore() {
         status = "disconnected";
         lastError = formatError(error);
         startTick();
-        if (retryTimer === null && !pingInFlight) {
+        if (!retryTimer && !pingInFlight) {
             scheduleRetry();
         }
     }
@@ -175,22 +175,26 @@ function createConnectionStore() {
 function isConnectionError(err: unknown): boolean {
     if (err instanceof AuthRequiredError) return false;
     const msg = formatError(err);
-    if (msg === null) return false;
+    if (!msg) return false;
     return /networkerror|failed to fetch|load failed|network request failed|typeerror.*fetch/i.test(
         msg,
     );
 }
 
 function formatError(err: unknown): string | null {
-    if (err === undefined || err === null) return null;
     if (err instanceof Error) return err.message;
     if (typeof err === "string") return err;
     if (typeof err === "number" || typeof err === "boolean") return String(err);
+    if (!isRecord(err)) return null;
     try {
         return JSON.stringify(err);
     } catch {
         return "Unknown error";
     }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && Boolean(value);
 }
 
 export const connectionStore = createConnectionStore();
