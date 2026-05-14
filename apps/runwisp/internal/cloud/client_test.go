@@ -18,6 +18,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -64,7 +65,7 @@ func newTestEnv(t *testing.T, wsHandler wsHandlerFunc) *testEnv {
 
 	bus := events.NewEventBus()
 	mockExec := &testutil.MockExecutor{}
-	jm := runtime.NewTaskManager(mockExec, bus)
+	jm := runtime.NewTaskManager(mockExec, bus, time.Now)
 	mockRepo := &testutil.MockRunRepository{}
 
 	cfg := Config{
@@ -78,7 +79,7 @@ func newTestEnv(t *testing.T, wsHandler wsHandlerFunc) *testEnv {
 	}
 
 	client, err := NewClient(cfg, Dependencies{
-		TaskManager:  jm,
+		TaskManager:  &testTaskRunnerAdapter{inner: jm},
 		RunRepo:      mockRepo,
 		EventBus:     bus,
 		LocalTasks:   nil,
@@ -543,4 +544,31 @@ func TestWebSocketURLPathInjectionSafety(t *testing.T) {
 	wsURL := cfg.WebSocketURL()
 	assert.True(t, strings.HasSuffix(wsURL, "/api/daemon/ws"))
 	assert.False(t, strings.Contains(wsURL, "malicious"))
+}
+
+// testTaskRunnerAdapter mirrors the cmd/runwisp cloudTaskRunner adapter for
+// the cloud package's own tests, mapping cloud.TaskRunner.TriggerCloudRun
+// onto runtime.TaskManager.TriggerRunWithOptions. Kept minimal — production
+// wiring lives in apps/runwisp/cmd/runwisp/cloud_adapters.go.
+type testTaskRunnerAdapter struct {
+	inner runtime.TaskManager
+}
+
+func (a *testTaskRunnerAdapter) GetTask(name string) (*model.Task, bool) {
+	return a.inner.GetTask(name)
+}
+
+func (a *testTaskRunnerAdapter) UpsertTask(task *model.Task) {
+	a.inner.UpsertTask(task)
+}
+
+func (a *testTaskRunnerAdapter) TriggerCloudRun(taskName, externalExecutionID string) (*model.Run, error) {
+	return a.inner.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
+		TriggeredBy:         model.TriggeredByCloud,
+		ExternalExecutionID: externalExecutionID,
+	})
+}
+
+func (a *testTaskRunnerAdapter) TerminateRunByExternalExecutionID(externalExecutionID string) error {
+	return a.inner.TerminateRunByExternalExecutionID(externalExecutionID)
 }

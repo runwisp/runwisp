@@ -33,7 +33,7 @@ func serviceTask(name string, instances int) *model.Task {
 func TestStartServiceInstances(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := serviceTask("svc", 3)
@@ -67,7 +67,7 @@ func TestStartServiceInstances(t *testing.T) {
 func TestServiceInstanceRefillsOnExit(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := serviceTask("svc", 2)
@@ -102,7 +102,7 @@ func TestServiceInstanceRefillsOnExit(t *testing.T) {
 func TestServiceShutdownStopsRestarts(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := serviceTask("svc", 1)
 	jm.UpsertTask(task)
@@ -127,7 +127,7 @@ func TestServiceShutdownStopsRestarts(t *testing.T) {
 func TestServiceLoadPendingRunsSkipsServices(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := serviceTask("svc", 2)
@@ -146,7 +146,7 @@ func TestServiceLoadPendingRunsSkipsServices(t *testing.T) {
 func TestRestartServiceInstancesCancelsAll(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := serviceTask("svc", 3)
@@ -181,7 +181,7 @@ func TestRestartServiceInstancesCancelsAll(t *testing.T) {
 func TestServiceInstanceRefillsAfterManualStop(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := serviceTask("svc", 2)
@@ -236,7 +236,7 @@ func TestServiceInstanceRefillsAfterManualStop(t *testing.T) {
 func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := serviceTask("svc", 1)
@@ -266,7 +266,7 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 func TestRestartServiceInstancesRejectsNonService(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	jm.UpsertTask(&model.Task{
@@ -286,7 +286,7 @@ func TestRestartServiceInstancesRejectsNonService(t *testing.T) {
 func TestStopServiceHaltsRestarts(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := serviceTask("svc", 2)

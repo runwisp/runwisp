@@ -35,7 +35,7 @@ func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.
 	repo := new(testutil.MockRunRepository)
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := runtime.NewTaskManager(exec, eb)
+	jm := runtime.NewTaskManager(exec, eb, time.Now)
 
 	task := &model.Task{
 		Name:          "task1",
@@ -276,7 +276,7 @@ func TestAuth(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := runtime.NewTaskManager(exec, eb)
+	jm := runtime.NewTaskManager(exec, eb, time.Now)
 	tasks := map[string]*model.Task{}
 
 	// Create scheduler (nil is fine for this test)

@@ -33,13 +33,14 @@ func startCloudClient(
 	}
 
 	cloudClient, clientErr := cloud.NewClient(cfg.CloudConfig, cloud.Dependencies{
-		TaskManager:       svc.TaskManager,
-		RunRepo:           svc.DB,
-		PendingUploadRepo: svc.DB,
+		TaskManager:       &cloudTaskRunner{inner: svc.TaskManager},
+		RunRepo:           &cloudRunRepo{inner: svc.DB},
+		PendingUploadRepo: &cloudPendingUploadRepo{inner: svc.DB},
 		EventBus:          svc.EventBus,
 		LocalTasks:        svc.TasksMap,
 		LogDir:            flags.LogDir(),
 		Availability:      svc.Executor.Availability(),
+		Now:               time.Now,
 		OnConnected: func() {
 			slog.Info("Cloud connected")
 		},

@@ -148,7 +148,7 @@ func setupServerWithSocket(t *testing.T) (*Server, *testutil.MockRunRepository, 
 	repo := new(testutil.MockRunRepository)
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := runtime.NewTaskManager(exec, eb)
+	jm := runtime.NewTaskManager(exec, eb, time.Now)
 
 	task := &model.Task{
 		Name:          "task1",
