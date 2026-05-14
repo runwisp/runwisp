@@ -21,6 +21,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,10 +32,11 @@ import (
 // entirely. This is the contract that lets the local CLI/TUI talk to the
 // daemon without ever holding a password.
 func TestAuthOrLocalTrusted_BypassWithLocalContext(t *testing.T) {
-	auth := NewAuthService("pw", "jwt-secret-for-bypass-test", nil)
+	authSvc, err := auth.NewService("pw", "jwt-secret-for-bypass-test", nil)
+	require.NoError(t, err)
 
 	called := false
-	handler := authOrLocalTrusted(auth)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := authOrLocalTrusted(authSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -53,10 +55,11 @@ func TestAuthOrLocalTrusted_BypassWithLocalContext(t *testing.T) {
 // this, removing the password from disk would silently expose the API to
 // any local user that could reach the TCP port.
 func TestAuthOrLocalTrusted_RejectsTCPWithoutJWT(t *testing.T) {
-	auth := NewAuthService("pw", "jwt-secret-for-reject-test", nil)
+	authSvc, err := auth.NewService("pw", "jwt-secret-for-reject-test", nil)
+	require.NoError(t, err)
 
 	called := false
-	handler := authOrLocalTrusted(auth)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := authOrLocalTrusted(authSvc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))

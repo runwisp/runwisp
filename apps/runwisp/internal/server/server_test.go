@@ -23,6 +23,8 @@ import (
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/server/auth"
+	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -246,7 +248,7 @@ func TestGetRunNotFound(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
 	id := ulid.Make().String()
-	repo.On("GetRun", id).Return(nil, assert.AnError)
+	repo.On("GetRun", id).Return(nil, storage.ErrNotFound)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id, nil)
 	w := httptest.NewRecorder()
@@ -478,8 +480,8 @@ func TestGetLogPage_NegativeFrom_Tail(t *testing.T) {
 func addAuth(req *http.Request, s *Server) {
 	_, ts, _ := s.auth.JWTAuth().Encode(map[string]any{
 		"exp": time.Now().Add(time.Hour).Unix(),
-		"iss": JWTIssuer,
-		"aud": JWTAudience,
+		"iss": auth.JWTIssuer,
+		"aud": auth.JWTAudience,
 	})
 	req.Header.Set("Authorization", "Bearer "+ts)
 }

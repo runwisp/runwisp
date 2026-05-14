@@ -1,0 +1,131 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package server
+
+import (
+	"net"
+	"net/http"
+
+	"github.com/runwisp/runwisp/internal/server/auth"
+)
+
+// This file is the transport adapter for the auth subsystem. The core CHAP /
+// JWT flow lives in internal/server/auth; the handlers below just connect
+// chi routes to that package, layer in the local-trusted gating that depends
+// on peer-credential context keys (owned by this package), and host the few
+// helpers that are inherently HTTP-layer (launch-redirect sanitization,
+// local-loopback detection).
+
+// registerAuthRoutes registers the public auth endpoints as raw chi routes.
+// They are deliberately *not* huma operations: they set cookies, honor
+// httprate middleware, and deal with non-JSON redirects.
+func (srv *Server) registerAuthRoutes() {
+	srv.router.Get("/api/auth/status", srv.handleAuthStatus)
+}
+
+func (srv *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	authenticated := srv.auth.DecodeCookieToken(auth.TokenFromCookie(r))
+	respondJSON(w, http.StatusOK, AuthStatusBody{
+		AuthRequired:  true,
+		Authenticated: authenticated,
+	})
+}
+
+// handleAuthChallenge mints a single-use nonce. Raw chi handler so it sits
+// under the same httprate limiter as the login POST, preventing nonce-store
+// flooding.
+func (srv *Server) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
+	nonce, err := srv.auth.IssueChallenge()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate challenge", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, AuthChallengeBody{Nonce: nonce})
+}
+
+// handleCreateLaunchTicket generates a launch ticket via the authenticated
+// API. Restricted to local origins (Unix socket peer or TCP loopback) so
+// only local TUI/CLI clients can mint tickets.
+func (srv *Server) handleCreateLaunchTicket(w http.ResponseWriter, r *http.Request) {
+	if !isLocalRequest(r) {
+		respondForbidden(w, "Launch tickets can only be created from localhost")
+		return
+	}
+	ticket, err := srv.auth.CreateLaunchTicket()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to create launch ticket", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"ticket": ticket})
+}
+
+// handleLaunchTicket redeems a single-use launch ticket and redirects to
+// the UI with a session cookie. Only accepts requests from local origins
+// (Unix socket peer or TCP loopback).
+//
+// An optional `redirect` query parameter targets a same-origin path (must
+// start with `/` and not `//`) — used by the TUI's "download log" action so
+// the operator's browser lands directly on the raw-log endpoint with a
+// fresh session cookie. Cross-origin or scheme-relative redirects are
+// rejected to avoid an open-redirect surface.
+func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
+	if !isLocalRequest(r) {
+		respondForbidden(w, "Launch tickets are only valid from localhost")
+		return
+	}
+	ticket := r.URL.Query().Get("ticket")
+	if ticket == "" {
+		respondBadRequest(w, "Missing ticket parameter")
+		return
+	}
+	if !srv.auth.ConsumeLaunchTicket(ticket) {
+		respondUnauthorized(w, "Invalid or expired launch ticket")
+		return
+	}
+
+	token, err := srv.auth.IssueToken(auth.JWTTokenDuration)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to generate token", err)
+		return
+	}
+	srv.auth.SetAuthCookie(w, r, token, auth.JWTTokenDuration)
+	http.Redirect(w, r, sanitizeLaunchRedirect(r.URL.Query().Get("redirect")), http.StatusSeeOther)
+}
+
+// isLocalRequest returns true if the request was either delivered on the
+// daemon's Unix socket (PEERCRED-verified at accept time) or originates
+// from a TCP loopback address.
+//
+// The TCP path uses the original peer address stored by savePeerAddr
+// middleware to prevent bypass via spoofed X-Real-IP / X-Forwarded-For
+// headers (middleware.RealIP overwrites r.RemoteAddr with those values).
+func isLocalRequest(r *http.Request) bool {
+	if IsLocalTrusted(r) {
+		return true
+	}
+	addr := r.RemoteAddr
+	if peerAddr, ok := r.Context().Value(peerAddrContextKey).(string); ok {
+		addr = peerAddr
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// sanitizeLaunchRedirect returns the requested redirect target if it is a
+// safe same-origin absolute path; otherwise it falls back to "/". A safe
+// target starts with a single "/" (so "/api/..." is allowed) but not "//"
+// (which would be scheme-relative and could escape the origin).
+func sanitizeLaunchRedirect(target string) string {
+	if target == "" || target[0] != '/' {
+		return "/"
+	}
+	if len(target) >= 2 && target[1] == '/' {
+		return "/"
+	}
+	return target
+}

@@ -5,6 +5,7 @@ package ui
 
 import (
 	"embed"
+	"fmt"
 	"io"
 	"io/fs"
 	"mime"
@@ -18,65 +19,82 @@ import (
 //go:embed all:dist
 var uiFiles embed.FS
 
-// Serve mounts the embedded UI assets.
-func Serve(router chi.Router) {
+// Handler returns an http.Handler that serves the embedded Svelte dashboard.
+// The embedded FS is opened once at construction; if the embed is malformed
+// the error is surfaced to the caller instead of panicking inside an HTTP
+// request hot path.
+func Handler() (http.Handler, error) {
 	stripped, err := fs.Sub(uiFiles, "dist")
 	if err != nil {
-		panic("ui: failed to open embedded dist: " + err.Error())
+		return nil, fmt.Errorf("ui: open embedded dist: %w", err)
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		serve(stripped, w, req)
+	}), nil
+}
+
+// Mount registers Handler on the given chi router under "/*". Daemon startup
+// fails fast if the embedded asset tree is malformed.
+func Mount(router chi.Router) error {
+	h, err := Handler()
+	if err != nil {
+		return err
+	}
+	router.Get("/*", h.ServeHTTP)
+	return nil
+}
+
+func serve(stripped fs.FS, w http.ResponseWriter, req *http.Request) {
+	reqPath := strings.TrimPrefix(req.URL.Path, "/")
+	if reqPath == "" {
+		reqPath = "index.html"
 	}
 
-	router.Get("/*", func(w http.ResponseWriter, req *http.Request) {
-		reqPath := strings.TrimPrefix(req.URL.Path, "/")
-		if reqPath == "" {
-			reqPath = "index.html"
-		}
+	f, err := stripped.Open(reqPath)
+	if err == nil {
+		defer f.Close()
 
-		f, err := stripped.Open(reqPath)
-		if err == nil {
-			defer f.Close()
-
-			stat, statErr := f.Stat()
-			if statErr != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			if !stat.IsDir() {
-				if contentType := mime.TypeByExtension(path.Ext(reqPath)); contentType != "" {
-					w.Header().Set("Content-Type", contentType)
-				}
-				rs, ok := f.(io.ReadSeeker)
-				if !ok {
-					http.Error(w, "internal error", http.StatusInternalServerError)
-					return
-				}
-				http.ServeContent(w, req, reqPath, stat.ModTime(), rs)
-				return
-			}
-		}
-
-		if strings.HasPrefix(reqPath, "_app/") || (path.Ext(reqPath) != "" && reqPath != "index.html") {
-			http.NotFound(w, req)
-			return
-		}
-
-		indexFile, err := stripped.Open("index.html")
-		if err != nil {
-			http.NotFound(w, req)
-			return
-		}
-		defer indexFile.Close()
-
-		stat, statErr := indexFile.Stat()
+		stat, statErr := f.Stat()
 		if statErr != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		rs, ok := indexFile.(io.ReadSeeker)
-		if !ok {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+		if !stat.IsDir() {
+			if contentType := mime.TypeByExtension(path.Ext(reqPath)); contentType != "" {
+				w.Header().Set("Content-Type", contentType)
+			}
+			rs, ok := f.(io.ReadSeeker)
+			if !ok {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			http.ServeContent(w, req, reqPath, stat.ModTime(), rs)
 			return
 		}
-		http.ServeContent(w, req, "index.html", stat.ModTime(), rs)
-	})
+	}
+
+	if strings.HasPrefix(reqPath, "_app/") || (path.Ext(reqPath) != "" && reqPath != "index.html") {
+		http.NotFound(w, req)
+		return
+	}
+
+	indexFile, err := stripped.Open("index.html")
+	if err != nil {
+		http.NotFound(w, req)
+		return
+	}
+	defer indexFile.Close()
+
+	stat, statErr := indexFile.Stat()
+	if statErr != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rs, ok := indexFile.(io.ReadSeeker)
+	if !ok {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	http.ServeContent(w, req, "index.html", stat.ModTime(), rs)
 }

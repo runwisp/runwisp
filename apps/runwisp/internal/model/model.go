@@ -4,6 +4,7 @@
 package model
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -15,6 +16,36 @@ var taskNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 // name safe for use in file paths and other identifiers.
 func SanitizeTaskName(name string) string {
 	return taskNameSanitizer.ReplaceAllString(name, "_")
+}
+
+// TaskNameMaxLength caps task names so they fit comfortably in filenames,
+// log paths, and URL segments without further truncation.
+const TaskNameMaxLength = 100
+
+// TaskNamePatternString is the canonical regular expression that defines a
+// valid task name. Kept in sync with the huma `pattern:` tags on REST
+// request inputs so an operator who passes TOML validation can also call
+// the API for the same name.
+const TaskNamePatternString = `^[a-zA-Z0-9._-]+$`
+
+// TaskNamePattern is the compiled form of TaskNamePatternString.
+var TaskNamePattern = regexp.MustCompile(TaskNamePatternString)
+
+// ValidateTaskName checks that a name is non-empty, within the length cap,
+// and matches TaskNamePattern. It is the single source of truth for task
+// name validation across the daemon (TOML loader, REST handlers, etc.).
+func ValidateTaskName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return fmt.Errorf("task name is required")
+	}
+	if len(trimmed) > TaskNameMaxLength {
+		return fmt.Errorf("task name %q exceeds the %d-character limit", trimmed, TaskNameMaxLength)
+	}
+	if !TaskNamePattern.MatchString(trimmed) {
+		return fmt.Errorf("invalid task name %q: must match %s", trimmed, TaskNamePatternString)
+	}
+	return nil
 }
 
 // Task describes a runnable task loaded from configuration.

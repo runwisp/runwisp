@@ -70,8 +70,8 @@ func decode(data []byte) (*Config, error) {
 
 	taskNames := make([]string, 0, len(raw.Tasks))
 	for name, w := range raw.Tasks {
-		if strings.TrimSpace(name) == "" {
-			return nil, fmt.Errorf("task name is required")
+		if err := model.ValidateTaskName(name); err != nil {
+			return nil, err
 		}
 		if w.Restart == model.RestartAlways {
 			return nil, fmt.Errorf("task %q sets restart=\"always\"; use [services.%s] instead", name, name)
@@ -85,8 +85,8 @@ func decode(data []byte) (*Config, error) {
 
 	serviceNames := make([]string, 0, len(raw.Services))
 	for name := range raw.Services {
-		if strings.TrimSpace(name) == "" {
-			return nil, fmt.Errorf("service name is required")
+		if err := model.ValidateTaskName(name); err != nil {
+			return nil, err
 		}
 		if _, dup := raw.Tasks[name]; dup {
 			return nil, fmt.Errorf("name %q used by both [tasks.*] and [services.*]", name)
@@ -175,8 +175,8 @@ func Validate(cfg *Config) error {
 }
 
 func validateTask(task *model.Task, seen map[string]struct{}) error {
-	if strings.TrimSpace(task.Name) == "" {
-		return fmt.Errorf("task name is required")
+	if err := model.ValidateTaskName(task.Name); err != nil {
+		return err
 	}
 	if _, exists := seen[task.Name]; exists {
 		return fmt.Errorf("duplicate task name: %s", task.Name)
