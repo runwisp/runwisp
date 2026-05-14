@@ -14,9 +14,9 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/version"
 	"log/slog"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // daemonServices holds all long-lived services created during daemon startup.

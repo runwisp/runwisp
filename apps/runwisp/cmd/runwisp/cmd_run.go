@@ -17,9 +17,9 @@ import (
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/version"
 	"log/slog"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // daemonMode controls which subsystems runDaemon initializes.

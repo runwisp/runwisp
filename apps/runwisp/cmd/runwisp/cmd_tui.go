@@ -10,8 +10,8 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/spf13/cobra"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/spf13/cobra"
 )
 
 var tuiCmd = &cobra.Command{

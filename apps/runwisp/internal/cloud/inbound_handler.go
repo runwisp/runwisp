@@ -203,4 +203,3 @@ func (h *InboundHandler) ClearLogListeners() {
 	defer h.mu.Unlock()
 	h.logListeners = make(map[string]struct{})
 }
-
