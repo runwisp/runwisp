@@ -15,21 +15,20 @@ import (
 
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage"
 )
 
 type fakePendingRepo struct {
 	mu      sync.Mutex
-	rows    map[string]storage.PendingLogUpload
+	rows    map[string]PendingLogUpload
 	upserts int
 	deletes int
 }
 
 func newFakePendingRepo() *fakePendingRepo {
-	return &fakePendingRepo{rows: map[string]storage.PendingLogUpload{}}
+	return &fakePendingRepo{rows: map[string]PendingLogUpload{}}
 }
 
-func (f *fakePendingRepo) UpsertPendingLogUpload(rec storage.PendingLogUpload) error {
+func (f *fakePendingRepo) UpsertPendingLogUpload(rec PendingLogUpload) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rows[rec.ExternalExecutionID] = rec
@@ -45,10 +44,10 @@ func (f *fakePendingRepo) DeletePendingLogUpload(externalExecutionID string) err
 	return nil
 }
 
-func (f *fakePendingRepo) ListPendingLogUploads() ([]storage.PendingLogUpload, error) {
+func (f *fakePendingRepo) ListPendingLogUploads() ([]PendingLogUpload, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	out := make([]storage.PendingLogUpload, 0, len(f.rows))
+	out := make([]PendingLogUpload, 0, len(f.rows))
 	for _, r := range f.rows {
 		out = append(out, r)
 	}
@@ -68,33 +67,18 @@ type fakeRunRepo struct {
 func (r *fakeRunRepo) GetRunByExternalExecutionID(id string) (*model.Run, error) {
 	run, ok := r.byExt[id]
 	if !ok {
-		return nil, storage.ErrNotFound
+		return nil, ErrNotFound
 	}
 	return run, nil
 }
 
-// The remaining storage.RunRepository methods are unused in these tests.
-func (r *fakeRunRepo) CreateRun(*model.Run) error        { return nil }
-func (r *fakeRunRepo) UpdateRun(*model.Run) error        { return nil }
-func (r *fakeRunRepo) GetRun(string) (*model.Run, error) { return nil, storage.ErrNotFound }
-func (r *fakeRunRepo) CountRuns(string) (int64, error)   { return 0, nil }
-func (r *fakeRunRepo) CountRunsFiltered(string, string, string) (int64, error) {
-	return 0, nil
+// fixedClock returns a deterministic wall-clock for log_uploader tests. The
+// exact instant doesn't matter for correctness; what matters is that
+// InsertedAt is reproducible run-to-run.
+func fixedClock() func() time.Time {
+	t := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	return func() time.Time { return t }
 }
-func (r *fakeRunRepo) QueryRuns(string, int, int, string, string, string, string) ([]model.Run, error) {
-	return nil, nil
-}
-func (r *fakeRunRepo) DeleteRun(string) error                         { return nil }
-func (r *fakeRunRepo) DeleteOldRuns(*model.Task) ([]model.Run, error) { return nil, nil }
-func (r *fakeRunRepo) MarkCrashedRuns() (int64, error)                { return 0, nil }
-func (r *fakeRunRepo) GetPendingRuns() ([]model.Run, error)           { return nil, nil }
-func (r *fakeRunRepo) GetLastRunByTask(string) (*model.Run, error)    { return nil, storage.ErrNotFound }
-func (r *fakeRunRepo) GetRunSummary() (*model.RunSummary, error)      { return nil, nil }
-func (r *fakeRunRepo) EnsureTaskRegistered(string, time.Time) error   { return nil }
-func (r *fakeRunRepo) GetTaskRegistration(string) (*model.TaskRegistration, error) {
-	return nil, storage.ErrNotFound
-}
-func (r *fakeRunRepo) Close() error { return nil }
 
 func writeRunLog(t *testing.T, logDir string, run *model.Run, body string) string {
 	t.Helper()
@@ -123,7 +107,7 @@ func newTerminalRun(taskName, runID, externalID string) *model.Run {
 
 func TestRegisterDispatchPersistsAndCachesEntry(t *testing.T) {
 	repo := newFakePendingRepo()
-	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir())
+	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
 
 	if err := u.RegisterDispatch("exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
@@ -137,9 +121,34 @@ func TestRegisterDispatchPersistsAndCachesEntry(t *testing.T) {
 	}
 }
 
+// TestRegisterDispatchUsesInjectedClock pins the determinism guarantee added
+// with the LogUploader clock injection: InsertedAt must come from the
+// injected clock, not time.Now(). Regressions here would let wall-clock
+// drift creep into persisted dispatch records.
+func TestRegisterDispatchUsesInjectedClock(t *testing.T) {
+	repo := newFakePendingRepo()
+	fixed := time.Date(2026, 5, 14, 9, 30, 0, 0, time.UTC)
+	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), func() time.Time { return fixed })
+
+	if err := u.RegisterDispatch("exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+		t.Fatalf("RegisterDispatch: %v", err)
+	}
+
+	rows, err := repo.ListPendingLogUploads()
+	if err != nil {
+		t.Fatalf("ListPendingLogUploads: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if got, want := rows[0].InsertedAt, fixed.Unix(); got != want {
+		t.Errorf("InsertedAt = %d, want %d (injected clock)", got, want)
+	}
+}
+
 func TestRegisterDispatchEmptyURLIsNoop(t *testing.T) {
 	repo := newFakePendingRepo()
-	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir())
+	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
 
 	if err := u.RegisterDispatch("exec-1", "", "key/x.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
@@ -155,7 +164,7 @@ func TestRegisterDispatchEmptyURLIsNoop(t *testing.T) {
 
 func TestForgetRemovesRowAndCachedEntry(t *testing.T) {
 	repo := newFakePendingRepo()
-	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir())
+	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
 
 	if err := u.RegisterDispatch("exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
@@ -185,7 +194,7 @@ func TestArchiveSuccessRemovesRowAndLogFile(t *testing.T) {
 
 	repo := newFakePendingRepo()
 	runs := &fakeRunRepo{byExt: map[string]*model.Run{"exec-1": run}}
-	u := NewLogUploader(repo, runs, logDir)
+	u := NewLogUploader(repo, runs, logDir, fixedClock())
 	u.httpClient = srv.Client()
 
 	if err := u.RegisterDispatch("exec-1", srv.URL, "key/exec-1.log.gz"); err != nil {
@@ -218,7 +227,7 @@ func TestArchiveSuccessRemovesRowAndLogFile(t *testing.T) {
 }
 
 func TestArchiveNoPendingEntryIsNoop(t *testing.T) {
-	u := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, t.TempDir())
+	u := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, t.TempDir(), fixedClock())
 
 	result, err := u.Archive(context.Background(), "missing", "/does/not/matter")
 	if err != nil {
@@ -232,7 +241,7 @@ func TestArchiveNoPendingEntryIsNoop(t *testing.T) {
 func TestArchiveMissingLogFileForgetsEntry(t *testing.T) {
 	logDir := t.TempDir()
 	repo := newFakePendingRepo()
-	u := NewLogUploader(repo, &fakeRunRepo{}, logDir)
+	u := NewLogUploader(repo, &fakeRunRepo{}, logDir, fixedClock())
 
 	if err := u.RegisterDispatch("exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
@@ -255,14 +264,14 @@ func TestArchiveMissingLogFileForgetsEntry(t *testing.T) {
 
 func TestRecoverOrphansDropsRowWhenRunMissing(t *testing.T) {
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(storage.PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(PendingLogUpload{
 		ExternalExecutionID: "exec-gone",
 		UploadURL:           "https://upload/x",
 		LogPath:             "key/x.log.gz",
 		InsertedAt:          time.Now().Unix(),
 	})
 
-	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{}}, t.TempDir())
+	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{}}, t.TempDir(), fixedClock())
 
 	var emitted []string
 	u.RecoverOrphans(context.Background(), func(id string, _ LogUploaderResult) {
@@ -288,14 +297,14 @@ func TestRecoverOrphansSkipsNonTerminalRun(t *testing.T) {
 	}
 
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(storage.PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(PendingLogUpload{
 		ExternalExecutionID: "exec-running",
 		UploadURL:           "https://upload/x",
 		LogPath:             "key/x.log.gz",
 		InsertedAt:          time.Now().Unix(),
 	})
 
-	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-running": runningRun}}, logDir)
+	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-running": runningRun}}, logDir, fixedClock())
 
 	var emitted []string
 	u.RecoverOrphans(context.Background(), func(id string, _ LogUploaderResult) {
@@ -321,14 +330,14 @@ func TestRecoverOrphansRetriesTerminatedRun(t *testing.T) {
 	defer srv.Close()
 
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(storage.PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(PendingLogUpload{
 		ExternalExecutionID: "exec-1",
 		UploadURL:           srv.URL,
 		LogPath:             "key/exec-1.log.gz",
 		InsertedAt:          time.Now().Unix(),
 	})
 
-	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-1": run}}, logDir)
+	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-1": run}}, logDir, fixedClock())
 	u.httpClient = srv.Client()
 
 	var emitted []struct {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/config"
@@ -192,7 +193,7 @@ func runExecStandalone(taskName string) (int, error) {
 	eventBus := events.NewEventBus()
 	exec := initExecutor(cfg, eventBus)
 
-	taskManager := runtime.NewTaskManager(exec, eventBus)
+	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
 	defer taskManager.Shutdown()
 
 	taskManager.UpsertTask(target)

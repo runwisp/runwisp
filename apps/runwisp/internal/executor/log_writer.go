@@ -67,9 +67,10 @@ type LogWriter struct {
 	rotatedBytes int64
 
 	// Timestamp index
-	firstWriteMs int64        // unix ms of the first line in the segment, for lazy tidx backfill
-	lastTidxTime int64        // unix ms of last tidx entry
-	nowMs        func() int64 // clock for timestamp index; defaults to time.Now().UnixMilli
+	firstWriteMs int64            // unix ms of the first line in the segment, for lazy tidx backfill
+	lastTidxTime int64            // unix ms of last tidx entry
+	now          func() time.Time // injected wall-clock; never call time.Now() inline
+	nowMs        func() int64     // unix-ms view of now, derived in the constructor
 }
 
 // LogWriterOpts configures a LogWriter.
@@ -89,6 +90,9 @@ type LogWriterOpts struct {
 	OnDiskPressure func(free, min int64, killedTask bool)
 	// DiskCheckInterval overrides the default 10MB probe interval. 0 = default.
 	DiskCheckInterval int64
+	// Now is the wall-clock source for system lines and the timestamp index.
+	// Required (must not be nil); production wiring passes time.Now.
+	Now func() time.Time
 }
 
 func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
@@ -105,6 +109,11 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 	interval := opts.DiskCheckInterval
 	if interval <= 0 {
 		interval = defaultDiskCheckInterval
+	}
+
+	now := opts.Now
+	if now == nil {
+		now = time.Now
 	}
 
 	// idx and tidx sidecars are not opened here. They appear on disk only
@@ -128,7 +137,8 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 		logDir:            opts.LogDir,
 		onDiskPressure:    opts.OnDiskPressure,
 		diskCheckInterval: interval,
-		nowMs:             func() int64 { return time.Now().UnixMilli() },
+		now:               now,
+		nowMs:             func() int64 { return now().UnixMilli() },
 	}, nil
 }
 
@@ -313,7 +323,7 @@ func (w *LogWriter) ensureIndexSidecars() {
 
 func (w *LogWriter) writeSystemLine(msg string) {
 	line := fmt.Sprintf("[%s] [SYSTEM] %s\n",
-		time.Now().Format("2006-01-02 15:04:05"), msg)
+		w.now().Format("2006-01-02 15:04:05"), msg)
 	n, err := w.file.Write([]byte(line))
 	if err != nil {
 		slog.Warn("Failed to write system log line", "err", err)

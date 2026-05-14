@@ -125,7 +125,7 @@ func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executo
 }
 
 func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.Executor, eventBus events.EventBus) (runtime.TaskManager, map[string]*model.Task) {
-	taskManager := runtime.NewTaskManager(exec, eventBus)
+	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
 	taskManager.BindPersistenceHook(func(run *model.Run, isNew bool) {
 		var dbErr error
 		if isNew {

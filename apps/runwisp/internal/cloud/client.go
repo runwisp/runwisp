@@ -12,12 +12,9 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime"
-	"github.com/runwisp/runwisp/internal/storage"
 	"log/slog"
 )
 
@@ -33,19 +30,24 @@ const (
 )
 
 type Dependencies struct {
-	TaskManager       runtime.TaskRunner
-	RunRepo           storage.RunRepository
-	PendingUploadRepo storage.PendingLogUploadRepository
-	EventBus          events.EventBus
+	TaskManager       TaskRunner
+	RunRepo           RunRepository
+	PendingUploadRepo PendingLogUploadRepository
+	EventBus          EventBus
 	LocalTasks        map[string]*model.Task
 	LogDir            string
 	Availability      executor.Availability
 	OnConnected       func()
+	// Now is the wall-clock source used by sub-components that persist
+	// timestamps (currently only the log uploader). Production wires
+	// time.Now; tests inject a fixed clock for deterministic fixtures. nil
+	// falls back to time.Now.
+	Now func() time.Time
 }
 
 type Client struct {
 	config  Config
-	runRepo storage.RunRepository
+	runRepo RunRepository
 	logDir  string
 
 	syncClient   *TaskSyncClient
@@ -93,7 +95,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 	tracker := NewExecutionTracker()
 	connMgr := newConnectionManager(tracker)
 
-	uploader := NewLogUploader(deps.PendingUploadRepo, deps.RunRepo, deps.LogDir)
+	uploader := NewLogUploader(deps.PendingUploadRepo, deps.RunRepo, deps.LogDir, deps.Now)
 
 	client := &Client{
 		config:       cfg,

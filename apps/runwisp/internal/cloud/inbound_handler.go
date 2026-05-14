@@ -10,17 +10,14 @@ import (
 
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime"
-	"github.com/runwisp/runwisp/internal/storage"
 	"log/slog"
 )
 
 // InboundHandler processes inbound WebSocket messages, encapsulating
 // domain logic for execution dispatch, stop, and log operations.
 type InboundHandler struct {
-	taskManager     runtime.TaskRunner
-	runRepo         storage.RunRepository
+	taskManager     TaskRunner
+	runRepo         RunRepository
 	logDir          string
 	availability    executor.Availability
 	queueExecUpdate func(protocol.ExecutionUpdateMessage)
@@ -31,8 +28,8 @@ type InboundHandler struct {
 }
 
 func NewInboundHandler(
-	taskManager runtime.TaskRunner,
-	runRepo storage.RunRepository,
+	taskManager TaskRunner,
+	runRepo RunRepository,
 	logDir string,
 	availability executor.Availability,
 	queueExecUpdate func(protocol.ExecutionUpdateMessage),
@@ -80,7 +77,7 @@ func (h *InboundHandler) HandleExecutionDispatch(message protocol.ExecutionDispa
 		return resolveErr
 	}
 
-	run, triggerErr := h.taskManager.TriggerRunWithOptions(taskName, runtimeTriggerOptions(executionID))
+	run, triggerErr := h.taskManager.TriggerCloudRun(taskName, executionID)
 	if triggerErr != nil {
 		if run != nil {
 			finishedAt := run.EndAt
@@ -113,7 +110,7 @@ func (h *InboundHandler) HandleExecutionStop(message protocol.ExecutionStopMessa
 
 	run, runErr := h.runRepo.GetRunByExternalExecutionID(executionID)
 	if runErr != nil {
-		if errors.Is(runErr, storage.ErrNotFound) {
+		if errors.Is(runErr, ErrNotFound) {
 			return &CloudError{Kind: CloudErrorKindConflict, Message: "execution not found"}
 		}
 		return &CloudError{Kind: CloudErrorKindTransient, Message: "failed to inspect execution for stop", Err: runErr}
@@ -138,7 +135,7 @@ func (h *InboundHandler) HandleLogReplayRequest(message protocol.LogReplayReques
 
 	run, err := h.runRepo.GetRunByExternalExecutionID(executionID)
 	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
+		if errors.Is(err, ErrNotFound) {
 			return NewLogReplayChunkMessage(message.ID, executionID, nil, true), nil
 		}
 		return NewLogReplayChunkMessage(message.ID, executionID, nil, true),
@@ -207,9 +204,3 @@ func (h *InboundHandler) ClearLogListeners() {
 	h.logListeners = make(map[string]struct{})
 }
 
-func runtimeTriggerOptions(executionID string) runtime.TriggerRunOptions {
-	return runtime.TriggerRunOptions{
-		TriggeredBy:         model.TriggeredByCloud,
-		ExternalExecutionID: executionID,
-	}
-}
