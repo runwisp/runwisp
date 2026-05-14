@@ -1,16 +1,16 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package execlist
 
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // Column widths for the execution table (excluding the variable-width task column).
@@ -30,7 +30,7 @@ const (
 type ExecList struct {
 	window     *ExecWindow
 	cursor     int // selected index in the virtual list (0 = newest)
-	scroll     int // first visible virtual row index
+	Scroll     int // first visible virtual row index
 	width      int
 	height     int
 	focused    bool
@@ -60,7 +60,7 @@ func (e *ExecList) SetFocused(focused bool) {
 func (e *ExecList) SetFilter(taskName string) {
 	e.window.SetFilter(taskName)
 	e.cursor = 0
-	e.scroll = 0
+	e.Scroll = 0
 }
 
 func (e *ExecList) Cursor() int {
@@ -97,12 +97,12 @@ func (e *ExecList) Update(msg tea.Msg) tea.Cmd {
 			e.cursor++
 		}
 	case "pgup":
-		e.cursor -= e.viewportHeight()
+		e.cursor -= e.ViewportHeight()
 		if e.cursor < 0 {
 			e.cursor = 0
 		}
 	case "pgdown":
-		e.cursor += e.viewportHeight()
+		e.cursor += e.ViewportHeight()
 		if e.cursor >= n {
 			e.cursor = n - 1
 		}
@@ -129,12 +129,12 @@ func (e *ExecList) SetHoveredFromLocalY(localY int) {
 		return
 	}
 	visIdx := localY - dataRowOffset
-	vpH := e.viewportHeight()
+	vpH := e.ViewportHeight()
 	if visIdx < 0 || visIdx >= vpH {
 		e.hoveredRow = -1
 		return
 	}
-	rowIdx := e.scroll + visIdx
+	rowIdx := e.Scroll + visIdx
 	if rowIdx < 0 || rowIdx >= n {
 		e.hoveredRow = -1
 		return
@@ -150,11 +150,11 @@ func (e *ExecList) HandleClick(localY int) bool {
 		return false
 	}
 	visIdx := localY - dataRowOffset
-	vpH := e.viewportHeight()
+	vpH := e.ViewportHeight()
 	if visIdx < 0 || visIdx >= vpH {
 		return false
 	}
-	rowIdx := e.scroll + visIdx
+	rowIdx := e.Scroll + visIdx
 	if rowIdx < 0 || rowIdx >= n {
 		return false
 	}
@@ -166,7 +166,7 @@ func (e *ExecList) View() string {
 	var b strings.Builder
 	w := e.width
 	n := e.totalCount()
-	vpH := e.viewportHeight()
+	vpH := e.ViewportHeight()
 
 	// Scrollbar state — computed first to determine content width.
 	showScrollbar := n > vpH && vpH > 0
@@ -186,7 +186,7 @@ func (e *ExecList) View() string {
 		if thumbSize < 1 {
 			thumbSize = 1
 		}
-		thumbStart = e.scroll * (vpH - thumbSize) / maxScroll
+		thumbStart = e.Scroll * (vpH - thumbSize) / maxScroll
 		if thumbStart < 0 {
 			thumbStart = 0
 		}
@@ -196,8 +196,8 @@ func (e *ExecList) View() string {
 		}
 	}
 
-	scrollTrack := lipgloss.NewStyle().Background(colorBg).Foreground(lipgloss.Color("#3b3d57")).Render("│")
-	scrollThumb := lipgloss.NewStyle().Background(colorBg).Foreground(colorText).Render("┃")
+	scrollTrack := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(lipgloss.Color("#3b3d57")).Render("│")
+	scrollThumb := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorText).Render("┃")
 
 	// Column headers.
 	headerText := "  " +
@@ -206,37 +206,37 @@ func (e *ExecList) View() string {
 		padCell("STARTED", colStartedW) + " " +
 		padCell("DURATION", colDurationW) + " " +
 		padCell("TRIGGER", colTriggerW)
-	b.WriteString(padLine(tableHeaderStyle.Render(headerText), w, colorBgLight))
+	b.WriteString(uikit.PadLine(uikit.TableHeaderStyle.Render(headerText), w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
 	if n == 0 {
 		emptyMsg := lipgloss.NewStyle().
-			Background(colorBg).
-			Foreground(colorTextMuted).
+			Background(uikit.ColorBg).
+			Foreground(uikit.ColorTextMuted).
 			PaddingLeft(2).
 			Render("No executions yet. Waiting for tasks to run...")
-		b.WriteString(padLine(emptyMsg, w, colorBg))
+		b.WriteString(uikit.PadLine(emptyMsg, w, uikit.ColorBg))
 		b.WriteString("\n")
 	} else {
 
 		// Data rows.
-		end := e.scroll + vpH
+		end := e.Scroll + vpH
 		if end > n {
 			end = n
 		}
 		visIdx := 0
-		for i := e.scroll; i < end; i++ {
+		for i := e.Scroll; i < end; i++ {
 			item := e.window.Item(i)
-			bg, fg, bold := colorBg, colorText, false
+			bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
 			isCursor := e.focused && i == e.cursor
 			isHovered := i == e.hoveredRow && !isCursor
 
 			if isCursor {
-				bg = colorPrimaryDim
-				fg = colorWhite
+				bg = uikit.ColorPrimaryDim
+				fg = uikit.ColorWhite
 				bold = true
 			} else if isHovered {
-				bg = colorExecRowHover
+				bg = uikit.ColorExecRowHover
 			}
 
 			rowStyle := lipgloss.NewStyle().Background(bg).Foreground(fg).Bold(bold)
@@ -244,7 +244,7 @@ func (e *ExecList) View() string {
 			var text string
 			if item != nil {
 				statusStr := item.Run.DisplayStatus()
-				statusBadge := statusStyle(statusStr).Render(statusStr)
+				statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
 				badgeW := lipgloss.Width(statusBadge)
 				statPad := colStatusW - badgeW
 				if statPad < 0 {
@@ -266,7 +266,7 @@ func (e *ExecList) View() string {
 				text = rowStyle.Render("  " + padCell("loading…", taskW+1+colStatusW+1+colStartedW+1+colDurationW+1+colTriggerW))
 			}
 
-			row := padLine(text, contentW, colorBg)
+			row := uikit.PadLine(text, contentW, uikit.ColorBg)
 			if showScrollbar {
 				if visIdx >= thumbStart && visIdx < thumbEnd {
 					row += scrollThumb
@@ -274,18 +274,18 @@ func (e *ExecList) View() string {
 					row += scrollTrack
 				}
 			}
-			b.WriteString(padLine(row, w, colorBg))
+			b.WriteString(uikit.PadLine(row, w, uikit.ColorBg))
 			b.WriteString("\n")
 			visIdx++
 		}
 
 		// Fill remaining viewport rows with scrollbar track.
 		for visIdx < vpH {
-			row := padLine("", contentW, colorBg)
+			row := uikit.PadLine("", contentW, uikit.ColorBg)
 			if showScrollbar {
 				row += scrollTrack
 			}
-			b.WriteString(padLine(row, w, colorBg))
+			b.WriteString(uikit.PadLine(row, w, uikit.ColorBg))
 			b.WriteString("\n")
 			visIdx++
 		}
@@ -293,23 +293,23 @@ func (e *ExecList) View() string {
 
 	// Footer with viewing range.
 	if n > 0 {
-		from := e.scroll + 1
-		to := e.scroll + vpH
+		from := e.Scroll + 1
+		to := e.Scroll + vpH
 		if to > n {
 			to = n
 		}
 		footerText := fmt.Sprintf("  viewing %d–%d of %d executions", from, to, n)
-		b.WriteString(padLine(tableFooterStyle.Render(footerText), w, colorBgLight))
+		b.WriteString(uikit.PadLine(uikit.TableFooterStyle.Render(footerText), w, uikit.ColorBgLight))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(padLine("", w, colorBg))
+		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 		b.WriteString("\n")
 	}
 
 	// Fill remaining space below viewport.
 	rendered := strings.Count(b.String(), "\n")
 	for rendered < e.height {
-		b.WriteString(padLine("", w, colorBg))
+		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 		b.WriteString("\n")
 		rendered++
 	}
@@ -317,11 +317,12 @@ func (e *ExecList) View() string {
 	return b.String()
 }
 
-// --- Internal helpers ---
-
 func (e *ExecList) totalCount() int {
 	return e.window.TotalCount()
 }
+
+// TotalCount returns the total number of executions known to the window.
+func (e *ExecList) TotalCount() int { return e.totalCount() }
 
 func (e *ExecList) taskColWidth() int {
 	return e.taskColWidthFor(e.width)
@@ -336,7 +337,7 @@ func (e *ExecList) taskColWidthFor(w int) int {
 	return tw
 }
 
-func (e *ExecList) viewportHeight() int {
+func (e *ExecList) ViewportHeight() int {
 	h := e.height - dataRowOffset - footerLines
 	if h < 1 {
 		return 1
@@ -345,29 +346,29 @@ func (e *ExecList) viewportHeight() int {
 }
 
 func (e *ExecList) ensureVisible() {
-	vpH := e.viewportHeight()
+	vpH := e.ViewportHeight()
 	if vpH <= 0 {
 		return
 	}
 	n := e.totalCount()
-	if e.cursor < e.scroll {
-		e.scroll = e.cursor
-	} else if e.cursor >= e.scroll+vpH {
-		e.scroll = e.cursor - vpH + 1
+	if e.cursor < e.Scroll {
+		e.Scroll = e.cursor
+	} else if e.cursor >= e.Scroll+vpH {
+		e.Scroll = e.cursor - vpH + 1
 	}
 	// When at last item, scroll one extra to reveal end-of-list indicator.
 	if n > vpH && e.cursor == n-1 {
-		e.scroll = n - vpH + 1
+		e.Scroll = n - vpH + 1
 	}
 	maxScroll := n - vpH + 1
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	if e.scroll > maxScroll {
-		e.scroll = maxScroll
+	if e.Scroll > maxScroll {
+		e.Scroll = maxScroll
 	}
-	if e.scroll < 0 {
-		e.scroll = 0
+	if e.Scroll < 0 {
+		e.Scroll = 0
 	}
 }
 
@@ -375,7 +376,7 @@ func (e *ExecList) ensureVisible() {
 // The cursor is moved into the visible area if needed.
 func (e *ExecList) ScrollBy(delta int) {
 	n := e.totalCount()
-	vpH := e.viewportHeight()
+	vpH := e.ViewportHeight()
 	if vpH <= 0 || n == 0 {
 		return
 	}
@@ -383,27 +384,25 @@ func (e *ExecList) ScrollBy(delta int) {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	e.scroll += delta
-	if e.scroll < 0 {
-		e.scroll = 0
+	e.Scroll += delta
+	if e.Scroll < 0 {
+		e.Scroll = 0
 	}
-	if e.scroll > maxScroll {
-		e.scroll = maxScroll
+	if e.Scroll > maxScroll {
+		e.Scroll = maxScroll
 	}
 	// Keep cursor within visible area.
-	if e.cursor < e.scroll {
-		e.cursor = e.scroll
-	} else if e.cursor >= e.scroll+vpH {
-		e.cursor = e.scroll + vpH - 1
+	if e.cursor < e.Scroll {
+		e.cursor = e.Scroll
+	} else if e.cursor >= e.Scroll+vpH {
+		e.cursor = e.Scroll + vpH - 1
 	}
 }
 
 // NeedsFetch returns true if the viewport requires more data from the API.
 func (e *ExecList) NeedsFetch() bool {
-	return e.window.NeedsFetch(e.scroll, e.viewportHeight())
+	return e.window.NeedsFetch(e.Scroll, e.ViewportHeight())
 }
-
-// --- Utilities ---
 
 // padCell truncates or pads a string to exactly the given visible width.
 func padCell(s string, w int) string {
@@ -419,45 +418,4 @@ func padCell(s string, w int) string {
 		return s + strings.Repeat(" ", w-vis)
 	}
 	return s
-}
-
-func formatDuration(run model.Run) string {
-	if run.StartAt == nil {
-		return "—"
-	}
-	endTime := time.Now()
-	if run.EndAt != nil {
-		endTime = *run.EndAt
-	}
-	d := endTime.Sub(*run.StartAt)
-	if d < time.Second {
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	}
-	if d < time.Minute {
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	}
-	if d < time.Hour {
-		mins := int(d.Minutes())
-		secs := int(d.Seconds()) % 60
-		return fmt.Sprintf("%dm%ds", mins, secs)
-	}
-	hrs := int(d.Hours())
-	mins := int(d.Minutes()) % 60
-	return fmt.Sprintf("%dh%dm", hrs, mins)
-}
-
-func formatTimeAgo(t time.Time) string {
-	d := time.Since(t)
-	switch {
-	case d < time.Second:
-		return "just now"
-	case d < time.Minute:
-		return fmt.Sprintf("%ds ago", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	default:
-		return t.Format("Jan 02 15:04")
-	}
 }

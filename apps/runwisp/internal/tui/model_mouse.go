@@ -5,6 +5,9 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/tui/views/execlist"
+	"github.com/runwisp/runwisp/internal/tui/views/home"
 )
 
 // handleMouse processes mouse clicks and motion on sidebar, Run Now button, and exec list.
@@ -27,11 +30,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
 			if m.execView != nil {
-				m.execView.pane.ScrollUp(3)
-				m.execView.headerFocus = headerFocusNone
-			} else if m.sidebar.ActivePage() == PageInfo && x >= sidebarWidth {
+				m.execView.Pane.ScrollUp(3)
+				m.execView.HeaderFocus = execlist.HeaderFocusNone
+			} else if m.sidebar.ActivePage() == uikit.PageInfo && x >= uikit.SidebarWidth {
 				m.infoView.ScrollUp(3)
-			} else if m.sidebar.ActivePage() == PageDebug && x >= sidebarWidth {
+			} else if m.sidebar.ActivePage() == uikit.PageDebug && x >= uikit.SidebarWidth {
 				m.debugView.ScrollUp(3)
 			} else {
 				m.execList.ScrollBy(-3)
@@ -42,11 +45,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.MouseButtonWheelDown:
 			if m.execView != nil {
-				m.execView.pane.ScrollDown(3)
-				m.execView.headerFocus = headerFocusNone
-			} else if m.sidebar.ActivePage() == PageInfo && x >= sidebarWidth {
+				m.execView.Pane.ScrollDown(3)
+				m.execView.HeaderFocus = execlist.HeaderFocusNone
+			} else if m.sidebar.ActivePage() == uikit.PageInfo && x >= uikit.SidebarWidth {
 				m.infoView.ScrollDown(3)
-			} else if m.sidebar.ActivePage() == PageDebug && x >= sidebarWidth {
+			} else if m.sidebar.ActivePage() == uikit.PageDebug && x >= uikit.SidebarWidth {
 				m.debugView.ScrollDown(3)
 			} else {
 				m.execList.ScrollBy(3)
@@ -63,11 +66,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Sidebar click.
-	if x < sidebarWidth {
+	if x < uikit.SidebarWidth {
 		prevPage := m.sidebar.ActivePage()
 		prevTask := m.sidebar.ActiveTask()
-		m.sidebar.handleClick(y)
+		m.sidebar.HandleClick(y)
 		focusCmd := m.focusSidebar()
 		if cmd := m.applySidebarSelectionChange(prevPage, prevTask); cmd != nil {
 			return m, tea.Batch(focusCmd, cmd)
@@ -82,7 +84,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleExecViewClick(x, y)
 	}
 
-	if m.sidebar.ActivePage() == PageHome {
+	if m.sidebar.ActivePage() == uikit.PageHome {
 		if m.sidebar.ActiveTask() != "" {
 			// Task header: check Run Now button click.
 			if y == m.layout.taskBtnY {
@@ -91,7 +93,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		} else {
 			// Home header: check field row clicks.
 			fieldsStartY := m.layout.homeFieldsY
-			fields := homeFields(m.info, m.hasLaunchTicket())
+			fields := home.Fields(m.info, m.hasLaunchTicket())
 			fieldIdx := y - fieldsStartY
 			if fieldIdx >= 0 && fieldIdx < len(fields) {
 				focusCmd := m.focusHomeField(fieldIdx)
@@ -125,13 +127,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // updateHoverState computes hover highlights for all UI zones based on mouse position.
 func (m *Model) updateHoverState(x, y int) {
-	// Sidebar hover.
-	if x < sidebarWidth {
-		m.sidebar.SetHovered(m.sidebar.rowIndexAt(y))
+	if x < uikit.SidebarWidth {
+		m.sidebar.SetHovered(m.sidebar.RowIndexAt(y))
 		m.execList.SetHovered(-1)
 		m.mouse.homeHover = -1
 		if m.execView != nil {
-			m.execView.hoveredHeader = headerFocusNone
+			m.execView.HoveredHeader = execlist.HeaderFocusNone
 		}
 		return
 	}
@@ -140,18 +141,18 @@ func (m *Model) updateHoverState(x, y int) {
 
 	// Exec view button hover — use precise X ranges.
 	if m.execView != nil {
-		m.execView.hoveredHeader = m.execView.hitAt(x, y)
+		m.execView.HoveredHeader = m.execView.HitAt(x, y)
 		m.mouse.homeHover = -1
 		return
 	}
 
 	// Home page hover: fields + exec list.
-	if m.sidebar.ActivePage() == PageHome {
+	if m.sidebar.ActivePage() == uikit.PageHome {
 
 		// Home field hover (only when no task is selected).
 		if m.sidebar.ActiveTask() == "" {
 			fieldsStartY := m.layout.homeFieldsY
-			fields := homeFields(m.info, m.hasLaunchTicket())
+			fields := home.Fields(m.info, m.hasLaunchTicket())
 			fieldIdx := y - fieldsStartY
 			if fieldIdx >= 0 && fieldIdx < len(fields) {
 				m.mouse.homeHover = fieldIdx
@@ -172,26 +173,26 @@ func (m *Model) updateHoverState(x, y int) {
 
 // handleExecViewClick handles clicks on buttons and meta fields inside the exec view.
 func (m Model) handleExecViewClick(x, y int) (tea.Model, tea.Cmd) {
-	if m.execView == nil || m.execView.run == nil {
+	if m.execView == nil || m.execView.Run == nil {
 		return m, nil
 	}
 	// Clear keyboard header focus on any click.
-	m.execView.headerFocus = headerFocusNone
+	m.execView.HeaderFocus = execlist.HeaderFocusNone
 
-	switch m.execView.hitAt(x, y) {
-	case headerFocusBack:
+	switch m.execView.HitAt(x, y) {
+	case execlist.HeaderFocusBack:
 		return m, m.closeExecView()
-	case headerFocusID, headerFocusStarted, headerFocusDuration:
-		return m, m.dialogs.CopyToClipboard(m.execView.copyValueFor(m.execView.hitAt(x, y)))
-	case headerFocusAction:
+	case execlist.HeaderFocusID, execlist.HeaderFocusStarted, execlist.HeaderFocusDuration:
+		return m, m.dialogs.CopyToClipboard(m.execView.CopyValueFor(m.execView.HitAt(x, y)))
+	case execlist.HeaderFocusAction:
 		switch m.execView.Action() {
-		case execViewActionStop:
+		case execlist.ActionStop:
 			return m, m.confirmAction(confirmActionStop)
-		case execViewActionStopService:
+		case execlist.ActionStopService:
 			return m, m.confirmAction(confirmActionStopService)
-		case execViewActionRetry:
+		case execlist.ActionRetry:
 			return m, m.confirmAction(confirmActionRetry)
-		case execViewActionRestartService:
+		case execlist.ActionRestartService:
 			return m, m.confirmAction(confirmActionRestartService)
 		}
 	}

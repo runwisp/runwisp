@@ -13,7 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"log/slog"
 )
 
@@ -43,8 +43,8 @@ var (
 // If debugWriter is non-nil, it is wired to the program so that writes to it
 // appear in the TUI's debug view.
 // launchTicketFunc, when non-nil, enables one-click "Open Web UI" via launch tickets.
-// It blocks until the user quits. Returns the chosen QuitAction and any error.
-func StartTUI(info StartupInfo, client *apiclient.Client, debugWriter *DebugLogWriter, shutdownFunc func() error, launchTicketFunc func() (string, error)) (QuitAction, error) {
+// It blocks until the user quits. Returns the chosen uikit.QuitAction and any error.
+func StartTUI(info uikit.StartupInfo, client *apiclient.Client, debugWriter *DebugLogWriter, shutdownFunc func() error, launchTicketFunc func() (string, error)) (uikit.QuitAction, error) {
 	m := NewModel(TUIConfig{
 		Info:             info,
 		Client:           client,
@@ -64,58 +64,13 @@ func StartTUI(info StartupInfo, client *apiclient.Client, debugWriter *DebugLogW
 
 	finalModel, err := p.Run()
 	if err != nil {
-		return QuitShutdownDaemon, err
+		return uikit.QuitShutdownDaemon, err
 	}
 
 	if fm, ok := finalModel.(Model); ok {
 		return fm.QuitAction(), nil
 	}
-	return QuitShutdownDaemon, nil
-}
-
-// --- Public Types ---
-
-// PendingRunsSummary describes what happened when resuming pending runs.
-type PendingRunsSummary struct {
-	Total   int
-	Resumed int
-	Queued  int
-	Skipped int
-	Failed  int
-}
-
-// StartupInfo gathers everything needed for the startup display.
-//
-// Timezone and TimezoneSource render the resolved scheduler zone in the
-// banner. TimezoneSource is "config" when the operator pinned [scheduler]
-// timezone explicitly, "system" when it was detected from the host. Empty
-// values omit the line so the trim-down `runwisp tui` invocation still
-// renders cleanly.
-type StartupInfo struct {
-	Version    string
-	ConfigPath string
-	DataDir    string
-	DBPath     string
-	LogDir     string
-	Port       int
-
-	Fingerprint    string
-	UsingDemo      bool
-	Capabilities   []model.CapInfo
-	Tasks          []model.TaskBrief
-	Timezone       string
-	TimezoneSource string
-
-	PasswordEphemeral bool
-	Password          string
-
-	CloudEnabled  bool
-	WebUIDisabled bool
-
-	ScheduleWarnings []string
-	CrashedRuns      int64
-	PendingRuns      PendingRunsSummary
-	CatchUpTriggered int
+	return uikit.QuitShutdownDaemon, nil
 }
 
 const (
@@ -144,14 +99,14 @@ func SetLogOutput(w io.Writer) {
 }
 
 // PrintStartup renders the polished startup display to stderr.
-func PrintStartup(info StartupInfo) {
+func PrintStartup(info uikit.StartupInfo) {
 	printStartupTo(os.Stderr, info)
 }
 
 // printStartupTo renders the polished startup display to the given writer.
 // Exposed as a writer-injecting seam so tests can capture the banner without
 // reaching into os.Stderr.
-func printStartupTo(w io.Writer, info StartupInfo) {
+func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	// --- Banner ---
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "  %s %s %s\n",
@@ -272,7 +227,6 @@ func printStartupTo(w io.Writer, info StartupInfo) {
 		fmt.Fprintln(w)
 	}
 
-	// --- Ephemeral password hint ---
 	// The plaintext password is never rendered in the banner — operators
 	// retrieve it via `runwisp password` (CLI) or by selecting Home →
 	// Password in the TUI. Anything that captures stderr (journald, log

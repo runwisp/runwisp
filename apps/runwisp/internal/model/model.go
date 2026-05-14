@@ -4,9 +4,12 @@
 package model
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 var taskNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
@@ -15,6 +18,35 @@ var taskNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 // name safe for use in file paths and other identifiers.
 func SanitizeTaskName(name string) string {
 	return taskNameSanitizer.ReplaceAllString(name, "_")
+}
+
+// TaskNameMaxLength caps task names so they fit comfortably in filenames,
+// log paths, and URL segments without further truncation.
+const TaskNameMaxLength = 100
+
+// TaskNamePatternString is the canonical regular expression that defines a
+// valid task name. Kept in sync with the huma `pattern:` tags on REST
+// request inputs so an operator who passes TOML validation can also call
+// the API for the same name.
+const TaskNamePatternString = `^[a-zA-Z0-9._-]+$`
+
+var TaskNamePattern = regexp.MustCompile(TaskNamePatternString)
+
+// ValidateTaskName checks that a name is non-empty, within the length cap,
+// and matches TaskNamePattern. It is the single source of truth for task
+// name validation across the daemon (TOML loader, REST handlers, etc.).
+func ValidateTaskName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return fmt.Errorf("task name is required")
+	}
+	if len(trimmed) > TaskNameMaxLength {
+		return fmt.Errorf("task name %q exceeds the %d-character limit", trimmed, TaskNameMaxLength)
+	}
+	if !TaskNamePattern.MatchString(trimmed) {
+		return fmt.Errorf("invalid task name %q: must match %s", trimmed, TaskNamePatternString)
+	}
+	return nil
 }
 
 // Task describes a runnable task loaded from configuration.
@@ -118,6 +150,45 @@ const (
 	ReasonDaemonStopped EndReason = "daemon_stopped"
 )
 
+// AllEndReasons is the canonical, ordered list of end-reason values. The order
+// is load-bearing: it determines the enum order in the generated OpenAPI
+// schema and downstream TypeScript types (`packages/common`). Keep new values
+// at the end unless intentionally reordering the API surface.
+var AllEndReasons = []EndReason{
+	ReasonSuccess,
+	ReasonFailed,
+	ReasonStopped,
+	ReasonTimeout,
+	ReasonCrashed,
+	ReasonSkipped,
+	ReasonLogOverflow,
+	ReasonQueueFull,
+	ReasonDSTSkipped,
+	ReasonDaemonStopped,
+}
+
+const endReasonSchemaName = "EndReason"
+
+// Schema implements huma.SchemaProvider so EndReason appears as a named enum
+// (`components.schemas.EndReason`) in the generated OpenAPI document instead
+// of an inline `enum` repeated at every usage site. Downstream codegen
+// (openapi-typescript → packages/common) picks this up as a single shared
+// type alias.
+func (EndReason) Schema(r huma.Registry) *huma.Schema {
+	if _, ok := r.Map()[endReasonSchemaName]; !ok {
+		enum := make([]any, len(AllEndReasons))
+		for i, v := range AllEndReasons {
+			enum[i] = string(v)
+		}
+		r.Map()[endReasonSchemaName] = &huma.Schema{
+			Type:        huma.TypeString,
+			Description: "Why a run ended. Set when status=ended.",
+			Enum:        enum,
+		}
+	}
+	return &huma.Schema{Ref: "#/components/schemas/" + endReasonSchemaName}
+}
+
 // IsTerminal reports whether the phase represents a completed run.
 func (p RunPhase) IsTerminal() bool {
 	return p == PhaseEnded
@@ -190,7 +261,7 @@ type Run struct {
 	ExternalExecutionID *string     `json:"external_execution_id,omitempty"`
 	TaskName            string      `json:"task_name"`
 	Status              RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
-	EndReason           *EndReason  `json:"end_reason,omitempty" enum:"success,failed,stopped,timeout,crashed,skipped,log_overflow,queue_full,dst_skipped,daemon_stopped" doc:"Why the run ended (set when status=ended)"`
+	EndReason           *EndReason  `json:"end_reason,omitempty"`
 	ExitCode            int         `json:"exit_code"`
 	LogPath             string      `json:"-"`
 	StartAt             *time.Time  `json:"start_at,omitempty"`

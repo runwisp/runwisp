@@ -14,7 +14,8 @@
     let reconnecting = $derived(c.isRetrying || c.status === "connecting");
 
     function elapsedSince(epoch: number | null): string | null {
-        return epoch === null ? null : formatDuration(Math.max(0, c.now - epoch));
+        if (typeof epoch !== "number") return null;
+        return formatDuration(Math.max(0, c.now - epoch));
     }
 
     let downFor = $derived(elapsedSince(c.disconnectedSince));
@@ -22,7 +23,7 @@
 
     let retryLine = $derived.by(() => {
         if (reconnecting) return "Trying to reconnect…";
-        if (c.nextRetryAt === null) return null;
+        if (typeof c.nextRetryAt !== "number") return null;
         const seconds = Math.max(0, Math.ceil((c.nextRetryAt - c.now) / 1000));
         return `Next automatic retry in ${seconds}s`;
     });
@@ -54,11 +55,11 @@
     <dl
         class="grid w-full max-w-md grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-outline bg-surface-raised px-5 py-3 text-left text-xs"
     >
-        {#if downFor !== null}
+        {#if downFor}
             <dt class="text-on-surface-muted">Down for</dt>
             <dd class="text-right font-medium text-on-surface tabular-nums">{downFor}</dd>
         {/if}
-        {#if lastSeen !== null}
+        {#if lastSeen}
             <dt class="text-on-surface-muted">Last reached</dt>
             <dd class="text-right font-medium text-on-surface tabular-nums">{lastSeen} ago</dd>
         {/if}
@@ -66,7 +67,7 @@
             <dt class="text-on-surface-muted">Attempts</dt>
             <dd class="text-right font-medium text-on-surface tabular-nums">{c.retryAttempts}</dd>
         {/if}
-        {#if retryLine !== null}
+        {#if retryLine}
             <dt class="text-on-surface-muted">Status</dt>
             <dd class="text-right font-medium text-on-surface">{retryLine}</dd>
         {/if}

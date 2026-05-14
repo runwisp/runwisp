@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-// Re-export generated API types (single source of truth from Go OpenAPI spec)
 export type {
   Task,
   Run,
@@ -10,10 +9,28 @@ export type {
   paths as APIPaths,
 } from "./generated/api.js";
 
+import type { components } from "./generated/api.js";
+
+/**
+ * EndReason is the union of all reasons a run can end. The single source of
+ * truth is the Go `model.EndReason` enum, surfaced via the OpenAPI spec
+ * (`components.schemas.EndReason`) and consumed here from the generated
+ * `api.ts`. Add new reasons in Go; this re-export keeps the TS surface in
+ * lockstep.
+ */
+export type EndReason = components["schemas"]["EndReason"];
+
 // Runtime constants remain manual until the Go app exposes enum metadata.
 export const RUN_PHASES = ["pending", "running", "ended"] as const;
 export type RunPhase = (typeof RUN_PHASES)[number];
 
+/**
+ * Runtime mirror of the generated `EndReason` union. Needed because the
+ * generated TS type is structural-only (no runtime form), but consumers
+ * (zod schemas, status filters) need an enumerable list. Drift is guarded
+ * on both sides: the `satisfies` clause rejects unknown values, and the
+ * `_EndReasonsExhaustive` check below rejects missing ones.
+ */
 export const END_REASONS = [
   "success",
   "failed",
@@ -25,15 +42,28 @@ export const END_REASONS = [
   "queue_full",
   "dst_skipped",
   "daemon_stopped",
-] as const;
-export type EndReason = (typeof END_REASONS)[number];
+] as const satisfies readonly EndReason[];
+
+// Compile-time exhaustiveness: identity-asserts that every EndReason
+// produced by the Go spec appears in END_REASONS. If Go adds a new value
+// without updating this array, this line fails with a missing-member error.
+type _EndReasonsExhaustive = Exclude<
+  EndReason,
+  (typeof END_REASONS)[number]
+> extends never
+  ? true
+  : false;
+const _endReasonsExhaustive: _EndReasonsExhaustive = true;
+void _endReasonsExhaustive;
 
 /**
  * End reasons treated as failures by retry policy, dashboards, and the
- * "Last run failed" UI surface. Mirrors `retry.IsFailureReason` in the Go
- * runtime — keep them in sync. queue_full / dst_skipped are policy outcomes,
- * not failures, so they intentionally stay out of this list (alongside
- * skipped). daemon_stopped is operator-driven shutdown, not a task fault.
+ * "Last run failed" UI surface. Mirrors `retry.IsFailureReason` in Go —
+ * keep them in sync.
+ *
+ * queue_full / dst_skipped are policy outcomes, not failures, so they
+ * intentionally stay out of this list (alongside skipped). daemon_stopped
+ * is operator-driven shutdown, not a task fault.
  */
 export const FAILURE_END_REASONS = [
   "failed",

@@ -17,7 +17,7 @@ import (
 // EventBridge subscribes to runtime events and forwards execution status
 // and log lines to the cloud connection.
 type EventBridge struct {
-	eventBus      events.EventBus
+	eventBus      EventBus
 	handler       *InboundHandler
 	tracker       *ExecutionTracker
 	sendReady     func(any) error
@@ -29,7 +29,7 @@ type EventBridge struct {
 }
 
 func NewEventBridge(
-	eventBus events.EventBus,
+	eventBus EventBus,
 	handler *InboundHandler,
 	tracker *ExecutionTracker,
 	sendReady func(any) error,

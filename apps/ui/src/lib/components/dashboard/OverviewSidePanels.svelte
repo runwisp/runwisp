@@ -4,7 +4,7 @@
 <script lang="ts">
     import { Activity, ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "@lucide/svelte";
     import Badge from "@runwisp/ui/components/Badge.svelte";
-    import { getRunStatusConfig } from "@runwisp/ui";
+    import { getRunStatusConfig, TaskCard } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import { isFailureEndReason, type Run } from "@runwisp/common";
     import {
@@ -60,10 +60,7 @@
                         ? getRunStatusConfig(task.lastStatus)
                         : undefined}
 
-                    <button
-                        class="group w-full rounded-lg border border-mist-100 bg-white p-3 text-left transition-all hover:border-danger-200 hover:shadow-sm"
-                        onclick={() => viewTask(task.task.name)}
-                    >
+                    <TaskCard accent="danger" onclick={() => viewTask(task.task.name)}>
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-center gap-1.5">
@@ -95,7 +92,7 @@
                                 </span>
                             {/if}
                         </div>
-                    </button>
+                    </TaskCard>
                 {/each}
             </div>
         {/if}
@@ -118,10 +115,7 @@
         {:else}
             <div class="mt-4 space-y-2">
                 {#each runningNow as run (run.id)}
-                    <button
-                        class="group w-full rounded-lg border border-mist-100 bg-white p-3 text-left transition-all hover:border-wisp-200 hover:shadow-sm"
-                        onclick={() => viewRun(run)}
-                    >
+                    <TaskCard accent="wisp" onclick={() => viewRun(run)}>
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2">
@@ -150,7 +144,7 @@
                                 class="shrink-0 text-mist-300 transition-colors group-hover:text-wisp-600"
                             />
                         </div>
-                    </button>
+                    </TaskCard>
                 {/each}
             </div>
         {/if}
@@ -171,10 +165,7 @@
         {:else}
             <div class="mt-4 space-y-2">
                 {#each upcomingTasks as task (task.task.id)}
-                    <button
-                        class="group w-full rounded-lg border border-mist-100 bg-white p-3 text-left transition-all hover:border-aurora-200 hover:shadow-sm"
-                        onclick={() => viewTask(task.task.name)}
-                    >
+                    <TaskCard accent="aurora" onclick={() => viewTask(task.task.name)}>
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-center gap-1.5">
@@ -200,7 +191,7 @@
                                 {task.task.cron}
                             </p>
                         {/if}
-                    </button>
+                    </TaskCard>
                 {/each}
             </div>
         {/if}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/stretchr/testify/assert"
@@ -527,6 +528,31 @@ func TestLogWriter_WriteLineEvent_DropReturnsNegative(t *testing.T) {
 	assert.Equal(t, int64(-1), second)
 
 	require.NoError(t, w.Close())
+}
+
+// TestLogWriter_InjectedClockStampsSystemLine pins the determinism guarantee
+// added with the LogWriter clock injection: the SYSTEM line written on
+// truncation must format its timestamp from the injected Now, not an inline
+// time.Now(). A regression here would re-introduce a hidden wall-clock read
+// inside the log path.
+func TestLogWriter_InjectedClockStampsSystemLine(t *testing.T) {
+	fixed := time.Date(2026, 5, 14, 9, 30, 0, 0, time.UTC)
+	opts := newTestOpts(t.TempDir())
+	opts.MaxSize = 100
+	opts.Overflow = "drop_new"
+	opts.Now = func() time.Time { return fixed }
+
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	w.Write([]byte(strings.Repeat("x", 110) + "\n"))
+	require.NoError(t, w.Close())
+
+	data, err := os.ReadFile(opts.LogPath)
+	require.NoError(t, err)
+	want := fixed.Format("2006-01-02 15:04:05")
+	assert.Contains(t, string(data), want,
+		"SYSTEM line must use the injected clock's formatted timestamp")
 }
 
 func TestLogWriter_TimestampIndex_NoTidxPath(t *testing.T) {

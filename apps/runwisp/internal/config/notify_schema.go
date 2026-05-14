@@ -57,16 +57,16 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 	}
 
 	if t.Notify.DefaultTimeout != "" {
-		d, err := parseScopedDuration("notify.default_timeout", t.Notify.DefaultTimeout)
+		d, err := parseDuration(t.Notify.DefaultTimeout)
 		if err != nil {
-			return NotifyConfig{}, err
+			return NotifyConfig{}, fmt.Errorf("invalid notify.default_timeout: %w", err)
 		}
 		out.DefaultTimeout = d
 	}
 	if t.Notify.HistoryKeepFor != "" {
-		d, err := parseScopedKeepFor("notify.history_keep_for", t.Notify.HistoryKeepFor)
+		d, err := parseKeepFor(t.Notify.HistoryKeepFor)
 		if err != nil {
-			return NotifyConfig{}, err
+			return NotifyConfig{}, fmt.Errorf("invalid notify.history_keep_for: %w", err)
 		}
 		out.HistoryKeepFor = d
 	}
@@ -74,9 +74,9 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 		out.HistoryKeepFor = defaultHistoryKeepFor
 	}
 	if t.Notify.CoalesceWindow != "" {
-		d, err := parseScopedDuration("notify.coalesce_window", t.Notify.CoalesceWindow)
+		d, err := parseDuration(t.Notify.CoalesceWindow)
 		if err != nil {
-			return NotifyConfig{}, err
+			return NotifyConfig{}, fmt.Errorf("invalid notify.coalesce_window: %w", err)
 		}
 		out.CoalesceWindow = d
 	}

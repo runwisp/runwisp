@@ -2,9 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { SSE_CONFIG } from "$lib/config/constants";
-import type { EventSourceFactory } from "$lib/adapters/browser";
+import type { EventSourceFactory, SSEStream } from "$lib/adapters/browser";
 import { browserEventSourceFactory } from "$lib/adapters/browser";
-import { getEventSourceErrorDetails, getMessageEventData } from "$lib/utils/event-source";
+import {
+    type SSEErrorInfo,
+    extractErrorInfo,
+    formatErrorInfo,
+    getMessageEventData,
+} from "$lib/utils/event-source";
 import { getApiUrl } from "$lib/utils/env";
 import { createLogger } from "$lib/utils/logger";
 
@@ -15,13 +20,6 @@ export interface SSEConnectionDeps {
 
 export function buildSSEUrl(path: string, apiUrl: string = getApiUrl()): string {
     return `${apiUrl}${path}`;
-}
-
-export interface SSEErrorInfo {
-    status?: number;
-    message?: string;
-    readyState?: number;
-    url?: string;
 }
 
 export interface ReconnectingSSEOptions {
@@ -50,26 +48,6 @@ export interface SSEConnection {
     disconnect(): void;
 }
 
-/** Extract useful debugging info from an EventSource error event. */
-function extractErrorInfo(e: Event, es: EventSource, url: string): SSEErrorInfo {
-    const { status, message } = getEventSourceErrorDetails(e);
-    return {
-        ...(status !== undefined && { status }),
-        ...(message !== undefined && { message }),
-        readyState: es.readyState,
-        url,
-    };
-}
-
-function formatErrorInfo(info: SSEErrorInfo): string {
-    const parts: string[] = [];
-    if (info.status !== undefined) parts.push(`status=${info.status.toString()}`);
-    if (info.message !== undefined) parts.push(info.message);
-    if (info.readyState !== undefined) parts.push(`readyState=${info.readyState.toString()}`);
-    if (info.url !== undefined) parts.push(info.url);
-    return parts.join(" ") || "unknown error";
-}
-
 /**
  * Creates an SSE connection with automatic token auth, exponential backoff
  * reconnection, and typed event dispatching.
@@ -89,7 +67,7 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
     const resolveApiUrl = deps.getApiUrl ?? getApiUrl;
     const logger = createLogger("SSE");
 
-    let eventSource: EventSource | null = null;
+    let eventSource: SSEStream | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let reconnectDelay: number = SSE_CONFIG.RECONNECT_DELAY;
     let disposed = false;
@@ -99,7 +77,7 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
 
         const resolvedPath = typeof path === "function" ? path() : path;
         const url = buildSSEUrl(resolvedPath, resolveApiUrl());
-        let es: EventSource;
+        let es: SSEStream;
         try {
             es = createEventSource(url);
         } catch (err) {
@@ -127,7 +105,7 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
             for (const eventType of eventTypes) {
                 es.addEventListener(eventType, (event: MessageEvent) => {
                     const data = getMessageEventData(event);
-                    if (data !== undefined) {
+                    if (typeof data !== "undefined") {
                         onEvent(eventType, data);
                     }
                 });
@@ -135,7 +113,7 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
         } else {
             es.onmessage = (event: MessageEvent) => {
                 const data = getMessageEventData(event);
-                if (data !== undefined) {
+                if (typeof data !== "undefined") {
                     onEvent("message", data);
                 }
             };

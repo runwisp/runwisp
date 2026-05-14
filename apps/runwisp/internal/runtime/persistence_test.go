@@ -85,7 +85,7 @@ func TestPersistenceCoordinatorAfterShutdown(t *testing.T) {
 
 func TestPublishRunNilBus(t *testing.T) {
 	// Nil bus should not panic
-	jm := NewTaskManager(new(testutil.MockExecutor), nil).(*defaultTaskManager)
+	jm := NewTaskManager(new(testutil.MockExecutor), nil, time.Now).(*defaultTaskManager)
 	assert.NotPanics(t, func() {
 		jm.publishRun("test", &model.Run{})
 	})

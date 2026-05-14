@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 	"github.com/go-chi/jwtauth/v5"
+	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/ui"
 	"github.com/runwisp/runwisp/internal/version"
 	"github.com/sebest/xff"
@@ -51,13 +52,13 @@ func maxBodySize(limit int64) func(http.Handler) http.Handler {
 //
 // For TCP requests (no local-trusted flag), the usual jwtauth verifier and
 // authenticator chain runs unchanged.
-func authOrLocalTrusted(auth *AuthService) func(http.Handler) http.Handler {
+func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 	verify := jwtauth.Verify(
-		auth.JWTAuth(),
+		authSvc.JWTAuth(),
 		jwtauth.TokenFromHeader,
-		tokenFromCookie(authCookieName),
+		auth.TokenFromCookie,
 	)
-	authenticator := jwtauth.Authenticator(auth.JWTAuth())
+	authenticator := jwtauth.Authenticator(authSvc.JWTAuth())
 	return func(next http.Handler) http.Handler {
 		fallback := verify(authenticator(next))
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,16 +80,6 @@ func savePeerAddr(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), peerAddrContextKey, r.RemoteAddr)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-func tokenFromCookie(name string) func(*http.Request) string {
-	return func(r *http.Request) string {
-		c, err := r.Cookie(name)
-		if err != nil {
-			return ""
-		}
-		return c.Value
-	}
 }
 
 // securityHeaders adds standard security headers to every response.
@@ -113,7 +104,7 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func (srv *Server) setupRoutes() {
+func (srv *Server) setupRoutes() error {
 	requestLogger := &middleware.DefaultLogFormatter{Logger: log.New(srv.logOutput, "", log.LstdFlags)}
 	// savePeerAddr MUST be first: captures the raw TCP peer address before
 	// any proxy-aware middleware (XFF, RealIP) can overwrite r.RemoteAddr.
@@ -148,9 +139,9 @@ func (srv *Server) setupRoutes() {
 
 	// Rate-limited auth endpoints: both challenge and login share the same limit
 	// to prevent nonce-store flooding (DoS on the auth flow).
-	authLimiter := httprate.LimitByIP(MaxAuthAttempts, AuthRateWindow)
+	authLimiter := httprate.LimitByIP(auth.MaxAuthAttempts, auth.AuthRateWindow)
 	srv.router.With(authLimiter).Get("/api/auth/challenge", srv.handleAuthChallenge)
-	srv.router.With(authLimiter).Post("/api/auth", srv.auth.handleAuth)
+	srv.router.With(authLimiter).Post("/api/auth", srv.auth.HandleLogin)
 	srv.router.With(authLimiter).Get("/api/auth/launch", srv.handleLaunchTicket)
 
 	// Protected routes
@@ -164,5 +155,5 @@ func (srv *Server) setupRoutes() {
 		// Raw chi handlers for complex endpoints
 		r.Post("/api/auth/launch-ticket", srv.handleCreateLaunchTicket)
 	})
-	ui.Serve(srv.router)
+	return ui.Mount(srv.router)
 }

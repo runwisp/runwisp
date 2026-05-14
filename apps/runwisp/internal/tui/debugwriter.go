@@ -8,9 +8,10 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
-// DebugLogWriter is an io.Writer that forwards each write as a DebugLogMsg
+// DebugLogWriter is an io.Writer that forwards each write as a uikit.DebugLogMsg
 // to a Bubble Tea program. It is safe for concurrent use.
 //
 // Before the program is attached via SetProgram, messages are buffered
@@ -18,14 +19,14 @@ import (
 type DebugLogWriter struct {
 	mu      sync.Mutex
 	program *tea.Program
-	buf     []DebugLogMsg
+	buf     []uikit.DebugLogMsg
 }
 
 const debugWriterBufCap = 256
 
 func NewDebugLogWriter() *DebugLogWriter {
 	return &DebugLogWriter{
-		buf: make([]DebugLogMsg, 0, debugWriterBufCap),
+		buf: make([]uikit.DebugLogMsg, 0, debugWriterBufCap),
 	}
 }
 
@@ -43,7 +44,7 @@ func (w *DebugLogWriter) SetProgram(p *tea.Program) {
 }
 
 // Write implements io.Writer. Each call is split on newlines and forwarded
-// as individual DebugLogMsg messages.
+// as individual uikit.DebugLogMsg messages.
 func (w *DebugLogWriter) Write(p []byte) (int, error) {
 	raw := strings.TrimRight(string(p), "\r\n")
 	if raw == "" {
@@ -60,7 +61,7 @@ func (w *DebugLogWriter) Write(p []byte) (int, error) {
 		if line == "" {
 			continue
 		}
-		msg := DebugLogMsg{Message: line}
+		msg := uikit.DebugLogMsg{Message: line}
 
 		if w.program != nil {
 			w.program.Send(msg)

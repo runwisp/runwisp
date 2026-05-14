@@ -12,10 +12,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/tui/views/execlist"
+	"github.com/runwisp/runwisp/internal/tui/views/home"
+	"github.com/runwisp/runwisp/internal/tui/views/info"
+	"github.com/runwisp/runwisp/internal/tui/views/notifications"
 )
 
 const (
-	sidebarWidth  = 28
 	tickInterval  = 1 * time.Second
 	maxDebugLines = 500
 )
@@ -40,19 +44,19 @@ type headerLayout struct {
 
 // Model is the root Bubble Tea model for the RunWisp TUI.
 type Model struct {
-	sidebar    Sidebar
-	execList   ExecList
-	execWindow *ExecWindow
-	execView   *ExecView
-	infoView   *InfoView
+	sidebar    home.Sidebar
+	execList   execlist.ExecList
+	execWindow *execlist.ExecWindow
+	execView   *execlist.ExecView
+	infoView   *info.InfoView
 	debugView  DebugView
 
 	dialogs       DialogManager
 	streams       StreamManager
-	notifications notificationsPanel
+	notifications notifications.Panel
 
-	panelFocus PanelFocus
-	info       StartupInfo
+	panelFocus uikit.PanelFocus
+	info       uikit.StartupInfo
 	client     *apiclient.Client
 
 	// Home page cursor for interactive fields (-1 = not in header area).
@@ -61,7 +65,7 @@ type Model struct {
 	layout headerLayout
 
 	// Quit action chosen by the user (keep daemon or shut down).
-	quitAction       QuitAction
+	quitAction       uikit.QuitAction
 	shutdownFunc     func() error
 	launchTicketFunc func() (string, error)
 
@@ -75,7 +79,7 @@ type Model struct {
 
 // TUIConfig holds the dependencies needed to start the interactive TUI.
 type TUIConfig struct {
-	Info             StartupInfo
+	Info             uikit.StartupInfo
 	Client           *apiclient.Client
 	IsRemote         bool                   // true when connecting to a remote daemon (no local debug writer)
 	ShutdownFunc     func() error           // if set, called inside the TUI to shut down the daemon
@@ -83,10 +87,10 @@ type TUIConfig struct {
 }
 
 func NewModel(cfg TUIConfig) Model {
-	sidebar := NewSidebar("RunWisp", cfg.Info.Version, cfg.Info.Fingerprint, cfg.Info.Tasks)
-	execWindow := NewExecWindow(cfg.Client)
-	execList := NewExecList(execWindow)
-	infoView := NewInfoView(cfg.Info)
+	sidebar := home.NewSidebar("RunWisp", cfg.Info.Version, cfg.Info.Fingerprint, cfg.Info.Tasks)
+	execWindow := execlist.NewExecWindow(cfg.Client)
+	execList := execlist.NewExecList(execWindow)
+	infoView := info.NewInfoView(cfg.Info)
 	debugView := NewDebugView()
 
 	return Model{
@@ -97,8 +101,8 @@ func NewModel(cfg TUIConfig) Model {
 		debugView:        debugView,
 		dialogs:          DialogManager{},
 		streams:          NewStreamManager(cfg.Client),
-		notifications:    newNotificationsPanel(),
-		panelFocus:       PanelSidebar,
+		notifications:    notifications.NewPanel(),
+		panelFocus:       uikit.PanelSidebar,
 		info:             cfg.Info,
 		client:           cfg.Client,
 		homeCursor:       -1,
@@ -112,7 +116,7 @@ func NewModel(cfg TUIConfig) Model {
 // Init loads initial data and starts subscriptions.
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
-		m.streams.FetchExecWindow(m.execWindow, m.execList.scroll, m.execList.viewportHeight()),
+		m.streams.FetchExecWindow(m.execWindow, m.execList.Scroll, m.execList.ViewportHeight()),
 		m.streams.SubscribeEvents(),
 		m.streams.SubscribeNotifications(),
 		m.streams.FetchUnreadCount(),
@@ -127,7 +131,7 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) tickCmd() tea.Cmd {
 	return tea.Tick(tickInterval, func(time.Time) tea.Msg {
-		return TickMsg{}
+		return uikit.TickMsg{}
 	})
 }
 
@@ -141,18 +145,18 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	if latest := m.execWindow.FindRun(run.ID); latest != nil {
 		run = latest
 	}
-	ev := NewExecView(run)
-	ev.taskIsService = m.isService(run.TaskName)
+	ev := execlist.NewExecView(run)
+	ev.TaskIsService = m.isService(run.TaskName)
 	mainW, mainH := m.mainSize()
 	ev.SetSize(mainW, mainH)
 	ev.SetFocused(true)
-	ev.headerFocus = headerFocusBack
+	ev.HeaderFocus = execlist.HeaderFocusBack
 	m.execView = &ev
 	m.execList.SetFocused(false)
 
 	cmds := []tea.Cmd{m.markRunNotificationsRead(run.ID)}
 	if run.Status != model.PhasePending {
-		cmds = append(cmds, m.streams.StartLogStream(run, -int64(logTailLines)))
+		cmds = append(cmds, m.streams.StartLogStream(run, -int64(execlist.LogTailLines)))
 	}
 	return tea.Batch(cmds...)
 }
@@ -195,7 +199,7 @@ func (m *Model) toggleSelectedNotificationRead() tea.Cmd {
 func (m *Model) closeExecView() tea.Cmd {
 	m.streams.CancelLogStream()
 	m.execView = nil
-	if m.panelFocus == PanelMain {
+	if m.panelFocus == uikit.PanelMain {
 		m.execList.SetFocused(true)
 	}
 	return m.syncMouseState()
@@ -215,12 +219,12 @@ func (m *Model) syncMouseState() tea.Cmd {
 
 // fetchExecWindow is a convenience wrapper for StreamManager.
 func (m *Model) fetchExecWindow() tea.Cmd {
-	return m.streams.FetchExecWindow(m.execWindow, m.execList.scroll, m.execList.viewportHeight())
+	return m.streams.FetchExecWindow(m.execWindow, m.execList.Scroll, m.execList.ViewportHeight())
 }
 
 func (m *Model) updateLayout() {
 	mainW, mainH := m.mainSize()
-	m.sidebar.SetSize(sidebarWidth, m.height-1) // -1 for help bar
+	m.sidebar.SetSize(uikit.SidebarWidth, m.height-1) // -1 for help bar
 	m.infoView.SetSize(mainW, mainH)
 	m.debugView.SetSize(mainW, mainH)
 	if m.execView != nil {
@@ -232,7 +236,7 @@ func (m *Model) updateLayout() {
 func (m *Model) mainSize() (int, int) {
 	w := m.width
 	if !m.isExecFullscreen() {
-		w -= sidebarWidth
+		w -= uikit.SidebarWidth
 	}
 	if w < 20 {
 		w = 20
@@ -248,21 +252,21 @@ func (m *Model) mainSize() (int, int) {
 func (m *Model) recalcExecListHeight() {
 	mainW, mainH := m.mainSize()
 	listH := mainH
-	if m.sidebar.ActivePage() == PageHome || m.sidebar.ActiveTask() != "" {
+	if m.sidebar.ActivePage() == uikit.PageHome || m.sidebar.ActiveTask() != "" {
 		if m.sidebar.ActiveTask() != "" {
-			header, btnY := renderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, false)
+			header, btnY := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, false)
 			m.layout.taskBtnY = btnY
 			m.layout.taskH = strings.Count(header, "\n")
 			listH -= m.layout.taskH
 		} else {
-			header, fieldsStartY := renderHomeHeader(m.info, m.hasLaunchTicket(), mainW, -1, -1)
+			header, fieldsStartY := home.RenderHeader(m.info, m.hasLaunchTicket(), mainW, -1, -1)
 			m.layout.homeH = strings.Count(header, "\n")
 			m.layout.homeFieldsY = fieldsStartY
 			listH -= m.layout.homeH
 		}
 	}
 	m.notifications.SetWidth(mainW)
-	if m.sidebar.ActivePage() == PageHome {
+	if m.sidebar.ActivePage() == uikit.PageHome {
 		listH -= m.notifications.PanelHeight()
 	}
 	if listH < 5 {
@@ -324,7 +328,7 @@ func (m *Model) autoOpenService(taskName string) tea.Cmd {
 }
 
 // QuitAction returns the quit action chosen by the user.
-func (m Model) QuitAction() QuitAction {
+func (m Model) QuitAction() uikit.QuitAction {
 	return m.quitAction
 }
 
@@ -335,15 +339,15 @@ func (m *Model) showQuitConfirm() {
 		"Keep the daemon running in the background?",
 		"Keep Running",
 		"Shut Down",
-		func() tea.Msg { return quitMsg{Action: QuitKeepDaemon} },
-		func() tea.Msg { return quitMsg{Action: QuitShutdownDaemon} },
+		func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} },
+		func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitShutdownDaemon} },
 	)
 	m.dialogs.ShowConfirm(dialog)
 }
 
 // resolveTaskName determines which task to act on based on current focus.
 func (m *Model) resolveTaskName() string {
-	if m.panelFocus == PanelMain {
+	if m.panelFocus == uikit.PanelMain {
 		return m.sidebar.ActiveTask()
 	}
 	name := m.sidebar.CursorTaskName()
@@ -383,26 +387,26 @@ func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
 	return func() tea.Msg {
 		run, err := client.GetRun(taskName, runID)
 		if err != nil {
-			return DebugLogMsg{Message: fmt.Sprintf("Failed to load run %s: %s", runID, err.Error())}
+			return uikit.DebugLogMsg{Message: fmt.Sprintf("Failed to load run %s: %s", runID, err.Error())}
 		}
-		return openRunMsg{Run: run}
+		return uikit.OpenRunMsg{Run: run}
 	}
 }
 
 // activateHomeField performs the primary action for the currently selected home field:
 // opens the browser for "Open Web UI", copies to clipboard for URL/password fields.
 func (m *Model) activateHomeField() tea.Cmd {
-	fields := homeFields(m.info, m.hasLaunchTicket())
+	fields := home.Fields(m.info, m.hasLaunchTicket())
 	if m.homeCursor < 0 || m.homeCursor >= len(fields) {
 		return nil
 	}
 
 	switch fields[m.homeCursor] {
-	case homeFieldOpenWebUI:
+	case home.FieldOpenWebUI:
 		return m.openWebUI()
-	case homeFieldWebUI:
+	case home.FieldWebUI:
 		return m.dialogs.CopyToClipboard(fmt.Sprintf("http://localhost:%d", m.info.Port))
-	case homeFieldPassword:
+	case home.FieldPassword:
 		return m.dialogs.CopyToClipboard(m.info.Password)
 	default:
 		return nil
@@ -420,10 +424,10 @@ func (m *Model) openWebUI() tea.Cmd {
 // non-graphical session (e.g. SSH) the URL is offered for clipboard copy
 // instead, with the modal dialog as the final fallback.
 func (m *Model) downloadExecLog() tea.Cmd {
-	if m.execView == nil || m.execView.run == nil {
+	if m.execView == nil || m.execView.Run == nil {
 		return nil
 	}
-	run := m.execView.run
+	run := m.execView.Run
 	if run.TaskName == "" || run.ID == "" {
 		return nil
 	}
@@ -447,17 +451,17 @@ func (m *Model) openLaunchURL(target string) tea.Cmd {
 	return func() tea.Msg {
 		ticket, err := ticketFunc()
 		if err != nil {
-			return openBrowserMsg{Err: err}
+			return uikit.OpenBrowserMsg{Err: err}
 		}
 		launchURL := fmt.Sprintf("http://localhost:%d/api/auth/launch?ticket=%s&redirect=%s",
 			port, ticket, url.QueryEscape(target))
 		if !canOpenBrowser() {
-			return openBrowserMsg{URL: launchURL}
+			return uikit.OpenBrowserMsg{URL: launchURL}
 		}
 		if err := openBrowser(launchURL); err != nil {
-			return openBrowserMsg{URL: launchURL, Err: err}
+			return uikit.OpenBrowserMsg{URL: launchURL, Err: err}
 		}
-		return openBrowserMsg{URL: launchURL, BrowserOpened: true}
+		return uikit.OpenBrowserMsg{URL: launchURL, BrowserOpened: true}
 	}
 }
 

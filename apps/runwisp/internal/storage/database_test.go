@@ -133,11 +133,11 @@ func TestQueryRunsByTask(t *testing.T) {
 	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
 	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
 
-	runs, err := db.QueryRuns("task1", 10, 0, "", "", "", "")
+	runs, err := db.QueryRuns("task1", 10, 0, "", SortColumnDefault, SortDirectionDefault, "")
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)
 
-	runs, err = db.QueryRuns("task1", 10, 0, string(model.ReasonSuccess), "", "", "")
+	runs, err = db.QueryRuns("task1", 10, 0, string(model.ReasonSuccess), SortColumnDefault, SortDirectionDefault, "")
 	require.NoError(t, err)
 	assert.Len(t, runs, 1)
 	assert.Equal(t, model.PhaseEnded, runs[0].Status)
@@ -151,11 +151,11 @@ func TestQueryAllRuns(t *testing.T) {
 	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
 	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task2", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
 
-	runs, err := db.QueryRuns("", 10, 0, "", "", "", "")
+	runs, err := db.QueryRuns("", 10, 0, "", SortColumnDefault, SortDirectionDefault, "")
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)
 
-	runs, err = db.QueryRuns("task1", 10, 0, "", "", "", "")
+	runs, err = db.QueryRuns("task1", 10, 0, "", SortColumnDefault, SortDirectionDefault, "")
 	require.NoError(t, err)
 	assert.Len(t, runs, 1)
 	assert.Equal(t, "task1", runs[0].TaskName)
@@ -275,19 +275,19 @@ func TestSearchAndSort(t *testing.T) {
 	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "beta", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), TriggeredBy: model.TriggeredByAPI}))
 
 	// Search
-	runs, err := db.QueryRuns("", 10, 0, "", "", "", "alp")
+	runs, err := db.QueryRuns("", 10, 0, "", SortColumnDefault, SortDirectionDefault, "alp")
 	require.NoError(t, err)
 	assert.Len(t, runs, 1)
 	assert.Equal(t, "alpha", runs[0].TaskName)
 
 	// Sort
-	runs, err = db.QueryRuns("", 10, 0, "", "task_name", "asc", "")
+	runs, err = db.QueryRuns("", 10, 0, "", SortColumnTaskName, SortAsc, "")
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)
 	assert.Equal(t, "alpha", runs[0].TaskName)
 	assert.Equal(t, "beta", runs[1].TaskName)
 
-	runs, err = db.QueryRuns("", 10, 0, "", "task_name", "desc", "")
+	runs, err = db.QueryRuns("", 10, 0, "", SortColumnTaskName, SortDesc, "")
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)
 	assert.Equal(t, "beta", runs[0].TaskName)

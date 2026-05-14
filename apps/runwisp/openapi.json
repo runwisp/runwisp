@@ -96,6 +96,22 @@
         ],
         "type": "object"
       },
+      "EndReason": {
+        "description": "Why a run ended. Set when status=ended.",
+        "enum": [
+          "success",
+          "failed",
+          "stopped",
+          "timeout",
+          "crashed",
+          "skipped",
+          "log_overflow",
+          "queue_full",
+          "dst_skipped",
+          "daemon_stopped"
+        ],
+        "type": "string"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -624,20 +640,7 @@
             "type": "string"
           },
           "end_reason": {
-            "description": "Why the run ended (set when status=ended)",
-            "enum": [
-              "success",
-              "failed",
-              "stopped",
-              "timeout",
-              "crashed",
-              "skipped",
-              "log_overflow",
-              "queue_full",
-              "dst_skipped",
-              "daemon_stopped"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/EndReason"
           },
           "exit_code": {
             "format": "int64",

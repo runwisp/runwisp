@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package notifications
 
 import (
 	"fmt"
@@ -15,28 +15,29 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/tui/rhythm"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 const (
-	notificationsCollapsedH    = 1
-	notificationsViewportLines = 8
-	notificationsExpandedH     = notificationsViewportLines + 2 // header + viewport + spacer
+	CollapsedH    = 1
+	viewportLines = 8
+	ExpandedH     = viewportLines + 2 // header + viewport + spacer
 
-	// notificationsInitialPageSize matches the web UI's PAGE_SIZE so both
+	// InitialPageSize matches the web UI's PAGE_SIZE so both
 	// surfaces hydrate from the same initial slice.
-	notificationsInitialPageSize = 50
+	InitialPageSize = 50
 
-	// notificationsBoundaryFlashDuration is how long the cursor row pulses with
+	// boundaryFlashDuration is how long the cursor row pulses with
 	// an accent background when a navigation keypress can't move the cursor.
-	notificationsBoundaryFlashDuration = 150 * time.Millisecond
+	boundaryFlashDuration = 150 * time.Millisecond
 )
 
-// notificationsPanel mirrors the web UI's bell + popover: an always-on
+// Panel mirrors the web UI's bell + popover: an always-on
 // summary line that the operator can expand into a scrollable list. Items
 // are tracked by ID so SSE updates mutate in place; the cursor highlights
 // one row at a time inside a bubble's viewport. Read state is per-item
 // (carried on apiclient.Notification.ReadAt).
-type notificationsPanel struct {
+type Panel struct {
 	items   map[string]apiclient.Notification
 	ordered []string // ULIDs DESC
 
@@ -60,14 +61,14 @@ type notificationsPanel struct {
 	width int
 }
 
-func newNotificationsPanel() notificationsPanel {
-	vp := viewport.New(0, notificationsViewportLines)
+func NewPanel() Panel {
+	vp := viewport.New(0, viewportLines)
 	// Bubbles' viewport pads visible lines to its Width with unstyled spaces;
 	// without a styled background the trailing pad and any blank rows below
-	// the content render with the terminal's default colour. Apply colorBg so
+	// the content render with the terminal's default colour. Apply uikit.ColorBg so
 	// the entire viewport rectangle stays in theme.
-	vp.Style = lipgloss.NewStyle().Background(colorBg)
-	return notificationsPanel{
+	vp.Style = lipgloss.NewStyle().Background(uikit.ColorBg)
+	return Panel{
 		items:    make(map[string]apiclient.Notification),
 		viewport: vp,
 	}
@@ -76,7 +77,7 @@ func newNotificationsPanel() notificationsPanel {
 // Upsert applies a created/updated SSE event. Returns true when the panel
 // changed in a way that warrants a repaint. The unread badge is owned by
 // SetUnread (server-driven), not Upsert.
-func (p *notificationsPanel) Upsert(n apiclient.Notification) bool {
+func (p *Panel) Upsert(n apiclient.Notification) bool {
 	if n.ID == "" {
 		return false
 	}
@@ -103,16 +104,16 @@ func (p *notificationsPanel) Upsert(n apiclient.Notification) bool {
 }
 
 // IsExpanded reports whether the panel is in expanded mode.
-func (p *notificationsPanel) IsExpanded() bool { return p.expanded }
+func (p *Panel) IsExpanded() bool { return p.expanded }
 
 // Total returns the count of distinct tracked notifications.
-func (p *notificationsPanel) Total() int { return len(p.items) }
+func (p *Panel) Total() int { return len(p.items) }
 
 // Unread returns the snapshot+delta-tracked unread count.
-func (p *notificationsPanel) Unread() int { return p.unread }
+func (p *Panel) Unread() int { return p.unread }
 
 // Toggle flips expanded state and snaps the cursor into a valid range.
-func (p *notificationsPanel) Toggle() {
+func (p *Panel) Toggle() {
 	p.expanded = !p.expanded
 	if p.expanded {
 		if p.cursor < 0 {
@@ -127,7 +128,7 @@ func (p *notificationsPanel) Toggle() {
 }
 
 // MoveCursor advances the cursor; no-op when collapsed or empty.
-func (p *notificationsPanel) MoveCursor(delta int) bool {
+func (p *Panel) MoveCursor(delta int) bool {
 	if !p.expanded || len(p.ordered) == 0 {
 		return false
 	}
@@ -150,18 +151,18 @@ func (p *notificationsPanel) MoveCursor(delta int) bool {
 // that a navigation keypress was received but the cursor was already at a
 // boundary (or the list has only one item). Callers schedule a clear-tick so
 // the panel repaints once the duration elapses.
-func (p *notificationsPanel) BumpBoundaryFlash() {
+func (p *Panel) BumpBoundaryFlash() {
 	if !p.expanded || len(p.ordered) == 0 {
 		return
 	}
-	p.flashCursorUntil = time.Now().Add(notificationsBoundaryFlashDuration)
+	p.flashCursorUntil = time.Now().Add(boundaryFlashDuration)
 	p.rebuildContent()
 }
 
 // ClearBoundaryFlash repaints if the flash window has fully elapsed. Rapid
 // repeat keypresses extend flashCursorUntil into the future; the guard keeps
 // the most recent flash alive instead of cutting it short.
-func (p *notificationsPanel) ClearBoundaryFlash() {
+func (p *Panel) ClearBoundaryFlash() {
 	if p.flashCursorUntil.IsZero() {
 		return
 	}
@@ -173,20 +174,20 @@ func (p *notificationsPanel) ClearBoundaryFlash() {
 }
 
 // flashActive reports whether the boundary flash should currently render.
-func (p *notificationsPanel) flashActive() bool {
+func (p *Panel) flashActive() bool {
 	return !p.flashCursorUntil.IsZero() && time.Now().Before(p.flashCursorUntil)
 }
 
-// scheduleNotificationFlashClear returns a tea.Cmd that nudges the panel to
+// ScheduleFlashClear returns a tea.Cmd that nudges the panel to
 // repaint after the flash window elapses.
-func scheduleNotificationFlashClear() tea.Cmd {
-	return tea.Tick(notificationsBoundaryFlashDuration, func(time.Time) tea.Msg {
-		return notificationBoundaryFlashClearedMsg{}
+func ScheduleFlashClear() tea.Cmd {
+	return tea.Tick(boundaryFlashDuration, func(time.Time) tea.Msg {
+		return uikit.NotificationBoundaryFlashClearedMsg{}
 	})
 }
 
 // Selected returns the currently-highlighted notification or nil.
-func (p *notificationsPanel) Selected() *apiclient.Notification {
+func (p *Panel) Selected() *apiclient.Notification {
 	if !p.expanded || len(p.ordered) == 0 {
 		return nil
 	}
@@ -201,7 +202,7 @@ func (p *notificationsPanel) Selected() *apiclient.Notification {
 // Called from the startup snapshot and from every SSE event that carries an
 // unread_count. Negative values (the server's "query failed" sentinel) are
 // ignored so the badge keeps the last known good value.
-func (p *notificationsPanel) SetUnread(n int) {
+func (p *Panel) SetUnread(n int) {
 	if n < 0 {
 		return
 	}
@@ -211,7 +212,7 @@ func (p *notificationsPanel) SetUnread(n int) {
 
 // LoadHistorical seeds the panel with the initial page fetched from the REST
 // list endpoint at startup.
-func (p *notificationsPanel) LoadHistorical(items []apiclient.Notification) bool {
+func (p *Panel) LoadHistorical(items []apiclient.Notification) bool {
 	changed := false
 	for _, n := range items {
 		if n.ID == "" {
@@ -238,7 +239,7 @@ func (p *notificationsPanel) LoadHistorical(items []apiclient.Notification) bool
 // RefreshLabels rebuilds the cached expanded viewport content so relative
 // time labels ("5m ago") tick forward without waiting for an SSE event.
 // Cheap: a string-builder pass over the in-memory ordered list.
-func (p *notificationsPanel) RefreshLabels() {
+func (p *Panel) RefreshLabels() {
 	if p.expanded {
 		p.rebuildContent()
 	}
@@ -247,7 +248,7 @@ func (p *notificationsPanel) RefreshLabels() {
 // MarkReadLocal stamps a single notification's ReadAt. No-op if the id is
 // unknown or the row was already read. The badge does not change here — the
 // authoritative count arrives on the next SSE event.
-func (p *notificationsPanel) MarkReadLocal(id string, at time.Time) bool {
+func (p *Panel) MarkReadLocal(id string, at time.Time) bool {
 	n, ok := p.items[id]
 	if !ok || n.ReadAt != nil {
 		return false
@@ -262,7 +263,7 @@ func (p *notificationsPanel) MarkReadLocal(id string, at time.Time) bool {
 // MarkUnreadLocal clears a single notification's ReadAt. No-op if the id is
 // unknown or the row was already unread. The badge does not change here —
 // the authoritative count arrives on the next SSE event.
-func (p *notificationsPanel) MarkUnreadLocal(id string) bool {
+func (p *Panel) MarkUnreadLocal(id string) bool {
 	n, ok := p.items[id]
 	if !ok || n.ReadAt == nil {
 		return false
@@ -276,7 +277,7 @@ func (p *notificationsPanel) MarkUnreadLocal(id string) bool {
 // UnreadIDsForRun returns the IDs of all locally-known notifications attached
 // to the given run that are still unread. Used to mark them read when the
 // operator opens the run's exec view.
-func (p *notificationsPanel) UnreadIDsForRun(runID string) []string {
+func (p *Panel) UnreadIDsForRun(runID string) []string {
 	if runID == "" {
 		return nil
 	}
@@ -290,7 +291,7 @@ func (p *notificationsPanel) UnreadIDsForRun(runID string) []string {
 }
 
 // SetWidth tells the panel how much horizontal space it has.
-func (p *notificationsPanel) SetWidth(w int) {
+func (p *Panel) SetWidth(w int) {
 	if w < 0 {
 		w = 0
 	}
@@ -305,18 +306,18 @@ func (p *notificationsPanel) SetWidth(w int) {
 
 // PanelHeight returns the total height the panel needs (0 when there are
 // no items and no unread state to report; >=1 otherwise).
-func (p *notificationsPanel) PanelHeight() int {
+func (p *Panel) PanelHeight() int {
 	if len(p.items) == 0 && p.unread == 0 {
 		return 0
 	}
 	if p.expanded {
-		return notificationsExpandedH
+		return ExpandedH
 	}
-	return notificationsCollapsedH
+	return CollapsedH
 }
 
 // View renders the panel.
-func (p *notificationsPanel) View() string {
+func (p *Panel) View() string {
 	if p.PanelHeight() == 0 {
 		return ""
 	}
@@ -329,16 +330,16 @@ func (p *notificationsPanel) View() string {
 // countLabel renders the header label. With unread > 0 it includes the count
 // in parentheses; with zero unread the parens drop entirely so pressing "r"
 // produces visible feedback.
-func (p *notificationsPanel) countLabel() string {
+func (p *Panel) countLabel() string {
 	if p.unread == 0 {
 		return "Notifications"
 	}
 	return fmt.Sprintf("Notifications (%d)", p.unread)
 }
 
-func (p *notificationsPanel) renderCollapsed() string {
-	prefix := notificationsPanelPrefixStyle.Render("  " + p.countLabel())
-	hint := notificationsPanelHintStyle.Render("  press n to expand")
+func (p *Panel) renderCollapsed() string {
+	prefix := panelPrefixStyle.Render("  " + p.countLabel())
+	hint := panelHintStyle.Render("  press n to expand")
 	body := prefix + hint
 
 	if latest := p.latest(); latest != nil {
@@ -346,8 +347,8 @@ func (p *notificationsPanel) renderCollapsed() string {
 		// another Render would inject ANSI reset codes mid-line, dropping the
 		// background back to the terminal default for everything after the
 		// embedded style.
-		summaryStyle := lipgloss.NewStyle().Background(colorBgLight).Foreground(colorTextDim)
-		sev := notificationSeverityStyle(latest.Severity).Background(colorBgLight).Render(strings.ToUpper(latest.Severity))
+		summaryStyle := lipgloss.NewStyle().Background(uikit.ColorBgLight).Foreground(uikit.ColorTextDim)
+		sev := severityStyle(latest.Severity).Background(uikit.ColorBgLight).Render(strings.ToUpper(latest.Severity))
 		leading := summaryStyle.Render("  ")
 		trailing := summaryStyle.Render(" · " + summarizeNotification(*latest) + " · " + relativeTime(latest.LastOccurredAt))
 		body = prefix + leading + sev + trailing + hint
@@ -356,19 +357,19 @@ func (p *notificationsPanel) renderCollapsed() string {
 	if p.width > 0 {
 		body = truncateLine(body, p.width)
 	}
-	return padLine(body, p.width, colorBgLight)
+	return uikit.PadLine(body, p.width, uikit.ColorBgLight)
 }
 
-func (p *notificationsPanel) renderExpanded() string {
-	headerL := notificationsPanelPrefixStyle.Render("  " + p.countLabel())
-	headerR := notificationsPanelHintStyle.Render("n collapse · ↑/↓ navigate · r toggle read · enter open  ")
+func (p *Panel) renderExpanded() string {
+	headerL := panelPrefixStyle.Render("  " + p.countLabel())
+	headerR := panelHintStyle.Render("n collapse · ↑/↓ navigate · r toggle read · enter open  ")
 	header := joinHeaderLine(headerL, headerR, p.width)
 
-	// renderRow already pads each row to viewport.Width with colorBg, and the
-	// viewport's Style fills its remaining rectangle with colorBg too.
+	// renderRow already pads each row to viewport.Width with uikit.ColorBg, and the
+	// viewport's Style fills its remaining rectangle with uikit.ColorBg too.
 	body := p.viewport.View()
 
-	spacer := stripeFocusLine("", p.width-1, colorBg)
+	spacer := stripeFocusLine("", p.width-1, uikit.ColorBg)
 	return header + "\n" + body + "\n" + spacer
 }
 
@@ -379,15 +380,15 @@ func joinHeaderLine(left, right string, width int) string {
 	if gap < 1 {
 		gap = 1
 	}
-	pad := lipgloss.NewStyle().Background(colorBgLight).Render(strings.Repeat(" ", gap))
+	pad := lipgloss.NewStyle().Background(uikit.ColorBgLight).Render(strings.Repeat(" ", gap))
 	line := left + pad + right
 	if width > 0 {
-		line = padLine(line, width, colorBgLight)
+		line = uikit.PadLine(line, width, uikit.ColorBgLight)
 	}
 	return line
 }
 
-func (p *notificationsPanel) rebuildContent() {
+func (p *Panel) rebuildContent() {
 	if !p.expanded {
 		return
 	}
@@ -397,10 +398,10 @@ func (p *notificationsPanel) rebuildContent() {
 	}
 	if len(p.ordered) == 0 {
 		hint := lipgloss.NewStyle().
-			Background(colorBg).
-			Foreground(colorTextMuted).
+			Background(uikit.ColorBg).
+			Foreground(uikit.ColorTextMuted).
 			Render("  No notifications yet.")
-		p.viewport.SetContent(stripeFocusLine(hint, rest, colorBg))
+		p.viewport.SetContent(stripeFocusLine(hint, rest, uikit.ColorBg))
 		return
 	}
 	lines := make([]string, 0, len(p.ordered))
@@ -408,18 +409,18 @@ func (p *notificationsPanel) rebuildContent() {
 		n := p.items[id]
 		lines = append(lines, p.renderRow(n, i == p.cursor))
 	}
-	for len(lines) < notificationsViewportLines {
-		lines = append(lines, stripeFocusLine("", rest, colorBg))
+	for len(lines) < viewportLines {
+		lines = append(lines, stripeFocusLine("", rest, uikit.ColorBg))
 	}
 	p.viewport.SetContent(strings.Join(lines, "\n"))
 }
 
-func (p *notificationsPanel) renderRow(n apiclient.Notification, selected bool) string {
-	bg := colorBg
+func (p *Panel) renderRow(n apiclient.Notification, selected bool) string {
+	bg := uikit.ColorBg
 	if selected {
-		bg = colorBgLight
+		bg = uikit.ColorBgLight
 		if p.flashActive() {
-			bg = colorPrimaryDim
+			bg = uikit.ColorPrimaryDim
 		}
 	}
 	indicator := "  "
@@ -428,7 +429,7 @@ func (p *notificationsPanel) renderRow(n apiclient.Notification, selected bool) 
 	}
 	sev := lipgloss.NewStyle().Background(bg).Render(" ")
 	if isUnread(n) {
-		sev = notificationSeverityStyle(n.Severity).Background(bg).Render("●")
+		sev = severityStyle(n.Severity).Background(bg).Render("●")
 	}
 
 	title := n.Title
@@ -440,9 +441,9 @@ func (p *notificationsPanel) renderRow(n apiclient.Notification, selected bool) 
 	}
 	when := relativeTime(n.LastOccurredAt)
 
-	indentStyle := lipgloss.NewStyle().Background(bg).Foreground(colorTextMuted)
-	titleStyle := lipgloss.NewStyle().Background(bg).Foreground(colorText).Bold(selected)
-	whenStyle := lipgloss.NewStyle().Background(bg).Foreground(colorTextMuted)
+	indentStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextMuted)
+	titleStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorText).Bold(selected)
+	whenStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextMuted)
 
 	line := indentStyle.Render(indicator) + sev + titleStyle.Render(" "+title) + whenStyle.Render("  "+when)
 	rest := p.viewport.Width - 1
@@ -457,14 +458,14 @@ func (p *notificationsPanel) renderRow(n apiclient.Notification, selected bool) 
 // expanded panel uses to broadcast that it owns keyboard input — visually
 // the same idea as RunsList' active-row stripe in the web UI.
 func stripeFocusLine(content string, restWidth int, restBg lipgloss.Color) string {
-	stripe := lipgloss.NewStyle().Background(colorPrimary).Render(" ")
+	stripe := lipgloss.NewStyle().Background(uikit.ColorPrimary).Render(" ")
 	if restWidth < 0 {
 		restWidth = 0
 	}
-	return stripe + padLine(content, restWidth, restBg)
+	return stripe + uikit.PadLine(content, restWidth, restBg)
 }
 
-func (p *notificationsPanel) latest() *apiclient.Notification {
+func (p *Panel) latest() *apiclient.Notification {
 	for _, id := range p.ordered {
 		n := p.items[id]
 		if isUnread(n) {
@@ -474,7 +475,7 @@ func (p *notificationsPanel) latest() *apiclient.Notification {
 	return nil
 }
 
-func (p *notificationsPanel) ensureCursorVisible() {
+func (p *Panel) ensureCursorVisible() {
 	top := p.viewport.YOffset
 	bottom := top + p.viewport.Height - 1
 	if p.cursor < top {
@@ -518,24 +519,24 @@ func truncateLine(s string, max int) string {
 func isUnread(n apiclient.Notification) bool { return n.ReadAt == nil }
 
 var (
-	notificationsPanelPrefixStyle = lipgloss.NewStyle().
-					Background(colorBgLight).
-					Foreground(colorTextBright).
-					Bold(true)
+	panelPrefixStyle = lipgloss.NewStyle().
+				Background(uikit.ColorBgLight).
+				Foreground(uikit.ColorTextBright).
+				Bold(true)
 
-	notificationsPanelHintStyle = lipgloss.NewStyle().
-					Background(colorBgLight).
-					Foreground(colorTextMuted)
+	panelHintStyle = lipgloss.NewStyle().
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorTextMuted)
 )
 
-func notificationSeverityStyle(severity string) lipgloss.Style {
-	base := lipgloss.NewStyle().Background(colorBg).Bold(true)
+func severityStyle(severity string) lipgloss.Style {
+	base := lipgloss.NewStyle().Background(uikit.ColorBg).Bold(true)
 	switch severity {
 	case "error":
-		return base.Foreground(colorError)
+		return base.Foreground(uikit.ColorError)
 	case "warn":
-		return base.Foreground(colorWarning)
+		return base.Foreground(uikit.ColorWarning)
 	default:
-		return base.Foreground(colorSuccess)
+		return base.Foreground(uikit.ColorSuccess)
 	}
 }

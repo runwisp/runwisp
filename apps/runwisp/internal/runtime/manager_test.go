@@ -30,7 +30,7 @@ func testTask(name string, policy model.ConcurrencyPolicy, limit int) *model.Tas
 func TestUpsertTask(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := testTask("task1", model.PolicyQueue, DefaultConcurrencyLimit)
 	jm.UpsertTask(task)
@@ -43,7 +43,7 @@ func TestUpsertTask(t *testing.T) {
 func TestTriggerRunBasic(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
@@ -62,7 +62,7 @@ func TestTriggerRunBasic(t *testing.T) {
 func TestPolicySkip(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
@@ -88,7 +88,7 @@ func TestPolicySkip(t *testing.T) {
 func TestPolicyQueue(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := testTask("task1", model.PolicyQueue, 1)
 	jm.UpsertTask(task)
@@ -117,7 +117,7 @@ func TestPolicyQueue(t *testing.T) {
 func TestPolicyQueueDropsAtCap(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := testTask("task1", model.PolicyQueue, 1)
 	task.QueueMax = 1
@@ -149,7 +149,7 @@ func TestPolicyQueueDropsAtCap(t *testing.T) {
 func TestPolicyTerminate(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := testTask("task1", model.PolicyTerminate, 1)
 	jm.UpsertTask(task)
@@ -175,7 +175,7 @@ func TestPolicyTerminate(t *testing.T) {
 func TestTerminateRun(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
@@ -197,7 +197,7 @@ func TestTerminateRun(t *testing.T) {
 func TestShutdown(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := testTask("task1", model.PolicyQueue, 1)
 	jm.UpsertTask(task)
@@ -257,7 +257,7 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 		forceKilledCh: make(chan struct{}),
 	}
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	var mu sync.Mutex
 	var persisted []*model.Run
@@ -306,7 +306,7 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 func TestPersistenceHook(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	var created, updated bool
 	jm.BindPersistenceHook(func(run *model.Run, isNew bool) {
@@ -335,7 +335,7 @@ func TestPersistenceHook(t *testing.T) {
 func TestRetryFiresOnFailure(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := &model.Task{
@@ -398,7 +398,7 @@ func TestRetryFiresOnFailure(t *testing.T) {
 func TestRetrySkippedForCloudRun(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := &model.Task{
@@ -430,7 +430,7 @@ func TestRetrySkippedForCloudRun(t *testing.T) {
 func TestRetryNotFiredWhenRestartPolicySet(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := &model.Task{
@@ -466,7 +466,7 @@ func TestRetryNotFiredWhenRestartPolicySet(t *testing.T) {
 func TestLoadPendingRunsResumed(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := testTask("task1", model.PolicySkip, 1)
@@ -498,7 +498,7 @@ func TestLoadPendingRunsResumed(t *testing.T) {
 func TestLoadPendingRunsQueued(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := testTask("task1", model.PolicyQueue, 1)
@@ -525,7 +525,7 @@ func TestLoadPendingRunsQueued(t *testing.T) {
 func TestLoadPendingRunsFailedWhenSlotFull(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	task := testTask("task1", model.PolicySkip, 1)
@@ -556,7 +556,7 @@ func TestLoadPendingRunsFailedWhenSlotFull(t *testing.T) {
 func TestLoadPendingRunsSkippedTaskNotFound(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
 	pending := []model.Run{
@@ -593,7 +593,7 @@ func TestResolveRunOutcomeKilledByPolicy(t *testing.T) {
 func TestPersistAfterShutdownDoesNotPanic(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	jm.BindPersistenceHook(func(run *model.Run, isNew bool) {})
 	jm.Shutdown()
@@ -602,4 +602,30 @@ func TestPersistAfterShutdownDoesNotPanic(t *testing.T) {
 	assert.NotPanics(t, func() {
 		djm.persistence.PersistExisting(&model.Run{})
 	})
+}
+
+// TestInjectedClockStampsCreatedAt pins the determinism guarantee added with
+// the run-manager clock injection: TriggerRun's CreatedAt must come from the
+// injected clock, not an inline time.Now(). A regression here would re-open
+// the door to non-deterministic scheduling timestamps.
+func TestInjectedClockStampsCreatedAt(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	fixed := time.Date(2026, 5, 14, 9, 30, 0, 0, time.UTC)
+	jm := NewTaskManager(exec, eb, func() time.Time { return fixed })
+	defer jm.Shutdown()
+
+	task := testTask("clocked", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+
+	// Block Execute so the run stays pending while we inspect CreatedAt.
+	exec.On("Execute", mock.Anything, task, mock.Anything).
+		Return(&executor.ExecuteResult{ExitCode: 0}, 50*time.Millisecond)
+
+	run, err := jm.TriggerRun("clocked", model.TriggeredByAPI)
+	require.NoError(t, err)
+	require.NotNil(t, run)
+	assert.True(t, run.CreatedAt.Equal(fixed),
+		"CreatedAt must come from the injected clock; got %s, want %s",
+		run.CreatedAt, fixed)
 }

@@ -19,7 +19,7 @@ import (
 func TestScheduler(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := &model.Task{
 		Name: "task1",
@@ -48,7 +48,7 @@ func TestScheduler(t *testing.T) {
 func TestSchedulerHonorsTaskTimezone(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	// New York is UTC-5 in winter, UTC-4 in summer. Either way, 02:00 New York
 	// is *not* 02:00 UTC, so a per-task TZ override must produce a different
@@ -80,7 +80,7 @@ func TestSchedulerHonorsTaskTimezone(t *testing.T) {
 func TestSchedulerDSTWallClockDedup(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := &model.Task{
 		Name:     "eu-2am",
@@ -119,7 +119,7 @@ func TestSchedulerDSTWallClockDedup(t *testing.T) {
 func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := &model.Task{
 		Name:     "eu-mins",
@@ -152,7 +152,7 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 func TestSchedulerRejectsBadTaskTimezone(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb)
+	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := &model.Task{Name: "bad", Cron: "0 2 * * *", Timezone: "Atlantis/Lost", Run: "echo"}
 	jm.UpsertTask(task)

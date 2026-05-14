@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
@@ -239,6 +240,7 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		CancelFunc:  cancelFunc,
 		MinFreeDisk: r.diskChecker.minFreeDisk,
 		LogDir:      r.logDir,
+		Now:         time.Now,
 		OnDiskPressure: func(free, min int64, killed bool) {
 			if bus == nil {
 				return

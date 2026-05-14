@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package home
 
 import (
 	"strings"
@@ -9,11 +9,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 type sidebarItem struct {
 	label    string
-	page     Page
+	page     uikit.Page
 	taskName string
 	kind     entryKind
 }
@@ -55,7 +56,7 @@ func NewSidebar(name, version, fingerprint string, tasks []model.TaskBrief) Side
 
 func buildItems(tasks []model.TaskBrief) []sidebarItem {
 	items := []sidebarItem{
-		{label: "Home", page: PageHome, kind: entryPage},
+		{label: "Home", page: uikit.PageHome, kind: entryPage},
 	}
 
 	showGroups := hasMultipleGroups(tasks)
@@ -80,7 +81,7 @@ func buildItems(tasks []model.TaskBrief) []sidebarItem {
 				}
 				items = append(items, sidebarItem{
 					label:    task.Name,
-					page:     PageHome,
+					page:     uikit.PageHome,
 					taskName: task.Name,
 					kind:     entryTask,
 				})
@@ -90,7 +91,7 @@ func buildItems(tasks []model.TaskBrief) []sidebarItem {
 		for _, task := range tasks {
 			items = append(items, sidebarItem{
 				label:    task.Name,
-				page:     PageHome,
+				page:     uikit.PageHome,
 				taskName: task.Name,
 				kind:     entryTask,
 			})
@@ -98,8 +99,8 @@ func buildItems(tasks []model.TaskBrief) []sidebarItem {
 	}
 
 	items = append(items,
-		sidebarItem{label: "Info", page: PageInfo, kind: entryPage},
-		sidebarItem{label: "Debug", page: PageDebug, kind: entryPage},
+		sidebarItem{label: "Info", page: uikit.PageInfo, kind: entryPage},
+		sidebarItem{label: "Debug", page: uikit.PageDebug, kind: entryPage},
 	)
 	return items
 }
@@ -135,11 +136,11 @@ func (s *Sidebar) SetHovered(idx int) {
 	s.hovered = idx
 }
 
-func (s *Sidebar) ActivePage() Page {
+func (s *Sidebar) ActivePage() uikit.Page {
 	if s.selected >= 0 && s.selected < len(s.items) {
 		return s.items[s.selected].page
 	}
-	return PageHome
+	return uikit.PageHome
 }
 
 func (s *Sidebar) ActiveTask() string {
@@ -206,8 +207,8 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-func (s *Sidebar) handleClick(y int) {
-	index := s.rowIndexAt(y)
+func (s *Sidebar) HandleClick(y int) {
+	index := s.RowIndexAt(y)
 	if index < 0 || s.items[index].kind == entryGroupHeader {
 		return
 	}
@@ -246,14 +247,14 @@ func (s *Sidebar) View() string {
 
 	writeSidebarLine(&b, "", w)
 	rendered++
-	writeSidebarLine(&b, sidebarMarkStyle.Render(" ⟡ ")+sidebarBrandStyle.Render(s.name), w)
+	writeSidebarLine(&b, uikit.SidebarMarkStyle.Render(" ⟡ ")+uikit.SidebarBrandStyle.Render(s.name), w)
 	rendered++
-	writeSidebarLine(&b, sidebarVersionStyle.Render("   v"+s.version), w)
+	writeSidebarLine(&b, uikit.SidebarVersionStyle.Render("   v"+s.version), w)
 	rendered++
 
 	if s.fingerprint != "" {
 		fingerprint := truncateToWidth(s.fingerprint, max(0, w-3))
-		writeSidebarLine(&b, sidebarFingerprintStyle.Render("   "+fingerprint), w)
+		writeSidebarLine(&b, uikit.SidebarFingerprintStyle.Render("   "+fingerprint), w)
 		rendered++
 	}
 
@@ -286,7 +287,7 @@ func (s *Sidebar) renderItem(index int) string {
 		if width := lipgloss.Width(text); width < s.width {
 			text += strings.Repeat(" ", s.width-width)
 		}
-		return sidebarGroupHeaderStyle.Render(text)
+		return uikit.SidebarGroupHeaderStyle.Render(text)
 	}
 
 	label := item.label
@@ -304,20 +305,20 @@ func (s *Sidebar) renderItem(index int) string {
 		text += strings.Repeat(" ", s.width-width)
 	}
 
-	style := sidebarItemNoneStyle
+	style := uikit.SidebarItemNoneStyle
 	switch {
 	case s.focused && index == s.cursor && index == s.selected:
-		style = sidebarItemFocusedCursorSelectedStyle
+		style = uikit.SidebarItemFocusedCursorSelectedStyle
 	case s.focused && index == s.cursor:
-		style = sidebarItemFocusedCursorStyle
+		style = uikit.SidebarItemFocusedCursorStyle
 	case s.focused && index == s.selected:
-		style = sidebarItemFocusedSelectedStyle
+		style = uikit.SidebarItemFocusedSelectedStyle
 	case index == s.selected:
-		style = sidebarItemSelectedStyle
+		style = uikit.SidebarItemSelectedStyle
 	case index == s.hovered:
-		style = sidebarItemHoveredStyle
+		style = uikit.SidebarItemHoveredStyle
 	case s.focused:
-		style = sidebarItemFocusedStyle
+		style = uikit.SidebarItemFocusedStyle
 	}
 
 	return style.Render(text)
@@ -331,7 +332,7 @@ func (s *Sidebar) visibleHeight() int {
 	return listHeight
 }
 
-func (s *Sidebar) rowIndexAt(y int) int {
+func (s *Sidebar) RowIndexAt(y int) int {
 	localY := y - s.brandHeight()
 	if localY < 0 || localY >= s.visibleHeight() {
 		return -1
@@ -377,7 +378,7 @@ func (s *Sidebar) ensureVisible() {
 }
 
 func writeSidebarLine(b *strings.Builder, content string, width int) {
-	b.WriteString(padLine(content, width, colorSidebarBg))
+	b.WriteString(uikit.PadLine(content, width, uikit.ColorSidebarBg))
 	b.WriteString("\n")
 }
 

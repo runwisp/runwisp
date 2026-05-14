@@ -203,17 +203,7 @@ func (db *SQLiteDatabase) ListNotifications(limit int, before string) ([]Notific
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []Notification
-	for rows.Next() {
-		n, err := scanNotification(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *n)
-	}
-	return out, rows.Err()
+	return collectRows(rows, scanNotification)
 }
 
 func (db *SQLiteDatabase) GetNotificationByID(id string) (*Notification, error) {

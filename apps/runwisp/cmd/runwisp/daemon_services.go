@@ -14,7 +14,7 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/version"
 	"log/slog"
 )
@@ -31,7 +31,7 @@ type daemonServices struct {
 	Notify              notifyBundle
 	ScheduleResult      runtime.ScheduleResult
 	CrashedRuns         int64
-	PendingSummary      tui.PendingRunsSummary
+	PendingSummary      uikit.PendingRunsSummary
 	CatchUpResult       runtime.CatchUpResult
 	TaskShutdownTimeout time.Duration
 }
@@ -53,7 +53,7 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 
 	var scheduler *runtime.Scheduler
 	var schedResult runtime.ScheduleResult
-	var pendingSummary tui.PendingRunsSummary
+	var pendingSummary uikit.PendingRunsSummary
 	var catchUpResult runtime.CatchUpResult
 
 	if mode == modeStandalone {
@@ -125,7 +125,7 @@ func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executo
 }
 
 func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.Executor, eventBus events.EventBus) (runtime.TaskManager, map[string]*model.Task) {
-	taskManager := runtime.NewTaskManager(exec, eventBus)
+	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
 	taskManager.BindPersistenceHook(func(run *model.Run, isNew bool) {
 		var dbErr error
 		if isNew {
@@ -166,18 +166,18 @@ func startServiceInstances(taskManager runtime.TaskManager, tasksMap map[string]
 	}
 }
 
-func resumePendingRuns(db storage.RunRepository, taskManager runtime.TaskManager) tui.PendingRunsSummary {
+func resumePendingRuns(db storage.RunRepository, taskManager runtime.TaskManager) uikit.PendingRunsSummary {
 	pendingRuns, err := db.GetPendingRuns()
 	if err != nil {
 		slog.Warn("Failed to query pending runs", "err", err)
-		return tui.PendingRunsSummary{}
+		return uikit.PendingRunsSummary{}
 	}
 	if len(pendingRuns) == 0 {
-		return tui.PendingRunsSummary{}
+		return uikit.PendingRunsSummary{}
 	}
 
 	pr := taskManager.LoadPendingRuns(pendingRuns)
-	return tui.PendingRunsSummary{
+	return uikit.PendingRunsSummary{
 		Total:   len(pendingRuns),
 		Resumed: pr.Resumed,
 		Queued:  pr.Queued,

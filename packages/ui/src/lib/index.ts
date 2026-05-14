@@ -1,27 +1,21 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-// Theme
 export { default as theme } from "./theme.css?inline";
 
-// Brand
 export { default as Logo } from "./components/Logo.svelte";
 
-// Layout
 export { default as PageContainer } from "./components/PageContainer.svelte";
 
-// Typography
 export { default as Heading } from "./components/Heading.svelte";
 export { default as Prose } from "./components/Prose.svelte";
 export { default as Text } from "./components/Text.svelte";
 
-// Inline
 export { default as Kbd } from "./components/Kbd.svelte";
 export { default as Link } from "./components/Link.svelte";
 export { default as Separator } from "./components/Separator.svelte";
 export { default as Spinner } from "./components/Spinner.svelte";
 
-// Form
 export { default as Button } from "./components/Button.svelte";
 export { default as LinkButton } from "./components/LinkButton.svelte";
 export {
@@ -43,7 +37,6 @@ export { default as Textarea } from "./components/Textarea.svelte";
 export { default as TimezoneSelect } from "./components/TimezoneSelect.svelte";
 export { default as Toggle } from "./components/Toggle.svelte";
 
-// Navigation
 export { default as Accordion } from "./components/Accordion.svelte";
 export { default as AccordionItem } from "./components/AccordionItem.svelte";
 export { default as Breadcrumb } from "./components/Breadcrumb.svelte";
@@ -51,7 +44,6 @@ export { default as Pagination } from "./components/Pagination.svelte";
 export { default as Tabs } from "./components/Tabs.svelte";
 export { default as ThemeToggle } from "./components/ThemeToggle.svelte";
 
-// Data display
 export { default as Avatar } from "./components/Avatar.svelte";
 export { default as Badge } from "./components/Badge.svelte";
 export { default as Card } from "./components/Card.svelte";
@@ -66,7 +58,6 @@ export { default as TableCell } from "./components/TableCell.svelte";
 export { default as TableHead } from "./components/TableHead.svelte";
 export { default as TableRow } from "./components/TableRow.svelte";
 
-// Feedback / overlay
 export { default as Alert } from "./components/Alert.svelte";
 export { default as AlertDialog } from "./components/AlertDialog.svelte";
 export { default as Drawer } from "./components/Drawer.svelte";
@@ -78,12 +69,12 @@ export { default as Popover } from "./components/Popover.svelte";
 export { default as ToastContainer } from "./components/ToastContainer.svelte";
 export { default as Tooltip } from "./components/Tooltip.svelte";
 
-// Generic
 export { default as CodeBlock } from "./components/CodeBlock.svelte";
 export { default as FeatureCard } from "./components/FeatureCard.svelte";
 export { default as FeatureGrid } from "./components/FeatureGrid.svelte";
+export { default as TaskCard } from "./components/TaskCard.svelte";
+export type { TaskCardAccent } from "./components/TaskCard.svelte";
 
-// Log console
 export { default as LogConsole } from "./components/LogConsole.svelte";
 export type {
     FetchLogsFn,
@@ -96,7 +87,6 @@ export { isLogEvent } from "./log-console/types.js";
 export { LogCache } from "./log-console/LogCache.svelte.js";
 export { LogFetcher } from "./log-console/LogFetcher.svelte.js";
 
-// Dashboard
 export { default as RunDetailPanel } from "./components/dashboard/RunDetailPanel.svelte";
 export { default as RunsList } from "./components/dashboard/RunsList.svelte";
 export {
@@ -108,7 +98,6 @@ export {
 export { runDuration } from "./components/dashboard/run-helpers.js";
 export type { DaemonState, DaemonStats } from "./components/dashboard/types.js";
 
-// Utilities
 export { toast, type Toast, type ToastType } from "./utils/toast.svelte.js";
 export { extractErrorMessage } from "./utils/error.js";
 export {

@@ -45,8 +45,13 @@ type defaultTaskManager struct {
 	tasks       map[string]*taskState
 	persistence *PersistenceCoordinator
 	eventBus    events.EventBus
-	mu          sync.RWMutex
-	isShutdown  atomic.Bool
+	// clock is injected so tests can pin run timestamps deterministically and
+	// so the manager honours the project-wide invariant that wall-clock reads
+	// inside scheduling logic come through an injected source. Production
+	// wiring passes time.Now.
+	clock      func() time.Time
+	mu         sync.RWMutex
+	isShutdown atomic.Bool
 	// deadlineExceeded latches when the daemon-wide shutdown deadline fires.
 	// Set BEFORE survivors are force-killed so each goroutine, on resolving
 	// its run outcome, sees the flag and records ReasonDaemonStopped instead
@@ -55,12 +60,19 @@ type defaultTaskManager struct {
 	wg               sync.WaitGroup
 }
 
-func NewTaskManager(exec executor.Executor, bus events.EventBus) TaskManager {
+// NewTaskManager constructs the default run-manager. clock must not be nil;
+// production wires time.Now, tests inject a fake to keep run timestamps
+// deterministic.
+func NewTaskManager(exec executor.Executor, bus events.EventBus, clock func() time.Time) TaskManager {
+	if clock == nil {
+		clock = time.Now
+	}
 	return &defaultTaskManager{
 		executor:    exec,
 		tasks:       make(map[string]*taskState),
 		persistence: NewPersistenceCoordinator(PersistenceChannelSize),
 		eventBus:    bus,
+		clock:       clock,
 	}
 }
 
@@ -167,7 +179,7 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 		}
 
 		if ts.task.Kind.IsService() {
-			r.End(model.ReasonFailed, -1, time.Now())
+			r.End(model.ReasonFailed, -1, m.clock())
 			m.persistence.PersistExisting(&r)
 			result.Skipped++
 			continue
@@ -176,7 +188,7 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 		if ts.task.OnOverlap == model.PolicyQueue {
 			queueMax := getQueueMax(ts.task)
 			if queueMax > 0 && len(ts.queue) >= queueMax {
-				r.End(model.ReasonQueueFull, -1, time.Now())
+				r.End(model.ReasonQueueFull, -1, m.clock())
 				m.persistence.PersistExisting(&r)
 				result.Failed++
 				continue
@@ -190,7 +202,7 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 				m.startRun(ts.task, &r)
 				result.Resumed++
 			} else {
-				r.End(model.ReasonFailed, -1, time.Now())
+				r.End(model.ReasonFailed, -1, m.clock())
 				m.persistence.PersistExisting(&r)
 				result.Failed++
 			}
@@ -236,7 +248,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 			TaskName:            taskName,
 			Status:              model.PhasePending,
 			TriggeredBy:         triggeredBy,
-			CreatedAt:           time.Now(),
+			CreatedAt:           m.clock(),
 			RetryAttempt:        options.RetryAttempt,
 			RetryOfRunID:        options.RetryOfRunID,
 			InstanceIndex:       idx,
@@ -253,7 +265,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		TaskName:            taskName,
 		Status:              model.PhasePending,
 		TriggeredBy:         triggeredBy,
-		CreatedAt:           time.Now(),
+		CreatedAt:           m.clock(),
 		RetryAttempt:        options.RetryAttempt,
 		RetryOfRunID:        options.RetryOfRunID,
 	}
@@ -266,11 +278,11 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	switch action {
 	case actionRejected:
-		run.End(model.ReasonSkipped, -1, time.Now())
+		run.End(model.ReasonSkipped, -1, m.clock())
 		m.persistence.PersistExisting(run)
 		return run, actionErr
 	case actionQueueFull:
-		run.End(model.ReasonQueueFull, -1, time.Now())
+		run.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(run)
 		m.publishRun(events.EventRunFailed, run)
 		return run, actionErr
@@ -299,7 +311,7 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 		return fmt.Errorf("task not found: %s", taskName)
 	}
 
-	now := time.Now()
+	now := m.clock()
 	run := &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    taskName,
@@ -411,7 +423,7 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 	active := &ActiveRun{
 		Run:       run,
 		Cancel:    cancel,
-		StartedAt: time.Now(),
+		StartedAt: m.clock(),
 	}
 
 	m.tasks[task.Name].active = append(m.tasks[task.Name].active, active)
@@ -431,7 +443,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 
 	result := m.executor.Execute(ctx, task, run)
 
-	endTime := time.Now()
+	endTime := m.clock()
 	outcome := resolveRunOutcome(result)
 	if m.deadlineExceeded.Load() {
 		// Daemon shutdown ran past its bound — the run was force-killed by

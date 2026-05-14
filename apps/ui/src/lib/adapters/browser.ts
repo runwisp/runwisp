@@ -4,7 +4,27 @@
 import { EventSourcePolyfill } from "event-source-polyfill";
 import { AUTH_TOKEN_KEY, AUTH_EVENTS } from "$lib/config/constants";
 
-export type EventSourceFactory = (url: string) => EventSource;
+/**
+ * Minimal SSE consumer surface — exactly what the EventManager and legacy
+ * connectSSE helper use. Both the native `EventSource` and `EventSourcePolyfill`
+ * structurally satisfy this, and test fakes only need to provide these few
+ * members. Callbacks omit a `this` type so values typed against EventSource
+ * (which binds `this: EventSource`) remain assignable.
+ */
+export interface SSEStream {
+    readonly readyState: number;
+    onopen: ((ev: Event) => unknown) | null;
+    onerror: ((ev: Event) => unknown) | null;
+    onmessage: ((ev: MessageEvent) => unknown) | null;
+    close(): void;
+    addEventListener(
+        type: string,
+        listener: (event: MessageEvent) => void,
+        options?: boolean | AddEventListenerOptions,
+    ): void;
+}
+
+export type EventSourceFactory = (url: string) => SSEStream;
 
 export const browserTokenStorage = {
     getToken: () => localStorage.getItem(AUTH_TOKEN_KEY),
@@ -53,6 +73,5 @@ export const browserAuthEventSourceFactory: EventSourceFactory = (url) => {
             headers: { Authorization: `Bearer ${token}` },
         });
     }
-    // Cookie-based auth: let the browser send the HttpOnly cookie.
     return new EventSourcePolyfill(url, { withCredentials: true });
 };

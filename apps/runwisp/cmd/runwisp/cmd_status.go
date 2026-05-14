@@ -33,7 +33,6 @@ func runStatus() error {
 		return fmt.Errorf("daemon returned status %d", resp.StatusCode)
 	}
 
-	// Try to get system stats for richer output
 	statsResp, err := client.Get(localAPIBaseURL() + "/api/system")
 	if err != nil {
 		fmt.Printf("RunWisp is healthy at :%d\n", flags.Port)

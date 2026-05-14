@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -14,12 +13,15 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/storage"
 	"log/slog"
 )
 
 type PaginationParams struct {
-	Limit, Offset                                           int
-	Status, TaskName, SortField, SortDirection, SearchQuery string
+	Limit, Offset                 int
+	Status, TaskName, SearchQuery string
+	SortField                     storage.SortColumn
+	SortDirection                 storage.SortDirection
 }
 
 func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
@@ -167,7 +169,7 @@ func (srv *Server) humaGetAllRuns(ctx context.Context, input *RunsQueryInput) (*
 	p := input.toPaginationParams()
 	result, err := srv.runService.ListRuns("", p)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to get runs")
+		return nil, mapDomainError(err, "Failed to get runs")
 	}
 	return &RunsOutput{Body: RunsResponseBody{Runs: result.Runs, Total: result.Total}}, nil
 }
@@ -184,7 +186,7 @@ func (srv *Server) humaGetTaskRuns(ctx context.Context, input *TaskRunsQueryInpu
 	p := input.toPaginationParams()
 	result, err := srv.runService.ListRuns(input.TaskName, p)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to get runs")
+		return nil, mapDomainError(err, "Failed to get runs")
 	}
 	return &RunsOutput{Body: RunsResponseBody{Runs: result.Runs, Total: result.Total}}, nil
 }
@@ -192,30 +194,14 @@ func (srv *Server) humaGetTaskRuns(ctx context.Context, input *TaskRunsQueryInpu
 func (srv *Server) humaTriggerRun(ctx context.Context, input *TaskNameInput) (*TriggerRunOutput, error) {
 	run, err := srv.runService.TriggerRun(input.TaskName)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrTaskNotFound):
-			return nil, huma.Error404NotFound(err.Error())
-		case errors.Is(err, ErrAPIDisabled):
-			return nil, huma.Error403Forbidden(err.Error())
-		case errors.Is(err, ErrServiceNotRunnable):
-			return nil, huma.Error409Conflict(err.Error())
-		default:
-			return nil, huma.Error500InternalServerError(err.Error())
-		}
+		return nil, mapDomainError(err, "Failed to trigger run")
 	}
 	return &TriggerRunOutput{Body: *run}, nil
 }
 
 func (srv *Server) humaRestartService(ctx context.Context, input *TaskNameInput) (*StopRunOutput, error) {
 	if err := srv.runService.RestartService(input.TaskName); err != nil {
-		switch {
-		case errors.Is(err, ErrTaskNotFound):
-			return nil, huma.Error404NotFound(err.Error())
-		case errors.Is(err, ErrNotAService):
-			return nil, huma.Error400BadRequest(err.Error())
-		default:
-			return nil, huma.Error500InternalServerError(err.Error())
-		}
+		return nil, mapDomainError(err, "Failed to restart service")
 	}
 	out := &StopRunOutput{}
 	out.Body.Message = "Service instances restarting"
@@ -224,14 +210,7 @@ func (srv *Server) humaRestartService(ctx context.Context, input *TaskNameInput)
 
 func (srv *Server) humaStopService(ctx context.Context, input *TaskNameInput) (*StopRunOutput, error) {
 	if err := srv.runService.StopService(input.TaskName); err != nil {
-		switch {
-		case errors.Is(err, ErrTaskNotFound):
-			return nil, huma.Error404NotFound(err.Error())
-		case errors.Is(err, ErrNotAService):
-			return nil, huma.Error400BadRequest(err.Error())
-		default:
-			return nil, huma.Error500InternalServerError(err.Error())
-		}
+		return nil, mapDomainError(err, "Failed to stop service")
 	}
 	out := &StopRunOutput{}
 	out.Body.Message = "Service stopped"
@@ -241,32 +220,21 @@ func (srv *Server) humaStopService(ctx context.Context, input *TaskNameInput) (*
 func (srv *Server) humaGetRun(ctx context.Context, input *TaskRunInput) (*RunOutput, error) {
 	run, err := srv.runService.GetRun(input.RunID)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, mapDomainError(err, "Failed to fetch run")
 	}
 	return &RunOutput{Body: *run}, nil
 }
 
 func (srv *Server) humaDeleteRun(ctx context.Context, input *TaskRunInput) (*struct{}, error) {
 	if err := srv.runService.DeleteRun(input.RunID); err != nil {
-		if errors.Is(err, ErrRunNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("Failed to delete run")
+		return nil, mapDomainError(err, "Failed to delete run")
 	}
 	return nil, nil
 }
 
 func (srv *Server) humaStopRun(ctx context.Context, input *TaskRunInput) (*StopRunOutput, error) {
-	err := srv.runService.StopRun(input.RunID)
-	if err != nil {
-		switch {
-		case errors.Is(err, ErrRunNotFound):
-			return nil, huma.Error404NotFound(err.Error())
-		case errors.Is(err, ErrNotRunning):
-			return nil, huma.Error400BadRequest(err.Error())
-		default:
-			return nil, huma.Error500InternalServerError("Failed to stop run")
-		}
+	if err := srv.runService.StopRun(input.RunID); err != nil {
+		return nil, mapDomainError(err, "Failed to stop run")
 	}
 	out := &StopRunOutput{}
 	out.Body.Message = "Run stop signal sent"

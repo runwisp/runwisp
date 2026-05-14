@@ -32,7 +32,7 @@ type RunRepository interface {
 	GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error)
 	CountRuns(taskName string) (int64, error)
 	CountRunsFiltered(status, taskName, searchQuery string) (int64, error)
-	QueryRuns(taskName string, limit, offset int, status, sortField, sortDirection, searchQuery string) ([]model.Run, error)
+	QueryRuns(taskName string, limit, offset int, status string, sortField SortColumn, sortDirection SortDirection, searchQuery string) ([]model.Run, error)
 	DeleteRun(id string) error
 	DeleteOldRuns(task *model.Task) ([]model.Run, error)
 	MarkCrashedRuns() (int64, error)
@@ -203,6 +203,19 @@ func scanRun(scanner interface {
 	return &run, nil
 }
 
+func collectRows[T any](rows *sql.Rows, scan func(interface{ Scan(...any) error }) (*T, error)) ([]T, error) {
+	defer rows.Close()
+	var out []T
+	for rows.Next() {
+		item, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *item)
+	}
+	return out, rows.Err()
+}
+
 func (db *SQLiteDatabase) GetRun(id string) (*model.Run, error) {
 	return db.getRunWhere("id = ?", id)
 }
@@ -212,7 +225,7 @@ func (db *SQLiteDatabase) GetRunByExternalExecutionID(externalExecutionID string
 }
 
 func (db *SQLiteDatabase) getRunWhere(whereClause string, args ...any) (*model.Run, error) {
-	row := db.db.QueryRow(`SELECT `+runColumns+` FROM runs WHERE `+whereClause+` LIMIT 1`, args...)
+	row := db.db.QueryRow(selectRunsSQL("WHERE "+whereClause, "LIMIT 1"), args...)
 	run, err := scanRun(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -254,7 +267,7 @@ func (q *queryBuilder) whereSQL() string {
 	if len(q.where) == 0 {
 		return ""
 	}
-	return " WHERE " + strings.Join(q.where, " AND ")
+	return "WHERE " + strings.Join(q.where, " AND ")
 }
 
 func applyStatusFilter(q *queryBuilder, status string) {
@@ -290,12 +303,16 @@ func (db *SQLiteDatabase) CountRunsFiltered(status, taskName, searchQuery string
 	}
 	applySearchFilter(&q, searchQuery)
 
+	query := "SELECT COUNT(*) FROM runs"
+	if w := q.whereSQL(); w != "" {
+		query += " " + w
+	}
 	var count int64
-	err := db.db.QueryRow(`SELECT COUNT(*) FROM runs`+q.whereSQL(), q.args...).Scan(&count)
+	err := db.db.QueryRow(query, q.args...).Scan(&count)
 	return count, err
 }
 
-func (db *SQLiteDatabase) QueryRuns(taskName string, limit, offset int, status, sortField, sortDirection, searchQuery string) ([]model.Run, error) {
+func (db *SQLiteDatabase) QueryRuns(taskName string, limit, offset int, status string, sortField SortColumn, sortDirection SortDirection, searchQuery string) ([]model.Run, error) {
 	var q queryBuilder
 	if taskName != "" {
 		q.add("task_name = ?", taskName)
@@ -303,27 +320,18 @@ func (db *SQLiteDatabase) QueryRuns(taskName string, limit, offset int, status, 
 	applyStatusFilter(&q, status)
 	applySearchFilter(&q, searchQuery)
 
-	order := buildOrderClause(sortField, sortDirection)
-	args := append(q.args, limit, offset)
-
-	rows, err := db.db.Query(
-		`SELECT `+runColumns+` FROM runs`+q.whereSQL()+` ORDER BY `+order+` LIMIT ? OFFSET ?`,
-		args...,
-	)
+	order, err := buildOrderClause(sortField, sortDirection)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	args := append(q.args, limit, offset)
 
-	var runs []model.Run
-	for rows.Next() {
-		r, err := scanRun(rows)
-		if err != nil {
-			return nil, err
-		}
-		runs = append(runs, *r)
+	query := selectRunsSQL(q.whereSQL(), "ORDER BY "+order+" LIMIT ? OFFSET ?")
+	rows, err := db.db.Query(query, args...)
+	if err != nil {
+		return nil, err
 	}
-	return runs, rows.Err()
+	return collectRows(rows, scanRun)
 }
 
 func (db *SQLiteDatabase) DeleteRun(id string) error {
@@ -337,7 +345,7 @@ func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
 	if task.KeepFor > 0 {
 		cutoff := time.Now().Add(-task.KeepFor)
 		if err := db.collectRuns(uniqueRuns,
-			`SELECT `+runColumns+` FROM runs WHERE task_name = ? AND created_at < ? LIMIT ?`,
+			selectRunsSQL("WHERE task_name = ? AND created_at < ?", "LIMIT ?"),
 			task.Name, cutoff, RetentionBatchSize,
 		); err != nil {
 			return nil, fmt.Errorf("query retention days for %s: %w", task.Name, err)
@@ -347,7 +355,7 @@ func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
 	if len(uniqueRuns) < RetentionBatchSize && task.KeepRuns > 0 {
 		remaining := RetentionBatchSize - len(uniqueRuns)
 		if err := db.collectRuns(uniqueRuns,
-			`SELECT `+runColumns+` FROM runs WHERE task_name = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+			selectRunsSQL("WHERE task_name = ?", "ORDER BY created_at DESC LIMIT ? OFFSET ?"),
 			task.Name, remaining, task.KeepRuns,
 		); err != nil {
 			return nil, fmt.Errorf("query retention runs for %s: %w", task.Name, err)
@@ -411,28 +419,18 @@ func (db *SQLiteDatabase) MarkCrashedRuns() (int64, error) {
 
 func (db *SQLiteDatabase) GetPendingRuns() ([]model.Run, error) {
 	rows, err := db.db.Query(
-		`SELECT `+runColumns+` FROM runs WHERE status = ? ORDER BY created_at ASC`,
+		selectRunsSQL("WHERE status = ?", "ORDER BY created_at ASC"),
 		model.PhasePending,
 	)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var runs []model.Run
-	for rows.Next() {
-		r, err := scanRun(rows)
-		if err != nil {
-			return nil, err
-		}
-		runs = append(runs, *r)
-	}
-	return runs, rows.Err()
+	return collectRows(rows, scanRun)
 }
 
 func (db *SQLiteDatabase) GetLastRunByTask(taskName string) (*model.Run, error) {
 	row := db.db.QueryRow(
-		`SELECT `+runColumns+` FROM runs WHERE task_name = ? ORDER BY created_at DESC LIMIT 1`,
+		selectRunsSQL("WHERE task_name = ?", "ORDER BY created_at DESC LIMIT 1"),
 		taskName,
 	)
 	run, err := scanRun(row)
@@ -490,7 +488,7 @@ func (db *SQLiteDatabase) Close() error {
 	return db.db.Close()
 }
 
-func (db *SQLiteDatabase) UpsertPendingLogUpload(rec PendingLogUpload) error {
+func (db *SQLiteDatabase) UpsertPendingLogUpload(rec model.PendingLogUpload) error {
 	_, err := db.db.Exec(
 		`INSERT INTO pending_log_uploads (external_execution_id, upload_url, log_path, inserted_at)
  VALUES (?, ?, ?, ?)
@@ -511,7 +509,7 @@ func (db *SQLiteDatabase) DeletePendingLogUpload(externalExecutionID string) err
 	return err
 }
 
-func (db *SQLiteDatabase) ListPendingLogUploads() ([]PendingLogUpload, error) {
+func (db *SQLiteDatabase) ListPendingLogUploads() ([]model.PendingLogUpload, error) {
 	rows, err := db.db.Query(
 		`SELECT external_execution_id, upload_url, log_path, inserted_at FROM pending_log_uploads`,
 	)
@@ -520,35 +518,13 @@ func (db *SQLiteDatabase) ListPendingLogUploads() ([]PendingLogUpload, error) {
 	}
 	defer rows.Close()
 
-	var recs []PendingLogUpload
+	var recs []model.PendingLogUpload
 	for rows.Next() {
-		var r PendingLogUpload
+		var r model.PendingLogUpload
 		if err := rows.Scan(&r.ExternalExecutionID, &r.UploadURL, &r.LogPath, &r.InsertedAt); err != nil {
 			return nil, err
 		}
 		recs = append(recs, r)
 	}
 	return recs, rows.Err()
-}
-
-func buildOrderClause(sortField, sortDirection string) string {
-	if sortField == "" {
-		return "created_at DESC"
-	}
-
-	direction := "DESC"
-	if sortDirection == "asc" {
-		direction = "ASC"
-	}
-
-	switch sortField {
-	case "duration":
-		return fmt.Sprintf("(COALESCE(julianday(end_at) - julianday(start_at), 0)) %s", direction)
-	case "start_at":
-		return fmt.Sprintf("COALESCE(start_at, created_at) %s, created_at %s", direction, direction)
-	case "task_name", "status", "exit_code", "created_at":
-		return fmt.Sprintf("%s %s", sortField, direction)
-	default:
-		return "created_at DESC"
-	}
 }

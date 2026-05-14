@@ -23,6 +23,8 @@ import (
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/server/auth"
+	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -33,7 +35,7 @@ func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.
 	repo := new(testutil.MockRunRepository)
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := runtime.NewTaskManager(exec, eb)
+	jm := runtime.NewTaskManager(exec, eb, time.Now)
 
 	task := &model.Task{
 		Name:          "task1",
@@ -113,7 +115,7 @@ func TestGetAllRuns(t *testing.T) {
 	runs := []model.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
-	repo.On("QueryRuns", "", 50, 0, "", "", "", "").Return(runs, nil)
+	repo.On("QueryRuns", "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
 	repo.On("CountRunsFiltered", "", "", "").Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/runs", nil)
@@ -136,7 +138,7 @@ func TestGetTaskRuns(t *testing.T) {
 	runs := []model.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
-	repo.On("QueryRuns", "task1", 50, 0, "", "", "", "").Return(runs, nil)
+	repo.On("QueryRuns", "task1", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
 	repo.On("CountRunsFiltered", "", "task1", "").Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs", nil)
@@ -246,7 +248,7 @@ func TestGetRunNotFound(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
 	id := ulid.Make().String()
-	repo.On("GetRun", id).Return(nil, assert.AnError)
+	repo.On("GetRun", id).Return(nil, storage.ErrNotFound)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id, nil)
 	w := httptest.NewRecorder()
@@ -274,7 +276,7 @@ func TestAuth(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
-	jm := runtime.NewTaskManager(exec, eb)
+	jm := runtime.NewTaskManager(exec, eb, time.Now)
 	tasks := map[string]*model.Task{}
 
 	// Create scheduler (nil is fine for this test)
@@ -478,8 +480,8 @@ func TestGetLogPage_NegativeFrom_Tail(t *testing.T) {
 func addAuth(req *http.Request, s *Server) {
 	_, ts, _ := s.auth.JWTAuth().Encode(map[string]any{
 		"exp": time.Now().Add(time.Hour).Unix(),
-		"iss": JWTIssuer,
-		"aud": JWTAudience,
+		"iss": auth.JWTIssuer,
+		"aud": auth.JWTAudience,
 	})
 	req.Header.Set("Authorization", "Bearer "+ts)
 }

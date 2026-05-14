@@ -17,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/version"
 	"log/slog"
 )
@@ -123,7 +124,7 @@ func runDaemon(mode daemonMode) error {
 		return err
 	}
 
-	startupInfo := tui.StartupInfo{
+	startupInfo := uikit.StartupInfo{
 		Version:    version.Version,
 		ConfigPath: flags.CfgFile,
 		DataDir:    flags.DataDir,

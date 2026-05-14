@@ -14,7 +14,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/cloud/logarchive"
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // archiveTimeout caps a single terminal archive operation. Daemon log files
@@ -35,8 +35,8 @@ type LogUploaderResult struct {
 // `pending_log_uploads` SQLite table written at dispatch time and removed
 // only on successful upload.
 type LogUploader struct {
-	repo         storage.PendingLogUploadRepository
-	runRepo      storage.RunRepository
+	repo         PendingLogUploadRepository
+	runRepo      RunRepository
 	logDir       string
 	httpClient   *http.Client
 	now          func() time.Time
@@ -52,14 +52,19 @@ type uploadEntry struct {
 }
 
 // NewLogUploader returns a coordinator. logDir must match the executor's
-// LogDir so file paths can be resolved on terminal.
-func NewLogUploader(repo storage.PendingLogUploadRepository, runRepo storage.RunRepository, logDir string) *LogUploader {
+// LogDir so file paths can be resolved on terminal. now is the wall-clock
+// source for persisted dispatch records; production passes time.Now, tests
+// inject a fixed clock to keep persistence fixtures deterministic.
+func NewLogUploader(repo PendingLogUploadRepository, runRepo RunRepository, logDir string, now func() time.Time) *LogUploader {
+	if now == nil {
+		now = time.Now
+	}
 	return &LogUploader{
 		repo:         repo,
 		runRepo:      runRepo,
 		logDir:       logDir,
 		httpClient:   http.DefaultClient,
-		now:          func() time.Time { return time.Now().UTC() },
+		now:          func() time.Time { return now().UTC() },
 		deleteOnDone: true,
 		pending:      make(map[string]uploadEntry),
 	}
@@ -75,7 +80,7 @@ func (u *LogUploader) RegisterDispatch(executionID, uploadURL, logPath string) e
 	if uploadURL == "" {
 		return nil
 	}
-	rec := storage.PendingLogUpload{
+	rec := model.PendingLogUpload{
 		ExternalExecutionID: executionID,
 		UploadURL:           uploadURL,
 		LogPath:             logPath,
@@ -154,7 +159,7 @@ func (u *LogUploader) RecoverOrphans(ctx context.Context, emit func(executionID 
 
 		run, runErr := u.runRepo.GetRunByExternalExecutionID(rec.ExternalExecutionID)
 		if runErr != nil {
-			if errors.Is(runErr, storage.ErrNotFound) {
+			if errors.Is(runErr, ErrNotFound) {
 				slog.Info("dropping orphan log upload row: run not found", "executionId", rec.ExternalExecutionID)
 				u.forget(rec.ExternalExecutionID)
 				continue

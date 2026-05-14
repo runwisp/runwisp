@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package uikit
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
@@ -90,176 +90,176 @@ const (
 	QuitShutdownDaemon
 )
 
-// quitMsg is sent when the user confirms a quit action.
-type quitMsg struct {
+// QuitMsg is sent when the user confirms a quit action.
+type QuitMsg struct {
 	Action QuitAction
 }
 
-// flashExpiredMsg signals that the flash message should be cleared.
-type flashExpiredMsg struct{}
+// FlashExpiredMsg signals that the flash message should be cleared.
+type FlashExpiredMsg struct{}
 
-// sseConnectedMsg is sent when the SSE stream is established.
-type sseConnectedMsg struct {
-	ch <-chan apiclient.RunStreamEvent
+// SSEConnectedMsg is sent when the SSE stream is established.
+type SSEConnectedMsg struct {
+	Ch <-chan apiclient.RunStreamEvent
 }
 
-// sseEventMsg wraps a parsed SSE run event.
-type sseEventMsg struct {
+// SSEEventMsg wraps a parsed SSE run event.
+type SSEEventMsg struct {
 	Event apiclient.RunStreamEvent
 }
 
-// sseDisconnectedMsg signals the SSE stream dropped.
-type sseDisconnectedMsg struct{}
+// SSEDisconnectedMsg signals the SSE stream dropped.
+type SSEDisconnectedMsg struct{}
 
-// execWindowFetchedMsg delivers results from an execution window fetch.
-type execWindowFetchedMsg struct {
+// ExecWindowFetchedMsg delivers results from an execution window fetch.
+type ExecWindowFetchedMsg struct {
 	Items  []ExecListItem
 	Offset int
 	Total  int
 }
 
-// logOlderLoadedMsg delivers the result of a scroll-up REST page fetch.
-type logOlderLoadedMsg struct {
+// LogOlderLoadedMsg delivers the result of a scroll-up REST page fetch.
+type LogOlderLoadedMsg struct {
 	RunID     string
 	Lines     []apiclient.LogLine
 	FirstLine int64
 	Total     int64
 }
 
-// logStreamConnectedMsg signals that the log SSE stream is connected.
-type logStreamConnectedMsg struct {
+// LogStreamConnectedMsg signals that the log SSE stream is connected.
+type LogStreamConnectedMsg struct {
 	RunID string
 	Ch    <-chan apiclient.LogStreamMsg
 }
 
-// logLineMsg delivers one absolute-numbered line from the SSE stream.
-type logLineMsg struct {
+// LogLineMsg delivers one absolute-numbered line from the SSE stream.
+type LogLineMsg struct {
 	RunID string
 	Line  apiclient.LogLine
 }
 
-// logRotatedMsg signals server-side rotation; lines below FirstAvailable
+// LogRotatedMsg signals server-side rotation; lines below FirstAvailable
 // have been dropped on disk.
-type logRotatedMsg struct {
+type LogRotatedMsg struct {
 	RunID          string
 	FirstAvailable int64
 }
 
-// logDroppedMsg signals streamer-side backpressure; Count line events were
+// LogDroppedMsg signals streamer-side backpressure; Count line events were
 // discarded after line After.
-type logDroppedMsg struct {
+type LogDroppedMsg struct {
 	RunID string
 	After int64
 	Count int64
 }
 
-// logDoneMsg signals log streaming ended.
-type logDoneMsg struct {
+// LogDoneMsg signals log streaming ended.
+type LogDoneMsg struct {
 	RunID     string
 	FinalLine int64
 }
 
-// reconnectLogMsg is a delayed signal to retry log streaming after a disconnect.
-type reconnectLogMsg struct {
+// ReconnectLogMsg is a delayed signal to retry log streaming after a disconnect.
+type ReconnectLogMsg struct {
 	RunID string
 }
 
-// systemStatsMsg delivers live system resource metrics.
-type systemStatsMsg struct {
+// SystemStatsMsg delivers live system resource metrics.
+type SystemStatsMsg struct {
 	Stats *model.SystemStats
 	Err   error
 }
 
-// metricsHistoryMsg delivers historical metrics for sparkline pre-fill.
-type metricsHistoryMsg struct {
+// MetricsHistoryMsg delivers historical metrics for sparkline pre-fill.
+type MetricsHistoryMsg struct {
 	Samples []model.MetricsSample
 	Err     error
 }
 
-// runSummaryMsg delivers aggregate run statistics.
-type runSummaryMsg struct {
+// RunSummaryMsg delivers aggregate run statistics.
+type RunSummaryMsg struct {
 	Summary *apiclient.RunSummary
 	Err     error
 }
 
-// daemonLogConnectedMsg signals that the daemon log SSE stream is established.
-type daemonLogConnectedMsg struct {
-	ch <-chan string
+// DaemonLogConnectedMsg signals that the daemon log SSE stream is established.
+type DaemonLogConnectedMsg struct {
+	Ch <-chan string
 }
 
-// daemonLogLineMsg delivers a single daemon log line from the SSE stream.
-type daemonLogLineMsg struct {
+// DaemonLogLineMsg delivers a single daemon log line from the SSE stream.
+type DaemonLogLineMsg struct {
 	Line string
 }
 
-// daemonLogDisconnectedMsg signals the daemon log stream dropped.
-type daemonLogDisconnectedMsg struct{}
+// DaemonLogDisconnectedMsg signals the daemon log stream dropped.
+type DaemonLogDisconnectedMsg struct{}
 
-// openBrowserMsg is a command result indicating the browser was opened (or failed).
-type openBrowserMsg struct {
+// OpenBrowserMsg is a command result indicating the browser was opened (or failed).
+type OpenBrowserMsg struct {
 	URL           string // launch URL (empty only if ticket generation failed)
 	BrowserOpened bool   // true when openBrowser was called and returned nil
 	Err           error  // ticket generation error or browser open error
 }
 
-// shutdownDoneMsg signals that the daemon shutdown completed; triggers tea.Quit.
-type shutdownDoneMsg struct {
+// ShutdownDoneMsg signals that the daemon shutdown completed; triggers tea.Quit.
+type ShutdownDoneMsg struct {
 	Err error
 }
 
-// spinnerTickMsg wraps the bubbles spinner tick for the confirm dialog.
-type spinnerTickMsg struct {
+// SpinnerTickMsg wraps the bubbles spinner tick for the confirm dialog.
+type SpinnerTickMsg struct {
 	Inner tea.Msg
 }
 
-// notificationStreamConnectedMsg signals the notifications SSE stream is established.
-type notificationStreamConnectedMsg struct {
-	ch <-chan apiclient.NotificationStreamEvent
+// NotificationStreamConnectedMsg signals the notifications SSE stream is established.
+type NotificationStreamConnectedMsg struct {
+	Ch <-chan apiclient.NotificationStreamEvent
 }
 
-// notificationEventMsg wraps a parsed notification SSE event.
-type notificationEventMsg struct {
+// NotificationEventMsg wraps a parsed notification SSE event.
+type NotificationEventMsg struct {
 	Event apiclient.NotificationStreamEvent
 }
 
-// notificationStreamDisconnectedMsg signals the notifications stream dropped.
-type notificationStreamDisconnectedMsg struct{}
+// NotificationStreamDisconnectedMsg signals the notifications stream dropped.
+type NotificationStreamDisconnectedMsg struct{}
 
-// openRunMsg requests the model open an exec view for the given run. Used by
+// OpenRunMsg requests the model open an exec view for the given run. Used by
 // asynchronous run lookups (e.g., notification → exec view) where the run is
 // not in the local execWindow cache yet.
-type openRunMsg struct {
+type OpenRunMsg struct {
 	Run *model.Run
 }
 
-// notificationUnreadCountMsg delivers the snapshot unread count fetched at
+// NotificationUnreadCountMsg delivers the snapshot unread count fetched at
 // startup. It seeds the panel's badge before the first list page resolves so
 // the operator sees the right number even when older unread items live
 // beyond the loaded slice.
-type notificationUnreadCountMsg struct {
+type NotificationUnreadCountMsg struct {
 	Count int64
 	Err   error
 }
 
-// notificationsLoadedMsg delivers the initial page of notifications fetched
+// NotificationsLoadedMsg delivers the initial page of notifications fetched
 // at startup so the expanded panel is populated immediately, instead of
 // waiting for a fresh SSE event.
-type notificationsLoadedMsg struct {
+type NotificationsLoadedMsg struct {
 	Items []apiclient.Notification
 	Err   error
 }
 
-// notificationReadStateMsg is the result of a per-notification mark-read or
+// NotificationReadStateMsg is the result of a per-notification mark-read or
 // mark-unread action. The TUI applies an optimistic local update before
 // firing the API call, so this message only logs failures (and resyncs from
 // the server when one occurs).
-type notificationReadStateMsg struct {
+type NotificationReadStateMsg struct {
 	ID   string
 	Read bool
 	Err  error
 }
 
-// notificationBoundaryFlashClearedMsg nudges the panel to repaint after a
+// NotificationBoundaryFlashClearedMsg nudges the panel to repaint after a
 // boundary-flash duration elapses so the cursor row returns to its normal
 // background.
-type notificationBoundaryFlashClearedMsg struct{}
+type NotificationBoundaryFlashClearedMsg struct{}

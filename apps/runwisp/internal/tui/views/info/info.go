@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package tui
+package info
 
 import (
 	"fmt"
@@ -14,18 +14,18 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 const (
 	sparklineWidth    = 24
 	sparklineHeight   = 2
 	maxHistorySamples = 30
-	infoFieldWidth    = 14
 )
 
 // InfoView displays live system information, metrics, and configuration.
 type InfoView struct {
-	info   StartupInfo
+	info   uikit.StartupInfo
 	width  int
 	height int
 	scroll int
@@ -42,9 +42,9 @@ type InfoView struct {
 	contentHeight int
 }
 
-func NewInfoView(info StartupInfo) InfoView {
-	cpuStyle := lipgloss.NewStyle().Background(colorChartBg).Foreground(colorRunning)
-	memStyle := lipgloss.NewStyle().Background(colorChartBg).Foreground(colorSecondary)
+func NewInfoView(info uikit.StartupInfo) InfoView {
+	cpuStyle := lipgloss.NewStyle().Background(uikit.ColorChartBg).Foreground(uikit.ColorRunning)
+	memStyle := lipgloss.NewStyle().Background(uikit.ColorChartBg).Foreground(uikit.ColorSecondary)
 
 	cpuSL := sparkline.New(sparklineWidth, sparklineHeight,
 		sparkline.WithMaxValue(100),
@@ -172,22 +172,17 @@ func (v *InfoView) View() string {
 		lines = append(lines, v.renderWarningsSection(w)...)
 	}
 
-	lines = append(lines, padLine("", w, colorBg))
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 	v.contentHeight = len(lines)
 
-	// Apply scrolling.
 	if v.scroll > 0 && v.scroll < len(lines) {
 		lines = lines[v.scroll:]
 	}
-
-	// Truncate to viewport.
 	if len(lines) > v.height {
 		lines = lines[:v.height]
 	}
-
-	// Pad to fill remaining height.
 	for len(lines) < v.height {
-		lines = append(lines, padLine("", w, colorBg))
+		lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 	}
 
 	return strings.Join(lines, "\n")
@@ -201,59 +196,57 @@ func (v *InfoView) maxScroll() int {
 	return max
 }
 
-// ── Render Sections ──
-
 func (v *InfoView) renderHealthSection(w int) []string {
 	var lines []string
 
-	lines = append(lines, padLine("", w, colorBgLight))
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBgLight))
 
 	title := lipgloss.NewStyle().
-		Background(colorBgLight).
-		Foreground(colorTextBright).
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorTextBright).
 		Bold(true).
 		Render("  System")
 	sub := ""
 	if v.stats != nil {
 		sub = lipgloss.NewStyle().
-			Background(colorBgLight).
-			Foreground(colorTextMuted).
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorTextMuted).
 			Render("  ·  up " + v.stats.Uptime)
 	}
-	lines = append(lines, padLine(title+sub, w, colorBgLight))
+	lines = append(lines, uikit.PadLine(title+sub, w, uikit.ColorBgLight))
 
 	hostLine := lipgloss.NewStyle().
-		Background(colorBgLight).
-		Foreground(colorTextMuted).
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorTextMuted).
 		Render("  " + runtime.GOOS + "/" + runtime.GOARCH)
 	if v.stats != nil && v.stats.Host != "" {
 		hostLine += lipgloss.NewStyle().
-			Background(colorBgLight).
-			Foreground(colorTextMuted).
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorTextMuted).
 			Render("  ·  " + v.stats.Host)
 	}
-	lines = append(lines, padLine(hostLine, w, colorBgLight))
-	lines = append(lines, padLine("", w, colorBgLight))
+	lines = append(lines, uikit.PadLine(hostLine, w, uikit.ColorBgLight))
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBgLight))
 
-	lines = append(lines, padLine("", w, colorBg))
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 	if v.stats != nil {
 		cpuLines := v.renderSparklineRow(w,
 			"CPU", fmt.Sprintf("%.1f%%", v.stats.CPUUsage),
 			fmt.Sprintf("%d cores", v.stats.CPUCores),
-			v.cpuSparkline, colorRunning)
+			v.cpuSparkline, uikit.ColorRunning)
 		lines = append(lines, cpuLines...)
 
-		lines = append(lines, padLine("", w, colorBg))
+		lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 		memLines := v.renderSparklineRow(w,
 			"MEM", fmt.Sprintf("%.1f%%", v.stats.MemUsage),
 			formatBytes(v.stats.MemUsed)+"/"+formatBytes(v.stats.MemTotal),
-			v.memSparkline, colorSecondary)
+			v.memSparkline, uikit.ColorSecondary)
 		lines = append(lines, memLines...)
 	} else {
-		waiting := lipgloss.NewStyle().Background(colorBg).Foreground(colorTextMuted).Render("  Loading metrics...")
-		lines = append(lines, padLine(waiting, w, colorBg))
+		waiting := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render("  Loading metrics...")
+		lines = append(lines, uikit.PadLine(waiting, w, uikit.ColorBg))
 	}
 
 	return lines
@@ -262,12 +255,12 @@ func (v *InfoView) renderHealthSection(w int) []string {
 func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, sl sparkline.Model, color lipgloss.Color) []string {
 	var lines []string
 
-	bgStyle := lipgloss.NewStyle().Background(colorBg)
-	chartBg := lipgloss.NewStyle().Background(colorChartBg)
+	bgStyle := lipgloss.NewStyle().Background(uikit.ColorBg)
+	chartBg := lipgloss.NewStyle().Background(uikit.ColorChartBg)
 
-	labelStr := lipgloss.NewStyle().Background(colorBg).Foreground(color).Bold(true).Render("  " + label + " ")
-	pctStr := infoStatValueStyle.Render(pct)
-	detailStr := infoStatLabelStyle.Render("  " + detail)
+	labelStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(color).Bold(true).Render("  " + label + " ")
+	pctStr := uikit.InfoStatValueStyle.Render(pct)
+	detailStr := uikit.InfoStatLabelStyle.Render("  " + detail)
 
 	sparkView := sl.View()
 	// Re-style each sparkline cell row to force our chart background on empty cells.
@@ -289,17 +282,17 @@ func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, sl spark
 		for i, sline := range sparkLines {
 			if i == 0 {
 				line := headerLeft + gapStr + sline
-				lines = append(lines, padLine(line, w, colorBg))
+				lines = append(lines, uikit.PadLine(line, w, uikit.ColorBg))
 			} else {
 				indent := bgStyle.Render(strings.Repeat(" ", headerWidth+gap))
 				line := indent + sline
-				lines = append(lines, padLine(line, w, colorBg))
+				lines = append(lines, uikit.PadLine(line, w, uikit.ColorBg))
 			}
 		}
 	} else {
-		lines = append(lines, padLine(headerLeft, w, colorBg))
+		lines = append(lines, uikit.PadLine(headerLeft, w, uikit.ColorBg))
 		for _, sline := range sparkLines {
-			lines = append(lines, padLine(bgStyle.Render("  ")+sline, w, colorBg))
+			lines = append(lines, uikit.PadLine(bgStyle.Render("  ")+sline, w, uikit.ColorBg))
 		}
 	}
 
@@ -309,38 +302,38 @@ func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, sl spark
 func (v *InfoView) renderActivitySection(w int) []string {
 	var lines []string
 	lines = append(lines, v.sectionDivider(w)...)
-	lines = append(lines, padLine(infoSectionStyle.Render("Activity"), w, colorBg))
-	lines = append(lines, padLine("", w, colorBg))
+	lines = append(lines, uikit.PadLine(uikit.InfoSectionStyle.Render("Activity"), w, uikit.ColorBg))
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 	s := v.runSummary
 	parts := []string{
-		infoStatValueStyle.Render(fmt.Sprintf("%d", s.Total)) + infoStatLabelStyle.Render(" runs"),
+		uikit.InfoStatValueStyle.Render(fmt.Sprintf("%d", s.Total)) + uikit.InfoStatLabelStyle.Render(" runs"),
 	}
 	if s.Total > 0 {
-		successStr := lipgloss.NewStyle().Background(colorBg).Foreground(colorSuccess).Bold(true).Render(fmt.Sprintf("%d", s.Success))
-		failedStr := lipgloss.NewStyle().Background(colorBg).Foreground(colorError).Bold(true).Render(fmt.Sprintf("%d", s.Failed))
-		parts = append(parts, successStr+infoStatLabelStyle.Render(" success"))
-		parts = append(parts, failedStr+infoStatLabelStyle.Render(" failed"))
+		successStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorSuccess).Bold(true).Render(fmt.Sprintf("%d", s.Success))
+		failedStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorError).Bold(true).Render(fmt.Sprintf("%d", s.Failed))
+		parts = append(parts, successStr+uikit.InfoStatLabelStyle.Render(" success"))
+		parts = append(parts, failedStr+uikit.InfoStatLabelStyle.Render(" failed"))
 
 		rate := float64(s.Success) / float64(s.Total) * 100
-		rateColor := colorSuccess
+		rateColor := uikit.ColorSuccess
 		if rate < 90 {
-			rateColor = colorWarning
+			rateColor = uikit.ColorWarning
 		}
 		if rate < 70 {
-			rateColor = colorError
+			rateColor = uikit.ColorError
 		}
-		rateStr := lipgloss.NewStyle().Background(colorBg).Foreground(rateColor).Render(fmt.Sprintf("%.1f%%", rate))
+		rateStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(rateColor).Render(fmt.Sprintf("%.1f%%", rate))
 		parts = append(parts, rateStr)
 	}
-	sep := infoStatLabelStyle.Render("  ·  ")
+	sep := uikit.InfoStatLabelStyle.Render("  ·  ")
 	line := bgSpace(2) + strings.Join(parts, sep)
-	lines = append(lines, padLine(line, w, colorBg))
+	lines = append(lines, uikit.PadLine(line, w, uikit.ColorBg))
 
 	if s.LastFailure != nil {
-		failLine := bgSpace(2) + infoStatLabelStyle.Render("Last failure  ") +
-			lipgloss.NewStyle().Background(colorBg).Foreground(colorTextMuted).Render(*s.LastFailure)
-		lines = append(lines, padLine(failLine, w, colorBg))
+		failLine := bgSpace(2) + uikit.InfoStatLabelStyle.Render("Last failure  ") +
+			lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(*s.LastFailure)
+		lines = append(lines, uikit.PadLine(failLine, w, uikit.ColorBg))
 	}
 
 	return lines
@@ -349,8 +342,8 @@ func (v *InfoView) renderActivitySection(w int) []string {
 func (v *InfoView) renderQuickInfoSection(w int) []string {
 	var lines []string
 	lines = append(lines, v.sectionDivider(w)...)
-	lines = append(lines, padLine(infoSectionStyle.Render("Info"), w, colorBg))
-	lines = append(lines, padLine("", w, colorBg))
+	lines = append(lines, uikit.PadLine(uikit.InfoSectionStyle.Render("Info"), w, uikit.ColorBg))
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 	type kv struct{ label, value string }
 	fields := []kv{
@@ -368,28 +361,28 @@ func (v *InfoView) renderQuickInfoSection(w int) []string {
 		if f.value == "" {
 			continue
 		}
-		label := infoLabelStyle.Render(f.label)
-		value := infoValueStyle.Render(f.value)
-		lines = append(lines, padLine(bgSpace(2)+label+value, w, colorBg))
+		label := uikit.InfoLabelStyle.Render(f.label)
+		value := uikit.InfoValueStyle.Render(f.value)
+		lines = append(lines, uikit.PadLine(bgSpace(2)+label+value, w, uikit.ColorBg))
 	}
 
 	if len(v.info.Capabilities) > 0 {
-		lines = append(lines, padLine("", w, colorBg))
+		lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 		var caps []string
 		for _, cap := range v.info.Capabilities {
 			if cap.Available {
-				caps = append(caps, infoCapsAvailableStyle.Render("✓ "+cap.Name))
+				caps = append(caps, uikit.InfoCapsAvailableStyle.Render("✓ "+cap.Name))
 			} else {
-				caps = append(caps, infoCapsUnavailableStyle.Render("✗ "+cap.Name))
+				caps = append(caps, uikit.InfoCapsUnavailableStyle.Render("✗ "+cap.Name))
 			}
 		}
 		capLine := bgSpace(2) + strings.Join(caps, bgSpace(2))
 		if lipgloss.Width(capLine) > w-2 {
 			for _, c := range caps {
-				lines = append(lines, padLine(bgSpace(2)+c, w, colorBg))
+				lines = append(lines, uikit.PadLine(bgSpace(2)+c, w, uikit.ColorBg))
 			}
 		} else {
-			lines = append(lines, padLine(capLine, w, colorBg))
+			lines = append(lines, uikit.PadLine(capLine, w, uikit.ColorBg))
 		}
 	}
 
@@ -399,8 +392,8 @@ func (v *InfoView) renderQuickInfoSection(w int) []string {
 func (v *InfoView) renderConfigSection(w int) []string {
 	var lines []string
 	lines = append(lines, v.sectionDivider(w)...)
-	lines = append(lines, padLine(infoSectionStyle.Render("Configuration"), w, colorBg))
-	lines = append(lines, padLine("", w, colorBg))
+	lines = append(lines, uikit.PadLine(uikit.InfoSectionStyle.Render("Configuration"), w, uikit.ColorBg))
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 	type kv struct{ label, value string }
 	fields := []kv{
@@ -415,9 +408,9 @@ func (v *InfoView) renderConfigSection(w int) []string {
 		if f.value == "" {
 			continue
 		}
-		label := infoLabelStyle.Render(f.label)
-		value := infoValueStyle.Render(f.value)
-		lines = append(lines, padLine(bgSpace(2)+label+value, w, colorBg))
+		label := uikit.InfoLabelStyle.Render(f.label)
+		value := uikit.InfoValueStyle.Render(f.value)
+		lines = append(lines, uikit.PadLine(bgSpace(2)+label+value, w, uikit.ColorBg))
 	}
 
 	return lines
@@ -426,8 +419,8 @@ func (v *InfoView) renderConfigSection(w int) []string {
 func (v *InfoView) renderTasksSection(w int) []string {
 	var lines []string
 	lines = append(lines, v.sectionDivider(w)...)
-	lines = append(lines, padLine(infoSectionStyle.Render(fmt.Sprintf("Tasks (%d)", len(v.info.Tasks))), w, colorBg))
-	lines = append(lines, padLine("", w, colorBg))
+	lines = append(lines, uikit.PadLine(uikit.InfoSectionStyle.Render(fmt.Sprintf("Tasks (%d)", len(v.info.Tasks))), w, uikit.ColorBg))
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 	for _, task := range v.info.Tasks {
 		var sched string
@@ -439,9 +432,9 @@ func (v *InfoView) renderTasksSection(w int) []string {
 		default:
 			sched = "manual"
 		}
-		name := lipgloss.NewStyle().Background(colorBg).Foreground(colorTextBright).Bold(true).Render(task.Name)
-		schedStyle := lipgloss.NewStyle().Background(colorBg).Foreground(colorTextMuted).Render(sched)
-		lines = append(lines, padLine(bgSpace(2)+name+bgSpace(2)+schedStyle, w, colorBg))
+		name := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextBright).Bold(true).Render(task.Name)
+		schedStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(sched)
+		lines = append(lines, uikit.PadLine(bgSpace(2)+name+bgSpace(2)+schedStyle, w, uikit.ColorBg))
 	}
 
 	return lines
@@ -450,30 +443,28 @@ func (v *InfoView) renderTasksSection(w int) []string {
 func (v *InfoView) renderWarningsSection(w int) []string {
 	var lines []string
 	lines = append(lines, v.sectionDivider(w)...)
-	lines = append(lines, padLine(infoSectionStyle.Render("Warnings"), w, colorBg))
-	lines = append(lines, padLine("", w, colorBg))
+	lines = append(lines, uikit.PadLine(uikit.InfoSectionStyle.Render("Warnings"), w, uikit.ColorBg))
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 	for _, warn := range v.info.ScheduleWarnings {
-		warnStyle := lipgloss.NewStyle().Background(colorBg).Foreground(colorWarning).Render("⚠ " + warn)
-		lines = append(lines, padLine(bgSpace(2)+warnStyle, w, colorBg))
+		warnStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorWarning).Render("⚠ " + warn)
+		lines = append(lines, uikit.PadLine(bgSpace(2)+warnStyle, w, uikit.ColorBg))
 	}
 
 	return lines
 }
 
-// ── Helpers ──
-
 func (v *InfoView) sectionDivider(w int) []string {
-	divider := infoDividerStyle.Render("  " + strings.Repeat("─", w-4))
+	divider := uikit.InfoDividerStyle.Render("  " + strings.Repeat("─", w-4))
 	return []string{
-		padLine("", w, colorBg),
-		padLine(divider, w, colorBg),
-		padLine("", w, colorBg),
+		uikit.PadLine("", w, uikit.ColorBg),
+		uikit.PadLine(divider, w, uikit.ColorBg),
+		uikit.PadLine("", w, uikit.ColorBg),
 	}
 }
 
 func bgSpace(n int) string {
-	return lipgloss.NewStyle().Background(colorBg).Render(strings.Repeat(" ", n))
+	return lipgloss.NewStyle().Background(uikit.ColorBg).Render(strings.Repeat(" ", n))
 }
 
 func appendCapped(s []float64, val float64, max int) []float64 {

@@ -12,12 +12,10 @@ export function getApiUrl(): string {
     const rawUrl: unknown = import.meta.env.VITE_API_URL;
     const url = typeof rawUrl === "string" ? rawUrl : DEFAULT_API_URL;
 
-    // If empty string - use relative URL (same origin)
     if (url === "") {
         return "";
     }
 
-    // If URL looks absolute (starts with http://, https:// or //), validate it
     if (/^(https?:)?\/\//.test(url)) {
         try {
             new URL(url);
@@ -28,6 +26,5 @@ export function getApiUrl(): string {
         }
     }
 
-    // Otherwise assume it's a relative path like "/api" or "api"
     return url;
 }

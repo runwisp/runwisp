@@ -165,7 +165,9 @@ export function createLogStreamer(taskName: string) {
                 logger.warn(
                     "Log stream error for " + taskName + "/" + runId + ":",
                     (info.message ?? "connection lost") +
-                        (info.status !== undefined ? " (HTTP " + String(info.status) + ")" : ""),
+                        (typeof info.status !== "undefined"
+                            ? " (HTTP " + String(info.status) + ")"
+                            : ""),
                 );
             },
             onEvent: (eventType, data) => {

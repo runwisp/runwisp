@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 const doubleClickThreshold = 400 * time.Millisecond
@@ -24,7 +25,7 @@ const (
 )
 
 func (m *Model) focusSidebar() tea.Cmd {
-	m.panelFocus = PanelSidebar
+	m.panelFocus = uikit.PanelSidebar
 	m.sidebar.SetFocused(true)
 	m.execList.SetFocused(false)
 	m.homeCursor = -1
@@ -35,10 +36,10 @@ func (m *Model) focusSidebar() tea.Cmd {
 }
 
 func (m *Model) focusMainPanel() tea.Cmd {
-	m.panelFocus = PanelMain
+	m.panelFocus = uikit.PanelMain
 	m.sidebar.SetFocused(false)
 	m.homeCursor = -1
-	m.execList.SetFocused(m.execView == nil && m.sidebar.ActivePage() == PageHome)
+	m.execList.SetFocused(m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome)
 	if m.execView != nil {
 		m.execView.SetFocused(true)
 	}
@@ -46,7 +47,7 @@ func (m *Model) focusMainPanel() tea.Cmd {
 }
 
 func (m *Model) focusHomeField(index int) tea.Cmd {
-	m.panelFocus = PanelMain
+	m.panelFocus = uikit.PanelMain
 	m.sidebar.SetFocused(false)
 	m.homeCursor = index
 	m.execList.SetFocused(false)
@@ -56,7 +57,7 @@ func (m *Model) focusHomeField(index int) tea.Cmd {
 	return m.dialogs.SyncMouseState()
 }
 
-func (m *Model) applySidebarSelectionChange(prevPage Page, prevTask string) tea.Cmd {
+func (m *Model) applySidebarSelectionChange(prevPage uikit.Page, prevTask string) tea.Cmd {
 	if m.sidebar.ActivePage() == prevPage && m.sidebar.ActiveTask() == prevTask {
 		return nil
 	}
@@ -73,7 +74,7 @@ func (m *Model) applySidebarSelectionChange(prevPage Page, prevTask string) tea.
 	if cmd := m.autoOpenService(m.sidebar.ActiveTask()); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
-	if m.sidebar.ActivePage() == PageInfo && prevPage != PageInfo {
+	if m.sidebar.ActivePage() == uikit.PageInfo && prevPage != uikit.PageInfo {
 		cmds = append(cmds, m.streams.FetchMetricsHistory(), m.streams.FetchSystemStats(), m.streams.FetchRunSummary())
 	}
 
@@ -85,7 +86,7 @@ func (m *Model) mainHeaderHeight() int {
 	if m.sidebar.ActiveTask() != "" {
 		base = m.layout.taskH
 	}
-	if m.sidebar.ActivePage() == PageHome {
+	if m.sidebar.ActivePage() == uikit.PageHome {
 		base += m.notifications.PanelHeight()
 	}
 	return base
@@ -103,7 +104,7 @@ func (m *Model) currentRun() *model.Run {
 	if m.execView == nil {
 		return nil
 	}
-	return m.execView.run
+	return m.execView.Run
 }
 
 func (m *Model) showConfirmDialog(title, message string, onConfirm tea.Cmd) tea.Cmd {
@@ -130,7 +131,7 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 			fmt.Sprintf("Trigger a new run of\n'%s'?", taskName),
 			func() tea.Msg {
 				run, err := client.TriggerRun(taskName)
-				return TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
+				return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
 			},
 		)
 	case confirmActionRestartService:
@@ -151,7 +152,7 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 			prompt,
 			func() tea.Msg {
 				err := client.RestartService(taskName)
-				return RestartServiceMsg{TaskName: taskName, Err: err}
+				return uikit.RestartServiceMsg{TaskName: taskName, Err: err}
 			},
 		)
 	case confirmActionStopService:
@@ -165,7 +166,7 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 			fmt.Sprintf("Stop service\n'%s'?\nThe daemon will not restart it until you click Restart\nor the daemon itself restarts.", taskName),
 			func() tea.Msg {
 				err := client.StopService(taskName)
-				return StopServiceMsg{TaskName: taskName, Err: err}
+				return uikit.StopServiceMsg{TaskName: taskName, Err: err}
 			},
 		)
 	case confirmActionStop:
@@ -181,7 +182,7 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 			fmt.Sprintf("Stop the running execution of\n'%s'?", taskName),
 			func() tea.Msg {
 				err := client.StopRun(taskName, runID)
-				return StopRunMsg{RunID: runID, TaskName: taskName, Err: err}
+				return uikit.StopRunMsg{RunID: runID, TaskName: taskName, Err: err}
 			},
 		)
 	case confirmActionRetry:
@@ -196,7 +197,7 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 			fmt.Sprintf("Retry '%s'?", taskName),
 			func() tea.Msg {
 				newRun, err := client.TriggerRun(taskName)
-				return TriggerRunMsg{TaskName: taskName, Run: newRun, Err: err, Retry: true}
+				return uikit.TriggerRunMsg{TaskName: taskName, Run: newRun, Err: err, Retry: true}
 			},
 		)
 	default:

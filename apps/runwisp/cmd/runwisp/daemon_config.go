@@ -59,7 +59,6 @@ func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*da
 			return nil, err
 		}
 	}
-	// Standalone mode: cloudCfg stays zero-value (Enabled: false).
 
 	cfg, usingDemo, err := loadConfigFile(flags.CfgFile, cloudCfg.Enabled)
 	if err != nil {

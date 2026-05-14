@@ -1,7 +1,7 @@
 # RunWisp — Agent Directives
 
 **License**: Apache-2.0 · **Status**: Pre-1.0 (breaking changes permitted)
-**Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + Make, embedded SQLite (GORM), AsyncAPI-defined optional control-plane protocol.
+**Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + Make, embedded SQLite (`database/sql` + `modernc.org/sqlite`), AsyncAPI-defined optional control-plane protocol.
 
 ## 🎯 PRODUCT VISION (read this first — it outranks everything below)
 
@@ -51,7 +51,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 
 1. **Does it make a failure more visible?** → Yes = lean toward it.
 2. **Does it add a runtime dependency or a required network call?** → Yes = reject or make it strictly optional.
-3. **Does it add state that must survive restart?** → It goes through `internal/storage/` (GORM + SQLite), gets a ULID, and has a reconciliation path on boot.
+3. **Does it add state that must survive restart?** → It goes through `internal/storage/` (`database/sql` + `modernc.org/sqlite`), gets a ULID, and has a reconciliation path on boot.
 4. **Can a solo dev understand it by reading `runwisp.toml` + the web UI?** → If no, simplify or document.
 
 ## 🚨 TECHNICAL DEBT & HYGIENE (HIGHEST PRIORITY)
@@ -96,7 +96,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 
 ## 💾 DATA MODEL & I/O
 
-- **Embedded SQLite (GORM)** is the only persistent store. No external DB, no KV, no Redis. Migrations are forward-only; old daemons must tolerate reading rows written by slightly newer ones where feasible.
+- **Embedded SQLite** (`database/sql` + `modernc.org/sqlite`) is the only persistent store. No external DB, no KV, no Redis. Migrations are forward-only; old daemons must tolerate reading rows written by slightly newer ones where feasible.
 - **IDs**: Monotonic ULIDs exclusively. No auto-increment integers on user-visible entities, no UUIDv4.
 - **Logs**: per-task log files on disk under the data dir, indexed by `internal/logutil/`. SQLite stores run metadata, not log bodies. Rotation/overflow is governed by TOML (`log_max_size`, `log_on_full`).
 - **Clock & time**: use injected clock interfaces in `internal/runtime/`. Cron expressions respect the daemon's local TZ unless explicitly scoped (document any TZ change as user-facing).
@@ -133,8 +133,9 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
    - `make test` — `make test` across the workspace (per-package `go test` / `vitest`). Excludes Playwright; use `make test-e2e` after a real build for browser tests.
    - `make check` — Go vet/lint via `scripts/check-go.sh` plus TS/Svelte checks. Slow lint (svelte-check, eslint) is cached at root `.cache/*.stamp`; `make clean` or branch switches invalidate.
    - `make generate` — regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`. Run after editing `packages/asyncapi/asyncapi.yaml` *before* committing — downstream Go types must compile.
-   - **Before finalizing Go changes**: `make build && make test`.
-   - **Before finalizing TS/Svelte changes**: `make check && make test`.
+    - **Before finalizing Go changes**: `make build && make test`.
+    - **Before finalizing TS/Svelte changes**: `make check && make test`.
+    - **After finalizing changes (or before wrapping up a session)**: `make ci`. This runs generate → format → check → test → test-e2e, the full CI pipeline.
 2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, and the README config reference if user-visible.
 3. **AsyncAPI changes**: edit `packages/asyncapi/asyncapi.yaml` first, then `bun run generate`, then consume the regenerated types in `internal/generated/protocol/`. Never the other way round.
 4. **User-facing changes** require a `CHANGELOG.md` entry. The changelog is marketing-facing — tell users what they can do, not how it was implemented. Concise but informative.
