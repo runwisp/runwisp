@@ -66,11 +66,23 @@ function resetDir(dir) {
   ensureDir(dir);
 }
 
+const goFileHeader = `// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Code generated from packages/asyncapi/asyncapi.yaml; DO NOT EDIT.
+
+`;
+
 function postProcessGo(dir) {
   const files = readdirSync(dir).filter((f) => f.endsWith(".go"));
   for (const file of files) {
     const filePath = join(dir, file);
     let content = readFileSync(filePath, "utf-8");
+
+    // Prepend SPDX + DO NOT EDIT header (Modelina does not emit one).
+    if (!content.startsWith("// SPDX-FileCopyrightText")) {
+      content = goFileHeader + content;
+    }
 
     // Fix reserved keyword workaround from Modelina
     content = content.replace(/ReservedType/g, "Type");

@@ -462,6 +462,11 @@ export interface components {
             /** @description One captured daemon log line */
             line: string;
         };
+        /**
+         * @description Why a run ended. Set when status=ended.
+         * @enum {string}
+         */
+        EndReason: "success" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped";
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -727,11 +732,7 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             end_at?: string;
-            /**
-             * @description Why the run ended (set when status=ended)
-             * @enum {string}
-             */
-            end_reason?: "success" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped";
+            end_reason?: components["schemas"]["EndReason"];
             /** Format: int64 */
             exit_code: number;
             external_execution_id?: string;
