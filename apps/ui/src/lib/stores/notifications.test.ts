@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createNotificationStore, type Notification } from "./notifications.svelte";
+import type { SSEStream } from "$lib/adapters/browser";
 
 function makeNotification(overrides: Partial<Notification> = {}): Notification {
     const base: Notification = {
@@ -23,13 +24,40 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
     return { ...base, ...overrides };
 }
 
-// FakeEventSource extends the platform EventTarget so addEventListener +
-// dispatchEvent come for free. `fire(type, payload)` mimics the server pushing
-// a named SSE message; the store's onEvent handler receives it as a real
-// MessageEvent.
-class FakeEventSource extends EventTarget {
+// FakeEventSource is a typed SSEStream the EventManager treats as a real
+// stream. It composes an internal EventTarget for dispatch and exposes only
+// the surface EventManager touches (close, readyState, onopen, onerror,
+// addEventListener). `fire(type, payload)` mimics the server pushing a named
+// SSE message; the store's handler receives it as a real MessageEvent.
+class FakeEventSource implements SSEStream {
+    readyState = 1;
+    onopen: ((ev: Event) => unknown) | null = null;
+    onerror: ((ev: Event) => unknown) | null = null;
+    onmessage: ((ev: MessageEvent) => unknown) | null = null;
+
+    readonly #target = new EventTarget();
+
+    close(): void {
+        this.readyState = 2;
+    }
+
+    addEventListener(
+        type: string,
+        listener: (event: MessageEvent) => void,
+        options?: boolean | AddEventListenerOptions,
+    ): void {
+        this.#target.addEventListener(
+            type,
+            (event: Event) => {
+                if (event instanceof MessageEvent) listener(event);
+            },
+            options,
+        );
+    }
+
+    /** Push a server-style named SSE event to bound listeners. */
     fire(eventType: string, payload: unknown): void {
-        this.dispatchEvent(new MessageEvent(eventType, { data: JSON.stringify(payload) }));
+        this.#target.dispatchEvent(new MessageEvent(eventType, { data: JSON.stringify(payload) }));
     }
 }
 
@@ -83,10 +111,7 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
     const fakeES = new FakeEventSource();
     const store = createNotificationStore({
         fetch: fakeFetch,
-        // FakeEventSource extends EventTarget; the structural EventSource type
-        // requires extra read-only fields that don't matter for these tests.
-        // eslint-disable-next-line no-restricted-syntax
-        createEventSource: () => fakeES as unknown as EventSource,
+        createEventSource: () => fakeES,
         getApiUrl: () => "http://test",
     });
     return { store, es: fakeES, requests };

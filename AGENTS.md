@@ -1,7 +1,7 @@
 # RunWisp — Agent Directives
 
 **License**: Apache-2.0 · **Status**: Pre-1.0 (breaking changes permitted)
-**Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + Make, embedded SQLite (GORM), AsyncAPI-defined optional control-plane protocol.
+**Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + Make, embedded SQLite (`database/sql` + `modernc.org/sqlite`), AsyncAPI-defined optional control-plane protocol.
 
 ## 🎯 PRODUCT VISION (read this first — it outranks everything below)
 
@@ -51,7 +51,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 
 1. **Does it make a failure more visible?** → Yes = lean toward it.
 2. **Does it add a runtime dependency or a required network call?** → Yes = reject or make it strictly optional.
-3. **Does it add state that must survive restart?** → It goes through `internal/storage/` (GORM + SQLite), gets a ULID, and has a reconciliation path on boot.
+3. **Does it add state that must survive restart?** → It goes through `internal/storage/` (`database/sql` + `modernc.org/sqlite`), gets a ULID, and has a reconciliation path on boot.
 4. **Can a solo dev understand it by reading `runwisp.toml` + the web UI?** → If no, simplify or document.
 
 ## 🚨 TECHNICAL DEBT & HYGIENE (HIGHEST PRIORITY)
@@ -96,7 +96,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 
 ## 💾 DATA MODEL & I/O
 
-- **Embedded SQLite (GORM)** is the only persistent store. No external DB, no KV, no Redis. Migrations are forward-only; old daemons must tolerate reading rows written by slightly newer ones where feasible.
+- **Embedded SQLite** (`database/sql` + `modernc.org/sqlite`) is the only persistent store. No external DB, no KV, no Redis. Migrations are forward-only; old daemons must tolerate reading rows written by slightly newer ones where feasible.
 - **IDs**: Monotonic ULIDs exclusively. No auto-increment integers on user-visible entities, no UUIDv4.
 - **Logs**: per-task log files on disk under the data dir, indexed by `internal/logutil/`. SQLite stores run metadata, not log bodies. Rotation/overflow is governed by TOML (`log_max_size`, `log_on_full`).
 - **Clock & time**: use injected clock interfaces in `internal/runtime/`. Cron expressions respect the daemon's local TZ unless explicitly scoped (document any TZ change as user-facing).

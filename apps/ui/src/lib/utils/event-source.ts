@@ -7,7 +7,7 @@ export interface EventSourceErrorDetails {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
+    return typeof value === "object" && Boolean(value);
 }
 
 export function getEventSourceErrorDetails(event: Event): EventSourceErrorDetails {
@@ -26,13 +26,13 @@ export function getEventSourceErrorDetails(event: Event): EventSourceErrorDetail
         }
     }
 
-    if (message === undefined && event instanceof ErrorEvent && event.message) {
+    if (typeof message === "undefined" && event instanceof ErrorEvent && event.message) {
         message = event.message;
     }
 
     return {
-        ...(status !== undefined && { status }),
-        ...(message !== undefined && { message }),
+        ...(typeof status !== "undefined" && { status }),
+        ...(typeof message !== "undefined" && { message }),
     };
 }
 

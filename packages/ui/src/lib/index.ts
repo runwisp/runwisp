@@ -82,6 +82,8 @@ export { default as Tooltip } from "./components/Tooltip.svelte";
 export { default as CodeBlock } from "./components/CodeBlock.svelte";
 export { default as FeatureCard } from "./components/FeatureCard.svelte";
 export { default as FeatureGrid } from "./components/FeatureGrid.svelte";
+export { default as TaskCard } from "./components/TaskCard.svelte";
+export type { TaskCardAccent } from "./components/TaskCard.svelte";
 
 // Log console
 export { default as LogConsole } from "./components/LogConsole.svelte";

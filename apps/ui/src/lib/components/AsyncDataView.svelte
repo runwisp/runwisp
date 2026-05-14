@@ -19,11 +19,11 @@
     } = $props();
 </script>
 
-{#if data.loading && data.data === undefined}
+{#if data.loading && typeof data.data === "undefined"}
     <Skeleton rows={skeletonRows} />
-{:else if connectionStore.status !== "connected" && data.data === undefined}
+{:else if connectionStore.status !== "connected" && typeof data.data === "undefined"}
     <ConnectionLostPanel />
-{:else if data.error !== undefined && data.data === undefined}
+{:else if typeof data.error !== "undefined" && typeof data.data === "undefined"}
     <ErrorState message={data.error} onRetry={data.reload} retrying={data.loading} />
 {:else}
     {@render children()}

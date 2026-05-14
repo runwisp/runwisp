@@ -9,7 +9,7 @@ import {
     type EventSourceFactory,
 } from "$lib/adapters/browser";
 import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
-import { connectSSE, type SSEConnection } from "$lib/utils/sse";
+import { EventManager } from "./event-manager.svelte";
 import { createLogger } from "$lib/utils/logger";
 import { connectionStore } from "./connection.svelte";
 
@@ -66,7 +66,9 @@ class NotificationStore {
     // we observe locally (SSE events + per-row mark-read/unread). We never
     // recompute it from #items because items is paginated.
     #unread = $state(0);
-    #connection: SSEConnection | null = null;
+    #events: EventManager;
+    #subscribed = false;
+    #unsubscribes: (() => void)[] = [];
     #connected = $state(false);
     #loaded = $state(false);
     #initInFlight: Promise<void> | null = null;
@@ -75,13 +77,16 @@ class NotificationStore {
     #logger = createLogger("NotificationStore");
 
     #fetch: typeof fetch;
-    #createEventSource: EventSourceFactory;
     #getApiUrl: () => string;
 
     constructor(deps: Required<NotificationStoreDeps>) {
         this.#fetch = deps.fetch;
-        this.#createEventSource = deps.createEventSource;
         this.#getApiUrl = deps.getApiUrl;
+        this.#events = new EventManager({
+            path: "/api/notifications/stream",
+            createEventSource: deps.createEventSource,
+            getApiUrl: deps.getApiUrl,
+        });
     }
 
     get items(): Notification[] {
@@ -212,45 +217,49 @@ class NotificationStore {
     }
 
     disconnect(): void {
-        this.#connection?.disconnect();
-        this.#connection = null;
+        for (const off of this.#unsubscribes) off();
+        this.#unsubscribes = [];
+        this.#subscribed = false;
         this.#connected = false;
     }
 
     #connect(): void {
-        if (this.#connection) return;
-        this.#connection = connectSSE({
-            path: "/api/notifications/stream",
-            eventTypes: ["notification.created", "notification.updated"],
-            onOpen: () => {
+        if (this.#subscribed) return;
+        this.#subscribed = true;
+        this.#unsubscribes.push(
+            this.#events.onOpen(() => {
                 this.#connected = true;
                 connectionStore.markConnected();
-            },
-            onError: (info) => {
+            }),
+        );
+        this.#unsubscribes.push(
+            this.#events.onError((info) => {
                 this.#connected = false;
                 if (info.status !== 401) {
                     connectionStore.markDisconnected(info.message ?? "Notifications stream error");
                 }
-            },
-            onEvent: (eventType, data) => {
-                try {
-                    this.#logger.debug("SSE notification event", eventType);
-                    const raw: unknown = JSON.parse(data);
-                    const parsed = streamEnvelopeSchema.safeParse(raw);
-                    if (!parsed.success) {
-                        this.#logger.warn("Invalid notification SSE payload", parsed.error.message);
-                        return;
-                    }
-                    this.#applyUpdate(parsed.data.notification);
-                } catch (e) {
-                    this.#logger.error("Malformed notification SSE event", e);
+            }),
+        );
+        const onNotification = (eventType: string) => (data: string) => {
+            try {
+                this.#logger.debug("SSE notification event", eventType);
+                const raw: unknown = JSON.parse(data);
+                const parsed = streamEnvelopeSchema.safeParse(raw);
+                if (!parsed.success) {
+                    this.#logger.warn("Invalid notification SSE payload", parsed.error.message);
+                    return;
                 }
-            },
-            deps: {
-                createEventSource: this.#createEventSource,
-                getApiUrl: this.#getApiUrl,
-            },
-        });
+                this.#applyUpdate(parsed.data.notification);
+            } catch (e) {
+                this.#logger.error("Malformed notification SSE event", e);
+            }
+        };
+        this.#unsubscribes.push(
+            this.#events.subscribe("notification.created", onNotification("notification.created")),
+        );
+        this.#unsubscribes.push(
+            this.#events.subscribe("notification.updated", onNotification("notification.updated")),
+        );
     }
 
     #applyUpdate(n: Notification): void {

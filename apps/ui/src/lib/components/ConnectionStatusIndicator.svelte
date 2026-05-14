@@ -52,7 +52,8 @@
         if (status === "connected") return `v${systemStore.version}`;
         if (status === "connecting") return "Reconnecting…";
         const since = connectionStore.disconnectedSince;
-        if (since !== null) return "Down for " + formatDuration(connectionStore.now - since);
+        if (typeof since === "number")
+            return "Down for " + formatDuration(connectionStore.now - since);
         return "Not reachable";
     });
 </script>
