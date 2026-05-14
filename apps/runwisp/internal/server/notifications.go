@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -200,10 +199,7 @@ func (srv *Server) humaMarkAllNotificationsRead(_ context.Context, _ *struct{}) 
 func (srv *Server) humaMarkNotificationRead(_ context.Context, input *NotificationByIDInput) (*struct{}, error) {
 	updated, err := srv.notifyRepo.MarkNotificationRead(input.ID, time.Now())
 	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return nil, huma.Error404NotFound("notification not found")
-		}
-		return nil, huma.Error500InternalServerError("Failed to mark notification read")
+		return nil, mapDomainError(err, "Failed to mark notification read")
 	}
 	srv.publishNotificationUpdate(updated)
 	return nil, nil
@@ -212,10 +208,7 @@ func (srv *Server) humaMarkNotificationRead(_ context.Context, input *Notificati
 func (srv *Server) humaMarkNotificationUnread(_ context.Context, input *NotificationByIDInput) (*struct{}, error) {
 	updated, err := srv.notifyRepo.MarkNotificationUnread(input.ID)
 	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return nil, huma.Error404NotFound("notification not found")
-		}
-		return nil, huma.Error500InternalServerError("Failed to mark notification unread")
+		return nil, mapDomainError(err, "Failed to mark notification unread")
 	}
 	srv.publishNotificationUpdate(updated)
 	return nil, nil

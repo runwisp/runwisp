@@ -19,6 +19,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/sebest/xff"
 	"log/slog"
@@ -38,7 +39,7 @@ type Server struct {
 	port              int
 	logDir            string
 	eventBus          events.EventBus
-	auth              *AuthService
+	auth              *auth.Service
 	passwordEphemeral bool
 	trustedProxies    *xff.Options
 	logOutput         io.Writer
@@ -84,7 +85,12 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("parse trusted proxies: %w", err)
 	}
 
-	authSvc := NewAuthService(opts.Password, opts.JWTSecret, trustedProxies)
+	authSvc, err := auth.NewService(opts.Password, opts.JWTSecret, func(r *http.Request) bool {
+		return isFromTrustedProxy(r, trustedProxies)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init auth service: %w", err)
+	}
 
 	router := chi.NewRouter()
 
@@ -116,7 +122,9 @@ func New(opts Options) (*Server, error) {
 	}
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)
-	s.setupRoutes()
+	if err := s.setupRoutes(); err != nil {
+		return nil, fmt.Errorf("setup routes: %w", err)
+	}
 	return s, nil
 }
 

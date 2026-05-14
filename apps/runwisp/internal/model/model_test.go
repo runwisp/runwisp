@@ -19,6 +19,53 @@ func TestModelConstants(t *testing.T) {
 	assert.Equal(t, ConcurrencyPolicy("queue"), PolicyQueue)
 }
 
+// TestValidateTaskName_RejectsBadInputs locks in the shared validator that
+// the TOML loader, REST inputs, and the cloud-dispatch resolver all rely
+// on. A drift here is a latent bug: a name accepted by TOML but rejected
+// by the API (or vice versa) makes the same task unreachable from
+// surfaces that should round-trip cleanly.
+func TestValidateTaskName_RejectsBadInputs(t *testing.T) {
+	bad := []struct {
+		name string
+		in   string
+	}{
+		{"empty", ""},
+		{"whitespace only", "   "},
+		{"contains slash", "foo/bar"},
+		{"contains space", "foo bar"},
+		{"contains colon", "foo:bar"},
+		{"contains hash", "foo#bar"},
+		{"too long", strings.Repeat("a", TaskNameMaxLength+1)},
+	}
+	for _, tc := range bad {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Error(t, ValidateTaskName(tc.in))
+		})
+	}
+}
+
+func TestValidateTaskName_AcceptsGoodInputs(t *testing.T) {
+	for _, name := range []string{
+		"task1",
+		"my-task",
+		"my_task",
+		"task.with.dots",
+		"a",
+		strings.Repeat("a", TaskNameMaxLength),
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.NoError(t, ValidateTaskName(name))
+		})
+	}
+}
+
+// TestTaskNamePatternString_MatchesPattern keeps the compiled regex and
+// the documented huma pattern literal in lockstep — if a future change
+// edits one without the other, this catches it before it ships.
+func TestTaskNamePatternString_MatchesPattern(t *testing.T) {
+	assert.Equal(t, TaskNamePatternString, TaskNamePattern.String())
+}
+
 // TestDaemonInfo_JSONShapeIsLocked guards the /api/info wire shape against
 // silent additions of password / credential / ephemeral fields. The struct is
 // the surface a future contributor would touch when "exposing the password to

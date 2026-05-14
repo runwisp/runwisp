@@ -17,6 +17,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/logstream"
 	"log/slog"
 )
 
@@ -234,8 +235,14 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		streamCtx, cancel := context.WithTimeout(ctx, LogStreamTimeout)
 		defer cancel()
 
-		streamer := newLogStreamer(send, logPath)
-		streamer.streamLoop(streamCtx, run.ID, srv.eventBus, srv.db, from, replay, run.Status.IsTerminal())
+		sender := logstream.HumaSender{
+			Inner:   send,
+			Line:    func(e logstream.LineEvent) any { return LogLineSSEEvent(e) },
+			Rotated: func(e logstream.RotatedEvent) any { return LogRotatedEvent(e) },
+			Dropped: func(e logstream.DroppedEvent) any { return LogDroppedEvent(e) },
+			Done:    func(e logstream.DoneEvent) any { return LogDoneEvent(e) },
+		}
+		logstream.Run(streamCtx, sender, logPath, run.ID, srv.eventBus, srv.db, from, replay, run.Status.IsTerminal())
 	})
 }
 
