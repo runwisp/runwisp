@@ -203,6 +203,19 @@ func scanRun(scanner interface {
 	return &run, nil
 }
 
+func collectRows[T any](rows *sql.Rows, scan func(interface{ Scan(...any) error }) (*T, error)) ([]T, error) {
+	defer rows.Close()
+	var out []T
+	for rows.Next() {
+		item, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *item)
+	}
+	return out, rows.Err()
+}
+
 func (db *SQLiteDatabase) GetRun(id string) (*model.Run, error) {
 	return db.getRunWhere("id = ?", id)
 }
@@ -318,17 +331,7 @@ func (db *SQLiteDatabase) QueryRuns(taskName string, limit, offset int, status s
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var runs []model.Run
-	for rows.Next() {
-		r, err := scanRun(rows)
-		if err != nil {
-			return nil, err
-		}
-		runs = append(runs, *r)
-	}
-	return runs, rows.Err()
+	return collectRows(rows, scanRun)
 }
 
 func (db *SQLiteDatabase) DeleteRun(id string) error {
@@ -422,17 +425,7 @@ func (db *SQLiteDatabase) GetPendingRuns() ([]model.Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var runs []model.Run
-	for rows.Next() {
-		r, err := scanRun(rows)
-		if err != nil {
-			return nil, err
-		}
-		runs = append(runs, *r)
-	}
-	return runs, rows.Err()
+	return collectRows(rows, scanRun)
 }
 
 func (db *SQLiteDatabase) GetLastRunByTask(taskName string) (*model.Run, error) {

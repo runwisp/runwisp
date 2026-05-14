@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
+import type { SSEStream } from "$lib/adapters/browser";
+
 export interface EventSourceErrorDetails {
     status?: number;
     message?: string;
@@ -47,4 +49,31 @@ export function getMessageEventData(event: Event): string | undefined {
 
     const data = event["data"];
     return typeof data === "string" ? data : undefined;
+}
+
+export interface SSEErrorInfo {
+    status?: number;
+    message?: string;
+    readyState?: number;
+    url?: string;
+}
+
+export function extractErrorInfo(e: Event, es: SSEStream, url: string): SSEErrorInfo {
+    const { status, message } = getEventSourceErrorDetails(e);
+    return {
+        ...(typeof status !== "undefined" && { status }),
+        ...(typeof message !== "undefined" && { message }),
+        readyState: es.readyState,
+        url,
+    };
+}
+
+export function formatErrorInfo(info: SSEErrorInfo): string {
+    const parts: string[] = [];
+    if (typeof info.status !== "undefined") parts.push(`status=${info.status.toString()}`);
+    if (typeof info.message !== "undefined") parts.push(info.message);
+    if (typeof info.readyState !== "undefined")
+        parts.push(`readyState=${info.readyState.toString()}`);
+    if (typeof info.url !== "undefined") parts.push(info.url);
+    return parts.join(" ") || "unknown error";
 }

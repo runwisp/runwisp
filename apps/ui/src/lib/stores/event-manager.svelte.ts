@@ -8,16 +8,11 @@ import {
     type EventSourceFactory,
     type SSEStream,
 } from "$lib/adapters/browser";
-import { getEventSourceErrorDetails, getMessageEventData } from "$lib/utils/event-source";
+import { type SSEErrorInfo, extractErrorInfo, formatErrorInfo, getMessageEventData } from "$lib/utils/event-source";
 import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
 import { createLogger } from "$lib/utils/logger";
 
-export interface EventManagerErrorInfo {
-    status?: number;
-    message?: string;
-    readyState?: number;
-    url?: string;
-}
+export type EventManagerErrorInfo = SSEErrorInfo;
 
 export type EventHandler = (data: string) => void;
 export type OpenHandler = () => void;
@@ -160,8 +155,8 @@ export class EventManager {
             }
         };
         es.onerror = (event: Event) => {
-            const info = this.#extractErrorInfo(event, es, url);
-            this.#logger.warn(`SSE error on ${this.#path}: ${this.#formatErrorInfo(info)}`);
+            const info = extractErrorInfo(event, es, url);
+            this.#logger.warn(`SSE error on ${this.#path}: ${formatErrorInfo(info)}`);
             this.#notifyError(info);
             this.#cleanup();
             this.#scheduleReconnect();
@@ -224,23 +219,4 @@ export class EventManager {
         }
     }
 
-    #extractErrorInfo(event: Event, es: SSEStream, url: string): EventManagerErrorInfo {
-        const { status, message } = getEventSourceErrorDetails(event);
-        return {
-            ...(typeof status !== "undefined" && { status }),
-            ...(typeof message !== "undefined" && { message }),
-            readyState: es.readyState,
-            url,
-        };
-    }
-
-    #formatErrorInfo(info: EventManagerErrorInfo): string {
-        const parts: string[] = [];
-        if (typeof info.status !== "undefined") parts.push(`status=${info.status.toString()}`);
-        if (typeof info.message !== "undefined") parts.push(info.message);
-        if (typeof info.readyState !== "undefined")
-            parts.push(`readyState=${info.readyState.toString()}`);
-        if (typeof info.url !== "undefined") parts.push(info.url);
-        return parts.join(" ") || "unknown error";
-    }
 }

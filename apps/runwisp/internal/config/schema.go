@@ -4,6 +4,7 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -299,29 +300,29 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	if w.APITrigger != nil {
 		apiTrigger = *w.APITrigger
 	}
-	timeout, err := parseTaskDuration(name, "timeout", w.Timeout)
+	timeout, err := parseDuration(w.Timeout)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid timeout for task %q: %w", name, err)
 	}
-	gracefulStop, err := parseTaskDuration(name, "graceful_stop", w.GracefulStop)
+	gracefulStop, err := parseDuration(w.GracefulStop)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid graceful_stop for task %q: %w", name, err)
 	}
-	retryDelay, err := parseTaskDuration(name, "retry_delay", w.RetryDelay)
+	retryDelay, err := parseDuration(w.RetryDelay)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid retry_delay for task %q: %w", name, err)
 	}
-	keepFor, err := parseTaskKeepFor(name, w.KeepFor)
+	keepFor, err := parseKeepFor(w.KeepFor)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid keep_for for task %q: %w", name, err)
 	}
-	keepRuns, err := parseTaskKeepRuns(name, w.KeepRuns)
+	keepRuns, err := parseKeepRuns(w.KeepRuns)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid keep_runs for task %q: %w", name, err)
 	}
-	logMaxSize, err := parseTaskLogMaxSize(name, w.LogMaxSize)
+	logMaxSize, err := parseLogMaxSize(w.LogMaxSize)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid log_max_size for task %q: %w", name, err)
 	}
 	return model.Task{
 		Name:           name,
@@ -355,33 +356,33 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	if w.APITrigger != nil {
 		apiTrigger = *w.APITrigger
 	}
-	timeout, err := parseTaskDuration(name, "timeout", w.Timeout)
+	timeout, err := parseDuration(w.Timeout)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid timeout for task %q: %w", name, err)
 	}
-	gracefulStop, err := parseTaskDuration(name, "graceful_stop", w.GracefulStop)
+	gracefulStop, err := parseDuration(w.GracefulStop)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid graceful_stop for task %q: %w", name, err)
 	}
-	restartDelay, err := parseTaskDuration(name, "restart_delay", w.RestartDelay)
+	restartDelay, err := parseDuration(w.RestartDelay)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid restart_delay for task %q: %w", name, err)
 	}
-	backoffReset, err := parseTaskDuration(name, "backoff_reset_after", w.BackoffResetAfter)
+	backoffReset, err := parseDuration(w.BackoffResetAfter)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid backoff_reset_after for task %q: %w", name, err)
 	}
-	keepFor, err := parseTaskKeepFor(name, w.KeepFor)
+	keepFor, err := parseKeepFor(w.KeepFor)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid keep_for for task %q: %w", name, err)
 	}
-	keepRuns, err := parseTaskKeepRuns(name, w.KeepRuns)
+	keepRuns, err := parseKeepRuns(w.KeepRuns)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid keep_runs for task %q: %w", name, err)
 	}
-	logMaxSize, err := parseTaskLogMaxSize(name, w.LogMaxSize)
+	logMaxSize, err := parseLogMaxSize(w.LogMaxSize)
 	if err != nil {
-		return model.Task{}, err
+		return model.Task{}, fmt.Errorf("invalid log_max_size for task %q: %w", name, err)
 	}
 	return model.Task{
 		Name:              name,
@@ -406,25 +407,25 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 }
 
 func (w *defaultsWire) toDefaults() (Defaults, error) {
-	timeout, err := parseScopedDuration("defaults.timeout", w.Timeout)
+	timeout, err := parseDuration(w.Timeout)
 	if err != nil {
-		return Defaults{}, err
+		return Defaults{}, fmt.Errorf("invalid defaults.timeout: %w", err)
 	}
-	keepFor, err := parseScopedKeepFor("defaults.keep_for", w.KeepFor)
+	keepFor, err := parseKeepFor(w.KeepFor)
 	if err != nil {
-		return Defaults{}, err
+		return Defaults{}, fmt.Errorf("invalid defaults.keep_for: %w", err)
 	}
-	keepRuns, err := parseScopedKeepRuns("defaults.keep_runs", w.KeepRuns)
+	keepRuns, err := parseKeepRuns(w.KeepRuns)
 	if err != nil {
-		return Defaults{}, err
+		return Defaults{}, fmt.Errorf("invalid defaults.keep_runs: %w", err)
 	}
-	logMaxSize, err := parseScopedLogMaxSize("defaults.log_max_size", w.LogMaxSize)
+	logMaxSize, err := parseLogMaxSize(w.LogMaxSize)
 	if err != nil {
-		return Defaults{}, err
+		return Defaults{}, fmt.Errorf("invalid defaults.log_max_size: %w", err)
 	}
-	backoffReset, err := parseScopedDuration("defaults.backoff_reset_after", w.BackoffResetAfter)
+	backoffReset, err := parseDuration(w.BackoffResetAfter)
 	if err != nil {
-		return Defaults{}, err
+		return Defaults{}, fmt.Errorf("invalid defaults.backoff_reset_after: %w", err)
 	}
 	return Defaults{
 		Timeout:           timeout,
@@ -437,9 +438,9 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 }
 
 func (w *daemonWire) toDaemon() (Daemon, error) {
-	shutdown, err := parseScopedDuration("daemon.shutdown_timeout", w.ShutdownTimeout)
+	shutdown, err := parseDuration(w.ShutdownTimeout)
 	if err != nil {
-		return Daemon{}, err
+		return Daemon{}, fmt.Errorf("invalid daemon.shutdown_timeout: %w", err)
 	}
 	return Daemon{
 		AllowCloudDispatch: w.AllowCloudDispatch,

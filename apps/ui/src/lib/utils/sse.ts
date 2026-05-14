@@ -4,7 +4,7 @@
 import { SSE_CONFIG } from "$lib/config/constants";
 import type { EventSourceFactory, SSEStream } from "$lib/adapters/browser";
 import { browserEventSourceFactory } from "$lib/adapters/browser";
-import { getEventSourceErrorDetails, getMessageEventData } from "$lib/utils/event-source";
+import { type SSEErrorInfo, extractErrorInfo, formatErrorInfo, getMessageEventData } from "$lib/utils/event-source";
 import { getApiUrl } from "$lib/utils/env";
 import { createLogger } from "$lib/utils/logger";
 
@@ -15,13 +15,6 @@ export interface SSEConnectionDeps {
 
 export function buildSSEUrl(path: string, apiUrl: string = getApiUrl()): string {
     return `${apiUrl}${path}`;
-}
-
-export interface SSEErrorInfo {
-    status?: number;
-    message?: string;
-    readyState?: number;
-    url?: string;
 }
 
 export interface ReconnectingSSEOptions {
@@ -48,27 +41,6 @@ export interface ReconnectingSSEOptions {
 
 export interface SSEConnection {
     disconnect(): void;
-}
-
-/** Extract useful debugging info from an EventSource error event. */
-function extractErrorInfo(e: Event, es: SSEStream, url: string): SSEErrorInfo {
-    const { status, message } = getEventSourceErrorDetails(e);
-    return {
-        ...(typeof status !== "undefined" && { status }),
-        ...(typeof message !== "undefined" && { message }),
-        readyState: es.readyState,
-        url,
-    };
-}
-
-function formatErrorInfo(info: SSEErrorInfo): string {
-    const parts: string[] = [];
-    if (typeof info.status !== "undefined") parts.push(`status=${info.status.toString()}`);
-    if (typeof info.message !== "undefined") parts.push(info.message);
-    if (typeof info.readyState !== "undefined")
-        parts.push(`readyState=${info.readyState.toString()}`);
-    if (typeof info.url !== "undefined") parts.push(info.url);
-    return parts.join(" ") || "unknown error";
 }
 
 /**
