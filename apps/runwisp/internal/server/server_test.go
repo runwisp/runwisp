@@ -115,7 +115,7 @@ func TestGetAllRuns(t *testing.T) {
 	runs := []model.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
-	repo.On("QueryRuns", "", 50, 0, "", "", "", "").Return(runs, nil)
+	repo.On("QueryRuns", "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
 	repo.On("CountRunsFiltered", "", "", "").Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/runs", nil)
@@ -138,7 +138,7 @@ func TestGetTaskRuns(t *testing.T) {
 	runs := []model.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
-	repo.On("QueryRuns", "task1", 50, 0, "", "", "", "").Return(runs, nil)
+	repo.On("QueryRuns", "task1", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
 	repo.On("CountRunsFiltered", "", "task1", "").Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs", nil)

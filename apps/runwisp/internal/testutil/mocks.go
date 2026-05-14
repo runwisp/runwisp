@@ -10,6 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -54,7 +55,7 @@ func (m *MockRunRepository) CountRunsFiltered(status, taskName, searchQuery stri
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *MockRunRepository) QueryRuns(taskName string, limit, offset int, status, sortField, sortDirection, searchQuery string) ([]model.Run, error) {
+func (m *MockRunRepository) QueryRuns(taskName string, limit, offset int, status string, sortField storage.SortColumn, sortDirection storage.SortDirection, searchQuery string) ([]model.Run, error) {
 	args := m.Called(taskName, limit, offset, status, sortField, sortDirection, searchQuery)
 	return args.Get(0).([]model.Run), args.Error(1)
 }
