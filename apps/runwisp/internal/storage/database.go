@@ -495,7 +495,7 @@ func (db *SQLiteDatabase) Close() error {
 	return db.db.Close()
 }
 
-func (db *SQLiteDatabase) UpsertPendingLogUpload(rec PendingLogUpload) error {
+func (db *SQLiteDatabase) UpsertPendingLogUpload(rec model.PendingLogUpload) error {
 	_, err := db.db.Exec(
 		`INSERT INTO pending_log_uploads (external_execution_id, upload_url, log_path, inserted_at)
  VALUES (?, ?, ?, ?)
@@ -516,7 +516,7 @@ func (db *SQLiteDatabase) DeletePendingLogUpload(externalExecutionID string) err
 	return err
 }
 
-func (db *SQLiteDatabase) ListPendingLogUploads() ([]PendingLogUpload, error) {
+func (db *SQLiteDatabase) ListPendingLogUploads() ([]model.PendingLogUpload, error) {
 	rows, err := db.db.Query(
 		`SELECT external_execution_id, upload_url, log_path, inserted_at FROM pending_log_uploads`,
 	)
@@ -525,9 +525,9 @@ func (db *SQLiteDatabase) ListPendingLogUploads() ([]PendingLogUpload, error) {
 	}
 	defer rows.Close()
 
-	var recs []PendingLogUpload
+	var recs []model.PendingLogUpload
 	for rows.Next() {
-		var r PendingLogUpload
+		var r model.PendingLogUpload
 		if err := rows.Scan(&r.ExternalExecutionID, &r.UploadURL, &r.LogPath, &r.InsertedAt); err != nil {
 			return nil, err
 		}

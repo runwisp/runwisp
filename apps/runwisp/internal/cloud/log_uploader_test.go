@@ -19,16 +19,16 @@ import (
 
 type fakePendingRepo struct {
 	mu      sync.Mutex
-	rows    map[string]PendingLogUpload
+	rows    map[string]model.PendingLogUpload
 	upserts int
 	deletes int
 }
 
 func newFakePendingRepo() *fakePendingRepo {
-	return &fakePendingRepo{rows: map[string]PendingLogUpload{}}
+	return &fakePendingRepo{rows: map[string]model.PendingLogUpload{}}
 }
 
-func (f *fakePendingRepo) UpsertPendingLogUpload(rec PendingLogUpload) error {
+func (f *fakePendingRepo) UpsertPendingLogUpload(rec model.PendingLogUpload) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rows[rec.ExternalExecutionID] = rec
@@ -44,10 +44,10 @@ func (f *fakePendingRepo) DeletePendingLogUpload(externalExecutionID string) err
 	return nil
 }
 
-func (f *fakePendingRepo) ListPendingLogUploads() ([]PendingLogUpload, error) {
+func (f *fakePendingRepo) ListPendingLogUploads() ([]model.PendingLogUpload, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	out := make([]PendingLogUpload, 0, len(f.rows))
+	out := make([]model.PendingLogUpload, 0, len(f.rows))
 	for _, r := range f.rows {
 		out = append(out, r)
 	}
@@ -264,7 +264,7 @@ func TestArchiveMissingLogFileForgetsEntry(t *testing.T) {
 
 func TestRecoverOrphansDropsRowWhenRunMissing(t *testing.T) {
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(model.PendingLogUpload{
 		ExternalExecutionID: "exec-gone",
 		UploadURL:           "https://upload/x",
 		LogPath:             "key/x.log.gz",
@@ -297,7 +297,7 @@ func TestRecoverOrphansSkipsNonTerminalRun(t *testing.T) {
 	}
 
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(model.PendingLogUpload{
 		ExternalExecutionID: "exec-running",
 		UploadURL:           "https://upload/x",
 		LogPath:             "key/x.log.gz",
@@ -330,7 +330,7 @@ func TestRecoverOrphansRetriesTerminatedRun(t *testing.T) {
 	defer srv.Close()
 
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(model.PendingLogUpload{
 		ExternalExecutionID: "exec-1",
 		UploadURL:           srv.URL,
 		LogPath:             "key/exec-1.log.gz",

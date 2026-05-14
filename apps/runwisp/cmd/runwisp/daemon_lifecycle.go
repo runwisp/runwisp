@@ -35,8 +35,8 @@ func startCloudClient(
 
 	cloudClient, clientErr := cloud.NewClient(cfg.CloudConfig, cloud.Dependencies{
 		TaskManager:       &cloudTaskRunner{inner: svc.TaskManager},
-		RunRepo:           &cloudRunRepo{inner: svc.DB},
-		PendingUploadRepo: &cloudPendingUploadRepo{inner: svc.DB},
+		RunRepo:           svc.DB,
+		PendingUploadRepo: svc.DB,
 		EventBus:          svc.EventBus,
 		LocalTasks:        svc.TasksMap,
 		LogDir:            flags.LogDir(),

@@ -14,6 +14,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/cloud/logarchive"
 	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // archiveTimeout caps a single terminal archive operation. Daemon log files
@@ -79,7 +80,7 @@ func (u *LogUploader) RegisterDispatch(executionID, uploadURL, logPath string) e
 	if uploadURL == "" {
 		return nil
 	}
-	rec := PendingLogUpload{
+	rec := model.PendingLogUpload{
 		ExternalExecutionID: executionID,
 		UploadURL:           uploadURL,
 		LogPath:             logPath,

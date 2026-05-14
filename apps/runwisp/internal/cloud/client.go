@@ -305,7 +305,6 @@ func (client *Client) startSession(ctx context.Context, connection *websocket.Co
 
 	sessionErr := client.sessions.run(ctx, session)
 	client.conn.detachSession()
-	// Clean up log listeners registered during this now-ended session.
 	if client.handler != nil {
 		client.handler.ClearLogListeners()
 	}

@@ -4,8 +4,6 @@
 package cloud
 
 import (
-	"errors"
-
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -42,23 +40,12 @@ type RunRepository interface {
 	GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error)
 }
 
-// PendingLogUpload records a dispatch that handed the daemon a signed PUT URL
-// for terminal log archival. Mirrors storage.PendingLogUpload; the cloud
-// package owns this type so persistence layers depend on cloud, not the
-// other way around.
-type PendingLogUpload struct {
-	ExternalExecutionID string
-	UploadURL           string
-	LogPath             string
-	InsertedAt          int64
-}
-
 // PendingLogUploadRepository persists dispatch metadata so the daemon can
 // resume terminal log archival after a crash.
 type PendingLogUploadRepository interface {
-	UpsertPendingLogUpload(rec PendingLogUpload) error
+	UpsertPendingLogUpload(rec model.PendingLogUpload) error
 	DeletePendingLogUpload(externalExecutionID string) error
-	ListPendingLogUploads() ([]PendingLogUpload, error)
+	ListPendingLogUploads() ([]model.PendingLogUpload, error)
 }
 
 // EventBus is the subset of the in-process event hub the cloud bridge
@@ -68,8 +55,6 @@ type EventBus interface {
 	Subscribe(eventType events.EventType, handler events.EventHandler) func()
 }
 
-// ErrNotFound mirrors storage.ErrNotFound so callers inside the cloud
-// package can check for "missing run" without importing internal/storage.
-// Adapters in cmd/runwisp/ translate between this sentinel and the storage
-// one when wiring the concrete repositories.
-var ErrNotFound = errors.New("record not found")
+// ErrNotFound is model.ErrNotFound re-exported so callers inside the cloud
+// package can reference it without importing internal/model directly.
+var ErrNotFound = model.ErrNotFound
