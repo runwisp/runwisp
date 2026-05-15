@@ -43,7 +43,12 @@ func initNotify(
 		return notifyBundle{}, nil
 	}
 
-	resolved, err := configload.Resolve(notifyCfg, flags.DataDir)
+	renderCtx := render.TemplateContext{
+		ExternalURL: cfg.Config.Daemon.ExternalURL,
+		Fingerprint: cfg.Fingerprint,
+		OutputTail:  render.NewOutputTail(),
+	}
+	resolved, err := configload.Resolve(notifyCfg, flags.DataDir, renderCtx)
 	if err != nil {
 		return notifyBundle{}, fmt.Errorf("resolve notify config: %w", err)
 	}

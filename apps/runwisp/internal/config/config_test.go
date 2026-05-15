@@ -818,6 +818,42 @@ run = "echo hi"
 		assert.Equal(t, 20*time.Second, cfg.Daemon.ShutdownTimeout)
 	})
 
+	t.Run("daemon external_url parses and strips trailing slash", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+external_url = "https://runwisp.example.com/"
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, "https://runwisp.example.com", cfg.Daemon.ExternalURL)
+	})
+
+	t.Run("daemon external_url rejects non-http schemes", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+external_url = "ftp://nope"
+
+[tasks.t]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "daemon.external_url")
+	})
+
+	t.Run("daemon external_url omitted is empty", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, "", cfg.Daemon.ExternalURL)
+	})
+
 	t.Run("legacy parallelism key is rejected with a migration hint", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]

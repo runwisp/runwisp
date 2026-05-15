@@ -1,27 +1,52 @@
+{{- /* Slack notification — Block Kit. */ -}}
+{{- $tail := "" -}}{{- if or (eq .Kind "run.failed") (eq .Kind "run.timeout") -}}{{- $tail = outputTail .Run -}}{{- end -}}
+{{- $url := "" -}}{{- if eq .Kind "log.disk_pressure" -}}{{- $url = taskURL .TaskName -}}{{- else -}}{{- $url = runURL .Run -}}{{- end -}}
+{{- $footer := "from runwisp" -}}{{- with fingerprint -}}{{- $footer = printf "from runwisp · %s" . -}}{{- end -}}
 {
   "blocks": [
     {
       "type": "header",
       "text": {
         "type": "plain_text",
-        "text": "{{ emoji .Severity }} {{ .TaskName }} — {{ .Kind }}"
+        "text": "{{ jsonStr (printf "%s %s %s" (statusEmoji .Kind) .TaskName (statusVerb .Kind)) }}",
+        "emoji": true
       }
     },
     {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Reason:* {{ jsonStr .Reason }}\n*Severity:* `{{ .Severity }}`"
+        "text": "{{ jsonStr (printf "%s\n%s · %s." (eventSentence .) (eventTrigger .) (humanTime .Timestamp)) }}"
       }
-    }{{- if .Run }},
+    }{{ if $tail }},
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "{{ jsonStr (printf "```\n%s\n```" $tail) }}"
+      }
+    }{{ end }}{{ if $url }},
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "{{ jsonStr (linkLabel .Kind) }}"
+          },
+          "url": "{{ jsonStr $url }}"
+        }
+      ]
+    }{{ end }},
     {
       "type": "context",
       "elements": [
         {
           "type": "mrkdwn",
-          "text": "Run `{{ .Run.ID }}` triggered by `{{ .Run.TriggeredBy }}` at {{ timeRFC .Timestamp }}"
+          "text": "{{ jsonStr $footer }}"
         }
       ]
-    }{{- end }}
+    }
   ]
 }

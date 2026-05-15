@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -84,6 +85,29 @@ func parseScopedByteSize(scope, raw string) (int64, error) {
 		return 0, fmt.Errorf("invalid %s: %w", scope, err)
 	}
 	return n, nil
+}
+
+// parseExternalURL normalises [daemon] external_url: trims surrounding
+// whitespace and trailing slashes, and rejects anything that doesn't parse
+// as an absolute http(s) URL. Empty is the supported default — no link line
+// is rendered in notifications when unset.
+func parseExternalURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("invalid daemon.external_url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("invalid daemon.external_url: must start with http:// or https://")
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("invalid daemon.external_url: missing host")
+	}
+	return trimmed, nil
 }
 
 // reservedKeyword reports whether the given string is one of the legacy

@@ -22,11 +22,13 @@ think of them together.
 ```toml
 [daemon]
 shutdown_timeout = "10s"
+external_url     = "https://runwisp.example.com"
 ```
 
-| Key                | Default | What it does                                                                                                                                                   |
-| ------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shutdown_timeout` | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit. |
+| Key                | Default | What it does                                                                                                                                                          |
+| ------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shutdown_timeout` | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.        |
+| `external_url`     | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted. |
 
 ### `shutdown_timeout`
 
@@ -39,6 +41,24 @@ will SIGKILL the survivor before its per-task grace window completes.
 Either raise `shutdown_timeout`, lower the per-task `graceful_stop`, or
 accept that the task's cleanup hook may be interrupted on daemon
 shutdown.
+
+### `external_url`
+
+`external_url` is the **public** base URL at which an operator (or a
+notification recipient) reaches this daemon's Web UI — e.g.
+`https://runwisp.example.com` behind a reverse proxy, or
+`http://192.168.1.50:9477` on a LAN. Trailing slashes are stripped; the
+scheme must be `http` or `https`.
+
+The daemon never opens an outbound connection to this URL. Its only
+purpose is rendering: when a Slack or Telegram notification fires, the
+template appends a "View run" link of the form
+`<external_url>/tasks/<task>?runId=<id>` that drops the operator directly
+into the run-detail panel of the embedded dashboard.
+
+Leaving `external_url` unset is the supported default. Notifications
+still render fully — they just omit the link line rather than emitting
+a broken URL.
 
 ## CLI flags: data directory & listen address
 

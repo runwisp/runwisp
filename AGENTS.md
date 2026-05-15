@@ -128,14 +128,7 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 
 ## 🤖 AGENT EXECUTION RULES
 
-1. **Validation commands** (run from repo root via `make …` or the equivalent `bun run …` alias):
-   - `make build` — builds the daemon (Makefile orchestrates web UI build → embed → go build).
-   - `make test` — `make test` across the workspace (per-package `go test` / `vitest`). Excludes Playwright; use `make test-e2e` after a real build for browser tests.
-   - `make check` — Go vet/lint via `scripts/check-go.sh` plus TS/Svelte checks. Slow lint (svelte-check, eslint) is cached at root `.cache/*.stamp`; `make clean` or branch switches invalidate.
-   - `make generate` — regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`. Run after editing `packages/asyncapi/asyncapi.yaml` *before* committing — downstream Go types must compile.
-    - **Before finalizing Go changes**: `make build && make test`.
-    - **Before finalizing TS/Svelte changes**: `make check && make test`.
-    - **After finalizing changes (or before wrapping up a session)**: `make ci`. This runs generate → format → check → test → test-e2e, the full CI pipeline.
+1. **Validation**: `make ci` is the **only** validation command you must run — it chains generate → format → check → test → test-e2e (build is covered via `test-e2e`'s binary dependency). Run it from repo root before wrapping up any session that touched code. Don't bother with `make build` / `make test` / `make check` / `make generate` individually unless you're iterating on a single stage — `make ci` supersedes them.
 2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, and the README config reference if user-visible.
 3. **AsyncAPI changes**: edit `packages/asyncapi/asyncapi.yaml` first, then `bun run generate`, then consume the regenerated types in `internal/generated/protocol/`. Never the other way round.
 4. **User-facing changes** require a `CHANGELOG.md` entry. The changelog is marketing-facing — tell users what they can do, not how it was implemented. Concise but informative.

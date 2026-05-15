@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
+	"github.com/runwisp/runwisp/internal/notify/render"
 )
 
 // ResolvedNotify carries everything the daemon needs to construct a
@@ -27,17 +28,20 @@ type ResolvedNotify struct {
 
 // Resolve takes the post-parse config and the daemon's data dir, reads any
 // file-backed secrets relative to the data dir, and produces a ready-to-use
-// ResolvedNotify. Returns an error when a secret source is missing or when
-// a route refers to an unknown notifier.
-func Resolve(cfg config.NotifyConfig, dataDir string) (ResolvedNotify, error) {
+// ResolvedNotify. The renderCtx carries per-daemon values (external URL,
+// fingerprint, output-tail reader) that bind into each channel's template
+// func map. Returns an error when a secret source is missing or when a
+// route refers to an unknown notifier.
+func Resolve(cfg config.NotifyConfig, dataDir string, renderCtx render.TemplateContext) (ResolvedNotify, error) {
 	specs := make([]channel.NotifierSpec, 0, len(cfg.Notifiers))
 	for _, n := range cfg.Notifiers {
 		spec := channel.NotifierSpec{
-			ID:           n.ID,
-			Type:         n.Type,
-			ParseMode:    n.ParseMode,
-			ChatID:       n.ChatID,
-			TemplatePath: n.TemplatePath,
+			ID:            n.ID,
+			Type:          n.Type,
+			ParseMode:     n.ParseMode,
+			ChatID:        n.ChatID,
+			TemplatePath:  n.TemplatePath,
+			RenderContext: renderCtx,
 		}
 		switch n.Type {
 		case "slack":
