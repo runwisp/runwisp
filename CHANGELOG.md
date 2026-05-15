@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`[daemon] external_url` for notification deep-links.** Set `external_url = "https://your-host.example.com"` (or the LAN address you actually reach the dashboard on) and Slack / Telegram messages now include a direct link to the run inside the embedded Web UI. Leaving it unset omits the link line entirely — no broken URLs.
+
 ### Changed
 
+- **Telegram and Slack notifications got a major facelift.** Same data, human shape: a one-line headline with an emoji and a verb, a sentence describing what happened (exit code + duration for failures, elapsed for timeouts, etc.), the trigger and timestamp on the next line, the **last 3 lines of captured output** for `run.failed` / `run.timeout` (capped at 300 bytes), a deep-link to the run in the dashboard when [`[daemon] external_url`](https://docs.runwisp.com/configuration/daemon/#external_url) is set, and a small italic footer identifying the daemon by its fingerprint. The previous flat single-paragraph form is gone.
 - **OpenAPI now exposes `EndReason` as a named schema.** The set of end-reason values (`success`, `failed`, `timeout`, …) is now a single `components/schemas/EndReason` enum referenced from every place a run's `end_reason` appears, instead of an inline enum repeated at each call site. Generated clients pick this up as one shared type/constant — no behavior or wire-format change.
 - **System resources panel shows live memory bytes inline.** The Memory sparkline header now displays `used / total` (e.g. `1.2 GB / 8.0 GB`) next to the percentage, replacing the separate Cores / RAM / Samples grid and the footer clock line that previously sat below the sparklines.
 

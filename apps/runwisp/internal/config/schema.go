@@ -99,9 +99,15 @@ type NotificationRoute struct {
 // ShutdownTimeout caps how long the daemon waits for in-flight tasks to drain
 // after SIGTERM before forcing exit. The default matches Docker's 10-second
 // stop-grace so a containerised daemon never leaves orphans.
+//
+// ExternalURL is the operator-supplied public base URL of the embedded Web UI
+// (e.g. "https://runwisp.example.com"). When set, notification renderers
+// build deep-links into the dashboard; when empty, link lines are omitted
+// from outbound messages rather than rendered as broken URLs.
 type Daemon struct {
 	AllowCloudDispatch bool          `toml:"-"`
 	ShutdownTimeout    time.Duration `toml:"-"`
+	ExternalURL        string        `toml:"-"`
 }
 
 // Defaults provides fallback values applied to every task.
@@ -241,6 +247,7 @@ type tomlConfig struct {
 type daemonWire struct {
 	AllowCloudDispatch bool   `toml:"allow_cloud_dispatch,omitempty"`
 	ShutdownTimeout    string `toml:"shutdown_timeout,omitempty"`
+	ExternalURL        string `toml:"external_url,omitempty"`
 }
 
 // schedulerWire mirrors [scheduler] before parsing.
@@ -442,9 +449,14 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	if err != nil {
 		return Daemon{}, fmt.Errorf("invalid daemon.shutdown_timeout: %w", err)
 	}
+	externalURL, err := parseExternalURL(w.ExternalURL)
+	if err != nil {
+		return Daemon{}, err
+	}
 	return Daemon{
 		AllowCloudDispatch: w.AllowCloudDispatch,
 		ShutdownTimeout:    shutdown,
+		ExternalURL:        externalURL,
 	}, nil
 }
 

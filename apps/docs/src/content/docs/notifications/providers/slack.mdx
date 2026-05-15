@@ -11,7 +11,7 @@ The Slack driver posts via Slack's [Incoming Webhooks][iw]. One
 webhook URL maps to one default channel. An optional `channel`
 override lets a single webhook target several destinations.
 
-[iw]: https://api.slack.com/messaging/webhooks
+[iw]: https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/
 
 ## Fields
 
@@ -170,44 +170,33 @@ row in the Web UI's bell. If only the bell shows a row, Slack
 delivery failed — open the bell and look for a
 `notify.delivery_failed` event with the underlying reason.
 
+## What a message looks like
+
+The default Slack template renders one message per event as Block Kit
+JSON — a header block with the task name and verb, a section with the
+event sentence and trigger, a code-block tail (failures and timeouts
+only), an action button linking to the run (when
+[`[daemon] external_url`](/configuration/daemon/#external_url) is set),
+and a context footer with the daemon's fingerprint. The same shape is
+used for every event kind — only the emoji, verb, and sentence change.
+
+Without `external_url` the action-button block is omitted; without a
+log file the code-block tail is omitted. Both omissions are silent.
+
+The helpers `statusEmoji`, `statusVerb`, `humanTime`, `humanDuration`,
+`runDuration`, `triggerPhrase`, `eventSentence`, `eventTrigger`,
+`linkLabel`, `runURL`, `taskURL`, `outputTail`, and `fingerprint` are
+available to custom templates if you point `template_path` at a
+Go-template file of your own.
+
 ## Customising the message
 
 Point `template_path` at a Go-template file to override the embedded
-message format. The default template is JSON for Slack's Block Kit:
-
-```json
-{
-  "blocks": [
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "{{ emoji .Severity }} {{ .TaskName }} — {{ .Kind }}"
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Reason:* {{ jsonStr .Reason }}\n*Severity:* `{{ .Severity }}`"
-      }
-    }{{- if .Run }},
-    {
-      "type": "context",
-      "elements": [
-        {
-          "type": "mrkdwn",
-          "text": "Run `{{ .Run.ID }}` triggered by `{{ .Run.TriggeredBy }}` at {{ timeRFC .Timestamp }}"
-        }
-      ]
-    }{{- end }}
-  ]
-}
-```
-
-Copy this as your starting point and modify what you need. The
-template receives the full event struct — task name, run id, exit
-code, end reason, captured tail.
+message format. Copy
+[`slack.tmpl.json`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/slack.tmpl.json)
+as your starting point — it has the full per-kind sentence table and
+the Block Kit JSON shape. The template receives the full event struct:
+task name, run id, exit code, end reason, timestamp, captured tail.
 
 ## What the loader rejects
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/notify/render"
 )
 
 func TestResolve_InlineSecretWins(t *testing.T) {
@@ -23,7 +24,7 @@ func TestResolve_InlineSecretWins(t *testing.T) {
 			WebhookURL: "https://hooks.slack.test/T/B/Z",
 		}},
 	}
-	got, err := Resolve(cfg, t.TempDir())
+	got, err := Resolve(cfg, t.TempDir(), render.TemplateContext{})
 	require.NoError(t, err)
 	require.Len(t, got.Notifiers, 1)
 	assert.Equal(t, "https://hooks.slack.test/T/B/Z", got.Notifiers[0].WebhookURL)
@@ -38,7 +39,7 @@ func TestResolve_EnvSecret(t *testing.T) {
 			WebhookURLEnv: "RUNWISP_TEST_SLACK_URL",
 		}},
 	}
-	got, err := Resolve(cfg, t.TempDir())
+	got, err := Resolve(cfg, t.TempDir(), render.TemplateContext{})
 	require.NoError(t, err)
 	require.Len(t, got.Notifiers, 1)
 	assert.Equal(t, "https://hooks.slack.test/from-env", got.Notifiers[0].WebhookURL)
@@ -54,7 +55,7 @@ func TestResolve_EnvSecretMissing(t *testing.T) {
 			WebhookURLEnv: "RUNWISP_TEST_MISSING_URL",
 		}},
 	}
-	_, err := Resolve(cfg, t.TempDir())
+	_, err := Resolve(cfg, t.TempDir(), render.TemplateContext{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "RUNWISP_TEST_MISSING_URL")
 	assert.Contains(t, err.Error(), `notifier "ops"`)
@@ -71,7 +72,7 @@ func TestResolve_FileSecretRelativeToDataDir(t *testing.T) {
 			WebhookURLFile: "slack.url",
 		}},
 	}
-	got, err := Resolve(cfg, dir)
+	got, err := Resolve(cfg, dir, render.TemplateContext{})
 	require.NoError(t, err)
 	require.Len(t, got.Notifiers, 1)
 	assert.Equal(t, "https://hooks.slack.test/from-file", got.Notifiers[0].WebhookURL)
@@ -90,7 +91,7 @@ func TestResolve_FileSecretAbsolutePath(t *testing.T) {
 			ChatID:       "-100123",
 		}},
 	}
-	got, err := Resolve(cfg, t.TempDir())
+	got, err := Resolve(cfg, t.TempDir(), render.TemplateContext{})
 	require.NoError(t, err)
 	require.Len(t, got.Notifiers, 1)
 	assert.Equal(t, "absolute-token", got.Notifiers[0].BotToken)
@@ -110,7 +111,7 @@ func TestResolve_CompiledRulePredicates(t *testing.T) {
 			NotifierID: []string{"ops"},
 		}},
 	}
-	got, err := Resolve(cfg, t.TempDir())
+	got, err := Resolve(cfg, t.TempDir(), render.TemplateContext{})
 	require.NoError(t, err)
 	require.Len(t, got.Rules, 1)
 	require.Equal(t, []string{"ops"}, got.Rules[0].ActionIDs)

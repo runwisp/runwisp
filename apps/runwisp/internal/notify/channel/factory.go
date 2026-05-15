@@ -31,6 +31,11 @@ type NotifierSpec struct {
 	// Transport overrides the channel's HTTP transport. Nil means use defaults.
 	// Daemon-level glue uses this to apply a global backoff override.
 	Transport *notify.HTTPProvider
+	// RenderContext binds per-daemon values (external URL, fingerprint, tail
+	// reader) into the template's func map. Zero values produce safe defaults:
+	// missing external URL collapses link blocks, missing fingerprint shortens
+	// the footer, missing tail reader collapses the output-tail blocks.
+	RenderContext render.TemplateContext
 }
 
 // Build turns a NotifierSpec into a notify.Channel. Inapp is built separately
@@ -42,7 +47,7 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 		if err != nil {
 			return nil, err
 		}
-		r, err := render.NewTemplateRenderer("slack:"+spec.ID, body, "application/json", render.DefaultTitle)
+		r, err := render.NewTemplateRendererWithContext("slack:"+spec.ID, body, "application/json", render.DefaultTitle, spec.RenderContext)
 		if err != nil {
 			return nil, err
 		}
@@ -58,7 +63,7 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 		if err != nil {
 			return nil, err
 		}
-		r, err := render.NewTemplateRenderer("telegram:"+spec.ID, body, "text/html", render.DefaultTitle)
+		r, err := render.NewTemplateRendererWithContext("telegram:"+spec.ID, body, "text/html", render.DefaultTitle, spec.RenderContext)
 		if err != nil {
 			return nil, err
 		}

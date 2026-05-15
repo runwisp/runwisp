@@ -177,6 +177,46 @@ Telegram messages usually arrive in 1–2 seconds. If yours doesn't:
   `curl https://api.telegram.org/bot<TOKEN>/getMe` — returns the
   bot's profile if the token is valid.
 
+## What a message looks like
+
+The default Telegram template renders one message per event in a single
+shape — only the emoji, headline verb, and sentence change between
+kinds. A failure looks like:
+
+```
+❌ backup-postgres failed
+
+Exited with code 1 after 0.3s.
+Manually triggered via API · 14 May, 17:11.
+
+> Error: connection refused
+> dial tcp 127.0.0.1:5432: connect:
+> connection refused
+
+🔗 View full run
+
+from runwisp · bright-falcon
+```
+
+- The **captured-output tail** (the `<blockquote>` block) appears on
+  `run.failed` and `run.timeout` only, capped at three lines / 300
+  bytes. A missing log file collapses the block silently.
+- The **View run** link points at
+  `<external_url>/tasks/<task>?runId=<id>`, taking from
+  [`[daemon] external_url`](/configuration/daemon/#external_url). When
+  `external_url` is unset the link line is omitted — no broken anchors.
+- The **fingerprint footer** (`from runwisp · bright-falcon`) names the
+  specific daemon that emitted the event. Single-daemon operators can
+  ignore it; multi-daemon operators finally know which box screamed.
+
+`template_path` overrides the embedded template if you need a different
+layout. Copy
+[`telegram.tmpl.html`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/telegram.tmpl.html)
+as your starting point. The helpers `statusEmoji`, `statusVerb`,
+`humanTime`, `humanDuration`, `runDuration`, `triggerPhrase`,
+`eventSentence`, `eventTrigger`, `linkLabel`, `runURL`, `taskURL`,
+`outputTail`, and `fingerprint` are available inside it.
+
 ## What the loader rejects
 
 - Two of `bot_token`, `bot_token_env`, `bot_token_file` set at the

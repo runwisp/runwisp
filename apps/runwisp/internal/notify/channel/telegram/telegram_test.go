@@ -87,6 +87,30 @@ func TestTelegram_HonorsBodyRetryAfter(t *testing.T) {
 	assert.EqualValues(t, 2, hits.Load())
 }
 
+func TestTelegram_SendsRenderedBody(t *testing.T) {
+	var seen string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		seen = r.Form.Get("text")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ch, err := New(Config{
+		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
+		Renderer: newTestRenderer(t), APIBase: srv.URL,
+		Transport: newFastTransport(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, ch.Execute(context.Background(), &notify.Event{
+		Kind: notify.KindRunFailed, Severity: notify.SevError,
+		TaskName: "backup-db", Reason: "exit 1",
+		Timestamp: time.Now().UTC(),
+	}))
+	assert.Contains(t, seen, "<b>backup-db</b> failed", "rendered body should carry the headline")
+	assert.Contains(t, seen, "<i>from runwisp</i>", "footer is always present, fingerprint omitted when blank")
+}
+
 func TestTelegram_RedactsTokenInError(t *testing.T) {
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "TOPSECRET:Z", ChatID: "-1001",

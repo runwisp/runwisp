@@ -1,5 +1,17 @@
-<b>{{ tgEscape .TaskName }}</b> — <i>{{ tgEscape (printf "%s" .Kind) }}</i>
-{{ if .Reason }}<code>{{ tgEscape .Reason }}</code>{{ end }}
-{{- if .Run }}
-Run <code>{{ tgEscape .Run.ID }}</code> ({{ tgEscape (printf "%s" .Run.TriggeredBy) }}) at {{ timeRFC .Timestamp }}
+{{- /* Telegram notification — HTML parse mode. */ -}}
+{{ statusEmoji .Kind }} <b>{{ tgEscape .TaskName }}</b> {{ statusVerb .Kind }}
+
+{{ tgEscape (eventSentence .) }}
+{{ tgEscape (eventTrigger .) }} · {{ humanTime .Timestamp }}.
+{{- $tail := "" }}{{ if or (eq .Kind "run.failed") (eq .Kind "run.timeout") }}{{ $tail = outputTail .Run }}{{ end }}
+{{- if $tail }}
+
+<blockquote>{{ tgEscape $tail }}</blockquote>
 {{- end }}
+{{- $url := "" }}{{ if eq .Kind "log.disk_pressure" }}{{ $url = taskURL .TaskName }}{{ else }}{{ $url = runURL .Run }}{{ end }}
+{{- if $url }}
+
+🔗 <a href="{{ $url }}">{{ linkLabel .Kind }}</a>
+{{- end }}
+
+<i>from runwisp{{ with fingerprint }} · {{ tgEscape . }}{{ end }}</i>
