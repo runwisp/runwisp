@@ -30,17 +30,9 @@ func (c *Client) GetMetricsHistory() ([]model.MetricsSample, error) {
 	return samples, nil
 }
 
-// RunSummary holds aggregate run statistics from the API.
-type RunSummary struct {
-	Total       int64   `json:"total"`
-	Success     int64   `json:"success"`
-	Failed      int64   `json:"failed"`
-	LastFailure *string `json:"last_failure,omitempty"`
-}
-
 // GetRunSummary fetches aggregate run statistics.
-func (c *Client) GetRunSummary() (*RunSummary, error) {
-	var summary RunSummary
+func (c *Client) GetRunSummary() (*model.RunSummary, error) {
+	var summary model.RunSummary
 	if err := c.doJSON("GET", "/api/runs/summary", nil, &summary); err != nil {
 		return nil, err
 	}

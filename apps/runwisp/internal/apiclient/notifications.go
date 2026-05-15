@@ -11,34 +11,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
+
+	"github.com/runwisp/runwisp/internal/server"
 )
-
-// Notification mirrors the server's NotificationDTO. ISO timestamps from the
-// server are decoded as time.Time on this side; the Occurrences ring stays
-// as raw RFC3339Nano strings since the TUI/web UI both render them
-// directly. ReadAt is nil when the row is unread.
-type Notification struct {
-	ID             string     `json:"id"`
-	Fingerprint    string     `json:"fingerprint"`
-	Kind           string     `json:"kind"`
-	Severity       string     `json:"severity"`
-	TaskName       string     `json:"task_name"`
-	RunID          string     `json:"run_id"`
-	Title          string     `json:"title"`
-	Body           string     `json:"body"`
-	Count          int        `json:"count"`
-	Occurrences    []string   `json:"occurrences"`
-	CreatedAt      time.Time  `json:"created_at"`
-	LastOccurredAt time.Time  `json:"last_occurred_at"`
-	ReadAt         *time.Time `json:"read_at,omitempty"`
-}
-
-// NotificationsPage is the cursor-paginated list response.
-type NotificationsPage struct {
-	Items      []Notification `json:"items"`
-	NextCursor string         `json:"next_cursor,omitempty"`
-}
 
 // NotificationStreamEvent is a parsed SSE event from /api/notifications/stream.
 // Type is one of "notification.created", "notification.updated",
@@ -48,25 +23,9 @@ type NotificationStreamEvent struct {
 	Data json.RawMessage
 }
 
-// NotificationEnvelope unwraps the {notification: {...}, unread_count: N}
-// payload that notification.created and notification.updated use. UnreadCount
-// is the post-mutation server count; clients display it as the badge value
-// instead of delta-tracking. A negative value means the server failed to
-// query and the field should be ignored.
-type NotificationEnvelope struct {
-	Notification Notification `json:"notification"`
-	UnreadCount  int64        `json:"unread_count"`
-}
-
-// UnreadCountEnvelope is the body of a notifications.unread_count_changed
-// event — count-only, no notification row.
-type UnreadCountEnvelope struct {
-	UnreadCount int64 `json:"unread_count"`
-}
-
 // ListNotifications fetches one page of notifications. Pass before="" for the
 // most recent page; subsequent pages use NextCursor from the previous response.
-func (c *Client) ListNotifications(limit int, before string) (NotificationsPage, error) {
+func (c *Client) ListNotifications(limit int, before string) (server.NotificationsListBody, error) {
 	q := url.Values{}
 	if limit > 0 {
 		q.Set("limit", strconv.Itoa(limit))
@@ -78,9 +37,9 @@ func (c *Client) ListNotifications(limit int, before string) (NotificationsPage,
 	if encoded := q.Encode(); encoded != "" {
 		path = path + "?" + encoded
 	}
-	var page NotificationsPage
+	var page server.NotificationsListBody
 	if err := c.doJSON("GET", path, nil, &page); err != nil {
-		return NotificationsPage{}, err
+		return server.NotificationsListBody{}, err
 	}
 	return page, nil
 }
@@ -164,11 +123,12 @@ func (c *Client) StreamNotifications(ctx context.Context) (<-chan NotificationSt
 
 // DecodeNotificationEnvelope unwraps a notification.created or
 // notification.updated event's payload, returning the row and the server's
-// post-mutation unread count.
-func DecodeNotificationEnvelope(data []byte) (NotificationEnvelope, error) {
-	var env NotificationEnvelope
+// post-mutation unread count. Both event types share the same JSON shape, so
+// server.NotificationCreatedEvent is used as the decode target for both.
+func DecodeNotificationEnvelope(data []byte) (server.NotificationCreatedEvent, error) {
+	var env server.NotificationCreatedEvent
 	if err := json.Unmarshal(data, &env); err != nil {
-		return NotificationEnvelope{}, fmt.Errorf("decode notification: %w", err)
+		return server.NotificationCreatedEvent{}, fmt.Errorf("decode notification: %w", err)
 	}
 	return env, nil
 }
@@ -176,7 +136,7 @@ func DecodeNotificationEnvelope(data []byte) (NotificationEnvelope, error) {
 // DecodeUnreadCountEnvelope unwraps a notifications.unread_count_changed
 // event's payload to a single int64.
 func DecodeUnreadCountEnvelope(data []byte) (int64, error) {
-	var env UnreadCountEnvelope
+	var env server.NotificationUnreadCountEvent
 	if err := json.Unmarshal(data, &env); err != nil {
 		return 0, fmt.Errorf("decode unread count: %w", err)
 	}

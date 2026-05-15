@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/stretchr/testify/require"
 )
 
@@ -284,7 +285,7 @@ func waitForNotificationEvent(
 	events <-chan apiclient.NotificationStreamEvent,
 	wanted string,
 	timeout time.Duration,
-) apiclient.Notification {
+) server.NotificationDTO {
 	t.Helper()
 	deadline := time.After(timeout)
 	for {
@@ -310,7 +311,7 @@ func waitForListedNotifications(
 	client *apiclient.Client,
 	atLeast int,
 	timeout time.Duration,
-) apiclient.NotificationsPage {
+) server.NotificationsListBody {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -322,10 +323,10 @@ func waitForListedNotifications(
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("notifications list never reached %d items within %s", atLeast, timeout)
-	return apiclient.NotificationsPage{}
+	return server.NotificationsListBody{}
 }
 
-func hasDeliveryFailure(items []apiclient.Notification) bool {
+func hasDeliveryFailure(items []server.NotificationDTO) bool {
 	for _, n := range items {
 		if n.Kind == "notify.delivery_failed" {
 			return true
@@ -384,7 +385,7 @@ func waitForNotificationEnvelope(
 	events <-chan apiclient.NotificationStreamEvent,
 	wanted string,
 	timeout time.Duration,
-) apiclient.NotificationEnvelope {
+) server.NotificationCreatedEvent {
 	t.Helper()
 	deadline := time.After(timeout)
 	for {
@@ -401,7 +402,7 @@ func waitForNotificationEnvelope(
 			return env
 		case <-deadline:
 			t.Fatalf("never received SSE event %q", wanted)
-			return apiclient.NotificationEnvelope{}
+			return server.NotificationCreatedEvent{}
 		}
 	}
 }

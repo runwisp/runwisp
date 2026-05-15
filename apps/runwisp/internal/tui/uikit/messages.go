@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 )
 
 // Page identifies which content the main panel displays.
@@ -121,7 +122,7 @@ type ExecWindowFetchedMsg struct {
 // LogOlderLoadedMsg delivers the result of a scroll-up REST page fetch.
 type LogOlderLoadedMsg struct {
 	RunID     string
-	Lines     []apiclient.LogLine
+	Lines     []server.LogLineEntry
 	FirstLine int64
 	Total     int64
 }
@@ -135,7 +136,7 @@ type LogStreamConnectedMsg struct {
 // LogLineMsg delivers one absolute-numbered line from the SSE stream.
 type LogLineMsg struct {
 	RunID string
-	Line  apiclient.LogLine
+	Line  server.LogLineEntry
 }
 
 // LogRotatedMsg signals server-side rotation; lines below FirstAvailable
@@ -178,7 +179,7 @@ type MetricsHistoryMsg struct {
 
 // RunSummaryMsg delivers aggregate run statistics.
 type RunSummaryMsg struct {
-	Summary *apiclient.RunSummary
+	Summary *model.RunSummary
 	Err     error
 }
 
@@ -245,7 +246,7 @@ type NotificationUnreadCountMsg struct {
 // at startup so the expanded panel is populated immediately, instead of
 // waiting for a fresh SSE event.
 type NotificationsLoadedMsg struct {
-	Items []apiclient.Notification
+	Items []server.NotificationDTO
 	Err   error
 }
 

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/server"
 )
 
-func unreadNotification(id string, sev string, occurredAt time.Time, title string) apiclient.Notification {
-	return apiclient.Notification{
+func unreadNotification(id string, sev string, occurredAt time.Time, title string) server.NotificationDTO {
+	return server.NotificationDTO{
 		ID:             id,
 		Severity:       sev,
 		Count:          1,
@@ -21,7 +21,7 @@ func unreadNotification(id string, sev string, occurredAt time.Time, title strin
 	}
 }
 
-func readNotification(id string, sev string, occurredAt time.Time, title string) apiclient.Notification {
+func readNotification(id string, sev string, occurredAt time.Time, title string) server.NotificationDTO {
 	stamp := occurredAt
 	n := unreadNotification(id, sev, occurredAt, title)
 	n.ReadAt = &stamp
@@ -294,7 +294,7 @@ func TestNotificationsPanel_BadgeIsServerAuthoritative(t *testing.T) {
 func TestNotificationsPanel_LoadHistoricalDoesNotTouchUnread(t *testing.T) {
 	p := NewPanel()
 	now := time.Now()
-	items := []apiclient.Notification{
+	items := []server.NotificationDTO{
 		readNotification("01A", "info", now.Add(-time.Hour), "old-read"),
 		unreadNotification("01B", "warn", now, "new-unread"),
 	}
@@ -435,7 +435,7 @@ func TestNotificationsPanel_CountLabelShowsUnreadCountOnly(t *testing.T) {
 	p := NewPanel()
 	p.SetWidth(80)
 	now := time.Now()
-	p.LoadHistorical([]apiclient.Notification{
+	p.LoadHistorical([]server.NotificationDTO{
 		readNotification("01A", "info", now, "first"),
 		unreadNotification("01B", "info", now, "second"),
 	})
