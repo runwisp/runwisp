@@ -13,7 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui/rhythm"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -36,9 +36,9 @@ const (
 // summary line that the operator can expand into a scrollable list. Items
 // are tracked by ID so SSE updates mutate in place; the cursor highlights
 // one row at a time inside a bubble's viewport. Read state is per-item
-// (carried on apiclient.Notification.ReadAt).
+// (carried on server.NotificationDTO.ReadAt).
 type Panel struct {
-	items   map[string]apiclient.Notification
+	items   map[string]server.NotificationDTO
 	ordered []string // ULIDs DESC
 
 	expanded bool
@@ -69,7 +69,7 @@ func NewPanel() Panel {
 	// the entire viewport rectangle stays in theme.
 	vp.Style = lipgloss.NewStyle().Background(uikit.ColorBg)
 	return Panel{
-		items:    make(map[string]apiclient.Notification),
+		items:    make(map[string]server.NotificationDTO),
 		viewport: vp,
 	}
 }
@@ -77,7 +77,7 @@ func NewPanel() Panel {
 // Upsert applies a created/updated SSE event. Returns true when the panel
 // changed in a way that warrants a repaint. The unread badge is owned by
 // SetUnread (server-driven), not Upsert.
-func (p *Panel) Upsert(n apiclient.Notification) bool {
+func (p *Panel) Upsert(n server.NotificationDTO) bool {
 	if n.ID == "" {
 		return false
 	}
@@ -187,7 +187,7 @@ func ScheduleFlashClear() tea.Cmd {
 }
 
 // Selected returns the currently-highlighted notification or nil.
-func (p *Panel) Selected() *apiclient.Notification {
+func (p *Panel) Selected() *server.NotificationDTO {
 	if !p.expanded || len(p.ordered) == 0 {
 		return nil
 	}
@@ -212,7 +212,7 @@ func (p *Panel) SetUnread(n int) {
 
 // LoadHistorical seeds the panel with the initial page fetched from the REST
 // list endpoint at startup.
-func (p *Panel) LoadHistorical(items []apiclient.Notification) bool {
+func (p *Panel) LoadHistorical(items []server.NotificationDTO) bool {
 	changed := false
 	for _, n := range items {
 		if n.ID == "" {
@@ -415,7 +415,7 @@ func (p *Panel) rebuildContent() {
 	p.viewport.SetContent(strings.Join(lines, "\n"))
 }
 
-func (p *Panel) renderRow(n apiclient.Notification, selected bool) string {
+func (p *Panel) renderRow(n server.NotificationDTO, selected bool) string {
 	bg := uikit.ColorBg
 	if selected {
 		bg = uikit.ColorBgLight
@@ -465,7 +465,7 @@ func stripeFocusLine(content string, restWidth int, restBg lipgloss.Color) strin
 	return stripe + uikit.PadLine(content, restWidth, restBg)
 }
 
-func (p *Panel) latest() *apiclient.Notification {
+func (p *Panel) latest() *server.NotificationDTO {
 	for _, id := range p.ordered {
 		n := p.items[id]
 		if isUnread(n) {
@@ -485,7 +485,7 @@ func (p *Panel) ensureCursorVisible() {
 	}
 }
 
-func summarizeNotification(n apiclient.Notification) string {
+func summarizeNotification(n server.NotificationDTO) string {
 	title := n.Title
 	if title == "" {
 		title = n.Kind
@@ -516,7 +516,7 @@ func truncateLine(s string, max int) string {
 	return s[:max-1] + "…"
 }
 
-func isUnread(n apiclient.Notification) bool { return n.ReadAt == nil }
+func isUnread(n server.NotificationDTO) bool { return n.ReadAt == nil }
 
 var (
 	panelPrefixStyle = lipgloss.NewStyle().

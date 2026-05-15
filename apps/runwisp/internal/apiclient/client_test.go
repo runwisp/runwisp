@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -158,7 +159,7 @@ func TestListTasks(t *testing.T) {
 }
 
 func TestListRuns(t *testing.T) {
-	resp := RunsResponse{
+	resp := server.RunsResponseBody{
 		Runs:  []model.Run{{ID: "run-1"}, {ID: "run-2"}},
 		Total: 42,
 	}
@@ -178,7 +179,7 @@ func TestListRuns(t *testing.T) {
 }
 
 func TestListRunsByTask(t *testing.T) {
-	resp := RunsResponse{
+	resp := server.RunsResponseBody{
 		Runs:  []model.Run{{ID: "run-1"}},
 		Total: 1,
 	}

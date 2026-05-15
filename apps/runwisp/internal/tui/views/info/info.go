@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/NimbleMarkets/ntcharts/sparkline"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -31,7 +31,7 @@ type InfoView struct {
 	scroll int
 
 	stats      *model.SystemStats
-	runSummary *apiclient.RunSummary
+	runSummary *model.RunSummary
 
 	cpuHistory []float64
 	memHistory []float64
@@ -105,7 +105,7 @@ func (v *InfoView) LoadHistory(samples []model.MetricsSample) {
 }
 
 // UpdateRunSummary stores the latest run summary.
-func (v *InfoView) UpdateRunSummary(summary *apiclient.RunSummary) {
+func (v *InfoView) UpdateRunSummary(summary *model.RunSummary) {
 	v.runSummary = summary
 }
 
@@ -332,7 +332,7 @@ func (v *InfoView) renderActivitySection(w int) []string {
 
 	if s.LastFailure != nil {
 		failLine := bgSpace(2) + uikit.InfoStatLabelStyle.Render("Last failure  ") +
-			lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(*s.LastFailure)
+			lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(s.LastFailure.Format(time.RFC3339))
 		lines = append(lines, uikit.PadLine(failLine, w, uikit.ColorBg))
 	}
 

@@ -9,6 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/internal/server/logstream"
 )
 
 // StreamRunEvents opens an SSE connection to /api/runs/stream and delivers
@@ -80,25 +83,11 @@ const (
 // the zero value.
 type LogStreamMsg struct {
 	Kind     LogStreamMsgKind
-	Line     LogLine
-	Rotated  LogStreamRotated
-	Dropped  LogStreamDropped
-	Done     LogStreamDone
+	Line     server.LogLineEntry
+	Rotated  logstream.RotatedEvent
+	Dropped  logstream.DroppedEvent
+	Done     logstream.DoneEvent
 	ErrValue error
-}
-
-type LogStreamRotated struct {
-	FirstAvailable int64 `json:"first_available"`
-}
-
-type LogStreamDropped struct {
-	After int64 `json:"after"`
-	Count int64 `json:"count"`
-}
-
-type LogStreamDone struct {
-	FinalLine int64  `json:"final_line"`
-	Status    string `json:"status"`
 }
 
 // StreamLogOpts tunes the line-stream subscription.
@@ -193,25 +182,25 @@ func (c *Client) StreamLogLines(ctx context.Context, taskName, runID string, opt
 func parseLogStreamFrame(event, data string) (LogStreamMsg, bool) {
 	switch event {
 	case "line", "":
-		var line LogLine
+		var line server.LogLineEntry
 		if err := json.Unmarshal([]byte(data), &line); err != nil {
 			return LogStreamMsg{}, false
 		}
 		return LogStreamMsg{Kind: LogStreamMsgKindLine, Line: line}, true
 	case "rotated":
-		var r LogStreamRotated
+		var r logstream.RotatedEvent
 		if err := json.Unmarshal([]byte(data), &r); err != nil {
 			return LogStreamMsg{}, false
 		}
 		return LogStreamMsg{Kind: LogStreamMsgKindRotated, Rotated: r}, true
 	case "dropped":
-		var d LogStreamDropped
+		var d logstream.DroppedEvent
 		if err := json.Unmarshal([]byte(data), &d); err != nil {
 			return LogStreamMsg{}, false
 		}
 		return LogStreamMsg{Kind: LogStreamMsgKindDropped, Dropped: d}, true
 	case "done":
-		var d LogStreamDone
+		var d logstream.DoneEvent
 		if err := json.Unmarshal([]byte(data), &d); err != nil {
 			return LogStreamMsg{}, false
 		}
@@ -220,9 +209,10 @@ func parseLogStreamFrame(event, data string) (LogStreamMsg, bool) {
 	return LogStreamMsg{}, false
 }
 
-// RunStreamEvent represents a parsed SSE event from the runs stream.
+// RunStreamEvent is the client-side SSE dispatch frame for the runs stream.
+// Type comes from the SSE `event:` field; Data is the raw wire payload.
+// No server-side envelope struct combines both, so this is a client concern.
 type RunStreamEvent struct {
-	Type      string          `json:"type"`
-	Timestamp string          `json:"timestamp"`
-	Data      json.RawMessage `json:"data"`
+	Type string
+	Data json.RawMessage
 }

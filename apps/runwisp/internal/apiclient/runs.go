@@ -9,13 +9,8 @@ import (
 	"strconv"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 )
-
-// RunsResponse mirrors the server's paginated runs response.
-type RunsResponse struct {
-	Runs  []model.Run `json:"runs"`
-	Total int64       `json:"total"`
-}
 
 // RunsParams holds query parameters for listing runs.
 type RunsParams struct {
@@ -69,7 +64,7 @@ func (c *Client) ListRuns(params RunsParams) ([]model.Run, int64, error) {
 		path += "?" + qs
 	}
 
-	var resp RunsResponse
+	var resp server.RunsResponseBody
 	if err := c.doJSON("GET", path, nil, &resp); err != nil {
 		return nil, 0, err
 	}
@@ -83,7 +78,7 @@ func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run
 		path += "?" + qs
 	}
 
-	var resp RunsResponse
+	var resp server.RunsResponseBody
 	if err := c.doJSON("GET", path, nil, &resp); err != nil {
 		return nil, 0, err
 	}
