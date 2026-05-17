@@ -128,6 +128,46 @@ func processAlive(pid int, pidPath string) bool {
 	return proc.Signal(syscall.Signal(0)) == nil
 }
 
+// daemonLogDrainer tails the daemon's log file incrementally, emitting each
+// new line to stderr and detecting fatal startup messages.
+type daemonLogDrainer struct {
+	path   string
+	file   *os.File
+	reader *bufio.Reader
+}
+
+func (d *daemonLogDrainer) drain() (fatalMsg string, fatal bool) {
+	if d.reader == nil {
+		f, err := os.Open(d.path)
+		if err != nil {
+			return "", false
+		}
+		d.file = f
+		d.reader = bufio.NewReader(f)
+	}
+	for {
+		line, err := d.reader.ReadString('\n')
+		if line != "" {
+			line = strings.TrimRight(line, "\n\r")
+			fmt.Fprintf(os.Stderr, "  %s\n", line)
+			if msg, isFatal := classifyDaemonLogLine(line); isFatal {
+				return msg, true
+			}
+		}
+		if err != nil {
+			// Reset so next drain picks up writes appended after EOF.
+			d.reader.Reset(d.file)
+			return "", false
+		}
+	}
+}
+
+func (d *daemonLogDrainer) close() {
+	if d.file != nil {
+		d.file.Close()
+	}
+}
+
 // waitForDaemon streams the daemon log file in real-time while polling the
 // health endpoint. It returns immediately on success, aborts early on fatal
 // log lines or process exit, and always dumps a log tail when startup fails
@@ -135,91 +175,15 @@ func processAlive(pid int, pidPath string) bool {
 func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Duration) error {
 	fmt.Fprintf(os.Stderr, "Starting daemon...\n")
 
+	drainer := &daemonLogDrainer{path: logPath}
+	defer drainer.close()
+
 	pidPath := datadir.PidFilePath(flags.DataDir)
 	deadline := time.Now().Add(timeout)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	var (
-		logFile    *os.File
-		logReader  *bufio.Reader
-		pidSeen    bool
-		startupErr error
-		timedOut   bool
-	)
-	defer func() {
-		if logFile != nil {
-			logFile.Close()
-		}
-	}()
-
-	drainLog := func() (fatalMsg string, fatal bool) {
-		if logReader == nil {
-			if f, err := os.Open(logPath); err == nil {
-				logFile = f
-				logReader = bufio.NewReader(f)
-			} else {
-				return "", false
-			}
-		}
-		for {
-			line, err := logReader.ReadString('\n')
-			if line != "" {
-				line = strings.TrimRight(line, "\n\r")
-				fmt.Fprintf(os.Stderr, "  %s\n", line)
-				if msg, isFatal := classifyDaemonLogLine(line); isFatal {
-					return msg, true
-				}
-			}
-			if err != nil {
-				// Reset so next drain picks up writes appended after EOF.
-				logReader.Reset(logFile)
-				return "", false
-			}
-		}
-	}
-
-loop:
-	for {
-		if msg, fatal := drainLog(); fatal {
-			startupErr = fmt.Errorf("daemon failed to start: %s", msg)
-			break
-		}
-
-		if err := client.HealthCheck(); err == nil {
-			return nil
-		}
-
-		if _, err := os.Stat(pidPath); err == nil {
-			pidSeen = true
-		} else if pidSeen {
-			// Give the log tailer one more drain to flush any final lines
-			// from the dying daemon before we report the exit.
-			time.Sleep(200 * time.Millisecond)
-			drainLog()
-			startupErr = errors.New("daemon process exited unexpectedly during startup")
-			break
-		}
-
-		if pidSeen {
-			if pid, err := datadir.ReadPidFile(flags.DataDir); err == nil {
-				if !processAlive(pid, pidPath) {
-					time.Sleep(200 * time.Millisecond)
-					drainLog()
-					startupErr = fmt.Errorf("daemon process %d exited during startup", pid)
-					break
-				}
-			}
-		}
-
-		if time.Now().After(deadline) {
-			timedOut = true
-			startupErr = errors.New("daemon failed to start: health check timed out")
-			break loop
-		}
-
-		<-ticker.C
-	}
+	startupErr, timedOut := waitForDaemonLoop(client, drainer, pidPath, deadline, ticker)
 
 	// On any failure path, surface the daemon log so the user can see the
 	// underlying cause. Also promote a recognised bind error to a clearer
@@ -234,6 +198,55 @@ loop:
 		fmt.Fprintf(os.Stderr, "(daemon log at %s is empty)\n", logPath)
 	}
 	return startupErr
+}
+
+// waitForDaemonLoop is the polling core of waitForDaemon. It returns the
+// startup error (nil on success) and whether the loop exited due to timeout.
+func waitForDaemonLoop(client *apiclient.Client, drainer *daemonLogDrainer, pidPath string, deadline time.Time, ticker *time.Ticker) (startupErr error, timedOut bool) {
+	var pidSeen bool
+	for {
+		if msg, fatal := drainer.drain(); fatal {
+			return fmt.Errorf("daemon failed to start: %s", msg), false
+		}
+
+		if err := client.HealthCheck(); err == nil {
+			return nil, false
+		}
+
+		if _, err := os.Stat(pidPath); err == nil {
+			pidSeen = true
+		} else if pidSeen {
+			// Give the log tailer one more drain to flush any final lines
+			// from the dying daemon before we report the exit.
+			time.Sleep(200 * time.Millisecond)
+			drainer.drain()
+			return errors.New("daemon process exited unexpectedly during startup"), false
+		}
+
+		if pidSeen {
+			if pid, alive := checkPidAlive(pidPath); !alive {
+				time.Sleep(200 * time.Millisecond)
+				drainer.drain()
+				return fmt.Errorf("daemon process %d exited during startup", pid), false
+			}
+		}
+
+		if time.Now().After(deadline) {
+			return errors.New("daemon failed to start: health check timed out"), true
+		}
+
+		<-ticker.C
+	}
+}
+
+// checkPidAlive reads the PID file and returns (pid, alive). Returns (0, true)
+// when the file is unreadable (conservative: assume alive to avoid false exits).
+func checkPidAlive(pidPath string) (pid int, alive bool) {
+	p, err := datadir.ReadPidFile(flags.DataDir)
+	if err != nil {
+		return 0, true
+	}
+	return p, processAlive(p, pidPath)
 }
 
 // classifyDaemonLogLine returns a trimmed message and fatal=true when the

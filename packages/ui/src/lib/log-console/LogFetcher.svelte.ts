@@ -19,7 +19,7 @@ const logger = createLogger("LogFetcher");
  * - Throttles and prioritizes requests to prevent viewport jitter.
  */
 export class LogFetcher {
-    private cache: LogCache;
+    private readonly cache: LogCache;
     private fetchLogsFn: FetchLogsFn | undefined;
     private chunkSize: number;
 
@@ -28,12 +28,12 @@ export class LogFetcher {
 
     isFetching = $state(false);
 
-    private pendingChunks = new SvelteSet<number>();
-    private inFlightChunks = new SvelteSet<number>();
+    private readonly pendingChunks = new SvelteSet<number>();
+    private readonly inFlightChunks = new SvelteSet<number>();
     private fetchTimer: ReturnType<typeof setTimeout> | null = null;
     private lastRequestAt = 0;
 
-    private onDataLoaded?: ((min: number, max: number) => void) | undefined;
+    private readonly onDataLoaded: ((min: number, max: number) => void) | undefined;
 
     constructor(
         cache: LogCache,

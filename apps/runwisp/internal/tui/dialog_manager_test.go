@@ -87,15 +87,16 @@ func TestDialogManager_Flash(t *testing.T) {
 		t.Fatalf("expected no flash initially, got %q", msg)
 	}
 
-	dm.Flash("Hello!", 100*time.Millisecond)
+	dm.Flash("Hello!", time.Hour) // long duration → still active immediately
 
 	msg, ok = dm.FlashActive()
 	if !ok || msg != "Hello!" {
 		t.Fatalf("expected flash 'Hello!', got ok=%v msg=%q", ok, msg)
 	}
 
-	// Wait for expiry.
-	time.Sleep(150 * time.Millisecond)
+	// Rewind expiry to the past instead of sleeping; the public observation
+	// of "expired" is identical and the test is deterministic.
+	dm.flashExpiry = time.Now().Add(-time.Second)
 
 	msg, ok = dm.FlashActive()
 	if ok {
@@ -195,5 +196,105 @@ func TestDialogManager_RenderOverlays_NoDialog(t *testing.T) {
 	out := dm.RenderOverlays(base, 80, 24)
 	if out != base {
 		t.Fatalf("expected base passthrough, got %q", out)
+	}
+}
+
+// TestDialogManager_IsShuttingDown verifies the predicate before and after StartShutdown.
+func TestDialogManager_IsShuttingDown(t *testing.T) {
+	var dm DialogManager
+
+	// No dialog → not shutting down.
+	if dm.IsShuttingDown() {
+		t.Fatal("expected IsShuttingDown=false with no dialog")
+	}
+
+	// Dialog present but not in shutdown mode.
+	d := NewConfirmDialog("Quit?", "Are you sure?", func() tea.Msg { return nil })
+	dm.ShowConfirm(d)
+	if dm.IsShuttingDown() {
+		t.Fatal("expected IsShuttingDown=false before StartShutdown")
+	}
+
+	// Transition to shutdown.
+	cmd := dm.StartShutdown()
+	if !dm.IsShuttingDown() {
+		t.Fatal("expected IsShuttingDown=true after StartShutdown")
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil spinner command from StartShutdown")
+	}
+}
+
+// TestDialogManager_StartShutdown_NoDialog returns nil when there is no confirm dialog.
+func TestDialogManager_StartShutdown_NoDialog(t *testing.T) {
+	var dm DialogManager
+	cmd := dm.StartShutdown()
+	if cmd != nil {
+		t.Fatal("expected nil cmd when no confirm dialog")
+	}
+}
+
+// TestDialogManager_UpdateSpinner_NoDialog returns nil without panicking.
+func TestDialogManager_UpdateSpinner_NoDialog(t *testing.T) {
+	var dm DialogManager
+	cmd := dm.UpdateSpinner(nil)
+	if cmd != nil {
+		t.Fatal("expected nil cmd when no confirm dialog")
+	}
+}
+
+// TestDialogManager_UpdateSpinner_WithDialog forwards a tick to the spinner.
+func TestDialogManager_UpdateSpinner_WithDialog(t *testing.T) {
+	var dm DialogManager
+	d := NewConfirmDialog("Quit?", "Stopping...", func() tea.Msg { return nil })
+	dm.ShowConfirm(d)
+	dm.StartShutdown() //nolint:errcheck
+
+	// Produce a real spinner tick message via wrapSpinnerCmd.
+	tickCmd := dm.confirmDialog.spinnerTick()
+	tickMsg := tickCmd()
+
+	// Forward to UpdateSpinner; must not panic.
+	_ = dm.UpdateSpinner(tickMsg)
+}
+
+// TestDialogManager_UpdateConfirmKeep does not dismiss the dialog after a key press.
+func TestDialogManager_UpdateConfirmKeep(t *testing.T) {
+	var dm DialogManager
+	d := NewConfirmDialog("Test", "Keep?", func() tea.Msg { return nil })
+	dm.ShowConfirm(d)
+
+	// Press Esc — normally closes; UpdateConfirmKeep must NOT dismiss it.
+	_, closed := dm.UpdateConfirmKeep(tea.KeyMsg{Type: tea.KeyEscape})
+	if !closed {
+		t.Fatal("expected closed=true from Esc")
+	}
+	// Dialog must still be present because UpdateConfirmKeep doesn't dismiss.
+	if !dm.HasConfirm() {
+		t.Fatal("expected dialog still present after UpdateConfirmKeep")
+	}
+}
+
+// TestDialogManager_UpdateConfirmKeep_YesCmd returns the confirm cmd without dismissing.
+func TestDialogManager_UpdateConfirmKeep_YesCmd(t *testing.T) {
+	var dm DialogManager
+	var fired bool
+	d := NewConfirmDialog("Test", "Sure?", func() tea.Msg { fired = true; return nil })
+	dm.ShowConfirm(d)
+
+	// Drive the keyboard shortcut for "yes".
+	cmd, closed := dm.UpdateConfirmKeep(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	if !closed {
+		t.Fatal("expected closed=true on y")
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd on y")
+	}
+	if !dm.HasConfirm() {
+		t.Fatal("dialog must survive UpdateConfirmKeep")
+	}
+	cmd() //nolint:errcheck
+	if !fired {
+		t.Fatal("expected confirm callback to fire")
 	}
 }

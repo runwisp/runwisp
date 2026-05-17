@@ -11,6 +11,12 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
+// programMessenger is the subset of *tea.Program that DebugLogWriter needs.
+// Letting tests substitute a fake without spinning up a real Bubble Tea loop.
+type programMessenger interface {
+	Send(msg tea.Msg)
+}
+
 // DebugLogWriter is an io.Writer that forwards each write as a uikit.DebugLogMsg
 // to a Bubble Tea program. It is safe for concurrent use.
 //
@@ -18,7 +24,7 @@ import (
 // (up to 256 entries). Once attached, buffered messages are flushed.
 type DebugLogWriter struct {
 	mu      sync.Mutex
-	program *tea.Program
+	program programMessenger
 	buf     []uikit.DebugLogMsg
 }
 
@@ -32,6 +38,11 @@ func NewDebugLogWriter() *DebugLogWriter {
 
 // SetProgram attaches the Bubble Tea program and flushes buffered messages.
 func (w *DebugLogWriter) SetProgram(p *tea.Program) {
+	w.attach(p)
+}
+
+// attach is the unexported form of SetProgram that accepts any message sink.
+func (w *DebugLogWriter) attach(p programMessenger) {
 	w.mu.Lock()
 	w.program = p
 	pending := w.buf

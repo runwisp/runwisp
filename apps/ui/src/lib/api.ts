@@ -168,8 +168,8 @@ export const tasksApi = {
         options?: { from?: number; limit?: number },
     ): Promise<LogPage> => {
         const params = new URLSearchParams();
-        if (typeof options?.from !== "undefined") params.set("from", String(options.from));
-        if (typeof options?.limit !== "undefined") params.set("limit", String(options.limit));
+        if (options?.from !== undefined) params.set("from", String(options.from));
+        if (options?.limit !== undefined) params.set("limit", String(options.limit));
         const qs = params.toString();
         const url =
             API_BASE_URL +

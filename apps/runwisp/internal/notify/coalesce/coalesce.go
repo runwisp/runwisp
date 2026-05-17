@@ -51,15 +51,16 @@ const (
 type Channel struct {
 	inner  notify.Channel
 	cfg    Config
-	clock  notify.Clock
+	clock  notify.Clocker
 	logger *slog.Logger
 
 	mu    sync.Mutex
 	state map[string]*fpState
 
-	// timerCtx underpins window-close summaries. Cancelling it stops pending
-	// summary deliveries; Close blocks until in-flight summaries return.
-	timerCtx    context.Context
+	// timerDone is closed when the channel is closed; timer goroutines select on
+	// it before dispatching window-close summaries. Close blocks until all
+	// in-flight summary goroutines return.
+	timerDone   <-chan struct{}
 	timerCancel context.CancelFunc
 	wg          sync.WaitGroup
 }
@@ -73,7 +74,7 @@ type fpState struct {
 
 // New wraps inner. The returned Channel must be Closed; otherwise pending
 // timer goroutines will leak.
-func New(inner notify.Channel, cfg Config, clock notify.Clock, logger *slog.Logger) *Channel {
+func New(inner notify.Channel, cfg Config, clock notify.Clocker, logger *slog.Logger) *Channel {
 	if cfg.Window <= 0 {
 		cfg.Window = DefaultWindow
 	}
@@ -93,7 +94,7 @@ func New(inner notify.Channel, cfg Config, clock notify.Clock, logger *slog.Logg
 		clock:       clock,
 		logger:      logger,
 		state:       make(map[string]*fpState),
-		timerCtx:    ctx,
+		timerDone:   ctx.Done(),
 		timerCancel: cancel,
 	}
 }
@@ -237,7 +238,12 @@ func (c *Channel) timerFlush(fp string) {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		if err := c.inner.Execute(c.timerCtx, summarize(ev, count, true)); err != nil {
+		select {
+		case <-c.timerDone:
+			return
+		default:
+		}
+		if err := c.inner.Execute(context.Background(), summarize(ev, count, true)); err != nil {
 			c.logger.Error("notify outbound coalesce: window-close summary delivery failed",
 				"channel", c.inner.ID(), "fingerprint", fp, "err", err)
 		}

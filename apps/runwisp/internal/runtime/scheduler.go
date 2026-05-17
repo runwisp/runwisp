@@ -59,14 +59,30 @@ func newWallMinute(t time.Time) wallMinute {
 	}
 }
 
+// SchedulerOption tweaks a Scheduler at construction time. Used today only
+// to inject a fake clock from tests; kept exported so test packages outside
+// `runtime` (e.g. runtime_test) can use it too.
+type SchedulerOption func(*Scheduler)
+
+// WithNow overrides the scheduler's clock. Production code uses time.Now;
+// tests inject a fake clock so DST-fall-back firing sequences are
+// deterministic.
+func WithNow(now func() time.Time) SchedulerOption {
+	return func(s *Scheduler) {
+		if now != nil {
+			s.now = now
+		}
+	}
+}
+
 // NewScheduler creates a scheduler. location controls how task cron expressions
 // are interpreted; nil means UTC, which is the project default. Per-task
 // timezones are layered on via a CRON_TZ= prefix when scheduling.
-func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location *time.Location) *Scheduler {
+func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location *time.Location, opts ...SchedulerOption) *Scheduler {
 	if location == nil {
 		location = time.UTC
 	}
-	return &Scheduler{
+	s := &Scheduler{
 		cron:        cron.New(cron.WithLocation(location)),
 		location:    location,
 		taskManager: taskManager,
@@ -75,6 +91,10 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		lastFired:   make(map[string]wallMinute),
 		now:         time.Now,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (scheduler *Scheduler) Start() (ScheduleResult, error) {

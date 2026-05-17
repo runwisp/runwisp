@@ -9,7 +9,7 @@ import "github.com/oklog/ulid/v2"
 // routes it directly into the failure sink (in-app coalescer), bypassing the
 // router. The original event's Kind is preserved in Extra so the UI can show
 // "delivery to slack-ops failed for run.failed".
-func reportDeliveryFailure(sink FailureSink, clock Clock, actionID string, original *Event, cause error) {
+func reportDeliveryFailure(sink SyntheticIngester, clock Clocker, actionID string, original *Event, cause error) {
 	syn := &Event{
 		ID:        ulid.Make().String(),
 		Kind:      KindNotifyDeliveryFailed,

@@ -63,8 +63,9 @@ async function globalSetup(_config: FullConfig): Promise<void> {
     // Obtain a JWT once to avoid rate-limit issues across tests
     const token = await obtainToken(baseURL, password);
 
+    if (daemon.pid === undefined) throw new Error("Daemon process has no PID");
     const state: DaemonState = {
-        pid: daemon.pid!,
+        pid: daemon.pid,
         port,
         dataDir,
         password,

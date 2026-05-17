@@ -28,7 +28,7 @@ type persistTask struct {
 type PersistenceCoordinator struct {
 	hook   RunPersistenceHook
 	ch     chan persistTask
-	ctx    context.Context
+	done   <-chan struct{}
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
@@ -37,11 +37,11 @@ func NewPersistenceCoordinator(bufferSize int) *PersistenceCoordinator {
 	ctx, cancel := context.WithCancel(context.Background())
 	pc := &PersistenceCoordinator{
 		ch:     make(chan persistTask, bufferSize),
-		ctx:    ctx,
+		done:   ctx.Done(),
 		cancel: cancel,
 	}
 	pc.wg.Add(1)
-	go pc.worker()
+	go pc.worker(ctx)
 	return pc
 }
 
@@ -80,26 +80,26 @@ func (pc *PersistenceCoordinator) Shutdown() {
 	pc.wg.Wait()
 }
 
-// Done returns the context's Done channel, used to detect shutdown.
+// Done returns a channel that is closed when the coordinator shuts down.
 func (pc *PersistenceCoordinator) Done() <-chan struct{} {
-	return pc.ctx.Done()
+	return pc.done
 }
 
 func (pc *PersistenceCoordinator) enqueue(task persistTask) {
 	select {
-	case <-pc.ctx.Done():
+	case <-pc.done:
 		return
 	case pc.ch <- task:
 	}
 }
 
-func (pc *PersistenceCoordinator) worker() {
+func (pc *PersistenceCoordinator) worker(ctx context.Context) {
 	defer pc.wg.Done()
 	for {
 		select {
 		case task := <-pc.ch:
 			pc.hook(task.run, task.isNew)
-		case <-pc.ctx.Done():
+		case <-ctx.Done():
 			for {
 				select {
 				case task := <-pc.ch:

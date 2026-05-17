@@ -87,8 +87,7 @@ func runPasswordCmd(
 		"password",
 	)
 	cmd.Dir = projectDir
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Env = subprocEnv(append([]string{"TERM=xterm-256color"}, extraEnv...)...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -127,8 +126,7 @@ func startDaemonWithEnv(t *testing.T, projectDir, binaryPath, configPath string,
 		"daemon",
 	)
 	cmd.Dir = projectDir
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Env = subprocEnv(append([]string{"TERM=xterm-256color"}, extraEnv...)...)
 	cmd.Stdout = output
 	cmd.Stderr = output
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

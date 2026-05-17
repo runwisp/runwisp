@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"log/slog"
 )
@@ -62,6 +65,17 @@ func StartTUI(info uikit.StartupInfo, client *apiclient.Client, debugWriter *Deb
 		debugWriter.SetProgram(p)
 	}
 
+	// Kill the program on SIGTERM so main() returns normally and the Go
+	// coverage runtime can flush GOCOVERDIR data before the process exits.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	defer func() { signal.Stop(sigCh); close(sigCh) }()
+	go func() {
+		if _, ok := <-sigCh; ok {
+			p.Kill()
+		}
+	}()
+
 	finalModel, err := p.Run()
 	if err != nil {
 		return uikit.QuitShutdownDaemon, err
@@ -107,7 +121,6 @@ func PrintStartup(info uikit.StartupInfo) {
 // Exposed as a writer-injecting seam so tests can capture the banner without
 // reaching into os.Stderr.
 func printStartupTo(w io.Writer, info uikit.StartupInfo) {
-	// --- Banner ---
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "  %s %s %s\n",
 		brandMark.Render("⟡"),
@@ -117,7 +130,6 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	fmt.Fprintf(w, "    %s\n", dimStyle.Render(runtime.GOOS+"/"+runtime.GOARCH))
 	fmt.Fprintln(w)
 
-	// --- Configuration ---
 	printDotField(w, "Config", info.ConfigPath)
 	printDotField(w, "Data", info.DataDir)
 	printDotField(w, "Database", info.DBPath)
@@ -134,84 +146,22 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	}
 	fmt.Fprintln(w)
 
-	// --- Capabilities ---
-	var caps []string
-	for _, c := range info.Capabilities {
-		if c.Available {
-			caps = append(caps, greenMark.Render("✓")+" "+c.Name)
-		} else {
-			caps = append(caps, dimStyle.Render("–")+" "+dimStyle.Render(c.Name))
-		}
-	}
-	fmt.Fprintf(w, "  %s\n", strings.Join(caps, "   "))
-	fmt.Fprintln(w)
+	printCapabilitiesSection(w, info.Capabilities)
+	printTasksSection(w, info.Tasks)
 
-	// --- Tasks ---
-	if len(info.Tasks) > 0 {
-		fmt.Fprintf(w, "  %s\n", boldStyle.Render("Tasks"))
-		last := len(info.Tasks) - 1
-		for i, task := range info.Tasks {
-			prefix := "├─"
-			if i == last {
-				prefix = "└─"
-			}
-			var schedule string
-			switch {
-			case task.Kind.IsService():
-				schedule = fmt.Sprintf("service x%d", task.Instances)
-			case task.Cron != "":
-				schedule = task.Cron
-			default:
-				schedule = "manual"
-			}
-			dots := strings.Repeat("·", max(2, taskPad-len(task.Name)))
-			fmt.Fprintf(w, "  %s %s %s %s\n",
-				dimStyle.Render(prefix),
-				boldStyle.Render(task.Name),
-				dotStyle.Render(dots),
-				dimStyle.Render(schedule),
-			)
-		}
-		fmt.Fprintln(w)
-	}
-
-	// --- Demo notice ---
 	if info.UsingDemo {
 		fmt.Fprintf(w, "  %s\n", yellowSt.Render("No config found — running with built-in demo task"))
 		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Create runwisp.toml to define your own tasks (see github.com/runwisp/runwisp)"))
 		fmt.Fprintln(w)
 	}
-
-	// --- Crashed runs ---
 	if info.CrashedRuns > 0 {
 		fmt.Fprintf(w, "  %s\n",
 			yellowSt.Render(fmt.Sprintf("Marked %d crashed runs from previous session", info.CrashedRuns)),
 		)
 	}
 
-	// --- Pending runs ---
-	if pr := info.PendingRuns; pr.Total > 0 {
-		var parts []string
-		if pr.Resumed > 0 {
-			parts = append(parts, fmt.Sprintf("%d resumed", pr.Resumed))
-		}
-		if pr.Queued > 0 {
-			parts = append(parts, fmt.Sprintf("%d re-queued", pr.Queued))
-		}
-		if pr.Skipped > 0 {
-			parts = append(parts, fmt.Sprintf("%d skipped", pr.Skipped))
-		}
-		if pr.Failed > 0 {
-			parts = append(parts, fmt.Sprintf("%d failed", pr.Failed))
-		}
-		fmt.Fprintf(w, "  %s  %s\n",
-			dimStyle.Render("Pending runs"),
-			strings.Join(parts, dimStyle.Render(" · ")),
-		)
-		fmt.Fprintln(w)
-	}
+	printPendingRunsSection(w, info.PendingRuns)
 
-	// --- Missed-tick catch-up ---
 	if info.CatchUpTriggered > 0 {
 		fmt.Fprintf(w, "  %s\n",
 			yellowSt.Render(fmt.Sprintf("Triggered %d catch-up runs for missed cron ticks", info.CatchUpTriggered)),
@@ -219,7 +169,6 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 		fmt.Fprintln(w)
 	}
 
-	// --- Schedule warnings ---
 	for _, warn := range info.ScheduleWarnings {
 		fmt.Fprintf(w, "  %s %s\n", yellowSt.Render("⚠"), warn)
 	}
@@ -237,7 +186,6 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 		fmt.Fprintln(w)
 	}
 
-	// --- Server ---
 	if info.WebUIDisabled {
 		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Web UI disabled (no password in cloud-only mode)"))
 	} else if info.Port > 0 {
@@ -246,6 +194,74 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 		)
 	}
 
+	fmt.Fprintln(w)
+}
+
+func printCapabilitiesSection(w io.Writer, capabilities []model.CapInfo) {
+	var caps []string
+	for _, c := range capabilities {
+		if c.Available {
+			caps = append(caps, greenMark.Render("✓")+" "+c.Name)
+		} else {
+			caps = append(caps, dimStyle.Render("–")+" "+dimStyle.Render(c.Name))
+		}
+	}
+	fmt.Fprintf(w, "  %s\n", strings.Join(caps, "   "))
+	fmt.Fprintln(w)
+}
+
+func printTasksSection(w io.Writer, tasks []model.TaskBrief) {
+	if len(tasks) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "  %s\n", boldStyle.Render("Tasks"))
+	last := len(tasks) - 1
+	for i, task := range tasks {
+		prefix := "├─"
+		if i == last {
+			prefix = "└─"
+		}
+		var schedule string
+		switch {
+		case task.Kind.IsService():
+			schedule = fmt.Sprintf("service x%d", task.Instances)
+		case task.Cron != "":
+			schedule = task.Cron
+		default:
+			schedule = "manual"
+		}
+		dots := strings.Repeat("·", max(2, taskPad-len(task.Name)))
+		fmt.Fprintf(w, "  %s %s %s %s\n",
+			dimStyle.Render(prefix),
+			boldStyle.Render(task.Name),
+			dotStyle.Render(dots),
+			dimStyle.Render(schedule),
+		)
+	}
+	fmt.Fprintln(w)
+}
+
+func printPendingRunsSection(w io.Writer, pr uikit.PendingRunsSummary) {
+	if pr.Total == 0 {
+		return
+	}
+	var parts []string
+	if pr.Resumed > 0 {
+		parts = append(parts, fmt.Sprintf("%d resumed", pr.Resumed))
+	}
+	if pr.Queued > 0 {
+		parts = append(parts, fmt.Sprintf("%d re-queued", pr.Queued))
+	}
+	if pr.Skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", pr.Skipped))
+	}
+	if pr.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed", pr.Failed))
+	}
+	fmt.Fprintf(w, "  %s  %s\n",
+		dimStyle.Render("Pending runs"),
+		strings.Join(parts, dimStyle.Render(" · ")),
+	)
 	fmt.Fprintln(w)
 }
 

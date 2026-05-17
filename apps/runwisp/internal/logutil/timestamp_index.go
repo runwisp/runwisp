@@ -88,19 +88,9 @@ func LookupLineRangeByTime(r io.ReaderAt, size int64, fromMs, toMs int64) (start
 		return 0, 0, nil
 	}
 
-	// Lower bound: first entry with Timestamp >= fromMs
-	lo, hi := 0, count
-	for lo < hi {
-		mid := lo + (hi-lo)/2
-		e, err := ReadTimestampAt(r, mid)
-		if err != nil {
-			return 0, 0, err
-		}
-		if e.Timestamp < fromMs {
-			lo = mid + 1
-		} else {
-			hi = mid
-		}
+	lo, err := tidxLowerBound(r, count, fromMs)
+	if err != nil {
+		return 0, 0, err
 	}
 	if lo >= count {
 		return 0, 0, nil
@@ -112,25 +102,51 @@ func LookupLineRangeByTime(r io.ReaderAt, size int64, fromMs, toMs int64) (start
 	if startEntry.Timestamp > toMs {
 		return 0, 0, nil
 	}
-	startLine = startEntry.Line
 
-	// Upper bound: last entry with Timestamp <= toMs
-	lo2, hi2 := lo, count-1
-	endLine = startLine
-	for lo2 <= hi2 {
-		mid := lo2 + (hi2-lo2)/2
+	endLine, err = tidxUpperBound(r, lo, count, toMs, startEntry.Line)
+	if err != nil {
+		return 0, 0, err
+	}
+	return startEntry.Line, endLine, nil
+}
+
+// tidxLowerBound returns the index of the first entry with Timestamp >= fromMs.
+func tidxLowerBound(r io.ReaderAt, count int, fromMs int64) (int, error) {
+	lo, hi := 0, count
+	for lo < hi {
+		mid := lo + (hi-lo)/2
 		e, err := ReadTimestampAt(r, mid)
 		if err != nil {
-			return 0, 0, err
+			return 0, err
+		}
+		if e.Timestamp < fromMs {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo, nil
+}
+
+// tidxUpperBound returns the line of the last entry with Timestamp <= toMs,
+// searching from fromIdx. Returns startLine when no qualifying entry is found.
+func tidxUpperBound(r io.ReaderAt, fromIdx, count int, toMs int64, startLine uint32) (uint32, error) {
+	lo, hi := fromIdx, count-1
+	endLine := startLine
+	for lo <= hi {
+		mid := lo + (hi-lo)/2
+		e, err := ReadTimestampAt(r, mid)
+		if err != nil {
+			return 0, err
 		}
 		if e.Timestamp <= toMs {
 			endLine = e.Line
-			lo2 = mid + 1
+			lo = mid + 1
 		} else {
-			hi2 = mid - 1
+			hi = mid - 1
 		}
 	}
-	return startLine, endLine, nil
+	return endLine, nil
 }
 
 // ReadTimestampIndex loads the entire .tidx file into memory.

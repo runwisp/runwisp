@@ -5,8 +5,10 @@ package logpane
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -142,4 +144,566 @@ func TestLogPane_EvictBelow(t *testing.T) {
 	assert.Equal(t, 7, len(p.Lines))
 	assert.Equal(t, 3, p.FirstLoadedLine)
 	assert.Equal(t, "line 3", p.Lines[0].Text)
+}
+
+func TestLogPane_ScrollUp(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 50; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Scroll = 20
+	p.Follow = false
+
+	p.ScrollUp(5)
+	assert.Equal(t, 15, p.Scroll)
+	assert.False(t, p.Follow)
+
+	// Clamp at 0
+	p.ScrollUp(100)
+	assert.Equal(t, 0, p.Scroll)
+}
+
+func TestLogPane_ScrollUp_AtZeroNoOp(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", "line")
+	p.Scroll = 0
+
+	p.ScrollUp(3)
+	assert.Equal(t, 0, p.Scroll)
+}
+
+func TestLogPane_ScrollDown(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 50; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Scroll = 0
+	p.Follow = false
+
+	p.ScrollDown(5)
+	assert.Equal(t, 5, p.Scroll)
+}
+
+func TestLogPane_ScrollDown_TriggersFollow(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 10; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Follow = false
+	p.Scroll = p.maxScroll() - 1
+
+	p.ScrollDown(100)
+	assert.True(t, p.Follow)
+	assert.Equal(t, p.maxScroll(), p.Scroll)
+}
+
+func TestLogPane_FirstLoadedLineNum(t *testing.T) {
+	p := newTestPane(100_000)
+	p.SetFirstLoadedLine(42)
+	assert.Equal(t, 42, p.FirstLoadedLineNum())
+}
+
+func TestLogPane_HandleKeyScroll_HScroll(t *testing.T) {
+	p := newTestPane(100_000)
+	p.Cfg.HScroll = true
+	// Add a long line so MaxHScroll > 0
+	p.AppendLine(0, "stdout", fmt.Sprintf("%s", fmt.Sprintf("%-200s", "x")))
+	p.Scroll = 0
+	p.Follow = false
+
+	// scroll right
+	consumed := p.HandleKeyScroll("right")
+	assert.True(t, consumed)
+	assert.Equal(t, HScrollStep, p.HScroll)
+
+	// scroll left
+	consumed = p.HandleKeyScroll("left")
+	assert.True(t, consumed)
+	assert.Equal(t, 0, p.HScroll)
+
+	// shift+right jumps further
+	p.HScroll = 0
+	consumed = p.HandleKeyScroll("shift+right")
+	assert.True(t, consumed)
+	assert.Greater(t, p.HScroll, 0)
+
+	// shift+left resets to 0
+	consumed = p.HandleKeyScroll("shift+left")
+	assert.True(t, consumed)
+	assert.Equal(t, 0, p.HScroll)
+}
+
+func TestLogPane_HandleKeyScroll_VerticalKeys(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 100; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Scroll = 10
+	p.Follow = false
+
+	assert.True(t, p.HandleKeyScroll("up"))
+	assert.Equal(t, 9, p.Scroll)
+
+	assert.True(t, p.HandleKeyScroll("down"))
+	assert.Equal(t, 10, p.Scroll)
+
+	assert.True(t, p.HandleKeyScroll("pgup"))
+	assert.Less(t, p.Scroll, 10)
+
+	p.Scroll = 0
+	p.Follow = false
+	assert.True(t, p.HandleKeyScroll("pgdown"))
+	assert.Greater(t, p.Scroll, 0)
+
+	assert.True(t, p.HandleKeyScroll("g"))
+	assert.Equal(t, 0, p.Scroll)
+
+	assert.True(t, p.HandleKeyScroll("G"))
+	assert.Equal(t, p.maxScroll(), p.Scroll)
+
+	// Unknown key → false
+	assert.False(t, p.HandleKeyScroll("z"))
+}
+
+func TestLogPane_ScrollLeft_ClampedAtZero(t *testing.T) {
+	p := newTestPane(100_000)
+	p.HScroll = 0
+
+	p.scrollLeft()
+	assert.Equal(t, 0, p.HScroll)
+
+	p.HScroll = 4
+	p.scrollLeft()
+	assert.Equal(t, 0, p.HScroll) // 4 - 8 clamped to 0
+}
+
+// ---- SetLineNumbers ----
+
+func TestLogPane_SetLineNumbers_EnableDisable(t *testing.T) {
+	p := newTestPane(100_000)
+	assert.True(t, p.Cfg.LineNumbers)
+
+	p.SetLineNumbers(false)
+	assert.False(t, p.Cfg.LineNumbers)
+
+	p.SetLineNumbers(true)
+	assert.True(t, p.Cfg.LineNumbers)
+}
+
+// ---- MaxScroll ----
+
+func TestLogPane_MaxScroll_ExposedMethod(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 50; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	// MaxScroll (exported) must equal maxScroll (internal).
+	assert.Equal(t, p.maxScroll(), p.MaxScroll())
+}
+
+func TestLogPane_MaxScroll_Empty(t *testing.T) {
+	p := newTestPane(100_000)
+	assert.Equal(t, 0, p.MaxScroll())
+}
+
+// ---- scrollRight ----
+
+func TestLogPane_ScrollRight_AdvancesHScroll(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", fmt.Sprintf("%-200s", "x"))
+	p.Scroll = 0
+	p.Follow = false
+
+	p.scrollRight()
+	assert.Equal(t, HScrollStep, p.HScroll)
+}
+
+func TestLogPane_ScrollRight_ClampsAtMax(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", fmt.Sprintf("%-200s", "x"))
+	p.Scroll = 0
+	p.Follow = false
+	maxH := p.MaxHScroll()
+	p.HScroll = maxH // already at max
+	p.scrollRight()
+	assert.Equal(t, maxH, p.HScroll)
+}
+
+// ---- scrollPageDown ----
+
+func TestLogPane_ScrollPageDown_AdvancesScroll(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 100; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Scroll = 0
+	p.Follow = false
+	vis := p.VisibleLines()
+	ms := p.maxScroll()
+
+	p.scrollPageDown(ms)
+	assert.Equal(t, vis, p.Scroll)
+}
+
+func TestLogPane_ScrollPageDown_AtMaxEnablesFollow(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 50; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Follow = false
+	ms := p.maxScroll()
+	p.Scroll = ms - 1 // one before the end
+
+	p.scrollPageDown(ms)
+	assert.True(t, p.Follow)
+	assert.Equal(t, ms, p.Scroll)
+}
+
+// ---- EvictBelow edge case ----
+
+func TestLogPane_EvictBelow_AllLinesEvicted(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 5; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	// Evict beyond all lines.
+	p.EvictBelow(100)
+	assert.Equal(t, 0, len(p.Lines))
+	assert.Equal(t, 100, p.FirstLoadedLine)
+}
+
+// ---- RenderLines ----
+
+func TestLogPane_RenderLines_WithLineNumbers(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 5; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Scroll = 0
+
+	var b strings.Builder
+	p.RenderLines(&b, false, false)
+	out := b.String()
+	assert.NotEmpty(t, out)
+	assert.Contains(t, out, "line 0")
+}
+
+func TestLogPane_RenderLines_WithoutLineNumbers(t *testing.T) {
+	p := newTestPane(100_000)
+	p.SetLineNumbers(false)
+	for i := 0; i < 5; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("text %d", i))
+	}
+	p.Scroll = 0
+
+	var b strings.Builder
+	p.RenderLines(&b, false, false)
+	out := b.String()
+	assert.NotEmpty(t, out)
+	assert.Contains(t, out, "text 0")
+}
+
+func TestLogPane_RenderLines_DimContent(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", "dimmed line")
+	p.Scroll = 0
+
+	var b strings.Builder
+	p.RenderLines(&b, true, false)
+	assert.NotEmpty(t, b.String())
+}
+
+func TestLogPane_RenderLines_LoadingOlder(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", "some line")
+	p.Scroll = 0
+
+	var b strings.Builder
+	p.RenderLines(&b, false, true)
+	out := b.String()
+	assert.Contains(t, out, "Loading older logs")
+}
+
+func TestLogPane_RenderLines_StderrAndSystem(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stderr", "error line")
+	p.AppendLine(1, "system", "system line")
+	p.Scroll = 0
+
+	var b strings.Builder
+	p.RenderLines(&b, false, false)
+	assert.NotEmpty(t, b.String())
+}
+
+func TestLogPane_RenderLines_HScrollOffset(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", fmt.Sprintf("%-200s", "hello"))
+	p.Scroll = 0
+	p.HScroll = 10 // non-zero horizontal scroll
+
+	var b strings.Builder
+	p.RenderLines(&b, false, false)
+	assert.NotEmpty(t, b.String())
+}
+
+func TestLogPane_RenderLines_WithoutLineNumbersHScroll(t *testing.T) {
+	p := newTestPane(100_000)
+	p.SetLineNumbers(false)
+	p.AppendLine(0, "stdout", fmt.Sprintf("%-200s", "hello"))
+	p.Scroll = 0
+	p.HScroll = 10
+
+	var b strings.Builder
+	p.RenderLines(&b, false, false)
+	assert.NotEmpty(t, b.String())
+}
+
+// ---- styleForStream ----
+
+func TestStyleForStream_AllStreams(t *testing.T) {
+	stdout := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+	stderr := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000"))
+	system := lipgloss.NewStyle().Foreground(lipgloss.Color("#aaaaaa"))
+
+	assert.Equal(t, stderr, styleForStream("stderr", stdout, stderr, system))
+	assert.Equal(t, system, styleForStream("system", stdout, stderr, system))
+	assert.Equal(t, stdout, styleForStream("stdout", stdout, stderr, system))
+	assert.Equal(t, stdout, styleForStream("unknown", stdout, stderr, system))
+}
+
+// ---- trimTrailingRuneIfClipped ----
+
+func TestTrimTrailingRuneIfClipped_NotClipped(t *testing.T) {
+	assert.Equal(t, "hello", trimTrailingRuneIfClipped("hello", false))
+}
+
+func TestTrimTrailingRuneIfClipped_Clipped(t *testing.T) {
+	got := trimTrailingRuneIfClipped("hello", true)
+	assert.Equal(t, "hell", got)
+}
+
+func TestTrimTrailingRuneIfClipped_EmptyClipped(t *testing.T) {
+	got := trimTrailingRuneIfClipped("", true)
+	assert.Equal(t, "", got)
+}
+
+// ---- composeLineContent ----
+
+func TestComposeLineContent_NoIndicators(t *testing.T) {
+	ts := lipgloss.NewStyle()
+	ls := lipgloss.NewStyle()
+	rs := lipgloss.NewStyle()
+	out := composeLineContent("hello", false, false, ls, rs, ts)
+	assert.Contains(t, out, "hello")
+}
+
+func TestComposeLineContent_LeftIndicator(t *testing.T) {
+	ts := lipgloss.NewStyle()
+	ls := lipgloss.NewStyle()
+	rs := lipgloss.NewStyle()
+	out := composeLineContent("world", true, false, ls, rs, ts)
+	assert.Contains(t, out, "world")
+	assert.Contains(t, out, "◂")
+}
+
+func TestComposeLineContent_RightIndicator(t *testing.T) {
+	ts := lipgloss.NewStyle()
+	ls := lipgloss.NewStyle()
+	rs := lipgloss.NewStyle()
+	out := composeLineContent("world", false, true, ls, rs, ts)
+	assert.Contains(t, out, "world")
+	assert.Contains(t, out, "▸")
+}
+
+func TestComposeLineContent_BothIndicators(t *testing.T) {
+	ts := lipgloss.NewStyle()
+	ls := lipgloss.NewStyle()
+	rs := lipgloss.NewStyle()
+	out := composeLineContent("mid", true, true, ls, rs, ts)
+	assert.Contains(t, out, "◂")
+	assert.Contains(t, out, "mid")
+	assert.Contains(t, out, "▸")
+}
+
+// ---- padLineContent ----
+
+func TestPadLineContent_ShortContent(t *testing.T) {
+	ps := lipgloss.NewStyle()
+	out := padLineContent("hi", 10, ps)
+	// Should be padded to width 10.
+	vis := lipgloss.Width(out)
+	assert.Equal(t, 10, vis)
+}
+
+func TestPadLineContent_ExactWidth(t *testing.T) {
+	ps := lipgloss.NewStyle()
+	out := padLineContent("hello", 5, ps)
+	assert.Equal(t, "hello", out)
+}
+
+func TestPadLineContent_OverWidth(t *testing.T) {
+	ps := lipgloss.NewStyle()
+	out := padLineContent("hello world", 5, ps)
+	// No truncation — content returned as-is when wider than target.
+	assert.Equal(t, "hello world", out)
+}
+
+// ---- sliceRowText ----
+
+func TestSliceRowText_HScrollDisabled(t *testing.T) {
+	p := newTestPane(100_000)
+	p.Cfg.HScroll = false
+	p.HScroll = 10
+	sliced, clipped := p.sliceRowText("hello world", 5)
+	assert.Equal(t, "hello world", sliced)
+	assert.False(t, clipped)
+}
+
+func TestSliceRowText_HScrollEnabled(t *testing.T) {
+	p := newTestPane(100_000)
+	p.Cfg.HScroll = true
+	p.HScroll = 5
+	sliced, _ := p.sliceRowText("hello world", 5)
+	// Slice starts at col 5 → " worl" (5 chars), then trailing rune trimmed
+	// because the source string was clipped on the right.
+	assert.NotEqual(t, "hello world", sliced)
+}
+
+// ---- clampScroll ----
+
+func TestLogPane_ClampScroll_FollowSnapToMaxScroll(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 50; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Follow = true
+	p.Scroll = 0
+
+	// Trigger clampScroll via SetHeaderHeight.
+	p.SetHeaderHeight(4)
+	assert.Equal(t, p.maxScroll(), p.Scroll)
+}
+
+func TestLogPane_ClampScroll_NonFollow_AboveMax(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 10; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Follow = false
+	ms := p.maxScroll()
+	p.Scroll = ms + 100 // way above max
+
+	// Trigger clampScroll via SetHeaderHeight.
+	p.SetHeaderHeight(p.HeaderH)
+	assert.Equal(t, ms, p.Scroll)
+}
+
+func TestLogPane_ClampScroll_NonFollow_Negative(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", "line")
+	p.Follow = false
+	p.Scroll = -5
+
+	p.SetHeaderHeight(p.HeaderH)
+	assert.Equal(t, 0, p.Scroll)
+}
+
+// ---- VisibleLines edge case ----
+
+func TestLogPane_VisibleLines_AtLeastOne(t *testing.T) {
+	p := newTestPane(100_000)
+	// Height smaller than header → clamped to 1.
+	p.SetSize(80, 1)
+	p.SetHeaderHeight(10)
+	assert.Equal(t, 1, p.VisibleLines())
+}
+
+// ---- scrollDown ----
+
+func TestLogPane_ScrollDown_AtMax_EnablesFollow(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 50; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Follow = false
+	ms := p.maxScroll()
+	p.Scroll = ms // already at max
+
+	p.scrollDown(ms) // scroll when already at ms → follow should be set
+	assert.True(t, p.Follow)
+}
+
+func TestLogPane_ScrollDown_BelowMax_Advances(t *testing.T) {
+	p := newTestPane(100_000)
+	for i := 0; i < 50; i++ {
+		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
+	}
+	p.Follow = false
+	ms := p.maxScroll()
+	p.Scroll = 0
+
+	p.scrollDown(ms)
+	assert.Equal(t, 1, p.Scroll)
+}
+
+// ---- LogContentWidth edge cases ----
+
+func TestLogPane_LogContentWidth_NoLineNumbers_Narrow(t *testing.T) {
+	p := NewPane(Config{LineNumbers: false})
+	p.SetSize(5, 30) // width 5 − 2 = 3 < 10 → clamped to 10
+	assert.Equal(t, 10, p.LogContentWidth())
+}
+
+func TestLogPane_LogContentWidth_WithLineNumbers_Narrow(t *testing.T) {
+	p := NewPane(Config{LineNumbers: true})
+	p.SetSize(5, 30) // very small → clamped to 10
+	assert.Equal(t, 10, p.LogContentWidth())
+}
+
+func TestLogPane_LogContentWidth_WithLineNumbers_Normal(t *testing.T) {
+	p := NewPane(Config{LineNumbers: true})
+	p.SetSize(80, 30)
+	w := p.LogContentWidth()
+	assert.Greater(t, w, 10)
+}
+
+// ---- HandleKeyScroll with HScroll disabled ----
+
+func TestLogPane_HandleKeyScroll_HScrollDisabled_HKeys_NotConsumed(t *testing.T) {
+	p := newTestPane(100_000)
+	p.Cfg.HScroll = false
+
+	assert.False(t, p.HandleKeyScroll("left"))
+	assert.False(t, p.HandleKeyScroll("right"))
+}
+
+// ---- AppendLine FirstLoadedLine not reset when already set ----
+
+func TestLogPane_AppendLine_FirstLoadedLineNotOverriddenWhenSet(t *testing.T) {
+	p := newTestPane(100_000)
+	p.SetFirstLoadedLine(10)
+	// FirstLoadedLine is already set; subsequent AppendLine calls must not reset it to 0.
+	p.AppendLine(10, "stdout", "first")
+	p.AppendLine(11, "stdout", "second")
+	assert.Equal(t, 10, p.FirstLoadedLine)
+}
+
+// ---- effectiveEndPadding capped at half VisibleLines ----
+
+func TestLogPane_EffectiveEndPadding_CappedAtHalfVisible(t *testing.T) {
+	p := NewPane(Config{EndPadding: 100})
+	p.SetSize(80, 10)    // VisibleLines = 10; cap = 5
+	p.SetHeaderHeight(0) // ensure no header shrinkage
+	ep := p.effectiveEndPadding()
+	assert.LessOrEqual(t, ep, p.VisibleLines()/2)
+}
+
+// ---- PrependLines: negative firstLine clamped to zero ----
+
+func TestLogPane_PrependLines_NegativeFirstLineClamped(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", "existing")
+	pre := []Line{{Stream: "stdout", Text: "old"}}
+	p.PrependLines(pre, -5)
+	assert.Equal(t, 0, p.FirstLoadedLine)
 }

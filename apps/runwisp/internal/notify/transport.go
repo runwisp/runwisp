@@ -45,42 +45,7 @@ func NewHTTPProvider() *HTTPProvider {
 // error on backoff exhaustion.
 func (p *HTTPProvider) PostJSON(ctx context.Context, url string, contentType string, body []byte) error {
 	op := func() error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return backoff.Permanent(err)
-		}
-		req.Header.Set("Content-Type", contentType)
-		if p.UserAgent != "" {
-			req.Header.Set("User-Agent", p.UserAgent)
-		}
-		resp, err := p.Client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-
-		switch {
-		case resp.StatusCode >= 200 && resp.StatusCode < 300:
-			return nil
-		case resp.StatusCode == http.StatusTooManyRequests:
-			d := ParseRetryAfterHeader(resp.Header)
-			if d == 0 && p.Body429Fn != nil {
-				d = p.Body429Fn(respBody)
-			}
-			if d > 0 {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-time.After(d):
-				}
-			}
-			return fmt.Errorf("rate-limited: status=%d body=%s", resp.StatusCode, truncateBody(respBody))
-		case IsPermanentHTTPStatus(resp.StatusCode):
-			return backoff.Permanent(fmt.Errorf("permanent: status=%d body=%s", resp.StatusCode, truncateBody(respBody)))
-		default:
-			return fmt.Errorf("transient: status=%d body=%s", resp.StatusCode, truncateBody(respBody))
-		}
+		return p.doHTTPRequest(ctx, url, contentType, body)
 	}
 
 	bo := p.Backoff.NewExponential()
@@ -94,6 +59,52 @@ func (p *HTTPProvider) PostJSON(ctx context.Context, url string, contentType str
 		return err
 	}
 	return nil
+}
+
+func (p *HTTPProvider) doHTTPRequest(ctx context.Context, url, contentType string, body []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return backoff.Permanent(err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	if p.UserAgent != "" {
+		req.Header.Set("User-Agent", p.UserAgent)
+	}
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	return p.checkHTTPResponse(ctx, resp.StatusCode, resp.Header, respBody)
+}
+
+func (p *HTTPProvider) checkHTTPResponse(ctx context.Context, statusCode int, header http.Header, body []byte) error {
+	switch {
+	case statusCode >= 200 && statusCode < 300:
+		return nil
+	case statusCode == http.StatusTooManyRequests:
+		return p.handleRateLimit(ctx, statusCode, header, body)
+	case IsPermanentHTTPStatus(statusCode):
+		return backoff.Permanent(fmt.Errorf("permanent: status=%d body=%s", statusCode, truncateBody(body)))
+	default:
+		return fmt.Errorf("transient: status=%d body=%s", statusCode, truncateBody(body))
+	}
+}
+
+func (p *HTTPProvider) handleRateLimit(ctx context.Context, statusCode int, header http.Header, body []byte) error {
+	d := ParseRetryAfterHeader(header)
+	if d == 0 && p.Body429Fn != nil {
+		d = p.Body429Fn(body)
+	}
+	if d > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(d):
+		}
+	}
+	return fmt.Errorf("rate-limited: status=%d body=%s", statusCode, truncateBody(body))
 }
 
 func truncateBody(b []byte) string {

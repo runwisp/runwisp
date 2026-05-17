@@ -16,6 +16,9 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
+// blockedMetadataHosts are well-known cloud-metadata endpoints that must never be reachable from user-authored tasks.
+var blockedMetadataHosts = []string{"metadata.google.internal", "169.254.169.254"}
+
 // validateHTTPURL blocks requests to private/internal network addresses (SSRF protection).
 func validateHTTPURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
@@ -32,9 +35,7 @@ func validateHTTPURL(rawURL string) error {
 		return fmt.Errorf("URL must have a hostname")
 	}
 
-	// Block well-known cloud metadata endpoints
-	blockedHosts := []string{"metadata.google.internal", "169.254.169.254"}
-	for _, blocked := range blockedHosts {
+	for _, blocked := range blockedMetadataHosts {
 		if strings.EqualFold(hostname, blocked) {
 			return fmt.Errorf("requests to %s are blocked", hostname)
 		}

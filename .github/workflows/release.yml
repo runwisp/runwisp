@@ -25,15 +25,13 @@ on:
   release:
     types: [published]
 
-permissions:
-  contents: write
-  id-token: write
-
 jobs:
   build:
     if: github.event_name == 'push'
     name: Build binaries
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
       is_prerelease: ${{ steps.npm_tag.outputs.PRERELEASE }}
@@ -45,12 +43,12 @@ jobs:
           go-version-file: apps/runwisp/go.mod
           cache-dependency-path: apps/runwisp/go.sum
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
 
       - name: Install JS dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Build web UI
         run: bun run build
@@ -104,6 +102,8 @@ jobs:
     name: Create GitHub Release draft
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -141,7 +141,7 @@ jobs:
         run: sha256sum runwisp-*.tar.gz > checksums-sha256.txt
 
       - name: Create draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           draft: true
           prerelease: ${{ needs.build.outputs.is_prerelease == 'true' }}
@@ -154,6 +154,9 @@ jobs:
     if: github.event_name == 'release'
     name: Publish ${{ matrix.package }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -194,7 +197,7 @@ jobs:
         run: |
           pkg_name=$(node -p "require('./${PKG_DIR}/package.json').name")
           prev_version=$(npm view "${pkg_name}" version 2>/dev/null || true)
-          if [ -z "${prev_version}" ]; then
+          if [[ -z "${prev_version}" ]]; then
             echo "No previously published version of ${pkg_name}; will publish."
             echo "skip=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -252,6 +255,9 @@ jobs:
     if: github.event_name == 'release'
     name: Publish @runwisp/${{ matrix.platform }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -319,6 +325,9 @@ jobs:
     name: Publish runwisp
     needs: npm-publish-platform
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:

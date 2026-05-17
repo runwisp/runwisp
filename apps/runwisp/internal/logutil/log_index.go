@@ -214,20 +214,29 @@ func ScanOffset(rs io.ReadSeeker, startPos int64, linesToSkip int) (int64, int, 
 	if _, err := rs.Seek(startPos, io.SeekStart); err != nil {
 		return startPos, 0, err
 	}
-
 	if linesToSkip < 0 {
-		scanner := bufio.NewScanner(rs)
-		linesFound := 0
-		for scanner.Scan() {
-			linesFound++
-		}
-		if err := scanner.Err(); err != nil {
-			return startPos, linesFound, err
-		}
-		currentPos, _ := rs.Seek(0, io.SeekCurrent)
-		return currentPos, linesFound, nil
+		return scanAllLines(rs, startPos)
 	}
+	return scanToLine(rs, startPos, linesToSkip)
+}
 
+// scanAllLines counts all remaining newlines from the current reader position.
+func scanAllLines(rs io.ReadSeeker, startPos int64) (int64, int, error) {
+	scanner := bufio.NewScanner(rs)
+	linesFound := 0
+	for scanner.Scan() {
+		linesFound++
+	}
+	if err := scanner.Err(); err != nil {
+		return startPos, linesFound, err
+	}
+	currentPos, _ := rs.Seek(0, io.SeekCurrent)
+	return currentPos, linesFound, nil
+}
+
+// scanToLine advances through the reader counting newlines until linesToSkip
+// have been passed, returning the byte offset after the last counted newline.
+func scanToLine(rs io.ReadSeeker, startPos int64, linesToSkip int) (int64, int, error) {
 	currentPos := startPos
 	linesFound := 0
 	buf := make([]byte, ScanBufferSize)
@@ -235,13 +244,10 @@ func ScanOffset(rs io.ReadSeeker, startPos int64, linesToSkip int) (int64, int, 
 	for linesFound < linesToSkip {
 		n, err := rs.Read(buf)
 		if n > 0 {
-			for i := 0; i < n; i++ {
-				if buf[i] == '\n' {
-					linesFound++
-					if linesFound == linesToSkip {
-						return currentPos + int64(i) + 1, linesFound, nil
-					}
-				}
+			offset, newCount := countNewlinesInBuf(buf[:n], linesFound, linesToSkip)
+			linesFound = newCount
+			if offset >= 0 {
+				return currentPos + int64(offset), linesFound, nil
 			}
 			currentPos += int64(n)
 		}
@@ -250,6 +256,23 @@ func ScanOffset(rs io.ReadSeeker, startPos int64, linesToSkip int) (int64, int, 
 		}
 	}
 	return currentPos, linesFound, nil
+}
+
+// countNewlinesInBuf scans buf for newlines, stopping when linesToSkip have
+// been seen in total. Returns the byte offset after the linesToSkip-th newline
+// within buf and the updated total count; offset is -1 when buf did not
+// contain enough newlines to reach linesToSkip.
+func countNewlinesInBuf(buf []byte, linesFound, linesToSkip int) (offset, newLinesFound int) {
+	for i, b := range buf {
+		if b != '\n' {
+			continue
+		}
+		linesFound++
+		if linesFound == linesToSkip {
+			return i + 1, linesFound
+		}
+	}
+	return -1, linesFound
 }
 
 // CalculateTotalLines returns the total number of lines across rotated

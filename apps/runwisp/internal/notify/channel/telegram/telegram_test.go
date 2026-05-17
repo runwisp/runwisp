@@ -123,3 +123,17 @@ func TestTelegram_RedactsTokenInError(t *testing.T) {
 	assert.NotContains(t, err.Error(), "TOPSECRET", "bot token must not leak")
 	assert.True(t, strings.HasPrefix(err.Error(), "telegram:oncall:"), "error prefix must be the redacted id")
 }
+
+// TestTelegram_ChannelInterface pins the Channel interface contract on the
+// telegram adapter: ID() returns the configured id, Close is a no-op, and
+// String() renders the "telegram:<id>" tag used in logs and error prefixes.
+func TestTelegram_ChannelInterface(t *testing.T) {
+	ch, err := New(Config{
+		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
+		Renderer: newTestRenderer(t), Transport: newFastTransport(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "oncall", ch.ID())
+	assert.NoError(t, ch.Close(context.Background()))
+	assert.Equal(t, "telegram:oncall", ch.String())
+}

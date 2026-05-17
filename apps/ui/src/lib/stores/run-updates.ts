@@ -5,9 +5,9 @@ import { createLogger } from "$lib/utils/logger";
 import { runUpdateEventSchema } from "$lib/types";
 import { EventManager } from "./event-manager.svelte";
 import { connectionStore } from "./connection.svelte";
-import type { RunUpdateEvent, RunUpdateEventType, RunUpdateHandler } from "$lib/types";
+import type { RunUpdateEventType, RunUpdateHandler } from "$lib/types";
 
-export type { RunUpdateEvent, RunUpdateHandler };
+export type { RunUpdateEvent, RunUpdateHandler } from "$lib/types";
 
 const RUN_EVENT_TYPES: RunUpdateEventType[] = [
     "run.created",
@@ -33,12 +33,10 @@ class RunUpdateManager {
                 this.logger.info("SSE connection established");
                 connectionStore.markConnected();
             }),
-        );
-        this.unsubscribes.push(
             this.events.onError((info) => {
                 this.logger.warn(
                     `SSE connection error: ${info.message ?? "unknown"}`,
-                    typeof info.status !== "undefined" ? `(HTTP ${info.status.toString()})` : "",
+                    info.status === undefined ? "" : `(HTTP ${info.status.toString()})`,
                 );
                 // 401 means the daemon is up but rejected our auth — not a connection loss.
                 if (info.status !== 401) {

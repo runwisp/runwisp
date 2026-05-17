@@ -28,13 +28,13 @@ export function getEventSourceErrorDetails(event: Event): EventSourceErrorDetail
         }
     }
 
-    if (typeof message === "undefined" && event instanceof ErrorEvent && event.message) {
+    if (message === undefined && event instanceof ErrorEvent && event.message) {
         message = event.message;
     }
 
     return {
-        ...(typeof status !== "undefined" && { status }),
-        ...(typeof message !== "undefined" && { message }),
+        ...(status !== undefined && { status }),
+        ...(message !== undefined && { message }),
     };
 }
 
@@ -61,8 +61,8 @@ export interface SSEErrorInfo {
 export function extractErrorInfo(e: Event, es: SSEStream, url: string): SSEErrorInfo {
     const { status, message } = getEventSourceErrorDetails(e);
     return {
-        ...(typeof status !== "undefined" && { status }),
-        ...(typeof message !== "undefined" && { message }),
+        ...(status !== undefined && { status }),
+        ...(message !== undefined && { message }),
         readyState: es.readyState,
         url,
     };
@@ -70,10 +70,9 @@ export function extractErrorInfo(e: Event, es: SSEStream, url: string): SSEError
 
 export function formatErrorInfo(info: SSEErrorInfo): string {
     const parts: string[] = [];
-    if (typeof info.status !== "undefined") parts.push(`status=${info.status.toString()}`);
-    if (typeof info.message !== "undefined") parts.push(info.message);
-    if (typeof info.readyState !== "undefined")
-        parts.push(`readyState=${info.readyState.toString()}`);
-    if (typeof info.url !== "undefined") parts.push(info.url);
+    if (info.status !== undefined) parts.push(`status=${info.status.toString()}`);
+    if (info.message !== undefined) parts.push(info.message);
+    if (info.readyState !== undefined) parts.push(`readyState=${info.readyState.toString()}`);
+    if (info.url !== undefined) parts.push(info.url);
     return parts.join(" ") || "unknown error";
 }

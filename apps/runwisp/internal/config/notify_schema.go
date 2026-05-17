@@ -56,56 +56,12 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 		out.HistoryKeep = defaultHistoryKeep
 	}
 
-	if t.Notify.DefaultTimeout != "" {
-		d, err := parseDuration(t.Notify.DefaultTimeout)
-		if err != nil {
-			return NotifyConfig{}, fmt.Errorf("invalid notify.default_timeout: %w", err)
-		}
-		out.DefaultTimeout = d
-	}
-	if t.Notify.HistoryKeepFor != "" {
-		d, err := parseKeepFor(t.Notify.HistoryKeepFor)
-		if err != nil {
-			return NotifyConfig{}, fmt.Errorf("invalid notify.history_keep_for: %w", err)
-		}
-		out.HistoryKeepFor = d
-	}
-	if out.HistoryKeepFor == 0 {
-		out.HistoryKeepFor = defaultHistoryKeepFor
-	}
-	if t.Notify.CoalesceWindow != "" {
-		d, err := parseDuration(t.Notify.CoalesceWindow)
-		if err != nil {
-			return NotifyConfig{}, fmt.Errorf("invalid notify.coalesce_window: %w", err)
-		}
-		out.CoalesceWindow = d
+	if err := t.applyNotifyDurations(&out); err != nil {
+		return NotifyConfig{}, err
 	}
 
-	for i, n := range t.Notifiers {
-		spec := NotifierSpec{
-			ID:             strings.TrimSpace(n.ID),
-			Type:           strings.TrimSpace(n.Type),
-			WebhookURL:     n.WebhookURL,
-			WebhookURLEnv:  n.WebhookURLEnv,
-			WebhookURLFile: n.WebhookURLFile,
-			SlackChannel:   n.Channel,
-			BotToken:       n.BotToken,
-			BotTokenEnv:    n.BotTokenEnv,
-			BotTokenFile:   n.BotTokenFile,
-			ChatID:         n.ChatID,
-			ParseMode:      n.ParseMode,
-			TemplatePath:   n.TemplatePath,
-		}
-		if spec.ID == "" {
-			return NotifyConfig{}, fmt.Errorf("notifier #%d: id is required", i)
-		}
-		if spec.ID == inappNotifierID {
-			return NotifyConfig{}, fmt.Errorf("notifier id %q is reserved for the in-app channel", inappNotifierID)
-		}
-		if strings.ContainsRune(spec.ID, notifyTokenSeparatorB) {
-			return NotifyConfig{}, fmt.Errorf("notifier id %q must not contain %q (reserved for inline target overrides like %q)", spec.ID, notifyTokenSeparator, "slack:#ops")
-		}
-		out.Notifiers = append(out.Notifiers, spec)
+	if err := buildNotifierSpecs(t.Notifiers, &out); err != nil {
+		return NotifyConfig{}, err
 	}
 
 	for _, r := range t.Routes {
@@ -128,6 +84,70 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 	return out, nil
 }
 
+// applyNotifyDurations parses the [notify] duration knobs and stamps them onto
+// out, applying the documented default when history_keep_for is omitted.
+func (t *tomlConfig) applyNotifyDurations(out *NotifyConfig) error {
+	if t.Notify.DefaultTimeout != "" {
+		d, err := parseDuration(t.Notify.DefaultTimeout)
+		if err != nil {
+			return fmt.Errorf("invalid notify.default_timeout: %w", err)
+		}
+		out.DefaultTimeout = d
+	}
+	if t.Notify.HistoryKeepFor != "" {
+		d, err := parseKeepFor(t.Notify.HistoryKeepFor)
+		if err != nil {
+			return fmt.Errorf("invalid notify.history_keep_for: %w", err)
+		}
+		out.HistoryKeepFor = d
+	}
+	if out.HistoryKeepFor == 0 {
+		out.HistoryKeepFor = defaultHistoryKeepFor
+	}
+	if t.Notify.CoalesceWindow != "" {
+		d, err := parseDuration(t.Notify.CoalesceWindow)
+		if err != nil {
+			return fmt.Errorf("invalid notify.coalesce_window: %w", err)
+		}
+		out.CoalesceWindow = d
+	}
+	return nil
+}
+
+// buildNotifierSpecs translates the raw [[notifier]] entries into NotifierSpec
+// rows on out. ID-shape rules (non-empty, not the reserved "inapp", no inline
+// override separator) are enforced here so the rest of the pipeline can trust
+// the result.
+func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
+	for i, n := range notifiers {
+		spec := NotifierSpec{
+			ID:             strings.TrimSpace(n.ID),
+			Type:           strings.TrimSpace(n.Type),
+			WebhookURL:     n.WebhookURL,
+			WebhookURLEnv:  n.WebhookURLEnv,
+			WebhookURLFile: n.WebhookURLFile,
+			SlackChannel:   n.Channel,
+			BotToken:       n.BotToken,
+			BotTokenEnv:    n.BotTokenEnv,
+			BotTokenFile:   n.BotTokenFile,
+			ChatID:         n.ChatID,
+			ParseMode:      n.ParseMode,
+			TemplatePath:   n.TemplatePath,
+		}
+		if spec.ID == "" {
+			return fmt.Errorf("notifier #%d: id is required", i)
+		}
+		if spec.ID == inappNotifierID {
+			return fmt.Errorf("notifier id %q is reserved for the in-app channel", inappNotifierID)
+		}
+		if strings.ContainsRune(spec.ID, notifyTokenSeparatorB) {
+			return fmt.Errorf("notifier id %q must not contain %q (reserved for inline target overrides like %q)", spec.ID, notifyTokenSeparator, "slack:#ops")
+		}
+		out.Notifiers = append(out.Notifiers, spec)
+	}
+	return nil
+}
+
 // expandInlineTokens walks every route's notify list, finds tokens of the form
 // "<id>:<override>", and synthesises a NotifierSpec per unique token by cloning
 // the parent notifier's credentials and replacing its target (Slack channel or
@@ -146,36 +166,49 @@ func expandInlineTokens(out *NotifyConfig) error {
 
 	for _, route := range out.Routes {
 		for _, tok := range route.NotifierID {
-			parentID, override, hasOverride := parseNotifyToken(tok)
-			if !hasOverride {
-				continue
-			}
-			if _, done := seen[tok]; done {
-				continue
-			}
-			seen[tok] = struct{}{}
-
-			if parentID == "" {
-				return fmt.Errorf("notify token %q: parent notifier id is empty", tok)
-			}
-			if override == "" {
-				return fmt.Errorf("notify token %q: target override is empty after %q", tok, notifyTokenSeparator)
-			}
-			if parentID == inappNotifierID {
-				return fmt.Errorf("notify token %q: %q has no target to override", tok, inappNotifierID)
-			}
-			parent, ok := parentByID[parentID]
-			if !ok {
-				return fmt.Errorf("notify token %q: unknown parent notifier id %q", tok, parentID)
-			}
-			spec, err := cloneNotifierWithOverride(*parent, tok, override)
+			spec, ok, err := resolveInlineToken(tok, parentByID, seen)
 			if err != nil {
 				return err
 			}
-			out.Notifiers = append(out.Notifiers, spec)
+			if ok {
+				out.Notifiers = append(out.Notifiers, spec)
+			}
 		}
 	}
 	return nil
+}
+
+// resolveInlineToken returns a synthesised NotifierSpec for an "id:override"
+// notify token. It returns (_, false, nil) when the token has no override or
+// when an identical token was already resolved on a prior route.
+func resolveInlineToken(tok string, parentByID map[string]*NotifierSpec, seen map[string]struct{}) (NotifierSpec, bool, error) {
+	parentID, override, hasOverride := parseNotifyToken(tok)
+	if !hasOverride {
+		return NotifierSpec{}, false, nil
+	}
+	if _, done := seen[tok]; done {
+		return NotifierSpec{}, false, nil
+	}
+	seen[tok] = struct{}{}
+
+	if parentID == "" {
+		return NotifierSpec{}, false, fmt.Errorf("notify token %q: parent notifier id is empty", tok)
+	}
+	if override == "" {
+		return NotifierSpec{}, false, fmt.Errorf("notify token %q: target override is empty after %q", tok, notifyTokenSeparator)
+	}
+	if parentID == inappNotifierID {
+		return NotifierSpec{}, false, fmt.Errorf("notify token %q: %q has no target to override", tok, inappNotifierID)
+	}
+	parent, ok := parentByID[parentID]
+	if !ok {
+		return NotifierSpec{}, false, fmt.Errorf("notify token %q: unknown parent notifier id %q", tok, parentID)
+	}
+	spec, err := cloneNotifierWithOverride(*parent, tok, override)
+	if err != nil {
+		return NotifierSpec{}, false, err
+	}
+	return spec, true, nil
 }
 
 // cloneNotifierWithOverride copies a parent NotifierSpec, assigns a synthetic
@@ -297,47 +330,12 @@ func validateNotify(cfg *NotifyConfig) error {
 	if cfg == nil {
 		return nil
 	}
-	seenID := make(map[string]struct{}, len(cfg.Notifiers))
-	for i := range cfg.Notifiers {
-		spec := &cfg.Notifiers[i]
-		if _, dup := seenID[spec.ID]; dup {
-			return fmt.Errorf("duplicate notifier id %q", spec.ID)
-		}
-		seenID[spec.ID] = struct{}{}
-
-		if err := requireOneOf(fmt.Sprintf("notifier %q type", spec.ID),
-			spec.Type, allowedNotifierTypes, false); err != nil {
-			return err
-		}
-
-		switch spec.Type {
-		case "slack":
-			if err := requireOneSecretSource(spec.ID, "webhook_url",
-				spec.WebhookURL, spec.WebhookURLEnv, spec.WebhookURLFile); err != nil {
-				return err
-			}
-			if ch := strings.TrimSpace(spec.SlackChannel); ch != "" && ch[0] != '#' && ch[0] != '@' {
-				return fmt.Errorf("notifier %q: channel must start with # or @ (got %q)", spec.ID, ch)
-			}
-		case "telegram":
-			if err := requireOneSecretSource(spec.ID, "bot_token",
-				spec.BotToken, spec.BotTokenEnv, spec.BotTokenFile); err != nil {
-				return err
-			}
-			if strings.TrimSpace(spec.ChatID) == "" {
-				return fmt.Errorf("notifier %q: chat_id is required for type=telegram", spec.ID)
-			}
-			if strings.TrimSpace(spec.ParseMode) == "MarkdownV2" && strings.TrimSpace(spec.TemplatePath) == "" {
-				return fmt.Errorf("notifier %q: parse_mode=MarkdownV2 requires template_path (the embedded default uses HTML)", spec.ID)
-			}
-		}
+	seenID, err := validateNotifierSpecs(cfg.Notifiers)
+	if err != nil {
+		return err
 	}
 
-	known := make(map[string]struct{}, len(seenID)+1)
-	for id := range seenID {
-		known[id] = struct{}{}
-	}
-	known[inappNotifierID] = struct{}{}
+	known := buildKnownNotifierSet(seenID)
 
 	for _, id := range cfg.GlobalNotifiers {
 		if _, ok := known[id]; !ok {
@@ -346,27 +344,102 @@ func validateNotify(cfg *NotifyConfig) error {
 	}
 
 	for i, r := range cfg.Routes {
-		scope := fmt.Sprintf("notification_route #%d", i)
-		for _, k := range r.Kinds {
-			if err := requireOneOf(scope+" match.kind", k, kinds.AllKindStrings, false); err != nil {
-				return err
-			}
-		}
-		if err := requireOneOf(scope+" match.severity", r.Severity, kinds.AllSeverityStrings, true); err != nil {
+		if err := validateRoute(i, r, known); err != nil {
 			return err
 		}
-		if r.TaskGlob != "" {
-			if _, err := path.Match(r.TaskGlob, ""); err != nil {
-				return fmt.Errorf("%s: invalid task glob %q: %w", scope, r.TaskGlob, err)
-			}
+	}
+	return nil
+}
+
+// validateNotifierSpecs runs per-spec structural checks (unique id, correct
+// type, type-specific secret/target requirements) and returns the set of
+// declared ids on success.
+func validateNotifierSpecs(specs []NotifierSpec) (map[string]struct{}, error) {
+	seenID := make(map[string]struct{}, len(specs))
+	for i := range specs {
+		spec := &specs[i]
+		if _, dup := seenID[spec.ID]; dup {
+			return nil, fmt.Errorf("duplicate notifier id %q", spec.ID)
 		}
-		if len(r.NotifierID) == 0 {
-			return fmt.Errorf("%s: notify list is empty", scope)
+		seenID[spec.ID] = struct{}{}
+
+		if err := requireOneOf(fmt.Sprintf("notifier %q type", spec.ID),
+			spec.Type, allowedNotifierTypes, false); err != nil {
+			return nil, err
 		}
-		for _, id := range r.NotifierID {
-			if _, ok := known[id]; !ok {
-				return fmt.Errorf("%s: unknown notifier id %q", scope, id)
-			}
+		if err := validateNotifierByType(spec); err != nil {
+			return nil, err
+		}
+	}
+	return seenID, nil
+}
+
+func validateNotifierByType(spec *NotifierSpec) error {
+	switch spec.Type {
+	case "slack":
+		return validateSlackNotifier(spec)
+	case "telegram":
+		return validateTelegramNotifier(spec)
+	}
+	return nil
+}
+
+func validateSlackNotifier(spec *NotifierSpec) error {
+	if err := requireOneSecretSource(spec.ID, "webhook_url",
+		spec.WebhookURL, spec.WebhookURLEnv, spec.WebhookURLFile); err != nil {
+		return err
+	}
+	ch := strings.TrimSpace(spec.SlackChannel)
+	if ch != "" && ch[0] != '#' && ch[0] != '@' {
+		return fmt.Errorf("notifier %q: channel must start with # or @ (got %q)", spec.ID, ch)
+	}
+	return nil
+}
+
+func validateTelegramNotifier(spec *NotifierSpec) error {
+	if err := requireOneSecretSource(spec.ID, "bot_token",
+		spec.BotToken, spec.BotTokenEnv, spec.BotTokenFile); err != nil {
+		return err
+	}
+	if strings.TrimSpace(spec.ChatID) == "" {
+		return fmt.Errorf("notifier %q: chat_id is required for type=telegram", spec.ID)
+	}
+	if strings.TrimSpace(spec.ParseMode) == "MarkdownV2" && strings.TrimSpace(spec.TemplatePath) == "" {
+		return fmt.Errorf("notifier %q: parse_mode=MarkdownV2 requires template_path (the embedded default uses HTML)", spec.ID)
+	}
+	return nil
+}
+
+func buildKnownNotifierSet(seenID map[string]struct{}) map[string]struct{} {
+	known := make(map[string]struct{}, len(seenID)+1)
+	for id := range seenID {
+		known[id] = struct{}{}
+	}
+	known[inappNotifierID] = struct{}{}
+	return known
+}
+
+func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) error {
+	scope := fmt.Sprintf("notification_route #%d", idx)
+	for _, k := range r.Kinds {
+		if err := requireOneOf(scope+" match.kind", k, kinds.AllKindStrings, false); err != nil {
+			return err
+		}
+	}
+	if err := requireOneOf(scope+" match.severity", r.Severity, kinds.AllSeverityStrings, true); err != nil {
+		return err
+	}
+	if r.TaskGlob != "" {
+		if _, err := path.Match(r.TaskGlob, ""); err != nil {
+			return fmt.Errorf("%s: invalid task glob %q: %w", scope, r.TaskGlob, err)
+		}
+	}
+	if len(r.NotifierID) == 0 {
+		return fmt.Errorf("%s: notify list is empty", scope)
+	}
+	for _, id := range r.NotifierID {
+		if _, ok := known[id]; !ok {
+			return fmt.Errorf("%s: unknown notifier id %q", scope, id)
 		}
 	}
 	return nil

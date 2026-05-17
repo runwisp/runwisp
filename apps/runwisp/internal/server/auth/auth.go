@@ -164,7 +164,7 @@ func (s *Service) SetAuthCookie(w http.ResponseWriter, r *http.Request, token st
 		Path:     CookiePath,
 		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
-		Secure:   s.IsSecureRequest(r),
+		Secure:   s.IsSecureRequest(r), // NOSONAR: intentionally dynamic — true when direct TLS or trusted-proxy TLS, false for plain HTTP dev setups
 		SameSite: http.SameSiteStrictMode,
 	})
 }

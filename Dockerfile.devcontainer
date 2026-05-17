@@ -22,7 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null \
  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
- && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+ && echo "deb [arch=$(dpkg --print-architecture) \
+    signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] \
+    https://cli.github.com/packages stable main" \
     > /etc/apt/sources.list.d/github-cli.list \
  && apt-get update \
  && apt-get install -y --no-install-recommends gh \
@@ -30,9 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=golang /usr/local/go /usr/local/go
 RUN ln -sf /usr/local/go/bin/go /usr/local/bin/go \
- && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
-
-RUN mkdir -p \
+ && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt \
+ && mkdir -p \
     /home/vscode/.config \
     /home/vscode/.local/share \
     /home/vscode/.local/state \
@@ -40,16 +41,21 @@ RUN mkdir -p \
  && chown -R vscode:vscode \
     /home/vscode/.config \
     /home/vscode/.local \
-    /home/vscode/.vscode-server
-
-RUN mkdir -p "${NVM_DIR}" \
+    /home/vscode/.vscode-server \
+ && mkdir -p "${NVM_DIR}" \
  && curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh \
     | PROFILE=/dev/null bash \
- && bash -lc '. "${NVM_DIR}/nvm.sh" && nvm install --lts && nvm alias default lts/* && nvm use default && corepack enable' \
- && printf '\nexport NVM_DIR=%s\n[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"\n' "${NVM_DIR}" >> /home/vscode/.bashrc \
+ && bash -lc \
+    '. "${NVM_DIR}/nvm.sh" \
+     && nvm install --lts \
+     && nvm alias default lts/* \
+     && nvm use default \
+     && corepack enable' \
+ && printf '\nexport NVM_DIR=%s\n[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"\n' \
+    "${NVM_DIR}" >> /home/vscode/.bashrc \
  && chown -R vscode:vscode "${NVM_DIR}" /home/vscode/.bashrc
 
 USER vscode
-RUN curl -fsSL https://bun.sh/install | bash -s -- bun-v1.3.3
-RUN bunx playwright install --with-deps
+RUN curl -fsSL https://bun.sh/install | bash -s -- bun-v1.3.3 \
+ && bunx playwright install --with-deps
 USER root

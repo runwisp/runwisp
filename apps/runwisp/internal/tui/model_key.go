@@ -11,218 +11,57 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/views/notifications"
 )
 
-// handleKey processes keyboard input. Recognised global shortcuts (quit, esc,
-// arrows, action keys) are handled inline; anything else is delegated to the
-// currently focused sub-component.
+// keyHandlerFn processes a key event. Returns (model, cmd, handled): when
+// handled=true the caller returns early; when handled=false the caller
+// delegates to the focused sub-component. An extra cmd with handled=false
+// signals "prepend this cmd to the delegation result".
+type keyHandlerFn func(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool)
+
+// globalKeyHandlers maps key strings to their handler. Keys that share the
+// same handler (e.g. "left"/"h") share the same function pointer.
+var globalKeyHandlers = map[string]keyHandlerFn{
+	keyCtrlC:    handleKeyQuit,
+	"q":         handleKeyQuit,
+	"n":         handleKeyN,
+	"esc":       handleKeyEsc,
+	"backspace": handleKeyBackspace,
+	"f":         handleKeyF,
+	"left":      handleKeyLeft,
+	"h":         handleKeyLeft,
+	"right":     handleKeyRight,
+	"l":         handleKeyRight,
+	"enter":     handleKeyEnter,
+	"r":         handleKeyR,
+	"R":         handleKeyR,
+	"s":         handleKeyS,
+	"d":         handleKeyD,
+	"up":        handleKeyUp,
+	"k":         handleKeyUp,
+	"down":      handleKeyDown,
+	"j":         handleKeyDown,
+}
+
+// handleKey processes keyboard input. Global shortcuts are dispatched through
+// globalKeyHandlers; unrecognised keys delegate to the focused sub-component.
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
-	switch msg.String() {
-	case "ctrl+c", "q":
-		m.showQuitConfirm()
-		return m, nil
-
-	case "n":
-		if m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome {
-			m.notifications.Toggle()
-			m.updateLayout()
-			return m, nil
+	if handler, ok := globalKeyHandlers[msg.String()]; ok {
+		newM, extraCmd, handled := handler(m, msg)
+		if handled {
+			return newM, extraCmd
 		}
-
-	case "esc":
-		if m.notifications.IsExpanded() {
-			m.notifications.Toggle()
-			m.updateLayout()
-			return m, nil
-		}
-		if m.execView != nil {
-			if m.execView.Fullscreen() {
-				m.execView.ToggleFullscreen()
-				m.updateLayout()
-				return m, m.syncMouseState()
-			}
-			return m, m.closeExecView()
-		}
-		if m.panelFocus == uikit.PanelMain {
-			return m, m.focusSidebar()
-		}
-
-	case "backspace":
-		if m.execView != nil {
-			if m.execView.Fullscreen() {
-				m.execView.ToggleFullscreen()
-				m.updateLayout()
-				return m, m.syncMouseState()
-			}
-			return m, m.closeExecView()
-		}
-
-	case "f":
-		if m.execView != nil {
-			m.execView.ToggleFullscreen()
-			if m.execView.Fullscreen() {
-				m.panelFocus = uikit.PanelMain
-				m.execView.SetFocused(true)
-			}
-			m.updateLayout()
-			return m, m.syncMouseState()
-		}
-
-	case "left", "h":
-		if m.execView == nil {
-			if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug && m.debugView.pane.HScroll > 0 {
-				break
-			}
-			return m, m.focusSidebar()
-		}
-
-		ev := m.execView
-		if ev.Fullscreen() {
-			// In fullscreen the sidebar is hidden; left just scrolls the pane.
-			break
-		}
-		atEdge := ev.HeaderFocus == execlist.HeaderFocusBack || ev.HeaderFocus == execlist.HeaderFocusStarted ||
-			(ev.HeaderFocus == execlist.HeaderFocusNone && ev.Pane.HScroll <= 0)
-		if atEdge {
-			return m, m.focusSidebar()
-		}
-
-	case "right", "l":
-		if m.execView == nil {
-			if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug {
-				break
-			}
-			return m, m.focusMainPanel()
-		}
-		if m.execView.Fullscreen() {
-			break
-		}
-		if m.panelFocus == uikit.PanelSidebar {
-			return m, m.focusMainPanel()
-		}
-
-	case "enter":
-		if m.notifications.IsExpanded() {
-			if sel := m.notifications.Selected(); sel != nil && sel.RunID != "" {
-				m.notifications.Toggle()
-				m.updateLayout()
-				return m, m.openRunByID(sel.TaskName, sel.RunID)
-			}
-			return m, nil
-		}
-		if m.execView != nil && m.panelFocus == uikit.PanelMain && m.execView.HeaderFocus != execlist.HeaderFocusNone {
-			switch m.execView.HeaderFocus {
-			case execlist.HeaderFocusBack:
-				return m, m.closeExecView()
-			case execlist.HeaderFocusAction:
-				switch m.execView.Action() {
-				case execlist.ActionStop:
-					return m, m.confirmAction(confirmActionStop)
-				case execlist.ActionStopService:
-					return m, m.confirmAction(confirmActionStopService)
-				case execlist.ActionRetry:
-					return m, m.confirmAction(confirmActionRetry)
-				case execlist.ActionRestartService:
-					return m, m.confirmAction(confirmActionRestartService)
-				}
-			case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration, execlist.HeaderFocusID:
-				return m, m.copyExecField()
-			}
-			return m, nil
-		}
-		if m.panelFocus == uikit.PanelMain && m.execView == nil {
-			if m.homeCursor >= 0 {
-				return m, m.activateHomeField()
-			}
-			if run := m.execList.SelectedRun(); run != nil {
-				return m, m.openExecView(run)
-			}
-		}
-		// Enter on sidebar commits the cursor item as the main view;
-		// close any open exec view so the user lands on that view.
-		if m.panelFocus == uikit.PanelSidebar && m.execView != nil {
-			if cmd := m.closeExecView(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-
-	case "r", "R":
-		if m.notifications.IsExpanded() {
-			return m, m.toggleSelectedNotificationRead()
-		}
-		if msg.String() == "R" {
-			break
-		}
-		if m.execView != nil {
-			switch m.execView.Action() {
-			case execlist.ActionRetry:
-				return m, m.confirmAction(confirmActionRetry)
-			case execlist.ActionRestartService:
-				return m, m.confirmAction(confirmActionRestartService)
-			}
-			return m, nil
-		}
-		return m, m.confirmAction(confirmActionTrigger)
-
-	case "s":
-		if m.execView != nil {
-			switch m.execView.Action() {
-			case execlist.ActionStop:
-				return m, m.confirmAction(confirmActionStop)
-			case execlist.ActionStopService:
-				return m, m.confirmAction(confirmActionStopService)
-			}
-			return m, nil
-		}
-
-	case "d":
-		if m.execView != nil && !m.execView.Fullscreen() {
-			return m, m.downloadExecLog()
-		}
-
-	case "up", "k":
-		if m.notifications.IsExpanded() {
-			if m.notifications.MoveCursor(-1) {
-				return m, nil
-			}
-			m.notifications.BumpBoundaryFlash()
-			return m, notifications.ScheduleFlashClear()
-		}
-		if m.panelFocus == uikit.PanelMain && m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome && m.sidebar.ActiveTask() == "" {
-			if m.execList.Cursor() == 0 || m.execList.TotalCount() == 0 {
-				fields := home.Fields(m.info, m.hasLaunchTicket())
-				if len(fields) > 0 {
-					if m.homeCursor < 0 {
-						return m, m.focusHomeField(len(fields) - 1)
-					} else if m.homeCursor > 0 {
-						m.homeCursor--
-					}
-					return m, m.dialogs.SyncMouseState()
-				}
-			}
-		}
-
-	case "down", "j":
-		if m.notifications.IsExpanded() {
-			if m.notifications.MoveCursor(1) {
-				return m, nil
-			}
-			m.notifications.BumpBoundaryFlash()
-			return m, notifications.ScheduleFlashClear()
-		}
-		if m.panelFocus == uikit.PanelMain && m.execView == nil && m.homeCursor >= 0 {
-			fields := home.Fields(m.info, m.hasLaunchTicket())
-			if m.homeCursor < len(fields)-1 {
-				m.homeCursor++
-			} else {
-				m.homeCursor = -1
-				m.execList.SetFocused(true)
-			}
-			return m, m.dialogs.SyncMouseState()
+		m = newM
+		if extraCmd != nil {
+			delegatedM, delegatedCmd := newM.delegateKeyToFocusedView(msg)
+			return delegatedM, tea.Batch(extraCmd, delegatedCmd)
 		}
 	}
+	return m.delegateKeyToFocusedView(msg)
+}
 
-	// Delegate to focused sub-component.
+// delegateKeyToFocusedView forwards msg to whichever sub-component currently
+// owns keyboard focus.
+func (m Model) delegateKeyToFocusedView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
 	if m.execView != nil && m.panelFocus != uikit.PanelSidebar {
 		if cmd := m.execView.Update(msg); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -242,13 +81,283 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	} else if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug {
 		m.debugView.Update(msg)
 	} else if m.panelFocus == uikit.PanelMain && m.homeCursor < 0 {
-		if cmd := m.execList.Update(msg); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		if m.execList.NeedsFetch() {
-			cmds = append(cmds, m.fetchExecWindow())
-		}
+		cmds = append(cmds, delegateToExecList(&m, msg)...)
 	}
-
 	return m, tea.Batch(cmds...)
+}
+
+func delegateToExecList(m *Model, msg tea.KeyMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	if cmd := m.execList.Update(msg); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if m.execList.NeedsFetch() {
+		cmds = append(cmds, m.fetchExecWindow())
+	}
+	return cmds
+}
+
+// ---------- per-key handlers ----------
+
+func handleKeyQuit(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	m.showQuitConfirm()
+	return m, nil, true
+}
+
+func handleKeyN(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome {
+		m.notifications.Toggle()
+		m.updateLayout()
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func handleKeyEsc(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.notifications.IsExpanded() {
+		m.notifications.Toggle()
+		m.updateLayout()
+		return m, nil, true
+	}
+	if m.execView != nil {
+		if m.execView.Fullscreen() {
+			m.execView.ToggleFullscreen()
+			m.updateLayout()
+			return m, m.syncMouseState(), true
+		}
+		return m, m.closeExecView(), true
+	}
+	if m.panelFocus == uikit.PanelMain {
+		return m, m.focusSidebar(), true
+	}
+	return m, nil, false
+}
+
+func handleKeyBackspace(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.execView != nil {
+		if m.execView.Fullscreen() {
+			m.execView.ToggleFullscreen()
+			m.updateLayout()
+			return m, m.syncMouseState(), true
+		}
+		return m, m.closeExecView(), true
+	}
+	return m, nil, false
+}
+
+func handleKeyF(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.execView != nil {
+		m.execView.ToggleFullscreen()
+		if m.execView.Fullscreen() {
+			m.panelFocus = uikit.PanelMain
+			m.execView.SetFocused(true)
+		}
+		m.updateLayout()
+		return m, m.syncMouseState(), true
+	}
+	return m, nil, false
+}
+
+func handleKeyLeft(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.execView == nil {
+		return handleKeyLeftNoExecView(m)
+	}
+	if m.execView.Fullscreen() {
+		return m, nil, false
+	}
+	if isAtExecViewLeftEdge(m.execView) {
+		return m, m.focusSidebar(), true
+	}
+	return m, nil, false
+}
+
+func handleKeyLeftNoExecView(m Model) (Model, tea.Cmd, bool) {
+	if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug && m.debugView.pane.HScroll > 0 {
+		return m, nil, false
+	}
+	return m, m.focusSidebar(), true
+}
+
+func isAtExecViewLeftEdge(ev *execlist.ExecView) bool {
+	return ev.HeaderFocus == execlist.HeaderFocusBack ||
+		ev.HeaderFocus == execlist.HeaderFocusStarted ||
+		(ev.HeaderFocus == execlist.HeaderFocusNone && ev.Pane.HScroll <= 0)
+}
+
+func handleKeyRight(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.execView == nil {
+		if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug {
+			return m, nil, false
+		}
+		return m, m.focusMainPanel(), true
+	}
+	if m.execView.Fullscreen() {
+		return m, nil, false
+	}
+	if m.panelFocus == uikit.PanelSidebar {
+		return m, m.focusMainPanel(), true
+	}
+	return m, nil, false
+}
+
+func handleKeyEnter(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.notifications.IsExpanded() {
+		return handleKeyEnterNotifications(m)
+	}
+	if m.execView != nil && m.panelFocus == uikit.PanelMain && m.execView.HeaderFocus != execlist.HeaderFocusNone {
+		return handleKeyEnterHeader(m)
+	}
+	if m.panelFocus == uikit.PanelMain && m.execView == nil {
+		return handleKeyEnterMainPanel(m)
+	}
+	// Sidebar: close any open exec view, then delegate so the sidebar can react.
+	if m.panelFocus == uikit.PanelSidebar && m.execView != nil {
+		return m, m.closeExecView(), false
+	}
+	return m, nil, false
+}
+
+func handleKeyEnterNotifications(m Model) (Model, tea.Cmd, bool) {
+	sel := m.notifications.Selected()
+	if sel != nil && sel.RunID != "" {
+		m.notifications.Toggle()
+		m.updateLayout()
+		return m, m.openRunByID(sel.TaskName, sel.RunID), true
+	}
+	return m, nil, true
+}
+
+func handleKeyEnterHeader(m Model) (Model, tea.Cmd, bool) {
+	switch m.execView.HeaderFocus {
+	case execlist.HeaderFocusBack:
+		return m, m.closeExecView(), true
+	case execlist.HeaderFocusAction:
+		return handleKeyEnterActionButton(m)
+	case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration, execlist.HeaderFocusID:
+		return m, m.copyExecField(), true
+	}
+	return m, nil, true
+}
+
+func handleKeyEnterActionButton(m Model) (Model, tea.Cmd, bool) {
+	switch m.execView.Action() {
+	case execlist.ActionStop:
+		return m, m.confirmAction(confirmActionStop), true
+	case execlist.ActionStopService:
+		return m, m.confirmAction(confirmActionStopService), true
+	case execlist.ActionRetry:
+		return m, m.confirmAction(confirmActionRetry), true
+	case execlist.ActionRestartService:
+		return m, m.confirmAction(confirmActionRestartService), true
+	}
+	return m, nil, true
+}
+
+func handleKeyEnterMainPanel(m Model) (Model, tea.Cmd, bool) {
+	if m.homeCursor >= 0 {
+		return m, m.activateHomeField(), true
+	}
+	if run := m.execList.SelectedRun(); run != nil {
+		return m, m.openExecView(run), true
+	}
+	return m, nil, false
+}
+
+func handleKeyR(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.notifications.IsExpanded() {
+		return m, m.toggleSelectedNotificationRead(), true
+	}
+	if msg.String() == "R" {
+		return m, nil, false
+	}
+	if m.execView != nil {
+		return handleKeyRExecView(m)
+	}
+	return m, m.confirmAction(confirmActionTrigger), true
+}
+
+func handleKeyRExecView(m Model) (Model, tea.Cmd, bool) {
+	switch m.execView.Action() {
+	case execlist.ActionRetry:
+		return m, m.confirmAction(confirmActionRetry), true
+	case execlist.ActionRestartService:
+		return m, m.confirmAction(confirmActionRestartService), true
+	}
+	return m, nil, true
+}
+
+func handleKeyS(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.execView != nil {
+		switch m.execView.Action() {
+		case execlist.ActionStop:
+			return m, m.confirmAction(confirmActionStop), true
+		case execlist.ActionStopService:
+			return m, m.confirmAction(confirmActionStopService), true
+		}
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func handleKeyD(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.execView != nil && !m.execView.Fullscreen() {
+		return m, m.downloadExecLog(), true
+	}
+	return m, nil, false
+}
+
+func handleKeyUp(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.notifications.IsExpanded() {
+		if m.notifications.MoveCursor(-1) {
+			return m, nil, true
+		}
+		m.notifications.BumpBoundaryFlash()
+		return m, notifications.ScheduleFlashClear(), true
+	}
+	if m.panelFocus == uikit.PanelMain && m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome && m.sidebar.ActiveTask() == "" {
+		return handleKeyUpHome(m)
+	}
+	return m, nil, false
+}
+
+func handleKeyUpHome(m Model) (Model, tea.Cmd, bool) {
+	if m.execList.Cursor() != 0 && m.execList.TotalCount() != 0 {
+		return m, nil, false
+	}
+	fields := home.Fields(m.info, m.hasLaunchTicket())
+	if len(fields) == 0 {
+		return m, nil, false
+	}
+	if m.homeCursor < 0 {
+		return m, m.focusHomeField(len(fields) - 1), true
+	}
+	if m.homeCursor > 0 {
+		m.homeCursor--
+	}
+	return m, m.dialogs.SyncMouseState(), true
+}
+
+func handleKeyDown(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.notifications.IsExpanded() {
+		if m.notifications.MoveCursor(1) {
+			return m, nil, true
+		}
+		m.notifications.BumpBoundaryFlash()
+		return m, notifications.ScheduleFlashClear(), true
+	}
+	if m.panelFocus == uikit.PanelMain && m.execView == nil && m.homeCursor >= 0 {
+		return handleKeyDownHome(m)
+	}
+	return m, nil, false
+}
+
+func handleKeyDownHome(m Model) (Model, tea.Cmd, bool) {
+	fields := home.Fields(m.info, m.hasLaunchTicket())
+	if m.homeCursor < len(fields)-1 {
+		m.homeCursor++
+	} else {
+		m.homeCursor = -1
+		m.execList.SetFocused(true)
+	}
+	return m, m.dialogs.SyncMouseState(), true
 }

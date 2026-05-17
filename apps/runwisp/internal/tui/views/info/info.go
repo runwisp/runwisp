@@ -367,25 +367,31 @@ func (v *InfoView) renderQuickInfoSection(w int) []string {
 	}
 
 	if len(v.info.Capabilities) > 0 {
-		lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
-		var caps []string
-		for _, cap := range v.info.Capabilities {
-			if cap.Available {
-				caps = append(caps, uikit.InfoCapsAvailableStyle.Render("✓ "+cap.Name))
-			} else {
-				caps = append(caps, uikit.InfoCapsUnavailableStyle.Render("✗ "+cap.Name))
-			}
-		}
-		capLine := bgSpace(2) + strings.Join(caps, bgSpace(2))
-		if lipgloss.Width(capLine) > w-2 {
-			for _, c := range caps {
-				lines = append(lines, uikit.PadLine(bgSpace(2)+c, w, uikit.ColorBg))
-			}
-		} else {
-			lines = append(lines, uikit.PadLine(capLine, w, uikit.ColorBg))
-		}
+		lines = append(lines, v.renderCapabilitiesLines(v.info.Capabilities, w)...)
 	}
 
+	return lines
+}
+
+func (v *InfoView) renderCapabilitiesLines(caps []model.CapInfo, w int) []string {
+	var lines []string
+	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
+	var capStrs []string
+	for _, cap := range caps {
+		if cap.Available {
+			capStrs = append(capStrs, uikit.InfoCapsAvailableStyle.Render("✓ "+cap.Name))
+		} else {
+			capStrs = append(capStrs, uikit.InfoCapsUnavailableStyle.Render("✗ "+cap.Name))
+		}
+	}
+	capLine := bgSpace(2) + strings.Join(capStrs, bgSpace(2))
+	if lipgloss.Width(capLine) > w-2 {
+		for _, c := range capStrs {
+			lines = append(lines, uikit.PadLine(bgSpace(2)+c, w, uikit.ColorBg))
+		}
+	} else {
+		lines = append(lines, uikit.PadLine(capLine, w, uikit.ColorBg))
+	}
 	return lines
 }
 

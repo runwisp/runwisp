@@ -17,10 +17,16 @@ import (
 
 // StreamManager owns SSE event subscriptions, log streaming, and data fetching.
 // Extracted from Model to isolate I/O and async concerns.
+//
+// The base context is owned by this manager because each subscription derives
+// a child context from it; shutting the manager down cancels every in-flight
+// stream in one step. Passing context as a method parameter would require the
+// caller to thread the same lifecycle context through every SSE subscribe call
+// — that responsibility belongs here.
 type StreamManager struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	client *apiclient.Client
+	streamCtx context.Context //NOSONAR: lifecycle ctx owned by the manager; cancelled via Shutdown()
+	cancel    context.CancelFunc
+	client    *apiclient.Client
 
 	logCancel context.CancelFunc
 	logCh     <-chan apiclient.LogStreamMsg
@@ -33,9 +39,9 @@ type StreamManager struct {
 func NewStreamManager(client *apiclient.Client) StreamManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return StreamManager{
-		ctx:    ctx,
-		cancel: cancel,
-		client: client,
+		streamCtx: ctx,
+		cancel:    cancel,
+		client:    client,
 	}
 }
 
@@ -50,7 +56,7 @@ func (sm *StreamManager) SubscribeEvents() tea.Cmd {
 		if sm.client == nil {
 			return nil
 		}
-		ch, err := sm.client.StreamRunEvents(sm.ctx)
+		ch, err := sm.client.StreamRunEvents(sm.streamCtx)
 		if err != nil {
 			return uikit.DebugLogMsg{Message: "Events stream failed: " + err.Error()}
 		}
@@ -84,7 +90,7 @@ func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd 
 	if sm.logCancel != nil {
 		sm.logCancel()
 	}
-	ctx, cancel := context.WithCancel(sm.ctx)
+	ctx, cancel := context.WithCancel(sm.streamCtx)
 	sm.logCancel = cancel
 
 	runID := run.ID
@@ -244,7 +250,7 @@ func (sm *StreamManager) SubscribeDaemonLogs() tea.Cmd {
 		return nil
 	}
 	client := sm.client
-	ctx := sm.ctx
+	ctx := sm.streamCtx
 	return func() tea.Msg {
 		ch, err := client.StreamDaemonLogs(ctx)
 		if err != nil {
@@ -274,7 +280,7 @@ func (sm *StreamManager) SubscribeNotifications() tea.Cmd {
 		return nil
 	}
 	client := sm.client
-	ctx := sm.ctx
+	ctx := sm.streamCtx
 	return func() tea.Msg {
 		ch, err := client.StreamNotifications(ctx)
 		if err != nil {

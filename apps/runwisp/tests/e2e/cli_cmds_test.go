@@ -1,0 +1,138 @@
+//go:build !windows
+
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package e2e
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// writeQuickConfig writes a config with a single instant task for standalone exec tests.
+func writeQuickConfig(t *testing.T, dir string) string {
+	t.Helper()
+
+	path := filepath.Join(dir, "quick.toml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+[tasks.hello]
+run = "echo 'hello world'"
+`), 0o600))
+	return path
+}
+
+func runCLI(t *testing.T, projectDir string, binaryPath string, args ...string) (string, error) {
+	t.Helper()
+
+	cmd := exec.Command(binaryPath, args...)
+	cmd.Dir = projectDir
+	cmd.Env = subprocEnv()
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func TestCLIValidateCmd(t *testing.T) {
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	configDir := t.TempDir()
+	configPath := writeE2EConfig(t, configDir)
+
+	// Valid config should succeed and print summary.
+	out, err := runCLI(t, projectDir, binaryPath, "validate", "--config", configPath)
+	require.NoError(t, err, "validate should succeed: %s", out)
+	require.Contains(t, out, "is valid")
+	require.Contains(t, out, "tasks:")
+	require.Contains(t, out, "services:")
+	require.Contains(t, out, "timezone:")
+
+	// Invalid config should fail.
+	badPath := filepath.Join(configDir, "bad.toml")
+	require.NoError(t, os.WriteFile(badPath, []byte("[tasks.bad\n"), 0o600))
+	_, err = runCLI(t, projectDir, binaryPath, "validate", "--config", badPath)
+	require.Error(t, err, "validate should fail on malformed TOML")
+}
+
+func TestCLIListCmd(t *testing.T) {
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	configDir := t.TempDir()
+	configPath := writeE2EConfig(t, configDir)
+
+	out, err := runCLI(t, projectDir, binaryPath, "list", "--config", configPath)
+	require.NoError(t, err, "list should succeed: %s", out)
+	require.Contains(t, out, "alpha-stream")
+	require.Contains(t, out, "bravo-fail")
+	require.Contains(t, out, "SCHEDULE")
+}
+
+func TestCLIStatusCmd(t *testing.T) {
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	configDir := t.TempDir()
+	configPath := writeE2EConfig(t, configDir)
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+
+	out, err := runCLI(t, projectDir, binaryPath,
+		"status",
+		"--port", strconv.Itoa(daemon.port),
+	)
+	require.NoError(t, err, "status should succeed: %s", out)
+	require.True(t, strings.Contains(out, "healthy") || strings.Contains(out, "RunWisp"),
+		"expected healthy output, got: %s", out)
+}
+
+func TestCLIOpenAPICmd(t *testing.T) {
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	out, err := runCLI(t, projectDir, binaryPath, "openapi")
+	require.NoError(t, err, "openapi should succeed: %s", out)
+	require.Contains(t, out, `"openapi"`)
+	require.Contains(t, out, `"paths"`)
+}
+
+func TestCLIExecViaDaemon(t *testing.T) {
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	configDir := t.TempDir()
+	configPath := writeE2EConfig(t, configDir)
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+
+	out, err := runCLI(t, projectDir, binaryPath,
+		"exec", "alpha-stream",
+		"--data", daemon.dataDir,
+		"--config", configPath,
+		"--daemon",
+	)
+	require.NoError(t, err, "exec via daemon should succeed: %s", out)
+	require.Contains(t, out, "alpha-line-1")
+}
+
+func TestCLIExecStandalone(t *testing.T) {
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	configDir := t.TempDir()
+	dataDir := t.TempDir()
+	configPath := writeQuickConfig(t, configDir)
+
+	out, err := runCLI(t, projectDir, binaryPath,
+		"exec", "hello",
+		"--data", dataDir,
+		"--config", configPath,
+		"--standalone",
+	)
+	require.NoError(t, err, "exec --standalone should succeed: %s", out)
+	require.Contains(t, out, "hello world")
+}

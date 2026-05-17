@@ -378,3 +378,153 @@ func TestNewUnix_DialsSocket(t *testing.T) {
 	assert.Equal(t, "test", stats.Version)
 	assert.Equal(t, 7.0, stats.CPUUsage)
 }
+
+func TestRestartService(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/tasks/my-task/restart", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	err := c.RestartService("my-task")
+	assert.NoError(t, err)
+}
+
+func TestRestartService_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	err := c.RestartService("missing-task")
+	assert.Error(t, err)
+}
+
+func TestStopService(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/tasks/my-task/stop", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	err := c.StopService("my-task")
+	assert.NoError(t, err)
+}
+
+func TestStopService_Unauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	err := c.StopService("my-task")
+	assert.ErrorIs(t, err, ErrUnauthorized)
+}
+
+func TestDeleteRun(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/api/tasks/my-task/runs/run-1", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	err := c.DeleteRun("my-task", "run-1")
+	assert.NoError(t, err)
+}
+
+func TestDeleteRun_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	err := c.DeleteRun("my-task", "run-1")
+	assert.Error(t, err)
+}
+
+func TestCreateLaunchTicket(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/auth/launch-ticket", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"ticket": "my-ticket-abc"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	ticket, err := c.CreateLaunchTicket()
+	require.NoError(t, err)
+	assert.Equal(t, "my-ticket-abc", ticket)
+}
+
+func TestCreateLaunchTicket_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	ticket, err := c.CreateLaunchTicket()
+	assert.Error(t, err)
+	assert.Empty(t, ticket)
+}
+
+func TestGetLogPage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/tasks/my-task/runs/run-1/log", r.URL.Path)
+		assert.Equal(t, "-100", r.URL.Query().Get("from"))
+		assert.Equal(t, "50", r.URL.Query().Get("limit"))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(server.LogPageBody{
+			TotalLines: 5,
+			Finalized:  true,
+			Lines: []server.LogLineEntry{
+				{N: 1, Text: "hello"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	page, err := c.GetLogPage("my-task", "run-1", -100, 50)
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), page.TotalLines)
+	assert.True(t, page.Finalized)
+	require.Len(t, page.Lines, 1)
+	assert.Equal(t, "hello", page.Lines[0].Text)
+}
+
+func TestGetLogPage_NoLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "0", r.URL.Query().Get("from"))
+		assert.Empty(t, r.URL.Query().Get("limit"), "limit must be omitted when <= 0")
+		json.NewEncoder(w).Encode(server.LogPageBody{TotalLines: 2})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	page, err := c.GetLogPage("my-task", "run-1", 0, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), page.TotalLines)
+}
+
+func TestGetLogPage_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	_, err := c.GetLogPage("my-task", "run-1", -100, 50)
+	assert.Error(t, err)
+}

@@ -13,7 +13,9 @@
         "check:lint": "bunx prettier --check . && bunx eslint .",
         "format": "prettier --write .",
         "test": "playwright test",
-        "test:unit": "vitest run"
+        "test:unit": "vitest run --coverage",
+        "playwright:install": "playwright install --with-deps chromium",
+        "playwright:install-deps": "playwright install-deps chromium"
     },
     "devDependencies": {
         "@eslint/compat": "^1.4.0",
@@ -28,6 +30,7 @@
         "@tailwindcss/typography": "^0.5.19",
         "@tailwindcss/vite": "^4.1.17",
         "@types/node": "^24",
+        "@vitest/coverage-v8": "^4.1.6",
         "eslint": "^9.39.1",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-sonarjs": "^4.0.0",

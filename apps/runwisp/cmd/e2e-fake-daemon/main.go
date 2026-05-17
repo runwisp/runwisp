@@ -92,102 +92,112 @@ func run() error {
 			slog.Info("ignored frame", "type", head.Type)
 			continue
 		}
-		var disp struct {
-			Type      string `json:"type"`
-			Execution struct {
-				ExecutionID  string `json:"executionId"`
-				LogUploadURL string `json:"logUploadUrl"`
-				LogPath      string `json:"logPath"`
-				Timeout      int    `json:"timeout"`
-			} `json:"execution"`
-		}
-		if err := json.Unmarshal(raw, &disp); err != nil {
-			return fmt.Errorf("decode dispatch: %w", err)
-		}
-		if disp.Execution.ExecutionID == "" {
-			return fmt.Errorf("dispatch missing executionId: %s", string(raw))
-		}
-		slog.Info("dispatch received",
-			"executionId", disp.Execution.ExecutionID,
-			"logUploadUrl_present", disp.Execution.LogUploadURL != "",
-			"logPath", disp.Execution.LogPath,
-		)
-
-		// Send a single live log:chunk so the cloud sees activity.
-		startedAt := time.Now().UTC()
-		startedAtStr := startedAt.Format(time.RFC3339Nano)
-		runningRaw, _ := json.Marshal(map[string]any{
-			"type":        "execution:update",
-			"v":           2,
-			"sentAt":      startedAtStr,
-			"executionId": disp.Execution.ExecutionID,
-			"status":      "running",
-			"startedAt":   startedAtStr,
-		})
-		if err := conn.Write(ctx, websocket.MessageText, runningRaw); err != nil {
-			return fmt.Errorf("send running update: %w", err)
-		}
-
-		// Materialise the log on disk in a temp file so we exercise the
-		// real logarchive.Archive code path.
-		dir, err := os.MkdirTemp("", "e2e-daemon-log-")
-		if err != nil {
-			return fmt.Errorf("mktemp: %w", err)
-		}
-		defer os.RemoveAll(dir)
-		logFile := filepath.Join(dir, "execution.log")
-		if err := os.WriteFile(logFile, []byte(*logBody), 0o644); err != nil {
-			return fmt.Errorf("write log: %w", err)
-		}
-
-		var logPath string
-		var logSize int64
-		if disp.Execution.LogUploadURL != "" {
-			logSize, err = logarchive.Archive(ctx, http.DefaultClient, disp.Execution.LogUploadURL, logFile)
-			if err != nil {
-				return fmt.Errorf("archive: %w", err)
-			}
-			logPath = disp.Execution.LogPath
-			slog.Info("archive uploaded", "logPath", logPath, "logSize", logSize)
-		} else {
-			slog.Warn("dispatch has empty logUploadUrl; skipping archive")
-		}
-
-		// Send terminal execution:update.
-		exitCode := 0
-		finishedAt := time.Now().UTC()
-		finishedAtStr := finishedAt.Format(time.RFC3339Nano)
-		payload := map[string]any{
-			"type":        "execution:update",
-			"v":           2,
-			"sentAt":      finishedAtStr,
-			"executionId": disp.Execution.ExecutionID,
-			"status":      "ok",
-			"exitCode":    exitCode,
-			"startedAt":   startedAtStr,
-			"finishedAt":  finishedAtStr,
-		}
-		if logPath != "" {
-			payload["logPath"] = logPath
-			payload["logSize"] = logSize
-		}
-		raw, _ = json.Marshal(payload)
-		if err := conn.Write(ctx, websocket.MessageText, raw); err != nil {
-			return fmt.Errorf("send terminal: %w", err)
-		}
-		slog.Info("terminal sent", "logPathSent", logPath != "")
-
-		// Drain any trailing frames briefly so the server sees the message.
-		drain, dcancel := context.WithTimeout(ctx, 1*time.Second)
-		defer dcancel()
-		for {
-			if _, err := readMsg(drain, conn); err != nil {
-				break
-			}
-		}
-		return nil
+		return handleDispatch(ctx, conn, raw, *logBody)
 	}
 	return fmt.Errorf("no dispatch within deadline")
+}
+
+func handleDispatch(ctx context.Context, conn *websocket.Conn, raw []byte, logBody string) error {
+	var disp struct {
+		Type      string `json:"type"`
+		Execution struct {
+			ExecutionID  string `json:"executionId"`
+			LogUploadURL string `json:"logUploadUrl"`
+			LogPath      string `json:"logPath"`
+			Timeout      int    `json:"timeout"`
+		} `json:"execution"`
+	}
+	if err := json.Unmarshal(raw, &disp); err != nil {
+		return fmt.Errorf("decode dispatch: %w", err)
+	}
+	if disp.Execution.ExecutionID == "" {
+		return fmt.Errorf("dispatch missing executionId: %s", string(raw))
+	}
+	slog.Info("dispatch received",
+		"executionId", disp.Execution.ExecutionID,
+		"logUploadUrl_present", disp.Execution.LogUploadURL != "",
+		"logPath", disp.Execution.LogPath,
+	)
+
+	startedAt := time.Now().UTC()
+	startedAtStr := startedAt.Format(time.RFC3339Nano)
+	runningRaw, _ := json.Marshal(map[string]any{
+		"type":        "execution:update",
+		"v":           2,
+		"sentAt":      startedAtStr,
+		"executionId": disp.Execution.ExecutionID,
+		"status":      "running",
+		"startedAt":   startedAtStr,
+	})
+	if err := conn.Write(ctx, websocket.MessageText, runningRaw); err != nil {
+		return fmt.Errorf("send running update: %w", err)
+	}
+
+	// Materialise the log on disk in a temp file so we exercise the
+	// real logarchive.Archive code path.
+	dir, err := os.MkdirTemp("", "e2e-daemon-log-")
+	if err != nil {
+		return fmt.Errorf("mktemp: %w", err)
+	}
+	defer os.RemoveAll(dir)
+	logFilePath := filepath.Join(dir, "execution.log")
+	if err := os.WriteFile(logFilePath, []byte(logBody), 0o644); err != nil {
+		return fmt.Errorf("write log: %w", err)
+	}
+
+	logPath, logSize, err := archiveExecutionLog(ctx, disp.Execution.LogUploadURL, disp.Execution.LogPath, logFilePath)
+	if err != nil {
+		return err
+	}
+
+	return sendTerminalUpdate(ctx, conn, disp.Execution.ExecutionID, startedAtStr, logPath, logSize)
+}
+
+func archiveExecutionLog(ctx context.Context, uploadURL, cloudLogPath, localLogPath string) (string, int64, error) {
+	if uploadURL == "" {
+		slog.Warn("dispatch has empty logUploadUrl; skipping archive")
+		return "", 0, nil
+	}
+	size, err := logarchive.Archive(ctx, http.DefaultClient, uploadURL, localLogPath)
+	if err != nil {
+		return "", 0, fmt.Errorf("archive: %w", err)
+	}
+	slog.Info("archive uploaded", "logPath", cloudLogPath, "logSize", size)
+	return cloudLogPath, size, nil
+}
+
+func sendTerminalUpdate(ctx context.Context, conn *websocket.Conn, executionID, startedAtStr, logPath string, logSize int64) error {
+	finishedAt := time.Now().UTC()
+	finishedAtStr := finishedAt.Format(time.RFC3339Nano)
+	payload := map[string]any{
+		"type":        "execution:update",
+		"v":           2,
+		"sentAt":      finishedAtStr,
+		"executionId": executionID,
+		"status":      "ok",
+		"exitCode":    0,
+		"startedAt":   startedAtStr,
+		"finishedAt":  finishedAtStr,
+	}
+	if logPath != "" {
+		payload["logPath"] = logPath
+		payload["logSize"] = logSize
+	}
+	raw, _ := json.Marshal(payload)
+	if err := conn.Write(ctx, websocket.MessageText, raw); err != nil {
+		return fmt.Errorf("send terminal: %w", err)
+	}
+	slog.Info("terminal sent", "logPathSent", logPath != "")
+
+	// Drain any trailing frames briefly so the server sees the message.
+	drain, dcancel := context.WithTimeout(ctx, 1*time.Second)
+	defer dcancel()
+	for {
+		if _, err := readMsg(drain, conn); err != nil {
+			break
+		}
+	}
+	return nil
 }
 
 func readMsg(ctx context.Context, conn *websocket.Conn) ([]byte, error) {

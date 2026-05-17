@@ -13,8 +13,7 @@ import {
     FileExclamationPoint,
 } from "@lucide/svelte";
 import type { Component } from "svelte";
-import { displayStatus, type RunStatus } from "@runwisp/common";
-import type { Run } from "@runwisp/common";
+import { displayStatus, type RunStatus, type Run } from "@runwisp/common";
 
 export interface RunStatusConfig {
     icon: Component;

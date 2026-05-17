@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
 	"github.com/runwisp/runwisp/internal/model"
 )

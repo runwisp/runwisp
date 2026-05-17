@@ -91,7 +91,7 @@ samples_file="${workdir}/samples.tsv"
 : >"${samples_file}"
 
 end=$(( $(date +%s) + duration_s ))
-while [ "$(date +%s)" -lt "${end}" ]; do
+while [[ "$(date +%s)" -lt "${end}" ]]; do
     if ! kill -0 "${pid}" 2>/dev/null; then
         break
     fi

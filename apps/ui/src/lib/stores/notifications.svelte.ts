@@ -66,7 +66,7 @@ class NotificationStore {
     // we observe locally (SSE events + per-row mark-read/unread). We never
     // recompute it from #items because items is paginated.
     #unread = $state(0);
-    #events: EventManager;
+    readonly #events: EventManager;
     #subscribed = false;
     #unsubscribes: (() => void)[] = [];
     #connected = $state(false);
@@ -74,10 +74,10 @@ class NotificationStore {
     #initInFlight: Promise<void> | null = null;
     #cursor: string | null = null;
     #hasMore = $state(false);
-    #logger = createLogger("NotificationStore");
+    readonly #logger = createLogger("NotificationStore");
 
-    #fetch: typeof fetch;
-    #getApiUrl: () => string;
+    readonly #fetch: typeof fetch;
+    readonly #getApiUrl: () => string;
 
     constructor(deps: Required<NotificationStoreDeps>) {
         this.#fetch = deps.fetch;
@@ -231,8 +231,6 @@ class NotificationStore {
                 this.#connected = true;
                 connectionStore.markConnected();
             }),
-        );
-        this.#unsubscribes.push(
             this.#events.onError((info) => {
                 this.#connected = false;
                 if (info.status !== 401) {
@@ -256,8 +254,6 @@ class NotificationStore {
         };
         this.#unsubscribes.push(
             this.#events.subscribe("notification.created", onNotification("notification.created")),
-        );
-        this.#unsubscribes.push(
             this.#events.subscribe("notification.updated", onNotification("notification.updated")),
         );
     }
@@ -277,9 +273,7 @@ class NotificationStore {
         if (isUnread(n)) this.#unread += 1;
     }
 
-    async #fetchPage(
-        before?: string,
-    ): Promise<{ items: Notification[]; next_cursor?: string | undefined }> {
+    async #fetchPage(before?: string): Promise<z.infer<typeof listResponseSchema>> {
         let qs = `limit=${PAGE_SIZE.toString()}`;
         if (before) qs += `&before=${encodeURIComponent(before)}`;
         const url = `${this.#getApiUrl()}/api/notifications?${qs}`;

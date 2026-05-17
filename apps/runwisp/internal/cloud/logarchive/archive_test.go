@@ -113,3 +113,14 @@ func TestArchiveEmptyURL(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestPermanentError_Error(t *testing.T) {
+	e := &PermanentError{StatusCode: 403, Status: "403 Forbidden"}
+	msg := e.Error()
+	if msg == "" {
+		t.Fatal("expected non-empty error message")
+	}
+	if msg != "logarchive: permanent failure: 403 Forbidden" {
+		t.Fatalf("unexpected error message: %q", msg)
+	}
+}

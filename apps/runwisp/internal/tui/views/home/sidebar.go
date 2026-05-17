@@ -59,9 +59,7 @@ func buildItems(tasks []model.TaskBrief) []sidebarItem {
 		{label: "Home", page: uikit.PageHome, kind: entryPage},
 	}
 
-	showGroups := hasMultipleGroups(tasks)
-	if showGroups {
-		// Collect unique groups preserving alphabetical task order
+	if hasMultipleGroups(tasks) {
 		seen := make(map[string]bool)
 		var groups []string
 		for _, task := range tasks {
@@ -70,23 +68,7 @@ func buildItems(tasks []model.TaskBrief) []sidebarItem {
 				groups = append(groups, task.Group)
 			}
 		}
-		for _, group := range groups {
-			items = append(items, sidebarItem{
-				label: group,
-				kind:  entryGroupHeader,
-			})
-			for _, task := range tasks {
-				if task.Group != group {
-					continue
-				}
-				items = append(items, sidebarItem{
-					label:    task.Name,
-					page:     uikit.PageHome,
-					taskName: task.Name,
-					kind:     entryTask,
-				})
-			}
-		}
+		items = append(items, buildGroupItems(tasks, groups)...)
 	} else {
 		for _, task := range tasks {
 			items = append(items, sidebarItem{
@@ -102,6 +84,25 @@ func buildItems(tasks []model.TaskBrief) []sidebarItem {
 		sidebarItem{label: "Info", page: uikit.PageInfo, kind: entryPage},
 		sidebarItem{label: "Debug", page: uikit.PageDebug, kind: entryPage},
 	)
+	return items
+}
+
+func buildGroupItems(tasks []model.TaskBrief, groups []string) []sidebarItem {
+	var items []sidebarItem
+	for _, group := range groups {
+		items = append(items, sidebarItem{label: group, kind: entryGroupHeader})
+		for _, task := range tasks {
+			if task.Group != group {
+				continue
+			}
+			items = append(items, sidebarItem{
+				label:    task.Name,
+				page:     uikit.PageHome,
+				taskName: task.Name,
+				kind:     entryTask,
+			})
+		}
+	}
 	return items
 }
 

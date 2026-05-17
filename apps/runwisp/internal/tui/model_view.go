@@ -17,56 +17,61 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 
-	var body string
-	if m.isExecFullscreen() {
-		body = strings.TrimRight(m.execView.View(), "\n")
-	} else {
-		sidebarView := m.sidebar.View()
-
-		var mainContent string
-		if m.execView != nil {
-			mainContent = m.execView.View()
-		} else {
-			mainW, _ := m.mainSize()
-			m.notifications.SetWidth(mainW)
-			panelView := ""
-			if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
-				panelView = m.notifications.View() + "\n"
-			}
-			switch m.sidebar.ActivePage() {
-			case uikit.PageHome:
-				if m.sidebar.ActiveTask() != "" {
-					runNowHovered := m.mouse.hoverY == m.layout.taskBtnY && m.mouse.hoverX >= uikit.SidebarWidth
-					header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, runNowHovered)
-					mainContent = header + panelView + m.execList.View()
-				} else {
-					header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), mainW, m.homeCursor, m.mouse.homeHover)
-					mainContent = header + panelView + m.execList.View()
-				}
-			case uikit.PageInfo:
-				mainContent = m.infoView.View()
-			case uikit.PageDebug:
-				mainContent = m.debugView.View()
-			}
-		}
-
-		body = lipgloss.JoinHorizontal(lipgloss.Top,
-			strings.TrimRight(sidebarView, "\n"),
-			strings.TrimRight(mainContent, "\n"),
-		)
-	}
-
-	helpText := m.buildHelpText()
-	if flash, ok := m.dialogs.FlashActive(); ok {
-		flashStr := lipgloss.NewStyle().Foreground(uikit.ColorSuccess).Bold(true).Render(flash)
-		helpText = flashStr + "  " + helpText
-	}
-	helpBar := uikit.HelpBarStyle.Width(m.width).Render(helpText)
-
+	body := m.renderBody()
+	helpBar := uikit.HelpBarStyle.Width(m.width).Render(m.helpTextWithFlash())
 	output := body + "\n" + helpBar
-	output = m.dialogs.RenderOverlays(output, m.width, m.height)
+	return m.dialogs.RenderOverlays(output, m.width, m.height)
+}
 
-	return output
+func (m Model) helpTextWithFlash() string {
+	helpText := m.buildHelpText()
+	flash, ok := m.dialogs.FlashActive()
+	if !ok {
+		return helpText
+	}
+	flashStr := lipgloss.NewStyle().Foreground(uikit.ColorSuccess).Bold(true).Render(flash)
+	return flashStr + "  " + helpText
+}
+
+func (m Model) renderBody() string {
+	if m.isExecFullscreen() {
+		return strings.TrimRight(m.execView.View(), "\n")
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		strings.TrimRight(m.sidebar.View(), "\n"),
+		strings.TrimRight(m.renderMainContent(), "\n"),
+	)
+}
+
+func (m Model) renderMainContent() string {
+	if m.execView != nil {
+		return m.execView.View()
+	}
+	mainW, _ := m.mainSize()
+	m.notifications.SetWidth(mainW)
+	panelView := ""
+	if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
+		panelView = m.notifications.View() + "\n"
+	}
+	switch m.sidebar.ActivePage() {
+	case uikit.PageHome:
+		return m.renderHomeContent(mainW, panelView)
+	case uikit.PageInfo:
+		return m.infoView.View()
+	case uikit.PageDebug:
+		return m.debugView.View()
+	}
+	return ""
+}
+
+func (m Model) renderHomeContent(mainW int, panelView string) string {
+	if m.sidebar.ActiveTask() != "" {
+		runNowHovered := m.mouse.hoverY == m.layout.taskBtnY && m.mouse.hoverX >= uikit.SidebarWidth
+		header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, runNowHovered)
+		return header + panelView + m.execList.View()
+	}
+	header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), mainW, m.homeCursor, m.mouse.homeHover)
+	return header + panelView + m.execList.View()
 }
 
 func (m Model) buildHelpText() string {
@@ -74,59 +79,76 @@ func (m Model) buildHelpText() string {
 		return "↑/↓ navigate  enter open  r mark read  n/esc collapse  q/^C quit"
 	}
 	if m.execView != nil {
-		var parts []string
-		if m.execView.Fullscreen() {
-			scrollParts := "esc/f exit fullscreen  ↑↓ scroll"
-			if m.execView.MaxHScroll() > 0 {
-				scrollParts += "  ←→ pan"
-			}
-			scrollParts += "  G end  g top  pgup/pgdn page"
-			parts = append(parts, scrollParts, "select text with mouse", "q/^C quit")
-			return strings.Join(parts, "  ")
-		}
-		switch m.execView.HeaderFocus {
-		case execlist.HeaderFocusBack, execlist.HeaderFocusAction:
-			parts = append(parts, "enter activate  ←→ switch  ↓ details")
-		case execlist.HeaderFocusID:
-			parts = append(parts, "enter copy  ←→ switch  ↓ details")
-		case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration:
-			parts = append(parts, "enter copy  ←→ switch  ↑ buttons  ↓ log")
-		default:
-			scrollParts := "esc/⌫ back  ↑↓ scroll"
-			if m.execView.MaxHScroll() > 0 {
-				scrollParts += "  ←→ pan"
-			}
-			scrollParts += "  G end  g top  pgup/pgdn page  f fullscreen"
-			parts = append(parts, scrollParts)
-		}
-		if m.execView.Run != nil {
-			switch m.execView.Action() {
-			case execlist.ActionStop:
-				parts = append(parts, "s stop")
-			case execlist.ActionStopService:
-				parts = append(parts, "s stop service")
-			case execlist.ActionRetry:
-				parts = append(parts, "r retry")
-			case execlist.ActionRestartService:
-				parts = append(parts, "r restart")
-			}
-			if m.hasLaunchTicket() {
-				parts = append(parts, "d download")
-			}
-		}
-		parts = append(parts, "q/^C quit")
-		return strings.Join(parts, "  ")
+		return m.buildExecViewHelpText()
 	}
 	if m.panelFocus == uikit.PanelSidebar {
-		if name := m.sidebar.CursorTaskName(); name != "" {
-			actionHint := "r run now"
-			if m.isService(name) {
-				actionHint = "r restart"
-			}
-			return "↑↓ navigate  enter select  " + actionHint + "  → main panel  q/^C quit"
-		}
-		return "↑↓ navigate  enter select  → main panel  q/^C quit"
+		return m.buildSidebarHelpText()
 	}
+	return m.buildMainHelpText()
+}
+
+func (m Model) buildExecViewHelpText() string {
+	var parts []string
+	if m.execView.Fullscreen() {
+		scrollParts := "esc/f exit fullscreen  ↑↓ scroll"
+		if m.execView.MaxHScroll() > 0 {
+			scrollParts += "  ←→ pan"
+		}
+		scrollParts += "  G end  g top  pgup/pgdn page"
+		return strings.Join([]string{scrollParts, "select text with mouse", "q/^C quit"}, "  ")
+	}
+	switch m.execView.HeaderFocus {
+	case execlist.HeaderFocusBack, execlist.HeaderFocusAction:
+		parts = append(parts, "enter activate  ←→ switch  ↓ details")
+	case execlist.HeaderFocusID:
+		parts = append(parts, "enter copy  ←→ switch  ↓ details")
+	case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration:
+		parts = append(parts, "enter copy  ←→ switch  ↑ buttons  ↓ log")
+	default:
+		scrollParts := "esc/⌫ back  ↑↓ scroll"
+		if m.execView.MaxHScroll() > 0 {
+			scrollParts += "  ←→ pan"
+		}
+		scrollParts += "  G end  g top  pgup/pgdn page  f fullscreen"
+		parts = append(parts, scrollParts)
+	}
+	parts = m.appendExecViewActionHints(parts)
+	parts = append(parts, "q/^C quit")
+	return strings.Join(parts, "  ")
+}
+
+func (m Model) appendExecViewActionHints(parts []string) []string {
+	if m.execView.Run == nil {
+		return parts
+	}
+	switch m.execView.Action() {
+	case execlist.ActionStop:
+		parts = append(parts, "s stop")
+	case execlist.ActionStopService:
+		parts = append(parts, "s stop service")
+	case execlist.ActionRetry:
+		parts = append(parts, "r retry")
+	case execlist.ActionRestartService:
+		parts = append(parts, "r restart")
+	}
+	if m.hasLaunchTicket() {
+		parts = append(parts, "d download")
+	}
+	return parts
+}
+
+func (m Model) buildSidebarHelpText() string {
+	if name := m.sidebar.CursorTaskName(); name != "" {
+		actionHint := "r run now"
+		if m.isService(name) {
+			actionHint = "r restart"
+		}
+		return "↑↓ navigate  enter select  " + actionHint + "  → main panel  q/^C quit"
+	}
+	return "↑↓ navigate  enter select  → main panel  q/^C quit"
+}
+
+func (m Model) buildMainHelpText() string {
 	if m.homeCursor >= 0 {
 		fields := home.Fields(m.info, m.hasLaunchTicket())
 		if m.homeCursor < len(fields) && fields[m.homeCursor] == home.FieldOpenWebUI {

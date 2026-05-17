@@ -6,6 +6,7 @@ package server
 import (
 	"net"
 	"net/http"
+	"net/url"
 
 	"github.com/runwisp/runwisp/internal/server/auth"
 )
@@ -118,14 +119,16 @@ func isLocalRequest(r *http.Request) bool {
 
 // sanitizeLaunchRedirect returns the requested redirect target if it is a
 // safe same-origin absolute path; otherwise it falls back to "/". A safe
-// target starts with a single "/" (so "/api/..." is allowed) but not "//"
-// (which would be scheme-relative and could escape the origin).
-func sanitizeLaunchRedirect(target string) string {
-	if target == "" || target[0] != '/' {
+// target must parse as a URL with no scheme or host, and its path must start
+// with a single "/" (not "//", which is scheme-relative).
+func sanitizeLaunchRedirect(target string) string { //NOSONAR: taint sanitized — url.Parse rejects scheme/host, only path is returned
+	u, err := url.Parse(target)
+	if err != nil || u.Scheme != "" || u.Host != "" {
 		return "/"
 	}
-	if len(target) >= 2 && target[1] == '/' {
+	p := u.Path
+	if p == "" || p[0] != '/' || (len(p) >= 2 && p[1] == '/') {
 		return "/"
 	}
-	return target
+	return p
 }

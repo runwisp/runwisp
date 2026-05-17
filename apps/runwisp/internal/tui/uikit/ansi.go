@@ -45,44 +45,7 @@ func WalkANSISegments(s string, fn func(seg string, printable bool)) {
 			break
 		}
 
-		switch runes[i] {
-		case '[': // CSI – ends at a byte in [0x40, 0x7e].
-			i++
-			for i < n && (runes[i] < 0x40 || runes[i] > 0x7e) {
-				i++
-			}
-			if i < n {
-				i++ // consume final byte
-			}
-
-		case ']': // OSC – ends at BEL or ST (ESC \).
-			i++
-			for i < n {
-				if runes[i] == '\x07' {
-					i++
-					break
-				}
-				if runes[i] == '\x1b' && i+1 < n && runes[i+1] == '\\' {
-					i += 2
-					break
-				}
-				i++
-			}
-
-		case 'P', '_', '^', 'X': // DCS, APC, PM, SOS – end at ST.
-			i++
-			for i < n {
-				if runes[i] == '\x1b' && i+1 < n && runes[i+1] == '\\' {
-					i += 2
-					break
-				}
-				i++
-			}
-
-		default: // Two-byte sequence, e.g. ESC M (RI), ESC c (RIS).
-			i++
-		}
-
+		i = skipEscapeSequence(runes, n, i)
 		fn(string(runes[seqStart:i]), false)
 		// The outer loop's i++ will move past the last consumed character,
 		// so back up one to compensate.
@@ -93,6 +56,53 @@ func WalkANSISegments(s string, fn func(seg string, printable bool)) {
 	if segStart < n {
 		fn(string(runes[segStart:n]), true)
 	}
+}
+
+// skipEscapeSequence advances past the escape sequence starting at pos (after ESC).
+func skipEscapeSequence(runes []rune, n, pos int) int {
+	switch runes[pos] {
+	case '[': // CSI – ends at a byte in [0x40, 0x7e].
+		return skipCSISequence(runes, n, pos+1)
+	case ']': // OSC – ends at BEL or ST (ESC \).
+		return skipOSCSequence(runes, n, pos+1)
+	case 'P', '_', '^', 'X': // DCS, APC, PM, SOS – end at ST.
+		return skipSTSequence(runes, n, pos+1)
+	default: // Two-byte sequence, e.g. ESC M (RI), ESC c (RIS).
+		return pos + 1
+	}
+}
+
+func skipCSISequence(runes []rune, n, i int) int {
+	for i < n && (runes[i] < 0x40 || runes[i] > 0x7e) {
+		i++
+	}
+	if i < n {
+		i++ // consume final byte
+	}
+	return i
+}
+
+func skipOSCSequence(runes []rune, n, i int) int {
+	for i < n {
+		if runes[i] == '\x07' {
+			return i + 1
+		}
+		if runes[i] == '\x1b' && i+1 < n && runes[i+1] == '\\' {
+			return i + 2
+		}
+		i++
+	}
+	return i
+}
+
+func skipSTSequence(runes []rune, n, i int) int {
+	for i < n {
+		if runes[i] == '\x1b' && i+1 < n && runes[i+1] == '\\' {
+			return i + 2
+		}
+		i++
+	}
+	return i
 }
 
 // SliceLineColumns returns a substring of s starting at column offset `start`
@@ -108,50 +118,57 @@ func SliceLineColumns(s string, start, cols int) (string, bool) {
 		return "", false
 	}
 	s = strings.ReplaceAll(s, "\t", "    ")
+	cs := &columnSlicer{start: start, cols: cols}
+	WalkANSISegments(s, cs.processSegment)
+	return cs.buf.String(), cs.beyond
+}
 
-	var (
-		buf    strings.Builder
-		col    int  // current visual column (printable chars only)
-		beyond bool // content extends past start+cols
-		done   bool // stop processing further segments
-	)
+// columnSlicer accumulates the visible column slice of an ANSI string.
+type columnSlicer struct {
+	buf    strings.Builder
+	col    int
+	beyond bool
+	done   bool
+	start  int
+	cols   int
+}
 
-	WalkANSISegments(s, func(seg string, printable bool) {
-		if done {
-			return
+func (cs *columnSlicer) processSegment(seg string, printable bool) {
+	if cs.done {
+		return
+	}
+	if !printable {
+		// Include ANSI sequences before the visible window ends so colour
+		// state set before the window is inherited correctly.
+		if !cs.beyond {
+			cs.buf.WriteString(seg)
 		}
-		if !printable {
-			// Always include ANSI sequences up to the end of the visible window
-			// so that colour state set before the window is inherited correctly.
-			if !beyond {
-				buf.WriteString(seg)
-			}
-			return
+		return
+	}
+	for _, r := range seg {
+		if cs.done {
+			break
 		}
-		for _, r := range seg {
-			if done {
-				break
-			}
-			w := ansi.StringWidth(string(r))
-			if w == 0 {
-				// Zero-width characters (combining marks etc.) tag along with
-				// the preceding visible character.
-				if col > start && col <= start+cols {
-					buf.WriteRune(r)
-				}
-				continue
-			}
-			if col+w > start+cols {
-				beyond = true
-				done = true
-				break
-			}
-			if col >= start {
-				buf.WriteRune(r)
-			}
-			col += w
-		}
-	})
+		cs.processRune(r)
+	}
+}
 
-	return buf.String(), beyond
+func (cs *columnSlicer) processRune(r rune) {
+	w := ansi.StringWidth(string(r))
+	if w == 0 {
+		// Zero-width characters tag along with the preceding visible character.
+		if cs.col > cs.start && cs.col <= cs.start+cs.cols {
+			cs.buf.WriteRune(r)
+		}
+		return
+	}
+	if cs.col+w > cs.start+cs.cols {
+		cs.beyond = true
+		cs.done = true
+		return
+	}
+	if cs.col >= cs.start {
+		cs.buf.WriteRune(r)
+	}
+	cs.col += w
 }

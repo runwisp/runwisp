@@ -94,18 +94,13 @@ func initNotify(
 		EveryN: notifyCfg.OccurrenceRing,
 	}
 
-	for _, spec := range resolved.Notifiers {
-		ch, err := channel.Build(spec)
-		if err != nil {
-			return notifyBundle{}, fmt.Errorf("build notifier %q: %w", spec.ID, err)
-		}
-		if outboundCoalesce {
-			ch = coalesce.New(ch, coalesceCfg, notify.RealClock(), logger)
-		}
-		channels = append(channels, ch)
+	outbound, err := buildOutboundChannels(resolved.Notifiers, outboundCoalesce, coalesceCfg, logger)
+	if err != nil {
+		return notifyBundle{}, err
 	}
+	channels = append(channels, outbound...)
 
-	var failureSink notify.FailureSink
+	var failureSink notify.SyntheticIngester
 	if inappCh != nil {
 		failureSink = inappCh
 	}
@@ -168,6 +163,21 @@ func buildInappRenderer() (render.Renderer, error) {
 		return nil, fmt.Errorf("load inapp template: %w", err)
 	}
 	return render.NewTemplateRenderer("inapp", body, "text/plain", render.DefaultTitle)
+}
+
+func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, coalesceCfg coalesce.Config, logger *slog.Logger) ([]notify.Channel, error) {
+	channels := make([]notify.Channel, 0, len(specs))
+	for _, spec := range specs {
+		ch, err := channel.Build(spec)
+		if err != nil {
+			return nil, fmt.Errorf("build notifier %q: %w", spec.ID, err)
+		}
+		if outboundCoalesce {
+			ch = coalesce.New(ch, coalesceCfg, notify.RealClock(), logger)
+		}
+		channels = append(channels, ch)
+	}
+	return channels, nil
 }
 
 func buildRetentionFn(repo storage.NotificationRepository, cfg config.NotifyConfig, logger *slog.Logger) func() {

@@ -199,32 +199,13 @@ func runExecStandalone(taskName string) (int, error) {
 	taskManager.UpsertTask(target)
 
 	done := make(chan *events.RunEvent, 1)
-	unsubLog := eventBus.Subscribe(events.EventLogLine, func(e events.Event) {
-		ll, ok := e.Data.(events.LogLineEvent)
-		if !ok || ll.TaskName != taskName {
-			return
-		}
-		switch ll.Stream {
-		case logutil.StreamStderr:
-			fmt.Fprintln(os.Stderr, ll.Text)
-		default:
-			fmt.Fprintln(os.Stdout, ll.Text)
-		}
-	})
+	unsubLog := eventBus.Subscribe(events.EventLogLine, execLogLineHandler(taskName))
 	defer unsubLog()
 
-	unsubComplete := eventBus.Subscribe(events.EventRunCompleted, func(e events.Event) {
-		if re, ok := e.Data.(events.RunEvent); ok && re.Run != nil && re.Run.TaskName == taskName {
-			done <- &re
-		}
-	})
+	termHandler := execRunTerminalHandler(taskName, done)
+	unsubComplete := eventBus.Subscribe(events.EventRunCompleted, termHandler)
 	defer unsubComplete()
-
-	unsubFailed := eventBus.Subscribe(events.EventRunFailed, func(e events.Event) {
-		if re, ok := e.Data.(events.RunEvent); ok && re.Run != nil && re.Run.TaskName == taskName {
-			done <- &re
-		}
-	})
+	unsubFailed := eventBus.Subscribe(events.EventRunFailed, termHandler)
 	defer unsubFailed()
 
 	run, err := taskManager.TriggerRun(taskName, model.TriggeredByAPI)
@@ -242,4 +223,27 @@ func runExecStandalone(taskName string) (int, error) {
 
 	slog.Info("Task completed", "name", taskName, "status", result.Run.Status)
 	return 0, nil
+}
+
+func execLogLineHandler(taskName string) func(events.Event) {
+	return func(e events.Event) {
+		ll, ok := e.Data.(events.LogLineEvent)
+		if !ok || ll.TaskName != taskName {
+			return
+		}
+		switch ll.Stream {
+		case logutil.StreamStderr:
+			fmt.Fprintln(os.Stderr, ll.Text)
+		default:
+			fmt.Fprintln(os.Stdout, ll.Text)
+		}
+	}
+}
+
+func execRunTerminalHandler(taskName string, done chan<- *events.RunEvent) func(events.Event) {
+	return func(e events.Event) {
+		if re, ok := e.Data.(events.RunEvent); ok && re.Run != nil && re.Run.TaskName == taskName {
+			done <- &re
+		}
+	}
 }

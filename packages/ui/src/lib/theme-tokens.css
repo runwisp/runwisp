@@ -87,10 +87,8 @@
     --rw-color-warning-500: oklch(0.75 0.16 65);
     --rw-color-warning-600: oklch(0.65 0.14 60);
     --rw-color-warning-700: oklch(0.55 0.12 55);
-}
 
-/* Light-mode semantic tokens (default) */
-:root {
+    /* Light-mode semantic tokens (default) */
     /* Surfaces */
     --rw-surface: var(--rw-color-mist-50);
     --rw-surface-raised: white;

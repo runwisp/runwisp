@@ -118,89 +118,108 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 	}
 	switch action {
 	case confirmActionTrigger:
-		taskName := m.resolveTaskName()
-		if taskName == "" {
-			return nil
-		}
-		if m.isService(taskName) {
-			return m.confirmAction(confirmActionRestartService)
-		}
-		client := m.client
-		return m.showConfirmDialog(
-			"Run Now",
-			fmt.Sprintf("Trigger a new run of\n'%s'?", taskName),
-			func() tea.Msg {
-				run, err := client.TriggerRun(taskName)
-				return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
-			},
-		)
+		return m.confirmTrigger()
 	case confirmActionRestartService:
-		taskName := m.resolveTaskName()
-		if taskName == "" {
-			return nil
-		}
-		client := m.client
-		instances := m.serviceInstances(taskName)
-		var prompt string
-		if instances > 1 {
-			prompt = fmt.Sprintf("Cancel and restart all %d instances of\n'%s'?", instances, taskName)
-		} else {
-			prompt = fmt.Sprintf("Cancel and restart\n'%s'?", taskName)
-		}
-		return m.showConfirmDialog(
-			"Restart Service",
-			prompt,
-			func() tea.Msg {
-				err := client.RestartService(taskName)
-				return uikit.RestartServiceMsg{TaskName: taskName, Err: err}
-			},
-		)
+		return m.confirmRestartService()
 	case confirmActionStopService:
-		taskName := m.resolveTaskName()
-		if taskName == "" {
-			return nil
-		}
-		client := m.client
-		return m.showConfirmDialog(
-			"Stop Service",
-			fmt.Sprintf("Stop service\n'%s'?\nThe daemon will not restart it until you click Restart\nor the daemon itself restarts.", taskName),
-			func() tea.Msg {
-				err := client.StopService(taskName)
-				return uikit.StopServiceMsg{TaskName: taskName, Err: err}
-			},
-		)
+		return m.confirmStopService()
 	case confirmActionStop:
-		run := m.currentRun()
-		if run == nil || run.Status != model.PhaseRunning {
-			return nil
-		}
-		client := m.client
-		runID := run.ID
-		taskName := run.TaskName
-		return m.showConfirmDialog(
-			"Stop Run",
-			fmt.Sprintf("Stop the running execution of\n'%s'?", taskName),
-			func() tea.Msg {
-				err := client.StopRun(taskName, runID)
-				return uikit.StopRunMsg{RunID: runID, TaskName: taskName, Err: err}
-			},
-		)
+		return m.confirmStop()
 	case confirmActionRetry:
-		run := m.currentRun()
-		if run == nil || !run.IsRetryable() {
-			return nil
-		}
-		client := m.client
-		taskName := run.TaskName
-		return m.showConfirmDialog(
-			"Retry Run",
-			fmt.Sprintf("Retry '%s'?", taskName),
-			func() tea.Msg {
-				newRun, err := client.TriggerRun(taskName)
-				return uikit.TriggerRunMsg{TaskName: taskName, Run: newRun, Err: err, Retry: true}
-			},
-		)
-	default:
+		return m.confirmRetry()
+	}
+	return nil
+}
+
+func (m *Model) confirmTrigger() tea.Cmd {
+	taskName := m.resolveTaskName()
+	if taskName == "" {
 		return nil
 	}
+	if m.isService(taskName) {
+		return m.confirmAction(confirmActionRestartService)
+	}
+	client := m.client
+	return m.showConfirmDialog(
+		"Run Now",
+		fmt.Sprintf("Trigger a new run of\n'%s'?", taskName),
+		func() tea.Msg {
+			run, err := client.TriggerRun(taskName)
+			return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
+		},
+	)
+}
+
+func (m *Model) confirmRestartService() tea.Cmd {
+	taskName := m.resolveTaskName()
+	if taskName == "" {
+		return nil
+	}
+	client := m.client
+	instances := m.serviceInstances(taskName)
+	var prompt string
+	if instances > 1 {
+		prompt = fmt.Sprintf("Cancel and restart all %d instances of\n'%s'?", instances, taskName)
+	} else {
+		prompt = fmt.Sprintf("Cancel and restart\n'%s'?", taskName)
+	}
+	return m.showConfirmDialog(
+		"Restart Service",
+		prompt,
+		func() tea.Msg {
+			err := client.RestartService(taskName)
+			return uikit.RestartServiceMsg{TaskName: taskName, Err: err}
+		},
+	)
+}
+
+func (m *Model) confirmStopService() tea.Cmd {
+	taskName := m.resolveTaskName()
+	if taskName == "" {
+		return nil
+	}
+	client := m.client
+	return m.showConfirmDialog(
+		"Stop Service",
+		fmt.Sprintf("Stop service\n'%s'?\nThe daemon will not restart it until you click Restart\nor the daemon itself restarts.", taskName),
+		func() tea.Msg {
+			err := client.StopService(taskName)
+			return uikit.StopServiceMsg{TaskName: taskName, Err: err}
+		},
+	)
+}
+
+func (m *Model) confirmStop() tea.Cmd {
+	run := m.currentRun()
+	if run == nil || run.Status != model.PhaseRunning {
+		return nil
+	}
+	client := m.client
+	runID := run.ID
+	taskName := run.TaskName
+	return m.showConfirmDialog(
+		"Stop Run",
+		fmt.Sprintf("Stop the running execution of\n'%s'?", taskName),
+		func() tea.Msg {
+			err := client.StopRun(taskName, runID)
+			return uikit.StopRunMsg{RunID: runID, TaskName: taskName, Err: err}
+		},
+	)
+}
+
+func (m *Model) confirmRetry() tea.Cmd {
+	run := m.currentRun()
+	if run == nil || !run.IsRetryable() {
+		return nil
+	}
+	client := m.client
+	taskName := run.TaskName
+	return m.showConfirmDialog(
+		"Retry Run",
+		fmt.Sprintf("Retry '%s'?", taskName),
+		func() tea.Msg {
+			newRun, err := client.TriggerRun(taskName)
+			return uikit.TriggerRunMsg{TaskName: taskName, Run: newRun, Err: err, Retry: true}
+		},
+	)
 }

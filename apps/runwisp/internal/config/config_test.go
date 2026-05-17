@@ -768,6 +768,332 @@ func TestApplyDefaultsBuiltinFallback(t *testing.T) {
 	assert.Equal(t, model.LogOverflowDropOld, cfg.Tasks[0].LogOnFull)
 }
 
+func TestValidate_MoreCases(t *testing.T) {
+	serviceTask := func(name string) model.Task {
+		return model.Task{
+			Name:          name,
+			Kind:          model.KindService,
+			Run:           "echo hello",
+			Instances:     1,
+			MaxConcurrent: 1,
+			OnOverlap:     model.PolicyQueue,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		cfg     *Config
+		wantErr string
+	}{
+		{
+			name: "invalid defaults.log_on_full",
+			cfg: &Config{
+				Defaults: Defaults{LogOnFull: "bad"},
+				Tasks:    []model.Task{testTask("t1")},
+			},
+			wantErr: "defaults.log_on_full",
+		},
+		{
+			name: "negative defaults.keep_runs",
+			cfg: &Config{
+				Defaults: Defaults{KeepRuns: -1},
+				Tasks:    []model.Task{testTask("t1")},
+			},
+			wantErr: "defaults.keep_runs",
+		},
+		{
+			name: "negative defaults.keep_for",
+			cfg: &Config{
+				Defaults: Defaults{KeepFor: -time.Second},
+				Tasks:    []model.Task{testTask("t1")},
+			},
+			wantErr: "defaults.keep_for",
+		},
+		{
+			name: "negative defaults.backoff_reset_after",
+			cfg: &Config{
+				Defaults: Defaults{BackoffResetAfter: -time.Second},
+				Tasks:    []model.Task{testTask("t1")},
+			},
+			wantErr: "defaults.backoff_reset_after",
+		},
+		{
+			name: "whitespace-only run script",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "t1",
+					Run:           "   ",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicyQueue,
+				}},
+			},
+			wantErr: "task run command is required",
+		},
+		{
+			name: "negative max_concurrent",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "t1",
+					Run:           "echo hi",
+					MaxConcurrent: -1,
+					OnOverlap:     model.PolicyQueue,
+				}},
+			},
+			wantErr: "max_concurrent",
+		},
+		{
+			name: "negative queue_max",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "t1",
+					Run:           "echo hi",
+					MaxConcurrent: 1,
+					QueueMax:      -1,
+					OnOverlap:     model.PolicyQueue,
+				}},
+			},
+			wantErr: "queue_max",
+		},
+		{
+			name: "negative retry_attempts",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "t1",
+					Run:           "echo hi",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicyQueue,
+					RetryAttempts: -1,
+				}},
+			},
+			wantErr: "retry_attempts",
+		},
+		{
+			name: "negative keep_runs on task",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "t1",
+					Run:           "echo hi",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicyQueue,
+					KeepRuns:      -1,
+				}},
+			},
+			wantErr: "keep_runs",
+		},
+		{
+			name: "negative keep_for on task",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "t1",
+					Run:           "echo hi",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicyQueue,
+					KeepFor:       -time.Second,
+				}},
+			},
+			wantErr: "keep_for",
+		},
+		{
+			name: "invalid timezone on task",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "t1",
+					Run:           "echo hi",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicyQueue,
+					Timezone:      "Not/ATimezone",
+				}},
+			},
+			wantErr: "timezone",
+		},
+		{
+			name: "service instances == 0",
+			cfg: &Config{
+				Tasks: []model.Task{func() model.Task {
+					t := serviceTask("svc1")
+					t.Instances = 0
+					return t
+				}()},
+			},
+			wantErr: "instances",
+		},
+		{
+			name: "service invalid restart_backoff",
+			cfg: &Config{
+				Tasks: []model.Task{func() model.Task {
+					t := serviceTask("svc1")
+					t.RestartBackoff = "weird"
+					return t
+				}()},
+			},
+			wantErr: "restart_backoff",
+		},
+		{
+			name: "service negative backoff_reset_after",
+			cfg: &Config{
+				Tasks: []model.Task{func() model.Task {
+					t := serviceTask("svc1")
+					t.BackoffResetAfter = -time.Second
+					return t
+				}()},
+			},
+			wantErr: "backoff_reset_after",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate(tt.cfg)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestGracefulStopWarnings(t *testing.T) {
+	t.Run("returns nil when shutdown_timeout is zero", func(t *testing.T) {
+		cfg := &Config{
+			Daemon: Daemon{ShutdownTimeout: 0},
+			Tasks:  []model.Task{testTask("t1")},
+		}
+		cfg.Tasks[0].GracefulStop = 30 * time.Second
+		warnings := GracefulStopWarnings(cfg)
+		assert.Nil(t, warnings)
+	})
+
+	t.Run("returns nil when shutdown_timeout is negative", func(t *testing.T) {
+		cfg := &Config{
+			Daemon: Daemon{ShutdownTimeout: -time.Second},
+			Tasks:  []model.Task{testTask("t1")},
+		}
+		cfg.Tasks[0].GracefulStop = 30 * time.Second
+		warnings := GracefulStopWarnings(cfg)
+		assert.Nil(t, warnings)
+	})
+
+	t.Run("returns warning when task graceful_stop exceeds shutdown_timeout", func(t *testing.T) {
+		cfg := &Config{
+			Daemon: Daemon{ShutdownTimeout: 10 * time.Second},
+			Tasks:  []model.Task{testTask("t1")},
+		}
+		cfg.Tasks[0].GracefulStop = 30 * time.Second
+		warnings := GracefulStopWarnings(cfg)
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0], "t1")
+		assert.Contains(t, warnings[0], "graceful_stop")
+		assert.Contains(t, warnings[0], "shutdown_timeout")
+	})
+
+	t.Run("returns no warning when task graceful_stop is within shutdown_timeout", func(t *testing.T) {
+		cfg := &Config{
+			Daemon: Daemon{ShutdownTimeout: 30 * time.Second},
+			Tasks:  []model.Task{testTask("t1")},
+		}
+		cfg.Tasks[0].GracefulStop = 10 * time.Second
+		warnings := GracefulStopWarnings(cfg)
+		assert.Empty(t, warnings)
+	})
+}
+
+func TestLoad_ParseErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		wantErr string
+	}{
+		{
+			name:    "task timeout bad",
+			toml:    "[tasks.t]\nrun = \"echo hi\"\ntimeout = \"bad\"\n",
+			wantErr: "timeout",
+		},
+		{
+			name:    "task graceful_stop bad",
+			toml:    "[tasks.t]\nrun = \"echo hi\"\ngraceful_stop = \"bad\"\n",
+			wantErr: "graceful_stop",
+		},
+		{
+			name:    "service timeout bad",
+			toml:    "[services.svc]\nrun = \"exec ./bin/svc\"\ntimeout = \"bad\"\n",
+			wantErr: "timeout",
+		},
+		{
+			name:    "service graceful_stop bad",
+			toml:    "[services.svc]\nrun = \"exec ./bin/svc\"\ngraceful_stop = \"bad\"\n",
+			wantErr: "graceful_stop",
+		},
+		{
+			name:    "service restart_delay bad",
+			toml:    "[services.svc]\nrun = \"exec ./bin/svc\"\nrestart_delay = \"bad\"\n",
+			wantErr: "restart_delay",
+		},
+		{
+			name:    "service backoff_reset_after bad",
+			toml:    "[services.svc]\nrun = \"exec ./bin/svc\"\nbackoff_reset_after = \"bad\"\n",
+			wantErr: "backoff_reset_after",
+		},
+		{
+			name:    "service log_max_size bad",
+			toml:    "[services.svc]\nrun = \"exec ./bin/svc\"\nlog_max_size = \"badsize\"\n",
+			wantErr: "log_max_size",
+		},
+		{
+			name:    "defaults timeout bad",
+			toml:    "[defaults]\ntimeout = \"bad\"\n\n[tasks.t]\nrun = \"echo hi\"\n",
+			wantErr: "timeout",
+		},
+		{
+			name:    "defaults log_max_size bad",
+			toml:    "[defaults]\nlog_max_size = \"badsize\"\n\n[tasks.t]\nrun = \"echo hi\"\n",
+			wantErr: "log_max_size",
+		},
+		{
+			name:    "defaults backoff_reset_after bad",
+			toml:    "[defaults]\nbackoff_reset_after = \"bad\"\n\n[tasks.t]\nrun = \"echo hi\"\n",
+			wantErr: "backoff_reset_after",
+		},
+		{
+			name:    "daemon shutdown_timeout bad",
+			toml:    "[daemon]\nshutdown_timeout = \"bad\"\n\n[tasks.t]\nrun = \"echo hi\"\n",
+			wantErr: "shutdown_timeout",
+		},
+		{
+			name:    "storage max_size bad",
+			toml:    "[storage]\nmax_size = \"badsize\"\n\n[tasks.t]\nrun = \"echo hi\"\n",
+			wantErr: "max_size",
+		},
+		{
+			name:    "storage min_free_space bad",
+			toml:    "[storage]\nmin_free_space = \"badsize\"\n\n[tasks.t]\nrun = \"echo hi\"\n",
+			wantErr: "min_free_space",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTOML(t, tt.toml)
+			_, err := Load(path)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestLoad_ServiceAPITriggerFalse(t *testing.T) {
+	path := writeTOML(t, `
+[services.svc]
+run = "exec ./bin/svc"
+api_trigger = false
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Tasks, 1)
+	assert.False(t, cfg.Tasks[0].APITrigger)
+}
+
 func TestNewSchemaFields(t *testing.T) {
 	t.Run("graceful_stop, max_concurrent, queue_max parse on tasks", func(t *testing.T) {
 		path := writeTOML(t, `
@@ -864,5 +1190,17 @@ run = "echo hi"
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), `unknown key "parallelism"`)
 		assert.Contains(t, err.Error(), `max_concurrent`)
+	})
+
+	t.Run("type mismatch on max_concurrent triggers DecodeError path", func(t *testing.T) {
+		// Passing a string where an integer is expected triggers a toml.DecodeError.
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+max_concurrent = "not-a-number"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse config file")
 	})
 }

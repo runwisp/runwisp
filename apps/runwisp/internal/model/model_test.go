@@ -8,16 +8,11 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestModelConstants(t *testing.T) {
-	assert.Equal(t, RunPhase("pending"), PhasePending)
-	assert.Equal(t, TriggeredBy("cron"), TriggeredByCron)
-	assert.Equal(t, ConcurrencyPolicy("queue"), PolicyQueue)
-}
 
 // TestValidateTaskName_RejectsBadInputs locks in the shared validator that
 // the TOML loader, REST inputs, and the cloud-dispatch resolver all rely
@@ -101,4 +96,168 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 		assert.NotContains(t, lower, banned,
 			"DaemonInfo must not gain a %q-related field — that data belongs on the local-only credentials endpoint", banned)
 	}
+}
+
+// --- ParseExecutionDef ---
+
+func TestParseExecutionDef_EmptyInput(t *testing.T) {
+	_, err := ParseExecutionDef(json.RawMessage{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty execution definition")
+}
+
+func TestParseExecutionDef_NullJSON(t *testing.T) {
+	_, err := ParseExecutionDef(json.RawMessage("null"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty execution definition")
+}
+
+func TestParseExecutionDef_InvalidJSON(t *testing.T) {
+	_, err := ParseExecutionDef(json.RawMessage(`{notjson`))
+	require.Error(t, err)
+}
+
+func TestParseExecutionDef_UnknownType(t *testing.T) {
+	_, err := ParseExecutionDef(json.RawMessage(`{"type":"magic"}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported execution type")
+}
+
+func TestParseExecutionDef_Shell(t *testing.T) {
+	def, err := ParseExecutionDef(json.RawMessage(`{"type":"shell","script":"echo hi"}`))
+	require.NoError(t, err)
+	shell, ok := def.(*ShellExecution)
+	require.True(t, ok, "expected *ShellExecution")
+	assert.Equal(t, "echo hi", shell.Script)
+}
+
+func TestParseExecutionDef_Container(t *testing.T) {
+	def, err := ParseExecutionDef(json.RawMessage(`{"type":"container","base_image":"alpine"}`))
+	require.NoError(t, err)
+	c, ok := def.(*ContainerExecution)
+	require.True(t, ok, "expected *ContainerExecution")
+	assert.Equal(t, "alpine", c.BaseImage)
+}
+
+func TestParseExecutionDef_HTTP(t *testing.T) {
+	def, err := ParseExecutionDef(json.RawMessage(`{"type":"http","url":"https://example.com"}`))
+	require.NoError(t, err)
+	h, ok := def.(*HTTPExecution)
+	require.True(t, ok, "expected *HTTPExecution")
+	assert.Equal(t, "https://example.com", h.URL)
+}
+
+func TestParseExecutionDef_Config(t *testing.T) {
+	def, err := ParseExecutionDef(json.RawMessage(`{"type":"config","task_name":"mytask"}`))
+	require.NoError(t, err)
+	c, ok := def.(*ConfigExecution)
+	require.True(t, ok, "expected *ConfigExecution")
+	assert.Equal(t, "mytask", c.TaskName)
+}
+
+// --- MarshalExecutionDef ---
+
+func TestMarshalExecutionDef_Shell(t *testing.T) {
+	raw, err := MarshalExecutionDef(&ShellExecution{Script: "echo hi"})
+	require.NoError(t, err)
+	s := string(raw)
+	assert.Contains(t, s, `"type":"shell"`)
+	assert.Contains(t, s, `"script":`)
+}
+
+func TestMarshalExecutionDef_HTTP(t *testing.T) {
+	raw, err := MarshalExecutionDef(&HTTPExecution{URL: "https://example.com"})
+	require.NoError(t, err)
+	s := string(raw)
+	assert.Contains(t, s, `"type":"http"`)
+	assert.Contains(t, s, `"url":`)
+}
+
+func TestMarshalExecutionDef_Config(t *testing.T) {
+	raw, err := MarshalExecutionDef(&ConfigExecution{TaskName: "mytask"})
+	require.NoError(t, err)
+	s := string(raw)
+	assert.Contains(t, s, `"type":"config"`)
+	assert.Contains(t, s, `"task_name":`)
+}
+
+// --- Task.ResolvedExecutionDef ---
+
+func TestTask_ResolvedExecutionDef_WithExecutionDef(t *testing.T) {
+	def := &ShellExecution{Script: "explicit"}
+	task := &Task{ExecutionDef: def}
+	got := task.ResolvedExecutionDef()
+	assert.Equal(t, def, got)
+}
+
+func TestTask_ResolvedExecutionDef_WithRun(t *testing.T) {
+	task := &Task{Run: "echo hi"}
+	got := task.ResolvedExecutionDef()
+	shell, ok := got.(*ShellExecution)
+	require.True(t, ok, "expected *ShellExecution")
+	assert.Equal(t, "echo hi", shell.Script)
+}
+
+func TestTask_ResolvedExecutionDef_EmptyRun(t *testing.T) {
+	task := &Task{}
+	got := task.ResolvedExecutionDef()
+	assert.Nil(t, got)
+}
+
+// --- Run.DisplayStatus ---
+
+func TestRun_DisplayStatus_Running(t *testing.T) {
+	r := &Run{Status: PhaseRunning}
+	assert.Equal(t, "running", r.DisplayStatus())
+}
+
+func TestRun_DisplayStatus_EndedSuccess(t *testing.T) {
+	reason := ReasonSuccess
+	r := &Run{Status: PhaseEnded, EndReason: &reason}
+	assert.Equal(t, "success", r.DisplayStatus())
+}
+
+func TestRun_DisplayStatus_EndedNilReason(t *testing.T) {
+	r := &Run{Status: PhaseEnded, EndReason: nil}
+	assert.Equal(t, "stopped", r.DisplayStatus())
+}
+
+// --- Run.Copy ---
+
+func TestRun_Copy_PointerFieldsAreIndependent(t *testing.T) {
+	extID := "ext-123"
+	reason := ReasonFailed
+	now := time.Now()
+	end := now.Add(time.Second)
+	retryID := "retry-abc"
+
+	orig := &Run{
+		ID:                  "run-1",
+		ExternalExecutionID: &extID,
+		EndReason:           &reason,
+		StartAt:             &now,
+		EndAt:               &end,
+		RetryOfRunID:        &retryID,
+	}
+
+	cpy := orig.Copy()
+	require.NotNil(t, cpy)
+
+	// Every nullable pointer field must have been deep-copied: the copy's
+	// pointer addresses must differ from the original's. The values they
+	// point to must match.
+	assert.NotSame(t, orig.ExternalExecutionID, cpy.ExternalExecutionID)
+	assert.Equal(t, extID, *cpy.ExternalExecutionID)
+
+	assert.NotSame(t, orig.EndReason, cpy.EndReason)
+	assert.Equal(t, reason, *cpy.EndReason)
+
+	assert.NotSame(t, orig.StartAt, cpy.StartAt)
+	assert.Equal(t, now, *cpy.StartAt)
+
+	assert.NotSame(t, orig.EndAt, cpy.EndAt)
+	assert.Equal(t, end, *cpy.EndAt)
+
+	assert.NotSame(t, orig.RetryOfRunID, cpy.RetryOfRunID)
+	assert.Equal(t, retryID, *cpy.RetryOfRunID)
 }

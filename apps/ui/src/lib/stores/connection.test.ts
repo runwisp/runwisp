@@ -1,0 +1,91 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+import { describe, expect, it } from "vitest";
+import { connectionStore } from "./connection.svelte";
+import { AuthRequiredError } from "$lib/api";
+
+// ─── reportFetchError (exercises isConnectionError + formatError) ─────────────
+
+describe("connectionStore.reportFetchError", () => {
+    it("returns false and makes no state change for AuthRequiredError", () => {
+        const before = connectionStore.status;
+        const result = connectionStore.reportFetchError(new AuthRequiredError());
+        expect(result).toBe(false);
+        expect(connectionStore.status).toBe(before);
+    });
+
+    it("returns false for null (formatError returns null → isConnectionError false)", () => {
+        expect(connectionStore.reportFetchError(null)).toBe(false);
+    });
+
+    it("returns false for a plain string that does not match the network-error regex", () => {
+        expect(connectionStore.reportFetchError("HTTP 404 Not Found")).toBe(false);
+    });
+
+    it("returns false for a non-network Error", () => {
+        expect(connectionStore.reportFetchError(new Error("Not Found"))).toBe(false);
+    });
+
+    it("returns false for a plain object whose JSON does not match the network regex", () => {
+        expect(connectionStore.reportFetchError({ code: 503, reason: "overloaded" })).toBe(false);
+    });
+
+    it("returns true for a network TypeError and sets lastError", () => {
+        // markDisconnected is called internally, which starts timers; markConnected
+        // immediately after cancels them so the process can exit cleanly.
+        const result = connectionStore.reportFetchError(new TypeError("Failed to fetch"));
+        expect(result).toBe(true);
+        connectionStore.markConnected(); // cancel retry / tick timers
+    });
+});
+
+// ─── formatError branches via markDisconnected ────────────────────────────────
+
+describe("connectionStore.markDisconnected formatError paths", () => {
+    it("sets lastError to err.message when given an Error instance", () => {
+        connectionStore.markDisconnected(new Error("disk full"));
+        expect(connectionStore.lastError).toBe("disk full");
+        connectionStore.markConnected();
+    });
+
+    it("sets lastError to the string itself when given a plain string", () => {
+        connectionStore.markDisconnected("timed out");
+        expect(connectionStore.lastError).toBe("timed out");
+        connectionStore.markConnected();
+    });
+
+    it("sets lastError to null when given null", () => {
+        connectionStore.markDisconnected(null);
+        expect(connectionStore.lastError).toBeNull();
+        connectionStore.markConnected();
+    });
+
+    it("sets lastError to null when given undefined", () => {
+        connectionStore.markDisconnected(undefined);
+        expect(connectionStore.lastError).toBeNull();
+        connectionStore.markConnected();
+    });
+});
+
+// ─── markConnected state transitions ─────────────────────────────────────────
+
+describe("connectionStore.markConnected", () => {
+    it("sets status to connected after a disconnect", () => {
+        connectionStore.markDisconnected(new Error("err"));
+        connectionStore.markConnected();
+        expect(connectionStore.status).toBe("connected");
+    });
+
+    it("resets lastError to null after a disconnect with error", () => {
+        connectionStore.markDisconnected(new Error("previous error"));
+        connectionStore.markConnected();
+        expect(connectionStore.lastError).toBeNull();
+    });
+
+    it("resets retryAttempts to 0", () => {
+        connectionStore.markDisconnected(new Error("err"));
+        connectionStore.markConnected();
+        expect(connectionStore.retryAttempts).toBe(0);
+    });
+});

@@ -1,10 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-export type LineNumber = number;
-export type LogMessage = string;
-
-export type LogSlice = Record<LineNumber, LogMessage>;
+export type LogSlice = Record<number, string>;
 
 export type LogEvent = {
     lines: LogSlice;

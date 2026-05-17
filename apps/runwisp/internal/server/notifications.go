@@ -267,67 +267,80 @@ func (srv *Server) registerNotificationsSSE(api huma.API) {
 		inapp.UpdateTypeUpdated:            NotificationUpdatedEvent{},
 		inapp.UpdateTypeUnreadCountChanged: NotificationUnreadCountEvent{},
 		"ping":                             PingEvent{},
-	}, func(ctx context.Context, _ *struct{}, send sse.Sender) {
-		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
-		if !ok {
+	}, srv.sseNotificationsHandler)
+}
+
+func (srv *Server) sseNotificationsHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
+	release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+	if !ok {
+		return
+	}
+	defer release()
+
+	if err := send(sse.Message{Data: PingEvent{}}); err != nil {
+		return
+	}
+
+	if srv.notifyHub == nil {
+		// Notifications disabled — keep the stream alive with pings so the
+		// browser EventSource doesn't error-loop, but emit nothing else.
+		sseNotificationsPingLoop(ctx, send)
+		return
+	}
+
+	srv.sseNotificationsLiveLoop(ctx, send)
+}
+
+func sseNotificationsPingLoop(ctx context.Context, send sse.Sender) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
 			return
-		}
-		defer release()
-
-		if err := send(sse.Message{Data: PingEvent{}}); err != nil {
-			return
-		}
-
-		if srv.notifyHub == nil {
-			// Notifications disabled — keep the stream alive with pings so the
-			// browser EventSource doesn't error-loop, but emit nothing else.
-			ticker := time.NewTicker(30 * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					if err := send(sse.Message{Data: PingEvent{}}); err != nil {
-						return
-					}
-				}
-			}
-		}
-
-		sub, unsubscribe := srv.notifyHub.Subscribe()
-		defer unsubscribe()
-
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
+		case <-ticker.C:
+			if err := send(sse.Message{Data: PingEvent{}}); err != nil {
 				return
-			case u, ok := <-sub.Channel():
-				if !ok {
-					return
-				}
-				var payload any
-				switch u.Type {
-				case inapp.UpdateTypeCreated:
-					payload = NotificationCreatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
-				case inapp.UpdateTypeUpdated:
-					payload = NotificationUpdatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
-				case inapp.UpdateTypeUnreadCountChanged:
-					payload = NotificationUnreadCountEvent{UnreadCount: u.UnreadCount}
-				default:
-					payload = NotificationUpdatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
-				}
-				if err := send(sse.Message{Data: payload}); err != nil {
-					return
-				}
-			case <-ticker.C:
-				if err := send(sse.Message{Data: PingEvent{}}); err != nil {
-					return
-				}
 			}
 		}
-	})
+	}
+}
+
+func notifyUpdateToPayload(u inapp.Update) any {
+	switch u.Type {
+	case inapp.UpdateTypeCreated:
+		return NotificationCreatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
+	case inapp.UpdateTypeUpdated:
+		return NotificationUpdatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
+	case inapp.UpdateTypeUnreadCountChanged:
+		return NotificationUnreadCountEvent{UnreadCount: u.UnreadCount}
+	default:
+		return NotificationUpdatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
+	}
+}
+
+func (srv *Server) sseNotificationsLiveLoop(ctx context.Context, send sse.Sender) {
+	sub, unsubscribe := srv.notifyHub.Subscribe()
+	defer unsubscribe()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case u, ok := <-sub.Channel():
+			if !ok {
+				return
+			}
+			if err := send(sse.Message{Data: notifyUpdateToPayload(u)}); err != nil {
+				return
+			}
+		case <-ticker.C:
+			if err := send(sse.Message{Data: PingEvent{}}); err != nil {
+				return
+			}
+		}
+	}
 }

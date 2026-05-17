@@ -292,3 +292,183 @@ func TestSearchAndSort(t *testing.T) {
 	assert.Len(t, runs, 2)
 	assert.Equal(t, "beta", runs[0].TaskName)
 }
+
+// setupFullTestDB returns the full Database interface (includes PendingLogUploadRepository).
+func setupFullTestDB(t *testing.T) Database {
+	t.Helper()
+	db, err := New(":memory:", nil)
+	require.NoError(t, err)
+	return db
+}
+
+func TestGetRunByExternalExecutionID(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	extID := "ext-exec-abc123"
+	run := &model.Run{
+		ID:                  ulid.Make().String(),
+		TaskName:            "task1",
+		Status:              model.PhasePending,
+		TriggeredBy:         model.TriggeredByAPI,
+		ExternalExecutionID: &extID,
+	}
+	require.NoError(t, db.CreateRun(run))
+
+	fetched, err := db.GetRunByExternalExecutionID(extID)
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	assert.Equal(t, run.ID, fetched.ID)
+	assert.Equal(t, run.TaskName, fetched.TaskName)
+	require.NotNil(t, fetched.ExternalExecutionID)
+	assert.Equal(t, extID, *fetched.ExternalExecutionID)
+
+	// Non-existent external execution ID returns ErrNotFound.
+	_, err = db.GetRunByExternalExecutionID("does-not-exist")
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestGetLastRunByTask(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+
+	run1 := &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    "task-last",
+		Status:      model.PhaseEnded,
+		EndReason:   model.EndReasonPtr(model.ReasonSuccess),
+		TriggeredBy: model.TriggeredByAPI,
+		CreatedAt:   now.Add(-10 * time.Minute),
+	}
+	run2 := &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    "task-last",
+		Status:      model.PhaseEnded,
+		EndReason:   model.EndReasonPtr(model.ReasonFailed),
+		TriggeredBy: model.TriggeredByAPI,
+		CreatedAt:   now,
+	}
+	require.NoError(t, db.CreateRun(run1))
+	require.NoError(t, db.CreateRun(run2))
+
+	last, err := db.GetLastRunByTask("task-last")
+	require.NoError(t, err)
+	require.NotNil(t, last)
+	assert.Equal(t, run2.ID, last.ID)
+
+	// Task with no runs returns nil, nil.
+	noRun, err := db.GetLastRunByTask("no-such-task")
+	require.NoError(t, err)
+	assert.Nil(t, noRun)
+}
+
+func TestEnsureTaskRegistered(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	firstSeen := time.Now().Truncate(time.Second)
+
+	// First call inserts the record.
+	require.NoError(t, db.EnsureTaskRegistered("my-task", firstSeen))
+
+	// Second call with a different time is idempotent (INSERT OR IGNORE).
+	require.NoError(t, db.EnsureTaskRegistered("my-task", firstSeen.Add(time.Hour)))
+
+	reg, err := db.GetTaskRegistration("my-task")
+	require.NoError(t, err)
+	require.NotNil(t, reg)
+	assert.Equal(t, "my-task", reg.TaskName)
+	// The stored value is the original firstSeen, not the later time.
+	assert.WithinDuration(t, firstSeen, reg.FirstSeenAt, time.Second)
+}
+
+func TestGetTaskRegistration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Non-existent task returns nil, nil.
+	reg, err := db.GetTaskRegistration("not-registered")
+	require.NoError(t, err)
+	assert.Nil(t, reg)
+
+	// After registering, returns a populated record.
+	firstSeen := time.Now().Truncate(time.Second)
+	require.NoError(t, db.EnsureTaskRegistered("reg-task", firstSeen))
+
+	reg, err = db.GetTaskRegistration("reg-task")
+	require.NoError(t, err)
+	require.NotNil(t, reg)
+	assert.Equal(t, "reg-task", reg.TaskName)
+	assert.WithinDuration(t, firstSeen, reg.FirstSeenAt, time.Second)
+}
+
+func TestUpsertPendingLogUpload(t *testing.T) {
+	db := setupFullTestDB(t)
+	defer db.Close()
+
+	rec := model.PendingLogUpload{
+		ExternalExecutionID: "exec-upsert-1",
+		UploadURL:           "https://example.com/upload/1",
+		LogPath:             "/var/log/run1.log",
+		InsertedAt:          1234567890,
+	}
+
+	require.NoError(t, db.UpsertPendingLogUpload(rec))
+
+	// Upsert again with updated URL — must not error and must update.
+	rec.UploadURL = "https://example.com/upload/1-updated"
+	require.NoError(t, db.UpsertPendingLogUpload(rec))
+
+	uploads, err := db.ListPendingLogUploads()
+	require.NoError(t, err)
+	require.Len(t, uploads, 1)
+	assert.Equal(t, "https://example.com/upload/1-updated", uploads[0].UploadURL)
+}
+
+func TestDeletePendingLogUpload(t *testing.T) {
+	db := setupFullTestDB(t)
+	defer db.Close()
+
+	rec := model.PendingLogUpload{
+		ExternalExecutionID: "exec-delete-1",
+		UploadURL:           "https://example.com/upload/del",
+		LogPath:             "/var/log/rundel.log",
+		InsertedAt:          111,
+	}
+	require.NoError(t, db.UpsertPendingLogUpload(rec))
+
+	require.NoError(t, db.DeletePendingLogUpload("exec-delete-1"))
+
+	uploads, err := db.ListPendingLogUploads()
+	require.NoError(t, err)
+	assert.Empty(t, uploads)
+
+	// Deleting a non-existent record is not an error.
+	require.NoError(t, db.DeletePendingLogUpload("does-not-exist"))
+}
+
+func TestListPendingLogUploads(t *testing.T) {
+	db := setupFullTestDB(t)
+	defer db.Close()
+
+	// Empty table returns nil/empty slice.
+	uploads, err := db.ListPendingLogUploads()
+	require.NoError(t, err)
+	assert.Empty(t, uploads)
+
+	for i := range 3 {
+		rec := model.PendingLogUpload{
+			ExternalExecutionID: ulid.Make().String(),
+			UploadURL:           "https://example.com/" + ulid.Make().String(),
+			LogPath:             "/var/log/run.log",
+			InsertedAt:          int64(i),
+		}
+		require.NoError(t, db.UpsertPendingLogUpload(rec))
+	}
+
+	uploads, err = db.ListPendingLogUploads()
+	require.NoError(t, err)
+	assert.Len(t, uploads, 3)
+}

@@ -105,7 +105,7 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
             for (const eventType of eventTypes) {
                 es.addEventListener(eventType, (event: MessageEvent) => {
                     const data = getMessageEventData(event);
-                    if (typeof data !== "undefined") {
+                    if (data !== undefined) {
                         onEvent(eventType, data);
                     }
                 });
@@ -113,7 +113,7 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
         } else {
             es.onmessage = (event: MessageEvent) => {
                 const data = getMessageEventData(event);
-                if (typeof data !== "undefined") {
+                if (data !== undefined) {
                     onEvent("message", data);
                 }
             };

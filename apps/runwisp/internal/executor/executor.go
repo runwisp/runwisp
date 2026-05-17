@@ -140,70 +140,107 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	defer cancelFunc()
 
 	run.LogPath = logPath
-	if r.onUpdate != nil {
-		r.onUpdate(run)
+	r.notifyRunUpdated(run)
+
+	backend, execDef, errResult := r.resolveBackend(task, writer)
+	if errResult != nil {
+		return errResult
 	}
 
-	if r.eventBus != nil {
-		r.eventBus.Publish(events.EventRunUpdated, events.RunEvent{
-			Run: run,
-		})
-	}
-
-	execDef := task.ResolvedExecutionDef()
-	if execDef == nil {
-		return &ExecuteResult{ExitCode: -1, Error: errors.New("missing execution definition")}
-	}
-	backend, ok := r.backends[execDef.ExecType()]
-	if !ok {
-		errMsg := fmt.Sprintf("unsupported execution type: %s", execDef.ExecType())
-		writer.WriteLineEvent(errMsg, logutil.StreamSystem)
-		return &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
-	}
-
-	proc, err := backend.Start(cancelCtx, task, execDef)
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to start %s execution: %v", execDef.ExecType(), err)
-		writer.WriteLineEvent(errMsg, logutil.StreamSystem)
-		return &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
+	proc, errResult := r.startBackend(cancelCtx, backend, task, execDef, writer)
+	if errResult != nil {
+		return errResult
 	}
 	if r.onProcessStarted != nil {
 		r.onProcessStarted(run.ID, proc.ForceKill)
 	}
 
-	var wg sync.WaitGroup
-	streamOutput := func(reader io.ReadCloser, stream string) {
-		if reader == nil {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer func() {
-				if rec := recover(); rec != nil {
-					slog.Error("Recovered from panic in stream", "stream", stream, "task", task.Name, "err", rec)
-				}
-			}()
-			r.streamer.StreamToFile(reader, writer, task, run, stream)
-		}()
-	}
-
-	streamOutput(proc.Stdout, logutil.StreamStdout)
-	streamOutput(proc.Stderr, logutil.StreamStderr)
-	wg.Wait()
+	r.streamProcessOutput(proc, writer, task, run)
 
 	exitCode, waitErr := proc.Wait()
 	if proc.Cleanup != nil {
 		proc.Cleanup()
 	}
 
+	return classifyExecuteResult(cancelCtx, writer, exitCode, waitErr)
+}
+
+// notifyRunUpdated fans the post-log-prep run state out to the persistence
+// callback and event bus when each is wired.
+func (r *RoutingExecutor) notifyRunUpdated(run *model.Run) {
+	if r.onUpdate != nil {
+		r.onUpdate(run)
+	}
+	if r.eventBus != nil {
+		r.eventBus.Publish(events.EventRunUpdated, events.RunEvent{
+			Run: run,
+		})
+	}
+}
+
+// resolveBackend picks the execution backend matching the task's resolved
+// definition and returns an *ExecuteResult only when resolution fails. The
+// error path writes a synthetic system log line so operators see the failure
+// inline with the rest of the run.
+func (r *RoutingExecutor) resolveBackend(task *model.Task, writer *LogWriter) (Backend, model.ExecutionDef, *ExecuteResult) {
+	execDef := task.ResolvedExecutionDef()
+	if execDef == nil {
+		return nil, nil, &ExecuteResult{ExitCode: -1, Error: errors.New("missing execution definition")}
+	}
+	backend, ok := r.backends[execDef.ExecType()]
+	if !ok {
+		errMsg := fmt.Sprintf("unsupported execution type: %s", execDef.ExecType())
+		writer.WriteLineEvent(errMsg, logutil.StreamSystem)
+		return nil, nil, &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
+	}
+	return backend, execDef, nil
+}
+
+func (r *RoutingExecutor) startBackend(ctx context.Context, backend Backend, task *model.Task, execDef model.ExecutionDef, writer *LogWriter) (*Process, *ExecuteResult) {
+	proc, err := backend.Start(ctx, task, execDef)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to start %s execution: %v", execDef.ExecType(), err)
+		writer.WriteLineEvent(errMsg, logutil.StreamSystem)
+		return nil, &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
+	}
+	return proc, nil
+}
+
+// streamProcessOutput tees both standard streams into the run's log writer
+// and blocks until each goroutine finishes. Panics inside the streamer are
+// logged so one misbehaving backend cannot abort Execute mid-flight.
+func (r *RoutingExecutor) streamProcessOutput(proc *Process, writer *LogWriter, task *model.Task, run *model.Run) {
+	var wg sync.WaitGroup
+	r.streamOne(&wg, proc.Stdout, writer, task, run, logutil.StreamStdout)
+	r.streamOne(&wg, proc.Stderr, writer, task, run, logutil.StreamStderr)
+	wg.Wait()
+}
+
+func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
+	if reader == nil {
+		return
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("Recovered from panic in stream", "stream", stream, "task", task.Name, "err", rec)
+			}
+		}()
+		r.streamer.StreamToFile(reader, writer, task, run, stream)
+	}()
+}
+
+// classifyExecuteResult translates wait state + cancellation cause into the
+// terminal ExecuteResult. Wait errors are only surfaced when no context-driven
+// cancellation explains them, since the OS error is expected after a
+// timeout / stop / log-disk kill.
+func classifyExecuteResult(cancelCtx context.Context, writer *LogWriter, exitCode int, waitErr error) *ExecuteResult {
 	timedOut := errors.Is(cancelCtx.Err(), context.DeadlineExceeded)
 	killedByPolicy := writer.KilledByPolicy()
 	stopped := !timedOut && !killedByPolicy && errors.Is(cancelCtx.Err(), context.Canceled)
 
-	// Propagate unexpected wait errors; ignore them when context cancellation
-	// is the cause (timed out / stopped / policy-killed) since the OS error
-	// is expected then.
 	var resultErr error
 	if waitErr != nil && !timedOut && !stopped && !killedByPolicy {
 		resultErr = waitErr

@@ -74,19 +74,26 @@ type RunGetter interface {
 	GetRun(string) (*model.Run, error)
 }
 
+// StreamConfig holds the non-context parameters for Run.
+type StreamConfig struct {
+	Send        Sender
+	LogPath     string
+	RunID       string
+	Bus         events.EventBus
+	DB          RunGetter // nil skips the post-subscribe run-state recheck
+	AnchorFrom  int64
+	ReplayLimit int64
+	RunEnded    bool
+}
+
 // Run drives the SSE connection through three phases:
 //  1. subscribe to the bus, draining published lines into a bounded buffer;
 //  2. backfill from disk starting at the resolved anchor;
 //  3. drain the buffer + follow live events until the run reaches a
 //     terminal state.
-//
-// db lets us re-check run state after subscribing to close the race where
-// a run completes between the caller's GetRun and Subscribe — without it
-// we'd hang on the bus until context timeout. Tests pass nil to skip the
-// recheck.
-func Run(ctx context.Context, send Sender, logPath, runID string, bus events.EventBus, db RunGetter, anchorFrom, replayLimit int64, runEnded bool) {
-	s := newStreamer(send, logPath)
-	s.streamLoop(ctx, runID, bus, db, anchorFrom, replayLimit, runEnded)
+func Run(ctx context.Context, cfg StreamConfig) {
+	s := newStreamer(cfg.Send, cfg.LogPath)
+	s.streamLoop(ctx, cfg.RunID, cfg.Bus, cfg.DB, cfg.AnchorFrom, cfg.ReplayLimit, cfg.RunEnded)
 }
 
 // HumaSender adapts an huma sse.Sender into the Sender interface above,
@@ -192,82 +199,36 @@ func resolveBackfillAnchor(from, replayLimit, totalLines, firstAvailable int64) 
 	return from
 }
 
+// streamDropTracker holds the mutable drop-accounting state shared between
+// the bus subscription handler and the main event loop.
+type streamDropTracker struct {
+	after int64 // highest dropped line number (-1 = none)
+	count int64 // total dropped since last flush
+}
+
 func (s *streamer) streamLoop(ctx context.Context, runID string, bus events.EventBus, db RunGetter, anchorFrom, replayLimit int64, runEnded bool) {
 	pendingCh := make(chan events.LogLineEvent, PendingBufferLimit)
 	terminalCh := make(chan struct{}, 1)
+	dt := &streamDropTracker{after: -1}
 
-	dropAfter := int64(-1)
-	dropCount := int64(0)
-
-	signalTerminal := func() {
-		select {
-		case terminalCh <- struct{}{}:
-		default:
-		}
-	}
-
-	unsubLine := bus.Subscribe(events.EventLogLine, func(e events.Event) {
-		le, ok := e.Data.(events.LogLineEvent)
-		if !ok || le.RunID != runID {
-			return
-		}
-		select {
-		case pendingCh <- le:
-		default:
-			// Bounded buffer overflowed — drop the oldest queued event so
-			// we keep up with the live tail, then enqueue the newest.
-			select {
-			case dropped := <-pendingCh:
-				if dropped.LineNum > dropAfter {
-					dropAfter = dropped.LineNum
-				}
-				dropCount++
-			default:
-			}
-			select {
-			case pendingCh <- le:
-			default:
-				dropCount++
-				if le.LineNum > dropAfter {
-					dropAfter = le.LineNum
-				}
-			}
-		}
-	})
+	// Subscribe before reading disk so no live events are missed.
+	unsubLine := bus.Subscribe(events.EventLogLine, makeLineHandler(runID, pendingCh, dt))
 	defer unsubLine()
-
-	terminalHandler := func(e events.Event) {
-		re, ok := e.Data.(events.RunEvent)
-		if !ok || re.Run == nil || re.Run.ID != runID {
-			return
-		}
-		signalTerminal()
-	}
-	unsubCompleted := bus.Subscribe(events.EventRunCompleted, terminalHandler)
+	termHandler := makeTerminalHandler(runID, terminalCh)
+	unsubCompleted := bus.Subscribe(events.EventRunCompleted, termHandler)
 	defer unsubCompleted()
-	unsubFailed := bus.Subscribe(events.EventRunFailed, terminalHandler)
+	unsubFailed := bus.Subscribe(events.EventRunFailed, termHandler)
 	defer unsubFailed()
 
-	// Backfill from disk so subscribers see history that was published
-	// before they attached, plus everything between the anchor and the
-	// live cursor.
+	// Backfill from disk so subscribers see history published before they
+	// attached, plus everything between the anchor and the live cursor.
 	backfill, firstAvailable, totalLines, err := logutil.ReadLineRange(s.logPath, anchorFrom, replayLimit)
 	if err != nil {
 		slog.Warn("SSE: backfill read failed", "runID", runID, "err", err)
 	}
 	resolvedAnchor := resolveBackfillAnchor(anchorFrom, replayLimit, totalLines, firstAvailable)
-	if firstAvailable > 0 {
-		if err := s.send.SendRotated(RotatedEvent{FirstAvailable: firstAvailable}); err != nil {
-			return
-		}
-	}
-	for _, rec := range backfill {
-		if rec.LineNum < resolvedAnchor {
-			continue
-		}
-		if err := s.emitLine(lineFromRecord(rec)); err != nil {
-			return
-		}
+	if err := s.emitBackfill(backfill, resolvedAnchor, firstAvailable); err != nil {
+		return
 	}
 
 	// Race recheck: if the caller saw a non-terminal status but the run
@@ -279,53 +240,146 @@ func (s *streamer) streamLoop(ctx context.Context, runID string, bus events.Even
 			terminal = true
 		}
 	}
-	drainPending := func() error {
-		for {
-			select {
-			case le := <-pendingCh:
-				if err := s.emitLine(lineFromBus(le)); err != nil {
-					return err
-				}
-			default:
-				return nil
+
+	if terminal {
+		s.sendTerminalEvents(pendingCh, dt)
+		return
+	}
+	s.runLiveLoop(ctx, pendingCh, terminalCh, dt)
+}
+
+// makeLineHandler returns the EventLogLine subscription handler for runID.
+func makeLineHandler(runID string, pendingCh chan events.LogLineEvent, dt *streamDropTracker) func(events.Event) {
+	return func(e events.Event) {
+		le, ok := e.Data.(events.LogLineEvent)
+		if !ok || le.RunID != runID {
+			return
+		}
+		bufferLogLine(le, pendingCh, dt)
+	}
+}
+
+// makeTerminalHandler returns the run-terminal subscription handler for runID.
+func makeTerminalHandler(runID string, terminalCh chan struct{}) func(events.Event) {
+	return func(e events.Event) {
+		re, ok := e.Data.(events.RunEvent)
+		if !ok || re.Run == nil || re.Run.ID != runID {
+			return
+		}
+		signalTerminalCh(terminalCh)
+	}
+}
+
+// signalTerminalCh sends a non-blocking signal to terminalCh.
+func signalTerminalCh(terminalCh chan struct{}) {
+	select {
+	case terminalCh <- struct{}{}:
+	default:
+	}
+}
+
+// bufferLogLine enqueues le in pendingCh. On overflow it evicts the oldest
+// event and records the drop range in dt before re-enqueueing the newest.
+func bufferLogLine(le events.LogLineEvent, pendingCh chan events.LogLineEvent, dt *streamDropTracker) {
+	select {
+	case pendingCh <- le:
+	default:
+		// Bounded buffer overflowed — evict the oldest so the live tail
+		// stays current, then try to enqueue the newest.
+		select {
+		case dropped := <-pendingCh:
+			if dropped.LineNum > dt.after {
+				dt.after = dropped.LineNum
+			}
+			dt.count++
+		default:
+		}
+		select {
+		case pendingCh <- le:
+		default:
+			dt.count++
+			if le.LineNum > dt.after {
+				dt.after = le.LineNum
 			}
 		}
 	}
+}
 
-	if terminal {
-		if err := drainPending(); err != nil {
-			return
+// emitBackfill sends the rotated notice (if any) and replays backfill lines
+// starting at resolvedAnchor. Returns the first send error encountered.
+func (s *streamer) emitBackfill(backfill []logutil.LogLineRecord, resolvedAnchor, firstAvailable int64) error {
+	if firstAvailable > 0 {
+		if err := s.send.SendRotated(RotatedEvent{FirstAvailable: firstAvailable}); err != nil {
+			return err
 		}
-		if dropCount > 0 {
-			_ = s.send.SendDropped(DroppedEvent{After: dropAfter, Count: dropCount})
+	}
+	for _, rec := range backfill {
+		if rec.LineNum < resolvedAnchor {
+			continue
 		}
-		_ = s.send.SendDone(DoneEvent{FinalLine: s.lastSent, Status: "ended"})
+		if err := s.emitLine(lineFromRecord(rec)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// drainPendingCh reads all buffered LogLineEvents from pendingCh without
+// blocking, emitting each to the SSE stream. Returns on the first send error.
+func (s *streamer) drainPendingCh(pendingCh <-chan events.LogLineEvent) error {
+	for {
+		select {
+		case le := <-pendingCh:
+			if err := s.emitLine(lineFromBus(le)); err != nil {
+				return err
+			}
+		default:
+			return nil
+		}
+	}
+}
+
+// sendTerminalEvents drains pendingCh, flushes any recorded drops, and sends
+// the final done event.
+func (s *streamer) sendTerminalEvents(pendingCh <-chan events.LogLineEvent, dt *streamDropTracker) {
+	if err := s.drainPendingCh(pendingCh); err != nil {
 		return
 	}
+	if dt.count > 0 {
+		_ = s.send.SendDropped(DroppedEvent{After: dt.after, Count: dt.count})
+	}
+	_ = s.send.SendDone(DoneEvent{FinalLine: s.lastSent, Status: "ended"})
+}
 
+// handleLiveLine emits one live log line and flushes any queued drop notice.
+// Returns false if a send error occurred (caller should stop the loop).
+func (s *streamer) handleLiveLine(le events.LogLineEvent, dt *streamDropTracker) bool {
+	if err := s.emitLine(lineFromBus(le)); err != nil {
+		return false
+	}
+	if dt.count > 0 {
+		if err := s.send.SendDropped(DroppedEvent{After: dt.after, Count: dt.count}); err != nil {
+			return false
+		}
+		dt.count = 0
+		dt.after = -1
+	}
+	return true
+}
+
+// runLiveLoop drives the SSE connection until ctx is cancelled, the run ends
+// (terminalCh fires), or a send error occurs.
+func (s *streamer) runLiveLoop(ctx context.Context, pendingCh <-chan events.LogLineEvent, terminalCh <-chan struct{}, dt *streamDropTracker) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-terminalCh:
-			if err := drainPending(); err != nil {
-				return
-			}
-			if dropCount > 0 {
-				_ = s.send.SendDropped(DroppedEvent{After: dropAfter, Count: dropCount})
-			}
-			_ = s.send.SendDone(DoneEvent{FinalLine: s.lastSent, Status: "ended"})
+			s.sendTerminalEvents(pendingCh, dt)
 			return
 		case le := <-pendingCh:
-			if err := s.emitLine(lineFromBus(le)); err != nil {
+			if !s.handleLiveLine(le, dt) {
 				return
-			}
-			if dropCount > 0 {
-				if err := s.send.SendDropped(DroppedEvent{After: dropAfter, Count: dropCount}); err != nil {
-					return
-				}
-				dropCount = 0
-				dropAfter = -1
 			}
 		}
 	}

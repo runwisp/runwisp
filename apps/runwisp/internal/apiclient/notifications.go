@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"strconv"
 	"strings"
@@ -82,43 +83,45 @@ func (c *Client) StreamNotifications(ctx context.Context) (<-chan NotificationSt
 		return nil, err
 	}
 	ch := make(chan NotificationStreamEvent, 32)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
+	go c.streamNotificationsLoop(ctx, resp.Body, ch)
+	return ch, nil
+}
 
-		scanner := bufio.NewScanner(resp.Body)
-		var eventType string
+func (c *Client) streamNotificationsLoop(ctx context.Context, body io.ReadCloser, ch chan<- NotificationStreamEvent) {
+	defer close(ch)
+	defer body.Close()
 
-		for scanner.Scan() {
-			line := scanner.Text()
+	scanner := bufio.NewScanner(body)
+	var eventType string
 
-			if strings.HasPrefix(line, "event: ") {
-				eventType = strings.TrimPrefix(line, "event: ")
-				continue
-			}
+	for scanner.Scan() {
+		line := scanner.Text()
 
-			if strings.HasPrefix(line, "data: ") {
-				data := strings.TrimPrefix(line, "data: ")
-				if eventType != "" {
-					select {
-					case ch <- NotificationStreamEvent{
-						Type: eventType,
-						Data: json.RawMessage(data),
-					}:
-					case <-ctx.Done():
-						return
-					}
-					eventType = ""
+		if strings.HasPrefix(line, "event: ") {
+			eventType = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			data := strings.TrimPrefix(line, "data: ")
+			if eventType != "" {
+				select {
+				case ch <- NotificationStreamEvent{
+					Type: eventType,
+					Data: json.RawMessage(data),
+				}:
+				case <-ctx.Done():
+					return
 				}
-				continue
-			}
-
-			if line == "" {
 				eventType = ""
 			}
+			continue
 		}
-	}()
-	return ch, nil
+
+		if line == "" {
+			eventType = ""
+		}
+	}
 }
 
 // DecodeNotificationEnvelope unwraps a notification.created or

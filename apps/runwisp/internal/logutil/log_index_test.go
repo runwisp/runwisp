@@ -178,3 +178,147 @@ func TestReadLogIndex_MissingFile(t *testing.T) {
 	_, err := ReadLogIndex("/nonexistent/path.idx")
 	assert.Error(t, err)
 }
+
+// --- FormatLine ---
+
+func TestFormatLine_Stdout(t *testing.T) {
+	got := FormatLine("hello", StreamStdout)
+	assert.Equal(t, "hello\n", got)
+}
+
+func TestFormatLine_Stderr(t *testing.T) {
+	got := FormatLine("oops", StreamStderr)
+	assert.Equal(t, "[ERR] oops\n", got)
+}
+
+func TestFormatLine_SystemStream(t *testing.T) {
+	got := FormatLine("starting", StreamSystem)
+	assert.Equal(t, "[SYSTEM] starting\n", got)
+}
+
+func TestFormatLine_CustomStream(t *testing.T) {
+	got := FormatLine("msg", "trace")
+	assert.Equal(t, "[TRACE] msg\n", got)
+}
+
+func TestFormatLine_StripsTrailingNewline(t *testing.T) {
+	got := FormatLine("line\n", StreamStdout)
+	assert.Equal(t, "line\n", got, "trailing newline must be stripped and re-added exactly once")
+}
+
+// --- ParseStreamPrefix ---
+
+func TestParseStreamPrefix_Stdout(t *testing.T) {
+	stream, text := ParseStreamPrefix("plain text")
+	assert.Equal(t, StreamStdout, stream)
+	assert.Equal(t, "plain text", text)
+}
+
+func TestParseStreamPrefix_Stderr(t *testing.T) {
+	stream, text := ParseStreamPrefix("[ERR] error message")
+	assert.Equal(t, StreamStderr, stream)
+	assert.Equal(t, "error message", text)
+}
+
+func TestParseStreamPrefix_System(t *testing.T) {
+	stream, text := ParseStreamPrefix("[SYSTEM] system message")
+	assert.Equal(t, StreamSystem, stream)
+	assert.Equal(t, "system message", text)
+}
+
+func TestParseStreamPrefix_SystemWithTimestamp(t *testing.T) {
+	// "[2024-01-15T12:00:00] [SYSTEM] foo" — timestamp prefix is tolerated
+	stream, text := ParseStreamPrefix("[2024-01-15T12:00:00] [SYSTEM] foo")
+	assert.Equal(t, StreamSystem, stream)
+	assert.Equal(t, "foo", text)
+}
+
+func TestParseStreamPrefix_StripTrailingNewline(t *testing.T) {
+	stream, text := ParseStreamPrefix("output line\n")
+	assert.Equal(t, StreamStdout, stream)
+	assert.Equal(t, "output line", text)
+}
+
+func TestParseStreamPrefix_EmptyLine(t *testing.T) {
+	stream, text := ParseStreamPrefix("")
+	assert.Equal(t, StreamStdout, stream)
+	assert.Equal(t, "", text)
+}
+
+// --- stripSystemPrefix ---
+
+func TestStripSystemPrefix_ExactSystem(t *testing.T) {
+	rest, ok := stripSystemPrefix("[SYSTEM] payload")
+	assert.True(t, ok)
+	assert.Equal(t, "payload", rest)
+}
+
+func TestStripSystemPrefix_NoMatch(t *testing.T) {
+	_, ok := stripSystemPrefix("plain text")
+	assert.False(t, ok)
+}
+
+func TestStripSystemPrefix_TimestampThenSystem(t *testing.T) {
+	// "[2024-01-15T12:00:00.000Z] [SYSTEM] message"
+	rest, ok := stripSystemPrefix("[2024-01-15T12:00:00.000Z] [SYSTEM] message")
+	assert.True(t, ok)
+	assert.Equal(t, "message", rest)
+}
+
+func TestStripSystemPrefix_ShortBracketedPrefix(t *testing.T) {
+	// "[ERR] [SYSTEM] msg" — "[ERR]" is length 3 which is < 19 chars, so treated as a tag,
+	// not a timestamp prefix. The CutPrefix then looks for [SYSTEM] on the remaining.
+	_, ok := stripSystemPrefix("[ERR] [SYSTEM] msg")
+	// "[ERR] " is head="ERR", len 3, < 19, so not stripped as timestamp.
+	// rest stays "[ERR] [SYSTEM] msg", then CutPrefix("[SYSTEM] ") fails → false
+	assert.False(t, ok)
+}
+
+func TestStripSystemPrefix_EmptyString(t *testing.T) {
+	_, ok := stripSystemPrefix("")
+	assert.False(t, ok)
+}
+
+// --- CalculateLineOffset with indices ---
+
+func TestCalculateLineOffset_WithIndex_FirstChunk(t *testing.T) {
+	// 3 lines of "abc\n" each (4 bytes), index=[0, 8] (every 2 lines)
+	content := "abc\nabc\nabc\n"
+	f := tempFileWithContent(t, content)
+	indices := []int64{0, 8}
+	// Requesting local line 1 (chunk 0, skip 1) → offset 4
+	offset := CalculateLineOffset(f, indices, 1, LogMeta{})
+	assert.Equal(t, int64(4), offset)
+}
+
+func TestCalculateLineOffset_WithIndex_SecondChunk(t *testing.T) {
+	content := "abc\nabc\nabc\nabc\n"
+	f := tempFileWithContent(t, content)
+	// Each "abc\n" = 4 bytes; index entries every LogIndexInterval lines.
+	// Use a small manual index to force the second chunk path.
+	indices := []int64{0, 8}
+	// Line 2 → chunkIdx=1 (8/2=4 exceeds but is clamped at len-1=1), base=8, skip=0 → offset 8
+	meta := LogMeta{}
+	offset := CalculateLineOffset(f, indices, 2, meta)
+	assert.Equal(t, int64(8), offset)
+}
+
+func TestCalculateLineOffset_ChunkIdxClamped(t *testing.T) {
+	content := "x\ny\nz\n"
+	f := tempFileWithContent(t, content)
+	// indices has only 1 entry; requesting a line beyond that clamps to last chunk
+	indices := []int64{0}
+	offset := CalculateLineOffset(f, indices, 100, LogMeta{})
+	// clamped to last index (0), then skip 100 lines from 0 → EOF, returns end of file
+	assert.True(t, offset >= 0)
+}
+
+// --- CalculateLineOffset edge case: RotatedLines exact ---
+
+func TestCalculateLineOffset_RotatedLinesExact(t *testing.T) {
+	// Line requested == RotatedLines → localLine 0, starts at offset 0
+	f := tempFileWithContent(t, "line0\nline1\n")
+	meta := LogMeta{RotatedLines: 3}
+	offset := CalculateLineOffset(f, nil, 3, meta)
+	assert.Equal(t, int64(0), offset)
+}

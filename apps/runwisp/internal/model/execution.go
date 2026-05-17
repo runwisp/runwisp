@@ -9,9 +9,10 @@ import (
 	"strings"
 )
 
-// ExecutionDef is the discriminated union for task execution definitions.
-// The concrete type is determined by the "type" JSON field.
-type ExecutionDef interface {
+// ExecutionDef is a sealed-type discriminant; ExecType() identifies the concrete
+// subtype for JSON deserialization. The single-method interface is intentional —
+// it exists only to constrain the type set, not as a behavioural abstraction.
+type ExecutionDef interface { //NOSONAR: sealed-type discriminant, not a behavioural interface
 	ExecType() string
 }
 

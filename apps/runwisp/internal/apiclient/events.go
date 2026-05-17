@@ -8,10 +8,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/server/logstream"
+)
+
+const (
+	ssePrefixEvent = "event: "
+	ssePrefixData  = "data: "
 )
 
 // StreamRunEvents opens an SSE connection to /api/runs/stream and delivers
@@ -24,46 +30,47 @@ func (c *Client) StreamRunEvents(ctx context.Context) (<-chan RunStreamEvent, er
 	}
 
 	ch := make(chan RunStreamEvent, 32)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
+	go c.streamRunEventsLoop(ctx, resp.Body, ch)
+	return ch, nil
+}
 
-		scanner := bufio.NewScanner(resp.Body)
-		var eventType string
+func (c *Client) streamRunEventsLoop(ctx context.Context, body io.ReadCloser, ch chan<- RunStreamEvent) {
+	defer close(ch)
+	defer body.Close()
 
-		for scanner.Scan() {
-			line := scanner.Text()
+	scanner := bufio.NewScanner(body)
+	var eventType string
 
-			if strings.HasPrefix(line, "event: ") {
-				eventType = strings.TrimPrefix(line, "event: ")
-				continue
-			}
+	for scanner.Scan() {
+		line := scanner.Text()
 
-			if strings.HasPrefix(line, "data: ") {
-				data := strings.TrimPrefix(line, "data: ")
-				if eventType != "" {
-					evt := RunStreamEvent{
-						Type: eventType,
-						Data: json.RawMessage(data),
-					}
-					select {
-					case ch <- evt:
-					case <-ctx.Done():
-						return
-					}
-					eventType = ""
+		if strings.HasPrefix(line, ssePrefixEvent) {
+			eventType = strings.TrimPrefix(line, ssePrefixEvent)
+			continue
+		}
+
+		if strings.HasPrefix(line, ssePrefixData) {
+			data := strings.TrimPrefix(line, ssePrefixData)
+			if eventType != "" {
+				evt := RunStreamEvent{
+					Type: eventType,
+					Data: json.RawMessage(data),
 				}
-				continue
-			}
-
-			// Empty line or comment — reset.
-			if line == "" {
+				select {
+				case ch <- evt:
+				case <-ctx.Done():
+					return
+				}
 				eventType = ""
 			}
+			continue
 		}
-	}()
 
-	return ch, nil
+		// Empty line or comment — reset.
+		if line == "" {
+			eventType = ""
+		}
+	}
 }
 
 // LogStreamMsgKind discriminates the line-stream message types delivered to
@@ -114,65 +121,66 @@ func (c *Client) StreamLogLines(ctx context.Context, taskName, runID string, opt
 	}
 
 	ch := make(chan LogStreamMsg, 64)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
-
-		scanner := bufio.NewScanner(resp.Body)
-		// SSE data lines for backfill burst can carry up to a 64 KiB log
-		// line plus JSON overhead; 256 KiB is a comfortable headroom.
-		scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
-
-		var event string
-		var dataParts []string
-
-		flush := func() {
-			defer func() {
-				event = ""
-				dataParts = dataParts[:0]
-			}()
-			if len(dataParts) == 0 {
-				return
-			}
-			data := strings.Join(dataParts, "\n")
-			msg, ok := parseLogStreamFrame(event, data)
-			if !ok {
-				return
-			}
-			select {
-			case ch <- msg:
-			case <-ctx.Done():
-			}
-		}
-
-		for scanner.Scan() {
-			line := scanner.Text()
-			if line == "" {
-				flush()
-				continue
-			}
-			if strings.HasPrefix(line, "id: ") {
-				continue
-			}
-			if strings.HasPrefix(line, "event: ") {
-				event = strings.TrimPrefix(line, "event: ")
-				continue
-			}
-			if strings.HasPrefix(line, "data: ") {
-				dataParts = append(dataParts, strings.TrimPrefix(line, "data: "))
-				continue
-			}
-			// retry: / : (comment) / unknown — ignore.
-		}
-		if err := scanner.Err(); err != nil {
-			select {
-			case ch <- LogStreamMsg{Kind: LogStreamMsgKindErr, ErrValue: err}:
-			case <-ctx.Done():
-			}
-		}
-	}()
-
+	go c.streamLogLinesLoop(ctx, resp.Body, ch)
 	return ch, nil
+}
+
+func (c *Client) streamLogLinesLoop(ctx context.Context, body io.ReadCloser, ch chan<- LogStreamMsg) {
+	defer close(ch)
+	defer body.Close()
+
+	scanner := bufio.NewScanner(body)
+	// SSE data lines for backfill burst can carry up to a 64 KiB log
+	// line plus JSON overhead; 256 KiB is a comfortable headroom.
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+
+	var event string
+	var dataParts []string
+
+	flush := func() {
+		defer func() {
+			event = ""
+			dataParts = dataParts[:0]
+		}()
+		if len(dataParts) == 0 {
+			return
+		}
+		data := strings.Join(dataParts, "\n")
+		msg, ok := parseLogStreamFrame(event, data)
+		if !ok {
+			return
+		}
+		select {
+		case ch <- msg:
+		case <-ctx.Done():
+		}
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			flush()
+			continue
+		}
+		if strings.HasPrefix(line, "id: ") {
+			continue
+		}
+		if strings.HasPrefix(line, ssePrefixEvent) {
+			event = strings.TrimPrefix(line, ssePrefixEvent)
+			continue
+		}
+		if strings.HasPrefix(line, ssePrefixData) {
+			dataParts = append(dataParts, strings.TrimPrefix(line, ssePrefixData))
+			continue
+		}
+		// retry: / : (comment) / unknown — ignore.
+	}
+	if err := scanner.Err(); err != nil {
+		select {
+		case ch <- LogStreamMsg{Kind: LogStreamMsgKindErr, ErrValue: err}:
+		case <-ctx.Done():
+		}
+	}
 }
 
 // parseLogStreamFrame decodes one SSE event into a LogStreamMsg. The default

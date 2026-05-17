@@ -8,11 +8,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCoalesce_ID_DelegatesToInner(t *testing.T) {
+	inner := testutil.NewFakeChannel("slack-ops")
+	c := New(inner, Config{Window: time.Hour, EveryN: 10}, testutil.NewFakeClock(time.Unix(0, 0)), nil)
+	defer c.Close(context.Background())
+	if c.ID() != "slack-ops" {
+		t.Fatalf("expected ID=slack-ops, got %q", c.ID())
+	}
+}
+
+func TestCoalesce_FingerprintKey_DifferentFields(t *testing.T) {
+	ev1 := &notify.Event{Kind: notify.KindRunFailed, TaskName: "a"}
+	ev2 := &notify.Event{Kind: notify.KindRunFailed, TaskName: "b"}
+	if fingerprintKey(ev1) == fingerprintKey(ev2) {
+		t.Fatal("different task names must yield different fingerprint keys")
+	}
+}
 
 // helper: build a run-failed event for taskName.
 func failEvent(taskName string) *notify.Event {
@@ -157,4 +175,51 @@ func TestCoalesce_CloseStopsTimers(t *testing.T) {
 	// pre-close delivery in the count.
 	time.Sleep(20 * time.Millisecond)
 	assert.Len(t, inner.Received(), 1)
+}
+
+func TestFingerprintKey_NilEvent(t *testing.T) {
+	assert.Equal(t, "", fingerprintKey(nil))
+}
+
+func TestFingerprintKey_WithEndReason(t *testing.T) {
+	r := model.ReasonFailed
+	ev := &notify.Event{
+		Kind:     notify.KindRunFailed,
+		TaskName: "t1",
+		Run:      &model.Run{EndReason: &r},
+	}
+	key := fingerprintKey(ev)
+	assert.Contains(t, key, "failed")
+}
+
+func TestFingerprintKey_WithDeliveryFailed(t *testing.T) {
+	ev := &notify.Event{
+		Kind:     notify.KindNotifyDeliveryFailed,
+		TaskName: "t1",
+		Extra:    map[string]any{"channel": "slack", "original_kind": "run.failed"},
+	}
+	key := fingerprintKey(ev)
+	assert.Contains(t, key, "slack")
+	assert.Contains(t, key, "run.failed")
+}
+
+func TestSummarize_NonNilExtra(t *testing.T) {
+	ev := &notify.Event{
+		Kind:  notify.KindRunFailed,
+		Extra: map[string]any{"foo": "bar"},
+	}
+	out := summarize(ev, 5, false)
+	assert.Equal(t, "bar", out.Extra["foo"], "existing extra keys preserved")
+	assert.Equal(t, 5, out.Extra["coalesced_count"])
+	_, hasFlag := out.Extra["coalesced_summary"]
+	assert.False(t, hasFlag)
+}
+
+func TestTimerFlush_EmptyState(t *testing.T) {
+	inner := testutil.NewFakeChannel("slack-ops")
+	c := New(inner, Config{Window: time.Hour, EveryN: 1}, nil, nil)
+	defer c.Close(context.Background())
+	// calling timerFlush with a key that has no state is a no-op
+	c.timerFlush("nonexistent-key")
+	assert.Empty(t, inner.Received())
 }

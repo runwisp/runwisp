@@ -8,7 +8,7 @@ module=$(cd "${script_dir}/.." && go list -m -f '{{.Path}}')
 # Ensure the UI dist folder has at least one file to satisfy go:embed during build
 dist_dir="${script_dir}/../internal/ui/dist"
 mkdir -p "${dist_dir}"
-if [ -z "$(ls -A "${dist_dir}")" ]; then
+if [[ -z "$(ls -A "${dist_dir}")" ]]; then
   echo '<!-- placeholder for go:embed -->' > "${dist_dir}/index.html"
 fi
 

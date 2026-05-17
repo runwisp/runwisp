@@ -175,7 +175,7 @@ export class EventManager {
     #bindEventType(es: SSEStream, eventType: string): void {
         es.addEventListener(eventType, (event: MessageEvent) => {
             const data = getMessageEventData(event);
-            if (typeof data === "undefined") return;
+            if (data === undefined) return;
             const set = this.#handlers.get(eventType);
             if (!set) return;
             for (const handler of set) {

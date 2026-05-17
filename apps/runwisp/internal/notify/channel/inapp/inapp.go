@@ -44,7 +44,7 @@ func (c *Channel) Execute(_ context.Context, ev *notify.Event) error {
 	return nil
 }
 
-// IngestSynthetic implements notify.FailureSink so the dispatcher can deliver
+// IngestSynthetic implements notify.SyntheticIngester so the dispatcher can deliver
 // delivery-failure events directly to the in-app sink, bypassing the router
 // (cycle guard).
 func (c *Channel) IngestSynthetic(ev *notify.Event) {
