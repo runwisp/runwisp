@@ -134,6 +134,10 @@ func (srv *Server) setupRoutes() error {
 		_, _ = w.Write([]byte("OK"))
 	})
 
+	// OpenMetrics scrape endpoint (public, parallel to /health — operators
+	// firewall the bind address or front it with a reverse proxy).
+	srv.router.Get("/metrics", srv.handleOpenMetrics)
+
 	// Public auth endpoints (huma — only authStatus; challenge is raw chi below)
 	srv.registerAuthRoutes()
 

@@ -182,6 +182,7 @@ func (r *recordingTaskRunner) TerminateRun(string) error                      { 
 func (r *recordingTaskRunner) TerminateRunByExternalExecutionID(string) error { return nil }
 func (r *recordingTaskRunner) RestartServiceInstances(string) error           { return nil }
 func (r *recordingTaskRunner) StopService(string) error                       { return nil }
+func (r *recordingTaskRunner) GetActiveRunCount(string) int                   { return 0 }
 
 // TestSchedulerFireOnce_GoldenTriggerSkipSequence pins down the firing
 // pattern across the 2026-10-25 fall-back in Europe/Bratislava under the

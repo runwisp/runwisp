@@ -73,6 +73,10 @@ func (m *mockTaskRunner) RecordSkippedFiring(taskName string, reason model.EndRe
 	return m.Called(taskName, reason, triggeredBy).Error(0)
 }
 
+func (m *mockTaskRunner) GetActiveRunCount(taskName string) int {
+	return m.Called(taskName).Int(0)
+}
+
 func TestCountMissedTicks(t *testing.T) {
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 

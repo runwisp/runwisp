@@ -575,6 +575,19 @@ func (m *defaultTaskManager) GetActiveRuns(taskName string) []*ActiveRun {
 	return runs
 }
 
+// GetActiveRunCount returns the number of active runs for the given task
+// without allocating a slice. Unknown tasks return 0.
+func (m *defaultTaskManager) GetActiveRunCount(taskName string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		return 0
+	}
+	return len(ts.active)
+}
+
 // TerminateRun cancels a running task by ID.
 func (m *defaultTaskManager) TerminateRun(runID string) error {
 	return m.cancelActiveRun(func(ar *ActiveRun) bool {
