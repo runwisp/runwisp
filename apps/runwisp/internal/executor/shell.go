@@ -6,6 +6,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
 	"time"
@@ -33,6 +34,12 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, def model.Ex
 	// be delivered to the entire group (including grandchildren spawned by
 	// the script) rather than just the /bin/sh leader.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// Only set cmd.Env when the task asked for overlays — leaving it nil
+	// preserves Go's default of inheriting the daemon's env verbatim.
+	if len(task.Env) > 0 || len(task.SecretEnv) > 0 {
+		cmd.Env = buildProcessEnv(os.Environ(), task.Env, task.SecretEnv)
+	}
 
 	grace := task.GracefulStop
 	done := make(chan struct{})

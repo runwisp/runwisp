@@ -151,7 +151,7 @@ func (b *ContainerBackend) Available(ctx context.Context) bool {
 	return err == nil
 }
 
-func (b *ContainerBackend) Start(ctx context.Context, _ *model.Task, def model.ExecutionDef) (*Process, error) {
+func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, def model.ExecutionDef) (*Process, error) {
 	ctr, ok := def.(*model.ContainerExecution)
 	if !ok {
 		return nil, fmt.Errorf("ContainerBackend received non-container execution: %s", def.ExecType())
@@ -169,7 +169,7 @@ func (b *ContainerBackend) Start(ctx context.Context, _ *model.Task, def model.E
 	}
 
 	// Configure the container
-	containerConfig, hostConfig := b.buildContainerConfig(imageTag, ctr)
+	containerConfig, hostConfig := b.buildContainerConfig(imageTag, ctr, task)
 
 	// Create the container
 	created, err := b.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
@@ -241,10 +241,19 @@ func (b *ContainerBackend) removeContainer(ctx context.Context, containerID stri
 	}
 }
 
-func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.ContainerExecution) (*container.Config, *container.HostConfig) {
-	env := make([]string, 0, len(ctr.Env))
+func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.ContainerExecution, task *model.Task) (*container.Config, *container.HostConfig) {
+	baseEnv := make([]string, 0, len(ctr.Env))
 	for _, kv := range ctr.Env {
-		env = append(env, kv.Key+"="+kv.Value)
+		baseEnv = append(baseEnv, kv.Key+"="+kv.Value)
+	}
+	// Overlay Task.Env then Task.SecretEnv on top of the container-execution
+	// env so task-level entries (defined alongside cron/run) win over
+	// container-specific defaults, matching the shell backend's precedence.
+	var env []string
+	if task != nil && (len(task.Env) > 0 || len(task.SecretEnv) > 0) {
+		env = buildProcessEnv(baseEnv, task.Env, task.SecretEnv)
+	} else {
+		env = baseEnv
 	}
 
 	exposedPorts := nat.PortSet{}

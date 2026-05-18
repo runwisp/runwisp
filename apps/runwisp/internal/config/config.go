@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -21,11 +23,39 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := resolveEnvFiles(cfg, filepath.Dir(path)); err != nil {
+		return nil, err
+	}
 	ApplyDefaults(cfg)
 	if err := Validate(cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// resolveEnvFiles reads each env_file referenced by the config and stashes the
+// resulting KEY=VALUE map in the corresponding SecretEnv field. Relative paths
+// are resolved against baseDir (the runwisp.toml directory).
+func resolveEnvFiles(cfg *Config, baseDir string) error {
+	if cfg.Defaults.EnvFile != "" {
+		values, err := loadEnvFile(baseDir, cfg.Defaults.EnvFile)
+		if err != nil {
+			return fmt.Errorf("defaults: %w", err)
+		}
+		cfg.Defaults.SecretEnv = values
+	}
+	for i := range cfg.Tasks {
+		task := &cfg.Tasks[i]
+		if task.EnvFile == "" {
+			continue
+		}
+		values, err := loadEnvFile(baseDir, task.EnvFile)
+		if err != nil {
+			return fmt.Errorf("task %q: %w", task.Name, err)
+		}
+		task.SecretEnv = values
+	}
+	return nil
 }
 
 // GracefulStopWarnings reports tasks whose graceful_stop exceeds the daemon
@@ -209,12 +239,58 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if err := validateTaskEnums(task); err != nil {
 		return err
 	}
+	if err := validateTaskEnv(task); err != nil {
+		return err
+	}
 	if task.Kind.IsService() {
 		if err := validateServiceTask(task); err != nil {
 			return err
 		}
 	}
 	return validateTaskRetention(task)
+}
+
+// envKeyPattern is the POSIX-ish shape required for environment variable
+// names: letters, digits, and underscores; not starting with a digit.
+var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// validateTaskEnv enforces shape and size limits on env. Inline env and
+// env_file-derived SecretEnv are validated together so the merged map can
+// safely be turned into KEY=VALUE strings without producing malformed entries.
+func validateTaskEnv(task *model.Task) error {
+	scope := fmt.Sprintf("env for task %s", task.Name)
+	if err := validateEnvMap(scope, task.Env); err != nil {
+		return err
+	}
+	secretScope := fmt.Sprintf("env_file for task %s", task.Name)
+	if err := validateEnvMap(secretScope, task.SecretEnv); err != nil {
+		return err
+	}
+	if total := len(task.Env) + len(task.SecretEnv); total > EnvMaxEntries {
+		return fmt.Errorf("invalid env for task %s: %d entries exceeds the cap of %d", task.Name, total, EnvMaxEntries)
+	}
+	return nil
+}
+
+// validateEnvMap is reusable across inline env and env_file values. Scope is a
+// human-readable label embedded in error messages (e.g. "env for task foo" or
+// "env_file /etc/runwisp/secrets.env").
+func validateEnvMap(scope string, env map[string]string) error {
+	if len(env) > EnvMaxEntries {
+		return fmt.Errorf("invalid %s: %d entries exceeds the cap of %d", scope, len(env), EnvMaxEntries)
+	}
+	for key, value := range env {
+		if !envKeyPattern.MatchString(key) {
+			return fmt.Errorf("invalid %s: key %q must match %s", scope, key, envKeyPattern.String())
+		}
+		if strings.ContainsRune(value, 0) {
+			return fmt.Errorf("invalid %s: value for %q contains a NUL byte", scope, key)
+		}
+		if len(value) > EnvMaxValueLen {
+			return fmt.Errorf("invalid %s: value for %q is %d bytes; cap is %d", scope, key, len(value), EnvMaxValueLen)
+		}
+	}
+	return nil
 }
 
 func validateTaskIdentity(task *model.Task, seen map[string]struct{}) error {
@@ -401,6 +477,15 @@ const (
 	QueueMaxCap      = 10000
 	KeepRunsCap      = 1_000_000
 	RetryAttemptsCap = 100
+
+	// EnvMaxEntries caps the combined size of a task's inline env and
+	// env_file-derived secret env. Generous enough for any realistic dotenv
+	// while keeping a malformed config from blowing up the daemon's memory.
+	EnvMaxEntries = 256
+	// EnvMaxValueLen caps a single env value at 32 KiB. Linux's argv+env
+	// limit is 128 KiB by default; capping per-value leaves room for many
+	// entries without bumping into ARG_MAX surprises.
+	EnvMaxValueLen = 32 * 1024
 )
 
 // Built-in defaults applied by ApplyDefaults when a field is omitted entirely.
@@ -478,6 +563,26 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if task.LogOnFull == "" {
 		task.LogOnFull = model.LogOverflowDropOld
 	}
+	task.Env = mergeEnv(d.Env, task.Env)
+	task.SecretEnv = mergeEnv(d.SecretEnv, task.SecretEnv)
+}
+
+// mergeEnv returns a map containing every key in base then in overlay, with
+// overlay winning on collision. Returns nil when both inputs are empty so the
+// executor can keep its "no env overlay → inherit parent" fast path. The
+// inputs are never mutated.
+func mergeEnv(base, overlay map[string]string) map[string]string {
+	if len(base) == 0 && len(overlay) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(base)+len(overlay))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range overlay {
+		out[k] = v
+	}
+	return out
 }
 
 func applyTaskDefaults(task *model.Task) {
