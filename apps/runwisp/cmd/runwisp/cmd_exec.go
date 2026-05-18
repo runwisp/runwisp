@@ -124,7 +124,9 @@ func runExecViaDaemon(taskName string) (int, error) {
 		}
 	}()
 
-	ch, err := client.StreamLogLines(ctx, taskName, run.ID, apiclient.StreamLogOpts{FromLine: 1})
+	// Line numbers are zero-indexed; the server reads from=0 as the default
+	// tail window and clamps to anchor 0 on a fresh run, so we see every line.
+	ch, err := client.StreamLogLines(ctx, taskName, run.ID, apiclient.StreamLogOpts{FromLine: 0})
 	if err != nil {
 		return 0, fmt.Errorf("open log stream: %w", err)
 	}
