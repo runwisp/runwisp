@@ -34,9 +34,10 @@ type Service struct {
 	retentionEvery time.Duration
 	retentionFn    func()
 
-	unsubscribe func()
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
+	unsubscribe     func()
+	cancel          context.CancelFunc // cancels workCtx — workers + runDispatch
+	retentionCancel context.CancelFunc // cancels the retention loop; fired upfront in Stop so it never gates wg.Wait
+	wg              sync.WaitGroup
 
 	droppedIngress atomic.Uint64
 	started        atomic.Bool
@@ -121,8 +122,15 @@ func (s *Service) Start(ctx context.Context) error {
 	go s.runDispatch(workCtx)
 
 	if s.retentionFn != nil {
+		// Retention runs on its own cancellable context so Stop can shut it
+		// down immediately without also tearing down the dispatch/worker
+		// drain path. Sharing workCtx here used to deadlock Stop: the
+		// retention ticker had no exit signal in the happy path, so wg.Wait
+		// blocked until the caller-supplied deadline fired.
+		retentionCtx, retentionCancel := context.WithCancel(ctx)
+		s.retentionCancel = retentionCancel
 		s.wg.Add(1)
-		go s.runRetention(workCtx)
+		go s.runRetention(retentionCtx)
 	}
 
 	s.unsubscribe = s.bus.SubscribeAll(s.onBusEvent)
@@ -148,6 +156,13 @@ func (s *Service) Stop(ctx context.Context) error {
 	if s.unsubscribe != nil {
 		s.unsubscribe()
 		s.unsubscribe = nil
+	}
+
+	// Retention has nothing to drain — stop it before waiting on wg so it
+	// doesn't gate Stop's bounded wait.
+	if s.retentionCancel != nil {
+		s.retentionCancel()
+		s.retentionCancel = nil
 	}
 
 	close(s.ingressCh)
