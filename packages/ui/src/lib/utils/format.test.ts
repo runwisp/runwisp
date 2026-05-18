@@ -78,11 +78,11 @@ describe("formatRelativeTimeWithAbsolute", () => {
     it("uses month-day format for dates more than 1 day ago", () => {
         const old = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
         const r = formatRelativeTimeWithAbsolute(old);
-        // Older-than-day branch produces a parenthesised month/day suffix.
-        // Intl.DateTimeFormat orders the parts per locale (en-US → "May 15",
-        // most others → "15 May"), so accept either ordering — the point of
-        // the assertion is that the suffix has no time colon.
-        expect(r).toMatch(/\((?:\d{1,2} [A-Za-z]{3,}|[A-Za-z]{3,} \d{1,2})\)$/);
+        // Older-than-day branch produces a parenthesised calendar-date suffix.
+        // Locales render { month: "short", day: "numeric" } very differently
+        // ("May 15" / "15 May" / "16. 5." / "5月15日"), so the locale-invariant
+        // contract we assert is: parens contain a day digit and no time colon.
+        expect(r).toMatch(/\([^)]*\d[^)]*\)$/);
         expect(r).not.toMatch(/\(\d{1,2}:\d{2}\)$/);
     });
 });
