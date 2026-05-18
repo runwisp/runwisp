@@ -203,14 +203,7 @@ test-runwisp:
 		go tool covdata textfmt -i $(E2E_COVDIR) -o .coverage_e2e.out 2>/dev/null; \
 		cat .coverage_unit.out > .coverage_raw.out; \
 		grep -v '^mode:' .coverage_e2e.out >> .coverage_raw.out 2>/dev/null || true; \
-		python3 -c " \
-import sys; from collections import OrderedDict; \
-lines = open('.coverage_raw.out').readlines(); \
-blocks = OrderedDict(); \
-[blocks.__setitem__(p[0]+' '+p[1], max(blocks.get(p[0]+' '+p[1],0), int(p[2]))) \
- for l in lines[1:] if (p := l.strip().rsplit(' ', 2)) and len(p)==3]; \
-open('coverage.out','w').write(lines[0] + ''.join(f'{k} {v}\n' for k,v in blocks.items())) \
-"; \
+		python3 ./scripts/merge-coverage.py; \
 		rm -f .coverage_unit.out .coverage_e2e.out .coverage_raw.out
 	@rm -rf $(E2E_COVDIR)
 

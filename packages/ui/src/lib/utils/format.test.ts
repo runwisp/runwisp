@@ -78,10 +78,11 @@ describe("formatRelativeTimeWithAbsolute", () => {
     it("uses month-day format for dates more than 1 day ago", () => {
         const old = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
         const r = formatRelativeTimeWithAbsolute(old);
-        // Older-than-day branch produces `relative (D Mon)` — assert the
-        // suffix has no time colon and matches a day-month tail, locale-
-        // tolerant on the exact word for the month.
-        expect(r).toMatch(/\(\d{1,2} [A-Za-z]{3,}\)$/);
+        // Older-than-day branch produces a parenthesised month/day suffix.
+        // Intl.DateTimeFormat orders the parts per locale (en-US → "May 15",
+        // most others → "15 May"), so accept either ordering — the point of
+        // the assertion is that the suffix has no time colon.
+        expect(r).toMatch(/\((?:\d{1,2} [A-Za-z]{3,}|[A-Za-z]{3,} \d{1,2})\)$/);
         expect(r).not.toMatch(/\(\d{1,2}:\d{2}\)$/);
     });
 });

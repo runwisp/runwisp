@@ -10,10 +10,10 @@
         "prepare": "bunx @sveltejs/kit sync",
         "check": "bun run check:types && bun run check:lint",
         "check:types": "bunx @sveltejs/kit sync && bunx svelte-check --tsconfig ./tsconfig.json",
-        "check:lint": "bunx prettier --check . && bunx eslint .",
+        "check:lint": "bunx @sveltejs/kit sync && bunx prettier --check . && bunx eslint .",
         "format": "prettier --write .",
         "test": "playwright test",
-        "test:unit": "vitest run --coverage",
+        "test:unit": "bunx @sveltejs/kit sync && vitest run --coverage",
         "playwright:install": "playwright install --with-deps chromium",
         "playwright:install-deps": "playwright install-deps chromium"
     },
