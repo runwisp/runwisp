@@ -22,6 +22,7 @@ runner_version() {
     return 1
   fi
   printf '%s' "${version}"
+  return 0
 }
 
 runner_ldflags() {
@@ -33,6 +34,7 @@ runner_ldflags() {
     flags="-s -w ${flags}"
   fi
   printf '%s' "${flags}"
+  return 0
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

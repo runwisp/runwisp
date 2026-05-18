@@ -77,7 +77,7 @@ func buildRunwispBinary(t testing.TB, projectDir string) string {
 		buildDir, err := os.MkdirTemp("", "runwisp-e2e-")
 		require.NoError(t, err)
 		appBinaryPath = filepath.Join(buildDir, "runwisp")
-		buildCmd := exec.Command("go", "build", "-o", appBinaryPath, "./cmd/runwisp")
+		buildCmd := exec.Command("go", "build", "-cover", "-o", appBinaryPath, "./cmd/runwisp")
 		buildCmd.Dir = projectDir
 
 		buildOutput, err := buildCmd.CombinedOutput()
@@ -228,7 +228,7 @@ func startDaemon(t *testing.T, projectDir string, binaryPath string, configPath 
 		"daemon",
 	)
 	cmd.Dir = projectDir
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = subprocEnv("TERM=xterm-256color")
 	cmd.Stdout = output
 	cmd.Stderr = output
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -323,7 +323,7 @@ func startRemoteTUI(t *testing.T, projectDir string, binaryPath string, configPa
 		"tui",
 	)
 	cmd.Dir = projectDir
-	cmd.Env = append(os.Environ(), "TERM=dumb")
+	cmd.Env = subprocEnv("TERM=dumb")
 
 	ptyFile, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: screenCols,
@@ -483,6 +483,12 @@ func (s *tuiSession) forceStop() {
 			return
 		}
 
+		_ = s.cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-s.waitDone:
+			return
+		case <-time.After(2 * time.Second):
+		}
 		_ = s.cmd.Process.Kill()
 		select {
 		case <-s.waitDone:
@@ -529,6 +535,33 @@ func killProcessGroup(pid int, signal syscall.Signal) error {
 		return nil
 	}
 	return syscall.Kill(-pid, signal)
+}
+
+// subprocEnv builds an env slice for daemon/TUI subprocesses. It strips the
+// GOCOVERDIR that `go test -covermode=atomic` injects (pointing at a temp dir
+// we can't access) and re-injects our stable E2E coverage dir if
+// RUNWISP_E2E_COVDIR is set. This lets `go tool covdata textfmt` merge daemon
+// and TUI subprocess coverage into the final report.
+//
+// When RUNWISP_E2E_COVDIR is not set the binary still needs a GOCOVERDIR
+// (it is always built with -cover) or it writes a warning to stderr that
+// breaks tests which assert on clean stderr. Use a throwaway temp dir in
+// that case.
+func subprocEnv(extra ...string) []string {
+	env := make([]string, 0, len(os.Environ())+len(extra)+1)
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "GOCOVERDIR=") {
+			env = append(env, e)
+		}
+	}
+	covdir := os.Getenv("RUNWISP_E2E_COVDIR")
+	if covdir == "" {
+		covdir, _ = os.MkdirTemp("", "runwisp-nocov-")
+	}
+	if covdir != "" {
+		env = append(env, "GOCOVERDIR="+covdir)
+	}
+	return append(env, extra...)
 }
 
 func normalizeScreen(screen string) string {

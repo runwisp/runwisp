@@ -23,28 +23,13 @@ func parseTrustedProxies(env string) (*xff.Options, error) {
 	}
 	var subnets []string
 	for _, raw := range strings.Split(env, ",") {
-		cidr := strings.TrimSpace(raw)
-		if cidr == "" {
-			continue
+		cidr, err := normalizeTrustProxyCIDR(raw)
+		if err != nil {
+			return nil, err
 		}
-		if !strings.Contains(cidr, "/") {
-			// Append a default /32 if it's an exact IP rather than CIDR.
-			// XFF library expects full CIDRs on certain checks.
-			if strings.Contains(cidr, ":") {
-				cidr += "/128"
-			} else {
-				cidr += "/32"
-			}
+		if cidr != "" {
+			subnets = append(subnets, cidr)
 		}
-		if _, ipNet, err := net.ParseCIDR(cidr); err == nil {
-			ones, bits := ipNet.Mask.Size()
-			if ones == 0 && bits != 0 {
-				return nil, fmt.Errorf("RUNWISP_TRUST_PROXY rejects %q: trusting the entire address space defeats spoofing protection", cidr)
-			}
-		} else {
-			return nil, fmt.Errorf("RUNWISP_TRUST_PROXY: invalid CIDR %q: %w", cidr, err)
-		}
-		subnets = append(subnets, cidr)
 	}
 
 	if len(subnets) == 0 {
@@ -54,6 +39,33 @@ func parseTrustedProxies(env string) (*xff.Options, error) {
 	return &xff.Options{
 		AllowedSubnets: subnets,
 	}, nil
+}
+
+// normalizeTrustProxyCIDR validates and normalises one raw entry from
+// RUNWISP_TRUST_PROXY. Returns ("", nil) for blank entries, an error for
+// invalid or catch-all CIDRs, or the normalised CIDR string otherwise.
+func normalizeTrustProxyCIDR(raw string) (string, error) {
+	cidr := strings.TrimSpace(raw)
+	if cidr == "" {
+		return "", nil
+	}
+	if !strings.Contains(cidr, "/") {
+		// Append a host mask if an exact IP was given rather than a CIDR.
+		if strings.Contains(cidr, ":") {
+			cidr += "/128"
+		} else {
+			cidr += "/32"
+		}
+	}
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return "", fmt.Errorf("RUNWISP_TRUST_PROXY: invalid CIDR %q: %w", cidr, err)
+	}
+	ones, bits := ipNet.Mask.Size()
+	if ones == 0 && bits != 0 {
+		return "", fmt.Errorf("RUNWISP_TRUST_PROXY rejects %q: trusting the entire address space defeats spoofing protection", cidr)
+	}
+	return cidr, nil
 }
 
 // isFromTrustedProxy reports whether the request's TCP peer is within the

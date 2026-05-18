@@ -23,7 +23,11 @@ import (
 // PersistenceChannelSize bounds the run-persistence work queue. Sized for
 // realistic burst (pending-run replay on startup) while staying well below
 // 1 MB of reserved channel ring memory.
-const PersistenceChannelSize = 1024
+const (
+	PersistenceChannelSize = 1024
+	errTaskNotFoundFmt     = "task not found: %s"
+	errTaskNotServiceFmt   = "task %s is not a service"
+)
 
 // TriggerRunOptions customise run creation for non-local invocations.
 type TriggerRunOptions struct {
@@ -177,38 +181,53 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 			result.Skipped++
 			continue
 		}
-
-		if ts.task.Kind.IsService() {
-			r.End(model.ReasonFailed, -1, m.clock())
-			m.persistence.PersistExisting(&r)
-			result.Skipped++
-			continue
-		}
-
-		if ts.task.OnOverlap == model.PolicyQueue {
-			queueMax := getQueueMax(ts.task)
-			if queueMax > 0 && len(ts.queue) >= queueMax {
-				r.End(model.ReasonQueueFull, -1, m.clock())
-				m.persistence.PersistExisting(&r)
-				result.Failed++
-				continue
-			}
-			ts.queue = append(ts.queue, &r)
-			ts.cond.Signal()
-			result.Queued++
-		} else {
-			concurrencyLimit := m.getConcurrencyLimit(ts.task)
-			if len(ts.active) < concurrencyLimit {
-				m.startRun(ts.task, &r)
-				result.Resumed++
-			} else {
-				r.End(model.ReasonFailed, -1, m.clock())
-				m.persistence.PersistExisting(&r)
-				result.Failed++
-			}
-		}
+		m.resumePendingRun(ts, &r, &result)
 	}
 	return result
+}
+
+// resumePendingRun applies the per-run policy from LoadPendingRuns: services
+// are marked failed (the supervisor spawns fresh instances on boot), queued
+// tasks rejoin their queue (or fail when it is full), and concurrent tasks
+// either restart immediately or fail when capacity is exhausted.
+func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
+	if ts.task.Kind.IsService() {
+		r.End(model.ReasonFailed, -1, m.clock())
+		m.persistence.PersistExisting(r)
+		result.Skipped++
+		return
+	}
+
+	if ts.task.OnOverlap == model.PolicyQueue {
+		m.requeuePendingRun(ts, r, result)
+		return
+	}
+	m.restartOrFailPendingRun(ts, r, result)
+}
+
+func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
+	queueMax := getQueueMax(ts.task)
+	if queueMax > 0 && len(ts.queue) >= queueMax {
+		r.End(model.ReasonQueueFull, -1, m.clock())
+		m.persistence.PersistExisting(r)
+		result.Failed++
+		return
+	}
+	ts.queue = append(ts.queue, r)
+	ts.cond.Signal()
+	result.Queued++
+}
+
+func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
+	concurrencyLimit := m.getConcurrencyLimit(ts.task)
+	if len(ts.active) < concurrencyLimit {
+		m.startRun(ts.task, r)
+		result.Resumed++
+		return
+	}
+	r.End(model.ReasonFailed, -1, m.clock())
+	m.persistence.PersistExisting(r)
+	result.Failed++
 }
 
 func (m *defaultTaskManager) TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error) {
@@ -223,7 +242,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	ts, exists := m.tasks[taskName]
 	if !exists {
-		return nil, fmt.Errorf("task not found: %s", taskName)
+		return nil, fmt.Errorf(errTaskNotFoundFmt, taskName)
 	}
 
 	triggeredBy := options.TriggeredBy
@@ -308,7 +327,7 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 	defer m.mu.Unlock()
 
 	if _, exists := m.tasks[taskName]; !exists {
-		return fmt.Errorf("task not found: %s", taskName)
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
 	}
 
 	now := m.clock()
@@ -334,11 +353,11 @@ func (m *defaultTaskManager) StartServiceInstances(taskName string) error {
 	ts, exists := m.tasks[taskName]
 	if !exists {
 		m.mu.RUnlock()
-		return fmt.Errorf("task not found: %s", taskName)
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
 	}
 	if !ts.task.Kind.IsService() {
 		m.mu.RUnlock()
-		return fmt.Errorf("task %s is not a service", taskName)
+		return fmt.Errorf(errTaskNotServiceFmt, taskName)
 	}
 	if ts.supervisor.IsStopped() {
 		m.mu.RUnlock()
@@ -368,11 +387,11 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	ts, exists := m.tasks[taskName]
 	if !exists {
 		m.mu.Unlock()
-		return fmt.Errorf("task not found: %s", taskName)
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
 	}
 	if !ts.task.Kind.IsService() {
 		m.mu.Unlock()
-		return fmt.Errorf("task %s is not a service", taskName)
+		return fmt.Errorf(errTaskNotServiceFmt, taskName)
 	}
 	wasStopped := ts.supervisor.IsStopped()
 	ts.supervisor.MarkRunning()
@@ -396,10 +415,10 @@ func (m *defaultTaskManager) StopService(taskName string) error {
 
 	ts, exists := m.tasks[taskName]
 	if !exists {
-		return fmt.Errorf("task not found: %s", taskName)
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
 	}
 	if !ts.task.Kind.IsService() {
-		return fmt.Errorf("task %s is not a service", taskName)
+		return fmt.Errorf(errTaskNotServiceFmt, taskName)
 	}
 	ts.supervisor.MarkStopped()
 	for _, ar := range ts.active {

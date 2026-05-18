@@ -190,3 +190,12 @@ func TestSlack_RedactsURLInError(t *testing.T) {
 	assert.NotContains(t, err.Error(), "B0XXXSECRET", "URL must not leak into error")
 	assert.True(t, strings.HasPrefix(err.Error(), "slack:ops:"), "error must start with redacted channel id")
 }
+
+// TestSlack_IDAndClose pins the Channel interface contract on the slack
+// adapter: ID() returns the configured id; Close is a no-op that never errs.
+func TestSlack_IDAndClose(t *testing.T) {
+	ch, err := New(Config{ID: "ops", WebhookURL: "http://example.com", Renderer: newTestRenderer(t), Transport: newFastTransport()})
+	require.NoError(t, err)
+	assert.Equal(t, "ops", ch.ID())
+	assert.NoError(t, ch.Close(context.Background()))
+}

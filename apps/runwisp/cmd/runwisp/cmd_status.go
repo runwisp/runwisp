@@ -44,22 +44,26 @@ func runStatus() error {
 		var stats map[string]interface{}
 		if err := json.NewDecoder(statsResp.Body).Decode(&stats); err == nil {
 			fmt.Printf("RunWisp is healthy at :%d\n", flags.Port)
-			if v, ok := stats["version"]; ok {
-				fmt.Printf("  Version:  %v\n", v)
-			}
-			if v, ok := stats["uptime"]; ok {
-				fmt.Printf("  Uptime:   %v\n", v)
-			}
-			if v, ok := stats["cpuCores"]; ok {
-				fmt.Printf("  CPU:      %.0f cores\n", v)
-			}
-			if v, ok := stats["host"]; ok {
-				fmt.Printf("  Host:     %v\n", v)
-			}
+			printSystemStats(stats)
 			return nil
 		}
 	}
 
 	fmt.Printf("RunWisp is healthy at :%d\n", flags.Port)
 	return nil
+}
+
+func printSystemStats(stats map[string]interface{}) {
+	if v, ok := stats["version"]; ok {
+		fmt.Printf("  Version:  %v\n", v)
+	}
+	if v, ok := stats["uptime"]; ok {
+		fmt.Printf("  Uptime:   %v\n", v)
+	}
+	if v, ok := stats["cpuCores"]; ok {
+		fmt.Printf("  CPU:      %.0f cores\n", v)
+	}
+	if v, ok := stats["host"]; ok {
+		fmt.Printf("  Host:     %v\n", v)
+	}
 }

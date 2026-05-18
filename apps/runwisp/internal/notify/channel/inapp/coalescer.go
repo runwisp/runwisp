@@ -33,13 +33,13 @@ const (
 type Coalescer struct {
 	repo  storage.NotificationRepository
 	hub   *Hub
-	clock notify.Clock
+	clock notify.Clocker
 	cfg   CoalescerConfig
 	log   *slog.Logger
 }
 
 // NewCoalescer constructs a coalescer.
-func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock notify.Clock, cfg CoalescerConfig, log *slog.Logger) *Coalescer {
+func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock notify.Clocker, cfg CoalescerConfig, log *slog.Logger) *Coalescer {
 	if cfg.Window == 0 {
 		cfg.Window = DefaultWindow
 	}

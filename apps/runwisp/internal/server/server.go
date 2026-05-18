@@ -34,7 +34,7 @@ type Server struct {
 	notifyHub         NotificationHub
 	taskManager       runtime.TaskRunner
 	tasks             map[string]*model.Task
-	scheduler         runtime.ScheduleSource
+	scheduler         runtime.NextRunGetter
 	host              string
 	port              int
 	logDir            string
@@ -61,7 +61,7 @@ type Options struct {
 	NotificationHub   NotificationHub                // optional; nil disables /api/notifications/stream
 	TaskManager       runtime.TaskRunner
 	Tasks             map[string]*model.Task
-	Scheduler         runtime.ScheduleSource
+	Scheduler         runtime.NextRunGetter
 	Host              string // Bind address (default: 127.0.0.1)
 	Port              int
 	SocketPath        string // Unix socket path for local CLI/TUI; empty disables socket listener

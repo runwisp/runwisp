@@ -13,55 +13,23 @@ import (
 // handleMouse processes mouse clicks and motion on sidebar, Run Now button, and exec list.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	x, y := msg.X, msg.Y
-
-	// Always update hover coordinates on any mouse event.
 	m.mouse.hoverX = x
 	m.mouse.hoverY = y
-
-	// Compute hover state for every mouse event (motion or click).
 	m.updateHoverState(x, y)
 
 	if msg.Action == tea.MouseActionMotion {
 		return m, nil
 	}
 
-	// Mouse wheel scrolling.
 	if msg.Action == tea.MouseActionPress {
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
-			if m.execView != nil {
-				m.execView.Pane.ScrollUp(3)
-				m.execView.HeaderFocus = execlist.HeaderFocusNone
-			} else if m.sidebar.ActivePage() == uikit.PageInfo && x >= uikit.SidebarWidth {
-				m.infoView.ScrollUp(3)
-			} else if m.sidebar.ActivePage() == uikit.PageDebug && x >= uikit.SidebarWidth {
-				m.debugView.ScrollUp(3)
-			} else {
-				m.execList.ScrollBy(-3)
-				if m.execList.NeedsFetch() {
-					return m, m.fetchExecWindow()
-				}
-			}
-			return m, nil
+			return m, m.scrollWheelUp(x)
 		case tea.MouseButtonWheelDown:
-			if m.execView != nil {
-				m.execView.Pane.ScrollDown(3)
-				m.execView.HeaderFocus = execlist.HeaderFocusNone
-			} else if m.sidebar.ActivePage() == uikit.PageInfo && x >= uikit.SidebarWidth {
-				m.infoView.ScrollDown(3)
-			} else if m.sidebar.ActivePage() == uikit.PageDebug && x >= uikit.SidebarWidth {
-				m.debugView.ScrollDown(3)
-			} else {
-				m.execList.ScrollBy(3)
-				if m.execList.NeedsFetch() {
-					return m, m.fetchExecWindow()
-				}
-			}
-			return m, nil
+			return m, m.scrollWheelDown(x)
 		}
 	}
 
-	// Only process left-button presses below.
 	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
 		return m, nil
 	}
@@ -77,52 +45,92 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, focusCmd
 	}
 
-	// Main panel click.
+	return m.handleMainPanelClick(x, y)
+}
 
-	// Click on exec view action buttons.
+func (m *Model) scrollWheelUp(x int) tea.Cmd {
+	if m.execView != nil {
+		m.execView.Pane.ScrollUp(3)
+		m.execView.HeaderFocus = execlist.HeaderFocusNone
+		return nil
+	}
+	if m.sidebar.ActivePage() == uikit.PageInfo && x >= uikit.SidebarWidth {
+		m.infoView.ScrollUp(3)
+		return nil
+	}
+	if m.sidebar.ActivePage() == uikit.PageDebug && x >= uikit.SidebarWidth {
+		m.debugView.ScrollUp(3)
+		return nil
+	}
+	m.execList.ScrollBy(-3)
+	if m.execList.NeedsFetch() {
+		return m.fetchExecWindow()
+	}
+	return nil
+}
+
+func (m *Model) scrollWheelDown(x int) tea.Cmd {
+	if m.execView != nil {
+		m.execView.Pane.ScrollDown(3)
+		m.execView.HeaderFocus = execlist.HeaderFocusNone
+		return nil
+	}
+	if m.sidebar.ActivePage() == uikit.PageInfo && x >= uikit.SidebarWidth {
+		m.infoView.ScrollDown(3)
+		return nil
+	}
+	if m.sidebar.ActivePage() == uikit.PageDebug && x >= uikit.SidebarWidth {
+		m.debugView.ScrollDown(3)
+		return nil
+	}
+	m.execList.ScrollBy(3)
+	if m.execList.NeedsFetch() {
+		return m.fetchExecWindow()
+	}
+	return nil
+}
+
+func (m Model) handleMainPanelClick(x, y int) (tea.Model, tea.Cmd) {
 	if m.execView != nil {
 		return m.handleExecViewClick(x, y)
 	}
-
 	if m.sidebar.ActivePage() == uikit.PageHome {
-		if m.sidebar.ActiveTask() != "" {
-			// Task header: check Run Now button click.
-			if y == m.layout.taskBtnY {
-				return m, m.confirmAction(confirmActionTrigger)
-			}
-		} else {
-			// Home header: check field row clicks.
-			fieldsStartY := m.layout.homeFieldsY
-			fields := home.Fields(m.info, m.hasLaunchTicket())
-			fieldIdx := y - fieldsStartY
-			if fieldIdx >= 0 && fieldIdx < len(fields) {
-				focusCmd := m.focusHomeField(fieldIdx)
-				isDoubleClick := m.detectDoubleClick(y)
-				if isDoubleClick {
-					return m, m.activateHomeField()
-				}
-				return m, focusCmd
-			}
-		}
+		return m.handleHomePageClick(x, y)
+	}
+	return m, nil
+}
 
-		// Click on exec list area.
-		focusCmd := m.focusMainPanel()
-		localY := y - m.mainHeaderHeight()
-		if localY >= 0 {
-			isDoubleClick := m.detectDoubleClick(y)
-			hit := m.execList.HandleClick(localY)
-			if hit && isDoubleClick {
-				if run := m.execList.SelectedRun(); run != nil {
-					cmd := m.openExecView(run)
-					return m, tea.Batch(focusCmd, cmd)
-				}
-			}
+func (m Model) handleHomePageClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.sidebar.ActiveTask() != "" {
+		if y == m.layout.taskBtnY {
+			return m, m.confirmAction(confirmActionTrigger)
 		}
+	} else {
+		fieldsStartY := m.layout.homeFieldsY
+		fields := home.Fields(m.info, m.hasLaunchTicket())
+		fieldIdx := y - fieldsStartY
+		if fieldIdx >= 0 && fieldIdx < len(fields) {
+			focusCmd := m.focusHomeField(fieldIdx)
+			if m.detectDoubleClick(y) {
+				return m, m.activateHomeField()
+			}
+			return m, focusCmd
+		}
+	}
+	return m.handleExecListClick(y, m.focusMainPanel())
+}
 
+func (m Model) handleExecListClick(y int, focusCmd tea.Cmd) (tea.Model, tea.Cmd) {
+	localY := y - m.mainHeaderHeight()
+	if localY < 0 {
 		return m, focusCmd
 	}
-
-	return m, nil
+	if m.execList.HandleClick(localY) && m.detectDoubleClick(y) {
+		if run := m.execList.SelectedRun(); run != nil {
+			return m, tea.Batch(focusCmd, m.openExecView(run))
+		}
+	}
+	return m, focusCmd
 }
 
 // updateHoverState computes hover highlights for all UI zones based on mouse position.

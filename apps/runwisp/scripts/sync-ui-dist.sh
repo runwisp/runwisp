@@ -4,7 +4,7 @@ set -euo pipefail
 source_dir="../ui/build"
 target_dir="internal/ui/dist"
 
-if [ ! -d "${source_dir}" ]; then
+if [[ ! -d "${source_dir}" ]]; then
   printf 'Runner UI build output not found at %s\n' "${source_dir}" >&2
   exit 1
 fi

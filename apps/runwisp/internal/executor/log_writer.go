@@ -175,67 +175,12 @@ func (w *LogWriter) writeOneLine(p []byte) (lineNum int64, written int, err erro
 		return -1, len(p), nil
 	}
 
-	// Periodic disk-space check. The check honours the task's log_on_full
-	// policy: kill_task tasks die when disk is critical (the operator chose
-	// loud failure over disk safety); other policies just stop logging. In
-	// both cases we fire OnDiskPressure once so the operator is notified —
-	// silent disk-pressure stop is a Prime Directive violation.
-	if w.minFreeDisk > 0 && w.currentOffset-w.lastDiskCheck > w.diskCheckInterval {
-		w.lastDiskCheck = w.currentOffset
-		if free := freeDiskSpace(w.logDir); free >= 0 && free < w.minFreeDisk {
-			killed := w.overflow == model.LogOverflowKillTask
-			if killed {
-				w.writeSystemLine(fmt.Sprintf(
-					"Process killed: disk space critically low (%s free, minimum %s required); log_on_full=\"kill_task\".",
-					config.FormatByteSize(free), config.FormatByteSize(w.minFreeDisk)))
-			} else {
-				w.writeSystemLine(fmt.Sprintf(
-					"Log output stopped: disk space critically low (%s free, minimum %s required).",
-					config.FormatByteSize(free), config.FormatByteSize(w.minFreeDisk)))
-			}
-			w.stopped = true
-			w.truncated = true
-			if killed && w.cancelFunc != nil {
-				w.cancelFunc()
-			}
-			if !w.diskPressureHit {
-				w.diskPressureHit = true
-				if w.onDiskPressure != nil {
-					w.onDiskPressure(free, w.minFreeDisk, killed)
-				}
-			}
-			return -1, len(p), nil
-		}
+	if w.checkDiskPressure() {
+		return -1, len(p), nil
 	}
 
-	// Check per-run size limit
-	if w.maxSize > 0 && w.currentOffset+int64(len(p)) > w.maxSize {
-		switch w.overflow {
-		case model.LogOverflowDropNew:
-			w.writeSystemLine(fmt.Sprintf(
-				"Log output truncated: exceeded log_max_size (%s). Process continues running.",
-				config.FormatByteSize(w.maxSize)))
-			w.stopped = true
-			w.truncated = true
-			return -1, len(p), nil
-
-		case model.LogOverflowKillTask:
-			w.writeSystemLine(fmt.Sprintf(
-				"Process killed: log output exceeded log_max_size (%s).",
-				config.FormatByteSize(w.maxSize)))
-			w.truncated = true
-			w.stopped = true
-			w.killedByPolicy = true
-			if w.cancelFunc != nil {
-				w.cancelFunc()
-			}
-			return -1, len(p), nil
-
-		case model.LogOverflowDropOld:
-			if rotateErr := w.rotateTail(); rotateErr != nil {
-				slog.Error("Failed to rotate log file, continuing without rotation", "err", rotateErr)
-			}
-		}
+	if w.handleSizeOverflow(p) {
+		return -1, len(p), nil
 	}
 
 	// Capture the assigned line number AFTER any rotation (which may have
@@ -248,29 +193,107 @@ func (w *LogWriter) writeOneLine(p []byte) (lineNum int64, written int, err erro
 	}
 
 	if n > 0 {
-		if w.firstWriteMs == 0 {
-			w.firstWriteMs = w.nowMs()
-		}
-		// Sidecar policy: write an idx entry only once the segment has
-		// produced at least one full chunk. Below that, the sidecar files
-		// don't exist on disk at all. The first time we cross the threshold
-		// we lazily open both files and backfill chunk-0 entries.
-		if w.lineCount > 0 && w.lineCount%logutil.LogIndexInterval == 0 {
-			w.ensureIndexSidecars()
-			if w.idxFile != nil {
-				var buf [8]byte
-				binary.LittleEndian.PutUint64(buf[:], uint64(w.currentOffset))
-				if _, idxErr := w.idxFile.Write(buf[:]); idxErr != nil {
-					slog.Warn("Failed to write to log index", "err", idxErr)
-				}
-			}
-		}
-		w.writeTidxEntry()
+		w.updateSidecarsAfterWrite()
 		w.currentOffset += int64(n)
 		w.lineCount++
 	}
 
 	return assignedN, n, nil
+}
+
+// checkDiskPressure periodically samples free disk space and stops the writer
+// when it drops below minFreeDisk. Fires OnDiskPressure once per writer
+// instance on the first threshold crossing. Must be called with mu held.
+// Returns true when the caller should drop the current write.
+func (w *LogWriter) checkDiskPressure() bool {
+	if w.minFreeDisk <= 0 || w.currentOffset-w.lastDiskCheck <= w.diskCheckInterval {
+		return false
+	}
+	w.lastDiskCheck = w.currentOffset
+	free := freeDiskSpace(w.logDir)
+	if free < 0 || free >= w.minFreeDisk {
+		return false
+	}
+	killed := w.overflow == model.LogOverflowKillTask
+	if killed {
+		w.writeSystemLine(fmt.Sprintf(
+			"Process killed: disk space critically low (%s free, minimum %s required); log_on_full=\"kill_task\".",
+			config.FormatByteSize(free), config.FormatByteSize(w.minFreeDisk)))
+	} else {
+		w.writeSystemLine(fmt.Sprintf(
+			"Log output stopped: disk space critically low (%s free, minimum %s required).",
+			config.FormatByteSize(free), config.FormatByteSize(w.minFreeDisk)))
+	}
+	w.stopped = true
+	w.truncated = true
+	if killed && w.cancelFunc != nil {
+		w.cancelFunc()
+	}
+	if !w.diskPressureHit {
+		w.diskPressureHit = true
+		if w.onDiskPressure != nil {
+			w.onDiskPressure(free, w.minFreeDisk, killed)
+		}
+	}
+	return true
+}
+
+// handleSizeOverflow checks whether writing p would exceed the per-run maxSize
+// cap and enforces the configured overflow policy. Must be called with mu held.
+// Returns true when the caller should drop the current write.
+func (w *LogWriter) handleSizeOverflow(p []byte) bool {
+	if w.maxSize <= 0 || w.currentOffset+int64(len(p)) <= w.maxSize {
+		return false
+	}
+	switch w.overflow {
+	case model.LogOverflowDropNew:
+		w.writeSystemLine(fmt.Sprintf(
+			"Log output truncated: exceeded log_max_size (%s). Process continues running.",
+			config.FormatByteSize(w.maxSize)))
+		w.stopped = true
+		w.truncated = true
+		return true
+	case model.LogOverflowKillTask:
+		w.writeSystemLine(fmt.Sprintf(
+			"Process killed: log output exceeded log_max_size (%s).",
+			config.FormatByteSize(w.maxSize)))
+		w.truncated = true
+		w.stopped = true
+		w.killedByPolicy = true
+		if w.cancelFunc != nil {
+			w.cancelFunc()
+		}
+		return true
+	case model.LogOverflowDropOld:
+		if err := w.rotateTail(); err != nil {
+			slog.Error("Failed to rotate log file, continuing without rotation", "err", err)
+		}
+	}
+	return false
+}
+
+// updateSidecarsAfterWrite updates the idx and tidx sidecars following a
+// successful line write. Must be called with mu held, before lineCount is
+// incremented.
+func (w *LogWriter) updateSidecarsAfterWrite() {
+	if w.firstWriteMs == 0 {
+		w.firstWriteMs = w.nowMs()
+	}
+	// Sidecar policy: write an idx entry only once the segment has
+	// produced at least one full chunk. Below that, the sidecar files
+	// don't exist on disk at all. The first time we cross the threshold
+	// we lazily open both files and backfill chunk-0 entries.
+	if w.lineCount > 0 && w.lineCount%logutil.LogIndexInterval == 0 {
+		w.ensureIndexSidecars()
+		if w.idxFile != nil {
+			var buf [8]byte
+			binary.LittleEndian.PutUint64(buf[:], uint64(w.currentOffset))
+			if _, idxErr := w.idxFile.Write(buf[:]); idxErr != nil {
+				slog.Warn("Failed to write to log index", "err", idxErr)
+			}
+		}
+	}
+	w.writeTidxEntry()
 }
 
 // ensureIndexSidecars opens the .idx and (if configured) .tidx files on the
@@ -366,24 +389,7 @@ func (w *LogWriter) rotateTail() error {
 	w.rotatedLines += w.lineCount
 	w.rotatedBytes += w.currentOffset
 
-	if err := w.file.Sync(); err != nil {
-		slog.Warn("Failed to sync log file before rotation", "err", err)
-	}
-	if err := w.file.Close(); err != nil {
-		slog.Warn("Failed to close log file before rotation", "err", err)
-	}
-	if w.idxFile != nil {
-		if err := w.idxFile.Sync(); err != nil {
-			slog.Warn("Failed to sync log index before rotation", "err", err)
-		}
-		if err := w.idxFile.Close(); err != nil {
-			slog.Warn("Failed to close log index before rotation", "err", err)
-		}
-	}
-	if w.tidxFile != nil {
-		w.tidxFile.Sync()
-		w.tidxFile.Close()
-	}
+	w.closeCurrentFiles()
 
 	prevPath := w.mainPath + ".prev"
 	prevIdxPath := w.idxPath + ".prev"
@@ -415,20 +421,8 @@ func (w *LogWriter) rotateTail() error {
 		w.tidxFile = nil
 		return fmt.Errorf("failed to rotate log: %w", err)
 	}
-	if w.idxFile != nil {
-		os.Rename(w.idxPath, prevIdxPath) // best-effort; stale idx is harmless
-	} else {
-		// No sidecar in the rotating segment — make sure there's no stale
-		// .prev lingering from an earlier rotation cycle.
-		os.Remove(prevIdxPath)
-	}
-	if w.tidxPath != "" {
-		if w.tidxFile != nil {
-			os.Rename(w.tidxPath, prevTidxPath)
-		} else {
-			os.Remove(prevTidxPath)
-		}
-	}
+
+	w.rotateSidecars(prevIdxPath, prevTidxPath)
 
 	f, err := os.Create(w.mainPath)
 	if err != nil {
@@ -458,21 +452,53 @@ func (w *LogWriter) rotateTail() error {
 	return nil
 }
 
+// closeCurrentFiles syncs and closes the main log file and any open sidecar
+// files. Caller must hold mu.
+func (w *LogWriter) closeCurrentFiles() {
+	if err := w.file.Sync(); err != nil {
+		slog.Warn("Failed to sync log file before rotation", "err", err)
+	}
+	if err := w.file.Close(); err != nil {
+		slog.Warn("Failed to close log file before rotation", "err", err)
+	}
+	if w.idxFile != nil {
+		if err := w.idxFile.Sync(); err != nil {
+			slog.Warn("Failed to sync log index before rotation", "err", err)
+		}
+		if err := w.idxFile.Close(); err != nil {
+			slog.Warn("Failed to close log index before rotation", "err", err)
+		}
+	}
+	if w.tidxFile != nil {
+		w.tidxFile.Sync()
+		w.tidxFile.Close()
+	}
+}
+
+// rotateSidecars renames or removes old sidecar files after the main log has
+// been renamed to its .prev slot. Caller must hold mu.
+func (w *LogWriter) rotateSidecars(prevIdxPath, prevTidxPath string) {
+	if w.idxFile != nil {
+		os.Rename(w.idxPath, prevIdxPath) // best-effort; stale idx is harmless
+	} else {
+		// No sidecar in the rotating segment — make sure there's no stale
+		// .prev lingering from an earlier rotation cycle.
+		os.Remove(prevIdxPath)
+	}
+	if w.tidxPath != "" {
+		if w.tidxFile != nil {
+			os.Rename(w.tidxPath, prevTidxPath)
+		} else {
+			os.Remove(prevTidxPath)
+		}
+	}
+}
+
 func (w *LogWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.truncated {
-		if w.maxSize > 0 {
-			w.writeSystemLine(fmt.Sprintf(
-				"Total process output: %s (limit: %s).",
-				config.FormatByteSize(w.totalProduced), config.FormatByteSize(w.maxSize)))
-		} else {
-			w.writeSystemLine(fmt.Sprintf(
-				"Total process output: %s.",
-				config.FormatByteSize(w.totalProduced)))
-		}
-	}
+	w.writeTotalProducedLine()
 
 	// Persist finalized metadata so readers never need to scan the file
 	logutil.WriteLogMeta(w.mainPath, logutil.LogMeta{
@@ -496,18 +522,7 @@ func (w *LogWriter) Close() error {
 		}
 	}
 	if w.tidxFile != nil {
-		if w.lineCount > 0 && w.lineCount <= math.MaxUint32 {
-			now := w.nowMs()
-			if now < w.lastTidxTime {
-				now = w.lastTidxTime
-			}
-			var buf [logutil.TimestampIndexEntrySize]byte
-			logutil.WriteTimestampEntry(buf[:], logutil.TimestampEntry{
-				Line:      uint32(w.lineCount),
-				Timestamp: now,
-			})
-			w.tidxFile.Write(buf[:])
-		}
+		w.writeFinalTidxEntry()
 		w.tidxFile.Sync()
 		if err := w.tidxFile.Close(); err != nil {
 			errs = append(errs, err)
@@ -522,6 +537,42 @@ func (w *LogWriter) Close() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// writeTotalProducedLine appends a system summary of total bytes produced when
+// any output was truncated. Caller must hold mu.
+func (w *LogWriter) writeTotalProducedLine() {
+	if !w.truncated {
+		return
+	}
+	if w.maxSize > 0 {
+		w.writeSystemLine(fmt.Sprintf(
+			"Total process output: %s (limit: %s).",
+			config.FormatByteSize(w.totalProduced), config.FormatByteSize(w.maxSize)))
+	} else {
+		w.writeSystemLine(fmt.Sprintf(
+			"Total process output: %s.",
+			config.FormatByteSize(w.totalProduced)))
+	}
+}
+
+// writeFinalTidxEntry appends a sentinel timestamp entry at the current
+// lineCount so readers can bound the final segment. Caller must hold mu and
+// must only be called when tidxFile != nil.
+func (w *LogWriter) writeFinalTidxEntry() {
+	if w.lineCount == 0 || w.lineCount > math.MaxUint32 {
+		return
+	}
+	now := w.nowMs()
+	if now < w.lastTidxTime {
+		now = w.lastTidxTime
+	}
+	var buf [logutil.TimestampIndexEntrySize]byte
+	logutil.WriteTimestampEntry(buf[:], logutil.TimestampEntry{
+		Line:      uint32(w.lineCount),
+		Timestamp: now,
+	})
+	w.tidxFile.Write(buf[:])
 }
 
 // Truncated reports whether any output was discarded.

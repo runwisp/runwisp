@@ -134,34 +134,11 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 			break
 		}
 
-		deletedInBatch := 0
-		for _, run := range runs {
-			if !run.Status.IsTerminal() {
-				continue
-			}
-			logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
-			if info, statErr := os.Stat(logPath); statErr == nil {
-				totalSize -= info.Size()
-			}
-			if info, statErr := os.Stat(logPath + ".idx"); statErr == nil {
-				totalSize -= info.Size()
-			}
-			logutil.RemoveLogFiles(logPath)
-			logutil.RemoveEmptyParents(logPath, cleaner.logDir)
-			if err := cleaner.db.DeleteRun(run.ID); err != nil {
-				slog.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
-				continue
-			}
-			deleted++
-			deletedInBatch++
-
-			if totalSize <= cleaner.maxTotalSize {
-				break
-			}
-		}
+		n := cleaner.deleteRunBatch(runs, &totalSize)
+		deleted += n
 
 		// No terminal runs found in this batch — advance past them
-		if deletedInBatch == 0 {
+		if n == 0 {
 			offset += len(runs)
 		}
 	}
@@ -169,6 +146,35 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 	if deleted > 0 {
 		slog.Info("Purged runs to enforce storage.max_size", "deleted", deleted)
 	}
+}
+
+// deleteRunBatch deletes terminal runs from runs until totalSize drops to or
+// below maxTotalSize. Updates *totalSize in place. Returns the number deleted.
+func (cleaner *RetentionCleaner) deleteRunBatch(runs []model.Run, totalSize *int64) int {
+	deleted := 0
+	for _, run := range runs {
+		if !run.Status.IsTerminal() {
+			continue
+		}
+		logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
+		if info, statErr := os.Stat(logPath); statErr == nil {
+			*totalSize -= info.Size()
+		}
+		if info, statErr := os.Stat(logPath + ".idx"); statErr == nil {
+			*totalSize -= info.Size()
+		}
+		logutil.RemoveLogFiles(logPath)
+		logutil.RemoveEmptyParents(logPath, cleaner.logDir)
+		if err := cleaner.db.DeleteRun(run.ID); err != nil {
+			slog.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
+			continue
+		}
+		deleted++
+		if *totalSize <= cleaner.maxTotalSize {
+			break
+		}
+	}
+	return deleted
 }
 
 // dirSize returns the total size in bytes of all files under dir (recursive).

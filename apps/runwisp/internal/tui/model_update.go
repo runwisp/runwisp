@@ -16,7 +16,13 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/views/logpane"
 )
 
-// Update processes messages by delegating to per-type handlers.
+const keyCtrlC = "ctrl+c"
+
+// Update processes messages by delegating to per-domain dispatchers. Each
+// dispatcher owns a related group of message types (input, streams, logs,
+// notifications, actions, lifecycle); routing is purely structural so adding
+// a new message means picking the right group rather than extending one
+// monolithic switch.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.dialogs.HasConfirm() {
 		if newModel, cmd, intercepted := m.interceptConfirmDialog(msg); intercepted {
@@ -29,84 +35,167 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		return m.handleWindowSize(msg)
-	case tea.MouseMsg:
-		return m.handleMouse(msg)
-	case tea.KeyMsg:
-		return m.handleKey(msg)
-	case uikit.ExecWindowFetchedMsg:
-		return m.handleExecWindowFetched(msg)
-	case uikit.SSEConnectedMsg:
-		return m.handleSSEConnected(msg)
-	case uikit.SSEEventMsg:
-		return m.handleSSEEventMsg(msg)
-	case uikit.SSEDisconnectedMsg:
-		return m.handleSSEDisconnected()
-	case uikit.LogOlderLoadedMsg:
-		return m.handleLogOlderLoaded(msg)
-	case uikit.LogStreamConnectedMsg:
-		return m.handleLogStreamConnected(msg)
-	case uikit.LogLineMsg:
-		return m.handleLogLine(msg)
-	case uikit.LogRotatedMsg:
-		return m.handleLogRotated(msg)
-	case uikit.LogDroppedMsg:
-		return m.handleLogDropped(msg)
-	case uikit.LogDoneMsg:
-		return m.handleLogDone(msg)
-	case uikit.DebugLogMsg:
-		return m.handleDebugLog(msg)
-	case uikit.OpenBrowserMsg:
-		return m.handleOpenBrowser(msg)
-	case uikit.DaemonLogConnectedMsg:
-		return m.handleDaemonLogConnected(msg)
-	case uikit.DaemonLogLineMsg:
-		return m.handleDaemonLogLine(msg)
-	case uikit.DaemonLogDisconnectedMsg:
-		return m.handleDaemonLogDisconnected()
-	case uikit.TriggerRunMsg:
-		return m.handleTriggerRun(msg)
-	case uikit.StopRunMsg:
-		return m.handleStopRun(msg)
-	case uikit.RestartServiceMsg:
-		return m.handleRestartService(msg)
-	case uikit.StopServiceMsg:
-		return m.handleStopService(msg)
-	case uikit.ReconnectLogMsg:
-		return m.handleReconnectLog(msg)
-	case uikit.TickMsg:
-		return m.handleTick()
-	case uikit.QuitMsg:
-		return m.handleQuit(msg)
-	case uikit.FlashExpiredMsg:
-		return m.handleFlashExpired()
-	case uikit.SystemStatsMsg:
-		return m.handleSystemStats(msg)
-	case uikit.MetricsHistoryMsg:
-		return m.handleMetricsHistory(msg)
-	case uikit.RunSummaryMsg:
-		return m.handleRunSummary(msg)
-	case uikit.NotificationStreamConnectedMsg:
-		return m.handleNotificationStreamConnected(msg)
-	case uikit.NotificationEventMsg:
-		return m.handleNotificationEvent(msg)
-	case uikit.NotificationStreamDisconnectedMsg:
-		return m.handleNotificationStreamDisconnected()
-	case uikit.NotificationUnreadCountMsg:
-		return m.handleNotificationUnreadCount(msg)
-	case uikit.NotificationsLoadedMsg:
-		return m.handleNotificationsLoaded(msg)
-	case uikit.NotificationReadStateMsg:
-		return m.handleNotificationReadState(msg)
-	case uikit.NotificationBoundaryFlashClearedMsg:
-		m.notifications.ClearBoundaryFlash()
-		return m, nil
-	case uikit.OpenRunMsg:
-		return m.handleOpenRun(msg)
+	dispatchers := []func(tea.Msg) (tea.Model, tea.Cmd, bool){
+		m.dispatchInputMsg,
+		m.dispatchStreamMsg,
+		m.dispatchLogMsg,
+		m.dispatchNotificationMsg,
+		m.dispatchActionMsg,
+		m.dispatchLifecycleMsg,
+	}
+	for _, dispatch := range dispatchers {
+		if newModel, cmd, ok := dispatch(msg); ok {
+			return newModel, cmd
+		}
 	}
 	return m, nil
+}
+
+func (m Model) dispatchInputMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		model, cmd := m.handleWindowSize(msg)
+		return model, cmd, true
+	case tea.MouseMsg:
+		model, cmd := m.handleMouse(msg)
+		return model, cmd, true
+	case tea.KeyMsg:
+		model, cmd := m.handleKey(msg)
+		return model, cmd, true
+	}
+	return m, nil, false
+}
+
+func (m Model) dispatchStreamMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case uikit.ExecWindowFetchedMsg:
+		model, cmd := m.handleExecWindowFetched(msg)
+		return model, cmd, true
+	case uikit.SSEConnectedMsg:
+		model, cmd := m.handleSSEConnected(msg)
+		return model, cmd, true
+	case uikit.SSEEventMsg:
+		model, cmd := m.handleSSEEventMsg(msg)
+		return model, cmd, true
+	case uikit.SSEDisconnectedMsg:
+		model, cmd := m.handleSSEDisconnected()
+		return model, cmd, true
+	}
+	return m, nil, false
+}
+
+func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case uikit.LogOlderLoadedMsg:
+		model, cmd := m.handleLogOlderLoaded(msg)
+		return model, cmd, true
+	case uikit.LogStreamConnectedMsg:
+		model, cmd := m.handleLogStreamConnected(msg)
+		return model, cmd, true
+	case uikit.LogLineMsg:
+		model, cmd := m.handleLogLine(msg)
+		return model, cmd, true
+	case uikit.LogRotatedMsg:
+		model, cmd := m.handleLogRotated(msg)
+		return model, cmd, true
+	case uikit.LogDroppedMsg:
+		model, cmd := m.handleLogDropped(msg)
+		return model, cmd, true
+	case uikit.LogDoneMsg:
+		model, cmd := m.handleLogDone(msg)
+		return model, cmd, true
+	case uikit.DebugLogMsg:
+		model, cmd := m.handleDebugLog(msg)
+		return model, cmd, true
+	case uikit.ReconnectLogMsg:
+		model, cmd := m.handleReconnectLog(msg)
+		return model, cmd, true
+	case uikit.DaemonLogConnectedMsg:
+		model, cmd := m.handleDaemonLogConnected(msg)
+		return model, cmd, true
+	case uikit.DaemonLogLineMsg:
+		model, cmd := m.handleDaemonLogLine(msg)
+		return model, cmd, true
+	case uikit.DaemonLogDisconnectedMsg:
+		model, cmd := m.handleDaemonLogDisconnected()
+		return model, cmd, true
+	}
+	return m, nil, false
+}
+
+func (m Model) dispatchNotificationMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case uikit.NotificationStreamConnectedMsg:
+		model, cmd := m.handleNotificationStreamConnected(msg)
+		return model, cmd, true
+	case uikit.NotificationEventMsg:
+		model, cmd := m.handleNotificationEvent(msg)
+		return model, cmd, true
+	case uikit.NotificationStreamDisconnectedMsg:
+		model, cmd := m.handleNotificationStreamDisconnected()
+		return model, cmd, true
+	case uikit.NotificationUnreadCountMsg:
+		model, cmd := m.handleNotificationUnreadCount(msg)
+		return model, cmd, true
+	case uikit.NotificationsLoadedMsg:
+		model, cmd := m.handleNotificationsLoaded(msg)
+		return model, cmd, true
+	case uikit.NotificationReadStateMsg:
+		model, cmd := m.handleNotificationReadState(msg)
+		return model, cmd, true
+	case uikit.NotificationBoundaryFlashClearedMsg:
+		m.notifications.ClearBoundaryFlash()
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case uikit.TriggerRunMsg:
+		model, cmd := m.handleTriggerRun(msg)
+		return model, cmd, true
+	case uikit.StopRunMsg:
+		model, cmd := m.handleStopRun(msg)
+		return model, cmd, true
+	case uikit.RestartServiceMsg:
+		model, cmd := m.handleRestartService(msg)
+		return model, cmd, true
+	case uikit.StopServiceMsg:
+		model, cmd := m.handleStopService(msg)
+		return model, cmd, true
+	}
+	return m, nil, false
+}
+
+func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case uikit.TickMsg:
+		model, cmd := m.handleTick()
+		return model, cmd, true
+	case uikit.QuitMsg:
+		model, cmd := m.handleQuit(msg)
+		return model, cmd, true
+	case uikit.FlashExpiredMsg:
+		model, cmd := m.handleFlashExpired()
+		return model, cmd, true
+	case uikit.OpenBrowserMsg:
+		model, cmd := m.handleOpenBrowser(msg)
+		return model, cmd, true
+	case uikit.OpenRunMsg:
+		model, cmd := m.handleOpenRun(msg)
+		return model, cmd, true
+	case uikit.SystemStatsMsg:
+		model, cmd := m.handleSystemStats(msg)
+		return model, cmd, true
+	case uikit.MetricsHistoryMsg:
+		model, cmd := m.handleMetricsHistory(msg)
+		return model, cmd, true
+	case uikit.RunSummaryMsg:
+		model, cmd := m.handleRunSummary(msg)
+		return model, cmd, true
+	}
+	return m, nil, false
 }
 
 func (m Model) handleNotificationStreamConnected(msg uikit.NotificationStreamConnectedMsg) (tea.Model, tea.Cmd) {
@@ -196,28 +285,11 @@ func (m Model) handleNotificationReadState(msg uikit.NotificationReadStateMsg) (
 // (e.g. WindowSizeMsg keeps layout responsive even with a dialog open).
 func (m Model) interceptConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	if m.dialogs.IsShuttingDown() {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			if msg.String() == "ctrl+c" {
-				m.streams.Shutdown()
-				m.quitAction = uikit.QuitKeepDaemon
-				return m, tea.Quit, true
-			}
-			return m, nil, true
-		case uikit.SpinnerTickMsg:
-			cmd := m.dialogs.UpdateSpinner(msg.Inner)
-			return m, cmd, true
-		case uikit.ShutdownDoneMsg:
-			return m, tea.Quit, true
-		case tea.MouseMsg:
-			return m, nil, true
-		}
-		return m, nil, false
+		return m.interceptShuttingDownDialog(msg)
 	}
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		if msg.String() == keyCtrlC {
 			m.streams.Shutdown()
 			m.quitAction = uikit.QuitKeepDaemon
 			return m, tea.Quit, true
@@ -243,11 +315,31 @@ func (m Model) interceptConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == keyCtrlC {
+			m.streams.Shutdown()
+			m.quitAction = uikit.QuitKeepDaemon
+			return m, tea.Quit, true
+		}
+		return m, nil, true
+	case uikit.SpinnerTickMsg:
+		cmd := m.dialogs.UpdateSpinner(msg.Inner)
+		return m, cmd, true
+	case uikit.ShutdownDoneMsg:
+		return m, tea.Quit, true
+	case tea.MouseMsg:
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
 // interceptCopyDialog handles input while the copy dialog is visible.
 func (m Model) interceptCopyDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		if msg.String() == keyCtrlC {
 			m.dialogs.DismissCopy()
 			cmd := m.dialogs.SyncMouseState()
 			m.showQuitConfirm()

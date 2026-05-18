@@ -65,29 +65,7 @@ func (d *ConfirmDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "left", "h", "tab":
-			d.selected = 1 - d.selected
-		case "right", "l":
-			d.selected = 1 - d.selected
-		case "enter":
-			if d.selected == 0 {
-				return d.onConfirm, true
-			}
-			if d.onDeny != nil {
-				return d.onDeny, true
-			}
-			return nil, true
-		case "esc":
-			return nil, true
-		case "n":
-			if d.onDeny != nil {
-				return d.onDeny, true
-			}
-			return nil, true
-		case "y":
-			return d.onConfirm, true
-		}
+		return d.handleKeyMsg(msg.String())
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionMotion {
 			d.updateHover(msg.X, msg.Y)
@@ -96,6 +74,33 @@ func (d *ConfirmDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			return d.handleClick(msg.X, msg.Y)
 		}
+	}
+	return nil, false
+}
+
+func (d *ConfirmDialog) handleKeyMsg(key string) (tea.Cmd, bool) {
+	switch key {
+	case "left", "h", "tab":
+		d.selected = 1 - d.selected
+	case "right", "l":
+		d.selected = 1 - d.selected
+	case "enter":
+		if d.selected == 0 {
+			return d.onConfirm, true
+		}
+		if d.onDeny != nil {
+			return d.onDeny, true
+		}
+		return nil, true
+	case "esc":
+		return nil, true
+	case "n":
+		if d.onDeny != nil {
+			return d.onDeny, true
+		}
+		return nil, true
+	case "y":
+		return d.onConfirm, true
 	}
 	return nil, false
 }
@@ -169,87 +174,9 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 	var lines []string
 	var yesBtnW, noBtnW int
 	if d.shuttingDown {
-		// Render spinner and message as separately styled strings so the
-		// spinner's internal ANSI reset doesn't kill the outer background.
-		spinnerPart := d.spinner.View()
-		msgPart := lipgloss.NewStyle().
-			Foreground(uikit.ColorText).
-			Background(uikit.ColorBgLight).
-			Render(" " + d.message)
-		spinnerLine := lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Width(innerWidth).
-			Align(lipgloss.Center).
-			Render(spinnerPart + msgPart)
-		lines = []string{
-			modalEmptyLine(innerWidth),
-			titleStr,
-			modalEmptyLine(innerWidth),
-			spinnerLine,
-			modalEmptyLine(innerWidth),
-			modalSurfaceLine("ctrl+c force quit", innerWidth, uikit.ColorTextMuted, false),
-			modalEmptyLine(innerWidth),
-		}
+		lines = d.renderShuttingDownLines(innerWidth, titleStr)
 	} else {
-		// Buttons.
-		yesStyle := lipgloss.NewStyle().
-			Padding(0, 3).
-			Bold(true)
-		noStyle := lipgloss.NewStyle().
-			Padding(0, 3).
-			Bold(true)
-
-		yesHover := d.hovered == 0
-		noHover := d.hovered == 1
-
-		if d.selected == 0 || yesHover {
-			bg := uikit.ColorError
-			if yesHover {
-				bg = lipgloss.Color("#f99aae")
-			}
-			yesStyle = yesStyle.Background(bg).Foreground(uikit.ColorWhite)
-		} else {
-			yesStyle = yesStyle.Background(uikit.ColorSidebarBg).Foreground(uikit.ColorTextMuted)
-		}
-
-		if d.selected == 1 || noHover {
-			bg := uikit.ColorPrimary
-			if noHover {
-				bg = lipgloss.Color("#6b85f0")
-			}
-			noStyle = noStyle.Background(bg).Foreground(uikit.ColorWhite)
-		} else {
-			noStyle = noStyle.Background(uikit.ColorSidebarBg).Foreground(uikit.ColorTextMuted)
-		}
-
-		yesBtn := yesStyle.Render(d.yesLabel)
-		noBtn := noStyle.Render(d.noLabel)
-		btnGap := lipgloss.NewStyle().Background(uikit.ColorBgLight).Render("   ")
-		buttons := lipgloss.JoinHorizontal(lipgloss.Center, yesBtn, btnGap, noBtn)
-		buttonsLine := lipgloss.NewStyle().
-			Width(innerWidth).
-			Background(uikit.ColorBgLight).
-			Align(lipgloss.Center).
-			Render(buttons)
-
-		hintText := "y confirm · n/esc cancel · ←→ switch"
-		if d.onDeny != nil {
-			hintText = "enter select · esc cancel · ←→ switch"
-		}
-		lines = []string{
-			modalEmptyLine(innerWidth),
-			titleStr,
-			modalEmptyLine(innerWidth),
-			msgStr,
-			modalEmptyLine(innerWidth),
-			buttonsLine,
-			modalEmptyLine(innerWidth),
-			modalSurfaceLine(hintText, innerWidth, uikit.ColorTextMuted, false),
-			modalEmptyLine(innerWidth),
-		}
-
-		yesBtnW = lipgloss.Width(yesBtn)
-		noBtnW = lipgloss.Width(noBtn)
+		lines, yesBtnW, noBtnW = d.renderButtonLines(innerWidth, titleStr, msgStr)
 	}
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
@@ -257,7 +184,6 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 	if !d.shuttingDown {
 		msgH := lipgloss.Height(msgStr)
 		d.btnY = box.top + 1 + 3 + msgH + 1
-
 		gapW := 3
 		totalBtnW := yesBtnW + gapW + noBtnW
 		btnAreaLeft := box.left + 2 + (box.innerWidth-totalBtnW)/2
@@ -268,6 +194,84 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 	}
 
 	return box.view
+}
+
+func (d *ConfirmDialog) renderShuttingDownLines(innerWidth int, titleStr string) []string {
+	// Render spinner and message as separately styled strings so the
+	// spinner's internal ANSI reset doesn't kill the outer background.
+	spinnerPart := d.spinner.View()
+	msgPart := lipgloss.NewStyle().
+		Foreground(uikit.ColorText).
+		Background(uikit.ColorBgLight).
+		Render(" " + d.message)
+	spinnerLine := lipgloss.NewStyle().
+		Background(uikit.ColorBgLight).
+		Width(innerWidth).
+		Align(lipgloss.Center).
+		Render(spinnerPart + msgPart)
+	return []string{
+		modalEmptyLine(innerWidth),
+		titleStr,
+		modalEmptyLine(innerWidth),
+		spinnerLine,
+		modalEmptyLine(innerWidth),
+		modalSurfaceLine("ctrl+c force quit", innerWidth, uikit.ColorTextMuted, false),
+		modalEmptyLine(innerWidth),
+	}
+}
+
+func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr string) (lines []string, yesBtnW, noBtnW int) {
+	yesStyle := lipgloss.NewStyle().Padding(0, 3).Bold(true)
+	noStyle := lipgloss.NewStyle().Padding(0, 3).Bold(true)
+	yesHover := d.hovered == 0
+	noHover := d.hovered == 1
+
+	if d.selected == 0 || yesHover {
+		bg := uikit.ColorError
+		if yesHover {
+			bg = lipgloss.Color("#f99aae")
+		}
+		yesStyle = yesStyle.Background(bg).Foreground(uikit.ColorWhite)
+	} else {
+		yesStyle = yesStyle.Background(uikit.ColorSidebarBg).Foreground(uikit.ColorTextMuted)
+	}
+
+	if d.selected == 1 || noHover {
+		bg := uikit.ColorPrimary
+		if noHover {
+			bg = lipgloss.Color("#6b85f0")
+		}
+		noStyle = noStyle.Background(bg).Foreground(uikit.ColorWhite)
+	} else {
+		noStyle = noStyle.Background(uikit.ColorSidebarBg).Foreground(uikit.ColorTextMuted)
+	}
+
+	yesBtn := yesStyle.Render(d.yesLabel)
+	noBtn := noStyle.Render(d.noLabel)
+	btnGap := lipgloss.NewStyle().Background(uikit.ColorBgLight).Render("   ")
+	buttons := lipgloss.JoinHorizontal(lipgloss.Center, yesBtn, btnGap, noBtn)
+	buttonsLine := lipgloss.NewStyle().
+		Width(innerWidth).
+		Background(uikit.ColorBgLight).
+		Align(lipgloss.Center).
+		Render(buttons)
+
+	hintText := "y confirm · n/esc cancel · ←→ switch"
+	if d.onDeny != nil {
+		hintText = "enter select · esc cancel · ←→ switch"
+	}
+	lines = []string{
+		modalEmptyLine(innerWidth),
+		titleStr,
+		modalEmptyLine(innerWidth),
+		msgStr,
+		modalEmptyLine(innerWidth),
+		buttonsLine,
+		modalEmptyLine(innerWidth),
+		modalSurfaceLine(hintText, innerWidth, uikit.ColorTextMuted, false),
+		modalEmptyLine(innerWidth),
+	}
+	return lines, lipgloss.Width(yesBtn), lipgloss.Width(noBtn)
 }
 
 type modalBox struct {

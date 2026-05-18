@@ -1,0 +1,37 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runDuration } from "./run-helpers.js";
+
+describe("runDuration", () => {
+    it("returns undefined when start_at is not set", () => {
+        expect(runDuration({})).toBeUndefined();
+    });
+
+    it("returns formatted duration when both start_at and end_at are set", () => {
+        const start = "2024-06-15T12:00:00.000Z";
+        const end = "2024-06-15T12:00:05.000Z";
+        expect(runDuration({ start_at: start, end_at: end })).toBe("5s");
+    });
+
+    it("returns ms duration for sub-second runs", () => {
+        const start = "2024-06-15T12:00:00.000Z";
+        const end = "2024-06-15T12:00:00.500Z";
+        expect(runDuration({ start_at: start, end_at: end })).toBe("500ms");
+    });
+
+    describe("with fake clock", () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date("2024-06-15T12:00:02.000Z"));
+        });
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it("uses current time when end_at is not set (run still in progress)", () => {
+            expect(runDuration({ start_at: "2024-06-15T12:00:00.000Z" })).toBe("2s");
+        });
+    });
+});

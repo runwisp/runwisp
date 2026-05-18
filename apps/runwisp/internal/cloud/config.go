@@ -29,14 +29,14 @@ type Config struct {
 }
 
 // LoadConfigFromEnv loads cloud configuration from environment variables only.
-func LoadConfigFromEnv(agentVersion string, fingerprint string) (Config, error) {
+func LoadConfigFromEnv(agentVersion, fingerprint string) (Config, error) {
 	return LoadConfig(agentVersion, "", "", fingerprint)
 }
 
 // LoadConfig loads cloud configuration. CLI overrides (tokenOverride, urlOverride)
 // take precedence over environment variables. fingerprint must be pre-resolved
 // by the caller (from persistent storage or environment).
-func LoadConfig(agentVersion string, tokenOverride string, urlOverride string, fingerprint string) (Config, error) {
+func LoadConfig(agentVersion, tokenOverride, urlOverride, fingerprint string) (Config, error) {
 	cloudToken := strings.TrimSpace(tokenOverride)
 	if cloudToken == "" {
 		cloudToken = strings.TrimSpace(os.Getenv("RUNWISP_CLOUD_TOKEN"))

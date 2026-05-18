@@ -68,47 +68,17 @@ func decode(data []byte) (*Config, error) {
 		return nil, formatDecodeError(err)
 	}
 
-	taskNames := make([]string, 0, len(raw.Tasks))
-	for name, w := range raw.Tasks {
-		if err := model.ValidateTaskName(name); err != nil {
-			return nil, err
-		}
-		if w.Restart == model.RestartAlways {
-			return nil, fmt.Errorf("task %q sets restart=\"always\"; use [services.%s] instead", name, name)
-		}
-		if w.Instances != nil {
-			return nil, fmt.Errorf("task %q sets instances; instances is only valid on [services.*]", name)
-		}
-		taskNames = append(taskNames, name)
+	taskNames, err := collectTaskNames(&raw)
+	if err != nil {
+		return nil, err
 	}
-	sort.Strings(taskNames)
-
-	serviceNames := make([]string, 0, len(raw.Services))
-	for name := range raw.Services {
-		if err := model.ValidateTaskName(name); err != nil {
-			return nil, err
-		}
-		if _, dup := raw.Tasks[name]; dup {
-			return nil, fmt.Errorf("name %q used by both [tasks.*] and [services.*]", name)
-		}
-		serviceNames = append(serviceNames, name)
+	serviceNames, err := collectServiceNames(&raw)
+	if err != nil {
+		return nil, err
 	}
-	sort.Strings(serviceNames)
-
-	tasks := make([]model.Task, 0, len(taskNames)+len(serviceNames))
-	for _, name := range taskNames {
-		t, err := raw.Tasks[name].toTask(name)
-		if err != nil {
-			return nil, err
-		}
-		tasks = append(tasks, t)
-	}
-	for _, name := range serviceNames {
-		t, err := raw.Services[name].toTask(name)
-		if err != nil {
-			return nil, err
-		}
-		tasks = append(tasks, t)
+	tasks, err := buildTaskSlice(&raw, taskNames, serviceNames)
+	if err != nil {
+		return nil, err
 	}
 
 	defaults, err := raw.Defaults.toDefaults()
@@ -137,6 +107,58 @@ func decode(data []byte) (*Config, error) {
 		Notify:    notifyCfg,
 		Scheduler: Scheduler{Timezone: raw.Scheduler.Timezone},
 	}, nil
+}
+
+func collectTaskNames(raw *tomlConfig) ([]string, error) {
+	names := make([]string, 0, len(raw.Tasks))
+	for name, w := range raw.Tasks {
+		if err := model.ValidateTaskName(name); err != nil {
+			return nil, err
+		}
+		if w.Restart == model.RestartAlways {
+			return nil, fmt.Errorf("task %q sets restart=\"always\"; use [services.%s] instead", name, name)
+		}
+		if w.Instances != nil {
+			return nil, fmt.Errorf("task %q sets instances; instances is only valid on [services.*]", name)
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+func collectServiceNames(raw *tomlConfig) ([]string, error) {
+	names := make([]string, 0, len(raw.Services))
+	for name := range raw.Services {
+		if err := model.ValidateTaskName(name); err != nil {
+			return nil, err
+		}
+		if _, dup := raw.Tasks[name]; dup {
+			return nil, fmt.Errorf("name %q used by both [tasks.*] and [services.*]", name)
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+func buildTaskSlice(raw *tomlConfig, taskNames, serviceNames []string) ([]model.Task, error) {
+	tasks := make([]model.Task, 0, len(taskNames)+len(serviceNames))
+	for _, name := range taskNames {
+		t, err := raw.Tasks[name].toTask(name)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	for _, name := range serviceNames {
+		t, err := raw.Services[name].toTask(name)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
 }
 
 // Validate checks for invalid configuration values. Durations and byte sizes
@@ -175,6 +197,27 @@ func Validate(cfg *Config) error {
 }
 
 func validateTask(task *model.Task, seen map[string]struct{}) error {
+	if err := validateTaskIdentity(task, seen); err != nil {
+		return err
+	}
+	if err := validateTaskCommand(task); err != nil {
+		return err
+	}
+	if err := validateTaskLimits(task); err != nil {
+		return err
+	}
+	if err := validateTaskEnums(task); err != nil {
+		return err
+	}
+	if task.Kind.IsService() {
+		if err := validateServiceTask(task); err != nil {
+			return err
+		}
+	}
+	return validateTaskRetention(task)
+}
+
+func validateTaskIdentity(task *model.Task, seen map[string]struct{}) error {
 	if err := model.ValidateTaskName(task.Name); err != nil {
 		return err
 	}
@@ -182,7 +225,10 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 		return fmt.Errorf("duplicate task name: %s", task.Name)
 	}
 	seen[task.Name] = struct{}{}
+	return nil
+}
 
+func validateTaskCommand(task *model.Task) error {
 	execDef := task.ResolvedExecutionDef()
 	if execDef == nil {
 		return fmt.Errorf("task run command is required for task: %s", task.Name)
@@ -190,7 +236,10 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if shellDef, ok := execDef.(*model.ShellExecution); ok && strings.TrimSpace(shellDef.Script) == "" {
 		return fmt.Errorf("task run command is required for task: %s", task.Name)
 	}
+	return nil
+}
 
+func validateTaskLimits(task *model.Task) error {
 	if task.MaxConcurrent < 0 {
 		return fmt.Errorf("invalid max_concurrent for task %s: must be a positive integer", task.Name)
 	}
@@ -206,44 +255,6 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if task.GracefulStop < 0 {
 		return fmt.Errorf("invalid graceful_stop for task %s: must be zero or a positive duration", task.Name)
 	}
-
-	if err := requireOneOf(fmt.Sprintf("on_overlap for task %s", task.Name),
-		string(task.OnOverlap), validOnOverlap, false); err != nil {
-		return err
-	}
-	if err := requireOneOf(fmt.Sprintf("restart for task %s", task.Name),
-		string(task.Restart), validRestart, true); err != nil {
-		return err
-	}
-	if err := requireOneOf(fmt.Sprintf("retry_backoff for task %s", task.Name),
-		task.RetryBackoff, validRetryBackoff, true); err != nil {
-		return err
-	}
-	if err := requireOneOf(fmt.Sprintf("log_on_full for task %s", task.Name),
-		task.LogOnFull, validLogOnFull, true); err != nil {
-		return err
-	}
-	if err := requireOneOf(fmt.Sprintf("catch_up for task %s", task.Name),
-		string(task.CatchUp), validCatchUp, true); err != nil {
-		return err
-	}
-
-	if task.Kind.IsService() {
-		if task.Instances < 1 {
-			return fmt.Errorf("invalid instances for service %s: must be >= 1", task.Name)
-		}
-		if task.Instances > MaxServiceInstances {
-			return fmt.Errorf("invalid instances for service %s: must be <= %d", task.Name, MaxServiceInstances)
-		}
-		if err := requireOneOf(fmt.Sprintf("restart_backoff for service %s", task.Name),
-			task.RestartBackoff, validRestartBackoff, true); err != nil {
-			return err
-		}
-		if task.BackoffResetAfter < 0 {
-			return fmt.Errorf("invalid backoff_reset_after for service %s: must be a positive duration", task.Name)
-		}
-	}
-
 	if task.RetryAttempts < 0 {
 		return fmt.Errorf("invalid retry_attempts for task %s: must be non-negative", task.Name)
 	}
@@ -253,6 +264,31 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if task.MaxCatchUpRuns < 0 {
 		return fmt.Errorf("invalid max_catch_up_runs for task %s: must be a positive integer", task.Name)
 	}
+	return nil
+}
+
+func validateTaskEnums(task *model.Task) error {
+	enums := []struct {
+		scope   string
+		value   string
+		allowed []string
+		emptyOK bool
+	}{
+		{"on_overlap for task " + task.Name, string(task.OnOverlap), validOnOverlap, false},
+		{"restart for task " + task.Name, string(task.Restart), validRestart, true},
+		{"retry_backoff for task " + task.Name, task.RetryBackoff, validRetryBackoff, true},
+		{"log_on_full for task " + task.Name, task.LogOnFull, validLogOnFull, true},
+		{"catch_up for task " + task.Name, string(task.CatchUp), validCatchUp, true},
+	}
+	for _, e := range enums {
+		if err := requireOneOf(e.scope, e.value, e.allowed, e.emptyOK); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateTaskRetention(task *model.Task) error {
 	if err := validateKeepRuns(fmt.Sprintf("keep_runs for task %s", task.Name), task.KeepRuns); err != nil {
 		return err
 	}
@@ -262,7 +298,23 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if _, err := ResolveTimezone(fmt.Sprintf("timezone for task %s", task.Name), task.Timezone); err != nil {
 		return err
 	}
+	return nil
+}
 
+func validateServiceTask(task *model.Task) error {
+	if task.Instances < 1 {
+		return fmt.Errorf("invalid instances for service %s: must be >= 1", task.Name)
+	}
+	if task.Instances > MaxServiceInstances {
+		return fmt.Errorf("invalid instances for service %s: must be <= %d", task.Name, MaxServiceInstances)
+	}
+	if err := requireOneOf(fmt.Sprintf("restart_backoff for service %s", task.Name),
+		task.RestartBackoff, validRestartBackoff, true); err != nil {
+		return err
+	}
+	if task.BackoffResetAfter < 0 {
+		return fmt.Errorf("invalid backoff_reset_after for service %s: must be a positive duration", task.Name)
+	}
 	return nil
 }
 
@@ -398,28 +450,33 @@ func ApplyDefaults(cfg *Config) {
 			task.GracefulStop = DefaultGracefulStop
 		}
 
-		if task.Timeout == 0 {
-			task.Timeout = cfg.Defaults.Timeout
-		}
-		if task.LogMaxSize == 0 {
-			task.LogMaxSize = cfg.Defaults.LogMaxSize
-		}
-		if task.LogOnFull == "" && cfg.Defaults.LogOnFull != "" {
-			task.LogOnFull = cfg.Defaults.LogOnFull
-		}
-		if task.KeepRuns == 0 && cfg.Defaults.KeepRuns != 0 {
-			task.KeepRuns = cfg.Defaults.KeepRuns
-		}
-		if task.KeepFor == 0 && cfg.Defaults.KeepFor != 0 {
-			task.KeepFor = cfg.Defaults.KeepFor
-		}
+		applyInheritedDefaults(task, cfg.Defaults)
+	}
+}
 
-		if task.LogMaxSize == 0 {
-			task.LogMaxSize = defaultTaskLogMaxSize
-		}
-		if task.LogOnFull == "" {
-			task.LogOnFull = model.LogOverflowDropOld
-		}
+// applyInheritedDefaults copies defaults-section values into task fields that
+// were not explicitly set in TOML, then fills in absolute built-in fallbacks.
+func applyInheritedDefaults(task *model.Task, d Defaults) {
+	if task.Timeout == 0 {
+		task.Timeout = d.Timeout
+	}
+	if task.LogMaxSize == 0 {
+		task.LogMaxSize = d.LogMaxSize
+	}
+	if task.LogOnFull == "" && d.LogOnFull != "" {
+		task.LogOnFull = d.LogOnFull
+	}
+	if task.KeepRuns == 0 && d.KeepRuns != 0 {
+		task.KeepRuns = d.KeepRuns
+	}
+	if task.KeepFor == 0 && d.KeepFor != 0 {
+		task.KeepFor = d.KeepFor
+	}
+	if task.LogMaxSize == 0 {
+		task.LogMaxSize = defaultTaskLogMaxSize
+	}
+	if task.LogOnFull == "" {
+		task.LogOnFull = model.LogOverflowDropOld
 	}
 }
 

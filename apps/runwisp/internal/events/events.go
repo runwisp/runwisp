@@ -36,8 +36,9 @@ var AllEventTypes = []EventType{
 	EventLogDiskPressure,
 }
 
-// EventData is the type constraint for event payloads.
-type EventData interface {
+// EventData is a sealed-union marker; the eventData() method exists only to constrain
+// the type set. The single-method interface is intentional — it is not a behavioural abstraction.
+type EventData interface { //NOSONAR: sealed-type discriminant, not a behavioural interface
 	eventData()
 }
 
@@ -48,9 +49,10 @@ type Event struct {
 	Data      EventData `json:"data"`
 }
 
-func (RunEvent) eventData()             {}
-func (LogLineEvent) eventData()         {}
-func (LogDiskPressureEvent) eventData() {}
+// eventData is a marker method; the empty body is intentional — it exists only to constrain the EventData type set.
+func (RunEvent) eventData()             { /* sealed-type marker */ }
+func (LogLineEvent) eventData()         { /* sealed-type marker */ }
+func (LogDiskPressureEvent) eventData() { /* sealed-type marker */ }
 
 // RunEvent tracks lifecycle updates for a run.
 type RunEvent struct {

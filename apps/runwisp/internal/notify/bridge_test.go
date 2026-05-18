@@ -50,6 +50,11 @@ func TestMapEvent_SkipNeverNotifies(t *testing.T) {
 	}
 }
 
+func TestService_DroppedIngressCount_Zero(t *testing.T) {
+	svc := New(Config{Bus: events.NewEventBus()})
+	assert.Equal(t, uint64(0), svc.DroppedIngressCount())
+}
+
 // TestMapEvent_LogDiskPressure verifies the new event surface introduced
 // when min_free_space stops honouring per-task log_on_full silently.
 func TestMapEvent_LogDiskPressure(t *testing.T) {
@@ -72,4 +77,104 @@ func TestMapEvent_LogDiskPressure(t *testing.T) {
 	assert.Equal(t, true, got.Extra["killed_task"])
 	assert.Equal(t, int64(100), got.Extra["free_bytes"])
 	assert.Equal(t, int64(1024), got.Extra["min_free_bytes"])
+}
+
+func TestMapEvent_NilRun(t *testing.T) {
+	ev := events.Event{
+		Type:      events.EventRunFailed,
+		Timestamp: time.Now(),
+		Data:      events.RunEvent{Run: nil},
+	}
+	assert.Nil(t, MapEvent(ev))
+}
+
+func TestMapEvent_UnknownEventType(t *testing.T) {
+	run := &model.Run{ID: "01HR1", TaskName: "t1", Status: model.PhaseRunning}
+	ev := events.Event{
+		Type: events.EventRunCreated,
+		Data: events.RunEvent{Run: run},
+	}
+	assert.Nil(t, MapEvent(ev))
+}
+
+func TestDiskPressureReason_NotKilled(t *testing.T) {
+	d := events.LogDiskPressureEvent{FreeBytes: 50, MinFreeBytes: 1000, KilledTask: false}
+	reason := diskPressureReason(d)
+	assert.Contains(t, reason, "paused")
+	assert.NotContains(t, reason, "killed")
+}
+
+func TestMapRunEventType_RunFailed_NilEndReason(t *testing.T) {
+	run := &model.Run{Status: model.PhaseEnded}
+	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.True(t, ok)
+	assert.Equal(t, KindRunFailed, kind)
+	assert.Equal(t, SevError, sev)
+}
+
+func TestMapRunEventType_RunFailed_ReasonFailed(t *testing.T) {
+	r := model.ReasonFailed
+	run := &model.Run{EndReason: &r}
+	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.True(t, ok)
+	assert.Equal(t, KindRunFailed, kind)
+}
+
+func TestMapRunEventType_RunFailed_ReasonTimeout(t *testing.T) {
+	r := model.ReasonTimeout
+	run := &model.Run{EndReason: &r}
+	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.True(t, ok)
+	assert.Equal(t, KindRunTimeout, kind)
+}
+
+func TestMapRunEventType_RunFailed_ReasonStopped(t *testing.T) {
+	r := model.ReasonStopped
+	run := &model.Run{EndReason: &r}
+	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.True(t, ok)
+	assert.Equal(t, KindRunStopped, kind)
+	assert.Equal(t, SevWarn, sev)
+}
+
+func TestMapRunEventType_RunFailed_ReasonCrashed(t *testing.T) {
+	r := model.ReasonCrashed
+	run := &model.Run{EndReason: &r}
+	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.True(t, ok)
+	assert.Equal(t, KindRunCrashed, kind)
+}
+
+func TestMapRunEventType_RunFailed_DefaultReason(t *testing.T) {
+	r := model.ReasonSuccess // not a typical failure reason, hits default branch
+	run := &model.Run{EndReason: &r}
+	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.True(t, ok)
+	assert.Equal(t, KindRunFailed, kind)
+}
+
+func TestRunReasonString_WithErrMsg(t *testing.T) {
+	run := &model.Run{ID: "r1"}
+	result := runReasonString(run, "connection refused")
+	assert.Equal(t, "connection refused", result)
+}
+
+func TestRunReasonString_NilRun(t *testing.T) {
+	result := runReasonString(nil, "")
+	assert.Equal(t, "", result)
+}
+
+func TestRunReasonString_WithDuration(t *testing.T) {
+	r := model.ReasonFailed
+	now := time.Now()
+	end := now.Add(5 * time.Second)
+	run := &model.Run{
+		EndReason: &r,
+		ExitCode:  1,
+		StartAt:   &now,
+		EndAt:     &end,
+	}
+	result := runReasonString(run, "")
+	assert.Contains(t, result, "failed")
+	assert.Contains(t, result, "5s")
 }

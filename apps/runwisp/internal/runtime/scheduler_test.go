@@ -149,6 +149,98 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	assert.Equal(t, wm, sched.lastFired["eu-mins"], "lastFired must advance when wall-clock minute differs")
 }
 
+// recordingTaskRunner is a TaskRunner stand-in that captures trigger/skip
+// calls so scheduler tests can assert on the firing sequence without booting
+// the executor or event bus.
+type recordingTaskRunner struct {
+	triggers []string
+	skips    []recordedSkip
+}
+
+type recordedSkip struct {
+	taskName string
+	reason   model.EndReason
+}
+
+func (r *recordingTaskRunner) TriggerRun(name string, _ model.TriggeredBy) (*model.Run, error) {
+	r.triggers = append(r.triggers, name)
+	return &model.Run{TaskName: name}, nil
+}
+
+func (r *recordingTaskRunner) TriggerRunWithOptions(name string, _ TriggerRunOptions) (*model.Run, error) {
+	return r.TriggerRun(name, model.TriggeredByCron)
+}
+
+func (r *recordingTaskRunner) RecordSkippedFiring(name string, reason model.EndReason, _ model.TriggeredBy) error {
+	r.skips = append(r.skips, recordedSkip{taskName: name, reason: reason})
+	return nil
+}
+
+func (r *recordingTaskRunner) GetTask(string) (*model.Task, bool)             { return nil, false }
+func (r *recordingTaskRunner) UpsertTask(*model.Task)                         {}
+func (r *recordingTaskRunner) TerminateRun(string) error                      { return nil }
+func (r *recordingTaskRunner) TerminateRunByExternalExecutionID(string) error { return nil }
+func (r *recordingTaskRunner) RestartServiceInstances(string) error           { return nil }
+func (r *recordingTaskRunner) StopService(string) error                       { return nil }
+
+// TestSchedulerFireOnce_GoldenTriggerSkipSequence pins down the firing
+// pattern across the 2026-10-25 fall-back in Europe/Bratislava under the
+// realistic "0 2 * * *" cron: wall-clock 02:00 happens twice (CEST then
+// CET). The dedup must trigger the first instance and skip the second.
+// A third firing one wall-minute later must trigger again — proving the
+// dedup is per-wall-minute, not a sticky "this hour was already fired".
+//
+// This is a contract: the (trigger, skip, trigger) sequence is the golden
+// outcome; change it only if scheduler semantics intentionally change.
+func TestSchedulerFireOnce_GoldenTriggerSkipSequence(t *testing.T) {
+	runner := &recordingTaskRunner{}
+	task := &model.Task{
+		Name:     "tick",
+		Cron:     "0 2 * * *",
+		Timezone: "Europe/Bratislava",
+		Run:      "echo",
+	}
+
+	// UTC instants around the 2026-10-25 fall-back, in chronological order:
+	//   UTC 00:00 Oct 25 → 02:00 CEST  ← first 02:00 (trigger)
+	//   UTC 01:00 Oct 25 → 02:00 CET   ← duplicate 02:00 (skip)
+	//   UTC 01:01 Oct 25 → 02:01 CET   ← new wall-minute (trigger)
+	stamps := []time.Time{
+		time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC),
+		time.Date(2026, 10, 25, 1, 1, 0, 0, time.UTC),
+	}
+	idx := 0
+	clock := func() time.Time {
+		t := stamps[idx]
+		idx++
+		return t
+	}
+
+	sched := NewScheduler(
+		runner,
+		map[string]*model.Task{"tick": task},
+		time.UTC,
+		WithNow(clock),
+	)
+
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+
+	for range stamps {
+		sched.fireOnce("tick", loc)
+	}
+
+	// Observed behavior via the public runner records: two triggers
+	// (the unique wall-minutes) and exactly one DST-suppressed skip.
+	assert.Equal(t, []string{"tick", "tick"}, runner.triggers,
+		"two non-duplicate wall-minutes must each trigger exactly one run")
+	assert.Equal(t,
+		[]recordedSkip{{taskName: "tick", reason: model.ReasonDSTSkipped}},
+		runner.skips,
+		"the second 02:00 on the fall-back day must be recorded as dst_skipped")
+}
+
 func TestSchedulerRejectsBadTaskTimezone(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()

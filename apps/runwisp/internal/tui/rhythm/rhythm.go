@@ -59,50 +59,61 @@ func Sparkline(occurrences []time.Time, now time.Time, window time.Duration, cel
 	}
 	buckets := make([]int, cells)
 	for _, t := range occurrences {
-		age := now.Sub(t)
-		if age < 0 {
-			age = 0
+		if idx := sparklineBucket(t, now, window, cells); idx >= 0 {
+			buckets[idx]++
 		}
-		if age >= window {
-			continue
-		}
-		// Older occurrences land in lower-index buckets (left); newer on the right.
-		idx := cells - 1 - int(math.Floor(float64(age)/float64(window)*float64(cells)))
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= cells {
-			idx = cells - 1
-		}
-		buckets[idx]++
 	}
-	max := 0
+	maxB := 0
 	for _, b := range buckets {
-		if b > max {
-			max = b
+		if b > maxB {
+			maxB = b
 		}
 	}
-	const blocks = "▁▂▃▄▅▆▇█"
-	if max == 0 {
+	if maxB == 0 {
 		return ""
 	}
-	out := make([]rune, cells)
+	const blocks = "▁▂▃▄▅▆▇█"
 	runes := []rune(blocks)
+	out := make([]rune, cells)
 	for i, b := range buckets {
-		if b == 0 {
-			out[i] = runes[0]
-			continue
-		}
-		idx := int(math.Round(float64(b) / float64(max) * float64(len(runes)-1)))
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= len(runes) {
-			idx = len(runes) - 1
-		}
-		out[i] = runes[idx]
+		out[i] = sparklineRune(b, maxB, runes)
 	}
 	return string(out)
+}
+
+// sparklineBucket returns the bucket index for occurrence t, or -1 if outside the window.
+// Older occurrences land in lower-index buckets (left); newer on the right.
+func sparklineBucket(t, now time.Time, window time.Duration, cells int) int {
+	age := now.Sub(t)
+	if age < 0 {
+		age = 0
+	}
+	if age >= window {
+		return -1
+	}
+	idx := cells - 1 - int(math.Floor(float64(age)/float64(window)*float64(cells)))
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= cells {
+		idx = cells - 1
+	}
+	return idx
+}
+
+// sparklineRune maps a bucket count to the appropriate block character.
+func sparklineRune(b, maxB int, runes []rune) rune {
+	if b == 0 {
+		return runes[0]
+	}
+	idx := int(math.Round(float64(b) / float64(maxB) * float64(len(runes)-1)))
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(runes) {
+		idx = len(runes) - 1
+	}
+	return runes[idx]
 }
 
 func allWithin(occ []time.Time, now time.Time, window time.Duration) bool {

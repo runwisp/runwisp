@@ -67,7 +67,7 @@ export function buildTaskOverviews(
             state = "running";
         } else if (lastStatus && ATTENTION_STATUSES.has(lastStatus)) {
             state = "attention";
-        } else if (typeof nextRunMs !== "undefined") {
+        } else if (nextRunMs !== undefined) {
             state = "scheduled";
         } else if (isApiOnly) {
             state = "manual";
@@ -92,11 +92,9 @@ export function buildOverviewSummary(
         totalTasks: taskOverviews.length,
         activeRuns: runningRuns.length,
         attentionTasks: taskOverviews.filter((task) => task.state === "attention").length,
-        scheduledTasks: taskOverviews.filter((task) => typeof task.nextRunMs !== "undefined")
+        scheduledTasks: taskOverviews.filter((task) => task.nextRunMs !== undefined).length,
+        manualTasks: taskOverviews.filter((task) => task.isApiOnly && task.nextRunMs === undefined)
             .length,
-        manualTasks: taskOverviews.filter(
-            (task) => task.isApiOnly && typeof task.nextRunMs === "undefined",
-        ).length,
     };
 }
 
@@ -105,10 +103,9 @@ export function countTaskOverviews(taskOverviews: TaskOverview[]): OverviewTaskC
         all: taskOverviews.length,
         attention: taskOverviews.filter((task) => task.state === "attention").length,
         running: taskOverviews.filter((task) => task.state === "running").length,
-        scheduled: taskOverviews.filter((task) => typeof task.nextRunMs !== "undefined").length,
-        manual: taskOverviews.filter(
-            (task) => task.isApiOnly && typeof task.nextRunMs === "undefined",
-        ).length,
+        scheduled: taskOverviews.filter((task) => task.nextRunMs !== undefined).length,
+        manual: taskOverviews.filter((task) => task.isApiOnly && task.nextRunMs === undefined)
+            .length,
     };
 }
 
@@ -171,9 +168,9 @@ function matchesFilter(task: TaskOverview, filter: OverviewTaskFilter): boolean 
         case "all":
             return true;
         case "scheduled":
-            return typeof task.nextRunMs !== "undefined";
+            return task.nextRunMs !== undefined;
         case "manual":
-            return task.isApiOnly && typeof task.nextRunMs === "undefined";
+            return task.isApiOnly && task.nextRunMs === undefined;
         default:
             return task.state === filter;
     }
@@ -264,10 +261,10 @@ function compareOptionalAscending(left: number | undefined, right: number | unde
     if (left === right) {
         return 0;
     }
-    if (typeof left === "undefined") {
+    if (left === undefined) {
         return 1;
     }
-    if (typeof right === "undefined") {
+    if (right === undefined) {
         return -1;
     }
     return left - right;
@@ -277,10 +274,10 @@ function compareOptionalDescending(left: number | undefined, right: number | und
     if (left === right) {
         return 0;
     }
-    if (typeof left === "undefined") {
+    if (left === undefined) {
         return 1;
     }
-    if (typeof right === "undefined") {
+    if (right === undefined) {
         return -1;
     }
     return right - left;

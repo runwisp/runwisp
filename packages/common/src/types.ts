@@ -53,8 +53,8 @@ type _EndReasonsExhaustive = Exclude<
 > extends never
   ? true
   : false;
-const _endReasonsExhaustive: _EndReasonsExhaustive = true;
-void _endReasonsExhaustive;
+// Triggers a compile-time error if any EndReason is missing from END_REASONS.
+true satisfies _EndReasonsExhaustive;
 
 /**
  * End reasons treated as failures by retry policy, dashboards, and the

@@ -192,67 +192,66 @@ func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
 		if t == nil {
 			continue
 		}
+		task, ok := buildOneSyncTask(t)
+		if ok {
+			syncTasks = append(syncTasks, task)
+		}
+	}
+	return syncTasks
+}
 
-		task := syncTask{
-			Name:          t.Name,
-			Description:   t.Description,
-			RestartPolicy: string(model.RestartNever),
-		}
-
-		// Serialize the execution definition using the typed format
-		execDef := t.ResolvedExecutionDef()
-		if scriptJSON, err := model.MarshalExecutionDef(execDef); err == nil {
-			task.Script = scriptJSON
-		} else {
-			slog.Warn("Failed to marshal execution", "task", t.Name, "err", err)
-			continue // Skip task if we cannot marshal its execution definition
-		}
-
-		if t.Restart != "" {
-			task.RestartPolicy = string(t.Restart)
-		}
-		if t.RetryAttempts > 0 {
-			retries := t.RetryAttempts
-			task.MaxRetries = &retries
-		}
-		if delayMs := durationToMillis(t.RetryDelay); delayMs > 0 {
-			task.RetryDelay = &delayMs
-		}
-		if t.RetryBackoff != "" {
-			task.RetryBackoff = t.RetryBackoff
-		}
-
-		if t.MaxConcurrent > 0 {
-			limit := t.MaxConcurrent
-			task.ConcurrencyLimit = &limit
-		}
-
-		behavior := mapConcurrencyBehavior(t.OnOverlap)
-		if behavior != "" {
-			task.ConcurrencyBehavior = behavior
-		}
-
-		if timeoutMs := durationToMillis(t.Timeout); timeoutMs > 0 {
-			task.Timeout = &timeoutMs
-		}
-
-		enabled := true
-		task.Enabled = &enabled
-
-		if strings.TrimSpace(t.Cron) != "" {
-			task.Schedules = []syncTaskSchedule{
-				{
-					Cron:     strings.TrimSpace(t.Cron),
-					Timezone: "UTC",
-					Enabled:  true,
-				},
-			}
-		}
-
-		syncTasks = append(syncTasks, task)
+// buildOneSyncTask converts a single model.Task into its cloud sync representation.
+// Returns (task, false) if the execution definition cannot be marshalled.
+func buildOneSyncTask(t *model.Task) (syncTask, bool) {
+	task := syncTask{
+		Name:          t.Name,
+		Description:   t.Description,
+		RestartPolicy: string(model.RestartNever),
 	}
 
-	return syncTasks
+	execDef := t.ResolvedExecutionDef()
+	if scriptJSON, err := model.MarshalExecutionDef(execDef); err == nil {
+		task.Script = scriptJSON
+	} else {
+		slog.Warn("Failed to marshal execution", "task", t.Name, "err", err)
+		return syncTask{}, false
+	}
+
+	if t.Restart != "" {
+		task.RestartPolicy = string(t.Restart)
+	}
+	if t.RetryAttempts > 0 {
+		retries := t.RetryAttempts
+		task.MaxRetries = &retries
+	}
+	if delayMs := durationToMillis(t.RetryDelay); delayMs > 0 {
+		task.RetryDelay = &delayMs
+	}
+	if t.RetryBackoff != "" {
+		task.RetryBackoff = t.RetryBackoff
+	}
+	if t.MaxConcurrent > 0 {
+		limit := t.MaxConcurrent
+		task.ConcurrencyLimit = &limit
+	}
+	if behavior := mapConcurrencyBehavior(t.OnOverlap); behavior != "" {
+		task.ConcurrencyBehavior = behavior
+	}
+	if timeoutMs := durationToMillis(t.Timeout); timeoutMs > 0 {
+		task.Timeout = &timeoutMs
+	}
+	enabled := true
+	task.Enabled = &enabled
+	if strings.TrimSpace(t.Cron) != "" {
+		task.Schedules = []syncTaskSchedule{
+			{
+				Cron:     strings.TrimSpace(t.Cron),
+				Timezone: "UTC",
+				Enabled:  true,
+			},
+		}
+	}
+	return task, true
 }
 
 func buildTaskSyncID(tasks []syncTask) string {

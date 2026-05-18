@@ -39,7 +39,7 @@ export function formatTaskNextRunLabel(task: TaskOverview): string {
         return "Always on";
     }
 
-    if (typeof task.nextRunMs !== "undefined") {
+    if (task.nextRunMs !== undefined) {
         return formatRelativeTimeWithAbsolute(new Date(task.nextRunMs));
     }
 

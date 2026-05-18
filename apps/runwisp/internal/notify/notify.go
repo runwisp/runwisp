@@ -26,9 +26,9 @@ type Service struct {
 	router   *Router
 	disp     *dispatcher
 	channels []Channel
-	failures FailureSink
+	failures SyntheticIngester
 
-	clock  Clock
+	clock  Clocker
 	logger *slog.Logger
 
 	retentionEvery time.Duration
@@ -52,13 +52,13 @@ const DefaultActionQueueSize = 256
 // dispatcher / router.
 type Config struct {
 	Bus            events.EventBus
-	Channels       []Channel     // includes inapp + each configured provider
-	Rules          []Rule        // routing predicates
-	FailureSink    FailureSink   // typically the inapp.Channel
-	Clock          Clock         // 0 → RealClock
-	Logger         *slog.Logger  // 0 → slog.Default
-	RetentionEvery time.Duration // 0 → 5min
-	RetentionFn    func()        // executed on each tick; injected by Service builder
+	Channels       []Channel         // includes inapp + each configured provider
+	Rules          []Rule            // routing predicates
+	FailureSink    SyntheticIngester // typically the inapp.Channel
+	Clock          Clocker           // 0 → RealClock
+	Logger         *slog.Logger      // 0 → slog.Default
+	RetentionEvery time.Duration     // 0 → 5min
+	RetentionFn    func()            // executed on each tick; injected by Service builder
 }
 
 // New constructs a Service from already-built channels and pre-compiled rules.

@@ -16,7 +16,7 @@ const DEFAULT_DURATION = 5000;
 
 class ToastStore {
     items = $state<Toast[]>([]);
-    private timers = new Map<string, ReturnType<typeof setTimeout>>();
+    private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
 
     add(type: ToastType, message: string, duration = DEFAULT_DURATION): string {
         const existing = this.items.find((t) => t.type === type && t.message === message);

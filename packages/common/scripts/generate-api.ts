@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { execSync } from "child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { execSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import openapiTS, { astToString } from "openapi-typescript";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

@@ -5,6 +5,7 @@
 # Parallel by default; override with `make -j1 <target>`.
 
 JOBS := $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+E2E_COVDIR := $(CURDIR)/apps/runwisp/.gocoverdir
 MAKEFLAGS += --no-print-directory -j$(JOBS)
 SHELL := /bin/bash
 .DEFAULT_GOAL := build
@@ -194,7 +195,17 @@ format-ui:
 test: test-runwisp test-ui-unit ## unit tests (go + vitest); see test-e2e for playwright
 
 test-runwisp:
-	$(call step,go test apps/runwisp,cd apps/runwisp && go test ./...)
+	@rm -rf $(E2E_COVDIR) && mkdir -p $(E2E_COVDIR)
+	$(call step,go test apps/runwisp,\
+		cd apps/runwisp && RUNWISP_E2E_COVDIR=$(E2E_COVDIR) \
+		go test -covermode=atomic -coverpkg=./... -coverprofile=.coverage_unit.out ./...)
+	@cd apps/runwisp && \
+		go tool covdata textfmt -i $(E2E_COVDIR) -o .coverage_e2e.out 2>/dev/null; \
+		cat .coverage_unit.out > .coverage_raw.out; \
+		grep -v '^mode:' .coverage_e2e.out >> .coverage_raw.out 2>/dev/null || true; \
+		python3 ./scripts/merge-coverage.py; \
+		rm -f .coverage_unit.out .coverage_e2e.out .coverage_raw.out
+	@rm -rf $(E2E_COVDIR)
 
 test-ui-unit:
 	$(call step,vitest apps/ui,cd apps/ui && bun run test:unit)
@@ -224,7 +235,7 @@ docs: $(OPENAPI_JSON) ## build apps/docs and serve the result
 	cd apps/docs && bun run build && bun run preview
 
 clean: ## remove all build outputs, generated code, and caches
-	$(call step,clean workspace,rm -rf .cache $(RUNWISP_BIN) $(OPENAPI_JSON) apps/runwisp/dist apps/runwisp/internal/ui/dist apps/runwisp/internal/generated/protocol apps/ui/build apps/ui/.svelte-kit apps/docs/dist apps/docs/.astro apps/docs/public/openapi.json packages/asyncapi/src/generated packages/common/src/generated)
+	$(call step,clean workspace,rm -rf .cache $(RUNWISP_BIN) $(OPENAPI_JSON) apps/runwisp/dist apps/runwisp/internal/ui/dist apps/runwisp/internal/generated/protocol apps/ui/build apps/ui/.svelte-kit apps/docs/dist apps/docs/.astro apps/docs/public/openapi.json packages/asyncapi/src/generated packages/common/src/generated apps/runwisp/.gocoverdir)
 
 help: ## show this help
 	@awk -v on='$(C_BOLD)' -v off='$(C_OFF)' \

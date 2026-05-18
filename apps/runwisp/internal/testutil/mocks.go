@@ -25,7 +25,7 @@ func (m *MockRunRepository) CreateRun(run *model.Run) error {
 }
 
 func (m *MockRunRepository) UpdateRun(run *model.Run) error {
-	args := m.Called(run)
+	args := m.MethodCalled("UpdateRun", run)
 	return args.Error(0)
 }
 

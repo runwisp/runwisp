@@ -26,11 +26,11 @@ type runService struct {
 	db          storage.RunRepository
 	taskManager runtime.TaskRunner
 	tasks       map[string]*model.Task
-	scheduler   runtime.ScheduleSource
+	scheduler   runtime.NextRunGetter
 	logDir      string
 }
 
-func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks map[string]*model.Task, sched runtime.ScheduleSource, logDir string) *runService {
+func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks map[string]*model.Task, sched runtime.NextRunGetter, logDir string) *runService {
 	return &runService{db: db, taskManager: jm, tasks: tasks, scheduler: sched, logDir: logDir}
 }
 

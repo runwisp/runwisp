@@ -190,84 +190,109 @@ func (p *Pane) ScrollDown(n int) {
 // HandleKeyScroll handles vertical and horizontal scroll keyboard input.
 // Returns true if the key was consumed.
 func (p *Pane) HandleKeyScroll(key string) bool {
-	ms := p.maxScroll()
+	if handled, result := p.handleVScrollKey(key); handled {
+		return result
+	}
+	if p.Cfg.HScroll {
+		return p.handleHScrollKey(key)
+	}
+	return false
+}
 
+func (p *Pane) handleVScrollKey(key string) (handled, result bool) {
+	ms := p.maxScroll()
 	switch key {
 	case "up", "k":
 		if p.Scroll > 0 {
 			p.Scroll--
 			p.Follow = false
-			return true
+			return true, true
 		}
-		return false
+		return true, false
 	case "down", "j":
-		if p.Scroll < ms {
-			p.Scroll++
-		}
-		if p.Scroll >= ms {
-			p.Follow = true
-		}
-		return true
+		p.scrollDown(ms)
+		return true, true
 	case "pgup":
 		p.Scroll -= p.VisibleLines()
 		if p.Scroll < 0 {
 			p.Scroll = 0
 		}
 		p.Follow = false
-		return true
+		return true, true
 	case "pgdown":
-		p.Scroll += p.VisibleLines()
-		if p.Scroll > ms {
-			p.Scroll = ms
-		}
-		if p.Scroll >= ms {
-			p.Follow = true
-		}
-		return true
+		p.scrollPageDown(ms)
+		return true, true
 	case "g", "home":
 		p.Scroll = 0
 		p.HScroll = 0
 		p.Follow = false
-		return true
+		return true, true
 	case "G", "end":
 		p.Scroll = ms
 		p.Follow = true
+		return true, true
+	}
+	return false, false
+}
+
+func (p *Pane) scrollDown(ms int) {
+	if p.Scroll < ms {
+		p.Scroll++
+	}
+	if p.Scroll >= ms {
+		p.Follow = true
+	}
+}
+
+func (p *Pane) scrollPageDown(ms int) {
+	p.Scroll += p.VisibleLines()
+	if p.Scroll > ms {
+		p.Scroll = ms
+	}
+	if p.Scroll >= ms {
+		p.Follow = true
+	}
+}
+
+func (p *Pane) handleHScrollKey(key string) bool {
+	switch key {
+	case "left":
+		p.scrollLeft()
+		return true
+	case "right":
+		p.scrollRight()
+		return true
+	case "shift+left":
+		p.HScroll = 0
+		return true
+	case "shift+right":
+		maxH := p.MaxHScroll()
+		p.HScroll += p.LogContentWidth() / 2
+		if p.HScroll > maxH {
+			p.HScroll = maxH
+		}
 		return true
 	}
+	return false
+}
 
-	if p.Cfg.HScroll {
-		switch key {
-		case "left":
-			if p.HScroll > 0 {
-				p.HScroll -= HScrollStep
-				if p.HScroll < 0 {
-					p.HScroll = 0
-				}
-			}
-			return true
-		case "right":
-			maxH := p.MaxHScroll()
-			if p.HScroll < maxH {
-				p.HScroll += HScrollStep
-				if p.HScroll > maxH {
-					p.HScroll = maxH
-				}
-			}
-			return true
-		case "shift+left":
+func (p *Pane) scrollLeft() {
+	if p.HScroll > 0 {
+		p.HScroll -= HScrollStep
+		if p.HScroll < 0 {
 			p.HScroll = 0
-			return true
-		case "shift+right":
-			maxH := p.MaxHScroll()
-			p.HScroll += p.LogContentWidth() / 2
-			if p.HScroll > maxH {
-				p.HScroll = maxH
-			}
-			return true
 		}
 	}
+}
 
-	return false
+func (p *Pane) scrollRight() {
+	maxH := p.MaxHScroll()
+	if p.HScroll < maxH {
+		p.HScroll += HScrollStep
+		if p.HScroll > maxH {
+			p.HScroll = maxH
+		}
+	}
 }
 
 // MaxHScroll returns the maximum useful horizontal scroll offset,

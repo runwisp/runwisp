@@ -31,19 +31,8 @@ func ParseByteSize(s string) (int64, error) {
 	}
 
 	for _, u := range units {
-		if strings.HasSuffix(s, u.suffix) {
-			numStr := strings.TrimSpace(s[:len(s)-len(u.suffix)])
-			if numStr == "" {
-				return 0, fmt.Errorf("invalid byte size %q: missing number", s)
-			}
-			n, err := strconv.ParseFloat(numStr, 64)
-			if err != nil {
-				return 0, fmt.Errorf("invalid byte size %q: %w", s, err)
-			}
-			if n < 0 {
-				return 0, fmt.Errorf("invalid byte size %q: must be non-negative", s)
-			}
-			return int64(n * float64(u.mult)), nil
+		if result, matched, err := parseByteSizeWithUnit(s, u.suffix, u.mult); matched {
+			return result, err
 		}
 	}
 
@@ -55,6 +44,27 @@ func ParseByteSize(s string) (int64, error) {
 		return 0, fmt.Errorf("invalid byte size %q: must be non-negative", s)
 	}
 	return n, nil
+}
+
+// parseByteSizeWithUnit tries to parse s as a float followed by the given unit
+// suffix. Returns (result, true, err) when the suffix matches, (0, false, nil)
+// when it does not.
+func parseByteSizeWithUnit(s, suffix string, mult int64) (int64, bool, error) {
+	if !strings.HasSuffix(s, suffix) {
+		return 0, false, nil
+	}
+	numStr := strings.TrimSpace(s[:len(s)-len(suffix)])
+	if numStr == "" {
+		return 0, true, fmt.Errorf("invalid byte size %q: missing number", s)
+	}
+	n, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0, true, fmt.Errorf("invalid byte size %q: %w", s, err)
+	}
+	if n < 0 {
+		return 0, true, fmt.Errorf("invalid byte size %q: must be non-negative", s)
+	}
+	return int64(n * float64(mult)), true, nil
 }
 
 // FormatByteSize formats a byte count as a human-readable string.

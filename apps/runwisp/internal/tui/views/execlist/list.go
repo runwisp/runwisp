@@ -162,44 +162,128 @@ func (e *ExecList) HandleClick(localY int) bool {
 	return true
 }
 
+type scrollbarState struct {
+	show                 bool
+	thumbStart, thumbEnd int
+}
+
+// scrollbarRender bundles the scrollbar's computed state with the pre-styled
+// glyphs used to draw it. The three values are always consumed together by the
+// row renderer, so they ride as one parameter.
+type scrollbarRender struct {
+	state scrollbarState
+	track string
+	thumb string
+}
+
+func (e *ExecList) computeScrollbar(vpH, n int) scrollbarState {
+	if n <= vpH || vpH <= 0 {
+		return scrollbarState{}
+	}
+	maxScroll := n - vpH + 1
+	if maxScroll < 1 {
+		maxScroll = 1
+	}
+	thumbSize := vpH * vpH / n
+	if thumbSize < 1 {
+		thumbSize = 1
+	}
+	thumbStart := e.Scroll * (vpH - thumbSize) / maxScroll
+	if thumbStart < 0 {
+		thumbStart = 0
+	}
+	thumbEnd := thumbStart + thumbSize
+	if thumbEnd > vpH {
+		thumbEnd = vpH
+	}
+	return scrollbarState{show: true, thumbStart: thumbStart, thumbEnd: thumbEnd}
+}
+
+func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx, contentW, taskW int) string {
+	bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
+	isCursor := e.focused && rowIdx == e.cursor
+	isHovered := rowIdx == e.hoveredRow && !isCursor
+	if isCursor {
+		bg = uikit.ColorPrimaryDim
+		fg = uikit.ColorWhite
+		bold = true
+	} else if isHovered {
+		bg = uikit.ColorExecRowHover
+	}
+	rowStyle := lipgloss.NewStyle().Background(bg).Foreground(fg).Bold(bold)
+	if item == nil {
+		return rowStyle.Render("  " + padCell("loading…", taskW+1+colStatusW+1+colStartedW+1+colDurationW+1+colTriggerW))
+	}
+	statusStr := item.Run.DisplayStatus()
+	statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
+	badgeW := lipgloss.Width(statusBadge)
+	statPad := colStatusW - badgeW
+	if statPad < 0 {
+		statPad = 0
+	}
+	statusCell := statusBadge + rowStyle.Render(strings.Repeat(" ", statPad))
+	taskLabel := item.Run.TaskName
+	if item.Run.InstanceIndex > 0 {
+		taskLabel = fmt.Sprintf("%s#%d", taskLabel, item.Run.InstanceIndex)
+	}
+	return rowStyle.Render("  "+padCell(taskLabel, taskW)+" ") +
+		statusCell +
+		rowStyle.Render(" "+
+			padCell(item.TimeAgo, colStartedW)+" "+
+			padCell(item.Duration, colDurationW)+" "+
+			padCell(string(item.Run.TriggeredBy), colTriggerW))
+}
+
+func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW, taskW int, sb scrollbarRender) {
+	end := e.Scroll + vpH
+	if end > n {
+		end = n
+	}
+	visIdx := 0
+	for i := e.Scroll; i < end; i++ {
+		text := e.buildRowText(e.window.Item(i), i, contentW, taskW)
+		row := uikit.PadLine(text, contentW, uikit.ColorBg)
+		if sb.state.show {
+			if visIdx >= sb.state.thumbStart && visIdx < sb.state.thumbEnd {
+				row += sb.thumb
+			} else {
+				row += sb.track
+			}
+		}
+		b.WriteString(uikit.PadLine(row, w, uikit.ColorBg))
+		b.WriteString("\n")
+		visIdx++
+	}
+	for visIdx < vpH {
+		row := uikit.PadLine("", contentW, uikit.ColorBg)
+		if sb.state.show {
+			row += sb.track
+		}
+		b.WriteString(uikit.PadLine(row, w, uikit.ColorBg))
+		b.WriteString("\n")
+		visIdx++
+	}
+}
+
 func (e *ExecList) View() string {
 	var b strings.Builder
 	w := e.width
 	n := e.totalCount()
 	vpH := e.ViewportHeight()
 
-	// Scrollbar state — computed first to determine content width.
-	showScrollbar := n > vpH && vpH > 0
+	sbState := e.computeScrollbar(vpH, n)
 	contentW := w
-	if showScrollbar {
+	if sbState.show {
 		contentW = w - 1
 	}
 	taskW := e.taskColWidthFor(contentW)
 
-	var thumbStart, thumbEnd int
-	if showScrollbar {
-		maxScroll := n - vpH + 1
-		if maxScroll < 1 {
-			maxScroll = 1
-		}
-		thumbSize := vpH * vpH / n
-		if thumbSize < 1 {
-			thumbSize = 1
-		}
-		thumbStart = e.Scroll * (vpH - thumbSize) / maxScroll
-		if thumbStart < 0 {
-			thumbStart = 0
-		}
-		thumbEnd = thumbStart + thumbSize
-		if thumbEnd > vpH {
-			thumbEnd = vpH
-		}
+	sb := scrollbarRender{
+		state: sbState,
+		track: lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(lipgloss.Color("#3b3d57")).Render("│"),
+		thumb: lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorText).Render("┃"),
 	}
 
-	scrollTrack := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(lipgloss.Color("#3b3d57")).Render("│")
-	scrollThumb := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorText).Render("┃")
-
-	// Column headers.
 	headerText := "  " +
 		padCell("TASK", taskW) + " " +
 		padCell("STATUS", colStatusW) + " " +
@@ -218,80 +302,9 @@ func (e *ExecList) View() string {
 		b.WriteString(uikit.PadLine(emptyMsg, w, uikit.ColorBg))
 		b.WriteString("\n")
 	} else {
-
-		// Data rows.
-		end := e.Scroll + vpH
-		if end > n {
-			end = n
-		}
-		visIdx := 0
-		for i := e.Scroll; i < end; i++ {
-			item := e.window.Item(i)
-			bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
-			isCursor := e.focused && i == e.cursor
-			isHovered := i == e.hoveredRow && !isCursor
-
-			if isCursor {
-				bg = uikit.ColorPrimaryDim
-				fg = uikit.ColorWhite
-				bold = true
-			} else if isHovered {
-				bg = uikit.ColorExecRowHover
-			}
-
-			rowStyle := lipgloss.NewStyle().Background(bg).Foreground(fg).Bold(bold)
-
-			var text string
-			if item != nil {
-				statusStr := item.Run.DisplayStatus()
-				statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
-				badgeW := lipgloss.Width(statusBadge)
-				statPad := colStatusW - badgeW
-				if statPad < 0 {
-					statPad = 0
-				}
-				statusCell := statusBadge + rowStyle.Render(strings.Repeat(" ", statPad))
-				taskLabel := item.Run.TaskName
-				if item.Run.InstanceIndex > 0 {
-					taskLabel = fmt.Sprintf("%s#%d", taskLabel, item.Run.InstanceIndex)
-				}
-				text = rowStyle.Render("  "+padCell(taskLabel, taskW)+" ") +
-					statusCell +
-					rowStyle.Render(" "+
-						padCell(item.TimeAgo, colStartedW)+" "+
-						padCell(item.Duration, colDurationW)+" "+
-						padCell(string(item.Run.TriggeredBy), colTriggerW))
-			} else {
-				// Item not in window — show loading placeholder.
-				text = rowStyle.Render("  " + padCell("loading…", taskW+1+colStatusW+1+colStartedW+1+colDurationW+1+colTriggerW))
-			}
-
-			row := uikit.PadLine(text, contentW, uikit.ColorBg)
-			if showScrollbar {
-				if visIdx >= thumbStart && visIdx < thumbEnd {
-					row += scrollThumb
-				} else {
-					row += scrollTrack
-				}
-			}
-			b.WriteString(uikit.PadLine(row, w, uikit.ColorBg))
-			b.WriteString("\n")
-			visIdx++
-		}
-
-		// Fill remaining viewport rows with scrollbar track.
-		for visIdx < vpH {
-			row := uikit.PadLine("", contentW, uikit.ColorBg)
-			if showScrollbar {
-				row += scrollTrack
-			}
-			b.WriteString(uikit.PadLine(row, w, uikit.ColorBg))
-			b.WriteString("\n")
-			visIdx++
-		}
+		e.renderDataSection(&b, vpH, n, w, contentW, taskW, sb)
 	}
 
-	// Footer with viewing range.
 	if n > 0 {
 		from := e.Scroll + 1
 		to := e.Scroll + vpH
@@ -306,7 +319,6 @@ func (e *ExecList) View() string {
 		b.WriteString("\n")
 	}
 
-	// Fill remaining space below viewport.
 	rendered := strings.Count(b.String(), "\n")
 	for rendered < e.height {
 		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))

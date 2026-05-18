@@ -31,10 +31,10 @@ type TaskRunner interface {
 	TerminateRunByExternalExecutionID(externalExecutionID string) error
 }
 
-// RunRepository is the subset of run persistence the cloud package needs.
+// ExternalRunGetter is the subset of run persistence the cloud package needs.
 // Mirrors a slice of storage.RunRepository so the cloud doesn't depend on
 // the SQLite-backed concrete.
-type RunRepository interface {
+type ExternalRunGetter interface {
 	// GetRunByExternalExecutionID returns the run tagged with the supplied
 	// cloud-side execution id, or ErrNotFound if no such run exists.
 	GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error)
@@ -48,10 +48,10 @@ type PendingLogUploadRepository interface {
 	ListPendingLogUploads() ([]model.PendingLogUpload, error)
 }
 
-// EventBus is the subset of the in-process event hub the cloud bridge
+// EventSubscriber is the subset of the in-process event hub the cloud bridge
 // consumes. Matches events.EventBus's Subscribe signature so the concrete
 // implementation satisfies this interface without an adapter.
-type EventBus interface {
+type EventSubscriber interface {
 	Subscribe(eventType events.EventType, handler events.EventHandler) func()
 }
 

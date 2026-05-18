@@ -71,15 +71,8 @@ wait
 	// Wait for the script to write the child PID — up to one second.
 	var childPid int
 	require.Eventually(t, func() bool {
-		data, readErr := os.ReadFile(pidFile)
-		if readErr != nil || len(data) == 0 {
-			return false
-		}
-		var pid int
-		if _, scanErr := fmtSscanInt(string(data), &pid); scanErr != nil {
-			return false
-		}
-		if pid <= 0 {
+		pid, ok := readPidFromFile(pidFile)
+		if !ok {
 			return false
 		}
 		childPid = pid
@@ -134,6 +127,23 @@ sleep 30
 	case <-time.After(time.Second):
 		t.Fatal("graceful_stop=0 must SIGKILL immediately, not wait")
 	}
+}
+
+// readPidFromFile loads a PID written by the shell-script helper. Returns
+// (pid, true) only when the file is non-empty and parses as a positive int.
+func readPidFromFile(path string) (int, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return 0, false
+	}
+	var pid int
+	if _, scanErr := fmtSscanInt(string(data), &pid); scanErr != nil {
+		return 0, false
+	}
+	if pid <= 0 {
+		return 0, false
+	}
+	return pid, true
 }
 
 // fmtSscanInt is a tiny Sscanf replacement to keep this test free of

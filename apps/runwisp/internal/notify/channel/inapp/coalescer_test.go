@@ -10,7 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/notify/render"
 	"github.com/runwisp/runwisp/internal/notify/testutil"
 	"github.com/runwisp/runwisp/internal/storage"
 )
@@ -146,4 +148,68 @@ func TestCoalescer_DistinctFingerprintsAllPersist(t *testing.T) {
 	rows, err := db.ListNotifications(50, "")
 	require.NoError(t, err)
 	assert.Len(t, rows, 5, "each distinct fingerprint persists as its own row")
+}
+
+func TestHub_SubscriberCount_ZeroInitially(t *testing.T) {
+	h := NewHub(8, 50)
+	if h.SubscriberCount() != 0 {
+		t.Fatalf("expected 0 subscribers initially, got %d", h.SubscriberCount())
+	}
+}
+
+func TestHub_SubscriberCount_AfterSubscribe(t *testing.T) {
+	h := NewHub(8, 50)
+	_, cancel := h.Subscribe()
+	defer cancel()
+	if h.SubscriberCount() != 1 {
+		t.Fatalf("expected 1 subscriber, got %d", h.SubscriberCount())
+	}
+}
+
+func TestIngestSynthetic_NoPanic(t *testing.T) {
+	db := newDB(t)
+	hub := NewHub(8, 50)
+	clk := testutil.NewFakeClock(time.Now().UTC())
+	coalescer := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
+	ch := New("inapp", &fakeRenderer{}, coalescer)
+	ev := makeEvent("task1")
+	ch.IngestSynthetic(ev) // must not panic
+}
+
+type fakeRenderer struct{}
+
+func (f *fakeRenderer) Render(ev *notify.Event) (render.RenderedMessage, error) {
+	return render.RenderedMessage{Title: ev.TaskName, Body: []byte("body")}, nil
+}
+
+func TestCoalescer_Receive_NilEvent(t *testing.T) {
+	db := newDB(t)
+	hub := NewHub(8, 50)
+	clk := testutil.NewFakeClock(time.Now().UTC())
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
+	c.Receive("t", "b", nil) // must not panic
+	rows, err := db.ListNotifications(50, "")
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+}
+
+func TestFingerprintBytes_WithEndReason(t *testing.T) {
+	r := model.ReasonFailed
+	ev := &notify.Event{
+		Kind:     notify.KindRunFailed,
+		TaskName: "t1",
+		Run:      &model.Run{EndReason: &r},
+	}
+	b := fingerprintBytes(ev)
+	assert.Contains(t, string(b), "failed")
+}
+
+func TestFingerprintBytes_WithDeliveryFailed(t *testing.T) {
+	ev := &notify.Event{
+		Kind:     notify.KindNotifyDeliveryFailed,
+		TaskName: "t1",
+		Extra:    map[string]any{"channel": "slack", "original_kind": "run.failed"},
+	}
+	b := fingerprintBytes(ev)
+	assert.Contains(t, string(b), "slack")
 }

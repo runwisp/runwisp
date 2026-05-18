@@ -13,12 +13,37 @@ export default defineConfig({
         }),
     ],
     test: {
-        include: ["src/**/*.test.ts"],
+        include: [
+            "src/**/*.test.ts",
+            "../../packages/ui/src/**/*.test.ts",
+            "../../packages/common/src/**/*.test.ts",
+        ],
         environment: "node",
         server: {
             deps: {
                 inline: [/\.svelte\.ts$/, /\.svelte$/],
             },
+        },
+        coverage: {
+            provider: "v8",
+            reporter: ["text", "lcov"],
+            reportsDirectory: "./coverage",
+            allowExternal: true,
+            include: [
+                "apps/ui/src/**/*.{ts,svelte,svelte.ts}",
+                "packages/ui/src/lib/utils/format.ts",
+                "packages/ui/src/lib/utils/error.ts",
+                "packages/ui/src/lib/utils/id.ts",
+                "packages/ui/src/lib/components/dashboard/run-helpers.ts",
+                "packages/common/src/utils/ulid.ts",
+            ],
+            exclude: [
+                "apps/ui/src/**/*.test.ts",
+                "apps/ui/src/**/*.spec.ts",
+                "apps/ui/test/**",
+                "packages/ui/src/**/*.test.ts",
+                "packages/common/src/**/*.test.ts",
+            ],
         },
     },
     resolve: {

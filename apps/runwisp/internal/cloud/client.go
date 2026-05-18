@@ -31,9 +31,9 @@ const (
 
 type Dependencies struct {
 	TaskManager       TaskRunner
-	RunRepo           RunRepository
+	RunRepo           ExternalRunGetter
 	PendingUploadRepo PendingLogUploadRepository
-	EventBus          EventBus
+	EventBus          EventSubscriber
 	LocalTasks        map[string]*model.Task
 	LogDir            string
 	Availability      executor.Availability
@@ -47,7 +47,7 @@ type Dependencies struct {
 
 type Client struct {
 	config  Config
-	runRepo RunRepository
+	runRepo ExternalRunGetter
 	logDir  string
 
 	syncClient   *TaskSyncClient
@@ -130,7 +130,6 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		connMgr.sendIfReady,
 		connMgr.refreshExecutionState,
 	)
-	client.bridge.Subscribe()
 	slog.Info("cloud integration enabled", "baseURL", cfg.BaseURL.String(), "fingerprint", cfg.Fingerprint)
 
 	return client, nil
@@ -166,7 +165,7 @@ func (client *Client) Run(ctx context.Context) error {
 	if client == nil {
 		return nil
 	}
-	client.bridge.SetArchiveContext(ctx)
+	client.bridge.Start(ctx)
 	defer client.bridge.Shutdown()
 
 	backoff := newReconnectBackoff()

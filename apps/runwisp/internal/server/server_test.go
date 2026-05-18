@@ -370,6 +370,7 @@ func TestRunsStream(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	req = req.WithContext(ctx)
 
 	go func() {
@@ -404,6 +405,7 @@ func TestLogStream(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	req = req.WithContext(ctx)
 
 	go func() {
@@ -484,4 +486,103 @@ func addAuth(req *http.Request, s *Server) {
 		"aud": auth.JWTAudience,
 	})
 	req.Header.Set("Authorization", "Bearer "+ts)
+}
+
+// setupServerWithService returns a server containing a service task alongside
+// the default "task1" cron task.
+func setupServerWithService(t *testing.T) (*Server, string) {
+	t.Helper()
+	s, _, _, _ := setupServer(t)
+
+	svcName := "svc1"
+	svcTask := &model.Task{
+		Name: svcName,
+		Run:  "tail -f /dev/null",
+		Kind: model.KindService,
+	}
+	s.tasks[svcName] = svcTask
+	s.runService.tasks[svcName] = svcTask
+	s.taskManager.UpsertTask(svcTask)
+	return s, svcName
+}
+
+// ---- humaRestartService ----
+
+func TestRestartServiceHTTP_Success(t *testing.T) {
+	s, svcName := setupServerWithService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+svcName+"/restart", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body struct {
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	assert.Equal(t, "Service instances restarting", body.Message)
+}
+
+func TestRestartServiceHTTP_TaskNotFound(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/nonexistent/restart", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestRestartServiceHTTP_NotAService(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	// task1 is a cron task, not a service.
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/task1/restart", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// ---- humaStopService ----
+
+func TestStopServiceHTTP_Success(t *testing.T) {
+	s, svcName := setupServerWithService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+svcName+"/stop", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body struct {
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	assert.Equal(t, "Service stopped", body.Message)
+}
+
+func TestStopServiceHTTP_TaskNotFound(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/nonexistent/stop", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestStopServiceHTTP_NotAService(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/task1/stop", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

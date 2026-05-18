@@ -19,6 +19,11 @@ import (
 //go:embed all:dist
 var uiFiles embed.FS
 
+const (
+	indexHTML   = "index.html"
+	errInternal = "internal error"
+)
+
 // Handler returns an http.Handler that serves the embedded Svelte dashboard.
 // The embedded FS is opened once at construction; if the embed is malformed
 // the error is surfaced to the caller instead of panicking inside an HTTP
@@ -45,40 +50,60 @@ func Mount(router chi.Router) error {
 }
 
 func serve(stripped fs.FS, w http.ResponseWriter, req *http.Request) {
-	reqPath := strings.TrimPrefix(req.URL.Path, "/")
-	if reqPath == "" {
-		reqPath = "index.html"
+	// path.Clean collapses any ".." segments before we touch the FS.
+	// embed.FS.Open also rejects invalid paths, so traversal to real files is
+	// impossible, but being explicit keeps static analysis tools happy.
+	reqPath := strings.TrimPrefix(path.Clean("/"+req.URL.Path), "/") //NOSONAR: path is sanitized via path.Clean and restricted to embed.FS
+	if reqPath == "" || reqPath == "." {
+		reqPath = indexHTML
 	}
 
-	f, err := stripped.Open(reqPath)
-	if err == nil {
-		defer f.Close()
-
-		stat, statErr := f.Stat()
-		if statErr != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		if !stat.IsDir() {
-			if contentType := mime.TypeByExtension(path.Ext(reqPath)); contentType != "" {
-				w.Header().Set("Content-Type", contentType)
-			}
-			rs, ok := f.(io.ReadSeeker)
-			if !ok {
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			http.ServeContent(w, req, reqPath, stat.ModTime(), rs)
-			return
-		}
+	if tryServeFile(stripped, w, req, reqPath) {
+		return
 	}
 
-	if strings.HasPrefix(reqPath, "_app/") || (path.Ext(reqPath) != "" && reqPath != "index.html") {
+	if strings.HasPrefix(reqPath, "_app/") || (path.Ext(reqPath) != "" && reqPath != indexHTML) {
 		http.NotFound(w, req)
 		return
 	}
 
-	indexFile, err := stripped.Open("index.html")
+	serveIndexFallback(stripped, w, req)
+}
+
+// tryServeFile attempts to serve reqPath from the embedded FS. Returns true
+// if the request was handled (even with an error response), false if the
+// caller should fall through to the SPA index fallback.
+func tryServeFile(stripped fs.FS, w http.ResponseWriter, req *http.Request, reqPath string) bool {
+	f, err := stripped.Open(reqPath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	stat, statErr := f.Stat()
+	if statErr != nil {
+		http.Error(w, errInternal, http.StatusInternalServerError)
+		return true
+	}
+	if stat.IsDir() {
+		return false
+	}
+
+	if contentType := mime.TypeByExtension(path.Ext(reqPath)); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	rs, ok := f.(io.ReadSeeker)
+	if !ok {
+		http.Error(w, errInternal, http.StatusInternalServerError)
+		return true
+	}
+	http.ServeContent(w, req, reqPath, stat.ModTime(), rs)
+	return true
+}
+
+// serveIndexFallback serves the SPA root index.html for any unmatched path.
+func serveIndexFallback(stripped fs.FS, w http.ResponseWriter, req *http.Request) {
+	indexFile, err := stripped.Open(indexHTML)
 	if err != nil {
 		http.NotFound(w, req)
 		return
@@ -87,14 +112,14 @@ func serve(stripped fs.FS, w http.ResponseWriter, req *http.Request) {
 
 	stat, statErr := indexFile.Stat()
 	if statErr != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		http.Error(w, errInternal, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rs, ok := indexFile.(io.ReadSeeker)
 	if !ok {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		http.Error(w, errInternal, http.StatusInternalServerError)
 		return
 	}
-	http.ServeContent(w, req, "index.html", stat.ModTime(), rs)
+	http.ServeContent(w, req, indexHTML, stat.ModTime(), rs)
 }

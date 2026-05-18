@@ -9,6 +9,7 @@ node_modules
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 test-results
+/coverage
 e2e/.state.json
 e2e/.auth-state.json
 e2e/.debug-screenshot.png

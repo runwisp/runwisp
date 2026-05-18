@@ -15,6 +15,8 @@ data/
 
 # Testing
 coverage
+coverage.out
+apps/runwisp/.gocoverdir/
 
 # Build cache (Makefile stamps)
 .cache/
@@ -37,3 +39,5 @@ npm-debug.log*
 # Worktrees
 .wbaum/
 .worktrees/
+
+.scannerwork

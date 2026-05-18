@@ -12,6 +12,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,4 +53,47 @@ func TestRetentionCleaner(t *testing.T) {
 
 	_, err := os.Stat(logPath)
 	assert.True(t, os.IsNotExist(err))
+}
+
+func TestEnforceMaxTotalSize_NoLimit(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	logDir := t.TempDir()
+	// maxTotalSize=0 means no limit; enforceMaxTotalSize should be a no-op
+	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 0)
+	cleaner.enforceMaxTotalSize() // must not call QueryRuns
+	repo.AssertNotCalled(t, "QueryRuns")
+}
+
+func TestEnforceMaxTotalSize_UnderLimit(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	logDir := t.TempDir()
+	// Write a tiny file; maxTotalSize is huge → no pruning
+	require.NoError(t, os.WriteFile(filepath.Join(logDir, "small.log"), []byte("x"), 0644))
+	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 1<<30) // 1 GiB
+	cleaner.enforceMaxTotalSize()
+	repo.AssertNotCalled(t, "QueryRuns")
+}
+
+func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	logDir := t.TempDir()
+	now := time.Now()
+
+	runID := ulid.Make().String()
+	logPath := logutil.ResolveRunLogPath(logDir, "task1", runID, now)
+	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
+	// Write 200 bytes; set limit to 100 bytes to trigger pruning
+	require.NoError(t, os.WriteFile(logPath, make([]byte, 200), 0644))
+
+	run := model.Run{ID: runID, TaskName: "task1", CreatedAt: now, Status: model.PhaseEnded}
+
+	repo.On("QueryRuns", "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{run}, nil)
+	// Second call returns empty to stop the loop
+	repo.On("QueryRuns", "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{}, nil)
+	repo.On("DeleteRun", runID).Return(nil)
+
+	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 100)
+	cleaner.enforceMaxTotalSize()
+
+	repo.AssertCalled(t, "DeleteRun", runID)
 }

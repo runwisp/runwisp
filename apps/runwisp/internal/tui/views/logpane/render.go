@@ -48,10 +48,15 @@ func (p *Pane) RenderLines(b *strings.Builder, dimContent, loadingOlder bool) {
 		b.WriteString("\n")
 	}
 
+	opts := lineRenderOpts{
+		b: b, start: start, end: end, w: w,
+		padStyle: padStyle, stdoutStyle: stdoutStyle,
+		stderrStyle: stderrStyle, systemStyle: systemStyle,
+	}
 	if p.Cfg.LineNumbers {
-		p.renderLinesWithNumbers(b, start, end, w, padStyle, stdoutStyle, stderrStyle, systemStyle)
+		p.renderLinesWithNumbers(opts)
 	} else {
-		p.renderLinesPlain(b, start, end, w, padStyle, stdoutStyle, stderrStyle, systemStyle)
+		p.renderLinesPlain(opts)
 	}
 
 	rendered := end - start + p.HeaderH
@@ -60,6 +65,18 @@ func (p *Pane) RenderLines(b *strings.Builder, dimContent, loadingOlder bool) {
 		b.WriteString("\n")
 		rendered++
 	}
+}
+
+// lineRenderOpts bundles the styling and geometry arguments shared between
+// renderLinesWithNumbers and renderLinesPlain.
+type lineRenderOpts struct {
+	b           *strings.Builder
+	start, end  int
+	w           int
+	padStyle    lipgloss.Style
+	stdoutStyle lipgloss.Style
+	stderrStyle lipgloss.Style
+	systemStyle lipgloss.Style
 }
 
 func styleForStream(stream string, stdout, stderr, system lipgloss.Style) lipgloss.Style {
@@ -73,7 +90,7 @@ func styleForStream(stream string, stdout, stderr, system lipgloss.Style) lipglo
 	}
 }
 
-func (p *Pane) renderLinesWithNumbers(b *strings.Builder, start, end, w int, padStyle, stdoutStyle, stderrStyle, systemStyle lipgloss.Style) {
+func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 	lnw := p.lineNumWidth()
 
 	logContentWidth := p.LogContentWidth()
@@ -97,43 +114,38 @@ func (p *Pane) renderLinesWithNumbers(b *strings.Builder, start, end, w int, pad
 		Foreground(uikit.ColorTextMuted).
 		Background(uikit.ColorBg)
 
-	for i := start; i < end; i++ {
+	for i := o.start; i < o.end; i++ {
 		absLineNum := p.absoluteLineNumber(i)
 		lineNum := lineNumStyle.Render(fmt.Sprintf("%*d ", lnw, absLineNum))
 
 		row := p.Lines[i]
 		sliced, clippedRight := uikit.SliceLineColumns(row.Text, p.HScroll, textAreaWidth)
+		sliced = trimTrailingRuneIfClipped(sliced, clippedRight)
 
-		if clippedRight {
-			runes := []rune(sliced)
-			if len(runes) > 0 {
-				sliced = string(runes[:len(runes)-1])
-			}
-		}
+		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
+		lineContent := composeLineContent(sliced, hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
+		lineContent = padLineContent(lineContent, logContentWidth, o.padStyle)
 
-		textStyle := styleForStream(row.Stream, stdoutStyle, stderrStyle, systemStyle)
-
-		var lineContent string
-		if hasLeftIndicator {
-			lineContent = leftIndicatorStyle.Render("◂") + textStyle.Render(sliced)
-		} else {
-			lineContent = textStyle.Render(sliced)
-		}
-		if clippedRight {
-			lineContent += rightIndicatorStyle.Render("▸")
-		}
-
-		visWidth := lipgloss.Width(lineContent)
-		if visWidth < logContentWidth {
-			lineContent += padStyle.Render(strings.Repeat(" ", logContentWidth-visWidth))
-		}
-
-		b.WriteString(lineNum + lineContent)
-		b.WriteString("\n")
+		o.b.WriteString(lineNum + lineContent)
+		o.b.WriteString("\n")
 	}
 }
 
-func (p *Pane) renderLinesPlain(b *strings.Builder, start, end, w int, padStyle, stdoutStyle, stderrStyle, systemStyle lipgloss.Style) {
+// trimTrailingRuneIfClipped drops one rune off the end of sliced so the "▸"
+// indicator can fit in the text-area width. No-op when not clipped or when
+// the slice is already empty.
+func trimTrailingRuneIfClipped(sliced string, clippedRight bool) string {
+	if !clippedRight {
+		return sliced
+	}
+	runes := []rune(sliced)
+	if len(runes) == 0 {
+		return sliced
+	}
+	return string(runes[:len(runes)-1])
+}
+
+func (p *Pane) renderLinesPlain(o lineRenderOpts) {
 	logContentWidth := p.LogContentWidth()
 
 	hasLeftIndicator := p.Cfg.HScroll && p.HScroll > 0
@@ -150,41 +162,51 @@ func (p *Pane) renderLinesPlain(b *strings.Builder, start, end, w int, padStyle,
 		Foreground(uikit.ColorTextMuted).
 		Background(uikit.ColorBg)
 
-	for i := start; i < end; i++ {
+	for i := o.start; i < o.end; i++ {
 		row := p.Lines[i]
+		sliced, clippedRight := p.sliceRowText(row.Text, textAreaWidth)
 
-		var sliced string
-		var clippedRight bool
-		if p.Cfg.HScroll {
-			sliced, clippedRight = uikit.SliceLineColumns(row.Text, p.HScroll, textAreaWidth)
-			if clippedRight {
-				runes := []rune(sliced)
-				if len(runes) > 0 {
-					sliced = string(runes[:len(runes)-1])
-				}
-			}
-		} else {
-			sliced = row.Text
-		}
+		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
+		lineContent := composeLineContent(sliced, hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
+		lineContent = padLineContent(lineContent, logContentWidth, o.padStyle)
 
-		textStyle := styleForStream(row.Stream, stdoutStyle, stderrStyle, systemStyle)
-
-		var lineContent string
-		if hasLeftIndicator {
-			lineContent = leftIndicatorStyle.Render("◂") + textStyle.Render(sliced)
-		} else {
-			lineContent = textStyle.Render(sliced)
-		}
-		if clippedRight {
-			lineContent += rightIndicatorStyle.Render("▸")
-		}
-
-		visWidth := lipgloss.Width(lineContent)
-		if visWidth < logContentWidth {
-			lineContent += padStyle.Render(strings.Repeat(" ", logContentWidth-visWidth))
-		}
-
-		b.WriteString(padStyle.Render("  ") + lineContent)
-		b.WriteString("\n")
+		o.b.WriteString(o.padStyle.Render("  ") + lineContent)
+		o.b.WriteString("\n")
 	}
+}
+
+// sliceRowText applies horizontal scrolling to a single log row when HScroll
+// is enabled. When the slice is clipped on the right we drop one trailing
+// rune so the trailing "▸" indicator fits within the text-area width.
+func (p *Pane) sliceRowText(text string, textAreaWidth int) (sliced string, clippedRight bool) {
+	if !p.Cfg.HScroll {
+		return text, false
+	}
+	sliced, clippedRight = uikit.SliceLineColumns(text, p.HScroll, textAreaWidth)
+	return trimTrailingRuneIfClipped(sliced, clippedRight), clippedRight
+}
+
+// composeLineContent renders one row's pre-padding content: optional left
+// scroll indicator + styled text + optional right scroll indicator.
+func composeLineContent(sliced string, hasLeftIndicator, clippedRight bool, leftStyle, rightStyle, textStyle lipgloss.Style) string {
+	var lineContent string
+	if hasLeftIndicator {
+		lineContent = leftStyle.Render("◂") + textStyle.Render(sliced)
+	} else {
+		lineContent = textStyle.Render(sliced)
+	}
+	if clippedRight {
+		lineContent += rightStyle.Render("▸")
+	}
+	return lineContent
+}
+
+// padLineContent right-pads the rendered content with background-colored
+// spaces so every log row fills the available width.
+func padLineContent(lineContent string, logContentWidth int, padStyle lipgloss.Style) string {
+	visWidth := lipgloss.Width(lineContent)
+	if visWidth >= logContentWidth {
+		return lineContent
+	}
+	return lineContent + padStyle.Render(strings.Repeat(" ", logContentWidth-visWidth))
 }

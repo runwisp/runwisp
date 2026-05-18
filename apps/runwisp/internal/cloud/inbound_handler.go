@@ -10,6 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/internal/model"
 	"log/slog"
 )
 
@@ -17,7 +18,7 @@ import (
 // domain logic for execution dispatch, stop, and log operations.
 type InboundHandler struct {
 	taskManager     TaskRunner
-	runRepo         RunRepository
+	runRepo         ExternalRunGetter
 	logDir          string
 	availability    executor.Availability
 	queueExecUpdate func(protocol.ExecutionUpdateMessage)
@@ -29,7 +30,7 @@ type InboundHandler struct {
 
 func NewInboundHandler(
 	taskManager TaskRunner,
-	runRepo RunRepository,
+	runRepo ExternalRunGetter,
 	logDir string,
 	availability executor.Availability,
 	queueExecUpdate func(protocol.ExecutionUpdateMessage),
@@ -79,23 +80,27 @@ func (h *InboundHandler) HandleExecutionDispatch(message protocol.ExecutionDispa
 
 	run, triggerErr := h.taskManager.TriggerCloudRun(taskName, executionID)
 	if triggerErr != nil {
-		if run != nil {
-			finishedAt := run.EndAt
-			if finishedAt == nil {
-				finishedAt = nowPtr()
-			}
-			h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(run.ExitCode), run.StartAt, finishedAt))
-		} else {
-			h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(-1), nil, nowPtr()))
-		}
-		if h.uploader != nil {
-			h.uploader.Forget(executionID)
-		}
-		return &CloudError{Kind: CloudErrorKindConflict, Message: triggerErr.Error()}
+		return h.handleTriggerError(executionID, run, triggerErr)
 	}
 
 	slog.Info("execution dispatched", "executionId", executionID, "task", taskName)
 	return nil
+}
+
+func (h *InboundHandler) handleTriggerError(executionID string, run *model.Run, triggerErr error) error {
+	if run != nil {
+		finishedAt := run.EndAt
+		if finishedAt == nil {
+			finishedAt = nowPtr()
+		}
+		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(run.ExitCode), run.StartAt, finishedAt))
+	} else {
+		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(-1), nil, nowPtr()))
+	}
+	if h.uploader != nil {
+		h.uploader.Forget(executionID)
+	}
+	return &CloudError{Kind: CloudErrorKindConflict, Message: triggerErr.Error()}
 }
 
 func (h *InboundHandler) HandleExecutionStop(message protocol.ExecutionStopMessage) error {

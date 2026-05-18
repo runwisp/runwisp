@@ -413,3 +413,483 @@ func TestExecView_NotFocused_IgnoresInput(t *testing.T) {
 		t.Fatal("expected no scroll change when not focused")
 	}
 }
+
+func TestExecView_HandleKeyLeft_AllTransitions(t *testing.T) {
+	tests := []struct {
+		name    string
+		initial HeaderFocusItem
+		want    HeaderFocusItem
+	}{
+		{"Action→ID", HeaderFocusAction, HeaderFocusID},
+		{"ID→Back", HeaderFocusID, HeaderFocusBack},
+		{"Duration→Started", HeaderFocusDuration, HeaderFocusStarted},
+		{"Back→Back (no change)", HeaderFocusBack, HeaderFocusBack},
+		{"Started→Started (no change)", HeaderFocusStarted, HeaderFocusStarted},
+		// default: pane scroll handled
+		{"None→None (pane handles)", HeaderFocusNone, HeaderFocusNone},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := newSizedExecView(80, 24)
+			ev.HeaderFocus = tc.initial
+			ev.Update(tea.KeyMsg{Type: tea.KeyLeft})
+			if ev.HeaderFocus != tc.want {
+				t.Fatalf("after left from %d: expected focus=%d, got %d", tc.initial, tc.want, ev.HeaderFocus)
+			}
+		})
+	}
+}
+
+func TestExecView_HandleKeyRight_AllTransitions(t *testing.T) {
+	tests := []struct {
+		name    string
+		initial HeaderFocusItem
+		want    HeaderFocusItem
+		// hasAction controls whether the run is in a state that has an action button
+		running bool
+	}{
+		{"Back→ID", HeaderFocusBack, HeaderFocusID, false},
+		{"ID→Action (running)", HeaderFocusID, HeaderFocusAction, true},
+		{"Started→Duration", HeaderFocusStarted, HeaderFocusDuration, false},
+		{"Action→Action (no change)", HeaderFocusAction, HeaderFocusAction, true},
+		{"Duration→Duration (no change)", HeaderFocusDuration, HeaderFocusDuration, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := newSizedExecView(80, 24)
+			if tc.running {
+				ev.Run.Status = model.PhaseRunning
+			} else {
+				ev.Run.Status = model.PhaseEnded
+				ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
+			}
+			ev.HeaderFocus = tc.initial
+			ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+			if ev.HeaderFocus != tc.want {
+				t.Fatalf("after right from %d: expected focus=%d, got %d", tc.initial, tc.want, ev.HeaderFocus)
+			}
+		})
+	}
+}
+
+func TestExecView_HandleKeyRight_IDNoAction(t *testing.T) {
+	// When at ID and there is no action, focus stays at ID.
+	ev := newSizedExecView(80, 24)
+	ev.Run.Status = model.PhaseEnded
+	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
+	ev.HeaderFocus = HeaderFocusID
+	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if ev.HeaderFocus != HeaderFocusID {
+		t.Fatalf("expected focus to stay at ID when no action button, got %d", ev.HeaderFocus)
+	}
+}
+
+func TestExecView_HandleKeyDown_AllTransitions(t *testing.T) {
+	tests := []struct {
+		name    string
+		initial HeaderFocusItem
+		want    HeaderFocusItem
+	}{
+		{"Back→Started", HeaderFocusBack, HeaderFocusStarted},
+		{"ID→Started", HeaderFocusID, HeaderFocusStarted},
+		{"Action→Started", HeaderFocusAction, HeaderFocusStarted},
+		{"Started→None", HeaderFocusStarted, HeaderFocusNone},
+		{"Duration→None", HeaderFocusDuration, HeaderFocusNone},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := newSizedExecView(80, 24)
+			ev.HeaderFocus = tc.initial
+			ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+			if ev.HeaderFocus != tc.want {
+				t.Fatalf("after down from %d: expected focus=%d, got %d", tc.initial, tc.want, ev.HeaderFocus)
+			}
+		})
+	}
+}
+
+func TestExecView_HandleKeyUp_StartedAndDuration(t *testing.T) {
+	for _, initial := range []HeaderFocusItem{HeaderFocusStarted, HeaderFocusDuration} {
+		ev := newSizedExecView(80, 24)
+		ev.HeaderFocus = initial
+		ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+		if ev.HeaderFocus != HeaderFocusID {
+			t.Fatalf("up from %d: expected HeaderFocusID, got %d", initial, ev.HeaderFocus)
+		}
+	}
+}
+
+func TestExecView_HandleKeyUp_AtTopFocusedItems(t *testing.T) {
+	for _, initial := range []HeaderFocusItem{HeaderFocusBack, HeaderFocusID, HeaderFocusAction} {
+		ev := newSizedExecView(80, 24)
+		ev.HeaderFocus = initial
+		ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+		// These don't change on up
+		if ev.HeaderFocus != initial {
+			t.Fatalf("up from %d: expected no change, got %d", initial, ev.HeaderFocus)
+		}
+	}
+}
+
+func TestExecView_HandleKeyUp_ScrollAtZero_EntersHeader(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.Pane.Scroll = 0
+	ev.HeaderFocus = HeaderFocusNone
+	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if ev.HeaderFocus != HeaderFocusStarted {
+		t.Fatalf("expected HeaderFocusStarted when scrolling up from top, got %d", ev.HeaderFocus)
+	}
+}
+
+func TestExecView_HandleKeyUp_ScrollAboveZero_Scrolls(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	appendLines(&ev, 50)
+	ev.Pane.Scroll = 10
+	ev.Pane.Follow = false
+	ev.HeaderFocus = HeaderFocusNone
+	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if ev.Pane.Scroll != 9 {
+		t.Fatalf("expected scroll=9 after up, got %d", ev.Pane.Scroll)
+	}
+	if ev.HeaderFocus != HeaderFocusNone {
+		t.Fatalf("expected no header focus change, got %d", ev.HeaderFocus)
+	}
+}
+
+func TestExecView_Action_ServiceStopped(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.TaskIsService = true
+	ev.SetServiceStopped(true)
+	if ev.Action() != ActionRestartService {
+		t.Fatalf("expected ActionRestartService when service is stopped, got %d", ev.Action())
+	}
+}
+
+func TestExecView_Action_ServiceRunning(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.TaskIsService = true
+	ev.SetServiceStopped(false)
+	if ev.Action() != ActionStopService {
+		t.Fatalf("expected ActionStopService when service is running, got %d", ev.Action())
+	}
+}
+
+func TestExecView_Action_NilRun(t *testing.T) {
+	ev := NewExecView(nil)
+	if ev.Action() != ActionNone {
+		t.Fatalf("expected ActionNone for nil run, got %d", ev.Action())
+	}
+}
+
+func TestExecView_Action_Running(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.Run.Status = model.PhaseRunning
+	if ev.Action() != ActionStop {
+		t.Fatalf("expected ActionStop for running task, got %d", ev.Action())
+	}
+}
+
+func TestExecView_ServiceStopped_RoundTrip(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.SetServiceStopped(true)
+	if !ev.ServiceStopped() {
+		t.Fatal("expected ServiceStopped()=true after SetServiceStopped(true)")
+	}
+	ev.SetServiceStopped(false)
+	if ev.ServiceStopped() {
+		t.Fatal("expected ServiceStopped()=false after SetServiceStopped(false)")
+	}
+}
+
+func TestExecView_CopyValueFor_Duration(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	val := ev.CopyValueFor(HeaderFocusDuration)
+	// Just verify it's non-empty and doesn't panic.
+	if val == "" {
+		t.Fatal("expected non-empty duration copy value")
+	}
+}
+
+func TestExecView_CopyValueFor_Started(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	val := ev.CopyValueFor(HeaderFocusStarted)
+	if val == "" {
+		t.Fatal("expected non-empty started copy value")
+	}
+}
+
+func TestExecView_CopyValueFor_NilRun(t *testing.T) {
+	ev := NewExecView(nil)
+	for _, f := range []HeaderFocusItem{HeaderFocusStarted, HeaderFocusDuration, HeaderFocusID, HeaderFocusNone} {
+		if val := ev.CopyValueFor(f); val != "" {
+			t.Fatalf("expected empty value for nil run, focus=%d, got %q", f, val)
+		}
+	}
+}
+
+func TestExecView_MaxHScroll(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.Pane.AppendLine(0, "stdout", strings.Repeat("x", 200))
+	ev.Pane.Scroll = 0
+	ev.Pane.Follow = false
+	// MaxHScroll should be > 0 given a line wider than the viewport.
+	mhs := ev.MaxHScroll()
+	if mhs <= 0 {
+		t.Fatalf("expected MaxHScroll > 0 for wide line, got %d", mhs)
+	}
+}
+
+func TestExecView_HitAt_Normal(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	// In normal mode, hitAt delegates to headerLayout (no hitboxes added yet → returns None)
+	hit := ev.HitAt(10, 2)
+	if hit != HeaderFocusNone {
+		t.Fatalf("expected HeaderFocusNone for empty layout, got %d", hit)
+	}
+}
+
+func TestExecView_Update_NonKeyMsg_NoChange(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	appendLines(&ev, 20)
+	scroll := ev.Pane.Scroll
+	// A non-key message should be ignored.
+	ev.Update("not a key message")
+	if ev.Pane.Scroll != scroll {
+		t.Fatal("non-key message must not change scroll")
+	}
+}
+
+// ---- execHeaderLayout helpers ----
+
+func TestHeaderLayout_AddAndHitAt(t *testing.T) {
+	var l execHeaderLayout
+	l.add(HeaderFocusBack, 10, 20, 1)
+	l.add(HeaderFocusID, 25, 40, 1)
+
+	// Hit inside Back box.
+	if got := l.hitAt(15, 1); got != HeaderFocusBack {
+		t.Fatalf("expected HeaderFocusBack, got %d", got)
+	}
+	// Hit inside ID box.
+	if got := l.hitAt(30, 1); got != HeaderFocusID {
+		t.Fatalf("expected HeaderFocusID, got %d", got)
+	}
+	// Miss: wrong y.
+	if got := l.hitAt(15, 2); got != HeaderFocusNone {
+		t.Fatalf("expected HeaderFocusNone for wrong y, got %d", got)
+	}
+	// Miss: outside all boxes.
+	if got := l.hitAt(0, 1); got != HeaderFocusNone {
+		t.Fatalf("expected HeaderFocusNone for x outside boxes, got %d", got)
+	}
+	// x == x1 is exclusive.
+	if got := l.hitAt(20, 1); got != HeaderFocusNone {
+		t.Fatalf("expected HeaderFocusNone for x==x1 (exclusive), got %d", got)
+	}
+}
+
+func TestHeaderLayout_Reset(t *testing.T) {
+	var l execHeaderLayout
+	l.add(HeaderFocusBack, 0, 10, 0)
+	l.reset()
+	if got := l.hitAt(5, 0); got != HeaderFocusNone {
+		t.Fatalf("expected no hits after reset, got %d", got)
+	}
+}
+
+// ---- view_render.go methods ----
+
+func TestRenderMetaField_NormalAndFocused(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+
+	// Not focused, not hovered.
+	out := ev.renderMetaField("Started", "2024-01-01 00:00:00", HeaderFocusStarted)
+	if out == "" {
+		t.Fatal("expected non-empty renderMetaField output")
+	}
+
+	// Focused.
+	ev.HeaderFocus = HeaderFocusStarted
+	out2 := ev.renderMetaField("Started", "2024-01-01 00:00:00", HeaderFocusStarted)
+	if out2 == "" {
+		t.Fatal("expected non-empty renderMetaField when focused")
+	}
+
+	// Hovered.
+	ev.HeaderFocus = HeaderFocusNone
+	ev.HoveredHeader = HeaderFocusStarted
+	out3 := ev.renderMetaField("Started", "2024-01-01 00:00:00", HeaderFocusStarted)
+	if out3 == "" {
+		t.Fatal("expected non-empty renderMetaField when hovered")
+	}
+}
+
+func TestRenderBackButton_NormalAndHovered(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+
+	out := ev.renderBackButton()
+	if !strings.Contains(out, "Back") {
+		t.Fatalf("expected '← Back' in output, got %q", out)
+	}
+
+	ev.HoveredHeader = HeaderFocusBack
+	out2 := ev.renderBackButton()
+	if !strings.Contains(out2, "Back") {
+		t.Fatalf("expected hovered back button to still contain 'Back', got %q", out2)
+	}
+
+	ev.HoveredHeader = HeaderFocusNone
+	ev.HeaderFocus = HeaderFocusBack
+	out3 := ev.renderBackButton()
+	if !strings.Contains(out3, "Back") {
+		t.Fatalf("expected focused back button to still contain 'Back', got %q", out3)
+	}
+}
+
+func TestRenderActionButtons_AllActions(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+
+	// ActionStop
+	ev.Run.Status = model.PhaseRunning
+	out := ev.renderActionButtons()
+	if !strings.Contains(out, "Stop") {
+		t.Fatalf("expected Stop button, got %q", out)
+	}
+
+	// ActionRetry (failed run, non-service)
+	ev.Run.Status = model.PhaseEnded
+	ev.Run.EndReason = model.EndReasonPtr(model.ReasonFailed)
+	out2 := ev.renderActionButtons()
+	if !strings.Contains(out2, "Retry") {
+		t.Fatalf("expected Retry button, got %q", out2)
+	}
+
+	// ActionStopService
+	ev.TaskIsService = true
+	ev.SetServiceStopped(false)
+	out3 := ev.renderActionButtons()
+	if !strings.Contains(out3, "Stop") {
+		t.Fatalf("expected Stop button for service, got %q", out3)
+	}
+
+	// ActionRestartService
+	ev.SetServiceStopped(true)
+	out4 := ev.renderActionButtons()
+	if !strings.Contains(out4, "Restart") {
+		t.Fatalf("expected Restart button for stopped service, got %q", out4)
+	}
+
+	// ActionNone — success run, non-service
+	ev.TaskIsService = false
+	ev.Run.Status = model.PhaseEnded
+	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
+	out5 := ev.renderActionButtons()
+	if out5 != "" {
+		t.Fatalf("expected empty output for ActionNone, got %q", out5)
+	}
+}
+
+func TestRenderActionButtons_HoveredAndFocused(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.Run.Status = model.PhaseRunning
+
+	// Hovered action
+	ev.HoveredHeader = HeaderFocusAction
+	out := ev.renderActionButtons()
+	if !strings.Contains(out, "Stop") {
+		t.Fatalf("expected Stop in hovered action, got %q", out)
+	}
+
+	// Focused action
+	ev.HoveredHeader = HeaderFocusNone
+	ev.HeaderFocus = HeaderFocusAction
+	out2 := ev.renderActionButtons()
+	if !strings.Contains(out2, "Stop") {
+		t.Fatalf("expected Stop in focused action, got %q", out2)
+	}
+}
+
+func TestExecView_View_Normal(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	appendLines(&ev, 10)
+
+	out := ev.View()
+	if !strings.Contains(out, "← Back") {
+		t.Fatalf("expected back button in normal view, got %q", out)
+	}
+	if !strings.Contains(out, "test-task") {
+		t.Fatalf("expected task name in normal view")
+	}
+}
+
+func TestExecView_View_NormalWithAction(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.Run.Status = model.PhaseRunning
+	appendLines(&ev, 5)
+
+	out := ev.View()
+	if !strings.Contains(out, "Stop") {
+		t.Fatalf("expected Stop button in view with running run")
+	}
+}
+
+func TestExecView_View_FollowIndicator(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.Run.Status = model.PhaseRunning
+	ev.Pane.Follow = true
+	appendLines(&ev, 5)
+
+	out := ev.View()
+	if !strings.Contains(out, "FOLLOW") {
+		t.Fatalf("expected FOLLOW indicator, got view without it")
+	}
+}
+
+func TestExecView_View_LoadingOlder(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.LoadingOlder = true
+	ev.Pane.Scroll = 0
+	appendLines(&ev, 5)
+
+	out := ev.View()
+	if !strings.Contains(out, "Loading older") {
+		t.Fatalf("expected 'Loading older' in output, got: %q", out)
+	}
+}
+
+func TestExecView_HandleKeyDown_DefaultBranch(t *testing.T) {
+	// When focus is HeaderFocusNone, down should call Pane.HandleKeyScroll("down")
+	// and not change HeaderFocus.
+	ev := newSizedExecView(80, 24)
+	appendLines(&ev, 100)
+	ev.Pane.Scroll = 0
+	ev.Pane.Follow = false
+	ev.HeaderFocus = HeaderFocusNone
+
+	ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+	// Scroll should have advanced since pane handled the key.
+	if ev.Pane.Scroll == 0 {
+		t.Fatal("expected scroll to advance when HeaderFocusNone and key=down")
+	}
+}
+
+func TestExecView_SetSize_Fullscreen(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.ToggleFullscreen()
+	// In fullscreen, SetSize should set HeaderHeight to 0.
+	ev.SetSize(100, 30)
+	if ev.Pane.HeaderH != 0 {
+		t.Fatalf("expected HeaderH=0 in fullscreen after SetSize, got %d", ev.Pane.HeaderH)
+	}
+}
+
+func TestExecView_View_InstanceIndex(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.Run.InstanceIndex = 3
+	appendLines(&ev, 5)
+
+	out := ev.View()
+	if !strings.Contains(out, "#3") {
+		t.Fatalf("expected instance index in view output")
+	}
+}

@@ -1,16 +1,16 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { execSync } from "child_process";
+import { execSync } from "node:child_process";
 import {
   mkdirSync,
   readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
-} from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+} from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import yaml from "yaml";
 import $RefParser from "@apidevtools/json-schema-ref-parser";
 import { GO_COMMON_PRESET, GoFileGenerator } from "@asyncapi/modelina";
@@ -73,91 +73,135 @@ const goFileHeader = `// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 
 `;
 
+function fixGoNamingConvention(match, indent, fieldName) {
+  if (fieldName[0] < "A" || fieldName[0] > "Z") return match;
+  const fixed = fieldName.replace(/Id$/, "ID").replace(/Url$/, "URL");
+  return `${indent}${fixed}`;
+}
+
+function injectGoImports(content) {
+  const needsTime =
+    content.includes("*time.Time") && !content.includes('"time"');
+  const needsJSON =
+    content.includes("json.RawMessage") &&
+    !content.includes('"encoding/json"');
+  if (!needsTime && !needsJSON) {
+    return content;
+  }
+  const imports = [];
+  if (needsJSON) imports.push('\t"encoding/json"');
+  if (needsTime) imports.push('\t"time"');
+  if (content.includes("import (")) {
+    return content.replace(/import \(/, `import (\n${imports.join("\n")}`);
+  }
+  return content.replace(
+    /^(package protocol\n)/m,
+    `$1\nimport (\n${imports.join("\n")}\n)\n`,
+  );
+}
+
+const int64Fields = new Set(["Limit", "LogSize", "FromLine", "N", "Ts"]);
+const timeFields = new Set(["StartedAt", "FinishedAt"]);
+
+// isAdditionalPropertiesBoilerplate identifies the generator-injected field that
+// must be dropped. Using string checks avoids regex quantifier overhead.
+function isAdditionalPropertiesBoilerplate(trimmed) {
+  return (
+    trimmed.startsWith("AdditionalProperties") &&
+    trimmed.includes("map[string]interface{}") &&
+    trimmed.includes('json:"-,omitempty"')
+  );
+}
+
+// applyGoNamingConvention renames Id→ID and Url→URL suffixes on exported
+// struct field names. Returns the fixed line, or null if no rename was needed.
+function applyGoNamingConvention(fieldName, rest, indent) {
+  if (fieldName[0] < "A" || fieldName[0] > "Z") return null;
+  if (fieldName.endsWith("Id"))
+    return indent + fieldName.slice(0, -2) + "ID" + rest;
+  if (fieldName.endsWith("Url"))
+    return indent + fieldName.slice(0, -3) + "URL" + rest;
+  return null;
+}
+
+function transformGoLine(line) {
+  const trimmed = line.trimStart();
+  if (!trimmed) return line;
+  const indent = line.slice(0, line.length - trimmed.length);
+
+  if (isAdditionalPropertiesBoilerplate(trimmed)) return "";
+
+  // First word on the line is the struct field name.
+  let nameEnd = 0;
+  while (nameEnd < trimmed.length && trimmed[nameEnd] !== " " && trimmed[nameEnd] !== "\t")
+    nameEnd++;
+  const fieldName = trimmed.slice(0, nameEnd);
+  const rest = trimmed.slice(nameEnd);
+
+  const renamed = applyGoNamingConvention(fieldName, rest, indent);
+  if (renamed !== null) return renamed;
+
+  if (timeFields.has(fieldName) && rest.includes(" string "))
+    return indent + fieldName + rest.replace(" string ", " *time.Time ");
+
+  if (fieldName === "ExitCode" && rest.includes(" int "))
+    return indent + fieldName + rest.replace(" int ", " *int ");
+
+  if (fieldName === "Script" && rest.includes("map[string]interface{}"))
+    return indent + 'Script json.RawMessage\t`json:"script" binding:"required"`';
+
+  if (int64Fields.has(fieldName) && rest.includes(" int "))
+    return indent + fieldName + rest.replace(" int ", " int64 ");
+
+  return line;
+}
+
+function postProcessGoFile(filePath) {
+  let content = readFileSync(filePath, "utf-8");
+  if (!content.startsWith("// SPDX-FileCopyrightText")) {
+    content = goFileHeader + content;
+  }
+  content = content.replaceAll("ReservedType", "Type");
+  content = content.split("\n").map(transformGoLine).join("\n");
+  content = injectGoImports(content);
+  writeFileSync(filePath, content);
+}
+
 function postProcessGo(dir) {
   const files = readdirSync(dir).filter((f) => f.endsWith(".go"));
   for (const file of files) {
-    const filePath = join(dir, file);
-    let content = readFileSync(filePath, "utf-8");
-
-    // Prepend SPDX + DO NOT EDIT header (Modelina does not emit one).
-    if (!content.startsWith("// SPDX-FileCopyrightText")) {
-      content = goFileHeader + content;
-    }
-
-    // Fix reserved keyword workaround from Modelina
-    content = content.replace(/ReservedType/g, "Type");
-
-    // Remove AdditionalProperties fields (json:"-" makes them useless noise)
-    content = content.replace(
-      /\s*AdditionalProperties\s+map\[string\]interface\{\}\s+`json:"-,omitempty"`\n/g,
-      "\n",
-    );
-
-    // Fix Go naming conventions: trailing Id -> ID, Url -> URL
-    content = content.replace(
-      /^(\s+)(\w*(?:Id|Url))\b/gm,
-      (match, indent, fieldName) => {
-        if (fieldName[0] < "A" || fieldName[0] > "Z") return match;
-        const fixed = fieldName
-          .replace(/Id$/, "ID")
-          .replace(/Url$/, "URL");
-        return `${indent}${fixed}`;
-      },
-    );
-
-    // Nullable date-time fields -> *time.Time
-    // The spec marks startedAt, finishedAt as nullable + format: date-time
-    content = content.replace(
-      /(\s+(?:StartedAt|FinishedAt))\s+string(\s+`json:"(?:startedAt|finishedAt),omitempty"`)/g,
-      "$1 *time.Time$2",
-    );
-
-    // Nullable integer fields -> pointer types
-    // The spec marks exitCode as nullable
-    content = content.replace(
-      /(\s+ExitCode)\s+int(\s+`json:"exitCode,omitempty"`)/g,
-      "$1 *int$2",
-    );
-
-    // Script field: map[string]interface{} -> json.RawMessage for passthrough
-    content = content.replace(
-      /(\s+Script)\s+map\[string\]interface\{\}(\s+`json:"script)[,"].*`/g,
-      '$1 json.RawMessage$2" binding:"required"`',
-    );
-
-    // int -> int64 for fields with format: int64 (line numbers, timestamps, paging, archive size)
-    content = content.replace(
-      /(\s+(?:Limit|LogSize|FromLine|N|Ts))\s+int(\s+`json:"(?:limit|logSize|fromLine|n|ts))/g,
-      "$1 int64$2",
-    );
-
-    // Add required imports based on content
-    const needsTime =
-      content.includes("*time.Time") && !content.includes('"time"');
-    const needsJSON =
-      content.includes("json.RawMessage") &&
-      !content.includes('"encoding/json"');
-    if (needsTime || needsJSON) {
-      const imports = [];
-      if (needsJSON) imports.push('\t"encoding/json"');
-      if (needsTime) imports.push('\t"time"');
-
-      if (content.includes("import (")) {
-        content = content.replace(
-          /import \(/,
-          `import (\n${imports.join("\n")}`,
-        );
-      } else {
-        content = content.replace(
-          /^(package protocol\n)/m,
-          `$1\nimport (\n${imports.join("\n")}\n)\n`,
-        );
-      }
-    }
-
-    writeFileSync(filePath, content);
+    postProcessGoFile(join(dir, file));
   }
   execSync(`gofmt -w .`, { cwd: dir });
+}
+
+function numberToZod(schema) {
+  let base = schema.type === "integer" ? "z.number().int()" : "z.number()";
+  if (schema.minimum === 0) {
+    base += ".nonnegative()";
+  } else if (typeof schema.minimum === "number") {
+    base += `.min(${schema.minimum})`;
+  }
+  if (typeof schema.maximum === "number") {
+    base += `.max(${schema.maximum})`;
+  }
+  return base;
+}
+
+function objectToZod(schema) {
+  if (schema.properties) {
+    const props = Object.entries(schema.properties).map(([key, value]) => {
+      let zType = typeToZod(value, key.endsWith("At") && key !== "sentAt");
+      if (value.nullable) zType += ".nullable()";
+      if (!schema.required?.includes(key)) zType += ".optional()";
+      return `"${key}": ${zType}`;
+    });
+    return `z.object({ ${props.join(", ")} })`;
+  }
+  if (schema.additionalProperties) {
+    return `z.record(z.string(), ${typeToZod(schema.additionalProperties)})`;
+  }
+  return "z.unknown()";
 }
 
 function typeToZod(schema, isDate = false) {
@@ -172,35 +216,10 @@ function typeToZod(schema, isDate = false) {
     return "z.string()";
   }
   if (schema.type === "integer" || schema.type === "number") {
-    let base = schema.type === "integer" ? "z.number().int()" : "z.number()";
-    if (schema.minimum === 0) {
-      base += ".nonnegative()";
-    } else if (typeof schema.minimum === "number") {
-      base += `.min(${schema.minimum})`;
-    }
-    if (typeof schema.maximum === "number") {
-      base += `.max(${schema.maximum})`;
-    }
-    return base;
+    return numberToZod(schema);
   }
   if (schema.type === "boolean") return "z.boolean()";
-  if (schema.type === "object") {
-    if (schema.properties) {
-      const props = Object.entries(schema.properties).map(([key, value]) => {
-        let zType = typeToZod(value, key.endsWith("At") && key !== "sentAt");
-        if (value.nullable) zType += ".nullable()";
-        if (!schema.required || !schema.required.includes(key)) {
-          zType += ".optional()";
-        }
-        return `"${key}": ${zType}`;
-      });
-      return `z.object({ ${props.join(", ")} })`;
-    }
-    if (schema.additionalProperties) {
-      return `z.record(z.string(), ${typeToZod(schema.additionalProperties)})`;
-    }
-    return "z.unknown()";
-  }
+  if (schema.type === "object") return objectToZod(schema);
   return "z.unknown()";
 }
 
@@ -235,12 +254,12 @@ export const outboundDaemonMessageSchema = z.discriminatedUnion("type", [
 export type OutboundDaemonMessage = z.infer<typeof outboundDaemonMessageSchema>;
 `;
 
-  outCode = outCode.replace(
-    /v: z\.number\(\)\.int\(\)\.optional\(\)/g,
+  outCode = outCode.replaceAll(
+    "v: z.number().int().optional()",
     "v: z.literal(PROTOCOL_VERSION).optional()",
   );
-  outCode = outCode.replace(
-    /"v": z\.number\(\)\.int\(\)\.optional\(\)/g,
+  outCode = outCode.replaceAll(
+    '"v": z.number().int().optional()',
     '"v": z.literal(PROTOCOL_VERSION).optional()',
   );
 
@@ -277,4 +296,4 @@ async function run() {
   console.log("Done!");
 }
 
-run().catch(console.error);
+await run();

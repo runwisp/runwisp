@@ -464,3 +464,225 @@ global_notifiers = ["does-not-exist"]
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "global_notifiers")
 }
+
+func TestDecode_NotifyDefaultTimeout(t *testing.T) {
+	src := schedulerTZHeader + `
+[notify]
+default_timeout = "5m"
+history_keep_for = "720h"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+	assert.NotZero(t, cfg.Notify.DefaultTimeout)
+	assert.NotZero(t, cfg.Notify.HistoryKeepFor)
+}
+
+func TestDecode_NotifyDefaultTimeout_Invalid(t *testing.T) {
+	src := schedulerTZHeader + `
+[notify]
+default_timeout = "not-a-duration"
+`
+	_, err := decode([]byte(src))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "default_timeout")
+}
+
+func TestDecode_NotifyHistoryKeepFor_Invalid(t *testing.T) {
+	src := schedulerTZHeader + `
+[notify]
+history_keep_for = "bad-value"
+`
+	_, err := decode([]byte(src))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "history_keep_for")
+}
+
+func TestValidate_RejectsTelegramMissingChatID(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "tg"
+type = "telegram"
+bot_token = "tok"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "chat_id")
+}
+
+func TestValidate_RejectsTelegramMissingBotToken(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "tg"
+type = "telegram"
+chat_id = "-1001"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bot_token")
+}
+
+func TestValidate_RejectsTelegramMarkdownV2WithoutTemplatePath(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "tg"
+type = "telegram"
+bot_token = "tok"
+chat_id = "-1001"
+parse_mode = "MarkdownV2"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parse_mode=MarkdownV2")
+}
+
+func TestValidate_AcceptsTelegramMarkdownV2WithTemplatePath(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "tg"
+type = "telegram"
+bot_token = "tok"
+chat_id = "-1001"
+parse_mode = "MarkdownV2"
+template_path = "/etc/runwisp/tg.html"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+}
+
+func TestValidate_SlackChannelBadPrefix(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "s"
+type = "slack"
+webhook_url = "https://example.com/hook"
+channel = "ops"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "# or @")
+}
+
+func TestValidate_SlackChannelWithAtPrefix(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "s"
+type = "slack"
+webhook_url = "https://example.com/hook"
+channel = "@user"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+}
+
+func TestValidate_UnknownNotifierType(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "x"
+type = "pagerduty"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pagerduty")
+}
+
+func TestValidate_RequireOneSecretSource_FileOnly(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "s"
+type = "slack"
+webhook_url_file = "/run/secrets/webhook"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+}
+
+func TestDesugarServiceNotify(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id = "ops"
+type = "slack"
+webhook_url = "https://example/x"
+
+[services.svc]
+run = "svc-process"
+on_overlap = "queue"
+instances = 1
+notify_on_failure = ["ops"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+	// Service task must still produce a route
+	found := false
+	for _, r := range cfg.Notify.Routes {
+		if r.TaskGlob == "svc" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "service task with notify_on_failure must produce a route")
+}
+
+func TestValidate_RouteWithEmptySeverity(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notification_route]]
+match = { kind = ["run.failed"] }
+notify = ["inapp"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+}
+
+func TestValidate_RouteWithBadSeverity(t *testing.T) {
+	src := `
+[[notification_route]]
+match = { kind = ["run.failed"], severity = "unknown-sev" }
+notify = ["inapp"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "match.severity")
+}
+
+func TestValidate_RouteWithInvalidGlob(t *testing.T) {
+	src := `
+[[notification_route]]
+match = { kind = ["run.failed"], task = "[invalid" }
+notify = ["inapp"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid task glob")
+}
+
+func TestValidate_RouteEmptyNotifyList(t *testing.T) {
+	src := `
+[[notification_route]]
+match = { kind = ["run.failed"] }
+notify = []
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "notify list is empty")
+}

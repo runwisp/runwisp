@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-// Clock is the time source used by the dispatcher and coalescer. The
+// Clocker is the time source used by the dispatcher and coalescer. The
 // production wire is time.Now; unit tests use testutil.FakeClock.
-type Clock interface {
+type Clocker interface {
 	Now() time.Time
 }
 
@@ -24,26 +24,25 @@ func (realClock) Now() time.Time { return time.Now() }
 
 // RealClock returns the production clock implementation. Convenience to avoid
 // callers stating their own.
-func RealClock() Clock { return realClock{} }
+func RealClock() Clocker { return realClock{} }
 
-// FailureSink receives synthetic delivery-failure events. The in-app channel's
+// SyntheticIngester receives synthetic delivery-failure events. The in-app channel's
 // Coalescer fits this shape; bypassing the router is what prevents cycles
 // (a Slack failure must never re-route as a Slack notification).
-type FailureSink interface {
+type SyntheticIngester interface {
 	IngestSynthetic(ev *Event)
 }
 
 // dispatcher pumps events from the ingress channel through the router to
 // per-channel queues, where workers execute side effects with retry and
-// surface permanent failures back via the FailureSink.
+// surface permanent failures back via the SyntheticIngester.
 type dispatcher struct {
-	router     *Router
-	channels   map[string]Channel
-	queueSize  int
-	clock      Clock
-	failures   FailureSink
-	logger     *slog.Logger
-	executeCtx context.Context
+	router    *Router
+	channels  map[string]Channel
+	queueSize int
+	clock     Clocker
+	failures  SyntheticIngester
+	logger    *slog.Logger
 
 	queues  map[string]chan *Event
 	workers sync.WaitGroup
@@ -51,7 +50,7 @@ type dispatcher struct {
 	droppedAction atomic.Uint64
 }
 
-func newDispatcher(router *Router, channels map[string]Channel, queueSize int, clock Clock, failures FailureSink, logger *slog.Logger) *dispatcher {
+func newDispatcher(router *Router, channels map[string]Channel, queueSize int, clock Clocker, failures SyntheticIngester, logger *slog.Logger) *dispatcher {
 	if queueSize <= 0 {
 		queueSize = 256
 	}
@@ -76,7 +75,6 @@ func newDispatcher(router *Router, channels map[string]Channel, queueSize int, c
 // startWorkers spawns one worker goroutine per channel. Workers exit when
 // their queue is closed AND drained, or when ctx is cancelled.
 func (d *dispatcher) startWorkers(ctx context.Context) {
-	d.executeCtx = ctx
 	for id, c := range d.channels {
 		queue := d.queues[id]
 		d.workers.Add(1)

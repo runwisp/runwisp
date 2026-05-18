@@ -23,3 +23,30 @@ func TestKind_FingerprintTokenCoversAllKinds(t *testing.T) {
 		assert.NotEmpty(t, token, "Kind.FingerprintToken() must return a non-empty string for %s", k)
 	}
 }
+
+func TestKindNotifyDeliveryFailed_Title_WithChannel(t *testing.T) {
+	ev := &Event{
+		Kind:  KindNotifyDeliveryFailed,
+		Extra: map[string]any{"channel": "slack-ops"},
+	}
+	title := KindNotifyDeliveryFailed.Title(ev)
+	assert.Equal(t, "Delivery to slack-ops failed", title)
+}
+
+func TestKindNotifyDeliveryFailed_Title_WrongChannelType(t *testing.T) {
+	ev := &Event{
+		Kind:  KindNotifyDeliveryFailed,
+		Extra: map[string]any{"channel": 42},
+	}
+	title := KindNotifyDeliveryFailed.Title(ev)
+	assert.Equal(t, "Notification delivery failed", title)
+}
+
+func TestKindNotifyDeliveryFailed_Title_NoChannelKey(t *testing.T) {
+	ev := &Event{
+		Kind:  KindNotifyDeliveryFailed,
+		Extra: map[string]any{},
+	}
+	title := KindNotifyDeliveryFailed.Title(ev)
+	assert.Equal(t, "Notification delivery failed", title)
+}

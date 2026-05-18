@@ -476,3 +476,76 @@ func TestNotificationsPanel_ReadItemHidesSeverityDot(t *testing.T) {
 		t.Errorf("expected exactly one severity dot for the unread row; got %d in %q", got, view)
 	}
 }
+
+// ─── ScheduleFlashClear ──────────────────────────────────────────────────────
+
+// TestScheduleFlashClear_ReturnsNonNilCmd verifies that ScheduleFlashClear
+// returns a non-nil tea.Cmd (the timer that triggers the repaint message).
+func TestScheduleFlashClear_ReturnsNonNilCmd(t *testing.T) {
+	cmd := ScheduleFlashClear()
+	if cmd == nil {
+		t.Fatal("ScheduleFlashClear must return a non-nil tea.Cmd")
+	}
+}
+
+// ─── truncateLine ────────────────────────────────────────────────────────────
+
+// TestTruncateLine_ShortLineUnchanged verifies that a line whose visual width
+// is at or below max is returned verbatim.
+func TestTruncateLine_ShortLineUnchanged(t *testing.T) {
+	cases := []struct {
+		name string
+		s    string
+		max  int
+	}{
+		{"empty string", "", 10},
+		{"exactly at limit", "hello", 5},
+		{"well below limit", "hi", 20},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncateLine(tc.s, tc.max)
+			if got != tc.s {
+				t.Fatalf("truncateLine(%q, %d): want %q unchanged, got %q", tc.s, tc.max, tc.s, got)
+			}
+		})
+	}
+}
+
+// TestTruncateLine_LongLineGetsTruncated verifies that a line exceeding max is
+// shortened and terminated with the ellipsis rune "…".
+func TestTruncateLine_LongLineGetsTruncated(t *testing.T) {
+	s := "this is a rather long notification title"
+	max := 15
+	got := truncateLine(s, max)
+	if len([]rune(got)) > max {
+		t.Fatalf("truncateLine: result length %d exceeds max %d; got %q", len([]rune(got)), max, got)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("truncateLine: long line must end with '…'; got %q", got)
+	}
+}
+
+// TestTruncateLine_MaxTwoOrLessPassThrough verifies the edge branch where
+// max <= 1 returns the string unchanged (guard against division-by-zero-style
+// panics with tiny widths).
+func TestTruncateLine_MaxOnePassThrough(t *testing.T) {
+	s := "long enough to truncate"
+	got := truncateLine(s, 1)
+	if got != s {
+		t.Fatalf("truncateLine with max=1 must pass through unchanged; got %q", got)
+	}
+}
+
+// TestTruncateLine_MaxThreeCutsWithoutEllipsis verifies the 2<=max<=3 branch
+// that hard-cuts without appending the ellipsis rune (no room for "…").
+func TestTruncateLine_MaxThreeCutsWithoutEllipsis(t *testing.T) {
+	s := "abcdefgh"
+	got := truncateLine(s, 3)
+	if len(got) != 3 {
+		t.Fatalf("truncateLine with max=3: want 3 bytes, got %d (%q)", len(got), got)
+	}
+	if strings.HasSuffix(got, "…") {
+		t.Fatalf("truncateLine with max=3 must not append ellipsis; got %q", got)
+	}
+}

@@ -38,22 +38,22 @@ export const browserTokenStorage = {
 
 export const browserAuthEventBus = {
     onAuthRequired(handler: EventListener) {
-        window.addEventListener(AUTH_EVENTS.REQUIRED, handler);
+        globalThis.addEventListener(AUTH_EVENTS.REQUIRED, handler);
         return () => {
-            window.removeEventListener(AUTH_EVENTS.REQUIRED, handler);
+            globalThis.removeEventListener(AUTH_EVENTS.REQUIRED, handler);
         };
     },
     onAuthSuccess(handler: EventListener) {
-        window.addEventListener(AUTH_EVENTS.SUCCESS, handler);
+        globalThis.addEventListener(AUTH_EVENTS.SUCCESS, handler);
         return () => {
-            window.removeEventListener(AUTH_EVENTS.SUCCESS, handler);
+            globalThis.removeEventListener(AUTH_EVENTS.SUCCESS, handler);
         };
     },
     emitAuthRequired() {
-        window.dispatchEvent(new CustomEvent(AUTH_EVENTS.REQUIRED));
+        globalThis.dispatchEvent(new CustomEvent(AUTH_EVENTS.REQUIRED));
     },
     emitAuthSuccess() {
-        window.dispatchEvent(new CustomEvent(AUTH_EVENTS.SUCCESS));
+        globalThis.dispatchEvent(new CustomEvent(AUTH_EVENTS.SUCCESS));
     },
 };
 

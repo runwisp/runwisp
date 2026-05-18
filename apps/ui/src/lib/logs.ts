@@ -123,10 +123,7 @@ function handleDoneEvent(
     const result = doneSchema.safeParse(JSON.parse(data));
     if (!result.success) return false;
     state.finished = true;
-    const sz =
-        result.data.final_line + 1 > state.totalLines
-            ? result.data.final_line + 1
-            : state.totalLines;
+    const sz = Math.max(result.data.final_line + 1, state.totalLines);
     const evt: LogEvent = { lines: {}, sizeLines: sz, finished: true };
     if (state.firstAvailable > 0) evt.firstAvailableLine = state.firstAvailable;
     onEvent(evt);
@@ -165,9 +162,7 @@ export function createLogStreamer(taskName: string) {
                 logger.warn(
                     "Log stream error for " + taskName + "/" + runId + ":",
                     (info.message ?? "connection lost") +
-                        (typeof info.status !== "undefined"
-                            ? " (HTTP " + String(info.status) + ")"
-                            : ""),
+                        (info.status === undefined ? "" : " (HTTP " + String(info.status) + ")"),
                 );
             },
             onEvent: (eventType, data) => {

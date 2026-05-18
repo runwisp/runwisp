@@ -47,7 +47,7 @@ type TaskManager interface {
 	ShutdownWithDeadline(deadline time.Duration)
 }
 
-// ScheduleSource is the subset of Scheduler consumed by the server package.
-type ScheduleSource interface {
+// NextRunGetter is the subset of Scheduler consumed by the server package.
+type NextRunGetter interface {
 	GetNextRun(taskName string) *string
 }

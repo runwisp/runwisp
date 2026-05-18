@@ -76,13 +76,7 @@ export { default as TaskCard } from "./components/TaskCard.svelte";
 export type { TaskCardAccent } from "./components/TaskCard.svelte";
 
 export { default as LogConsole } from "./components/LogConsole.svelte";
-export type {
-    FetchLogsFn,
-    LineNumber,
-    LogEvent,
-    LogMessage,
-    LogSlice,
-} from "./log-console/types.js";
+export type { FetchLogsFn, LogEvent, LogSlice } from "./log-console/types.js";
 export { isLogEvent } from "./log-console/types.js";
 export { LogCache } from "./log-console/LogCache.svelte.js";
 export { LogFetcher } from "./log-console/LogFetcher.svelte.js";

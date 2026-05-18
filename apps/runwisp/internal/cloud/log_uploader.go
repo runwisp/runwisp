@@ -36,7 +36,7 @@ type LogUploaderResult struct {
 // only on successful upload.
 type LogUploader struct {
 	repo         PendingLogUploadRepository
-	runRepo      RunRepository
+	runRepo      ExternalRunGetter
 	logDir       string
 	httpClient   *http.Client
 	now          func() time.Time
@@ -55,7 +55,7 @@ type uploadEntry struct {
 // LogDir so file paths can be resolved on terminal. now is the wall-clock
 // source for persisted dispatch records; production passes time.Now, tests
 // inject a fixed clock to keep persistence fixtures deterministic.
-func NewLogUploader(repo PendingLogUploadRepository, runRepo RunRepository, logDir string, now func() time.Time) *LogUploader {
+func NewLogUploader(repo PendingLogUploadRepository, runRepo ExternalRunGetter, logDir string, now func() time.Time) *LogUploader {
 	if now == nil {
 		now = time.Now
 	}
@@ -157,33 +157,37 @@ func (u *LogUploader) RecoverOrphans(ctx context.Context, emit func(executionID 
 		u.pending[rec.ExternalExecutionID] = uploadEntry{uploadURL: rec.UploadURL, logPath: rec.LogPath}
 		u.mu.Unlock()
 
-		run, runErr := u.runRepo.GetRunByExternalExecutionID(rec.ExternalExecutionID)
-		if runErr != nil {
-			if errors.Is(runErr, ErrNotFound) {
-				slog.Info("dropping orphan log upload row: run not found", "executionId", rec.ExternalExecutionID)
-				u.forget(rec.ExternalExecutionID)
-				continue
-			}
-			slog.Warn("failed to query run for orphan upload", "executionId", rec.ExternalExecutionID, "err", runErr)
-			continue
-		}
-		if !run.Status.IsTerminal() {
-			slog.Info("skipping orphan upload: run not terminal yet", "executionId", rec.ExternalExecutionID)
-			continue
-		}
+		u.recoverOrphanRecord(ctx, rec, emit)
+	}
+}
 
-		logFilePath := logutil.ResolveRunLogPath(u.logDir, run.TaskName, run.ID, run.CreatedAt)
-		result, err := u.Archive(ctx, rec.ExternalExecutionID, logFilePath)
-		if err != nil {
-			slog.Warn("orphan log upload failed", "executionId", rec.ExternalExecutionID, "err", err)
-			continue
+func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec model.PendingLogUpload, emit func(executionID string, result LogUploaderResult)) {
+	run, runErr := u.runRepo.GetRunByExternalExecutionID(rec.ExternalExecutionID)
+	if runErr != nil {
+		if errors.Is(runErr, ErrNotFound) {
+			slog.Info("dropping orphan log upload row: run not found", "executionId", rec.ExternalExecutionID)
+			u.forget(rec.ExternalExecutionID)
+			return
 		}
-		if result == nil {
-			continue
-		}
-		if emit != nil {
-			emit(rec.ExternalExecutionID, *result)
-		}
+		slog.Warn("failed to query run for orphan upload", "executionId", rec.ExternalExecutionID, "err", runErr)
+		return
+	}
+	if !run.Status.IsTerminal() {
+		slog.Info("skipping orphan upload: run not terminal yet", "executionId", rec.ExternalExecutionID)
+		return
+	}
+
+	logFilePath := logutil.ResolveRunLogPath(u.logDir, run.TaskName, run.ID, run.CreatedAt)
+	result, err := u.Archive(ctx, rec.ExternalExecutionID, logFilePath)
+	if err != nil {
+		slog.Warn("orphan log upload failed", "executionId", rec.ExternalExecutionID, "err", err)
+		return
+	}
+	if result == nil {
+		return
+	}
+	if emit != nil {
+		emit(rec.ExternalExecutionID, *result)
 	}
 }
 

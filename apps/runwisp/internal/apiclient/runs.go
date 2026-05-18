@@ -105,12 +105,12 @@ func (c *Client) StopService(taskName string) error {
 }
 
 // StopRun sends a stop signal to a running execution.
-func (c *Client) StopRun(taskName string, runID string) error {
+func (c *Client) StopRun(taskName, runID string) error {
 	return c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/runs/%s/stop", taskName, runID), nil, nil)
 }
 
 // GetRun fetches a single run by task name and run ID.
-func (c *Client) GetRun(taskName string, runID string) (*model.Run, error) {
+func (c *Client) GetRun(taskName, runID string) (*model.Run, error) {
 	var run model.Run
 	if err := c.doJSON("GET", fmt.Sprintf("/api/tasks/%s/runs/%s", taskName, runID), nil, &run); err != nil {
 		return nil, err
@@ -119,6 +119,6 @@ func (c *Client) GetRun(taskName string, runID string) (*model.Run, error) {
 }
 
 // DeleteRun removes a run record.
-func (c *Client) DeleteRun(taskName string, runID string) error {
+func (c *Client) DeleteRun(taskName, runID string) error {
 	return c.doJSON("DELETE", fmt.Sprintf("/api/tasks/%s/runs/%s", taskName, runID), nil, nil)
 }

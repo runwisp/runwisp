@@ -256,6 +256,44 @@ func TestCountUnreadNotifications(t *testing.T) {
 	assert.EqualValues(t, 1, c)
 }
 
+// --- encodeOccurrences / decodeOccurrences ---
+
+func TestEncodeOccurrences_Nil(t *testing.T) {
+	// nil input should marshal to empty array, not "null"
+	s, err := encodeOccurrences(nil)
+	require.NoError(t, err)
+	assert.Equal(t, "[]", s)
+}
+
+func TestEncodeOccurrences_NonNil(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	s, err := encodeOccurrences([]time.Time{now})
+	require.NoError(t, err)
+	assert.Contains(t, s, `"`)
+}
+
+func TestDecodeOccurrences_Empty(t *testing.T) {
+	ts, err := decodeOccurrences("")
+	require.NoError(t, err)
+	assert.Nil(t, ts)
+}
+
+func TestDecodeOccurrences_ValidJSON(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	encoded, err := encodeOccurrences([]time.Time{now})
+	require.NoError(t, err)
+
+	decoded, err := decodeOccurrences(encoded)
+	require.NoError(t, err)
+	require.Len(t, decoded, 1)
+	assert.Equal(t, now, decoded[0].UTC().Truncate(time.Second))
+}
+
+func TestDecodeOccurrences_InvalidJSON(t *testing.T) {
+	_, err := decodeOccurrences("not-json")
+	require.Error(t, err)
+}
+
 func TestUpsertByFingerprint_CoalesceClearsReadAt(t *testing.T) {
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)

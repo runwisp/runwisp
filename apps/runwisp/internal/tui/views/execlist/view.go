@@ -148,88 +148,99 @@ func (v *ExecView) Update(msg tea.Msg) tea.Cmd {
 	if !v.focused {
 		return nil
 	}
-
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil
 	}
-
 	key := keyMsg.String()
-
 	if v.fullscreen {
 		v.Pane.HandleKeyScroll(key)
 		return nil
 	}
-
 	switch key {
 	case "up", "k":
-		switch v.HeaderFocus {
-		case HeaderFocusBack, HeaderFocusID, HeaderFocusAction:
-			return nil
-		case HeaderFocusStarted, HeaderFocusDuration:
-			v.HeaderFocus = HeaderFocusID
-			return nil
-		default:
-			if v.Pane.Scroll > 0 {
-				v.Pane.Scroll--
-				v.Pane.Follow = false
-			} else {
-				v.HeaderFocus = HeaderFocusStarted
-			}
-			return nil
-		}
+		return v.handleKeyUp()
 	case "down", "j":
-		switch v.HeaderFocus {
-		case HeaderFocusBack, HeaderFocusID, HeaderFocusAction:
-			v.HeaderFocus = HeaderFocusStarted
-			return nil
-		case HeaderFocusStarted, HeaderFocusDuration:
-			v.HeaderFocus = HeaderFocusNone
-			return nil
-		default:
-			v.Pane.HandleKeyScroll(key)
-			return nil
-		}
+		return v.handleKeyDown(key)
 	case "left":
-		switch v.HeaderFocus {
-		case HeaderFocusAction:
-			v.HeaderFocus = HeaderFocusID
-			return nil
-		case HeaderFocusID:
-			v.HeaderFocus = HeaderFocusBack
-			return nil
-		case HeaderFocusDuration:
-			v.HeaderFocus = HeaderFocusStarted
-			return nil
-		case HeaderFocusBack, HeaderFocusStarted:
-			return nil
-		default:
-			v.Pane.HandleKeyScroll(key)
-			return nil
-		}
+		return v.handleKeyLeft(key)
 	case "right":
-		switch v.HeaderFocus {
-		case HeaderFocusBack:
-			v.HeaderFocus = HeaderFocusID
-			return nil
-		case HeaderFocusID:
-			if v.hasActionButton() {
-				v.HeaderFocus = HeaderFocusAction
-			}
-			return nil
-		case HeaderFocusStarted:
-			v.HeaderFocus = HeaderFocusDuration
-			return nil
-		case HeaderFocusAction, HeaderFocusDuration:
-			return nil
-		default:
-			v.Pane.HandleKeyScroll(key)
-			return nil
-		}
+		return v.handleKeyRight(key)
 	}
-
 	v.Pane.HandleKeyScroll(key)
 	return nil
+}
+
+func (v *ExecView) handleKeyUp() tea.Cmd {
+	switch v.HeaderFocus {
+	case HeaderFocusBack, HeaderFocusID, HeaderFocusAction:
+		return nil
+	case HeaderFocusStarted, HeaderFocusDuration:
+		v.HeaderFocus = HeaderFocusID
+		return nil
+	default:
+		if v.Pane.Scroll > 0 {
+			v.Pane.Scroll--
+			v.Pane.Follow = false
+		} else {
+			v.HeaderFocus = HeaderFocusStarted
+		}
+		return nil
+	}
+}
+
+func (v *ExecView) handleKeyDown(key string) tea.Cmd {
+	switch v.HeaderFocus {
+	case HeaderFocusBack, HeaderFocusID, HeaderFocusAction:
+		v.HeaderFocus = HeaderFocusStarted
+		return nil
+	case HeaderFocusStarted, HeaderFocusDuration:
+		v.HeaderFocus = HeaderFocusNone
+		return nil
+	default:
+		v.Pane.HandleKeyScroll(key)
+		return nil
+	}
+}
+
+func (v *ExecView) handleKeyLeft(key string) tea.Cmd {
+	switch v.HeaderFocus {
+	case HeaderFocusAction:
+		v.HeaderFocus = HeaderFocusID
+		return nil
+	case HeaderFocusID:
+		v.HeaderFocus = HeaderFocusBack
+		return nil
+	case HeaderFocusDuration:
+		v.HeaderFocus = HeaderFocusStarted
+		return nil
+	case HeaderFocusBack, HeaderFocusStarted:
+		return nil
+	default:
+		v.Pane.HandleKeyScroll(key)
+		return nil
+	}
+}
+
+func (v *ExecView) handleKeyRight(key string) tea.Cmd {
+	switch v.HeaderFocus {
+	case HeaderFocusBack:
+		v.HeaderFocus = HeaderFocusID
+		return nil
+	case HeaderFocusID:
+		if v.hasActionButton() {
+			v.HeaderFocus = HeaderFocusAction
+		}
+		return nil
+	case HeaderFocusStarted:
+		v.HeaderFocus = HeaderFocusDuration
+		return nil
+	case HeaderFocusAction, HeaderFocusDuration:
+		return nil
+	default:
+		v.Pane.HandleKeyScroll(key)
+		return nil
+	}
 }
 
 func (v *ExecView) Action() Action {

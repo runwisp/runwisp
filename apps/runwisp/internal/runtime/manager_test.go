@@ -604,6 +604,33 @@ func TestPersistAfterShutdownDoesNotPanic(t *testing.T) {
 	})
 }
 
+func TestGetTask_NotFound(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	_, found := jm.GetTask("nonexistent")
+	assert.False(t, found)
+}
+
+func TestGetTask_Found(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	task := testTask("task1", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+	got, found := jm.GetTask("task1")
+	assert.True(t, found)
+	assert.Equal(t, "task1", got.Name)
+}
+
+func TestGetActiveRuns_NotFound(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	runs := jm.GetActiveRuns("unknown")
+	assert.Nil(t, runs)
+}
+
+func TestTerminateRunByExternalExecutionID_NotFound(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	err := jm.TerminateRunByExternalExecutionID("unknown-ext-id")
+	assert.Error(t, err)
+}
+
 // TestInjectedClockStampsCreatedAt pins the determinism guarantee added with
 // the run-manager clock injection: TriggerRun's CreatedAt must come from the
 // injected clock, not an inline time.Now(). A regression here would re-open

@@ -242,7 +242,16 @@ func (srv *Server) registerLogSSE(api huma.API) {
 			Dropped: func(e logstream.DroppedEvent) any { return LogDroppedEvent(e) },
 			Done:    func(e logstream.DoneEvent) any { return LogDoneEvent(e) },
 		}
-		logstream.Run(streamCtx, sender, logPath, run.ID, srv.eventBus, srv.db, from, replay, run.Status.IsTerminal())
+		logstream.Run(streamCtx, logstream.StreamConfig{
+			Send:        sender,
+			LogPath:     logPath,
+			RunID:       run.ID,
+			Bus:         srv.eventBus,
+			DB:          srv.db,
+			AnchorFrom:  from,
+			ReplayLimit: replay,
+			RunEnded:    run.Status.IsTerminal(),
+		})
 	})
 }
 

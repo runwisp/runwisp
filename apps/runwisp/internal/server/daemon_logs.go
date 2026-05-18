@@ -21,38 +21,40 @@ func (srv *Server) registerDaemonLogSSE(api huma.API) {
 		Tags:        []string{"System"},
 	}, map[string]any{
 		"line": DaemonLogLineEvent{},
-	}, func(ctx context.Context, _ *struct{}, send sse.Sender) {
-		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
-		if !ok {
+	}, srv.sseDaemonLogHandler)
+}
+
+func (srv *Server) sseDaemonLogHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
+	release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+	if !ok {
+		return
+	}
+	defer release()
+
+	if srv.daemonLogBuffer == nil {
+		return
+	}
+
+	for _, line := range srv.daemonLogBuffer.Lines(100) {
+		if err := send(sse.Message{Data: DaemonLogLineEvent{Line: line}}); err != nil {
 			return
 		}
-		defer release()
+	}
 
-		if srv.daemonLogBuffer == nil {
+	subID, ch := srv.daemonLogBuffer.Subscribe()
+	defer srv.daemonLogBuffer.Unsubscribe(subID)
+
+	for {
+		select {
+		case <-ctx.Done():
 			return
-		}
-
-		for _, line := range srv.daemonLogBuffer.Lines(100) {
+		case line, ok := <-ch:
+			if !ok {
+				return
+			}
 			if err := send(sse.Message{Data: DaemonLogLineEvent{Line: line}}); err != nil {
 				return
 			}
 		}
-
-		subID, ch := srv.daemonLogBuffer.Subscribe()
-		defer srv.daemonLogBuffer.Unsubscribe(subID)
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case line, ok := <-ch:
-				if !ok {
-					return
-				}
-				if err := send(sse.Message{Data: DaemonLogLineEvent{Line: line}}); err != nil {
-					return
-				}
-			}
-		}
-	})
+	}
 }

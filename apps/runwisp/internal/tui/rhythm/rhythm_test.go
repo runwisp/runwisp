@@ -114,6 +114,68 @@ func runVector(v rhythmVector) (string, string) {
 	return phrase, spark
 }
 
+func TestRelative(t *testing.T) {
+	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{5 * time.Second, "just now"},
+		{45 * time.Second, "45s ago"},
+		{90 * time.Second, "1m ago"},
+		{30 * time.Minute, "30m ago"},
+		{2 * time.Hour, "2h ago"},
+		{25 * time.Hour, "yesterday"},
+		{5 * 24 * time.Hour, "5d ago"},
+		{45 * 24 * time.Hour, "1mo ago"},
+		{2 * 30 * 24 * time.Hour, "2mo ago"},
+		{400 * 24 * time.Hour, "1y ago"},
+		{3 * 365 * 24 * time.Hour, "3y ago"},
+	}
+	for _, tt := range tests {
+		got := Relative(now.Add(-tt.d), now)
+		assert.Equal(t, tt.want, got, "Relative with d=%v", tt.d)
+	}
+}
+
+func TestFormatSpan(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{30 * time.Minute, "30m"},
+		{90 * time.Minute, "1h"},
+		{3 * 24 * time.Hour, "3d"},
+		{10 * 24 * time.Hour, "1 week"},
+		{14 * 24 * time.Hour, "2 weeks"},
+		{50 * 24 * time.Hour, "1 month"},
+		{90 * 24 * time.Hour, "3 months"},
+	}
+	for _, tt := range tests {
+		got := formatSpan(tt.d)
+		assert.Equal(t, tt.want, got, "formatSpan(%v)", tt.d)
+	}
+}
+
+func TestSparkline_Empty(t *testing.T) {
+	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	assert.Equal(t, "", Sparkline(nil, now, time.Hour, 8))
+	assert.Equal(t, "", Sparkline([]time.Time{}, now, time.Hour, 8))
+	assert.Equal(t, "", Sparkline([]time.Time{now.Add(-2 * time.Hour)}, now, time.Hour, 8)) // outside window
+}
+
+func TestSparkline_DefaultCells(t *testing.T) {
+	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	occ := []time.Time{now.Add(-5 * time.Minute)}
+	out := Sparkline(occ, now, time.Hour, 0) // 0 → defaults to 8
+	assert.NotEmpty(t, out)
+}
+
+func TestAllWithin_EmptySlice(t *testing.T) {
+	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	assert.False(t, allWithin(nil, now, time.Hour))
+}
+
 func TestRhythm_TableVectors(t *testing.T) {
 	for _, v := range vectorInputs() {
 		v := v

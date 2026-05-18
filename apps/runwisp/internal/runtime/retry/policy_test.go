@@ -228,4 +228,23 @@ func TestComputeRestartDelay(t *testing.T) {
 		}
 		assert.Equal(t, RestartBackoffCap, ComputeRestartDelay(task, 100))
 	})
+
+	t.Run("linear scales with attempt+1", func(t *testing.T) {
+		task := &model.Task{
+			RestartDelay:   2 * time.Second,
+			RestartBackoff: model.BackoffLinear,
+		}
+		// delay = base * (attempt+1)
+		assert.Equal(t, 4*time.Second, ComputeRestartDelay(task, 1)) // 2s * 2
+		assert.Equal(t, 6*time.Second, ComputeRestartDelay(task, 2)) // 2s * 3
+		assert.Equal(t, 8*time.Second, ComputeRestartDelay(task, 3)) // 2s * 4
+	})
+
+	t.Run("linear clamps to cap", func(t *testing.T) {
+		task := &model.Task{
+			RestartDelay:   time.Minute,
+			RestartBackoff: model.BackoffLinear,
+		}
+		assert.Equal(t, RestartBackoffCap, ComputeRestartDelay(task, 10))
+	})
 }
