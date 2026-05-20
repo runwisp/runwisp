@@ -175,7 +175,7 @@ generate: $(ASYNCAPI_STAMP) $(OPENAPI_JSON) $(COMMON_API_TS) ## regenerate async
 
 check: $(ALL_LINT_STAMPS) check-go ## type-check + lint everything (cached per package)
 
-check-go: ## go vet + gofmt
+check-go: $(ASYNCAPI_STAMP) ## go vet + gofmt
 	$(call step,go vet + gofmt,cd apps/runwisp && ./scripts/check-go.sh)
 
 format: format-runwisp format-ui-app format-docs format-ui ## go fmt + prettier across the workspace
