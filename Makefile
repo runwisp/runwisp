@@ -203,7 +203,7 @@ test-runwisp:
 		go tool covdata textfmt -i $(E2E_COVDIR) -o .coverage_e2e.out 2>/dev/null; \
 		cat .coverage_unit.out > .coverage_raw.out; \
 		grep -v '^mode:' .coverage_e2e.out >> .coverage_raw.out 2>/dev/null || true; \
-		python3 ./scripts/merge-coverage.py; \
+		./scripts/merge-coverage.sh; \
 		rm -f .coverage_unit.out .coverage_e2e.out .coverage_raw.out
 	@rm -rf $(E2E_COVDIR)
 
