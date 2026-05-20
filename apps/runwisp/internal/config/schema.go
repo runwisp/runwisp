@@ -104,10 +104,20 @@ type NotificationRoute struct {
 // (e.g. "https://runwisp.example.com"). When set, notification renderers
 // build deep-links into the dashboard; when empty, link lines are omitted
 // from outbound messages rather than rendered as broken URLs.
+//
+// MetricsEnabled gates the OpenMetrics /metrics endpoint. Default off: the
+// per-task labels and the daemon version label are information disclosure
+// that a publicly-exposed daemon shouldn't leak by default. Operators who
+// scrape with Prometheus opt in. MetricsListen, when non-empty, binds the
+// metrics endpoint to a separate address (e.g. "127.0.0.1:9478") instead of
+// sharing the main UI/REST listener — useful when --host exposes the UI
+// publicly but the scrape surface should stay on loopback.
 type Daemon struct {
 	AllowCloudDispatch bool          `toml:"-"`
 	ShutdownTimeout    time.Duration `toml:"-"`
 	ExternalURL        string        `toml:"-"`
+	MetricsEnabled     bool          `toml:"-"`
+	MetricsListen      string        `toml:"-"`
 }
 
 // Defaults provides fallback values applied to every task.
@@ -248,6 +258,8 @@ type daemonWire struct {
 	AllowCloudDispatch bool   `toml:"allow_cloud_dispatch,omitempty"`
 	ShutdownTimeout    string `toml:"shutdown_timeout,omitempty"`
 	ExternalURL        string `toml:"external_url,omitempty"`
+	MetricsEnabled     bool   `toml:"metrics_enabled,omitempty"`
+	MetricsListen      string `toml:"metrics_listen,omitempty"`
 }
 
 // schedulerWire mirrors [scheduler] before parsing.
@@ -453,10 +465,19 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	if err != nil {
 		return Daemon{}, err
 	}
+	metricsListen, err := parseMetricsListen(w.MetricsListen)
+	if err != nil {
+		return Daemon{}, err
+	}
+	if metricsListen != "" && !w.MetricsEnabled {
+		return Daemon{}, fmt.Errorf("invalid daemon.metrics_listen: set without daemon.metrics_enabled = true")
+	}
 	return Daemon{
 		AllowCloudDispatch: w.AllowCloudDispatch,
 		ShutdownTimeout:    shutdown,
 		ExternalURL:        externalURL,
+		MetricsEnabled:     w.MetricsEnabled,
+		MetricsListen:      metricsListen,
 	}, nil
 }
 

@@ -74,6 +74,11 @@ func (m *mockTaskRunner) RecordSkippedFiring(taskName string, reason model.EndRe
 	return args.Error(0)
 }
 
+func (m *mockTaskRunner) GetActiveRunCount(taskName string) int {
+	args := m.Called(taskName)
+	return args.Int(0)
+}
+
 // helpers
 
 func makeRunService(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner) *runService {

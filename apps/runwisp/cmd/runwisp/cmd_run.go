@@ -119,6 +119,8 @@ func runDaemon(mode daemonMode) error {
 		DaemonInfo:        daemonInfo,
 		DaemonLogBuffer:   logBuffer,
 		LogOutput:         logOutput,
+		MetricsEnabled:    cfg.Config.Daemon.MetricsEnabled,
+		MetricsListen:     cfg.Config.Daemon.MetricsListen,
 	})
 	if err != nil {
 		return err

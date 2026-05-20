@@ -140,3 +140,17 @@ hole.
 
 The daemon rejects `0.0.0.0/0` and `::/0` — trusting the entire
 internet would let any client lie about its source IP.
+
+## Public endpoints
+
+A short list of routes that intentionally bypass the password / JWT
+boundary:
+
+- `/health` — liveness probe; always `200 OK`.
+- `/metrics` — Prometheus / OpenMetrics scrape endpoint. See
+  [Metrics](/operations/metrics/) for the surface and the security
+  trade-off.
+
+Everything under `/api/` (other than the auth handshake itself)
+requires either a valid session cookie or a request delivered over
+the local Unix socket.

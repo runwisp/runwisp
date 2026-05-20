@@ -103,7 +103,13 @@ export default defineConfig({
                         { label: "Docker patterns", slug: "recipes/docker" },
                     ],
                 },
-                { label: "Auth", slug: "operations/auth" },
+                {
+                    label: "Operations",
+                    items: [
+                        { label: "Auth", slug: "operations/auth" },
+                        { label: "Metrics", slug: "operations/metrics" },
+                    ],
+                },
                 // ...openAPISidebarGroups,
             ],
         }),

@@ -23,12 +23,16 @@ think of them together.
 [daemon]
 shutdown_timeout = "10s"
 external_url     = "https://runwisp.example.com"
+metrics_enabled  = false
+metrics_listen   = ""
 ```
 
-| Key                | Default | What it does                                                                                                                                                          |
-| ------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shutdown_timeout` | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.        |
-| `external_url`     | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted. |
+| Key                | Default | What it does                                                                                                                                                                                                                    |
+| ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shutdown_timeout` | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                  |
+| `external_url`     | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                           |
+| `metrics_enabled`  | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.            |
+| `metrics_listen`   | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`. |
 
 ### `shutdown_timeout`
 
@@ -59,6 +63,30 @@ into the run-detail panel of the embedded dashboard.
 Leaving `external_url` unset is the supported default. Notifications
 still render fully — they just omit the link line rather than emitting
 a broken URL.
+
+### `metrics_enabled`
+
+`metrics_enabled` gates the OpenMetrics scrape endpoint at `/metrics`.
+Default off: `runwisp_task_active_runs` carries your task names as label
+values, and `runwisp_build_info` carries the daemon version — that's
+recon detail a publicly-exposed daemon shouldn't leak by default. Flip
+this to `true` when you're ready to plug RunWisp into Prometheus,
+Grafana Agent, or an OpenTelemetry collector. See
+[Operations / Metrics](/operations/metrics/) for the full label list
+and a sample scrape config.
+
+### `metrics_listen`
+
+Once `metrics_enabled = true`, the endpoint shares the main UI/REST
+listener by default. Set `metrics_listen = "127.0.0.1:9478"` (or any
+host:port) to bind `/metrics` on a dedicated address instead — this is
+the right knob when `--host 0.0.0.0` exposes the dashboard publicly but
+the scrape surface should stay on loopback. The dedicated listener
+serves only `/metrics`; the UI, REST API, and `/health` remain on the
+main listener.
+
+Setting `metrics_listen` without `metrics_enabled = true` is rejected
+at boot rather than silently ignored.
 
 ## CLI flags: data directory & listen address
 

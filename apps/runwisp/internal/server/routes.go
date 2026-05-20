@@ -134,6 +134,14 @@ func (srv *Server) setupRoutes() error {
 		_, _ = w.Write([]byte("OK"))
 	})
 
+	// OpenMetrics scrape endpoint. Off by default; when enabled without a
+	// dedicated [daemon] metrics_listen it mounts here, parallel to /health.
+	// A non-empty metrics_listen routes scrapes to a separate http.Server
+	// stood up in Start(), so we deliberately do NOT mount on the main mux.
+	if srv.metricsEnabled && srv.metricsListen == "" {
+		srv.router.Get("/metrics", srv.handleOpenMetrics)
+	}
+
 	// Public auth endpoints (huma — only authStatus; challenge is raw chi below)
 	srv.registerAuthRoutes()
 

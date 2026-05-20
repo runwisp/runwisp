@@ -28,6 +28,9 @@ type TaskRunner interface {
 	// executor started — currently used by the scheduler to log DST wall-clock
 	// duplicates with end_reason = "dst_skipped".
 	RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error
+	// GetActiveRunCount reports how many runs for the given task are currently
+	// in flight. Unknown tasks return 0.
+	GetActiveRunCount(taskName string) int
 }
 
 // TaskManager is the full lifecycle interface for task management.

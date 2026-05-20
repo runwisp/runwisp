@@ -1,0 +1,135 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Metrics
+description: Scrape RunWisp from Prometheus, Grafana Agent, or any OpenMetrics-compatible collector via the daemon's public /metrics endpoint.
+---
+
+RunWisp exposes a Prometheus-compatible `/metrics` endpoint in
+OpenMetrics 1.0 text format. It is **opt-in**: flip
+[`[daemon] metrics_enabled = true`](/configuration/daemon/#metrics_enabled)
+in `runwisp.toml` to turn it on. Once enabled, it is **unauthenticated**
+and lives alongside `/health` by default — so the same firewall or
+reverse-proxy posture you use for those applies here.
+
+Why opt-in: the metric labels include your task names
+(`runwisp_task_active_runs{task=...}`) and the daemon version
+(`runwisp_build_info{version=...}`). That's recon detail a
+publicly-exposed daemon shouldn't leak unless you've decided you want
+to scrape it.
+
+## Enable it
+
+Add this to `runwisp.toml` and restart the daemon:
+
+```toml
+[daemon]
+metrics_enabled = true
+```
+
+By default the endpoint mounts on the same address as the Web UI and
+REST API. If you've set `--host 0.0.0.0` to expose the dashboard
+publicly and want the scrape surface to stay on loopback, point it at
+a dedicated listener instead:
+
+```toml
+[daemon]
+metrics_enabled = true
+metrics_listen  = "127.0.0.1:9478"
+```
+
+The dedicated listener serves only `/metrics`; nothing else (no UI, no
+`/health`, no REST API).
+
+## Scrape config
+
+A minimal `prometheus.yml` job — replace the port with `metrics_listen`'s
+port if you configured a dedicated listener:
+
+```yaml
+scrape_configs:
+    - job_name: runwisp
+      scrape_interval: 30s
+      static_configs:
+          - targets: ["localhost:9477"]
+```
+
+The endpoint serves `application/openmetrics-text; version=1.0.0;
+charset=utf-8` and terminates with the `# EOF` marker that strict
+OpenMetrics parsers require. Both Prometheus and the OpenTelemetry
+Collector parse it without any extra configuration.
+
+If you have `promtool` on `PATH`, you can lint the output directly:
+
+```bash
+curl -s http://localhost:9477/metrics | promtool check metrics
+```
+
+## Available metrics
+
+All metric names use the `runwisp_` prefix. The current set is
+intentionally small — it covers Prime Directive #1 ("nothing
+silently fails") and the daemon-liveness signals operators need.
+Histograms for run duration and per-end-reason counters may come
+later.
+
+| Metric                                        | Type    | Labels         | Meaning                                                                                |
+| --------------------------------------------- | ------- | -------------- | -------------------------------------------------------------------------------------- |
+| `runwisp_runs_total`                          | counter | `status`       | Total runs that reached a terminal status (`success` or `failed`) since the DB existed |
+| `runwisp_runs_last_failure_timestamp_seconds` | gauge   | —              | Unix time of the most recent failed run; **omitted entirely** when no failure recorded |
+| `runwisp_task_active_runs`                    | gauge   | `task`, `kind` | In-flight runs per task; `kind` is `task` or `service`                                 |
+| `runwisp_daemon_cpu_percent`                  | gauge   | —              | Host CPU usage as seen by the daemon (0–100)                                           |
+| `runwisp_daemon_memory_used_bytes`            | gauge   | —              | Host memory in use, in bytes                                                           |
+| `runwisp_daemon_memory_total_bytes`           | gauge   | —              | Total host memory, in bytes                                                            |
+| `runwisp_daemon_uptime_seconds`               | gauge   | —              | Seconds since the daemon started                                                       |
+| `runwisp_build_info`                          | gauge   | `version`      | Always `1`; the label carries the running daemon's version string                      |
+
+`runwisp_runs_last_failure_timestamp_seconds` is omitted when no run
+has ever failed — emitting a literal `0` would read as a failure in 1970. A simple alert like `time() - runwisp_runs_last_failure_timestamp_seconds < 600`
+fires for "anything went wrong in the last ten minutes" without
+needing to special-case the missing-sample case (use `absent_over_time`
+if you want to.)
+
+## Security
+
+The endpoint is off by default for the reasons in the intro: enabling
+it makes your task names and daemon version visible to anyone who can
+reach the address it's bound to. Secrets, run output, and `run = …`
+shell commands are **not** in the metrics surface — only counters,
+timestamps, gauges, and the labels listed in the table above.
+
+Once you've enabled it, pick one of these postures based on how the
+daemon is reachable:
+
+1. **Daemon bound to loopback (`--host 127.0.0.1`, the default).**
+   Easiest case. `/metrics` shares the main listener; scrapers running
+   on the same host hit `127.0.0.1:9477/metrics` and nothing external
+   ever reaches the endpoint.
+
+2. **Daemon exposed on a LAN or public interface, scrape surface on
+   loopback.** Set
+   [`[daemon] metrics_listen = "127.0.0.1:9478"`](/configuration/daemon/#metrics_listen).
+   The dedicated listener only binds to loopback regardless of `--host`;
+   scrapers run on the same host (or reach in via SSH tunnel / wireguard
+   / similar). The main listener still serves the UI publicly.
+
+3. **Daemon and scrape surface both public.** Front the daemon with a
+   reverse proxy and require authentication on `/metrics` there (basic
+   auth, mTLS, or a bearer token your scraper supplies). The same
+   [reverse-proxy guidance](/operations/auth/#reverse-proxies) that
+   applies to the Web UI applies here — `RUNWISP_TRUST_PROXY` controls
+   which proxies the daemon trusts for `X-Forwarded-*`.
+
+## Trigger a re-scrape during a run
+
+Active-run counts and the last-failure timestamp update on every
+scrape — there is no internal cache to flush. To see the metrics move
+in real time:
+
+```bash
+# In one shell, trigger a long-running task
+curl -sX POST http://localhost:9477/api/tasks/$NAME/run -H "Authorization: Bearer $TOKEN"
+
+# In another, watch the gauge climb and fall
+watch -n1 'curl -s http://localhost:9477/metrics | grep runwisp_task_active_runs'
+```

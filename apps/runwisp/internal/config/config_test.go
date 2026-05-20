@@ -1180,6 +1180,88 @@ run = "echo hi"
 		assert.Equal(t, "", cfg.Daemon.ExternalURL)
 	})
 
+	t.Run("daemon metrics_enabled defaults to false", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.False(t, cfg.Daemon.MetricsEnabled)
+		assert.Equal(t, "", cfg.Daemon.MetricsListen)
+	})
+
+	t.Run("daemon metrics_enabled true with shared listener", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+metrics_enabled = true
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.True(t, cfg.Daemon.MetricsEnabled)
+		assert.Equal(t, "", cfg.Daemon.MetricsListen)
+	})
+
+	t.Run("daemon metrics_listen requires metrics_enabled", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+metrics_listen = "127.0.0.1:9478"
+
+[tasks.t]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "daemon.metrics_listen")
+		assert.Contains(t, err.Error(), "metrics_enabled = true")
+	})
+
+	t.Run("daemon metrics_listen parses host:port", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+metrics_enabled = true
+metrics_listen = "127.0.0.1:9478"
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.True(t, cfg.Daemon.MetricsEnabled)
+		assert.Equal(t, "127.0.0.1:9478", cfg.Daemon.MetricsListen)
+	})
+
+	t.Run("daemon metrics_listen rejects non-numeric port", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+metrics_enabled = true
+metrics_listen = "127.0.0.1:abc"
+
+[tasks.t]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "daemon.metrics_listen")
+	})
+
+	t.Run("daemon metrics_listen rejects malformed address", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+metrics_enabled = true
+metrics_listen = "no-colon-here"
+
+[tasks.t]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "daemon.metrics_listen")
+	})
+
 	t.Run("legacy parallelism key is rejected with a migration hint", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]
