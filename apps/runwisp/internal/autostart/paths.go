@@ -144,6 +144,12 @@ const (
 // defaultDataDirFlag matches cmd_root.go default value for --data.
 const defaultDataDirFlag = "data"
 
+// configFileName is the canonical RunWisp config filename.
+const configFileName = "runwisp.toml"
+
+// errResolveConfig is the wrap prefix used by ResolveConfigPath.
+const errResolveConfig = "resolve config: %w"
+
 // xdgDataDir returns the XDG-conformant data dir for RunWisp.
 func xdgDataDir(home, xdg string) string {
 	if xdg != "" {
@@ -239,13 +245,13 @@ type ResolveConfigOptions struct {
 func ResolveConfigPath(opts ResolveConfigOptions) (string, error) {
 	xdg := XDGConfigPath(opts.HomeDir, opts.XDGConfHome)
 
-	if opts.ExplicitSet && opts.Explicit != "" && opts.Explicit != "runwisp.toml" {
+	if opts.ExplicitSet && opts.Explicit != "" && opts.Explicit != configFileName {
 		if filepath.IsAbs(opts.Explicit) {
 			return opts.Explicit, nil
 		}
 		abs, err := filepath.Abs(opts.Explicit)
 		if err != nil {
-			return "", fmt.Errorf("resolve config: %w", err)
+			return "", fmt.Errorf(errResolveConfig, err)
 		}
 		return abs, nil
 	}
@@ -254,9 +260,9 @@ func ResolveConfigPath(opts ResolveConfigOptions) (string, error) {
 		return xdg, nil
 	}
 	if opts.BareExists {
-		abs, err := filepath.Abs("runwisp.toml")
+		abs, err := filepath.Abs(configFileName)
 		if err != nil {
-			return "", fmt.Errorf("resolve config: %w", err)
+			return "", fmt.Errorf(errResolveConfig, err)
 		}
 		return abs, nil
 	}
@@ -265,9 +271,9 @@ func ResolveConfigPath(opts ResolveConfigOptions) (string, error) {
 	if xdg != "" {
 		return xdg, nil
 	}
-	abs, err := filepath.Abs("runwisp.toml")
+	abs, err := filepath.Abs(configFileName)
 	if err != nil {
-		return "", fmt.Errorf("resolve config: %w", err)
+		return "", fmt.Errorf(errResolveConfig, err)
 	}
 	return abs, nil
 }
@@ -276,10 +282,10 @@ func ResolveConfigPath(opts ResolveConfigOptions) (string, error) {
 // given home / XDG_CONFIG_HOME. Empty when both are empty.
 func XDGConfigPath(home, xdg string) string {
 	if xdg != "" {
-		return filepath.Join(xdg, "runwisp", "runwisp.toml")
+		return filepath.Join(xdg, "runwisp", configFileName)
 	}
 	if home != "" {
-		return filepath.Join(home, ".config", "runwisp", "runwisp.toml")
+		return filepath.Join(home, ".config", "runwisp", configFileName)
 	}
 	return ""
 }

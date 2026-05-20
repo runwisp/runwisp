@@ -100,68 +100,105 @@ func renderServiceStatus(w io.Writer, st autostart.Status) int {
 		return serviceStatusExitDegraded
 	}
 
-	degraded := false
-
 	fmt.Fprintf(w, "  Installed:  yes\n")
-	if st.Autostart {
-		fmt.Fprintf(w, "  Autostart:  enabled\n")
-	} else {
-		fmt.Fprintf(w, "  Autostart:  DISABLED — will not survive reboot\n")
-		degraded = true
-	}
-	if st.Running {
-		fmt.Fprintf(w, "  Running:    yes\n")
-	} else {
-		fmt.Fprintf(w, "  Running:    no\n")
-		degraded = true
-	}
-
-	unitNote := "matches recorded settings"
-	if st.UnitConfigHash != "" && st.ExpectedConfigHash != "" && st.UnitConfigHash != st.ExpectedConfigHash {
-		unitNote = "DRIFT — unit hash does not match current flags (rerun 'runwisp service install')"
-		degraded = true
-	}
-	fmt.Fprintf(w, "  Unit file:  %s  (%s)\n", st.UnitPath, unitNote)
-
-	binNote := ""
-	if st.BinaryExists && st.ExpectedBinarySHA != "" && st.BinaryOnDiskSHA != "" &&
-		st.ExpectedBinarySHA != st.BinaryOnDiskSHA {
-		binNote = "  (BINARY CHANGED since install — rerun 'runwisp service install')"
-		degraded = true
-	}
-	if !st.BinaryExists {
-		binNote = "  (binary missing on disk)"
-		degraded = true
-	}
-	fmt.Fprintf(w, "  Binary:     %s%s\n", st.Binary, binNote)
-
-	ddNote := ""
-	if !st.DataDirWritable {
-		ddNote = "  (not writable)"
-		degraded = true
-	} else if !st.DataDirLastWrite.IsZero() {
-		ddNote = fmt.Sprintf("  (last write %s)", st.DataDirLastWrite.Format("2006-01-02 15:04:05"))
-	}
-	fmt.Fprintf(w, "  Data dir:   %s%s\n", st.DataDir, ddNote)
-
-	if st.OS == "linux" {
-		if st.Linger {
-			fmt.Fprintf(w, "  Linger:     on\n")
-		} else {
-			fmt.Fprintf(w, "  Linger:     OFF — user sessions exit will stop the daemon\n")
-			degraded = true
-		}
-	}
-
-	if !st.LastStart.IsZero() {
-		fmt.Fprintf(w, "  Last start: %s\n", st.LastStart.Format("2006-01-02 15:04:05 MST"))
-	}
-	if st.LogsHint != "" {
-		fmt.Fprintf(w, "  Logs:       %s\n", st.LogsHint)
-	}
+	degraded := false
+	degraded = renderAutostartLine(w, st.Autostart) || degraded
+	degraded = renderRunningLine(w, st.Running) || degraded
+	degraded = renderUnitFileLine(w, st) || degraded
+	degraded = renderBinaryLine(w, st) || degraded
+	degraded = renderDataDirLine(w, st) || degraded
+	degraded = renderLingerLine(w, st) || degraded
+	renderLastStartLine(w, st)
+	renderLogsHintLine(w, st)
 
 	if degraded {
 		return serviceStatusExitDegraded
 	}
 	return serviceStatusExitHealthy
+}
+
+func renderAutostartLine(w io.Writer, enabled bool) bool {
+	if enabled {
+		fmt.Fprintf(w, "  Autostart:  enabled\n")
+		return false
+	}
+	fmt.Fprintf(w, "  Autostart:  DISABLED — will not survive reboot\n")
+	return true
+}
+
+func renderRunningLine(w io.Writer, running bool) bool {
+	if running {
+		fmt.Fprintf(w, "  Running:    yes\n")
+		return false
+	}
+	fmt.Fprintf(w, "  Running:    no\n")
+	return true
+}
+
+func renderUnitFileLine(w io.Writer, st autostart.Status) bool {
+	note := "matches recorded settings"
+	drift := st.UnitConfigHash != "" && st.ExpectedConfigHash != "" && st.UnitConfigHash != st.ExpectedConfigHash
+	if drift {
+		note = "DRIFT — unit hash does not match current flags (rerun 'runwisp service install')"
+	}
+	fmt.Fprintf(w, "  Unit file:  %s  (%s)\n", st.UnitPath, note)
+	return drift
+}
+
+func renderBinaryLine(w io.Writer, st autostart.Status) bool {
+	note, degraded := binaryNote(st)
+	fmt.Fprintf(w, "  Binary:     %s%s\n", st.Binary, note)
+	return degraded
+}
+
+func binaryNote(st autostart.Status) (string, bool) {
+	if !st.BinaryExists {
+		return "  (binary missing on disk)", true
+	}
+	if st.ExpectedBinarySHA != "" && st.BinaryOnDiskSHA != "" && st.ExpectedBinarySHA != st.BinaryOnDiskSHA {
+		return "  (BINARY CHANGED since install — rerun 'runwisp service install')", true
+	}
+	return "", false
+}
+
+func renderDataDirLine(w io.Writer, st autostart.Status) bool {
+	note, degraded := dataDirNote(st)
+	fmt.Fprintf(w, "  Data dir:   %s%s\n", st.DataDir, note)
+	return degraded
+}
+
+func dataDirNote(st autostart.Status) (string, bool) {
+	if !st.DataDirWritable {
+		return "  (not writable)", true
+	}
+	if !st.DataDirLastWrite.IsZero() {
+		return fmt.Sprintf("  (last write %s)", st.DataDirLastWrite.Format("2006-01-02 15:04:05")), false
+	}
+	return "", false
+}
+
+func renderLingerLine(w io.Writer, st autostart.Status) bool {
+	if st.OS != "linux" {
+		return false
+	}
+	if st.Linger {
+		fmt.Fprintf(w, "  Linger:     on\n")
+		return false
+	}
+	fmt.Fprintf(w, "  Linger:     OFF — user sessions exit will stop the daemon\n")
+	return true
+}
+
+func renderLastStartLine(w io.Writer, st autostart.Status) {
+	if st.LastStart.IsZero() {
+		return
+	}
+	fmt.Fprintf(w, "  Last start: %s\n", st.LastStart.Format("2006-01-02 15:04:05 MST"))
+}
+
+func renderLogsHintLine(w io.Writer, st autostart.Status) {
+	if st.LogsHint == "" {
+		return
+	}
+	fmt.Fprintf(w, "  Logs:       %s\n", st.LogsHint)
 }

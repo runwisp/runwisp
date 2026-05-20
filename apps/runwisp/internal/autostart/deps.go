@@ -16,7 +16,7 @@ import (
 // (or wired by hand in tests) and passed to New().
 type Deps struct {
 	FS       FileSystem
-	Cmd      OSCmd
+	Cmd      Runner
 	Prompter Prompter
 	Stdout   io.Writer
 	Stderr   io.Writer
@@ -60,7 +60,7 @@ func DefaultDeps(stdout, stderr io.Writer, stdin *os.File, autoOK bool) (Deps, e
 	isTTY := stdin != nil && isatty.IsTerminal(stdin.Fd())
 	d := Deps{
 		FS:          NewOSFileSystem(),
-		Cmd:         NewOSCmd(),
+		Cmd:         NewRunner(),
 		Stdout:      stdout,
 		Stderr:      stderr,
 		Home:        home,

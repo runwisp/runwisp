@@ -174,7 +174,7 @@ type Status struct {
 
 // Installer is implemented per-OS. The interface keeps the cobra
 // commands OS-neutral and is the natural seam for unit tests against
-// FakeFS / FakeOSCmd.
+// FakeFS / FakeRunner.
 type Installer interface {
 	// Render returns the unit/plist body without touching disk.
 	// Powers `service install --print`.

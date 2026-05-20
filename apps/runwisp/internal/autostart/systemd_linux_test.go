@@ -17,15 +17,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newFakeInstaller wires a systemdInstaller against FakeFS + FakeOSCmd
+// newFakeInstaller wires a systemdInstaller against FakeFS + FakeRunner
 // and a scripted prompter. The returned binary path points at a real
 // temp file (because the installer hashes its content).
-func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *FakeFS, *FakeOSCmd, *ScriptedPrompter, string) {
+func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *FakeFS, *FakeRunner, *ScriptedPrompter, string) {
 	t.Helper()
 	binaryPath := filepath.Join(t.TempDir(), "runwisp")
 	require.NoError(t, os.WriteFile(binaryPath, []byte("fake-binary-content"), 0755))
 	fs := NewFakeFS()
-	cmd := NewFakeOSCmd()
+	cmd := NewFakeRunner()
 	prompter := &ScriptedPrompter{}
 	deps := Deps{
 		FS:          fs,
@@ -224,7 +224,7 @@ func TestSystemdStatus_NotInstalled(t *testing.T) {
 	inst, _, cmd, _, binary := newFakeInstaller(t, false)
 
 	// systemctl is-enabled / is-active / show / loginctl all return
-	// errors when nothing is installed; FakeOSCmd needs explicit
+	// errors when nothing is installed; FakeRunner needs explicit
 	// entries even for negative cases.
 	cmd.Expect("systemctl", []string{"--user", "is-enabled", "runwisp-bright-falcon.service"}, nil, nil, assertErrFake("no unit"))
 	cmd.Expect("systemctl", []string{"--user", "is-active", "runwisp-bright-falcon.service"}, nil, nil, assertErrFake("no unit"))

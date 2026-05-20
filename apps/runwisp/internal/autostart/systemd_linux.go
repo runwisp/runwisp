@@ -25,6 +25,14 @@ const (
 	// systemd does not propagate a $PATH to user units, so the unit
 	// has to set its own.
 	defaultPATH = "/usr/local/bin:/usr/bin:/bin"
+
+	// systemctlUserFlag is the systemctl flag that scopes commands to
+	// the calling user's manager (as opposed to the system manager).
+	systemctlUserFlag = "--user"
+
+	// systemctlDaemonReload is the systemctl subcommand that re-reads
+	// unit files from disk after install/uninstall.
+	systemctlDaemonReload = "daemon-reload"
 )
 
 // New returns the systemd installer.
@@ -148,16 +156,16 @@ func (s *systemdInstaller) planSteps(plan Plan, opts InstallOptions) []Step {
 
 func (s *systemdInstaller) daemonReloadCmd(systemWide bool) string {
 	if systemWide {
-		return "Run:  sudo systemctl daemon-reload"
+		return "Run:  sudo systemctl " + systemctlDaemonReload
 	}
-	return "Run:  systemctl --user daemon-reload"
+	return "Run:  systemctl " + systemctlUserFlag + " " + systemctlDaemonReload
 }
 
 func (s *systemdInstaller) enableNowCmd(systemWide bool) string {
 	if systemWide {
 		return "Run:  sudo systemctl enable --now " + s.serviceName()
 	}
-	return "Run:  systemctl --user enable --now " + s.serviceName()
+	return "Run:  systemctl " + systemctlUserFlag + " enable --now " + s.serviceName()
 }
 
 // Install implements Installer.
@@ -235,13 +243,13 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 
 func (s *systemdInstaller) runDaemonReload(ctx context.Context, systemWide bool) error {
 	if systemWide {
-		_, stderr, err := s.deps.Cmd.Run(ctx, "sudo", "systemctl", "daemon-reload")
+		_, stderr, err := s.deps.Cmd.Run(ctx, "sudo", "systemctl", systemctlDaemonReload)
 		if err != nil {
 			return fmt.Errorf("systemctl daemon-reload: %w: %s", err, string(stderr))
 		}
 		return nil
 	}
-	_, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", "--user", "daemon-reload")
+	_, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, systemctlDaemonReload)
 	if err != nil {
 		return fmt.Errorf("systemctl --user daemon-reload: %w: %s", err, string(stderr))
 	}
@@ -265,7 +273,7 @@ func (s *systemdInstaller) runEnableNow(ctx context.Context, systemWide bool) er
 		}
 		return nil
 	}
-	_, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", "--user", "enable", "--now", s.serviceName())
+	_, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "enable", "--now", s.serviceName())
 	if err != nil {
 		return fmt.Errorf("systemctl --user enable --now: %w: %s", err, string(stderr))
 	}
@@ -282,10 +290,10 @@ func (s *systemdInstaller) ComputeUninstallPlan(_ context.Context, opts Uninstal
 	plan.UnitPath = unitPath
 	if plan.Kind == PlanUninstall {
 		plan.Steps = []Step{
-			{Action: ActionStopService, Description: "Run:  systemctl --user stop " + s.serviceName()},
-			{Action: ActionDisableService, Description: "Run:  systemctl --user disable " + s.serviceName()},
+			{Action: ActionStopService, Description: "Run:  systemctl " + systemctlUserFlag + " stop " + s.serviceName()},
+			{Action: ActionDisableService, Description: "Run:  systemctl " + systemctlUserFlag + " disable " + s.serviceName()},
 			{Action: ActionRemoveUnit, Description: "Remove unit file\n       " + unitPath},
-			{Action: ActionDaemonReload, Description: "Run:  systemctl --user daemon-reload"},
+			{Action: ActionDaemonReload, Description: "Run:  systemctl " + systemctlUserFlag + " " + systemctlDaemonReload},
 		}
 	}
 	return plan, nil
@@ -334,17 +342,17 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 	// Stop and disable are best-effort: if the unit was already off
 	// (manual stop) we still want to remove the file. We log warnings
 	// but continue.
-	if _, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", "--user", "stop", s.serviceName()); err != nil {
+	if _, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "stop", s.serviceName()); err != nil {
 		fmt.Fprintf(out, "Warning: systemctl --user stop: %v %s\n", err, string(stderr))
 	}
-	if _, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", "--user", "disable", s.serviceName()); err != nil {
+	if _, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "disable", s.serviceName()); err != nil {
 		fmt.Fprintf(out, "Warning: systemctl --user disable: %v %s\n", err, string(stderr))
 	}
 	if err := s.deps.FS.Remove(plan.UnitPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove unit: %w", err)
 	}
 	fmt.Fprintf(out, "Removed %s\n", plan.UnitPath)
-	if _, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", "--user", "daemon-reload"); err != nil {
+	if _, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, systemctlDaemonReload); err != nil {
 		fmt.Fprintf(out, "Warning: systemctl --user daemon-reload: %v %s\n", err, string(stderr))
 	}
 	if opts.Purge && opts.DataDir != "" {
@@ -380,13 +388,13 @@ func (s *systemdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 		st.BinaryExists = true
 		st.BinaryOnDiskSHA = hashContent(data)
 	}
-	if stdout, _, err := s.deps.Cmd.Run(ctx, "systemctl", "--user", "is-enabled", s.serviceName()); err == nil {
+	if stdout, _, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "is-enabled", s.serviceName()); err == nil {
 		st.Autostart = strings.TrimSpace(string(stdout)) == "enabled"
 	}
-	if stdout, _, err := s.deps.Cmd.Run(ctx, "systemctl", "--user", "is-active", s.serviceName()); err == nil {
+	if stdout, _, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "is-active", s.serviceName()); err == nil {
 		st.Running = strings.TrimSpace(string(stdout)) == "active"
 	}
-	if stdout, _, err := s.deps.Cmd.Run(ctx, "systemctl", "--user", "show", "-p", "ActiveEnterTimestamp", "--value", s.serviceName()); err == nil {
+	if stdout, _, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "show", "-p", "ActiveEnterTimestamp", "--value", s.serviceName()); err == nil {
 		st.LastStart = parseSystemdTimestamp(strings.TrimSpace(string(stdout)))
 	}
 	if lingerOn, _ := s.checkLinger(ctx); lingerOn {

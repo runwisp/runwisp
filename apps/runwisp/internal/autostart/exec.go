@@ -11,19 +11,19 @@ import (
 	"sync"
 )
 
-// OSCmd is the subprocess seam used by the installer. Production
-// uses execOSCmd which shells out via os/exec; tests use FakeOSCmd
+// Runner is the subprocess seam used by the installer. Production
+// uses execRunner which shells out via os/exec; tests use FakeRunner
 // so they never spawn real systemctl/loginctl/launchctl processes.
-type OSCmd interface {
+type Runner interface {
 	// Run executes name with args. stdout/stderr are returned even
 	// when err is non-nil (so the caller can surface diagnostics).
 	Run(ctx context.Context, name string, args ...string) (stdout, stderr []byte, err error)
 }
 
-// execOSCmd is the production OSCmd.
-type execOSCmd struct{}
+// execRunner is the production Runner.
+type execRunner struct{}
 
-func (execOSCmd) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
+func (execRunner) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -32,13 +32,13 @@ func (execOSCmd) Run(ctx context.Context, name string, args ...string) ([]byte, 
 	return stdout.Bytes(), stderr.Bytes(), err
 }
 
-// NewOSCmd returns the production OSCmd.
-func NewOSCmd() OSCmd { return execOSCmd{} }
+// NewRunner returns the production Runner.
+func NewRunner() Runner { return execRunner{} }
 
-// FakeOSCmd is a scriptable OSCmd for tests. Each registered call
+// FakeRunner is a scriptable Runner for tests. Each registered call
 // matches once (in registration order) and then is exhausted; an
 // unregistered call returns an error so missing scripting is caught.
-type FakeOSCmd struct {
+type FakeRunner struct {
 	mu    sync.Mutex
 	calls []fakeCall
 	log   []FakeCallLog
@@ -58,16 +58,16 @@ type FakeCallLog struct {
 	Args []string
 }
 
-func NewFakeOSCmd() *FakeOSCmd { return &FakeOSCmd{} }
+func NewFakeRunner() *FakeRunner { return &FakeRunner{} }
 
 // Expect adds a scripted call that returns the given stdout/stderr/err.
-func (f *FakeOSCmd) Expect(name string, args []string, stdout, stderr []byte, err error) {
+func (f *FakeRunner) Expect(name string, args []string, stdout, stderr []byte, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, fakeCall{name: name, args: args, stdout: stdout, stderr: stderr, err: err})
 }
 
-func (f *FakeOSCmd) Run(_ context.Context, name string, args ...string) ([]byte, []byte, error) {
+func (f *FakeRunner) Run(_ context.Context, name string, args ...string) ([]byte, []byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.log = append(f.log, FakeCallLog{Name: name, Args: append([]string(nil), args...)})
@@ -77,11 +77,11 @@ func (f *FakeOSCmd) Run(_ context.Context, name string, args ...string) ([]byte,
 			return c.stdout, c.stderr, c.err
 		}
 	}
-	return nil, nil, fmt.Errorf("FakeOSCmd: unexpected call %s %v", name, args)
+	return nil, nil, fmt.Errorf("FakeRunner: unexpected call %s %v", name, args)
 }
 
 // Log returns the recorded call sequence (a copy).
-func (f *FakeOSCmd) Log() []FakeCallLog {
+func (f *FakeRunner) Log() []FakeCallLog {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]FakeCallLog, len(f.log))
@@ -90,7 +90,7 @@ func (f *FakeOSCmd) Log() []FakeCallLog {
 }
 
 // Remaining returns the count of scripted calls that were not consumed.
-func (f *FakeOSCmd) Remaining() int {
+func (f *FakeRunner) Remaining() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.calls)
