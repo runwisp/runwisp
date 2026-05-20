@@ -139,6 +139,50 @@ wins in practice. See [Logs & retention](/concepts/logs/) for the full
 picture, including the `.prev` rotation lifecycle and the fixed
 one-hour cleanup cadence.
 
+## Environment
+
+| Key        | Default  | What it does                                                                                         |
+| ---------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `env`      | _(none)_ | Inline KEY/VALUE map overlaid on the task's process env. Visible in the API, UI, and CLI.            |
+| `env_file` | _(none)_ | Path to a dotenv file (`KEY=VALUE` per line). Path is visible, but its keys and values stay on disk. |
+
+Values from `env` and `env_file` are merged into the daemon's own
+environment when the task starts. Precedence (later wins on key
+collision):
+
+1. The daemon process's own environment.
+2. `[defaults] env_file`, then `[defaults.env]`.
+3. The task's `env_file`, then the task's `env`.
+
+`env_file` paths can be absolute or relative. Relative paths are
+resolved against the directory of `runwisp.toml` (the same root the
+config loader uses for any other file lookup). The format is standard
+dotenv: `KEY=VALUE` per line, `#` introduces a comment, blank lines are
+ignored, no shell expansion or interpolation.
+
+**Why two knobs?** Anything in inline `env` is treated as openly
+visible — it shows up alongside `cron` and `run` in the dashboard, the
+TUI, and `GET /api/tasks`. Anything that should _not_ be visible (API
+tokens, signing keys) goes in `env_file`, where the file's contents
+never leave disk: the API exposes the path so operators can see where a
+value came from, but never the keys or values themselves.
+
+```toml
+[tasks.backup]
+cron     = "0 3 * * *"
+run      = "/usr/local/bin/backup.sh"
+env_file = "/etc/runwisp/backup-secrets.env"
+
+[tasks.backup.env]
+BACKUP_BUCKET = "s3://prod-backups"
+DRY_RUN       = "0"
+```
+
+Validation is enforced at config load: keys must match
+`^[A-Za-z_][A-Za-z0-9_]*$`, values cannot contain NUL bytes, no single
+value exceeds 32 KiB, and the combined count of inline + file entries
+per task is capped at 256.
+
 ## Notifications
 
 | Key                 | Default  | What it does                                                           |

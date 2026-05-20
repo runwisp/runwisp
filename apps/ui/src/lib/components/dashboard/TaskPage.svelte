@@ -96,6 +96,11 @@
     });
 
     let selectedRun = $derived(runs.find((r: Run) => r.id === selectedRunId));
+
+    const envEntries = $derived(
+        task.env ? Object.entries(task.env).sort(([a], [b]) => a.localeCompare(b)) : [],
+    );
+    const showEnvPanel = $derived(envEntries.length > 0 || !!task.env_file);
 </script>
 
 <PageContainer variant="flush" class="gap-4">
@@ -172,6 +177,30 @@
             {/if}
         </div>
     </div>
+
+    {#if showEnvPanel}
+        <section
+            class="shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+            aria-label="Task environment"
+        >
+            <h2 class="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                Environment
+            </h2>
+            {#if envEntries.length > 0}
+                <dl class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-xs">
+                    {#each envEntries as [key, value] (key)}
+                        <dt class="text-slate-700">{key}</dt>
+                        <dd class="break-all text-slate-500">{value}</dd>
+                    {/each}
+                </dl>
+            {/if}
+            {#if task.env_file}
+                <p class="mt-2 font-mono text-xs text-slate-400">
+                    Loaded from {task.env_file} (values not exposed)
+                </p>
+            {/if}
+        </section>
+    {/if}
 
     <!-- Main Content Area -->
     <div

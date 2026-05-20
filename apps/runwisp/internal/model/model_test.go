@@ -261,3 +261,22 @@ func TestRun_Copy_PointerFieldsAreIndependent(t *testing.T) {
 	assert.NotSame(t, orig.RetryOfRunID, cpy.RetryOfRunID)
 	assert.Equal(t, retryID, *cpy.RetryOfRunID)
 }
+
+// TestTaskJSON_HidesSecretEnv guards the invariant that env_file-derived
+// values never escape the daemon over JSON (API, UI, cloud). Inline env and
+// the env_file path remain visible because operators expect them in the UI.
+func TestTaskJSON_HidesSecretEnv(t *testing.T) {
+	task := Task{
+		Name:      "demo",
+		Env:       map[string]string{"VISIBLE": "ok"},
+		EnvFile:   "/etc/runwisp/secrets.env",
+		SecretEnv: map[string]string{"AWS_SECRET_KEY": "do-not-leak"},
+	}
+	data, err := json.Marshal(&task)
+	require.NoError(t, err)
+	body := string(data)
+	assert.Contains(t, body, `"env":{"VISIBLE":"ok"}`)
+	assert.Contains(t, body, `"env_file":"/etc/runwisp/secrets.env"`)
+	assert.NotContains(t, body, "AWS_SECRET_KEY")
+	assert.NotContains(t, body, "do-not-leak")
+}

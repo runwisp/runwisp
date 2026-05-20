@@ -64,6 +64,8 @@ run  = "curl -sf https://myapp.example.com/health || exit 1"
 
 [services.worker]
 instances = 3              # keep three replicas always running
+env       = { NODE_ENV = "production" }   # inline env, visible in the UI
+env_file  = "/etc/runwisp/worker.env"     # secrets stay on disk
 run       = "node /app/worker.js"
 ```
 

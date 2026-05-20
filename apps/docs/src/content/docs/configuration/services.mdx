@@ -122,6 +122,22 @@ reasonable starting point for a flap-prone service.
 
 See [Logs & retention](/concepts/logs/) for the underlying behaviour.
 
+## Environment
+
+`env` and `env_file` work exactly the same way they do on tasks — see
+[`[tasks.*]` Environment](/configuration/tasks/#environment) for the
+merge order, visibility rules, and validation.
+
+```toml
+[services.api]
+run      = "/srv/api/bin/server"
+env      = { PORT = "8080", LOG_LEVEL = "info" }
+env_file = "/etc/runwisp/api-secrets.env"
+```
+
+Every instance of a multi-instance service receives the same merged
+environment.
+
 ## Notifications
 
 | Key                 | Default  | What it does                                                            |

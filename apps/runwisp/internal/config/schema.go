@@ -135,6 +135,15 @@ type Defaults struct {
 	KeepRuns          int
 	KeepFor           time.Duration
 	BackoffResetAfter time.Duration
+
+	// Env is the inline env block from [defaults.env]. Visible in API/UI.
+	Env map[string]string
+	// EnvFile is the path string from defaults.env_file as written by the
+	// operator (relative paths resolve against the runwisp.toml directory at
+	// load time).
+	EnvFile string
+	// SecretEnv is populated by the config loader from EnvFile.
+	SecretEnv map[string]string
 }
 
 // Storage controls global disk-usage limits for log files.
@@ -187,6 +196,9 @@ type taskWire struct {
 
 	Run string `toml:"run,omitempty"`
 
+	Env     map[string]string `toml:"env,omitempty"`
+	EnvFile string            `toml:"env_file,omitempty"`
+
 	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
 	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
 }
@@ -218,6 +230,9 @@ type serviceWire struct {
 
 	Run string `toml:"run,omitempty"`
 
+	Env     map[string]string `toml:"env,omitempty"`
+	EnvFile string            `toml:"env_file,omitempty"`
+
 	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
 	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
 }
@@ -230,6 +245,9 @@ type defaultsWire struct {
 	KeepRuns          int    `toml:"keep_runs,omitempty"`
 	KeepFor           string `toml:"keep_for,omitempty"`
 	BackoffResetAfter string `toml:"backoff_reset_after,omitempty"`
+
+	Env     map[string]string `toml:"env,omitempty"`
+	EnvFile string            `toml:"env_file,omitempty"`
 }
 
 // storageWire mirrors [storage] before parsing.
@@ -367,6 +385,8 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 		KeepRuns:       keepRuns,
 		KeepFor:        keepFor,
 		Run:            w.Run,
+		Env:            w.Env,
+		EnvFile:        w.EnvFile,
 	}, nil
 }
 
@@ -422,6 +442,8 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 		KeepRuns:          keepRuns,
 		KeepFor:           keepFor,
 		Run:               w.Run,
+		Env:               w.Env,
+		EnvFile:           w.EnvFile,
 	}, nil
 }
 
@@ -453,6 +475,8 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 		KeepRuns:          keepRuns,
 		KeepFor:           keepFor,
 		BackoffResetAfter: backoffReset,
+		Env:               w.Env,
+		EnvFile:           w.EnvFile,
 	}, nil
 }
 

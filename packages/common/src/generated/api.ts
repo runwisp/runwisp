@@ -905,6 +905,12 @@ export interface components {
             catch_up?: "latest" | "all" | "skip";
             cron?: string;
             description?: string;
+            /** @description Environment variables overlaid on the task's process env. Values are visible in the API/UI. */
+            env?: {
+                [key: string]: string;
+            };
+            /** @description Path to a dotenv file whose KEY=VALUE pairs are loaded into the task's process env. Keys and values are not exposed via API/UI. */
+            env_file?: string;
             /**
              * Format: int64
              * @description Window between SIGTERM and SIGKILL when a run is stopped, in nanoseconds

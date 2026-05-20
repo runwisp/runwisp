@@ -1029,6 +1029,17 @@
           "description": {
             "type": "string"
           },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Environment variables overlaid on the task's process env. Values are visible in the API/UI.",
+            "type": "object"
+          },
+          "env_file": {
+            "description": "Path to a dotenv file whose KEY=VALUE pairs are loaded into the task's process env. Keys and values are not exposed via API/UI.",
+            "type": "string"
+          },
           "graceful_stop": {
             "description": "Window between SIGTERM and SIGKILL when a run is stopped, in nanoseconds",
             "format": "int64",
