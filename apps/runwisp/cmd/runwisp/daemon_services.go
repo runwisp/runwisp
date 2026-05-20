@@ -160,7 +160,7 @@ func startServiceInstances(taskManager runtime.TaskManager, tasksMap map[string]
 		if !task.Kind.IsService() {
 			continue
 		}
-		if err := taskManager.StartServiceInstances(task.Name); err != nil {
+		if err := taskManager.StartServiceInstances(task.Name, model.TriggeredByService); err != nil {
 			slog.Error("Failed to start service instances", "task", task.Name, "err", err)
 		}
 	}

@@ -89,16 +89,16 @@
 <AuthModal />
 <ToastContainer />
 
-{#if !hydrated}
+{#if isAuthenticated}
+    <AppLayout {activePage} tasks={navTasks} urls={{ overview: "/", runs: "/runs" }}>
+        {@render children()}
+    </AppLayout>
+{:else if !hydrated || !authStore.current.loaded}
     <div class="flex h-screen items-center justify-center bg-mist-50">
         <div
             class="border-primary-600 h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
         ></div>
     </div>
-{:else if isAuthenticated}
-    <AppLayout {activePage} tasks={navTasks} urls={{ overview: "/", runs: "/runs" }}>
-        {@render children()}
-    </AppLayout>
 {:else}
-    {@render children()}
+    <div class="h-screen bg-mist-50"></div>
 {/if}

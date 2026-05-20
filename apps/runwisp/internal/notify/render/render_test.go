@@ -57,6 +57,7 @@ func TestTriggerPhrase(t *testing.T) {
 	assert.Equal(t, "Scheduled run", triggerPhrase(model.TriggeredByCron))
 	assert.Equal(t, "Manually triggered via API", triggerPhrase(model.TriggeredByAPI))
 	assert.Equal(t, "Triggered from the control plane", triggerPhrase(model.TriggeredByCloud))
+	assert.Equal(t, "Service auto-started", triggerPhrase(model.TriggeredByService))
 	assert.Equal(t, "Run", triggerPhrase(""))
 }
 

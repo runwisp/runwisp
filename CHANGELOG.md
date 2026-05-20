@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Service runs no longer claim they were triggered by the API.** Every service instance started by the daemon — on boot, after a crash, or when the supervisor refills a slot — used to show "API" as the trigger source in the dashboard, the activity feed, and Slack / Telegram notifications. They now show **Service** ("Service auto-started" in notifications), making it obvious at a glance which runs were supervisor-driven vs. operator-triggered. Operator-initiated REST restarts of a stopped service still show **API** for the immediate run.
+
 - **Graceful shutdown is now instant when there's nothing running.** Stopping the daemon (Ctrl+C, `SIGTERM`, or "Quit & stop daemon" in the TUI) used to sit for several seconds even with no tasks active, because the notification subsystem's retention ticker had no way to exit and forced shutdown to wait out the full `[daemon] shutdown_timeout` every time. The retention loop now has its own cancel path, so the daemon exits as soon as in-flight work drains.
 
 ### Added

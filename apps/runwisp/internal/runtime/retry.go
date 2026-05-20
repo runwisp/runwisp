@@ -62,6 +62,7 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 		TriggeredBy: previousRun.TriggeredBy,
 	}
 	if task.Kind.IsService() {
+		options.TriggeredBy = model.TriggeredByService
 		idx := previousRun.InstanceIndex
 		options.InstanceIndex = &idx
 	}

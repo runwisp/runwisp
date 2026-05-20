@@ -37,7 +37,7 @@ type TaskManager interface {
 	BindPersistenceHook(hook RunPersistenceHook)
 	GetActiveRuns(taskName string) []*ActiveRun
 	LoadPendingRuns(runs []model.Run) PendingRunsResult
-	StartServiceInstances(taskName string) error
+	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
 	// Shutdown cancels every active run and waits for all goroutines to
 	// drain. Equivalent to ShutdownWithDeadline(0).
 	Shutdown()

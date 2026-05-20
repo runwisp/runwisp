@@ -684,7 +684,8 @@
             "enum": [
               "cron",
               "api",
-              "cloud"
+              "cloud",
+              "service"
             ],
             "type": "string"
           }
