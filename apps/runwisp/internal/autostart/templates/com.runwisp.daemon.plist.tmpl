@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Managed by runwisp service install — DO NOT EDIT -->
+<!-- runwisp-config-hash: {{.ConfigHash}} -->
+<!-- runwisp-binary-sha256: {{.BinarySHA}} -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{{.Label}}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{.Binary}}</string>
+        <string>daemon</string>
+        <string>--config</string>
+        <string>{{.Config}}</string>
+        <string>--data</string>
+        <string>{{.DataDir}}</string>
+        <string>--port</string>
+        <string>{{.Port}}</string>
+        <string>--host</string>
+        <string>{{.Host}}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>{{.LogPath}}</string>
+    <key>StandardErrorPath</key>
+    <string>{{.LogPath}}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{{.Home}}</string>
+        <key>PATH</key>
+        <string>{{.Path}}</string>
+        <key>LANG</key>
+        <string>C.UTF-8</string>
+    </dict>
+</dict>
+</plist>
