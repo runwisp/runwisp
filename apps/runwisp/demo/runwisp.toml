@@ -1,0 +1,252 @@
+# RunWisp demo configuration — "Acme Notes" persona.
+#
+# Purpose: a maintained, screenshot-ready config that populates the Web UI,
+# TUI, and notification surfaces with believable runs. The fictional operator
+# is a bootstrapped SaaS team on a single VPS: Postgres-backed app, a couple
+# of background workers, basic health checks, manual deploys.
+#
+# Run with:
+#   runwisp daemon -c apps/runwisp/demo/runwisp.toml --data-dir /tmp/runwisp-demo
+#
+# Slack and Telegram notifiers below resolve their secrets from env vars, so
+# the file commits cleanly without inline credentials. For real outbound
+# delivery during a shoot, point each variable at a webhook URL (a
+# webhook.site bin is enough for screenshots):
+#
+#   export DEMO_SLACK_WEBHOOK_OPS=https://hooks.slack.com/services/...
+#   export DEMO_SLACK_WEBHOOK_DEPLOYS=https://hooks.slack.com/services/...
+#   export DEMO_TELEGRAM_BOT_TOKEN=1234:abcd...
+#
+# With the env vars unset the notifier definitions still validate; outbound
+# delivery just fails silently in the background.
+#
+# Every `run` body uses commands available on a stock Linux/macOS box — no
+# Postgres, no Docker — so screenshots reflect a genuinely running daemon.
+
+[daemon]
+shutdown_timeout = "15s"
+external_url     = "https://runwisp.acme-notes.example"
+
+[scheduler]
+timezone = "Europe/Bratislava"
+
+[defaults]
+timeout      = "30m"
+log_max_size = "20mb"
+log_on_full  = "drop_old"
+keep_runs    = 200
+keep_for     = "30d"
+
+[storage]
+max_size       = "2gb"
+min_free_space = "500mb"
+
+[notify]
+global_notifiers = ["inapp", "slack-ops"]
+coalesce_window  = "30s"
+history_keep     = 500
+history_keep_for = "30d"
+
+# ── Notifiers ────────────────────────────────────────────────────────────────
+
+[[notifier]]
+id              = "slack-ops"
+type            = "slack"
+webhook_url_env = "DEMO_SLACK_WEBHOOK_OPS"
+channel         = "#ops-alerts"
+
+[[notifier]]
+id              = "slack-deploys"
+type            = "slack"
+webhook_url_env = "DEMO_SLACK_WEBHOOK_DEPLOYS"
+channel         = "#deploys"
+
+[[notifier]]
+id            = "telegram-oncall"
+type          = "telegram"
+bot_token_env = "DEMO_TELEGRAM_BOT_TOKEN"
+chat_id       = "-1001234567890"
+
+# ── Routes ───────────────────────────────────────────────────────────────────
+
+# Any backup-* failure pages ops and on-call; inline override sends Slack to
+# the dedicated #backups channel.
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notify = ["slack-ops:#backups", "telegram-oncall"]
+
+# Surface successful deploys to the deploys channel.
+[[notification_route]]
+match  = { kind = ["run.succeeded"], task = "deploy-*" }
+notify = ["slack-deploys"]
+
+# Mirror notifier-delivery failures into the in-app bell so the operator
+# notices a broken webhook without staring at the daemon log.
+[[notification_route]]
+match  = { kind = ["notify.delivery_failed"] }
+notify = ["inapp"]
+
+# ── Backups ──────────────────────────────────────────────────────────────────
+
+[tasks.backup-postgres]
+group             = "Backups"
+description       = "Nightly logical dump of the primary Postgres cluster, then ship to off-box storage."
+cron              = "15 3 * * *"
+timeout           = "2h"
+on_overlap        = "skip"
+keep_runs         = 60
+keep_for          = "60d"
+notify_on_failure = ["slack-ops:#backups"]
+run = '''
+set -euo pipefail
+echo "[backup] starting snapshot at $(date -u +%FT%TZ)"
+echo "[backup] dumping schema (142 tables, 318 indexes)"
+sleep 2
+echo "[backup] snapshot complete: 482M compressed in 12.3s"
+echo "[backup] uploaded to s3://acme-notes-backups/$(date -u +%F)/"
+'''
+
+[tasks.backup-restore-test]
+group             = "Backups"
+description       = "Restores last night's dump into a throwaway database and verifies the schema fingerprint."
+cron              = "30 5 * * *"
+timeout           = "1h"
+retry_attempts    = 1
+retry_delay       = "5m"
+retry_backoff     = "exponential"
+notify_on_failure = ["slack-ops"]
+run = '''
+set -euo pipefail
+echo "[restore-test] booting throwaway cluster on :15432"
+echo "[restore-test] restoring $(date -u -d 'yesterday' +%F 2>/dev/null || date -u -v -1d +%F).dump (482M)"
+sleep 2
+echo "[restore-test] verifying schema fingerprint"
+echo "[restore-test] all 142 tables match production"
+'''
+
+# ── Health ───────────────────────────────────────────────────────────────────
+
+[tasks.healthcheck-api]
+group             = "Health"
+description       = "Probes the public API every five minutes. Two retries before paging on-call."
+cron              = "*/5 * * * *"
+timeout           = "30s"
+retry_attempts    = 2
+retry_delay       = "10s"
+notify_on_failure = ["slack-ops"]
+run = '''
+set -eu
+curl -fsS -m 5 https://api.github.com/zen
+printf "\n"
+echo "[health] api ok at $(date -u +%H:%M:%SZ)"
+'''
+
+[tasks.healthcheck-tls]
+group             = "Health"
+description       = "Reads the production TLS cert and asserts more than 14 days of life remain."
+cron              = "0 */6 * * *"
+timeout           = "1m"
+notify_on_failure = ["slack-ops:#certs"]
+run = '''
+set -euo pipefail
+host=github.com
+exp=$(echo | openssl s_client -servername "$host" -connect "$host":443 2>/dev/null \
+  | openssl x509 -noout -enddate | cut -d= -f2)
+echo "[tls] $host expires: $exp"
+'''
+
+# ── Maintenance ──────────────────────────────────────────────────────────────
+
+[tasks.rotate-logs]
+group       = "Maintenance"
+description = "Compresses last week's app logs and prunes anything older than 30 days."
+cron        = "0 4 * * 0"
+keep_runs   = 12
+keep_for    = "180d"
+run = '''
+set -eu
+echo "[rotate] scanning /var/log/acme-notes"
+sleep 1
+echo "[rotate] compressed 14 files, freed 312 MB"
+echo "[rotate] removed 8 archives older than 30 days"
+'''
+
+[tasks.disk-usage-report]
+group       = "Maintenance"
+description = "Posts a snapshot of disk usage to the ops channel each morning."
+cron        = "30 7 * * *"
+timeout     = "1m"
+run = '''
+df -h / | awk 'NR==1 || NR==2 { print }'
+'''
+
+# ── Deploys ──────────────────────────────────────────────────────────────────
+
+[tasks.deploy-migrate]
+group             = "Deploys"
+description       = "Database migrations. Triggered from the deploy pipeline via the REST API; never scheduled."
+api_trigger       = true
+timeout           = "10m"
+on_overlap        = "skip"
+notify_on_success = ["slack-deploys"]
+notify_on_failure = ["slack-ops", "telegram-oncall"]
+run = '''
+set -euo pipefail
+echo "[migrate] HEAD = a1b2c3d"
+echo "[migrate] applying 3 pending migrations"
+echo "[migrate] 0042_add_user_locale.sql ok"
+sleep 1
+echo "[migrate] 0043_widen_org_slug.sql ok"
+echo "[migrate] 0044_index_run_created_at.sql ok"
+echo "[migrate] done in 1.2s"
+'''
+
+# ── Reports ──────────────────────────────────────────────────────────────────
+
+[tasks.weekly-billing-rollup]
+group             = "Reports"
+description       = "Aggregates the previous week's usage events and emails the rollup to finance."
+cron              = "0 6 * * 1"
+timeout           = "30m"
+notify_on_success = ["slack-deploys:#finance"]
+run = '''
+set -eu
+since=$(date -u -d 'last monday' +%F 2>/dev/null || date -u -v -monday +%F)
+echo "[billing] window: ${since} → $(date -u +%F)"
+echo "[billing] 18,432 events processed"
+echo "[billing] usage_rollup.csv (412 KB) generated"
+echo "[billing] report mailed to finance@acme-notes.example"
+'''
+
+# ── Services ─────────────────────────────────────────────────────────────────
+
+[services.queue-worker]
+group               = "Services"
+description         = "Background worker for the email + webhook queues. Two parallel instances."
+instances           = 2
+graceful_stop       = "15s"
+restart_delay       = "2s"
+restart_backoff     = "exponential"
+backoff_reset_after = "2m"
+run = '''
+set -eu
+echo "[worker $$] starting"
+while true; do
+  printf "[worker %s] processed %s jobs (last: %s)\n" "$$" "$((RANDOM % 8 + 1))" "$(date -u +%H:%M:%S)"
+  sleep 7
+done
+'''
+
+[services.cache-warmer]
+group         = "Services"
+description   = "Keeps the hottest Redis keys warm so cold deploys don't stall the home page."
+graceful_stop = "5s"
+restart_delay = "5s"
+run = '''
+set -eu
+echo "[warmer $$] booting"
+while true; do
+  echo "[warmer $$] refreshed 14 keys ($(date -u +%H:%M:%SZ))"
+  sleep 12
+done
+'''

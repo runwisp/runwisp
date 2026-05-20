@@ -754,7 +754,7 @@ export interface components {
              * @description How the run was triggered
              * @enum {string}
              */
-            triggered_by: "cron" | "api" | "cloud";
+            triggered_by: "cron" | "api" | "cloud" | "service";
         };
         RunCompletedEvent: {
             error?: string;

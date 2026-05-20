@@ -293,6 +293,8 @@ func triggerPhrase(t model.TriggeredBy) string {
 		return "Manually triggered via API"
 	case model.TriggeredByCloud:
 		return "Triggered from the control plane"
+	case model.TriggeredByService:
+		return "Service auto-started"
 	default:
 		if t == "" {
 			return "Run"

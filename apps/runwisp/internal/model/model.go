@@ -198,9 +198,10 @@ func (p RunPhase) IsTerminal() bool {
 type TriggeredBy string
 
 const (
-	TriggeredByCron  TriggeredBy = "cron"
-	TriggeredByAPI   TriggeredBy = "api"
-	TriggeredByCloud TriggeredBy = "cloud"
+	TriggeredByCron    TriggeredBy = "cron"
+	TriggeredByAPI     TriggeredBy = "api"
+	TriggeredByCloud   TriggeredBy = "cloud"
+	TriggeredByService TriggeredBy = "service"
 )
 
 // ConcurrencyPolicy controls how overlapping runs are handled.
@@ -266,7 +267,7 @@ type Run struct {
 	LogPath             string      `json:"-"`
 	StartAt             *time.Time  `json:"start_at,omitempty"`
 	EndAt               *time.Time  `json:"end_at,omitempty"`
-	TriggeredBy         TriggeredBy `json:"triggered_by" enum:"cron,api,cloud" doc:"How the run was triggered"`
+	TriggeredBy         TriggeredBy `json:"triggered_by" enum:"cron,api,cloud,service" doc:"How the run was triggered"`
 	CreatedAt           time.Time   `json:"created_at"`
 	RetryAttempt        int         `json:"retry_attempt"`
 	RetryOfRunID        *string     `json:"retry_of_run_id,omitempty"`

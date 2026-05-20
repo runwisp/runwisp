@@ -22,7 +22,7 @@
 If you've ever SSH'd into a server at 3 AM to figure out *why* a cron job silently failed, RunWisp is for you.
 
 <div align="center">
-<img alt="RunWisp web dashboard screenshot: cron job list, execution history, and live log streaming in a self-hosted UI" src="packages/assets/webui-screenshot.png" width="780">
+<img alt="RunWisp web dashboard screenshot: cron job list, execution history, and live log streaming in a self-hosted UI" src="apps/docs/src/assets/screenshots/web-ui-overview.png" width="780">
 <p><em>Web dashboard: task overview, execution history, and live log streaming, all served by the daemon itself.</em></p>
 </div>
 
@@ -124,7 +124,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - TOML configuration: one file, version-controllable, reviewable in pull requests
 
 <div align="center">
-<img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="packages/assets/tui-screenshot.png" width="780">
+<img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="apps/docs/src/assets/screenshots/tui-overview.png" width="780">
 <p><em>Terminal UI: full task management from your terminal, over SSH, without leaving the session.</em></p>
 </div>
 

@@ -44,7 +44,7 @@ func TestStartServiceInstances(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 500*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc"))
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -59,6 +59,8 @@ func TestStartServiceInstances(t *testing.T) {
 	indexes := make(map[int]bool)
 	for _, ar := range ts.active {
 		indexes[ar.Run.InstanceIndex] = true
+		assert.Equal(t, model.TriggeredByService, ar.Run.TriggeredBy,
+			"supervisor-driven start must label runs as TriggeredByService")
 	}
 	djm.mu.RUnlock()
 	assert.Equal(t, map[int]bool{0: true, 1: true, 2: true}, indexes)
@@ -79,7 +81,7 @@ func TestServiceInstanceRefillsOnExit(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 1}, 10*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc"))
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
 
 	// Allow several restart cycles.
 	time.Sleep(200 * time.Millisecond)
@@ -92,6 +94,8 @@ func TestServiceInstanceRefillsOnExit(t *testing.T) {
 	for _, ar := range ts.active {
 		idx := ar.Run.InstanceIndex
 		assert.Truef(t, idx == 0 || idx == 1, "unexpected instance index %d", idx)
+		assert.Equal(t, model.TriggeredByService, ar.Run.TriggeredBy,
+			"supervisor-driven refills must label runs as TriggeredByService, not inherit")
 	}
 	djm.mu.RUnlock()
 
@@ -111,7 +115,7 @@ func TestServiceShutdownStopsRestarts(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 1}, 10*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc"))
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
 	time.Sleep(50 * time.Millisecond)
 
 	jm.Shutdown()
@@ -156,7 +160,7 @@ func TestRestartServiceInstancesCancelsAll(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 200*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc"))
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
 	time.Sleep(30 * time.Millisecond)
 
 	djm := jm.(*defaultTaskManager)
@@ -192,7 +196,7 @@ func TestServiceInstanceRefillsAfterManualStop(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 5*time.Second,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc"))
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
 	time.Sleep(50 * time.Millisecond)
 
 	djm := jm.(*defaultTaskManager)
@@ -251,7 +255,7 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 1}, 5*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc"))
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
 	time.Sleep(250 * time.Millisecond)
 
 	djm := jm.(*defaultTaskManager)
@@ -296,7 +300,7 @@ func TestStopServiceHaltsRestarts(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 200*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc"))
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
 	time.Sleep(50 * time.Millisecond)
 
 	require.NoError(t, jm.StopService("svc"))

@@ -247,7 +247,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	triggeredBy := options.TriggeredBy
 	if triggeredBy == "" {
-		triggeredBy = model.TriggeredByAPI
+		triggeredBy = model.TriggeredByService
 	}
 
 	var externalExecutionID *string
@@ -347,8 +347,11 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 }
 
 // StartServiceInstances brings every instance of a service up to its desired
-// count. Idempotent — already-running instances are left untouched.
-func (m *defaultTaskManager) StartServiceInstances(taskName string) error {
+// count. Idempotent — already-running instances are left untouched. The
+// triggeredBy argument labels the resulting runs: daemon boot passes
+// TriggeredByService; an operator-initiated REST restart of a stopped service
+// passes TriggeredByAPI.
+func (m *defaultTaskManager) StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error {
 	m.mu.RLock()
 	ts, exists := m.tasks[taskName]
 	if !exists {
@@ -369,7 +372,7 @@ func (m *defaultTaskManager) StartServiceInstances(taskName string) error {
 	for _, idx := range missing {
 		i := idx
 		if _, err := m.TriggerRunWithOptions(taskName, TriggerRunOptions{
-			TriggeredBy:   model.TriggeredByAPI,
+			TriggeredBy:   triggeredBy,
 			InstanceIndex: &i,
 		}); err != nil {
 			slog.Error("Failed to start service instance", "task", taskName, "instance", i, "err", err)
@@ -401,7 +404,7 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	m.mu.Unlock()
 
 	if wasStopped {
-		return m.StartServiceInstances(taskName)
+		return m.StartServiceInstances(taskName, model.TriggeredByAPI)
 	}
 	return nil
 }

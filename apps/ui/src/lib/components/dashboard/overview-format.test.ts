@@ -152,4 +152,8 @@ describe("formatTriggeredByLabel", () => {
     it("returns 'Cloud' for 'cloud'", () => {
         expect(formatTriggeredByLabel("cloud")).toBe("Cloud");
     });
+
+    it("returns 'Service' for 'service'", () => {
+        expect(formatTriggeredByLabel("service")).toBe("Service");
+    });
 });
