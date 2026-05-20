@@ -5,7 +5,9 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -106,6 +108,26 @@ func parseExternalURL(raw string) (string, error) {
 	}
 	if u.Host == "" {
 		return "", fmt.Errorf("invalid daemon.external_url: missing host")
+	}
+	return trimmed, nil
+}
+
+// parseMetricsListen validates [daemon] metrics_listen: empty means "share
+// the main UI/REST listener", otherwise it must be a host:port pair the OS
+// can bind. Hostname resolution and the actual bind happen at server start —
+// we only catch obvious shape errors at config-load time.
+func parseMetricsListen(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	_, port, err := net.SplitHostPort(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("invalid daemon.metrics_listen: %w", err)
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p < 0 || p > 65535 {
+		return "", fmt.Errorf("invalid daemon.metrics_listen: %q is not a valid port", port)
 	}
 	return trimmed, nil
 }

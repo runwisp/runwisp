@@ -50,7 +50,10 @@ type Server struct {
 	streams           *streamLimiter
 	httpServer        *http.Server
 	unixServer        *http.Server
+	metricsServer     *http.Server
 	socketPath        string
+	metricsEnabled    bool
+	metricsListen     string
 }
 
 // DaemonInfo, TaskBrief, and CapInfo live in the model package.
@@ -73,6 +76,8 @@ type Options struct {
 	DaemonInfo        *model.DaemonInfo // Static identity/config info for /api/info
 	DaemonLogBuffer   *DaemonLogBuffer  // Ring buffer for daemon log streaming (optional)
 	LogOutput         io.Writer         // Destination for HTTP request logs (default: os.Stderr)
+	MetricsEnabled    bool              // When false, /metrics is not mounted anywhere
+	MetricsListen     string            // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
 }
 
 func New(opts Options) (*Server, error) {
@@ -110,6 +115,8 @@ func New(opts Options) (*Server, error) {
 		auth:              authSvc,
 		passwordEphemeral: opts.PasswordEphemeral,
 		trustedProxies:    trustedProxies,
+		metricsEnabled:    opts.MetricsEnabled,
+		metricsListen:     opts.MetricsListen,
 	}
 
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir)
@@ -173,12 +180,46 @@ func (srv *Server) Start() error {
 		unixErrCh <- nil
 	}()
 
+	// Optional dedicated metrics listener. Bind synchronously so bind errors
+	// (port collision, permission) surface before httpServer starts blocking.
+	var metricsErrCh chan error
+	if srv.metricsEnabled && srv.metricsListen != "" {
+		metricsLn, err := net.Listen("tcp", srv.metricsListen)
+		if err != nil {
+			return fmt.Errorf("listen metrics %s: %w", srv.metricsListen, err)
+		}
+		metricsMux := http.NewServeMux()
+		metricsMux.HandleFunc("/metrics", srv.handleOpenMetrics)
+		srv.metricsServer = &http.Server{
+			Handler:           metricsMux,
+			ReadHeaderTimeout: srv.httpServer.ReadHeaderTimeout,
+			ReadTimeout:       srv.httpServer.ReadTimeout,
+			WriteTimeout:      srv.httpServer.WriteTimeout,
+			IdleTimeout:       srv.httpServer.IdleTimeout,
+			MaxHeaderBytes:    srv.httpServer.MaxHeaderBytes,
+		}
+		metricsErrCh = make(chan error, 1)
+		go func() {
+			err := srv.metricsServer.Serve(metricsLn)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				metricsErrCh <- err
+				return
+			}
+			metricsErrCh <- nil
+		}()
+	}
+
 	tcpErr := srv.httpServer.ListenAndServe()
 	if tcpErr != nil && !errors.Is(tcpErr, http.ErrServerClosed) {
 		return tcpErr
 	}
 	if err := <-unixErrCh; err != nil {
 		return err
+	}
+	if metricsErrCh != nil {
+		if err := <-metricsErrCh; err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -241,7 +282,7 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 	srv.metrics.Stop()
 
 	var wg sync.WaitGroup
-	var tcpErr, unixErr error
+	var tcpErr, unixErr, metricsErr error
 
 	if srv.httpServer != nil {
 		wg.Add(1)
@@ -257,6 +298,13 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 			unixErr = srv.unixServer.Shutdown(ctx)
 		}()
 	}
+	if srv.metricsServer != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			metricsErr = srv.metricsServer.Shutdown(ctx)
+		}()
+	}
 	wg.Wait()
 
 	if srv.socketPath != "" {
@@ -268,7 +316,10 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 	if tcpErr != nil {
 		return tcpErr
 	}
-	return unixErr
+	if unixErr != nil {
+		return unixErr
+	}
+	return metricsErr
 }
 
 func (srv *Server) API() huma.API {
