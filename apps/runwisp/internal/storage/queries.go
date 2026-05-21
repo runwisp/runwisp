@@ -108,11 +108,84 @@ func buildOrderClause(col SortColumn, dir SortDirection) (string, error) {
 // so deleted rows are invisible to the UI until the purger reaps them.
 const notDeletedClause = "deleted_at IS NULL"
 
+// wherePrefix is the standalone "WHERE " token used by the dynamic-query
+// helpers below. Extracted into a single constant so the literal isn't
+// duplicated across helpers.
+const wherePrefix = "WHERE "
+
+// selectFromRuns is the common SELECT runColumns FROM runs prefix used by
+// every full-row read. Hoisting it keeps the static query constants from
+// duplicating either the column list or the SELECT keyword (S1192).
+const selectFromRuns = `SELECT ` + runColumns + ` FROM runs`
+
+// filterGatesSQL is the static filter-gates predicate block appended to
+// every selector-driven query that takes a RunFilter. Each gate has the
+// shape "(? = empty OR col = ?)": an empty gate value disables the filter,
+// a non-empty one matches the column. The search gate takes three params
+// (gate + two LIKE patterns). See runFilterGateArgs for the parameter
+// layout — the SQL surface is fixed at compile time, only values are bound.
+const filterGatesSQL = `
+  AND (? = '' OR end_reason = ?)
+  AND (? = '' OR status = ?)
+  AND (? = '' OR task_name = ?)
+  AND (? = '' OR (task_name LIKE ? OR id LIKE ?))`
+
+// inIDsSQL / notInIDsSQL accept a JSON-array string via json_each(?) so the
+// SQL is static even though the ID cardinality is variable. See idsJSON.
+const inIDsSQL = `
+  AND id IN (SELECT value FROM json_each(?))`
+const notInIDsSQL = `
+  AND id NOT IN (SELECT value FROM json_each(?))`
+
+// statusFilterGateSQL is the trailing optional bulk-status gate used by
+// ResolveSelectorIDs to narrow MatchAll selections.
+const statusFilterGateSQL = `
+  AND (? = '' OR status = ?)`
+
+// CountRunsFiltered query.
+const countRunsFilteredSQL = `SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL` + filterGatesSQL
+
+// SoftDeleteRuns — two static shapes (by ID list vs by filter).
+// status = ? is bound to PhaseEnded; only terminal runs can be soft-deleted.
+const softDeleteByIDsSQL = `UPDATE runs SET deleted_at = ?
+WHERE deleted_at IS NULL
+  AND status = ?` + inIDsSQL + `
+RETURNING id, task_name, created_at`
+
+const softDeleteByFilterSQL = `UPDATE runs SET deleted_at = ?
+WHERE deleted_at IS NULL
+  AND status = ?` + filterGatesSQL + notInIDsSQL + `
+RETURNING id, task_name, created_at`
+
+// RestoreRuns — clears deleted_at, then re-reads the rows to publish events.
+const restoreByIDsSQL = `UPDATE runs SET deleted_at = NULL
+WHERE deleted_at IS NOT NULL` + inIDsSQL
+
+const restoreByFilterSQL = `UPDATE runs SET deleted_at = NULL
+WHERE deleted_at IS NOT NULL` + filterGatesSQL + notInIDsSQL
+
+const selectRestoredByIDsSQL = selectFromRuns + `
+WHERE deleted_at IS NULL` + inIDsSQL
+
+const selectRestoredByFilterSQL = selectFromRuns + `
+WHERE deleted_at IS NULL` + filterGatesSQL + notInIDsSQL
+
+// ResolveSelectorIDs — same selector shapes plus the trailing bulk-status gate.
+const resolveByIDsSQL = `SELECT id, task_name, created_at FROM runs
+WHERE deleted_at IS NULL` + inIDsSQL + statusFilterGateSQL
+
+const resolveByFilterSQL = `SELECT id, task_name, created_at FROM runs
+WHERE deleted_at IS NULL` + filterGatesSQL + notInIDsSQL + statusFilterGateSQL
+
 // selectRunsSQL composes a `SELECT runColumns FROM runs <where> <tail>` query,
 // implicitly adding the soft-delete filter to whatever predicates the caller
 // passed in. tail is appended verbatim — callers use it for ORDER BY / LIMIT.
+//
+// Used by the legacy dynamic-query paths (GetRun, QueryRuns, GetPendingRuns,
+// GetLastRunByTask, DeleteOldRuns) whose ORDER BY tails are still assembled
+// at runtime from validated, hardcoded fragments.
 func selectRunsSQL(where, tail string) string {
-	q := "SELECT " + runColumns + " FROM runs"
+	q := selectFromRuns
 	combined := combineWhere(where, notDeletedClause)
 	if combined != "" {
 		q += " " + combined
@@ -128,10 +201,10 @@ func selectRunsSQL(where, tail string) string {
 func combineWhere(existing, extra string) string {
 	trimmed := strings.TrimSpace(existing)
 	if trimmed == "" {
-		return "WHERE " + extra
+		return wherePrefix + extra
 	}
-	if strings.HasPrefix(strings.ToUpper(trimmed), "WHERE ") {
+	if strings.HasPrefix(strings.ToUpper(trimmed), wherePrefix) {
 		return trimmed + " AND " + extra
 	}
-	return "WHERE " + trimmed + " AND " + extra
+	return wherePrefix + trimmed + " AND " + extra
 }

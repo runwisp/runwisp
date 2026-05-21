@@ -144,8 +144,8 @@ export function createRunsSource(): RunsSource {
         const f = currentFilters;
         if (!f) return;
         const idx = items.findIndex((r) => r.id === run.id);
-        if (idx !== -1) replaceExisting(idx, run, f);
-        else insertNew(run, f);
+        if (idx === -1) insertNew(run, f);
+        else replaceExisting(idx, run, f);
     }
 
     function remove(runId: string): void {

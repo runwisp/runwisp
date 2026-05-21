@@ -221,7 +221,7 @@ func (db *SQLiteDatabase) GetRunByExternalExecutionID(externalExecutionID string
 }
 
 func (db *SQLiteDatabase) getRunWhere(whereClause string, args ...any) (*model.Run, error) {
-	row := db.db.QueryRow(selectRunsSQL("WHERE "+whereClause, "LIMIT 1"), args...)
+	row := db.db.QueryRow(selectRunsSQL(wherePrefix+whereClause, "LIMIT 1"), args...)
 	run, err := scanRun(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -263,7 +263,7 @@ func (q *queryBuilder) whereSQL() string {
 	if len(q.where) == 0 {
 		return ""
 	}
-	return "WHERE " + strings.Join(q.where, " AND ")
+	return wherePrefix + strings.Join(q.where, " AND ")
 }
 
 func applyStatusFilter(q *queryBuilder, status string) {
@@ -292,16 +292,13 @@ func applySearchFilter(q *queryBuilder, searchQuery string) {
 }
 
 func (db *SQLiteDatabase) CountRunsFiltered(status, taskName, searchQuery string) (int64, error) {
-	var q queryBuilder
-	applyStatusFilter(&q, status)
-	if taskName != "" {
-		q.add("task_name = ?", taskName)
-	}
-	applySearchFilter(&q, searchQuery)
-
-	query := "SELECT COUNT(*) FROM runs " + combineWhere(q.whereSQL(), notDeletedClause)
+	args := runFilterGateArgs(model.RunFilter{
+		Status:   status,
+		TaskName: taskName,
+		Search:   searchQuery,
+	})
 	var count int64
-	err := db.db.QueryRow(query, q.args...).Scan(&count)
+	err := db.db.QueryRow(countRunsFilteredSQL, args...).Scan(&count)
 	return count, err
 }
 
@@ -349,12 +346,17 @@ type RunRef struct {
 // the affected rows as lightweight refs so callers can publish run.deleted
 // events without a follow-up query.
 func (db *SQLiteDatabase) SoftDeleteRuns(sel model.RunSelector, deletedAt time.Time) ([]RunRef, error) {
-	clause, args := buildSelectorWhere(sel)
-	query := `UPDATE runs SET deleted_at = ?
- WHERE deleted_at IS NULL AND status = ? AND ` + clause + `
- RETURNING id, task_name, created_at`
-	fullArgs := append([]any{deletedAt, model.PhaseEnded}, args...)
-	rows, err := db.db.Query(query, fullArgs...)
+	if sel.MatchAll {
+		args := []any{deletedAt, model.PhaseEnded}
+		args = append(args, runFilterGateArgs(sel.Filter)...)
+		args = append(args, idsJSON(sel.ExceptIDs))
+		rows, err := db.db.Query(softDeleteByFilterSQL, args...)
+		if err != nil {
+			return nil, err
+		}
+		return scanRunRefs(rows)
+	}
+	rows, err := db.db.Query(softDeleteByIDsSQL, deletedAt, model.PhaseEnded, idsJSON(sel.IDs))
 	if err != nil {
 		return nil, err
 	}
@@ -365,18 +367,26 @@ func (db *SQLiteDatabase) SoftDeleteRuns(sel model.RunSelector, deletedAt time.T
 // and returns the full restored rows so the caller can re-emit run.updated
 // events that bring the rows back in connected UIs.
 func (db *SQLiteDatabase) RestoreRuns(sel model.RunSelector) ([]model.Run, error) {
-	clause, args := buildSelectorWhere(sel)
-	_, err := db.db.Exec(
-		`UPDATE runs SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND `+clause,
-		args...,
-	)
-	if err != nil {
+	if sel.MatchAll {
+		args := runFilterGateArgs(sel.Filter)
+		args = append(args, idsJSON(sel.ExceptIDs))
+		if _, err := db.db.Exec(restoreByFilterSQL, args...); err != nil {
+			return nil, err
+		}
+		// Re-read with the same predicate (deleted_at is now NULL so the
+		// rows are visible to the standard SELECT) so we can publish full
+		// updates.
+		rows, err := db.db.Query(selectRestoredByFilterSQL, args...)
+		if err != nil {
+			return nil, err
+		}
+		return collectRows(rows, scanRun)
+	}
+	idsArg := idsJSON(sel.IDs)
+	if _, err := db.db.Exec(restoreByIDsSQL, idsArg); err != nil {
 		return nil, err
 	}
-	// Re-read with the same predicate (now that deleted_at is NULL the rows
-	// are visible to the standard SELECT) so we can publish full updates.
-	listQuery := selectRunsSQL("WHERE "+clause, "")
-	rows, err := db.db.Query(listQuery, args...)
+	rows, err := db.db.Query(selectRestoredByIDsSQL, idsArg)
 	if err != nil {
 		return nil, err
 	}
@@ -387,13 +397,16 @@ func (db *SQLiteDatabase) RestoreRuns(sel model.RunSelector) ([]model.Run, error
 // optionally constrained to a status (use "" for any). Used by bulk
 // cancel/rerun which need IDs to drive per-run actions.
 func (db *SQLiteDatabase) ResolveSelectorIDs(sel model.RunSelector, statusFilter string) ([]RunRef, error) {
-	clause, args := buildSelectorWhere(sel)
-	query := "SELECT id, task_name, created_at FROM runs WHERE " + notDeletedClause + " AND " + clause
-	if statusFilter != "" {
-		query += " AND status = ?"
-		args = append(args, statusFilter)
+	if sel.MatchAll {
+		args := runFilterGateArgs(sel.Filter)
+		args = append(args, idsJSON(sel.ExceptIDs), statusFilter, statusFilter)
+		rows, err := db.db.Query(resolveByFilterSQL, args...)
+		if err != nil {
+			return nil, err
+		}
+		return scanRunRefs(rows)
 	}
-	rows, err := db.db.Query(query, args...)
+	rows, err := db.db.Query(resolveByIDsSQL, idsJSON(sel.IDs), statusFilter, statusFilter)
 	if err != nil {
 		return nil, err
 	}

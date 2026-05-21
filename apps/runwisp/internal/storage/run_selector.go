@@ -4,57 +4,60 @@
 package storage
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// buildSelectorWhere turns a RunSelector into a parameterized WHERE fragment.
-// The returned string never contains a leading WHERE — callers append it with
-// "AND" between their other predicates (e.g. "deleted_at IS NULL").
+// runFilterGateArgs decomposes a RunFilter into the nine positional parameters
+// expected by the static filterGatesSQL predicate block:
 //
-// "(1=1)" is returned when MatchAll is true and the filter is empty; callers
-// can append it unconditionally without worrying about the empty-WHERE case.
-func buildSelectorWhere(sel model.RunSelector) (string, []any) {
-	if sel.MatchAll {
-		return buildMatchAllWhere(sel)
+//	end_reason gate, end_reason value,
+//	status     gate, status     value,
+//	task_name  gate, task_name  value,
+//	search     gate, search pattern, search pattern
+//
+// The status input is dispatched here (end_reason column vs status column) so
+// the SQL itself never branches. The search input is truncated and stripped of
+// LIKE wildcards before the pattern is built.
+func runFilterGateArgs(f model.RunFilter) []any {
+	var endReason, statusPhase string
+	switch model.EndReason(f.Status) {
+	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped,
+		model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped,
+		model.ReasonLogOverflow:
+		endReason = f.Status
+	default:
+		statusPhase = f.Status
 	}
-	return buildIDListWhere(sel.IDs)
+	var pattern string
+	if f.Search != "" {
+		s := f.Search
+		if len(s) > MaxSearchQueryLength {
+			s = s[:MaxSearchQueryLength]
+		}
+		s = strings.ReplaceAll(s, "%", "")
+		s = strings.ReplaceAll(s, "_", "")
+		pattern = "%" + s + "%"
+	}
+	return []any{
+		endReason, endReason,
+		statusPhase, statusPhase,
+		f.TaskName, f.TaskName,
+		f.Search, pattern, pattern,
+	}
 }
 
-func buildMatchAllWhere(sel model.RunSelector) (string, []any) {
-	var q queryBuilder
-	applyStatusFilter(&q, sel.Filter.Status)
-	if sel.Filter.TaskName != "" {
-		q.add("task_name = ?", sel.Filter.TaskName)
-	}
-	applySearchFilter(&q, sel.Filter.Search)
-	if len(sel.ExceptIDs) > 0 {
-		placeholders, args := idPlaceholders(sel.ExceptIDs)
-		q.add("id NOT IN ("+placeholders+")", args...)
-	}
-	if len(q.where) == 0 {
-		return "(1=1)", nil
-	}
-	return "(" + strings.Join(q.where, " AND ") + ")", q.args
-}
-
-func buildIDListWhere(ids []string) (string, []any) {
+// idsJSON marshals an ID list to a JSON-array string accepted by
+// `json_each(?)` inside the static IN / NOT IN subqueries. nil or empty
+// becomes "[]" so the resulting `IN ()` is the empty set (no matches) and
+// `NOT IN ()` is universal — both are exactly the safety-net behaviors we
+// want when the selector side is unconstrained.
+func idsJSON(ids []string) string {
 	if len(ids) == 0 {
-		// Callers must validate before reaching here; "(1=0)" prevents an
-		// accidentally unbounded UPDATE if validation is skipped.
-		return "(1=0)", nil
+		return "[]"
 	}
-	placeholders, args := idPlaceholders(ids)
-	return "id IN (" + placeholders + ")", args
-}
-
-func idPlaceholders(ids []string) (string, []any) {
-	placeholders := strings.Repeat("?,", len(ids))
-	placeholders = placeholders[:len(placeholders)-1]
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
-	}
-	return placeholders, args
+	b, _ := json.Marshal(ids)
+	return string(b)
 }
