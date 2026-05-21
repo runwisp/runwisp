@@ -109,6 +109,38 @@ func (m *MockRunRepository) GetTaskRegistration(taskName string) (*model.TaskReg
 	return args.Get(0).(*model.TaskRegistration), args.Error(1)
 }
 
+func (m *MockRunRepository) SoftDeleteRuns(sel model.RunSelector, deletedAt time.Time) ([]storage.RunRef, error) {
+	args := m.Called(sel, deletedAt)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.RunRef), args.Error(1)
+}
+
+func (m *MockRunRepository) RestoreRuns(sel model.RunSelector) ([]model.Run, error) {
+	args := m.Called(sel)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]model.Run), args.Error(1)
+}
+
+func (m *MockRunRepository) ResolveSelectorIDs(sel model.RunSelector, statusFilter string) ([]storage.RunRef, error) {
+	args := m.Called(sel, statusFilter)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.RunRef), args.Error(1)
+}
+
+func (m *MockRunRepository) PurgeExpiredSoftDeletes(ttl time.Duration) ([]storage.RunRef, error) {
+	args := m.Called(ttl)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.RunRef), args.Error(1)
+}
+
 func (m *MockRunRepository) Close() error {
 	args := m.Called()
 	return args.Error(0)

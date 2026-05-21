@@ -8,7 +8,13 @@
     import { formatBytes } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, type MetricsSample } from "$lib/api";
-    import { runUpdatesStore, upsertRun, connectionStore, systemStore } from "$lib/stores";
+    import {
+        runUpdatesStore,
+        upsertRun,
+        removeRun,
+        connectionStore,
+        systemStore,
+    } from "$lib/stores";
     import { getApiUrl } from "$lib/utils/env";
     import { toTaskPageId } from "$lib/utils/task-id";
     import { AsyncData } from "$lib/utils/async-data.svelte";
@@ -91,6 +97,11 @@
 
     $effect(() => {
         const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
+            if (event.type === "run.deleted") {
+                dashState.recentRuns = removeRun(dashState.recentRuns, event.data.run_id);
+                dashState.runningRuns = removeRun(dashState.runningRuns, event.data.run_id);
+                return;
+            }
             const run = event.data.run;
 
             dashState.recentRuns = upsertRun(dashState.recentRuns, run).slice(0, RECENT_RUN_LIMIT);

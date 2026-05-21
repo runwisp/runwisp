@@ -5,9 +5,11 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"sort"
+	"time"
 
-	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
@@ -21,7 +23,15 @@ var (
 	ErrServiceNotRunnable    = errors.New("services cannot be triggered; use the restart endpoint")
 	ErrNotAService           = errors.New("task is not a service")
 	ErrCannotDeleteActiveRun = errors.New("cannot delete a run that is still pending or running; stop it first")
+	ErrInvalidSelector       = errors.New("invalid run selector")
 )
+
+func wrapSelectorErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrInvalidSelector, err.Error())
+}
 
 type runService struct {
 	db          storage.RunRepository
@@ -29,10 +39,11 @@ type runService struct {
 	tasks       map[string]*model.Task
 	scheduler   runtime.NextRunGetter
 	logDir      string
+	eventBus    events.EventBus
 }
 
-func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks map[string]*model.Task, sched runtime.NextRunGetter, logDir string) *runService {
-	return &runService{db: db, taskManager: jm, tasks: tasks, scheduler: sched, logDir: logDir}
+func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks map[string]*model.Task, sched runtime.NextRunGetter, logDir string, bus events.EventBus) *runService {
+	return &runService{db: db, taskManager: jm, tasks: tasks, scheduler: sched, logDir: logDir, eventBus: bus}
 }
 
 func (s *runService) ListTasks() []model.TaskResponse {
@@ -126,13 +137,114 @@ func (s *runService) DeleteRun(runID string) error {
 	if run.Status == model.PhaseRunning || run.Status == model.PhasePending {
 		return ErrCannotDeleteActiveRun
 	}
-	if err := s.db.DeleteRun(runID); err != nil {
-		return err
+	// Single-row delete is just a one-ID soft-delete — no duplicated logic.
+	_, err = s.bulkSoftDelete(model.RunSelector{IDs: []string{runID}})
+	return err
+}
+
+// bulkSoftDelete applies a selector against the soft-delete storage method
+// and publishes run.deleted for every affected row.
+func (s *runService) bulkSoftDelete(sel model.RunSelector) (int, error) {
+	if err := sel.Validate(); err != nil {
+		return 0, wrapSelectorErr(err)
 	}
-	logPath := logutil.ResolveRunLogPath(s.logDir, run.TaskName, run.ID, run.CreatedAt)
-	logutil.RemoveLogFiles(logPath)
-	logutil.RemoveEmptyParents(logPath, s.logDir)
-	return nil
+	refs, err := s.db.SoftDeleteRuns(sel, time.Now())
+	if err != nil {
+		return 0, err
+	}
+	for _, ref := range refs {
+		s.publishDeleted(ref)
+	}
+	return len(refs), nil
+}
+
+// bulkRestore reverses a soft-delete and re-emits run.updated for each
+// restored run so connected UIs can splice the rows back in.
+func (s *runService) bulkRestore(sel model.RunSelector) (int, error) {
+	if err := sel.Validate(); err != nil {
+		return 0, wrapSelectorErr(err)
+	}
+	runs, err := s.db.RestoreRuns(sel)
+	if err != nil {
+		return 0, err
+	}
+	for i := range runs {
+		s.publishRunUpdated(&runs[i])
+	}
+	return len(runs), nil
+}
+
+// bulkCancel resolves the selector to currently-running runs and terminates
+// each one through the task manager. Returns the number of cancel signals
+// sent (best-effort — a run may exit between resolve and signal).
+func (s *runService) bulkCancel(sel model.RunSelector) (int, error) {
+	if err := sel.Validate(); err != nil {
+		return 0, wrapSelectorErr(err)
+	}
+	refs, err := s.db.ResolveSelectorIDs(sel, string(model.PhaseRunning))
+	if err != nil {
+		return 0, err
+	}
+	signalled := 0
+	for _, ref := range refs {
+		if err := s.taskManager.TerminateRun(ref.ID); err == nil {
+			signalled++
+		}
+	}
+	return signalled, nil
+}
+
+// bulkRerun resolves the selector to a unique set of task names and triggers
+// one new run per task. Returns the (task_name, new_run_id) pairs so the UI
+// can build an "undo rerun" selector.
+func (s *runService) bulkRerun(sel model.RunSelector) ([]TriggeredRunRef, error) {
+	if err := sel.Validate(); err != nil {
+		return nil, wrapSelectorErr(err)
+	}
+	refs, err := s.db.ResolveSelectorIDs(sel, "")
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	taskNames := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if _, ok := seen[ref.TaskName]; ok {
+			continue
+		}
+		seen[ref.TaskName] = struct{}{}
+		taskNames = append(taskNames, ref.TaskName)
+	}
+	sort.Strings(taskNames)
+	out := make([]TriggeredRunRef, 0, len(taskNames))
+	for _, name := range taskNames {
+		task, ok := s.tasks[name]
+		if !ok || task.Kind.IsService() || !task.APITrigger {
+			continue
+		}
+		run, err := s.taskManager.TriggerRun(name, model.TriggeredByAPI)
+		if err != nil || run == nil {
+			continue
+		}
+		out = append(out, TriggeredRunRef{TaskName: name, RunID: run.ID})
+	}
+	return out, nil
+}
+
+func (s *runService) publishDeleted(ref storage.RunRef) {
+	if s.eventBus == nil {
+		return
+	}
+	s.eventBus.Publish(events.EventRunDeleted, events.RunDeletedEvent{
+		RunID:    ref.ID,
+		TaskName: ref.TaskName,
+	})
+}
+
+func (s *runService) publishRunUpdated(run *model.Run) {
+	if s.eventBus == nil {
+		return
+	}
+	s.eventBus.Publish(events.EventRunUpdated, events.RunEvent{Run: run.Copy()})
 }
 
 func (s *runService) StopRun(runID string) error {

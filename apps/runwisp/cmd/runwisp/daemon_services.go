@@ -28,6 +28,7 @@ type daemonServices struct {
 	TasksMap            map[string]*model.Task
 	Scheduler           *runtime.Scheduler
 	RetentionCleaner    *runtime.RetentionCleaner
+	SoftDeletePurger    *runtime.SoftDeletePurger
 	Notify              notifyBundle
 	ScheduleResult      runtime.ScheduleResult
 	CrashedRuns         int64
@@ -82,6 +83,9 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 
 	retentionCleaner := initRetentionCleaner(cfg, db, tasksMap)
 
+	softDeletePurger := runtime.NewSoftDeletePurger(db, flags.LogDir())
+	softDeletePurger.Start()
+
 	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
 	if err != nil {
 		slog.Warn("Failed to initialize notify subsystem", "err", err)
@@ -100,6 +104,7 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 		TasksMap:            tasksMap,
 		Scheduler:           scheduler,
 		RetentionCleaner:    retentionCleaner,
+		SoftDeletePurger:    softDeletePurger,
 		Notify:              notifyB,
 		ScheduleResult:      schedResult,
 		CrashedRuns:         crashed,

@@ -7,9 +7,12 @@ export type {
   DaemonInfo,
   SystemStats,
   paths as APIPaths,
+  components as APIComponents,
 } from "./generated/api.js";
 
 import type { components } from "./generated/api.js";
+
+export type RunSelector = components["schemas"]["RunSelector"];
 
 /**
  * EndReason is the union of all reasons a run can end. The single source of

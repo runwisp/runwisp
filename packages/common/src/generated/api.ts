@@ -178,6 +178,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/bulk/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel every running run matched by the selector */
+        post: operations["bulkCancelRuns"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/bulk/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Soft-delete every run matched by the selector
+         * @description Marks matching terminal runs as deleted. Rows remain on disk for a short undo window before the purger reclaims them.
+         */
+        post: operations["bulkDeleteRuns"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/bulk/rerun": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-run the unique tasks behind the selector's runs */
+        post: operations["bulkRerunRuns"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/bulk/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore soft-deleted runs matching the selector */
+        post: operations["bulkRestoreRuns"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/stream": {
         parameters: {
             query?: never;
@@ -436,6 +507,29 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BulkAffectedBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/BulkAffectedBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: int64
+             * @description Number of rows the operation touched
+             */
+            affected: number;
+        };
+        BulkRerunBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/BulkRerunBody.json
+             */
+            readonly $schema?: string;
+            /** @description New runs spawned by the rerun, keyed by task */
+            triggered: components["schemas"]["TriggeredRunRef"][] | null;
+        };
         CapInfo: {
             available: boolean;
             name: string;
@@ -764,9 +858,37 @@ export interface components {
             error?: string;
             run: components["schemas"]["Run"];
         };
+        RunDeletedSSEEvent: {
+            run_id: string;
+            task_name: string;
+        };
         RunFailedEvent: {
             error?: string;
             run: components["schemas"]["Run"];
+        };
+        RunFilter: {
+            /** @description Search query against task_name / id */
+            search?: string;
+            /** @description Filter by run status (phase or end reason) */
+            status?: string;
+            /** @description Filter by task name */
+            task_name?: string;
+        };
+        RunSelector: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/RunSelector.json
+             */
+            readonly $schema?: string;
+            /** @description IDs to exclude when MatchAll is true */
+            except_ids?: string[] | null;
+            /** @description Filter to apply when MatchAll is true */
+            filter?: components["schemas"]["RunFilter"];
+            /** @description Explicit run IDs to select when MatchAll is false */
+            ids?: string[] | null;
+            /** @description When true, selects every run matching Filter except those listed in ExceptIDs */
+            match_all?: boolean;
         };
         RunStartedEvent: {
             error?: string;
@@ -1003,6 +1125,10 @@ export interface components {
             timeout?: number;
             /** @description IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone */
             timezone?: string;
+        };
+        TriggeredRunRef: {
+            run_id: string;
+            task_name: string;
         };
     };
     responses: never;
@@ -1379,6 +1505,138 @@ export interface operations {
             };
         };
     };
+    bulkCancelRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunSelector"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkAffectedBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    bulkDeleteRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunSelector"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkAffectedBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    bulkRerunRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunSelector"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkRerunBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    bulkRestoreRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunSelector"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkAffectedBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     streamRuns: {
         parameters: {
             query?: never;
@@ -1423,6 +1681,17 @@ export interface operations {
                          * @constant
                          */
                         event: "run.created";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["RunDeletedSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "run.deleted";
                         /** @description The event ID. */
                         id?: number;
                         /** @description The retry time in milliseconds. */

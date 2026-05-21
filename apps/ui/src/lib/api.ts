@@ -3,7 +3,7 @@
 
 import createClient, { type Middleware } from "openapi-fetch";
 import { z } from "zod";
-import type { APIPaths } from "@runwisp/common";
+import type { APIPaths, RunSelector } from "@runwisp/common";
 import { browser } from "$app/environment";
 import { getApiUrl } from "./utils/env";
 import { HTTP_STATUS } from "./config/constants";
@@ -221,6 +221,40 @@ export const runsApi = {
         });
         if (error) throw new Error("Failed to fetch runs");
         return { runs: data.runs ?? [], total: data.total };
+    },
+
+    bulkDelete: async (selector: RunSelector): Promise<number> => {
+        const { data, error } = await apiClient.POST("/api/runs/bulk/delete", {
+            body: selector,
+        });
+        if (error) throw new Error("Failed to delete runs");
+        return data.affected;
+    },
+
+    bulkRestore: async (selector: RunSelector): Promise<number> => {
+        const { data, error } = await apiClient.POST("/api/runs/bulk/restore", {
+            body: selector,
+        });
+        if (error) throw new Error("Failed to restore runs");
+        return data.affected;
+    },
+
+    bulkCancel: async (selector: RunSelector): Promise<number> => {
+        const { data, error } = await apiClient.POST("/api/runs/bulk/cancel", {
+            body: selector,
+        });
+        if (error) throw new Error("Failed to cancel runs");
+        return data.affected;
+    },
+
+    bulkRerun: async (
+        selector: RunSelector,
+    ): Promise<{ triggered: { task_name: string; run_id: string }[] }> => {
+        const { data, error } = await apiClient.POST("/api/runs/bulk/rerun", {
+            body: selector,
+        });
+        if (error) throw new Error("Failed to re-run tasks");
+        return { triggered: data.triggered ?? [] };
     },
 };
 

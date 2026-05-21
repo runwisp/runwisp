@@ -41,6 +41,10 @@ type RunRepository interface {
 	GetRunSummary() (*model.RunSummary, error)
 	EnsureTaskRegistered(taskName string, firstSeen time.Time) error
 	GetTaskRegistration(taskName string) (*model.TaskRegistration, error)
+	SoftDeleteRuns(sel model.RunSelector, deletedAt time.Time) ([]RunRef, error)
+	RestoreRuns(sel model.RunSelector) ([]model.Run, error)
+	ResolveSelectorIDs(sel model.RunSelector, statusFilter string) ([]RunRef, error)
+	PurgeExpiredSoftDeletes(ttl time.Duration) ([]RunRef, error)
 	Close() error
 }
 
@@ -63,10 +67,12 @@ triggered_by          VARCHAR(20) NOT NULL,
 created_at            DATETIME,
 retry_attempt         INTEGER DEFAULT 0,
 retry_of_run_id       TEXT,
-instance_index        INTEGER NOT NULL DEFAULT 0
+instance_index        INTEGER NOT NULL DEFAULT 0,
+deleted_at            DATETIME
 );
 CREATE INDEX IF NOT EXISTS idx_runs_external_execution_id ON runs(external_execution_id);
 CREATE INDEX IF NOT EXISTS idx_runs_task_name ON runs(task_name);
+CREATE INDEX IF NOT EXISTS idx_runs_deleted_at ON runs(deleted_at);
 
 CREATE TABLE IF NOT EXISTS task_registrations (
 task_name     TEXT PRIMARY KEY,
@@ -129,7 +135,25 @@ func New(dbPath string, logOutput io.Writer) (Database, error) {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
+	if err := migrateAddDeletedAt(db); err != nil {
+		return nil, fmt.Errorf("failed to migrate deleted_at: %w", err)
+	}
+
 	return &SQLiteDatabase{db: db}, nil
+}
+
+// migrateAddDeletedAt adds the deleted_at column to runs on legacy databases.
+// Idempotent: the CREATE TABLE above already includes the column on fresh
+// installs, so the ALTER fails with "duplicate column" and we return nil.
+func migrateAddDeletedAt(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE runs ADD COLUMN deleted_at DATETIME`)
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "duplicate column") {
+		return nil
+	}
+	return err
 }
 
 const runColumns = `id, external_execution_id, task_name, status, end_reason, exit_code,
@@ -210,7 +234,7 @@ SELECT COUNT(*),
 COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0),
 COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow') THEN 1 ELSE 0 END), 0),
 MAX(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow') THEN end_at END)
-FROM runs`)
+FROM runs WHERE deleted_at IS NULL`)
 	summary := &model.RunSummary{}
 	if err := row.Scan(&summary.Total, &summary.Success, &summary.Failed, &summary.LastFailure); err != nil {
 		return nil, err
@@ -220,7 +244,7 @@ FROM runs`)
 
 func (db *SQLiteDatabase) CountRuns(taskName string) (int64, error) {
 	var count int64
-	err := db.db.QueryRow(`SELECT COUNT(*) FROM runs WHERE task_name = ?`, taskName).Scan(&count)
+	err := db.db.QueryRow(`SELECT COUNT(*) FROM runs WHERE task_name = ? AND deleted_at IS NULL`, taskName).Scan(&count)
 	return count, err
 }
 
@@ -274,10 +298,7 @@ func (db *SQLiteDatabase) CountRunsFiltered(status, taskName, searchQuery string
 	}
 	applySearchFilter(&q, searchQuery)
 
-	query := "SELECT COUNT(*) FROM runs"
-	if w := q.whereSQL(); w != "" {
-		query += " " + w
-	}
+	query := "SELECT COUNT(*) FROM runs " + combineWhere(q.whereSQL(), notDeletedClause)
 	var count int64
 	err := db.db.QueryRow(query, q.args...).Scan(&count)
 	return count, err
@@ -305,9 +326,106 @@ func (db *SQLiteDatabase) QueryRuns(taskName string, limit, offset int, status s
 	return collectRows(rows, scanRun)
 }
 
+// DeleteRun hard-deletes a single run by id, bypassing the soft-delete
+// window. Used by retention sweeps; soft-delete-aware paths go through
+// SoftDeleteRuns instead.
 func (db *SQLiteDatabase) DeleteRun(id string) error {
 	_, err := db.db.Exec(`DELETE FROM runs WHERE id = ?`, id)
 	return err
+}
+
+// RunRef is the minimum identifying tuple needed to resolve a run's log path
+// on disk. Returned by bulk-selector storage methods so callers can publish
+// events or clean up logs without re-querying the run table.
+type RunRef struct {
+	ID        string
+	TaskName  string
+	CreatedAt time.Time
+}
+
+// SoftDeleteRuns marks every run matched by sel (and currently terminal +
+// not already soft-deleted) with the supplied deletion timestamp. Returns
+// the affected rows as lightweight refs so callers can publish run.deleted
+// events without a follow-up query.
+func (db *SQLiteDatabase) SoftDeleteRuns(sel model.RunSelector, deletedAt time.Time) ([]RunRef, error) {
+	clause, args := buildSelectorWhere(sel)
+	query := `UPDATE runs SET deleted_at = ?
+ WHERE deleted_at IS NULL AND status = ? AND ` + clause + `
+ RETURNING id, task_name, created_at`
+	fullArgs := append([]any{deletedAt, model.PhaseEnded}, args...)
+	rows, err := db.db.Query(query, fullArgs...)
+	if err != nil {
+		return nil, err
+	}
+	return scanRunRefs(rows)
+}
+
+// RestoreRuns clears deleted_at for every soft-deleted run matched by sel
+// and returns the full restored rows so the caller can re-emit run.updated
+// events that bring the rows back in connected UIs.
+func (db *SQLiteDatabase) RestoreRuns(sel model.RunSelector) ([]model.Run, error) {
+	clause, args := buildSelectorWhere(sel)
+	_, err := db.db.Exec(
+		`UPDATE runs SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND `+clause,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	// Re-read with the same predicate (now that deleted_at is NULL the rows
+	// are visible to the standard SELECT) so we can publish full updates.
+	listQuery := selectRunsSQL("WHERE "+clause, "")
+	rows, err := db.db.Query(listQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	return collectRows(rows, scanRun)
+}
+
+// ResolveSelectorIDs returns the IDs of non-deleted runs matched by sel,
+// optionally constrained to a status (use "" for any). Used by bulk
+// cancel/rerun which need IDs to drive per-run actions.
+func (db *SQLiteDatabase) ResolveSelectorIDs(sel model.RunSelector, statusFilter string) ([]RunRef, error) {
+	clause, args := buildSelectorWhere(sel)
+	query := "SELECT id, task_name, created_at FROM runs WHERE " + notDeletedClause + " AND " + clause
+	if statusFilter != "" {
+		query += " AND status = ?"
+		args = append(args, statusFilter)
+	}
+	rows, err := db.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanRunRefs(rows)
+}
+
+// PurgeExpiredSoftDeletes hard-deletes every soft-deleted row whose
+// deleted_at is older than ttl ago (use ttl=0 to drain all on boot).
+// Returns refs so the caller can wipe the matching log files.
+func (db *SQLiteDatabase) PurgeExpiredSoftDeletes(ttl time.Duration) ([]RunRef, error) {
+	cutoff := time.Now().Add(-ttl)
+	rows, err := db.db.Query(
+		`DELETE FROM runs WHERE deleted_at IS NOT NULL AND deleted_at <= ?
+ RETURNING id, task_name, created_at`,
+		cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return scanRunRefs(rows)
+}
+
+func scanRunRefs(rows *sql.Rows) ([]RunRef, error) {
+	defer rows.Close()
+	var out []RunRef
+	for rows.Next() {
+		var ref RunRef
+		if err := rows.Scan(&ref.ID, &ref.TaskName, &ref.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
 }
 
 func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
@@ -379,7 +497,7 @@ func (db *SQLiteDatabase) MarkCrashedRuns() (int64, error) {
 	now := time.Now()
 	result, err := db.db.Exec(
 		`UPDATE runs SET status = ?, end_reason = ?, end_at = ?, exit_code = ?
- WHERE status = ? AND end_at IS NULL`,
+ WHERE status = ? AND end_at IS NULL AND deleted_at IS NULL`,
 		model.PhaseEnded, string(model.ReasonCrashed), now, -2, model.PhaseRunning,
 	)
 	if err != nil {

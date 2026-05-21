@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Delete a run from the Web UI and TUI.** The run detail panel grows a trash button next to the status badge; the TUI exec view binds <kbd>D</kbd> and surfaces a Delete action button on terminal runs. Deletion removes the metadata row and the captured log segment; running or pending runs are rejected (`409 Conflict`) until you stop them first.
 
-- **Bulk run actions in the Web UI.** The runs list now shows a checkbox per row and a toolbar when one or more runs are selected. Re-run dedupes by task and triggers each once; Cancel applies to running runs in the selection; Delete applies to runs in a terminal state. Each batch fires in parallel and reports an aggregate toast (`"Deleted 3 / 4 runs"`).
+- **Bulk run actions in the Web UI with undo.** The runs list now has a master checkbox in the heading (Gmail-style: click once for select-all, again to clear) plus per-row checkboxes. Re-run, Cancel, and Delete sit inline in the heading so they don't crowd the table. Deleted runs disappear immediately and a toast offers a 5-second **Undo** — the rows come back, even if you reload or close the tab inside that window. After it expires the daemon purges both the row and its log segment.
 
 - **Trigger-type icons next to every task.** Services show a server icon, cron-scheduled tasks a clock, manual-only tasks a hand — visible in the sidebar and the dashboard's task overview. Hover the icon for the cron expression or instance count.
 

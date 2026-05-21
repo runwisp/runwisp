@@ -72,6 +72,18 @@
                 aria-hidden="true"
             />
             <p class="flex-1 text-sm font-medium">{toastItem.message}</p>
+            {#if toastItem.action}
+                {@const action = toastItem.action}
+                <button
+                    onclick={() => {
+                        action.onClick();
+                        toast.remove(toastItem.id);
+                    }}
+                    class="flex-shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-on-surface underline-offset-2 transition-colors hover:bg-surface-sunken hover:underline"
+                >
+                    {action.label}
+                </button>
+            {/if}
             <button
                 onclick={() => toast.remove(toastItem.id)}
                 class="flex-shrink-0 rounded-lg p-1 text-on-surface-muted transition-colors hover:bg-surface-sunken hover:text-on-surface"

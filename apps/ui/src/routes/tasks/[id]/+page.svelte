@@ -7,7 +7,7 @@
     import { toast, ErrorState } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
-    import { runUpdatesStore, upsertRun } from "$lib/stores";
+    import { runUpdatesStore, upsertRun, removeRun } from "$lib/stores";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { type Run, type Task } from "$lib/types";
@@ -59,6 +59,11 @@
 
     $effect(() => {
         const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
+            if (event.type === "run.deleted") {
+                if (event.data.task_name !== taskName) return;
+                runs = removeRun(runs, event.data.run_id);
+                return;
+            }
             if (event.data.run.task_name !== taskName) return;
             runs = upsertRun(runs, event.data.run);
         });

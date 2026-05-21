@@ -34,7 +34,8 @@ func mapDomainError(err error, fallback500 string) huma.StatusError {
 		errors.Is(err, ErrCannotDeleteActiveRun):
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, ErrNotAService),
-		errors.Is(err, ErrNotRunning):
+		errors.Is(err, ErrNotRunning),
+		errors.Is(err, ErrInvalidSelector):
 		return huma.Error400BadRequest(err.Error())
 	default:
 		if fallback500 == "" {

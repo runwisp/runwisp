@@ -5,7 +5,7 @@
     import { RunsPage } from "$lib/components/dashboard";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi } from "$lib/api";
-    import { runUpdatesStore, upsertRun } from "$lib/stores";
+    import { runUpdatesStore, upsertRun, removeRun } from "$lib/stores";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { type Run } from "$lib/types";
@@ -27,6 +27,10 @@
 
     $effect(() => {
         const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
+            if (event.type === "run.deleted") {
+                runs = removeRun(runs, event.data.run_id);
+                return;
+            }
             runs = upsertRun(runs, event.data.run);
         });
         void runsData.fetch();

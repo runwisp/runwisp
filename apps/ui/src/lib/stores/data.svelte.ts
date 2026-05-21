@@ -61,3 +61,7 @@ export function upsertRun(list: Run[], run: Run): Run[] {
     }
     return sortByCreatedAtDesc([run, ...list]);
 }
+
+export function removeRun(list: Run[], runId: string): Run[] {
+    return list.filter((r) => r.id !== runId);
+}

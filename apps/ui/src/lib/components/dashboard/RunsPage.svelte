@@ -2,16 +2,12 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Trash2 } from "@lucide/svelte";
-    import { SvelteSet } from "svelte/reactivity";
-    import type { Run } from "@runwisp/common";
+    import type { Run, RunSelector } from "@runwisp/common";
     import type { LogEvent, LogSlice } from "@runwisp/ui";
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
-    import Button from "@runwisp/ui/components/Button.svelte";
-    import Modal from "@runwisp/ui/components/Modal.svelte";
     import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
     import { sortByCreatedAtDesc } from "$lib/utils/sort";
-    import { tasksApi } from "$lib/api";
+    import { runsApi } from "$lib/api";
 
     let {
         runs = $bindable([]),
@@ -32,90 +28,92 @@
     }>();
 
     let userSelectedRunId = $state<string | null>(null);
-    let deleteTargetId = $state<string | null>(null);
-    let deleteConfirmOpen = $state(false);
-    let deleting = $state(false);
 
-    function requestDelete(runId: string) {
-        deleteTargetId = runId;
-        deleteConfirmOpen = true;
-    }
+    const UNDO_MS = 5000;
 
-    async function confirmDelete() {
-        const id = deleteTargetId;
-        if (!id) return;
-        const target = runs.find((r: Run) => r.id === id);
-        if (!target) {
-            deleteConfirmOpen = false;
-            deleteTargetId = null;
-            return;
-        }
-        deleting = true;
+    async function handleBulkDelete(selector: RunSelector, affected: Run[]) {
+        if (affected.length === 0) return;
+        const removedIds = new Set(affected.map((r) => r.id));
+        const snapshot = runs.filter((r: Run) => removedIds.has(r.id));
+        runs = runs.filter((r: Run) => !removedIds.has(r.id));
+        if (userSelectedRunId && removedIds.has(userSelectedRunId)) userSelectedRunId = null;
+
         try {
-            await tasksApi.deleteRun(target.task_name, id);
-            runs = runs.filter((r: Run) => r.id !== id);
-            if (userSelectedRunId === id) userSelectedRunId = null;
-            toast.success("Run deleted");
+            const count = await runsApi.bulkDelete(selector);
+            const restoreSelector: RunSelector = {
+                match_all: false,
+                ids: [...removedIds],
+            };
+            toast.success(count === 1 ? "Run deleted" : `${count} runs deleted`, {
+                duration: UNDO_MS,
+                action: {
+                    label: "Undo",
+                    onClick: () => void undoDelete(restoreSelector, snapshot),
+                },
+            });
         } catch (err) {
-            toast.error(extractErrorMessage(err, "Failed to delete run"));
-        } finally {
-            deleting = false;
-            deleteConfirmOpen = false;
-            deleteTargetId = null;
+            runs = sortByCreatedAtDesc([...runs, ...snapshot]);
+            toast.error(extractErrorMessage(err, "Failed to delete runs"));
         }
     }
 
-    function runsByIds(ids: string[]): Run[] {
-        const want = new SvelteSet(ids);
-        return runs.filter((r: Run) => want.has(r.id));
+    async function undoDelete(selector: RunSelector, snapshot: Run[]) {
+        try {
+            await runsApi.bulkRestore(selector);
+            // Restore optimistically — SSE run.updated will also splice them
+            // back in if not already.
+            runs = sortByCreatedAtDesc([
+                ...runs.filter((r: Run) => !snapshot.some((s) => s.id === r.id)),
+                ...snapshot,
+            ]);
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to restore runs"));
+        }
     }
 
-    async function handleBulkCancel(ids: string[]) {
-        const targets = runsByIds(ids).filter((r) => r.status === "running");
-        if (targets.length === 0) {
-            toast.error("No running runs selected");
-            return;
+    async function handleBulkCancel(selector: RunSelector, affected: Run[]) {
+        if (affected.length === 0) return;
+        try {
+            const count = await runsApi.bulkCancel(selector);
+            toast.success(count === 1 ? "Cancelled 1 run" : `Cancelled ${count} runs`);
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to cancel runs"));
         }
-        const results = await Promise.allSettled(
-            targets.map((r) => tasksApi.stopRun(r.task_name, r.id)),
-        );
-        const ok = results.filter((r) => r.status === "fulfilled").length;
-        if (ok === targets.length) toast.success(`Cancelled ${ok} run${ok === 1 ? "" : "s"}`);
-        else toast.error(`Cancelled ${ok} / ${targets.length} runs`);
     }
 
-    async function handleBulkDelete(ids: string[]) {
-        const targets = runsByIds(ids).filter(
-            (r) => r.status !== "running" && r.status !== "pending",
-        );
-        if (targets.length === 0) {
-            toast.error("No deletable runs selected");
-            return;
+    async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
+        try {
+            const { triggered } = await runsApi.bulkRerun(selector);
+            if (triggered.length === 0) {
+                toast.error("Could not re-run any of the selected tasks");
+                return;
+            }
+            const label = triggered.length === 1 ? "task" : "tasks";
+            toast.success(`Triggered ${triggered.length} ${label}`, {
+                duration: UNDO_MS,
+                action: {
+                    label: "Undo",
+                    onClick: () => void undoRerun(triggered),
+                },
+            });
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to re-run tasks"));
         }
-        const results = await Promise.allSettled(
-            targets.map((r) => tasksApi.deleteRun(r.task_name, r.id)),
-        );
-        const deleted = new SvelteSet<string>();
-        results.forEach((res, idx) => {
-            const target = targets[idx];
-            if (res.status === "fulfilled" && target) deleted.add(target.id);
-        });
-        if (deleted.size > 0) {
-            runs = runs.filter((r: Run) => !deleted.has(r.id));
-            if (userSelectedRunId && deleted.has(userSelectedRunId)) userSelectedRunId = null;
-        }
-        if (deleted.size === targets.length)
-            toast.success(`Deleted ${deleted.size} run${deleted.size === 1 ? "" : "s"}`);
-        else toast.error(`Deleted ${deleted.size} / ${targets.length} runs`);
     }
 
-    async function handleBulkRerun(ids: string[]) {
-        const taskNames = Array.from(new Set(runsByIds(ids).map((r) => r.task_name)));
-        if (taskNames.length === 0) return;
-        const results = await Promise.allSettled(taskNames.map((n) => tasksApi.triggerRun(n)));
-        const ok = results.filter((r) => r.status === "fulfilled").length;
-        if (ok === taskNames.length) toast.success(`Triggered ${ok} task${ok === 1 ? "" : "s"}`);
-        else toast.error(`Triggered ${ok} / ${taskNames.length} tasks`);
+    async function undoRerun(triggered: { task_name: string; run_id: string }[]) {
+        const ids = triggered.map((t) => t.run_id);
+        try {
+            await runsApi.bulkCancel({ match_all: false, ids });
+        } catch {
+            // best-effort: runs may already have finished
+        }
+        try {
+            await runsApi.bulkDelete({ match_all: false, ids });
+            toast.info("Re-run undone");
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to undo re-run"));
+        }
     }
 
     let sortedRuns: Run[] = $derived(sortByCreatedAtDesc(runs));
@@ -128,6 +126,12 @@
     });
 
     let selectedRun = $derived(runs.find((r: Run) => r.id === selectedRunId));
+
+    function deleteSingle(runId: string) {
+        const target = runs.find((r: Run) => r.id === runId);
+        if (!target) return;
+        void handleBulkDelete({ match_all: false, ids: [runId] }, [target]);
+    }
 </script>
 
 <PageContainer variant="flush" class="gap-4">
@@ -166,27 +170,8 @@
                 {fetchLogs}
                 {streamLogs}
                 showTaskName
-                onDelete={requestDelete}
+                onDelete={deleteSingle}
             />
         </div>
     </div>
-
-    <Modal
-        bind:open={deleteConfirmOpen}
-        title="Delete Run"
-        description="Delete this run? The captured log will also be removed and cannot be recovered."
-        size="sm"
-    >
-        {#snippet footer()}
-            <div class="flex justify-end gap-2">
-                <Button variant="secondary" size="sm" onclick={() => (deleteConfirmOpen = false)}>
-                    Cancel
-                </Button>
-                <Button variant="danger" size="sm" onclick={confirmDelete} loading={deleting}>
-                    {#snippet icon()}<Trash2 size={16} />{/snippet}
-                    Delete
-                </Button>
-            </div>
-        {/snippet}
-    </Modal>
 </PageContainer>

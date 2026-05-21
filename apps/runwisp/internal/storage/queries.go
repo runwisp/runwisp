@@ -3,7 +3,10 @@
 
 package storage
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // SortColumn is a typed handle for a column the runs list may be sorted by.
 // Callers receive the typed value via ParseSortColumn so unknown strings are
@@ -101,15 +104,34 @@ func buildOrderClause(col SortColumn, dir SortDirection) (string, error) {
 	return fmt.Sprintf("%s %s", sqlCol, direction), nil
 }
 
-// selectRunsSQL composes a `SELECT runColumns FROM runs <where> <tail>` query.
-// tail is appended verbatim — callers use it for ORDER BY / LIMIT / OFFSET.
+// notDeletedClause filters out soft-deleted rows. Appended to every read path
+// so deleted rows are invisible to the UI until the purger reaps them.
+const notDeletedClause = "deleted_at IS NULL"
+
+// selectRunsSQL composes a `SELECT runColumns FROM runs <where> <tail>` query,
+// implicitly adding the soft-delete filter to whatever predicates the caller
+// passed in. tail is appended verbatim — callers use it for ORDER BY / LIMIT.
 func selectRunsSQL(where, tail string) string {
 	q := "SELECT " + runColumns + " FROM runs"
-	if where != "" {
-		q += " " + where
+	combined := combineWhere(where, notDeletedClause)
+	if combined != "" {
+		q += " " + combined
 	}
 	if tail != "" {
 		q += " " + tail
 	}
 	return q
+}
+
+// combineWhere merges an existing WHERE clause (which may already start with
+// "WHERE" or be empty) with an extra predicate.
+func combineWhere(existing, extra string) string {
+	trimmed := strings.TrimSpace(existing)
+	if trimmed == "" {
+		return "WHERE " + extra
+	}
+	if strings.HasPrefix(strings.ToUpper(trimmed), "WHERE ") {
+		return trimmed + " AND " + extra
+	}
+	return "WHERE " + trimmed + " AND " + extra
 }

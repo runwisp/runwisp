@@ -76,6 +76,9 @@ func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, s
 	// RetentionCleaner.Stop only cancels its loop's context — non-blocking,
 	// so it's safe to call outside the deadline-bounded waits below.
 	svc.RetentionCleaner.Stop()
+	if svc.SoftDeletePurger != nil {
+		svc.SoftDeletePurger.Stop()
+	}
 
 	inputCtx, cancelInput := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelInput()

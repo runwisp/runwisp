@@ -5,11 +5,22 @@ import { generateUlid } from "@runwisp/common";
 
 export type ToastType = "success" | "error" | "warning" | "info";
 
+export interface ToastAction {
+    label: string;
+    onClick: () => void;
+}
+
 export interface Toast {
     id: string;
     type: ToastType;
     message: string;
     duration?: number;
+    action?: ToastAction;
+}
+
+export interface ToastOptions {
+    duration?: number;
+    action?: ToastAction;
 }
 
 const DEFAULT_DURATION = 5000;
@@ -18,7 +29,8 @@ class ToastStore {
     items = $state<Toast[]>([]);
     private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
 
-    add(type: ToastType, message: string, duration = DEFAULT_DURATION): string {
+    add(type: ToastType, message: string, opts: ToastOptions = {}): string {
+        const duration = opts.duration ?? DEFAULT_DURATION;
         const existing = this.items.find((t) => t.type === type && t.message === message);
         if (existing) {
             this.refreshTimer(existing.id, duration);
@@ -26,7 +38,9 @@ class ToastStore {
         }
 
         const id = generateUlid();
-        this.items = [...this.items, { id, type, message, duration }];
+        const next: Toast = { id, type, message, duration };
+        if (opts.action) next.action = opts.action;
+        this.items = [...this.items, next];
         if (duration > 0) {
             this.scheduleRemoval(id, duration);
         }
@@ -59,20 +73,20 @@ class ToastStore {
         this.items = this.items.filter((t) => t.id !== id);
     }
 
-    success(message: string, duration?: number): string {
-        return this.add("success", message, duration);
+    success(message: string, opts?: ToastOptions): string {
+        return this.add("success", message, opts);
     }
 
-    error(message: string, duration?: number): string {
-        return this.add("error", message, duration);
+    error(message: string, opts?: ToastOptions): string {
+        return this.add("error", message, opts);
     }
 
-    warning(message: string, duration?: number): string {
-        return this.add("warning", message, duration);
+    warning(message: string, opts?: ToastOptions): string {
+        return this.add("warning", message, opts);
     }
 
-    info(message: string, duration?: number): string {
-        return this.add("info", message, duration);
+    info(message: string, opts?: ToastOptions): string {
+        return this.add("info", message, opts);
     }
 
     clear() {

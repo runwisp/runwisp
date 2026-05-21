@@ -1,6 +1,57 @@
 {
   "components": {
     "schemas": {
+      "BulkAffectedBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/BulkAffectedBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "affected": {
+            "description": "Number of rows the operation touched",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "affected"
+        ],
+        "type": "object"
+      },
+      "BulkRerunBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/BulkRerunBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "triggered": {
+            "description": "New runs spawned by the rerun, keyed by task",
+            "items": {
+              "$ref": "#/components/schemas/TriggeredRunRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "triggered"
+        ],
+        "type": "object"
+      },
       "CapInfo": {
         "additionalProperties": false,
         "properties": {
@@ -732,6 +783,22 @@
         ],
         "type": "object"
       },
+      "RunDeletedSSEEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "task_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "task_name"
+        ],
+        "type": "object"
+      },
       "RunFailedEvent": {
         "additionalProperties": false,
         "properties": {
@@ -745,6 +812,67 @@
         "required": [
           "run"
         ],
+        "type": "object"
+      },
+      "RunFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "search": {
+            "description": "Search query against task_name / id",
+            "type": "string"
+          },
+          "status": {
+            "description": "Filter by run status (phase or end reason)",
+            "type": "string"
+          },
+          "task_name": {
+            "description": "Filter by task name",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RunSelector": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/RunSelector.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "except_ids": {
+            "description": "IDs to exclude when MatchAll is true",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "filter": {
+            "$ref": "#/components/schemas/RunFilter",
+            "description": "Filter to apply when MatchAll is true"
+          },
+          "ids": {
+            "description": "Explicit run IDs to select when MatchAll is false",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "match_all": {
+            "description": "When true, selects every run matching Filter except those listed in ExceptIDs",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "RunStartedEvent": {
@@ -1169,6 +1297,22 @@
         "required": [
           "name",
           "api_trigger"
+        ],
+        "type": "object"
+      },
+      "TriggeredRunRef": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "task_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name",
+          "run_id"
         ],
         "type": "object"
       }
@@ -1764,6 +1908,171 @@
         ]
       }
     },
+    "/api/runs/bulk/cancel": {
+      "post": {
+        "operationId": "bulkCancelRuns",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSelector"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkAffectedBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Cancel every running run matched by the selector",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/runs/bulk/delete": {
+      "post": {
+        "description": "Marks matching terminal runs as deleted. Rows remain on disk for a short undo window before the purger reclaims them.",
+        "operationId": "bulkDeleteRuns",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSelector"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkAffectedBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Soft-delete every run matched by the selector",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/runs/bulk/rerun": {
+      "post": {
+        "operationId": "bulkRerunRuns",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSelector"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkRerunBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Re-run the unique tasks behind the selector's runs",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/runs/bulk/restore": {
+      "post": {
+        "operationId": "bulkRestoreRuns",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSelector"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkAffectedBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Restore soft-deleted runs matching the selector",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
     "/api/runs/stream": {
       "get": {
         "description": "Server-Sent Events stream of run creation, start, completion, failure and update events.",
@@ -1852,6 +2161,32 @@
                           "event"
                         ],
                         "title": "Event run.created",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/RunDeletedSSEEvent"
+                          },
+                          "event": {
+                            "const": "run.deleted",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event run.deleted",
                         "type": "object"
                       },
                       {

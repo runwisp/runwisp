@@ -82,7 +82,7 @@ func (m *mockTaskRunner) GetActiveRunCount(taskName string) int {
 // helpers
 
 func makeRunService(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner) *runService {
-	return newRunService(repo, runner, tasks, nil, "")
+	return newRunService(repo, runner, tasks, nil, "", nil)
 }
 
 // ---- mapNotFound ----
@@ -388,7 +388,9 @@ func TestDeleteRun_EndedRun_Succeeds(t *testing.T) {
 
 	run := &model.Run{ID: "run-3", TaskName: "t", Status: model.PhaseEnded}
 	repo.On("GetRun", "run-3").Return(run, nil)
-	repo.On("DeleteRun", "run-3").Return(nil)
+	repo.On("SoftDeleteRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
+		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == "run-3"
+	}), mock.Anything).Return([]storage.RunRef{{ID: "run-3", TaskName: "t"}}, nil)
 
 	err := svc.DeleteRun("run-3")
 	assert.NoError(t, err)

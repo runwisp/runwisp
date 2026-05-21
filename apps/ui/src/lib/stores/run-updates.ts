@@ -15,7 +15,10 @@ const RUN_EVENT_TYPES: RunUpdateEventType[] = [
     "run.completed",
     "run.failed",
     "run.updated",
+    "run.deleted",
 ];
+
+const SOURCE_ID = "run-updates";
 
 class RunUpdateManager {
     private readonly events = new EventManager({ path: "/api/runs/stream" });
@@ -31,7 +34,7 @@ class RunUpdateManager {
         this.unsubscribes.push(
             this.events.onOpen(() => {
                 this.logger.info("SSE connection established");
-                connectionStore.markConnected();
+                connectionStore.reportSourceUp(SOURCE_ID);
             }),
             this.events.onError((info) => {
                 this.logger.warn(
@@ -40,7 +43,10 @@ class RunUpdateManager {
                 );
                 // 401 means the daemon is up but rejected our auth — not a connection loss.
                 if (info.status !== 401) {
-                    connectionStore.markDisconnected(info.message ?? "SSE connection error");
+                    connectionStore.reportSourceDown(
+                        SOURCE_ID,
+                        info.message ?? "SSE connection error",
+                    );
                 }
             }),
         );
@@ -74,7 +80,11 @@ class RunUpdateManager {
                 );
                 return;
             }
-            this.logger.debug("SSE event validated OK", eventType, result.data.data.run.id);
+            const identity =
+                result.data.type === "run.deleted"
+                    ? result.data.data.run_id
+                    : result.data.data.run.id;
+            this.logger.debug("SSE event validated OK", eventType, identity);
             for (const handler of this.handlers) handler(result.data);
         } catch (e) {
             this.logger.error("Malformed SSE event JSON", data, e);
@@ -85,6 +95,7 @@ class RunUpdateManager {
         for (const off of this.unsubscribes) off();
         this.unsubscribes.length = 0;
         this.connected = false;
+        connectionStore.reportSourceDown(SOURCE_ID);
     }
 
     subscribeToUpdates(handler: RunUpdateHandler): () => void {

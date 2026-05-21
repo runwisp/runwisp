@@ -89,3 +89,36 @@ describe("connectionStore.markConnected", () => {
         expect(connectionStore.retryAttempts).toBe(0);
     });
 });
+
+// ─── reportSourceUp / reportSourceDown multi-source semantics ────────────────
+
+describe("connectionStore.reportSourceUp / reportSourceDown", () => {
+    it("stays connected when one source goes down but another is still up", () => {
+        connectionStore.reportSourceUp("a");
+        connectionStore.reportSourceUp("b");
+        connectionStore.reportSourceDown("a");
+        expect(connectionStore.status).toBe("connected");
+        // Cleanup
+        connectionStore.reportSourceDown("b");
+        connectionStore.markConnected();
+    });
+
+    it("transitions to disconnected only when all sources are down", () => {
+        connectionStore.reportSourceUp("a");
+        connectionStore.reportSourceUp("b");
+        connectionStore.reportSourceDown("a");
+        connectionStore.reportSourceDown("b", "boom");
+        expect(connectionStore.status).toBe("disconnected");
+        connectionStore.markConnected();
+    });
+
+    it("recovers to connected when any source comes back up", () => {
+        connectionStore.reportSourceUp("a");
+        connectionStore.reportSourceDown("a");
+        expect(connectionStore.status).toBe("disconnected");
+        connectionStore.reportSourceUp("b");
+        expect(connectionStore.status).toBe("connected");
+        connectionStore.reportSourceDown("b");
+        connectionStore.markConnected();
+    });
+});
