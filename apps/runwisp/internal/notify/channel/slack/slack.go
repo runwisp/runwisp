@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/render"
@@ -77,7 +76,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 		}
 	}
 	if err := c.transport.PostJSON(ctx, c.webhookURL, "application/json", body); err != nil {
-		return fmt.Errorf("%s: %s", c, c.redact(err.Error()))
+		return fmt.Errorf("%s: %s", c, notify.Redact(err.Error(), c.webhookURL))
 	}
 	return nil
 }
@@ -97,14 +96,4 @@ func injectChannel(body []byte, ch string) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimRight(buf.Bytes(), "\n"), nil
-}
-
-// redact strips the webhook URL out of any string. Net/http embeds the full
-// URL in *url.Error.String(); without this the secret leaks into in-app
-// delivery-failure notifications.
-func (c *Channel) redact(s string) string {
-	if c.webhookURL == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, c.webhookURL, "[redacted]")
 }

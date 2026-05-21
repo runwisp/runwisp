@@ -57,6 +57,28 @@ func Resolve(cfg config.NotifyConfig, dataDir string, renderCtx render.TemplateC
 				return ResolvedNotify{}, fmt.Errorf("notifier %q bot_token: %w", n.ID, err)
 			}
 			spec.BotToken = token
+		case "smtp":
+			spec.Host = n.Host
+			spec.Port = n.Port
+			spec.TLSMode = n.TLSMode
+			spec.TLSSkipVerify = n.TLSSkipVerify
+			spec.Username = n.Username
+			spec.From = n.From
+			spec.ReplyTo = n.ReplyTo
+			spec.Recipients = append([]string(nil), n.Recipients...)
+			spec.CC = append([]string(nil), n.CC...)
+			spec.BCC = append([]string(nil), n.BCC...)
+			if strings.TrimSpace(n.Password) == "" &&
+				strings.TrimSpace(n.PasswordEnv) == "" &&
+				strings.TrimSpace(n.PasswordFile) == "" {
+				// Auth-less local relay (e.g. Postfix on 127.0.0.1:25); leave empty.
+				break
+			}
+			pw, err := resolveSecret(n.Password, n.PasswordEnv, n.PasswordFile, dataDir)
+			if err != nil {
+				return ResolvedNotify{}, fmt.Errorf("notifier %q password: %w", n.ID, err)
+			}
+			spec.Password = pw
 		}
 		specs = append(specs, spec)
 	}

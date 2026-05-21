@@ -81,6 +81,21 @@ type NotifierSpec struct {
 	ChatID       string
 	ParseMode    string
 
+	// SMTP-specific
+	Host          string
+	Port          int
+	TLSMode       string // "starttls" | "implicit" | "none" | "" (port-derived)
+	TLSSkipVerify bool
+	Username      string
+	Password      string
+	PasswordEnv   string
+	PasswordFile  string
+	From          string
+	ReplyTo       string
+	Recipients    []string // To:
+	CC            []string
+	BCC           []string
+
 	TemplatePath string
 }
 
@@ -316,6 +331,20 @@ type notifierWire struct {
 	BotTokenFile string `toml:"bot_token_file,omitempty"`
 	ChatID       string `toml:"chat_id,omitempty"`
 	ParseMode    string `toml:"parse_mode,omitempty"`
+
+	Host          string   `toml:"host,omitempty"`
+	Port          int      `toml:"port,omitempty"`
+	TLS           string   `toml:"tls,omitempty"`
+	TLSSkipVerify bool     `toml:"tls_skip_verify,omitempty"`
+	Username      string   `toml:"username,omitempty"`
+	Password      string   `toml:"password,omitempty"`
+	PasswordEnv   string   `toml:"password_env,omitempty"`
+	PasswordFile  string   `toml:"password_file,omitempty"`
+	From          string   `toml:"from,omitempty"`
+	ReplyTo       string   `toml:"reply_to,omitempty"`
+	To            []string `toml:"to,omitempty"`
+	CC            []string `toml:"cc,omitempty"`
+	BCC           []string `toml:"bcc,omitempty"`
 
 	TemplatePath string `toml:"template_path,omitempty"`
 }

@@ -6,7 +6,6 @@ package notify
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,21 +43,9 @@ func NewHTTPProvider() *HTTPProvider {
 // 2xx, a permanent error on 4xx (except 408/429), and the last transport
 // error on backoff exhaustion.
 func (p *HTTPProvider) PostJSON(ctx context.Context, url string, contentType string, body []byte) error {
-	op := func() error {
+	return RetryWithBackoff(ctx, p.Backoff, func() error {
 		return p.doHTTPRequest(ctx, url, contentType, body)
-	}
-
-	bo := p.Backoff.NewExponential()
-	bo.Reset()
-	wrapped := backoff.WithContext(bo, ctx)
-	if err := backoff.Retry(op, wrapped); err != nil {
-		var perm *backoff.PermanentError
-		if errors.As(err, &perm) {
-			return perm.Err
-		}
-		return err
-	}
-	return nil
+	})
 }
 
 func (p *HTTPProvider) doHTTPRequest(ctx context.Context, url, contentType string, body []byte) error {

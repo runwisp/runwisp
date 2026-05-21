@@ -97,19 +97,9 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 
 	endpoint := fmt.Sprintf("%s/bot%s/sendMessage", c.apiBase, c.botToken)
 	if err := c.transport.PostJSON(ctx, endpoint, "application/x-www-form-urlencoded", []byte(form.Encode())); err != nil {
-		return fmt.Errorf("%s: %s", c, c.redact(err.Error()))
+		return fmt.Errorf("%s: %s", c, notify.Redact(err.Error(), c.botToken))
 	}
 	return nil
-}
-
-// redact strips the bot token out of any string. Telegram's URL contains the
-// secret token directly; without this the token leaks into delivery-failure
-// notifications.
-func (c *Channel) redact(s string) string {
-	if c.botToken == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, c.botToken, "[redacted]")
 }
 
 // parseTelegramRetryAfter pulls parameters.retry_after out of a 429 body, in
