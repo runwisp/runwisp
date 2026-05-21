@@ -90,9 +90,9 @@
     }
 
     function handleOutsideClick(e: MouseEvent) {
-        const target = e.target as HTMLElement;
-        if (triggerEl?.contains(target)) return;
-        if (menuEl?.contains(target)) return;
+        const path = e.composedPath();
+        if (triggerEl && path.includes(triggerEl)) return;
+        if (menuEl && path.includes(menuEl)) return;
         if (open) toggle(false);
     }
 

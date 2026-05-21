@@ -64,9 +64,9 @@
     }
 
     function handleOutsideClick(e: MouseEvent) {
-        const target = e.target as HTMLElement;
-        if (triggerEl?.contains(target)) return;
-        if (contentEl?.contains(target)) return;
+        const path = e.composedPath();
+        if (triggerEl && path.includes(triggerEl)) return;
+        if (contentEl && path.includes(contentEl)) return;
         if (open) {
             open = false;
             cleanupFloating?.();

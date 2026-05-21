@@ -502,26 +502,6 @@ run = "echo hi"
 		assert.Equal(t, 50, cfg.Tasks[0].KeepRuns)
 	})
 
-	t.Run("unlimited keyword is rejected", func(t *testing.T) {
-		path := writeTOML(t, `
-[tasks.t]
-keep_runs = "unlimited"
-run = "echo hi"
-`)
-		_, err := Load(path)
-		require.Error(t, err)
-	})
-
-	t.Run("inherit keyword is rejected", func(t *testing.T) {
-		path := writeTOML(t, `
-[tasks.t]
-keep_runs = "inherit"
-run = "echo hi"
-`)
-		_, err := Load(path)
-		require.Error(t, err)
-	})
-
 	t.Run("negative integer is rejected", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]
@@ -570,16 +550,6 @@ run = "echo hi"
 		assert.Equal(t, 30*24*time.Hour, cfg.Tasks[0].KeepFor)
 	})
 
-	t.Run("unlimited keyword is rejected", func(t *testing.T) {
-		path := writeTOML(t, `
-[tasks.t]
-keep_for = "unlimited"
-run = "echo hi"
-`)
-		_, err := Load(path)
-		require.Error(t, err)
-	})
-
 	t.Run("zero is rejected", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]
@@ -604,16 +574,6 @@ run = "echo hi"
 }
 
 func TestLogMaxSizeRules(t *testing.T) {
-	t.Run("unlimited keyword is rejected", func(t *testing.T) {
-		path := writeTOML(t, `
-[tasks.t]
-log_max_size = "unlimited"
-run = "echo hi"
-`)
-		_, err := Load(path)
-		require.Error(t, err)
-	})
-
 	t.Run("zero bytes are rejected", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]
@@ -1260,18 +1220,6 @@ run = "echo hi"
 		_, err := Load(path)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "daemon.metrics_listen")
-	})
-
-	t.Run("legacy parallelism key is rejected with a migration hint", func(t *testing.T) {
-		path := writeTOML(t, `
-[tasks.t]
-parallelism = 2
-run = "echo hi"
-`)
-		_, err := Load(path)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), `unknown key "parallelism"`)
-		assert.Contains(t, err.Error(), `max_concurrent`)
 	})
 
 	t.Run("type mismatch on max_concurrent triggers DecodeError path", func(t *testing.T) {

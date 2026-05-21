@@ -111,10 +111,11 @@
 
     // Request missing data for the visible range (read-only w.r.t. cache).
     $effect(() => {
-        if (fetcher && cache.totalLines > 0) {
-            fetcher.pruneQueue(visibleStart, visibleEnd);
+        const f = fetcher;
+        if (f && cache.totalLines > 0) {
+            f.pruneQueue(visibleStart, visibleEnd);
             untrack(() => {
-                fetcher!.maybeRequestMissing(visibleStart, visibleEnd);
+                f.maybeRequestMissing(visibleStart, visibleEnd);
             });
         }
     });
@@ -136,8 +137,8 @@
         prevTotalLines = currentTotal;
     });
 
-    function onScroll(e: Event) {
-        const target = e.target as HTMLDivElement;
+    function onScroll(e: Event & { currentTarget: EventTarget & HTMLDivElement }) {
+        const target = e.currentTarget;
         scrollTop = target.scrollTop;
 
         const scrollHeight = target.scrollHeight;

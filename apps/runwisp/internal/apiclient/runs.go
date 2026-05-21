@@ -31,7 +31,6 @@ func (c *Client) ListTasks() ([]model.TaskResponse, error) {
 	return tasks, nil
 }
 
-// encodeRunsParams builds URL query values from RunsParams.
 func encodeRunsParams(params RunsParams) url.Values {
 	q := url.Values{}
 	if params.Limit > 0 {
@@ -71,7 +70,6 @@ func (c *Client) ListRuns(params RunsParams) ([]model.Run, int64, error) {
 	return resp.Runs, resp.Total, nil
 }
 
-// ListRunsByTask returns paginated runs for a specific task.
 func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run, int64, error) {
 	path := fmt.Sprintf("/api/tasks/%s/runs", taskName)
 	if qs := encodeRunsParams(params).Encode(); qs != "" {
@@ -85,7 +83,6 @@ func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run
 	return resp.Runs, resp.Total, nil
 }
 
-// TriggerRun triggers a new run for the specified task.
 func (c *Client) TriggerRun(taskName string) (*model.Run, error) {
 	var run model.Run
 	if err := c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/run", taskName), nil, &run); err != nil {
@@ -109,7 +106,6 @@ func (c *Client) StopRun(taskName, runID string) error {
 	return c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/runs/%s/stop", taskName, runID), nil, nil)
 }
 
-// GetRun fetches a single run by task name and run ID.
 func (c *Client) GetRun(taskName, runID string) (*model.Run, error) {
 	var run model.Run
 	if err := c.doJSON("GET", fmt.Sprintf("/api/tasks/%s/runs/%s", taskName, runID), nil, &run); err != nil {
@@ -118,7 +114,6 @@ func (c *Client) GetRun(taskName, runID string) (*model.Run, error) {
 	return &run, nil
 }
 
-// DeleteRun removes a run record.
 func (c *Client) DeleteRun(taskName, runID string) error {
 	return c.doJSON("DELETE", fmt.Sprintf("/api/tasks/%s/runs/%s", taskName, runID), nil, nil)
 }

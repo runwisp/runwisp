@@ -129,36 +129,7 @@ func New(dbPath string, logOutput io.Writer) (Database, error) {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
-	if err := migrateAddInstanceIndex(db); err != nil {
-		return nil, fmt.Errorf("failed to migrate instance_index: %w", err)
-	}
-
 	return &SQLiteDatabase{db: db}, nil
-}
-
-// migrateAddInstanceIndex is idempotent and works on three shapes of the
-// runs table:
-//   - Fresh install: the CREATE TABLE above already added instance_index, so
-//     both ALTERs below fail with "duplicate column" / "no such column" and
-//     we return nil.
-//   - Pre-rename install (old daemon left a replica_index column): we rename
-//     it to instance_index in place.
-//   - Pre-column install (very old daemon, neither column present): we ADD
-//     instance_index with a zero default.
-func migrateAddInstanceIndex(db *sql.DB) error {
-	if _, err := db.Exec(`ALTER TABLE runs RENAME COLUMN replica_index TO instance_index`); err == nil {
-		return nil
-	} else if !strings.Contains(err.Error(), "no such column") {
-		return err
-	}
-	_, err := db.Exec(`ALTER TABLE runs ADD COLUMN instance_index INTEGER NOT NULL DEFAULT 0`)
-	if err == nil {
-		return nil
-	}
-	if strings.Contains(err.Error(), "duplicate column") {
-		return nil
-	}
-	return err
 }
 
 const runColumns = `id, external_execution_id, task_name, status, end_reason, exit_code,

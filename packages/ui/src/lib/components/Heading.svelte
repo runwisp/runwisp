@@ -22,13 +22,12 @@
         3: "2xl",
         4: "xl",
         5: "lg",
-        6: "base" as HeadingSize,
+        6: "md",
     };
 
     const sizeClasses: Record<string, string> = {
         xs: "text-xs font-semibold",
         sm: "text-sm font-semibold",
-        base: "text-base font-semibold",
         md: "text-base font-semibold",
         lg: "text-lg font-semibold",
         xl: "text-xl font-bold",

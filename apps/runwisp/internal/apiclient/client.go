@@ -124,7 +124,6 @@ func (c *Client) IsLocal() bool {
 	return c.local
 }
 
-// BaseURL returns the base URL the client connects to.
 func (c *Client) BaseURL() string {
 	return c.baseURL
 }

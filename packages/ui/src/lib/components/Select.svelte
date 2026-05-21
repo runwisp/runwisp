@@ -212,16 +212,12 @@
     }
 
     function handleOutsideClick(e: MouseEvent) {
-        if (
-            isOpen &&
-            triggerEl &&
-            !triggerEl.contains(e.target as Node) &&
-            menuEl &&
-            !menuEl.contains(e.target as Node)
-        ) {
-            isOpen = false;
-            cleanupFloating?.();
-        }
+        if (!isOpen) return;
+        const path = e.composedPath();
+        if (triggerEl && path.includes(triggerEl)) return;
+        if (menuEl && path.includes(menuEl)) return;
+        isOpen = false;
+        cleanupFloating?.();
     }
 
     onDestroy(() => {

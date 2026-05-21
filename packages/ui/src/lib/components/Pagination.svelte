@@ -36,8 +36,8 @@
         onPageChange?.(clamped);
     }
 
-    function handlePageSizeChange(e: Event) {
-        const newSize = Number((e.target as HTMLSelectElement).value);
+    function handlePageSizeChange(e: Event & { currentTarget: EventTarget & HTMLSelectElement }) {
+        const newSize = Number(e.currentTarget.value);
         onPageSizeChange?.(newSize);
     }
 </script>

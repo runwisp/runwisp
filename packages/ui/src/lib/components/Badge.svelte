@@ -89,21 +89,17 @@
         md: "h-3.5 w-3.5",
         lg: "h-4 w-4",
     };
-
-    let safeVariant = $derived(
-        (Object.hasOwn(variantClasses, variant) ? variant : "default") as BadgeVariant,
-    );
 </script>
 
 <span
     class="{baseClasses} {outline
-        ? variantClasses[safeVariant].outline
-        : variantClasses[safeVariant].solid} {sizeClasses[size]} {className}"
+        ? variantClasses[variant].outline
+        : variantClasses[variant].solid} {sizeClasses[size]} {className}"
 >
     {#if dot}
         {#if loading}
             <svg
-                class="{spinnerSizeClasses[size]} animate-spin {indicatorTextColors[safeVariant]}"
+                class="{spinnerSizeClasses[size]} animate-spin {indicatorTextColors[variant]}"
                 viewBox="0 0 24 24"
                 fill="none"
             >
@@ -122,7 +118,7 @@
                 ></path>
             </svg>
         {:else}
-            <span class="h-1.5 w-1.5 rounded-full {dotColors[safeVariant]}"></span>
+            <span class="h-1.5 w-1.5 rounded-full {dotColors[variant]}"></span>
         {/if}
     {/if}
     {#if children}

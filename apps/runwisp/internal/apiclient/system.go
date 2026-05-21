@@ -12,7 +12,6 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// GetSystemStats fetches system resource metrics.
 func (c *Client) GetSystemStats() (*model.SystemStats, error) {
 	var stats model.SystemStats
 	if err := c.doJSON("GET", "/api/system", nil, &stats); err != nil {
@@ -30,7 +29,6 @@ func (c *Client) GetMetricsHistory() ([]model.MetricsSample, error) {
 	return samples, nil
 }
 
-// GetRunSummary fetches aggregate run statistics.
 func (c *Client) GetRunSummary() (*model.RunSummary, error) {
 	var summary model.RunSummary
 	if err := c.doJSON("GET", "/api/runs/summary", nil, &summary); err != nil {
@@ -39,7 +37,6 @@ func (c *Client) GetRunSummary() (*model.RunSummary, error) {
 	return &summary, nil
 }
 
-// GetDaemonInfo fetches the daemon's identity and configuration summary.
 func (c *Client) GetDaemonInfo() (*model.DaemonInfo, error) {
 	var info model.DaemonInfo
 	if err := c.doJSON("GET", "/api/info", nil, &info); err != nil {
@@ -48,7 +45,6 @@ func (c *Client) GetDaemonInfo() (*model.DaemonInfo, error) {
 	return &info, nil
 }
 
-// HealthCheck pings the daemon's health endpoint.
 func (c *Client) HealthCheck() error {
 	resp, err := c.doRaw("GET", "/health")
 	if err != nil {

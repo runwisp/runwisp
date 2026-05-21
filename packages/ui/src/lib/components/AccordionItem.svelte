@@ -26,8 +26,6 @@
             open = !open;
         }
     }
-
-    const isSnippet = $derived(typeof title === "function");
 </script>
 
 <div class="group {className}">
@@ -44,8 +42,8 @@
         aria-expanded={open}
     >
         <span class="flex-1">
-            {#if isSnippet && title}
-                {@render (title as Snippet)()}
+            {#if typeof title === "function"}
+                {@render title()}
             {:else if title}
                 {title}
             {/if}
