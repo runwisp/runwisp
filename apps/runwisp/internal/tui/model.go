@@ -342,6 +342,16 @@ func (m *Model) showQuitConfirm() {
 		func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} },
 		func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitShutdownDaemon} },
 	)
+	// Hint about autostart only in a fresh local session (the operator
+	// started this daemon by running ./runwisp). A `runwisp tui` client
+	// connected to an already-running daemon doesn't need the nudge.
+	if !m.isRemote {
+		dialog = dialog.WithNote(
+			"",
+			"Tip: `runwisp service install` makes it",
+			"survive a reboot (systemd / launchd).",
+		)
+	}
 	m.dialogs.ShowConfirm(dialog)
 }
 

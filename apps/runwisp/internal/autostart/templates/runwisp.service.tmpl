@@ -1,0 +1,21 @@
+# Managed by runwisp service install — DO NOT EDIT
+# runwisp-config-hash: {{.ConfigHash}}
+# runwisp-binary-sha256: {{.BinarySHA}}
+[Unit]
+Description=RunWisp — lightweight cron daemon
+Documentation=https://docs.runwisp.com/
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{.Binary}} daemon --config {{.Config}} --data {{.DataDir}} --port {{.Port}} --host {{.Host}}
+Restart=on-failure
+RestartSec=5s
+KillMode=mixed
+TimeoutStopSec=30s
+Environment=HOME={{.Home}}
+Environment=PATH={{.Path}}
+Environment=LANG=C.UTF-8
+
+[Install]
+WantedBy=default.target

@@ -16,6 +16,7 @@ import (
 type ConfirmDialog struct {
 	title     string
 	message   string
+	noteLines []string // optional muted lines below the message
 	yesLabel  string
 	noLabel   string
 	onConfirm tea.Cmd
@@ -30,6 +31,14 @@ type ConfirmDialog struct {
 	btnYesX1, btnYesX2 int
 	btnNoX1, btnNoX2   int
 	btnY               int
+}
+
+// WithNote attaches one or more muted lines rendered below the
+// message. Empty strings render as visual spacers. Returns the dialog
+// for chained construction.
+func (d ConfirmDialog) WithNote(lines ...string) ConfirmDialog {
+	d.noteLines = lines
+	return d
 }
 
 func NewConfirmDialog(title, message string, onConfirm tea.Cmd) ConfirmDialog {
@@ -183,7 +192,7 @@ func (d *ConfirmDialog) View(screenWidth, screenHeight int) string {
 
 	if !d.shuttingDown {
 		msgH := lipgloss.Height(msgStr)
-		d.btnY = box.top + 1 + 3 + msgH + 1
+		d.btnY = box.top + 1 + 3 + msgH + len(d.noteLines) + 1
 		gapW := 3
 		totalBtnW := yesBtnW + gapW + noBtnW
 		btnAreaLeft := box.left + 2 + (box.innerWidth-totalBtnW)/2
@@ -265,12 +274,17 @@ func (d *ConfirmDialog) renderButtonLines(innerWidth int, titleStr, msgStr strin
 		titleStr,
 		modalEmptyLine(innerWidth),
 		msgStr,
+	}
+	for _, note := range d.noteLines {
+		lines = append(lines, modalSurfaceLine(note, innerWidth, uikit.ColorTextMuted, false))
+	}
+	lines = append(lines,
 		modalEmptyLine(innerWidth),
 		buttonsLine,
 		modalEmptyLine(innerWidth),
 		modalSurfaceLine(hintText, innerWidth, uikit.ColorTextMuted, false),
 		modalEmptyLine(innerWidth),
-	}
+	)
 	return lines, lipgloss.Width(yesBtn), lipgloss.Width(noBtn)
 }
 

@@ -1,0 +1,217 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Autostart
+description: Wire RunWisp into systemd (Linux, WSL) or launchd (macOS) with one command, so the daemon survives a reboot. Covers install, status, uninstall, --purge, --print for Ansible/Nix, secrets-on-systemd patterns, and the WSL Task Scheduler recipe.
+---
+
+`runwisp service install` writes a managed systemd user unit (Linux,
+WSL) or a launchd LaunchAgent (macOS), enables it, and turns on linger
+so the daemon survives logout. No root, no surprise sudo — the only
+escalation is `loginctl enable-linger`, which is printed and confirmed
+before it runs.
+
+The command never edits `runwisp.toml`. It is OS integration only.
+
+## The four commands
+
+```sh
+runwisp service install     # wire up systemd / launchd
+runwisp service status      # show autostart wiring and any drift
+runwisp service uninstall   # remove the unit (data dir is preserved)
+runwisp service install --print > custom.service   # Ansible / Nix
+```
+
+`runwisp status` is the _daemon_ health check (is it alive right
+now?). `runwisp service status` is the _autostart_ check (will it
+come up after a reboot?).
+
+## What `install` does
+
+On Linux and WSL:
+
+1. Writes `~/.config/systemd/user/runwisp-<fingerprint>.service` with
+   the operator's resolved binary path, config path, data dir, port,
+   and host baked in. The unit name carries the daemon's
+   human-readable fingerprint (e.g. `bright-falcon`) so multiple
+   RunWisp instances on the same host install side-by-side. The file
+   starts with a `# Managed by runwisp service install` marker so a
+   later re-run can tell whether it can safely overwrite.
+2. `systemctl --user daemon-reload`.
+3. `sudo loginctl enable-linger <user>` — only when linger isn't
+   already on. This is the single privileged step.
+4. `systemctl --user enable --now runwisp-<fingerprint>.service`.
+
+On macOS:
+
+1. Writes `~/Library/LaunchAgents/com.runwisp.daemon.<fingerprint>.plist`
+   with the same managed-marker preamble. The LaunchAgent label
+   matches (`com.runwisp.daemon.<fingerprint>`), so multiple
+   instances coexist without overwriting each other.
+2. `launchctl bootout` (best effort, in case an old copy is loaded).
+3. `launchctl bootstrap gui/$UID <path>` then `launchctl enable`.
+
+On WSL, the systemd path runs as on Linux **and** the command prints a
+`Register-ScheduledTask` PowerShell snippet you paste into a Windows
+shell so the distro boots on login.
+
+A confirmation banner lists every action and the resolved settings
+before anything is written. `--yes` skips the prompt for CI; it does
+**not** skip the literal-word confirmation that `--purge` requires.
+
+### Resolving paths
+
+The unit needs absolute, durable paths for the binary and the data
+dir. `runwisp service install` resolves them by these rules:
+
+- **Binary**: `os.Executable()` followed by `EvalSymlinks`. The
+  installer **rejects** transient locations outright (`/tmp/`,
+  `/var/tmp/`, `/dev/shm/`, the `go-build` cache used by `go run`).
+  It **warns** on awkward-but-acceptable ones (`~/go/bin`,
+  `~/.cache`, paths with spaces) and suggests copying to
+  `~/.local/bin/runwisp`. Override with `--binary` for Ansible/Nix.
+- **Data dir**: an absolute `--data` is accepted silently. A relative
+  `--data` is rejected with the resolved absolute path as a hint — a
+  boot-launched unit has `cwd=/` and would otherwise silently miss the
+  data. The default `./data` is upgraded interactively: if a DB already
+  exists there, the installer asks whether to keep using it (default
+  yes); otherwise it offers `$XDG_DATA_HOME/runwisp` (or
+  `~/.local/share/runwisp` if XDG is unset).
+- **Config**: same resolution as the daemon. When both
+  `~/.config/runwisp/runwisp.toml` and `./runwisp.toml` exist, the
+  XDG location wins.
+
+### Idempotent re-install
+
+Re-running the install command on an unchanged host is a no-op:
+
+| Existing unit            | Outcome                                              |
+| ------------------------ | ---------------------------------------------------- |
+| absent                   | `Install`                                            |
+| managed, content matches | `Noop` — exits 0 with `Already installed. ✓`         |
+| managed, content drifted | `Update` — shows a unified diff, asks before writing |
+| hand-written (no marker) | `Conflict` — refuses; pass `--force` to overwrite    |
+
+The hashes embedded in the unit's `# runwisp-config-hash:` and
+`# runwisp-binary-sha256:` lines are how `service status` notices that
+the operator replaced the binary or changed a flag since installing.
+
+## `service status`
+
+```
+RunWisp service status
+
+  Installed:  yes
+  Autostart:  enabled
+  Running:    yes
+  Unit file:  /home/alice/.config/systemd/user/runwisp-bright-falcon.service  (matches recorded settings)
+  Binary:     /home/alice/.local/bin/runwisp
+  Data dir:   /home/alice/.local/share/runwisp  (last write 2026-05-20 10:32:01)
+  Linger:     on
+  Last start: 2026-05-19 09:00:11 UTC
+  Logs:       journalctl --user -u runwisp-bright-falcon.service
+```
+
+Exit codes are part of the contract:
+
+| Code | Meaning                                             |
+| ---- | --------------------------------------------------- |
+| 0    | healthy (installed, enabled, running, no drift)     |
+| 1    | degraded (installed but disabled / stopped / drift) |
+| 2    | not installed                                       |
+
+## Secrets on systemd
+
+`runwisp service install` never copies `RUNWISP_PASSWORD` into the
+unit — secrets stay off disk. The recommended pattern is a drop-in
+file alongside the managed unit:
+
+Replace `<fingerprint>` with the slug your `runwisp service status`
+reports for this instance (e.g. `bright-falcon`):
+
+```sh
+unit=runwisp-<fingerprint>.service
+mkdir -p ~/.config/systemd/user/$unit.d
+cat > ~/.config/systemd/user/$unit.d/password.conf <<'EOF'
+[Service]
+Environment=RUNWISP_PASSWORD=…
+EOF
+chmod 600 ~/.config/systemd/user/$unit.d/password.conf
+systemctl --user daemon-reload
+systemctl --user restart $unit
+```
+
+Drop-ins live next to the managed unit but outside the unit file
+itself, so `service install` updates and re-installs do not touch
+them.
+
+## `--print` for Ansible / Nix
+
+`runwisp service install --print` writes the rendered unit (or plist)
+to stdout and exits 0. It does not touch the filesystem. Combine with
+`--binary`, `--config`, `--data`, `--port`, `--host` to bake declared
+values in:
+
+```sh
+runwisp service install --print \
+  --binary /opt/runwisp/bin/runwisp \
+  --config /etc/runwisp/runwisp.toml \
+  --data /var/lib/runwisp \
+  --port 9477 --host 127.0.0.1 > /etc/systemd/system/runwisp-bright-falcon.service
+```
+
+Use `--system` to target `/etc/systemd/system/` directly from the
+interactive command (requires root; documented as advanced — the
+default path is the per-user unit).
+
+## `--purge` for full removal
+
+`runwisp service uninstall --purge` removes the data dir in addition
+to the unit. It is the only place where `--yes` does **not** skip a
+prompt: the operator must type the literal word `delete` to proceed.
+That guard is permanent; nothing on the command line removes it.
+
+Without `--purge`, uninstall is symmetric and reversible: it stops
+the service, disables autostart, removes the managed unit, runs
+`daemon-reload`, and leaves the data dir untouched.
+
+## WSL
+
+On WSL, the Linux-side `service install` runs unchanged — it writes
+the systemd user unit and turns on linger. The Windows side then
+needs a one-shot scheduled task that boots the WSL distro on login so
+the systemd user instance comes up:
+
+```powershell
+$Action  = New-ScheduledTaskAction -Execute 'wsl.exe' -Argument '~ -d <distro> -- true'
+$Trigger = New-ScheduledTaskTrigger -AtLogOn
+Register-ScheduledTask -TaskName 'RunWispBoot' -Action $Action -Trigger $Trigger
+```
+
+`runwisp service install` detects WSL (via `WSL_DISTRO_NAME` or the
+`microsoft` token in `/proc/sys/kernel/osrelease`) and prints this
+snippet at the end of a successful install with `<distro>` filled in.
+
+## macOS notes
+
+The LaunchAgent runs as the logged-in user, on every login. macOS has
+no equivalent of `loginctl enable-linger` — the LaunchAgent is per-user
+by design. Logs go to `<data-dir>/daemon.log`; `service status`
+prints a `tail -f` hint to the same file.
+
+## Flag reference
+
+```
+runwisp service install
+  -y, --yes       skip the install confirmation (does not skip --purge)
+      --print     write the rendered unit to stdout and exit
+      --dry-run   print the plan and exit without writing
+      --force     overwrite a hand-edited unit
+      --system    install /etc/systemd/system/ (Linux, advanced)
+      --binary    override the binary path baked into the unit
+
+runwisp service uninstall
+  -y, --yes       skip the uninstall confirmation
+      --purge     also remove the data dir (typed 'delete' to confirm)
+      --force     remove a hand-edited unit
+```
