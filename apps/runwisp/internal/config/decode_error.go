@@ -11,19 +11,10 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// renames maps each retired key to its replacement. Used when a TOML strict-
-// mode error names a key the operator used to know — instead of "fields in
-// the document are missing in the target struct" the error becomes
-// "unknown key 'parallelism' for tasks; did you mean 'max_concurrent'?".
-var renames = map[string]string{
-	"parallelism": "max_concurrent",
-}
-
 // formatDecodeError converts pelletier's strict-mode and type errors into
 // messages an operator can read. The strict-mode message in the upstream
 // library doesn't surface the field name; we walk the wrapped DecodeError
-// list to pull it out and add a "did you mean ..." hint where we recognise
-// the legacy key.
+// list to pull it out.
 func formatDecodeError(err error) error {
 	var strict *toml.StrictMissingError
 	if errors.As(err, &strict) {
@@ -45,9 +36,6 @@ func formatStrictMissing(s *toml.StrictMissingError) string {
 		b.WriteString("\n  ")
 		if field != "" {
 			b.WriteString(fmt.Sprintf("unknown key %q at line %d:%d", field, row, col))
-			if hint, ok := renames[strings.ToLower(field)]; ok {
-				b.WriteString(fmt.Sprintf(" — did you mean %q?", hint))
-			}
 		} else {
 			b.WriteString(de.Error())
 		}

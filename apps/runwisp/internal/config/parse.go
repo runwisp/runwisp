@@ -25,16 +25,11 @@ func parseDuration(raw string) (time.Duration, error) {
 
 // parseKeepFor parses a retention window using the extended syntax that also
 // accepts day/week suffixes (e.g. "30d", "2w"). An empty string means
-// "omitted, inherit the default". Zero and negative durations are rejected,
-// and the legacy "unlimited" / "inherit" keywords are no longer recognised —
-// pre-1.0, RunWisp keeps integer config single-typed.
+// "omitted, inherit the default". Zero and negative durations are rejected.
 func parseKeepFor(raw string) (time.Duration, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return 0, nil
-	}
-	if reservedKeyword(trimmed) {
-		return 0, fmt.Errorf("keyword %q is no longer accepted; pick a positive duration or omit the field to inherit the default", raw)
 	}
 	d, err := str2duration.ParseDuration(trimmed)
 	if err != nil {
@@ -47,15 +42,11 @@ func parseKeepFor(raw string) (time.Duration, error) {
 }
 
 // parseLogMaxSize parses a byte size. Empty string means "omitted, inherit
-// the default"; zero and negative byte counts are rejected. Legacy keywords
-// ("unlimited", "inherit") are rejected with a hint.
+// the default"; zero and negative byte counts are rejected.
 func parseLogMaxSize(raw string) (int64, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return 0, nil
-	}
-	if reservedKeyword(trimmed) {
-		return 0, fmt.Errorf("keyword %q is no longer accepted; pick a positive byte size or omit the field to inherit the default", raw)
 	}
 	n, err := ParseByteSize(trimmed)
 	if err != nil {
@@ -130,15 +121,4 @@ func parseMetricsListen(raw string) (string, error) {
 		return "", fmt.Errorf("invalid daemon.metrics_listen: %q is not a valid port", port)
 	}
 	return trimmed, nil
-}
-
-// reservedKeyword reports whether the given string is one of the legacy
-// keywords ("unlimited", "inherit") that callers used to pass for "no cap" or
-// "fall back to defaults". RunWisp now rejects these and surfaces a hint.
-func reservedKeyword(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "unlimited", "inherit":
-		return true
-	}
-	return false
 }
