@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Component } from "svelte";
-import { Clock, Server, Hand } from "@lucide/svelte";
+import { Activity, CalendarClock, CircleDot } from "@lucide/svelte";
 import { isService, type Task } from "@runwisp/common";
 
 export function taskIcon(task: Task): Component {
-    if (isService(task.kind)) return Server;
-    if (task.cron && task.cron.trim() !== "") return Clock;
-    return Hand;
+    if (isService(task.kind)) return Activity;
+    if (task.cron && task.cron.trim() !== "") return CalendarClock;
+    return CircleDot;
 }
 
 export function taskTriggerTooltip(task: Task): string {

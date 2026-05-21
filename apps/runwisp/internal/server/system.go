@@ -146,8 +146,16 @@ func populateLinuxStats(stats *model.SystemStats) {
 }
 
 func populateFallbackStats(stats *model.SystemStats) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	populateFallbackStatsFromMemStats(stats, &m)
+}
+
+// populateFallbackStatsFromMemStats is the deterministic core of
+// populateFallbackStats; see populateFallbackSampleFromMemStats.
+func populateFallbackStatsFromMemStats(stats *model.SystemStats, m *runtime.MemStats) {
 	var s model.MetricsSample
-	populateFallbackSample(&s)
+	populateFallbackSampleFromMemStats(&s, m)
 	stats.MemTotal = s.MemTotal
 	stats.MemUsed = s.MemUsed
 	stats.MemUsage = s.MemUsage

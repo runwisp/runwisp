@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { tasksApi, AuthRequiredError } from "$lib/api";
-import { toast, extractErrorMessage } from "@runwisp/ui";
+import { toast, extractErrorMessage, runPhaseOrder } from "@runwisp/ui";
 import { connectionStore } from "$lib/stores/connection.svelte";
 import { sortByCreatedAtDesc } from "$lib/utils/sort";
 import type { Task, Run } from "$lib/types";
@@ -42,9 +42,6 @@ class TaskStore {
 
 export const taskStore = new TaskStore();
 
-/** Status progression index — higher means further along in lifecycle. */
-const PHASE_ORDER: Record<string, number> = { pending: 0, running: 1, ended: 2 };
-
 export function upsertRun(list: Run[], run: Run): Run[] {
     const idx = list.findIndex((r) => r.id === run.id);
     if (idx !== -1) {
@@ -52,7 +49,7 @@ export function upsertRun(list: Run[], run: Run): Run[] {
         if (!existing) return list;
         // Never regress a run's status (e.g. stale HTTP response arriving
         // after an SSE event already advanced the status).
-        if ((PHASE_ORDER[run.status] ?? 0) < (PHASE_ORDER[existing.status] ?? 0)) {
+        if (runPhaseOrder(run.status) < runPhaseOrder(existing.status)) {
             return list;
         }
         const copy = [...list];

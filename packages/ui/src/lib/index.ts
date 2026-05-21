@@ -84,13 +84,17 @@ export { LogFetcher } from "./log-console/LogFetcher.svelte.js";
 
 export { default as RunDetailPanel } from "./components/dashboard/RunDetailPanel.svelte";
 export { default as RunsList } from "./components/dashboard/RunsList.svelte";
+export type {
+    RunsListFilters,
+    RunsListSortDirection,
+} from "./components/dashboard/RunsList.svelte";
 export {
     getRunStatusConfig,
     runDisplayStatus,
     RUN_STATUS_CONFIG,
     type RunStatusConfig,
 } from "./components/dashboard/status-config.js";
-export { runDuration } from "./components/dashboard/run-helpers.js";
+export { runDuration, runPhaseOrder } from "./components/dashboard/run-helpers.js";
 export type { DaemonState, DaemonStats } from "./components/dashboard/types.js";
 
 export { toast, type Toast, type ToastType } from "./utils/toast.svelte.js";

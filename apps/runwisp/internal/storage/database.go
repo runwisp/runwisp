@@ -73,6 +73,7 @@ deleted_at            DATETIME
 CREATE INDEX IF NOT EXISTS idx_runs_external_execution_id ON runs(external_execution_id);
 CREATE INDEX IF NOT EXISTS idx_runs_task_name ON runs(task_name);
 CREATE INDEX IF NOT EXISTS idx_runs_deleted_at ON runs(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_runs_created_at_desc ON runs(created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS task_registrations (
 task_name     TEXT PRIMARY KEY,

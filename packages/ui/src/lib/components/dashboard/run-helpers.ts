@@ -10,3 +10,14 @@ export function runDuration(run: Pick<Run, "start_at" | "end_at">): string | und
     const end = run.end_at ? new Date(run.end_at).getTime() : Date.now();
     return formatDuration(end - start);
 }
+
+/**
+ * Monotonic position of a run's status in its lifecycle. Used to reject stale
+ * updates (e.g. a `pending` HTTP response arriving after an SSE already
+ * advanced the row to `success`). Higher = further along.
+ */
+export function runPhaseOrder(status: string): number {
+    if (status === "pending") return 0;
+    if (status === "running") return 1;
+    return 2;
+}

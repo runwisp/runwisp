@@ -8,16 +8,21 @@
     import Alert from "@runwisp/ui/components/Alert.svelte";
     import Card from "@runwisp/ui/components/Card.svelte";
     import { isService, type Task, type Run, type RunSelector } from "@runwisp/common";
-    import type { LogEvent, LogSlice } from "@runwisp/ui";
+    import type { LogEvent, LogSlice, RunsListFilters } from "@runwisp/ui";
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
     import PageHeader from "@runwisp/ui/components/PageHeader.svelte";
     import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
-    import { sortByCreatedAtDesc } from "$lib/utils/sort";
     import { runsApi } from "$lib/api";
 
     let {
         task,
-        runs = $bindable([]),
+        items,
+        total,
+        loading = false,
+        filters = $bindable(),
+        onLoadMore,
+        onOptimisticRemove,
+        onOptimisticRestore,
         concurrencyReached = false,
         triggering = false,
         stopping = false,
@@ -34,7 +39,13 @@
         selectRunId = null,
     } = $props<{
         task: Task;
-        runs?: Run[];
+        items: Run[];
+        total: number;
+        loading?: boolean;
+        filters: RunsListFilters;
+        onLoadMore: () => void;
+        onOptimisticRemove: (ids: string[]) => void;
+        onOptimisticRestore: (runs: Run[]) => void;
         concurrencyReached?: boolean;
         triggering?: boolean;
         stopping?: boolean;
@@ -73,8 +84,8 @@
     async function handleBulkDelete(selector: RunSelector, affected: Run[]) {
         if (affected.length === 0) return;
         const removedIds = new Set(affected.map((r) => r.id));
-        const snapshot = runs.filter((r: Run) => removedIds.has(r.id));
-        runs = runs.filter((r: Run) => !removedIds.has(r.id));
+        const snapshot = items.filter((r: Run) => removedIds.has(r.id));
+        onOptimisticRemove([...removedIds]);
         if (userSelectedRunId && removedIds.has(userSelectedRunId)) userSelectedRunId = null;
 
         try {
@@ -91,7 +102,7 @@
                 },
             });
         } catch (err) {
-            runs = sortByCreatedAtDesc([...runs, ...snapshot]);
+            onOptimisticRestore(snapshot);
             toast.error(extractErrorMessage(err, "Failed to delete runs"));
         }
     }
@@ -99,10 +110,7 @@
     async function undoDelete(selector: RunSelector, snapshot: Run[]) {
         try {
             await runsApi.bulkRestore(selector);
-            runs = sortByCreatedAtDesc([
-                ...runs.filter((r: Run) => !snapshot.some((s) => s.id === r.id)),
-                ...snapshot,
-            ]);
+            onOptimisticRestore(snapshot);
         } catch (err) {
             toast.error(extractErrorMessage(err, "Failed to restore runs"));
         }
@@ -154,7 +162,7 @@
     }
 
     function deleteSingle(runId: string) {
-        const target = runs.find((r: Run) => r.id === runId);
+        const target = items.find((r: Run) => r.id === runId);
         if (!target) return;
         void handleBulkDelete({ match_all: false, ids: [runId] }, [target]);
     }
@@ -169,8 +177,6 @@
         return "";
     });
 
-    let sortedRuns: Run[] = $derived(sortByCreatedAtDesc(runs));
-
     let userSelectedRunId = $state<string | null>(null);
 
     $effect(() => {
@@ -182,15 +188,15 @@
     });
 
     let selectedRunId = $derived.by(() => {
-        if (userSelectedRunId && runs.some((r: Run) => r.id === userSelectedRunId)) {
+        if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
             return userSelectedRunId;
         }
-        const running = runs.find((r: Run) => r.status === "running");
+        const running = items.find((r: Run) => r.status === "running");
         if (running) return running.id;
-        return sortedRuns[0]?.id ?? null;
+        return items[0]?.id ?? null;
     });
 
-    let selectedRun = $derived(runs.find((r: Run) => r.id === selectedRunId));
+    let selectedRun = $derived(items.find((r: Run) => r.id === selectedRunId));
 
     const envEntries = $derived(
         task.env ? Object.entries(task.env).sort(([a], [b]) => a.localeCompare(b)) : [],
@@ -300,7 +306,11 @@
     >
         {#if !hideHistory || historyExpanded}
             <RunsList
-                {runs}
+                {items}
+                {total}
+                {loading}
+                bind:filters
+                {onLoadMore}
                 {selectedRunId}
                 onselect={(id) => (userSelectedRunId = id)}
                 emptyText="No runs yet"

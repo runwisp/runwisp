@@ -3,20 +3,31 @@
 
 <script lang="ts">
     import type { Run, RunSelector } from "@runwisp/common";
-    import type { LogEvent, LogSlice } from "@runwisp/ui";
+    import type { LogEvent, LogSlice, RunsListFilters } from "@runwisp/ui";
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
     import PageHeader from "@runwisp/ui/components/PageHeader.svelte";
     import Card from "@runwisp/ui/components/Card.svelte";
     import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
-    import { sortByCreatedAtDesc } from "$lib/utils/sort";
     import { runsApi } from "$lib/api";
 
     let {
-        runs = $bindable([]),
+        items,
+        total,
+        loading = false,
+        filters = $bindable(),
+        onLoadMore,
+        onOptimisticRemove,
+        onOptimisticRestore,
         fetchLogs,
         streamLogs,
     } = $props<{
-        runs: Run[];
+        items: Run[];
+        total: number;
+        loading?: boolean;
+        filters: RunsListFilters;
+        onLoadMore: () => void;
+        onOptimisticRemove: (ids: string[]) => void;
+        onOptimisticRestore: (runs: Run[]) => void;
         fetchLogs: (
             runId: string,
             from: number,
@@ -36,8 +47,8 @@
     async function handleBulkDelete(selector: RunSelector, affected: Run[]) {
         if (affected.length === 0) return;
         const removedIds = new Set(affected.map((r) => r.id));
-        const snapshot = runs.filter((r: Run) => removedIds.has(r.id));
-        runs = runs.filter((r: Run) => !removedIds.has(r.id));
+        const snapshot = items.filter((r: Run) => removedIds.has(r.id));
+        onOptimisticRemove([...removedIds]);
         if (userSelectedRunId && removedIds.has(userSelectedRunId)) userSelectedRunId = null;
 
         try {
@@ -54,7 +65,7 @@
                 },
             });
         } catch (err) {
-            runs = sortByCreatedAtDesc([...runs, ...snapshot]);
+            onOptimisticRestore(snapshot);
             toast.error(extractErrorMessage(err, "Failed to delete runs"));
         }
     }
@@ -64,10 +75,7 @@
             await runsApi.bulkRestore(selector);
             // Restore optimistically — SSE run.updated will also splice them
             // back in if not already.
-            runs = sortByCreatedAtDesc([
-                ...runs.filter((r: Run) => !snapshot.some((s) => s.id === r.id)),
-                ...snapshot,
-            ]);
+            onOptimisticRestore(snapshot);
         } catch (err) {
             toast.error(extractErrorMessage(err, "Failed to restore runs"));
         }
@@ -118,19 +126,17 @@
         }
     }
 
-    let sortedRuns: Run[] = $derived(sortByCreatedAtDesc(runs));
-
     let selectedRunId = $derived.by(() => {
-        if (userSelectedRunId && sortedRuns.some((r) => r.id === userSelectedRunId)) {
+        if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
             return userSelectedRunId;
         }
-        return sortedRuns[0]?.id ?? null;
+        return items[0]?.id ?? null;
     });
 
-    let selectedRun = $derived(runs.find((r: Run) => r.id === selectedRunId));
+    let selectedRun = $derived(items.find((r: Run) => r.id === selectedRunId));
 
     function deleteSingle(runId: string) {
-        const target = runs.find((r: Run) => r.id === runId);
+        const target = items.find((r: Run) => r.id === runId);
         if (!target) return;
         void handleBulkDelete({ match_all: false, ids: [runId] }, [target]);
     }
@@ -145,7 +151,11 @@
     <!-- Main Content Area -->
     <div class="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-12">
         <RunsList
-            {runs}
+            {items}
+            {total}
+            {loading}
+            bind:filters
+            {onLoadMore}
             {selectedRunId}
             onselect={(id) => (userSelectedRunId = id)}
             showFilters
