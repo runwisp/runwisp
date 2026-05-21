@@ -6,6 +6,7 @@ export { default as theme } from "./theme.css?inline";
 export { default as Logo } from "./components/Logo.svelte";
 
 export { default as PageContainer } from "./components/PageContainer.svelte";
+export { default as PageHeader } from "./components/PageHeader.svelte";
 
 export { default as Heading } from "./components/Heading.svelte";
 export { default as Prose } from "./components/Prose.svelte";

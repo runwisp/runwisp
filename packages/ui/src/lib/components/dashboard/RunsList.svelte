@@ -15,9 +15,11 @@
         RotateCw,
     } from "@lucide/svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import { slide } from "svelte/transition";
+    import { flip } from "svelte/animate";
+    import { fade, slide } from "svelte/transition";
     import Button from "../Button.svelte";
     import Badge from "../Badge.svelte";
+    import EmptyState from "../EmptyState.svelte";
     import type { Run } from "./types.js";
     import type { RunSelector, RunStatus } from "@runwisp/common";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
@@ -336,8 +338,9 @@
             {@const duration = runDuration(run)}
             <div
                 class="flex items-stretch gap-1"
-                in:slide={{ duration: 120 }}
-                out:slide={{ duration: 180 }}
+                in:fade={{ duration: 150 }}
+                out:slide={{ duration: 200 }}
+                animate:flip={{ duration: 200 }}
             >
                 {#if bulkActions}
                     <label
@@ -354,7 +357,7 @@
                     </label>
                 {/if}
                 <button
-                    class="group duration-normal relative w-full rounded-lg border p-3 text-left transition-all select-none
+                    class="btn-scale group duration-normal relative w-full rounded-lg border p-3 text-left transition-all select-none
                     {isActive
                         ? 'border-primary-soft bg-primary-soft/50 shadow-sm'
                         : 'border-transparent bg-surface-raised hover:border-outline hover:bg-surface-sunken'}"
@@ -379,7 +382,7 @@
                                 </span>
                             </div>
                             <span
-                                class="shrink-0 text-[10px] {isActive
+                                class="shrink-0 text-2xs {isActive
                                     ? 'font-medium text-primary'
                                     : 'text-on-surface-faint'}"
                             >
@@ -389,7 +392,7 @@
 
                         <div class="flex items-center justify-between pl-6 text-xs">
                             <div
-                                class="flex items-center gap-1 font-mono text-[11px] text-on-surface-muted"
+                                class="flex items-center gap-1 font-mono text-2xs text-on-surface-muted"
                             >
                                 #{formatShortId(run.id)}
                             </div>
@@ -419,7 +422,7 @@
                                 </span>
                             </div>
                             <span
-                                class="text-[10px] {isActive
+                                class="text-2xs {isActive
                                     ? 'font-medium text-primary'
                                     : 'text-on-surface-faint'}"
                             >
@@ -431,7 +434,7 @@
                             <div class="flex items-center gap-2 text-on-surface-muted">
                                 <span class="capitalize">{runDisplayStatus(run)}</span>
                                 {#if run.instance_index > 0}
-                                    <span class="font-mono text-[11px] text-on-surface-faint"
+                                    <span class="font-mono text-2xs text-on-surface-faint"
                                         >instance #{run.instance_index}</span
                                     >
                                 {/if}
@@ -449,22 +452,18 @@
                         </div>
                     {/if}
 
-                    {#if isActive}
-                        <div
-                            class="absolute top-1/2 left-0 h-8 w-1 -translate-y-1/2 rounded-r-full bg-primary"
-                        ></div>
-                    {/if}
+                    <div
+                        class="duration-normal absolute top-1/2 left-0 h-8 w-1 -translate-y-1/2 rounded-r-full bg-primary transition-all {isActive
+                            ? 'opacity-100'
+                            : 'opacity-0'}"
+                        aria-hidden="true"
+                    ></div>
                 </button>
             </div>
         {/each}
 
         {#if paginatedRuns.length === 0}
-            <div class="flex flex-col items-center gap-3 p-8 text-center text-on-surface-faint">
-                <div class="rounded-full bg-surface-sunken p-3">
-                    <Clock size={24} class="opacity-50" />
-                </div>
-                <span class="text-sm">{emptyText}</span>
-            </div>
+            <EmptyState title={emptyText} icon={Clock} iconSize={32} class="py-8" />
         {/if}
     </div>
 
@@ -480,7 +479,7 @@
         >
             {#snippet icon()}<ChevronLeft size={14} />{/snippet}
         </Button>
-        <span class="text-[10px] font-medium tracking-wide text-on-surface-muted uppercase">
+        <span class="text-2xs font-medium tracking-wide text-on-surface-muted uppercase">
             Page {currentPage} of {totalPages}
         </span>
         <Button

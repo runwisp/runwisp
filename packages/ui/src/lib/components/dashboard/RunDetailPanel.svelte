@@ -3,9 +3,17 @@
 
 <script lang="ts">
     import { untrack } from "svelte";
-    import { Server, Hash, Terminal as TerminalIcon, Download, Trash2 } from "@lucide/svelte";
+    import {
+        Server,
+        Hash,
+        Terminal as TerminalIcon,
+        Download,
+        Trash2,
+        MousePointerClick,
+    } from "@lucide/svelte";
     import Badge from "../Badge.svelte";
     import Button from "../Button.svelte";
+    import EmptyState from "../EmptyState.svelte";
     import LogConsole from "../LogConsole.svelte";
     import type { Run } from "./types.js";
     import type { LogEvent, LogSlice } from "../../log-console/types.js";
@@ -261,13 +269,11 @@
         {/key}
     </div>
 {:else}
-    <div
-        class="flex flex-1 flex-col items-center justify-center bg-surface-sunken/30 text-on-surface-faint"
-    >
-        <div class="mb-4 rounded-full border border-outline bg-surface-raised p-4 shadow-sm">
-            <Server size={32} class="text-outline-faint" />
-        </div>
-        <h3 class="mb-1 font-medium text-on-surface">No Run Selected</h3>
-        <p class="text-sm">Select a run from the history on the left to view details.</p>
+    <div class="flex flex-1 items-center justify-center bg-surface-sunken/30">
+        <EmptyState
+            title="Select a run"
+            description="Pick a run from the list to view details and logs."
+            icon={MousePointerClick}
+        />
     </div>
 {/if}

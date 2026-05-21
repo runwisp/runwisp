@@ -99,7 +99,7 @@
             : resolve(`/tasks/${encodeURIComponent(notification.task_name)}`)}
         {onclick}
         data-testid="notification-item"
-        class="flex gap-3 rounded-lg border border-mist-100 bg-white p-3 no-underline transition-colors hover:bg-mist-50"
+        class="flex gap-3 rounded-lg border border-mist-100 bg-surface-raised p-3 no-underline transition-colors hover:bg-mist-50"
         aria-label={notification.title || notification.kind}
     >
         {@render body()}
@@ -107,7 +107,7 @@
 {:else}
     <article
         data-testid="notification-item"
-        class="flex gap-3 rounded-lg border border-mist-100 bg-white p-3 transition-colors hover:bg-mist-50"
+        class="flex gap-3 rounded-lg border border-mist-100 bg-surface-raised p-3 transition-colors hover:bg-mist-50"
         aria-label={notification.title || notification.kind}
     >
         {@render body()}

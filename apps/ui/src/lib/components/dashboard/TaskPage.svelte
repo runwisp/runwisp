@@ -5,9 +5,12 @@
     import { Play, PanelLeftClose, History, Square, RefreshCcw } from "@lucide/svelte";
     import Button from "@runwisp/ui/components/Button.svelte";
     import Modal from "@runwisp/ui/components/Modal.svelte";
+    import Alert from "@runwisp/ui/components/Alert.svelte";
+    import Card from "@runwisp/ui/components/Card.svelte";
     import { isService, type Task, type Run, type RunSelector } from "@runwisp/common";
     import type { LogEvent, LogSlice } from "@runwisp/ui";
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
+    import PageHeader from "@runwisp/ui/components/PageHeader.svelte";
     import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
     import { sortByCreatedAtDesc } from "$lib/utils/sort";
     import { runsApi } from "$lib/api";
@@ -196,15 +199,8 @@
 </script>
 
 <PageContainer variant="flush" class="gap-4">
-    <!-- Header -->
-    <div class="flex shrink-0 items-center justify-between px-1">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-slate-900">{task.name}</h1>
-            <p class="mt-0.5 text-sm text-slate-500">
-                {task.description || "No description provided."}
-            </p>
-        </div>
-        <div class="flex items-center gap-2">
+    <PageHeader title={task.name} subtitle={task.description || "No description provided."}>
+        {#snippet actions()}
             {#if hideHistory}
                 <Button
                     variant="ghost"
@@ -267,31 +263,32 @@
                     Run Task
                 </Button>
             {/if}
-        </div>
-    </div>
+        {/snippet}
+    </PageHeader>
 
     {#if showEnvPanel}
-        <section
-            class="shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-            aria-label="Task environment"
-        >
-            <h2 class="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                Environment
-            </h2>
-            {#if envEntries.length > 0}
-                <dl class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-xs">
-                    {#each envEntries as [key, value] (key)}
-                        <dt class="text-slate-700">{key}</dt>
-                        <dd class="break-all text-slate-500">{value}</dd>
-                    {/each}
-                </dl>
-            {/if}
-            {#if task.env_file}
-                <p class="mt-2 font-mono text-xs text-slate-400">
-                    Loaded from {task.env_file} (values not exposed)
-                </p>
-            {/if}
-        </section>
+        <Card padding="none" class="shrink-0">
+            <section aria-label="Task environment" class="px-4 py-3">
+                <h2 class="text-xs font-semibold tracking-wide text-on-surface-muted uppercase">
+                    Environment
+                </h2>
+                {#if envEntries.length > 0}
+                    <dl
+                        class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-xs"
+                    >
+                        {#each envEntries as [key, value] (key)}
+                            <dt class="text-on-surface">{key}</dt>
+                            <dd class="break-all text-on-surface-muted">{value}</dd>
+                        {/each}
+                    </dl>
+                {/if}
+                {#if task.env_file}
+                    <p class="mt-2 font-mono text-xs text-on-surface-faint">
+                        Loaded from {task.env_file} (values not exposed)
+                    </p>
+                {/if}
+            </section>
+        </Card>
     {/if}
 
     <!-- Main Content Area -->
@@ -316,14 +313,15 @@
         {/if}
 
         <!-- Right Panel: Run Details -->
-        <div
-            class={[
-                "flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm",
-                hideHistory && !historyExpanded ? "" : "md:col-span-8 lg:col-span-9",
-            ]}
+        <Card
+            padding="none"
+            class="flex flex-col {hideHistory && !historyExpanded
+                ? ''
+                : 'md:col-span-8 lg:col-span-9'}"
+            bodyClass="flex min-h-0 flex-1 flex-col"
         >
             <RunDetailPanel run={selectedRun} {fetchLogs} {streamLogs} onDelete={deleteSingle} />
-        </div>
+        </Card>
     </div>
 
     <Modal
@@ -413,16 +411,11 @@
 </PageContainer>
 
 {#snippet concurrencyWarning()}
-    <div
-        class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
-    >
-        <span class="mt-0.5 shrink-0 text-amber-500">⚠</span>
-        <span>
-            This task is already running at its maximum concurrency. Your run will be <strong
-                >queued</strong
-            > and will start automatically once a slot becomes available.
-        </span>
-    </div>
+    <Alert variant="warning">
+        This task is already running at its maximum concurrency. Your run will be <strong
+            >queued</strong
+        > and will start automatically once a slot becomes available.
+    </Alert>
 {/snippet}
 
 {#snippet confirmFooter(

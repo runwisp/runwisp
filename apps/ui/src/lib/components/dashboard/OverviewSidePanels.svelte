@@ -4,6 +4,7 @@
 <script lang="ts">
     import { Activity, ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "@lucide/svelte";
     import Badge from "@runwisp/ui/components/Badge.svelte";
+    import Card from "@runwisp/ui/components/Card.svelte";
     import { getRunStatusConfig, TaskCard } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import { isFailureEndReason, type Run } from "@runwisp/common";
@@ -40,7 +41,7 @@
 
 <div class="grid gap-4 lg:grid-cols-3">
     <!-- Needs attention -->
-    <section class="rounded-xl border border-mist-200 bg-white p-4 shadow-sm">
+    <Card>
         <div class="flex items-center justify-between gap-3">
             <h3 class="text-sm font-semibold text-mist-950">Needs attention</h3>
             <Badge variant={attentionTasks.length > 0 ? "danger" : "success"}>
@@ -69,7 +70,7 @@
                                     </span>
                                     {#if statusConfig}
                                         <span
-                                            class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase {statusConfig.badge}"
+                                            class="rounded-full px-1.5 py-0.5 text-2xs font-semibold uppercase {statusConfig.badge}"
                                         >
                                             {formatStatusLabel(task.lastStatus ?? "")}
                                         </span>
@@ -96,10 +97,10 @@
                 {/each}
             </div>
         {/if}
-    </section>
+    </Card>
 
     <!-- Running now -->
-    <section class="rounded-xl border border-mist-200 bg-white p-4 shadow-sm">
+    <Card>
         <div class="flex items-center justify-between gap-3">
             <h3 class="text-sm font-semibold text-mist-950">Running now</h3>
             <Badge variant={runningNow.length > 0 ? "primary" : "default"}>
@@ -148,10 +149,10 @@
                 {/each}
             </div>
         {/if}
-    </section>
+    </Card>
 
     <!-- Up next -->
-    <section class="rounded-xl border border-mist-200 bg-white p-4 shadow-sm">
+    <Card>
         <div class="flex items-center justify-between gap-3">
             <h3 class="text-sm font-semibold text-mist-950">Up next</h3>
             <Badge variant="info">{upcomingTasks.length}</Badge>
@@ -195,5 +196,5 @@
                 {/each}
             </div>
         {/if}
-    </section>
+    </Card>
 </div>

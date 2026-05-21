@@ -24,7 +24,7 @@
 
 <button
     type="button"
-    class="group w-full rounded-lg border border-mist-100 bg-white p-3 text-left transition-all hover:shadow-sm {accentClasses[
+    class="group w-full rounded-lg border border-mist-100 bg-surface-raised p-3 text-left transition-all hover:shadow-sm {accentClasses[
         accent
     ]} {className}"
     {onclick}

@@ -4,6 +4,7 @@
 <script lang="ts">
     import { ArrowRight, CircleAlert, ShieldCheck, Sparkles, Zap } from "@lucide/svelte";
     import Badge from "@runwisp/ui/components/Badge.svelte";
+    import Card from "@runwisp/ui/components/Card.svelte";
     import { formatBytes, Sparkline } from "@runwisp/ui";
     import { type Component } from "svelte";
     import type { MetricsSample } from "$lib/api";
@@ -111,7 +112,7 @@
             icon: ShieldCheck,
             accentClass: isFullyHealthy
                 ? "border-success-200 bg-success-50/80"
-                : "border-mist-200 bg-white/80",
+                : "border-outline bg-surface-raised/80",
             iconWrapClass: isFullyHealthy ? "bg-success-100" : "bg-mist-100",
             iconClass: isFullyHealthy ? "text-success-700" : "text-mist-500",
         };
@@ -129,7 +130,7 @@
             icon: CircleAlert,
             accentClass: hasAttentionTasks
                 ? "border-danger-200 bg-danger-50/80"
-                : "border-mist-200 bg-white/80",
+                : "border-outline bg-surface-raised/80",
             iconWrapClass: hasAttentionTasks ? "bg-danger-100" : "bg-mist-100",
             iconClass: hasAttentionTasks ? "text-danger-700" : "text-mist-500",
         };
@@ -147,7 +148,7 @@
             icon: Zap,
             accentClass: hasRunningTasks
                 ? "border-wisp-200 bg-wisp-50/80"
-                : "border-mist-200 bg-white/80",
+                : "border-outline bg-surface-raised/80",
             iconWrapClass: hasRunningTasks ? "bg-wisp-100" : "bg-mist-100",
             iconClass: hasRunningTasks ? "text-wisp-700" : "text-mist-500",
         };
@@ -171,7 +172,7 @@
                 ? "border-success-200 bg-success-50/80"
                 : hasCompletedRuns
                   ? "border-warning-200 bg-warning-50/80"
-                  : "border-mist-200 bg-white/80",
+                  : "border-outline bg-surface-raised/80",
             iconWrapClass: isPerfectSuccessRate
                 ? "bg-success-100"
                 : hasCompletedRuns
@@ -235,8 +236,9 @@
 <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
     <div class="space-y-5">
         <!-- Header bar -->
-        <div
-            class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-mist-200 bg-white px-5 py-3.5 shadow-sm"
+        <Card
+            padding="none"
+            bodyClass="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
         >
             <div class="flex flex-wrap items-center gap-2">
                 <Badge
@@ -261,7 +263,7 @@
                 View all runs
                 <ArrowRight size={14} />
             </button>
-        </div>
+        </Card>
 
         <!-- Stat cards -->
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -271,7 +273,7 @@
                     <div class="flex items-start justify-between gap-3">
                         <div class="space-y-1">
                             <p
-                                class="text-[11px] font-semibold tracking-widest text-mist-500 uppercase"
+                                class="text-2xs font-semibold tracking-widest text-mist-500 uppercase"
                             >
                                 {card.label}
                             </p>
@@ -307,7 +309,7 @@
     </div>
 
     <!-- System resources sidebar -->
-    <div class="rounded-xl border border-mist-200 bg-white p-5 shadow-sm">
+    <Card padding="lg">
         <div class="flex items-center justify-between gap-3">
             <h2 class="text-sm font-semibold text-mist-950">System resources</h2>
             <Badge variant={stats.cpuUsage >= 85 || stats.memUsage >= 85 ? "warning" : "success"}>
@@ -347,5 +349,5 @@
                 </div>
             </div>
         </div>
-    </div>
+    </Card>
 </section>

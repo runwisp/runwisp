@@ -8,11 +8,12 @@
         padding?: "none" | "sm" | "md" | "lg";
         hover?: boolean;
         border?: boolean;
-        shadow?: "none" | "sm" | "md" | "lg";
+        shadow?: "none" | "sm" | "md" | "lg" | "xl";
         header?: Snippet;
         footer?: Snippet;
         children?: Snippet;
         class?: string;
+        bodyClass?: string;
     }
 
     let {
@@ -24,6 +25,7 @@
         footer,
         children,
         class: className = "",
+        bodyClass = "",
     }: Props = $props();
 
     const paddingClasses: Record<string, string> = {
@@ -38,6 +40,7 @@
         sm: "shadow-sm",
         md: "shadow-md",
         lg: "shadow-lg",
+        xl: "shadow-xl shadow-mist-900/10",
     };
 </script>
 
@@ -56,7 +59,7 @@
         </div>
     {/if}
 
-    <div class={paddingClasses[padding]}>
+    <div class="{paddingClasses[padding]} {bodyClass}">
         {#if children}
             {@render children()}
         {/if}

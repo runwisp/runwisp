@@ -2,6 +2,8 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
+    import { Bell } from "@lucide/svelte";
+    import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
     import { notificationStore } from "$lib/stores";
     import NotificationItem from "$lib/components/NotificationItem.svelte";
 
@@ -41,11 +43,12 @@
     </header>
 
     {#if items.length === 0}
-        <div class="rounded-lg border border-dashed border-mist-200 bg-white p-12 text-center">
-            <p class="text-sm text-mist-500">No notifications yet.</p>
-            <p class="mt-1 text-xs text-mist-400">
-                Failed runs and notifier delivery problems will appear here.
-            </p>
+        <div class="rounded-xl border border-dashed border-outline bg-surface-raised">
+            <EmptyState
+                title="No notifications yet"
+                description="Failed runs and notifier delivery problems will appear here."
+                icon={Bell}
+            />
         </div>
     {:else}
         <div class="space-y-2">
@@ -58,7 +61,7 @@
             <div class="flex justify-center pt-4">
                 <button
                     type="button"
-                    class="rounded-md border border-mist-200 bg-white px-4 py-1.5 text-sm font-medium text-mist-700 hover:bg-mist-50"
+                    class="rounded-md border border-mist-200 bg-surface-raised px-4 py-1.5 text-sm font-medium text-mist-700 hover:bg-mist-50"
                     onclick={() => void loadMore()}>Load more</button
                 >
             </div>

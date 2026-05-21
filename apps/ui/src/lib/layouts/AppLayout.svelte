@@ -8,6 +8,7 @@
     import { resolve } from "$app/paths";
     import { page } from "$app/stores";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
+    import ConnectionPip from "$lib/components/ConnectionPip.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import { systemStore } from "$lib/stores/system.svelte";
 
@@ -92,7 +93,7 @@
     <aside
         id="app-sidebar"
         aria-label="Primary"
-        class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-mist-200 bg-white shadow-sm transition-transform duration-200 ease-out md:static md:translate-x-0 {sidebarOpen
+        class="duration-normal fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-mist-200 bg-surface-raised shadow-sm transition-transform ease-out md:static md:translate-x-0 {sidebarOpen
             ? 'translate-x-0'
             : '-translate-x-full'}"
     >
@@ -155,7 +156,7 @@
             {#if showGroupHeaders}
                 {#each taskGroups as group (group.name)}
                     <div
-                        class="mt-4 mb-2 px-3 text-[11px] font-bold tracking-wider text-mist-400 uppercase first:mt-0"
+                        class="mt-4 mb-2 px-3 text-2xs font-bold tracking-wider text-mist-400 uppercase first:mt-0"
                     >
                         {group.name}
                     </div>
@@ -181,7 +182,7 @@
                     </nav>
                 {/each}
             {:else}
-                <div class="mb-2 px-3 text-[11px] font-bold tracking-wider text-mist-400 uppercase">
+                <div class="mb-2 px-3 text-2xs font-bold tracking-wider text-mist-400 uppercase">
                     Tasks
                 </div>
                 <nav class="mb-8 space-y-0.5">
@@ -215,7 +216,7 @@
     <main class="flex flex-1 flex-col overflow-hidden">
         <!-- Topbar -->
         <header
-            class="flex h-16 items-center justify-between border-b border-mist-200 bg-white px-6 shadow-sm"
+            class="flex h-16 items-center justify-between border-b border-mist-200 bg-surface-raised px-6 shadow-sm"
         >
             <!-- Breadcrumb / Title -->
             <div class="flex items-center gap-3">
@@ -250,6 +251,7 @@
                         {/if}
                     </span>
                 {/if}
+                <ConnectionPip />
                 <NotificationBell />
             </div>
         </header>

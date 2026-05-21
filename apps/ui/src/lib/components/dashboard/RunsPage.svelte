@@ -5,6 +5,8 @@
     import type { Run, RunSelector } from "@runwisp/common";
     import type { LogEvent, LogSlice } from "@runwisp/ui";
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
+    import PageHeader from "@runwisp/ui/components/PageHeader.svelte";
+    import Card from "@runwisp/ui/components/Card.svelte";
     import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
     import { sortByCreatedAtDesc } from "$lib/utils/sort";
     import { runsApi } from "$lib/api";
@@ -135,15 +137,10 @@
 </script>
 
 <PageContainer variant="flush" class="gap-4">
-    <!-- Header -->
-    <div class="flex shrink-0 items-center justify-between px-1">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-slate-900">Run History</h1>
-            <p class="mt-0.5 text-sm text-slate-500">
-                Comprehensive log of all task executions across this instance.
-            </p>
-        </div>
-    </div>
+    <PageHeader
+        title="Run History"
+        subtitle="Comprehensive log of all task executions across this instance."
+    />
 
     <!-- Main Content Area -->
     <div class="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-12">
@@ -162,8 +159,10 @@
         />
 
         <!-- Right Panel: Run Details -->
-        <div
-            class="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm md:col-span-8 lg:col-span-9"
+        <Card
+            padding="none"
+            class="flex flex-col md:col-span-8 lg:col-span-9"
+            bodyClass="flex min-h-0 flex-1 flex-col"
         >
             <RunDetailPanel
                 run={selectedRun}
@@ -172,6 +171,6 @@
                 showTaskName
                 onDelete={deleteSingle}
             />
-        </div>
+        </Card>
     </div>
 </PageContainer>

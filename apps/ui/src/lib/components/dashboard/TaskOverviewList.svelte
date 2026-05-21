@@ -147,16 +147,16 @@
                                 "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-all",
                                 taskFilter === filter.value
                                     ? "border-wisp-200 bg-wisp-50 text-wisp-700"
-                                    : "border-mist-200 bg-white text-mist-600 hover:border-mist-300 hover:text-mist-950",
+                                    : "border-mist-200 bg-surface-raised text-mist-600 hover:border-mist-300 hover:text-mist-950",
                             ]}
                             onclick={() => (taskFilter = filter.value)}
                         >
                             {filter.label}
                             <span
                                 class={[
-                                    "rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
+                                    "rounded-md px-1.5 py-0.5 text-2xs font-semibold",
                                     taskFilter === filter.value
-                                        ? "bg-white text-wisp-700"
+                                        ? "bg-surface-raised text-wisp-700"
                                         : "bg-mist-100 text-mist-500",
                                 ]}
                             >
@@ -196,7 +196,7 @@
                 {@const TaskIcon = taskIcon(task.task)}
 
                 <button
-                    class="group w-full rounded-xl border border-l-4 border-mist-200 bg-white px-4 py-3 text-left transition-all hover:border-mist-300 hover:shadow-sm {taskState.accentClass}"
+                    class="group w-full rounded-xl border border-l-4 border-mist-200 bg-surface-raised px-4 py-3 text-left transition-all hover:border-mist-300 hover:shadow-sm {taskState.accentClass}"
                     onclick={() => viewTask(task.task.name)}
                 >
                     <div class="flex items-center gap-4">
@@ -236,7 +236,7 @@
                                 <p class="text-mist-400">Latest</p>
                                 <span
                                     class={[
-                                        "inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                                        "inline-flex rounded-full px-1.5 py-0.5 text-2xs font-semibold",
                                         lastStatusConfig?.badge ?? taskState.toneClass,
                                     ]}
                                 >
