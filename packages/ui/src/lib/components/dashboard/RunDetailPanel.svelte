@@ -3,8 +3,9 @@
 
 <script lang="ts">
     import { untrack } from "svelte";
-    import { Server, Hash, Terminal as TerminalIcon, Download } from "@lucide/svelte";
+    import { Server, Hash, Terminal as TerminalIcon, Download, Trash2 } from "@lucide/svelte";
     import Badge from "../Badge.svelte";
+    import Button from "../Button.svelte";
     import LogConsole from "../LogConsole.svelte";
     import type { Run } from "./types.js";
     import type { LogEvent, LogSlice } from "../../log-console/types.js";
@@ -18,6 +19,7 @@
         fetchLogs,
         streamLogs,
         showTaskName = false,
+        onDelete,
     }: {
         run: Run | undefined;
         fetchLogs: (
@@ -31,7 +33,14 @@
             initialState?: { fromLine: number },
         ) => () => void;
         showTaskName?: boolean;
+        onDelete?: (runId: string) => void;
     } = $props();
+
+    let canDelete = $derived.by(() => {
+        if (!run || !onDelete) return false;
+        const status = runDisplayStatus(run);
+        return status !== "running" && status !== "pending";
+    });
 
     const TAIL_LINES = 1000;
 
@@ -109,6 +118,18 @@
                         >
                             {runDisplayStatus(run).toUpperCase()}
                         </Badge>
+                        {#if canDelete}
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                class="ml-1 text-danger-surface hover:bg-danger-soft"
+                                onclick={() => onDelete?.(run.id)}
+                                title="Delete this run"
+                                aria-label="Delete run"
+                            >
+                                {#snippet icon()}<Trash2 size={14} />{/snippet}
+                            </Button>
+                        {/if}
                     </div>
                     <div
                         class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-on-surface-muted"

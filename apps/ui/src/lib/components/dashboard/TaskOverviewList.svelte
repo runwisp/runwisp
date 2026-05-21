@@ -21,6 +21,7 @@
         formatTaskNextRunLabel,
         formatTaskTriggerLabel,
     } from "./overview-format.js";
+    import { taskIcon, taskTriggerTooltip } from "$lib/utils/task-icon";
 
     type TaskCounts = Record<OverviewTaskFilter, number>;
     type BadgeTone = "default" | "primary" | "success" | "warning" | "danger" | "info";
@@ -192,6 +193,7 @@
                 {@const lastStatusConfig = task.lastStatus
                     ? getRunStatusConfig(task.lastStatus)
                     : undefined}
+                {@const TaskIcon = taskIcon(task.task)}
 
                 <button
                     class="group w-full rounded-xl border border-l-4 border-mist-200 bg-white px-4 py-3 text-left transition-all hover:border-mist-300 hover:shadow-sm {taskState.accentClass}"
@@ -200,7 +202,15 @@
                     <div class="flex items-center gap-4">
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-1.5">
-                                <span class="text-sm font-semibold text-mist-950">
+                                <TaskIcon
+                                    size={14}
+                                    class="shrink-0 text-mist-400 group-hover:text-wisp-600"
+                                    aria-hidden="true"
+                                />
+                                <span
+                                    class="text-sm font-semibold text-mist-950"
+                                    title={taskTriggerTooltip(task.task)}
+                                >
                                     {task.task.name}
                                 </span>
                                 <Badge variant={taskState.badge} size="sm">{taskState.label}</Badge>

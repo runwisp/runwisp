@@ -153,7 +153,7 @@
     {#if task}
         <TaskPage
             {task}
-            {runs}
+            bind:runs
             {concurrencyReached}
             {triggering}
             {stopping}

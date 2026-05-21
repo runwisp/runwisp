@@ -4,6 +4,7 @@
 <script lang="ts">
     import { resolve } from "$app/paths";
     import { browser } from "$app/environment";
+    import { formatShortId } from "@runwisp/ui";
     import { phrase } from "$lib/utils/notification-rhythm";
     import NotificationSparkline from "./NotificationSparkline.svelte";
     import type { Notification } from "$lib/stores/notifications.svelte";
@@ -64,6 +65,14 @@
 
         {#if !compact && notification.body}
             <p class="line-clamp-2 text-xs text-mist-600">{notification.body}</p>
+        {/if}
+
+        {#if notification.run_id}
+            <span
+                class="inline-flex items-center gap-1 rounded-md bg-wisp-50 px-1.5 py-0.5 font-mono text-2xs font-medium text-wisp-700"
+            >
+                View run #{formatShortId(notification.run_id)} <span aria-hidden="true">→</span>
+            </span>
         {/if}
 
         <div class="flex items-center justify-between gap-2 text-2xs text-mist-400">

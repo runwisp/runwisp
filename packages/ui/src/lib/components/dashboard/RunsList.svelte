@@ -10,7 +10,11 @@
         ArrowUpDown,
         Search,
         Funnel,
+        Square,
+        Trash2,
+        RotateCw,
     } from "@lucide/svelte";
+    import { SvelteSet } from "svelte/reactivity";
     import Button from "../Button.svelte";
     import Badge from "../Badge.svelte";
     import type { Run } from "./types.js";
@@ -28,6 +32,10 @@
         showTaskName = false,
         headerLabel = "Run History",
         emptyText = "No runs yet",
+        bulkActions = false,
+        onBulkCancel,
+        onBulkDelete,
+        onBulkRerun,
     }: {
         runs: Run[];
         selectedRunId?: string | null;
@@ -36,7 +44,22 @@
         showTaskName?: boolean;
         headerLabel?: string;
         emptyText?: string;
+        bulkActions?: boolean;
+        onBulkCancel?: (ids: string[]) => void;
+        onBulkDelete?: (ids: string[]) => void;
+        onBulkRerun?: (ids: string[]) => void;
     } = $props();
+
+    let selectedIds = new SvelteSet<string>();
+
+    function toggleSelected(runId: string) {
+        if (selectedIds.has(runId)) selectedIds.delete(runId);
+        else selectedIds.add(runId);
+    }
+
+    function clearSelection() {
+        selectedIds.clear();
+    }
 
     function selectRun(runId: string) {
         selectedRunId = runId;
@@ -84,6 +107,30 @@
         const targetPage = Math.floor(idx / pageSize) + 1;
         if (targetPage !== currentPage) currentPage = targetPage;
     });
+
+    $effect(() => {
+        const visibleIds = new Set(filteredRuns.map((r: Run) => r.id));
+        for (const id of selectedIds) {
+            if (!visibleIds.has(id)) selectedIds.delete(id);
+        }
+    });
+
+    let selectedRuns = $derived(filteredRuns.filter((r: Run) => selectedIds.has(r.id)));
+    let allVisibleSelected = $derived(
+        filteredRuns.length > 0 && selectedRuns.length === filteredRuns.length,
+    );
+    let anyRunning = $derived(selectedRuns.some((r: Run) => r.status === "running"));
+    let anyTerminal = $derived(
+        selectedRuns.some((r: Run) => r.status !== "running" && r.status !== "pending"),
+    );
+
+    function toggleSelectAllVisible() {
+        if (allVisibleSelected) {
+            clearSelection();
+            return;
+        }
+        for (const r of filteredRuns as Run[]) selectedIds.add(r.id);
+    }
 </script>
 
 <div
@@ -185,113 +232,186 @@
         </div>
     {/if}
 
+    {#if bulkActions && selectedIds.size > 0}
+        <div
+            class="flex shrink-0 flex-wrap items-center gap-2 border-b border-outline-faint bg-primary-soft/40 px-3 py-2 text-xs"
+        >
+            <span class="font-medium text-on-surface">{selectedIds.size} selected</span>
+            <Button variant="ghost" size="xs" onclick={clearSelection}>Clear</Button>
+            <div class="ml-auto flex items-center gap-1.5">
+                {#if onBulkRerun}
+                    <Button
+                        variant="secondary"
+                        size="xs"
+                        onclick={() => onBulkRerun?.([...selectedIds])}
+                    >
+                        {#snippet icon()}<RotateCw size={12} />{/snippet}
+                        Re-run
+                    </Button>
+                {/if}
+                {#if onBulkCancel && anyRunning}
+                    <Button
+                        variant="secondary"
+                        size="xs"
+                        onclick={() => onBulkCancel?.([...selectedIds])}
+                    >
+                        {#snippet icon()}<Square size={12} />{/snippet}
+                        Cancel
+                    </Button>
+                {/if}
+                {#if onBulkDelete && anyTerminal}
+                    <Button
+                        variant="danger"
+                        size="xs"
+                        onclick={() => onBulkDelete?.([...selectedIds])}
+                    >
+                        {#snippet icon()}<Trash2 size={12} />{/snippet}
+                        Delete
+                    </Button>
+                {/if}
+            </div>
+        </div>
+    {/if}
+
+    {#if bulkActions && filteredRuns.length > 0}
+        <label
+            class="flex shrink-0 cursor-pointer items-center gap-2 border-b border-outline-faint bg-surface-sunken px-4 py-1.5 text-xs text-on-surface-muted hover:text-on-surface"
+        >
+            <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onchange={toggleSelectAllVisible}
+                class="h-3.5 w-3.5 cursor-pointer rounded border-outline accent-primary"
+            />
+            <span>Select all visible</span>
+        </label>
+    {/if}
+
     <div class="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
         {#each paginatedRuns as run (run.id)}
             {@const isActive = selectedRunId === run.id}
+            {@const isChecked = selectedIds.has(run.id)}
             {@const config = getRunStatusConfig(runDisplayStatus(run))}
             {@const Icon = config.icon}
             {@const duration = runDuration(run)}
-            <button
-                class="group duration-normal relative w-full rounded-lg border p-3 text-left transition-all select-none
+            <div class="flex items-stretch gap-1">
+                {#if bulkActions}
+                    <label
+                        class="flex shrink-0 cursor-pointer items-center px-1.5"
+                        aria-label={`Select run ${formatShortId(run.id)}`}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onchange={() => toggleSelected(run.id)}
+                            onclick={(e) => e.stopPropagation()}
+                            class="h-3.5 w-3.5 cursor-pointer rounded border-outline accent-primary"
+                        />
+                    </label>
+                {/if}
+                <button
+                    class="group duration-normal relative w-full rounded-lg border p-3 text-left transition-all select-none
                     {isActive
-                    ? 'border-primary-soft bg-primary-soft/50 shadow-sm'
-                    : 'border-transparent bg-surface-raised hover:border-outline hover:bg-surface-sunken'}"
-                onclick={() => selectRun(run.id)}
-                onkeydown={(e) => e.key === "Enter" && selectRun(run.id)}
-            >
-                {#if showTaskName}
-                    <!-- Runs variant: task name as primary, shortId secondary -->
-                    <div class="mb-1 flex items-center justify-between">
-                        <div class="flex min-w-0 items-center gap-2">
-                            <div class="{config.color} shrink-0">
-                                <Icon
-                                    size={16}
-                                    class={run.status === "running" ? "animate-spin" : ""}
-                                />
+                        ? 'border-primary-soft bg-primary-soft/50 shadow-sm'
+                        : 'border-transparent bg-surface-raised hover:border-outline hover:bg-surface-sunken'}"
+                    onclick={() => selectRun(run.id)}
+                    onkeydown={(e) => e.key === "Enter" && selectRun(run.id)}
+                >
+                    {#if showTaskName}
+                        <!-- Runs variant: task name as primary, shortId secondary -->
+                        <div class="mb-1 flex items-center justify-between">
+                            <div class="flex min-w-0 items-center gap-2">
+                                <div class="{config.color} shrink-0">
+                                    <Icon
+                                        size={16}
+                                        class={run.status === "running" ? "animate-spin" : ""}
+                                    />
+                                </div>
+                                <span class="truncate text-sm font-semibold text-on-surface">
+                                    {run.task_name}{#if run.instance_index > 0}<span
+                                            class="text-on-surface-muted"
+                                            >#{run.instance_index}</span
+                                        >{/if}
+                                </span>
                             </div>
-                            <span class="truncate text-sm font-semibold text-on-surface">
-                                {run.task_name}{#if run.instance_index > 0}<span
-                                        class="text-on-surface-muted">#{run.instance_index}</span
-                                    >{/if}
-                            </span>
-                        </div>
-                        <span
-                            class="shrink-0 text-[10px] {isActive
-                                ? 'font-medium text-primary'
-                                : 'text-on-surface-faint'}"
-                        >
-                            {formatRelativeTime(run.start_at || run.created_at)}
-                        </span>
-                    </div>
-
-                    <div class="flex items-center justify-between pl-6 text-xs">
-                        <div
-                            class="flex items-center gap-1 font-mono text-[11px] text-on-surface-muted"
-                        >
-                            #{formatShortId(run.id)}
-                        </div>
-                        {#if duration}
-                            <div
-                                class="flex items-center gap-1 text-on-surface-faint {isActive
-                                    ? 'text-primary'
-                                    : ''}"
+                            <span
+                                class="shrink-0 text-[10px] {isActive
+                                    ? 'font-medium text-primary'
+                                    : 'text-on-surface-faint'}"
                             >
-                                <Timer size={10} />
-                                <span class="font-mono">{duration}</span>
-                            </div>
-                        {/if}
-                    </div>
-                {:else}
-                    <!-- Task variant: shortId as primary, status secondary -->
-                    <div class="mb-1.5 flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <div class={config.color}>
-                                <Icon
-                                    size={16}
-                                    class={run.status === "running" ? "animate-spin" : ""}
-                                />
-                            </div>
-                            <span class="font-mono text-xs font-medium text-on-surface">
-                                #{formatShortId(run.id)}
+                                {formatRelativeTime(run.start_at || run.created_at)}
                             </span>
                         </div>
-                        <span
-                            class="text-[10px] {isActive
-                                ? 'font-medium text-primary'
-                                : 'text-on-surface-faint'}"
-                        >
-                            {formatRelativeTime(run.start_at || run.created_at)}
-                        </span>
-                    </div>
 
-                    <div class="flex items-center justify-between text-xs">
-                        <div class="flex items-center gap-2 text-on-surface-muted">
-                            <span class="capitalize">{runDisplayStatus(run)}</span>
-                            {#if run.instance_index > 0}
-                                <span class="font-mono text-[11px] text-on-surface-faint"
-                                    >instance #{run.instance_index}</span
+                        <div class="flex items-center justify-between pl-6 text-xs">
+                            <div
+                                class="flex items-center gap-1 font-mono text-[11px] text-on-surface-muted"
+                            >
+                                #{formatShortId(run.id)}
+                            </div>
+                            {#if duration}
+                                <div
+                                    class="flex items-center gap-1 text-on-surface-faint {isActive
+                                        ? 'text-primary'
+                                        : ''}"
                                 >
+                                    <Timer size={10} />
+                                    <span class="font-mono">{duration}</span>
+                                </div>
                             {/if}
                         </div>
-                        {#if duration}
-                            <div
-                                class="flex items-center gap-1 text-on-surface-faint {isActive
-                                    ? 'text-primary'
-                                    : ''}"
-                            >
-                                <Timer size={10} />
-                                <span class="font-mono">{duration}</span>
+                    {:else}
+                        <!-- Task variant: shortId as primary, status secondary -->
+                        <div class="mb-1.5 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class={config.color}>
+                                    <Icon
+                                        size={16}
+                                        class={run.status === "running" ? "animate-spin" : ""}
+                                    />
+                                </div>
+                                <span class="font-mono text-xs font-medium text-on-surface">
+                                    #{formatShortId(run.id)}
+                                </span>
                             </div>
-                        {/if}
-                    </div>
-                {/if}
+                            <span
+                                class="text-[10px] {isActive
+                                    ? 'font-medium text-primary'
+                                    : 'text-on-surface-faint'}"
+                            >
+                                {formatRelativeTime(run.start_at || run.created_at)}
+                            </span>
+                        </div>
 
-                {#if isActive}
-                    <div
-                        class="absolute top-1/2 left-0 h-8 w-1 -translate-y-1/2 rounded-r-full bg-primary"
-                    ></div>
-                {/if}
-            </button>
+                        <div class="flex items-center justify-between text-xs">
+                            <div class="flex items-center gap-2 text-on-surface-muted">
+                                <span class="capitalize">{runDisplayStatus(run)}</span>
+                                {#if run.instance_index > 0}
+                                    <span class="font-mono text-[11px] text-on-surface-faint"
+                                        >instance #{run.instance_index}</span
+                                    >
+                                {/if}
+                            </div>
+                            {#if duration}
+                                <div
+                                    class="flex items-center gap-1 text-on-surface-faint {isActive
+                                        ? 'text-primary'
+                                        : ''}"
+                                >
+                                    <Timer size={10} />
+                                    <span class="font-mono">{duration}</span>
+                                </div>
+                            {/if}
+                        </div>
+                    {/if}
+
+                    {#if isActive}
+                        <div
+                            class="absolute top-1/2 left-0 h-8 w-1 -translate-y-1/2 rounded-r-full bg-primary"
+                        ></div>
+                    {/if}
+                </button>
+            </div>
         {/each}
 
         {#if paginatedRuns.length === 0}

@@ -14,12 +14,13 @@ import (
 )
 
 var (
-	ErrTaskNotFound       = errors.New("task not found")
-	ErrAPIDisabled        = errors.New("API triggering disabled for this task")
-	ErrRunNotFound        = errors.New("run not found")
-	ErrNotRunning         = errors.New("run is not currently running")
-	ErrServiceNotRunnable = errors.New("services cannot be triggered; use the restart endpoint")
-	ErrNotAService        = errors.New("task is not a service")
+	ErrTaskNotFound          = errors.New("task not found")
+	ErrAPIDisabled           = errors.New("API triggering disabled for this task")
+	ErrRunNotFound           = errors.New("run not found")
+	ErrNotRunning            = errors.New("run is not currently running")
+	ErrServiceNotRunnable    = errors.New("services cannot be triggered; use the restart endpoint")
+	ErrNotAService           = errors.New("task is not a service")
+	ErrCannotDeleteActiveRun = errors.New("cannot delete a run that is still pending or running; stop it first")
 )
 
 type runService struct {
@@ -121,6 +122,9 @@ func (s *runService) DeleteRun(runID string) error {
 	run, err := s.db.GetRun(runID)
 	if err != nil {
 		return mapNotFound(err)
+	}
+	if run.Status == model.PhaseRunning || run.Status == model.PhasePending {
+		return ErrCannotDeleteActiveRun
 	}
 	if err := s.db.DeleteRun(runID); err != nil {
 		return err

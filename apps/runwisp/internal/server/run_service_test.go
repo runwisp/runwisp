@@ -338,6 +338,63 @@ func TestStopRun_TerminateError(t *testing.T) {
 	runner.AssertExpectations(t)
 }
 
+// ---- DeleteRun ----
+
+func TestDeleteRun_RunNotFound(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	repo.On("GetRun", "missing").Return(nil, storage.ErrNotFound)
+
+	err := svc.DeleteRun("missing")
+	assert.ErrorIs(t, err, ErrRunNotFound)
+	repo.AssertExpectations(t)
+}
+
+func TestDeleteRun_RunningRun_RejectsWithConflict(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	run := &model.Run{ID: "run-1", Status: model.PhaseRunning}
+	repo.On("GetRun", "run-1").Return(run, nil)
+
+	err := svc.DeleteRun("run-1")
+	assert.ErrorIs(t, err, ErrCannotDeleteActiveRun)
+	repo.AssertExpectations(t)
+	// DeleteRun must not be invoked when the run is active.
+	repo.AssertNotCalled(t, "DeleteRun", mock.Anything)
+}
+
+func TestDeleteRun_PendingRun_RejectsWithConflict(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	run := &model.Run{ID: "run-2", Status: model.PhasePending}
+	repo.On("GetRun", "run-2").Return(run, nil)
+
+	err := svc.DeleteRun("run-2")
+	assert.ErrorIs(t, err, ErrCannotDeleteActiveRun)
+	repo.AssertExpectations(t)
+	repo.AssertNotCalled(t, "DeleteRun", mock.Anything)
+}
+
+func TestDeleteRun_EndedRun_Succeeds(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	run := &model.Run{ID: "run-3", TaskName: "t", Status: model.PhaseEnded}
+	repo.On("GetRun", "run-3").Return(run, nil)
+	repo.On("DeleteRun", "run-3").Return(nil)
+
+	err := svc.DeleteRun("run-3")
+	assert.NoError(t, err)
+	repo.AssertExpectations(t)
+}
+
 func TestStopRun_RunPending_NotRunning(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)

@@ -298,14 +298,20 @@ func TestExecView_HasActionButton(t *testing.T) {
 
 	ev.Run.Status = model.PhaseEnded
 	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
-	if ev.hasActionButton() {
-		t.Fatal("expected no action button for success status")
+	if !ev.hasActionButton() {
+		t.Fatal("expected action button (Delete) for success status")
 	}
 
 	ev.Run.Status = model.PhaseEnded
 	ev.Run.EndReason = model.EndReasonPtr(model.ReasonFailed)
 	if !ev.hasActionButton() {
 		t.Fatal("expected action button for failed status")
+	}
+
+	ev.Run.Status = model.PhasePending
+	ev.Run.EndReason = nil
+	if ev.hasActionButton() {
+		t.Fatal("expected no action button for pending status")
 	}
 }
 
@@ -475,8 +481,8 @@ func TestExecView_HandleKeyRight_AllTransitions(t *testing.T) {
 func TestExecView_HandleKeyRight_IDNoAction(t *testing.T) {
 	// When at ID and there is no action, focus stays at ID.
 	ev := newSizedExecView(80, 24)
-	ev.Run.Status = model.PhaseEnded
-	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
+	ev.Run.Status = model.PhasePending
+	ev.Run.EndReason = nil
 	ev.HeaderFocus = HeaderFocusID
 	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
 	if ev.HeaderFocus != HeaderFocusID {
@@ -779,13 +785,21 @@ func TestRenderActionButtons_AllActions(t *testing.T) {
 		t.Fatalf("expected Restart button for stopped service, got %q", out4)
 	}
 
-	// ActionNone — success run, non-service
+	// ActionDelete — success run, non-service (still deletable)
 	ev.TaskIsService = false
 	ev.Run.Status = model.PhaseEnded
 	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
 	out5 := ev.renderActionButtons()
-	if out5 != "" {
-		t.Fatalf("expected empty output for ActionNone, got %q", out5)
+	if !strings.Contains(out5, "Delete") {
+		t.Fatalf("expected Delete button for ended successful run, got %q", out5)
+	}
+
+	// ActionNone — pending run
+	ev.Run.Status = model.PhasePending
+	ev.Run.EndReason = nil
+	out6 := ev.renderActionButtons()
+	if out6 != "" {
+		t.Fatalf("expected empty output for pending run, got %q", out6)
 	}
 }
 

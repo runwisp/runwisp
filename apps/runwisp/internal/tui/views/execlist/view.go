@@ -40,6 +40,9 @@ const (
 	// ActionRestartService re-spawns a stopped service or restarts a
 	// running one.
 	ActionRestartService
+	// ActionDelete removes a terminal run record (and its log files).
+	// Never offered for running, pending, or service runs.
+	ActionDelete
 )
 
 type headerHitBox struct {
@@ -260,10 +263,23 @@ func (v *ExecView) Action() Action {
 	if v.Run.Status == model.PhaseRunning {
 		return ActionStop
 	}
+	if v.Run.Status == model.PhasePending {
+		return ActionNone
+	}
 	if v.Run.IsRetryable() {
 		return ActionRetry
 	}
-	return ActionNone
+	return ActionDelete
+}
+
+// CanDelete reports whether the run is in a state that allows deletion.
+// Used by keybindings and confirm flows that surface delete independently
+// of the header action button.
+func (v *ExecView) CanDelete() bool {
+	if v.Run == nil || v.TaskIsService {
+		return false
+	}
+	return v.Run.Status != model.PhaseRunning && v.Run.Status != model.PhasePending
 }
 
 // SetServiceStopped tells the view whether the parent service has been

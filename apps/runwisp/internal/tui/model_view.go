@@ -134,6 +134,9 @@ func (m Model) appendExecViewActionHints(parts []string) []string {
 	if m.hasLaunchTicket() {
 		parts = append(parts, "d download")
 	}
+	if m.execView.CanDelete() {
+		parts = append(parts, "D delete")
+	}
 	return parts
 }
 

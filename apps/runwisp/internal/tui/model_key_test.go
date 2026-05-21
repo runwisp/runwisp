@@ -429,6 +429,13 @@ func TestHandleKeyEnterActionButton_NilClient_Actions(t *testing.T) {
 				return ev
 			},
 		},
+		{
+			"ActionDelete (ended, non-retryable, non-service)",
+			func() execlist.ExecView {
+				success := model.ReasonSuccess
+				return execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &success})
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -535,6 +542,35 @@ func TestHandleKeyD_NoExecViewReturnsFalse(t *testing.T) {
 	_, _, handled := handleKeyD(m, keyMsg("d"))
 	if handled {
 		t.Fatal("expected handled=false when no execView")
+	}
+}
+
+func TestHandleKeyDCapital_DeletableRun_ReturnsHandled(t *testing.T) {
+	m := newTestModel(nil)
+	success := model.ReasonSuccess
+	ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &success})
+	m.execView = &ev
+
+	_, cmd, handled := handleKeyD(m, keyMsg("D"))
+	if !handled {
+		t.Fatal("expected handled=true for D on deletable run")
+	}
+	if cmd != nil {
+		t.Fatalf("expected nil cmd with nil client, got %v", cmd)
+	}
+}
+
+func TestHandleKeyDCapital_RunningRun_NoOp(t *testing.T) {
+	m := newTestModel(nil)
+	ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning})
+	m.execView = &ev
+
+	_, cmd, handled := handleKeyD(m, keyMsg("D"))
+	if !handled {
+		t.Fatal("expected handled=true (swallowed) for D on running run")
+	}
+	if cmd != nil {
+		t.Fatalf("expected nil cmd for non-deletable run, got %v", cmd)
 	}
 }
 

@@ -41,5 +41,5 @@
 </script>
 
 <AsyncDataView data={runsData} skeletonRows={5}>
-    <RunsPage {runs} fetchLogs={logSession.fetchLogs} streamLogs={logSession.streamLogs} />
+    <RunsPage bind:runs fetchLogs={logSession.fetchLogs} streamLogs={logSession.streamLogs} />
 </AsyncDataView>

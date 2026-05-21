@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Delete a run from the Web UI and TUI.** The run detail panel grows a trash button next to the status badge; the TUI exec view binds <kbd>D</kbd> and surfaces a Delete action button on terminal runs. Deletion removes the metadata row and the captured log segment; running or pending runs are rejected (`409 Conflict`) until you stop them first.
+
+- **Bulk run actions in the Web UI.** The runs list now shows a checkbox per row and a toolbar when one or more runs are selected. Re-run dedupes by task and triggers each once; Cancel applies to running runs in the selection; Delete applies to runs in a terminal state. Each batch fires in parallel and reports an aggregate toast (`"Deleted 3 / 4 runs"`).
+
+- **Trigger-type icons next to every task.** Services show a server icon, cron-scheduled tasks a clock, manual-only tasks a hand — visible in the sidebar and the dashboard's task overview. Hover the icon for the cron expression or instance count.
+
+- **Notification "View run #abc1234 →" chip.** When a notification is tied to a specific run, the in-app notification item shows a compact chip with its short ID so you can jump straight to it.
+
+- **The Web UI sidebar collapses on narrow viewports.** Below the `md` breakpoint, the navigation now lives behind a hamburger menu with a backdrop, ESC-to-close, and focus management — the dashboard is finally usable on phones and tablets without horizontal scroll.
+
 - **Prometheus-compatible `/metrics` endpoint (opt-in).** The daemon now serves OpenMetrics 1.0 text at `/metrics` so you can plug RunWisp into Prometheus, Grafana Agent, OpenTelemetry Collector, or any other scraper without parsing the JSON API. The surface includes run counters, the timestamp of the last failure, per-task active-run gauges, daemon CPU / memory / uptime, and a `runwisp_build_info` label. The endpoint is **off by default** — your task names and the daemon version label show up on it as recon-grade detail, so you turn it on with `[daemon] metrics_enabled = true` once you're ready to scrape. When `--host` exposes the dashboard publicly, set `[daemon] metrics_listen = "127.0.0.1:9478"` to keep the scrape surface on its own loopback bind. See [Operations / Metrics](https://docs.runwisp.com/operations/metrics/) for the full list of metrics and a sample scrape config.
 
 - **Per-task environment variables via `env` and `env_file`.** Set `env = { PORT = "8080" }` on a `[tasks.*]` / `[services.*]` table, or point `env_file = "secrets.env"` at a dotenv file, and the values are overlaid on the spawned process's environment. `[defaults.env]` and `[defaults.env_file]` apply to every task; task-level entries override defaults on key collision. Inline `env` values are visible in the API and Web UI; `env_file` values stay on disk — the API exposes the file path so operators see where a value came from, but never the keys or values themselves.

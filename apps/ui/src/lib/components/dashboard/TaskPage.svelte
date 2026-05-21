@@ -2,18 +2,20 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Play, PanelLeftClose, History, Square, RefreshCcw } from "@lucide/svelte";
+    import { Play, PanelLeftClose, History, Square, RefreshCcw, Trash2 } from "@lucide/svelte";
+    import { SvelteSet } from "svelte/reactivity";
     import Button from "@runwisp/ui/components/Button.svelte";
     import Modal from "@runwisp/ui/components/Modal.svelte";
     import { isService, type Task, type Run } from "@runwisp/common";
     import type { LogEvent, LogSlice } from "@runwisp/ui";
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
-    import { RunsList, RunDetailPanel } from "@runwisp/ui";
+    import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
     import { sortByCreatedAtDesc } from "$lib/utils/sort";
+    import { tasksApi } from "$lib/api";
 
     let {
         task,
-        runs = [],
+        runs = $bindable([]),
         concurrencyReached = false,
         triggering = false,
         stopping = false,
@@ -63,6 +65,85 @@
     let stopConfirmOpen = $state(false);
     let restartConfirmOpen = $state(false);
     let stopServiceConfirmOpen = $state(false);
+    let deleteConfirmOpen = $state(false);
+    let deleteTargetId = $state<string | null>(null);
+    let deleting = $state(false);
+
+    function requestDelete(runId: string) {
+        deleteTargetId = runId;
+        deleteConfirmOpen = true;
+    }
+
+    async function confirmDelete() {
+        const id = deleteTargetId;
+        if (!id) return;
+        deleting = true;
+        try {
+            await tasksApi.deleteRun(task.name, id);
+            runs = runs.filter((r: Run) => r.id !== id);
+            if (userSelectedRunId === id) userSelectedRunId = null;
+            toast.success("Run deleted");
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to delete run"));
+        } finally {
+            deleting = false;
+            deleteConfirmOpen = false;
+            deleteTargetId = null;
+        }
+    }
+
+    function runsByIds(ids: string[]): Run[] {
+        const want = new SvelteSet(ids);
+        return runs.filter((r: Run) => want.has(r.id));
+    }
+
+    async function handleBulkCancel(ids: string[]) {
+        const targets = runsByIds(ids).filter((r) => r.status === "running");
+        if (targets.length === 0) {
+            toast.error("No running runs selected");
+            return;
+        }
+        const results = await Promise.allSettled(
+            targets.map((r) => tasksApi.stopRun(r.task_name, r.id)),
+        );
+        const ok = results.filter((r) => r.status === "fulfilled").length;
+        if (ok === targets.length) toast.success(`Cancelled ${ok} run${ok === 1 ? "" : "s"}`);
+        else toast.error(`Cancelled ${ok} / ${targets.length} runs`);
+    }
+
+    async function handleBulkDelete(ids: string[]) {
+        const targets = runsByIds(ids).filter(
+            (r) => r.status !== "running" && r.status !== "pending",
+        );
+        if (targets.length === 0) {
+            toast.error("No deletable runs selected");
+            return;
+        }
+        const results = await Promise.allSettled(
+            targets.map((r) => tasksApi.deleteRun(r.task_name, r.id)),
+        );
+        const deleted = new SvelteSet<string>();
+        results.forEach((res, idx) => {
+            const target = targets[idx];
+            if (res.status === "fulfilled" && target) deleted.add(target.id);
+        });
+        if (deleted.size > 0) {
+            runs = runs.filter((r: Run) => !deleted.has(r.id));
+            if (userSelectedRunId && deleted.has(userSelectedRunId)) userSelectedRunId = null;
+        }
+        if (deleted.size === targets.length)
+            toast.success(`Deleted ${deleted.size} run${deleted.size === 1 ? "" : "s"}`);
+        else toast.error(`Deleted ${deleted.size} / ${targets.length} runs`);
+    }
+
+    async function handleBulkRerun(ids: string[]) {
+        const taskNames = Array.from(new Set(runsByIds(ids).map((r) => r.task_name)));
+        if (taskNames.length === 0) return;
+        const results = await Promise.allSettled(taskNames.map((n) => tasksApi.triggerRun(n)));
+        const ok = results.filter((r) => r.status === "fulfilled").length;
+        if (ok === taskNames.length) toast.success(`Triggered ${ok} task${ok === 1 ? "" : "s"}`);
+        else toast.error(`Triggered ${ok} / ${taskNames.length} tasks`);
+    }
 
     const runLaunchable = $derived(
         !taskIsService && (task.api_trigger ?? true) && !triggering && !concurrencyReached,
@@ -215,6 +296,10 @@
                 {selectedRunId}
                 onselect={(id) => (userSelectedRunId = id)}
                 emptyText="No runs yet"
+                bulkActions
+                onBulkCancel={handleBulkCancel}
+                onBulkDelete={handleBulkDelete}
+                onBulkRerun={handleBulkRerun}
             />
         {/if}
 
@@ -225,7 +310,7 @@
                 hideHistory && !historyExpanded ? "" : "md:col-span-8 lg:col-span-9",
             ]}
         >
-            <RunDetailPanel run={selectedRun} {fetchLogs} {streamLogs} />
+            <RunDetailPanel run={selectedRun} {fetchLogs} {streamLogs} onDelete={requestDelete} />
         </div>
     </div>
 
@@ -291,6 +376,25 @@
                 "primary",
                 RefreshCcw,
             )}
+        {/snippet}
+    </Modal>
+
+    <Modal
+        bind:open={deleteConfirmOpen}
+        title="Delete Run"
+        description="Delete this run? The captured log will also be removed and cannot be recovered."
+        size="sm"
+    >
+        {#snippet footer()}
+            <div class="flex justify-end gap-2">
+                <Button variant="secondary" size="sm" onclick={() => (deleteConfirmOpen = false)}>
+                    Cancel
+                </Button>
+                <Button variant="danger" size="sm" onclick={confirmDelete} loading={deleting}>
+                    {#snippet icon()}<Trash2 size={16} />{/snippet}
+                    Delete
+                </Button>
+            </div>
         {/snippet}
     </Modal>
 

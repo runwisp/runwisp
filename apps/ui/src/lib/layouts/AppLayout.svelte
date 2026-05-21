@@ -2,10 +2,11 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Activity, Box, History, Globe } from "@lucide/svelte";
+    import { Activity, History, Globe, Menu, X } from "@lucide/svelte";
     import Logo from "@runwisp/ui/components/Logo.svelte";
-    import { type Snippet, type Component } from "svelte";
+    import { type Snippet, type Component, tick } from "svelte";
     import { resolve } from "$app/paths";
+    import { page } from "$app/stores";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import { systemStore } from "$lib/stores/system.svelte";
@@ -20,7 +21,7 @@
         children,
     } = $props<{
         activePage: string;
-        tasks?: { id: string; name: string; group?: string; icon?: Component; href?: string }[];
+        tasks?: { id: string; name: string; group?: string; icon: Component; href?: string }[];
         urls?: { overview: string; runs: string };
         children: Snippet;
     }>();
@@ -42,13 +43,59 @@
     });
 
     let showGroupHeaders = $derived(taskGroups.length > 1);
+
+    let sidebarOpen = $state(false);
+    let firstLink = $state<HTMLElement | null>(null);
+
+    let lastPath = $page.url.pathname;
+    $effect(() => {
+        const path = $page.url.pathname;
+        if (path !== lastPath) {
+            lastPath = path;
+            sidebarOpen = false;
+        }
+    });
+
+    async function openDrawer() {
+        sidebarOpen = true;
+        await tick();
+        firstLink?.focus();
+    }
+
+    function closeDrawer() {
+        sidebarOpen = false;
+    }
+
+    function handleKey(e: KeyboardEvent) {
+        if (e.key === "Escape" && sidebarOpen) {
+            e.preventDefault();
+            closeDrawer();
+        }
+    }
 </script>
+
+<svelte:window onkeydown={handleKey} />
 
 <div
     class="flex h-screen w-full bg-mist-50 font-sans text-mist-900 selection:bg-wisp-100 selection:text-wisp-900"
 >
+    {#if sidebarOpen}
+        <button
+            type="button"
+            aria-label="Close navigation"
+            class="fixed inset-0 z-30 bg-black/40 md:hidden"
+            onclick={closeDrawer}
+        ></button>
+    {/if}
+
     <!-- Sidebar -->
-    <aside class="flex w-64 flex-col border-r border-mist-200 bg-white shadow-sm">
+    <aside
+        id="app-sidebar"
+        aria-label="Primary"
+        class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-mist-200 bg-white shadow-sm transition-transform duration-200 ease-out md:static md:translate-x-0 {sidebarOpen
+            ? 'translate-x-0'
+            : '-translate-x-full'}"
+    >
         <!-- Brand -->
         <div
             class="flex h-16 items-center gap-3 border-b border-mist-100 px-5 transition-all hover:bg-mist-50/50"
@@ -56,15 +103,24 @@
             <div class="flex h-8 w-8 items-center justify-center rounded-lg">
                 <Logo size="lg" />
             </div>
-            <div class="flex flex-col leading-none">
+            <div class="flex flex-1 flex-col leading-none">
                 <span class="text-base font-bold tracking-tight text-mist-900">RunWisp</span>
             </div>
+            <button
+                type="button"
+                aria-label="Close navigation"
+                class="rounded-md p-1 text-mist-500 hover:bg-mist-100 hover:text-mist-900 md:hidden"
+                onclick={closeDrawer}
+            >
+                <X size={18} />
+            </button>
         </div>
 
         <!-- Navigation -->
         <div class="flex-1 overflow-y-auto px-3 py-6">
             <nav class="mb-6 space-y-0.5">
                 <a
+                    bind:this={firstLink}
                     href={resolve(urls.overview)}
                     class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
                     'overview'
@@ -105,6 +161,7 @@
                     </div>
                     <nav class="mb-2 space-y-0.5">
                         {#each group.tasks as task (task.id)}
+                            {@const TaskIcon = task.icon}
                             <a
                                 href={resolve(task.href || "#")}
                                 class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
@@ -112,7 +169,7 @@
                                     ? 'bg-wisp-50 text-wisp-700 shadow-sm shadow-wisp-500/5'
                                     : 'text-mist-600 hover:bg-mist-50 hover:text-mist-900'}"
                             >
-                                <Box
+                                <TaskIcon
                                     size={18}
                                     class={activePage === task.id
                                         ? "text-wisp-600"
@@ -129,6 +186,7 @@
                 </div>
                 <nav class="mb-8 space-y-0.5">
                     {#each tasks as task (task.id)}
+                        {@const TaskIcon = task.icon}
                         <a
                             href={resolve(task.href || "#")}
                             class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
@@ -136,7 +194,7 @@
                                 ? 'bg-wisp-50 text-wisp-700 shadow-sm shadow-wisp-500/5'
                                 : 'text-mist-600 hover:bg-mist-50 hover:text-mist-900'}"
                         >
-                            <Box
+                            <TaskIcon
                                 size={18}
                                 class={activePage === task.id
                                     ? "text-wisp-600"
@@ -160,9 +218,19 @@
             class="flex h-16 items-center justify-between border-b border-mist-200 bg-white px-6 shadow-sm"
         >
             <!-- Breadcrumb / Title -->
-            <div class="flex items-center gap-2">
-                <span class="text-mist-400">RunWisp</span>
-                <span class="text-mist-300">/</span>
+            <div class="flex items-center gap-3">
+                <button
+                    type="button"
+                    aria-label="Open navigation"
+                    aria-expanded={sidebarOpen}
+                    aria-controls="app-sidebar"
+                    class="-ml-2 rounded-md p-2 text-mist-600 hover:bg-mist-100 hover:text-mist-900 md:hidden"
+                    onclick={openDrawer}
+                >
+                    <Menu size={20} />
+                </button>
+                <span class="hidden text-mist-400 sm:inline">RunWisp</span>
+                <span class="hidden text-mist-300 sm:inline">/</span>
                 <span class="font-semibold text-mist-900 capitalize"
                     >{activePage.replace("task_", "").replace(/_/g, " ")}</span
                 >

@@ -69,6 +69,13 @@ type StopRunMsg struct {
 	Err      error
 }
 
+// DeleteRunMsg is the result of a "Delete Run" action.
+type DeleteRunMsg struct {
+	RunID    string
+	TaskName string
+	Err      error
+}
+
 // RestartServiceMsg is the result of a "Restart Service" action.
 type RestartServiceMsg struct {
 	TaskName string
