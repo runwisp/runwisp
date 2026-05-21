@@ -85,8 +85,8 @@
         updateFromValue();
     });
 
-    function handleInput(e: Event) {
-        const val = (e.target as HTMLInputElement).value;
+    function handleInput(e: Event & { currentTarget: EventTarget & HTMLInputElement }) {
+        const val = e.currentTarget.value;
         textValue = val;
 
         const msValue = parseToMs(val);

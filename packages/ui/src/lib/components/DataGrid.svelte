@@ -176,7 +176,7 @@
             <Input
                 value={filterQuery}
                 oninput={(e) => {
-                    filterQuery = (e.currentTarget as HTMLInputElement).value;
+                    filterQuery = e.currentTarget.value;
                     if (paginate && !total) page = 1;
                 }}
                 type="search"
@@ -308,8 +308,7 @@
                                 <td
                                     class="px-4 {compact ? 'py-2' : 'py-3'} cursor-pointer"
                                     onclick={(e) => {
-                                        if ((e.target as HTMLElement).tagName !== "INPUT")
-                                            toggleRow(row);
+                                        if (!(e.target instanceof HTMLInputElement)) toggleRow(row);
                                     }}
                                 >
                                     <Checkbox

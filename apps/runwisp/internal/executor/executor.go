@@ -25,13 +25,11 @@ const (
 	MaxLineBufferSize     = 64 * 1024 // 64KB max before flushing partial line
 )
 
-// Executor defines the interface for running tasks.
 type Executor interface {
 	Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult
 	Availability() Availability
 }
 
-// ExecuteResult summarizes a completed execution.
 type ExecuteResult struct {
 	ExitCode       int
 	Error          error
@@ -53,7 +51,6 @@ type RoutingExecutor struct {
 	streamer         *StreamManager
 }
 
-// Options configures the RoutingExecutor at startup.
 type Options struct {
 	LogDir            string
 	EventBus          events.EventBus
@@ -107,7 +104,6 @@ func New(opts Options) Executor {
 	}
 }
 
-// Availability returns the backend availability status.
 func (r *RoutingExecutor) Availability() Availability {
 	return r.availability
 }
