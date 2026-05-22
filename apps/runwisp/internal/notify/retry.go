@@ -4,6 +4,8 @@
 package notify
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -76,4 +78,30 @@ func IsPermanentHTTPStatus(code int) bool {
 		return false
 	}
 	return code >= 400 && code < 500
+}
+
+// RetryWithBackoff runs op under cfg's exponential backoff, unwrapping any
+// *backoff.PermanentError so callers see the underlying cause without the
+// wrapper appearing in the error chain or log line.
+func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func() error) error {
+	bo := cfg.NewExponential()
+	bo.Reset()
+	if err := backoff.Retry(op, backoff.WithContext(bo, ctx)); err != nil {
+		var perm *backoff.PermanentError
+		if errors.As(err, &perm) {
+			return perm.Err
+		}
+		return err
+	}
+	return nil
+}
+
+// Redact replaces every occurrence of secret in s with "[redacted]". The
+// empty-secret guard prevents accidental full-string replacement when a
+// channel has no secret configured (e.g. auth-less SMTP relays).
+func Redact(s, secret string) string {
+	if secret == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, secret, "[redacted]")
 }

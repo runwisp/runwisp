@@ -674,6 +674,255 @@ notify = ["inapp"]
 	assert.Contains(t, err.Error(), "invalid task glob")
 }
 
+// --- SMTP notifier validation ---------------------------------------------
+
+func TestValidate_SMTP_HappyPath(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id           = "email-ops"
+type         = "smtp"
+host         = "smtp.example.com"
+port         = 587
+from         = "RunWisp <runwisp@example.com>"
+to           = ["ops@example.com", "Alerts Team <alerts@example.com>"]
+cc           = ["audit@example.com"]
+username     = "apikey"
+password_env = "RUNWISP_SMTP_PASSWORD"
+tls          = "starttls"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+	require.Len(t, cfg.Notify.Notifiers, 1)
+	n := cfg.Notify.Notifiers[0]
+	assert.Equal(t, "smtp", n.Type)
+	assert.Equal(t, 587, n.Port)
+	assert.Equal(t, "smtp.example.com", n.Host)
+	assert.Equal(t, []string{"ops@example.com", "Alerts Team <alerts@example.com>"}, n.Recipients)
+	assert.Equal(t, []string{"audit@example.com"}, n.CC)
+}
+
+func TestValidate_SMTP_AuthlessLocalRelay(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id   = "email-local"
+type = "smtp"
+host = "127.0.0.1"
+port = 25
+from = "RunWisp <runwisp@example.com>"
+to   = ["ops@example.com"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg), "auth-less local relay must be accepted")
+}
+
+func TestValidate_SMTP_MissingHost(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id   = "email-ops"
+type = "smtp"
+from = "runwisp@example.com"
+to   = ["ops@example.com"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "host is required")
+}
+
+func TestValidate_SMTP_MissingFrom(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id   = "email-ops"
+type = "smtp"
+host = "smtp.example.com"
+to   = ["ops@example.com"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "from is required")
+}
+
+func TestValidate_SMTP_InvalidFrom(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id   = "email-ops"
+type = "smtp"
+host = "smtp.example.com"
+from = "not-an-email"
+to   = ["ops@example.com"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "from")
+}
+
+func TestValidate_SMTP_EmptyTo(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id   = "email-ops"
+type = "smtp"
+host = "smtp.example.com"
+from = "runwisp@example.com"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "to is required")
+}
+
+func TestValidate_SMTP_ConflictingPasswordSources(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id           = "email-ops"
+type         = "smtp"
+host         = "smtp.example.com"
+from         = "runwisp@example.com"
+to           = ["ops@example.com"]
+username     = "u"
+password     = "inline"
+password_env = "PW"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "only one of")
+}
+
+func TestValidate_SMTP_TLSNoneRejectedWithCreds(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id       = "email-ops"
+type     = "smtp"
+host     = "smtp.example.com"
+from     = "runwisp@example.com"
+to       = ["ops@example.com"]
+username = "u"
+password = "p"
+tls      = "none"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PLAIN auth")
+}
+
+func TestValidate_SMTP_BadTLSValue(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id   = "email-ops"
+type = "smtp"
+host = "smtp.example.com"
+from = "runwisp@example.com"
+to   = ["ops@example.com"]
+tls  = "wat"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tls")
+}
+
+func TestValidate_SMTP_BadRecipientAddress(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id   = "email-ops"
+type = "smtp"
+host = "smtp.example.com"
+from = "runwisp@example.com"
+to   = ["not-an-email"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not valid")
+}
+
+func TestValidate_SMTP_UsernameWithoutPasswordRejected(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id       = "email-ops"
+type     = "smtp"
+host     = "smtp.example.com"
+from     = "runwisp@example.com"
+to       = ["ops@example.com"]
+username = "u"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "username and a password source must be set together")
+}
+
+func TestInlineToken_SMTPRecipientOverride(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id           = "email-ops"
+type         = "smtp"
+host         = "smtp.example.com"
+from         = "RunWisp <runwisp@example.com>"
+to           = ["ops@example.com"]
+username     = "apikey"
+password_env = "RUNWISP_SMTP_PASSWORD"
+
+[tasks.backup-db]
+cron              = "0 3 * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "backup.sh"
+notify_on_failure = ["email-ops:alerts@example.com"]
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	require.Len(t, cfg.Notify.Notifiers, 2, "parent + synthesised override")
+	var synth NotifierSpec
+	for _, n := range cfg.Notify.Notifiers {
+		if n.ID == "email-ops:alerts@example.com" {
+			synth = n
+		}
+	}
+	require.Equal(t, "email-ops:alerts@example.com", synth.ID)
+	assert.Equal(t, []string{"alerts@example.com"}, synth.Recipients)
+	assert.Empty(t, synth.CC, "override clears CC from parent")
+}
+
+func TestInlineToken_SMTPRejectsBadEmail(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id           = "email-ops"
+type         = "smtp"
+host         = "smtp.example.com"
+from         = "runwisp@example.com"
+to           = ["ops@example.com"]
+username     = "u"
+password_env = "P"
+
+[tasks.x]
+cron              = "* * * * *"
+max_concurrent    = 1
+on_overlap        = "queue"
+run               = "x"
+notify_on_failure = ["email-ops:bad@@@"]
+`
+	_, err := decode([]byte(src))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a valid email")
+}
+
 func TestValidate_RouteEmptyNotifyList(t *testing.T) {
 	src := `
 [[notification_route]]

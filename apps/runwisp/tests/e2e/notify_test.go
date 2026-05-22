@@ -6,13 +6,17 @@
 package e2e
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -246,6 +250,218 @@ run = "exit 1"
 	page := waitForListedNotifications(t, client, 1, 5*time.Second)
 	require.Equal(t, "fail-task", page.Items[0].TaskName)
 	require.Equal(t, "run.failed", page.Items[0].Kind)
+}
+
+// TestNotificationsSMTPDeliversAndCoalesces verifies the SMTP channel
+// end-to-end: a failing run produces a real SMTP transaction with both a
+// text/plain and a text/html part, mentioning the task; a second failure
+// within the coalesce window must NOT trigger a second SMTP transaction
+// (outbound coalescing applies to SMTP exactly like Slack).
+func TestNotificationsSMTPDeliversAndCoalesces(t *testing.T) {
+	srv := newTestSMTPServer(t)
+	t.Cleanup(srv.Close)
+
+	host, portStr, err := net.SplitHostPort(srv.Addr())
+	require.NoError(t, err)
+
+	configPath := writeNotifyConfig(t, fmt.Sprintf(`
+[notify]
+coalesce_window = "1m"
+
+[tasks.fail-task]
+run = "exit 1"
+
+[[notifier]]
+id   = "email-ops"
+type = "smtp"
+host = "%s"
+port = %s
+tls  = "none"
+from = "RunWisp <runwisp@example.test>"
+to   = ["alerts@example.test"]
+
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["email-ops"]
+`, host, portStr))
+
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+
+	client := socketClient(t, daemon.dataDir)
+
+	_, err = client.TriggerRun("fail-task")
+	require.NoError(t, err)
+
+	body := srv.WaitForMessage(t, 15*time.Second)
+	require.Contains(t, body, "fail-task", "SMTP DATA should mention the failing task")
+	require.Contains(t, body, "Content-Type: text/plain", "must include the plain-text alternative")
+	require.Contains(t, body, "Content-Type: text/html", "must include the HTML alternative")
+	require.Contains(t, body, "multipart/alternative", "must be multipart/alternative")
+
+	// Second failure within the coalesce window: no further SMTP transaction.
+	_, err = client.TriggerRun("fail-task")
+	require.NoError(t, err)
+
+	srv.ExpectNoMessage(t, 2*time.Second)
+}
+
+// ---------- SMTP test server ----------
+
+// testSMTPServer is a tiny stdlib-only fake that accepts EHLO → MAIL → RCPT →
+// DATA → QUIT and captures the message body. It speaks just enough of the
+// SMTP protocol to satisfy go-mail with TLS disabled (`tls = "none"`).
+type testSMTPServer struct {
+	ln     net.Listener
+	bodies chan string
+	wg     sync.WaitGroup
+	closed atomic.Bool
+}
+
+func newTestSMTPServer(t *testing.T) *testSMTPServer {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	s := &testSMTPServer{ln: ln, bodies: make(chan string, 8)}
+	s.wg.Add(1)
+	go s.acceptLoop()
+	return s
+}
+
+func (s *testSMTPServer) Addr() string { return s.ln.Addr().String() }
+
+func (s *testSMTPServer) Close() {
+	if !s.closed.CompareAndSwap(false, true) {
+		return
+	}
+	_ = s.ln.Close()
+	s.wg.Wait()
+}
+
+func (s *testSMTPServer) acceptLoop() {
+	defer s.wg.Done()
+	for {
+		conn, err := s.ln.Accept()
+		if err != nil {
+			return
+		}
+		s.wg.Add(1)
+		go s.handle(conn)
+	}
+}
+
+func (s *testSMTPServer) handle(conn net.Conn) {
+	defer s.wg.Done()
+	defer func() { _ = conn.Close() }()
+	sess := &smtpTestSession{
+		br:     bufio.NewReader(conn),
+		bw:     bufio.NewWriter(conn),
+		bodies: s.bodies,
+	}
+	sess.run()
+}
+
+// smtpTestSession holds per-connection state for the fake SMTP server. The
+// split into command vs. data-mode handlers keeps each step small enough to
+// reason about (and below SonarCloud's cognitive-complexity threshold).
+type smtpTestSession struct {
+	br     *bufio.Reader
+	bw     *bufio.Writer
+	bodies chan<- string
+	body   strings.Builder
+	inData bool
+}
+
+func (s *smtpTestSession) writeLine(line string) bool {
+	if _, err := s.bw.WriteString(line + "\r\n"); err != nil {
+		return false
+	}
+	return s.bw.Flush() == nil
+}
+
+func (s *smtpTestSession) run() {
+	if !s.writeLine("220 runwisp-test ESMTP ready") {
+		return
+	}
+	for {
+		line, err := s.br.ReadString('\n')
+		if err != nil {
+			return
+		}
+		line = strings.TrimRight(line, "\r\n")
+		var keep bool
+		if s.inData {
+			keep = s.handleDataLine(line)
+		} else {
+			keep = s.handleCommand(line)
+		}
+		if !keep {
+			return
+		}
+	}
+}
+
+func (s *smtpTestSession) handleDataLine(line string) bool {
+	if line == "." {
+		s.inData = false
+		select {
+		case s.bodies <- s.body.String():
+		default:
+		}
+		s.body.Reset()
+		return s.writeLine("250 2.0.0 Ok: queued")
+	}
+	if strings.HasPrefix(line, "..") {
+		line = line[1:]
+	}
+	s.body.WriteString(line)
+	s.body.WriteString("\n")
+	return true
+}
+
+func (s *smtpTestSession) handleCommand(line string) bool {
+	upper := strings.ToUpper(line)
+	switch {
+	case strings.HasPrefix(upper, "EHLO"), strings.HasPrefix(upper, "HELO"):
+		return s.writeLine("250-runwisp-test") && s.writeLine("250 SMTPUTF8")
+	case strings.HasPrefix(upper, "MAIL FROM"),
+		strings.HasPrefix(upper, "RCPT TO"),
+		upper == "NOOP",
+		upper == "RSET":
+		return s.writeLine("250 2.1.0 Ok")
+	case upper == "DATA":
+		if !s.writeLine("354 End data with <CR><LF>.<CR><LF>") {
+			return false
+		}
+		s.inData = true
+		return true
+	case upper == "QUIT":
+		_ = s.writeLine("221 2.0.0 Bye")
+		return false
+	default:
+		return s.writeLine("250 Ok")
+	}
+}
+
+func (s *testSMTPServer) WaitForMessage(t *testing.T, timeout time.Duration) string {
+	t.Helper()
+	select {
+	case b := <-s.bodies:
+		return b
+	case <-time.After(timeout):
+		t.Fatalf("SMTP test server never received a DATA message within %s", timeout)
+		return ""
+	}
+}
+
+func (s *testSMTPServer) ExpectNoMessage(t *testing.T, window time.Duration) {
+	t.Helper()
+	select {
+	case b := <-s.bodies:
+		t.Fatalf("SMTP test server received an unexpected second message: %q", b)
+	case <-time.After(window):
+	}
 }
 
 // ---------- helpers ----------

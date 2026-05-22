@@ -12,6 +12,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel/slack"
+	"github.com/runwisp/runwisp/internal/notify/channel/smtp"
 	"github.com/runwisp/runwisp/internal/notify/channel/telegram"
 	"github.com/runwisp/runwisp/internal/notify/render"
 )
@@ -27,6 +28,20 @@ type NotifierSpec struct {
 	BotToken     string // telegram
 	ChatID       string // telegram
 	ParseMode    string // telegram
+
+	// SMTP-specific
+	Host          string
+	Port          int
+	TLSMode       string
+	TLSSkipVerify bool
+	Username      string
+	Password      string
+	From          string
+	ReplyTo       string
+	Recipients    []string
+	CC            []string
+	BCC           []string
+
 	TemplatePath string // optional override
 	// Transport overrides the channel's HTTP transport. Nil means use defaults.
 	// Daemon-level glue uses this to apply a global backoff override.
@@ -74,6 +89,30 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 			ParseMode: spec.ParseMode,
 			Renderer:  r,
 			Transport: spec.Transport,
+		})
+	case "smtp":
+		body, err := render.LoadTemplate("smtp", spec.TemplatePath)
+		if err != nil {
+			return nil, err
+		}
+		r, err := render.NewTemplateRendererWithContext("smtp:"+spec.ID, body, "text/html", render.DefaultTitle, spec.RenderContext)
+		if err != nil {
+			return nil, err
+		}
+		return smtp.New(smtp.Config{
+			ID:            spec.ID,
+			Host:          spec.Host,
+			Port:          spec.Port,
+			TLSMode:       spec.TLSMode,
+			TLSSkipVerify: spec.TLSSkipVerify,
+			Username:      spec.Username,
+			Password:      spec.Password,
+			From:          spec.From,
+			ReplyTo:       spec.ReplyTo,
+			Recipients:    spec.Recipients,
+			CC:            spec.CC,
+			BCC:           spec.BCC,
+			Renderer:      r,
 		})
 	default:
 		return nil, fmt.Errorf("unknown notifier type %q (id=%s)", spec.Type, spec.ID)

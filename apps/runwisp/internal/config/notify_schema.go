@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"net/mail"
 	"path"
 	"slices"
 	"strings"
@@ -13,7 +14,12 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/kinds"
 )
 
-var allowedNotifierTypes = []string{"slack", "telegram"}
+var allowedNotifierTypes = []string{"slack", "telegram", "smtp"}
+
+// allowedSMTPTLSModes enumerates the values accepted for [[notifier]].tls. An
+// empty string falls back to a port-derived default (465 → implicit; everything
+// else → starttls).
+var allowedSMTPTLSModes = []string{"starttls", "implicit", "none"}
 
 const (
 	inappNotifierID       = "inapp"
@@ -133,6 +139,20 @@ func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
 			ChatID:         n.ChatID,
 			ParseMode:      n.ParseMode,
 			TemplatePath:   n.TemplatePath,
+
+			Host:          n.Host,
+			Port:          n.Port,
+			TLSMode:       n.TLS,
+			TLSSkipVerify: n.TLSSkipVerify,
+			Username:      n.Username,
+			Password:      n.Password,
+			PasswordEnv:   n.PasswordEnv,
+			PasswordFile:  n.PasswordFile,
+			From:          n.From,
+			ReplyTo:       n.ReplyTo,
+			Recipients:    append([]string(nil), n.To...),
+			CC:            append([]string(nil), n.CC...),
+			BCC:           append([]string(nil), n.BCC...),
 		}
 		if spec.ID == "" {
 			return fmt.Errorf("notifier #%d: id is required", i)
@@ -212,8 +232,8 @@ func resolveInlineToken(tok string, parentByID map[string]*NotifierSpec, seen ma
 }
 
 // cloneNotifierWithOverride copies a parent NotifierSpec, assigns a synthetic
-// ID, and replaces the type-specific target (Slack channel or Telegram
-// chat_id) with the override. Returns an error for types that have no
+// ID, and replaces the type-specific target (Slack channel, Telegram chat_id,
+// SMTP recipient) with the override. Returns an error for types that have no
 // overridable target.
 func cloneNotifierWithOverride(parent NotifierSpec, syntheticID, override string) (NotifierSpec, error) {
 	spec := parent
@@ -226,6 +246,13 @@ func cloneNotifierWithOverride(parent NotifierSpec, syntheticID, override string
 		spec.SlackChannel = override
 	case "telegram":
 		spec.ChatID = override
+	case "smtp":
+		if _, err := mail.ParseAddress(override); err != nil {
+			return NotifierSpec{}, fmt.Errorf("notify token %q: smtp recipient override %q is not a valid email address: %w", syntheticID, override, err)
+		}
+		spec.Recipients = []string{override}
+		spec.CC = nil
+		spec.BCC = nil
 	default:
 		return NotifierSpec{}, fmt.Errorf("notify token %q: notifier type %q does not support inline target overrides", syntheticID, parent.Type)
 	}
@@ -380,6 +407,8 @@ func validateNotifierByType(spec *NotifierSpec) error {
 		return validateSlackNotifier(spec)
 	case "telegram":
 		return validateTelegramNotifier(spec)
+	case "smtp":
+		return validateSMTPNotifier(spec)
 	}
 	return nil
 }
@@ -392,6 +421,84 @@ func validateSlackNotifier(spec *NotifierSpec) error {
 	ch := strings.TrimSpace(spec.SlackChannel)
 	if ch != "" && ch[0] != '#' && ch[0] != '@' {
 		return fmt.Errorf("notifier %q: channel must start with # or @ (got %q)", spec.ID, ch)
+	}
+	return nil
+}
+
+func validateSMTPNotifier(spec *NotifierSpec) error {
+	if strings.TrimSpace(spec.Host) == "" {
+		return fmt.Errorf("notifier %q: host is required for type=smtp", spec.ID)
+	}
+	if spec.Port < 0 || spec.Port > 65535 {
+		return fmt.Errorf("notifier %q: port %d is out of range", spec.ID, spec.Port)
+	}
+	if err := requireOneOf(fmt.Sprintf("notifier %q tls", spec.ID),
+		spec.TLSMode, allowedSMTPTLSModes, true); err != nil {
+		return err
+	}
+	if err := validateSMTPAddresses(spec); err != nil {
+		return err
+	}
+	return validateSMTPAuth(spec)
+}
+
+func validateSMTPAddresses(spec *NotifierSpec) error {
+	from := strings.TrimSpace(spec.From)
+	if from == "" {
+		return fmt.Errorf("notifier %q: from is required for type=smtp", spec.ID)
+	}
+	if _, err := mail.ParseAddress(from); err != nil {
+		return fmt.Errorf("notifier %q: from %q is not a valid email address: %w", spec.ID, from, err)
+	}
+	if rt := strings.TrimSpace(spec.ReplyTo); rt != "" {
+		if _, err := mail.ParseAddress(rt); err != nil {
+			return fmt.Errorf("notifier %q: reply_to %q is not a valid email address: %w", spec.ID, rt, err)
+		}
+	}
+	if len(spec.Recipients) == 0 {
+		return fmt.Errorf("notifier %q: to is required for type=smtp (at least one recipient)", spec.ID)
+	}
+	groups := []struct {
+		label string
+		addrs []string
+	}{
+		{"to", spec.Recipients},
+		{"cc", spec.CC},
+		{"bcc", spec.BCC},
+	}
+	for _, g := range groups {
+		if err := validateAddressList(spec.ID, g.label, g.addrs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAddressList(notifierID, label string, addrs []string) error {
+	for _, a := range addrs {
+		if _, err := mail.ParseAddress(a); err != nil {
+			return fmt.Errorf("notifier %q: %s address %q is not valid: %w", notifierID, label, a, err)
+		}
+	}
+	return nil
+}
+
+func validateSMTPAuth(spec *NotifierSpec) error {
+	hasUser := strings.TrimSpace(spec.Username) != ""
+	hasAnyPasswordSource := strings.TrimSpace(spec.Password) != "" ||
+		strings.TrimSpace(spec.PasswordEnv) != "" ||
+		strings.TrimSpace(spec.PasswordFile) != ""
+	if hasAnyPasswordSource {
+		if err := requireOneSecretSource(spec.ID, "password",
+			spec.Password, spec.PasswordEnv, spec.PasswordFile); err != nil {
+			return err
+		}
+	}
+	if hasUser != hasAnyPasswordSource {
+		return fmt.Errorf("notifier %q: username and a password source must be set together (or both omitted for auth-less relays)", spec.ID)
+	}
+	if hasAnyPasswordSource && strings.TrimSpace(spec.TLSMode) == "none" {
+		return fmt.Errorf("notifier %q: tls=\"none\" is not allowed with credentials — refuse to send PLAIN auth over cleartext", spec.ID)
 	}
 	return nil
 }

@@ -87,6 +87,10 @@ export default defineConfig({
                                     label: "Telegram",
                                     slug: "notifications/providers/telegram",
                                 },
+                                {
+                                    label: "Email (SMTP)",
+                                    slug: "notifications/providers/smtp",
+                                },
                             ],
                         },
                         { label: "Per-task notifications", slug: "notifications/per-task" },
