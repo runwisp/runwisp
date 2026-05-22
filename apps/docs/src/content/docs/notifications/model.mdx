@@ -54,7 +54,8 @@ notify_on_failure = ["slack-ops"]
 
 That is a working setup. The same shape works for every provider — see the
 **Providers** section: [Slack](/notifications/providers/slack/) ·
-[Telegram](/notifications/providers/telegram/).
+[Telegram](/notifications/providers/telegram/) ·
+[Email (SMTP)](/notifications/providers/smtp/).
 
 ## `[[notifier]]` — declaring a channel
 
@@ -263,5 +264,10 @@ notify = ["tg-oncall"]
         title="Telegram"
         href="/notifications/providers/telegram/"
         description="Declare an outbound Telegram channel."
+    />
+    <LinkCard
+        title="Email (SMTP)"
+        href="/notifications/providers/smtp/"
+        description="Send failure alerts to any inbox via any SMTP server."
     />
 </CardGrid>

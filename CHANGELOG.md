@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Email (SMTP) notifications.** A new `type = "smtp"` notifier sends alerts to any inbox through any SMTP server — Gmail, Amazon SES, Mailgun, Postmark, SendGrid, or a self-hosted relay. STARTTLS and implicit TLS (port 465) are both supported; auth is optional for local relays. Inline recipient overrides — `notify_on_failure = ["email-ops:alerts@example.com"]` — reuse one credential set across many tasks. Messages ship as `multipart/alternative` so rich email clients render the HTML layout while terminal MUAs see a plain-text fallback. See [Notifications / Email](https://docs.runwisp.com/notifications/providers/smtp/).
+
 - **`runwisp service install` wires up systemd or launchd autostart.** One command installs a user-level service unit (systemd on Linux/WSL, LaunchAgent on macOS) so the daemon comes back up after reboot. Companions: `service uninstall`, `service status`, and `--print` to emit the unit for Ansible / Nix. WSL prints a `Register-ScheduledTask` PowerShell recipe alongside the systemd path.
 
 - **Per-task environment variables via `env` and `env_file`.** Set `env = { PORT = "8080" }` on a `[tasks.*]` / `[services.*]` (or `[defaults]`) table to overlay inline values; `env_file = "secrets.env"` reads dotenv from disk. Task-level entries override `[defaults]` on key collision. Values loaded from `env_file` stay on the daemon — the API and Web UI only show the file path.

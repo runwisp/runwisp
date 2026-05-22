@@ -35,28 +35,9 @@ type ResolvedNotify struct {
 func Resolve(cfg config.NotifyConfig, dataDir string, renderCtx render.TemplateContext) (ResolvedNotify, error) {
 	specs := make([]channel.NotifierSpec, 0, len(cfg.Notifiers))
 	for _, n := range cfg.Notifiers {
-		spec := channel.NotifierSpec{
-			ID:            n.ID,
-			Type:          n.Type,
-			ParseMode:     n.ParseMode,
-			ChatID:        n.ChatID,
-			TemplatePath:  n.TemplatePath,
-			RenderContext: renderCtx,
-		}
-		switch n.Type {
-		case "slack":
-			url, err := resolveSecret(n.WebhookURL, n.WebhookURLEnv, n.WebhookURLFile, dataDir)
-			if err != nil {
-				return ResolvedNotify{}, fmt.Errorf("notifier %q webhook_url: %w", n.ID, err)
-			}
-			spec.WebhookURL = url
-			spec.SlackChannel = n.SlackChannel
-		case "telegram":
-			token, err := resolveSecret(n.BotToken, n.BotTokenEnv, n.BotTokenFile, dataDir)
-			if err != nil {
-				return ResolvedNotify{}, fmt.Errorf("notifier %q bot_token: %w", n.ID, err)
-			}
-			spec.BotToken = token
+		spec, err := resolveNotifier(n, dataDir, renderCtx)
+		if err != nil {
+			return ResolvedNotify{}, err
 		}
 		specs = append(specs, spec)
 	}
@@ -74,6 +55,62 @@ func Resolve(cfg config.NotifyConfig, dataDir string, renderCtx render.TemplateC
 		Notifiers: specs,
 		Rules:     rules,
 	}, nil
+}
+
+func resolveNotifier(n config.NotifierSpec, dataDir string, renderCtx render.TemplateContext) (channel.NotifierSpec, error) {
+	spec := channel.NotifierSpec{
+		ID:            n.ID,
+		Type:          n.Type,
+		ParseMode:     n.ParseMode,
+		ChatID:        n.ChatID,
+		TemplatePath:  n.TemplatePath,
+		RenderContext: renderCtx,
+	}
+	switch n.Type {
+	case "slack":
+		url, err := resolveSecret(n.WebhookURL, n.WebhookURLEnv, n.WebhookURLFile, dataDir)
+		if err != nil {
+			return channel.NotifierSpec{}, fmt.Errorf("notifier %q webhook_url: %w", n.ID, err)
+		}
+		spec.WebhookURL = url
+		spec.SlackChannel = n.SlackChannel
+	case "telegram":
+		token, err := resolveSecret(n.BotToken, n.BotTokenEnv, n.BotTokenFile, dataDir)
+		if err != nil {
+			return channel.NotifierSpec{}, fmt.Errorf("notifier %q bot_token: %w", n.ID, err)
+		}
+		spec.BotToken = token
+	case "smtp":
+		if err := fillSMTPSpec(&spec, n, dataDir); err != nil {
+			return channel.NotifierSpec{}, err
+		}
+	}
+	return spec, nil
+}
+
+func fillSMTPSpec(spec *channel.NotifierSpec, n config.NotifierSpec, dataDir string) error {
+	spec.Host = n.Host
+	spec.Port = n.Port
+	spec.TLSMode = n.TLSMode
+	spec.TLSSkipVerify = n.TLSSkipVerify
+	spec.Username = n.Username
+	spec.From = n.From
+	spec.ReplyTo = n.ReplyTo
+	spec.Recipients = append([]string(nil), n.Recipients...)
+	spec.CC = append([]string(nil), n.CC...)
+	spec.BCC = append([]string(nil), n.BCC...)
+	if strings.TrimSpace(n.Password) == "" &&
+		strings.TrimSpace(n.PasswordEnv) == "" &&
+		strings.TrimSpace(n.PasswordFile) == "" {
+		// Auth-less local relay (e.g. Postfix on 127.0.0.1:25); leave empty.
+		return nil
+	}
+	pw, err := resolveSecret(n.Password, n.PasswordEnv, n.PasswordFile, dataDir)
+	if err != nil {
+		return fmt.Errorf("notifier %q password: %w", n.ID, err)
+	}
+	spec.Password = pw
+	return nil
 }
 
 // resolveSecret applies the standard env > file > inline precedence; exactly
