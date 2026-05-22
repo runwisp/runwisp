@@ -4,6 +4,7 @@
 package cloud
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -171,7 +172,7 @@ func TestHandleLogReplayRequest_WithValidRun(t *testing.T) {
 	}}
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
-	chunk, err := h.HandleLogReplayRequest(protocol.LogReplayRequestMessage{
+	chunk, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{
 		ID:          "req-1",
 		ExecutionID: "exec-1",
 	})

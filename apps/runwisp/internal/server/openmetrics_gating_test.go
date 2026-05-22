@@ -20,6 +20,7 @@ import (
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,7 +81,7 @@ func TestMetricsRouter_DisabledByDefaultExposesNoMetrics(t *testing.T) {
 // the same chi mux as /health.
 func TestMetricsRouter_EnabledMountsOnMainRouter(t *testing.T) {
 	s, repo := setupServerForMetrics(t, true, "")
-	repo.On("GetRunSummary").Return(&model.RunSummary{Total: 0}, nil)
+	repo.On("GetRunSummary", mock.Anything).Return(&model.RunSummary{Total: 0}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	w := httptest.NewRecorder()
@@ -117,7 +118,7 @@ func TestMetricsServer_DedicatedListenerServesAndShutsDown(t *testing.T) {
 	metricsPort := pickFreePort(t)
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	s, repo := setupServerForMetrics(t, true, metricsAddr)
-	repo.On("GetRunSummary").Return(&model.RunSummary{Total: 0}, nil)
+	repo.On("GetRunSummary", mock.Anything).Return(&model.RunSummary{Total: 0}, nil)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.Start() }()

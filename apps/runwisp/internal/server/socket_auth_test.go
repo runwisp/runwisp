@@ -25,6 +25,7 @@ import (
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -81,8 +82,8 @@ func TestSocketServer_EndToEnd(t *testing.T) {
 	s, repo, _, _ := setupServerWithSocket(t)
 
 	runs := []model.Run{}
-	repo.On("QueryRuns", "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
-	repo.On("CountRunsFiltered", "", "", "").Return(int64(0), nil)
+	repo.On("QueryRuns", mock.Anything, "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
+	repo.On("CountRunsFiltered", mock.Anything, "", "", "").Return(int64(0), nil)
 
 	// --- TCP path: no JWT, no local flag → 401 ---
 	tcpReq := httptest.NewRequest("GET", "/api/runs", nil)

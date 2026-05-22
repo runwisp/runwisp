@@ -75,7 +75,7 @@ func runDaemon(mode daemonMode) error {
 		return err
 	}
 
-	cfg, err := loadDaemonConfig(db, mode)
+	cfg, err := loadDaemonConfig(context.Background(), db, mode)
 	if err != nil {
 		_ = db.Close()
 		return err
@@ -89,7 +89,7 @@ func runDaemon(mode daemonMode) error {
 
 	logSecurityWarnings(cfg)
 
-	svc, err := initDaemonServices(cfg, db, mode)
+	svc, err := initDaemonServices(context.Background(), cfg, db, mode)
 	if err != nil {
 		return err
 	}

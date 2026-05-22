@@ -58,12 +58,12 @@ func (cleaner *RetentionCleaner) run(ctx context.Context) {
 	ticker := time.NewTicker(cleaner.interval)
 	defer ticker.Stop()
 
-	cleaner.cleanOldRuns()
+	cleaner.cleanOldRuns(ctx)
 
 	for {
 		select {
 		case <-ticker.C:
-			cleaner.cleanOldRuns()
+			cleaner.cleanOldRuns(ctx)
 		case <-ctx.Done():
 			slog.Debug("Stopping retention cleaner")
 			return
@@ -71,7 +71,7 @@ func (cleaner *RetentionCleaner) run(ctx context.Context) {
 	}
 }
 
-func (cleaner *RetentionCleaner) cleanOldRuns() {
+func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 	slog.Debug("Running retention cleanup")
 
 	totalDeleted := 0
@@ -82,7 +82,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns() {
 			continue
 		}
 
-		deletedRuns, err := cleaner.db.DeleteOldRuns(task)
+		deletedRuns, err := cleaner.db.DeleteOldRuns(ctx, task)
 		if err != nil {
 			slog.Error("Failed to clean runs", "task", task.Name, "err", err)
 			continue
@@ -104,7 +104,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns() {
 		slog.Info("Retention cleanup complete", "deleted", totalDeleted)
 	}
 
-	cleaner.enforceMaxTotalSize()
+	cleaner.enforceMaxTotalSize(ctx)
 
 	// Return freed pages to the OS so RSS doesn't stay at the high-water mark
 	// after a large cleanup batch.
@@ -113,7 +113,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns() {
 
 // enforceMaxTotalSize deletes the oldest completed runs when the log directory
 // exceeds the configured storage cap.
-func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
+func (cleaner *RetentionCleaner) enforceMaxTotalSize(ctx context.Context) {
 	if cleaner.maxTotalSize <= 0 || cleaner.logDir == "" {
 		return
 	}
@@ -130,12 +130,12 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 	deleted := 0
 	offset := 0
 	for totalSize > cleaner.maxTotalSize {
-		runs, err := cleaner.db.QueryRuns("", 100, offset, "", storage.SortColumnCreatedAt, storage.SortAsc, "")
+		runs, err := cleaner.db.QueryRuns(ctx, "", 100, offset, "", storage.SortColumnCreatedAt, storage.SortAsc, "")
 		if err != nil || len(runs) == 0 {
 			break
 		}
 
-		n := cleaner.deleteRunBatch(runs, &totalSize)
+		n := cleaner.deleteRunBatch(ctx, runs, &totalSize)
 		deleted += n
 
 		// No terminal runs found in this batch — advance past them
@@ -151,7 +151,7 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 
 // deleteRunBatch deletes terminal runs from runs until totalSize drops to or
 // below maxTotalSize. Updates *totalSize in place. Returns the number deleted.
-func (cleaner *RetentionCleaner) deleteRunBatch(runs []model.Run, totalSize *int64) int {
+func (cleaner *RetentionCleaner) deleteRunBatch(ctx context.Context, runs []model.Run, totalSize *int64) int {
 	deleted := 0
 	for _, run := range runs {
 		if !run.Status.IsTerminal() {
@@ -166,7 +166,7 @@ func (cleaner *RetentionCleaner) deleteRunBatch(runs []model.Run, totalSize *int
 		}
 		logutil.RemoveLogFiles(logPath)
 		logutil.RemoveEmptyParents(logPath, cleaner.logDir)
-		if err := cleaner.db.DeleteRun(run.ID); err != nil {
+		if err := cleaner.db.DeleteRun(ctx, run.ID); err != nil {
 			slog.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
 			continue
 		}

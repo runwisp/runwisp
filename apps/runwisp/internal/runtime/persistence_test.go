@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func TestPersistenceCoordinatorPersistNew(t *testing.T) {
 
 	var called bool
 	var isNewArg bool
-	pc.hook = func(run *model.Run, isNew bool) {
+	pc.hook = func(_ context.Context, run *model.Run, isNew bool) {
 		called = true
 		isNewArg = isNew
 	}
@@ -36,7 +37,7 @@ func TestPersistenceCoordinatorPersistExisting(t *testing.T) {
 	defer pc.Shutdown()
 
 	var isNewArg bool
-	pc.hook = func(run *model.Run, isNew bool) {
+	pc.hook = func(_ context.Context, run *model.Run, isNew bool) {
 		isNewArg = isNew
 	}
 
@@ -60,7 +61,7 @@ func TestPersistenceCoordinatorShutdownDrains(t *testing.T) {
 	pc := NewPersistenceCoordinator(100)
 
 	var count int32
-	pc.hook = func(run *model.Run, isNew bool) {
+	pc.hook = func(_ context.Context, run *model.Run, isNew bool) {
 		atomic.AddInt32(&count, 1)
 	}
 
@@ -74,7 +75,7 @@ func TestPersistenceCoordinatorShutdownDrains(t *testing.T) {
 
 func TestPersistenceCoordinatorAfterShutdown(t *testing.T) {
 	pc := NewPersistenceCoordinator(10)
-	pc.hook = func(run *model.Run, isNew bool) {}
+	pc.hook = func(_ context.Context, run *model.Run, isNew bool) {}
 	pc.Shutdown()
 
 	assert.NotPanics(t, func() {

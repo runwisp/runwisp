@@ -26,60 +26,60 @@ type mockNotificationRepository struct {
 	mock.Mock
 }
 
-func (m *mockNotificationRepository) UpsertByFingerprint(n *storage.Notification, window time.Duration, ringSize int) (bool, error) {
-	args := m.Called(n, window, ringSize)
+func (m *mockNotificationRepository) UpsertByFingerprint(ctx context.Context, n *storage.Notification, window time.Duration, ringSize int) (bool, error) {
+	args := m.Called(ctx, n, window, ringSize)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *mockNotificationRepository) ListNotifications(limit int, before string) ([]storage.Notification, error) {
-	args := m.Called(limit, before)
+func (m *mockNotificationRepository) ListNotifications(ctx context.Context, limit int, before string) ([]storage.Notification, error) {
+	args := m.Called(ctx, limit, before)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]storage.Notification), args.Error(1)
 }
 
-func (m *mockNotificationRepository) GetNotificationByID(id string) (*storage.Notification, error) {
-	args := m.MethodCalled("GetNotificationByID", id)
+func (m *mockNotificationRepository) GetNotificationByID(ctx context.Context, id string) (*storage.Notification, error) {
+	args := m.MethodCalled("GetNotificationByID", ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*storage.Notification), args.Error(1)
 }
 
-func (m *mockNotificationRepository) PruneNotificationsByCount(keep int) (int64, error) {
-	args := m.MethodCalled("PruneNotificationsByCount", keep)
+func (m *mockNotificationRepository) PruneNotificationsByCount(ctx context.Context, keep int) (int64, error) {
+	args := m.MethodCalled("PruneNotificationsByCount", ctx, keep)
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *mockNotificationRepository) PruneNotificationsByAge(olderThan time.Duration) (int64, error) {
-	args := m.MethodCalled("PruneNotificationsByAge", olderThan)
+func (m *mockNotificationRepository) PruneNotificationsByAge(ctx context.Context, olderThan time.Duration) (int64, error) {
+	args := m.MethodCalled("PruneNotificationsByAge", ctx, olderThan)
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *mockNotificationRepository) CountUnreadNotifications() (int64, error) {
-	args := m.MethodCalled("CountUnreadNotifications")
+func (m *mockNotificationRepository) CountUnreadNotifications(ctx context.Context) (int64, error) {
+	args := m.MethodCalled("CountUnreadNotifications", ctx)
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *mockNotificationRepository) MarkNotificationRead(id string, at time.Time) (*storage.Notification, error) {
-	args := m.MethodCalled("MarkNotificationRead", id, at)
+func (m *mockNotificationRepository) MarkNotificationRead(ctx context.Context, id string, at time.Time) (*storage.Notification, error) {
+	args := m.MethodCalled("MarkNotificationRead", ctx, id, at)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*storage.Notification), args.Error(1)
 }
 
-func (m *mockNotificationRepository) MarkNotificationUnread(id string) (*storage.Notification, error) {
-	args := m.MethodCalled("MarkNotificationUnread", id)
+func (m *mockNotificationRepository) MarkNotificationUnread(ctx context.Context, id string) (*storage.Notification, error) {
+	args := m.MethodCalled("MarkNotificationUnread", ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*storage.Notification), args.Error(1)
 }
 
-func (m *mockNotificationRepository) MarkAllNotificationsRead(at time.Time) error {
-	args := m.Called(at)
+func (m *mockNotificationRepository) MarkAllNotificationsRead(ctx context.Context, at time.Time) error {
+	args := m.Called(ctx, at)
 	return args.Error(0)
 }
 
@@ -111,7 +111,7 @@ func TestHumaMarkAllNotificationsRead_Success(t *testing.T) {
 	repo := new(mockNotificationRepository)
 	hub := new(mockNotificationHub)
 
-	repo.On("MarkAllNotificationsRead", mock.AnythingOfType("time.Time")).Return(nil)
+	repo.On("MarkAllNotificationsRead", mock.Anything, mock.AnythingOfType("time.Time")).Return(nil)
 	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
 		return u.Type == inapp.UpdateTypeUnreadCountChanged && u.UnreadCount == 0
 	})).Return()
@@ -131,7 +131,7 @@ func TestHumaMarkAllNotificationsRead_Success(t *testing.T) {
 func TestHumaMarkAllNotificationsRead_RepoError(t *testing.T) {
 	repo := new(mockNotificationRepository)
 
-	repo.On("MarkAllNotificationsRead", mock.AnythingOfType("time.Time")).Return(errors.New("db error"))
+	repo.On("MarkAllNotificationsRead", mock.Anything, mock.AnythingOfType("time.Time")).Return(errors.New("db error"))
 
 	s := notificationServer(t, repo, nil)
 
@@ -151,8 +151,8 @@ func TestHumaMarkNotificationRead_Success(t *testing.T) {
 	hub := new(mockNotificationHub)
 
 	n := &storage.Notification{ID: "01JT000000000000000000001", Kind: "run.failed"}
-	repo.On("MarkNotificationRead", "01JT000000000000000000001", mock.AnythingOfType("time.Time")).Return(n, nil)
-	repo.On("CountUnreadNotifications").Return(int64(3), nil)
+	repo.On("MarkNotificationRead", mock.Anything, "01JT000000000000000000001", mock.AnythingOfType("time.Time")).Return(n, nil)
+	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(3), nil)
 	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
 		return u.Type == inapp.UpdateTypeUpdated && u.Notification.ID == n.ID && u.UnreadCount == 3
 	})).Return()
@@ -172,7 +172,7 @@ func TestHumaMarkNotificationRead_Success(t *testing.T) {
 func TestHumaMarkNotificationRead_NotFound(t *testing.T) {
 	repo := new(mockNotificationRepository)
 
-	repo.On("MarkNotificationRead", "01JT000000000000000000001", mock.AnythingOfType("time.Time")).
+	repo.On("MarkNotificationRead", mock.Anything, "01JT000000000000000000001", mock.AnythingOfType("time.Time")).
 		Return(nil, storage.ErrNotFound)
 
 	s := notificationServer(t, repo, nil)
@@ -189,7 +189,7 @@ func TestHumaMarkNotificationRead_NotFound(t *testing.T) {
 func TestHumaMarkNotificationRead_RepoError(t *testing.T) {
 	repo := new(mockNotificationRepository)
 
-	repo.On("MarkNotificationRead", "01JT000000000000000000001", mock.AnythingOfType("time.Time")).
+	repo.On("MarkNotificationRead", mock.Anything, "01JT000000000000000000001", mock.AnythingOfType("time.Time")).
 		Return(nil, errors.New("db error"))
 
 	s := notificationServer(t, repo, nil)
@@ -210,8 +210,8 @@ func TestHumaMarkNotificationUnread_Success(t *testing.T) {
 	hub := new(mockNotificationHub)
 
 	n := &storage.Notification{ID: "01JT000000000000000000002", Kind: "run.failed"}
-	repo.On("MarkNotificationUnread", "01JT000000000000000000002").Return(n, nil)
-	repo.On("CountUnreadNotifications").Return(int64(5), nil)
+	repo.On("MarkNotificationUnread", mock.Anything, "01JT000000000000000000002").Return(n, nil)
+	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(5), nil)
 	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
 		return u.Type == inapp.UpdateTypeUpdated && u.Notification.ID == n.ID && u.UnreadCount == 5
 	})).Return()
@@ -231,7 +231,7 @@ func TestHumaMarkNotificationUnread_Success(t *testing.T) {
 func TestHumaMarkNotificationUnread_NotFound(t *testing.T) {
 	repo := new(mockNotificationRepository)
 
-	repo.On("MarkNotificationUnread", "01JT000000000000000000002").Return(nil, storage.ErrNotFound)
+	repo.On("MarkNotificationUnread", mock.Anything, "01JT000000000000000000002").Return(nil, storage.ErrNotFound)
 
 	s := notificationServer(t, repo, nil)
 
@@ -250,7 +250,7 @@ func TestPublishNotificationUpdate_NilHub_NoPanic(t *testing.T) {
 	repo := new(mockNotificationRepository)
 	s := notificationServer(t, repo, nil)
 	// Should not panic when hub is nil.
-	s.publishNotificationUpdate(&storage.Notification{ID: "x"})
+	s.publishNotificationUpdate(context.Background(), &storage.Notification{ID: "x"})
 }
 
 func TestPublishNotificationUpdate_NilNotification_NoPanic(t *testing.T) {
@@ -258,7 +258,7 @@ func TestPublishNotificationUpdate_NilNotification_NoPanic(t *testing.T) {
 	repo := new(mockNotificationRepository)
 	s := notificationServer(t, repo, hub)
 	// Should not panic when notification is nil.
-	s.publishNotificationUpdate(nil)
+	s.publishNotificationUpdate(context.Background(), nil)
 	hub.AssertNotCalled(t, "Publish")
 }
 
@@ -266,13 +266,13 @@ func TestPublishNotificationUpdate_CountQueryFails_ShipsNegativeCount(t *testing
 	repo := new(mockNotificationRepository)
 	hub := new(mockNotificationHub)
 
-	repo.On("CountUnreadNotifications").Return(int64(0), errors.New("db error"))
+	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(0), errors.New("db error"))
 	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
 		return u.UnreadCount == -1
 	})).Return()
 
 	s := notificationServer(t, repo, hub)
-	s.publishNotificationUpdate(&storage.Notification{ID: "y"})
+	s.publishNotificationUpdate(context.Background(), &storage.Notification{ID: "y"})
 
 	repo.AssertExpectations(t)
 	hub.AssertExpectations(t)
@@ -369,7 +369,7 @@ func TestListNotifications_Success(t *testing.T) {
 	rows := []storage.Notification{
 		{ID: "01JT000000000000000000001", Kind: "run.failed", CreatedAt: now, LastOccurredAt: now, Occurrences: []time.Time{now}},
 	}
-	repo.On("ListNotifications", 50, "").Return(rows, nil)
+	repo.On("ListNotifications", mock.Anything, 50, "").Return(rows, nil)
 
 	s := notificationServer(t, repo, nil)
 
@@ -388,7 +388,7 @@ func TestListNotifications_Success(t *testing.T) {
 
 func TestListNotifications_RepoError(t *testing.T) {
 	repo := new(mockNotificationRepository)
-	repo.On("ListNotifications", 50, "").Return(nil, errors.New("db error"))
+	repo.On("ListNotifications", mock.Anything, 50, "").Return(nil, errors.New("db error"))
 
 	s := notificationServer(t, repo, nil)
 

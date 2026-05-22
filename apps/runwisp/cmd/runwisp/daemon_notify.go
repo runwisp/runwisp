@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
@@ -180,20 +181,20 @@ func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, 
 	return channels, nil
 }
 
-func buildRetentionFn(repo storage.NotificationRepository, cfg config.NotifyConfig, logger *slog.Logger) func() {
+func buildRetentionFn(repo storage.NotificationRepository, cfg config.NotifyConfig, logger *slog.Logger) func(context.Context) {
 	keep := cfg.HistoryKeep
 	age := cfg.HistoryKeepFor
 	if keep <= 0 && age <= 0 {
 		return nil
 	}
-	return func() {
+	return func(ctx context.Context) {
 		if keep > 0 {
-			if _, err := repo.PruneNotificationsByCount(keep); err != nil {
+			if _, err := repo.PruneNotificationsByCount(ctx, keep); err != nil {
 				logger.Warn("notify retention: prune by count failed", "error", err)
 			}
 		}
 		if age > 0 {
-			if _, err := repo.PruneNotificationsByAge(age); err != nil {
+			if _, err := repo.PruneNotificationsByAge(ctx, age); err != nil {
 				logger.Warn("notify retention: prune by age failed", "error", err)
 			}
 		}

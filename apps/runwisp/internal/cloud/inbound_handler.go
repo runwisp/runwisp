@@ -4,6 +4,7 @@
 package cloud
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -55,7 +56,7 @@ func (h *InboundHandler) LogDir() string { return h.logDir }
 // Uploader returns the configured archival coordinator (may be nil).
 func (h *InboundHandler) Uploader() *LogUploader { return h.uploader }
 
-func (h *InboundHandler) HandleExecutionDispatch(message protocol.ExecutionDispatchMessage) error {
+func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message protocol.ExecutionDispatchMessage) error {
 	executionID := strings.TrimSpace(message.Execution.ExecutionID)
 	if executionID == "" {
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
@@ -65,7 +66,7 @@ func (h *InboundHandler) HandleExecutionDispatch(message protocol.ExecutionDispa
 	// after trigger but before persistence would lose the upload metadata
 	// and orphan the local log file with no way to archive it.
 	if h.uploader != nil {
-		if err := h.uploader.RegisterDispatch(executionID, message.Execution.LogUploadURL, message.Execution.LogPath); err != nil {
+		if err := h.uploader.RegisterDispatch(ctx, executionID, message.Execution.LogUploadURL, message.Execution.LogPath); err != nil {
 			slog.Warn("failed to register dispatch for log archival", "executionId", executionID, "err", err)
 		}
 	}
@@ -74,21 +75,21 @@ func (h *InboundHandler) HandleExecutionDispatch(message protocol.ExecutionDispa
 	if resolveErr != nil {
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(-1), nil, nowPtr()))
 		if h.uploader != nil {
-			h.uploader.Forget(executionID)
+			h.uploader.Forget(ctx, executionID)
 		}
 		return resolveErr
 	}
 
 	run, triggerErr := h.taskManager.TriggerCloudRun(taskName, executionID)
 	if triggerErr != nil {
-		return h.handleTriggerError(executionID, run, triggerErr)
+		return h.handleTriggerError(ctx, executionID, run, triggerErr)
 	}
 
 	slog.Info("execution dispatched", "executionId", executionID, "task", taskName)
 	return nil
 }
 
-func (h *InboundHandler) handleTriggerError(executionID string, run *model.Run, triggerErr error) error {
+func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID string, run *model.Run, triggerErr error) error {
 	if run != nil {
 		finishedAt := run.EndAt
 		if finishedAt == nil {
@@ -99,12 +100,12 @@ func (h *InboundHandler) handleTriggerError(executionID string, run *model.Run, 
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(-1), nil, nowPtr()))
 	}
 	if h.uploader != nil {
-		h.uploader.Forget(executionID)
+		h.uploader.Forget(ctx, executionID)
 	}
 	return &CloudError{Kind: CloudErrorKindConflict, Message: triggerErr.Error()}
 }
 
-func (h *InboundHandler) HandleExecutionStop(message protocol.ExecutionStopMessage) error {
+func (h *InboundHandler) HandleExecutionStop(ctx context.Context, message protocol.ExecutionStopMessage) error {
 	executionID := strings.TrimSpace(message.ExecutionID)
 	if executionID == "" {
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
@@ -114,7 +115,7 @@ func (h *InboundHandler) HandleExecutionStop(message protocol.ExecutionStopMessa
 		return nil
 	}
 
-	run, runErr := h.runRepo.GetRunByExternalExecutionID(executionID)
+	run, runErr := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
 	if runErr != nil {
 		if errors.Is(runErr, ErrNotFound) {
 			return &CloudError{Kind: CloudErrorKindConflict, Message: "execution not found"}
@@ -132,14 +133,14 @@ func (h *InboundHandler) HandleExecutionStop(message protocol.ExecutionStopMessa
 // HandleLogReplayRequest reads a bounded historical page of lines and returns
 // it as a single LogReplayChunkMessage. final is true when no more lines
 // remain beyond this page or the run has terminated.
-func (h *InboundHandler) HandleLogReplayRequest(message protocol.LogReplayRequestMessage) (protocol.LogReplayChunkMessage, error) {
+func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message protocol.LogReplayRequestMessage) (protocol.LogReplayChunkMessage, error) {
 	executionID := strings.TrimSpace(message.ExecutionID)
 	if executionID == "" {
 		return NewLogReplayChunkMessage(message.ID, message.ExecutionID, nil, true),
 			&CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
 	}
 
-	run, err := h.runRepo.GetRunByExternalExecutionID(executionID)
+	run, err := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return NewLogReplayChunkMessage(message.ID, executionID, nil, true), nil

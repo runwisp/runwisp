@@ -171,8 +171,8 @@ func (srv *Server) registerNotificationsRoutes(api huma.API) {
 
 // ---------- Handlers ----------
 
-func (srv *Server) humaListNotifications(_ context.Context, input *NotificationsListInput) (*NotificationsListOutput, error) {
-	rows, err := srv.notifyRepo.ListNotifications(input.Limit, input.Before)
+func (srv *Server) humaListNotifications(ctx context.Context, input *NotificationsListInput) (*NotificationsListOutput, error) {
+	rows, err := srv.notifyRepo.ListNotifications(ctx, input.Limit, input.Before)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list notifications")
 	}
@@ -188,34 +188,34 @@ func (srv *Server) humaListNotifications(_ context.Context, input *Notifications
 	return out, nil
 }
 
-func (srv *Server) humaMarkAllNotificationsRead(_ context.Context, _ *struct{}) (*struct{}, error) {
-	if err := srv.notifyRepo.MarkAllNotificationsRead(time.Now()); err != nil {
+func (srv *Server) humaMarkAllNotificationsRead(ctx context.Context, _ *struct{}) (*struct{}, error) {
+	if err := srv.notifyRepo.MarkAllNotificationsRead(ctx, time.Now()); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to mark notifications read")
 	}
 	srv.publishUnreadCountChanged(0)
 	return nil, nil
 }
 
-func (srv *Server) humaMarkNotificationRead(_ context.Context, input *NotificationByIDInput) (*struct{}, error) {
-	updated, err := srv.notifyRepo.MarkNotificationRead(input.ID, time.Now())
+func (srv *Server) humaMarkNotificationRead(ctx context.Context, input *NotificationByIDInput) (*struct{}, error) {
+	updated, err := srv.notifyRepo.MarkNotificationRead(ctx, input.ID, time.Now())
 	if err != nil {
 		return nil, mapDomainError(err, "Failed to mark notification read")
 	}
-	srv.publishNotificationUpdate(updated)
+	srv.publishNotificationUpdate(ctx, updated)
 	return nil, nil
 }
 
-func (srv *Server) humaMarkNotificationUnread(_ context.Context, input *NotificationByIDInput) (*struct{}, error) {
-	updated, err := srv.notifyRepo.MarkNotificationUnread(input.ID)
+func (srv *Server) humaMarkNotificationUnread(ctx context.Context, input *NotificationByIDInput) (*struct{}, error) {
+	updated, err := srv.notifyRepo.MarkNotificationUnread(ctx, input.ID)
 	if err != nil {
 		return nil, mapDomainError(err, "Failed to mark notification unread")
 	}
-	srv.publishNotificationUpdate(updated)
+	srv.publishNotificationUpdate(ctx, updated)
 	return nil, nil
 }
 
-func (srv *Server) humaUnreadNotificationCount(_ context.Context, _ *struct{}) (*NotificationUnreadOutput, error) {
-	count, err := srv.notifyRepo.CountUnreadNotifications()
+func (srv *Server) humaUnreadNotificationCount(ctx context.Context, _ *struct{}) (*NotificationUnreadOutput, error) {
+	count, err := srv.notifyRepo.CountUnreadNotifications(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to count notifications")
 	}
@@ -228,11 +228,11 @@ func (srv *Server) humaUnreadNotificationCount(_ context.Context, _ *struct{}) (
 // subscribers so other surfaces (Web UI, second TUI window) stay in sync.
 // The post-mutation unread count is queried once and shipped on the event so
 // clients never have to delta-track.
-func (srv *Server) publishNotificationUpdate(n *storage.Notification) {
+func (srv *Server) publishNotificationUpdate(ctx context.Context, n *storage.Notification) {
 	if srv.notifyHub == nil || n == nil {
 		return
 	}
-	count, err := srv.notifyRepo.CountUnreadNotifications()
+	count, err := srv.notifyRepo.CountUnreadNotifications(ctx)
 	if err != nil {
 		// Ship the row update even if the count query failed; -1 tells the
 		// client to ignore the count field rather than trust a stale value.

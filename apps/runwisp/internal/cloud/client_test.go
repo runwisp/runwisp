@@ -484,7 +484,7 @@ func TestHandleInboundPayloadPong(t *testing.T) {
 
 	session := &wsSession{outbound: make(chan []byte, 16)}
 	payload, _ := json.Marshal(protocol.PongMessage{Type: "pong"})
-	err := env.client.sessions.handleInboundPayload(session, payload)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
 	assert.NoError(t, err)
 }
 
@@ -496,7 +496,7 @@ func TestHandleInboundPayloadUnsupportedType(t *testing.T) {
 
 	session := &wsSession{outbound: make(chan []byte, 16)}
 	payload := []byte(`{"type":"unknown:message"}`)
-	err := env.client.sessions.handleInboundPayload(session, payload)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
 	assert.Error(t, err)
 }
 
@@ -507,7 +507,7 @@ func TestHandleInboundPayloadInvalidJSON(t *testing.T) {
 	defer env.close()
 
 	session := &wsSession{outbound: make(chan []byte, 16)}
-	err := env.client.sessions.handleInboundPayload(session, []byte("not json"))
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, []byte("not json"))
 	assert.Error(t, err)
 }
 

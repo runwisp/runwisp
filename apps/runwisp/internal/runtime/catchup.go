@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"context"
 	"time"
 
 	"log/slog"
@@ -22,7 +23,7 @@ type CatchUpResult struct {
 
 // RunMissedTickCatchUp inspects each scheduled task and triggers catch-up runs
 // for cron ticks that were missed while the daemon was down.
-func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task, runner TaskRunner, now time.Time) CatchUpResult {
+func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks map[string]*model.Task, runner TaskRunner, now time.Time) CatchUpResult {
 	var result CatchUpResult
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
@@ -30,7 +31,7 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 		if task.Cron == "" || task.CatchUp == model.MissedRunSkip {
 			continue
 		}
-		triggered, errors := catchupOneTask(db, parser, task, runner, now)
+		triggered, errors := catchupOneTask(ctx, db, parser, task, runner, now)
 		result.Triggered += triggered
 		result.Errors += errors
 	}
@@ -40,11 +41,11 @@ func RunMissedTickCatchUp(db storage.RunRepository, tasks map[string]*model.Task
 
 // catchupOneTask processes a single task's catch-up logic and returns the
 // number of runs triggered and errors encountered.
-func catchupOneTask(db storage.RunRepository, parser cron.Parser, task *model.Task, runner TaskRunner, now time.Time) (triggered, errors int) {
+func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.Parser, task *model.Task, runner TaskRunner, now time.Time) (triggered, errors int) {
 	// Persist first-seen timestamp; INSERT OR IGNORE is a no-op on every
 	// restart after the first. On first startup firstSeenAt == now, so
 	// countMissedTicks returns 0 — no spurious initial run.
-	if err := db.EnsureTaskRegistered(task.Name, now); err != nil {
+	if err := db.EnsureTaskRegistered(ctx, task.Name, now); err != nil {
 		slog.Warn("Failed to register task for catch-up", "task", task.Name, "err", err)
 		return 0, 1
 	}
@@ -55,7 +56,7 @@ func catchupOneTask(db storage.RunRepository, parser cron.Parser, task *model.Ta
 		return 0, 1
 	}
 
-	anchor, ok, errCount := resolveCatchupAnchor(db, task)
+	anchor, ok, errCount := resolveCatchupAnchor(ctx, db, task)
 	if !ok {
 		return 0, errCount
 	}
@@ -98,8 +99,8 @@ func catchupOneTask(db storage.RunRepository, parser cron.Parser, task *model.Ta
 // resolveCatchupAnchor returns the time to use as the catch-up anchor point
 // (the last run time, or the first-seen registration time if no runs exist).
 // Returns (anchor, true, 0) on success or (zero, false, 1) on error/skip.
-func resolveCatchupAnchor(db storage.RunRepository, task *model.Task) (time.Time, bool, int) {
-	lastRun, err := db.GetLastRunByTask(task.Name)
+func resolveCatchupAnchor(ctx context.Context, db storage.RunRepository, task *model.Task) (time.Time, bool, int) {
+	lastRun, err := db.GetLastRunByTask(ctx, task.Name)
 	if err != nil {
 		slog.Warn("Failed to query last run for catch-up", "task", task.Name, "err", err)
 		return time.Time{}, false, 1
@@ -107,7 +108,7 @@ func resolveCatchupAnchor(db storage.RunRepository, task *model.Task) (time.Time
 	if lastRun != nil {
 		return lastRun.CreatedAt, true, 0
 	}
-	reg, err := db.GetTaskRegistration(task.Name)
+	reg, err := db.GetTaskRegistration(ctx, task.Name)
 	if err != nil {
 		slog.Warn("Failed to query task registration for catch-up", "task", task.Name, "err", err)
 		return time.Time{}, false, 1

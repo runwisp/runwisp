@@ -3,7 +3,11 @@
 
 package storage
 
-import "github.com/runwisp/runwisp/internal/model"
+import (
+	"context"
+
+	"github.com/runwisp/runwisp/internal/model"
+)
 
 const (
 	ConfigKeyFingerprint = "fingerprint"
@@ -12,9 +16,9 @@ const (
 // ConfigRepository stores and retrieves named daemon configuration values.
 type ConfigRepository interface {
 	// GetConfigValue returns the stored value for key, or ("", false, nil) if not set.
-	GetConfigValue(key string) (string, bool, error)
+	GetConfigValue(ctx context.Context, key string) (string, bool, error)
 	// SetConfigValue persists key=value, overwriting any existing entry.
-	SetConfigValue(key, value string) error
+	SetConfigValue(ctx context.Context, key, value string) error
 }
 
 // Database is the full persistent store for the daemon: runs + configuration + notifications.
@@ -28,7 +32,7 @@ type Database interface {
 // PendingLogUploadRepository persists dispatch metadata so the daemon can
 // resume terminal log archival after a crash.
 type PendingLogUploadRepository interface {
-	UpsertPendingLogUpload(rec model.PendingLogUpload) error
-	DeletePendingLogUpload(externalExecutionID string) error
-	ListPendingLogUploads() ([]model.PendingLogUpload, error)
+	UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error
+	DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error
+	ListPendingLogUploads(ctx context.Context) ([]model.PendingLogUpload, error)
 }

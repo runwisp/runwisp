@@ -28,7 +28,7 @@ func newFakePendingRepo() *fakePendingRepo {
 	return &fakePendingRepo{rows: map[string]model.PendingLogUpload{}}
 }
 
-func (f *fakePendingRepo) UpsertPendingLogUpload(rec model.PendingLogUpload) error {
+func (f *fakePendingRepo) UpsertPendingLogUpload(_ context.Context, rec model.PendingLogUpload) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rows[rec.ExternalExecutionID] = rec
@@ -36,7 +36,7 @@ func (f *fakePendingRepo) UpsertPendingLogUpload(rec model.PendingLogUpload) err
 	return nil
 }
 
-func (f *fakePendingRepo) DeletePendingLogUpload(externalExecutionID string) error {
+func (f *fakePendingRepo) DeletePendingLogUpload(_ context.Context, externalExecutionID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.rows, externalExecutionID)
@@ -44,7 +44,7 @@ func (f *fakePendingRepo) DeletePendingLogUpload(externalExecutionID string) err
 	return nil
 }
 
-func (f *fakePendingRepo) ListPendingLogUploads() ([]model.PendingLogUpload, error) {
+func (f *fakePendingRepo) ListPendingLogUploads(_ context.Context) ([]model.PendingLogUpload, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]model.PendingLogUpload, 0, len(f.rows))
@@ -64,7 +64,7 @@ type fakeRunRepo struct {
 	byExt map[string]*model.Run
 }
 
-func (r *fakeRunRepo) GetRunByExternalExecutionID(id string) (*model.Run, error) {
+func (r *fakeRunRepo) GetRunByExternalExecutionID(_ context.Context, id string) (*model.Run, error) {
 	run, ok := r.byExt[id]
 	if !ok {
 		return nil, ErrNotFound
@@ -109,7 +109,7 @@ func TestRegisterDispatchPersistsAndCachesEntry(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
 
-	if err := u.RegisterDispatch("exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -130,11 +130,11 @@ func TestRegisterDispatchUsesInjectedClock(t *testing.T) {
 	fixed := time.Date(2026, 5, 14, 9, 30, 0, 0, time.UTC)
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), func() time.Time { return fixed })
 
-	if err := u.RegisterDispatch("exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
-	rows, err := repo.ListPendingLogUploads()
+	rows, err := repo.ListPendingLogUploads(context.Background())
 	if err != nil {
 		t.Fatalf("ListPendingLogUploads: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestRegisterDispatchEmptyURLIsNoop(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
 
-	if err := u.RegisterDispatch("exec-1", "", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "", "key/x.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -166,11 +166,11 @@ func TestForgetRemovesRowAndCachedEntry(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
 
-	if err := u.RegisterDispatch("exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
-	u.Forget("exec-1")
+	u.Forget(context.Background(), "exec-1")
 
 	if got := repo.count(); got != 0 {
 		t.Errorf("repo rows = %d, want 0", got)
@@ -197,7 +197,7 @@ func TestArchiveSuccessRemovesRowAndLogFile(t *testing.T) {
 	u := NewLogUploader(repo, runs, logDir, fixedClock())
 	u.httpClient = srv.Client()
 
-	if err := u.RegisterDispatch("exec-1", srv.URL, "key/exec-1.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", srv.URL, "key/exec-1.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -243,7 +243,7 @@ func TestArchiveMissingLogFileForgetsEntry(t *testing.T) {
 	repo := newFakePendingRepo()
 	u := NewLogUploader(repo, &fakeRunRepo{}, logDir, fixedClock())
 
-	if err := u.RegisterDispatch("exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
@@ -264,7 +264,7 @@ func TestArchiveMissingLogFileForgetsEntry(t *testing.T) {
 
 func TestRecoverOrphansDropsRowWhenRunMissing(t *testing.T) {
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(model.PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
 		ExternalExecutionID: "exec-gone",
 		UploadURL:           "https://upload/x",
 		LogPath:             "key/x.log.gz",
@@ -297,7 +297,7 @@ func TestRecoverOrphansSkipsNonTerminalRun(t *testing.T) {
 	}
 
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(model.PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
 		ExternalExecutionID: "exec-running",
 		UploadURL:           "https://upload/x",
 		LogPath:             "key/x.log.gz",
@@ -330,7 +330,7 @@ func TestRecoverOrphansRetriesTerminatedRun(t *testing.T) {
 	defer srv.Close()
 
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(model.PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
 		ExternalExecutionID: "exec-1",
 		UploadURL:           srv.URL,
 		LogPath:             "key/exec-1.log.gz",

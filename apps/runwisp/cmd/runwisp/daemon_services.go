@@ -41,8 +41,8 @@ type daemonServices struct {
 // initDaemonServices creates and wires together the core daemon services.
 // db must already be open; initDaemonServices marks crashed runs and then
 // builds all higher-level services on top of it.
-func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode) (*daemonServices, error) {
-	crashed, err := db.MarkCrashedRuns()
+func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Database, mode daemonMode) (*daemonServices, error) {
+	crashed, err := db.MarkCrashedRuns(ctx)
 	if err != nil {
 		slog.Warn("Failed to mark crashed runs", "err", err)
 	}
@@ -72,9 +72,9 @@ func initDaemonServices(cfg *daemonConfig, db storage.Database, mode daemonMode)
 			slog.Warn("Failed to start scheduler", "err", err)
 		}
 
-		pendingSummary = resumePendingRuns(db, taskManager)
+		pendingSummary = resumePendingRuns(ctx, db, taskManager)
 
-		catchUpResult = runtime.RunMissedTickCatchUp(db, tasksMap, taskManager, time.Now())
+		catchUpResult = runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now())
 		if catchUpResult.Triggered > 0 {
 			slog.Info("Missed-tick catch-up completed", "triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
 		}
@@ -132,12 +132,12 @@ func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executo
 
 func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.Executor, eventBus events.EventBus) (runtime.TaskManager, map[string]*model.Task) {
 	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
-	taskManager.BindPersistenceHook(func(run *model.Run, isNew bool) {
+	taskManager.BindPersistenceHook(func(ctx context.Context, run *model.Run, isNew bool) {
 		var dbErr error
 		if isNew {
-			dbErr = db.CreateRun(run)
+			dbErr = db.CreateRun(ctx, run)
 		} else {
-			dbErr = db.UpdateRun(run)
+			dbErr = db.UpdateRun(ctx, run)
 		}
 		if dbErr != nil {
 			slog.Error("Failed to persist run", "id", run.ID, "err", dbErr)
@@ -172,8 +172,8 @@ func startServiceInstances(taskManager runtime.TaskManager, tasksMap map[string]
 	}
 }
 
-func resumePendingRuns(db storage.RunRepository, taskManager runtime.TaskManager) uikit.PendingRunsSummary {
-	pendingRuns, err := db.GetPendingRuns()
+func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManager runtime.TaskManager) uikit.PendingRunsSummary {
+	pendingRuns, err := db.GetPendingRuns(ctx)
 	if err != nil {
 		slog.Warn("Failed to query pending runs", "err", err)
 		return uikit.PendingRunsSummary{}

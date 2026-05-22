@@ -4,6 +4,8 @@
 package cloud
 
 import (
+	"context"
+
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
@@ -38,15 +40,15 @@ type TaskRunner interface {
 type ExternalRunGetter interface {
 	// GetRunByExternalExecutionID returns the run tagged with the supplied
 	// cloud-side execution id, or ErrNotFound if no such run exists.
-	GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error)
+	GetRunByExternalExecutionID(ctx context.Context, externalExecutionID string) (*model.Run, error)
 }
 
 // PendingLogUploadRepository persists dispatch metadata so the daemon can
 // resume terminal log archival after a crash.
 type PendingLogUploadRepository interface {
-	UpsertPendingLogUpload(rec model.PendingLogUpload) error
-	DeletePendingLogUpload(externalExecutionID string) error
-	ListPendingLogUploads() ([]model.PendingLogUpload, error)
+	UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error
+	DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error
+	ListPendingLogUploads(ctx context.Context) ([]model.PendingLogUpload, error)
 }
 
 // EventSubscriber is the subset of the in-process event hub the cloud bridge
