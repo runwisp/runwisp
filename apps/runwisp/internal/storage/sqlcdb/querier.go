@@ -28,7 +28,6 @@ type Querier interface {
 	GetPendingRuns(ctx context.Context) ([]Run, error)
 	GetRun(ctx context.Context, id string) (Run, error)
 	GetRunByExternalExecutionID(ctx context.Context, externalExecutionID *string) (Run, error)
-	GetRunSummary(ctx context.Context) (GetRunSummaryRow, error)
 	GetTaskRegistration(ctx context.Context, taskName string) (TaskRegistration, error)
 	InsertNotification(ctx context.Context, arg InsertNotificationParams) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.

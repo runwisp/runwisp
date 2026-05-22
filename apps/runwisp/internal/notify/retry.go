@@ -33,6 +33,12 @@ func DefaultBackoff() BackoffConfig {
 	}
 }
 
+// IsZero reports whether c is the zero value (no fields set). Callers use this
+// to decide whether to substitute DefaultBackoff for an unset config.
+func (c BackoffConfig) IsZero() bool {
+	return c.InitialInterval == 0 && c.MaxInterval == 0 && c.MaxElapsedTime == 0 && c.Multiplier == 0
+}
+
 // NewExponential constructs a configured cenkalti backoff.
 func (c BackoffConfig) NewExponential() *backoff.ExponentialBackOff {
 	b := backoff.NewExponentialBackOff()

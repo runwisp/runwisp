@@ -22,16 +22,6 @@ SELECT * FROM runs WHERE external_execution_id = ? AND deleted_at IS NULL LIMIT 
 -- name: CountRuns :one
 SELECT COUNT(*) FROM runs WHERE task_name = ? AND deleted_at IS NULL;
 
--- name: GetRunSummary :one
-SELECT
-  CAST(COUNT(*) AS INTEGER) AS total,
-  CAST(COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
-  CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow')
-                         THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed,
-  MAX(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow')
-           THEN end_at END) AS last_failure
-FROM runs WHERE deleted_at IS NULL;
-
 -- name: MarkCrashedRuns :execrows
 UPDATE runs SET status = 'ended', end_reason = 'crashed', end_at = ?, exit_code = -2
 WHERE status = 'running' AND end_at IS NULL AND deleted_at IS NULL;

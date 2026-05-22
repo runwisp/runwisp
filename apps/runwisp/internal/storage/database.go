@@ -86,9 +86,6 @@ func New(dbPath string) (Database, error) {
 	return &SQLiteDatabase{db: db, q: sqlcdb.New(db)}, nil
 }
 
-const runColumns = `id, external_execution_id, task_name, status, end_reason, exit_code,
-start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index`
-
 func (db *SQLiteDatabase) CreateRun(run *model.Run) error {
 	return db.q.CreateRun(context.Background(), runToCreateParams(run))
 }
@@ -147,20 +144,15 @@ func (db *SQLiteDatabase) GetRunByExternalExecutionID(externalExecutionID string
 }
 
 func (db *SQLiteDatabase) GetRunSummary() (*model.RunSummary, error) {
-	row, err := db.q.GetRunSummary(context.Background())
+	summary := &model.RunSummary{}
+	err := db.db.QueryRow(getRunSummarySQL).Scan(
+		&summary.Total,
+		&summary.Success,
+		&summary.Failed,
+		&summary.LastFailure,
+	)
 	if err != nil {
 		return nil, err
-	}
-	summary := &model.RunSummary{
-		Total:   row.Total,
-		Success: row.Success,
-		Failed:  row.Failed,
-	}
-	// last_failure is emitted as interface{} because MAX(CASE WHEN ...) is
-	// nullable from SQLite's perspective. modernc/sqlite hands back time.Time
-	// for DATETIME columns; preserve that when present.
-	if t, ok := row.LastFailure.(time.Time); ok {
-		summary.LastFailure = &t
 	}
 	return summary, nil
 }
