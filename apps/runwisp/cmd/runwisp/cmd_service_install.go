@@ -151,7 +151,7 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps) (autostart.I
 	dataDirFlag := cmd.Flag("data")
 	dataDirExplicit := dataDirFlag != nil && dataDirFlag.Changed
 	bareDBExists := false
-	if _, err := os.Stat(filepath.Join("data", "runwisp.db")); err == nil {
+	if _, err := os.Stat(filepath.Join(".runwisp", "runwisp.db")); err == nil {
 		bareDBExists = true
 	}
 	dataRes, err := autostart.ResolveDataDir(autostart.ResolveDataDirOptions{

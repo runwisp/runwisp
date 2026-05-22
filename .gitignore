@@ -11,7 +11,7 @@ node_modules
 .env.production.local
 
 # Data directories
-data/
+.runwisp/
 
 # Testing
 coverage

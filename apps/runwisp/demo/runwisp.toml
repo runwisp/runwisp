@@ -6,7 +6,7 @@
 # of background workers, basic health checks, manual deploys.
 #
 # Run with:
-#   runwisp daemon -c apps/runwisp/demo/runwisp.toml --data-dir /tmp/runwisp-demo
+#   runwisp daemon -c apps/runwisp/demo/runwisp.toml --data /tmp/runwisp-demo
 #
 # Slack and Telegram notifiers below resolve their secrets from env vars, so
 # the file commits cleanly without inline credentials. For real outbound

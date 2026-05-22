@@ -73,7 +73,7 @@ dir. `runwisp service install` resolves them by these rules:
 - **Data dir**: an absolute `--data` is accepted silently. A relative
   `--data` is rejected with the resolved absolute path as a hint — a
   boot-launched unit has `cwd=/` and would otherwise silently miss the
-  data. The default `./data` is upgraded interactively: if a DB already
+  data. The default `./.runwisp` is upgraded interactively: if a DB already
   exists there, the installer asks whether to keep using it (default
   yes); otherwise it offers `$XDG_DATA_HOME/runwisp` (or
   `~/.local/share/runwisp` if XDG is unset).
