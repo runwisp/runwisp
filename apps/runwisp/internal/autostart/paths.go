@@ -95,11 +95,11 @@ func awkwardBinaryWarning(p, home string) string {
 
 // ResolveDataDirOptions configures ResolveDataDir.
 type ResolveDataDirOptions struct {
-	// Explicit is the value the user passed via --data (or "" / "data"
+	// Explicit is the value the user passed via --data (or "" / ".runwisp"
 	// for the default).
 	Explicit string
 	// ExplicitSet is true when the user actually set --data (vs.
-	// taking the cobra default of "data"). Cobra doesn't expose
+	// taking the cobra default of ".runwisp"). Cobra doesn't expose
 	// "was set", so the caller checks Changed() and passes it in.
 	ExplicitSet bool
 
@@ -107,7 +107,7 @@ type ResolveDataDirOptions struct {
 	HomeDir     string
 	XDGDataHome string
 
-	// Existing tells us whether the default ./data dir holds a real DB.
+	// Existing tells us whether the default ./.runwisp dir holds a real DB.
 	// Injected by the caller (which has the FileSystem) so this function
 	// stays free of I/O dependencies.
 	BareDefaultHasDB bool
@@ -142,7 +142,7 @@ const (
 )
 
 // defaultDataDirFlag matches cmd_root.go default value for --data.
-const defaultDataDirFlag = "data"
+const defaultDataDirFlag = ".runwisp"
 
 // configFileName is the canonical RunWisp config filename.
 const configFileName = "runwisp.toml"

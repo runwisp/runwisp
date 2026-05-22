@@ -44,7 +44,7 @@ func TestGeneratePassword_Unique(t *testing.T) {
 }
 
 func TestEnsureDir_Mode0700(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "data")
+	dir := filepath.Join(t.TempDir(), ".runwisp")
 	if err := EnsureDir(dir); err != nil {
 		t.Fatal(err)
 	}
