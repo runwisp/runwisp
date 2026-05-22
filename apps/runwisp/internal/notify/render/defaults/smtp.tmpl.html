@@ -3,6 +3,10 @@
 {{- $url := "" }}{{ if eq .Kind "log.disk_pressure" }}{{ $url = taskURL .TaskName }}{{ else }}{{ $url = runURL .Run }}{{ end -}}
 <!doctype html>
 <html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ htmlEsc .TaskName }} {{ statusVerb .Kind }}</title>
+</head>
 <body style="margin:0;padding:24px;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111;">
 <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e3e6ea;border-radius:8px;padding:24px;">
 <h2 style="margin:0 0 12px 0;font-size:20px;line-height:1.3;color:#111;">{{ statusEmoji .Kind }} {{ htmlEsc .TaskName }} {{ statusVerb .Kind }}</h2>

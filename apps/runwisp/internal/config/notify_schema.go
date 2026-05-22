@@ -436,6 +436,13 @@ func validateSMTPNotifier(spec *NotifierSpec) error {
 		spec.TLSMode, allowedSMTPTLSModes, true); err != nil {
 		return err
 	}
+	if err := validateSMTPAddresses(spec); err != nil {
+		return err
+	}
+	return validateSMTPAuth(spec)
+}
+
+func validateSMTPAddresses(spec *NotifierSpec) error {
 	from := strings.TrimSpace(spec.From)
 	if from == "" {
 		return fmt.Errorf("notifier %q: from is required for type=smtp", spec.ID)
@@ -451,21 +458,32 @@ func validateSMTPNotifier(spec *NotifierSpec) error {
 	if len(spec.Recipients) == 0 {
 		return fmt.Errorf("notifier %q: to is required for type=smtp (at least one recipient)", spec.ID)
 	}
-	for _, group := range []struct {
+	groups := []struct {
 		label string
 		addrs []string
 	}{
 		{"to", spec.Recipients},
 		{"cc", spec.CC},
 		{"bcc", spec.BCC},
-	} {
-		for _, a := range group.addrs {
-			if _, err := mail.ParseAddress(a); err != nil {
-				return fmt.Errorf("notifier %q: %s address %q is not valid: %w", spec.ID, group.label, a, err)
-			}
+	}
+	for _, g := range groups {
+		if err := validateAddressList(spec.ID, g.label, g.addrs); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
+func validateAddressList(notifierID, label string, addrs []string) error {
+	for _, a := range addrs {
+		if _, err := mail.ParseAddress(a); err != nil {
+			return fmt.Errorf("notifier %q: %s address %q is not valid: %w", notifierID, label, a, err)
+		}
+	}
+	return nil
+}
+
+func validateSMTPAuth(spec *NotifierSpec) error {
 	hasUser := strings.TrimSpace(spec.Username) != ""
 	hasAnyPasswordSource := strings.TrimSpace(spec.Password) != "" ||
 		strings.TrimSpace(spec.PasswordEnv) != "" ||
