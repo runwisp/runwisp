@@ -108,6 +108,7 @@
         "@fontsource/tasa-orbiter": "^5.2.2",
         "@lucide/svelte": "^0.561.0",
         "@runwisp/common": "workspace:*",
+        "@tanstack/svelte-virtual": "^3.13.25",
         "ansi-to-html": "^0.7.2",
         "cron-parser": "^5.4.0",
         "cronstrue": "^3.9.0",

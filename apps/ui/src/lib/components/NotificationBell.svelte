@@ -39,7 +39,7 @@
         <Bell size={18} />
         {#if unread > 0}
             <span
-                class="absolute -top-0.5 -right-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white {hasError
+                class="absolute -top-0.5 -right-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-2xs font-bold text-white {hasError
                     ? 'bg-danger-500'
                     : 'bg-wisp-600'}"
                 aria-label={`${unread.toString()} unread notifications`}

@@ -6,6 +6,7 @@ export { default as theme } from "./theme.css?inline";
 export { default as Logo } from "./components/Logo.svelte";
 
 export { default as PageContainer } from "./components/PageContainer.svelte";
+export { default as PageHeader } from "./components/PageHeader.svelte";
 
 export { default as Heading } from "./components/Heading.svelte";
 export { default as Prose } from "./components/Prose.svelte";
@@ -83,13 +84,17 @@ export { LogFetcher } from "./log-console/LogFetcher.svelte.js";
 
 export { default as RunDetailPanel } from "./components/dashboard/RunDetailPanel.svelte";
 export { default as RunsList } from "./components/dashboard/RunsList.svelte";
+export type {
+    RunsListFilters,
+    RunsListSortDirection,
+} from "./components/dashboard/RunsList.svelte";
 export {
     getRunStatusConfig,
     runDisplayStatus,
     RUN_STATUS_CONFIG,
     type RunStatusConfig,
 } from "./components/dashboard/status-config.js";
-export { runDuration } from "./components/dashboard/run-helpers.js";
+export { runDuration, runPhaseOrder } from "./components/dashboard/run-helpers.js";
 export type { DaemonState, DaemonStats } from "./components/dashboard/types.js";
 
 export { toast, type Toast, type ToastType } from "./utils/toast.svelte.js";

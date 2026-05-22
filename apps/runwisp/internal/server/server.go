@@ -119,7 +119,7 @@ func New(opts Options) (*Server, error) {
 		metricsListen:     opts.MetricsListen,
 	}
 
-	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir)
+	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals
 	s.metrics.Start(5 * time.Second)

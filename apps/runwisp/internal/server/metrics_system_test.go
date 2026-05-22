@@ -11,38 +11,37 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestPopulateFallbackSample asserts populateFallbackSample sets MemTotal/MemUsed
-// from runtime.MemStats and leaves CPUUsage / MemUsage untouched (these are not
-// observable from MemStats alone, so the fallback intentionally skips them).
+// TestPopulateFallbackSample asserts populateFallbackSampleFromMemStats sets
+// MemTotal/MemUsed from the injected runtime.MemStats and leaves CPUUsage /
+// MemUsage untouched (these are not observable from MemStats alone, so the
+// fallback intentionally skips them).
 func TestPopulateFallbackSample(t *testing.T) {
 	s := model.MetricsSample{
 		CPUUsage: 42.0,
 		MemUsage: 17.0,
 	}
-	populateFallbackSample(&s)
+	m := runtime.MemStats{Sys: 1024, Alloc: 512}
+	populateFallbackSampleFromMemStats(&s, &m)
 
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	assert.Equal(t, m.Sys, s.MemTotal, "MemTotal must come from runtime.MemStats.Sys")
-	assert.Equal(t, m.Alloc, s.MemUsed, "MemUsed must come from runtime.MemStats.Alloc")
+	assert.Equal(t, uint64(1024), s.MemTotal, "MemTotal must come from MemStats.Sys")
+	assert.Equal(t, uint64(512), s.MemUsed, "MemUsed must come from MemStats.Alloc")
 	assert.InDelta(t, 42.0, s.CPUUsage, 0.001, "CPUUsage must be left untouched by the fallback")
 	assert.InDelta(t, 17.0, s.MemUsage, 0.001, "MemUsage must be left untouched by the fallback")
 }
 
-// TestPopulateFallbackStats asserts populateFallbackStats overwrites all four
-// of the destination's stats fields — including CPUUsage / MemUsage — from a
-// fresh sample (so any pre-populated CPU values get wiped).
+// TestPopulateFallbackStats asserts populateFallbackStatsFromMemStats overwrites
+// all four of the destination's stats fields — including CPUUsage / MemUsage —
+// from a fresh sample (so any pre-populated CPU values get wiped).
 func TestPopulateFallbackStats(t *testing.T) {
 	stats := model.SystemStats{
 		CPUUsage: 99.0, // must be overwritten back to 0
 		MemUsage: 88.0, // ditto
 	}
-	populateFallbackStats(&stats)
+	m := runtime.MemStats{Sys: 2048, Alloc: 1024}
+	populateFallbackStatsFromMemStats(&stats, &m)
 
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	assert.Equal(t, m.Sys, stats.MemTotal)
-	assert.Equal(t, m.Alloc, stats.MemUsed)
+	assert.Equal(t, uint64(2048), stats.MemTotal)
+	assert.Equal(t, uint64(1024), stats.MemUsed)
 	assert.InDelta(t, 0.0, stats.CPUUsage, 0.001,
 		"fallback wipes CPUUsage because runtime.MemStats can't report it")
 	assert.InDelta(t, 0.0, stats.MemUsage, 0.001,

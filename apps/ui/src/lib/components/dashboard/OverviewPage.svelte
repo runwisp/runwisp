@@ -3,6 +3,7 @@
 
 <script lang="ts">
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
+    import Card from "@runwisp/ui/components/Card.svelte";
     import type { MetricsSample } from "$lib/api";
     import OverviewHero from "./OverviewHero.svelte";
     import OverviewSidePanels from "./OverviewSidePanels.svelte";
@@ -156,7 +157,7 @@
         <RecentActivityPanel {recentActivity} {onRunClick} {onViewAllRuns} />
     </section>
 
-    <section class="rounded-xl border border-mist-200 bg-white p-5 shadow-sm">
+    <Card padding="lg">
         <TaskOverviewList
             {taskOverviews}
             {filteredTasks}
@@ -168,5 +169,5 @@
             sortOptions={SORT_OPTIONS}
             {onTaskClick}
         />
-    </section>
+    </Card>
 </PageContainer>

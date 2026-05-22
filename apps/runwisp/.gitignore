@@ -23,6 +23,7 @@ data/
 vendor/
 *.prof
 coverage.out
+.coverage_unit.out
 
 # Embedded UI (generated)
 internal/ui/dist/

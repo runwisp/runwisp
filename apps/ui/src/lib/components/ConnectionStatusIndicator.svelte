@@ -69,7 +69,7 @@
     </div>
     <div class="flex min-w-0 flex-col">
         <span class="text-xs font-medium {theme.labelColor}">{theme.label}</span>
-        <span class="truncate text-[10px] {theme.subtitleColor}">{subtitle}</span>
+        <span class="truncate text-2xs {theme.subtitleColor}">{subtitle}</span>
     </div>
 {/snippet}
 

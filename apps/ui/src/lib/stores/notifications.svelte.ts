@@ -55,6 +55,7 @@ export interface NotificationStoreDeps {
 }
 
 const PAGE_SIZE = 50;
+const SOURCE_ID = "notifications";
 
 function isUnread(n: Notification): boolean {
     return !n.read_at;
@@ -221,6 +222,7 @@ class NotificationStore {
         this.#unsubscribes = [];
         this.#subscribed = false;
         this.#connected = false;
+        connectionStore.reportSourceDown(SOURCE_ID);
     }
 
     #connect(): void {
@@ -229,12 +231,15 @@ class NotificationStore {
         this.#unsubscribes.push(
             this.#events.onOpen(() => {
                 this.#connected = true;
-                connectionStore.markConnected();
+                connectionStore.reportSourceUp(SOURCE_ID);
             }),
             this.#events.onError((info) => {
                 this.#connected = false;
                 if (info.status !== 401) {
-                    connectionStore.markDisconnected(info.message ?? "Notifications stream error");
+                    connectionStore.reportSourceDown(
+                        SOURCE_ID,
+                        info.message ?? "Notifications stream error",
+                    );
                 }
             }),
         );

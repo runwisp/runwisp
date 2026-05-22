@@ -4,18 +4,18 @@
 <script lang="ts">
     import { page } from "$app/stores";
     import { TaskPage } from "$lib/components/dashboard";
-    import { toast, ErrorState } from "@runwisp/ui";
+    import { toast, ErrorState, Skeleton } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
-    import { runUpdatesStore, upsertRun } from "$lib/stores";
+    import { runUpdatesStore } from "$lib/stores";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
-    import { type Run, type Task } from "$lib/types";
+    import { createRunsSource } from "$lib/utils/runs-source.svelte";
+    import { type Task } from "$lib/types";
+    import type { RunsListFilters } from "@runwisp/ui";
 
     let taskName = $derived($page.params.id ?? "");
 
-    let task = $state<Task | null>(null);
-    let runs = $state<Run[]>([]);
     let triggering = $state(false);
     let stopping = $state(false);
     let restarting = $state(false);
@@ -23,68 +23,62 @@
     let serviceStopped = $state(false);
     let selectRunId = $state<string | null>(null);
 
+    const source = createRunsSource();
+
+    let filters = $state<RunsListFilters>({
+        search: "",
+        status: "all",
+        sort_direction: "desc",
+    });
+
+    $effect(() => {
+        if (!taskName) return;
+        source.setFilters({ ...filters, task_name: taskName });
+    });
+
     const DEFAULT_CONCURRENCY_LIMIT = 1;
-    let activeRunCount = $derived(runs.filter((r) => r.status === "running").length);
+    let activeRunCount = $derived(source.items.filter((r) => r.status === "running").length);
+
+    const taskData = new AsyncData(async (signal: AbortSignal): Promise<Task | null> => {
+        const allTasks = await tasksApi.getAll();
+        if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+        return allTasks.find((t) => t.name === taskName) || null;
+    });
+
+    let task = $derived(taskData.data ?? null);
     let concurrencyLimit = $derived(task?.max_concurrent ?? DEFAULT_CONCURRENCY_LIMIT);
     let concurrencyReached = $derived(triggering || activeRunCount >= concurrencyLimit);
 
-    const pageData = new AsyncData(
-        async (
-            signal: AbortSignal,
-        ): Promise<{
-            task: Task | null;
-            runs: Run[];
-        }> => {
-            const allTasks = await tasksApi.getAll();
-            if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-
-            const foundTask = allTasks.find((t) => t.name === taskName) || null;
-            if (!foundTask) return { task: null, runs: [] };
-
-            const runsRes = await tasksApi.getRuns(taskName, {
-                limit: 50,
-                sort_field: "start_at",
-                sort_direction: "desc",
-            });
-            if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-
-            return { task: foundTask, runs: runsRes.runs };
-        },
-    );
-
     const logSession = createLogSession({
-        findRun: (runId) => runs.find((r) => r.id === runId),
+        findRun: (runId) => source.items.find((r) => r.id === runId),
         getTaskName: (_run) => taskName,
     });
 
     $effect(() => {
-        const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
+        return runUpdatesStore.subscribeToUpdates((event) => {
+            if (event.type === "run.deleted") {
+                if (event.data.task_name !== taskName) return;
+                source.remove(event.data.run_id);
+                return;
+            }
             if (event.data.run.task_name !== taskName) return;
-            runs = upsertRun(runs, event.data.run);
+            source.upsert(event.data.run);
         });
-        return () => unsubscribe();
     });
 
     $effect(() => {
-        if (taskName) void pageData.fetch();
-        return () => pageData.abort();
-    });
-
-    $effect(() => {
-        if (pageData.data) {
-            task = pageData.data.task;
-            runs = pageData.data.runs;
-        }
+        if (taskName) void taskData.fetch();
+        return () => taskData.abort();
     });
 
     $effect(() => {
         const initialRunId = $page.url.searchParams.get("runId");
-        if (!initialRunId || !taskName || runs.length === 0) return;
-        if (runs.some((r) => r.id === initialRunId)) return;
+        if (!initialRunId || !taskName || source.items.length === 0) return;
+        if (source.items.some((r) => r.id === initialRunId)) return;
         void (async () => {
             try {
                 const run = await tasksApi.getRun(taskName, initialRunId);
-                if (run) runs = upsertRun(runs, run);
+                if (run) source.upsert(run);
             } catch {
                 // Run not found / not authorized — TaskPage's fallback selection
                 // (running run, else newest) keeps the UI usable.
@@ -97,7 +91,7 @@
         triggering = true;
         try {
             const newRun = await tasksApi.triggerRun(taskName);
-            runs = upsertRun(runs, newRun);
+            source.upsert(newRun);
             selectRunId = newRun.id;
             toast.success(`Triggered "${taskName}"`);
         } catch {
@@ -149,26 +143,36 @@
     }
 </script>
 
-<AsyncDataView data={pageData}>
+<AsyncDataView data={taskData}>
     {#if task}
-        <TaskPage
-            {task}
-            {runs}
-            {concurrencyReached}
-            {triggering}
-            {stopping}
-            {restarting}
-            {stoppingService}
-            {serviceStopped}
-            onRun={handleRun}
-            onStop={handleStop}
-            onRestart={handleRestart}
-            onStopService={handleStopService}
-            fetchLogs={logSession.fetchLogs}
-            streamLogs={logSession.streamLogs}
-            initialRunId={$page.url.searchParams.get("runId")}
-            {selectRunId}
-        />
+        {#if source.items.length === 0 && source.loading}
+            <Skeleton rows={5} />
+        {:else}
+            <TaskPage
+                {task}
+                items={source.items}
+                total={source.total}
+                loading={source.loading}
+                bind:filters
+                onLoadMore={() => source.loadMore()}
+                onOptimisticRemove={(ids) => ids.forEach((id) => source.remove(id))}
+                onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
+                {concurrencyReached}
+                {triggering}
+                {stopping}
+                {restarting}
+                {stoppingService}
+                {serviceStopped}
+                onRun={handleRun}
+                onStop={handleStop}
+                onRestart={handleRestart}
+                onStopService={handleStopService}
+                fetchLogs={logSession.fetchLogs}
+                streamLogs={logSession.streamLogs}
+                initialRunId={$page.url.searchParams.get("runId")}
+                {selectRunId}
+            />
+        {/if}
     {:else}
         <ErrorState message={'No task named "' + taskName + '" found.'} />
     {/if}

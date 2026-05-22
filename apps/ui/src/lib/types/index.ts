@@ -51,7 +51,7 @@ const runSchema = z
     })
     .pipe(z.custom<Run>());
 
-export const runUpdateEventSchema = z.object({
+const runMutationEventSchema = z.object({
     type: z.enum(["run.created", "run.started", "run.completed", "run.failed", "run.updated"]),
     timestamp: z.string(),
     data: z.object({
@@ -60,6 +60,19 @@ export const runUpdateEventSchema = z.object({
     }),
 });
 
+const runDeletedEventSchema = z.object({
+    type: z.literal("run.deleted"),
+    timestamp: z.string(),
+    data: z.object({
+        run_id: z.string(),
+        task_name: z.string(),
+    }),
+});
+
+export const runUpdateEventSchema = z.union([runMutationEventSchema, runDeletedEventSchema]);
+
+export type RunMutationEvent = z.infer<typeof runMutationEventSchema>;
+export type RunDeletedEvent = z.infer<typeof runDeletedEventSchema>;
 export type RunUpdateEvent = z.infer<typeof runUpdateEventSchema>;
 export type RunUpdateEventType = RunUpdateEvent["type"];
 export type RunUpdateHandler = (event: RunUpdateEvent) => void;

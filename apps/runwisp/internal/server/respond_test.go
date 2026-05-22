@@ -60,6 +60,12 @@ func TestMapDomainError_ErrServiceNotRunnable_Returns409(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, result.GetStatus())
 }
 
+func TestMapDomainError_ErrCannotDeleteActiveRun_Returns409(t *testing.T) {
+	result := mapDomainError(ErrCannotDeleteActiveRun, "fallback")
+	require.NotNil(t, result)
+	assert.Equal(t, http.StatusConflict, result.GetStatus())
+}
+
 func TestMapDomainError_ErrNotAService_Returns400(t *testing.T) {
 	result := mapDomainError(ErrNotAService, "fallback")
 	require.NotNil(t, result)

@@ -3,6 +3,7 @@
 
 <script lang="ts">
     import { ArrowRight, History } from "@lucide/svelte";
+    import Card from "@runwisp/ui/components/Card.svelte";
     import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
     import { getRunStatusConfig, runDisplayStatus } from "@runwisp/ui";
     import { isFailureEndReason, type Run } from "@runwisp/common";
@@ -27,7 +28,7 @@
     }
 </script>
 
-<div class="rounded-xl border border-mist-200 bg-white p-5 shadow-sm">
+<Card padding="lg">
     <div class="flex items-center justify-between gap-3">
         <h2 class="text-sm font-semibold text-mist-950">Recent activity</h2>
         <button
@@ -73,7 +74,7 @@
                                         >{/if}
                                 </span>
                                 <span
-                                    class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase {statusConfig.badge}"
+                                    class="shrink-0 rounded-full px-1.5 py-0.5 text-2xs font-semibold uppercase {statusConfig.badge}"
                                 >
                                     {status}
                                 </span>
@@ -97,4 +98,4 @@
             {/each}
         </div>
     {/if}
-</div>
+</Card>

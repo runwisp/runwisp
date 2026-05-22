@@ -28,6 +28,7 @@ function createConnectionStore() {
     let retryDelay = INITIAL_RETRY_DELAY_MS;
     let pingInFlight = false;
     const reconnectListeners = new SvelteSet<Listener>();
+    const upSources = new SvelteSet<string>();
 
     function startTick() {
         if (tickTimer) return;
@@ -131,6 +132,16 @@ function createConnectionStore() {
         return () => reconnectListeners.delete(listener);
     }
 
+    function reportSourceUp(id: string) {
+        upSources.add(id);
+        markConnected();
+    }
+
+    function reportSourceDown(id: string, err?: unknown) {
+        upSources.delete(id);
+        if (upSources.size === 0) markDisconnected(err);
+    }
+
     function reportFetchError(err: unknown): boolean {
         if (isConnectionError(err)) {
             markDisconnected(err);
@@ -167,6 +178,8 @@ function createConnectionStore() {
         markConnected,
         markDisconnected,
         reportFetchError,
+        reportSourceUp,
+        reportSourceDown,
         retryNow: attemptReconnect,
         onReconnect,
     };

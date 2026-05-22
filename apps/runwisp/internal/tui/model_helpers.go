@@ -22,6 +22,7 @@ const (
 	confirmActionRetry
 	confirmActionRestartService
 	confirmActionStopService
+	confirmActionDelete
 )
 
 func (m *Model) focusSidebar() tea.Cmd {
@@ -127,6 +128,8 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 		return m.confirmStop()
 	case confirmActionRetry:
 		return m.confirmRetry()
+	case confirmActionDelete:
+		return m.confirmDelete()
 	}
 	return nil
 }
@@ -203,6 +206,24 @@ func (m *Model) confirmStop() tea.Cmd {
 		func() tea.Msg {
 			err := client.StopRun(taskName, runID)
 			return uikit.StopRunMsg{RunID: runID, TaskName: taskName, Err: err}
+		},
+	)
+}
+
+func (m *Model) confirmDelete() tea.Cmd {
+	run := m.currentRun()
+	if run == nil || m.execView == nil || !m.execView.CanDelete() {
+		return nil
+	}
+	client := m.client
+	runID := run.ID
+	taskName := run.TaskName
+	return m.showConfirmDialog(
+		"Delete Run",
+		fmt.Sprintf("Delete this run of\n'%s'?\nThe captured log is also removed.", taskName),
+		func() tea.Msg {
+			err := client.DeleteRun(taskName, runID)
+			return uikit.DeleteRunMsg{RunID: runID, TaskName: taskName, Err: err}
 		},
 	)
 }

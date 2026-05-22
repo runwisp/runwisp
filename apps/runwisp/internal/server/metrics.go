@@ -100,6 +100,13 @@ func populateLinuxSample(s *model.MetricsSample) {
 func populateFallbackSample(s *model.MetricsSample) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
+	populateFallbackSampleFromMemStats(s, &m)
+}
+
+// populateFallbackSampleFromMemStats is the deterministic core of
+// populateFallbackSample, split out so tests can pass synthetic MemStats
+// instead of racing against the live allocator.
+func populateFallbackSampleFromMemStats(s *model.MetricsSample, m *runtime.MemStats) {
 	s.MemTotal = m.Sys
 	s.MemUsed = m.Alloc
 }

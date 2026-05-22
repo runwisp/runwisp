@@ -3,8 +3,17 @@
 
 <script lang="ts">
     import { untrack } from "svelte";
-    import { Server, Hash, Terminal as TerminalIcon, Download } from "@lucide/svelte";
+    import {
+        Server,
+        Hash,
+        Terminal as TerminalIcon,
+        Download,
+        Trash2,
+        MousePointerClick,
+    } from "@lucide/svelte";
     import Badge from "../Badge.svelte";
+    import Button from "../Button.svelte";
+    import EmptyState from "../EmptyState.svelte";
     import LogConsole from "../LogConsole.svelte";
     import type { Run } from "./types.js";
     import type { LogEvent, LogSlice } from "../../log-console/types.js";
@@ -18,6 +27,7 @@
         fetchLogs,
         streamLogs,
         showTaskName = false,
+        onDelete,
     }: {
         run: Run | undefined;
         fetchLogs: (
@@ -31,7 +41,14 @@
             initialState?: { fromLine: number },
         ) => () => void;
         showTaskName?: boolean;
+        onDelete?: (runId: string) => void;
     } = $props();
+
+    let canDelete = $derived.by(() => {
+        if (!run || !onDelete) return false;
+        const status = runDisplayStatus(run);
+        return status !== "running" && status !== "pending";
+    });
 
     const TAIL_LINES = 1000;
 
@@ -109,6 +126,18 @@
                         >
                             {runDisplayStatus(run).toUpperCase()}
                         </Badge>
+                        {#if canDelete}
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                class="ml-1 text-danger-surface hover:bg-danger-soft"
+                                onclick={() => onDelete?.(run.id)}
+                                title="Delete this run"
+                                aria-label="Delete run"
+                            >
+                                {#snippet icon()}<Trash2 size={14} />{/snippet}
+                            </Button>
+                        {/if}
                     </div>
                     <div
                         class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-on-surface-muted"
@@ -240,13 +269,11 @@
         {/key}
     </div>
 {:else}
-    <div
-        class="flex flex-1 flex-col items-center justify-center bg-surface-sunken/30 text-on-surface-faint"
-    >
-        <div class="mb-4 rounded-full border border-outline bg-surface-raised p-4 shadow-sm">
-            <Server size={32} class="text-outline-faint" />
-        </div>
-        <h3 class="mb-1 font-medium text-on-surface">No Run Selected</h3>
-        <p class="text-sm">Select a run from the history on the left to view details.</p>
+    <div class="flex flex-1 items-center justify-center bg-surface-sunken/30">
+        <EmptyState
+            title="Select a run"
+            description="Pick a run from the list to view details and logs."
+            icon={MousePointerClick}
+        />
     </div>
 {/if}

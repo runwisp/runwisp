@@ -30,10 +30,12 @@ func mapDomainError(err error, fallback500 string) huma.StatusError {
 		return huma.Error404NotFound(err.Error())
 	case errors.Is(err, ErrAPIDisabled):
 		return huma.Error403Forbidden(err.Error())
-	case errors.Is(err, ErrServiceNotRunnable):
+	case errors.Is(err, ErrServiceNotRunnable),
+		errors.Is(err, ErrCannotDeleteActiveRun):
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, ErrNotAService),
-		errors.Is(err, ErrNotRunning):
+		errors.Is(err, ErrNotRunning),
+		errors.Is(err, ErrInvalidSelector):
 		return huma.Error400BadRequest(err.Error())
 	default:
 		if fallback500 == "" {

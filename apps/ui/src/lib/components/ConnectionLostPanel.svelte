@@ -84,7 +84,7 @@
                 >Details</summary
             >
             <pre
-                class="mt-2 overflow-x-auto rounded-md bg-surface-sunken p-3 font-mono text-[11px] text-on-surface-muted">{c.lastError}</pre>
+                class="mt-2 overflow-x-auto rounded-md bg-surface-sunken p-3 font-mono text-2xs text-on-surface-muted">{c.lastError}</pre>
         </details>
     {/if}
 </div>

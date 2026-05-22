@@ -83,6 +83,34 @@ type StopRunOutput struct {
 	}
 }
 
+// BulkRunSelectorInput is the shared request body for every /api/runs/bulk/*
+// endpoint. The selector is the same object the UI builds locally and any
+// other client could reuse — one shape, four operations.
+type BulkRunSelectorInput struct {
+	Body model.RunSelector
+}
+
+type BulkAffectedOutput struct {
+	Body BulkAffectedBody
+}
+
+type BulkAffectedBody struct {
+	Affected int `json:"affected" doc:"Number of rows the operation touched"`
+}
+
+type BulkRerunOutput struct {
+	Body BulkRerunBody
+}
+
+type BulkRerunBody struct {
+	Triggered []TriggeredRunRef `json:"triggered" doc:"New runs spawned by the rerun, keyed by task"`
+}
+
+type TriggeredRunRef struct {
+	TaskName string `json:"task_name"`
+	RunID    string `json:"run_id"`
+}
+
 type DaemonInfoOutput struct {
 	Body model.DaemonInfo
 }
@@ -127,6 +155,7 @@ type RunStartedEvent events.RunEvent
 type RunCompletedEvent events.RunEvent
 type RunFailedEvent events.RunEvent
 type RunUpdatedEvent events.RunEvent
+type RunDeletedSSEEvent events.RunDeletedEvent
 type PingEvent struct{}
 
 // LogLineSSEEvent is the per-line payload for the run-log stream. Identical

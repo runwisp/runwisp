@@ -13,6 +13,7 @@
     import AppLayout from "$lib/layouts/AppLayout.svelte";
     import { ToastContainer } from "@runwisp/ui";
     import { toTaskPageId } from "$lib/utils/task-id";
+    import { taskIcon } from "$lib/utils/task-icon";
 
     let { children } = $props();
 
@@ -72,6 +73,7 @@
             name: t.name,
             group: t.group ?? "Tasks",
             href: `/tasks/${t.name}`,
+            icon: taskIcon(t),
         })),
     );
 

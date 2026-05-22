@@ -164,6 +164,9 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case uikit.StopServiceMsg:
 		model, cmd := m.handleStopService(msg)
 		return model, cmd, true
+	case uikit.DeleteRunMsg:
+		model, cmd := m.handleDeleteRun(msg)
+		return model, cmd, true
 	}
 	return m, nil, false
 }
@@ -497,6 +500,21 @@ func (m Model) handleTriggerRun(msg uikit.TriggerRunMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleStopRun(msg uikit.StopRunMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Stopped run for", msg.TaskName, msg.Err)
 	return m, nil
+}
+
+func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
+	m.logActionResult("Deleted run for", msg.TaskName, msg.Err)
+	if msg.Err != nil {
+		return m, nil
+	}
+	var cmds []tea.Cmd
+	if m.execView != nil && m.execView.Run != nil && m.execView.Run.ID == msg.RunID {
+		if cmd := m.closeExecView(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	cmds = append(cmds, m.fetchExecWindow())
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {

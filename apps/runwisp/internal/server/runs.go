@@ -137,6 +137,39 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaStopRun)
 
 	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "bulkDeleteRuns",
+		Method:      http.MethodPost,
+		Path:        "/api/runs/bulk/delete",
+		Summary:     "Soft-delete every run matched by the selector",
+		Description: "Marks matching terminal runs as deleted. Rows remain on disk for a short undo window before the purger reclaims them.",
+		Tags:        []string{"Runs"},
+	}, srv.humaBulkDeleteRuns)
+
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "bulkRestoreRuns",
+		Method:      http.MethodPost,
+		Path:        "/api/runs/bulk/restore",
+		Summary:     "Restore soft-deleted runs matching the selector",
+		Tags:        []string{"Runs"},
+	}, srv.humaBulkRestoreRuns)
+
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "bulkCancelRuns",
+		Method:      http.MethodPost,
+		Path:        "/api/runs/bulk/cancel",
+		Summary:     "Cancel every running run matched by the selector",
+		Tags:        []string{"Runs"},
+	}, srv.humaBulkCancelRuns)
+
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "bulkRerunRuns",
+		Method:      http.MethodPost,
+		Path:        "/api/runs/bulk/rerun",
+		Summary:     "Re-run the unique tasks behind the selector's runs",
+		Tags:        []string{"Runs"},
+	}, srv.humaBulkRerunRuns)
+
+	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getLogPage",
 		Method:      http.MethodGet,
 		Path:        "/api/tasks/{taskName}/runs/{runId}/log",
@@ -241,6 +274,38 @@ func (srv *Server) humaStopRun(ctx context.Context, input *TaskRunInput) (*StopR
 	return out, nil
 }
 
+func (srv *Server) humaBulkDeleteRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
+	n, err := srv.runService.bulkSoftDelete(input.Body)
+	if err != nil {
+		return nil, mapDomainError(err, "Failed to delete runs")
+	}
+	return &BulkAffectedOutput{Body: BulkAffectedBody{Affected: n}}, nil
+}
+
+func (srv *Server) humaBulkRestoreRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
+	n, err := srv.runService.bulkRestore(input.Body)
+	if err != nil {
+		return nil, mapDomainError(err, "Failed to restore runs")
+	}
+	return &BulkAffectedOutput{Body: BulkAffectedBody{Affected: n}}, nil
+}
+
+func (srv *Server) humaBulkCancelRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
+	n, err := srv.runService.bulkCancel(input.Body)
+	if err != nil {
+		return nil, mapDomainError(err, "Failed to cancel runs")
+	}
+	return &BulkAffectedOutput{Body: BulkAffectedBody{Affected: n}}, nil
+}
+
+func (srv *Server) humaBulkRerunRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkRerunOutput, error) {
+	triggered, err := srv.runService.bulkRerun(input.Body)
+	if err != nil {
+		return nil, mapDomainError(err, "Failed to rerun")
+	}
+	return &BulkRerunOutput{Body: BulkRerunBody{Triggered: triggered}}, nil
+}
+
 func (srv *Server) registerRunsSSE(api huma.API) {
 	sse.Register(api, huma.Operation{
 		OperationID: "streamRuns",
@@ -255,6 +320,7 @@ func (srv *Server) registerRunsSSE(api huma.API) {
 		"run.completed": RunCompletedEvent{},
 		"run.failed":    RunFailedEvent{},
 		"run.updated":   RunUpdatedEvent{},
+		"run.deleted":   RunDeletedSSEEvent{},
 		"ping":          PingEvent{},
 	}, func(ctx context.Context, input *struct{}, send sse.Sender) {
 		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
@@ -276,7 +342,7 @@ func (srv *Server) registerRunsSSE(api huma.API) {
 		eventChan := make(chan events.Event, 10)
 		unsubscribe := srv.eventBus.SubscribeAll(func(event events.Event) {
 			switch event.Type {
-			case events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted, events.EventRunFailed, events.EventRunUpdated:
+			case events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted, events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted:
 				select {
 				case eventChan <- event:
 				default:
@@ -310,6 +376,12 @@ func (srv *Server) registerRunsSSE(api huma.API) {
 // toSSEEventData converts an internal event to the correct SSE wrapper type
 // so that huma/sse emits the right event name.
 func toSSEEventData(event events.Event) any {
+	if event.Type == events.EventRunDeleted {
+		if de, ok := event.Data.(events.RunDeletedEvent); ok {
+			return RunDeletedSSEEvent(de)
+		}
+		return RunDeletedSSEEvent{}
+	}
 	re, ok := event.Data.(events.RunEvent)
 	if !ok {
 		return RunUpdatedEvent{}

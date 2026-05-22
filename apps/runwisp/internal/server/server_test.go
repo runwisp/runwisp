@@ -179,9 +179,11 @@ func TestDeleteRun(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
 	id := ulid.Make().String()
-	run := &model.Run{ID: id, TaskName: "task1"}
+	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseEnded}
 	repo.On("GetRun", id).Return(run, nil)
-	repo.On("DeleteRun", id).Return(nil)
+	repo.On("SoftDeleteRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
+		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == id
+	}), mock.Anything).Return([]storage.RunRef{{ID: id, TaskName: "task1"}}, nil)
 
 	req := httptest.NewRequest("DELETE", "/api/tasks/task1/runs/"+id, nil)
 	w := httptest.NewRecorder()
@@ -190,6 +192,72 @@ func TestDeleteRun(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+func TestBulkDeleteRuns(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+
+	id1 := ulid.Make().String()
+	id2 := ulid.Make().String()
+	repo.On("SoftDeleteRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
+		return !sel.MatchAll && len(sel.IDs) == 2
+	}), mock.Anything).Return([]storage.RunRef{
+		{ID: id1, TaskName: "task1"},
+		{ID: id2, TaskName: "task1"},
+	}, nil)
+
+	body, err := json.Marshal(model.RunSelector{IDs: []string{id1, id2}})
+	require.NoError(t, err)
+	req := httptest.NewRequest("POST", "/api/runs/bulk/delete", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp BulkAffectedBody
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 2, resp.Affected)
+}
+
+func TestBulkRestoreRuns(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+
+	id := ulid.Make().String()
+	repo.On("RestoreRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
+		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == id
+	})).Return([]model.Run{{ID: id, TaskName: "task1", Status: model.PhaseEnded}}, nil)
+
+	body, err := json.Marshal(model.RunSelector{IDs: []string{id}})
+	require.NoError(t, err)
+	req := httptest.NewRequest("POST", "/api/runs/bulk/restore", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp BulkAffectedBody
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 1, resp.Affected)
+}
+
+func TestBulkDeleteRuns_InvalidSelector(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	// Empty selector violates Validate() (no IDs, no MatchAll).
+	body, err := json.Marshal(model.RunSelector{})
+	require.NoError(t, err)
+	req := httptest.NewRequest("POST", "/api/runs/bulk/delete", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	// huma returns 422 (or 400) for body-validation failures. Either is a
+	// rejection — we just shouldn't get a 2xx.
+	assert.GreaterOrEqual(t, w.Code, 400)
+	assert.Less(t, w.Code, 500)
 }
 
 func TestStopRun(t *testing.T) {

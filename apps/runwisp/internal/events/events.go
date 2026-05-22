@@ -20,6 +20,7 @@ const (
 	EventRunCompleted    EventType = "run.completed"
 	EventRunFailed       EventType = "run.failed"
 	EventRunUpdated      EventType = "run.updated"
+	EventRunDeleted      EventType = "run.deleted"
 	EventLogLine         EventType = "log.line"
 	EventLogDiskPressure EventType = "log.disk_pressure"
 )
@@ -32,6 +33,7 @@ var AllEventTypes = []EventType{
 	EventRunCompleted,
 	EventRunFailed,
 	EventRunUpdated,
+	EventRunDeleted,
 	EventLogLine,
 	EventLogDiskPressure,
 }
@@ -51,6 +53,7 @@ type Event struct {
 
 // eventData is a marker method; the empty body is intentional — it exists only to constrain the EventData type set.
 func (RunEvent) eventData()             { /* sealed-type marker */ }
+func (RunDeletedEvent) eventData()      { /* sealed-type marker */ }
 func (LogLineEvent) eventData()         { /* sealed-type marker */ }
 func (LogDiskPressureEvent) eventData() { /* sealed-type marker */ }
 
@@ -58,6 +61,15 @@ func (LogDiskPressureEvent) eventData() { /* sealed-type marker */ }
 type RunEvent struct {
 	Run   *model.Run `json:"run"`
 	Error string     `json:"error,omitempty"`
+}
+
+// RunDeletedEvent fires when a run row has been soft-deleted. The slim envelope
+// is intentional: subscribers (notably the SSE-driven UI cache) only need the
+// identity to splice the row out — they already have the full Run from prior
+// events.
+type RunDeletedEvent struct {
+	RunID    string `json:"run_id"`
+	TaskName string `json:"task_name"`
 }
 
 // LogDiskPressureEvent fires once per run when min_free_space crosses the

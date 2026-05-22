@@ -82,7 +82,7 @@ func (m *mockTaskRunner) GetActiveRunCount(taskName string) int {
 // helpers
 
 func makeRunService(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner) *runService {
-	return newRunService(repo, runner, tasks, nil, "")
+	return newRunService(repo, runner, tasks, nil, "", nil)
 }
 
 // ---- mapNotFound ----
@@ -336,6 +336,65 @@ func TestStopRun_TerminateError(t *testing.T) {
 	assert.ErrorIs(t, err, termErr)
 	repo.AssertExpectations(t)
 	runner.AssertExpectations(t)
+}
+
+// ---- DeleteRun ----
+
+func TestDeleteRun_RunNotFound(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	repo.On("GetRun", "missing").Return(nil, storage.ErrNotFound)
+
+	err := svc.DeleteRun("missing")
+	assert.ErrorIs(t, err, ErrRunNotFound)
+	repo.AssertExpectations(t)
+}
+
+func TestDeleteRun_RunningRun_RejectsWithConflict(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	run := &model.Run{ID: "run-1", Status: model.PhaseRunning}
+	repo.On("GetRun", "run-1").Return(run, nil)
+
+	err := svc.DeleteRun("run-1")
+	assert.ErrorIs(t, err, ErrCannotDeleteActiveRun)
+	repo.AssertExpectations(t)
+	// DeleteRun must not be invoked when the run is active.
+	repo.AssertNotCalled(t, "DeleteRun", mock.Anything)
+}
+
+func TestDeleteRun_PendingRun_RejectsWithConflict(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	run := &model.Run{ID: "run-2", Status: model.PhasePending}
+	repo.On("GetRun", "run-2").Return(run, nil)
+
+	err := svc.DeleteRun("run-2")
+	assert.ErrorIs(t, err, ErrCannotDeleteActiveRun)
+	repo.AssertExpectations(t)
+	repo.AssertNotCalled(t, "DeleteRun", mock.Anything)
+}
+
+func TestDeleteRun_EndedRun_Succeeds(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	run := &model.Run{ID: "run-3", TaskName: "t", Status: model.PhaseEnded}
+	repo.On("GetRun", "run-3").Return(run, nil)
+	repo.On("SoftDeleteRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
+		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == "run-3"
+	}), mock.Anything).Return([]storage.RunRef{{ID: "run-3", TaskName: "t"}}, nil)
+
+	err := svc.DeleteRun("run-3")
+	assert.NoError(t, err)
+	repo.AssertExpectations(t)
 }
 
 func TestStopRun_RunPending_NotRunning(t *testing.T) {

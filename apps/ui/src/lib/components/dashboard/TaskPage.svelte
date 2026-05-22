@@ -5,15 +5,24 @@
     import { Play, PanelLeftClose, History, Square, RefreshCcw } from "@lucide/svelte";
     import Button from "@runwisp/ui/components/Button.svelte";
     import Modal from "@runwisp/ui/components/Modal.svelte";
-    import { isService, type Task, type Run } from "@runwisp/common";
-    import type { LogEvent, LogSlice } from "@runwisp/ui";
+    import Alert from "@runwisp/ui/components/Alert.svelte";
+    import Card from "@runwisp/ui/components/Card.svelte";
+    import { isService, type Task, type Run, type RunSelector } from "@runwisp/common";
+    import type { LogEvent, LogSlice, RunsListFilters } from "@runwisp/ui";
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
-    import { RunsList, RunDetailPanel } from "@runwisp/ui";
-    import { sortByCreatedAtDesc } from "$lib/utils/sort";
+    import PageHeader from "@runwisp/ui/components/PageHeader.svelte";
+    import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
+    import { runsApi } from "$lib/api";
 
     let {
         task,
-        runs = [],
+        items,
+        total,
+        loading = false,
+        filters = $bindable(),
+        onLoadMore,
+        onOptimisticRemove,
+        onOptimisticRestore,
         concurrencyReached = false,
         triggering = false,
         stopping = false,
@@ -30,7 +39,13 @@
         selectRunId = null,
     } = $props<{
         task: Task;
-        runs?: Run[];
+        items: Run[];
+        total: number;
+        loading?: boolean;
+        filters: RunsListFilters;
+        onLoadMore: () => void;
+        onOptimisticRemove: (ids: string[]) => void;
+        onOptimisticRestore: (runs: Run[]) => void;
         concurrencyReached?: boolean;
         triggering?: boolean;
         stopping?: boolean;
@@ -64,6 +79,94 @@
     let restartConfirmOpen = $state(false);
     let stopServiceConfirmOpen = $state(false);
 
+    const UNDO_MS = 5000;
+
+    async function handleBulkDelete(selector: RunSelector, affected: Run[]) {
+        if (affected.length === 0) return;
+        const removedIds = new Set(affected.map((r) => r.id));
+        const snapshot = items.filter((r: Run) => removedIds.has(r.id));
+        onOptimisticRemove([...removedIds]);
+        if (userSelectedRunId && removedIds.has(userSelectedRunId)) userSelectedRunId = null;
+
+        try {
+            const count = await runsApi.bulkDelete(selector);
+            const restoreSelector: RunSelector = {
+                match_all: false,
+                ids: [...removedIds],
+            };
+            toast.success(count === 1 ? "Run deleted" : `${count} runs deleted`, {
+                duration: UNDO_MS,
+                action: {
+                    label: "Undo",
+                    onClick: () => void undoDelete(restoreSelector, snapshot),
+                },
+            });
+        } catch (err) {
+            onOptimisticRestore(snapshot);
+            toast.error(extractErrorMessage(err, "Failed to delete runs"));
+        }
+    }
+
+    async function undoDelete(selector: RunSelector, snapshot: Run[]) {
+        try {
+            await runsApi.bulkRestore(selector);
+            onOptimisticRestore(snapshot);
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to restore runs"));
+        }
+    }
+
+    async function handleBulkCancel(selector: RunSelector, affected: Run[]) {
+        if (affected.length === 0) return;
+        try {
+            const count = await runsApi.bulkCancel(selector);
+            toast.success(count === 1 ? "Cancelled 1 run" : `Cancelled ${count} runs`);
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to cancel runs"));
+        }
+    }
+
+    async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
+        try {
+            const { triggered } = await runsApi.bulkRerun(selector);
+            if (triggered.length === 0) {
+                toast.error("Could not re-run any of the selected tasks");
+                return;
+            }
+            const label = triggered.length === 1 ? "task" : "tasks";
+            toast.success(`Triggered ${triggered.length} ${label}`, {
+                duration: UNDO_MS,
+                action: {
+                    label: "Undo",
+                    onClick: () => void undoRerun(triggered),
+                },
+            });
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to re-run tasks"));
+        }
+    }
+
+    async function undoRerun(triggered: { task_name: string; run_id: string }[]) {
+        const ids = triggered.map((t) => t.run_id);
+        try {
+            await runsApi.bulkCancel({ match_all: false, ids });
+        } catch {
+            // best-effort: runs may already have finished
+        }
+        try {
+            await runsApi.bulkDelete({ match_all: false, ids });
+            toast.info("Re-run undone");
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to undo re-run"));
+        }
+    }
+
+    function deleteSingle(runId: string) {
+        const target = items.find((r: Run) => r.id === runId);
+        if (!target) return;
+        void handleBulkDelete({ match_all: false, ids: [runId] }, [target]);
+    }
+
     const runLaunchable = $derived(
         !taskIsService && (task.api_trigger ?? true) && !triggering && !concurrencyReached,
     );
@@ -73,8 +176,6 @@
         if (concurrencyReached) return "Max concurrency reached";
         return "";
     });
-
-    let sortedRuns: Run[] = $derived(sortByCreatedAtDesc(runs));
 
     let userSelectedRunId = $state<string | null>(null);
 
@@ -87,15 +188,15 @@
     });
 
     let selectedRunId = $derived.by(() => {
-        if (userSelectedRunId && runs.some((r: Run) => r.id === userSelectedRunId)) {
+        if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
             return userSelectedRunId;
         }
-        const running = runs.find((r: Run) => r.status === "running");
+        const running = items.find((r: Run) => r.status === "running");
         if (running) return running.id;
-        return sortedRuns[0]?.id ?? null;
+        return items[0]?.id ?? null;
     });
 
-    let selectedRun = $derived(runs.find((r: Run) => r.id === selectedRunId));
+    let selectedRun = $derived(items.find((r: Run) => r.id === selectedRunId));
 
     const envEntries = $derived(
         task.env ? Object.entries(task.env).sort(([a], [b]) => a.localeCompare(b)) : [],
@@ -104,15 +205,8 @@
 </script>
 
 <PageContainer variant="flush" class="gap-4">
-    <!-- Header -->
-    <div class="flex shrink-0 items-center justify-between px-1">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-slate-900">{task.name}</h1>
-            <p class="mt-0.5 text-sm text-slate-500">
-                {task.description || "No description provided."}
-            </p>
-        </div>
-        <div class="flex items-center gap-2">
+    <PageHeader title={task.name} subtitle={task.description || "No description provided."}>
+        {#snippet actions()}
             {#if hideHistory}
                 <Button
                     variant="ghost"
@@ -175,31 +269,32 @@
                     Run Task
                 </Button>
             {/if}
-        </div>
-    </div>
+        {/snippet}
+    </PageHeader>
 
     {#if showEnvPanel}
-        <section
-            class="shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-            aria-label="Task environment"
-        >
-            <h2 class="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                Environment
-            </h2>
-            {#if envEntries.length > 0}
-                <dl class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-xs">
-                    {#each envEntries as [key, value] (key)}
-                        <dt class="text-slate-700">{key}</dt>
-                        <dd class="break-all text-slate-500">{value}</dd>
-                    {/each}
-                </dl>
-            {/if}
-            {#if task.env_file}
-                <p class="mt-2 font-mono text-xs text-slate-400">
-                    Loaded from {task.env_file} (values not exposed)
-                </p>
-            {/if}
-        </section>
+        <Card padding="none" class="shrink-0">
+            <section aria-label="Task environment" class="px-4 py-3">
+                <h2 class="text-xs font-semibold tracking-wide text-on-surface-muted uppercase">
+                    Environment
+                </h2>
+                {#if envEntries.length > 0}
+                    <dl
+                        class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-xs"
+                    >
+                        {#each envEntries as [key, value] (key)}
+                            <dt class="text-on-surface">{key}</dt>
+                            <dd class="break-all text-on-surface-muted">{value}</dd>
+                        {/each}
+                    </dl>
+                {/if}
+                {#if task.env_file}
+                    <p class="mt-2 font-mono text-xs text-on-surface-faint">
+                        Loaded from {task.env_file} (values not exposed)
+                    </p>
+                {/if}
+            </section>
+        </Card>
     {/if}
 
     <!-- Main Content Area -->
@@ -211,22 +306,32 @@
     >
         {#if !hideHistory || historyExpanded}
             <RunsList
-                {runs}
+                {items}
+                {total}
+                {loading}
+                bind:filters
+                {onLoadMore}
                 {selectedRunId}
                 onselect={(id) => (userSelectedRunId = id)}
                 emptyText="No runs yet"
+                bulkActions
+                taskNameFilter={task.name}
+                onBulkCancel={handleBulkCancel}
+                onBulkDelete={handleBulkDelete}
+                onBulkRerun={handleBulkRerun}
             />
         {/if}
 
         <!-- Right Panel: Run Details -->
-        <div
-            class={[
-                "flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm",
-                hideHistory && !historyExpanded ? "" : "md:col-span-8 lg:col-span-9",
-            ]}
+        <Card
+            padding="none"
+            class="flex flex-col {hideHistory && !historyExpanded
+                ? ''
+                : 'md:col-span-8 lg:col-span-9'}"
+            bodyClass="flex min-h-0 flex-1 flex-col"
         >
-            <RunDetailPanel run={selectedRun} {fetchLogs} {streamLogs} />
-        </div>
+            <RunDetailPanel run={selectedRun} {fetchLogs} {streamLogs} onDelete={deleteSingle} />
+        </Card>
     </div>
 
     <Modal
@@ -316,16 +421,11 @@
 </PageContainer>
 
 {#snippet concurrencyWarning()}
-    <div
-        class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
-    >
-        <span class="mt-0.5 shrink-0 text-amber-500">⚠</span>
-        <span>
-            This task is already running at its maximum concurrency. Your run will be <strong
-                >queued</strong
-            > and will start automatically once a slot becomes available.
-        </span>
-    </div>
+    <Alert variant="warning">
+        This task is already running at its maximum concurrency. Your run will be <strong
+            >queued</strong
+        > and will start automatically once a slot becomes available.
+    </Alert>
 {/snippet}
 
 {#snippet confirmFooter(

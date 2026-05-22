@@ -35,6 +35,7 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	"R":         handleKeyR,
 	"s":         handleKeyS,
 	"d":         handleKeyD,
+	"D":         handleKeyD,
 	"up":        handleKeyUp,
 	"k":         handleKeyUp,
 	"down":      handleKeyDown,
@@ -249,6 +250,8 @@ func handleKeyEnterActionButton(m Model) (Model, tea.Cmd, bool) {
 		return m, m.confirmAction(confirmActionRetry), true
 	case execlist.ActionRestartService:
 		return m, m.confirmAction(confirmActionRestartService), true
+	case execlist.ActionDelete:
+		return m, m.confirmAction(confirmActionDelete), true
 	}
 	return m, nil, true
 }
@@ -300,10 +303,16 @@ func handleKeyS(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 }
 
 func handleKeyD(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
-	if m.execView != nil && !m.execView.Fullscreen() {
-		return m, m.downloadExecLog(), true
+	if m.execView == nil || m.execView.Fullscreen() {
+		return m, nil, false
 	}
-	return m, nil, false
+	if msg.String() == "D" {
+		if m.execView.CanDelete() {
+			return m, m.confirmAction(confirmActionDelete), true
+		}
+		return m, nil, true
+	}
+	return m, m.downloadExecLog(), true
 }
 
 func handleKeyUp(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {

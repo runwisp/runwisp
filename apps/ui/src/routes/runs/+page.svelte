@@ -3,43 +3,52 @@
 
 <script lang="ts">
     import { RunsPage } from "$lib/components/dashboard";
-    import AsyncDataView from "$lib/components/AsyncDataView.svelte";
-    import { runsApi } from "$lib/api";
-    import { runUpdatesStore, upsertRun } from "$lib/stores";
-    import { AsyncData } from "$lib/utils/async-data.svelte";
+    import { Skeleton } from "@runwisp/ui";
+    import { runUpdatesStore } from "$lib/stores";
+    import { createRunsSource } from "$lib/utils/runs-source.svelte";
     import { createLogSession } from "$lib/utils/log-session";
-    import { type Run } from "$lib/types";
+    import type { RunsListFilters } from "@runwisp/ui";
 
-    let runs = $state<Run[]>([]);
+    const source = createRunsSource();
 
-    const runsData = new AsyncData(() =>
-        runsApi.getAll({
-            limit: 200,
-            sort_field: "start_at",
-            sort_direction: "desc",
-        }),
-    );
+    let filters = $state<RunsListFilters>({
+        search: "",
+        status: "all",
+        sort_direction: "desc",
+    });
+
+    $effect(() => {
+        source.setFilters({ ...filters });
+    });
 
     const logSession = createLogSession({
-        findRun: (runId) => runs.find((r) => r.id === runId),
+        findRun: (runId) => source.items.find((r) => r.id === runId),
         getTaskName: (run) => run.task_name,
     });
 
     $effect(() => {
-        const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
-            runs = upsertRun(runs, event.data.run);
+        return runUpdatesStore.subscribeToUpdates((event) => {
+            if (event.type === "run.deleted") {
+                source.remove(event.data.run_id);
+                return;
+            }
+            source.upsert(event.data.run);
         });
-        void runsData.fetch();
-        return () => unsubscribe();
-    });
-
-    $effect(() => {
-        if (runsData.data) {
-            runs = runsData.data.runs;
-        }
     });
 </script>
 
-<AsyncDataView data={runsData} skeletonRows={5}>
-    <RunsPage {runs} fetchLogs={logSession.fetchLogs} streamLogs={logSession.streamLogs} />
-</AsyncDataView>
+{#if source.items.length === 0 && source.loading}
+    <Skeleton rows={5} />
+{:else}
+    <RunsPage
+        items={source.items}
+        total={source.total}
+        loading={source.loading}
+        onLoadMore={() => source.loadMore()}
+        bind:filters
+        onOptimisticRemove={(ids) => ids.forEach((id) => source.remove(id))}
+        onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
+        fetchLogs={logSession.fetchLogs}
+        streamLogs={logSession.streamLogs}
+    />
+{/if}
