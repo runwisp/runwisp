@@ -7,6 +7,7 @@ package sqlcdb
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -18,6 +19,35 @@ SELECT COUNT(*) FROM runs WHERE task_name = ? AND deleted_at IS NULL
 
 func (q *Queries) CountRuns(ctx context.Context, taskName string) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countRuns, taskName)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countRunsFiltered = `-- name: CountRunsFiltered :one
+SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
+  AND (?1 = '' OR end_reason = ?1)
+  AND (?2 = '' OR status = ?2)
+  AND (?3 = '' OR task_name = ?3)
+  AND (?4 = '' OR (task_name LIKE ?5 OR id LIKE ?5))
+`
+
+type CountRunsFilteredParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+}
+
+func (q *Queries) CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRunsFiltered,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -74,6 +104,25 @@ DELETE FROM runs WHERE id = ?
 
 func (q *Queries) DeleteRun(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, deleteRun, id)
+	return err
+}
+
+const deleteRunsByIDs = `-- name: DeleteRunsByIDs :exec
+DELETE FROM runs WHERE id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) DeleteRunsByIDs(ctx context.Context, ids []string) error {
+	query := deleteRunsByIDs
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
 	return err
 }
 
@@ -195,6 +244,38 @@ func (q *Queries) GetRunByExternalExecutionID(ctx context.Context, externalExecu
 		&i.RetryOfRunID,
 		&i.InstanceIndex,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getRunSummary = `-- name: GetRunSummary :one
+SELECT
+  CAST(COUNT(*) AS INTEGER) AS total,
+  CAST(COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
+  CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow')
+                         THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed,
+  (SELECT end_at FROM runs
+   WHERE end_reason IN ('failed','crashed','timeout','log_overflow')
+     AND deleted_at IS NULL
+   ORDER BY end_at DESC LIMIT 1) AS end_at
+FROM runs WHERE deleted_at IS NULL
+`
+
+type GetRunSummaryRow struct {
+	Total   int64      `json:"total"`
+	Success int64      `json:"success"`
+	Failed  int64      `json:"failed"`
+	EndAt   *time.Time `json:"end_at"`
+}
+
+func (q *Queries) GetRunSummary(ctx context.Context) (GetRunSummaryRow, error) {
+	row := q.db.QueryRowContext(ctx, getRunSummary)
+	var i GetRunSummaryRow
+	err := row.Scan(
+		&i.Total,
+		&i.Success,
+		&i.Failed,
+		&i.EndAt,
 	)
 	return i, err
 }

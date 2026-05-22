@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,13 +30,13 @@ func makeRunWithLog(t *testing.T, db storage.RunRepository, logDir string, delet
 		TriggeredBy: model.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
-	require.NoError(t, db.CreateRun(run))
+	require.NoError(t, db.CreateRun(context.Background(), run))
 
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0o755))
 	require.NoError(t, os.WriteFile(logPath, []byte("hello\n"), 0o644))
 
-	_, err := db.SoftDeleteRuns(model.RunSelector{IDs: []string{run.ID}}, deletedAt)
+	_, err := db.SoftDeleteRuns(context.Background(), model.RunSelector{IDs: []string{run.ID}}, deletedAt)
 	require.NoError(t, err)
 	return run.ID, logPath
 }
@@ -49,10 +50,10 @@ func TestSoftDeletePurger_DrainOnBoot(t *testing.T) {
 	runID, logPath := makeRunWithLog(t, db, logDir, time.Now())
 
 	p := NewSoftDeletePurger(db, logDir)
-	p.purge(0) // simulate boot drain — TTL 0 ⇒ everything goes.
+	p.purge(context.Background(), 0) // simulate boot drain — TTL 0 ⇒ everything goes.
 
 	// Row is hard-deleted.
-	_, err = db.GetRun(runID)
+	_, err = db.GetRun(context.Background(), runID)
 	assert.ErrorIs(t, err, storage.ErrNotFound)
 
 	// Log file is gone.
@@ -69,10 +70,10 @@ func TestSoftDeletePurger_KeepsRunsInsideTTL(t *testing.T) {
 	runID, logPath := makeRunWithLog(t, db, logDir, time.Now())
 
 	p := NewSoftDeletePurger(db, logDir)
-	p.purge(time.Hour) // TTL way bigger than how long the run has been deleted.
+	p.purge(context.Background(), time.Hour) // TTL way bigger than how long the run has been deleted.
 
 	// Row should still be present (restorable).
-	restored, err := db.RestoreRuns(model.RunSelector{IDs: []string{runID}})
+	restored, err := db.RestoreRuns(context.Background(), model.RunSelector{IDs: []string{runID}})
 	require.NoError(t, err)
 	require.Len(t, restored, 1)
 
@@ -91,15 +92,15 @@ func TestSoftDeletePurger_RemovesExpiredButKeepsFresh(t *testing.T) {
 	freshID, freshLog := makeRunWithLog(t, db, logDir, time.Now())
 
 	p := NewSoftDeletePurger(db, logDir)
-	p.purge(time.Minute) // old run is past it; fresh is well inside.
+	p.purge(context.Background(), time.Minute) // old run is past it; fresh is well inside.
 
-	_, err = db.GetRun(oldID)
+	_, err = db.GetRun(context.Background(), oldID)
 	assert.ErrorIs(t, err, storage.ErrNotFound)
 	_, err = os.Stat(oldLog)
 	assert.True(t, os.IsNotExist(err))
 
 	// Fresh remains in deleted state, restorable.
-	restored, err := db.RestoreRuns(model.RunSelector{IDs: []string{freshID}})
+	restored, err := db.RestoreRuns(context.Background(), model.RunSelector{IDs: []string{freshID}})
 	require.NoError(t, err)
 	require.Len(t, restored, 1)
 	_, err = os.Stat(freshLog)

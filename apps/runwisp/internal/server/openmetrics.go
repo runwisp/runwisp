@@ -24,11 +24,11 @@ const openMetricsContentType = "application/openmetrics-text; version=1.0.0; cha
 // OpenMetrics text payload. It is registered outside the protected router
 // group so external scrapers can hit it without a JWT — operators bind to
 // loopback or firewall the port to keep it private.
-func (srv *Server) handleOpenMetrics(w http.ResponseWriter, _ *http.Request) {
+func (srv *Server) handleOpenMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", openMetricsContentType)
 	w.WriteHeader(http.StatusOK)
 
-	summary, err := srv.db.GetRunSummary()
+	summary, err := srv.db.GetRunSummary(r.Context())
 	if err != nil || summary == nil {
 		summary = &model.RunSummary{}
 	}

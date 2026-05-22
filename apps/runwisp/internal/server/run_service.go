@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -67,17 +68,17 @@ func mapNotFound(err error) error {
 	return err
 }
 
-func (s *runService) ListRuns(taskName string, p PaginationParams) (*RunsResponseBody, error) {
+func (s *runService) ListRuns(ctx context.Context, taskName string, p PaginationParams) (*RunsResponseBody, error) {
 	filterTaskName := taskName
 	if filterTaskName == "" {
 		filterTaskName = p.TaskName
 	}
-	runs, err := s.db.QueryRuns(filterTaskName, p.Limit, p.Offset, p.Status, p.SortField, p.SortDirection, p.SearchQuery)
+	runs, err := s.db.QueryRuns(ctx, filterTaskName, p.Limit, p.Offset, p.Status, p.SortField, p.SortDirection, p.SearchQuery)
 	if err != nil {
 		return nil, err
 	}
 
-	total, err := s.db.CountRunsFiltered(p.Status, filterTaskName, p.SearchQuery)
+	total, err := s.db.CountRunsFiltered(ctx, p.Status, filterTaskName, p.SearchQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -85,15 +86,15 @@ func (s *runService) ListRuns(taskName string, p PaginationParams) (*RunsRespons
 	return &RunsResponseBody{Runs: runs, Total: total}, nil
 }
 
-func (s *runService) GetRun(runID string) (*model.Run, error) {
-	run, err := s.db.GetRun(runID)
+func (s *runService) GetRun(ctx context.Context, runID string) (*model.Run, error) {
+	run, err := s.db.GetRun(ctx, runID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
 	return run, nil
 }
 
-func (s *runService) TriggerRun(taskName string) (*model.Run, error) {
+func (s *runService) TriggerRun(ctx context.Context, taskName string) (*model.Run, error) {
 	task, exists := s.tasks[taskName]
 	if !exists {
 		return nil, ErrTaskNotFound
@@ -129,8 +130,8 @@ func (s *runService) StopService(taskName string) error {
 	return s.taskManager.StopService(taskName)
 }
 
-func (s *runService) DeleteRun(runID string) error {
-	run, err := s.db.GetRun(runID)
+func (s *runService) DeleteRun(ctx context.Context, runID string) error {
+	run, err := s.db.GetRun(ctx, runID)
 	if err != nil {
 		return mapNotFound(err)
 	}
@@ -138,17 +139,17 @@ func (s *runService) DeleteRun(runID string) error {
 		return ErrCannotDeleteActiveRun
 	}
 	// Single-row delete is just a one-ID soft-delete — no duplicated logic.
-	_, err = s.bulkSoftDelete(model.RunSelector{IDs: []string{runID}})
+	_, err = s.bulkSoftDelete(ctx, model.RunSelector{IDs: []string{runID}})
 	return err
 }
 
 // bulkSoftDelete applies a selector against the soft-delete storage method
 // and publishes run.deleted for every affected row.
-func (s *runService) bulkSoftDelete(sel model.RunSelector) (int, error) {
+func (s *runService) bulkSoftDelete(ctx context.Context, sel model.RunSelector) (int, error) {
 	if err := sel.Validate(); err != nil {
 		return 0, wrapSelectorErr(err)
 	}
-	refs, err := s.db.SoftDeleteRuns(sel, time.Now())
+	refs, err := s.db.SoftDeleteRuns(ctx, sel, time.Now())
 	if err != nil {
 		return 0, err
 	}
@@ -160,11 +161,11 @@ func (s *runService) bulkSoftDelete(sel model.RunSelector) (int, error) {
 
 // bulkRestore reverses a soft-delete and re-emits run.updated for each
 // restored run so connected UIs can splice the rows back in.
-func (s *runService) bulkRestore(sel model.RunSelector) (int, error) {
+func (s *runService) bulkRestore(ctx context.Context, sel model.RunSelector) (int, error) {
 	if err := sel.Validate(); err != nil {
 		return 0, wrapSelectorErr(err)
 	}
-	runs, err := s.db.RestoreRuns(sel)
+	runs, err := s.db.RestoreRuns(ctx, sel)
 	if err != nil {
 		return 0, err
 	}
@@ -177,11 +178,11 @@ func (s *runService) bulkRestore(sel model.RunSelector) (int, error) {
 // bulkCancel resolves the selector to currently-running runs and terminates
 // each one through the task manager. Returns the number of cancel signals
 // sent (best-effort — a run may exit between resolve and signal).
-func (s *runService) bulkCancel(sel model.RunSelector) (int, error) {
+func (s *runService) bulkCancel(ctx context.Context, sel model.RunSelector) (int, error) {
 	if err := sel.Validate(); err != nil {
 		return 0, wrapSelectorErr(err)
 	}
-	refs, err := s.db.ResolveSelectorIDs(sel, string(model.PhaseRunning))
+	refs, err := s.db.ResolveSelectorIDs(ctx, sel, string(model.PhaseRunning))
 	if err != nil {
 		return 0, err
 	}
@@ -197,11 +198,11 @@ func (s *runService) bulkCancel(sel model.RunSelector) (int, error) {
 // bulkRerun resolves the selector to a unique set of task names and triggers
 // one new run per task. Returns the (task_name, new_run_id) pairs so the UI
 // can build an "undo rerun" selector.
-func (s *runService) bulkRerun(sel model.RunSelector) ([]TriggeredRunRef, error) {
+func (s *runService) bulkRerun(ctx context.Context, sel model.RunSelector) ([]TriggeredRunRef, error) {
 	if err := sel.Validate(); err != nil {
 		return nil, wrapSelectorErr(err)
 	}
-	refs, err := s.db.ResolveSelectorIDs(sel, "")
+	refs, err := s.db.ResolveSelectorIDs(ctx, sel, "")
 	if err != nil {
 		return nil, err
 	}
@@ -247,8 +248,8 @@ func (s *runService) publishRunUpdated(run *model.Run) {
 	s.eventBus.Publish(events.EventRunUpdated, events.RunEvent{Run: run.Copy()})
 }
 
-func (s *runService) StopRun(runID string) error {
-	run, err := s.db.GetRun(runID)
+func (s *runService) StopRun(ctx context.Context, runID string) error {
+	run, err := s.db.GetRun(ctx, runID)
 	if err != nil {
 		return mapNotFound(err)
 	}

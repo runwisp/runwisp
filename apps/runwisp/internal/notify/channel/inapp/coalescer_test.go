@@ -4,6 +4,7 @@
 package inapp
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -39,13 +40,13 @@ func TestCoalescer_FoldsRepeatsWithinWindow(t *testing.T) {
 	clk := testutil.NewFakeClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
-	c.Receive("title", "first body", makeEvent("backup-db"))
+	c.Receive(context.Background(), "title", "first body", makeEvent("backup-db"))
 	clk.Advance(5 * time.Minute)
-	c.Receive("title", "second body", makeEvent("backup-db"))
+	c.Receive(context.Background(), "title", "second body", makeEvent("backup-db"))
 	clk.Advance(10 * time.Minute)
-	c.Receive("title", "third body", makeEvent("backup-db"))
+	c.Receive(context.Background(), "title", "third body", makeEvent("backup-db"))
 
-	rows, err := db.ListNotifications(50, "")
+	rows, err := db.ListNotifications(context.Background(), 50, "")
 	require.NoError(t, err)
 	require.Len(t, rows, 1, "all three within window must coalesce")
 	assert.Equal(t, 3, rows[0].Count)
@@ -58,11 +59,11 @@ func TestCoalescer_InsertsNewRowAfterWindow(t *testing.T) {
 	clk := testutil.NewFakeClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
-	c.Receive("t", "b", makeEvent("backup-db"))
+	c.Receive(context.Background(), "t", "b", makeEvent("backup-db"))
 	clk.Advance(2 * time.Hour)
-	c.Receive("t", "b", makeEvent("backup-db"))
+	c.Receive(context.Background(), "t", "b", makeEvent("backup-db"))
 
-	rows, err := db.ListNotifications(50, "")
+	rows, err := db.ListNotifications(context.Background(), 50, "")
 	require.NoError(t, err)
 	require.Len(t, rows, 2, "outside window must produce a new row")
 }
@@ -73,11 +74,11 @@ func TestCoalescer_SeparatesByFingerprint(t *testing.T) {
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
-	c.Receive("t", "b", makeEvent("alpha"))
-	c.Receive("t", "b", makeEvent("beta"))
-	c.Receive("t", "b", makeEvent("alpha"))
+	c.Receive(context.Background(), "t", "b", makeEvent("alpha"))
+	c.Receive(context.Background(), "t", "b", makeEvent("beta"))
+	c.Receive(context.Background(), "t", "b", makeEvent("alpha"))
 
-	rows, err := db.ListNotifications(50, "")
+	rows, err := db.ListNotifications(context.Background(), 50, "")
 	require.NoError(t, err)
 	assert.Len(t, rows, 2, "different task names → different fingerprints")
 }
@@ -90,10 +91,10 @@ func TestCoalescer_OccurrenceRingTrimmed(t *testing.T) {
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: ringSize}, nil)
 
 	for i := 0; i < 20; i++ {
-		c.Receive("t", "b", makeEvent("backup-db"))
+		c.Receive(context.Background(), "t", "b", makeEvent("backup-db"))
 		clk.Advance(time.Second)
 	}
-	rows, err := db.ListNotifications(50, "")
+	rows, err := db.ListNotifications(context.Background(), 50, "")
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, 20, rows[0].Count)
@@ -109,9 +110,9 @@ func TestCoalescer_PublishesCreatedThenUpdated(t *testing.T) {
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
-	c.Receive("t", "b", makeEvent("backup-db"))
+	c.Receive(context.Background(), "t", "b", makeEvent("backup-db"))
 	clk.Advance(time.Minute)
-	c.Receive("t", "b", makeEvent("backup-db"))
+	c.Receive(context.Background(), "t", "b", makeEvent("backup-db"))
 
 	deadline := time.After(time.Second)
 	var got []Update
@@ -142,10 +143,10 @@ func TestCoalescer_DistinctFingerprintsAllPersist(t *testing.T) {
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
-		c.Receive("t", "b", makeEvent(name))
+		c.Receive(context.Background(), "t", "b", makeEvent(name))
 		clk.Advance(time.Second)
 	}
-	rows, err := db.ListNotifications(50, "")
+	rows, err := db.ListNotifications(context.Background(), 50, "")
 	require.NoError(t, err)
 	assert.Len(t, rows, 5, "each distinct fingerprint persists as its own row")
 }
@@ -187,8 +188,8 @@ func TestCoalescer_Receive_NilEvent(t *testing.T) {
 	hub := NewHub(8, 50)
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
-	c.Receive("t", "b", nil) // must not panic
-	rows, err := db.ListNotifications(50, "")
+	c.Receive(context.Background(), "t", "b", nil) // must not panic
+	rows, err := db.ListNotifications(context.Background(), 50, "")
 	require.NoError(t, err)
 	assert.Empty(t, rows)
 }

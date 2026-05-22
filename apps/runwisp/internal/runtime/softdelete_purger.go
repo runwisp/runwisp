@@ -42,10 +42,9 @@ func NewSoftDeletePurger(db storage.RunRepository, logDir string) *SoftDeletePur
 // Start drains any leftover soft-deletes from a previous run and then begins
 // the periodic sweep.
 func (p *SoftDeletePurger) Start() {
-	p.purge(0) // boot drain — undo window is a UI affordance, not durability.
-
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
+	p.purge(ctx, 0) // boot drain — undo window is a UI affordance, not durability.
 	go p.run(ctx)
 }
 
@@ -62,7 +61,7 @@ func (p *SoftDeletePurger) run(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			p.purge(SoftDeleteTTL)
+			p.purge(ctx, SoftDeleteTTL)
 		case <-ctx.Done():
 			slog.Debug("Stopping soft-delete purger")
 			return
@@ -70,8 +69,8 @@ func (p *SoftDeletePurger) run(ctx context.Context) {
 	}
 }
 
-func (p *SoftDeletePurger) purge(ttl time.Duration) {
-	refs, err := p.db.PurgeExpiredSoftDeletes(ttl)
+func (p *SoftDeletePurger) purge(ctx context.Context, ttl time.Duration) {
+	refs, err := p.db.PurgeExpiredSoftDeletes(ctx, ttl)
 	if err != nil {
 		slog.Warn("Soft-delete purge failed", "err", err)
 		return

@@ -261,7 +261,7 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 
 	var mu sync.Mutex
 	var persisted []*model.Run
-	jm.BindPersistenceHook(func(run *model.Run, _ bool) {
+	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, _ bool) {
 		mu.Lock()
 		defer mu.Unlock()
 		persisted = append(persisted, run)
@@ -309,7 +309,7 @@ func TestPersistenceHook(t *testing.T) {
 	jm := NewTaskManager(exec, eb, time.Now)
 
 	var created, updated bool
-	jm.BindPersistenceHook(func(run *model.Run, isNew bool) {
+	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, isNew bool) {
 		if isNew {
 			created = true
 		} else {
@@ -357,7 +357,7 @@ func TestRetryFiresOnFailure(t *testing.T) {
 		mu   sync.Mutex
 		runs []*model.Run
 	)
-	jm.BindPersistenceHook(func(r *model.Run, isNew bool) {
+	jm.BindPersistenceHook(func(_ context.Context, r *model.Run, isNew bool) {
 		if !isNew {
 			return
 		}
@@ -595,7 +595,7 @@ func TestPersistAfterShutdownDoesNotPanic(t *testing.T) {
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, time.Now)
 
-	jm.BindPersistenceHook(func(run *model.Run, isNew bool) {})
+	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, isNew bool) {})
 	jm.Shutdown()
 
 	djm := jm.(*defaultTaskManager)

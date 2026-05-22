@@ -72,7 +72,7 @@ type Sender interface {
 // state AFTER subscribing to the bus, closing the race where a run can
 // finish between the handler's initial GetRun and the bus subscription.
 type RunGetter interface {
-	GetRun(string) (*model.Run, error)
+	GetRun(context.Context, string) (*model.Run, error)
 }
 
 // StreamConfig holds the non-context parameters for Run.
@@ -237,7 +237,7 @@ func (s *streamer) streamLoop(ctx context.Context, runID string, bus events.Even
 	// into the void. db reads finalize that case so we don't hang.
 	terminal := runEnded
 	if !terminal && db != nil {
-		if r, getErr := db.GetRun(runID); getErr == nil && r != nil && r.Status == model.PhaseEnded {
+		if r, getErr := db.GetRun(ctx, runID); getErr == nil && r != nil && r.Status == model.PhaseEnded {
 			terminal = true
 		}
 	}

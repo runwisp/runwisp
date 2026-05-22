@@ -11,84 +11,64 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// runFilterGateArgs returns 9 positional params; document the slot indices
-// here so the SQL <-> Go contract is greppable from one place.
-const (
-	endReasonGateIdx   = 0
-	endReasonValueIdx  = 1
-	statusGateIdx      = 2
-	statusValueIdx     = 3
-	taskNameGateIdx    = 4
-	taskNameValueIdx   = 5
-	searchGateIdx      = 6
-	searchPattern1Idx  = 7
-	searchPattern2Idx  = 8
-	filterGateArgCount = 9
-)
-
-func TestRunFilterGateArgs_EmptyFilterDisablesEveryGate(t *testing.T) {
-	args := runFilterGateArgs(model.RunFilter{})
-	assert.Len(t, args, filterGateArgCount)
-	for i, v := range args {
-		assert.Equal(t, "", v, "args[%d] should be empty", i)
-	}
+func TestBuildRunFilterArgs_EmptyFilterDisablesEveryGate(t *testing.T) {
+	args := buildRunFilterArgs(model.RunFilter{})
+	assert.Equal(t, "", args.EndReasonFilter)
+	assert.Equal(t, "", args.StatusPhaseFilter)
+	assert.Equal(t, "", args.TaskNameFilter)
+	assert.Equal(t, "", args.SearchFilter)
+	assert.Equal(t, "", args.SearchPattern)
 }
 
-func TestRunFilterGateArgs_EndReasonStatusGoesToReasonColumn(t *testing.T) {
-	args := runFilterGateArgs(model.RunFilter{Status: string(model.ReasonSuccess)})
-	assert.Equal(t, "success", args[endReasonGateIdx])
-	assert.Equal(t, "success", args[endReasonValueIdx])
-	assert.Equal(t, "", args[statusGateIdx])
-	assert.Equal(t, "", args[statusValueIdx])
+func TestBuildRunFilterArgs_EndReasonStatusGoesToReasonColumn(t *testing.T) {
+	args := buildRunFilterArgs(model.RunFilter{Status: string(model.ReasonSuccess)})
+	assert.Equal(t, "success", args.EndReasonFilter)
+	assert.Equal(t, "", args.StatusPhaseFilter)
 }
 
-func TestRunFilterGateArgs_PhaseStatusGoesToStatusColumn(t *testing.T) {
-	args := runFilterGateArgs(model.RunFilter{Status: string(model.PhaseRunning)})
-	assert.Equal(t, "", args[endReasonGateIdx])
-	assert.Equal(t, "", args[endReasonValueIdx])
-	assert.Equal(t, "running", args[statusGateIdx])
-	assert.Equal(t, "running", args[statusValueIdx])
+func TestBuildRunFilterArgs_PhaseStatusGoesToStatusColumn(t *testing.T) {
+	args := buildRunFilterArgs(model.RunFilter{Status: string(model.PhaseRunning)})
+	assert.Equal(t, "", args.EndReasonFilter)
+	assert.Equal(t, "running", args.StatusPhaseFilter)
 }
 
-func TestRunFilterGateArgs_TaskNameFillsBothSlots(t *testing.T) {
-	args := runFilterGateArgs(model.RunFilter{TaskName: "task1"})
-	assert.Equal(t, "task1", args[taskNameGateIdx])
-	assert.Equal(t, "task1", args[taskNameValueIdx])
+func TestBuildRunFilterArgs_TaskNameFillsTaskNameFilter(t *testing.T) {
+	args := buildRunFilterArgs(model.RunFilter{TaskName: "task1"})
+	assert.Equal(t, "task1", args.TaskNameFilter)
 }
 
-func TestRunFilterGateArgs_SearchBuildsLikePattern(t *testing.T) {
-	args := runFilterGateArgs(model.RunFilter{Search: "foo"})
-	assert.Equal(t, "foo", args[searchGateIdx])
-	assert.Equal(t, "%foo%", args[searchPattern1Idx])
-	assert.Equal(t, "%foo%", args[searchPattern2Idx])
+func TestBuildRunFilterArgs_SearchBuildsLikePattern(t *testing.T) {
+	args := buildRunFilterArgs(model.RunFilter{Search: "foo"})
+	assert.Equal(t, "foo", args.SearchFilter)
+	assert.Equal(t, "%foo%", args.SearchPattern)
 }
 
-func TestRunFilterGateArgs_SearchStripsLikeWildcards(t *testing.T) {
+func TestBuildRunFilterArgs_SearchStripsLikeWildcards(t *testing.T) {
 	// `%` and `_` are LIKE metacharacters — strip them so a user typing
 	// them doesn't get an accidental wildcard match.
-	args := runFilterGateArgs(model.RunFilter{Search: "%a_b%"})
-	assert.Equal(t, "%a_b%", args[searchGateIdx], "gate keeps the raw input")
-	assert.Equal(t, "%ab%", args[searchPattern1Idx])
+	args := buildRunFilterArgs(model.RunFilter{Search: "%a_b%"})
+	assert.Equal(t, "%a_b%", args.SearchFilter, "gate keeps the raw input")
+	assert.Equal(t, "%ab%", args.SearchPattern)
 }
 
-func TestRunFilterGateArgs_SearchTruncatedToMaxLength(t *testing.T) {
+func TestBuildRunFilterArgs_SearchTruncatedToMaxLength(t *testing.T) {
 	long := strings.Repeat("a", MaxSearchQueryLength+50)
-	args := runFilterGateArgs(model.RunFilter{Search: long})
-	pattern, ok := args[searchPattern1Idx].(string)
-	assert.True(t, ok)
-	assert.Len(t, pattern, MaxSearchQueryLength+2, "pattern is truncated body wrapped in %%")
+	args := buildRunFilterArgs(model.RunFilter{Search: long})
+	assert.Len(t, args.SearchPattern, MaxSearchQueryLength+2, "pattern is truncated body wrapped in %%")
 }
 
-func TestIDsJSON_EmptyInputYieldsEmptyArray(t *testing.T) {
-	// "[]" makes `id IN (json_each('[]'))` an empty IN, which matches
-	// nothing — exactly the safety-net the old "(1=0)" sentinel provided.
-	assert.Equal(t, "[]", idsJSON(nil))
-	assert.Equal(t, "[]", idsJSON([]string{}))
+func TestExceptIDsForSlice_EmptyInputYieldsSentinelOnly(t *testing.T) {
+	// Empty input must still produce a one-element slice so sqlc.slice
+	// expands to `NOT IN ('')` — matching every real (non-empty) ULID.
+	got := exceptIDsForSlice(nil)
+	assert.Equal(t, []string{""}, got)
+	got = exceptIDsForSlice([]string{})
+	assert.Equal(t, []string{""}, got)
 }
 
-func TestIDsJSON_PopulatedInputProducesJSONArray(t *testing.T) {
-	assert.Equal(t, `["a"]`, idsJSON([]string{"a"}))
-	assert.Equal(t, `["a","b","c"]`, idsJSON([]string{"a", "b", "c"}))
+func TestExceptIDsForSlice_PopulatedInputPrependsSentinel(t *testing.T) {
+	got := exceptIDsForSlice([]string{"a", "b"})
+	assert.Equal(t, []string{"", "a", "b"}, got)
 }
 
 func TestRunSelector_Validate(t *testing.T) {

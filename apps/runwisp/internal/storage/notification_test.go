@@ -37,15 +37,16 @@ func newNotification(now time.Time, fp string) *Notification {
 }
 
 func TestUpsertByFingerprint_InsertsFreshRow(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	n := newNotification(now, "fp-1")
-	created, err := db.UpsertByFingerprint(n, time.Hour, 10)
+	created, err := db.UpsertByFingerprint(ctx, n, time.Hour, 10)
 	require.NoError(t, err)
 	assert.True(t, created, "first call must insert")
 
-	got, err := db.GetNotificationByID(n.ID)
+	got, err := db.GetNotificationByID(ctx, n.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "fp-1", got.Fingerprint)
 	assert.Equal(t, 1, got.Count)
@@ -53,11 +54,12 @@ func TestUpsertByFingerprint_InsertsFreshRow(t *testing.T) {
 }
 
 func TestUpsertByFingerprint_CoalescesWithinWindow(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	first := newNotification(now, "fp-2")
-	created, err := db.UpsertByFingerprint(first, time.Hour, 10)
+	created, err := db.UpsertByFingerprint(ctx, first, time.Hour, 10)
 	require.NoError(t, err)
 	require.True(t, created)
 
@@ -66,11 +68,11 @@ func TestUpsertByFingerprint_CoalescesWithinWindow(t *testing.T) {
 	// Set ring cap by passing a slice with len=10 limit semantics: caller sets cap.
 	// Here we mimic Coalescer: cap by occurrence_ring at runtime via len(slice)+truncate.
 	// We rely on the repo's truncate-by-len behavior.
-	created, err = db.UpsertByFingerprint(second, time.Hour, 10)
+	created, err = db.UpsertByFingerprint(ctx, second, time.Hour, 10)
 	require.NoError(t, err)
 	assert.False(t, created, "second call within window must update")
 
-	got, err := db.GetNotificationByID(first.ID)
+	got, err := db.GetNotificationByID(ctx, first.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 2, got.Count)
 	assert.Equal(t, second.LastOccurredAt.Unix(), got.LastOccurredAt.Unix())
@@ -80,25 +82,27 @@ func TestUpsertByFingerprint_CoalescesWithinWindow(t *testing.T) {
 }
 
 func TestUpsertByFingerprint_InsertsAfterWindowExpires(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	old := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
 
 	first := newNotification(old, "fp-3")
-	_, err := db.UpsertByFingerprint(first, time.Hour, 10)
+	_, err := db.UpsertByFingerprint(ctx, first, time.Hour, 10)
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	second := newNotification(now, "fp-3")
-	created, err := db.UpsertByFingerprint(second, time.Hour, 10)
+	created, err := db.UpsertByFingerprint(ctx, second, time.Hour, 10)
 	require.NoError(t, err)
 	assert.True(t, created, "outside window must insert")
 
-	rows, err := db.ListNotifications(10, "")
+	rows, err := db.ListNotifications(ctx, 10, "")
 	require.NoError(t, err)
 	assert.Len(t, rows, 2)
 }
 
 func TestListNotifications_PaginationByULIDCursor(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -110,148 +114,155 @@ func TestListNotifications_PaginationByULIDCursor(t *testing.T) {
 		// inserts; subsequent ones update the same row. To get distinct rows,
 		// vary fingerprint per iteration.
 		n.Fingerprint = "fp-" + ulid.Make().String()
-		_, err := db.UpsertByFingerprint(n, time.Hour, 10)
+		_, err := db.UpsertByFingerprint(ctx, n, time.Hour, 10)
 		require.NoError(t, err)
 		ids[i] = n.ID
 	}
 
-	page1, err := db.ListNotifications(2, "")
+	page1, err := db.ListNotifications(ctx, 2, "")
 	require.NoError(t, err)
 	require.Len(t, page1, 2)
 
-	page2, err := db.ListNotifications(2, page1[len(page1)-1].ID)
+	page2, err := db.ListNotifications(ctx, 2, page1[len(page1)-1].ID)
 	require.NoError(t, err)
 	require.Len(t, page2, 2)
 	assert.NotEqual(t, page1[0].ID, page2[0].ID)
 }
 
 func TestPruneByCount(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	for i := 0; i < 10; i++ {
 		n := newNotification(now.Add(time.Duration(i)*time.Millisecond), "")
 		n.Fingerprint = "fp-" + ulid.Make().String()
-		_, err := db.UpsertByFingerprint(n, time.Hour, 10)
+		_, err := db.UpsertByFingerprint(ctx, n, time.Hour, 10)
 		require.NoError(t, err)
 	}
 
-	deleted, err := db.PruneNotificationsByCount(3)
+	deleted, err := db.PruneNotificationsByCount(ctx, 3)
 	require.NoError(t, err)
 	assert.EqualValues(t, 7, deleted)
 
-	rows, err := db.ListNotifications(50, "")
+	rows, err := db.ListNotifications(ctx, 50, "")
 	require.NoError(t, err)
 	assert.Len(t, rows, 3)
 }
 
 func TestPruneByAge(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 
 	old := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Second)
 	n1 := newNotification(old, "fp-old")
-	_, err := db.UpsertByFingerprint(n1, time.Hour, 10)
+	_, err := db.UpsertByFingerprint(ctx, n1, time.Hour, 10)
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	n2 := newNotification(now, "fp-new")
-	_, err = db.UpsertByFingerprint(n2, time.Hour, 10)
+	_, err = db.UpsertByFingerprint(ctx, n2, time.Hour, 10)
 	require.NoError(t, err)
 
-	deleted, err := db.PruneNotificationsByAge(24 * time.Hour)
+	deleted, err := db.PruneNotificationsByAge(ctx, 24*time.Hour)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, deleted)
 
-	rows, err := db.ListNotifications(50, "")
+	rows, err := db.ListNotifications(ctx, 50, "")
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, "fp-new", rows[0].Fingerprint)
 }
 
 func TestMarkNotificationRead_Stamps(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	n := newNotification(now, "fp-read-1")
-	_, err := db.UpsertByFingerprint(n, time.Hour, 10)
+	_, err := db.UpsertByFingerprint(ctx, n, time.Hour, 10)
 	require.NoError(t, err)
 
 	stamp := now.Add(time.Minute)
-	got, err := db.MarkNotificationRead(n.ID, stamp)
+	got, err := db.MarkNotificationRead(ctx, n.ID, stamp)
 	require.NoError(t, err)
 	require.NotNil(t, got.ReadAt)
 	assert.Equal(t, stamp.Unix(), got.ReadAt.Unix())
 }
 
 func TestMarkNotificationRead_NotFound(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
-	_, err := db.MarkNotificationRead("does-not-exist", time.Now())
+	_, err := db.MarkNotificationRead(ctx, "does-not-exist", time.Now())
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestMarkNotificationUnread_ClearsReadAt(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	n := newNotification(now, "fp-unread")
-	_, err := db.UpsertByFingerprint(n, time.Hour, 10)
+	_, err := db.UpsertByFingerprint(ctx, n, time.Hour, 10)
 	require.NoError(t, err)
-	_, err = db.MarkNotificationRead(n.ID, now.Add(time.Minute))
+	_, err = db.MarkNotificationRead(ctx, n.ID, now.Add(time.Minute))
 	require.NoError(t, err)
 
-	got, err := db.MarkNotificationUnread(n.ID)
+	got, err := db.MarkNotificationUnread(ctx, n.ID)
 	require.NoError(t, err)
 	assert.Nil(t, got.ReadAt)
 }
 
 func TestMarkAllNotificationsRead_StampsOnlyUnread(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	a := newNotification(now, "fp-a")
-	_, err := db.UpsertByFingerprint(a, time.Hour, 10)
+	_, err := db.UpsertByFingerprint(ctx, a, time.Hour, 10)
 	require.NoError(t, err)
 	b := newNotification(now, "fp-b")
-	_, err = db.UpsertByFingerprint(b, time.Hour, 10)
+	_, err = db.UpsertByFingerprint(ctx, b, time.Hour, 10)
 	require.NoError(t, err)
 
 	earlier := now.Add(-time.Hour)
-	_, err = db.MarkNotificationRead(a.ID, earlier)
+	_, err = db.MarkNotificationRead(ctx, a.ID, earlier)
 	require.NoError(t, err)
 
 	stamp := now.Add(time.Minute)
-	require.NoError(t, db.MarkAllNotificationsRead(stamp))
+	require.NoError(t, db.MarkAllNotificationsRead(ctx, stamp))
 
-	gotA, err := db.GetNotificationByID(a.ID)
+	gotA, err := db.GetNotificationByID(ctx, a.ID)
 	require.NoError(t, err)
 	require.NotNil(t, gotA.ReadAt)
 	assert.Equal(t, earlier.Unix(), gotA.ReadAt.Unix(), "already-read row must keep its stamp")
 
-	gotB, err := db.GetNotificationByID(b.ID)
+	gotB, err := db.GetNotificationByID(ctx, b.ID)
 	require.NoError(t, err)
 	require.NotNil(t, gotB.ReadAt)
 	assert.Equal(t, stamp.Unix(), gotB.ReadAt.Unix())
 }
 
 func TestCountUnreadNotifications(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	a := newNotification(now, "fp-a")
-	_, err := db.UpsertByFingerprint(a, time.Hour, 10)
+	_, err := db.UpsertByFingerprint(ctx, a, time.Hour, 10)
 	require.NoError(t, err)
 	b := newNotification(now, "fp-b")
-	_, err = db.UpsertByFingerprint(b, time.Hour, 10)
+	_, err = db.UpsertByFingerprint(ctx, b, time.Hour, 10)
 	require.NoError(t, err)
 
-	c, err := db.CountUnreadNotifications()
+	c, err := db.CountUnreadNotifications(ctx)
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, c)
 
-	_, err = db.MarkNotificationRead(a.ID, now.Add(time.Minute))
+	_, err = db.MarkNotificationRead(ctx, a.ID, now.Add(time.Minute))
 	require.NoError(t, err)
 
-	c, err = db.CountUnreadNotifications()
+	c, err = db.CountUnreadNotifications(ctx)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, c)
 }
@@ -295,20 +306,21 @@ func TestDecodeOccurrences_InvalidJSON(t *testing.T) {
 }
 
 func TestUpsertByFingerprint_CoalesceClearsReadAt(t *testing.T) {
+	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	first := newNotification(now, "fp-coalesce")
-	_, err := db.UpsertByFingerprint(first, time.Hour, 10)
+	_, err := db.UpsertByFingerprint(ctx, first, time.Hour, 10)
 	require.NoError(t, err)
-	_, err = db.MarkNotificationRead(first.ID, now.Add(time.Minute))
+	_, err = db.MarkNotificationRead(ctx, first.ID, now.Add(time.Minute))
 	require.NoError(t, err)
 
 	second := newNotification(now.Add(5*time.Minute), "fp-coalesce")
-	_, err = db.UpsertByFingerprint(second, time.Hour, 10)
+	_, err = db.UpsertByFingerprint(ctx, second, time.Hour, 10)
 	require.NoError(t, err)
 
-	got, err := db.GetNotificationByID(first.ID)
+	got, err := db.GetNotificationByID(ctx, first.ID)
 	require.NoError(t, err)
 	assert.Nil(t, got.ReadAt, "fresh occurrence must reset read state")
 }

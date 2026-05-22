@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -110,7 +111,7 @@ func TestTriggerRun_TaskNotFound(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	_, err := svc.TriggerRun("missing")
+	_, err := svc.TriggerRun(context.Background(), "missing")
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
@@ -122,7 +123,7 @@ func TestTriggerRun_ServiceTask_ReturnsServiceNotRunnable(t *testing.T) {
 	}
 	svc := makeRunService(tasks, repo, runner)
 
-	_, err := svc.TriggerRun("svc")
+	_, err := svc.TriggerRun(context.Background(), "svc")
 	assert.ErrorIs(t, err, ErrServiceNotRunnable)
 }
 
@@ -134,7 +135,7 @@ func TestTriggerRun_APITriggerDisabled(t *testing.T) {
 	}
 	svc := makeRunService(tasks, repo, runner)
 
-	_, err := svc.TriggerRun("t")
+	_, err := svc.TriggerRun(context.Background(), "t")
 	assert.ErrorIs(t, err, ErrAPIDisabled)
 }
 
@@ -149,7 +150,7 @@ func TestTriggerRun_Success(t *testing.T) {
 	expected := &model.Run{ID: "run-1", TaskName: "t"}
 	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(expected, nil)
 
-	run, err := svc.TriggerRun("t")
+	run, err := svc.TriggerRun(context.Background(), "t")
 	require.NoError(t, err)
 	assert.Equal(t, expected, run)
 	runner.AssertExpectations(t)
@@ -166,7 +167,7 @@ func TestTriggerRun_RunnerError(t *testing.T) {
 	runnerErr := errors.New("runner failed")
 	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(nil, runnerErr)
 
-	_, err := svc.TriggerRun("t")
+	_, err := svc.TriggerRun(context.Background(), "t")
 	assert.ErrorIs(t, err, runnerErr)
 	runner.AssertExpectations(t)
 }
@@ -286,9 +287,9 @@ func TestStopRun_RunNotFound(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	repo.On("GetRun", "run-999").Return(nil, storage.ErrNotFound)
+	repo.On("GetRun", mock.Anything, "run-999").Return(nil, storage.ErrNotFound)
 
-	err := svc.StopRun("run-999")
+	err := svc.StopRun(context.Background(), "run-999")
 	assert.ErrorIs(t, err, ErrRunNotFound)
 	repo.AssertExpectations(t)
 }
@@ -299,9 +300,9 @@ func TestStopRun_NotRunning(t *testing.T) {
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
 	run := &model.Run{ID: "run-1", Status: model.PhaseEnded}
-	repo.On("GetRun", "run-1").Return(run, nil)
+	repo.On("GetRun", mock.Anything, "run-1").Return(run, nil)
 
-	err := svc.StopRun("run-1")
+	err := svc.StopRun(context.Background(), "run-1")
 	assert.ErrorIs(t, err, ErrNotRunning)
 	repo.AssertExpectations(t)
 }
@@ -312,10 +313,10 @@ func TestStopRun_Success(t *testing.T) {
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
 	run := &model.Run{ID: "run-1", Status: model.PhaseRunning}
-	repo.On("GetRun", "run-1").Return(run, nil)
+	repo.On("GetRun", mock.Anything, "run-1").Return(run, nil)
 	runner.On("TerminateRun", "run-1").Return(nil)
 
-	err := svc.StopRun("run-1")
+	err := svc.StopRun(context.Background(), "run-1")
 	assert.NoError(t, err)
 	repo.AssertExpectations(t)
 	runner.AssertExpectations(t)
@@ -327,12 +328,12 @@ func TestStopRun_TerminateError(t *testing.T) {
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
 	run := &model.Run{ID: "run-1", Status: model.PhaseRunning}
-	repo.On("GetRun", "run-1").Return(run, nil)
+	repo.On("GetRun", mock.Anything, "run-1").Return(run, nil)
 
 	termErr := errors.New("terminate failed")
 	runner.On("TerminateRun", "run-1").Return(termErr)
 
-	err := svc.StopRun("run-1")
+	err := svc.StopRun(context.Background(), "run-1")
 	assert.ErrorIs(t, err, termErr)
 	repo.AssertExpectations(t)
 	runner.AssertExpectations(t)
@@ -345,9 +346,9 @@ func TestDeleteRun_RunNotFound(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	repo.On("GetRun", "missing").Return(nil, storage.ErrNotFound)
+	repo.On("GetRun", mock.Anything, "missing").Return(nil, storage.ErrNotFound)
 
-	err := svc.DeleteRun("missing")
+	err := svc.DeleteRun(context.Background(), "missing")
 	assert.ErrorIs(t, err, ErrRunNotFound)
 	repo.AssertExpectations(t)
 }
@@ -358,9 +359,9 @@ func TestDeleteRun_RunningRun_RejectsWithConflict(t *testing.T) {
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
 	run := &model.Run{ID: "run-1", Status: model.PhaseRunning}
-	repo.On("GetRun", "run-1").Return(run, nil)
+	repo.On("GetRun", mock.Anything, "run-1").Return(run, nil)
 
-	err := svc.DeleteRun("run-1")
+	err := svc.DeleteRun(context.Background(), "run-1")
 	assert.ErrorIs(t, err, ErrCannotDeleteActiveRun)
 	repo.AssertExpectations(t)
 	// DeleteRun must not be invoked when the run is active.
@@ -373,9 +374,9 @@ func TestDeleteRun_PendingRun_RejectsWithConflict(t *testing.T) {
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
 	run := &model.Run{ID: "run-2", Status: model.PhasePending}
-	repo.On("GetRun", "run-2").Return(run, nil)
+	repo.On("GetRun", mock.Anything, "run-2").Return(run, nil)
 
-	err := svc.DeleteRun("run-2")
+	err := svc.DeleteRun(context.Background(), "run-2")
 	assert.ErrorIs(t, err, ErrCannotDeleteActiveRun)
 	repo.AssertExpectations(t)
 	repo.AssertNotCalled(t, "DeleteRun", mock.Anything)
@@ -387,12 +388,12 @@ func TestDeleteRun_EndedRun_Succeeds(t *testing.T) {
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
 	run := &model.Run{ID: "run-3", TaskName: "t", Status: model.PhaseEnded}
-	repo.On("GetRun", "run-3").Return(run, nil)
-	repo.On("SoftDeleteRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
+	repo.On("GetRun", mock.Anything, "run-3").Return(run, nil)
+	repo.On("SoftDeleteRuns", mock.Anything, mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == "run-3"
 	}), mock.Anything).Return([]storage.RunRef{{ID: "run-3", TaskName: "t"}}, nil)
 
-	err := svc.DeleteRun("run-3")
+	err := svc.DeleteRun(context.Background(), "run-3")
 	assert.NoError(t, err)
 	repo.AssertExpectations(t)
 }
@@ -403,9 +404,9 @@ func TestStopRun_RunPending_NotRunning(t *testing.T) {
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
 	run := &model.Run{ID: "run-1", Status: model.PhasePending}
-	repo.On("GetRun", "run-1").Return(run, nil)
+	repo.On("GetRun", mock.Anything, "run-1").Return(run, nil)
 
-	err := svc.StopRun("run-1")
+	err := svc.StopRun(context.Background(), "run-1")
 	assert.ErrorIs(t, err, ErrNotRunning)
 	repo.AssertExpectations(t)
 }

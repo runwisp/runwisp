@@ -85,11 +85,11 @@ type LogRawOutput struct {
 
 // resolveLogPath validates the run ID and computes the log path. Returns an
 // error suitable for huma to map to an HTTP status code.
-func (srv *Server) resolveLogPathFor(taskName, runIDStr string) (string, *model.Run, error) {
+func (srv *Server) resolveLogPathFor(ctx context.Context, taskName, runIDStr string) (string, *model.Run, error) {
 	if _, err := ulid.Parse(runIDStr); err != nil {
 		return "", nil, huma.Error400BadRequest("Invalid run ID")
 	}
-	run, err := srv.db.GetRun(runIDStr)
+	run, err := srv.db.GetRun(ctx, runIDStr)
 	if err != nil {
 		return "", nil, huma.Error404NotFound("Run not found")
 	}
@@ -100,7 +100,7 @@ func (srv *Server) resolveLogPathFor(taskName, runIDStr string) (string, *model.
 }
 
 func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*LogPageOutput, error) {
-	logPath, run, err := srv.resolveLogPathFor(input.TaskName, input.RunID)
+	logPath, run, err := srv.resolveLogPathFor(ctx, input.TaskName, input.RunID)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*Lo
 }
 
 func (srv *Server) humaGetLogRaw(ctx context.Context, input *LogRawInput) (*LogRawOutput, error) {
-	logPath, _, err := srv.resolveLogPathFor(input.TaskName, input.RunID)
+	logPath, _, err := srv.resolveLogPathFor(ctx, input.TaskName, input.RunID)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +209,7 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		if _, err := ulid.Parse(input.RunID); err != nil {
 			return
 		}
-		run, err := srv.db.GetRun(input.RunID)
+		run, err := srv.db.GetRun(ctx, input.RunID)
 		if err != nil {
 			slog.Error("Failed to get run", "run", input.RunID, "err", err)
 			return

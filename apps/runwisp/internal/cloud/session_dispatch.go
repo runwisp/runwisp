@@ -83,7 +83,7 @@ func (sr *sessionRunner) readLoop(ctx context.Context, session *wsSession) error
 
 		session.lastReceived.Store(time.Now().UnixMilli())
 
-		if err := sr.handleInboundPayload(session, payload); err != nil {
+		if err := sr.handleInboundPayload(ctx, session, payload); err != nil {
 			slog.Info("failed to handle inbound message", "error", err.Error())
 		}
 	}
@@ -138,7 +138,7 @@ func (sr *sessionRunner) watchdogLoop(ctx context.Context, session *wsSession) e
 	}
 }
 
-func (sr *sessionRunner) handleInboundPayload(session *wsSession, payload []byte) error {
+func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSession, payload []byte) error {
 	decoded, err := DecodeInboundMessage(payload)
 	if err != nil {
 		sr.sendProtocolError(session, CloudErrorKindValidation, "Failed to parse message", "")
@@ -152,17 +152,17 @@ func (sr *sessionRunner) handleInboundPayload(session *wsSession, payload []byte
 		slog.Info("cloud protocol error", "code", message.Code, "message", message.Message, "requestId", message.RequestID)
 		return nil
 	case protocol.ExecutionDispatchMessage:
-		if dispatchErr := sr.handler.HandleExecutionDispatch(message); dispatchErr != nil {
+		if dispatchErr := sr.handler.HandleExecutionDispatch(ctx, message); dispatchErr != nil {
 			sr.sendProtocolError(session, classifyErrorKind(dispatchErr), dispatchErr.Error(), "")
 		}
 		return nil
 	case protocol.ExecutionStopMessage:
-		if stopErr := sr.handler.HandleExecutionStop(message); stopErr != nil {
+		if stopErr := sr.handler.HandleExecutionStop(ctx, message); stopErr != nil {
 			sr.sendProtocolError(session, classifyErrorKind(stopErr), stopErr.Error(), "")
 		}
 		return nil
 	case protocol.LogReplayRequestMessage:
-		response, responseErr := sr.handler.HandleLogReplayRequest(message)
+		response, responseErr := sr.handler.HandleLogReplayRequest(ctx, message)
 		if responseErr != nil {
 			sr.sendProtocolError(session, classifyErrorKind(responseErr), responseErr.Error(), message.ID)
 		}

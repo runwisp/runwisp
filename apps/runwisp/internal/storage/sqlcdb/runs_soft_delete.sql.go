@@ -7,7 +7,10 @@ package sqlcdb
 
 import (
 	"context"
+	"strings"
 	"time"
+
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 const purgeExpiredSoftDeletes = `-- name: PurgeExpiredSoftDeletes :many
@@ -33,6 +36,432 @@ func (q *Queries) PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.T
 	items := []PurgeExpiredSoftDeletesRow{}
 	for rows.Next() {
 		var i PurgeExpiredSoftDeletesRow
+		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const resolveSelectorIDsByFilter = `-- name: ResolveSelectorIDsByFilter :many
+SELECT id, task_name, created_at FROM runs
+WHERE deleted_at IS NULL
+  AND (?1 = '' OR end_reason = ?1)
+  AND (?2 = '' OR status = ?2)
+  AND (?3 = '' OR task_name = ?3)
+  AND (?4 = '' OR (task_name LIKE ?5 OR id LIKE ?5))
+  AND (?6 = '' OR status = ?6)
+  AND id NOT IN (/*SLICE:except_ids*/?)
+`
+
+type ResolveSelectorIDsByFilterParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	BulkStatusFilter  interface{} `json:"bulk_status_filter"`
+	ExceptIds         []string    `json:"except_ids"`
+}
+
+type ResolveSelectorIDsByFilterRow struct {
+	ID        string    `json:"id"`
+	TaskName  string    `json:"task_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (q *Queries) ResolveSelectorIDsByFilter(ctx context.Context, arg ResolveSelectorIDsByFilterParams) ([]ResolveSelectorIDsByFilterRow, error) {
+	query := resolveSelectorIDsByFilter
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.EndReasonFilter)
+	queryParams = append(queryParams, arg.StatusPhaseFilter)
+	queryParams = append(queryParams, arg.TaskNameFilter)
+	queryParams = append(queryParams, arg.SearchFilter)
+	queryParams = append(queryParams, arg.SearchPattern)
+	queryParams = append(queryParams, arg.BulkStatusFilter)
+	if len(arg.ExceptIds) > 0 {
+		for _, v := range arg.ExceptIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:except_ids*/?", strings.Repeat(",?", len(arg.ExceptIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:except_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ResolveSelectorIDsByFilterRow{}
+	for rows.Next() {
+		var i ResolveSelectorIDsByFilterRow
+		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const resolveSelectorIDsByIDs = `-- name: ResolveSelectorIDsByIDs :many
+SELECT id, task_name, created_at FROM runs
+WHERE deleted_at IS NULL
+  AND id IN (/*SLICE:ids*/?)
+  AND (?2 = '' OR status = ?2)
+`
+
+type ResolveSelectorIDsByIDsParams struct {
+	Ids              []string    `json:"ids"`
+	BulkStatusFilter interface{} `json:"bulk_status_filter"`
+}
+
+type ResolveSelectorIDsByIDsRow struct {
+	ID        string    `json:"id"`
+	TaskName  string    `json:"task_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (q *Queries) ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelectorIDsByIDsParams) ([]ResolveSelectorIDsByIDsRow, error) {
+	query := resolveSelectorIDsByIDs
+	var queryParams []interface{}
+	if len(arg.Ids) > 0 {
+		for _, v := range arg.Ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(arg.Ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	queryParams = append(queryParams, arg.BulkStatusFilter)
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ResolveSelectorIDsByIDsRow{}
+	for rows.Next() {
+		var i ResolveSelectorIDsByIDsRow
+		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const restoreRunsByFilter = `-- name: RestoreRunsByFilter :exec
+UPDATE runs SET deleted_at = NULL
+WHERE deleted_at IS NOT NULL
+  AND (?1 = '' OR end_reason = ?1)
+  AND (?2 = '' OR status = ?2)
+  AND (?3 = '' OR task_name = ?3)
+  AND (?4 = '' OR (task_name LIKE ?5 OR id LIKE ?5))
+  AND id NOT IN (/*SLICE:except_ids*/?)
+`
+
+type RestoreRunsByFilterParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	ExceptIds         []string    `json:"except_ids"`
+}
+
+func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilterParams) error {
+	query := restoreRunsByFilter
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.EndReasonFilter)
+	queryParams = append(queryParams, arg.StatusPhaseFilter)
+	queryParams = append(queryParams, arg.TaskNameFilter)
+	queryParams = append(queryParams, arg.SearchFilter)
+	queryParams = append(queryParams, arg.SearchPattern)
+	if len(arg.ExceptIds) > 0 {
+		for _, v := range arg.ExceptIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:except_ids*/?", strings.Repeat(",?", len(arg.ExceptIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:except_ids*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
+
+const restoreRunsByIDs = `-- name: RestoreRunsByIDs :exec
+UPDATE runs SET deleted_at = NULL
+WHERE deleted_at IS NOT NULL
+  AND id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) error {
+	query := restoreRunsByIDs
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
+
+const selectRestoredRunsByFilter = `-- name: SelectRestoredRunsByFilter :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, deleted_at FROM runs WHERE deleted_at IS NULL
+  AND (?1 = '' OR end_reason = ?1)
+  AND (?2 = '' OR status = ?2)
+  AND (?3 = '' OR task_name = ?3)
+  AND (?4 = '' OR (task_name LIKE ?5 OR id LIKE ?5))
+  AND id NOT IN (/*SLICE:except_ids*/?)
+`
+
+type SelectRestoredRunsByFilterParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	ExceptIds         []string    `json:"except_ids"`
+}
+
+func (q *Queries) SelectRestoredRunsByFilter(ctx context.Context, arg SelectRestoredRunsByFilterParams) ([]Run, error) {
+	query := selectRestoredRunsByFilter
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.EndReasonFilter)
+	queryParams = append(queryParams, arg.StatusPhaseFilter)
+	queryParams = append(queryParams, arg.TaskNameFilter)
+	queryParams = append(queryParams, arg.SearchFilter)
+	queryParams = append(queryParams, arg.SearchPattern)
+	if len(arg.ExceptIds) > 0 {
+		for _, v := range arg.ExceptIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:except_ids*/?", strings.Repeat(",?", len(arg.ExceptIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:except_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Run{}
+	for rows.Next() {
+		var i Run
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRestoredRunsByIDs = `-- name: SelectRestoredRunsByIDs :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, deleted_at FROM runs WHERE deleted_at IS NULL
+  AND id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) SelectRestoredRunsByIDs(ctx context.Context, ids []string) ([]Run, error) {
+	query := selectRestoredRunsByIDs
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Run{}
+	for rows.Next() {
+		var i Run
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const softDeleteRunsByFilter = `-- name: SoftDeleteRunsByFilter :many
+UPDATE runs SET deleted_at = ?1
+WHERE deleted_at IS NULL
+  AND status = ?2
+  AND (?3 = '' OR end_reason = ?3)
+  AND (?4 = '' OR status = ?4)
+  AND (?5 = '' OR task_name = ?5)
+  AND (?6 = '' OR (task_name LIKE ?7 OR id LIKE ?7))
+  AND id NOT IN (/*SLICE:except_ids*/?)
+RETURNING id, task_name, created_at
+`
+
+type SoftDeleteRunsByFilterParams struct {
+	DeletedAt         *time.Time     `json:"deleted_at"`
+	StatusPhase       model.RunPhase `json:"status_phase"`
+	EndReasonFilter   interface{}    `json:"end_reason_filter"`
+	StatusPhaseFilter interface{}    `json:"status_phase_filter"`
+	TaskNameFilter    interface{}    `json:"task_name_filter"`
+	SearchFilter      interface{}    `json:"search_filter"`
+	SearchPattern     string         `json:"search_pattern"`
+	ExceptIds         []string       `json:"except_ids"`
+}
+
+type SoftDeleteRunsByFilterRow struct {
+	ID        string    `json:"id"`
+	TaskName  string    `json:"task_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (q *Queries) SoftDeleteRunsByFilter(ctx context.Context, arg SoftDeleteRunsByFilterParams) ([]SoftDeleteRunsByFilterRow, error) {
+	query := softDeleteRunsByFilter
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.DeletedAt)
+	queryParams = append(queryParams, arg.StatusPhase)
+	queryParams = append(queryParams, arg.EndReasonFilter)
+	queryParams = append(queryParams, arg.StatusPhaseFilter)
+	queryParams = append(queryParams, arg.TaskNameFilter)
+	queryParams = append(queryParams, arg.SearchFilter)
+	queryParams = append(queryParams, arg.SearchPattern)
+	if len(arg.ExceptIds) > 0 {
+		for _, v := range arg.ExceptIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:except_ids*/?", strings.Repeat(",?", len(arg.ExceptIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:except_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SoftDeleteRunsByFilterRow{}
+	for rows.Next() {
+		var i SoftDeleteRunsByFilterRow
+		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const softDeleteRunsByIDs = `-- name: SoftDeleteRunsByIDs :many
+UPDATE runs SET deleted_at = ?1
+WHERE deleted_at IS NULL
+  AND status = ?2
+  AND id IN (/*SLICE:ids*/?)
+RETURNING id, task_name, created_at
+`
+
+type SoftDeleteRunsByIDsParams struct {
+	DeletedAt   *time.Time     `json:"deleted_at"`
+	StatusPhase model.RunPhase `json:"status_phase"`
+	Ids         []string       `json:"ids"`
+}
+
+type SoftDeleteRunsByIDsRow struct {
+	ID        string    `json:"id"`
+	TaskName  string    `json:"task_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (q *Queries) SoftDeleteRunsByIDs(ctx context.Context, arg SoftDeleteRunsByIDsParams) ([]SoftDeleteRunsByIDsRow, error) {
+	query := softDeleteRunsByIDs
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.DeletedAt)
+	queryParams = append(queryParams, arg.StatusPhase)
+	if len(arg.Ids) > 0 {
+		for _, v := range arg.Ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(arg.Ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SoftDeleteRunsByIDsRow{}
+	for rows.Next() {
+		var i SoftDeleteRunsByIDsRow
 		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
 			return nil, err
 		}

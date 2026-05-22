@@ -4,6 +4,7 @@
 package inapp
 
 import (
+	"context"
 	"hash/fnv"
 	"log/slog"
 	"strconv"
@@ -63,7 +64,7 @@ func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock notify.Cl
 
 // Receive folds the (rendered, ev) pair into the persistent store and
 // publishes the resulting Update on the hub.
-func (c *Coalescer) Receive(title, body string, ev *notify.Event) {
+func (c *Coalescer) Receive(ctx context.Context, title, body string, ev *notify.Event) {
 	if ev == nil {
 		return
 	}
@@ -83,7 +84,7 @@ func (c *Coalescer) Receive(title, body string, ev *notify.Event) {
 		CreatedAt:      now,
 		LastOccurredAt: now,
 	}
-	created, err := c.repo.UpsertByFingerprint(n, c.cfg.Window, c.cfg.OccurrenceN)
+	created, err := c.repo.UpsertByFingerprint(ctx, n, c.cfg.Window, c.cfg.OccurrenceN)
 	if err != nil {
 		c.log.Error("notify coalescer: upsert failed", "fingerprint", n.Fingerprint, "error", err)
 		return
@@ -92,7 +93,7 @@ func (c *Coalescer) Receive(title, body string, ev *notify.Event) {
 	if !created {
 		updateType = UpdateTypeUpdated
 	}
-	count, err := c.repo.CountUnreadNotifications()
+	count, err := c.repo.CountUnreadNotifications(ctx)
 	if err != nil {
 		// SSE clients can re-derive on next event or by polling; don't drop
 		// the row update because the count query failed.

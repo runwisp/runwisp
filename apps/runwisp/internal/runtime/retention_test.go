@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +43,7 @@ func TestRetentionCleaner(t *testing.T) {
 		{ID: runID, TaskName: "task1", CreatedAt: now},
 	}
 
-	repo.On("DeleteOldRuns", task).Return(deletedRuns, nil)
+	repo.On("DeleteOldRuns", mock.Anything, task).Return(deletedRuns, nil)
 
 	cleaner := NewRetentionCleaner(repo, tasks, 10*time.Millisecond, logDir, 0)
 	cleaner.Start()
@@ -60,7 +62,7 @@ func TestEnforceMaxTotalSize_NoLimit(t *testing.T) {
 	logDir := t.TempDir()
 	// maxTotalSize=0 means no limit; enforceMaxTotalSize should be a no-op
 	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 0)
-	cleaner.enforceMaxTotalSize() // must not call QueryRuns
+	cleaner.enforceMaxTotalSize(context.Background()) // must not call QueryRuns
 	repo.AssertNotCalled(t, "QueryRuns")
 }
 
@@ -70,7 +72,7 @@ func TestEnforceMaxTotalSize_UnderLimit(t *testing.T) {
 	// Write a tiny file; maxTotalSize is huge → no pruning
 	require.NoError(t, os.WriteFile(filepath.Join(logDir, "small.log"), []byte("x"), 0644))
 	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 1<<30) // 1 GiB
-	cleaner.enforceMaxTotalSize()
+	cleaner.enforceMaxTotalSize(context.Background())
 	repo.AssertNotCalled(t, "QueryRuns")
 }
 
@@ -87,13 +89,13 @@ func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
 
 	run := model.Run{ID: runID, TaskName: "task1", CreatedAt: now, Status: model.PhaseEnded}
 
-	repo.On("QueryRuns", "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{run}, nil)
+	repo.On("QueryRuns", mock.Anything, "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{run}, nil)
 	// Second call returns empty to stop the loop
-	repo.On("QueryRuns", "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{}, nil)
-	repo.On("DeleteRun", runID).Return(nil)
+	repo.On("QueryRuns", mock.Anything, "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{}, nil)
+	repo.On("DeleteRun", mock.Anything, runID).Return(nil)
 
 	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 100)
-	cleaner.enforceMaxTotalSize()
+	cleaner.enforceMaxTotalSize(context.Background())
 
-	repo.AssertCalled(t, "DeleteRun", runID)
+	repo.AssertCalled(t, "DeleteRun", mock.Anything, runID)
 }

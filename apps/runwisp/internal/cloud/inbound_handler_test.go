@@ -4,6 +4,7 @@
 package cloud
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -29,7 +30,7 @@ type stubRunRepo struct {
 	getErr error
 }
 
-func (f *stubRunRepo) GetRunByExternalExecutionID(_ string) (*model.Run, error) {
+func (f *stubRunRepo) GetRunByExternalExecutionID(_ context.Context, _ string) (*model.Run, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
@@ -54,7 +55,7 @@ func newDispatchInboundHandler(runner TaskRunner, repo ExternalRunGetter, avail 
 
 func TestHandleExecutionDispatch_EmptyExecutionID(t *testing.T) {
 	h := newTestInboundHandler()
-	err := h.HandleExecutionDispatch(protocol.ExecutionDispatchMessage{
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
 		Execution: &protocol.Execution{ExecutionID: ""},
 	})
 	require.Error(t, err)
@@ -68,7 +69,7 @@ func TestHandleExecutionDispatch_InvalidScript(t *testing.T) {
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
 	h := newDispatchInboundHandler(runner, nil, avail)
 
-	err := h.HandleExecutionDispatch(protocol.ExecutionDispatchMessage{
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
 		Execution: &protocol.Execution{
 			ExecutionID: "exec-1",
 			Script:      []byte(`{bad json`),
@@ -83,7 +84,7 @@ func TestHandleExecutionDispatch_Success(t *testing.T) {
 	h := newDispatchInboundHandler(runner, nil, avail)
 
 	script := shellScript(t, "echo hello")
-	err := h.HandleExecutionDispatch(protocol.ExecutionDispatchMessage{
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
 		Execution: &protocol.Execution{
 			ExecutionID: "exec-abc",
 			TaskID:      "my-task",
@@ -103,7 +104,7 @@ func TestHandleExecutionDispatch_TriggerError_NilRun(t *testing.T) {
 	h := newDispatchInboundHandler(runner, nil, avail)
 
 	script := shellScript(t, "echo hi")
-	err := h.HandleExecutionDispatch(protocol.ExecutionDispatchMessage{
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
 		Execution: &protocol.Execution{
 			ExecutionID: "exec-fail",
 			TaskID:      "some-task",
@@ -127,7 +128,7 @@ func TestHandleExecutionDispatch_TriggerError_WithRun(t *testing.T) {
 	h := newDispatchInboundHandler(runner, nil, avail)
 
 	script := shellScript(t, "echo hi")
-	err := h.HandleExecutionDispatch(protocol.ExecutionDispatchMessage{
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
 		Execution: &protocol.Execution{
 			ExecutionID: "exec-conflict",
 			TaskID:      "task",
@@ -141,7 +142,7 @@ func TestHandleExecutionDispatch_TriggerError_WithRun(t *testing.T) {
 
 func TestHandleExecutionStop_EmptyID(t *testing.T) {
 	h := newTestInboundHandler()
-	err := h.HandleExecutionStop(protocol.ExecutionStopMessage{ExecutionID: ""})
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: ""})
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -153,7 +154,7 @@ func TestHandleExecutionStop_NotFound(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
 
-	err := h.HandleExecutionStop(protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -167,7 +168,7 @@ func TestHandleExecutionStop_RunAlreadyTerminal(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
 
-	err := h.HandleExecutionStop(protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
 	require.NoError(t, err)
 }
 
@@ -177,7 +178,7 @@ func TestHandleExecutionStop_RunActive_NotRunning(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
 
-	err := h.HandleExecutionStop(protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -189,7 +190,7 @@ func TestHandleExecutionStop_RepoTransientError(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
 
-	err := h.HandleExecutionStop(protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -200,7 +201,7 @@ func TestHandleExecutionStop_RepoTransientError(t *testing.T) {
 
 func TestHandleLogReplayRequest_EmptyID(t *testing.T) {
 	h := newTestInboundHandler()
-	_, err := h.HandleLogReplayRequest(protocol.LogReplayRequestMessage{ExecutionID: ""})
+	_, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{ExecutionID: ""})
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -211,7 +212,7 @@ func TestHandleLogReplayRequest_NotFound(t *testing.T) {
 	repo := &stubRunRepo{getErr: ErrNotFound}
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
-	chunk, err := h.HandleLogReplayRequest(protocol.LogReplayRequestMessage{
+	chunk, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{
 		ID:          "req-1",
 		ExecutionID: "exec-1",
 	})
@@ -223,7 +224,7 @@ func TestHandleLogReplayRequest_TransientError(t *testing.T) {
 	repo := &stubRunRepo{getErr: errors.New("db timeout")}
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
-	_, err := h.HandleLogReplayRequest(protocol.LogReplayRequestMessage{
+	_, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{
 		ID:          "req-1",
 		ExecutionID: "exec-1",
 	})

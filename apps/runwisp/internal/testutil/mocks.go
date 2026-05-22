@@ -19,122 +19,122 @@ type MockRunRepository struct {
 	mock.Mock
 }
 
-func (m *MockRunRepository) CreateRun(run *model.Run) error {
-	args := m.Called(run)
+func (m *MockRunRepository) CreateRun(ctx context.Context, run *model.Run) error {
+	args := m.Called(ctx, run)
 	return args.Error(0)
 }
 
-func (m *MockRunRepository) UpdateRun(run *model.Run) error {
-	args := m.MethodCalled("UpdateRun", run)
+func (m *MockRunRepository) UpdateRun(ctx context.Context, run *model.Run) error {
+	args := m.MethodCalled("UpdateRun", ctx, run)
 	return args.Error(0)
 }
 
-func (m *MockRunRepository) GetRun(id string) (*model.Run, error) {
-	args := m.Called(id)
+func (m *MockRunRepository) GetRun(ctx context.Context, id string) (*model.Run, error) {
+	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error) {
-	args := m.Called(externalExecutionID)
+func (m *MockRunRepository) GetRunByExternalExecutionID(ctx context.Context, externalExecutionID string) (*model.Run, error) {
+	args := m.Called(ctx, externalExecutionID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) CountRuns(taskName string) (int64, error) {
-	args := m.Called(taskName)
+func (m *MockRunRepository) CountRuns(ctx context.Context, taskName string) (int64, error) {
+	args := m.Called(ctx, taskName)
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *MockRunRepository) CountRunsFiltered(status, taskName, searchQuery string) (int64, error) {
-	args := m.Called(status, taskName, searchQuery)
+func (m *MockRunRepository) CountRunsFiltered(ctx context.Context, status, taskName, searchQuery string) (int64, error) {
+	args := m.Called(ctx, status, taskName, searchQuery)
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *MockRunRepository) QueryRuns(taskName string, limit, offset int, status string, sortField storage.SortColumn, sortDirection storage.SortDirection, searchQuery string) ([]model.Run, error) {
-	args := m.Called(taskName, limit, offset, status, sortField, sortDirection, searchQuery)
+func (m *MockRunRepository) QueryRuns(ctx context.Context, taskName string, limit, offset int, status string, sortField storage.SortColumn, sortDirection storage.SortDirection, searchQuery string) ([]model.Run, error) {
+	args := m.Called(ctx, taskName, limit, offset, status, sortField, sortDirection, searchQuery)
 	return args.Get(0).([]model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) DeleteRun(id string) error {
-	args := m.Called(id)
+func (m *MockRunRepository) DeleteRun(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
 	return args.Error(0)
 }
 
-func (m *MockRunRepository) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
-	args := m.Called(task)
+func (m *MockRunRepository) DeleteOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error) {
+	args := m.Called(ctx, task)
 	return args.Get(0).([]model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) MarkCrashedRuns() (int64, error) {
-	args := m.Called()
+func (m *MockRunRepository) MarkCrashedRuns(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *MockRunRepository) GetPendingRuns() ([]model.Run, error) {
-	args := m.Called()
+func (m *MockRunRepository) GetPendingRuns(ctx context.Context) ([]model.Run, error) {
+	args := m.Called(ctx)
 	return args.Get(0).([]model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) GetLastRunByTask(taskName string) (*model.Run, error) {
-	args := m.Called(taskName)
+func (m *MockRunRepository) GetLastRunByTask(ctx context.Context, taskName string) (*model.Run, error) {
+	args := m.Called(ctx, taskName)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) GetRunSummary() (*model.RunSummary, error) {
-	args := m.Called()
+func (m *MockRunRepository) GetRunSummary(ctx context.Context) (*model.RunSummary, error) {
+	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*model.RunSummary), args.Error(1)
 }
 
-func (m *MockRunRepository) EnsureTaskRegistered(taskName string, firstSeen time.Time) error {
-	args := m.Called(taskName, firstSeen)
+func (m *MockRunRepository) EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time) error {
+	args := m.Called(ctx, taskName, firstSeen)
 	return args.Error(0)
 }
 
-func (m *MockRunRepository) GetTaskRegistration(taskName string) (*model.TaskRegistration, error) {
-	args := m.Called(taskName)
+func (m *MockRunRepository) GetTaskRegistration(ctx context.Context, taskName string) (*model.TaskRegistration, error) {
+	args := m.Called(ctx, taskName)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*model.TaskRegistration), args.Error(1)
 }
 
-func (m *MockRunRepository) SoftDeleteRuns(sel model.RunSelector, deletedAt time.Time) ([]storage.RunRef, error) {
-	args := m.Called(sel, deletedAt)
+func (m *MockRunRepository) SoftDeleteRuns(ctx context.Context, sel model.RunSelector, deletedAt time.Time) ([]storage.RunRef, error) {
+	args := m.Called(ctx, sel, deletedAt)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]storage.RunRef), args.Error(1)
 }
 
-func (m *MockRunRepository) RestoreRuns(sel model.RunSelector) ([]model.Run, error) {
-	args := m.Called(sel)
+func (m *MockRunRepository) RestoreRuns(ctx context.Context, sel model.RunSelector) ([]model.Run, error) {
+	args := m.Called(ctx, sel)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) ResolveSelectorIDs(sel model.RunSelector, statusFilter string) ([]storage.RunRef, error) {
-	args := m.Called(sel, statusFilter)
+func (m *MockRunRepository) ResolveSelectorIDs(ctx context.Context, sel model.RunSelector, statusFilter string) ([]storage.RunRef, error) {
+	args := m.Called(ctx, sel, statusFilter)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]storage.RunRef), args.Error(1)
 }
 
-func (m *MockRunRepository) PurgeExpiredSoftDeletes(ttl time.Duration) ([]storage.RunRef, error) {
-	args := m.Called(ttl)
+func (m *MockRunRepository) PurgeExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]storage.RunRef, error) {
+	args := m.Called(ctx, ttl)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

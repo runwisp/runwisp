@@ -73,7 +73,7 @@ func NewLogUploader(repo PendingLogUploadRepository, runRepo ExternalRunGetter, 
 // RegisterDispatch persists the upload coordinates the cloud handed us. An
 // empty uploadURL means "skip archival for this dispatch" — we drop the
 // entry on the floor and return without error.
-func (u *LogUploader) RegisterDispatch(executionID, uploadURL, logPath string) error {
+func (u *LogUploader) RegisterDispatch(ctx context.Context, executionID, uploadURL, logPath string) error {
 	if u == nil || executionID == "" {
 		return nil
 	}
@@ -87,7 +87,7 @@ func (u *LogUploader) RegisterDispatch(executionID, uploadURL, logPath string) e
 		InsertedAt:          u.now().Unix(),
 	}
 	if u.repo != nil {
-		if err := u.repo.UpsertPendingLogUpload(rec); err != nil {
+		if err := u.repo.UpsertPendingLogUpload(ctx, rec); err != nil {
 			slog.Warn("failed to persist pending log upload", "executionId", executionID, "err", err)
 			return err
 		}
@@ -115,7 +115,7 @@ func (u *LogUploader) Archive(ctx context.Context, executionID, logFilePath stri
 	}
 	if _, err := os.Stat(logFilePath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			u.forget(executionID)
+			u.forget(ctx, executionID)
 			return nil, nil
 		}
 		return nil, err
@@ -128,7 +128,7 @@ func (u *LogUploader) Archive(ctx context.Context, executionID, logFilePath stri
 		return nil, err
 	}
 
-	u.forget(executionID)
+	u.forget(ctx, executionID)
 	if u.deleteOnDone {
 		if removeErr := os.Remove(logFilePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 			slog.Warn("failed to remove archived log file", "executionId", executionID, "path", logFilePath, "err", removeErr)
@@ -147,7 +147,7 @@ func (u *LogUploader) RecoverOrphans(ctx context.Context, emit func(executionID 
 	if u == nil || u.repo == nil {
 		return
 	}
-	recs, err := u.repo.ListPendingLogUploads()
+	recs, err := u.repo.ListPendingLogUploads(ctx)
 	if err != nil {
 		slog.Warn("failed to list pending log uploads", "err", err)
 		return
@@ -162,11 +162,11 @@ func (u *LogUploader) RecoverOrphans(ctx context.Context, emit func(executionID 
 }
 
 func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec model.PendingLogUpload, emit func(executionID string, result LogUploaderResult)) {
-	run, runErr := u.runRepo.GetRunByExternalExecutionID(rec.ExternalExecutionID)
+	run, runErr := u.runRepo.GetRunByExternalExecutionID(ctx, rec.ExternalExecutionID)
 	if runErr != nil {
 		if errors.Is(runErr, ErrNotFound) {
 			slog.Info("dropping orphan log upload row: run not found", "executionId", rec.ExternalExecutionID)
-			u.forget(rec.ExternalExecutionID)
+			u.forget(ctx, rec.ExternalExecutionID)
 			return
 		}
 		slog.Warn("failed to query run for orphan upload", "executionId", rec.ExternalExecutionID, "err", runErr)
@@ -193,8 +193,8 @@ func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec model.Pending
 
 // Forget drops in-memory state for an execution without touching storage.
 // Used when the dispatch is invalid or a run terminates with no upload URL.
-func (u *LogUploader) Forget(executionID string) {
-	u.forget(executionID)
+func (u *LogUploader) Forget(ctx context.Context, executionID string) {
+	u.forget(ctx, executionID)
 }
 
 func (u *LogUploader) lookup(executionID string) (uploadEntry, bool) {
@@ -204,12 +204,12 @@ func (u *LogUploader) lookup(executionID string) (uploadEntry, bool) {
 	return e, ok
 }
 
-func (u *LogUploader) forget(executionID string) {
+func (u *LogUploader) forget(ctx context.Context, executionID string) {
 	u.mu.Lock()
 	delete(u.pending, executionID)
 	u.mu.Unlock()
 	if u.repo != nil {
-		if err := u.repo.DeletePendingLogUpload(executionID); err != nil {
+		if err := u.repo.DeletePendingLogUpload(ctx, executionID); err != nil {
 			slog.Warn("failed to delete pending log upload row", "executionId", executionID, "err", err)
 		}
 	}

@@ -115,8 +115,8 @@ func TestGetAllRuns(t *testing.T) {
 	runs := []model.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
-	repo.On("QueryRuns", "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
-	repo.On("CountRunsFiltered", "", "", "").Return(int64(len(runs)), nil)
+	repo.On("QueryRuns", mock.Anything, "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
+	repo.On("CountRunsFiltered", mock.Anything, "", "", "").Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/runs", nil)
 	w := httptest.NewRecorder()
@@ -138,8 +138,8 @@ func TestGetTaskRuns(t *testing.T) {
 	runs := []model.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
-	repo.On("QueryRuns", "task1", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
-	repo.On("CountRunsFiltered", "", "task1", "").Return(int64(len(runs)), nil)
+	repo.On("QueryRuns", mock.Anything, "task1", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
+	repo.On("CountRunsFiltered", mock.Anything, "", "task1", "").Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs", nil)
 	w := httptest.NewRecorder()
@@ -160,7 +160,7 @@ func TestGetRun(t *testing.T) {
 
 	id := ulid.Make().String()
 	run := &model.Run{ID: id, TaskName: "task1"}
-	repo.On("GetRun", id).Return(run, nil)
+	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id, nil)
 	w := httptest.NewRecorder()
@@ -180,8 +180,8 @@ func TestDeleteRun(t *testing.T) {
 
 	id := ulid.Make().String()
 	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseEnded}
-	repo.On("GetRun", id).Return(run, nil)
-	repo.On("SoftDeleteRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
+	repo.On("GetRun", mock.Anything, id).Return(run, nil)
+	repo.On("SoftDeleteRuns", mock.Anything, mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == id
 	}), mock.Anything).Return([]storage.RunRef{{ID: id, TaskName: "task1"}}, nil)
 
@@ -199,7 +199,7 @@ func TestBulkDeleteRuns(t *testing.T) {
 
 	id1 := ulid.Make().String()
 	id2 := ulid.Make().String()
-	repo.On("SoftDeleteRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
+	repo.On("SoftDeleteRuns", mock.Anything, mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 2
 	}), mock.Anything).Return([]storage.RunRef{
 		{ID: id1, TaskName: "task1"},
@@ -224,7 +224,7 @@ func TestBulkRestoreRuns(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
 	id := ulid.Make().String()
-	repo.On("RestoreRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
+	repo.On("RestoreRuns", mock.Anything, mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == id
 	})).Return([]model.Run{{ID: id, TaskName: "task1", Status: model.PhaseEnded}}, nil)
 
@@ -278,7 +278,7 @@ func TestStopRun(t *testing.T) {
 	json.Unmarshal(wTrigger.Body.Bytes(), &triggeredRun)
 
 	triggeredRun.Status = model.PhaseRunning
-	repo.On("GetRun", triggeredRun.ID).Return(&triggeredRun, nil)
+	repo.On("GetRun", mock.Anything, triggeredRun.ID).Return(&triggeredRun, nil)
 
 	req := httptest.NewRequest("POST", "/api/tasks/task1/runs/"+triggeredRun.ID+"/stop", nil)
 	w := httptest.NewRecorder()
@@ -300,7 +300,7 @@ func TestGetLogRaw(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
 	require.NoError(t, os.WriteFile(logPath, []byte("log content\n"), 0644))
 
-	repo.On("GetRun", id).Return(run, nil)
+	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log/raw", nil)
 	w := httptest.NewRecorder()
@@ -316,7 +316,7 @@ func TestGetRunNotFound(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
 	id := ulid.Make().String()
-	repo.On("GetRun", id).Return(nil, storage.ErrNotFound)
+	repo.On("GetRun", mock.Anything, id).Return(nil, storage.ErrNotFound)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id, nil)
 	w := httptest.NewRecorder()
@@ -467,7 +467,7 @@ func TestLogStream(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
 	require.NoError(t, os.WriteFile(logPath, []byte("line 1\n"), 0644))
 
-	repo.On("GetRun", id).Return(run, nil)
+	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log/stream", nil)
 	w := httptest.NewRecorder()
@@ -526,7 +526,7 @@ func TestGetLogPage_NegativeFrom_Tail(t *testing.T) {
 	require.NoError(t, os.WriteFile(logPath, []byte(content.String()), 0644))
 	require.NoError(t, os.WriteFile(logPath+".idx", nil, 0644))
 
-	repo.On("GetRun", id).Return(run, nil)
+	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log?from=-5", nil)
 	w := httptest.NewRecorder()

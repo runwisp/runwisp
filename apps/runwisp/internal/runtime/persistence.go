@@ -11,8 +11,10 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// RunPersistenceHook persists run state transitions.
-type RunPersistenceHook func(run *model.Run, isNew bool)
+// RunPersistenceHook persists run state transitions. ctx is the
+// coordinator's worker context — cancelled at Shutdown so in-flight DB
+// writes can abort cleanly when the daemon is stopping.
+type RunPersistenceHook func(ctx context.Context, run *model.Run, isNew bool)
 
 // persistTask is the unit of work dispatched through the buffered channel.
 // A typed struct avoids the per-call closure allocation that a chan func()
@@ -28,7 +30,7 @@ type persistTask struct {
 type PersistenceCoordinator struct {
 	hook   RunPersistenceHook
 	ch     chan persistTask
-	done   <-chan struct{}
+	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
@@ -37,7 +39,7 @@ func NewPersistenceCoordinator(bufferSize int) *PersistenceCoordinator {
 	ctx, cancel := context.WithCancel(context.Background())
 	pc := &PersistenceCoordinator{
 		ch:     make(chan persistTask, bufferSize),
-		done:   ctx.Done(),
+		ctx:    ctx,
 		cancel: cancel,
 	}
 	pc.wg.Add(1)
@@ -82,12 +84,12 @@ func (pc *PersistenceCoordinator) Shutdown() {
 
 // Done returns a channel that is closed when the coordinator shuts down.
 func (pc *PersistenceCoordinator) Done() <-chan struct{} {
-	return pc.done
+	return pc.ctx.Done()
 }
 
 func (pc *PersistenceCoordinator) enqueue(task persistTask) {
 	select {
-	case <-pc.done:
+	case <-pc.ctx.Done():
 		return
 	case pc.ch <- task:
 	}
@@ -95,15 +97,19 @@ func (pc *PersistenceCoordinator) enqueue(task persistTask) {
 
 func (pc *PersistenceCoordinator) worker(ctx context.Context) {
 	defer pc.wg.Done()
+	// Drain pending tasks with a fresh background ctx after cancellation so
+	// in-flight persistence still completes during shutdown — the worker
+	// ctx is only the "stop accepting new work" signal.
 	for {
 		select {
 		case task := <-pc.ch:
-			pc.hook(task.run, task.isNew)
+			pc.hook(ctx, task.run, task.isNew)
 		case <-ctx.Done():
+			drainCtx := context.Background()
 			for {
 				select {
 				case task := <-pc.ch:
-					pc.hook(task.run, task.isNew)
+					pc.hook(drainCtx, task.run, task.isNew)
 				default:
 					return
 				}

@@ -27,7 +27,7 @@ func TestServiceStop_FastWhenIdle(t *testing.T) {
 		Rules:          nil,
 		FailureSink:    nil,
 		RetentionEvery: time.Hour,
-		RetentionFn:    func() {},
+		RetentionFn:    func(context.Context) {},
 	})
 
 	require.NoError(t, svc.Start(context.Background()))
@@ -53,7 +53,7 @@ func TestServiceStop_RetentionTickerExits(t *testing.T) {
 	svc := New(Config{
 		Bus:            events.NewEventBus(),
 		RetentionEvery: 10 * time.Millisecond,
-		RetentionFn:    func() { ticks.Add(1) },
+		RetentionFn:    func(context.Context) { ticks.Add(1) },
 	})
 
 	require.NoError(t, svc.Start(context.Background()))

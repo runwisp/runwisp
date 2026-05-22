@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -39,8 +40,9 @@ type daemonConfig struct {
 	JWTSecret         string
 }
 
-func loadDaemonConfig(configRepo storage.ConfigRepository, mode daemonMode) (*daemonConfig, error) {
+func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, mode daemonMode) (*daemonConfig, error) {
 	fp, err := resolveConfigValue(
+		ctx,
 		configRepo,
 		storage.ConfigKeyFingerprint,
 		"RUNWISP_FINGERPRINT",
@@ -135,6 +137,7 @@ func deriveJWTSecret(password, fp string) (string, error) {
 //  2. Database (canonical store)
 //  3. Generated via generate() and persisted to DB
 func resolveConfigValue(
+	ctx context.Context,
 	configRepo storage.ConfigRepository,
 	dbKey, envKey string,
 	generate func() (string, error),
@@ -143,7 +146,7 @@ func resolveConfigValue(
 		return v, nil
 	}
 
-	if v, found, err := configRepo.GetConfigValue(dbKey); err != nil {
+	if v, found, err := configRepo.GetConfigValue(ctx, dbKey); err != nil {
 		return "", err
 	} else if found {
 		return v, nil
@@ -153,7 +156,7 @@ func resolveConfigValue(
 	if err != nil {
 		return "", err
 	}
-	if err := configRepo.SetConfigValue(dbKey, v); err != nil {
+	if err := configRepo.SetConfigValue(ctx, dbKey, v); err != nil {
 		return "", err
 	}
 	return v, nil

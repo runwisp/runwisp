@@ -4,34 +4,42 @@
 package storage
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// runFilterGateArgs decomposes a RunFilter into the nine positional parameters
-// expected by the static filterGatesSQL predicate block:
-//
-//	end_reason gate, end_reason value,
-//	status     gate, status     value,
-//	task_name  gate, task_name  value,
-//	search     gate, search pattern, search pattern
-//
-// The status input is dispatched here (end_reason column vs status column) so
-// the SQL itself never branches. The search input is truncated and stripped of
-// LIKE wildcards before the pattern is built.
-func runFilterGateArgs(f model.RunFilter) []any {
-	var endReason, statusPhase string
+// runFilterArgs is the shared set of filter-gate parameters threaded through
+// every selector-driven sqlc query. Each Foo/FooFilter pair acts as a gate:
+// when the Foo value is "", the gate is open and the predicate is skipped;
+// when it is non-empty, the column must equal it. Search additionally drives
+// the LIKE pattern via SearchPattern, which is pre-rendered here.
+type runFilterArgs struct {
+	EndReasonFilter   string
+	StatusPhaseFilter string
+	TaskNameFilter    string
+	SearchFilter      string
+	SearchPattern     string
+}
+
+// buildRunFilterArgs decomposes a RunFilter into the values consumed by the
+// filter-gate predicates. The Status input is dispatched here (end_reason
+// column vs status column) so the SQL itself never branches. The search
+// input is truncated and stripped of LIKE wildcards before the pattern is
+// built.
+func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
+	args := runFilterArgs{
+		TaskNameFilter: f.TaskName,
+		SearchFilter:   f.Search,
+	}
 	switch model.EndReason(f.Status) {
 	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped,
 		model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped,
 		model.ReasonLogOverflow:
-		endReason = f.Status
+		args.EndReasonFilter = f.Status
 	default:
-		statusPhase = f.Status
+		args.StatusPhaseFilter = f.Status
 	}
-	var pattern string
 	if f.Search != "" {
 		s := f.Search
 		if len(s) > MaxSearchQueryLength {
@@ -39,25 +47,21 @@ func runFilterGateArgs(f model.RunFilter) []any {
 		}
 		s = strings.ReplaceAll(s, "%", "")
 		s = strings.ReplaceAll(s, "_", "")
-		pattern = "%" + s + "%"
+		args.SearchPattern = "%" + s + "%"
 	}
-	return []any{
-		endReason, endReason,
-		statusPhase, statusPhase,
-		f.TaskName, f.TaskName,
-		f.Search, pattern, pattern,
-	}
+	return args
 }
 
-// idsJSON marshals an ID list to a JSON-array string accepted by
-// `json_each(?)` inside the static IN / NOT IN subqueries. nil or empty
-// becomes "[]" so the resulting `IN ()` is the empty set (no matches) and
-// `NOT IN ()` is universal — both are exactly the safety-net behaviors we
-// want when the selector side is unconstrained.
-func idsJSON(ids []string) string {
-	if len(ids) == 0 {
-		return "[]"
-	}
-	b, _ := json.Marshal(ids)
-	return string(b)
+// exceptIDsForSlice prepends a never-matching sentinel to the caller's
+// ExceptIDs so sqlc's slice expansion behaves as "no exclusions" when the
+// list is empty. sqlc.slice on an empty []string renders `NOT IN (NULL)`,
+// which evaluates to NULL for every row — equivalent to "exclude
+// everything", the opposite of the intent. The empty-string sentinel never
+// matches a real ULID, so `NOT IN (”)` matches all rows; for non-empty
+// ExceptIDs the sentinel is harmless.
+func exceptIDsForSlice(ids []string) []string {
+	out := make([]string, 0, len(ids)+1)
+	out = append(out, "")
+	out = append(out, ids...)
+	return out
 }
