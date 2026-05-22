@@ -213,16 +213,15 @@ func collectRows[T any](rows *sql.Rows, scan func(interface{ Scan(...any) error 
 }
 
 func (db *SQLiteDatabase) GetRun(id string) (*model.Run, error) {
-	return db.getRunWhere("id = ?", id)
+	return db.scanSingleRun(selectRunByIDSQL, id)
 }
 
 func (db *SQLiteDatabase) GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error) {
-	return db.getRunWhere("external_execution_id = ?", externalExecutionID)
+	return db.scanSingleRun(selectRunByExternalIDSQL, externalExecutionID)
 }
 
-func (db *SQLiteDatabase) getRunWhere(whereClause string, args ...any) (*model.Run, error) {
-	row := db.db.QueryRow(selectRunsSQL(wherePrefix+whereClause, "LIMIT 1"), args...)
-	run, err := scanRun(row)
+func (db *SQLiteDatabase) scanSingleRun(query string, args ...any) (*model.Run, error) {
+	run, err := scanRun(db.db.QueryRow(query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

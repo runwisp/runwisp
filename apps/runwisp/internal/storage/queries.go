@@ -177,11 +177,16 @@ WHERE deleted_at IS NULL` + inIDsSQL + statusFilterGateSQL
 const resolveByFilterSQL = `SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL` + filterGatesSQL + notInIDsSQL + statusFilterGateSQL
 
+// Single-row lookups by primary key / external ID. Fully static SQL — the
+// `?` placeholders bind the only caller-supplied values.
+const selectRunByIDSQL = selectFromRuns + ` WHERE id = ? AND ` + notDeletedClause + ` LIMIT 1`
+const selectRunByExternalIDSQL = selectFromRuns + ` WHERE external_execution_id = ? AND ` + notDeletedClause + ` LIMIT 1`
+
 // selectRunsSQL composes a `SELECT runColumns FROM runs <where> <tail>` query,
 // implicitly adding the soft-delete filter to whatever predicates the caller
 // passed in. tail is appended verbatim — callers use it for ORDER BY / LIMIT.
 //
-// Used by the legacy dynamic-query paths (GetRun, QueryRuns, GetPendingRuns,
+// Used by the legacy dynamic-query paths (QueryRuns, GetPendingRuns,
 // GetLastRunByTask, DeleteOldRuns) whose ORDER BY tails are still assembled
 // at runtime from validated, hardcoded fragments.
 func selectRunsSQL(where, tail string) string {
