@@ -354,71 +354,93 @@ func (s *testSMTPServer) acceptLoop() {
 func (s *testSMTPServer) handle(conn net.Conn) {
 	defer s.wg.Done()
 	defer func() { _ = conn.Close() }()
-	br := bufio.NewReader(conn)
-	bw := bufio.NewWriter(conn)
-	writeLine := func(line string) bool {
-		if _, err := bw.WriteString(line + "\r\n"); err != nil {
-			return false
-		}
-		return bw.Flush() == nil
+	sess := &smtpTestSession{
+		br:     bufio.NewReader(conn),
+		bw:     bufio.NewWriter(conn),
+		bodies: s.bodies,
 	}
-	if !writeLine("220 runwisp-test ESMTP ready") {
+	sess.run()
+}
+
+// smtpTestSession holds per-connection state for the fake SMTP server. The
+// split into command vs. data-mode handlers keeps each step small enough to
+// reason about (and below SonarCloud's cognitive-complexity threshold).
+type smtpTestSession struct {
+	br     *bufio.Reader
+	bw     *bufio.Writer
+	bodies chan<- string
+	body   strings.Builder
+	inData bool
+}
+
+func (s *smtpTestSession) writeLine(line string) bool {
+	if _, err := s.bw.WriteString(line + "\r\n"); err != nil {
+		return false
+	}
+	return s.bw.Flush() == nil
+}
+
+func (s *smtpTestSession) run() {
+	if !s.writeLine("220 runwisp-test ESMTP ready") {
 		return
 	}
-	var body strings.Builder
-	inData := false
 	for {
-		line, err := br.ReadString('\n')
+		line, err := s.br.ReadString('\n')
 		if err != nil {
 			return
 		}
 		line = strings.TrimRight(line, "\r\n")
-		if inData {
-			if line == "." {
-				inData = false
-				select {
-				case s.bodies <- body.String():
-				default:
-				}
-				body.Reset()
-				if !writeLine("250 2.0.0 Ok: queued") {
-					return
-				}
-				continue
-			}
-			if strings.HasPrefix(line, "..") {
-				line = line[1:]
-			}
-			body.WriteString(line)
-			body.WriteString("\n")
-			continue
+		var keep bool
+		if s.inData {
+			keep = s.handleDataLine(line)
+		} else {
+			keep = s.handleCommand(line)
 		}
-		upper := strings.ToUpper(line)
-		switch {
-		case strings.HasPrefix(upper, "EHLO"), strings.HasPrefix(upper, "HELO"):
-			if !writeLine("250-runwisp-test") || !writeLine("250 SMTPUTF8") {
-				return
-			}
-		case strings.HasPrefix(upper, "MAIL FROM"),
-			strings.HasPrefix(upper, "RCPT TO"),
-			upper == "NOOP",
-			upper == "RSET":
-			if !writeLine("250 2.1.0 Ok") {
-				return
-			}
-		case upper == "DATA":
-			if !writeLine("354 End data with <CR><LF>.<CR><LF>") {
-				return
-			}
-			inData = true
-		case upper == "QUIT":
-			_ = writeLine("221 2.0.0 Bye")
+		if !keep {
 			return
-		default:
-			if !writeLine("250 Ok") {
-				return
-			}
 		}
+	}
+}
+
+func (s *smtpTestSession) handleDataLine(line string) bool {
+	if line == "." {
+		s.inData = false
+		select {
+		case s.bodies <- s.body.String():
+		default:
+		}
+		s.body.Reset()
+		return s.writeLine("250 2.0.0 Ok: queued")
+	}
+	if strings.HasPrefix(line, "..") {
+		line = line[1:]
+	}
+	s.body.WriteString(line)
+	s.body.WriteString("\n")
+	return true
+}
+
+func (s *smtpTestSession) handleCommand(line string) bool {
+	upper := strings.ToUpper(line)
+	switch {
+	case strings.HasPrefix(upper, "EHLO"), strings.HasPrefix(upper, "HELO"):
+		return s.writeLine("250-runwisp-test") && s.writeLine("250 SMTPUTF8")
+	case strings.HasPrefix(upper, "MAIL FROM"),
+		strings.HasPrefix(upper, "RCPT TO"),
+		upper == "NOOP",
+		upper == "RSET":
+		return s.writeLine("250 2.1.0 Ok")
+	case upper == "DATA":
+		if !s.writeLine("354 End data with <CR><LF>.<CR><LF>") {
+			return false
+		}
+		s.inData = true
+		return true
+	case upper == "QUIT":
+		_ = s.writeLine("221 2.0.0 Bye")
+		return false
+	default:
+		return s.writeLine("250 Ok")
 	}
 }
 

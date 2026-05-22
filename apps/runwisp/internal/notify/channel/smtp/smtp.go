@@ -227,8 +227,13 @@ func defaultClient(host string, port int, tlsMode string, tlsSkipVerify bool, us
 	}
 	if tlsSkipVerify {
 		// Acceptable in operator-controlled environments only; surfaced via
-		// the tls_skip_verify TOML flag so it is never silently on.
-		opts = append(opts, gomail.WithTLSConfig(&tls.Config{InsecureSkipVerify: true})) //nolint:gosec
+		// the tls_skip_verify TOML flag so it is never silently on. The
+		// MinVersion floor keeps the rest of the connection hardened even
+		// when the operator opts out of cert/hostname validation.
+		opts = append(opts, gomail.WithTLSConfig(&tls.Config{ //nolint:gosec // NOSONAR S4830,S5527: operator-opted-in via tls_skip_verify
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: tlsSkipVerify,
+		}))
 	}
 	if username != "" {
 		opts = append(opts,
