@@ -21,8 +21,6 @@ import (
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
-	"github.com/runwisp/runwisp/internal/server/dto"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/spf13/cobra"
 )
 
@@ -162,11 +160,11 @@ func runExecViaDaemon(taskName string) (int, error) {
 	return exitCodeFromRun(final), nil
 }
 
-func exitCodeFromRun(run *dto.Run) int {
+func exitCodeFromRun(run *model.Run) int {
 	if run == nil {
 		return 0
 	}
-	if run.EndReason != nil && *run.EndReason != sqlcdb.ReasonSuccess {
+	if run.EndReason != nil && *run.EndReason != model.ReasonSuccess {
 		return run.ExitCode
 	}
 	return 0
@@ -213,7 +211,7 @@ func runExecStandalone(taskName string) (int, error) {
 	unsubFailed := eventBus.Subscribe(events.EventRunFailed, termHandler)
 	defer unsubFailed()
 
-	run, err := taskManager.TriggerRun(taskName, sqlcdb.TriggeredByAPI)
+	run, err := taskManager.TriggerRun(taskName, model.TriggeredByAPI)
 	if err != nil {
 		return 0, fmt.Errorf("failed to trigger task %q: %w", taskName, err)
 	}
@@ -222,7 +220,7 @@ func runExecStandalone(taskName string) (int, error) {
 
 	result := <-done
 
-	if result.Run.EndReason != nil && *result.Run.EndReason != sqlcdb.ReasonSuccess {
+	if result.Run.EndReason != nil && *result.Run.EndReason != model.ReasonSuccess {
 		return result.Run.ExitCode, nil
 	}
 

@@ -18,7 +18,6 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime/retry"
 	"github.com/runwisp/runwisp/internal/runtime/services"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // PersistenceChannelSize bounds the run-persistence work queue. Sized for
@@ -32,7 +31,7 @@ const (
 
 // TriggerRunOptions customise run creation for non-local invocations.
 type TriggerRunOptions struct {
-	TriggeredBy         sqlcdb.TriggeredBy
+	TriggeredBy         model.TriggeredBy
 	ExternalExecutionID string
 	RetryAttempt        int
 	RetryOfRunID        *string
@@ -137,7 +136,7 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 	}
 
 	if task.OnOverlap == model.PolicyQueue && ts.cond == nil {
-		ts.queue = make([]*sqlcdb.Run, 0)
+		ts.queue = make([]*model.Run, 0)
 		ts.cond = sync.NewCond(&m.mu)
 		m.wg.Add(1)
 		go m.queueProcessLoop(task.Name)
@@ -170,7 +169,7 @@ type PendingRunsResult struct {
 // Service instances are never resumed — the supervisor spawns fresh runs at
 // the configured Instances count instead. Pending service rows are marked
 // failed so they don't linger in the database.
-func (m *defaultTaskManager) LoadPendingRuns(runs []sqlcdb.Run) PendingRunsResult {
+func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -191,9 +190,9 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []sqlcdb.Run) PendingRunsResul
 // are marked failed (the supervisor spawns fresh instances on boot), queued
 // tasks rejoin their queue (or fail when it is full), and concurrent tasks
 // either restart immediately or fail when capacity is exhausted.
-func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *sqlcdb.Run, result *PendingRunsResult) {
+func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
 	if ts.task.Kind.IsService() {
-		r.End(sqlcdb.ReasonFailed, -1, m.clock())
+		r.End(model.ReasonFailed, -1, m.clock())
 		m.persistence.PersistExisting(r)
 		result.Skipped++
 		return
@@ -206,10 +205,10 @@ func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *sqlcdb.Run, resu
 	m.restartOrFailPendingRun(ts, r, result)
 }
 
-func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *sqlcdb.Run, result *PendingRunsResult) {
+func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
 	queueMax := getQueueMax(ts.task)
 	if queueMax > 0 && len(ts.queue) >= queueMax {
-		r.End(sqlcdb.ReasonQueueFull, -1, m.clock())
+		r.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(r)
 		result.Failed++
 		return
@@ -219,25 +218,25 @@ func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *sqlcdb.Run, res
 	result.Queued++
 }
 
-func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *sqlcdb.Run, result *PendingRunsResult) {
+func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
 	concurrencyLimit := m.getConcurrencyLimit(ts.task)
 	if len(ts.active) < concurrencyLimit {
 		m.startRun(ts.task, r)
 		result.Resumed++
 		return
 	}
-	r.End(sqlcdb.ReasonFailed, -1, m.clock())
+	r.End(model.ReasonFailed, -1, m.clock())
 	m.persistence.PersistExisting(r)
 	result.Failed++
 }
 
-func (m *defaultTaskManager) TriggerRun(taskName string, triggeredBy sqlcdb.TriggeredBy) (*sqlcdb.Run, error) {
+func (m *defaultTaskManager) TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error) {
 	return m.TriggerRunWithOptions(taskName, TriggerRunOptions{
 		TriggeredBy: triggeredBy,
 	})
 }
 
-func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*sqlcdb.Run, error) {
+func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*model.Run, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -248,7 +247,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	triggeredBy := options.TriggeredBy
 	if triggeredBy == "" {
-		triggeredBy = sqlcdb.TriggeredByService
+		triggeredBy = model.TriggeredByService
 	}
 
 	var externalExecutionID *string
@@ -262,11 +261,11 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		if err != nil {
 			return nil, err
 		}
-		run := &sqlcdb.Run{
+		run := &model.Run{
 			ID:                  ulid.Make().String(),
 			ExternalExecutionID: externalExecutionID,
 			TaskName:            taskName,
-			Status:              sqlcdb.PhasePending,
+			Status:              model.PhasePending,
 			TriggeredBy:         triggeredBy,
 			CreatedAt:           m.clock(),
 			RetryAttempt:        options.RetryAttempt,
@@ -279,11 +278,11 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		return run, nil
 	}
 
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:                  ulid.Make().String(),
 		ExternalExecutionID: externalExecutionID,
 		TaskName:            taskName,
-		Status:              sqlcdb.PhasePending,
+		Status:              model.PhasePending,
 		TriggeredBy:         triggeredBy,
 		CreatedAt:           m.clock(),
 		RetryAttempt:        options.RetryAttempt,
@@ -298,11 +297,11 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	switch action {
 	case actionRejected:
-		run.End(sqlcdb.ReasonSkipped, -1, m.clock())
+		run.End(model.ReasonSkipped, -1, m.clock())
 		m.persistence.PersistExisting(run)
 		return run, actionErr
 	case actionQueueFull:
-		run.End(sqlcdb.ReasonQueueFull, -1, m.clock())
+		run.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(run)
 		m.publishRun(events.EventRunFailed, run)
 		return run, actionErr
@@ -323,7 +322,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 // executor work (e.g. a DST wall-clock duplicate). The run lives only as an
 // audit row — no process is started, no streams open. The run is created and
 // then immediately ended with the supplied reason.
-func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason sqlcdb.EndReason, triggeredBy sqlcdb.TriggeredBy) error {
+func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -332,10 +331,10 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason sqlcdb.
 	}
 
 	now := m.clock()
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    taskName,
-		Status:      sqlcdb.PhasePending,
+		Status:      model.PhasePending,
 		TriggeredBy: triggeredBy,
 		CreatedAt:   now,
 	}
@@ -352,7 +351,7 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason sqlcdb.
 // triggeredBy argument labels the resulting runs: daemon boot passes
 // TriggeredByService; an operator-initiated REST restart of a stopped service
 // passes TriggeredByAPI.
-func (m *defaultTaskManager) StartServiceInstances(taskName string, triggeredBy sqlcdb.TriggeredBy) error {
+func (m *defaultTaskManager) StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error {
 	m.mu.RLock()
 	ts, exists := m.tasks[taskName]
 	if !exists {
@@ -405,7 +404,7 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	m.mu.Unlock()
 
 	if wasStopped {
-		return m.StartServiceInstances(taskName, sqlcdb.TriggeredByAPI)
+		return m.StartServiceInstances(taskName, model.TriggeredByAPI)
 	}
 	return nil
 }
@@ -433,7 +432,7 @@ func (m *defaultTaskManager) StopService(taskName string) error {
 
 // startRun registers the run and spawns the execution goroutine. Assumes
 // m.mu is held.
-func (m *defaultTaskManager) startRun(task *model.Task, run *sqlcdb.Run) {
+func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 	ctx := context.Background()
 	var cancel context.CancelFunc
 
@@ -458,8 +457,8 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *sqlcdb.Run) {
 	}()
 }
 
-func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run *sqlcdb.Run, active *ActiveRun) {
-	run.Status = sqlcdb.PhaseRunning
+func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run *model.Run, active *ActiveRun) {
+	run.Status = model.PhaseRunning
 	run.StartAt = &active.StartedAt
 	m.persistence.PersistExisting(run)
 	m.publishRun(events.EventRunStarted, run)
@@ -472,7 +471,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 		// Daemon shutdown ran past its bound — the run was force-killed by
 		// the shutdown coordinator. Override the per-task outcome so the
 		// audit row reflects the reason the operator cares about.
-		outcome.endReason = sqlcdb.ReasonDaemonStopped
+		outcome.endReason = model.ReasonDaemonStopped
 		outcome.eventType = events.EventRunFailed
 	}
 	run.End(outcome.endReason, result.ExitCode, endTime)
@@ -501,7 +500,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 
 	// Retry logic: only for non-cloud runs (cloud retries are handled by the
 	// control plane).
-	if run.TriggeredBy == sqlcdb.TriggeredByCloud {
+	if run.TriggeredBy == model.TriggeredByCloud {
 		return
 	}
 	copiedRun := run.Copy()
@@ -522,38 +521,38 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 }
 
 type runOutcome struct {
-	endReason sqlcdb.EndReason
+	endReason model.EndReason
 	eventType events.EventType
 }
 
 func resolveRunOutcome(result *executor.ExecuteResult) runOutcome {
-	var reason sqlcdb.EndReason
+	var reason model.EndReason
 	switch {
 	case result.TimedOut:
-		reason = sqlcdb.ReasonTimeout
+		reason = model.ReasonTimeout
 	case result.KilledByPolicy:
 		// log_on_full = "kill_task" tripped: the run failed to stay inside
 		// its log budget. Recorded as log_overflow so the cause is visible
 		// at a glance; still treated as a failure for retry and notification
 		// policy.
-		reason = sqlcdb.ReasonLogOverflow
+		reason = model.ReasonLogOverflow
 	case result.Stopped:
-		reason = sqlcdb.ReasonStopped
+		reason = model.ReasonStopped
 	case result.ExitCode == 0:
-		reason = sqlcdb.ReasonSuccess
+		reason = model.ReasonSuccess
 	default:
-		reason = sqlcdb.ReasonFailed
+		reason = model.ReasonFailed
 	}
 
 	eventType := events.EventRunCompleted
-	if reason != sqlcdb.ReasonSuccess {
+	if reason != model.ReasonSuccess {
 		eventType = events.EventRunFailed
 	}
 
 	return runOutcome{endReason: reason, eventType: eventType}
 }
 
-func (m *defaultTaskManager) publishRun(eventType events.EventType, run *sqlcdb.Run) {
+func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.Run) {
 	if m.eventBus == nil {
 		return
 	}

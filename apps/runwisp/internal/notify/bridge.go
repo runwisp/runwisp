@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // MapEvent converts an internal events.Event into a notify.Event. Returns nil
@@ -64,7 +64,7 @@ func diskPressureReason(d events.LogDiskPressureEvent) string {
 // mapRunEventType collapses (events.EventType, run state) into the public Kind
 // + Severity. Returns ok=false for events the notify subsystem ignores
 // (e.g. EventLogLine).
-func mapRunEventType(t events.EventType, run *sqlcdb.Run) (Kind, Severity, bool) {
+func mapRunEventType(t events.EventType, run *model.Run) (Kind, Severity, bool) {
 	switch t {
 	case events.EventRunStarted:
 		return KindRunStarted, SevInfo, true
@@ -75,15 +75,15 @@ func mapRunEventType(t events.EventType, run *sqlcdb.Run) (Kind, Severity, bool)
 			return KindRunFailed, SevError, true
 		}
 		switch *run.EndReason {
-		case sqlcdb.ReasonFailed, sqlcdb.ReasonLogOverflow:
+		case model.ReasonFailed, model.ReasonLogOverflow:
 			return KindRunFailed, SevError, true
-		case sqlcdb.ReasonTimeout:
+		case model.ReasonTimeout:
 			return KindRunTimeout, SevError, true
-		case sqlcdb.ReasonStopped:
+		case model.ReasonStopped:
 			return KindRunStopped, SevWarn, true
-		case sqlcdb.ReasonCrashed:
+		case model.ReasonCrashed:
 			return KindRunCrashed, SevError, true
-		case sqlcdb.ReasonSkipped:
+		case model.ReasonSkipped:
 			// PolicySkip is the policy doing its job, not a failure: never
 			// route it through the notification system. Operators who care
 			// about chronic skips read the run history.
@@ -99,14 +99,14 @@ func mapRunEventType(t events.EventType, run *sqlcdb.Run) (Kind, Severity, bool)
 	}
 }
 
-func runReasonString(run *sqlcdb.Run, errMsg string) string {
+func runReasonString(run *model.Run, errMsg string) string {
 	if errMsg != "" {
 		return errMsg
 	}
 	if run == nil {
 		return ""
 	}
-	if run.EndReason != nil && *run.EndReason != sqlcdb.ReasonSuccess {
+	if run.EndReason != nil && *run.EndReason != model.ReasonSuccess {
 		duration := ""
 		if run.StartAt != nil && run.EndAt != nil {
 			duration = fmt.Sprintf(" after %s", run.EndAt.Sub(*run.StartAt).Round(time.Second))

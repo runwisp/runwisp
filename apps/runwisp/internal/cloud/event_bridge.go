@@ -11,7 +11,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // EventBridge subscribes to runtime events and forwards execution status
@@ -77,7 +77,7 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 
 	terminal := run.Status.IsTerminal()
 
-	if run.Status == sqlcdb.PhaseRunning {
+	if run.Status == model.PhaseRunning {
 		b.tracker.TrackRunning(executionID, run.StartAt)
 	}
 	if terminal {
@@ -96,7 +96,7 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 	go b.finalizeRun(ctx, run, *update, executionID)
 }
 
-func (b *EventBridge) finalizeRun(ctx context.Context, run *sqlcdb.Run, update protocol.ExecutionUpdateMessage, executionID string) {
+func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update protocol.ExecutionUpdateMessage, executionID string) {
 	uploader := b.handler.Uploader()
 	if uploader != nil {
 		logFilePath := logutil.ResolveRunLogPath(b.handler.LogDir(), run.TaskName, run.ID, run.CreatedAt)

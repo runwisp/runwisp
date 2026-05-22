@@ -8,8 +8,6 @@ import (
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
-	"github.com/runwisp/runwisp/internal/server/dto"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // Page identifies which content the main panel displays.
@@ -47,7 +45,7 @@ type TickMsg struct{}
 
 // ExecListItem holds pre-formatted data for an execution row.
 type ExecListItem struct {
-	Run      dto.Run
+	Run      model.Run
 	Duration string
 	TimeAgo  string
 }
@@ -59,7 +57,7 @@ type DebugLogMsg struct {
 // TriggerRunMsg is the result of a "Run Now" or "Retry" action.
 type TriggerRunMsg struct {
 	TaskName string
-	Run      *dto.Run
+	Run      *model.Run
 	Err      error
 	Retry    bool
 }
@@ -188,7 +186,7 @@ type MetricsHistoryMsg struct {
 
 // RunSummaryMsg delivers aggregate run statistics.
 type RunSummaryMsg struct {
-	Summary *sqlcdb.RunSummary
+	Summary *model.RunSummary
 	Err     error
 }
 
@@ -239,7 +237,7 @@ type NotificationStreamDisconnectedMsg struct{}
 // asynchronous run lookups (e.g., notification → exec view) where the run is
 // not in the local execWindow cache yet.
 type OpenRunMsg struct {
-	Run *dto.Run
+	Run *model.Run
 }
 
 // NotificationUnreadCountMsg delivers the snapshot unread count fetched at

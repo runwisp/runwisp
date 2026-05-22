@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: PoppyCake, s.r.o.
+-- SPDX-License-Identifier: Apache-2.0
+
 CREATE TABLE IF NOT EXISTS runs (
 id                    TEXT PRIMARY KEY,
 external_execution_id TEXT,

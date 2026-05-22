@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,11 +19,11 @@ import (
 // not pose as a KindRunFailed (the original `* * * * *` health-probe Slack
 // storm bug).
 func TestMapEvent_SkipNeverNotifies(t *testing.T) {
-	skipped := sqlcdb.ReasonSkipped
-	run := &sqlcdb.Run{
+	skipped := model.ReasonSkipped
+	run := &model.Run{
 		ID:        "01HSKIP",
 		TaskName:  "health-probe",
-		Status:    sqlcdb.PhaseEnded,
+		Status:    model.PhaseEnded,
 		EndReason: &skipped,
 		ExitCode:  -1,
 	}
@@ -89,7 +89,7 @@ func TestMapEvent_NilRun(t *testing.T) {
 }
 
 func TestMapEvent_UnknownEventType(t *testing.T) {
-	run := &sqlcdb.Run{ID: "01HR1", TaskName: "t1", Status: sqlcdb.PhaseRunning}
+	run := &model.Run{ID: "01HR1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := events.Event{
 		Type: events.EventRunCreated,
 		Data: events.RunEvent{Run: run},
@@ -105,7 +105,7 @@ func TestDiskPressureReason_NotKilled(t *testing.T) {
 }
 
 func TestMapRunEventType_RunFailed_NilEndReason(t *testing.T) {
-	run := &sqlcdb.Run{Status: sqlcdb.PhaseEnded}
+	run := &model.Run{Status: model.PhaseEnded}
 	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunFailed, kind)
@@ -113,24 +113,24 @@ func TestMapRunEventType_RunFailed_NilEndReason(t *testing.T) {
 }
 
 func TestMapRunEventType_RunFailed_ReasonFailed(t *testing.T) {
-	r := sqlcdb.ReasonFailed
-	run := &sqlcdb.Run{EndReason: &r}
+	r := model.ReasonFailed
+	run := &model.Run{EndReason: &r}
 	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunFailed, kind)
 }
 
 func TestMapRunEventType_RunFailed_ReasonTimeout(t *testing.T) {
-	r := sqlcdb.ReasonTimeout
-	run := &sqlcdb.Run{EndReason: &r}
+	r := model.ReasonTimeout
+	run := &model.Run{EndReason: &r}
 	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunTimeout, kind)
 }
 
 func TestMapRunEventType_RunFailed_ReasonStopped(t *testing.T) {
-	r := sqlcdb.ReasonStopped
-	run := &sqlcdb.Run{EndReason: &r}
+	r := model.ReasonStopped
+	run := &model.Run{EndReason: &r}
 	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunStopped, kind)
@@ -138,23 +138,23 @@ func TestMapRunEventType_RunFailed_ReasonStopped(t *testing.T) {
 }
 
 func TestMapRunEventType_RunFailed_ReasonCrashed(t *testing.T) {
-	r := sqlcdb.ReasonCrashed
-	run := &sqlcdb.Run{EndReason: &r}
+	r := model.ReasonCrashed
+	run := &model.Run{EndReason: &r}
 	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunCrashed, kind)
 }
 
 func TestMapRunEventType_RunFailed_DefaultReason(t *testing.T) {
-	r := sqlcdb.ReasonSuccess // not a typical failure reason, hits default branch
-	run := &sqlcdb.Run{EndReason: &r}
+	r := model.ReasonSuccess // not a typical failure reason, hits default branch
+	run := &model.Run{EndReason: &r}
 	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunFailed, kind)
 }
 
 func TestRunReasonString_WithErrMsg(t *testing.T) {
-	run := &sqlcdb.Run{ID: "r1"}
+	run := &model.Run{ID: "r1"}
 	result := runReasonString(run, "connection refused")
 	assert.Equal(t, "connection refused", result)
 }
@@ -165,10 +165,10 @@ func TestRunReasonString_NilRun(t *testing.T) {
 }
 
 func TestRunReasonString_WithDuration(t *testing.T) {
-	r := sqlcdb.ReasonFailed
+	r := model.ReasonFailed
 	now := time.Now()
 	end := now.Add(5 * time.Second)
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		EndReason: &r,
 		ExitCode:  1,
 		StartAt:   &now,

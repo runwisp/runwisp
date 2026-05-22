@@ -12,7 +12,6 @@ import (
 
 	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // ScheduleResult holds the outcome of scheduling tasks.
@@ -184,14 +183,14 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 			"task", taskName,
 			"wall_clock", nowLocal.Format("2006-01-02 15:04 MST"),
 		)
-		if err := scheduler.taskManager.RecordSkippedFiring(taskName, sqlcdb.ReasonDSTSkipped, sqlcdb.TriggeredByCron); err != nil {
+		if err := scheduler.taskManager.RecordSkippedFiring(taskName, model.ReasonDSTSkipped, model.TriggeredByCron); err != nil {
 			slog.Error("Failed to record DST-skipped firing", "task", taskName, "err", err)
 		}
 		return
 	}
 
 	slog.Debug("Cron triggering task", "name", taskName)
-	if _, err := scheduler.taskManager.TriggerRun(taskName, sqlcdb.TriggeredByCron); err != nil {
+	if _, err := scheduler.taskManager.TriggerRun(taskName, model.TriggeredByCron); err != nil {
 		slog.Error("Failed to trigger task", "name", taskName, "err", err)
 	}
 }

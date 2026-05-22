@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -87,7 +88,7 @@ func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Durat
 	}
 	defer func() { _ = tx.Rollback() }()
 	qtx := db.q.WithTx(tx)
-	ctx := bgCtx()
+	ctx := context.Background()
 
 	cutoff := n.LastOccurredAt.Add(-window)
 	existing, err := qtx.SelectExistingForFingerprint(ctx, sqlcdb.SelectExistingForFingerprintParams{
@@ -167,7 +168,7 @@ func (db *SQLiteDatabase) ListNotifications(limit int, before string) ([]Notific
 	if limit <= 0 {
 		limit = 50
 	}
-	ctx := bgCtx()
+	ctx := context.Background()
 	var rows []sqlcdb.Notification
 	var err error
 	if before != "" {
@@ -193,7 +194,7 @@ func (db *SQLiteDatabase) ListNotifications(limit int, before string) ([]Notific
 }
 
 func (db *SQLiteDatabase) GetNotificationByID(id string) (*Notification, error) {
-	row, err := db.q.GetNotificationByID(bgCtx(), id)
+	row, err := db.q.GetNotificationByID(context.Background(), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -212,7 +213,7 @@ func (db *SQLiteDatabase) PruneNotificationsByCount(keep int) (int64, error) {
 	if keep <= 0 {
 		return 0, nil
 	}
-	return db.q.PruneNotificationsByCount(bgCtx(), int64(keep))
+	return db.q.PruneNotificationsByCount(context.Background(), int64(keep))
 }
 
 // PruneNotificationsByAge deletes rows whose last_occurred_at is older than the cutoff.
@@ -221,12 +222,12 @@ func (db *SQLiteDatabase) PruneNotificationsByAge(olderThan time.Duration) (int6
 		return 0, nil
 	}
 	cutoff := time.Now().Add(-olderThan)
-	return db.q.PruneNotificationsByAge(bgCtx(), cutoff)
+	return db.q.PruneNotificationsByAge(context.Background(), cutoff)
 }
 
 // CountUnreadNotifications counts rows whose read_at is NULL.
 func (db *SQLiteDatabase) CountUnreadNotifications() (int64, error) {
-	return db.q.CountUnreadNotifications(bgCtx())
+	return db.q.CountUnreadNotifications(context.Background())
 }
 
 // MarkNotificationRead stamps read_at on a single row and returns the updated
@@ -244,7 +245,7 @@ func (db *SQLiteDatabase) setNotificationReadAt(id string, at *time.Time) (*Noti
 	if id == "" {
 		return nil, errors.New("notification id is empty")
 	}
-	ctx := bgCtx()
+	ctx := context.Background()
 	var affected int64
 	var err error
 	if at != nil {
@@ -266,5 +267,5 @@ func (db *SQLiteDatabase) setNotificationReadAt(id string, at *time.Time) (*Noti
 
 // MarkAllNotificationsRead stamps read_at on every currently-unread row.
 func (db *SQLiteDatabase) MarkAllNotificationsRead(at time.Time) error {
-	return db.q.MarkAllNotificationsRead(bgCtx(), &at)
+	return db.q.MarkAllNotificationsRead(context.Background(), &at)
 }

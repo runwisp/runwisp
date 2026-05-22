@@ -14,7 +14,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/cloud/logarchive"
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // archiveTimeout caps a single terminal archive operation. Daemon log files
@@ -80,9 +80,9 @@ func (u *LogUploader) RegisterDispatch(executionID, uploadURL, logPath string) e
 	if uploadURL == "" {
 		return nil
 	}
-	rec := sqlcdb.PendingLogUpload{
+	rec := model.PendingLogUpload{
 		ExternalExecutionID: executionID,
-		UploadUrl:           uploadURL,
+		UploadURL:           uploadURL,
 		LogPath:             logPath,
 		InsertedAt:          u.now().Unix(),
 	}
@@ -100,7 +100,7 @@ func (u *LogUploader) RegisterDispatch(executionID, uploadURL, logPath string) e
 
 // Archive performs a single gzip + PUT for the terminal log of executionID.
 // Returns nil, nil when there is no pending upload for the execution (e.g.
-// the dispatch came with an empty logUploadUrl). On success, the local log
+// the dispatch came with an empty logUploadURL). On success, the local log
 // file and the persistence row are both removed.
 func (u *LogUploader) Archive(ctx context.Context, executionID, logFilePath string) (*LogUploaderResult, error) {
 	if u == nil || executionID == "" {
@@ -154,14 +154,14 @@ func (u *LogUploader) RecoverOrphans(ctx context.Context, emit func(executionID 
 	}
 	for _, rec := range recs {
 		u.mu.Lock()
-		u.pending[rec.ExternalExecutionID] = uploadEntry{uploadURL: rec.UploadUrl, logPath: rec.LogPath}
+		u.pending[rec.ExternalExecutionID] = uploadEntry{uploadURL: rec.UploadURL, logPath: rec.LogPath}
 		u.mu.Unlock()
 
 		u.recoverOrphanRecord(ctx, rec, emit)
 	}
 }
 
-func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec sqlcdb.PendingLogUpload, emit func(executionID string, result LogUploaderResult)) {
+func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec model.PendingLogUpload, emit func(executionID string, result LogUploaderResult)) {
 	run, runErr := u.runRepo.GetRunByExternalExecutionID(rec.ExternalExecutionID)
 	if runErr != nil {
 		if errors.Is(runErr, ErrNotFound) {

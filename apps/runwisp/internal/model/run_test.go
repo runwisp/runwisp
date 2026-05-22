@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package sqlcdb
+package model
 
 import (
 	"testing"
@@ -46,9 +46,6 @@ func TestRun_Copy_PointerFieldsAreIndependent(t *testing.T) {
 	cpy := orig.Copy()
 	require.NotNil(t, cpy)
 
-	// Every nullable pointer field must have been deep-copied: the copy's
-	// pointer addresses must differ from the original's. The values they
-	// point to must match.
 	assert.NotSame(t, orig.ExternalExecutionID, cpy.ExternalExecutionID)
 	assert.Equal(t, extID, *cpy.ExternalExecutionID)
 

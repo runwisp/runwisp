@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: PoppyCake, s.r.o.
+-- SPDX-License-Identifier: Apache-2.0
+
 -- name: CreateRun :exec
 INSERT INTO runs (id, external_execution_id, task_name, status, end_reason,
   exit_code, start_at, end_at, triggered_by, created_at, retry_attempt,
@@ -18,15 +21,6 @@ SELECT * FROM runs WHERE external_execution_id = ? AND deleted_at IS NULL LIMIT 
 
 -- name: CountRuns :one
 SELECT COUNT(*) FROM runs WHERE task_name = ? AND deleted_at IS NULL;
-
--- name: CountRunsFiltered :one
-SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(end_reason_gate) = '' OR end_reason = sqlc.arg(end_reason_value))
-  AND (sqlc.arg(status_gate) = '' OR status = sqlc.arg(status_value))
-  AND (sqlc.arg(task_name_gate) = '' OR task_name = sqlc.arg(task_name_value))
-  AND (sqlc.arg(search_gate) = ''
-       OR (task_name LIKE sqlc.arg(search_pattern_name)
-           OR id LIKE sqlc.arg(search_pattern_id)));
 
 -- name: GetRunSummary :one
 SELECT

@@ -51,6 +51,7 @@ func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload
 }
 
 const upsertPendingLogUpload = `-- name: UpsertPendingLogUpload :exec
+
 INSERT INTO pending_log_uploads (external_execution_id, upload_url, log_path, inserted_at)
 VALUES (?, ?, ?, ?)
 ON CONFLICT(external_execution_id) DO UPDATE SET
@@ -66,6 +67,8 @@ type UpsertPendingLogUploadParams struct {
 	InsertedAt          int64  `json:"inserted_at"`
 }
 
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
 func (q *Queries) UpsertPendingLogUpload(ctx context.Context, arg UpsertPendingLogUploadParams) error {
 	_, err := q.db.ExecContext(ctx, upsertPendingLogUpload,
 		arg.ExternalExecutionID,

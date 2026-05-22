@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -32,7 +31,7 @@ type InfoView struct {
 	scroll int
 
 	stats      *model.SystemStats
-	runSummary *sqlcdb.RunSummary
+	runSummary *model.RunSummary
 
 	cpuHistory []float64
 	memHistory []float64
@@ -106,7 +105,7 @@ func (v *InfoView) LoadHistory(samples []model.MetricsSample) {
 }
 
 // UpdateRunSummary stores the latest run summary.
-func (v *InfoView) UpdateRunSummary(summary *sqlcdb.RunSummary) {
+func (v *InfoView) UpdateRunSummary(summary *model.RunSummary) {
 	v.runSummary = summary
 }
 

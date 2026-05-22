@@ -9,13 +9,12 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func setupTestDB(t *testing.T) RunRepository {
-	db, err := New(":memory:", nil)
+	db, err := New(":memory:")
 	require.NoError(t, err)
 	return db
 }
@@ -24,11 +23,11 @@ func TestCreateAndGetRun(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "test-task",
-		Status:      sqlcdb.PhasePending,
-		TriggeredBy: sqlcdb.TriggeredByAPI,
+		Status:      model.PhasePending,
+		TriggeredBy: model.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
 
@@ -45,31 +44,31 @@ func TestUpdateRun(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "test-task",
-		Status:      sqlcdb.PhasePending,
-		TriggeredBy: sqlcdb.TriggeredByAPI,
+		Status:      model.PhasePending,
+		TriggeredBy: model.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
 	require.NoError(t, db.CreateRun(run))
 
-	run.Status = sqlcdb.PhaseRunning
+	run.Status = model.PhaseRunning
 	err := db.UpdateRun(run)
 	require.NoError(t, err)
 
 	fetched, err := db.GetRun(run.ID)
 	require.NoError(t, err)
-	assert.Equal(t, sqlcdb.PhaseRunning, fetched.Status)
+	assert.Equal(t, model.PhaseRunning, fetched.Status)
 }
 
 func TestCountRuns(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhasePending, TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhasePending, TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task2", Status: sqlcdb.PhasePending, TriggeredBy: sqlcdb.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task2", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
 
 	count, err := db.CountRuns("task1")
 	require.NoError(t, err)
@@ -84,20 +83,20 @@ func TestCountRunsFiltered(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhasePending, TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess), TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task2", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonFailed), TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task3", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonLogOverflow), TriggeredBy: sqlcdb.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task2", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task3", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonLogOverflow), TriggeredBy: model.TriggeredByAPI}))
 
 	count, err := db.CountRunsFiltered("", "", "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), count)
 
-	count, err = db.CountRunsFiltered(string(sqlcdb.ReasonSuccess), "", "")
+	count, err = db.CountRunsFiltered(string(model.ReasonSuccess), "", "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 
-	count, err = db.CountRunsFiltered(string(sqlcdb.ReasonLogOverflow), "", "")
+	count, err = db.CountRunsFiltered(string(model.ReasonLogOverflow), "", "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 
@@ -114,10 +113,10 @@ func TestRunSummaryGroupsLogOverflowAsFailed(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "ok", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess), TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "bad", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonFailed), TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "noisy", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonLogOverflow), TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "skipped", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonSkipped), TriggeredBy: sqlcdb.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "ok", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "bad", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "noisy", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonLogOverflow), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "skipped", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSkipped), TriggeredBy: model.TriggeredByAPI}))
 
 	summary, err := db.GetRunSummary()
 	require.NoError(t, err)
@@ -131,26 +130,26 @@ func TestQueryRunsByTask(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhasePending, TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess), TriggeredBy: sqlcdb.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
 
 	runs, err := db.QueryRuns("task1", 10, 0, "", SortColumnDefault, SortDirectionDefault, "")
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)
 
-	runs, err = db.QueryRuns("task1", 10, 0, string(sqlcdb.ReasonSuccess), SortColumnDefault, SortDirectionDefault, "")
+	runs, err = db.QueryRuns("task1", 10, 0, string(model.ReasonSuccess), SortColumnDefault, SortDirectionDefault, "")
 	require.NoError(t, err)
 	assert.Len(t, runs, 1)
-	assert.Equal(t, sqlcdb.PhaseEnded, runs[0].Status)
-	assert.Equal(t, sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess), runs[0].EndReason)
+	assert.Equal(t, model.PhaseEnded, runs[0].Status)
+	assert.Equal(t, model.EndReasonPtr(model.ReasonSuccess), runs[0].EndReason)
 }
 
 func TestQueryAllRuns(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhasePending, TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task2", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess), TriggeredBy: sqlcdb.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "task2", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
 
 	runs, err := db.QueryRuns("", 10, 0, "", SortColumnDefault, SortDirectionDefault, "")
 	require.NoError(t, err)
@@ -167,7 +166,7 @@ func TestDeleteRun(t *testing.T) {
 	defer db.Close()
 
 	id := ulid.Make().String()
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: id, TaskName: "task1", Status: sqlcdb.PhasePending, TriggeredBy: sqlcdb.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: id, TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
 
 	err := db.DeleteRun(id)
 	require.NoError(t, err)
@@ -184,11 +183,11 @@ func TestDeleteOldRuns(t *testing.T) {
 	old := now.Add(-25 * time.Hour)
 
 	// Run to be deleted by hours retention (24h)
-	run1 := sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: old, TriggeredBy: sqlcdb.TriggeredByAPI}
+	run1 := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: old, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(&run1))
 
 	// Run to be kept
-	run2 := sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now, TriggeredBy: sqlcdb.TriggeredByAPI}
+	run2 := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(&run2))
 
 	task := &model.Task{
@@ -213,11 +212,11 @@ func TestDeleteOldRunsByCount(t *testing.T) {
 
 	// Create 3 runs
 	for i := 0; i < 3; i++ {
-		require.NoError(t, db.CreateRun(&sqlcdb.Run{
+		require.NoError(t, db.CreateRun(&model.Run{
 			ID:          ulid.Make().String(),
 			TaskName:    "task1",
 			CreatedAt:   time.Now().Add(time.Duration(i) * time.Second), // Different times
-			TriggeredBy: sqlcdb.TriggeredByAPI,
+			TriggeredBy: model.TriggeredByAPI,
 		}))
 	}
 
@@ -240,15 +239,15 @@ func TestMarkCrashedRuns(t *testing.T) {
 	defer db.Close()
 
 	// Running run
-	run1 := sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhaseRunning, TriggeredBy: sqlcdb.TriggeredByAPI}
+	run1 := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseRunning, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(&run1))
 
 	// Pending run
-	run2 := sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhasePending, TriggeredBy: sqlcdb.TriggeredByAPI}
+	run2 := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(&run2))
 
 	// Ended/success run (should not be touched)
-	run3 := sqlcdb.Run{ID: ulid.Make().String(), TaskName: "task1", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess), EndAt: &time.Time{}, TriggeredBy: sqlcdb.TriggeredByAPI}
+	run3 := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), EndAt: &time.Time{}, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(&run3))
 
 	affected, err := db.MarkCrashedRuns()
@@ -256,24 +255,24 @@ func TestMarkCrashedRuns(t *testing.T) {
 	assert.Equal(t, int64(1), affected)
 
 	r1, _ := db.GetRun(run1.ID)
-	assert.Equal(t, sqlcdb.PhaseEnded, r1.Status)
-	assert.Equal(t, sqlcdb.EndReasonPtr(sqlcdb.ReasonCrashed), r1.EndReason)
+	assert.Equal(t, model.PhaseEnded, r1.Status)
+	assert.Equal(t, model.EndReasonPtr(model.ReasonCrashed), r1.EndReason)
 	assert.Equal(t, -2, r1.ExitCode)
 
 	r2, _ := db.GetRun(run2.ID)
-	assert.Equal(t, sqlcdb.PhasePending, r2.Status)
+	assert.Equal(t, model.PhasePending, r2.Status)
 
 	r3, _ := db.GetRun(run3.ID)
-	assert.Equal(t, sqlcdb.PhaseEnded, r3.Status)
-	assert.Equal(t, sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess), r3.EndReason)
+	assert.Equal(t, model.PhaseEnded, r3.Status)
+	assert.Equal(t, model.EndReasonPtr(model.ReasonSuccess), r3.EndReason)
 }
 
 func TestSearchAndSort(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "alpha", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess), TriggeredBy: sqlcdb.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(&sqlcdb.Run{ID: ulid.Make().String(), TaskName: "beta", Status: sqlcdb.PhaseEnded, EndReason: sqlcdb.EndReasonPtr(sqlcdb.ReasonFailed), TriggeredBy: sqlcdb.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "alpha", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(&model.Run{ID: ulid.Make().String(), TaskName: "beta", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), TriggeredBy: model.TriggeredByAPI}))
 
 	// Search
 	runs, err := db.QueryRuns("", 10, 0, "", SortColumnDefault, SortDirectionDefault, "alp")
@@ -297,7 +296,7 @@ func TestSearchAndSort(t *testing.T) {
 // setupFullTestDB returns the full Database interface (includes PendingLogUploadRepository).
 func setupFullTestDB(t *testing.T) Database {
 	t.Helper()
-	db, err := New(":memory:", nil)
+	db, err := New(":memory:")
 	require.NoError(t, err)
 	return db
 }
@@ -307,11 +306,11 @@ func TestGetRunByExternalExecutionID(t *testing.T) {
 	defer db.Close()
 
 	extID := "ext-exec-abc123"
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:                  ulid.Make().String(),
 		TaskName:            "task1",
-		Status:              sqlcdb.PhasePending,
-		TriggeredBy:         sqlcdb.TriggeredByAPI,
+		Status:              model.PhasePending,
+		TriggeredBy:         model.TriggeredByAPI,
 		ExternalExecutionID: &extID,
 	}
 	require.NoError(t, db.CreateRun(run))
@@ -335,20 +334,20 @@ func TestGetLastRunByTask(t *testing.T) {
 
 	now := time.Now()
 
-	run1 := &sqlcdb.Run{
+	run1 := &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "task-last",
-		Status:      sqlcdb.PhaseEnded,
-		EndReason:   sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess),
-		TriggeredBy: sqlcdb.TriggeredByAPI,
+		Status:      model.PhaseEnded,
+		EndReason:   model.EndReasonPtr(model.ReasonSuccess),
+		TriggeredBy: model.TriggeredByAPI,
 		CreatedAt:   now.Add(-10 * time.Minute),
 	}
-	run2 := &sqlcdb.Run{
+	run2 := &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "task-last",
-		Status:      sqlcdb.PhaseEnded,
-		EndReason:   sqlcdb.EndReasonPtr(sqlcdb.ReasonFailed),
-		TriggeredBy: sqlcdb.TriggeredByAPI,
+		Status:      model.PhaseEnded,
+		EndReason:   model.EndReasonPtr(model.ReasonFailed),
+		TriggeredBy: model.TriggeredByAPI,
 		CreatedAt:   now,
 	}
 	require.NoError(t, db.CreateRun(run1))
@@ -409,9 +408,9 @@ func TestUpsertPendingLogUpload(t *testing.T) {
 	db := setupFullTestDB(t)
 	defer db.Close()
 
-	rec := sqlcdb.PendingLogUpload{
+	rec := model.PendingLogUpload{
 		ExternalExecutionID: "exec-upsert-1",
-		UploadUrl:           "https://example.com/upload/1",
+		UploadURL:           "https://example.com/upload/1",
 		LogPath:             "/var/log/run1.log",
 		InsertedAt:          1234567890,
 	}
@@ -419,22 +418,22 @@ func TestUpsertPendingLogUpload(t *testing.T) {
 	require.NoError(t, db.UpsertPendingLogUpload(rec))
 
 	// Upsert again with updated URL — must not error and must update.
-	rec.UploadUrl = "https://example.com/upload/1-updated"
+	rec.UploadURL = "https://example.com/upload/1-updated"
 	require.NoError(t, db.UpsertPendingLogUpload(rec))
 
 	uploads, err := db.ListPendingLogUploads()
 	require.NoError(t, err)
 	require.Len(t, uploads, 1)
-	assert.Equal(t, "https://example.com/upload/1-updated", uploads[0].UploadUrl)
+	assert.Equal(t, "https://example.com/upload/1-updated", uploads[0].UploadURL)
 }
 
 func TestDeletePendingLogUpload(t *testing.T) {
 	db := setupFullTestDB(t)
 	defer db.Close()
 
-	rec := sqlcdb.PendingLogUpload{
+	rec := model.PendingLogUpload{
 		ExternalExecutionID: "exec-delete-1",
-		UploadUrl:           "https://example.com/upload/del",
+		UploadURL:           "https://example.com/upload/del",
 		LogPath:             "/var/log/rundel.log",
 		InsertedAt:          111,
 	}
@@ -460,9 +459,9 @@ func TestListPendingLogUploads(t *testing.T) {
 	assert.Empty(t, uploads)
 
 	for i := range 3 {
-		rec := sqlcdb.PendingLogUpload{
+		rec := model.PendingLogUpload{
 			ExternalExecutionID: ulid.Make().String(),
-			UploadUrl:           "https://example.com/" + ulid.Make().String(),
+			UploadURL:           "https://example.com/" + ulid.Make().String(),
 			LogPath:             "/var/log/run.log",
 			InsertedAt:          int64(i),
 		}

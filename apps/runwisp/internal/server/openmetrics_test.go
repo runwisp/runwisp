@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/runwisp/runwisp/internal/version"
 	"github.com/stretchr/testify/assert"
@@ -63,7 +62,7 @@ func TestOpenMetrics_HappyPath(t *testing.T) {
 		},
 	}
 	srv, repo, runner := buildOpenMetricsServer(t, info)
-	repo.On("GetRunSummary").Return(&sqlcdb.RunSummary{
+	repo.On("GetRunSummary").Return(&model.RunSummary{
 		Total:       45,
 		Success:     42,
 		Failed:      3,
@@ -102,7 +101,7 @@ func TestOpenMetrics_HappyPath(t *testing.T) {
 
 func TestOpenMetrics_OmitsLastFailureWhenNil(t *testing.T) {
 	srv, repo, _ := buildOpenMetricsServer(t, &model.DaemonInfo{})
-	repo.On("GetRunSummary").Return(&sqlcdb.RunSummary{
+	repo.On("GetRunSummary").Return(&model.RunSummary{
 		Total:   5,
 		Success: 5,
 	}, nil)
@@ -115,7 +114,7 @@ func TestOpenMetrics_OmitsLastFailureWhenNil(t *testing.T) {
 
 func TestOpenMetrics_EmptyState(t *testing.T) {
 	srv, repo, _ := buildOpenMetricsServer(t, &model.DaemonInfo{})
-	repo.On("GetRunSummary").Return(&sqlcdb.RunSummary{}, nil)
+	repo.On("GetRunSummary").Return(&model.RunSummary{}, nil)
 
 	code, body, header := scrapeMetrics(t, srv)
 	require.Equal(t, http.StatusOK, code)
@@ -161,7 +160,7 @@ func TestOpenMetrics_LabelValueEscaping(t *testing.T) {
 		Tasks: []model.TaskBrief{{Name: tricky, Kind: model.KindTask}},
 	}
 	srv, repo, runner := buildOpenMetricsServer(t, info)
-	repo.On("GetRunSummary").Return(&sqlcdb.RunSummary{}, nil)
+	repo.On("GetRunSummary").Return(&model.RunSummary{}, nil)
 	runner.On("GetActiveRunCount", tricky).Return(7)
 
 	code, body, _ := scrapeMetrics(t, srv)
@@ -171,7 +170,7 @@ func TestOpenMetrics_LabelValueEscaping(t *testing.T) {
 
 func TestOpenMetrics_UptimeIsPositive(t *testing.T) {
 	srv, repo, _ := buildOpenMetricsServer(t, &model.DaemonInfo{})
-	repo.On("GetRunSummary").Return(&sqlcdb.RunSummary{}, nil)
+	repo.On("GetRunSummary").Return(&model.RunSummary{}, nil)
 
 	_, body, _ := scrapeMetrics(t, srv)
 	uptimeLine := ""

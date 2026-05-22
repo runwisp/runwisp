@@ -12,7 +12,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // StreamManager reads process output, writes each line to the LogWriter (which
@@ -35,7 +34,7 @@ func NewStreamManager(eventBus events.EventBus) *StreamManager {
 // number under the writer's mutex), and a LogLineEvent is published with that
 // number. Lines that LineBuffer split because they exceeded MaxLineBufferSize
 // are emitted as separate events with Continued=true on segments 2..N.
-func (s *StreamManager) StreamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *sqlcdb.Run, stream string) {
+func (s *StreamManager) StreamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
 	externalExecutionID := ""
 	if run.ExternalExecutionID != nil {
 		externalExecutionID = *run.ExternalExecutionID

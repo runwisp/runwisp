@@ -11,6 +11,7 @@ import (
 )
 
 const selectOldRunsByAge = `-- name: SelectOldRunsByAge :many
+
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, deleted_at FROM runs
 WHERE task_name = ? AND created_at < ? AND deleted_at IS NULL
 LIMIT ?
@@ -22,6 +23,8 @@ type SelectOldRunsByAgeParams struct {
 	Limit     int64     `json:"limit"`
 }
 
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
 func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAgeParams) ([]Run, error) {
 	rows, err := q.db.QueryContext(ctx, selectOldRunsByAge, arg.TaskName, arg.CreatedAt, arg.Limit)
 	if err != nil {

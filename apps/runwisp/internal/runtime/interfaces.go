@@ -7,15 +7,14 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // TaskRunner is the subset of TaskManager consumed by the cloud and server packages.
 // Using this interface instead of the concrete implementation makes those packages
 // testable without a real executor, event bus, or database.
 type TaskRunner interface {
-	TriggerRun(taskName string, triggeredBy sqlcdb.TriggeredBy) (*sqlcdb.Run, error)
-	TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*sqlcdb.Run, error)
+	TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error)
+	TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*model.Run, error)
 	GetTask(taskName string) (*model.Task, bool)
 	UpsertTask(task *model.Task)
 	TerminateRun(runID string) error
@@ -28,7 +27,7 @@ type TaskRunner interface {
 	// RecordSkippedFiring persists a run that was suppressed before the
 	// executor started — currently used by the scheduler to log DST wall-clock
 	// duplicates with end_reason = "dst_skipped".
-	RecordSkippedFiring(taskName string, reason sqlcdb.EndReason, triggeredBy sqlcdb.TriggeredBy) error
+	RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error
 	// GetActiveRunCount reports how many runs for the given task are currently
 	// in flight. Unknown tasks return 0.
 	GetActiveRunCount(taskName string) int
@@ -40,8 +39,8 @@ type TaskManager interface {
 	TaskRunner
 	BindPersistenceHook(hook RunPersistenceHook)
 	GetActiveRuns(taskName string) []*ActiveRun
-	LoadPendingRuns(runs []sqlcdb.Run) PendingRunsResult
-	StartServiceInstances(taskName string, triggeredBy sqlcdb.TriggeredBy) error
+	LoadPendingRuns(runs []model.Run) PendingRunsResult
+	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
 	// Shutdown cancels every active run and waits for all goroutines to
 	// drain. Equivalent to ShutdownWithDeadline(0).
 	Shutdown()

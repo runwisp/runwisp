@@ -86,9 +86,12 @@ func (q *Queries) InsertNotification(ctx context.Context, arg InsertNotification
 }
 
 const listNotifications = `-- name: ListNotifications :many
+
 SELECT id, fingerprint, kind, severity, task_name, run_id, title, body, count, occurrences_json, created_at, last_occurred_at, read_at FROM notifications ORDER BY id DESC LIMIT ?
 `
 
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
 func (q *Queries) ListNotifications(ctx context.Context, limit int64) ([]Notification, error) {
 	rows, err := q.db.QueryContext(ctx, listNotifications, limit)
 	if err != nil {

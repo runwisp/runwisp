@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: PoppyCake, s.r.o.
+-- SPDX-License-Identifier: Apache-2.0
+
 -- name: EnsureTaskRegistered :exec
 INSERT OR IGNORE INTO task_registrations (task_name, first_seen_at)
 VALUES (?, ?);

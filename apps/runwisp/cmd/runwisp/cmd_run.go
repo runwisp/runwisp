@@ -70,7 +70,7 @@ func runDaemon(mode daemonMode) error {
 	logOutput = io.MultiWriter(logOutput, logBuffer)
 
 	// Open database first — config values (fingerprint, jwt_secret) live there.
-	db, err := storage.New(flags.DBPath(), logOutput)
+	db, err := storage.New(flags.DBPath())
 	if err != nil {
 		return err
 	}

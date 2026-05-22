@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: PoppyCake, s.r.o.
+-- SPDX-License-Identifier: Apache-2.0
+
 -- name: SelectOldRunsByAge :many
 SELECT * FROM runs
 WHERE task_name = ? AND created_at < ? AND deleted_at IS NULL

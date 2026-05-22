@@ -10,16 +10,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/render"
 	"github.com/runwisp/runwisp/internal/notify/testutil"
 	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 func newDB(t *testing.T) storage.Database {
 	t.Helper()
-	db, err := storage.New(":memory:", nil)
+	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	return db
@@ -194,11 +194,11 @@ func TestCoalescer_Receive_NilEvent(t *testing.T) {
 }
 
 func TestFingerprintBytes_WithEndReason(t *testing.T) {
-	r := sqlcdb.ReasonFailed
+	r := model.ReasonFailed
 	ev := &notify.Event{
 		Kind:     notify.KindRunFailed,
 		TaskName: "t1",
-		Run:      &sqlcdb.Run{EndReason: &r},
+		Run:      &model.Run{EndReason: &r},
 	}
 	b := fingerprintBytes(ev)
 	assert.Contains(t, string(b), "failed")

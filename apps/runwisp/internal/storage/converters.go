@@ -4,28 +4,25 @@
 package storage
 
 import (
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
-// runFromSqlcdb maps a sqlcdb.Run row to the public sqlcdb.Run shape. LogPath
-// is intentionally left empty — it is a runtime attachment set by the executor
-// and is not persisted in the runs table.
-func runFromSqlcdb(s sqlcdb.Run) sqlcdb.Run {
-	var endReason *sqlcdb.EndReason
-	if s.EndReason != nil {
-		er := sqlcdb.EndReason(*s.EndReason)
-		endReason = &er
-	}
-	return sqlcdb.Run{
+// runFromRow maps a storage row (sqlcdb.Run) to the public domain shape,
+// dropping the row-internal DeletedAt column the rest of the daemon never
+// sees. Pointer fields are shared with the source — the row is not retained
+// after this call, so no aliasing problem in practice.
+func runFromRow(s sqlcdb.Run) model.Run {
+	return model.Run{
 		ID:                  s.ID,
 		ExternalExecutionID: s.ExternalExecutionID,
 		TaskName:            s.TaskName,
-		Status:              sqlcdb.RunPhase(s.Status),
-		EndReason:           endReason,
+		Status:              s.Status,
+		EndReason:           s.EndReason,
 		ExitCode:            s.ExitCode,
 		StartAt:             s.StartAt,
 		EndAt:               s.EndAt,
-		TriggeredBy:         sqlcdb.TriggeredBy(s.TriggeredBy),
+		TriggeredBy:         s.TriggeredBy,
 		CreatedAt:           s.CreatedAt,
 		RetryAttempt:        s.RetryAttempt,
 		RetryOfRunID:        s.RetryOfRunID,
@@ -33,31 +30,23 @@ func runFromSqlcdb(s sqlcdb.Run) sqlcdb.Run {
 	}
 }
 
-func runPtrFromSqlcdb(s sqlcdb.Run) *sqlcdb.Run {
-	r := runFromSqlcdb(s)
+func runPtrFromRow(s sqlcdb.Run) *model.Run {
+	r := runFromRow(s)
 	return &r
 }
 
-func endReasonToSqlcdb(r *sqlcdb.EndReason) *sqlcdb.EndReason {
-	if r == nil {
-		return nil
-	}
-	er := sqlcdb.EndReason(*r)
-	return &er
-}
-
-// runToCreateParams maps a sqlcdb.Run into sqlc CreateRun parameters.
-func runToCreateParams(r *sqlcdb.Run) sqlcdb.CreateRunParams {
+// runToCreateParams maps a domain Run into sqlc CreateRun parameters.
+func runToCreateParams(r *model.Run) sqlcdb.CreateRunParams {
 	return sqlcdb.CreateRunParams{
 		ID:                  r.ID,
 		ExternalExecutionID: r.ExternalExecutionID,
 		TaskName:            r.TaskName,
-		Status:              sqlcdb.RunPhase(r.Status),
-		EndReason:           endReasonToSqlcdb(r.EndReason),
+		Status:              r.Status,
+		EndReason:           r.EndReason,
 		ExitCode:            r.ExitCode,
 		StartAt:             r.StartAt,
 		EndAt:               r.EndAt,
-		TriggeredBy:         sqlcdb.TriggeredBy(r.TriggeredBy),
+		TriggeredBy:         r.TriggeredBy,
 		CreatedAt:           r.CreatedAt,
 		RetryAttempt:        r.RetryAttempt,
 		RetryOfRunID:        r.RetryOfRunID,
@@ -65,17 +54,17 @@ func runToCreateParams(r *sqlcdb.Run) sqlcdb.CreateRunParams {
 	}
 }
 
-// runToUpdateParams maps a sqlcdb.Run into sqlc UpdateRun parameters.
-func runToUpdateParams(r *sqlcdb.Run) sqlcdb.UpdateRunParams {
+// runToUpdateParams maps a domain Run into sqlc UpdateRun parameters.
+func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
 	return sqlcdb.UpdateRunParams{
 		ExternalExecutionID: r.ExternalExecutionID,
 		TaskName:            r.TaskName,
-		Status:              sqlcdb.RunPhase(r.Status),
-		EndReason:           endReasonToSqlcdb(r.EndReason),
+		Status:              r.Status,
+		EndReason:           r.EndReason,
 		ExitCode:            r.ExitCode,
 		StartAt:             r.StartAt,
 		EndAt:               r.EndAt,
-		TriggeredBy:         sqlcdb.TriggeredBy(r.TriggeredBy),
+		TriggeredBy:         r.TriggeredBy,
 		CreatedAt:           r.CreatedAt,
 		RetryAttempt:        r.RetryAttempt,
 		RetryOfRunID:        r.RetryOfRunID,
@@ -108,13 +97,14 @@ func notificationFromSqlcdb(s sqlcdb.Notification) (*Notification, error) {
 	}, nil
 }
 
-// pendingLogUploadFromSqlcdb maps a sqlcdb.PendingLogUpload row to the public
-// sqlcdb.PendingLogUpload shape. The on-disk inserted_at column is INTEGER
-// epoch seconds — sqlcdb.PendingLogUpload preserves the same int64 shape.
-func pendingLogUploadFromSqlcdb(s sqlcdb.PendingLogUpload) sqlcdb.PendingLogUpload {
-	return sqlcdb.PendingLogUpload{
+// pendingLogUploadFromRow maps a sqlcdb.PendingLogUpload row to the public
+// model.PendingLogUpload shape. The two structs differ only in field naming
+// (sqlc emits UploadUrl from the snake-cased column; the domain type uses
+// the Go-idiomatic UploadURL).
+func pendingLogUploadFromRow(s sqlcdb.PendingLogUpload) model.PendingLogUpload {
+	return model.PendingLogUpload{
 		ExternalExecutionID: s.ExternalExecutionID,
-		UploadUrl:           s.UploadUrl,
+		UploadURL:           s.UploadUrl,
 		LogPath:             s.LogPath,
 		InsertedAt:          s.InsertedAt,
 	}

@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: PoppyCake, s.r.o.
+-- SPDX-License-Identifier: Apache-2.0
+
 -- name: ListNotifications :many
 SELECT * FROM notifications ORDER BY id DESC LIMIT ?;
 

@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 func TestStatusEmojiAndVerbCoverAllKinds(t *testing.T) {
@@ -54,23 +54,23 @@ func TestHumanTime(t *testing.T) {
 }
 
 func TestTriggerPhrase(t *testing.T) {
-	assert.Equal(t, "Scheduled run", triggerPhrase(sqlcdb.TriggeredByCron))
-	assert.Equal(t, "Manually triggered via API", triggerPhrase(sqlcdb.TriggeredByAPI))
-	assert.Equal(t, "Triggered from the control plane", triggerPhrase(sqlcdb.TriggeredByCloud))
-	assert.Equal(t, "Service auto-started", triggerPhrase(sqlcdb.TriggeredByService))
+	assert.Equal(t, "Scheduled run", triggerPhrase(model.TriggeredByCron))
+	assert.Equal(t, "Manually triggered via API", triggerPhrase(model.TriggeredByAPI))
+	assert.Equal(t, "Triggered from the control plane", triggerPhrase(model.TriggeredByCloud))
+	assert.Equal(t, "Service auto-started", triggerPhrase(model.TriggeredByService))
 	assert.Equal(t, "Run", triggerPhrase(""))
 }
 
 func TestRunURL(t *testing.T) {
-	r := &sqlcdb.Run{ID: "01KRK", TaskName: "nightly-backup"}
+	r := &model.Run{ID: "01KRK", TaskName: "nightly-backup"}
 	assert.Equal(t, "", runURL("", r))
 	assert.Equal(t, "", runURL("https://x", nil))
-	assert.Equal(t, "", runURL("https://x", &sqlcdb.Run{ID: "01KRK"}))
-	assert.Equal(t, "", runURL("https://x", &sqlcdb.Run{TaskName: "n"}))
+	assert.Equal(t, "", runURL("https://x", &model.Run{ID: "01KRK"}))
+	assert.Equal(t, "", runURL("https://x", &model.Run{TaskName: "n"}))
 	assert.Equal(t, "https://x/tasks/nightly-backup?runId=01KRK", runURL("https://x", r))
 
 	// Path-escape the task name (spec disallows spaces but be defensive).
-	tricky := &sqlcdb.Run{ID: "01", TaskName: "name with space"}
+	tricky := &model.Run{ID: "01", TaskName: "name with space"}
 	assert.Equal(t, "https://x/tasks/name%20with%20space?runId=01", runURL("https://x", tricky))
 }
 
@@ -83,19 +83,19 @@ func TestTaskURL(t *testing.T) {
 func TestRunDuration(t *testing.T) {
 	start := time.Date(2026, 5, 14, 17, 11, 0, 0, time.UTC)
 	end := start.Add(12*time.Second + 400*time.Millisecond)
-	r := &sqlcdb.Run{StartAt: &start, EndAt: &end}
+	r := &model.Run{StartAt: &start, EndAt: &end}
 	assert.Equal(t, "12s", runDuration(r))
 
 	assert.Equal(t, "", runDuration(nil))
-	assert.Equal(t, "", runDuration(&sqlcdb.Run{StartAt: &start}))
-	assert.Equal(t, "", runDuration(&sqlcdb.Run{EndAt: &end}))
+	assert.Equal(t, "", runDuration(&model.Run{StartAt: &start}))
+	assert.Equal(t, "", runDuration(&model.Run{EndAt: &end}))
 }
 
 func TestEventSentence(t *testing.T) {
 	start := time.Date(2026, 5, 14, 17, 11, 0, 0, time.UTC)
 	end := start.Add(300 * time.Millisecond)
-	withDur := &sqlcdb.Run{StartAt: &start, EndAt: &end, ExitCode: 1}
-	noDur := &sqlcdb.Run{ExitCode: 2}
+	withDur := &model.Run{StartAt: &start, EndAt: &end, ExitCode: 1}
+	noDur := &model.Run{ExitCode: 2}
 
 	cases := []struct {
 		name string
@@ -129,10 +129,10 @@ func TestEventSentence(t *testing.T) {
 
 func TestEventTrigger(t *testing.T) {
 	assert.Equal(t, "Event", eventTrigger(&notify.Event{}))
-	assert.Equal(t, "Scheduled run", eventTrigger(&notify.Event{Run: &sqlcdb.Run{TriggeredBy: sqlcdb.TriggeredByCron}}))
-	assert.Equal(t, "Manually triggered via API", eventTrigger(&notify.Event{Run: &sqlcdb.Run{TriggeredBy: sqlcdb.TriggeredByAPI}}))
-	assert.Equal(t, "Triggered from the control plane", eventTrigger(&notify.Event{Run: &sqlcdb.Run{TriggeredBy: sqlcdb.TriggeredByCloud}}))
-	assert.Equal(t, "Run", eventTrigger(&notify.Event{Run: &sqlcdb.Run{}}))
+	assert.Equal(t, "Scheduled run", eventTrigger(&notify.Event{Run: &model.Run{TriggeredBy: model.TriggeredByCron}}))
+	assert.Equal(t, "Manually triggered via API", eventTrigger(&notify.Event{Run: &model.Run{TriggeredBy: model.TriggeredByAPI}}))
+	assert.Equal(t, "Triggered from the control plane", eventTrigger(&notify.Event{Run: &model.Run{TriggeredBy: model.TriggeredByCloud}}))
+	assert.Equal(t, "Run", eventTrigger(&notify.Event{Run: &model.Run{}}))
 }
 
 func TestLinkLabel(t *testing.T) {

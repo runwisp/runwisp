@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -36,7 +35,7 @@ func TestRunFilterGateArgs_EmptyFilterDisablesEveryGate(t *testing.T) {
 }
 
 func TestRunFilterGateArgs_EndReasonStatusGoesToReasonColumn(t *testing.T) {
-	args := runFilterGateArgs(model.RunFilter{Status: string(sqlcdb.ReasonSuccess)})
+	args := runFilterGateArgs(model.RunFilter{Status: string(model.ReasonSuccess)})
 	assert.Equal(t, "success", args[endReasonGateIdx])
 	assert.Equal(t, "success", args[endReasonValueIdx])
 	assert.Equal(t, "", args[statusGateIdx])
@@ -44,7 +43,7 @@ func TestRunFilterGateArgs_EndReasonStatusGoesToReasonColumn(t *testing.T) {
 }
 
 func TestRunFilterGateArgs_PhaseStatusGoesToStatusColumn(t *testing.T) {
-	args := runFilterGateArgs(model.RunFilter{Status: string(sqlcdb.PhaseRunning)})
+	args := runFilterGateArgs(model.RunFilter{Status: string(model.PhaseRunning)})
 	assert.Equal(t, "", args[endReasonGateIdx])
 	assert.Equal(t, "", args[endReasonValueIdx])
 	assert.Equal(t, "running", args[statusGateIdx])

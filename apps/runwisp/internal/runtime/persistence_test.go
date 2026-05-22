@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -19,12 +19,12 @@ func TestPersistenceCoordinatorPersistNew(t *testing.T) {
 
 	var called bool
 	var isNewArg bool
-	pc.hook = func(run *sqlcdb.Run, isNew bool) {
+	pc.hook = func(run *model.Run, isNew bool) {
 		called = true
 		isNewArg = isNew
 	}
 
-	pc.PersistNew(&sqlcdb.Run{TaskName: "test"})
+	pc.PersistNew(&model.Run{TaskName: "test"})
 	time.Sleep(50 * time.Millisecond)
 
 	assert.True(t, called)
@@ -36,11 +36,11 @@ func TestPersistenceCoordinatorPersistExisting(t *testing.T) {
 	defer pc.Shutdown()
 
 	var isNewArg bool
-	pc.hook = func(run *sqlcdb.Run, isNew bool) {
+	pc.hook = func(run *model.Run, isNew bool) {
 		isNewArg = isNew
 	}
 
-	pc.PersistExisting(&sqlcdb.Run{TaskName: "test"})
+	pc.PersistExisting(&model.Run{TaskName: "test"})
 	time.Sleep(50 * time.Millisecond)
 
 	assert.False(t, isNewArg)
@@ -51,8 +51,8 @@ func TestPersistenceCoordinatorNoHookNoPanic(t *testing.T) {
 	defer pc.Shutdown()
 
 	assert.NotPanics(t, func() {
-		pc.PersistNew(&sqlcdb.Run{})
-		pc.PersistExisting(&sqlcdb.Run{})
+		pc.PersistNew(&model.Run{})
+		pc.PersistExisting(&model.Run{})
 	})
 }
 
@@ -60,12 +60,12 @@ func TestPersistenceCoordinatorShutdownDrains(t *testing.T) {
 	pc := NewPersistenceCoordinator(100)
 
 	var count int32
-	pc.hook = func(run *sqlcdb.Run, isNew bool) {
+	pc.hook = func(run *model.Run, isNew bool) {
 		atomic.AddInt32(&count, 1)
 	}
 
 	for i := 0; i < 10; i++ {
-		pc.PersistNew(&sqlcdb.Run{})
+		pc.PersistNew(&model.Run{})
 	}
 
 	pc.Shutdown()
@@ -74,12 +74,12 @@ func TestPersistenceCoordinatorShutdownDrains(t *testing.T) {
 
 func TestPersistenceCoordinatorAfterShutdown(t *testing.T) {
 	pc := NewPersistenceCoordinator(10)
-	pc.hook = func(run *sqlcdb.Run, isNew bool) {}
+	pc.hook = func(run *model.Run, isNew bool) {}
 	pc.Shutdown()
 
 	assert.NotPanics(t, func() {
-		pc.PersistNew(&sqlcdb.Run{})
-		pc.PersistExisting(&sqlcdb.Run{})
+		pc.PersistNew(&model.Run{})
+		pc.PersistExisting(&model.Run{})
 	})
 }
 
@@ -87,6 +87,6 @@ func TestPublishRunNilBus(t *testing.T) {
 	// Nil bus should not panic
 	jm := NewTaskManager(new(testutil.MockExecutor), nil, time.Now).(*defaultTaskManager)
 	assert.NotPanics(t, func() {
-		jm.publishRun("test", &sqlcdb.Run{})
+		jm.publishRun("test", &model.Run{})
 	})
 }

@@ -8,22 +8,21 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestIsFailureReason(t *testing.T) {
 	for _, tc := range []struct {
-		reason sqlcdb.EndReason
+		reason model.EndReason
 		want   bool
 	}{
-		{sqlcdb.ReasonFailed, true},
-		{sqlcdb.ReasonTimeout, true},
-		{sqlcdb.ReasonCrashed, true},
-		{sqlcdb.ReasonLogOverflow, true},
-		{sqlcdb.ReasonSuccess, false},
-		{sqlcdb.ReasonStopped, false},
-		{sqlcdb.ReasonSkipped, false},
+		{model.ReasonFailed, true},
+		{model.ReasonTimeout, true},
+		{model.ReasonCrashed, true},
+		{model.ReasonLogOverflow, true},
+		{model.ReasonSuccess, false},
+		{model.ReasonStopped, false},
+		{model.ReasonSkipped, false},
 	} {
 		assert.Equalf(t, tc.want, IsFailureReason(tc.reason),
 			"IsFailureReason(%q)", tc.reason)
@@ -31,59 +30,59 @@ func TestIsFailureReason(t *testing.T) {
 }
 
 func TestShouldRestart(t *testing.T) {
-	stopped := sqlcdb.ReasonStopped
-	failed := sqlcdb.ReasonFailed
-	success := sqlcdb.ReasonSuccess
-	timeout := sqlcdb.ReasonTimeout
-	crashed := sqlcdb.ReasonCrashed
+	stopped := model.ReasonStopped
+	failed := model.ReasonFailed
+	success := model.ReasonSuccess
+	timeout := model.ReasonTimeout
+	crashed := model.ReasonCrashed
 
 	t.Run("never policy never restarts", func(t *testing.T) {
 		task := &model.Task{Restart: model.RestartNever}
-		assert.False(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &failed}))
-		assert.False(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &success}))
+		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &failed}))
+		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &success}))
 	})
 
 	t.Run("empty policy never restarts", func(t *testing.T) {
 		task := &model.Task{Restart: ""}
-		assert.False(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &failed}))
+		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &failed}))
 	})
 
 	t.Run("always policy restarts unless stopped (non-service)", func(t *testing.T) {
 		task := &model.Task{Restart: model.RestartAlways}
-		assert.True(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &failed}))
-		assert.True(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &success}))
-		assert.True(t, ShouldRestart(task, &sqlcdb.Run{EndReason: nil}))
-		assert.False(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &stopped}))
+		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &failed}))
+		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &success}))
+		assert.True(t, ShouldRestart(task, &model.Run{EndReason: nil}))
+		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &stopped}))
 	})
 
 	t.Run("always policy on service always restarts", func(t *testing.T) {
 		task := &model.Task{Restart: model.RestartAlways, Kind: model.KindService}
-		assert.True(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &stopped}),
+		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &stopped}),
 			"service must self-heal even after manual stop")
-		assert.True(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &failed}))
-		assert.True(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &success}))
+		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &failed}))
+		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &success}))
 	})
 
 	t.Run("on_failure restarts only on failure reasons", func(t *testing.T) {
 		task := &model.Task{Restart: model.RestartOnFailure}
-		assert.True(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &failed}))
-		assert.True(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &timeout}))
-		assert.True(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &crashed}))
-		assert.False(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &success}))
-		assert.False(t, ShouldRestart(task, &sqlcdb.Run{EndReason: &stopped}))
-		assert.False(t, ShouldRestart(task, &sqlcdb.Run{EndReason: nil}))
+		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &failed}))
+		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &timeout}))
+		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &crashed}))
+		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &success}))
+		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &stopped}))
+		assert.False(t, ShouldRestart(task, &model.Run{EndReason: nil}))
 	})
 }
 
 func TestShouldRetry(t *testing.T) {
-	failed := sqlcdb.ReasonFailed
-	success := sqlcdb.ReasonSuccess
-	stopped := sqlcdb.ReasonStopped
+	failed := model.ReasonFailed
+	success := model.ReasonSuccess
+	stopped := model.ReasonStopped
 
 	t.Run("retry disabled when restart policy active", func(t *testing.T) {
 		for _, policy := range []model.RestartPolicy{model.RestartAlways, model.RestartOnFailure} {
 			task := &model.Task{Restart: policy, RetryAttempts: 3}
-			assert.Falsef(t, ShouldRetry(task, &sqlcdb.Run{EndReason: &failed}),
+			assert.Falsef(t, ShouldRetry(task, &model.Run{EndReason: &failed}),
 				"restart=%s should disable retry", policy)
 		}
 	})
@@ -91,30 +90,30 @@ func TestShouldRetry(t *testing.T) {
 	t.Run("retry allowed when restart never or empty", func(t *testing.T) {
 		for _, policy := range []model.RestartPolicy{"", model.RestartNever} {
 			task := &model.Task{Restart: policy, RetryAttempts: 3}
-			assert.Truef(t, ShouldRetry(task, &sqlcdb.Run{EndReason: &failed}),
+			assert.Truef(t, ShouldRetry(task, &model.Run{EndReason: &failed}),
 				"restart=%q should allow retry", policy)
 		}
 	})
 
 	t.Run("zero retry attempts disables retry", func(t *testing.T) {
 		task := &model.Task{RetryAttempts: 0}
-		assert.False(t, ShouldRetry(task, &sqlcdb.Run{EndReason: &failed}))
+		assert.False(t, ShouldRetry(task, &model.Run{EndReason: &failed}))
 	})
 
 	t.Run("non-failure reasons skip retry", func(t *testing.T) {
 		task := &model.Task{RetryAttempts: 3}
-		assert.False(t, ShouldRetry(task, &sqlcdb.Run{EndReason: &success}))
-		assert.False(t, ShouldRetry(task, &sqlcdb.Run{EndReason: &stopped}))
-		assert.False(t, ShouldRetry(task, &sqlcdb.Run{EndReason: nil}))
+		assert.False(t, ShouldRetry(task, &model.Run{EndReason: &success}))
+		assert.False(t, ShouldRetry(task, &model.Run{EndReason: &stopped}))
+		assert.False(t, ShouldRetry(task, &model.Run{EndReason: nil}))
 	})
 
 	t.Run("retry budget boundary", func(t *testing.T) {
 		task := &model.Task{RetryAttempts: 3}
-		assert.True(t, ShouldRetry(task, &sqlcdb.Run{EndReason: &failed, RetryAttempt: 0}))
-		assert.True(t, ShouldRetry(task, &sqlcdb.Run{EndReason: &failed, RetryAttempt: 2}))
-		assert.False(t, ShouldRetry(task, &sqlcdb.Run{EndReason: &failed, RetryAttempt: 3}),
+		assert.True(t, ShouldRetry(task, &model.Run{EndReason: &failed, RetryAttempt: 0}))
+		assert.True(t, ShouldRetry(task, &model.Run{EndReason: &failed, RetryAttempt: 2}))
+		assert.False(t, ShouldRetry(task, &model.Run{EndReason: &failed, RetryAttempt: 3}),
 			"attempt == max budget exhausts retry")
-		assert.False(t, ShouldRetry(task, &sqlcdb.Run{EndReason: &failed, RetryAttempt: 4}))
+		assert.False(t, ShouldRetry(task, &model.Run{EndReason: &failed, RetryAttempt: 4}))
 	})
 }
 

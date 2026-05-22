@@ -11,6 +11,7 @@ import (
 )
 
 const ensureTaskRegistered = `-- name: EnsureTaskRegistered :exec
+
 INSERT OR IGNORE INTO task_registrations (task_name, first_seen_at)
 VALUES (?, ?)
 `
@@ -20,6 +21,8 @@ type EnsureTaskRegisteredParams struct {
 	FirstSeenAt time.Time `json:"first_seen_at"`
 }
 
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
 func (q *Queries) EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegisteredParams) error {
 	_, err := q.db.ExecContext(ctx, ensureTaskRegistered, arg.TaskName, arg.FirstSeenAt)
 	return err

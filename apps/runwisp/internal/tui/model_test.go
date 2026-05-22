@@ -9,8 +9,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
-	"github.com/runwisp/runwisp/internal/server/dto"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
@@ -97,7 +95,7 @@ func TestModel_Guards(t *testing.T) {
 
 func TestCloseExecView_SetsExecListFocusedWhenPanelMain(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 	m.panelFocus = uikit.PanelMain
@@ -203,10 +201,10 @@ func TestAutoOpenService_SingleInstanceWithRunningExecOpensView(t *testing.T) {
 	}}
 	m := newTestModel(tasks)
 
-	run := dto.Run{
+	run := model.Run{
 		ID:       "r-svc",
 		TaskName: "svc",
-		Status:   sqlcdb.PhaseRunning,
+		Status:   model.PhaseRunning,
 	}
 	m.execWindow.UpsertRun(run)
 
@@ -223,10 +221,10 @@ func TestAutoOpenService_SingleInstanceWithRunningExecOpensView(t *testing.T) {
 
 func TestOpenRunByID_RunInWindowOpensExecView(t *testing.T) {
 	m := newTestModel(nil)
-	run := dto.Run{
+	run := model.Run{
 		ID:       "r-found",
 		TaskName: "backup-db",
-		Status:   sqlcdb.PhasePending,
+		Status:   model.PhasePending,
 	}
 	m.execWindow.UpsertRun(run)
 

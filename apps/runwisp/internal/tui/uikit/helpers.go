@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // SidebarWidth is the fixed width of the left sidebar panel in cells.
@@ -28,7 +28,7 @@ func PadLine(content string, width int, bg lipgloss.Color) string {
 
 // FormatDuration renders a run's elapsed time. When EndAt is nil the duration
 // is measured against time.Now() so live cells tick forward.
-func FormatDuration(run dto.Run) string {
+func FormatDuration(run model.Run) string {
 	if run.StartAt == nil {
 		return "—"
 	}

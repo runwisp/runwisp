@@ -14,7 +14,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,9 +55,9 @@ func TestExecuteSuccess(t *testing.T) {
 		Name: "test-task",
 		Run:  "echo 'hello world'",
 	}
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:     ulid.Make().String(),
-		Status: sqlcdb.PhaseRunning,
+		Status: model.PhaseRunning,
 	}
 
 	result := exec.Execute(context.Background(), task, run)
@@ -83,9 +82,9 @@ func TestExecuteFailure(t *testing.T) {
 		Name: "fail-task",
 		Run:  "exit 1",
 	}
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:     ulid.Make().String(),
-		Status: sqlcdb.PhaseRunning,
+		Status: model.PhaseRunning,
 	}
 
 	result := exec.Execute(context.Background(), task, run)
@@ -104,9 +103,9 @@ func TestExecuteTimeout(t *testing.T) {
 		Name: "sleep-task",
 		Run:  "sleep 2",
 	}
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:     ulid.Make().String(),
-		Status: sqlcdb.PhaseRunning,
+		Status: model.PhaseRunning,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -129,9 +128,9 @@ func TestExecuteStderr(t *testing.T) {
 		Name: "stderr-task",
 		Run:  "echo 'error message' >&2",
 	}
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:     ulid.Make().String(),
-		Status: sqlcdb.PhaseRunning,
+		Status: model.PhaseRunning,
 	}
 
 	result := exec.Execute(context.Background(), task, run)
@@ -167,9 +166,9 @@ func TestExecuteEvents(t *testing.T) {
 		Name: "event-task",
 		Run:  "echo 'line 1'\necho 'line 2'",
 	}
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:     ulid.Make().String(),
-		Status: sqlcdb.PhaseRunning,
+		Status: model.PhaseRunning,
 	}
 
 	exec.Execute(context.Background(), task, run)
@@ -197,7 +196,7 @@ func TestRunUpdateCallback(t *testing.T) {
 		EventBus:          eb,
 		CloudShellEnabled: true,
 		HasLocalTasks:     true,
-		OnRunUpdate: func(r *sqlcdb.Run) {
+		OnRunUpdate: func(r *model.Run) {
 			called = true
 		},
 	})
@@ -207,9 +206,9 @@ func TestRunUpdateCallback(t *testing.T) {
 		Name: "callback-task",
 		Run:  "echo hi",
 	}
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:     ulid.Make().String(),
-		Status: sqlcdb.PhaseRunning,
+		Status: model.PhaseRunning,
 	}
 
 	exec.Execute(context.Background(), task, run)
@@ -228,7 +227,7 @@ func TestLogDirCreationFailure(t *testing.T) {
 	exec := New(Options{LogDir: tmpFile.Name(), EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{Name: "fail", Run: "echo hi"}
-	run := &sqlcdb.Run{ID: ulid.Make().String()}
+	run := &model.Run{ID: ulid.Make().String()}
 
 	result := exec.Execute(context.Background(), task, run)
 	assert.Equal(t, -1, result.ExitCode)
@@ -248,7 +247,7 @@ func TestLogFileCreationFailure(t *testing.T) {
 	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{Name: "fail", Run: "echo hi"}
-	run := &sqlcdb.Run{ID: ulid.Make().String()}
+	run := &model.Run{ID: ulid.Make().String()}
 
 	result := exec.Execute(context.Background(), task, run)
 	// If running as root (e.g. in some containers), chmod might not stop root.
@@ -273,9 +272,9 @@ func TestExecuteCommandStartFailure(t *testing.T) {
 		Name: "fail-start",
 		Run:  "/path/to/non/existent/command",
 	}
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:     ulid.Make().String(),
-		Status: sqlcdb.PhaseRunning,
+		Status: model.PhaseRunning,
 	}
 
 	result := exec.Execute(context.Background(), task, run)

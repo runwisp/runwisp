@@ -7,7 +7,6 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // The cloud package depends on these narrow interfaces rather than the
@@ -26,8 +25,8 @@ type TaskRunner interface {
 	UpsertTask(task *model.Task)
 	// TriggerCloudRun starts a fresh cloud-triggered run for the named task,
 	// tagged with the supplied external execution id. Implementations must set
-	// TriggeredBy = sqlcdb.TriggeredByCloud.
-	TriggerCloudRun(taskName, externalExecutionID string) (*sqlcdb.Run, error)
+	// TriggeredBy = model.TriggeredByCloud.
+	TriggerCloudRun(taskName, externalExecutionID string) (*model.Run, error)
 	// TerminateRunByExternalExecutionID cancels a running run identified by
 	// the cloud-side execution id, if any.
 	TerminateRunByExternalExecutionID(externalExecutionID string) error
@@ -39,15 +38,15 @@ type TaskRunner interface {
 type ExternalRunGetter interface {
 	// GetRunByExternalExecutionID returns the run tagged with the supplied
 	// cloud-side execution id, or ErrNotFound if no such run exists.
-	GetRunByExternalExecutionID(externalExecutionID string) (*sqlcdb.Run, error)
+	GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error)
 }
 
 // PendingLogUploadRepository persists dispatch metadata so the daemon can
 // resume terminal log archival after a crash.
 type PendingLogUploadRepository interface {
-	UpsertPendingLogUpload(rec sqlcdb.PendingLogUpload) error
+	UpsertPendingLogUpload(rec model.PendingLogUpload) error
 	DeletePendingLogUpload(externalExecutionID string) error
-	ListPendingLogUploads() ([]sqlcdb.PendingLogUpload, error)
+	ListPendingLogUploads() ([]model.PendingLogUpload, error)
 }
 
 // EventSubscriber is the subset of the in-process event hub the cloud bridge

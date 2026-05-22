@@ -16,7 +16,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,7 +109,7 @@ func waitForRunCreatedEvent(
 	stream <-chan apiclient.RunStreamEvent,
 	taskName string,
 	timeout time.Duration,
-) dto.Run {
+) model.Run {
 	t.Helper()
 	deadline := time.After(timeout)
 	for {
@@ -122,7 +122,7 @@ func waitForRunCreatedEvent(
 				continue
 			}
 			var envelope struct {
-				Run *dto.Run `json:"run"`
+				Run *model.Run `json:"run"`
 			}
 			require.NoError(t, json.Unmarshal(ev.Data, &envelope), "decode run.created envelope")
 			require.NotNil(t, envelope.Run, "run.created envelope must carry a non-nil run")
@@ -145,7 +145,7 @@ func waitForListedRun(
 	client *apiclient.Client,
 	taskName, runID string,
 	timeout time.Duration,
-) dto.Run {
+) model.Run {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -160,7 +160,7 @@ func waitForListedRun(
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("run %s for %s never showed up in GET /api/runs within %s", runID, taskName, timeout)
-	return dto.Run{}
+	return model.Run{}
 }
 
 // requireLogFileNonEmpty waits for the on-disk log file to materialize and

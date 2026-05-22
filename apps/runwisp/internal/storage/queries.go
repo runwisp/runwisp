@@ -3,10 +3,7 @@
 
 package storage
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // SortColumn is a typed handle for a column the runs list may be sorted by.
 // Callers receive the typed value via ParseSortColumn so unknown strings are
@@ -108,11 +105,6 @@ func buildOrderClause(col SortColumn, dir SortDirection) (string, error) {
 // so deleted rows are invisible to the UI until the purger reaps them.
 const notDeletedClause = "deleted_at IS NULL"
 
-// wherePrefix is the standalone "WHERE " token used by the dynamic-query
-// helpers below. Extracted into a single constant so the literal isn't
-// duplicated across helpers.
-const wherePrefix = "WHERE "
-
 // selectFromRuns is the common SELECT runColumns FROM runs prefix used by
 // every full-row read. Hoisting it keeps the static query constants from
 // duplicating either the column list or the SELECT keyword (S1192).
@@ -201,15 +193,12 @@ func selectRunsSQL(where, tail string) string {
 	return q
 }
 
-// combineWhere merges an existing WHERE clause (which may already start with
-// "WHERE" or be empty) with an extra predicate.
+// combineWhere appends an extra predicate to an optional caller-supplied
+// WHERE clause. The empty string means "no caller predicate" — the helper
+// then becomes the sole `WHERE extra` source.
 func combineWhere(existing, extra string) string {
-	trimmed := strings.TrimSpace(existing)
-	if trimmed == "" {
-		return wherePrefix + extra
+	if existing == "" {
+		return "WHERE " + extra
 	}
-	if strings.HasPrefix(strings.ToUpper(trimmed), wherePrefix) {
-		return trimmed + " AND " + extra
-	}
-	return wherePrefix + trimmed + " AND " + extra
+	return existing + " AND " + extra
 }

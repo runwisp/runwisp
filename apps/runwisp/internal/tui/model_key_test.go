@@ -7,9 +7,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
-	"github.com/runwisp/runwisp/internal/server/dto"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
@@ -45,7 +44,7 @@ func TestHandleKeyN_NoExecViewHomePageTogglesNotifications(t *testing.T) {
 
 func TestHandleKeyN_WithExecViewReturnsFalse(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "run1", TaskName: "task1"}
+	run := &model.Run{ID: "run1", TaskName: "task1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 
@@ -75,7 +74,7 @@ func TestHandleKeyEsc_NotificationsExpanded(t *testing.T) {
 
 func TestHandleKeyEsc_ExecViewNonFullscreen(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 
@@ -122,7 +121,7 @@ func TestHandleKeyBackspace_NoExecViewReturnsFalse(t *testing.T) {
 
 func TestHandleKeyBackspace_WithExecView(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 
@@ -147,7 +146,7 @@ func TestHandleKeyF_NoExecViewReturnsFalse(t *testing.T) {
 
 func TestHandleKeyF_WithExecViewTogglesFullscreen(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 
@@ -177,7 +176,7 @@ func TestHandleKeyLeft_NoExecViewCallsNoExecViewHandler(t *testing.T) {
 
 func TestHandleKeyLeft_ExecViewAtLeftEdge(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.HeaderFocus = execlist.HeaderFocusBack
 	m.execView = &ev
@@ -270,7 +269,7 @@ func TestHandleKeyRight_NoExecViewMainPanelDebugPageReturnsFalse(t *testing.T) {
 
 func TestHandleKeyRight_ExecViewFullscreenReturnsFalse(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.ToggleFullscreen()
 	m.execView = &ev
@@ -283,7 +282,7 @@ func TestHandleKeyRight_ExecViewFullscreenReturnsFalse(t *testing.T) {
 
 func TestHandleKeyRight_ExecViewNonFullscreenSidebarFocuseMain(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 	// panelFocus is PanelSidebar by default
@@ -299,7 +298,7 @@ func TestHandleKeyRight_ExecViewNonFullscreenSidebarFocuseMain(t *testing.T) {
 
 func TestHandleKeyRight_ExecViewNonFullscreenMainPanelReturnsFalse(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 	m.panelFocus = uikit.PanelMain
@@ -326,7 +325,7 @@ func TestHandleKeyEnter_MainPanelNoExecViewHomeCursorGte0(t *testing.T) {
 func TestHandleKeyEnter_SidebarWithExecView(t *testing.T) {
 	m := newTestModel(nil)
 	// panelFocus = PanelSidebar by default
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 
@@ -375,7 +374,7 @@ func TestHandleKeyEnterNotifications_SelectedWithRunID(t *testing.T) {
 
 func TestHandleKeyEnterHeader_FocusBack(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1"}
+	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	ev.HeaderFocus = execlist.HeaderFocusBack
 	m.execView = &ev
@@ -396,7 +395,7 @@ func TestHandleKeyEnterHeader_FocusBack(t *testing.T) {
 // Each row picks an execView state that produces a distinct Action() and
 // verifies the handler still reports handled=true.
 func TestHandleKeyEnterActionButton_NilClient_Actions(t *testing.T) {
-	reason := sqlcdb.ReasonFailed
+	reason := model.ReasonFailed
 	tests := []struct {
 		name string
 		make func() execlist.ExecView
@@ -404,13 +403,13 @@ func TestHandleKeyEnterActionButton_NilClient_Actions(t *testing.T) {
 		{
 			"ActionStop (running, non-service)",
 			func() execlist.ExecView {
-				return execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseRunning})
+				return execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning})
 			},
 		},
 		{
 			"ActionStopService (running service)",
 			func() execlist.ExecView {
-				ev := execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseRunning})
+				ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning})
 				ev.TaskIsService = true
 				return ev
 			},
@@ -418,13 +417,13 @@ func TestHandleKeyEnterActionButton_NilClient_Actions(t *testing.T) {
 		{
 			"ActionRetry (ended, retryable)",
 			func() execlist.ExecView {
-				return execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseEnded, EndReason: &reason})
+				return execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &reason})
 			},
 		},
 		{
 			"ActionRestartService (service stopped)",
 			func() execlist.ExecView {
-				ev := execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1"})
+				ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1"})
 				ev.TaskIsService = true
 				ev.SetServiceStopped(true)
 				return ev
@@ -433,8 +432,8 @@ func TestHandleKeyEnterActionButton_NilClient_Actions(t *testing.T) {
 		{
 			"ActionDelete (ended, non-retryable, non-service)",
 			func() execlist.ExecView {
-				success := sqlcdb.ReasonSuccess
-				return execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseEnded, EndReason: &success})
+				success := model.ReasonSuccess
+				return execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &success})
 			},
 		},
 	}
@@ -493,7 +492,7 @@ func TestHandleKeyS_NoExecViewReturnsFalse(t *testing.T) {
 // action — under a nil client. Each path should report handled=true with a
 // nil cmd because confirmAction short-circuits on the nil client.
 func TestHandleKeyS_ExecViewActions(t *testing.T) {
-	reason := sqlcdb.ReasonFailed
+	reason := model.ReasonFailed
 	tests := []struct {
 		name string
 		make func() execlist.ExecView
@@ -501,13 +500,13 @@ func TestHandleKeyS_ExecViewActions(t *testing.T) {
 		{
 			"ActionStop (running, non-service)",
 			func() execlist.ExecView {
-				return execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseRunning})
+				return execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning})
 			},
 		},
 		{
 			"ActionStopService (running service)",
 			func() execlist.ExecView {
-				ev := execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseRunning})
+				ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning})
 				ev.TaskIsService = true
 				return ev
 			},
@@ -515,7 +514,7 @@ func TestHandleKeyS_ExecViewActions(t *testing.T) {
 		{
 			"non-stop action (ended, retryable)",
 			func() execlist.ExecView {
-				return execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseEnded, EndReason: &reason})
+				return execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &reason})
 			},
 		},
 	}
@@ -548,8 +547,8 @@ func TestHandleKeyD_NoExecViewReturnsFalse(t *testing.T) {
 
 func TestHandleKeyDCapital_DeletableRun_ReturnsHandled(t *testing.T) {
 	m := newTestModel(nil)
-	success := sqlcdb.ReasonSuccess
-	ev := execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseEnded, EndReason: &success})
+	success := model.ReasonSuccess
+	ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &success})
 	m.execView = &ev
 
 	_, cmd, handled := handleKeyD(m, keyMsg("D"))
@@ -563,7 +562,7 @@ func TestHandleKeyDCapital_DeletableRun_ReturnsHandled(t *testing.T) {
 
 func TestHandleKeyDCapital_RunningRun_NoOp(t *testing.T) {
 	m := newTestModel(nil)
-	ev := execlist.NewExecView(&dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseRunning})
+	ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning})
 	m.execView = &ev
 
 	_, cmd, handled := handleKeyD(m, keyMsg("D"))
@@ -672,7 +671,7 @@ func TestHandleKeyDownHome_LastFieldResetsCursor(t *testing.T) {
 
 func TestHandleKeyBackspace_WithFullscreenExecView(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseRunning}
+	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	ev.ToggleFullscreen() // set fullscreen
 	m.execView = &ev
@@ -690,7 +689,7 @@ func TestHandleKeyBackspace_WithFullscreenExecView(t *testing.T) {
 
 func TestHandleKeyEnterHeader_FocusAction(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseRunning}
+	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	ev.HeaderFocus = execlist.HeaderFocusAction
 	m.execView = &ev
@@ -702,7 +701,7 @@ func TestHandleKeyEnterHeader_FocusAction(t *testing.T) {
 
 func TestHandleKeyEnterHeader_FocusCopyField(t *testing.T) {
 	m := newTestModel(nil)
-	run := &dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseRunning}
+	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	ev.HeaderFocus = execlist.HeaderFocusStarted
 	m.execView = &ev
@@ -734,8 +733,8 @@ func TestHandleKeyR_CapitalR(t *testing.T) {
 
 func TestHandleKeyR_WithExecViewRetry(t *testing.T) {
 	m := newTestModel(nil)
-	reason := sqlcdb.ReasonFailed
-	run := &dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseEnded, EndReason: &reason}
+	reason := model.ReasonFailed
+	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &reason}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 	_, _, handled := handleKeyRExecView(m)

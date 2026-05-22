@@ -6,13 +6,12 @@ package execlist
 import (
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/server/dto"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // makeItems returns a slice of ExecListItems with the given run IDs and task names.
-func makeItems(runs ...dto.Run) []uikit.ExecListItem {
+func makeItems(runs ...model.Run) []uikit.ExecListItem {
 	items := make([]uikit.ExecListItem, len(runs))
 	for i, r := range runs {
 		items[i] = uikit.ExecListItem{Run: r}
@@ -34,9 +33,9 @@ func TestWindowRange_Empty(t *testing.T) {
 func TestWindowRange_AfterFetch(t *testing.T) {
 	w := NewExecWindow(nil)
 	items := makeItems(
-		dto.Run{ID: "r1", TaskName: "task-a"},
-		dto.Run{ID: "r2", TaskName: "task-a"},
-		dto.Run{ID: "r3", TaskName: "task-a"},
+		model.Run{ID: "r1", TaskName: "task-a"},
+		model.Run{ID: "r2", TaskName: "task-a"},
+		model.Run{ID: "r3", TaskName: "task-a"},
 	)
 	w.ApplyFetch(items, 10, 50)
 
@@ -52,8 +51,8 @@ func TestWindowRange_AfterFetch(t *testing.T) {
 func TestWindowRange_ZeroOffset(t *testing.T) {
 	w := NewExecWindow(nil)
 	items := makeItems(
-		dto.Run{ID: "r1", TaskName: "task-a"},
-		dto.Run{ID: "r2", TaskName: "task-a"},
+		model.Run{ID: "r1", TaskName: "task-a"},
+		model.Run{ID: "r2", TaskName: "task-a"},
 	)
 	w.ApplyFetch(items, 0, 2)
 
@@ -80,7 +79,7 @@ func TestSetLoading_True(t *testing.T) {
 func TestSetLoading_False(t *testing.T) {
 	w := NewExecWindow(nil)
 	// Manually set loading via ApplyFetch (which sets loading=false) and confirm.
-	items := makeItems(dto.Run{ID: "r1", TaskName: "t"})
+	items := makeItems(model.Run{ID: "r1", TaskName: "t"})
 	w.ApplyFetch(items, 0, 1)
 
 	// Flip back to loading=true so we can then set it false.
@@ -99,9 +98,9 @@ func TestSetLoading_False(t *testing.T) {
 func TestLatestRunning_Found(t *testing.T) {
 	w := NewExecWindow(nil)
 	items := makeItems(
-		dto.Run{ID: "r1", TaskName: "alpha", Status: sqlcdb.PhaseEnded},
-		dto.Run{ID: "r2", TaskName: "alpha", Status: sqlcdb.PhaseRunning},
-		dto.Run{ID: "r3", TaskName: "alpha", Status: sqlcdb.PhaseRunning},
+		model.Run{ID: "r1", TaskName: "alpha", Status: model.PhaseEnded},
+		model.Run{ID: "r2", TaskName: "alpha", Status: model.PhaseRunning},
+		model.Run{ID: "r3", TaskName: "alpha", Status: model.PhaseRunning},
 	)
 	w.ApplyFetch(items, 0, 3)
 
@@ -118,7 +117,7 @@ func TestLatestRunning_Found(t *testing.T) {
 func TestLatestRunning_NotFound_WrongTask(t *testing.T) {
 	w := NewExecWindow(nil)
 	items := makeItems(
-		dto.Run{ID: "r1", TaskName: "alpha", Status: sqlcdb.PhaseRunning},
+		model.Run{ID: "r1", TaskName: "alpha", Status: model.PhaseRunning},
 	)
 	w.ApplyFetch(items, 0, 1)
 
@@ -131,7 +130,7 @@ func TestLatestRunning_NotFound_WrongTask(t *testing.T) {
 func TestLatestRunning_NotFound_NoRunning(t *testing.T) {
 	w := NewExecWindow(nil)
 	items := makeItems(
-		dto.Run{ID: "r1", TaskName: "alpha", Status: sqlcdb.PhaseEnded},
+		model.Run{ID: "r1", TaskName: "alpha", Status: model.PhaseEnded},
 	)
 	w.ApplyFetch(items, 0, 1)
 
@@ -166,7 +165,7 @@ func TestFilterTask_AfterSetFilter(t *testing.T) {
 
 func TestSetFilter_ClearsItems(t *testing.T) {
 	w := NewExecWindow(nil)
-	items := makeItems(dto.Run{ID: "r1", TaskName: "old"})
+	items := makeItems(model.Run{ID: "r1", TaskName: "old"})
 	w.ApplyFetch(items, 0, 1)
 
 	w.SetFilter("new-task")
@@ -182,7 +181,7 @@ func TestSetFilter_ClearsItems(t *testing.T) {
 
 func TestSetFilter_SameFilter_IsNoop(t *testing.T) {
 	w := NewExecWindow(nil)
-	items := makeItems(dto.Run{ID: "r1", TaskName: "task-x"})
+	items := makeItems(model.Run{ID: "r1", TaskName: "task-x"})
 	w.ApplyFetch(items, 5, 10)
 	w.SetFilter("task-x")
 	// Pre-populate again so we can tell if it was cleared.
@@ -200,8 +199,8 @@ func TestSetFilter_SameFilter_IsNoop(t *testing.T) {
 func TestItem_InsideWindow(t *testing.T) {
 	w := NewExecWindow(nil)
 	items := makeItems(
-		dto.Run{ID: "r1", TaskName: "task"},
-		dto.Run{ID: "r2", TaskName: "task"},
+		model.Run{ID: "r1", TaskName: "task"},
+		model.Run{ID: "r2", TaskName: "task"},
 	)
 	w.ApplyFetch(items, 0, 2)
 
@@ -224,7 +223,7 @@ func TestItem_InsideWindow(t *testing.T) {
 
 func TestItem_OutsideWindow(t *testing.T) {
 	w := NewExecWindow(nil)
-	items := makeItems(dto.Run{ID: "r1", TaskName: "task"})
+	items := makeItems(model.Run{ID: "r1", TaskName: "task"})
 	w.ApplyFetch(items, 5, 10) // window starts at offset 5
 
 	// Index below window start.
@@ -239,7 +238,7 @@ func TestItem_OutsideWindow(t *testing.T) {
 
 func TestItem_AtWindowOffset(t *testing.T) {
 	w := NewExecWindow(nil)
-	items := makeItems(dto.Run{ID: "offset-run", TaskName: "task"})
+	items := makeItems(model.Run{ID: "offset-run", TaskName: "task"})
 	w.ApplyFetch(items, 7, 20)
 
 	item := w.Item(7)
@@ -270,7 +269,7 @@ func TestNeedsFetch_NearBottom(t *testing.T) {
 func TestNeedsFetch_NearTop(t *testing.T) {
 	w := NewExecWindow(nil)
 	// No panic even with a non-zero window start.
-	items := makeItems(dto.Run{ID: "r1", TaskName: "t"})
+	items := makeItems(model.Run{ID: "r1", TaskName: "t"})
 	w.ApplyFetch(items, 50, 100)
 	_ = w.NeedsFetch(50, 10)
 }
@@ -280,7 +279,7 @@ func TestUpsertRun_NewRunPrepended(t *testing.T) {
 	// Window starts at 0 so new runs should be prepended.
 	w.ApplyFetch([]uikit.ExecListItem{}, 0, 0)
 
-	w.UpsertRun(dto.Run{ID: "new1", TaskName: "task"})
+	w.UpsertRun(model.Run{ID: "new1", TaskName: "task"})
 
 	item := w.Item(0)
 	if item == nil {
@@ -296,10 +295,10 @@ func TestUpsertRun_NewRunPrepended(t *testing.T) {
 
 func TestUpsertRun_ExistingRunUpdatedInPlace(t *testing.T) {
 	w := NewExecWindow(nil)
-	items := makeItems(dto.Run{ID: "r1", TaskName: "task", Status: sqlcdb.PhaseRunning})
+	items := makeItems(model.Run{ID: "r1", TaskName: "task", Status: model.PhaseRunning})
 	w.ApplyFetch(items, 0, 1)
 
-	updated := dto.Run{ID: "r1", TaskName: "task", Status: sqlcdb.PhaseEnded}
+	updated := model.Run{ID: "r1", TaskName: "task", Status: model.PhaseEnded}
 	w.UpsertRun(updated)
 
 	// Total count must not grow — it's an in-place update.
@@ -310,7 +309,7 @@ func TestUpsertRun_ExistingRunUpdatedInPlace(t *testing.T) {
 	if item == nil {
 		t.Fatal("expected item at index 0, got nil")
 	}
-	if item.Run.Status != sqlcdb.PhaseEnded {
+	if item.Run.Status != model.PhaseEnded {
 		t.Fatalf("expected status ended, got %s", item.Run.Status)
 	}
 }
@@ -321,14 +320,14 @@ func TestUpsertRun_FilterRespected(t *testing.T) {
 	w.ApplyFetch([]uikit.ExecListItem{}, 0, 0)
 
 	// Run for a different task must be silently dropped.
-	w.UpsertRun(dto.Run{ID: "other1", TaskName: "other-task"})
+	w.UpsertRun(model.Run{ID: "other1", TaskName: "other-task"})
 
 	if tc := w.TotalCount(); tc != 0 {
 		t.Fatalf("expected no items when run doesn't match filter, got totalCount=%d", tc)
 	}
 
 	// Run for the filtered task must be accepted.
-	w.UpsertRun(dto.Run{ID: "match1", TaskName: "only-this"})
+	w.UpsertRun(model.Run{ID: "match1", TaskName: "only-this"})
 
 	if tc := w.TotalCount(); tc != 1 {
 		t.Fatalf("expected totalCount=1 for matching run, got %d", tc)
@@ -338,11 +337,11 @@ func TestUpsertRun_FilterRespected(t *testing.T) {
 func TestUpsertRun_NonZeroWindowStart_NotPrepended(t *testing.T) {
 	w := NewExecWindow(nil)
 	// Window starts at offset 10 — new runs must not be prepended.
-	items := makeItems(dto.Run{ID: "r1", TaskName: "task"})
+	items := makeItems(model.Run{ID: "r1", TaskName: "task"})
 	w.ApplyFetch(items, 10, 20)
 	initialTotal := w.TotalCount()
 
-	w.UpsertRun(dto.Run{ID: "newrun", TaskName: "task"})
+	w.UpsertRun(model.Run{ID: "newrun", TaskName: "task"})
 
 	// totalCount increments even when not prepended.
 	if tc := w.TotalCount(); tc != initialTotal+1 {
@@ -382,8 +381,8 @@ func TestFetchAroundCmd_NilClient_ReturnsNonNil(t *testing.T) {
 func TestFindRun_Found(t *testing.T) {
 	w := NewExecWindow(nil)
 	items := makeItems(
-		dto.Run{ID: "run-1", TaskName: "task"},
-		dto.Run{ID: "run-2", TaskName: "task"},
+		model.Run{ID: "run-1", TaskName: "task"},
+		model.Run{ID: "run-2", TaskName: "task"},
 	)
 	w.ApplyFetch(items, 0, 2)
 
@@ -398,7 +397,7 @@ func TestFindRun_Found(t *testing.T) {
 
 func TestFindRun_NotFound_MissingFromIDSet(t *testing.T) {
 	w := NewExecWindow(nil)
-	items := makeItems(dto.Run{ID: "run-1", TaskName: "task"})
+	items := makeItems(model.Run{ID: "run-1", TaskName: "task"})
 	w.ApplyFetch(items, 0, 1)
 
 	got := w.FindRun("does-not-exist")
@@ -422,9 +421,9 @@ func TestUpdateVisibleTimes(t *testing.T) {
 	t.Run("full-overlap-sets-time-ago", func(t *testing.T) {
 		w := NewExecWindow(nil)
 		w.ApplyFetch(makeItems(
-			dto.Run{ID: "r1", TaskName: "task", Status: sqlcdb.PhaseRunning},
-			dto.Run{ID: "r2", TaskName: "task", Status: sqlcdb.PhaseEnded},
-			dto.Run{ID: "r3", TaskName: "task", Status: sqlcdb.PhaseRunning},
+			model.Run{ID: "r1", TaskName: "task", Status: model.PhaseRunning},
+			model.Run{ID: "r2", TaskName: "task", Status: model.PhaseEnded},
+			model.Run{ID: "r3", TaskName: "task", Status: model.PhaseRunning},
 		), 0, 3)
 
 		w.UpdateVisibleTimes(0, 3)
@@ -443,8 +442,8 @@ func TestUpdateVisibleTimes(t *testing.T) {
 	t.Run("partial-overlap-refreshes-in-range-items", func(t *testing.T) {
 		w := NewExecWindow(nil)
 		w.ApplyFetch(makeItems(
-			dto.Run{ID: "r10", TaskName: "task", Status: sqlcdb.PhaseRunning},
-			dto.Run{ID: "r11", TaskName: "task", Status: sqlcdb.PhaseEnded},
+			model.Run{ID: "r10", TaskName: "task", Status: model.PhaseRunning},
+			model.Run{ID: "r11", TaskName: "task", Status: model.PhaseEnded},
 		), 10, 2)
 
 		// scroll=9 below windowStart=10; scroll+vpH=12 overlaps the window.

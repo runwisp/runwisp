@@ -13,7 +13,6 @@ import (
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,12 +21,12 @@ import (
 // the path the purger will look up. Returns (runID, logPath).
 func makeRunWithLog(t *testing.T, db storage.RunRepository, logDir string, deletedAt time.Time) (string, string) {
 	t.Helper()
-	run := &sqlcdb.Run{
+	run := &model.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "task1",
-		Status:      sqlcdb.PhaseEnded,
-		EndReason:   sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess),
-		TriggeredBy: sqlcdb.TriggeredByAPI,
+		Status:      model.PhaseEnded,
+		EndReason:   model.EndReasonPtr(model.ReasonSuccess),
+		TriggeredBy: model.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
 	require.NoError(t, db.CreateRun(run))
@@ -43,7 +42,7 @@ func makeRunWithLog(t *testing.T, db storage.RunRepository, logDir string, delet
 
 func TestSoftDeletePurger_DrainOnBoot(t *testing.T) {
 	logDir := t.TempDir()
-	db, err := storage.New(":memory:", nil)
+	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -63,7 +62,7 @@ func TestSoftDeletePurger_DrainOnBoot(t *testing.T) {
 
 func TestSoftDeletePurger_KeepsRunsInsideTTL(t *testing.T) {
 	logDir := t.TempDir()
-	db, err := storage.New(":memory:", nil)
+	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -84,7 +83,7 @@ func TestSoftDeletePurger_KeepsRunsInsideTTL(t *testing.T) {
 
 func TestSoftDeletePurger_RemovesExpiredButKeepsFresh(t *testing.T) {
 	logDir := t.TempDir()
-	db, err := storage.New(":memory:", nil)
+	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	defer db.Close()
 

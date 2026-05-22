@@ -16,7 +16,6 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/version"
 )
@@ -133,7 +132,7 @@ func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executo
 
 func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.Executor, eventBus events.EventBus) (runtime.TaskManager, map[string]*model.Task) {
 	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
-	taskManager.BindPersistenceHook(func(run *sqlcdb.Run, isNew bool) {
+	taskManager.BindPersistenceHook(func(run *model.Run, isNew bool) {
 		var dbErr error
 		if isNew {
 			dbErr = db.CreateRun(run)
@@ -167,7 +166,7 @@ func startServiceInstances(taskManager runtime.TaskManager, tasksMap map[string]
 		if !task.Kind.IsService() {
 			continue
 		}
-		if err := taskManager.StartServiceInstances(task.Name, sqlcdb.TriggeredByService); err != nil {
+		if err := taskManager.StartServiceInstances(task.Name, model.TriggeredByService); err != nil {
 			slog.Error("Failed to start service instances", "task", task.Name, "err", err)
 		}
 	}

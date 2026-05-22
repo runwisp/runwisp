@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // RestartBackoffCap caps the exponential restart delay for service instances.
@@ -24,9 +23,9 @@ const retryDelayCap = 5 * time.Minute
 // (and therefore makes the run a candidate for retry). ReasonSkipped is
 // excluded by design — a skip is the concurrency policy working as intended,
 // not a failure to retry.
-func IsFailureReason(reason sqlcdb.EndReason) bool {
+func IsFailureReason(reason model.EndReason) bool {
 	switch reason {
-	case sqlcdb.ReasonFailed, sqlcdb.ReasonTimeout, sqlcdb.ReasonCrashed, sqlcdb.ReasonLogOverflow:
+	case model.ReasonFailed, model.ReasonTimeout, model.ReasonCrashed, model.ReasonLogOverflow:
 		return true
 	default:
 		return false
@@ -35,7 +34,7 @@ func IsFailureReason(reason sqlcdb.EndReason) bool {
 
 // ShouldRestart reports whether a finished run should trigger a restart per
 // the task's restart policy.
-func ShouldRestart(task *model.Task, run *sqlcdb.Run) bool {
+func ShouldRestart(task *model.Task, run *model.Run) bool {
 	switch task.Restart {
 	case model.RestartAlways:
 		// Services are supervisor-managed: every instance exit refills the slot,
@@ -44,7 +43,7 @@ func ShouldRestart(task *model.Task, run *sqlcdb.Run) bool {
 		if task.Kind.IsService() {
 			return true
 		}
-		return run.EndReason == nil || *run.EndReason != sqlcdb.ReasonStopped
+		return run.EndReason == nil || *run.EndReason != model.ReasonStopped
 	case model.RestartOnFailure:
 		return run.EndReason != nil && IsFailureReason(*run.EndReason)
 	default:
@@ -54,7 +53,7 @@ func ShouldRestart(task *model.Task, run *sqlcdb.Run) bool {
 
 // ShouldRetry reports whether a finished run is eligible for a retry. Restart
 // policy takes precedence: if a task restarts, it never retries.
-func ShouldRetry(task *model.Task, run *sqlcdb.Run) bool {
+func ShouldRetry(task *model.Task, run *model.Run) bool {
 	if task.Restart != "" && task.Restart != model.RestartNever {
 		return false
 	}

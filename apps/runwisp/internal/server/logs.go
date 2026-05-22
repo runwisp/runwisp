@@ -18,8 +18,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server/logstream"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 const (
@@ -85,7 +85,7 @@ type LogRawOutput struct {
 
 // resolveLogPath validates the run ID and computes the log path. Returns an
 // error suitable for huma to map to an HTTP status code.
-func (srv *Server) resolveLogPathFor(taskName, runIDStr string) (string, *sqlcdb.Run, error) {
+func (srv *Server) resolveLogPathFor(taskName, runIDStr string) (string, *model.Run, error) {
 	if _, err := ulid.Parse(runIDStr); err != nil {
 		return "", nil, huma.Error400BadRequest("Invalid run ID")
 	}

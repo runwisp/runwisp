@@ -11,6 +11,7 @@ import (
 )
 
 const purgeExpiredSoftDeletes = `-- name: PurgeExpiredSoftDeletes :many
+
 DELETE FROM runs WHERE deleted_at IS NOT NULL AND deleted_at <= ?
 RETURNING id, task_name, created_at
 `
@@ -21,6 +22,8 @@ type PurgeExpiredSoftDeletesRow struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
 func (q *Queries) PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]PurgeExpiredSoftDeletesRow, error) {
 	rows, err := q.db.QueryContext(ctx, purgeExpiredSoftDeletes, deletedAt)
 	if err != nil {

@@ -8,6 +8,8 @@ package sqlcdb
 import (
 	"context"
 	"time"
+
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 const countRuns = `-- name: CountRuns :one
@@ -21,46 +23,8 @@ func (q *Queries) CountRuns(ctx context.Context, taskName string) (int64, error)
 	return count, err
 }
 
-const countRunsFiltered = `-- name: CountRunsFiltered :one
-SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
-  AND (?1 = '' OR end_reason = ?2)
-  AND (?3 = '' OR status = ?4)
-  AND (?5 = '' OR task_name = ?6)
-  AND (?7 = ''
-       OR (task_name LIKE ?8
-           OR id LIKE ?9))
-`
-
-type CountRunsFilteredParams struct {
-	EndReasonGate     interface{} `json:"end_reason_gate"`
-	EndReasonValue    *EndReason  `json:"end_reason_value"`
-	StatusGate        interface{} `json:"status_gate"`
-	StatusValue       RunPhase    `json:"status_value"`
-	TaskNameGate      interface{} `json:"task_name_gate"`
-	TaskNameValue     string      `json:"task_name_value"`
-	SearchGate        interface{} `json:"search_gate"`
-	SearchPatternName string      `json:"search_pattern_name"`
-	SearchPatternID   string      `json:"search_pattern_id"`
-}
-
-func (q *Queries) CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countRunsFiltered,
-		arg.EndReasonGate,
-		arg.EndReasonValue,
-		arg.StatusGate,
-		arg.StatusValue,
-		arg.TaskNameGate,
-		arg.TaskNameValue,
-		arg.SearchGate,
-		arg.SearchPatternName,
-		arg.SearchPatternID,
-	)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createRun = `-- name: CreateRun :exec
+
 INSERT INTO runs (id, external_execution_id, task_name, status, end_reason,
   exit_code, start_at, end_at, triggered_by, created_at, retry_attempt,
   retry_of_run_id, instance_index)
@@ -68,21 +32,23 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateRunParams struct {
-	ID                  string      `json:"id"`
-	ExternalExecutionID *string     `json:"external_execution_id"`
-	TaskName            string      `json:"task_name"`
-	Status              RunPhase    `json:"status"`
-	EndReason           *EndReason  `json:"end_reason"`
-	ExitCode            int         `json:"exit_code"`
-	StartAt             *time.Time  `json:"start_at"`
-	EndAt               *time.Time  `json:"end_at"`
-	TriggeredBy         TriggeredBy `json:"triggered_by"`
-	CreatedAt           time.Time   `json:"created_at"`
-	RetryAttempt        int         `json:"retry_attempt"`
-	RetryOfRunID        *string     `json:"retry_of_run_id"`
-	InstanceIndex       int         `json:"instance_index"`
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
 }
 
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
 func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) error {
 	_, err := q.db.ExecContext(ctx, createRun,
 		arg.ID,
@@ -284,19 +250,19 @@ WHERE id = ?
 `
 
 type UpdateRunParams struct {
-	ExternalExecutionID *string     `json:"external_execution_id"`
-	TaskName            string      `json:"task_name"`
-	Status              RunPhase    `json:"status"`
-	EndReason           *EndReason  `json:"end_reason"`
-	ExitCode            int         `json:"exit_code"`
-	StartAt             *time.Time  `json:"start_at"`
-	EndAt               *time.Time  `json:"end_at"`
-	TriggeredBy         TriggeredBy `json:"triggered_by"`
-	CreatedAt           time.Time   `json:"created_at"`
-	RetryAttempt        int         `json:"retry_attempt"`
-	RetryOfRunID        *string     `json:"retry_of_run_id"`
-	InstanceIndex       int         `json:"instance_index"`
-	ID                  string      `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+	ID                  string            `json:"id"`
 }
 
 func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) error {

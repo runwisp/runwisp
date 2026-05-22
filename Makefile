@@ -113,7 +113,7 @@ $(SQLC_BIN):
 	$(call step,install sqlc $(SQLC_VERSION),GOBIN=$(LOCAL_BIN) go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION))
 
 $(SQLC_STAMP): $(SQLC_INPUTS) $(SQLC_BIN)
-	$(call step,sqlc generate,cd apps/runwisp && $(SQLC_BIN) generate && ./scripts/sqlc-cleanup.sh)
+	$(call step,sqlc generate,cd apps/runwisp && $(SQLC_BIN) generate)
 	$(stamp)
 
 $(ASYNCAPI_STAMP): packages/asyncapi/asyncapi.yaml packages/asyncapi/scripts/generate.js

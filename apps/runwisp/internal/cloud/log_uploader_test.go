@@ -14,21 +14,21 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 type fakePendingRepo struct {
 	mu      sync.Mutex
-	rows    map[string]sqlcdb.PendingLogUpload
+	rows    map[string]model.PendingLogUpload
 	upserts int
 	deletes int
 }
 
 func newFakePendingRepo() *fakePendingRepo {
-	return &fakePendingRepo{rows: map[string]sqlcdb.PendingLogUpload{}}
+	return &fakePendingRepo{rows: map[string]model.PendingLogUpload{}}
 }
 
-func (f *fakePendingRepo) UpsertPendingLogUpload(rec sqlcdb.PendingLogUpload) error {
+func (f *fakePendingRepo) UpsertPendingLogUpload(rec model.PendingLogUpload) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rows[rec.ExternalExecutionID] = rec
@@ -44,10 +44,10 @@ func (f *fakePendingRepo) DeletePendingLogUpload(externalExecutionID string) err
 	return nil
 }
 
-func (f *fakePendingRepo) ListPendingLogUploads() ([]sqlcdb.PendingLogUpload, error) {
+func (f *fakePendingRepo) ListPendingLogUploads() ([]model.PendingLogUpload, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	out := make([]sqlcdb.PendingLogUpload, 0, len(f.rows))
+	out := make([]model.PendingLogUpload, 0, len(f.rows))
 	for _, r := range f.rows {
 		out = append(out, r)
 	}
@@ -61,10 +61,10 @@ func (f *fakePendingRepo) count() int {
 }
 
 type fakeRunRepo struct {
-	byExt map[string]*sqlcdb.Run
+	byExt map[string]*model.Run
 }
 
-func (r *fakeRunRepo) GetRunByExternalExecutionID(id string) (*sqlcdb.Run, error) {
+func (r *fakeRunRepo) GetRunByExternalExecutionID(id string) (*model.Run, error) {
 	run, ok := r.byExt[id]
 	if !ok {
 		return nil, ErrNotFound
@@ -80,7 +80,7 @@ func fixedClock() func() time.Time {
 	return func() time.Time { return t }
 }
 
-func writeRunLog(t *testing.T, logDir string, run *sqlcdb.Run, body string) string {
+func writeRunLog(t *testing.T, logDir string, run *model.Run, body string) string {
 	t.Helper()
 	path := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -92,13 +92,13 @@ func writeRunLog(t *testing.T, logDir string, run *sqlcdb.Run, body string) stri
 	return path
 }
 
-func newTerminalRun(taskName, runID, externalID string) *sqlcdb.Run {
+func newTerminalRun(taskName, runID, externalID string) *model.Run {
 	ext := externalID
-	return &sqlcdb.Run{
+	return &model.Run{
 		ID:                  runID,
 		ExternalExecutionID: &ext,
 		TaskName:            taskName,
-		Status:              sqlcdb.PhaseEnded,
+		Status:              model.PhaseEnded,
 		CreatedAt:           time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
 	}
 }
@@ -193,7 +193,7 @@ func TestArchiveSuccessRemovesRowAndLogFile(t *testing.T) {
 	defer srv.Close()
 
 	repo := newFakePendingRepo()
-	runs := &fakeRunRepo{byExt: map[string]*sqlcdb.Run{"exec-1": run}}
+	runs := &fakeRunRepo{byExt: map[string]*model.Run{"exec-1": run}}
 	u := NewLogUploader(repo, runs, logDir, fixedClock())
 	u.httpClient = srv.Client()
 
@@ -264,14 +264,14 @@ func TestArchiveMissingLogFileForgetsEntry(t *testing.T) {
 
 func TestRecoverOrphansDropsRowWhenRunMissing(t *testing.T) {
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(sqlcdb.PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(model.PendingLogUpload{
 		ExternalExecutionID: "exec-gone",
-		UploadUrl:           "https://upload/x",
+		UploadURL:           "https://upload/x",
 		LogPath:             "key/x.log.gz",
 		InsertedAt:          time.Now().Unix(),
 	})
 
-	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*sqlcdb.Run{}}, t.TempDir(), fixedClock())
+	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{}}, t.TempDir(), fixedClock())
 
 	var emitted []string
 	u.RecoverOrphans(context.Background(), func(id string, _ LogUploaderResult) {
@@ -288,23 +288,23 @@ func TestRecoverOrphansDropsRowWhenRunMissing(t *testing.T) {
 
 func TestRecoverOrphansSkipsNonTerminalRun(t *testing.T) {
 	logDir := t.TempDir()
-	runningRun := &sqlcdb.Run{
+	runningRun := &model.Run{
 		ID:                  "run-1",
 		ExternalExecutionID: strPtr("exec-running"),
 		TaskName:            "greet",
-		Status:              sqlcdb.PhaseRunning,
+		Status:              model.PhaseRunning,
 		CreatedAt:           time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
 	}
 
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(sqlcdb.PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(model.PendingLogUpload{
 		ExternalExecutionID: "exec-running",
-		UploadUrl:           "https://upload/x",
+		UploadURL:           "https://upload/x",
 		LogPath:             "key/x.log.gz",
 		InsertedAt:          time.Now().Unix(),
 	})
 
-	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*sqlcdb.Run{"exec-running": runningRun}}, logDir, fixedClock())
+	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-running": runningRun}}, logDir, fixedClock())
 
 	var emitted []string
 	u.RecoverOrphans(context.Background(), func(id string, _ LogUploaderResult) {
@@ -330,14 +330,14 @@ func TestRecoverOrphansRetriesTerminatedRun(t *testing.T) {
 	defer srv.Close()
 
 	repo := newFakePendingRepo()
-	_ = repo.UpsertPendingLogUpload(sqlcdb.PendingLogUpload{
+	_ = repo.UpsertPendingLogUpload(model.PendingLogUpload{
 		ExternalExecutionID: "exec-1",
-		UploadUrl:           srv.URL,
+		UploadURL:           srv.URL,
 		LogPath:             "key/exec-1.log.gz",
 		InsertedAt:          time.Now().Unix(),
 	})
 
-	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*sqlcdb.Run{"exec-1": run}}, logDir, fixedClock())
+	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-1": run}}, logDir, fixedClock())
 	u.httpClient = srv.Client()
 
 	var emitted []struct {

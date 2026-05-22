@@ -11,12 +11,17 @@ import (
 
 type Querier interface {
 	CountRuns(ctx context.Context, taskName string) (int64, error)
-	CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error)
 	CountUnreadNotifications(ctx context.Context) (int64, error)
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: Apache-2.0
 	CreateRun(ctx context.Context, arg CreateRunParams) error
 	DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error
 	DeleteRun(ctx context.Context, id string) error
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: Apache-2.0
 	EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegisteredParams) error
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: Apache-2.0
 	GetConfigValue(ctx context.Context, key string) (string, error)
 	GetLastRunByTask(ctx context.Context, taskName string) (Run, error)
 	GetNotificationByID(ctx context.Context, id string) (Notification, error)
@@ -26,6 +31,8 @@ type Querier interface {
 	GetRunSummary(ctx context.Context) (GetRunSummaryRow, error)
 	GetTaskRegistration(ctx context.Context, taskName string) (TaskRegistration, error)
 	InsertNotification(ctx context.Context, arg InsertNotificationParams) error
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: Apache-2.0
 	ListNotifications(ctx context.Context, limit int64) ([]Notification, error)
 	ListNotificationsBefore(ctx context.Context, arg ListNotificationsBeforeParams) ([]Notification, error)
 	ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error)
@@ -35,13 +42,19 @@ type Querier interface {
 	MarkNotificationUnread(ctx context.Context, id string) (int64, error)
 	PruneNotificationsByAge(ctx context.Context, lastOccurredAt time.Time) (int64, error)
 	PruneNotificationsByCount(ctx context.Context, offset int64) (int64, error)
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: Apache-2.0
 	PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]PurgeExpiredSoftDeletesRow, error)
 	SelectExistingForFingerprint(ctx context.Context, arg SelectExistingForFingerprintParams) (SelectExistingForFingerprintRow, error)
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: Apache-2.0
 	SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAgeParams) ([]Run, error)
 	SelectOldRunsByCount(ctx context.Context, arg SelectOldRunsByCountParams) ([]Run, error)
 	SetConfigValue(ctx context.Context, arg SetConfigValueParams) error
 	UpdateNotificationCoalesced(ctx context.Context, arg UpdateNotificationCoalescedParams) error
 	UpdateRun(ctx context.Context, arg UpdateRunParams) error
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: Apache-2.0
 	UpsertPendingLogUpload(ctx context.Context, arg UpsertPendingLogUploadParams) error
 }
 

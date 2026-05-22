@@ -6,6 +6,8 @@ package sqlcdb
 
 import (
 	"time"
+
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 type ConfigEntry struct {
@@ -37,20 +39,20 @@ type PendingLogUpload struct {
 }
 
 type Run struct {
-	ID                  string      `json:"id"`
-	ExternalExecutionID *string     `json:"external_execution_id"`
-	TaskName            string      `json:"task_name"`
-	Status              RunPhase    `json:"status"`
-	EndReason           *EndReason  `json:"end_reason"`
-	ExitCode            int         `json:"exit_code"`
-	StartAt             *time.Time  `json:"start_at"`
-	EndAt               *time.Time  `json:"end_at"`
-	TriggeredBy         TriggeredBy `json:"triggered_by"`
-	CreatedAt           time.Time   `json:"created_at"`
-	RetryAttempt        int         `json:"retry_attempt"`
-	RetryOfRunID        *string     `json:"retry_of_run_id"`
-	InstanceIndex       int         `json:"instance_index"`
-	DeletedAt           *time.Time  `json:"deleted_at"`
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+	DeletedAt           *time.Time        `json:"deleted_at"`
 }
 
 type TaskRegistration struct {

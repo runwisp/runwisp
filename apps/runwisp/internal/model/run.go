@@ -1,9 +1,13 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package sqlcdb
+package model
 
-import "github.com/danielgtaylor/huma/v2"
+import (
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+)
 
 // RunPhase captures the high-level lifecycle phase of a run.
 type RunPhase string
@@ -108,3 +112,94 @@ const (
 	TriggeredByCloud   TriggeredBy = "cloud"
 	TriggeredByService TriggeredBy = "service"
 )
+
+// Run is the domain representation of an execution. The storage layer keeps a
+// row-shaped twin (sqlcdb.Run with DeletedAt) and converts at the boundary so
+// no consumer outside storage sees row-internal fields.
+type Run struct {
+	ID                  string      `json:"id"`
+	ExternalExecutionID *string     `json:"external_execution_id,omitempty"`
+	TaskName            string      `json:"task_name"`
+	Status              RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
+	EndReason           *EndReason  `json:"end_reason,omitempty"`
+	ExitCode            int         `json:"exit_code"`
+	StartAt             *time.Time  `json:"start_at,omitempty"`
+	EndAt               *time.Time  `json:"end_at,omitempty"`
+	TriggeredBy         TriggeredBy `json:"triggered_by" enum:"cron,api,cloud,service" doc:"How the run was triggered"`
+	CreatedAt           time.Time   `json:"created_at"`
+	RetryAttempt        int         `json:"retry_attempt"`
+	RetryOfRunID        *string     `json:"retry_of_run_id,omitempty"`
+	InstanceIndex       int         `json:"instance_index"`
+}
+
+// Copy creates a deep copy of the Run to prevent data races.
+func (r *Run) Copy() *Run {
+	if r == nil {
+		return nil
+	}
+	cpy := *r
+	if r.ExternalExecutionID != nil {
+		eid := *r.ExternalExecutionID
+		cpy.ExternalExecutionID = &eid
+	}
+	if r.EndReason != nil {
+		er := *r.EndReason
+		cpy.EndReason = &er
+	}
+	if r.StartAt != nil {
+		sa := *r.StartAt
+		cpy.StartAt = &sa
+	}
+	if r.EndAt != nil {
+		ea := *r.EndAt
+		cpy.EndAt = &ea
+	}
+	if r.RetryOfRunID != nil {
+		rid := *r.RetryOfRunID
+		cpy.RetryOfRunID = &rid
+	}
+	return &cpy
+}
+
+// End transitions a run to the ended phase with the given reason.
+func (r *Run) End(reason EndReason, exitCode int, endAt time.Time) {
+	r.Status = PhaseEnded
+	r.EndReason = &reason
+	r.ExitCode = exitCode
+	r.EndAt = &endAt
+}
+
+// IsRetryable reports whether a run ended with a reason that warrants
+// re-running it. Skipped runs are excluded — the policy already decided
+// the firing was redundant; another retry just races the original again.
+func (r *Run) IsRetryable() bool {
+	if r.Status != PhaseEnded || r.EndReason == nil {
+		return false
+	}
+	switch *r.EndReason {
+	case ReasonSuccess, ReasonSkipped:
+		return false
+	default:
+		return true
+	}
+}
+
+// DisplayStatus returns the end reason string when ended, otherwise the phase.
+func (r *Run) DisplayStatus() string {
+	if r.Status == PhaseEnded {
+		if r.EndReason != nil {
+			return string(*r.EndReason)
+		}
+		return string(ReasonStopped)
+	}
+	return string(r.Status)
+}
+
+// RunSummary holds aggregate run statistics surfaced by the GET /api/runs
+// summary endpoint.
+type RunSummary struct {
+	Total       int64      `json:"total" doc:"Total number of runs"`
+	Success     int64      `json:"success" doc:"Number of successful runs"`
+	Failed      int64      `json:"failed" doc:"Number of failed runs"`
+	LastFailure *time.Time `json:"last_failure,omitempty" doc:"Timestamp of most recent failure"`
+}

@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // Severity classifies how attention-worthy an event is.
@@ -103,7 +103,7 @@ type Event struct {
 	Severity  Severity
 	Timestamp time.Time
 	TaskName  string
-	Run       *sqlcdb.Run
+	Run       *model.Run
 	// LogPath is the on-disk path of the captured output for this run. It is
 	// sourced from the executor's event envelope (never persisted on the Run
 	// row) and consumed by renderers that need to splice a tail of the log

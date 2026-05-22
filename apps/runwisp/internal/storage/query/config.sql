@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: PoppyCake, s.r.o.
+-- SPDX-License-Identifier: Apache-2.0
+
 -- name: GetConfigValue :one
 SELECT value FROM config_entries WHERE key = ?;
 

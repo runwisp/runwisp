@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -147,7 +147,7 @@ func (v *ExecView) View() string {
 		metaSep +
 		bgLight.Foreground(uikit.ColorTextMuted).Render(string(v.Run.TriggeredBy))
 	followIndicator := ""
-	if v.Pane.Follow && (v.Run.Status == sqlcdb.PhaseRunning || v.Run.Status == sqlcdb.PhasePending) {
+	if v.Pane.Follow && (v.Run.Status == model.PhaseRunning || v.Run.Status == model.PhasePending) {
 		followIndicator = lipgloss.NewStyle().Background(uikit.ColorBgLight).Foreground(uikit.ColorSecondary).Bold(true).Render("  ● FOLLOW")
 	}
 

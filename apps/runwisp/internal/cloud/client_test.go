@@ -20,7 +20,6 @@ import (
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -563,9 +562,9 @@ func (a *testTaskRunnerAdapter) UpsertTask(task *model.Task) {
 	a.inner.UpsertTask(task)
 }
 
-func (a *testTaskRunnerAdapter) TriggerCloudRun(taskName, externalExecutionID string) (*sqlcdb.Run, error) {
+func (a *testTaskRunnerAdapter) TriggerCloudRun(taskName, externalExecutionID string) (*model.Run, error) {
 	return a.inner.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
-		TriggeredBy:         sqlcdb.TriggeredByCloud,
+		TriggeredBy:         model.TriggeredByCloud,
 		ExternalExecutionID: externalExecutionID,
 	})
 }

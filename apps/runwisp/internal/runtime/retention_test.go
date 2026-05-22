@@ -13,7 +13,6 @@ import (
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,7 +37,7 @@ func TestRetentionCleaner(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
 	require.NoError(t, os.WriteFile(logPath, []byte("log data"), 0644))
 
-	deletedRuns := []sqlcdb.Run{
+	deletedRuns := []model.Run{
 		{ID: runID, TaskName: "task1", CreatedAt: now},
 	}
 
@@ -86,11 +85,11 @@ func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
 	// Write 200 bytes; set limit to 100 bytes to trigger pruning
 	require.NoError(t, os.WriteFile(logPath, make([]byte, 200), 0644))
 
-	run := sqlcdb.Run{ID: runID, TaskName: "task1", CreatedAt: now, Status: sqlcdb.PhaseEnded}
+	run := model.Run{ID: runID, TaskName: "task1", CreatedAt: now, Status: model.PhaseEnded}
 
-	repo.On("QueryRuns", "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]sqlcdb.Run{run}, nil)
+	repo.On("QueryRuns", "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{run}, nil)
 	// Second call returns empty to stop the loop
-	repo.On("QueryRuns", "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]sqlcdb.Run{}, nil)
+	repo.On("QueryRuns", "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{}, nil)
 	repo.On("DeleteRun", runID).Return(nil)
 
 	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 100)

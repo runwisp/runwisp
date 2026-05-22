@@ -10,9 +10,12 @@ import (
 )
 
 const getConfigValue = `-- name: GetConfigValue :one
+
 SELECT value FROM config_entries WHERE key = ?
 `
 
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
 func (q *Queries) GetConfigValue(ctx context.Context, key string) (string, error) {
 	row := q.db.QueryRowContext(ctx, getConfigValue, key)
 	var value string

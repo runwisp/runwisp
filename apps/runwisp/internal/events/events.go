@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // EventType categorizes published messages.
@@ -64,9 +64,9 @@ func (LogDiskPressureEvent) eventData() { /* sealed-type marker */ }
 // that need the path read it from the event envelope rather than the Run
 // itself. Empty for events fired before the executor has resolved the path.
 type RunEvent struct {
-	Run     *sqlcdb.Run `json:"run"`
-	LogPath string      `json:"log_path,omitempty"`
-	Error   string      `json:"error,omitempty"`
+	Run     *model.Run `json:"run"`
+	LogPath string     `json:"log_path,omitempty"`
+	Error   string     `json:"error,omitempty"`
 }
 
 // RunDeletedEvent fires when a run row has been soft-deleted. The slim envelope

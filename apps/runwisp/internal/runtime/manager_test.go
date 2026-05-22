@@ -13,7 +13,6 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -51,7 +50,7 @@ func TestTriggerRunBasic(t *testing.T) {
 
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
-	run, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	run, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 	assert.NotNil(t, run)
 
@@ -71,17 +70,17 @@ func TestPolicySkip(t *testing.T) {
 	// First run blocks
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 100*time.Millisecond)
 
-	_, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 
 	// Second run should skip and persist with end_reason="skipped" — the skip
 	// policy is working as intended, so it must not pose as a failure to
 	// retries, notifications, or stats.
-	run2, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	run2, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.Error(t, err)
 	assert.Equal(t, "task already running, skipping (policy: skip)", err.Error())
-	assert.Equal(t, sqlcdb.PhaseEnded, run2.Status)
-	assert.Equal(t, sqlcdb.EndReasonPtr(sqlcdb.ReasonSkipped), run2.EndReason)
+	assert.Equal(t, model.PhaseEnded, run2.Status)
+	assert.Equal(t, model.EndReasonPtr(model.ReasonSkipped), run2.EndReason)
 	assert.Equal(t, -1, run2.ExitCode)
 	assert.False(t, run2.IsRetryable(), "skipped runs must not be flagged as retryable")
 }
@@ -97,13 +96,13 @@ func TestPolicyQueue(t *testing.T) {
 	// First run blocks
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 100*time.Millisecond)
 
-	_, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 
 	// Second run should queue
-	run2, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	run2, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
-	assert.Equal(t, sqlcdb.PhasePending, run2.Status)
+	assert.Equal(t, model.PhasePending, run2.Status)
 
 	// Wait for first to finish and second to start
 	time.Sleep(500 * time.Millisecond)
@@ -127,22 +126,22 @@ func TestPolicyQueueDropsAtCap(t *testing.T) {
 	// The single executor slot stays busy long enough for the queue to fill.
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 500*time.Millisecond)
 
-	first, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	first, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
-	require.Equal(t, sqlcdb.PhasePending, first.Status)
+	require.Equal(t, model.PhasePending, first.Status)
 
 	// Second slot occupies the queue.
-	queued, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	queued, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
-	require.Equal(t, sqlcdb.PhasePending, queued.Status)
+	require.Equal(t, model.PhasePending, queued.Status)
 
 	// Third firing trips queue_max and is dropped immediately.
-	dropped, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	dropped, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.Error(t, err, "third firing should be rejected")
 	assert.Contains(t, err.Error(), "queue full")
-	assert.Equal(t, sqlcdb.PhaseEnded, dropped.Status)
+	assert.Equal(t, model.PhaseEnded, dropped.Status)
 	require.NotNil(t, dropped.EndReason)
-	assert.Equal(t, sqlcdb.ReasonQueueFull, *dropped.EndReason)
+	assert.Equal(t, model.ReasonQueueFull, *dropped.EndReason)
 
 	jm.Shutdown()
 }
@@ -158,13 +157,13 @@ func TestPolicyTerminate(t *testing.T) {
 	// First run blocks
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 200*time.Millisecond)
 
-	_, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 
 	time.Sleep(10 * time.Millisecond) // Ensure run1 starts
 
 	// Second run should terminate first
-	_, err = jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	_, err = jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 
 	time.Sleep(300 * time.Millisecond)
@@ -183,7 +182,7 @@ func TestTerminateRun(t *testing.T) {
 
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 200*time.Millisecond)
 
-	run, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	run, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 
 	time.Sleep(10 * time.Millisecond)
@@ -205,7 +204,7 @@ func TestShutdown(t *testing.T) {
 
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 200*time.Millisecond)
 
-	jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	jm.TriggerRun("task1", model.TriggeredByAPI)
 	time.Sleep(10 * time.Millisecond)
 
 	jm.Shutdown()
@@ -230,7 +229,7 @@ func (s *stuckExecutor) SetOnProcessStarted(cb func(runID string, forceKill func
 
 func (s *stuckExecutor) Availability() executor.Availability { return executor.Availability{} }
 
-func (s *stuckExecutor) Execute(_ context.Context, _ *model.Task, run *sqlcdb.Run) *executor.ExecuteResult {
+func (s *stuckExecutor) Execute(_ context.Context, _ *model.Task, run *model.Run) *executor.ExecuteResult {
 	released := make(chan struct{})
 	if s.onStarted != nil {
 		s.onStarted(run.ID, func() {
@@ -261,8 +260,8 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 	jm := NewTaskManager(exec, eb, time.Now)
 
 	var mu sync.Mutex
-	var persisted []*sqlcdb.Run
-	jm.BindPersistenceHook(func(run *sqlcdb.Run, _ bool) {
+	var persisted []*model.Run
+	jm.BindPersistenceHook(func(run *model.Run, _ bool) {
 		mu.Lock()
 		defer mu.Unlock()
 		persisted = append(persisted, run)
@@ -271,7 +270,7 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 	task := testTask("stuck", model.PolicySkip, 1)
 	jm.UpsertTask(task)
 
-	_, err := jm.TriggerRun("stuck", sqlcdb.TriggeredByAPI)
+	_, err := jm.TriggerRun("stuck", model.TriggeredByAPI)
 	require.NoError(t, err)
 
 	select {
@@ -296,7 +295,7 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 	defer mu.Unlock()
 	var sawDaemonStopped bool
 	for _, r := range persisted {
-		if r.EndReason != nil && *r.EndReason == sqlcdb.ReasonDaemonStopped {
+		if r.EndReason != nil && *r.EndReason == model.ReasonDaemonStopped {
 			sawDaemonStopped = true
 			break
 		}
@@ -310,7 +309,7 @@ func TestPersistenceHook(t *testing.T) {
 	jm := NewTaskManager(exec, eb, time.Now)
 
 	var created, updated bool
-	jm.BindPersistenceHook(func(run *sqlcdb.Run, isNew bool) {
+	jm.BindPersistenceHook(func(run *model.Run, isNew bool) {
 		if isNew {
 			created = true
 		} else {
@@ -323,7 +322,7 @@ func TestPersistenceHook(t *testing.T) {
 
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
-	jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	jm.TriggerRun("task1", model.TriggeredByAPI)
 	time.Sleep(50 * time.Millisecond)
 
 	assert.True(t, created)
@@ -356,9 +355,9 @@ func TestRetryFiresOnFailure(t *testing.T) {
 
 	var (
 		mu   sync.Mutex
-		runs []*sqlcdb.Run
+		runs []*model.Run
 	)
-	jm.BindPersistenceHook(func(r *sqlcdb.Run, isNew bool) {
+	jm.BindPersistenceHook(func(r *model.Run, isNew bool) {
 		if !isNew {
 			return
 		}
@@ -367,7 +366,7 @@ func TestRetryFiresOnFailure(t *testing.T) {
 		runs = append(runs, r)
 	})
 
-	_, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
 
 	// Initial + 2 retries = 3 calls.
@@ -417,7 +416,7 @@ func TestRetrySkippedForCloudRun(t *testing.T) {
 		calls.Add(1)
 	}).Return(&executor.ExecuteResult{ExitCode: 1})
 
-	_, err := jm.TriggerRun("task1", sqlcdb.TriggeredByCloud)
+	_, err := jm.TriggerRun("task1", model.TriggeredByCloud)
 	require.NoError(t, err)
 
 	// One initial run, then long enough for a retry to fire if it were going
@@ -451,7 +450,7 @@ func TestRetryNotFiredWhenRestartPolicySet(t *testing.T) {
 		calls.Add(1)
 	}).Return(&executor.ExecuteResult{ExitCode: 1})
 
-	_, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
 
 	// Wait for at least 4 calls — restart loops indefinitely, retry would cap
@@ -478,8 +477,8 @@ func TestLoadPendingRunsResumed(t *testing.T) {
 		calls.Add(1)
 	}).Return(&executor.ExecuteResult{ExitCode: 0}, 50*time.Millisecond)
 
-	pending := []sqlcdb.Run{
-		{ID: "01", TaskName: "task1", Status: sqlcdb.PhasePending},
+	pending := []model.Run{
+		{ID: "01", TaskName: "task1", Status: model.PhasePending},
 	}
 	result := jm.LoadPendingRuns(pending)
 
@@ -509,10 +508,10 @@ func TestLoadPendingRunsQueued(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 0}, 10*time.Millisecond,
 	)
 
-	pending := []sqlcdb.Run{
-		{ID: "01", TaskName: "task1", Status: sqlcdb.PhasePending},
-		{ID: "02", TaskName: "task1", Status: sqlcdb.PhasePending},
-		{ID: "03", TaskName: "task1", Status: sqlcdb.PhasePending},
+	pending := []model.Run{
+		{ID: "01", TaskName: "task1", Status: model.PhasePending},
+		{ID: "02", TaskName: "task1", Status: model.PhasePending},
+		{ID: "03", TaskName: "task1", Status: model.PhasePending},
 	}
 	result := jm.LoadPendingRuns(pending)
 
@@ -537,13 +536,13 @@ func TestLoadPendingRunsFailedWhenSlotFull(t *testing.T) {
 	)
 
 	// Trigger one run that holds the only slot.
-	_, err := jm.TriggerRun("task1", sqlcdb.TriggeredByAPI)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond)
 
-	pending := []sqlcdb.Run{
-		{ID: "01", TaskName: "task1", Status: sqlcdb.PhasePending},
-		{ID: "02", TaskName: "task1", Status: sqlcdb.PhasePending},
+	pending := []model.Run{
+		{ID: "01", TaskName: "task1", Status: model.PhasePending},
+		{ID: "02", TaskName: "task1", Status: model.PhasePending},
 	}
 	result := jm.LoadPendingRuns(pending)
 
@@ -560,9 +559,9 @@ func TestLoadPendingRunsSkippedTaskNotFound(t *testing.T) {
 	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
 
-	pending := []sqlcdb.Run{
-		{ID: "01", TaskName: "ghost", Status: sqlcdb.PhasePending},
-		{ID: "02", TaskName: "ghost", Status: sqlcdb.PhasePending},
+	pending := []model.Run{
+		{ID: "01", TaskName: "ghost", Status: model.PhasePending},
+		{ID: "02", TaskName: "ghost", Status: model.PhasePending},
 	}
 	result := jm.LoadPendingRuns(pending)
 
@@ -576,12 +575,12 @@ func TestResolveRunOutcomeKilledByPolicy(t *testing.T) {
 	cases := []struct {
 		name       string
 		result     executor.ExecuteResult
-		wantReason sqlcdb.EndReason
+		wantReason model.EndReason
 	}{
-		{"policy kill records as log_overflow", executor.ExecuteResult{ExitCode: -1, Stopped: true, KilledByPolicy: true}, sqlcdb.ReasonLogOverflow},
-		{"clean stop stays stopped", executor.ExecuteResult{ExitCode: -1, Stopped: true}, sqlcdb.ReasonStopped},
-		{"timeout still wins over policy", executor.ExecuteResult{ExitCode: -1, TimedOut: true, KilledByPolicy: true}, sqlcdb.ReasonTimeout},
-		{"success unaffected", executor.ExecuteResult{ExitCode: 0}, sqlcdb.ReasonSuccess},
+		{"policy kill records as log_overflow", executor.ExecuteResult{ExitCode: -1, Stopped: true, KilledByPolicy: true}, model.ReasonLogOverflow},
+		{"clean stop stays stopped", executor.ExecuteResult{ExitCode: -1, Stopped: true}, model.ReasonStopped},
+		{"timeout still wins over policy", executor.ExecuteResult{ExitCode: -1, TimedOut: true, KilledByPolicy: true}, model.ReasonTimeout},
+		{"success unaffected", executor.ExecuteResult{ExitCode: 0}, model.ReasonSuccess},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -596,12 +595,12 @@ func TestPersistAfterShutdownDoesNotPanic(t *testing.T) {
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, time.Now)
 
-	jm.BindPersistenceHook(func(run *sqlcdb.Run, isNew bool) {})
+	jm.BindPersistenceHook(func(run *model.Run, isNew bool) {})
 	jm.Shutdown()
 
 	djm := jm.(*defaultTaskManager)
 	assert.NotPanics(t, func() {
-		djm.persistence.PersistExisting(&sqlcdb.Run{})
+		djm.persistence.PersistExisting(&model.Run{})
 	})
 }
 
@@ -650,7 +649,7 @@ func TestInjectedClockStampsCreatedAt(t *testing.T) {
 	exec.On("Execute", mock.Anything, task, mock.Anything).
 		Return(&executor.ExecuteResult{ExitCode: 0}, 50*time.Millisecond)
 
-	run, err := jm.TriggerRun("clocked", sqlcdb.TriggeredByAPI)
+	run, err := jm.TriggerRun("clocked", model.TriggeredByAPI)
 	require.NoError(t, err)
 	require.NotNil(t, run)
 	assert.True(t, run.CreatedAt.Equal(fixed),

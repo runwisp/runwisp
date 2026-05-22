@@ -9,7 +9,6 @@ import (
 
 	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -32,14 +31,14 @@ type mockTaskRunner struct {
 	mock.Mock
 }
 
-func (m *mockTaskRunner) TriggerRun(taskName string, triggeredBy sqlcdb.TriggeredBy) (*sqlcdb.Run, error) {
+func (m *mockTaskRunner) TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error) {
 	args := m.Called(taskName, triggeredBy)
-	return args.Get(0).(*sqlcdb.Run), args.Error(1)
+	return args.Get(0).(*model.Run), args.Error(1)
 }
 
-func (m *mockTaskRunner) TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*sqlcdb.Run, error) {
+func (m *mockTaskRunner) TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*model.Run, error) {
 	args := m.Called(taskName, options)
-	return args.Get(0).(*sqlcdb.Run), args.Error(1)
+	return args.Get(0).(*model.Run), args.Error(1)
 }
 
 func (m *mockTaskRunner) GetTask(taskName string) (*model.Task, bool) {
@@ -70,7 +69,7 @@ func (m *mockTaskRunner) StopService(taskName string) error {
 	return m.Called(taskName).Error(0)
 }
 
-func (m *mockTaskRunner) RecordSkippedFiring(taskName string, reason sqlcdb.EndReason, triggeredBy sqlcdb.TriggeredBy) error {
+func (m *mockTaskRunner) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
 	return m.Called(taskName, reason, triggeredBy).Error(0)
 }
 
@@ -142,7 +141,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC) // 4 missed ticks
 
-		lastRun := &sqlcdb.Run{
+		lastRun := &model.Run{
 			ID:        "last-run",
 			TaskName:  "my-task",
 			CreatedAt: time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
@@ -154,7 +153,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		db.On("EnsureTaskRegistered", "my-task", now).Return(nil)
 		db.On("GetLastRunByTask", "my-task").Return(lastRun, nil)
-		runner.On("TriggerRun", "my-task", sqlcdb.TriggeredByCron).Return(&sqlcdb.Run{}, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
 
 		result := RunMissedTickCatchUp(db, tasks, runner, now)
 
@@ -168,7 +167,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		now := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC) // 4 missed ticks
 
-		lastRun := &sqlcdb.Run{
+		lastRun := &model.Run{
 			ID:        "last-run",
 			TaskName:  "my-task",
 			CreatedAt: time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
@@ -180,7 +179,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		db.On("EnsureTaskRegistered", "my-task", now).Return(nil)
 		db.On("GetLastRunByTask", "my-task").Return(lastRun, nil)
-		runner.On("TriggerRun", "my-task", sqlcdb.TriggeredByCron).Return(&sqlcdb.Run{}, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
 
 		result := RunMissedTickCatchUp(db, tasks, runner, now)
 
@@ -243,7 +242,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		db.On("EnsureTaskRegistered", "my-task", now).Return(nil)
 		db.On("GetLastRunByTask", "my-task").Return(nil, nil)
 		db.On("GetTaskRegistration", "my-task").Return(reg, nil)
-		runner.On("TriggerRun", "my-task", sqlcdb.TriggeredByCron).Return(&sqlcdb.Run{}, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
 
 		result := RunMissedTickCatchUp(db, tasks, runner, now)
 
@@ -266,7 +265,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		db.On("EnsureTaskRegistered", "my-task", now).Return(nil)
 		db.On("GetLastRunByTask", "my-task").Return(nil, nil)
 		db.On("GetTaskRegistration", "my-task").Return(reg, nil)
-		runner.On("TriggerRun", "my-task", sqlcdb.TriggeredByCron).Return(&sqlcdb.Run{}, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
 
 		result := RunMissedTickCatchUp(db, tasks, runner, now)
 
@@ -279,7 +278,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC) // 12 missed ticks at */5
-		lastRun := &sqlcdb.Run{
+		lastRun := &model.Run{
 			ID:        "last-run",
 			TaskName:  "my-task",
 			CreatedAt: time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
@@ -291,7 +290,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		db.On("EnsureTaskRegistered", "my-task", now).Return(nil)
 		db.On("GetLastRunByTask", "my-task").Return(lastRun, nil)
-		runner.On("TriggerRun", "my-task", sqlcdb.TriggeredByCron).Return(&sqlcdb.Run{}, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
 
 		result := RunMissedTickCatchUp(db, tasks, runner, now)
 
@@ -304,7 +303,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		runner := new(mockTaskRunner)
 
 		now := time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC) // 12 missed ticks at */5
-		lastRun := &sqlcdb.Run{
+		lastRun := &model.Run{
 			ID:        "last-run",
 			TaskName:  "my-task",
 			CreatedAt: time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
@@ -316,7 +315,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		db.On("EnsureTaskRegistered", "my-task", now).Return(nil)
 		db.On("GetLastRunByTask", "my-task").Return(lastRun, nil)
-		runner.On("TriggerRun", "my-task", sqlcdb.TriggeredByCron).Return(&sqlcdb.Run{}, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
 
 		result := RunMissedTickCatchUp(db, tasks, runner, now)
 
@@ -330,7 +329,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		now := time.Date(2026, 4, 7, 10, 3, 0, 0, time.UTC) // 0 missed ticks
 
-		lastRun := &sqlcdb.Run{
+		lastRun := &model.Run{
 			ID:        "last-run",
 			TaskName:  "my-task",
 			CreatedAt: time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),

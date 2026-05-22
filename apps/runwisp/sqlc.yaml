@@ -15,16 +15,16 @@ sql:
         overrides:
           - column: "runs.status"
             go_type:
-              import: "github.com/runwisp/runwisp/internal/storage/sqlcdb"
+              import: "github.com/runwisp/runwisp/internal/model"
               type: "RunPhase"
           - column: "runs.end_reason"
             go_type:
-              import: "github.com/runwisp/runwisp/internal/storage/sqlcdb"
+              import: "github.com/runwisp/runwisp/internal/model"
               type: "EndReason"
               pointer: true
           - column: "runs.triggered_by"
             go_type:
-              import: "github.com/runwisp/runwisp/internal/storage/sqlcdb"
+              import: "github.com/runwisp/runwisp/internal/model"
               type: "TriggeredBy"
           - column: "runs.exit_code"
             go_type: "int"
