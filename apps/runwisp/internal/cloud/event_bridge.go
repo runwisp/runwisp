@@ -6,11 +6,12 @@ package cloud
 import (
 	"context"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
 )
 
 // EventBridge subscribes to runtime events and forwards execution status

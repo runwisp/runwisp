@@ -1,0 +1,36 @@
+version: "2"
+sql:
+  - engine: sqlite
+    queries: internal/storage/query
+    schema: internal/storage/schema.sql
+    gen:
+      go:
+        package: sqlcdb
+        out: internal/storage/sqlcdb
+        sql_package: database/sql
+        emit_json_tags: true
+        emit_pointers_for_null_types: true
+        emit_interface: true
+        emit_empty_slices: true
+        overrides:
+          - column: "runs.status"
+            go_type:
+              import: "github.com/runwisp/runwisp/internal/model"
+              type: "RunPhase"
+          - column: "runs.end_reason"
+            go_type:
+              import: "github.com/runwisp/runwisp/internal/model"
+              type: "EndReason"
+              pointer: true
+          - column: "runs.triggered_by"
+            go_type:
+              import: "github.com/runwisp/runwisp/internal/model"
+              type: "TriggeredBy"
+          - column: "runs.exit_code"
+            go_type: "int"
+          - column: "runs.retry_attempt"
+            go_type: "int"
+          - column: "runs.instance_index"
+            go_type: "int"
+          - column: "notifications.count"
+            go_type: "int"

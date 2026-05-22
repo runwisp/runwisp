@@ -11,11 +11,12 @@ import (
 	rdebug "runtime/debug"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
-	"log/slog"
 )
 
 // RetentionCleaner periodically prunes old runs and their logs.

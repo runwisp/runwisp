@@ -8,6 +8,8 @@ import (
 	"sort"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
@@ -16,7 +18,6 @@ import (
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/version"
-	"log/slog"
 )
 
 // daemonServices holds all long-lived services created during daemon startup.

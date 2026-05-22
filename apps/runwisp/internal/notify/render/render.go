@@ -48,7 +48,7 @@ type TemplateContext struct {
 	ExternalURL string
 	Fingerprint string
 	Now         func() time.Time
-	OutputTail  func(run *model.Run, maxLines, maxBytes int) string
+	OutputTail  func(logPath string, maxLines, maxBytes int) string
 }
 
 // TemplateRenderer is the workhorse: a parsed text/template plus a content
@@ -120,11 +120,11 @@ func funcMap(ctx TemplateContext) template.FuncMap {
 		"linkLabel":     linkLabel,
 		"runURL":        func(r *model.Run) string { return runURL(ctx.ExternalURL, r) },
 		"taskURL":       func(name string) string { return taskURL(ctx.ExternalURL, name) },
-		"outputTail": func(r *model.Run) string {
-			if ctx.OutputTail == nil {
+		"outputTail": func(ev *notify.Event) string {
+			if ctx.OutputTail == nil || ev == nil {
 				return ""
 			}
-			return ctx.OutputTail(r, 3, 300)
+			return ctx.OutputTail(ev.LogPath, 3, 300)
 		},
 		"fingerprint": func() string { return ctx.Fingerprint },
 	}

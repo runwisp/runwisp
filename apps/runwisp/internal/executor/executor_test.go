@@ -18,6 +18,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// captureLogPath returns a function that, after Execute completes, yields the
+// log path published on the run.updated event envelope. The executor no
+// longer stamps LogPath on the Run row; tests read it off the event payload.
+func captureLogPath(eb events.EventBus) func() string {
+	var (
+		mu      sync.Mutex
+		logPath string
+	)
+	eb.Subscribe(events.EventRunUpdated, func(e events.Event) {
+		re, ok := e.Data.(events.RunEvent)
+		if !ok || re.LogPath == "" {
+			return
+		}
+		mu.Lock()
+		logPath = re.LogPath
+		mu.Unlock()
+	})
+	return func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return logPath
+	}
+}
+
 func TestExecuteSuccess(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "executor-test")
 	require.NoError(t, err)
@@ -25,6 +49,7 @@ func TestExecuteSuccess(t *testing.T) {
 
 	eb := events.NewEventBus()
 	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
 		Name: "test-task",
@@ -40,7 +65,7 @@ func TestExecuteSuccess(t *testing.T) {
 	assert.NoError(t, result.Error)
 
 	// Check log file
-	logContent, err := os.ReadFile(run.LogPath)
+	logContent, err := os.ReadFile(getLogPath())
 	require.NoError(t, err)
 	assert.Contains(t, string(logContent), "hello world")
 }
@@ -97,6 +122,7 @@ func TestExecuteStderr(t *testing.T) {
 
 	eb := events.NewEventBus()
 	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
 		Name: "stderr-task",
@@ -110,7 +136,7 @@ func TestExecuteStderr(t *testing.T) {
 	result := exec.Execute(context.Background(), task, run)
 	assert.Equal(t, 0, result.ExitCode)
 
-	logContent, err := os.ReadFile(run.LogPath)
+	logContent, err := os.ReadFile(getLogPath())
 	require.NoError(t, err)
 	assert.Contains(t, string(logContent), "error message")
 	assert.Contains(t, string(logContent), "[ERR]")
@@ -172,9 +198,9 @@ func TestRunUpdateCallback(t *testing.T) {
 		HasLocalTasks:     true,
 		OnRunUpdate: func(r *model.Run) {
 			called = true
-			assert.NotEmpty(t, r.LogPath)
 		},
 	})
+	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
 		Name: "callback-task",
@@ -187,6 +213,7 @@ func TestRunUpdateCallback(t *testing.T) {
 
 	exec.Execute(context.Background(), task, run)
 	assert.True(t, called)
+	assert.NotEmpty(t, getLogPath(), "executor must publish LogPath on the run.updated event")
 }
 
 func TestLogDirCreationFailure(t *testing.T) {

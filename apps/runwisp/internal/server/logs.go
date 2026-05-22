@@ -12,13 +12,14 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server/logstream"
-	"log/slog"
 )
 
 const (

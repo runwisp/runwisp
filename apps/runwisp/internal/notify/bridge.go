@@ -30,6 +30,7 @@ func MapEvent(e events.Event) *Event {
 			Timestamp: e.Timestamp,
 			TaskName:  d.Run.TaskName,
 			Run:       d.Run,
+			LogPath:   d.LogPath,
 			Reason:    runReasonString(d.Run, d.Error),
 		}
 	case events.LogDiskPressureEvent:

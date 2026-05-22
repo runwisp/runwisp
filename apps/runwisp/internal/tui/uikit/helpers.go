@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-
 	"github.com/runwisp/runwisp/internal/model"
 )
 

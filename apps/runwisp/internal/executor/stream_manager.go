@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
 )
 
 // StreamManager reads process output, writes each line to the LogWriter (which

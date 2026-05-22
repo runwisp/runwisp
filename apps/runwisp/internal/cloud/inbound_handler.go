@@ -8,10 +8,11 @@ import (
 	"strings"
 	"sync"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
 )
 
 // InboundHandler processes inbound WebSocket messages, encapsulating

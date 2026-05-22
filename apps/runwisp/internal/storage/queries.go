@@ -3,10 +3,7 @@
 
 package storage
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // SortColumn is a typed handle for a column the runs list may be sorted by.
 // Callers receive the typed value via ParseSortColumn so unknown strings are
@@ -108,10 +105,12 @@ func buildOrderClause(col SortColumn, dir SortDirection) (string, error) {
 // so deleted rows are invisible to the UI until the purger reaps them.
 const notDeletedClause = "deleted_at IS NULL"
 
-// wherePrefix is the standalone "WHERE " token used by the dynamic-query
-// helpers below. Extracted into a single constant so the literal isn't
-// duplicated across helpers.
-const wherePrefix = "WHERE "
+// runColumns is the canonical ordered column list for full-row reads from
+// runs. Kept here next to its only consumer (selectFromRuns) — the rest of
+// the daemon either uses sqlc-generated scans or relies on the SELECT *
+// equivalent via selectFromRuns.
+const runColumns = `id, external_execution_id, task_name, status, end_reason, exit_code,
+start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index`
 
 // selectFromRuns is the common SELECT runColumns FROM runs prefix used by
 // every full-row read. Hoisting it keeps the static query constants from
@@ -145,6 +144,20 @@ const statusFilterGateSQL = `
 // CountRunsFiltered query.
 const countRunsFilteredSQL = `SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL` + filterGatesSQL
 
+// getRunSummarySQL is hand-written instead of sqlc-generated because
+// last_failure is a scalar MAX(end_at) subquery — sqlc cannot infer the
+// column type through the aggregate and would emit interface{}, forcing a
+// runtime type assertion at the call site.
+const getRunSummarySQL = `SELECT
+  CAST(COUNT(*) AS INTEGER) AS total,
+  CAST(COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
+  CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow')
+                         THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed,
+  (SELECT MAX(end_at) FROM runs
+   WHERE end_reason IN ('failed','crashed','timeout','log_overflow')
+     AND deleted_at IS NULL) AS last_failure
+FROM runs WHERE deleted_at IS NULL`
+
 // SoftDeleteRuns — two static shapes (by ID list vs by filter).
 // status = ? is bound to PhaseEnded; only terminal runs can be soft-deleted.
 const softDeleteByIDsSQL = `UPDATE runs SET deleted_at = ?
@@ -177,11 +190,6 @@ WHERE deleted_at IS NULL` + inIDsSQL + statusFilterGateSQL
 const resolveByFilterSQL = `SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL` + filterGatesSQL + notInIDsSQL + statusFilterGateSQL
 
-// Single-row lookups by primary key / external ID. Fully static SQL — the
-// `?` placeholders bind the only caller-supplied values.
-const selectRunByIDSQL = selectFromRuns + ` WHERE id = ? AND ` + notDeletedClause + ` LIMIT 1`
-const selectRunByExternalIDSQL = selectFromRuns + ` WHERE external_execution_id = ? AND ` + notDeletedClause + ` LIMIT 1`
-
 // selectRunsSQL composes a `SELECT runColumns FROM runs <where> <tail>` query,
 // implicitly adding the soft-delete filter to whatever predicates the caller
 // passed in. tail is appended verbatim — callers use it for ORDER BY / LIMIT.
@@ -201,15 +209,12 @@ func selectRunsSQL(where, tail string) string {
 	return q
 }
 
-// combineWhere merges an existing WHERE clause (which may already start with
-// "WHERE" or be empty) with an extra predicate.
+// combineWhere appends an extra predicate to an optional caller-supplied
+// WHERE clause. The empty string means "no caller predicate" — the helper
+// then becomes the sole `WHERE extra` source.
 func combineWhere(existing, extra string) string {
-	trimmed := strings.TrimSpace(existing)
-	if trimmed == "" {
-		return wherePrefix + extra
+	if existing == "" {
+		return "WHERE " + extra
 	}
-	if strings.HasPrefix(strings.ToUpper(trimmed), wherePrefix) {
-		return trimmed + " AND " + extra
-	}
-	return wherePrefix + trimmed + " AND " + extra
+	return existing + " AND " + extra
 }

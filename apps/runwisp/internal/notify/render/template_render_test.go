@@ -78,7 +78,6 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 		StartAt:     &start,
 		EndAt:       &end,
 		TriggeredBy: model.TriggeredByAPI,
-		LogPath:     logPath,
 	}
 	ev := &notify.Event{
 		Kind:      notify.KindRunFailed,
@@ -86,6 +85,7 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 		Timestamp: start,
 		TaskName:  "telegram-test-fail",
 		Run:       run,
+		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
 		ExternalURL: "https://runwisp.example.com",
@@ -176,7 +176,6 @@ func TestTelegram_RunTimeout_HasTail(t *testing.T) {
 		StartAt:     &start,
 		EndAt:       &end,
 		TriggeredBy: model.TriggeredByCron,
-		LogPath:     logPath,
 	}
 	ev := &notify.Event{
 		Kind:      notify.KindRunTimeout,
@@ -184,6 +183,7 @@ func TestTelegram_RunTimeout_HasTail(t *testing.T) {
 		Timestamp: start,
 		TaskName:  "long-task",
 		Run:       run,
+		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
 		ExternalURL: "https://r.example.com",
@@ -261,7 +261,6 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 		StartAt:     &start,
 		EndAt:       &end,
 		TriggeredBy: model.TriggeredByAPI,
-		LogPath:     logPath,
 	}
 	ev := &notify.Event{
 		Kind:      notify.KindRunFailed,
@@ -269,6 +268,7 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 		Timestamp: start,
 		TaskName:  "tg-fail",
 		Run:       run,
+		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
 		ExternalURL: "https://r.example.com",

@@ -148,13 +148,20 @@ type AuthChallengeBody struct {
 
 // ---------- SSE event wrapper types ----------
 // huma/sse dispatches event names by Go type, so each SSE event needs a
-// distinct type even though the payload shape is identical.
+// distinct type even though the payload shape is identical. The wire shape
+// embeds model.Run (not events.RunEvent's *model.Run) so the SSE stream
+// matches the REST response shape exactly.
 
-type RunCreatedEvent events.RunEvent
-type RunStartedEvent events.RunEvent
-type RunCompletedEvent events.RunEvent
-type RunFailedEvent events.RunEvent
-type RunUpdatedEvent events.RunEvent
+type RunEventBody struct {
+	Run   *model.Run `json:"run"`
+	Error string     `json:"error,omitempty"`
+}
+
+type RunCreatedEvent RunEventBody
+type RunStartedEvent RunEventBody
+type RunCompletedEvent RunEventBody
+type RunFailedEvent RunEventBody
+type RunUpdatedEvent RunEventBody
 type RunDeletedSSEEvent events.RunDeletedEvent
 type PingEvent struct{}
 

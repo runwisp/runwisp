@@ -8,9 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
 )
 
 // ScheduleResult holds the outcome of scheduling tasks.

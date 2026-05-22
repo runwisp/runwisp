@@ -42,7 +42,7 @@ func makeRunWithLog(t *testing.T, db storage.RunRepository, logDir string, delet
 
 func TestSoftDeletePurger_DrainOnBoot(t *testing.T) {
 	logDir := t.TempDir()
-	db, err := storage.New(":memory:", nil)
+	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -62,7 +62,7 @@ func TestSoftDeletePurger_DrainOnBoot(t *testing.T) {
 
 func TestSoftDeletePurger_KeepsRunsInsideTTL(t *testing.T) {
 	logDir := t.TempDir()
-	db, err := storage.New(":memory:", nil)
+	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -83,7 +83,7 @@ func TestSoftDeletePurger_KeepsRunsInsideTTL(t *testing.T) {
 
 func TestSoftDeletePurger_RemovesExpiredButKeepsFresh(t *testing.T) {
 	logDir := t.TempDir()
-	db, err := storage.New(":memory:", nil)
+	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	defer db.Close()
 

@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
@@ -20,7 +22,6 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/spf13/cobra"
-	"log/slog"
 )
 
 var execFlags struct {

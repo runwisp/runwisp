@@ -6,6 +6,7 @@ package cloud
 import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage"
 )
 
 // The cloud package depends on these narrow interfaces rather than the
@@ -55,6 +56,8 @@ type EventSubscriber interface {
 	Subscribe(eventType events.EventType, handler events.EventHandler) func()
 }
 
-// ErrNotFound is model.ErrNotFound re-exported so callers inside the cloud
-// package can reference it without importing internal/model directly.
-var ErrNotFound = model.ErrNotFound
+// ErrNotFound is the sentinel returned by ExternalRunGetter and related
+// interfaces when a referenced execution does not exist. Aliased from the
+// storage package so cloud-internal `errors.Is(err, ErrNotFound)` checks
+// match what the concrete SQLite-backed repository returns.
+var ErrNotFound = storage.ErrNotFound

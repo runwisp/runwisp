@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"log/slog"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
@@ -23,7 +25,6 @@ import (
 	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
 )
 
 // allowedVolumePrefixes lists host path prefixes that may be bind-mounted.

@@ -13,10 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
 )
 
 const (
@@ -135,8 +136,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	defer writer.Close()
 	defer cancelFunc()
 
-	run.LogPath = logPath
-	r.notifyRunUpdated(run)
+	r.notifyRunUpdated(run, logPath)
 
 	backend, execDef, errResult := r.resolveBackend(task, writer)
 	if errResult != nil {
@@ -162,14 +162,18 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 }
 
 // notifyRunUpdated fans the post-log-prep run state out to the persistence
-// callback and event bus when each is wired.
-func (r *RoutingExecutor) notifyRunUpdated(run *model.Run) {
+// callback and event bus when each is wired. logPath is the freshly resolved
+// on-disk log file; the executor carries it on the event envelope (not the
+// Run row, which is never persisted with a log path) so cloud and notify
+// subscribers can locate the captured output.
+func (r *RoutingExecutor) notifyRunUpdated(run *model.Run, logPath string) {
 	if r.onUpdate != nil {
 		r.onUpdate(run)
 	}
 	if r.eventBus != nil {
 		r.eventBus.Publish(events.EventRunUpdated, events.RunEvent{
-			Run: run,
+			Run:     run,
+			LogPath: logPath,
 		})
 	}
 }

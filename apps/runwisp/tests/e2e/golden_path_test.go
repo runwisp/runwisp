@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/require"
@@ -122,7 +121,9 @@ func waitForRunCreatedEvent(
 			if ev.Type != "run.created" {
 				continue
 			}
-			var envelope events.RunEvent
+			var envelope struct {
+				Run *model.Run `json:"run"`
+			}
 			require.NoError(t, json.Unmarshal(ev.Data, &envelope), "decode run.created envelope")
 			require.NotNil(t, envelope.Run, "run.created envelope must carry a non-nil run")
 			if envelope.Run.TaskName != taskName {

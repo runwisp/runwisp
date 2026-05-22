@@ -3,11 +3,6 @@
 
 package model
 
-import "errors"
-
-// ErrNotFound is returned when a requested record does not exist.
-var ErrNotFound = errors.New("record not found")
-
 // PendingLogUpload records a dispatch that handed the daemon a signed PUT URL
 // for terminal log archival. The row is removed on a successful upload; the
 // crash-recovery sweep at startup retries any rows still present.

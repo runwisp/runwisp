@@ -1,5 +1,5 @@
 {{- /* SMTP notification — HTML body. Inline CSS only so MUAs that strip <style> still render. The channel auto-derives a plain-text alternative; keep this layout readable in raw HTML form. */ -}}
-{{- $tail := "" }}{{ if or (eq .Kind "run.failed") (eq .Kind "run.timeout") }}{{ $tail = outputTail .Run }}{{ end -}}
+{{- $tail := "" }}{{ if or (eq .Kind "run.failed") (eq .Kind "run.timeout") }}{{ $tail = outputTail . }}{{ end -}}
 {{- $url := "" }}{{ if eq .Kind "log.disk_pressure" }}{{ $url = taskURL .TaskName }}{{ else }}{{ $url = runURL .Run }}{{ end -}}
 <!doctype html>
 <html lang="en">

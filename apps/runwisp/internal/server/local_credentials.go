@@ -7,8 +7,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/danielgtaylor/huma/v2"
 	"log/slog"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 // LocalCredentialsBody is the JSON payload returned by GET /api/local/credentials.

@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"log/slog"
 	"net/textproto"
 	"regexp"
 	"strings"
@@ -102,7 +103,7 @@ func New(cfg Config) (*Channel, error) {
 	}
 	mode := normalizeTLSMode(cfg.TLSMode, cfg.Port)
 	bo := cfg.Backoff
-	if bo.InitialInterval == 0 && bo.MaxElapsedTime == 0 {
+	if bo.IsZero() {
 		bo = notify.DefaultBackoff()
 	}
 
@@ -126,6 +127,10 @@ func New(cfg Config) (*Channel, error) {
 		c.newClient = func() (sender, error) {
 			return cfg.NewClient(c.host, c.port, c.tlsMode, c.tlsSkipVerify, c.username, c.password)
 		}
+	}
+	if c.tlsSkipVerify {
+		slog.Warn("smtp channel skipping TLS certificate verification — acceptable only in operator-controlled environments",
+			"channel", c.id, "host", c.host, "port", c.port)
 	}
 	return c, nil
 }
@@ -172,6 +177,34 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 }
 
 func (c *Channel) buildMsg(subject, htmlBody, textBody string) (*gomail.Msg, error) {
+	// Defense-in-depth: reject CRLF in any header-bound value before handing
+	// to go-mail. Addresses come from TOML (trusted) and the subject from the
+	// rendered template; this guard catches a future code path that lets
+	// untrusted text reach a header.
+	if err := rejectCRLF("subject", subject); err != nil {
+		return nil, err
+	}
+	if err := rejectCRLF("from", c.from); err != nil {
+		return nil, err
+	}
+	for _, addr := range c.to {
+		if err := rejectCRLF("to", addr); err != nil {
+			return nil, err
+		}
+	}
+	for _, addr := range c.cc {
+		if err := rejectCRLF("cc", addr); err != nil {
+			return nil, err
+		}
+	}
+	for _, addr := range c.bcc {
+		if err := rejectCRLF("bcc", addr); err != nil {
+			return nil, err
+		}
+	}
+	if err := rejectCRLF("reply-to", c.replyTo); err != nil {
+		return nil, err
+	}
 	m := gomail.NewMsg()
 	if err := m.From(c.from); err != nil {
 		return nil, fmt.Errorf("from %q: %w", c.from, err)
@@ -271,6 +304,17 @@ func (c *Channel) classify(err error) error {
 		return err
 	}
 	return err
+}
+
+// rejectCRLF returns a permanent error if value contains a CR or LF, which
+// would allow injecting additional SMTP headers (BCC redirection, content
+// spoofing). Empty input is allowed — callers that require a non-empty value
+// validate that separately.
+func rejectCRLF(field, value string) error {
+	if strings.ContainsAny(value, "\r\n") {
+		return backoff.Permanent(fmt.Errorf("smtp %s contains CR or LF, which is not allowed in a header", field))
+	}
+	return nil
 }
 
 // normalizeTLSMode resolves the operator-supplied tls knob, falling back to a

@@ -10,9 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	"github.com/coder/websocket"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"log/slog"
 )
 
 // sessionRunner manages the active WebSocket session loops (read, write,

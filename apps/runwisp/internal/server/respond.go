@@ -8,9 +8,10 @@ import (
 	"errors"
 	"net/http"
 
+	"log/slog"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/runwisp/runwisp/internal/storage"
-	"log/slog"
 )
 
 // mapDomainError translates a runService sentinel (or storage.ErrNotFound) to

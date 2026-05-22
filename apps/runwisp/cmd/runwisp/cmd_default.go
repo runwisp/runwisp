@@ -8,9 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/tui"
-	"log/slog"
 )
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.

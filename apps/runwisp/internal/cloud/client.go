@@ -11,11 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"log/slog"
+
 	"github.com/coder/websocket"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
 )
 
 const (

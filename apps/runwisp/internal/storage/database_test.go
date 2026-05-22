@@ -14,7 +14,7 @@ import (
 )
 
 func setupTestDB(t *testing.T) RunRepository {
-	db, err := New(":memory:", nil)
+	db, err := New(":memory:")
 	require.NoError(t, err)
 	return db
 }
@@ -296,7 +296,7 @@ func TestSearchAndSort(t *testing.T) {
 // setupFullTestDB returns the full Database interface (includes PendingLogUploadRepository).
 func setupFullTestDB(t *testing.T) Database {
 	t.Helper()
-	db, err := New(":memory:", nil)
+	db, err := New(":memory:")
 	require.NoError(t, err)
 	return db
 }

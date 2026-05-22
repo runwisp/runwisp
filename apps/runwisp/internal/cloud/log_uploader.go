@@ -100,7 +100,7 @@ func (u *LogUploader) RegisterDispatch(executionID, uploadURL, logPath string) e
 
 // Archive performs a single gzip + PUT for the terminal log of executionID.
 // Returns nil, nil when there is no pending upload for the execution (e.g.
-// the dispatch came with an empty logUploadUrl). On success, the local log
+// the dispatch came with an empty logUploadURL). On success, the local log
 // file and the persistence row are both removed.
 func (u *LogUploader) Archive(ctx context.Context, executionID, logFilePath string) (*LogUploaderResult, error) {
 	if u == nil || executionID == "" {

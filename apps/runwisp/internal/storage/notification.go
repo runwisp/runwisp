@@ -4,11 +4,14 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // Notification is one persistent in-app notification row, possibly representing
@@ -47,9 +50,6 @@ type NotificationRepository interface {
 	MarkAllNotificationsRead(at time.Time) error
 }
 
-const notificationColumns = `id, fingerprint, kind, severity, task_name, run_id, title, body,
-count, occurrences_json, created_at, last_occurred_at, read_at`
-
 func encodeOccurrences(ts []time.Time) (string, error) {
 	if ts == nil {
 		ts = []time.Time{}
@@ -72,30 +72,6 @@ func decodeOccurrences(s string) ([]time.Time, error) {
 	return ts, nil
 }
 
-func scanNotification(scanner interface {
-	Scan(dest ...any) error
-}) (*Notification, error) {
-	var n Notification
-	var occJSON string
-	var readAt sql.NullTime
-	if err := scanner.Scan(
-		&n.ID, &n.Fingerprint, &n.Kind, &n.Severity, &n.TaskName, &n.RunID,
-		&n.Title, &n.Body, &n.Count, &occJSON, &n.CreatedAt, &n.LastOccurredAt, &readAt,
-	); err != nil {
-		return nil, err
-	}
-	occ, err := decodeOccurrences(occJSON)
-	if err != nil {
-		return nil, fmt.Errorf("decode occurrences for %s: %w", n.ID, err)
-	}
-	n.Occurrences = occ
-	if readAt.Valid {
-		t := readAt.Time
-		n.ReadAt = &t
-	}
-	return &n, nil
-}
-
 // UpsertByFingerprint folds new occurrences into an existing row when one
 // matches the fingerprint and falls within the coalescing window. Otherwise
 // it inserts the supplied notification as a fresh row. The decision and the
@@ -111,32 +87,34 @@ func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Durat
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	qtx := db.q.WithTx(tx)
+	ctx := context.Background()
 
 	cutoff := n.LastOccurredAt.Add(-window)
-
-	var (
-		existingID          string
-		existingCount       int
-		existingOccurrences string
-	)
-	row := tx.QueryRow(
-		`SELECT id, count, occurrences_json FROM notifications
-		 WHERE fingerprint = ? AND last_occurred_at >= ?
-		 ORDER BY last_occurred_at DESC LIMIT 1`,
-		n.Fingerprint, cutoff,
-	)
-	switch err := row.Scan(&existingID, &existingCount, &existingOccurrences); {
+	existing, err := qtx.SelectExistingForFingerprint(ctx, sqlcdb.SelectExistingForFingerprintParams{
+		Fingerprint:    n.Fingerprint,
+		LastOccurredAt: cutoff,
+	})
+	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		occJSON, err := encodeOccurrences(n.Occurrences)
 		if err != nil {
 			return false, err
 		}
-		if _, err := tx.Exec(
-			`INSERT INTO notifications (`+notificationColumns+`)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-			n.ID, n.Fingerprint, n.Kind, n.Severity, n.TaskName, n.RunID,
-			n.Title, n.Body, n.Count, occJSON, n.CreatedAt, n.LastOccurredAt,
-		); err != nil {
+		if err := qtx.InsertNotification(ctx, sqlcdb.InsertNotificationParams{
+			ID:              n.ID,
+			Fingerprint:     n.Fingerprint,
+			Kind:            n.Kind,
+			Severity:        n.Severity,
+			TaskName:        n.TaskName,
+			RunID:           n.RunID,
+			Title:           n.Title,
+			Body:            n.Body,
+			Count:           n.Count,
+			OccurrencesJson: occJSON,
+			CreatedAt:       n.CreatedAt,
+			LastOccurredAt:  n.LastOccurredAt,
+		}); err != nil {
 			return false, err
 		}
 		if err := tx.Commit(); err != nil {
@@ -148,7 +126,7 @@ func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Durat
 		return false, err
 	}
 
-	prev, err := decodeOccurrences(existingOccurrences)
+	prev, err := decodeOccurrences(existing.OccurrencesJson)
 	if err != nil {
 		return false, fmt.Errorf("decode existing occurrences: %w", err)
 	}
@@ -161,20 +139,22 @@ func (db *SQLiteDatabase) UpsertByFingerprint(n *Notification, window time.Durat
 		return false, err
 	}
 
-	newCount := existingCount + 1
-	if _, err := tx.Exec(
-		`UPDATE notifications
-		 SET count = ?, occurrences_json = ?, last_occurred_at = ?, title = ?, body = ?, read_at = NULL
-		 WHERE id = ?`,
-		newCount, mergedJSON, n.LastOccurredAt, n.Title, n.Body, existingID,
-	); err != nil {
+	newCount := existing.Count + 1
+	if err := qtx.UpdateNotificationCoalesced(ctx, sqlcdb.UpdateNotificationCoalescedParams{
+		Count:           newCount,
+		OccurrencesJson: mergedJSON,
+		LastOccurredAt:  n.LastOccurredAt,
+		Title:           n.Title,
+		Body:            n.Body,
+		ID:              existing.ID,
+	}); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
 
-	n.ID = existingID
+	n.ID = existing.ID
 	n.Count = newCount
 	n.Occurrences = merged
 	n.ReadAt = nil
@@ -188,31 +168,44 @@ func (db *SQLiteDatabase) ListNotifications(limit int, before string) ([]Notific
 	if limit <= 0 {
 		limit = 50
 	}
-	args := []any{}
-	clause := ""
+	ctx := context.Background()
+	var rows []sqlcdb.Notification
+	var err error
 	if before != "" {
-		clause = " WHERE id < ?"
-		args = append(args, before)
+		rows, err = db.q.ListNotificationsBefore(ctx, sqlcdb.ListNotificationsBeforeParams{
+			ID:    before,
+			Limit: int64(limit),
+		})
+	} else {
+		rows, err = db.q.ListNotifications(ctx, int64(limit))
 	}
-	args = append(args, limit)
-
-	rows, err := db.db.Query(
-		`SELECT `+notificationColumns+` FROM notifications`+clause+` ORDER BY id DESC LIMIT ?`,
-		args...,
-	)
 	if err != nil {
 		return nil, err
 	}
-	return collectRows(rows, scanNotification)
+	out := make([]Notification, 0, len(rows))
+	for _, r := range rows {
+		n, err := notificationFromSqlcdb(r)
+		if err != nil {
+			return nil, fmt.Errorf("decode occurrences for %s: %w", r.ID, err)
+		}
+		out = append(out, *n)
+	}
+	return out, nil
 }
 
 func (db *SQLiteDatabase) GetNotificationByID(id string) (*Notification, error) {
-	row := db.db.QueryRow(`SELECT `+notificationColumns+` FROM notifications WHERE id = ?`, id)
-	n, err := scanNotification(row)
+	row, err := db.q.GetNotificationByID(context.Background(), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return n, err
+	if err != nil {
+		return nil, err
+	}
+	n, err := notificationFromSqlcdb(row)
+	if err != nil {
+		return nil, fmt.Errorf("decode occurrences for %s: %w", row.ID, err)
+	}
+	return n, nil
 }
 
 // PruneNotificationsByCount keeps the most recent `keep` rows and deletes the rest.
@@ -220,15 +213,7 @@ func (db *SQLiteDatabase) PruneNotificationsByCount(keep int) (int64, error) {
 	if keep <= 0 {
 		return 0, nil
 	}
-	res, err := db.db.Exec(
-		`DELETE FROM notifications WHERE id IN (
-			SELECT id FROM notifications ORDER BY id DESC LIMIT -1 OFFSET ?
-		)`, keep,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
+	return db.q.PruneNotificationsByCount(context.Background(), int64(keep))
 }
 
 // PruneNotificationsByAge deletes rows whose last_occurred_at is older than the cutoff.
@@ -237,18 +222,12 @@ func (db *SQLiteDatabase) PruneNotificationsByAge(olderThan time.Duration) (int6
 		return 0, nil
 	}
 	cutoff := time.Now().Add(-olderThan)
-	res, err := db.db.Exec(`DELETE FROM notifications WHERE last_occurred_at < ?`, cutoff)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
+	return db.q.PruneNotificationsByAge(context.Background(), cutoff)
 }
 
 // CountUnreadNotifications counts rows whose read_at is NULL.
 func (db *SQLiteDatabase) CountUnreadNotifications() (int64, error) {
-	var c int64
-	err := db.db.QueryRow(`SELECT COUNT(*) FROM notifications WHERE read_at IS NULL`).Scan(&c)
-	return c, err
+	return db.q.CountUnreadNotifications(context.Background())
 }
 
 // MarkNotificationRead stamps read_at on a single row and returns the updated
@@ -266,11 +245,21 @@ func (db *SQLiteDatabase) setNotificationReadAt(id string, at *time.Time) (*Noti
 	if id == "" {
 		return nil, errors.New("notification id is empty")
 	}
-	res, err := db.db.Exec(`UPDATE notifications SET read_at = ? WHERE id = ?`, at, id)
+	ctx := context.Background()
+	var affected int64
+	var err error
+	if at != nil {
+		affected, err = db.q.MarkNotificationRead(ctx, sqlcdb.MarkNotificationReadParams{
+			ReadAt: at,
+			ID:     id,
+		})
+	} else {
+		affected, err = db.q.MarkNotificationUnread(ctx, id)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if rows, _ := res.RowsAffected(); rows == 0 {
+	if affected == 0 {
 		return nil, ErrNotFound
 	}
 	return db.GetNotificationByID(id)
@@ -278,9 +267,5 @@ func (db *SQLiteDatabase) setNotificationReadAt(id string, at *time.Time) (*Noti
 
 // MarkAllNotificationsRead stamps read_at on every currently-unread row.
 func (db *SQLiteDatabase) MarkAllNotificationsRead(at time.Time) error {
-	_, err := db.db.Exec(
-		`UPDATE notifications SET read_at = ? WHERE read_at IS NULL`,
-		at,
-	)
-	return err
+	return db.q.MarkAllNotificationsRead(context.Background(), &at)
 }

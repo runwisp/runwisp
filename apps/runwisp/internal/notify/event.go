@@ -104,6 +104,11 @@ type Event struct {
 	Timestamp time.Time
 	TaskName  string
 	Run       *model.Run
-	Reason    string
-	Extra     map[string]any
+	// LogPath is the on-disk path of the captured output for this run. It is
+	// sourced from the executor's event envelope (never persisted on the Run
+	// row) and consumed by renderers that need to splice a tail of the log
+	// into the notification body.
+	LogPath string
+	Reason  string
+	Extra   map[string]any
 }
