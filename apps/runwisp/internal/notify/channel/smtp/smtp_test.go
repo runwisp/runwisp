@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"net/textproto"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -149,6 +151,53 @@ func TestSMTP_PermanentSendErrorIsNotRetried(t *testing.T) {
 	err := ch.Execute(context.Background(), failingEvent())
 	require.Error(t, err)
 	assert.EqualValues(t, 1, calls.Load(), "permanent send errors must not loop")
+}
+
+// TestSMTP_PermanentTextprotoErrorIsNotRetried covers the AUTH-failure path:
+// go-mail wraps net/smtp errors as "dial failed: SMTP AUTH failed: %w" around
+// a raw *textproto.Error, never reaching *gomail.SendError. classify() must
+// still recognise the 5xx reply and short-circuit retries.
+func TestSMTP_PermanentTextprotoErrorIsNotRetried(t *testing.T) {
+	calls := atomic.Int32{}
+	custom := &funcSender{
+		fn: func(_ context.Context, _ ...*gomail.Msg) error {
+			calls.Add(1)
+			return fmt.Errorf("dial failed: SMTP AUTH failed: %w",
+				&textproto.Error{Code: 535, Msg: "5.7.8 authentication failed"})
+		},
+	}
+	ch := mkChannel(t, nil, func(c *Config) {
+		c.NewClient = func(_ string, _ int, _ string, _ bool, _, _ string) (sender, error) {
+			return custom, nil
+		}
+	})
+	err := ch.Execute(context.Background(), failingEvent())
+	require.Error(t, err)
+	assert.EqualValues(t, 1, calls.Load(),
+		"textproto 5xx replies must not be retried")
+}
+
+// TestSMTP_TransientTextprotoErrorRetries covers the symmetric 4xx case: a
+// 4xx reply (e.g. greylisting, rate limit) should loop until the backoff
+// budget exhausts, mirroring how SendError's IsTemp() is handled.
+func TestSMTP_TransientTextprotoErrorRetries(t *testing.T) {
+	calls := atomic.Int32{}
+	custom := &funcSender{
+		fn: func(_ context.Context, _ ...*gomail.Msg) error {
+			calls.Add(1)
+			return fmt.Errorf("dial failed: %w",
+				&textproto.Error{Code: 421, Msg: "service not available"})
+		},
+	}
+	ch := mkChannel(t, nil, func(c *Config) {
+		c.NewClient = func(_ string, _ int, _ string, _ bool, _, _ string) (sender, error) {
+			return custom, nil
+		}
+	})
+	err := ch.Execute(context.Background(), failingEvent())
+	require.Error(t, err)
+	assert.GreaterOrEqual(t, int(calls.Load()), 2,
+		"4xx textproto replies must be treated as transient")
 }
 
 func TestSMTP_RedactsPasswordInError(t *testing.T) {

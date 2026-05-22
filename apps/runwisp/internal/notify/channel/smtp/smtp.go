@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"net/textproto"
 	"regexp"
 	"strings"
 
@@ -241,9 +242,14 @@ func defaultClient(host string, port int, tlsMode string, tlsSkipVerify bool, us
 	return gomail.NewClient(host, opts...)
 }
 
-// classify maps a go-mail SendError into the backoff library's transient /
-// permanent distinction. Anything that isn't an *SendError is treated as
-// transient (network blip, dial timeout) so the retry loop gets a chance.
+// classify maps a go-mail SendError or net/smtp textproto.Error into the
+// backoff library's transient / permanent distinction. SendError carries an
+// explicit IsTemp() flag. textproto.Error is what bubbles up from go-mail's
+// dial sequence (HELO/STARTTLS/AUTH/MAIL/RCPT/DATA) when the server returns a
+// 4xx/5xx reply — go-mail wraps it as "dial failed: SMTP AUTH failed: ..."
+// without going through SendError, so we check both shapes. Anything else is
+// treated as transient (network blip, dial timeout) so the retry loop gets a
+// chance.
 func (c *Channel) classify(err error) error {
 	var sendErr *gomail.SendError
 	if errors.As(err, &sendErr) {
@@ -251,6 +257,13 @@ func (c *Channel) classify(err error) error {
 			return err
 		}
 		return backoff.Permanent(err)
+	}
+	var tpErr *textproto.Error
+	if errors.As(err, &tpErr) {
+		if tpErr.Code >= 500 && tpErr.Code < 600 {
+			return backoff.Permanent(err)
+		}
+		return err
 	}
 	return err
 }
