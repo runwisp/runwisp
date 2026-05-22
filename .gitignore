@@ -21,6 +21,9 @@ apps/runwisp/.gocoverdir/
 # Build cache (Makefile stamps)
 .cache/
 
+# Local tooling installed via `go install`
+/.bin/
+
 # Build Outputs
 build
 dist

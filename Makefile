@@ -78,6 +78,15 @@ UI_BUILD_STAMP := apps/ui/build/.stamp
 UI_DIST_STAMP := apps/runwisp/internal/ui/dist/.stamp
 RUNWISP_BIN := apps/runwisp/runwisp
 
+# Local-only tooling installed via `go install` into ./.bin
+LOCAL_BIN := $(CURDIR)/.bin
+SQLC_VERSION := v1.27.0
+SQLC_BIN := $(LOCAL_BIN)/sqlc
+SQLC_INPUTS := apps/runwisp/sqlc.yaml \
+	apps/runwisp/internal/storage/schema.sql \
+	$(wildcard apps/runwisp/internal/storage/query/*.sql)
+SQLC_STAMP := .cache/sqlc-gen.stamp
+
 # Lint cache stamps --------------------------------------------------------
 
 UI_APP_TYPES_STAMP := .cache/apps-ui-types.stamp
@@ -99,11 +108,19 @@ endef
 
 # Codegen ------------------------------------------------------------------
 
+$(SQLC_BIN):
+	@mkdir -p $(LOCAL_BIN)
+	$(call step,install sqlc $(SQLC_VERSION),GOBIN=$(LOCAL_BIN) go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION))
+
+$(SQLC_STAMP): $(SQLC_INPUTS) $(SQLC_BIN)
+	$(call step,sqlc generate,cd apps/runwisp && $(SQLC_BIN) generate && ./scripts/sqlc-cleanup.sh)
+	$(stamp)
+
 $(ASYNCAPI_STAMP): packages/asyncapi/asyncapi.yaml packages/asyncapi/scripts/generate.js
 	$(call step,asyncapi codegen,cd packages/asyncapi && bun run generate)
 	$(stamp)
 
-$(OPENAPI_JSON): $(GO_SOURCES) $(GO_MOD) $(ASYNCAPI_STAMP)
+$(OPENAPI_JSON): $(GO_SOURCES) $(GO_MOD) $(ASYNCAPI_STAMP) $(SQLC_STAMP)
 	$(call step,openapi.json (runwisp),cd apps/runwisp && ./scripts/generate-openapi.sh)
 
 $(COMMON_API_TS): $(OPENAPI_JSON) packages/common/scripts/generate-api.ts
@@ -121,7 +138,7 @@ $(UI_DIST_STAMP): $(UI_BUILD_STAMP)
 
 # Go binary ----------------------------------------------------------------
 
-$(RUNWISP_BIN): $(GO_SOURCES) $(GO_MOD) $(ASYNCAPI_STAMP) $(UI_DIST_STAMP)
+$(RUNWISP_BIN): $(GO_SOURCES) $(GO_MOD) $(ASYNCAPI_STAMP) $(SQLC_STAMP) $(UI_DIST_STAMP)
 	$(call step,go build runwisp,cd apps/runwisp && ./scripts/build.sh)
 
 # Lint cache stamps --------------------------------------------------------
@@ -171,7 +188,7 @@ build-all: $(UI_DIST_STAMP) $(ASYNCAPI_STAMP) ## cross-compile binaries for all 
 dev: $(RUNWISP_BIN) ## build then run the daemon in foreground
 	$(call step,run runwisp daemon,cd apps/runwisp && ./runwisp)
 
-generate: $(ASYNCAPI_STAMP) $(OPENAPI_JSON) $(COMMON_API_TS) ## regenerate asyncapi + openapi + common api
+generate: $(ASYNCAPI_STAMP) $(SQLC_STAMP) $(OPENAPI_JSON) $(COMMON_API_TS) ## regenerate asyncapi + sqlc + openapi + common api
 
 check: $(ALL_LINT_STAMPS) check-go ## type-check + lint everything (cached per package)
 
@@ -235,7 +252,7 @@ docs: $(OPENAPI_JSON) ## build apps/docs and serve the result
 	cd apps/docs && bun run build && bun run preview
 
 clean: ## remove all build outputs, generated code, and caches
-	$(call step,clean workspace,rm -rf .cache $(RUNWISP_BIN) $(OPENAPI_JSON) apps/runwisp/dist apps/runwisp/internal/ui/dist apps/runwisp/internal/generated/protocol apps/ui/build apps/ui/.svelte-kit apps/docs/dist apps/docs/.astro apps/docs/public/openapi.json packages/asyncapi/src/generated packages/common/src/generated apps/runwisp/.gocoverdir)
+	$(call step,clean workspace,rm -rf .cache $(LOCAL_BIN) $(RUNWISP_BIN) $(OPENAPI_JSON) apps/runwisp/dist apps/runwisp/internal/ui/dist apps/runwisp/internal/generated/protocol apps/ui/build apps/ui/.svelte-kit apps/docs/dist apps/docs/.astro apps/docs/public/openapi.json packages/asyncapi/src/generated packages/common/src/generated apps/runwisp/.gocoverdir)
 
 help: ## show this help
 	@awk -v on='$(C_BOLD)' -v off='$(C_OFF)' \

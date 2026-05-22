@@ -1,0 +1,110 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package sqlcdb
+
+import "github.com/danielgtaylor/huma/v2"
+
+// RunPhase captures the high-level lifecycle phase of a run.
+type RunPhase string
+
+const (
+	PhasePending RunPhase = "pending"
+	PhaseRunning RunPhase = "running"
+	PhaseEnded   RunPhase = "ended"
+)
+
+// IsTerminal reports whether the phase represents a completed run.
+func (p RunPhase) IsTerminal() bool {
+	return p == PhaseEnded
+}
+
+// EndReason describes why a run ended.
+type EndReason string
+
+const (
+	ReasonSuccess EndReason = "success"
+	ReasonFailed  EndReason = "failed"
+	ReasonStopped EndReason = "stopped"
+	ReasonTimeout EndReason = "timeout"
+	ReasonCrashed EndReason = "crashed"
+	// ReasonSkipped marks runs that the concurrency policy rejected before
+	// they ever executed (PolicySkip). Distinct from ReasonFailed so chronic
+	// overlap on a `* * * * *` health probe doesn't pose as a real failure
+	// to retries, notifications, or dashboards. Exit code is conventionally
+	// recorded as -1.
+	ReasonSkipped EndReason = "skipped"
+	// ReasonLogOverflow marks runs that log_on_full = "kill_task" cancelled
+	// because output exceeded log_max_size. Treated as a failure for retry,
+	// notification, and UI purposes — the run failed to stay inside its log
+	// budget — but recorded as a distinct reason so operators can see the
+	// specific cause without inspecting logs.
+	ReasonLogOverflow EndReason = "log_overflow"
+	// ReasonQueueFull marks runs the queue overflow policy rejected because
+	// the per-task queue_max cap was already full when the firing arrived.
+	// Distinct from ReasonSkipped (which only applies under PolicySkip) so
+	// dashboards can call out queue saturation as its own signal.
+	ReasonQueueFull EndReason = "queue_full"
+	// ReasonDSTSkipped marks the suppressed half of a DST fall-back duplicate.
+	// The first wall-clock-equal firing runs normally; the second is recorded
+	// for visibility but never executes — so an operator can see the dedup
+	// happened instead of guessing why the schedule "felt off".
+	ReasonDSTSkipped EndReason = "dst_skipped"
+	// ReasonDaemonStopped marks runs that were still in flight when the daemon
+	// shut down and exceeded the [daemon] shutdown_timeout window before they
+	// could clean up. Distinct from ReasonStopped (which is operator-initiated
+	// per-run) and ReasonCrashed (which is reserved for unrecoverable kills).
+	ReasonDaemonStopped EndReason = "daemon_stopped"
+)
+
+// AllEndReasons is the canonical, ordered list of end-reason values. The order
+// is load-bearing: it determines the enum order in the generated OpenAPI
+// schema and downstream TypeScript types (`packages/common`). Keep new values
+// at the end unless intentionally reordering the API surface.
+var AllEndReasons = []EndReason{
+	ReasonSuccess,
+	ReasonFailed,
+	ReasonStopped,
+	ReasonTimeout,
+	ReasonCrashed,
+	ReasonSkipped,
+	ReasonLogOverflow,
+	ReasonQueueFull,
+	ReasonDSTSkipped,
+	ReasonDaemonStopped,
+}
+
+const endReasonSchemaName = "EndReason"
+
+// Schema implements huma.SchemaProvider so EndReason appears as a named enum
+// (`components.schemas.EndReason`) in the generated OpenAPI document instead
+// of an inline `enum` repeated at every usage site. Downstream codegen
+// (openapi-typescript → packages/common) picks this up as a single shared
+// type alias.
+func (EndReason) Schema(r huma.Registry) *huma.Schema {
+	if _, ok := r.Map()[endReasonSchemaName]; !ok {
+		enum := make([]any, len(AllEndReasons))
+		for i, v := range AllEndReasons {
+			enum[i] = string(v)
+		}
+		r.Map()[endReasonSchemaName] = &huma.Schema{
+			Type:        huma.TypeString,
+			Description: "Why a run ended. Set when status=ended.",
+			Enum:        enum,
+		}
+	}
+	return &huma.Schema{Ref: "#/components/schemas/" + endReasonSchemaName}
+}
+
+// EndReasonPtr returns a pointer to the given EndReason value.
+func EndReasonPtr(r EndReason) *EndReason { return &r }
+
+// TriggeredBy identifies how a run started.
+type TriggeredBy string
+
+const (
+	TriggeredByCron    TriggeredBy = "cron"
+	TriggeredByAPI     TriggeredBy = "api"
+	TriggeredByCloud   TriggeredBy = "cloud"
+	TriggeredByService TriggeredBy = "service"
+)
