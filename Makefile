@@ -80,7 +80,7 @@ RUNWISP_BIN := apps/runwisp/runwisp
 
 # Local-only tooling installed via `go install` into ./.bin
 LOCAL_BIN := $(CURDIR)/.bin
-SQLC_VERSION := v1.27.0
+SQLC_VERSION := v1.29.0
 SQLC_BIN := $(LOCAL_BIN)/sqlc
 SQLC_INPUTS := apps/runwisp/sqlc.yaml \
 	apps/runwisp/internal/storage/schema.sql \
