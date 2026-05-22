@@ -23,6 +23,7 @@ import (
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,7 +81,7 @@ func TestAuthOrLocalTrusted_RejectsTCPWithoutJWT(t *testing.T) {
 func TestSocketServer_EndToEnd(t *testing.T) {
 	s, repo, _, _ := setupServerWithSocket(t)
 
-	runs := []model.Run{}
+	runs := []sqlcdb.Run{}
 	repo.On("QueryRuns", "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
 	repo.On("CountRunsFiltered", "", "", "").Return(int64(0), nil)
 

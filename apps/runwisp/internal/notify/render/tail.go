@@ -7,14 +7,13 @@ import (
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/model"
 )
 
 // NewOutputTail returns the captured-output tail closure consumed by the
-// notify renderer. It reads the last maxLines from the run's log file and
-// caps the joined result at maxBytes. Empty/missing logs yield "" so the
-// template branch that wraps the tail in <blockquote> / Slack code-fence
-// collapses cleanly.
+// notify renderer. It reads the last maxLines from the on-disk log file at
+// logPath and caps the joined result at maxBytes. Empty/missing logs yield
+// "" so the template branch that wraps the tail in <blockquote> / Slack
+// code-fence collapses cleanly.
 //
 // Truncation rules:
 //   - empty/whitespace-only lines are skipped (they add no signal but eat
@@ -27,12 +26,12 @@ import (
 // The closure does not HTML-escape its output — the consuming template
 // applies tgEscape / jsonEscape before placing the body inside a blockquote
 // or code block.
-func NewOutputTail() func(run *model.Run, maxLines, maxBytes int) string {
-	return func(run *model.Run, maxLines, maxBytes int) string {
-		if run == nil || run.LogPath == "" || maxLines <= 0 || maxBytes <= 0 {
+func NewOutputTail() func(logPath string, maxLines, maxBytes int) string {
+	return func(logPath string, maxLines, maxBytes int) string {
+		if logPath == "" || maxLines <= 0 || maxBytes <= 0 {
 			return ""
 		}
-		lines, _, _, err := logutil.ReadLineRange(run.LogPath, -int64(maxLines), int64(maxLines))
+		lines, _, _, err := logutil.ReadLineRange(logPath, -int64(maxLines), int64(maxLines))
 		if err != nil || len(lines) == 0 {
 			return ""
 		}

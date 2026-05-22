@@ -3,7 +3,7 @@
 
 package storage
 
-import "github.com/runwisp/runwisp/internal/model"
+import "github.com/runwisp/runwisp/internal/storage/sqlcdb"
 
 const (
 	ConfigKeyFingerprint = "fingerprint"
@@ -28,7 +28,7 @@ type Database interface {
 // PendingLogUploadRepository persists dispatch metadata so the daemon can
 // resume terminal log archival after a crash.
 type PendingLogUploadRepository interface {
-	UpsertPendingLogUpload(rec model.PendingLogUpload) error
+	UpsertPendingLogUpload(rec sqlcdb.PendingLogUpload) error
 	DeletePendingLogUpload(externalExecutionID string) error
-	ListPendingLogUploads() ([]model.PendingLogUpload, error)
+	ListPendingLogUploads() ([]sqlcdb.PendingLogUpload, error)
 }

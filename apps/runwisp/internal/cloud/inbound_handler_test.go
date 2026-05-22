@@ -10,6 +10,7 @@ import (
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,11 +26,11 @@ func newTestInboundHandler() *InboundHandler {
 
 // stubRunRepo implements ExternalRunGetter for inbound handler tests.
 type stubRunRepo struct {
-	run    *model.Run
+	run    *sqlcdb.Run
 	getErr error
 }
 
-func (f *stubRunRepo) GetRunByExternalExecutionID(_ string) (*model.Run, error) {
+func (f *stubRunRepo) GetRunByExternalExecutionID(_ string) (*sqlcdb.Run, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
@@ -118,7 +119,7 @@ func TestHandleExecutionDispatch_TriggerError_NilRun(t *testing.T) {
 
 func TestHandleExecutionDispatch_TriggerError_WithRun(t *testing.T) {
 	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
-	run := &model.Run{ID: "r1", Status: model.PhaseEnded}
+	run := &sqlcdb.Run{ID: "r1", Status: sqlcdb.PhaseEnded}
 	runner := &fakeTaskRunner{
 		tasks:   make(map[string]*model.Task),
 		trigErr: errors.New("conflict"),
@@ -161,8 +162,8 @@ func TestHandleExecutionStop_NotFound(t *testing.T) {
 }
 
 func TestHandleExecutionStop_RunAlreadyTerminal(t *testing.T) {
-	reason := model.ReasonSuccess
-	run := &model.Run{Status: model.PhaseEnded, EndReason: &reason}
+	reason := sqlcdb.ReasonSuccess
+	run := &sqlcdb.Run{Status: sqlcdb.PhaseEnded, EndReason: &reason}
 	repo := &stubRunRepo{run: run}
 	runner := &fakeTaskRunner{}
 	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
@@ -172,7 +173,7 @@ func TestHandleExecutionStop_RunAlreadyTerminal(t *testing.T) {
 }
 
 func TestHandleExecutionStop_RunActive_NotRunning(t *testing.T) {
-	run := &model.Run{Status: model.PhasePending}
+	run := &sqlcdb.Run{Status: sqlcdb.PhasePending}
 	repo := &stubRunRepo{run: run}
 	runner := &fakeTaskRunner{}
 	h := newDispatchInboundHandler(runner, repo, executor.Availability{})

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/testutil"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -182,11 +182,11 @@ func TestFingerprintKey_NilEvent(t *testing.T) {
 }
 
 func TestFingerprintKey_WithEndReason(t *testing.T) {
-	r := model.ReasonFailed
+	r := sqlcdb.ReasonFailed
 	ev := &notify.Event{
 		Kind:     notify.KindRunFailed,
 		TaskName: "t1",
-		Run:      &model.Run{EndReason: &r},
+		Run:      &sqlcdb.Run{EndReason: &r},
 	}
 	key := fingerprintKey(ev)
 	assert.Contains(t, key, "failed")

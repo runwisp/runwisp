@@ -13,10 +13,12 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 const (
@@ -26,7 +28,7 @@ const (
 )
 
 type Executor interface {
-	Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult
+	Execute(ctx context.Context, task *model.Task, run *sqlcdb.Run) *ExecuteResult
 	Availability() Availability
 }
 
@@ -42,7 +44,7 @@ type ExecuteResult struct {
 // based on the task's execution type, while managing log files and events.
 type RoutingExecutor struct {
 	logDir           string
-	onUpdate         func(*model.Run)
+	onUpdate         func(*sqlcdb.Run)
 	onProcessStarted func(runID string, forceKill func())
 	eventBus         events.EventBus
 	backends         map[string]Backend
@@ -56,9 +58,9 @@ type Options struct {
 	EventBus          events.EventBus
 	CloudShellEnabled bool
 	HasLocalTasks     bool
-	Docker            Backend          // container backend; nil when Docker is unavailable
-	MinFreeDisk       int64            // minimum free disk space in bytes; 0 = disabled
-	OnRunUpdate       func(*model.Run) // called when run state changes (e.g. LogPath set)
+	Docker            Backend           // container backend; nil when Docker is unavailable
+	MinFreeDisk       int64             // minimum free disk space in bytes; 0 = disabled
+	OnRunUpdate       func(*sqlcdb.Run) // called when run state changes (e.g. LogPath set)
 }
 
 // New creates a routing executor with available backends.
@@ -110,7 +112,7 @@ func (r *RoutingExecutor) Availability() Availability {
 
 // SetRunUpdateCallback registers a hook to persist run updates.
 // This is a concrete method (not on the Executor interface) for late binding.
-func (r *RoutingExecutor) SetRunUpdateCallback(callback func(*model.Run)) {
+func (r *RoutingExecutor) SetRunUpdateCallback(callback func(*sqlcdb.Run)) {
 	r.onUpdate = callback
 }
 
@@ -123,7 +125,7 @@ func (r *RoutingExecutor) SetOnProcessStarted(callback func(runID string, forceK
 }
 
 // Execute resolves the execution backend and runs the task, streaming output.
-func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult {
+func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *sqlcdb.Run) *ExecuteResult {
 	if err := r.diskChecker.Check(); err != nil {
 		return &ExecuteResult{ExitCode: -1, Error: err}
 	}
@@ -135,8 +137,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	defer writer.Close()
 	defer cancelFunc()
 
-	run.LogPath = logPath
-	r.notifyRunUpdated(run)
+	r.notifyRunUpdated(run, logPath)
 
 	backend, execDef, errResult := r.resolveBackend(task, writer)
 	if errResult != nil {
@@ -162,14 +163,18 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 }
 
 // notifyRunUpdated fans the post-log-prep run state out to the persistence
-// callback and event bus when each is wired.
-func (r *RoutingExecutor) notifyRunUpdated(run *model.Run) {
+// callback and event bus when each is wired. logPath is the freshly resolved
+// on-disk log file; the executor carries it on the event envelope (not the
+// Run row, which is never persisted with a log path) so cloud and notify
+// subscribers can locate the captured output.
+func (r *RoutingExecutor) notifyRunUpdated(run *sqlcdb.Run, logPath string) {
 	if r.onUpdate != nil {
 		r.onUpdate(run)
 	}
 	if r.eventBus != nil {
 		r.eventBus.Publish(events.EventRunUpdated, events.RunEvent{
-			Run: run,
+			Run:     run,
+			LogPath: logPath,
 		})
 	}
 }
@@ -205,14 +210,14 @@ func (r *RoutingExecutor) startBackend(ctx context.Context, backend Backend, tas
 // streamProcessOutput tees both standard streams into the run's log writer
 // and blocks until each goroutine finishes. Panics inside the streamer are
 // logged so one misbehaving backend cannot abort Execute mid-flight.
-func (r *RoutingExecutor) streamProcessOutput(proc *Process, writer *LogWriter, task *model.Task, run *model.Run) {
+func (r *RoutingExecutor) streamProcessOutput(proc *Process, writer *LogWriter, task *model.Task, run *sqlcdb.Run) {
 	var wg sync.WaitGroup
 	r.streamOne(&wg, proc.Stdout, writer, task, run, logutil.StreamStdout)
 	r.streamOne(&wg, proc.Stderr, writer, task, run, logutil.StreamStderr)
 	wg.Wait()
 }
 
-func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
+func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, writer *LogWriter, task *model.Task, run *sqlcdb.Run, stream string) {
 	if reader == nil {
 		return
 	}
@@ -251,7 +256,7 @@ func classifyExecuteResult(cancelCtx context.Context, writer *LogWriter, exitCod
 	}
 }
 
-func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task, run *model.Run) (*LogWriter, string, context.Context, context.CancelFunc, error) {
+func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task, run *sqlcdb.Run) (*LogWriter, string, context.Context, context.CancelFunc, error) {
 	logPath := logutil.ResolveRunLogPath(r.logDir, task.Name, run.ID, run.CreatedAt)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
 		return nil, "", nil, nil, fmt.Errorf("create task log dir: %w", err)

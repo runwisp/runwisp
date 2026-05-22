@@ -12,12 +12,13 @@ import (
 	"strings"
 	"syscall"
 
+	"log/slog"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
-	"log/slog"
 )
 
 // --- Palette ---

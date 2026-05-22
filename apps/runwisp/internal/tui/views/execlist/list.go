@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -67,7 +67,7 @@ func (e *ExecList) Cursor() int {
 	return e.cursor
 }
 
-func (e *ExecList) SelectedRun() *model.Run {
+func (e *ExecList) SelectedRun() *dto.Run {
 	item := e.window.Item(e.cursor)
 	if item != nil {
 		return &item.Run

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 func (c *Client) GetSystemStats() (*model.SystemStats, error) {
@@ -29,8 +30,8 @@ func (c *Client) GetMetricsHistory() ([]model.MetricsSample, error) {
 	return samples, nil
 }
 
-func (c *Client) GetRunSummary() (*model.RunSummary, error) {
-	var summary model.RunSummary
+func (c *Client) GetRunSummary() (*sqlcdb.RunSummary, error) {
+	var summary sqlcdb.RunSummary
 	if err := c.doJSON("GET", "/api/runs/summary", nil, &summary); err != nil {
 		return nil, err
 	}

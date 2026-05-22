@@ -12,7 +12,9 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/server/dto"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 var (
@@ -82,10 +84,10 @@ func (s *runService) ListRuns(taskName string, p PaginationParams) (*RunsRespons
 		return nil, err
 	}
 
-	return &RunsResponseBody{Runs: runs, Total: total}, nil
+	return &RunsResponseBody{Runs: dto.FromSqlcdbSlice(runs), Total: total}, nil
 }
 
-func (s *runService) GetRun(runID string) (*model.Run, error) {
+func (s *runService) GetRun(runID string) (*sqlcdb.Run, error) {
 	run, err := s.db.GetRun(runID)
 	if err != nil {
 		return nil, mapNotFound(err)
@@ -93,7 +95,7 @@ func (s *runService) GetRun(runID string) (*model.Run, error) {
 	return run, nil
 }
 
-func (s *runService) TriggerRun(taskName string) (*model.Run, error) {
+func (s *runService) TriggerRun(taskName string) (*sqlcdb.Run, error) {
 	task, exists := s.tasks[taskName]
 	if !exists {
 		return nil, ErrTaskNotFound
@@ -104,7 +106,7 @@ func (s *runService) TriggerRun(taskName string) (*model.Run, error) {
 	if !task.APITrigger {
 		return nil, ErrAPIDisabled
 	}
-	return s.taskManager.TriggerRun(taskName, model.TriggeredByAPI)
+	return s.taskManager.TriggerRun(taskName, sqlcdb.TriggeredByAPI)
 }
 
 func (s *runService) RestartService(taskName string) error {
@@ -134,7 +136,7 @@ func (s *runService) DeleteRun(runID string) error {
 	if err != nil {
 		return mapNotFound(err)
 	}
-	if run.Status == model.PhaseRunning || run.Status == model.PhasePending {
+	if run.Status == sqlcdb.PhaseRunning || run.Status == sqlcdb.PhasePending {
 		return ErrCannotDeleteActiveRun
 	}
 	// Single-row delete is just a one-ID soft-delete — no duplicated logic.
@@ -181,7 +183,7 @@ func (s *runService) bulkCancel(sel model.RunSelector) (int, error) {
 	if err := sel.Validate(); err != nil {
 		return 0, wrapSelectorErr(err)
 	}
-	refs, err := s.db.ResolveSelectorIDs(sel, string(model.PhaseRunning))
+	refs, err := s.db.ResolveSelectorIDs(sel, string(sqlcdb.PhaseRunning))
 	if err != nil {
 		return 0, err
 	}
@@ -221,7 +223,7 @@ func (s *runService) bulkRerun(sel model.RunSelector) ([]TriggeredRunRef, error)
 		if !ok || task.Kind.IsService() || !task.APITrigger {
 			continue
 		}
-		run, err := s.taskManager.TriggerRun(name, model.TriggeredByAPI)
+		run, err := s.taskManager.TriggerRun(name, sqlcdb.TriggeredByAPI)
 		if err != nil || run == nil {
 			continue
 		}
@@ -240,7 +242,7 @@ func (s *runService) publishDeleted(ref storage.RunRef) {
 	})
 }
 
-func (s *runService) publishRunUpdated(run *model.Run) {
+func (s *runService) publishRunUpdated(run *sqlcdb.Run) {
 	if s.eventBus == nil {
 		return
 	}
@@ -252,7 +254,7 @@ func (s *runService) StopRun(runID string) error {
 	if err != nil {
 		return mapNotFound(err)
 	}
-	if run.Status != model.PhaseRunning {
+	if run.Status != sqlcdb.PhaseRunning {
 		return ErrNotRunning
 	}
 	return s.taskManager.TerminateRun(runID)

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // runFilterGateArgs decomposes a RunFilter into the nine positional parameters
@@ -23,10 +24,10 @@ import (
 // LIKE wildcards before the pattern is built.
 func runFilterGateArgs(f model.RunFilter) []any {
 	var endReason, statusPhase string
-	switch model.EndReason(f.Status) {
-	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped,
-		model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped,
-		model.ReasonLogOverflow:
+	switch sqlcdb.EndReason(f.Status) {
+	case sqlcdb.ReasonSuccess, sqlcdb.ReasonFailed, sqlcdb.ReasonStopped,
+		sqlcdb.ReasonTimeout, sqlcdb.ReasonCrashed, sqlcdb.ReasonSkipped,
+		sqlcdb.ReasonLogOverflow:
 		endReason = f.Status
 	default:
 		statusPhase = f.Status

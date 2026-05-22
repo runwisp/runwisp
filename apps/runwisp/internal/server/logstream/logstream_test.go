@@ -9,7 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -353,7 +353,7 @@ func TestMakeTerminalHandler_WrongRunID(t *testing.T) {
 	termCh := make(chan struct{}, 1)
 	handler := makeTerminalHandler("run-A", termCh)
 
-	run := &model.Run{ID: "run-B"}
+	run := &sqlcdb.Run{ID: "run-B"}
 	handler(events.Event{Data: events.RunEvent{Run: run}})
 	assert.Empty(t, termCh)
 }

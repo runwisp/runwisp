@@ -8,7 +8,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -101,7 +102,7 @@ func (m *Model) detectDoubleClick(y int) bool {
 	return isDoubleClick
 }
 
-func (m *Model) currentRun() *model.Run {
+func (m *Model) currentRun() *dto.Run {
 	if m.execView == nil {
 		return nil
 	}
@@ -194,7 +195,7 @@ func (m *Model) confirmStopService() tea.Cmd {
 
 func (m *Model) confirmStop() tea.Cmd {
 	run := m.currentRun()
-	if run == nil || run.Status != model.PhaseRunning {
+	if run == nil || run.Status != sqlcdb.PhaseRunning {
 		return nil
 	}
 	client := m.client

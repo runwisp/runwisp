@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,7 +63,7 @@ func TestStreamManager_OneEventPerLine(t *testing.T) {
 	sm := NewStreamManager(eb)
 
 	task := &model.Task{Name: "t"}
-	run := &model.Run{ID: "r1"}
+	run := &sqlcdb.Run{ID: "r1"}
 
 	source := strings.NewReader("alpha\nbeta\ngamma\n")
 	sm.StreamToFile(source, w, task, run, logutil.StreamStdout)
@@ -100,7 +101,7 @@ func TestStreamManager_StderrTaggedNoPrefixInText(t *testing.T) {
 	sm := NewStreamManager(eb)
 
 	task := &model.Task{Name: "t"}
-	run := &model.Run{ID: "r1"}
+	run := &sqlcdb.Run{ID: "r1"}
 
 	sm.StreamToFile(strings.NewReader("uh oh\n"), w, task, run, logutil.StreamStderr)
 	require.NoError(t, w.Close())
@@ -135,7 +136,7 @@ func TestStreamManager_OversizedLineSplit(t *testing.T) {
 	sm := NewStreamManager(eb)
 
 	task := &model.Task{Name: "t"}
-	run := &model.Run{ID: "r1"}
+	run := &sqlcdb.Run{ID: "r1"}
 
 	// 200 KB of one logical line, no newline until the very end → forces
 	// LineBuffer overflow flushes (each ~64KB).

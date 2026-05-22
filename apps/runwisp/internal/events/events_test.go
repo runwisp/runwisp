@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,7 +24,7 @@ func TestEventBus(t *testing.T) {
 		})
 		defer unsub()
 
-		data := RunEvent{Run: &model.Run{ID: "test-data"}}
+		data := RunEvent{Run: &sqlcdb.Run{ID: "test-data"}}
 		eb.Publish(EventRunCreated, data)
 
 		assert.True(t, called)
@@ -45,7 +45,7 @@ func TestEventBus(t *testing.T) {
 		})
 		defer unsub()
 
-		data := RunEvent{Run: &model.Run{ID: "test-data"}}
+		data := RunEvent{Run: &sqlcdb.Run{ID: "test-data"}}
 		eb.Publish(EventRunCreated, data)
 
 		wg.Wait()
@@ -61,12 +61,12 @@ func TestEventBus(t *testing.T) {
 			count++
 		})
 
-		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &sqlcdb.Run{ID: "1"}})
 		assert.Equal(t, 1, count)
 
 		unsub()
 
-		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "2"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &sqlcdb.Run{ID: "2"}})
 		assert.Equal(t, 1, count)
 	})
 
@@ -82,8 +82,8 @@ func TestEventBus(t *testing.T) {
 		})
 		defer unsub()
 
-		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
-		eb.Publish(EventRunStarted, RunEvent{Run: &model.Run{ID: "2"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &sqlcdb.Run{ID: "1"}})
+		eb.Publish(EventRunStarted, RunEvent{Run: &sqlcdb.Run{ID: "2"}})
 		eb.Publish(EventLogLine, LogLineEvent{RunID: "3", LineNum: 0, Stream: "stdout", Text: "hello"})
 
 		assert.Equal(t, 3, count)
@@ -97,12 +97,12 @@ func TestEventBus(t *testing.T) {
 			count++
 		})
 
-		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &sqlcdb.Run{ID: "1"}})
 		assert.Equal(t, 1, count)
 
 		unsub()
 
-		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "2"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &sqlcdb.Run{ID: "2"}})
 		assert.Equal(t, 1, count)
 	})
 
@@ -118,7 +118,7 @@ func TestEventBus(t *testing.T) {
 			count2++
 		})
 
-		eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
+		eb.Publish(EventRunCreated, RunEvent{Run: &sqlcdb.Run{ID: "1"}})
 
 		assert.Equal(t, 1, count1)
 		assert.Equal(t, 1, count2)

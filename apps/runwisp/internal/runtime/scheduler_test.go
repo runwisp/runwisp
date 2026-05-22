@@ -10,6 +10,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -159,19 +160,19 @@ type recordingTaskRunner struct {
 
 type recordedSkip struct {
 	taskName string
-	reason   model.EndReason
+	reason   sqlcdb.EndReason
 }
 
-func (r *recordingTaskRunner) TriggerRun(name string, _ model.TriggeredBy) (*model.Run, error) {
+func (r *recordingTaskRunner) TriggerRun(name string, _ sqlcdb.TriggeredBy) (*sqlcdb.Run, error) {
 	r.triggers = append(r.triggers, name)
-	return &model.Run{TaskName: name}, nil
+	return &sqlcdb.Run{TaskName: name}, nil
 }
 
-func (r *recordingTaskRunner) TriggerRunWithOptions(name string, _ TriggerRunOptions) (*model.Run, error) {
-	return r.TriggerRun(name, model.TriggeredByCron)
+func (r *recordingTaskRunner) TriggerRunWithOptions(name string, _ TriggerRunOptions) (*sqlcdb.Run, error) {
+	return r.TriggerRun(name, sqlcdb.TriggeredByCron)
 }
 
-func (r *recordingTaskRunner) RecordSkippedFiring(name string, reason model.EndReason, _ model.TriggeredBy) error {
+func (r *recordingTaskRunner) RecordSkippedFiring(name string, reason sqlcdb.EndReason, _ sqlcdb.TriggeredBy) error {
 	r.skips = append(r.skips, recordedSkip{taskName: name, reason: reason})
 	return nil
 }
@@ -237,7 +238,7 @@ func TestSchedulerFireOnce_GoldenTriggerSkipSequence(t *testing.T) {
 	assert.Equal(t, []string{"tick", "tick"}, runner.triggers,
 		"two non-duplicate wall-minutes must each trigger exactly one run")
 	assert.Equal(t,
-		[]recordedSkip{{taskName: "tick", reason: model.ReasonDSTSkipped}},
+		[]recordedSkip{{taskName: "tick", reason: sqlcdb.ReasonDSTSkipped}},
 		runner.skips,
 		"the second 02:00 on the fall-back day must be recorded as dst_skipped")
 }

@@ -8,17 +8,17 @@ import (
 	"sync"
 
 	"github.com/runwisp/runwisp/internal/executor"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // RunPersistenceHook persists run state transitions.
-type RunPersistenceHook func(run *model.Run, isNew bool)
+type RunPersistenceHook func(run *sqlcdb.Run, isNew bool)
 
 // persistTask is the unit of work dispatched through the buffered channel.
 // A typed struct avoids the per-call closure allocation that a chan func()
 // would impose.
 type persistTask struct {
-	run   *model.Run
+	run   *sqlcdb.Run
 	isNew bool
 }
 
@@ -51,24 +51,24 @@ func NewPersistenceCoordinator(bufferSize int) *PersistenceCoordinator {
 func (pc *PersistenceCoordinator) BindHook(hook RunPersistenceHook, exec executor.Executor) {
 	pc.hook = hook
 	type runUpdateSetter interface {
-		SetRunUpdateCallback(func(*model.Run))
+		SetRunUpdateCallback(func(*sqlcdb.Run))
 	}
 	if setter, ok := exec.(runUpdateSetter); ok {
-		setter.SetRunUpdateCallback(func(run *model.Run) {
+		setter.SetRunUpdateCallback(func(run *sqlcdb.Run) {
 			pc.PersistExisting(run)
 		})
 	}
 }
 
 // PersistNew enqueues a create-style persistence task.
-func (pc *PersistenceCoordinator) PersistNew(run *model.Run) {
+func (pc *PersistenceCoordinator) PersistNew(run *sqlcdb.Run) {
 	if pc.hook != nil {
 		pc.enqueue(persistTask{run: run.Copy(), isNew: true})
 	}
 }
 
 // PersistExisting enqueues an update-style persistence task.
-func (pc *PersistenceCoordinator) PersistExisting(run *model.Run) {
+func (pc *PersistenceCoordinator) PersistExisting(run *sqlcdb.Run) {
 	if pc.hook != nil {
 		pc.enqueue(persistTask{run: run.Copy(), isNew: false})
 	}

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -95,15 +95,15 @@ func TestMapRunToExecutionUpdateNilRun(t *testing.T) {
 }
 
 func TestMapRunToExecutionUpdateNilExternalExecutionID(t *testing.T) {
-	run := &model.Run{Status: model.PhaseRunning}
+	run := &sqlcdb.Run{Status: sqlcdb.PhaseRunning}
 	assert.Nil(t, mapRunToExecutionUpdate(run))
 }
 
 func TestMapRunToExecutionUpdateRunning(t *testing.T) {
 	execID := "ext-123"
 	now := time.Now()
-	run := &model.Run{
-		Status:              model.PhaseRunning,
+	run := &sqlcdb.Run{
+		Status:              sqlcdb.PhaseRunning,
 		ExternalExecutionID: &execID,
 		StartAt:             &now,
 	}
@@ -118,10 +118,10 @@ func TestMapRunToExecutionUpdateRunning(t *testing.T) {
 
 func TestMapRunToExecutionUpdateEndedSuccess(t *testing.T) {
 	execID := "ext-456"
-	reason := model.ReasonSuccess
+	reason := sqlcdb.ReasonSuccess
 	now := time.Now()
-	run := &model.Run{
-		Status:              model.PhaseEnded,
+	run := &sqlcdb.Run{
+		Status:              sqlcdb.PhaseEnded,
 		ExternalExecutionID: &execID,
 		EndReason:           &reason,
 		ExitCode:            0,
@@ -138,8 +138,8 @@ func TestMapRunToExecutionUpdateEndedSuccess(t *testing.T) {
 
 func TestMapRunToExecutionUpdateEndedNilReason(t *testing.T) {
 	execID := "ext-789"
-	run := &model.Run{
-		Status:              model.PhaseEnded,
+	run := &sqlcdb.Run{
+		Status:              sqlcdb.PhaseEnded,
 		ExternalExecutionID: &execID,
 		EndReason:           nil,
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -44,7 +45,7 @@ func TestStartServiceInstances(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 500*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	require.NoError(t, jm.StartServiceInstances("svc", sqlcdb.TriggeredByService))
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -59,7 +60,7 @@ func TestStartServiceInstances(t *testing.T) {
 	indexes := make(map[int]bool)
 	for _, ar := range ts.active {
 		indexes[ar.Run.InstanceIndex] = true
-		assert.Equal(t, model.TriggeredByService, ar.Run.TriggeredBy,
+		assert.Equal(t, sqlcdb.TriggeredByService, ar.Run.TriggeredBy,
 			"supervisor-driven start must label runs as TriggeredByService")
 	}
 	djm.mu.RUnlock()
@@ -81,7 +82,7 @@ func TestServiceInstanceRefillsOnExit(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 1}, 10*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	require.NoError(t, jm.StartServiceInstances("svc", sqlcdb.TriggeredByService))
 
 	// Allow several restart cycles.
 	time.Sleep(200 * time.Millisecond)
@@ -94,7 +95,7 @@ func TestServiceInstanceRefillsOnExit(t *testing.T) {
 	for _, ar := range ts.active {
 		idx := ar.Run.InstanceIndex
 		assert.Truef(t, idx == 0 || idx == 1, "unexpected instance index %d", idx)
-		assert.Equal(t, model.TriggeredByService, ar.Run.TriggeredBy,
+		assert.Equal(t, sqlcdb.TriggeredByService, ar.Run.TriggeredBy,
 			"supervisor-driven refills must label runs as TriggeredByService, not inherit")
 	}
 	djm.mu.RUnlock()
@@ -115,7 +116,7 @@ func TestServiceShutdownStopsRestarts(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 1}, 10*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	require.NoError(t, jm.StartServiceInstances("svc", sqlcdb.TriggeredByService))
 	time.Sleep(50 * time.Millisecond)
 
 	jm.Shutdown()
@@ -137,9 +138,9 @@ func TestServiceLoadPendingRunsSkipsServices(t *testing.T) {
 	task := serviceTask("svc", 2)
 	jm.UpsertTask(task)
 
-	pending := []model.Run{
-		{ID: "01", TaskName: "svc", Status: model.PhasePending},
-		{ID: "02", TaskName: "svc", Status: model.PhasePending},
+	pending := []sqlcdb.Run{
+		{ID: "01", TaskName: "svc", Status: sqlcdb.PhasePending},
+		{ID: "02", TaskName: "svc", Status: sqlcdb.PhasePending},
 	}
 	result := jm.LoadPendingRuns(pending)
 	assert.Equal(t, 0, result.Resumed)
@@ -160,7 +161,7 @@ func TestRestartServiceInstancesCancelsAll(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 200*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	require.NoError(t, jm.StartServiceInstances("svc", sqlcdb.TriggeredByService))
 	time.Sleep(30 * time.Millisecond)
 
 	djm := jm.(*defaultTaskManager)
@@ -196,7 +197,7 @@ func TestServiceInstanceRefillsAfterManualStop(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 5*time.Second,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	require.NoError(t, jm.StartServiceInstances("svc", sqlcdb.TriggeredByService))
 	time.Sleep(50 * time.Millisecond)
 
 	djm := jm.(*defaultTaskManager)
@@ -255,7 +256,7 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 1}, 5*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	require.NoError(t, jm.StartServiceInstances("svc", sqlcdb.TriggeredByService))
 	time.Sleep(250 * time.Millisecond)
 
 	djm := jm.(*defaultTaskManager)
@@ -300,7 +301,7 @@ func TestStopServiceHaltsRestarts(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 200*time.Millisecond,
 	)
 
-	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	require.NoError(t, jm.StartServiceInstances("svc", sqlcdb.TriggeredByService))
 	time.Sleep(50 * time.Millisecond)
 
 	require.NoError(t, jm.StopService("svc"))

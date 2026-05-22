@@ -10,6 +10,7 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -21,20 +22,20 @@ type mockTaskRunner struct {
 	mock.Mock
 }
 
-func (m *mockTaskRunner) TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error) {
+func (m *mockTaskRunner) TriggerRun(taskName string, triggeredBy sqlcdb.TriggeredBy) (*sqlcdb.Run, error) {
 	args := m.Called(taskName, triggeredBy)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.Run), args.Error(1)
+	return args.Get(0).(*sqlcdb.Run), args.Error(1)
 }
 
-func (m *mockTaskRunner) TriggerRunWithOptions(taskName string, options runtime.TriggerRunOptions) (*model.Run, error) {
+func (m *mockTaskRunner) TriggerRunWithOptions(taskName string, options runtime.TriggerRunOptions) (*sqlcdb.Run, error) {
 	args := m.Called(taskName, options)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.Run), args.Error(1)
+	return args.Get(0).(*sqlcdb.Run), args.Error(1)
 }
 
 func (m *mockTaskRunner) GetTask(taskName string) (*model.Task, bool) {
@@ -69,7 +70,7 @@ func (m *mockTaskRunner) StopService(taskName string) error {
 	return args.Error(0)
 }
 
-func (m *mockTaskRunner) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
+func (m *mockTaskRunner) RecordSkippedFiring(taskName string, reason sqlcdb.EndReason, triggeredBy sqlcdb.TriggeredBy) error {
 	args := m.Called(taskName, reason, triggeredBy)
 	return args.Error(0)
 }
@@ -146,8 +147,8 @@ func TestTriggerRun_Success(t *testing.T) {
 	}
 	svc := makeRunService(tasks, repo, runner)
 
-	expected := &model.Run{ID: "run-1", TaskName: "t"}
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(expected, nil)
+	expected := &sqlcdb.Run{ID: "run-1", TaskName: "t"}
+	runner.On("TriggerRun", "t", sqlcdb.TriggeredByAPI).Return(expected, nil)
 
 	run, err := svc.TriggerRun("t")
 	require.NoError(t, err)
@@ -164,7 +165,7 @@ func TestTriggerRun_RunnerError(t *testing.T) {
 	svc := makeRunService(tasks, repo, runner)
 
 	runnerErr := errors.New("runner failed")
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(nil, runnerErr)
+	runner.On("TriggerRun", "t", sqlcdb.TriggeredByAPI).Return(nil, runnerErr)
 
 	_, err := svc.TriggerRun("t")
 	assert.ErrorIs(t, err, runnerErr)
@@ -298,7 +299,7 @@ func TestStopRun_NotRunning(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	run := &model.Run{ID: "run-1", Status: model.PhaseEnded}
+	run := &sqlcdb.Run{ID: "run-1", Status: sqlcdb.PhaseEnded}
 	repo.On("GetRun", "run-1").Return(run, nil)
 
 	err := svc.StopRun("run-1")
@@ -311,7 +312,7 @@ func TestStopRun_Success(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	run := &model.Run{ID: "run-1", Status: model.PhaseRunning}
+	run := &sqlcdb.Run{ID: "run-1", Status: sqlcdb.PhaseRunning}
 	repo.On("GetRun", "run-1").Return(run, nil)
 	runner.On("TerminateRun", "run-1").Return(nil)
 
@@ -326,7 +327,7 @@ func TestStopRun_TerminateError(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	run := &model.Run{ID: "run-1", Status: model.PhaseRunning}
+	run := &sqlcdb.Run{ID: "run-1", Status: sqlcdb.PhaseRunning}
 	repo.On("GetRun", "run-1").Return(run, nil)
 
 	termErr := errors.New("terminate failed")
@@ -357,7 +358,7 @@ func TestDeleteRun_RunningRun_RejectsWithConflict(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	run := &model.Run{ID: "run-1", Status: model.PhaseRunning}
+	run := &sqlcdb.Run{ID: "run-1", Status: sqlcdb.PhaseRunning}
 	repo.On("GetRun", "run-1").Return(run, nil)
 
 	err := svc.DeleteRun("run-1")
@@ -372,7 +373,7 @@ func TestDeleteRun_PendingRun_RejectsWithConflict(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	run := &model.Run{ID: "run-2", Status: model.PhasePending}
+	run := &sqlcdb.Run{ID: "run-2", Status: sqlcdb.PhasePending}
 	repo.On("GetRun", "run-2").Return(run, nil)
 
 	err := svc.DeleteRun("run-2")
@@ -386,7 +387,7 @@ func TestDeleteRun_EndedRun_Succeeds(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	run := &model.Run{ID: "run-3", TaskName: "t", Status: model.PhaseEnded}
+	run := &sqlcdb.Run{ID: "run-3", TaskName: "t", Status: sqlcdb.PhaseEnded}
 	repo.On("GetRun", "run-3").Return(run, nil)
 	repo.On("SoftDeleteRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == "run-3"
@@ -402,7 +403,7 @@ func TestStopRun_RunPending_NotRunning(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	run := &model.Run{ID: "run-1", Status: model.PhasePending}
+	run := &sqlcdb.Run{ID: "run-1", Status: sqlcdb.PhasePending}
 	repo.On("GetRun", "run-1").Return(run, nil)
 
 	err := svc.StopRun("run-1")

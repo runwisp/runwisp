@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -201,7 +202,7 @@ func TestInfoView_UpdateRunSummary(t *testing.T) {
 	v.SetSize(80, 40)
 
 	lastFailure := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	summary := &model.RunSummary{
+	summary := &sqlcdb.RunSummary{
 		Total:       100,
 		Success:     90,
 		Failed:      10,
@@ -272,7 +273,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 			setup: func() *InfoView {
 				v := NewInfoView(uikit.StartupInfo{})
 				v.SetSize(80, 40)
-				v.UpdateRunSummary(&model.RunSummary{
+				v.UpdateRunSummary(&sqlcdb.RunSummary{
 					Total: 200, Success: 180, Failed: 20,
 					LastFailure: &lastFailure,
 				})
@@ -285,7 +286,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 			setup: func() *InfoView {
 				v := NewInfoView(uikit.StartupInfo{})
 				v.SetSize(80, 40)
-				v.UpdateRunSummary(&model.RunSummary{Total: 50, Success: 50, Failed: 0})
+				v.UpdateRunSummary(&sqlcdb.RunSummary{Total: 50, Success: 50, Failed: 0})
 				return &v
 			},
 			contains: []string{"50"},
@@ -295,7 +296,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 			setup: func() *InfoView {
 				v := NewInfoView(uikit.StartupInfo{})
 				v.SetSize(80, 40)
-				v.UpdateRunSummary(&model.RunSummary{})
+				v.UpdateRunSummary(&sqlcdb.RunSummary{})
 				return &v
 			},
 			contains: []string{"\n"},
@@ -365,7 +366,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 			setup: func() *InfoView {
 				v := NewInfoView(uikit.StartupInfo{})
 				v.SetSize(80, 40)
-				v.UpdateRunSummary(&model.RunSummary{Total: 100, Success: 60, Failed: 40})
+				v.UpdateRunSummary(&sqlcdb.RunSummary{Total: 100, Success: 60, Failed: 40})
 				return &v
 			},
 			contains: []string{"100"},
@@ -375,7 +376,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 			setup: func() *InfoView {
 				v := NewInfoView(uikit.StartupInfo{})
 				v.SetSize(80, 40)
-				v.UpdateRunSummary(&model.RunSummary{Total: 100, Success: 80, Failed: 20})
+				v.UpdateRunSummary(&sqlcdb.RunSummary{Total: 100, Success: 80, Failed: 20})
 				return &v
 			},
 			contains: []string{"100"},
@@ -428,7 +429,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 					{Timestamp: 1000, CPUUsage: 10.0, MemUsage: 45.0},
 					{Timestamp: 1060, CPUUsage: 12.0, MemUsage: 47.0},
 				})
-				v.UpdateRunSummary(&model.RunSummary{
+				v.UpdateRunSummary(&sqlcdb.RunSummary{
 					Total: 500, Success: 450, Failed: 50,
 					LastFailure: &lastFailure,
 				})

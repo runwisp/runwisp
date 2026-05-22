@@ -10,16 +10,17 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/oklog/ulid/v2"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/logpane"
 )
 
-func newTestRun() *model.Run {
-	return &model.Run{
+func newTestRun() *dto.Run {
+	return &dto.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "test-task",
-		Status:      model.PhaseRunning,
+		Status:      sqlcdb.PhaseRunning,
 		TriggeredBy: "manual",
 		CreatedAt:   time.Now(),
 	}
@@ -146,7 +147,7 @@ func TestExecView_Update_ScrollToTop(t *testing.T) {
 
 func TestExecView_Update_HeaderFocusNavigation(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.Run.Status = model.PhaseRunning
+	ev.Run.Status = sqlcdb.PhaseRunning
 
 	// Scroll up from log area should enter header focus.
 	ev.Pane.Scroll = 0
@@ -291,24 +292,24 @@ func TestSliceLineColumns(t *testing.T) {
 func TestExecView_HasActionButton(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 
-	ev.Run.Status = model.PhaseRunning
+	ev.Run.Status = sqlcdb.PhaseRunning
 	if !ev.hasActionButton() {
 		t.Fatal("expected action button for running status")
 	}
 
-	ev.Run.Status = model.PhaseEnded
-	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
+	ev.Run.Status = sqlcdb.PhaseEnded
+	ev.Run.EndReason = sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess)
 	if !ev.hasActionButton() {
 		t.Fatal("expected action button (Delete) for success status")
 	}
 
-	ev.Run.Status = model.PhaseEnded
-	ev.Run.EndReason = model.EndReasonPtr(model.ReasonFailed)
+	ev.Run.Status = sqlcdb.PhaseEnded
+	ev.Run.EndReason = sqlcdb.EndReasonPtr(sqlcdb.ReasonFailed)
 	if !ev.hasActionButton() {
 		t.Fatal("expected action button for failed status")
 	}
 
-	ev.Run.Status = model.PhasePending
+	ev.Run.Status = sqlcdb.PhasePending
 	ev.Run.EndReason = nil
 	if ev.hasActionButton() {
 		t.Fatal("expected no action button for pending status")
@@ -464,10 +465,10 @@ func TestExecView_HandleKeyRight_AllTransitions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ev := newSizedExecView(80, 24)
 			if tc.running {
-				ev.Run.Status = model.PhaseRunning
+				ev.Run.Status = sqlcdb.PhaseRunning
 			} else {
-				ev.Run.Status = model.PhaseEnded
-				ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
+				ev.Run.Status = sqlcdb.PhaseEnded
+				ev.Run.EndReason = sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess)
 			}
 			ev.HeaderFocus = tc.initial
 			ev.Update(tea.KeyMsg{Type: tea.KeyRight})
@@ -481,7 +482,7 @@ func TestExecView_HandleKeyRight_AllTransitions(t *testing.T) {
 func TestExecView_HandleKeyRight_IDNoAction(t *testing.T) {
 	// When at ID and there is no action, focus stays at ID.
 	ev := newSizedExecView(80, 24)
-	ev.Run.Status = model.PhasePending
+	ev.Run.Status = sqlcdb.PhasePending
 	ev.Run.EndReason = nil
 	ev.HeaderFocus = HeaderFocusID
 	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
@@ -589,7 +590,7 @@ func TestExecView_Action_NilRun(t *testing.T) {
 
 func TestExecView_Action_Running(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.Run.Status = model.PhaseRunning
+	ev.Run.Status = sqlcdb.PhaseRunning
 	if ev.Action() != ActionStop {
 		t.Fatalf("expected ActionStop for running task, got %d", ev.Action())
 	}
@@ -756,15 +757,15 @@ func TestRenderActionButtons_AllActions(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 
 	// ActionStop
-	ev.Run.Status = model.PhaseRunning
+	ev.Run.Status = sqlcdb.PhaseRunning
 	out := ev.renderActionButtons()
 	if !strings.Contains(out, "Stop") {
 		t.Fatalf("expected Stop button, got %q", out)
 	}
 
 	// ActionRetry (failed run, non-service)
-	ev.Run.Status = model.PhaseEnded
-	ev.Run.EndReason = model.EndReasonPtr(model.ReasonFailed)
+	ev.Run.Status = sqlcdb.PhaseEnded
+	ev.Run.EndReason = sqlcdb.EndReasonPtr(sqlcdb.ReasonFailed)
 	out2 := ev.renderActionButtons()
 	if !strings.Contains(out2, "Retry") {
 		t.Fatalf("expected Retry button, got %q", out2)
@@ -787,15 +788,15 @@ func TestRenderActionButtons_AllActions(t *testing.T) {
 
 	// ActionDelete — success run, non-service (still deletable)
 	ev.TaskIsService = false
-	ev.Run.Status = model.PhaseEnded
-	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
+	ev.Run.Status = sqlcdb.PhaseEnded
+	ev.Run.EndReason = sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess)
 	out5 := ev.renderActionButtons()
 	if !strings.Contains(out5, "Delete") {
 		t.Fatalf("expected Delete button for ended successful run, got %q", out5)
 	}
 
 	// ActionNone — pending run
-	ev.Run.Status = model.PhasePending
+	ev.Run.Status = sqlcdb.PhasePending
 	ev.Run.EndReason = nil
 	out6 := ev.renderActionButtons()
 	if out6 != "" {
@@ -805,7 +806,7 @@ func TestRenderActionButtons_AllActions(t *testing.T) {
 
 func TestRenderActionButtons_HoveredAndFocused(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.Run.Status = model.PhaseRunning
+	ev.Run.Status = sqlcdb.PhaseRunning
 
 	// Hovered action
 	ev.HoveredHeader = HeaderFocusAction
@@ -838,7 +839,7 @@ func TestExecView_View_Normal(t *testing.T) {
 
 func TestExecView_View_NormalWithAction(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.Run.Status = model.PhaseRunning
+	ev.Run.Status = sqlcdb.PhaseRunning
 	appendLines(&ev, 5)
 
 	out := ev.View()
@@ -849,7 +850,7 @@ func TestExecView_View_NormalWithAction(t *testing.T) {
 
 func TestExecView_View_FollowIndicator(t *testing.T) {
 	ev := newSizedExecView(80, 24)
-	ev.Run.Status = model.PhaseRunning
+	ev.Run.Status = sqlcdb.PhaseRunning
 	ev.Pane.Follow = true
 	appendLines(&ev, 5)
 

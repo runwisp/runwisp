@@ -15,9 +15,10 @@ import (
 	"syscall"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/datadir"
-	"log/slog"
 )
 
 // pollHealth polls a client's health endpoint until it responds or timeout.

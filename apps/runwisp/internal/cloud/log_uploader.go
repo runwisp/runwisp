@@ -14,7 +14,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/cloud/logarchive"
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // archiveTimeout caps a single terminal archive operation. Daemon log files
@@ -80,9 +80,9 @@ func (u *LogUploader) RegisterDispatch(executionID, uploadURL, logPath string) e
 	if uploadURL == "" {
 		return nil
 	}
-	rec := model.PendingLogUpload{
+	rec := sqlcdb.PendingLogUpload{
 		ExternalExecutionID: executionID,
-		UploadURL:           uploadURL,
+		UploadUrl:           uploadURL,
 		LogPath:             logPath,
 		InsertedAt:          u.now().Unix(),
 	}
@@ -154,14 +154,14 @@ func (u *LogUploader) RecoverOrphans(ctx context.Context, emit func(executionID 
 	}
 	for _, rec := range recs {
 		u.mu.Lock()
-		u.pending[rec.ExternalExecutionID] = uploadEntry{uploadURL: rec.UploadURL, logPath: rec.LogPath}
+		u.pending[rec.ExternalExecutionID] = uploadEntry{uploadURL: rec.UploadUrl, logPath: rec.LogPath}
 		u.mu.Unlock()
 
 		u.recoverOrphanRecord(ctx, rec, emit)
 	}
 }
 
-func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec model.PendingLogUpload, emit func(executionID string, result LogUploaderResult)) {
+func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec sqlcdb.PendingLogUpload, emit func(executionID string, result LogUploaderResult)) {
 	run, runErr := u.runRepo.GetRunByExternalExecutionID(rec.ExternalExecutionID)
 	if runErr != nil {
 		if errors.Is(runErr, ErrNotFound) {

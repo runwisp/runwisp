@@ -8,13 +8,15 @@ import (
 	"net/http"
 	"time"
 
+	"log/slog"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/server/dto"
 	"github.com/runwisp/runwisp/internal/storage"
-	"log/slog"
 )
 
 type PaginationParams struct {
@@ -229,7 +231,7 @@ func (srv *Server) humaTriggerRun(ctx context.Context, input *TaskNameInput) (*T
 	if err != nil {
 		return nil, mapDomainError(err, "Failed to trigger run")
 	}
-	return &TriggerRunOutput{Body: *run}, nil
+	return &TriggerRunOutput{Body: *dto.FromSqlcdb(run)}, nil
 }
 
 func (srv *Server) humaRestartService(ctx context.Context, input *TaskNameInput) (*StopRunOutput, error) {
@@ -255,7 +257,7 @@ func (srv *Server) humaGetRun(ctx context.Context, input *TaskRunInput) (*RunOut
 	if err != nil {
 		return nil, mapDomainError(err, "Failed to fetch run")
 	}
-	return &RunOutput{Body: *run}, nil
+	return &RunOutput{Body: *dto.FromSqlcdb(run)}, nil
 }
 
 func (srv *Server) humaDeleteRun(ctx context.Context, input *TaskRunInput) (*struct{}, error) {
@@ -374,7 +376,9 @@ func (srv *Server) registerRunsSSE(api huma.API) {
 }
 
 // toSSEEventData converts an internal event to the correct SSE wrapper type
-// so that huma/sse emits the right event name.
+// so that huma/sse emits the right event name. The run payload is projected
+// from sqlcdb.Run onto dto.Run so the SSE wire shape matches the REST
+// response (row-internal fields like deleted_at stay invisible).
 func toSSEEventData(event events.Event) any {
 	if event.Type == events.EventRunDeleted {
 		if de, ok := event.Data.(events.RunDeletedEvent); ok {
@@ -386,18 +390,19 @@ func toSSEEventData(event events.Event) any {
 	if !ok {
 		return RunUpdatedEvent{}
 	}
+	body := RunEventBody{Run: dto.FromSqlcdb(re.Run), Error: re.Error}
 	switch event.Type {
 	case events.EventRunCreated:
-		return RunCreatedEvent(re)
+		return RunCreatedEvent(body)
 	case events.EventRunStarted:
-		return RunStartedEvent(re)
+		return RunStartedEvent(body)
 	case events.EventRunCompleted:
-		return RunCompletedEvent(re)
+		return RunCompletedEvent(body)
 	case events.EventRunFailed:
-		return RunFailedEvent(re)
+		return RunFailedEvent(body)
 	case events.EventRunUpdated:
-		return RunUpdatedEvent(re)
+		return RunUpdatedEvent(body)
 	default:
-		return RunUpdatedEvent(re)
+		return RunUpdatedEvent(body)
 	}
 }

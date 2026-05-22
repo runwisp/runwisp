@@ -10,7 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -83,10 +83,10 @@ func TestEventBridge_HandleRunEvent_RunningRun(t *testing.T) {
 
 	extID := "exec-running"
 	now := time.Now()
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:                  "r1",
 		TaskName:            "t1",
-		Status:              model.PhaseRunning,
+		Status:              sqlcdb.PhaseRunning,
 		ExternalExecutionID: &extID,
 		StartAt:             &now,
 	}
@@ -107,11 +107,11 @@ func TestEventBridge_HandleRunEvent_TerminalRun(t *testing.T) {
 	)
 
 	extID := "exec-done"
-	reason := model.ReasonSuccess
-	run := &model.Run{
+	reason := sqlcdb.ReasonSuccess
+	run := &sqlcdb.Run{
 		ID:                  "r1",
 		TaskName:            "t1",
-		Status:              model.PhaseEnded,
+		Status:              sqlcdb.PhaseEnded,
 		EndReason:           &reason,
 		ExternalExecutionID: &extID,
 	}

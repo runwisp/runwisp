@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/internal/events"
@@ -22,7 +24,6 @@ import (
 	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/sebest/xff"
-	"log/slog"
 )
 
 // Server exposes the HTTP API and serves the UI.

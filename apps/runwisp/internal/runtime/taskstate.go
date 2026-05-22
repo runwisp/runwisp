@@ -12,6 +12,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime/services"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // DefaultConcurrencyLimit is used when a task does not configure max_concurrent.
@@ -19,7 +20,7 @@ const DefaultConcurrencyLimit = 1
 
 // ActiveRun holds context for an in-flight run.
 type ActiveRun struct {
-	Run    *model.Run
+	Run    *sqlcdb.Run
 	Cancel context.CancelFunc
 	// ForceKill, when non-nil, immediately SIGKILLs the underlying process.
 	// Set by the executor after the backend has started; nil for backends
@@ -35,7 +36,7 @@ type taskState struct {
 	active []*ActiveRun
 
 	// queue is populated only when task.OnOverlap == PolicyQueue.
-	queue []*model.Run
+	queue []*sqlcdb.Run
 	// cond signals the queue-drain goroutine. Allocated alongside queue.
 	cond *sync.Cond
 
@@ -57,7 +58,7 @@ const (
 
 // evaluateConcurrency decides whether a run can start and mutates queue state
 // accordingly. Must be called with m.mu held.
-func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, concurrencyLimit int) (concurrencyAction, error) {
+func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *sqlcdb.Run, concurrencyLimit int) (concurrencyAction, error) {
 	if len(ts.active) < concurrencyLimit {
 		return actionStart, nil
 	}

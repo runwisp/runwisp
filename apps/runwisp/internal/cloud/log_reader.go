@@ -6,14 +6,14 @@ package cloud
 import (
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // readExecutionLogReplay reads a bounded historical page of log lines for an
 // execution. Returns the lines (already encoded as protocol items) plus a
 // `final` flag — true when no more lines exist beyond this page or the run
 // has reached a terminal status.
-func readExecutionLogReplay(run *model.Run, logDir string, fromLine, limit int64) ([]protocol.LinesItem, bool, error) {
+func readExecutionLogReplay(run *sqlcdb.Run, logDir string, fromLine, limit int64) ([]protocol.LinesItem, bool, error) {
 	if run == nil {
 		return nil, true, nil
 	}

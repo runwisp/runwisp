@@ -11,6 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
@@ -297,7 +299,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 
 	t.Run("confirmStop with non-running run returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded}
+		run := &dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseEnded}
 		ev := execlist.NewExecView(run)
 		m.execView = &ev
 		if cmd := m.confirmStop(); cmd != nil {

@@ -4,29 +4,28 @@
 package storage
 
 import (
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
-// runFromSqlcdb maps a sqlcdb.Run row to the public model.Run shape. LogPath
+// runFromSqlcdb maps a sqlcdb.Run row to the public sqlcdb.Run shape. LogPath
 // is intentionally left empty — it is a runtime attachment set by the executor
 // and is not persisted in the runs table.
-func runFromSqlcdb(s sqlcdb.Run) model.Run {
-	var endReason *model.EndReason
+func runFromSqlcdb(s sqlcdb.Run) sqlcdb.Run {
+	var endReason *sqlcdb.EndReason
 	if s.EndReason != nil {
-		er := model.EndReason(*s.EndReason)
+		er := sqlcdb.EndReason(*s.EndReason)
 		endReason = &er
 	}
-	return model.Run{
+	return sqlcdb.Run{
 		ID:                  s.ID,
 		ExternalExecutionID: s.ExternalExecutionID,
 		TaskName:            s.TaskName,
-		Status:              model.RunPhase(s.Status),
+		Status:              sqlcdb.RunPhase(s.Status),
 		EndReason:           endReason,
 		ExitCode:            s.ExitCode,
 		StartAt:             s.StartAt,
 		EndAt:               s.EndAt,
-		TriggeredBy:         model.TriggeredBy(s.TriggeredBy),
+		TriggeredBy:         sqlcdb.TriggeredBy(s.TriggeredBy),
 		CreatedAt:           s.CreatedAt,
 		RetryAttempt:        s.RetryAttempt,
 		RetryOfRunID:        s.RetryOfRunID,
@@ -34,12 +33,12 @@ func runFromSqlcdb(s sqlcdb.Run) model.Run {
 	}
 }
 
-func runPtrFromSqlcdb(s sqlcdb.Run) *model.Run {
+func runPtrFromSqlcdb(s sqlcdb.Run) *sqlcdb.Run {
 	r := runFromSqlcdb(s)
 	return &r
 }
 
-func endReasonToSqlcdb(r *model.EndReason) *sqlcdb.EndReason {
+func endReasonToSqlcdb(r *sqlcdb.EndReason) *sqlcdb.EndReason {
 	if r == nil {
 		return nil
 	}
@@ -47,8 +46,8 @@ func endReasonToSqlcdb(r *model.EndReason) *sqlcdb.EndReason {
 	return &er
 }
 
-// runToCreateParams maps a model.Run into sqlc CreateRun parameters.
-func runToCreateParams(r *model.Run) sqlcdb.CreateRunParams {
+// runToCreateParams maps a sqlcdb.Run into sqlc CreateRun parameters.
+func runToCreateParams(r *sqlcdb.Run) sqlcdb.CreateRunParams {
 	return sqlcdb.CreateRunParams{
 		ID:                  r.ID,
 		ExternalExecutionID: r.ExternalExecutionID,
@@ -66,8 +65,8 @@ func runToCreateParams(r *model.Run) sqlcdb.CreateRunParams {
 	}
 }
 
-// runToUpdateParams maps a model.Run into sqlc UpdateRun parameters.
-func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
+// runToUpdateParams maps a sqlcdb.Run into sqlc UpdateRun parameters.
+func runToUpdateParams(r *sqlcdb.Run) sqlcdb.UpdateRunParams {
 	return sqlcdb.UpdateRunParams{
 		ExternalExecutionID: r.ExternalExecutionID,
 		TaskName:            r.TaskName,
@@ -110,12 +109,12 @@ func notificationFromSqlcdb(s sqlcdb.Notification) (*Notification, error) {
 }
 
 // pendingLogUploadFromSqlcdb maps a sqlcdb.PendingLogUpload row to the public
-// model.PendingLogUpload shape. The on-disk inserted_at column is INTEGER
-// epoch seconds — model.PendingLogUpload preserves the same int64 shape.
-func pendingLogUploadFromSqlcdb(s sqlcdb.PendingLogUpload) model.PendingLogUpload {
-	return model.PendingLogUpload{
+// sqlcdb.PendingLogUpload shape. The on-disk inserted_at column is INTEGER
+// epoch seconds — sqlcdb.PendingLogUpload preserves the same int64 shape.
+func pendingLogUploadFromSqlcdb(s sqlcdb.PendingLogUpload) sqlcdb.PendingLogUpload {
+	return sqlcdb.PendingLogUpload{
 		ExternalExecutionID: s.ExternalExecutionID,
-		UploadURL:           s.UploadUrl,
+		UploadUrl:           s.UploadUrl,
 		LogPath:             s.LogPath,
 		InsertedAt:          s.InsertedAt,
 	}

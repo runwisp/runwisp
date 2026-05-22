@@ -6,7 +6,8 @@ package execlist
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/logpane"
 )
@@ -79,7 +80,7 @@ func (l *execHeaderLayout) hitAt(x, y int) HeaderFocusItem {
 }
 
 type ExecView struct {
-	Run            *model.Run
+	Run            *dto.Run
 	Pane           logpane.Pane
 	focused        bool
 	fullscreen     bool
@@ -94,7 +95,7 @@ type ExecView struct {
 // execHeaderHeight is the number of header lines drawn above the log in normal mode.
 const execHeaderHeight = 4
 
-func NewExecView(run *model.Run) ExecView {
+func NewExecView(run *dto.Run) ExecView {
 	return ExecView{
 		Run: run,
 		Pane: logpane.NewPane(logpane.Config{
@@ -260,10 +261,10 @@ func (v *ExecView) Action() Action {
 		}
 		return ActionStopService
 	}
-	if v.Run.Status == model.PhaseRunning {
+	if v.Run.Status == sqlcdb.PhaseRunning {
 		return ActionStop
 	}
-	if v.Run.Status == model.PhasePending {
+	if v.Run.Status == sqlcdb.PhasePending {
 		return ActionNone
 	}
 	if v.Run.IsRetryable() {
@@ -279,7 +280,7 @@ func (v *ExecView) CanDelete() bool {
 	if v.Run == nil || v.TaskIsService {
 		return false
 	}
-	return v.Run.Status != model.PhaseRunning && v.Run.Status != model.PhasePending
+	return v.Run.Status != sqlcdb.PhaseRunning && v.Run.Status != sqlcdb.PhasePending
 }
 
 // SetServiceStopped tells the view whether the parent service has been

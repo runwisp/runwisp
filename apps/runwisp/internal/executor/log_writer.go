@@ -13,10 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,31 +23,31 @@ func TestFormatDuration(t *testing.T) {
 	now := time.Now()
 
 	// nil StartAt → dash
-	assert.Equal(t, "—", FormatDuration(model.Run{}))
+	assert.Equal(t, "—", FormatDuration(dto.Run{}))
 
 	// < 1s
 	start := now.Add(-500 * time.Millisecond)
-	r := model.Run{StartAt: &start}
+	r := dto.Run{StartAt: &start}
 	d := FormatDuration(r)
 	assert.Contains(t, d, "ms")
 
 	// < 1m
 	start2 := now.Add(-30 * time.Second)
-	r2 := model.Run{StartAt: &start2}
+	r2 := dto.Run{StartAt: &start2}
 	d2 := FormatDuration(r2)
 	assert.Contains(t, d2, "s")
 	assert.NotContains(t, d2, "m")
 
 	// >= 1m < 1h
 	start3 := now.Add(-5*time.Minute - 30*time.Second)
-	r3 := model.Run{StartAt: &start3}
+	r3 := dto.Run{StartAt: &start3}
 	d3 := FormatDuration(r3)
 	assert.Contains(t, d3, "m")
 	assert.Contains(t, d3, "s")
 
 	// >= 1h
 	start4 := now.Add(-90 * time.Minute)
-	r4 := model.Run{StartAt: &start4}
+	r4 := dto.Run{StartAt: &start4}
 	d4 := FormatDuration(r4)
 	assert.Contains(t, d4, "h")
 	assert.Contains(t, d4, "m")
@@ -55,7 +55,7 @@ func TestFormatDuration(t *testing.T) {
 	// with EndAt set
 	end := now.Add(-1 * time.Second)
 	start5 := now.Add(-5 * time.Second)
-	r5 := model.Run{StartAt: &start5, EndAt: &end}
+	r5 := dto.Run{StartAt: &start5, EndAt: &end}
 	d5 := FormatDuration(r5)
 	assert.Contains(t, d5, "s")
 }

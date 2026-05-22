@@ -9,10 +9,11 @@ import (
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime/retry"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // scheduleRetry waits for the retry delay and triggers a new run.
-func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Run) {
+func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *sqlcdb.Run) {
 	if m.isShutdown.Load() {
 		return
 	}
@@ -40,7 +41,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 
 // scheduleRestart waits for the restart delay and respawns the previous
 // instance (services) or re-triggers the task (non-services).
-func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *model.Run, attempt int) {
+func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *sqlcdb.Run, attempt int) {
 	if m.isShutdown.Load() {
 		return
 	}
@@ -62,7 +63,7 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 		TriggeredBy: previousRun.TriggeredBy,
 	}
 	if task.Kind.IsService() {
-		options.TriggeredBy = model.TriggeredByService
+		options.TriggeredBy = sqlcdb.TriggeredByService
 		idx := previousRun.InstanceIndex
 		options.InstanceIndex = &idx
 	}

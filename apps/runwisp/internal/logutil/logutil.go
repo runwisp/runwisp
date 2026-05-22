@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
 	"log/slog"
+
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // LogIndexInterval is the number of lines between index entries in log files.

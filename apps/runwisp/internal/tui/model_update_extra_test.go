@@ -7,7 +7,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
@@ -54,7 +55,7 @@ func TestUpdateHandlers_EarlyReturns(t *testing.T) {
 
 	t.Run("maybeLoadOlderLogs is nil when LoadingOlder is already true", func(t *testing.T) {
 		m := newTestModel(nil)
-		run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
+		run := &dto.Run{ID: "r1", TaskName: "t1", Status: sqlcdb.PhaseRunning}
 		ev := execlist.NewExecView(run)
 		m.execView = &ev
 		m.execView.LoadingOlder = true
@@ -112,7 +113,7 @@ func TestHandleOpenBrowser_BrowserOpenedReturnsFlashCmd(t *testing.T) {
 
 func TestViewingRun_WithMatchingExecView(t *testing.T) {
 	m := newTestModel(nil)
-	run := &model.Run{ID: "run-123", TaskName: "t1"}
+	run := &dto.Run{ID: "run-123", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 
@@ -123,7 +124,7 @@ func TestViewingRun_WithMatchingExecView(t *testing.T) {
 
 func TestViewingRun_WithNonMatchingExecView(t *testing.T) {
 	m := newTestModel(nil)
-	run := &model.Run{ID: "run-456", TaskName: "t1"}
+	run := &dto.Run{ID: "run-456", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 

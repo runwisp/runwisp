@@ -6,6 +6,7 @@ package main
 import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // cloudTaskRunner adapts the concrete runtime task manager to cloud.TaskRunner.
@@ -23,9 +24,9 @@ func (a *cloudTaskRunner) UpsertTask(task *model.Task) {
 	a.inner.UpsertTask(task)
 }
 
-func (a *cloudTaskRunner) TriggerCloudRun(taskName, externalExecutionID string) (*model.Run, error) {
+func (a *cloudTaskRunner) TriggerCloudRun(taskName, externalExecutionID string) (*sqlcdb.Run, error) {
 	return a.inner.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
-		TriggeredBy:         model.TriggeredByCloud,
+		TriggeredBy:         sqlcdb.TriggeredByCloud,
 		ExternalExecutionID: externalExecutionID,
 	})
 }

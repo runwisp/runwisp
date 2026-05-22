@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/notifications"
@@ -82,7 +82,7 @@ func (sm *StreamManager) ContinueListeningSSE() tea.Cmd {
 // is an absolute line anchor; pass a negative value (e.g. -execlist.LogTailLines) to
 // land at the end of the log immediately. Cancels any previous stream owned
 // by this manager.
-func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd {
+func (sm *StreamManager) StartLogStream(run *dto.Run, fromLine int64) tea.Cmd {
 	if sm.client == nil {
 		return nil
 	}

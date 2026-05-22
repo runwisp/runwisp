@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 func eventTime(t *testing.T) time.Time {
@@ -71,14 +71,13 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 	logPath := makeLogTail(t)
 	start := eventTime(t)
 	end := start.Add(300 * time.Millisecond)
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:          "01KRK9SS7MKEWN4F49R30ZM74N",
 		TaskName:    "telegram-test-fail",
 		ExitCode:    1,
 		StartAt:     &start,
 		EndAt:       &end,
-		TriggeredBy: model.TriggeredByAPI,
-		LogPath:     logPath,
+		TriggeredBy: sqlcdb.TriggeredByAPI,
 	}
 	ev := &notify.Event{
 		Kind:      notify.KindRunFailed,
@@ -86,6 +85,7 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 		Timestamp: start,
 		TaskName:  "telegram-test-fail",
 		Run:       run,
+		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
 		ExternalURL: "https://runwisp.example.com",
@@ -109,13 +109,13 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 func TestTelegram_RunFailed_NoURL_NoTail(t *testing.T) {
 	start := eventTime(t)
 	end := start.Add(300 * time.Millisecond)
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:          "01KRK9SS7MKEWN4F49R30ZM74N",
 		TaskName:    "telegram-test-fail",
 		ExitCode:    1,
 		StartAt:     &start,
 		EndAt:       &end,
-		TriggeredBy: model.TriggeredByAPI,
+		TriggeredBy: sqlcdb.TriggeredByAPI,
 	}
 	ev := &notify.Event{
 		Kind:      notify.KindRunFailed,
@@ -139,12 +139,12 @@ func TestTelegram_RunFailed_NoURL_NoTail(t *testing.T) {
 func TestTelegram_RunSucceeded(t *testing.T) {
 	start := eventTime(t)
 	end := start.Add(12*time.Second + 400*time.Millisecond)
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:          "01KRK9",
 		TaskName:    "nightly-backup",
 		StartAt:     &start,
 		EndAt:       &end,
-		TriggeredBy: model.TriggeredByCron,
+		TriggeredBy: sqlcdb.TriggeredByCron,
 	}
 	ev := &notify.Event{
 		Kind:      notify.KindRunSucceeded,
@@ -170,13 +170,12 @@ func TestTelegram_RunTimeout_HasTail(t *testing.T) {
 	logPath := makeLogTail(t)
 	start := eventTime(t)
 	end := start.Add(5 * time.Minute)
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:          "01KT",
 		TaskName:    "long-task",
 		StartAt:     &start,
 		EndAt:       &end,
-		TriggeredBy: model.TriggeredByCron,
-		LogPath:     logPath,
+		TriggeredBy: sqlcdb.TriggeredByCron,
 	}
 	ev := &notify.Event{
 		Kind:      notify.KindRunTimeout,
@@ -184,6 +183,7 @@ func TestTelegram_RunTimeout_HasTail(t *testing.T) {
 		Timestamp: start,
 		TaskName:  "long-task",
 		Run:       run,
+		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
 		ExternalURL: "https://r.example.com",
@@ -254,14 +254,13 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 	logPath := makeLogTail(t)
 	start := eventTime(t)
 	end := start.Add(300 * time.Millisecond)
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:          "01KRK9",
 		TaskName:    "tg-fail",
 		ExitCode:    1,
 		StartAt:     &start,
 		EndAt:       &end,
-		TriggeredBy: model.TriggeredByAPI,
-		LogPath:     logPath,
+		TriggeredBy: sqlcdb.TriggeredByAPI,
 	}
 	ev := &notify.Event{
 		Kind:      notify.KindRunFailed,
@@ -269,6 +268,7 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 		Timestamp: start,
 		TaskName:  "tg-fail",
 		Run:       run,
+		LogPath:   logPath,
 	}
 	ctx := TemplateContext{
 		ExternalURL: "https://r.example.com",
@@ -311,7 +311,7 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 func TestSlack_RunFailed_NoURL(t *testing.T) {
 	start := eventTime(t)
 	end := start.Add(300 * time.Millisecond)
-	run := &model.Run{ID: "01KRK9", TaskName: "tg-fail", ExitCode: 1, StartAt: &start, EndAt: &end, TriggeredBy: model.TriggeredByAPI}
+	run := &sqlcdb.Run{ID: "01KRK9", TaskName: "tg-fail", ExitCode: 1, StartAt: &start, EndAt: &end, TriggeredBy: sqlcdb.TriggeredByAPI}
 	ev := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, Timestamp: start, TaskName: "tg-fail", Run: run}
 	got := renderSlack(t, TemplateContext{Fingerprint: "fp"}, ev)
 	var parsed map[string]any

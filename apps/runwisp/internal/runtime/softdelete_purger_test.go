@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,12 +22,12 @@ import (
 // the path the purger will look up. Returns (runID, logPath).
 func makeRunWithLog(t *testing.T, db storage.RunRepository, logDir string, deletedAt time.Time) (string, string) {
 	t.Helper()
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "task1",
-		Status:      model.PhaseEnded,
-		EndReason:   model.EndReasonPtr(model.ReasonSuccess),
-		TriggeredBy: model.TriggeredByAPI,
+		Status:      sqlcdb.PhaseEnded,
+		EndReason:   sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess),
+		TriggeredBy: sqlcdb.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
 	require.NoError(t, db.CreateRun(run))

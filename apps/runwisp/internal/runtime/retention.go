@@ -11,11 +11,13 @@ import (
 	rdebug "runtime/debug"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
-	"log/slog"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // RetentionCleaner periodically prunes old runs and their logs.
@@ -150,7 +152,7 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize() {
 
 // deleteRunBatch deletes terminal runs from runs until totalSize drops to or
 // below maxTotalSize. Updates *totalSize in place. Returns the number deleted.
-func (cleaner *RetentionCleaner) deleteRunBatch(runs []model.Run, totalSize *int64) int {
+func (cleaner *RetentionCleaner) deleteRunBatch(runs []sqlcdb.Run, totalSize *int64) int {
 	deleted := 0
 	for _, run := range runs {
 		if !run.Status.IsTerminal() {

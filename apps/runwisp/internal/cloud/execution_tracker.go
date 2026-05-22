@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 type activeExecution struct {
@@ -86,22 +86,22 @@ func (t *ExecutionTracker) FlushPending(send func(any) error) {
 	}
 }
 
-var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
-	model.ReasonSuccess:     protocol.ExecutionStatusOk,
-	model.ReasonStopped:     protocol.ExecutionStatusStopped,
-	model.ReasonTimeout:     protocol.ExecutionStatusTimeout,
-	model.ReasonFailed:      protocol.ExecutionStatusErr,
-	model.ReasonCrashed:     protocol.ExecutionStatusErr,
-	model.ReasonLogOverflow: protocol.ExecutionStatusErr,
+var terminalReasonMap = map[sqlcdb.EndReason]protocol.ExecutionStatus{
+	sqlcdb.ReasonSuccess:     protocol.ExecutionStatusOk,
+	sqlcdb.ReasonStopped:     protocol.ExecutionStatusStopped,
+	sqlcdb.ReasonTimeout:     protocol.ExecutionStatusTimeout,
+	sqlcdb.ReasonFailed:      protocol.ExecutionStatusErr,
+	sqlcdb.ReasonCrashed:     protocol.ExecutionStatusErr,
+	sqlcdb.ReasonLogOverflow: protocol.ExecutionStatusErr,
 }
 
-func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
+func mapRunToExecutionUpdate(run *sqlcdb.Run) *protocol.ExecutionUpdateMessage {
 	if run == nil || run.ExternalExecutionID == nil {
 		return nil
 	}
 
 	executionID := *run.ExternalExecutionID
-	if run.Status == model.PhaseRunning {
+	if run.Status == sqlcdb.PhaseRunning {
 		return ptr(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusRunning, nil, run.StartAt, nil))
 	}
 

@@ -8,10 +8,11 @@ import (
 	"strings"
 	"sync"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // InboundHandler processes inbound WebSocket messages, encapsulating
@@ -87,7 +88,7 @@ func (h *InboundHandler) HandleExecutionDispatch(message protocol.ExecutionDispa
 	return nil
 }
 
-func (h *InboundHandler) handleTriggerError(executionID string, run *model.Run, triggerErr error) error {
+func (h *InboundHandler) handleTriggerError(executionID string, run *sqlcdb.Run, triggerErr error) error {
 	if run != nil {
 		finishedAt := run.EndAt
 		if finishedAt == nil {

@@ -12,7 +12,7 @@ import (
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +22,7 @@ const testRunID = "01HZXXXXXXXXXXXXXXXXXXXXXX"
 // writeRunLogRecords creates the on-disk log file for a run at the path
 // readExecutionLogReplay resolves to. Each entry is encoded with FormatLine
 // so the parser produces the expected (stream, text) pair.
-func writeRunLogRecords(t *testing.T, logDir string, run *model.Run, entries []logutil.LogLineRecord) {
+func writeRunLogRecords(t *testing.T, logDir string, run *sqlcdb.Run, entries []logutil.LogLineRecord) {
 	t.Helper()
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0o755))
@@ -42,11 +42,11 @@ func TestReadExecutionLogReplay_NilRun(t *testing.T) {
 }
 
 func TestReadExecutionLogReplay_NoLogFileTerminalRun_FinalTrue(t *testing.T) {
-	reason := model.ReasonSuccess
-	run := &model.Run{
+	reason := sqlcdb.ReasonSuccess
+	run := &sqlcdb.Run{
 		ID:        testRunID,
 		TaskName:  "t1",
-		Status:    model.PhaseEnded,
+		Status:    sqlcdb.PhaseEnded,
 		EndReason: &reason,
 		CreatedAt: time.Now(),
 	}
@@ -57,10 +57,10 @@ func TestReadExecutionLogReplay_NoLogFileTerminalRun_FinalTrue(t *testing.T) {
 }
 
 func TestReadExecutionLogReplay_NoLogFileRunningRun_FinalFalse(t *testing.T) {
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:        testRunID,
 		TaskName:  "t1",
-		Status:    model.PhaseRunning,
+		Status:    sqlcdb.PhaseRunning,
 		CreatedAt: time.Now(),
 	}
 	_, final, err := readExecutionLogReplay(run, t.TempDir(), 0, 10)
@@ -69,11 +69,11 @@ func TestReadExecutionLogReplay_NoLogFileRunningRun_FinalFalse(t *testing.T) {
 }
 
 func TestReadExecutionLogReplay_ReadsAllLines(t *testing.T) {
-	reason := model.ReasonSuccess
-	run := &model.Run{
+	reason := sqlcdb.ReasonSuccess
+	run := &sqlcdb.Run{
 		ID:        testRunID,
 		TaskName:  "t1",
-		Status:    model.PhaseEnded,
+		Status:    sqlcdb.PhaseEnded,
 		EndReason: &reason,
 		CreatedAt: time.Now(),
 	}
@@ -105,11 +105,11 @@ func TestReadExecutionLogReplay_ReadsAllLines(t *testing.T) {
 }
 
 func TestReadExecutionLogReplay_PaginationCursor(t *testing.T) {
-	reason := model.ReasonSuccess
-	run := &model.Run{
+	reason := sqlcdb.ReasonSuccess
+	run := &sqlcdb.Run{
 		ID:        testRunID,
 		TaskName:  "t1",
-		Status:    model.PhaseEnded,
+		Status:    sqlcdb.PhaseEnded,
 		EndReason: &reason,
 		CreatedAt: time.Now(),
 	}
@@ -140,11 +140,11 @@ func TestReadExecutionLogReplay_PaginationCursor(t *testing.T) {
 }
 
 func TestReadExecutionLogReplay_LimitClampedToMax(t *testing.T) {
-	reason := model.ReasonSuccess
-	run := &model.Run{
+	reason := sqlcdb.ReasonSuccess
+	run := &sqlcdb.Run{
 		ID:        testRunID,
 		TaskName:  "t1",
-		Status:    model.PhaseEnded,
+		Status:    sqlcdb.PhaseEnded,
 		EndReason: &reason,
 		CreatedAt: time.Now(),
 	}
@@ -163,10 +163,10 @@ func TestReadExecutionLogReplay_LimitClampedToMax(t *testing.T) {
 }
 
 func TestHandleLogReplayRequest_WithValidRun(t *testing.T) {
-	repo := &stubRunRepo{run: &model.Run{
+	repo := &stubRunRepo{run: &sqlcdb.Run{
 		ID:        testRunID,
 		TaskName:  "task1",
-		Status:    model.PhaseEnded,
+		Status:    sqlcdb.PhaseEnded,
 		CreatedAt: time.Now(),
 	}}
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})

@@ -12,11 +12,12 @@ import (
 	"io"
 	"strings"
 
+	"log/slog"
+
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/image"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/model"
-	"log/slog"
 )
 
 // ImageBuilder handles Docker image creation from execution definitions.

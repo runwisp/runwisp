@@ -6,6 +6,8 @@ package cloud
 import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // The cloud package depends on these narrow interfaces rather than the
@@ -24,8 +26,8 @@ type TaskRunner interface {
 	UpsertTask(task *model.Task)
 	// TriggerCloudRun starts a fresh cloud-triggered run for the named task,
 	// tagged with the supplied external execution id. Implementations must set
-	// TriggeredBy = model.TriggeredByCloud.
-	TriggerCloudRun(taskName, externalExecutionID string) (*model.Run, error)
+	// TriggeredBy = sqlcdb.TriggeredByCloud.
+	TriggerCloudRun(taskName, externalExecutionID string) (*sqlcdb.Run, error)
 	// TerminateRunByExternalExecutionID cancels a running run identified by
 	// the cloud-side execution id, if any.
 	TerminateRunByExternalExecutionID(externalExecutionID string) error
@@ -37,15 +39,15 @@ type TaskRunner interface {
 type ExternalRunGetter interface {
 	// GetRunByExternalExecutionID returns the run tagged with the supplied
 	// cloud-side execution id, or ErrNotFound if no such run exists.
-	GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error)
+	GetRunByExternalExecutionID(externalExecutionID string) (*sqlcdb.Run, error)
 }
 
 // PendingLogUploadRepository persists dispatch metadata so the daemon can
 // resume terminal log archival after a crash.
 type PendingLogUploadRepository interface {
-	UpsertPendingLogUpload(rec model.PendingLogUpload) error
+	UpsertPendingLogUpload(rec sqlcdb.PendingLogUpload) error
 	DeletePendingLogUpload(externalExecutionID string) error
-	ListPendingLogUploads() ([]model.PendingLogUpload, error)
+	ListPendingLogUploads() ([]sqlcdb.PendingLogUpload, error)
 }
 
 // EventSubscriber is the subset of the in-process event hub the cloud bridge
@@ -55,6 +57,8 @@ type EventSubscriber interface {
 	Subscribe(eventType events.EventType, handler events.EventHandler) func()
 }
 
-// ErrNotFound is model.ErrNotFound re-exported so callers inside the cloud
-// package can reference it without importing internal/model directly.
-var ErrNotFound = model.ErrNotFound
+// ErrNotFound is the sentinel returned by ExternalRunGetter and related
+// interfaces when a referenced execution does not exist. Aliased from the
+// storage package so cloud-internal `errors.Is(err, ErrNotFound)` checks
+// match what the concrete SQLite-backed repository returns.
+var ErrNotFound = storage.ErrNotFound

@@ -10,6 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/internal/server/dto"
 )
 
 // RunsParams holds query parameters for listing runs.
@@ -57,7 +58,7 @@ func encodeRunsParams(params RunsParams) url.Values {
 	return q
 }
 
-func (c *Client) ListRuns(params RunsParams) ([]model.Run, int64, error) {
+func (c *Client) ListRuns(params RunsParams) ([]dto.Run, int64, error) {
 	path := "/api/runs"
 	if qs := encodeRunsParams(params).Encode(); qs != "" {
 		path += "?" + qs
@@ -70,7 +71,7 @@ func (c *Client) ListRuns(params RunsParams) ([]model.Run, int64, error) {
 	return resp.Runs, resp.Total, nil
 }
 
-func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run, int64, error) {
+func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]dto.Run, int64, error) {
 	path := fmt.Sprintf("/api/tasks/%s/runs", taskName)
 	if qs := encodeRunsParams(params).Encode(); qs != "" {
 		path += "?" + qs
@@ -83,8 +84,8 @@ func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run
 	return resp.Runs, resp.Total, nil
 }
 
-func (c *Client) TriggerRun(taskName string) (*model.Run, error) {
-	var run model.Run
+func (c *Client) TriggerRun(taskName string) (*dto.Run, error) {
+	var run dto.Run
 	if err := c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/run", taskName), nil, &run); err != nil {
 		return nil, err
 	}
@@ -106,8 +107,8 @@ func (c *Client) StopRun(taskName, runID string) error {
 	return c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/runs/%s/stop", taskName, runID), nil, nil)
 }
 
-func (c *Client) GetRun(taskName, runID string) (*model.Run, error) {
-	var run model.Run
+func (c *Client) GetRun(taskName, runID string) (*dto.Run, error) {
+	var run dto.Run
 	if err := c.doJSON("GET", fmt.Sprintf("/api/tasks/%s/runs/%s", taskName, runID), nil, &run); err != nil {
 		return nil, err
 	}

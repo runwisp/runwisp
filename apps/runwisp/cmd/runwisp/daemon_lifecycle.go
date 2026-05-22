@@ -11,12 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
-	"log/slog"
 )
 
 // startCloudClient creates and runs the cloud client in a background goroutine.

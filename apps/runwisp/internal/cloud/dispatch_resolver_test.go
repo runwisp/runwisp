@@ -12,6 +12,7 @@ import (
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +23,7 @@ type fakeTaskRunner struct {
 	tasks    map[string]*model.Task
 	upserted []*model.Task
 	trigErr  error
-	trigRun  *model.Run
+	trigRun  *sqlcdb.Run
 }
 
 func (f *fakeTaskRunner) GetTask(name string) (*model.Task, bool) {
@@ -38,7 +39,7 @@ func (f *fakeTaskRunner) UpsertTask(task *model.Task) {
 	f.upserted = append(f.upserted, task)
 }
 
-func (f *fakeTaskRunner) TriggerCloudRun(taskName, externalID string) (*model.Run, error) {
+func (f *fakeTaskRunner) TriggerCloudRun(taskName, externalID string) (*sqlcdb.Run, error) {
 	return f.trigRun, f.trigErr
 }
 

@@ -15,8 +15,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // RenderedMessage carries the output of a Renderer. Title and Body are the
@@ -48,7 +48,7 @@ type TemplateContext struct {
 	ExternalURL string
 	Fingerprint string
 	Now         func() time.Time
-	OutputTail  func(run *model.Run, maxLines, maxBytes int) string
+	OutputTail  func(logPath string, maxLines, maxBytes int) string
 }
 
 // TemplateRenderer is the workhorse: a parsed text/template plus a content
@@ -118,13 +118,13 @@ func funcMap(ctx TemplateContext) template.FuncMap {
 		"eventSentence": eventSentence,
 		"eventTrigger":  eventTrigger,
 		"linkLabel":     linkLabel,
-		"runURL":        func(r *model.Run) string { return runURL(ctx.ExternalURL, r) },
+		"runURL":        func(r *sqlcdb.Run) string { return runURL(ctx.ExternalURL, r) },
 		"taskURL":       func(name string) string { return taskURL(ctx.ExternalURL, name) },
-		"outputTail": func(r *model.Run) string {
-			if ctx.OutputTail == nil {
+		"outputTail": func(ev *notify.Event) string {
+			if ctx.OutputTail == nil || ev == nil {
 				return ""
 			}
-			return ctx.OutputTail(r, 3, 300)
+			return ctx.OutputTail(ev.LogPath, 3, 300)
 		},
 		"fingerprint": func() string { return ctx.Fingerprint },
 	}
@@ -275,7 +275,7 @@ func humanDuration(d time.Duration) string {
 // runDuration derives a humanized duration from run.EndAt - run.StartAt.
 // Returns the empty string when either endpoint is missing — the template
 // then omits the duration phrase entirely rather than printing "0s".
-func runDuration(r *model.Run) string {
+func runDuration(r *sqlcdb.Run) string {
 	if r == nil || r.StartAt == nil || r.EndAt == nil {
 		return ""
 	}
@@ -285,15 +285,15 @@ func runDuration(r *model.Run) string {
 // triggerPhrase maps a TriggeredBy to the operator-facing sentence prefix
 // used in notification bodies. Unknown values fall through to the literal
 // enum value so adding new triggers doesn't silently lose context.
-func triggerPhrase(t model.TriggeredBy) string {
+func triggerPhrase(t sqlcdb.TriggeredBy) string {
 	switch t {
-	case model.TriggeredByCron:
+	case sqlcdb.TriggeredByCron:
 		return "Scheduled run"
-	case model.TriggeredByAPI:
+	case sqlcdb.TriggeredByAPI:
 		return "Manually triggered via API"
-	case model.TriggeredByCloud:
+	case sqlcdb.TriggeredByCloud:
 		return "Triggered from the control plane"
-	case model.TriggeredByService:
+	case sqlcdb.TriggeredByService:
 		return "Service auto-started"
 	default:
 		if t == "" {
@@ -383,7 +383,7 @@ func linkLabel(k notify.Kind) string {
 // run/task name is missing — callers wrap the result in a template
 // conditional so the link line vanishes cleanly rather than rendering an
 // orphan anchor.
-func runURL(externalURL string, r *model.Run) string {
+func runURL(externalURL string, r *sqlcdb.Run) string {
 	if externalURL == "" || r == nil || r.TaskName == "" || r.ID == "" {
 		return ""
 	}

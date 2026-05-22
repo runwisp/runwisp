@@ -7,7 +7,8 @@ import (
 	"sync"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -44,7 +45,7 @@ func NewExecWindow(client *apiclient.Client) *ExecWindow {
 	}
 }
 
-func newExecListItem(run model.Run) uikit.ExecListItem {
+func newExecListItem(run dto.Run) uikit.ExecListItem {
 	return uikit.ExecListItem{
 		Run:      run,
 		Duration: uikit.FormatDuration(run),
@@ -154,7 +155,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]uikit.ExecListIte
 			TaskName:      filter,
 		}
 
-		var runs []model.Run
+		var runs []dto.Run
 		var total int64
 		var err error
 		runs, total, err = w.client.ListRuns(params)
@@ -194,7 +195,7 @@ func (w *ExecWindow) SetLoading(loading bool) {
 
 // UpsertRun handles a real-time SSE event. New runs are prepended.
 // Updated runs are patched in-place if within the window.
-func (w *ExecWindow) UpsertRun(run model.Run) {
+func (w *ExecWindow) UpsertRun(run dto.Run) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -229,7 +230,7 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 }
 
 // FindRun returns a copy of the run with the given ID if it exists in the window.
-func (w *ExecWindow) FindRun(id string) *model.Run {
+func (w *ExecWindow) FindRun(id string) *dto.Run {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if _, exists := w.idSet[id]; !exists {
@@ -245,11 +246,11 @@ func (w *ExecWindow) FindRun(id string) *model.Run {
 }
 
 // LatestRunning returns the first running execution for the given task, if in window.
-func (w *ExecWindow) LatestRunning(taskName string) *model.Run {
+func (w *ExecWindow) LatestRunning(taskName string) *dto.Run {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for i := range w.items {
-		if w.items[i].Run.TaskName == taskName && w.items[i].Run.Status == model.PhaseRunning {
+		if w.items[i].Run.TaskName == taskName && w.items[i].Run.Status == sqlcdb.PhaseRunning {
 			run := w.items[i].Run
 			return &run
 		}

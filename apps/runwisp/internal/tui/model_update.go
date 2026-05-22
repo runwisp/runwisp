@@ -10,7 +10,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/logpane"
@@ -423,7 +424,7 @@ func (m Model) handleLogDone(msg uikit.LogDoneMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, nil
 	}
-	if m.execView.Run.Status == model.PhaseRunning {
+	if m.execView.Run.Status == sqlcdb.PhaseRunning {
 		return m, m.scheduleLogReconnect(msg.RunID)
 	}
 	return m, nil
@@ -534,7 +535,7 @@ func (m Model) handleStopService(msg uikit.StopServiceMsg) (tea.Model, tea.Cmd) 
 }
 
 func (m Model) handleReconnectLog(msg uikit.ReconnectLogMsg) (tea.Model, tea.Cmd) {
-	if !m.viewingRun(msg.RunID) || m.execView.Run.Status != model.PhaseRunning {
+	if !m.viewingRun(msg.RunID) || m.execView.Run.Status != sqlcdb.PhaseRunning {
 		return m, nil
 	}
 	resumeFrom := int64(m.execView.Pane.FirstLoadedLine + len(m.execView.Pane.Lines))
@@ -617,9 +618,9 @@ func (m *Model) maybeLoadOlderLogs() tea.Cmd {
 // handleSSEEvent processes a parsed SSE run event.
 func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 	var runEvt struct {
-		Run      *model.Run     `json:"run"`
-		TaskName string         `json:"task_name"`
-		Status   model.RunPhase `json:"status"`
+		Run      *dto.Run        `json:"run"`
+		TaskName string          `json:"task_name"`
+		Status   sqlcdb.RunPhase `json:"status"`
 	}
 	if err := json.Unmarshal(evt.Data, &runEvt); err != nil {
 		m.debugView.AppendLine("Failed to parse event: " + err.Error())
@@ -633,13 +634,13 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 		if m.execView != nil && m.execView.RunID() == runEvt.Run.ID {
 			prevStatus := m.execView.Run.Status
 			m.execView.Run = runEvt.Run
-			if runEvt.Run.Status == model.PhaseRunning && prevStatus != model.PhaseRunning {
+			if runEvt.Run.Status == sqlcdb.PhaseRunning && prevStatus != sqlcdb.PhaseRunning {
 				return m.streams.StartLogStream(runEvt.Run, -int64(execlist.LogTailLines))
 			}
 		}
 
 		// Auto-open when a single-instance service starts and user is viewing that task.
-		if m.execView == nil && runEvt.Run.Status == model.PhaseRunning &&
+		if m.execView == nil && runEvt.Run.Status == sqlcdb.PhaseRunning &&
 			m.sidebar.ActiveTask() == runEvt.TaskName &&
 			m.isSingleInstanceService(runEvt.TaskName) {
 			return m.openExecView(runEvt.Run)

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/version"
 )
 
@@ -30,7 +30,7 @@ func (srv *Server) handleOpenMetrics(w http.ResponseWriter, _ *http.Request) {
 
 	summary, err := srv.db.GetRunSummary()
 	if err != nil || summary == nil {
-		summary = &model.RunSummary{}
+		summary = &sqlcdb.RunSummary{}
 	}
 	daemonInfo := srv.stats.GetDaemonInfo()
 	stats := srv.stats.GetSystemStats()

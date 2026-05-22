@@ -25,6 +25,7 @@ import (
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -99,7 +100,7 @@ func TestTriggerRun(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
-	var run model.Run
+	var run sqlcdb.Run
 	err := json.Unmarshal(w.Body.Bytes(), &run)
 	require.NoError(t, err)
 	assert.Equal(t, "task1", run.TaskName)
@@ -112,7 +113,7 @@ func TestTriggerRun(t *testing.T) {
 func TestGetAllRuns(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
-	runs := []model.Run{
+	runs := []sqlcdb.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
 	repo.On("QueryRuns", "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
@@ -135,7 +136,7 @@ func TestGetAllRuns(t *testing.T) {
 func TestGetTaskRuns(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
-	runs := []model.Run{
+	runs := []sqlcdb.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
 	repo.On("QueryRuns", "task1", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
@@ -159,7 +160,7 @@ func TestGetRun(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
 	id := ulid.Make().String()
-	run := &model.Run{ID: id, TaskName: "task1"}
+	run := &sqlcdb.Run{ID: id, TaskName: "task1"}
 	repo.On("GetRun", id).Return(run, nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id, nil)
@@ -169,7 +170,7 @@ func TestGetRun(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	var resp model.Run
+	var resp sqlcdb.Run
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.Equal(t, id, resp.ID)
@@ -179,7 +180,7 @@ func TestDeleteRun(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
 	id := ulid.Make().String()
-	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseEnded}
+	run := &sqlcdb.Run{ID: id, TaskName: "task1", Status: sqlcdb.PhaseEnded}
 	repo.On("GetRun", id).Return(run, nil)
 	repo.On("SoftDeleteRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == id
@@ -226,7 +227,7 @@ func TestBulkRestoreRuns(t *testing.T) {
 	id := ulid.Make().String()
 	repo.On("RestoreRuns", mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == id
-	})).Return([]model.Run{{ID: id, TaskName: "task1", Status: model.PhaseEnded}}, nil)
+	})).Return([]sqlcdb.Run{{ID: id, TaskName: "task1", Status: sqlcdb.PhaseEnded}}, nil)
 
 	body, err := json.Marshal(model.RunSelector{IDs: []string{id}})
 	require.NoError(t, err)
@@ -274,10 +275,10 @@ func TestStopRun(t *testing.T) {
 	addAuth(reqTrigger, s)
 	s.router.ServeHTTP(wTrigger, reqTrigger)
 
-	var triggeredRun model.Run
+	var triggeredRun sqlcdb.Run
 	json.Unmarshal(wTrigger.Body.Bytes(), &triggeredRun)
 
-	triggeredRun.Status = model.PhaseRunning
+	triggeredRun.Status = sqlcdb.PhaseRunning
 	repo.On("GetRun", triggeredRun.ID).Return(&triggeredRun, nil)
 
 	req := httptest.NewRequest("POST", "/api/tasks/task1/runs/"+triggeredRun.ID+"/stop", nil)
@@ -295,7 +296,7 @@ func TestGetLogRaw(t *testing.T) {
 	id := ulid.Make().String()
 	now := time.Now()
 
-	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseEnded, CreatedAt: now}
+	run := &sqlcdb.Run{ID: id, TaskName: "task1", Status: sqlcdb.PhaseEnded, CreatedAt: now}
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
 	require.NoError(t, os.WriteFile(logPath, []byte("log content\n"), 0644))
@@ -443,7 +444,7 @@ func TestRunsStream(t *testing.T) {
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		s.eventBus.Publish(events.EventRunCreated, events.RunEvent{Run: &model.Run{ID: ulid.Make().String()}})
+		s.eventBus.Publish(events.EventRunCreated, events.RunEvent{Run: &sqlcdb.Run{ID: ulid.Make().String()}})
 		time.Sleep(100 * time.Millisecond)
 		cancel()
 	}()
@@ -462,7 +463,7 @@ func TestLogStream(t *testing.T) {
 	id := ulid.Make().String()
 	now := time.Now()
 
-	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseRunning, CreatedAt: now}
+	run := &sqlcdb.Run{ID: id, TaskName: "task1", Status: sqlcdb.PhaseRunning, CreatedAt: now}
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
 	require.NoError(t, os.WriteFile(logPath, []byte("line 1\n"), 0644))
@@ -515,7 +516,7 @@ func TestGetLogPage_NegativeFrom_Tail(t *testing.T) {
 	id := ulid.Make().String()
 	now := time.Now()
 
-	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseEnded, CreatedAt: now}
+	run := &sqlcdb.Run{ID: id, TaskName: "task1", Status: sqlcdb.PhaseEnded, CreatedAt: now}
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
 

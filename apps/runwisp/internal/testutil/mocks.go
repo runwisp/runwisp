@@ -11,6 +11,7 @@ import (
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -19,30 +20,30 @@ type MockRunRepository struct {
 	mock.Mock
 }
 
-func (m *MockRunRepository) CreateRun(run *model.Run) error {
+func (m *MockRunRepository) CreateRun(run *sqlcdb.Run) error {
 	args := m.Called(run)
 	return args.Error(0)
 }
 
-func (m *MockRunRepository) UpdateRun(run *model.Run) error {
+func (m *MockRunRepository) UpdateRun(run *sqlcdb.Run) error {
 	args := m.MethodCalled("UpdateRun", run)
 	return args.Error(0)
 }
 
-func (m *MockRunRepository) GetRun(id string) (*model.Run, error) {
+func (m *MockRunRepository) GetRun(id string) (*sqlcdb.Run, error) {
 	args := m.Called(id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.Run), args.Error(1)
+	return args.Get(0).(*sqlcdb.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error) {
+func (m *MockRunRepository) GetRunByExternalExecutionID(externalExecutionID string) (*sqlcdb.Run, error) {
 	args := m.Called(externalExecutionID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.Run), args.Error(1)
+	return args.Get(0).(*sqlcdb.Run), args.Error(1)
 }
 
 func (m *MockRunRepository) CountRuns(taskName string) (int64, error) {
@@ -55,9 +56,9 @@ func (m *MockRunRepository) CountRunsFiltered(status, taskName, searchQuery stri
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *MockRunRepository) QueryRuns(taskName string, limit, offset int, status string, sortField storage.SortColumn, sortDirection storage.SortDirection, searchQuery string) ([]model.Run, error) {
+func (m *MockRunRepository) QueryRuns(taskName string, limit, offset int, status string, sortField storage.SortColumn, sortDirection storage.SortDirection, searchQuery string) ([]sqlcdb.Run, error) {
 	args := m.Called(taskName, limit, offset, status, sortField, sortDirection, searchQuery)
-	return args.Get(0).([]model.Run), args.Error(1)
+	return args.Get(0).([]sqlcdb.Run), args.Error(1)
 }
 
 func (m *MockRunRepository) DeleteRun(id string) error {
@@ -65,9 +66,9 @@ func (m *MockRunRepository) DeleteRun(id string) error {
 	return args.Error(0)
 }
 
-func (m *MockRunRepository) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
+func (m *MockRunRepository) DeleteOldRuns(task *model.Task) ([]sqlcdb.Run, error) {
 	args := m.Called(task)
-	return args.Get(0).([]model.Run), args.Error(1)
+	return args.Get(0).([]sqlcdb.Run), args.Error(1)
 }
 
 func (m *MockRunRepository) MarkCrashedRuns() (int64, error) {
@@ -75,25 +76,25 @@ func (m *MockRunRepository) MarkCrashedRuns() (int64, error) {
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *MockRunRepository) GetPendingRuns() ([]model.Run, error) {
+func (m *MockRunRepository) GetPendingRuns() ([]sqlcdb.Run, error) {
 	args := m.Called()
-	return args.Get(0).([]model.Run), args.Error(1)
+	return args.Get(0).([]sqlcdb.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) GetLastRunByTask(taskName string) (*model.Run, error) {
+func (m *MockRunRepository) GetLastRunByTask(taskName string) (*sqlcdb.Run, error) {
 	args := m.Called(taskName)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.Run), args.Error(1)
+	return args.Get(0).(*sqlcdb.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) GetRunSummary() (*model.RunSummary, error) {
+func (m *MockRunRepository) GetRunSummary() (*sqlcdb.RunSummary, error) {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.RunSummary), args.Error(1)
+	return args.Get(0).(*sqlcdb.RunSummary), args.Error(1)
 }
 
 func (m *MockRunRepository) EnsureTaskRegistered(taskName string, firstSeen time.Time) error {
@@ -117,12 +118,12 @@ func (m *MockRunRepository) SoftDeleteRuns(sel model.RunSelector, deletedAt time
 	return args.Get(0).([]storage.RunRef), args.Error(1)
 }
 
-func (m *MockRunRepository) RestoreRuns(sel model.RunSelector) ([]model.Run, error) {
+func (m *MockRunRepository) RestoreRuns(sel model.RunSelector) ([]sqlcdb.Run, error) {
 	args := m.Called(sel)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]model.Run), args.Error(1)
+	return args.Get(0).([]sqlcdb.Run), args.Error(1)
 }
 
 func (m *MockRunRepository) ResolveSelectorIDs(sel model.RunSelector, statusFilter string) ([]storage.RunRef, error) {
@@ -151,7 +152,7 @@ type MockExecutor struct {
 	mock.Mock
 }
 
-func (m *MockExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *executor.ExecuteResult {
+func (m *MockExecutor) Execute(ctx context.Context, task *model.Task, run *sqlcdb.Run) *executor.ExecuteResult {
 	args := m.Called(ctx, task, run)
 
 	if len(args) > 1 {

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -17,7 +17,7 @@ func buildList(n int) ExecList {
 	w := NewExecWindow(nil)
 	items := make([]uikit.ExecListItem, n)
 	for i := range items {
-		items[i] = uikit.ExecListItem{Run: model.Run{ID: "r", TaskName: "task"}}
+		items[i] = uikit.ExecListItem{Run: dto.Run{ID: "r", TaskName: "task"}}
 	}
 	w.ApplyFetch(items, 0, n)
 	l := NewExecList(w)
@@ -291,8 +291,8 @@ func TestCursor_AfterFocusWithItems(t *testing.T) {
 func TestSelectedRun_ReturnsRun(t *testing.T) {
 	w := NewExecWindow(nil)
 	items := []uikit.ExecListItem{
-		{Run: model.Run{ID: "run-a", TaskName: "task-a"}},
-		{Run: model.Run{ID: "run-b", TaskName: "task-b"}},
+		{Run: dto.Run{ID: "run-a", TaskName: "task-a"}},
+		{Run: dto.Run{ID: "run-b", TaskName: "task-b"}},
 	}
 	w.ApplyFetch(items, 0, 2)
 	l := NewExecList(w)
@@ -612,7 +612,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 	t.Run("instance-index-formatted-with-hash", func(t *testing.T) {
 		w := NewExecWindow(nil)
 		w.ApplyFetch([]uikit.ExecListItem{
-			{Run: model.Run{ID: "r1", TaskName: "task", InstanceIndex: 2}},
+			{Run: dto.Run{ID: "r1", TaskName: "task", InstanceIndex: 2}},
 		}, 0, 1)
 		l := NewExecList(w)
 		l.SetSize(80, 24)

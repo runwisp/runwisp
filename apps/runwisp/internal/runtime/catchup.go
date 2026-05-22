@@ -6,10 +6,12 @@ package runtime
 import (
 	"time"
 
+	"log/slog"
+
 	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
-	"log/slog"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // CatchUpResult summarises missed-tick catch-up actions taken at startup.
@@ -84,7 +86,7 @@ func catchupOneTask(db storage.RunRepository, parser cron.Parser, task *model.Ta
 	}
 
 	for range triggerCount {
-		if _, err := runner.TriggerRun(task.Name, model.TriggeredByCron); err != nil {
+		if _, err := runner.TriggerRun(task.Name, sqlcdb.TriggeredByCron); err != nil {
 			slog.Error("Failed to trigger catch-up run", "task", task.Name, "err", err)
 			errors++
 		} else {

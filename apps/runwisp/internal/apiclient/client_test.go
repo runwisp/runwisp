@@ -16,6 +16,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/internal/server/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -160,7 +161,7 @@ func TestListTasks(t *testing.T) {
 
 func TestListRuns(t *testing.T) {
 	resp := server.RunsResponseBody{
-		Runs:  []model.Run{{ID: "run-1"}, {ID: "run-2"}},
+		Runs:  []dto.Run{{ID: "run-1"}, {ID: "run-2"}},
 		Total: 42,
 	}
 
@@ -180,7 +181,7 @@ func TestListRuns(t *testing.T) {
 
 func TestListRunsByTask(t *testing.T) {
 	resp := server.RunsResponseBody{
-		Runs:  []model.Run{{ID: "run-1"}},
+		Runs:  []dto.Run{{ID: "run-1"}},
 		Total: 1,
 	}
 
@@ -201,7 +202,7 @@ func TestTriggerRun(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "POST", r.Method)
 		assert.Equal(t, "/api/tasks/my-task/run", r.URL.Path)
-		json.NewEncoder(w).Encode(model.Run{ID: "new-run"})
+		json.NewEncoder(w).Encode(dto.Run{ID: "new-run"})
 	}))
 	defer srv.Close()
 
@@ -227,7 +228,7 @@ func TestStopRun(t *testing.T) {
 func TestGetRun(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/tasks/my-task/runs/run-1", r.URL.Path)
-		json.NewEncoder(w).Encode(model.Run{ID: "run-1", TaskName: "my-task"})
+		json.NewEncoder(w).Encode(dto.Run{ID: "run-1", TaskName: "my-task"})
 	}))
 	defer srv.Close()
 

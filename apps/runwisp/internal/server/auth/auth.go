@@ -20,11 +20,12 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/runwisp/runwisp/internal/datadir"
-	"log/slog"
 )
 
 const (

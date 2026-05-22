@@ -14,9 +14,34 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// captureLogPath returns a function that, after Execute completes, yields the
+// log path published on the run.updated event envelope. The executor no
+// longer stamps LogPath on the Run row; tests read it off the event payload.
+func captureLogPath(eb events.EventBus) func() string {
+	var (
+		mu      sync.Mutex
+		logPath string
+	)
+	eb.Subscribe(events.EventRunUpdated, func(e events.Event) {
+		re, ok := e.Data.(events.RunEvent)
+		if !ok || re.LogPath == "" {
+			return
+		}
+		mu.Lock()
+		logPath = re.LogPath
+		mu.Unlock()
+	})
+	return func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return logPath
+	}
+}
 
 func TestExecuteSuccess(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "executor-test")
@@ -25,14 +50,15 @@ func TestExecuteSuccess(t *testing.T) {
 
 	eb := events.NewEventBus()
 	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
 		Name: "test-task",
 		Run:  "echo 'hello world'",
 	}
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:     ulid.Make().String(),
-		Status: model.PhaseRunning,
+		Status: sqlcdb.PhaseRunning,
 	}
 
 	result := exec.Execute(context.Background(), task, run)
@@ -40,7 +66,7 @@ func TestExecuteSuccess(t *testing.T) {
 	assert.NoError(t, result.Error)
 
 	// Check log file
-	logContent, err := os.ReadFile(run.LogPath)
+	logContent, err := os.ReadFile(getLogPath())
 	require.NoError(t, err)
 	assert.Contains(t, string(logContent), "hello world")
 }
@@ -57,9 +83,9 @@ func TestExecuteFailure(t *testing.T) {
 		Name: "fail-task",
 		Run:  "exit 1",
 	}
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:     ulid.Make().String(),
-		Status: model.PhaseRunning,
+		Status: sqlcdb.PhaseRunning,
 	}
 
 	result := exec.Execute(context.Background(), task, run)
@@ -78,9 +104,9 @@ func TestExecuteTimeout(t *testing.T) {
 		Name: "sleep-task",
 		Run:  "sleep 2",
 	}
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:     ulid.Make().String(),
-		Status: model.PhaseRunning,
+		Status: sqlcdb.PhaseRunning,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -97,20 +123,21 @@ func TestExecuteStderr(t *testing.T) {
 
 	eb := events.NewEventBus()
 	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
 		Name: "stderr-task",
 		Run:  "echo 'error message' >&2",
 	}
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:     ulid.Make().String(),
-		Status: model.PhaseRunning,
+		Status: sqlcdb.PhaseRunning,
 	}
 
 	result := exec.Execute(context.Background(), task, run)
 	assert.Equal(t, 0, result.ExitCode)
 
-	logContent, err := os.ReadFile(run.LogPath)
+	logContent, err := os.ReadFile(getLogPath())
 	require.NoError(t, err)
 	assert.Contains(t, string(logContent), "error message")
 	assert.Contains(t, string(logContent), "[ERR]")
@@ -140,9 +167,9 @@ func TestExecuteEvents(t *testing.T) {
 		Name: "event-task",
 		Run:  "echo 'line 1'\necho 'line 2'",
 	}
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:     ulid.Make().String(),
-		Status: model.PhaseRunning,
+		Status: sqlcdb.PhaseRunning,
 	}
 
 	exec.Execute(context.Background(), task, run)
@@ -170,23 +197,24 @@ func TestRunUpdateCallback(t *testing.T) {
 		EventBus:          eb,
 		CloudShellEnabled: true,
 		HasLocalTasks:     true,
-		OnRunUpdate: func(r *model.Run) {
+		OnRunUpdate: func(r *sqlcdb.Run) {
 			called = true
-			assert.NotEmpty(t, r.LogPath)
 		},
 	})
+	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
 		Name: "callback-task",
 		Run:  "echo hi",
 	}
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:     ulid.Make().String(),
-		Status: model.PhaseRunning,
+		Status: sqlcdb.PhaseRunning,
 	}
 
 	exec.Execute(context.Background(), task, run)
 	assert.True(t, called)
+	assert.NotEmpty(t, getLogPath(), "executor must publish LogPath on the run.updated event")
 }
 
 func TestLogDirCreationFailure(t *testing.T) {
@@ -200,7 +228,7 @@ func TestLogDirCreationFailure(t *testing.T) {
 	exec := New(Options{LogDir: tmpFile.Name(), EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{Name: "fail", Run: "echo hi"}
-	run := &model.Run{ID: ulid.Make().String()}
+	run := &sqlcdb.Run{ID: ulid.Make().String()}
 
 	result := exec.Execute(context.Background(), task, run)
 	assert.Equal(t, -1, result.ExitCode)
@@ -220,7 +248,7 @@ func TestLogFileCreationFailure(t *testing.T) {
 	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{Name: "fail", Run: "echo hi"}
-	run := &model.Run{ID: ulid.Make().String()}
+	run := &sqlcdb.Run{ID: ulid.Make().String()}
 
 	result := exec.Execute(context.Background(), task, run)
 	// If running as root (e.g. in some containers), chmod might not stop root.
@@ -245,9 +273,9 @@ func TestExecuteCommandStartFailure(t *testing.T) {
 		Name: "fail-start",
 		Run:  "/path/to/non/existent/command",
 	}
-	run := &model.Run{
+	run := &sqlcdb.Run{
 		ID:     ulid.Make().String(),
-		Status: model.PhaseRunning,
+		Status: sqlcdb.PhaseRunning,
 	}
 
 	result := exec.Execute(context.Background(), task, run)

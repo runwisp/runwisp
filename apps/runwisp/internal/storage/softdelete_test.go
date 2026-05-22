@@ -9,17 +9,18 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newTerminalRun(taskName string) *model.Run {
-	return &model.Run{
+func newTerminalRun(taskName string) *sqlcdb.Run {
+	return &sqlcdb.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    taskName,
-		Status:      model.PhaseEnded,
-		EndReason:   model.EndReasonPtr(model.ReasonSuccess),
-		TriggeredBy: model.TriggeredByAPI,
+		Status:      sqlcdb.PhaseEnded,
+		EndReason:   sqlcdb.EndReasonPtr(sqlcdb.ReasonSuccess),
+		TriggeredBy: sqlcdb.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
 }
@@ -69,18 +70,18 @@ func TestSoftDeleteSkipsActiveRuns(t *testing.T) {
 	defer db.Close()
 
 	terminal := newTerminalRun("task1")
-	running := &model.Run{
+	running := &sqlcdb.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "task1",
-		Status:      model.PhaseRunning,
-		TriggeredBy: model.TriggeredByAPI,
+		Status:      sqlcdb.PhaseRunning,
+		TriggeredBy: sqlcdb.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
-	pending := &model.Run{
+	pending := &sqlcdb.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "task1",
-		Status:      model.PhasePending,
-		TriggeredBy: model.TriggeredByAPI,
+		Status:      sqlcdb.PhasePending,
+		TriggeredBy: sqlcdb.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
 	require.NoError(t, db.CreateRun(terminal))
@@ -179,11 +180,11 @@ func TestResolveSelectorIDsHonorsStatusFilter(t *testing.T) {
 	defer db.Close()
 
 	terminal := newTerminalRun("task1")
-	running := &model.Run{
+	running := &sqlcdb.Run{
 		ID:          ulid.Make().String(),
 		TaskName:    "task1",
-		Status:      model.PhaseRunning,
-		TriggeredBy: model.TriggeredByAPI,
+		Status:      sqlcdb.PhaseRunning,
+		TriggeredBy: sqlcdb.TriggeredByAPI,
 		CreatedAt:   time.Now(),
 	}
 	other := newTerminalRun("task2")
@@ -202,7 +203,7 @@ func TestResolveSelectorIDsHonorsStatusFilter(t *testing.T) {
 	// Status filter narrows to running rows only.
 	refs, err = db.ResolveSelectorIDs(
 		model.RunSelector{MatchAll: true, Filter: model.RunFilter{TaskName: "task1"}},
-		string(model.PhaseRunning),
+		string(sqlcdb.PhaseRunning),
 	)
 	require.NoError(t, err)
 	require.Len(t, refs, 1)

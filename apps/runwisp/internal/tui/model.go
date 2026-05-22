@@ -12,6 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
@@ -141,7 +143,7 @@ func (m Model) tickCmd() tea.Cmd {
 // Any unread notifications attached to this run are marked read — opening the
 // run is the operator acknowledging it.
 // Returns a tea.Cmd to start log streaming if the run is active or completed.
-func (m *Model) openExecView(run *model.Run) tea.Cmd {
+func (m *Model) openExecView(run *dto.Run) tea.Cmd {
 	if latest := m.execWindow.FindRun(run.ID); latest != nil {
 		run = latest
 	}
@@ -155,7 +157,7 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	m.execList.SetFocused(false)
 
 	cmds := []tea.Cmd{m.markRunNotificationsRead(run.ID)}
-	if run.Status != model.PhasePending {
+	if run.Status != sqlcdb.PhasePending {
 		cmds = append(cmds, m.streams.StartLogStream(run, -int64(execlist.LogTailLines)))
 	}
 	return tea.Batch(cmds...)
@@ -311,7 +313,7 @@ func (m *Model) serviceInstances(name string) int {
 }
 
 // latestRunningExec returns the most recent running execution for the given task, if any.
-func (m *Model) latestRunningExec(taskName string) *model.Run {
+func (m *Model) latestRunningExec(taskName string) *dto.Run {
 	return m.execWindow.LatestRunning(taskName)
 }
 

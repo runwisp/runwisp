@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 
+	"log/slog"
+
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
@@ -19,7 +21,6 @@ import (
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/version"
-	"log/slog"
 )
 
 // daemonMode controls which subsystems runDaemon initializes.

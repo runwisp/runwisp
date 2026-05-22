@@ -3,7 +3,7 @@
 
 {{ tgEscape (eventSentence .) }}
 {{ tgEscape (eventTrigger .) }} · {{ humanTime .Timestamp }}.
-{{- $tail := "" }}{{ if or (eq .Kind "run.failed") (eq .Kind "run.timeout") }}{{ $tail = outputTail .Run }}{{ end }}
+{{- $tail := "" }}{{ if or (eq .Kind "run.failed") (eq .Kind "run.timeout") }}{{ $tail = outputTail . }}{{ end }}
 {{- if $tail }}
 
 <blockquote>{{ tgEscape $tail }}</blockquote>

@@ -6,7 +6,9 @@ package server
 import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/dto"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
 
 // ---------- Path / query inputs ----------
@@ -65,16 +67,16 @@ type RunsOutput struct {
 }
 
 type RunsResponseBody struct {
-	Runs  []model.Run `json:"runs" doc:"List of runs"`
-	Total int64       `json:"total" doc:"Total matching runs"`
+	Runs  []dto.Run `json:"runs" doc:"List of runs"`
+	Total int64     `json:"total" doc:"Total matching runs"`
 }
 
 type RunOutput struct {
-	Body model.Run
+	Body dto.Run
 }
 
 type TriggerRunOutput struct {
-	Body model.Run
+	Body dto.Run
 }
 
 type StopRunOutput struct {
@@ -124,7 +126,7 @@ type MetricsHistoryOutput struct {
 }
 
 type RunSummaryOutput struct {
-	Body model.RunSummary
+	Body sqlcdb.RunSummary
 }
 
 // ---------- Auth types ----------
@@ -148,13 +150,20 @@ type AuthChallengeBody struct {
 
 // ---------- SSE event wrapper types ----------
 // huma/sse dispatches event names by Go type, so each SSE event needs a
-// distinct type even though the payload shape is identical.
+// distinct type even though the payload shape is identical. The wire shape
+// embeds dto.Run (not events.RunEvent's *sqlcdb.Run) so the SSE stream
+// matches the REST response shape exactly.
 
-type RunCreatedEvent events.RunEvent
-type RunStartedEvent events.RunEvent
-type RunCompletedEvent events.RunEvent
-type RunFailedEvent events.RunEvent
-type RunUpdatedEvent events.RunEvent
+type RunEventBody struct {
+	Run   *dto.Run `json:"run"`
+	Error string   `json:"error,omitempty"`
+}
+
+type RunCreatedEvent RunEventBody
+type RunStartedEvent RunEventBody
+type RunCompletedEvent RunEventBody
+type RunFailedEvent RunEventBody
+type RunUpdatedEvent RunEventBody
 type RunDeletedSSEEvent events.RunDeletedEvent
 type PingEvent struct{}
 

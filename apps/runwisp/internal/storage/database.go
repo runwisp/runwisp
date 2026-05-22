@@ -32,23 +32,23 @@ const (
 
 // RunRepository defines the interface for run persistence.
 type RunRepository interface {
-	CreateRun(run *model.Run) error
-	UpdateRun(run *model.Run) error
-	GetRun(id string) (*model.Run, error)
-	GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error)
+	CreateRun(run *sqlcdb.Run) error
+	UpdateRun(run *sqlcdb.Run) error
+	GetRun(id string) (*sqlcdb.Run, error)
+	GetRunByExternalExecutionID(externalExecutionID string) (*sqlcdb.Run, error)
 	CountRuns(taskName string) (int64, error)
 	CountRunsFiltered(status, taskName, searchQuery string) (int64, error)
-	QueryRuns(taskName string, limit, offset int, status string, sortField SortColumn, sortDirection SortDirection, searchQuery string) ([]model.Run, error)
+	QueryRuns(taskName string, limit, offset int, status string, sortField SortColumn, sortDirection SortDirection, searchQuery string) ([]sqlcdb.Run, error)
 	DeleteRun(id string) error
-	DeleteOldRuns(task *model.Task) ([]model.Run, error)
+	DeleteOldRuns(task *model.Task) ([]sqlcdb.Run, error)
 	MarkCrashedRuns() (int64, error)
-	GetPendingRuns() ([]model.Run, error)
-	GetLastRunByTask(taskName string) (*model.Run, error)
-	GetRunSummary() (*model.RunSummary, error)
+	GetPendingRuns() ([]sqlcdb.Run, error)
+	GetLastRunByTask(taskName string) (*sqlcdb.Run, error)
+	GetRunSummary() (*sqlcdb.RunSummary, error)
 	EnsureTaskRegistered(taskName string, firstSeen time.Time) error
 	GetTaskRegistration(taskName string) (*model.TaskRegistration, error)
 	SoftDeleteRuns(sel model.RunSelector, deletedAt time.Time) ([]RunRef, error)
-	RestoreRuns(sel model.RunSelector) ([]model.Run, error)
+	RestoreRuns(sel model.RunSelector) ([]sqlcdb.Run, error)
 	ResolveSelectorIDs(sel model.RunSelector, statusFilter string) ([]RunRef, error)
 	PurgeExpiredSoftDeletes(ttl time.Duration) ([]RunRef, error)
 	Close() error
@@ -97,18 +97,18 @@ func bgCtx() context.Context { return context.Background() }
 const runColumns = `id, external_execution_id, task_name, status, end_reason, exit_code,
 start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index`
 
-func (db *SQLiteDatabase) CreateRun(run *model.Run) error {
+func (db *SQLiteDatabase) CreateRun(run *sqlcdb.Run) error {
 	return db.q.CreateRun(bgCtx(), runToCreateParams(run))
 }
 
-func (db *SQLiteDatabase) UpdateRun(run *model.Run) error {
+func (db *SQLiteDatabase) UpdateRun(run *sqlcdb.Run) error {
 	return db.q.UpdateRun(bgCtx(), runToUpdateParams(run))
 }
 
 func scanRun(scanner interface {
 	Scan(dest ...any) error
-}) (*model.Run, error) {
-	var run model.Run
+}) (*sqlcdb.Run, error) {
+	var run sqlcdb.Run
 	err := scanner.Scan(
 		&run.ID, &run.ExternalExecutionID, &run.TaskName, &run.Status, &run.EndReason, &run.ExitCode,
 		&run.StartAt, &run.EndAt, &run.TriggeredBy, &run.CreatedAt, &run.RetryAttempt, &run.RetryOfRunID, &run.InstanceIndex,
@@ -132,7 +132,7 @@ func collectRows[T any](rows *sql.Rows, scan func(interface{ Scan(...any) error 
 	return out, rows.Err()
 }
 
-func (db *SQLiteDatabase) GetRun(id string) (*model.Run, error) {
+func (db *SQLiteDatabase) GetRun(id string) (*sqlcdb.Run, error) {
 	row, err := db.q.GetRun(bgCtx(), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -143,7 +143,7 @@ func (db *SQLiteDatabase) GetRun(id string) (*model.Run, error) {
 	return runPtrFromSqlcdb(row), nil
 }
 
-func (db *SQLiteDatabase) GetRunByExternalExecutionID(externalExecutionID string) (*model.Run, error) {
+func (db *SQLiteDatabase) GetRunByExternalExecutionID(externalExecutionID string) (*sqlcdb.Run, error) {
 	row, err := db.q.GetRunByExternalExecutionID(bgCtx(), &externalExecutionID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -154,12 +154,12 @@ func (db *SQLiteDatabase) GetRunByExternalExecutionID(externalExecutionID string
 	return runPtrFromSqlcdb(row), nil
 }
 
-func (db *SQLiteDatabase) GetRunSummary() (*model.RunSummary, error) {
+func (db *SQLiteDatabase) GetRunSummary() (*sqlcdb.RunSummary, error) {
 	row, err := db.q.GetRunSummary(bgCtx())
 	if err != nil {
 		return nil, err
 	}
-	summary := &model.RunSummary{
+	summary := &sqlcdb.RunSummary{
 		Total:   row.Total,
 		Success: row.Success,
 		Failed:  row.Failed,
@@ -198,8 +198,8 @@ func applyStatusFilter(q *queryBuilder, status string) {
 	if status == "" {
 		return
 	}
-	switch model.EndReason(status) {
-	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped, model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped, model.ReasonLogOverflow:
+	switch sqlcdb.EndReason(status) {
+	case sqlcdb.ReasonSuccess, sqlcdb.ReasonFailed, sqlcdb.ReasonStopped, sqlcdb.ReasonTimeout, sqlcdb.ReasonCrashed, sqlcdb.ReasonSkipped, sqlcdb.ReasonLogOverflow:
 		q.add("end_reason = ?", status)
 	default:
 		q.add("status = ?", status)
@@ -230,7 +230,7 @@ func (db *SQLiteDatabase) CountRunsFiltered(status, taskName, searchQuery string
 	return count, err
 }
 
-func (db *SQLiteDatabase) QueryRuns(taskName string, limit, offset int, status string, sortField SortColumn, sortDirection SortDirection, searchQuery string) ([]model.Run, error) {
+func (db *SQLiteDatabase) QueryRuns(taskName string, limit, offset int, status string, sortField SortColumn, sortDirection SortDirection, searchQuery string) ([]sqlcdb.Run, error) {
 	var q queryBuilder
 	if taskName != "" {
 		q.add("task_name = ?", taskName)
@@ -274,7 +274,7 @@ type RunRef struct {
 // events without a follow-up query.
 func (db *SQLiteDatabase) SoftDeleteRuns(sel model.RunSelector, deletedAt time.Time) ([]RunRef, error) {
 	if sel.MatchAll {
-		args := []any{deletedAt, model.PhaseEnded}
+		args := []any{deletedAt, sqlcdb.PhaseEnded}
 		args = append(args, runFilterGateArgs(sel.Filter)...)
 		args = append(args, idsJSON(sel.ExceptIDs))
 		rows, err := db.db.Query(softDeleteByFilterSQL, args...)
@@ -283,7 +283,7 @@ func (db *SQLiteDatabase) SoftDeleteRuns(sel model.RunSelector, deletedAt time.T
 		}
 		return scanRunRefs(rows)
 	}
-	rows, err := db.db.Query(softDeleteByIDsSQL, deletedAt, model.PhaseEnded, idsJSON(sel.IDs))
+	rows, err := db.db.Query(softDeleteByIDsSQL, deletedAt, sqlcdb.PhaseEnded, idsJSON(sel.IDs))
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +293,7 @@ func (db *SQLiteDatabase) SoftDeleteRuns(sel model.RunSelector, deletedAt time.T
 // RestoreRuns clears deleted_at for every soft-deleted run matched by sel
 // and returns the full restored rows so the caller can re-emit run.updated
 // events that bring the rows back in connected UIs.
-func (db *SQLiteDatabase) RestoreRuns(sel model.RunSelector) ([]model.Run, error) {
+func (db *SQLiteDatabase) RestoreRuns(sel model.RunSelector) ([]sqlcdb.Run, error) {
 	if sel.MatchAll {
 		args := runFilterGateArgs(sel.Filter)
 		args = append(args, idsJSON(sel.ExceptIDs))
@@ -366,8 +366,8 @@ func scanRunRefs(rows *sql.Rows) ([]RunRef, error) {
 	return out, rows.Err()
 }
 
-func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
-	uniqueRuns := make(map[string]model.Run)
+func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]sqlcdb.Run, error) {
+	uniqueRuns := make(map[string]sqlcdb.Run)
 	ctx := bgCtx()
 
 	if task.KeepFor > 0 {
@@ -401,11 +401,11 @@ func (db *SQLiteDatabase) DeleteOldRuns(task *model.Task) ([]model.Run, error) {
 	}
 
 	if len(uniqueRuns) == 0 {
-		return []model.Run{}, nil
+		return []sqlcdb.Run{}, nil
 	}
 
 	ids := make([]string, 0, len(uniqueRuns))
-	finalRuns := make([]model.Run, 0, len(uniqueRuns))
+	finalRuns := make([]sqlcdb.Run, 0, len(uniqueRuns))
 	for id, run := range uniqueRuns {
 		ids = append(ids, id)
 		finalRuns = append(finalRuns, run)
@@ -430,19 +430,19 @@ func (db *SQLiteDatabase) MarkCrashedRuns() (int64, error) {
 	return db.q.MarkCrashedRuns(bgCtx(), &now)
 }
 
-func (db *SQLiteDatabase) GetPendingRuns() ([]model.Run, error) {
+func (db *SQLiteDatabase) GetPendingRuns() ([]sqlcdb.Run, error) {
 	rows, err := db.q.GetPendingRuns(bgCtx())
 	if err != nil {
 		return nil, err
 	}
-	out := make([]model.Run, 0, len(rows))
+	out := make([]sqlcdb.Run, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, runFromSqlcdb(r))
 	}
 	return out, nil
 }
 
-func (db *SQLiteDatabase) GetLastRunByTask(taskName string) (*model.Run, error) {
+func (db *SQLiteDatabase) GetLastRunByTask(taskName string) (*sqlcdb.Run, error) {
 	row, err := db.q.GetLastRunByTask(bgCtx(), taskName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -490,10 +490,10 @@ func (db *SQLiteDatabase) Close() error {
 	return db.db.Close()
 }
 
-func (db *SQLiteDatabase) UpsertPendingLogUpload(rec model.PendingLogUpload) error {
+func (db *SQLiteDatabase) UpsertPendingLogUpload(rec sqlcdb.PendingLogUpload) error {
 	return db.q.UpsertPendingLogUpload(bgCtx(), sqlcdb.UpsertPendingLogUploadParams{
 		ExternalExecutionID: rec.ExternalExecutionID,
-		UploadUrl:           rec.UploadURL,
+		UploadUrl:           rec.UploadUrl,
 		LogPath:             rec.LogPath,
 		InsertedAt:          rec.InsertedAt,
 	})
@@ -503,12 +503,12 @@ func (db *SQLiteDatabase) DeletePendingLogUpload(externalExecutionID string) err
 	return db.q.DeletePendingLogUpload(bgCtx(), externalExecutionID)
 }
 
-func (db *SQLiteDatabase) ListPendingLogUploads() ([]model.PendingLogUpload, error) {
+func (db *SQLiteDatabase) ListPendingLogUploads() ([]sqlcdb.PendingLogUpload, error) {
 	rows, err := db.q.ListPendingLogUploads(bgCtx())
 	if err != nil {
 		return nil, err
 	}
-	out := make([]model.PendingLogUpload, 0, len(rows))
+	out := make([]sqlcdb.PendingLogUpload, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, pendingLogUploadFromSqlcdb(r))
 	}
