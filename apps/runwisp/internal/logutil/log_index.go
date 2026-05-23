@@ -5,7 +5,9 @@ package logutil
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -180,6 +182,58 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 		return lines, firstAvailable, totalLines, scanErr
 	}
 	return lines, firstAvailable, totalLines, nil
+}
+
+// ScanLines streams every on-disk line of a run in display order: the
+// rotated-away segment (`.log.prev`) first, then the current segment.
+// Each line is numbered with its absolute (cumulative) line index, matching
+// the numbering used by ReadLineRange and the SSE log wire.
+//
+// visit is invoked for every line; it returns false to stop the scan early
+// (treated as success — ScanLines returns nil). ctx.Err() is checked
+// between lines so a cancelled context aborts within one iteration.
+func ScanLines(ctx context.Context, logPath string, visit func(LogLineRecord) bool) error {
+	meta := ReadLogMeta(logPath)
+
+	done, err := scanSegment(ctx, logPath+".prev", 0, visit)
+	if err != nil || done {
+		return err
+	}
+	_, err = scanSegment(ctx, logPath, meta.RotatedLines, visit)
+	return err
+}
+
+// scanSegment scans one segment file, numbering lines starting at startLine.
+// Returns (done=true, nil) when visit asked to stop, so the caller can
+// short-circuit subsequent segments. Returns (false, nil) if the file does
+// not exist — rotation may not have produced a .prev yet.
+func scanSegment(ctx context.Context, path string, startLine int64, visit func(LogLineRecord) bool) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, ScanBufferSize), 1024*1024)
+	current := startLine
+	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		stream, text := ParseStreamPrefix(scanner.Text())
+		if !visit(LogLineRecord{LineNum: current, Stream: stream, Text: text}) {
+			return true, nil
+		}
+		current++
+	}
+	if err := scanner.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func ReadLogIndex(idxPath string) ([]int64, error) {

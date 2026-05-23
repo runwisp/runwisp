@@ -125,6 +125,35 @@ If a run rotated mid-stream under `drop_old`, the download includes
 the rotated-out part and the current part as a single file — you get
 the full bytestream, not just the tail.
 
+## Full-text search
+
+RunWisp can grep every captured run of a task on demand. The scan reads
+the on-disk log files directly — there is no background index, no extra
+disk usage, and no warm-up window after a fresh boot. The trade-off is
+that the cost of one query scales with the bytes you ask it to read, so
+results page through a cursor instead of being unbounded.
+
+- **Web UI** — open a task and unfold the **Search logs** panel above
+  the run detail. Toggle case sensitivity and regex with the buttons
+  next to the input. Click any hit and the existing log viewer
+  scrolls to the matching line and pulses a brief highlight.
+- **TUI** — press <kbd>/</kbd> from the exec view (or any task that's
+  selected). Same regex / case toggles. Enter on a hit jumps the log
+  pane to that line.
+- **REST** — `GET /api/tasks/{name}/log/search?q=...` returns hits
+  ordered newest-run-first, with `next_cursor` for paging. Supported
+  flags: `regex=true` (RE2 syntax), `case=true`, `run_id=<ulid>`
+  (scope to one run), `limit=<1-1000>` (default 200), `cursor=<token>`.
+
+Each scan visits up to 50 of the task's most recent runs in parallel
+(up to four workers at a time, so spinning disks don't get hammered),
+stops early once the hit budget is met, and emits a cursor so the next
+request resumes mid-task. Soft-deleted runs are excluded — the same
+visibility rules as the rest of the API.
+
+When a query is malformed (an unclosed regex group, an empty `q`) the
+endpoint returns `400` immediately, before any worker starts.
+
 ## Sidecars (`.idx`, `.tidx`, `.meta`, `.prev`)
 
 RunWisp keeps small helper files next to each `.log` to make seeking

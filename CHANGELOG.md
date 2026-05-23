@@ -5,6 +5,12 @@ All notable changes to RunWisp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Full-text log search across a task's runs.** Press <kbd>/</kbd> in the TUI or open the **Search logs** panel in the Web UI to grep every captured run of a task for a substring or RE2 regex, case-sensitive or not. Click a hit and the existing log viewer jumps to the line and pulses a highlight. The scan is on-demand — no background index, no extra disk usage — and walks runs newest-first in parallel, with an opaque cursor for paging through long histories. Exposed at `GET /api/tasks/{name}/log/search`. See [Logs / Search](https://docs.runwisp.com/concepts/logs/#full-text-search).
+
 ## [0.6.0] - 2026-05-22
 
 ### Added

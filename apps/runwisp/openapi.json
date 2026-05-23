@@ -442,6 +442,84 @@
         ],
         "type": "object"
       },
+      "LogSearchBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/LogSearchBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "exhausted": {
+            "description": "True when no further runs / lines need scanning",
+            "type": "boolean"
+          },
+          "hits": {
+            "description": "Hits ordered newest-run-first, then ascending line within a run",
+            "items": {
+              "$ref": "#/components/schemas/LogSearchHit"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "next_cursor": {
+            "description": "Opaque token to fetch the next page; empty when the scan is exhausted",
+            "type": "string"
+          },
+          "scanned_runs": {
+            "description": "Number of runs visited by this request",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hits",
+          "exhausted",
+          "scanned_runs"
+        ],
+        "type": "object"
+      },
+      "LogSearchHit": {
+        "additionalProperties": false,
+        "properties": {
+          "n": {
+            "description": "Absolute line number within the run",
+            "format": "int64",
+            "type": "integer"
+          },
+          "run_id": {
+            "description": "ULID of the run containing this line",
+            "type": "string"
+          },
+          "stream": {
+            "description": "Stream identifier (stdout/stderr/system)",
+            "type": "string"
+          },
+          "text": {
+            "description": "Matched line content without trailing newline",
+            "type": "string"
+          },
+          "ts": {
+            "description": "Run created_at in Unix milliseconds (used for newest-first sort)",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "n",
+          "stream",
+          "text",
+          "ts"
+        ],
+        "type": "object"
+      },
       "MetricsSample": {
         "additionalProperties": false,
         "properties": {
@@ -2426,6 +2504,118 @@
         "summary": "List all tasks",
         "tags": [
           "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{taskName}/log/search": {
+      "get": {
+        "description": "Streams on disk through the task's runs newest-first and returns matching lines. Pure on-demand scan; no index is maintained. Use `cursor` to paginate beyond the per-request hit/run budget.",
+        "operationId": "searchLogs",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Restrict the search to one run (ULID). Empty searches every non-deleted run of the task.",
+            "explode": false,
+            "in": "query",
+            "name": "run_id",
+            "schema": {
+              "description": "Restrict the search to one run (ULID). Empty searches every non-deleted run of the task.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Substring (or regex when regex=true) to search for",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "Substring (or regex when regex=true) to search for",
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Treat q as an RE2 regular expression",
+            "explode": false,
+            "in": "query",
+            "name": "regex",
+            "schema": {
+              "description": "Treat q as an RE2 regular expression",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Match case-sensitively (default is case-insensitive)",
+            "explode": false,
+            "in": "query",
+            "name": "case",
+            "schema": {
+              "description": "Match case-sensitively (default is case-insensitive)",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Max hits returned (default 200)",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Max hits returned (default 200)",
+              "format": "int64",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque continuation token returned by a previous call",
+            "explode": false,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "description": "Opaque continuation token returned by a previous call",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogSearchBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Search log lines across runs of a task",
+        "tags": [
+          "Logs"
         ]
       }
     },

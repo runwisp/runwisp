@@ -9,7 +9,12 @@ import { getApiUrl } from "./utils/env";
 import { HTTP_STATUS } from "./config/constants";
 import { browserTokenStorage, browserAuthEventBus } from "$lib/adapters/browser";
 import { authStore } from "./stores/auth.svelte";
-import { logPageSchema, type LogPage } from "./logs";
+import {
+    logPageSchema,
+    type LogPage,
+    logSearchResponseSchema,
+    type LogSearchResponse,
+} from "./logs";
 import {
     authChallengeResponseSchema,
     authLoginResponseSchema,
@@ -186,6 +191,40 @@ export const tasksApi = {
         const response = await fetch(url, { headers });
         if (!response.ok) throw new Error("Log page fetch failed: " + String(response.status));
         return logPageSchema.parse(await response.json());
+    },
+
+    searchLogs: async (
+        taskName: string,
+        options: {
+            q: string;
+            regex: boolean;
+            case: boolean;
+            run_id?: string;
+            limit?: number;
+            cursor?: string;
+        },
+    ): Promise<LogSearchResponse> => {
+        const params = new URLSearchParams();
+        params.set("q", options.q);
+        if (options.regex) params.set("regex", "true");
+        if (options.case) params.set("case", "true");
+        if (options.run_id) params.set("run_id", options.run_id);
+        if (options.limit !== undefined) params.set("limit", String(options.limit));
+        if (options.cursor) params.set("cursor", options.cursor);
+
+        const url =
+            API_BASE_URL +
+            "/api/tasks/" +
+            encodeURIComponent(taskName) +
+            "/log/search?" +
+            params.toString();
+        const headers: HeadersInit = { Accept: "application/json" };
+        const auth = authHeader();
+        if (auth) headers["Authorization"] = auth;
+
+        const response = await fetch(url, { headers });
+        if (!response.ok) throw new Error("Log search failed: " + String(response.status));
+        return logSearchResponseSchema.parse(await response.json());
     },
 
     getLogRaw: async (taskName: string, runId: string): Promise<string> => {

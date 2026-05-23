@@ -20,6 +20,9 @@ func (m Model) View() string {
 	body := m.renderBody()
 	helpBar := uikit.HelpBarStyle.Width(m.width).Render(m.helpTextWithFlash())
 	output := body + "\n" + helpBar
+	if m.logSearch != nil {
+		output = m.logSearch.View(m.width, m.height)
+	}
 	return m.dialogs.RenderOverlays(output, m.width, m.height)
 }
 

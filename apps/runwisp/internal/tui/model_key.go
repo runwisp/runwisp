@@ -8,6 +8,7 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
+	"github.com/runwisp/runwisp/internal/tui/views/logsearch"
 	"github.com/runwisp/runwisp/internal/tui/views/notifications"
 )
 
@@ -45,6 +46,12 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 // handleKey processes keyboard input. Global shortcuts are dispatched through
 // globalKeyHandlers; unrecognised keys delegate to the focused sub-component.
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.logSearch != nil {
+		return m.handleLogSearchKey(msg)
+	}
+	if msg.String() == "/" && m.canOpenLogSearch() {
+		return m.openLogSearch()
+	}
 	if handler, ok := globalKeyHandlers[msg.String()]; ok {
 		newM, extraCmd, handled := handler(m, msg)
 		if handled {
@@ -369,4 +376,61 @@ func handleKeyDownHome(m Model) (Model, tea.Cmd, bool) {
 		m.execList.SetFocused(true)
 	}
 	return m, m.dialogs.SyncMouseState(), true
+}
+
+// canOpenLogSearch reports whether a `/` key press should open the search
+// overlay. The feature is scoped to a task — the user must either be
+// looking at an exec view or have a task selected in the sidebar.
+func (m Model) canOpenLogSearch() bool {
+	if m.client == nil {
+		return false
+	}
+	if m.execView != nil && m.execView.Run != nil {
+		return true
+	}
+	return m.sidebar.ActiveTask() != ""
+}
+
+// openLogSearch creates and attaches the search overlay scoped to whichever
+// task the user is currently focused on.
+func (m Model) openLogSearch() (tea.Model, tea.Cmd) {
+	taskName := ""
+	if m.execView != nil && m.execView.Run != nil {
+		taskName = m.execView.Run.TaskName
+	} else {
+		taskName = m.sidebar.ActiveTask()
+	}
+	if taskName == "" {
+		return m, nil
+	}
+	ls := logsearch.New(m.client, taskName)
+	m.logSearch = &ls
+	return m, nil
+}
+
+// handleLogSearchKey routes one key event through the overlay. Esc closes;
+// Enter on a hit selects (opening the run and scheduling the highlight).
+func (m Model) handleLogSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "esc" {
+		m.logSearch = nil
+		return m, nil
+	}
+	newLS, cmd := m.logSearch.Update(msg)
+	m.logSearch = &newLS
+	return m, cmd
+}
+
+// handleLogSearchSelect is invoked when the user presses Enter on a hit.
+// Closes the overlay, opens the run (if not already), and records the line
+// number the pane should land on once its buffer is ready.
+func (m Model) handleLogSearchSelect(msg logsearch.SelectMsg) (tea.Model, tea.Cmd) {
+	m.logSearch = nil
+	m.pendingHighlight = msg.Line
+	if m.execView != nil && m.execView.Run != nil && m.execView.Run.ID == msg.RunID {
+		// Already open — jump immediately and clear the pending marker.
+		m.execView.Pane.JumpToLine(msg.Line)
+		m.pendingHighlight = 0
+		return m, nil
+	}
+	return m, m.openRunByID(msg.TaskName, msg.RunID)
 }

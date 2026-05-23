@@ -13,6 +13,8 @@
     import PageHeader from "@runwisp/ui/components/PageHeader.svelte";
     import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
     import { runsApi } from "$lib/api";
+    import LogSearchPanel from "./LogSearchPanel.svelte";
+    import type { LogSearchHit } from "$lib/logs";
 
     let {
         task,
@@ -36,6 +38,7 @@
         fetchLogs,
         streamLogs,
         initialRunId = null,
+        initialHighlightLine = null,
         selectRunId = null,
     } = $props<{
         task: Task;
@@ -67,6 +70,7 @@
             initialState?: { fromLine: number },
         ) => () => void;
         initialRunId?: string | null;
+        initialHighlightLine?: number | null;
         selectRunId?: string | null;
     }>();
 
@@ -178,6 +182,13 @@
     });
 
     let userSelectedRunId = $state<string | null>(null);
+    let highlightLine = $state<number | null>(null);
+
+    $effect(() => {
+        if (initialHighlightLine !== null && initialHighlightLine !== undefined) {
+            highlightLine = initialHighlightLine;
+        }
+    });
 
     $effect(() => {
         if (initialRunId) userSelectedRunId = initialRunId;
@@ -186,6 +197,13 @@
     $effect(() => {
         if (selectRunId) userSelectedRunId = selectRunId;
     });
+
+    function handleSearchHit(hit: LogSearchHit) {
+        userSelectedRunId = hit.run_id;
+        // Re-trigger by setting a new array+number — LogConsole's effect runs
+        // on every prop assignment, so the same line number twice is fine.
+        highlightLine = hit.n;
+    }
 
     let selectedRunId = $derived.by(() => {
         if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
@@ -330,7 +348,16 @@
                 : 'md:col-span-8 lg:col-span-9'}"
             bodyClass="flex min-h-0 flex-1 flex-col"
         >
-            <RunDetailPanel run={selectedRun} {fetchLogs} {streamLogs} onDelete={deleteSingle} />
+            <div class="flex min-h-0 flex-1 flex-col gap-3">
+                <LogSearchPanel taskName={task.name} onSelectHit={handleSearchHit} />
+                <RunDetailPanel
+                    run={selectedRun}
+                    {fetchLogs}
+                    {streamLogs}
+                    onDelete={deleteSingle}
+                    {highlightLine}
+                />
+            </div>
         </Card>
     </div>
 
