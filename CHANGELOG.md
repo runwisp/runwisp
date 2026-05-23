@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Full-text log search across a task's runs.** Press <kbd>/</kbd> in the TUI or open the **Search logs** panel in the Web UI to grep every captured run of a task for a substring or RE2 regex, case-sensitive or not. Click a hit and the existing log viewer jumps to the line and pulses a highlight. The scan is on-demand — no background index, no extra disk usage — and walks runs newest-first in parallel, with an opaque cursor for paging through long histories. Exposed at `GET /api/tasks/{name}/log/search`. See [Logs / Search](https://docs.runwisp.com/concepts/logs/#full-text-search).
+- **Full-text log search across a task's runs.** Press <kbd>/</kbd> in the TUI, or click **Search** in the task header (or <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd>) in the Web UI, to grep every captured run of a task for a substring or RE2 regex, case-sensitive or not. Hits are grouped by run with the run's start time as the heading; click one and the existing log viewer jumps to the line and pulses a highlight. The scan is on-demand — no background index, no extra disk usage — and walks runs newest-first in parallel, with an opaque cursor for paging through long histories. Exposed at `GET /api/tasks/{name}/log/search`. See [Logs / Search](https://docs.runwisp.com/concepts/logs/#full-text-search).
 
 ## [0.6.0] - 2026-05-22
 

@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Play, PanelLeftClose, History, Square, RefreshCcw } from "@lucide/svelte";
+    import { Play, PanelLeftClose, History, Square, RefreshCcw, Search } from "@lucide/svelte";
     import Button from "@runwisp/ui/components/Button.svelte";
     import Modal from "@runwisp/ui/components/Modal.svelte";
     import Alert from "@runwisp/ui/components/Alert.svelte";
@@ -82,6 +82,23 @@
     let stopConfirmOpen = $state(false);
     let restartConfirmOpen = $state(false);
     let stopServiceConfirmOpen = $state(false);
+    let searchOpen = $state(false);
+
+    function onWindowKeydown(e: KeyboardEvent) {
+        if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) {
+            return;
+        }
+        const target = e.target;
+        if (
+            target instanceof HTMLInputElement ||
+            target instanceof HTMLTextAreaElement ||
+            (target instanceof HTMLElement && target.isContentEditable)
+        ) {
+            return;
+        }
+        e.preventDefault();
+        searchOpen = true;
+    }
 
     const UNDO_MS = 5000;
 
@@ -222,9 +239,22 @@
     const showEnvPanel = $derived(envEntries.length > 0 || !!task.env_file);
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
+<LogSearchPanel bind:open={searchOpen} taskName={task.name} onSelectHit={handleSearchHit} />
+
 <PageContainer variant="flush" class="gap-4">
     <PageHeader title={task.name} subtitle={task.description || "No description provided."}>
         {#snippet actions()}
+            <Button
+                variant="ghost"
+                size="sm"
+                onclick={() => (searchOpen = true)}
+                title="Search logs (⌘K)"
+            >
+                {#snippet icon()}<Search size={16} />{/snippet}
+                Search
+            </Button>
             {#if hideHistory}
                 <Button
                     variant="ghost"
@@ -348,16 +378,13 @@
                 : 'md:col-span-8 lg:col-span-9'}"
             bodyClass="flex min-h-0 flex-1 flex-col"
         >
-            <div class="flex min-h-0 flex-1 flex-col gap-3">
-                <LogSearchPanel taskName={task.name} onSelectHit={handleSearchHit} />
-                <RunDetailPanel
-                    run={selectedRun}
-                    {fetchLogs}
-                    {streamLogs}
-                    onDelete={deleteSingle}
-                    {highlightLine}
-                />
-            </div>
+            <RunDetailPanel
+                run={selectedRun}
+                {fetchLogs}
+                {streamLogs}
+                onDelete={deleteSingle}
+                {highlightLine}
+            />
         </Card>
     </div>
 

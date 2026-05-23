@@ -2,17 +2,22 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Search, X, LoaderCircle } from "@lucide/svelte";
+    import { Search, LoaderCircle } from "@lucide/svelte";
     import Button from "@runwisp/ui/components/Button.svelte";
+    import Modal from "@runwisp/ui/components/Modal.svelte";
+    import Input from "@runwisp/ui/components/Input.svelte";
+    import Checkbox from "@runwisp/ui/components/Checkbox.svelte";
+    import { formatRelativeTimeWithAbsolute } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
     import type { LogSearchHit } from "$lib/logs";
-    import { formatShortId } from "@runwisp/ui";
 
     let {
         taskName,
+        open = $bindable(false),
         onSelectHit,
     }: {
         taskName: string;
+        open?: boolean;
         onSelectHit: (hit: LogSearchHit) => void;
     } = $props();
 
@@ -24,11 +29,33 @@
     let scannedRuns = $state(0);
     let exhausted = $state(false);
     let errorMessage = $state("");
+    let searched = $state(false);
+
+    interface HitGroup {
+        runId: string;
+        ts: number;
+        hits: LogSearchHit[];
+    }
+
+    const groups = $derived.by<HitGroup[]>(() => {
+        const out: HitGroup[] = [];
+        let current: HitGroup | undefined;
+        for (const hit of hits) {
+            if (!current || current.runId !== hit.run_id) {
+                current = { runId: hit.run_id, ts: hit.ts, hits: [hit] };
+                out.push(current);
+            } else {
+                current.hits.push(hit);
+            }
+        }
+        return out;
+    });
 
     async function search() {
         if (!q) return;
         loading = true;
         errorMessage = "";
+        searched = true;
         try {
             const result = await tasksApi.searchLogs(taskName, {
                 q,
@@ -51,78 +78,113 @@
         void search();
     }
 
-    function clearResults() {
-        hits = [];
-        q = "";
-        errorMessage = "";
+    function pickHit(hit: LogSearchHit) {
+        onSelectHit(hit);
+        open = false;
+    }
+
+    function pickGroup(group: HitGroup) {
+        const first = group.hits[0];
+        if (first) pickHit(first);
+    }
+
+    function hitCountLabel(n: number): string {
+        return n === 1 ? "1 hit" : `${String(n)} hits`;
+    }
+
+    function runCountLabel(n: number): string {
+        return n === 1 ? "1 run" : `${String(n)} runs`;
     }
 </script>
 
-<div class="flex flex-col gap-3 rounded border border-slate-800 bg-slate-900/40 p-3">
-    <form class="flex items-center gap-2" onsubmit={onSubmit}>
-        <Search class="text-slate-500" size={16} />
-        <input
-            type="text"
-            placeholder="Search log lines across runs…"
-            bind:value={q}
-            class="flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500 focus:border-aurora-500 focus:outline-none"
-        />
-        <label class="flex items-center gap-1 text-xs text-slate-400">
-            <input type="checkbox" bind:checked={regex} class="accent-aurora-500" />
-            regex
-        </label>
-        <label class="flex items-center gap-1 text-xs text-slate-400">
-            <input type="checkbox" bind:checked={caseSensitive} class="accent-aurora-500" />
-            case
-        </label>
-        <Button type="submit" variant="primary" size="sm" disabled={loading || !q}>
-            {#if loading}<LoaderCircle class="animate-spin" size={14} />{/if}
-            Search
-        </Button>
-        {#if hits.length > 0 || errorMessage}
-            <Button type="button" variant="ghost" size="sm" onclick={clearResults}>
-                <X size={14} />
-            </Button>
-        {/if}
-    </form>
+<Modal bind:open size="full" title="Search Logs">
+    <div class="flex flex-col gap-4">
+        <form class="flex flex-col gap-3" onsubmit={onSubmit}>
+            <Input size="sm" placeholder="Search log lines across runs…" bind:value={q} autofocus>
+                {#snippet leadingIcon()}
+                    <Search size={16} />
+                {/snippet}
+            </Input>
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+                <Checkbox size="sm" label="Regex" bind:checked={regex} />
+                <Checkbox size="sm" label="Case sensitive" bind:checked={caseSensitive} />
+                <div class="ml-auto">
+                    <Button type="submit" variant="primary" size="sm" disabled={loading || !q}>
+                        {#snippet icon()}
+                            {#if loading}
+                                <LoaderCircle class="animate-spin" size={14} />
+                            {:else}
+                                <Search size={14} />
+                            {/if}
+                        {/snippet}
+                        Search
+                    </Button>
+                </div>
+            </div>
+        </form>
 
-    {#if errorMessage}
-        <p class="text-xs text-danger-surface">{errorMessage}</p>
-    {:else if loading}
-        <p class="text-xs text-slate-500">Searching…</p>
-    {:else if hits.length === 0 && q && !loading}
-        <p class="text-xs text-slate-500">
-            No matches across {scannedRuns} run{scannedRuns === 1 ? "" : "s"}.
-        </p>
-    {:else if hits.length > 0}
-        <div class="flex flex-col gap-1 text-xs">
-            <p class="text-slate-500">
-                {hits.length} hit{hits.length === 1 ? "" : "s"} across {scannedRuns} run{scannedRuns ===
-                1
-                    ? ""
-                    : "s"}{exhausted ? "" : " (more available — refine your query)"}
+        {#if errorMessage}
+            <p class="text-sm text-danger-surface">{errorMessage}</p>
+        {:else if loading}
+            <p class="text-sm text-on-surface-muted">Searching…</p>
+        {:else if searched && hits.length === 0}
+            <p class="text-sm text-on-surface-muted">
+                No matches across {runCountLabel(scannedRuns)}.
             </p>
-            <ul class="max-h-72 overflow-y-auto rounded border border-slate-800 bg-slate-950">
-                {#each hits as hit (hit.run_id + ":" + hit.n)}
-                    <li>
+        {:else if hits.length > 0}
+            <p class="text-xs text-on-surface-muted">
+                {hitCountLabel(hits.length)} across {runCountLabel(scannedRuns)}{exhausted
+                    ? ""
+                    : " — refine your query to see more"}
+            </p>
+            <ul class="flex flex-col gap-3">
+                {#each groups as group (group.runId)}
+                    <li
+                        class="overflow-hidden rounded-lg border border-outline-faint bg-surface-raised"
+                    >
                         <button
                             type="button"
-                            class="flex w-full items-center gap-2 border-b border-slate-900 px-2 py-1 text-left hover:bg-slate-800/60"
-                            onclick={() => onSelectHit(hit)}
+                            class="flex w-full items-center justify-between gap-3 border-b border-outline-faint bg-surface-sunken px-3 py-2 text-left transition-colors hover:bg-surface-sunken/70"
+                            onclick={() => pickGroup(group)}
                         >
-                            <span class="font-mono text-slate-500">{formatShortId(hit.run_id)}</span
-                            >
-                            <span class="font-mono text-slate-600">L{hit.n}</span>
-                            <span
-                                class="truncate font-mono text-slate-300"
-                                class:text-danger-surface={hit.stream === "stderr"}
-                            >
-                                {hit.text}
+                            <span class="text-sm font-medium text-on-surface">
+                                {formatRelativeTimeWithAbsolute(new Date(group.ts))}
+                            </span>
+                            <span class="text-xs text-on-surface-muted">
+                                {hitCountLabel(group.hits.length)}
                             </span>
                         </button>
+                        <ul>
+                            {#each group.hits as hit (hit.n)}
+                                <li>
+                                    <button
+                                        type="button"
+                                        class="flex w-full items-baseline gap-3 px-3 py-1.5 text-left transition-colors hover:bg-surface-sunken/50"
+                                        onclick={() => pickHit(hit)}
+                                    >
+                                        <span
+                                            class="shrink-0 font-mono text-xs text-on-surface-faint"
+                                            >L{hit.n}</span
+                                        >
+                                        <span
+                                            class="truncate font-mono text-xs {hit.stream ===
+                                            'stderr'
+                                                ? 'text-danger-surface'
+                                                : 'text-on-surface'}"
+                                        >
+                                            {hit.text}
+                                        </span>
+                                    </button>
+                                </li>
+                            {/each}
+                        </ul>
                     </li>
                 {/each}
             </ul>
-        </div>
-    {/if}
-</div>
+        {:else}
+            <p class="text-sm text-on-surface-muted">
+                Type a query and press Enter to search across recent runs.
+            </p>
+        {/if}
+    </div>
+</Modal>
