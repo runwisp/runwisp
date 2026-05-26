@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Play, PanelLeftClose, History, Square, RefreshCcw } from "@lucide/svelte";
+    import { Play, PanelLeftClose, History, Square, RefreshCcw, Search } from "@lucide/svelte";
     import Button from "@runwisp/ui/components/Button.svelte";
     import Modal from "@runwisp/ui/components/Modal.svelte";
     import Alert from "@runwisp/ui/components/Alert.svelte";
@@ -13,6 +13,8 @@
     import PageHeader from "@runwisp/ui/components/PageHeader.svelte";
     import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
     import { runsApi } from "$lib/api";
+    import LogSearchPanel from "./LogSearchPanel.svelte";
+    import type { LogSearchHit } from "$lib/logs";
 
     let {
         task,
@@ -36,6 +38,7 @@
         fetchLogs,
         streamLogs,
         initialRunId = null,
+        initialHighlightLine = null,
         selectRunId = null,
     } = $props<{
         task: Task;
@@ -67,6 +70,7 @@
             initialState?: { fromLine: number },
         ) => () => void;
         initialRunId?: string | null;
+        initialHighlightLine?: number | null;
         selectRunId?: string | null;
     }>();
 
@@ -78,6 +82,23 @@
     let stopConfirmOpen = $state(false);
     let restartConfirmOpen = $state(false);
     let stopServiceConfirmOpen = $state(false);
+    let searchOpen = $state(false);
+
+    function onWindowKeydown(e: KeyboardEvent) {
+        if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) {
+            return;
+        }
+        const target = e.target;
+        if (
+            target instanceof HTMLInputElement ||
+            target instanceof HTMLTextAreaElement ||
+            (target instanceof HTMLElement && target.isContentEditable)
+        ) {
+            return;
+        }
+        e.preventDefault();
+        searchOpen = true;
+    }
 
     const UNDO_MS = 5000;
 
@@ -178,6 +199,13 @@
     });
 
     let userSelectedRunId = $state<string | null>(null);
+    let highlightLine = $state<number | null>(null);
+
+    $effect(() => {
+        if (initialHighlightLine !== null && initialHighlightLine !== undefined) {
+            highlightLine = initialHighlightLine;
+        }
+    });
 
     $effect(() => {
         if (initialRunId) userSelectedRunId = initialRunId;
@@ -186,6 +214,13 @@
     $effect(() => {
         if (selectRunId) userSelectedRunId = selectRunId;
     });
+
+    function handleSearchHit(hit: LogSearchHit) {
+        userSelectedRunId = hit.run_id;
+        // Re-trigger by setting a new array+number — LogConsole's effect runs
+        // on every prop assignment, so the same line number twice is fine.
+        highlightLine = hit.n;
+    }
 
     let selectedRunId = $derived.by(() => {
         if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
@@ -204,9 +239,22 @@
     const showEnvPanel = $derived(envEntries.length > 0 || !!task.env_file);
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
+<LogSearchPanel bind:open={searchOpen} taskName={task.name} onSelectHit={handleSearchHit} />
+
 <PageContainer variant="flush" class="gap-4">
     <PageHeader title={task.name} subtitle={task.description || "No description provided."}>
         {#snippet actions()}
+            <Button
+                variant="ghost"
+                size="sm"
+                onclick={() => (searchOpen = true)}
+                title="Search logs (⌘K)"
+            >
+                {#snippet icon()}<Search size={16} />{/snippet}
+                Search
+            </Button>
             {#if hideHistory}
                 <Button
                     variant="ghost"
@@ -330,7 +378,13 @@
                 : 'md:col-span-8 lg:col-span-9'}"
             bodyClass="flex min-h-0 flex-1 flex-col"
         >
-            <RunDetailPanel run={selectedRun} {fetchLogs} {streamLogs} onDelete={deleteSingle} />
+            <RunDetailPanel
+                run={selectedRun}
+                {fetchLogs}
+                {streamLogs}
+                onDelete={deleteSingle}
+                {highlightLine}
+            />
         </Card>
     </div>
 

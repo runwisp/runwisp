@@ -46,3 +46,48 @@ func (c *Client) GetLogRaw(taskName, runID string) (io.ReadCloser, error) {
 	}
 	return resp.Body, nil
 }
+
+// SearchLogsOptions parameterises a SearchLogs call. Zero values pick the
+// server defaults: substring match, case-insensitive, 200-hit page.
+type SearchLogsOptions struct {
+	Query         string
+	Regex         bool
+	CaseSensitive bool
+	RunID         string // optional — empty means search every run of the task
+	Limit         int    // 0 = server default
+	Cursor        string // opaque continuation token from a previous response
+}
+
+// SearchLogs runs an on-demand log search and returns the parsed body. The
+// returned cursor is empty when the scan reached the end of available runs.
+func (c *Client) SearchLogs(taskName string, opts SearchLogsOptions) (server.LogSearchBody, error) {
+	q := url.Values{}
+	q.Set("q", opts.Query)
+	if opts.Regex {
+		q.Set("regex", "true")
+	}
+	if opts.CaseSensitive {
+		q.Set("case", "true")
+	}
+	if opts.RunID != "" {
+		q.Set("run_id", opts.RunID)
+	}
+	if opts.Limit > 0 {
+		q.Set("limit", fmt.Sprintf("%d", opts.Limit))
+	}
+	if opts.Cursor != "" {
+		q.Set("cursor", opts.Cursor)
+	}
+	path := fmt.Sprintf("/api/tasks/%s/log/search?%s", taskName, q.Encode())
+	resp, err := c.doRaw("GET", path)
+	if err != nil {
+		return server.LogSearchBody{}, err
+	}
+	defer resp.Body.Close()
+
+	var body server.LogSearchBody
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return server.LogSearchBody{}, fmt.Errorf("decode log search: %w", err)
+	}
+	return body, nil
+}

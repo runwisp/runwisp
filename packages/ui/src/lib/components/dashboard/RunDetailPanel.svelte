@@ -28,6 +28,7 @@
         streamLogs,
         showTaskName = false,
         onDelete,
+        highlightLine = null,
     }: {
         run: Run | undefined;
         fetchLogs: (
@@ -42,6 +43,7 @@
         ) => () => void;
         showTaskName?: boolean;
         onDelete?: (runId: string) => void;
+        highlightLine?: number | null;
     } = $props();
 
     let canDelete = $derived.by(() => {
@@ -265,6 +267,7 @@
                 bind:this={logConsole}
                 fetchLogs={(f: number, t: number) => fetchLogs(run.id, f, t)}
                 class="min-h-0 flex-1"
+                {highlightLine}
             />
         {/key}
     </div>

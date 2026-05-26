@@ -40,6 +40,24 @@ const doneSchema = z.object({
 export type LogPageLine = z.infer<typeof logPageLineSchema>;
 export type LogPage = z.infer<typeof logPageSchema>;
 
+const logSearchHitSchema = z.object({
+    run_id: z.string(),
+    n: z.number().int().nonnegative(),
+    stream: z.string(),
+    text: z.string(),
+    ts: z.number().int(),
+});
+
+export const logSearchResponseSchema = z.object({
+    hits: z.array(logSearchHitSchema),
+    next_cursor: z.string().optional().default(""),
+    exhausted: z.boolean(),
+    scanned_runs: z.number().int().nonnegative(),
+});
+
+export type LogSearchHit = z.infer<typeof logSearchHitSchema>;
+export type LogSearchResponse = z.infer<typeof logSearchResponseSchema>;
+
 /** Convert a daemon LogPage into the LogEvent shape consumed by LogConsole. */
 export function parseLogPage(page: LogPage): LogEvent {
     const slice: Record<number, string> = {};

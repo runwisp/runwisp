@@ -337,6 +337,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskName}/log/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search log lines across runs of a task
+         * @description Streams on disk through the task's runs newest-first and returns matching lines. Pure on-demand scan; no index is maintained. Use `cursor` to paginate beyond the per-request hit/run budget.
+         */
+        get: operations["searchLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskName}/restart": {
         parameters: {
             query?: never;
@@ -707,6 +727,43 @@ export interface components {
              * @description Lowest line number still on disk after rotation
              */
             first_available: number;
+        };
+        LogSearchBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/LogSearchBody.json
+             */
+            readonly $schema?: string;
+            /** @description True when no further runs / lines need scanning */
+            exhausted: boolean;
+            /** @description Hits ordered newest-run-first, then ascending line within a run */
+            hits: components["schemas"]["LogSearchHit"][] | null;
+            /** @description Opaque token to fetch the next page; empty when the scan is exhausted */
+            next_cursor?: string;
+            /**
+             * Format: int64
+             * @description Number of runs visited by this request
+             */
+            scanned_runs: number;
+        };
+        LogSearchHit: {
+            /**
+             * Format: int64
+             * @description Absolute line number within the run
+             */
+            n: number;
+            /** @description ULID of the run containing this line */
+            run_id: string;
+            /** @description Stream identifier (stdout/stderr/system) */
+            stream: string;
+            /** @description Matched line content without trailing newline */
+            text: string;
+            /**
+             * Format: int64
+             * @description Run created_at in Unix milliseconds (used for newest-first sort)
+             */
+            ts: number;
         };
         MetricsSample: {
             /**
@@ -1846,6 +1903,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    searchLogs: {
+        parameters: {
+            query?: {
+                /** @description Restrict the search to one run (ULID). Empty searches every non-deleted run of the task. */
+                run_id?: string;
+                /** @description Substring (or regex when regex=true) to search for */
+                q?: string;
+                /** @description Treat q as an RE2 regular expression */
+                regex?: boolean;
+                /** @description Match case-sensitively (default is case-insensitive) */
+                case?: boolean;
+                /** @description Max hits returned (default 200) */
+                limit?: number;
+                /** @description Opaque continuation token returned by a previous call */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogSearchBody"];
                 };
             };
             /** @description Error */
