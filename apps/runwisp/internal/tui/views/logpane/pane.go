@@ -47,6 +47,9 @@ type Pane struct {
 	Height          int
 	HeaderH         int
 	FirstLoadedLine int
+	// HighlightLine is the absolute line number to render in the highlight
+	// style after a search-result jump. 0 disables highlighting.
+	HighlightLine int64
 }
 
 func NewPane(cfg Config) Pane {
@@ -174,6 +177,35 @@ func (p *Pane) ScrollUp(n int) {
 		}
 		p.Follow = false
 	}
+}
+
+// JumpToLine centres the pane on the given absolute line and stores it as
+// the current HighlightLine. Used by search-result deep-links. If the line
+// is not in the loaded buffer, only the highlight is recorded; the caller
+// should refetch around that anchor and call this again after the fetch
+// completes.
+func (p *Pane) JumpToLine(absLine int64) {
+	p.HighlightLine = absLine
+	bufIdx := int(absLine) - p.FirstLoadedLine - 1
+	if bufIdx < 0 || bufIdx >= len(p.Lines) {
+		return
+	}
+	target := bufIdx - p.VisibleLines()/2
+	if target < 0 {
+		target = 0
+	}
+	ms := p.maxScroll()
+	if target > ms {
+		target = ms
+	}
+	p.Scroll = target
+	p.Follow = false
+}
+
+// ClearHighlight removes any current highlight. Called on the next user
+// scroll so the highlight pulse doesn't linger.
+func (p *Pane) ClearHighlight() {
+	p.HighlightLine = 0
 }
 
 func (p *Pane) ScrollDown(n int) {

@@ -21,9 +21,23 @@
         chunkSize?: number;
         lineHeight?: number;
         class?: string;
+        // highlightLine, when set, scrolls the console so the given absolute
+        // line number is visible and pulses a short-lived flash on that row.
+        // The pulse is one-shot: changing the prop to a new line restarts the
+        // animation; setting it to null clears immediately.
+        highlightLine?: number | null;
     }
 
-    let { fetchLogs, chunkSize = 4096, lineHeight = 20, class: className = "" }: Props = $props();
+    let {
+        fetchLogs,
+        chunkSize = 4096,
+        lineHeight = 20,
+        class: className = "",
+        highlightLine = null,
+    }: Props = $props();
+
+    let flashLine = $state<number | null>(null);
+    let flashTimer: ReturnType<typeof setTimeout> | null = null;
 
     const cache = new LogCache();
     let fetcher: LogFetcher | null = $state(null);
@@ -202,6 +216,30 @@
         scrollTop = 0;
     }
 
+    // Search-hit deep-link: when highlightLine flips to a non-null number,
+    // scroll the viewport so that line is centred, and pulse a one-shot
+    // flash class for ~1.5s. Cleaning up the timer on prop change keeps a
+    // rapid sequence of jumps from leaking timers.
+    $effect(() => {
+        const target = highlightLine;
+        if (target === null || target === undefined) {
+            flashLine = null;
+            return;
+        }
+        if (!containerEl) return;
+        const targetY = lineTop(target) - containerHeight / 2 + lineHeight / 2;
+        const clamped = Math.max(0, Math.min(targetY, totalHeight - containerHeight));
+        containerEl.scrollTo({ top: clamped, behavior: "smooth" });
+        isAutoScroll = false;
+        userScrolledUp = true;
+        flashLine = target;
+        if (flashTimer !== null) clearTimeout(flashTimer);
+        flashTimer = setTimeout(() => {
+            flashLine = null;
+            flashTimer = null;
+        }, 1500);
+    });
+
     $effect(() => {
         if (!containerEl) return;
         containerHeight = containerEl.clientHeight;
@@ -242,7 +280,10 @@
 
             {#each renderedLines as line (line.num)}
                 <div
-                    class="log-line absolute right-0 left-0 flex items-center hover:bg-slate-900/50"
+                    class="log-line absolute right-0 left-0 flex items-center hover:bg-slate-900/50 {flashLine ===
+                    line.num
+                        ? 'log-line--flash'
+                        : ''}"
                     style="top: {lineTop(line.num)}px; height: {lineHeight}px;"
                 >
                     <div
@@ -374,6 +415,19 @@
 <style>
     .log-console {
         --log-line-height: 20px;
+    }
+
+    .log-line--flash {
+        animation: log-line-flash 1.5s ease-out;
+    }
+
+    @keyframes log-line-flash {
+        0% {
+            background-color: rgba(251, 191, 36, 0.45);
+        }
+        100% {
+            background-color: transparent;
+        }
     }
 
     .dot {

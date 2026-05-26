@@ -14,6 +14,7 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/logpane"
+	"github.com/runwisp/runwisp/internal/tui/views/logsearch"
 )
 
 const keyCtrlC = "ctrl+c"
@@ -173,6 +174,9 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
+	case logsearch.SelectMsg:
+		model, cmd := m.handleLogSearchSelect(msg)
+		return model, cmd, true
 	case uikit.TickMsg:
 		model, cmd := m.handleTick()
 		return model, cmd, true
@@ -400,6 +404,13 @@ func (m Model) handleLogLine(msg uikit.LogLineMsg) (tea.Model, tea.Cmd) {
 		return m, m.streams.ContinueListeningLog(msg.RunID)
 	}
 	m.execView.Pane.AppendLine(msg.Line.N, msg.Line.Stream, msg.Line.Text)
+	// If a search hit selected this run, jump as soon as the target line
+	// lands in the buffer. The pending marker is cleared so subsequent
+	// scroll input isn't yanked back to the hit.
+	if m.pendingHighlight != 0 && msg.Line.N >= m.pendingHighlight {
+		m.execView.Pane.JumpToLine(m.pendingHighlight)
+		m.pendingHighlight = 0
+	}
 	return m, m.streams.ContinueListeningLog(msg.RunID)
 }
 

@@ -188,6 +188,15 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		Tags:        []string{"Logs"},
 	}, srv.humaGetLogRaw)
 
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "searchLogs",
+		Method:      http.MethodGet,
+		Path:        "/api/tasks/{taskName}/log/search",
+		Summary:     "Search log lines across runs of a task",
+		Description: "Streams on disk through the task's runs newest-first and returns matching lines. Pure on-demand scan; no index is maintained. Use `cursor` to paginate beyond the per-request hit/run budget.",
+		Tags:        []string{"Logs"},
+	}, srv.humaSearchLogs)
+
 	srv.registerLocalCredentialsRoute(protectedAPI)
 	srv.registerRunsSSE(protectedAPI)
 	srv.registerLogSSE(protectedAPI)

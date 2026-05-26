@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
 	"github.com/runwisp/runwisp/internal/tui/views/info"
+	"github.com/runwisp/runwisp/internal/tui/views/logsearch"
 	"github.com/runwisp/runwisp/internal/tui/views/notifications"
 )
 
@@ -54,6 +55,12 @@ type Model struct {
 	dialogs       DialogManager
 	streams       StreamManager
 	notifications notifications.Panel
+	logSearch     *logsearch.Model
+	// pendingHighlight, when non-zero, is the absolute log-line number the
+	// next exec-view fetch should land on. Set when a search hit is
+	// selected for a run that's not yet open; consumed by the log
+	// streamer/fetcher when the buffer is ready.
+	pendingHighlight int64
 
 	panelFocus uikit.PanelFocus
 	info       uikit.StartupInfo

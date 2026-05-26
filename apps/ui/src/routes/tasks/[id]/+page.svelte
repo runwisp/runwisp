@@ -170,6 +170,12 @@
                 fetchLogs={logSession.fetchLogs}
                 streamLogs={logSession.streamLogs}
                 initialRunId={$page.url.searchParams.get("runId")}
+                initialHighlightLine={(() => {
+                    const v = $page.url.searchParams.get("line");
+                    if (!v) return null;
+                    const n = Number(v);
+                    return Number.isFinite(n) ? n : null;
+                })()}
                 {selectRunId}
             />
         {/if}

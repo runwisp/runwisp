@@ -106,6 +106,12 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		Background(uikit.ColorBg).
 		Width(lnw + 1)
 
+	highlightBg := lipgloss.NewStyle().
+		Background(uikit.ColorWarning).
+		Foreground(uikit.ColorBg).
+		Width(lnw + 1).
+		Bold(true)
+
 	leftIndicatorStyle := lipgloss.NewStyle().
 		Background(uikit.ColorBg).
 		Foreground(uikit.ColorTextMuted)
@@ -116,15 +122,26 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 
 	for i := o.start; i < o.end; i++ {
 		absLineNum := p.absoluteLineNumber(i)
-		lineNum := lineNumStyle.Render(fmt.Sprintf("%*d ", lnw, absLineNum))
+		isHL := p.HighlightLine != 0 && int64(absLineNum) == p.HighlightLine
+
+		gutterStyle := lineNumStyle
+		if isHL {
+			gutterStyle = highlightBg
+		}
+		lineNum := gutterStyle.Render(fmt.Sprintf("%*d ", lnw, absLineNum))
 
 		row := p.Lines[i]
 		sliced, clippedRight := uikit.SliceLineColumns(row.Text, p.HScroll, textAreaWidth)
 		sliced = trimTrailingRuneIfClipped(sliced, clippedRight)
 
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
+		padStyle := o.padStyle
+		if isHL {
+			textStyle = lipgloss.NewStyle().Background(uikit.ColorWarning).Foreground(uikit.ColorBg).Bold(true)
+			padStyle = lipgloss.NewStyle().Background(uikit.ColorWarning)
+		}
 		lineContent := composeLineContent(sliced, hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
-		lineContent = padLineContent(lineContent, logContentWidth, o.padStyle)
+		lineContent = padLineContent(lineContent, logContentWidth, padStyle)
 
 		o.b.WriteString(lineNum + lineContent)
 		o.b.WriteString("\n")
