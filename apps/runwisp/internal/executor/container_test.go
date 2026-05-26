@@ -5,7 +5,6 @@ package executor
 
 import (
 	"archive/tar"
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -17,12 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/build"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,72 +27,72 @@ import (
 // --- Mock Docker client ---
 
 type mockDockerClient struct {
-	pingFunc            func(ctx context.Context) (types.Ping, error)
-	imageBuildFunc      func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error)
-	containerCreateFunc func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
-	containerAttachFunc func(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error)
-	containerStartFunc  func(ctx context.Context, ctr string, options container.StartOptions) error
-	containerWaitFunc   func(ctx context.Context, ctr string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
-	containerRemoveFunc func(ctx context.Context, ctr string, options container.RemoveOptions) error
-	imageRemoveFunc     func(ctx context.Context, imageRef string, options image.RemoveOptions) ([]image.DeleteResponse, error)
+	pingFunc            func(ctx context.Context, options client.PingOptions) (client.PingResult, error)
+	imageBuildFunc      func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error)
+	containerCreateFunc func(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error)
+	containerAttachFunc func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error)
+	containerStartFunc  func(ctx context.Context, ctr string, options client.ContainerStartOptions) (client.ContainerStartResult, error)
+	containerWaitFunc   func(ctx context.Context, ctr string, options client.ContainerWaitOptions) client.ContainerWaitResult
+	containerRemoveFunc func(ctx context.Context, ctr string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
+	imageRemoveFunc     func(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error)
 }
 
-func (m *mockDockerClient) Ping(ctx context.Context) (types.Ping, error) {
+func (m *mockDockerClient) Ping(ctx context.Context, options client.PingOptions) (client.PingResult, error) {
 	if m.pingFunc != nil {
-		return m.pingFunc(ctx)
+		return m.pingFunc(ctx, options)
 	}
-	return types.Ping{}, nil
+	return client.PingResult{}, nil
 }
 
-func (m *mockDockerClient) ImageBuild(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
+func (m *mockDockerClient) ImageBuild(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
 	if m.imageBuildFunc != nil {
 		return m.imageBuildFunc(ctx, buildContext, options)
 	}
-	return build.ImageBuildResponse{Body: io.NopCloser(strings.NewReader(""))}, nil
+	return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(""))}, nil
 }
 
-func (m *mockDockerClient) ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+func (m *mockDockerClient) ContainerCreate(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error) {
 	if m.containerCreateFunc != nil {
-		return m.containerCreateFunc(ctx, config, hostConfig, networkingConfig, platform, containerName)
+		return m.containerCreateFunc(ctx, options)
 	}
-	return container.CreateResponse{ID: "test-container-id"}, nil
+	return client.ContainerCreateResult{ID: "test-container-id"}, nil
 }
 
-func (m *mockDockerClient) ContainerAttach(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error) {
+func (m *mockDockerClient) ContainerAttach(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
 	if m.containerAttachFunc != nil {
 		return m.containerAttachFunc(ctx, ctr, options)
 	}
 	return newHijackedResponse(""), nil
 }
 
-func (m *mockDockerClient) ContainerStart(ctx context.Context, ctr string, options container.StartOptions) error {
+func (m *mockDockerClient) ContainerStart(ctx context.Context, ctr string, options client.ContainerStartOptions) (client.ContainerStartResult, error) {
 	if m.containerStartFunc != nil {
 		return m.containerStartFunc(ctx, ctr, options)
 	}
-	return nil
+	return client.ContainerStartResult{}, nil
 }
 
-func (m *mockDockerClient) ContainerWait(ctx context.Context, ctr string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
+func (m *mockDockerClient) ContainerWait(ctx context.Context, ctr string, options client.ContainerWaitOptions) client.ContainerWaitResult {
 	if m.containerWaitFunc != nil {
-		return m.containerWaitFunc(ctx, ctr, condition)
+		return m.containerWaitFunc(ctx, ctr, options)
 	}
 	ch := make(chan container.WaitResponse, 1)
 	ch <- container.WaitResponse{StatusCode: 0}
-	return ch, make(chan error)
+	return client.ContainerWaitResult{Result: ch, Error: make(chan error)}
 }
 
-func (m *mockDockerClient) ContainerRemove(ctx context.Context, ctr string, options container.RemoveOptions) error {
+func (m *mockDockerClient) ContainerRemove(ctx context.Context, ctr string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 	if m.containerRemoveFunc != nil {
 		return m.containerRemoveFunc(ctx, ctr, options)
 	}
-	return nil
+	return client.ContainerRemoveResult{}, nil
 }
 
-func (m *mockDockerClient) ImageRemove(ctx context.Context, imageRef string, options image.RemoveOptions) ([]image.DeleteResponse, error) {
+func (m *mockDockerClient) ImageRemove(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error) {
 	if m.imageRemoveFunc != nil {
 		return m.imageRemoveFunc(ctx, imageRef, options)
 	}
-	return nil, nil
+	return client.ImageRemoveResult{}, nil
 }
 
 // --- Tests ---
@@ -125,16 +121,13 @@ func dockerStdoutFrame(payload string) []byte {
 	return buf.Bytes()
 }
 
-func newHijackedResponse(content string) types.HijackedResponse {
+func newHijackedResponse(content string) client.ContainerAttachResult {
 	var framed []byte
 	if content != "" {
 		framed = dockerStdoutFrame(content)
 	}
 	conn := &mockConn{Reader: bytes.NewReader(framed)}
-	return types.HijackedResponse{
-		Conn:   conn,
-		Reader: bufio.NewReader(conn),
-	}
+	return client.ContainerAttachResult{HijackedResponse: client.NewHijackedResponse(conn, "")}
 }
 
 func TestBuildContext(t *testing.T) {
@@ -190,12 +183,12 @@ func TestBuildContainerConfig(t *testing.T) {
 
 	assert.Equal(t, "test-image:latest", containerCfg.Image)
 	assert.Equal(t, []string{"FOO=bar", "BAZ=qux"}, containerCfg.Env)
-	_, has80 := containerCfg.ExposedPorts["80/tcp"]
+	_, has80 := containerCfg.ExposedPorts[network.MustParsePort("80/tcp")]
 	assert.True(t, has80)
-	_, has5432 := containerCfg.ExposedPorts["5432/tcp"]
+	_, has5432 := containerCfg.ExposedPorts[network.MustParsePort("5432/tcp")]
 	assert.True(t, has5432)
-	assert.Equal(t, "8080", hostCfg.PortBindings["80/tcp"][0].HostPort)
-	assert.Equal(t, "5432", hostCfg.PortBindings["5432/tcp"][0].HostPort)
+	assert.Equal(t, "8080", hostCfg.PortBindings[network.MustParsePort("80/tcp")][0].HostPort)
+	assert.Equal(t, "5432", hostCfg.PortBindings[network.MustParsePort("5432/tcp")][0].HostPort)
 	require.Len(t, hostCfg.Mounts, 1)
 	assert.Equal(t, "/data", hostCfg.Mounts[0].Source)
 	assert.Equal(t, "/mnt/data", hostCfg.Mounts[0].Target)
@@ -237,8 +230,8 @@ func TestAvailable(t *testing.T) {
 
 	t.Run("ping fails", func(t *testing.T) {
 		b := NewContainerBackendFromClient(&mockDockerClient{
-			pingFunc: func(ctx context.Context) (types.Ping, error) {
-				return types.Ping{}, fmt.Errorf("connection refused")
+			pingFunc: func(ctx context.Context, options client.PingOptions) (client.PingResult, error) {
+				return client.PingResult{}, fmt.Errorf("connection refused")
 			},
 		})
 		assert.False(t, b.Available(context.Background()))
@@ -254,8 +247,8 @@ func TestStartRejectsNonContainerExecution(t *testing.T) {
 
 func TestStartBuildFailure(t *testing.T) {
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{}, fmt.Errorf("build error")
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{}, fmt.Errorf("build error")
 		},
 	}
 	b := NewContainerBackendFromClient(mock)
@@ -271,8 +264,8 @@ func TestStartBuildFailure(t *testing.T) {
 func TestStartBuildOutputError(t *testing.T) {
 	errorMsg := `{"error": "COPY failed: file not found"}`
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(errorMsg)),
 			}, nil
 		},
@@ -291,17 +284,17 @@ func TestStartBuildOutputError(t *testing.T) {
 func TestStartContainerCreateFailure(t *testing.T) {
 	imageRemoved := false
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`)),
 			}, nil
 		},
-		containerCreateFunc: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			return container.CreateResponse{}, fmt.Errorf("create failed")
+		containerCreateFunc: func(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error) {
+			return client.ContainerCreateResult{}, fmt.Errorf("create failed")
 		},
-		imageRemoveFunc: func(ctx context.Context, imageRef string, options image.RemoveOptions) ([]image.DeleteResponse, error) {
+		imageRemoveFunc: func(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error) {
 			imageRemoved = true
-			return nil, nil
+			return client.ImageRemoveResult{}, nil
 		},
 	}
 	b := NewContainerBackendFromClient(mock)
@@ -319,21 +312,21 @@ func TestStartContainerAttachFailure(t *testing.T) {
 	containerRemoved := false
 	imageRemoved := false
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`)),
 			}, nil
 		},
-		containerAttachFunc: func(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error) {
-			return types.HijackedResponse{}, fmt.Errorf("attach failed")
+		containerAttachFunc: func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
+			return client.ContainerAttachResult{}, fmt.Errorf("attach failed")
 		},
-		containerRemoveFunc: func(ctx context.Context, ctr string, options container.RemoveOptions) error {
+		containerRemoveFunc: func(ctx context.Context, ctr string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 			containerRemoved = true
-			return nil
+			return client.ContainerRemoveResult{}, nil
 		},
-		imageRemoveFunc: func(ctx context.Context, imageRef string, options image.RemoveOptions) ([]image.DeleteResponse, error) {
+		imageRemoveFunc: func(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error) {
 			imageRemoved = true
-			return nil, nil
+			return client.ImageRemoveResult{}, nil
 		},
 	}
 	b := NewContainerBackendFromClient(mock)
@@ -352,24 +345,24 @@ func TestStartContainerStartFailure(t *testing.T) {
 	containerRemoved := false
 	imageRemoved := false
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`)),
 			}, nil
 		},
-		containerAttachFunc: func(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error) {
+		containerAttachFunc: func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
 			return newHijackedResponse(""), nil
 		},
-		containerStartFunc: func(ctx context.Context, ctr string, options container.StartOptions) error {
-			return fmt.Errorf("start failed")
+		containerStartFunc: func(ctx context.Context, ctr string, options client.ContainerStartOptions) (client.ContainerStartResult, error) {
+			return client.ContainerStartResult{}, fmt.Errorf("start failed")
 		},
-		containerRemoveFunc: func(ctx context.Context, ctr string, options container.RemoveOptions) error {
+		containerRemoveFunc: func(ctx context.Context, ctr string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 			containerRemoved = true
-			return nil
+			return client.ContainerRemoveResult{}, nil
 		},
-		imageRemoveFunc: func(ctx context.Context, imageRef string, options image.RemoveOptions) ([]image.DeleteResponse, error) {
+		imageRemoveFunc: func(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error) {
 			imageRemoved = true
-			return nil, nil
+			return client.ImageRemoveResult{}, nil
 		},
 	}
 	b := NewContainerBackendFromClient(mock)
@@ -387,18 +380,18 @@ func TestStartContainerStartFailure(t *testing.T) {
 func TestStartSuccess(t *testing.T) {
 	buildBody := `{"stream":"Step 1/1 : FROM alpine"}` + "\n"
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(buildBody)),
 			}, nil
 		},
-		containerAttachFunc: func(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error) {
+		containerAttachFunc: func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
 			return newHijackedResponse("hello world\n"), nil
 		},
-		containerWaitFunc: func(ctx context.Context, ctr string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
+		containerWaitFunc: func(ctx context.Context, ctr string, options client.ContainerWaitOptions) client.ContainerWaitResult {
 			ch := make(chan container.WaitResponse, 1)
 			ch <- container.WaitResponse{StatusCode: 0}
-			return ch, make(chan error)
+			return client.ContainerWaitResult{Result: ch, Error: make(chan error)}
 		},
 	}
 	b := NewContainerBackendFromClient(mock)
@@ -424,18 +417,18 @@ func TestStartSuccess(t *testing.T) {
 func TestStartWaitError(t *testing.T) {
 	buildBody := `{"stream":"ok"}` + "\n"
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(buildBody)),
 			}, nil
 		},
-		containerAttachFunc: func(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error) {
+		containerAttachFunc: func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
 			return newHijackedResponse(""), nil
 		},
-		containerWaitFunc: func(ctx context.Context, ctr string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
+		containerWaitFunc: func(ctx context.Context, ctr string, options client.ContainerWaitOptions) client.ContainerWaitResult {
 			errCh := make(chan error, 1)
 			errCh <- fmt.Errorf("container crashed")
-			return make(chan container.WaitResponse), errCh
+			return client.ContainerWaitResult{Result: make(chan container.WaitResponse), Error: errCh}
 		},
 	}
 	b := NewContainerBackendFromClient(mock)
@@ -455,18 +448,18 @@ func TestStartWaitError(t *testing.T) {
 func TestStartNonZeroExitCode(t *testing.T) {
 	buildBody := `{"stream":"ok"}` + "\n"
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(buildBody)),
 			}, nil
 		},
-		containerAttachFunc: func(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error) {
+		containerAttachFunc: func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
 			return newHijackedResponse(""), nil
 		},
-		containerWaitFunc: func(ctx context.Context, ctr string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
+		containerWaitFunc: func(ctx context.Context, ctr string, options client.ContainerWaitOptions) client.ContainerWaitResult {
 			ch := make(chan container.WaitResponse, 1)
 			ch <- container.WaitResponse{StatusCode: 42}
-			return ch, make(chan error)
+			return client.ContainerWaitResult{Result: ch, Error: make(chan error)}
 		},
 	}
 	b := NewContainerBackendFromClient(mock)
@@ -551,18 +544,18 @@ func TestBuildContainerConfigPortDefaultProtocol(t *testing.T) {
 	}
 
 	containerCfg, hostCfg := b.buildContainerConfig("img", ctr, nil)
-	_, has3000 := containerCfg.ExposedPorts["3000/udp"]
+	_, has3000 := containerCfg.ExposedPorts[network.MustParsePort("3000/udp")]
 	assert.True(t, has3000)
-	_, hasBinding := hostCfg.PortBindings["3000/udp"]
+	_, hasBinding := hostCfg.PortBindings[network.MustParsePort("3000/udp")]
 	assert.True(t, hasBinding)
 }
 
 func TestRemoveContainerLogsError(t *testing.T) {
 	called := false
 	mock := &mockDockerClient{
-		containerRemoveFunc: func(ctx context.Context, ctr string, options container.RemoveOptions) error {
+		containerRemoveFunc: func(ctx context.Context, ctr string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 			called = true
-			return fmt.Errorf("remove failed")
+			return client.ContainerRemoveResult{}, fmt.Errorf("remove failed")
 		},
 	}
 	b := NewContainerBackendFromClient(mock)
@@ -575,9 +568,9 @@ func TestRemoveContainerLogsError(t *testing.T) {
 func TestRemoveImageLogsError(t *testing.T) {
 	called := false
 	mock := &mockDockerClient{
-		imageRemoveFunc: func(ctx context.Context, imageRef string, options image.RemoveOptions) ([]image.DeleteResponse, error) {
+		imageRemoveFunc: func(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error) {
 			called = true
-			return nil, fmt.Errorf("remove failed")
+			return client.ImageRemoveResult{}, fmt.Errorf("remove failed")
 		},
 	}
 	builder := &ImageBuilder{docker: mock}
@@ -597,12 +590,12 @@ func TestStartBuildOutputMultipleMessages(t *testing.T) {
 	buildBody := strings.Join(messages, "\n")
 
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(buildBody)),
 			}, nil
 		},
-		containerAttachFunc: func(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error) {
+		containerAttachFunc: func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
 			return newHijackedResponse(""), nil
 		},
 	}
@@ -620,15 +613,15 @@ func TestStartBuildOutputMultipleMessages(t *testing.T) {
 func TestStartPassesBuildOptions(t *testing.T) {
 	var capturedTags []string
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
 			capturedTags = options.Tags
 			assert.True(t, options.Remove)
 			assert.True(t, options.ForceRemove)
-			return build.ImageBuildResponse{
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`)),
 			}, nil
 		},
-		containerAttachFunc: func(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error) {
+		containerAttachFunc: func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
 			return newHijackedResponse(""), nil
 		},
 	}
@@ -646,14 +639,14 @@ func TestStartPassesBuildOptions(t *testing.T) {
 
 // Verify that HijackedResponse is correctly used in attach - use real struct
 func TestContainerAttachOptions(t *testing.T) {
-	var capturedOpts container.AttachOptions
+	var capturedOpts client.ContainerAttachOptions
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
 				Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`)),
 			}, nil
 		},
-		containerAttachFunc: func(ctx context.Context, ctr string, options container.AttachOptions) (types.HijackedResponse, error) {
+		containerAttachFunc: func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
 			capturedOpts = options
 			return newHijackedResponse(""), nil
 		},
@@ -720,8 +713,8 @@ func TestStartCleanupBuildError(t *testing.T) {
 	}
 
 	mock := &mockDockerClient{
-		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error) {
-			return build.ImageBuildResponse{Body: errBody}, nil
+		imageBuildFunc: func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{Body: errBody}, nil
 		},
 	}
 	b := NewContainerBackendFromClient(mock)

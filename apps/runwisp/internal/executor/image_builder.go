@@ -14,8 +14,7 @@ import (
 
 	"log/slog"
 
-	"github.com/docker/docker/api/types/build"
-	"github.com/docker/docker/api/types/image"
+	"github.com/moby/moby/client"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -33,7 +32,7 @@ func (b *ImageBuilder) Build(ctx context.Context, ctr *model.ContainerExecution)
 
 	imageTag := "runwisp-task-" + ulid.Make().String()
 
-	buildResp, err := b.docker.ImageBuild(ctx, buildCtx, build.ImageBuildOptions{
+	buildResp, err := b.docker.ImageBuild(ctx, buildCtx, client.ImageBuildOptions{
 		Tags:        []string{imageTag},
 		Remove:      true,
 		ForceRemove: true,
@@ -66,7 +65,7 @@ func (b *ImageBuilder) Build(ctx context.Context, ctr *model.ContainerExecution)
 
 // Remove deletes a previously built image.
 func (b *ImageBuilder) Remove(ctx context.Context, imageTag string) {
-	if _, err := b.docker.ImageRemove(ctx, imageTag, image.RemoveOptions{Force: true}); err != nil {
+	if _, err := b.docker.ImageRemove(ctx, imageTag, client.ImageRemoveOptions{Force: true}); err != nil {
 		slog.Warn("Failed to remove image", "tag", imageTag, "err", err)
 	}
 }
