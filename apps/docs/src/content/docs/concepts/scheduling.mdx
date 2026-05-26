@@ -7,10 +7,10 @@ description: Cron expressions, timezones, missed-tick catchup, and the determini
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-The scheduler is meant to be predictable and unsurprising. It reads
-standard cron expressions, fires the matching tasks at the right
-moments, and records a row for every firing. There is no dependency
-graph, no leader election — one daemon owns its tasks.
+The scheduler's whole job is to be boring and predictable. It reads
+plain cron expressions, fires the matching tasks when their time comes,
+and writes a row for every firing. No dependency graph, no leader
+election — one daemon owns its tasks and that's it.
 
 ## The cron field
 
@@ -20,8 +20,8 @@ cron = "*/5 * * * *"
 run  = "/usr/local/bin/heartbeat"
 ```
 
-`cron` accepts standard 5-field syntax: **minute, hour, day-of-month,
-month, day-of-week**. The usual convenience aliases also work:
+`cron` takes the usual 5 fields — **minute, hour, day-of-month, month,
+day-of-week** — and the familiar shorthand aliases work too:
 
 | Expression              | Meaning                          |
 | ----------------------- | -------------------------------- |
@@ -38,18 +38,18 @@ month, day-of-week**. The usual convenience aliases also work:
 | `@yearly` / `@annually` | January 1st at 00:00             |
 | `@every 1h30m`          | every 90 minutes                 |
 
-Six-field syntax (with seconds) is **not** supported. If you need
-firings finer than a minute, use `@every 30s` or run a service.
+Six fields (the version with seconds) is **not** supported. If you need
+something finer than a minute, use `@every 30s` or reach for a service.
 
 ## Timezone
 
-Cron expressions are evaluated in the timezone configured by
-`[scheduler] timezone`. If you leave it unset, the daemon falls back
-to the host's system timezone.
+Cron expressions get evaluated in whatever zone `[scheduler] timezone`
+says. Leave it unset and the daemon just uses the host's system
+timezone.
 
-The resolved zone (and whether it came from config or the system) is
-shown in the TUI startup banner and in the Web UI header, so there's
-no guessing about what the scheduler is actually using.
+You never have to guess which zone is actually in play: the resolved
+zone — and whether it came from your config or the system — is printed
+in the TUI startup banner and shown in the Web UI header.
 
 ```toml
 # Daemon-wide default for every task without its own timezone.
@@ -67,49 +67,52 @@ timezone = "Atlantic/Faroe"
 | `[scheduler] timezone`    | _(system zone)_ | Fallback for every task without its own `timezone`.                             |
 | `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the scheduler-wide default. |
 
-If the daemon doesn't recognise a name (typo, or missing IANA
-timezone data on the host — e.g. a minimal container image without
-`tzdata`), config load fails with the offending scope — the daemon
-never silently falls back to UTC.
+If the daemon doesn't recognize the name you gave it — a typo, or a host
+with no IANA timezone data, like a stripped-down container image
+missing `tzdata` — config load fails and tells you exactly which scope
+is at fault. It never quietly falls back to UTC and leaves you
+wondering.
 
 ### DST behaviour
 
-RunWisp gives you a single-fire schedule across DST transitions:
+Across DST transitions, RunWisp makes sure a schedule fires once and
+only once:
 
-- **Fall-back** (clocks go back). The wall-clock minute that repeats —
-  e.g. 02:30 — only fires once. The scheduler dedupes by
-  `(local-date, hour, minute)`; the suppressed firing is still
-  recorded in history.
-- **Spring-forward** (clocks jump ahead). A cron like `0 2 * * *` whose
-  matching minute doesn't exist that day fires at the next valid time
-  — once.
+- **Fall-back** (clocks go back). The wall-clock minute that happens
+  twice — say 02:30 — only fires once. The scheduler dedupes on
+  `(local-date, hour, minute)`, and the suppressed firing still gets a
+  row in history.
+- **Spring-forward** (clocks jump ahead). If a cron like `0 2 * * *`
+  lands on a minute that simply doesn't exist that day, it fires at the
+  next valid time — again, once.
 
-UTC has no DST and is unaffected.
+UTC has no DST, so none of this touches it.
 
 ## What "fired" means
 
-A cron tick triggers a **run**, not a side effect. Every firing produces:
+A cron tick produces a **run**, not just some side effect. Every firing
+gives you:
 
 - A row in SQLite with a fresh ULID.
 - `triggered_by = "cron"`.
 - A captured stdout/stderr stream on disk.
-- A status of `pending → running → ended` with one of `success`,
-  `failed`, `stopped`, `timeout`, `crashed`, `skipped`, or
+- A status that walks `pending → running → ended`, landing on one of
+  `success`, `failed`, `stopped`, `timeout`, `crashed`, `skipped`, or
   `log_overflow`.
 
-Whether the run actually starts immediately depends on the task's
-[concurrency policy](/concepts/concurrency/). With the default
-`on_overlap = "queue"`, a tick that fires while a previous run is still
-going gets queued. With `on_overlap = "skip"`, the firing is recorded
-as a skipped run and the schedule moves on. Either way, the tick
-**always** appears in history — that's the rule: nothing fails or
-fires without leaving a record.
+Whether the run *starts* right away is up to the task's
+[concurrency policy](/concepts/concurrency/). Under the default
+`on_overlap = "queue"`, a tick that fires while the last run is still
+going simply waits in line. Under `on_overlap = "skip"`, it's recorded
+as a skipped run and the schedule moves on. Either way the tick
+**always** lands in history — that's the rule around here: nothing
+fires, and nothing fails, without leaving a trace.
 
 ## Missed ticks: catchup
 
-When the daemon was down (host reboot, deploy, hard crash), some
-scheduled firings didn't happen. The `catch_up` field controls what to
-do about that on next startup:
+While the daemon was down — a reboot, a deploy, a hard crash — some
+scheduled firings just didn't happen. `catch_up` decides what to do
+about those the next time it starts up:
 
 ```toml
 [tasks.metrics-rollup]
@@ -123,16 +126,16 @@ catch_up = "latest"      # default
 | `all`    | Fire **one run per missed tick**, capped by [`max_catch_up_runs`](#capping-the-backfill-max_catch_up_runs). Right when each tick processes a discrete slice. |
 | `skip`   | Pretend the missed ticks never happened. Right for monitors and probes that just want fresh.                                                                 |
 
-The anchor for "missed" is the timestamp of the last recorded run for
-the task. On the very first boot, the anchor is set the first time
-RunWisp sees the task — so a fresh install doesn't queue up a big
-batch of "catch-up" runs for ticks before the daemon existed.
+"Missed" is measured from the timestamp of the task's last recorded
+run. On the very first boot, that anchor is set the moment RunWisp first
+sees the task — so a fresh install won't suddenly queue up a mountain of
+"catch-up" runs for ticks from before the daemon ever existed.
 
 ### Capping the backfill: `max_catch_up_runs`
 
-`catch_up = "all"` on a `* * * * *` task and a daemon that was down
-for a day means a large backlog queued at startup. The cap exists so
-a long outage doesn't bury the scheduler.
+Picture `catch_up = "all"` on a `* * * * *` task with a daemon that was
+down for a day — that's a huge backlog waiting to fire at startup. The
+cap is there so one long outage can't bury the scheduler.
 
 ```toml
 [tasks.metrics-rollup]
@@ -146,36 +149,36 @@ max_catch_up_runs = 200    # at most 200 missed ticks fire on startup
 | _omitted_ | Inherit the built-in default of **100**. Tune up explicitly if each missed tick is real work. |
 | `N > 0`   | Cap the backfill at `N` runs; older missed ticks are dropped.                                 |
 
-Negative values and `0` are rejected; omit the key to inherit the
-default. The cap only applies to `catch_up = "all"`: `latest` always
-triggers exactly one run by construction, and `skip` triggers zero.
+Zero and negative values are rejected; leave the key off to inherit the
+default. The cap only matters for `catch_up = "all"` — `latest` fires
+exactly one run no matter what, and `skip` fires none.
 
-When the cap fires, the daemon logs a warning that names the task, the
-total `missed`, the cap, and how many were dropped — so the silenced
-ticks are never invisible (Prime Directive #1).
+And when the cap does kick in, the daemon logs a warning naming the
+task, how many ticks were `missed`, the cap, and how many got dropped.
+The silenced ticks never just vanish (Prime Directive #1).
 
 ## On startup: unfinished runs are marked crashed
 
-On a clean shutdown the daemon waits for its running tasks to finish
-or hit their timeout. On a hard crash (power loss, force kill), it
-can't.
+On a clean shutdown, the daemon waits for its running tasks to either
+finish or hit their timeout. On a hard crash — power loss, force kill —
+it doesn't get the chance.
 
-When the daemon next starts, **any run that was still recorded as
-running is marked `crashed` with exit code `-2`**. Those runs are **not
-resumed** — that would require knowing where the process got to, and
-the daemon doesn't. A fresh run may then be created by the normal
-scheduling / catchup logic above.
+So the next time it starts, **any run still on the books as running gets
+marked `crashed` with exit code `-2`**. Those runs are **not** picked
+back up — resuming would mean knowing exactly where the process left
+off, and the daemon doesn't. The normal scheduling and catchup logic
+above may then spin up a fresh run.
 
-The point: every row in your run history finishes with a final
-result. You never have a row stuck "running" because the daemon
-disappeared under it.
+The upshot: every row in your history ends with a real result. You'll
+never find one stuck on "running" just because the daemon vanished out
+from under it.
 
 ## Predictable timing
 
-Same TOML and same clock, same firings. There is no random delay —
-two tasks with `cron = "0 2 * * *"` fire at exactly the same instant.
-If that's a problem (they hit the same downstream service), stagger
-the schedule explicitly:
+Same TOML, same clock, same firings — there's no random jitter. Two
+tasks both set to `cron = "0 2 * * *"` fire at the exact same instant.
+If that's a problem (they both hammer the same downstream service, say),
+just stagger them yourself:
 
 ```toml
 [tasks.backup-a]
@@ -187,29 +190,29 @@ cron = "5 2 * * *"
 
 ## Reload semantics
 
-The scheduler reads `runwisp.toml` once, at startup. There is no live
-reload — no file watcher, no reload command. To pick up edits, restart
-the daemon.
+The scheduler reads `runwisp.toml` exactly once, at startup. There's no
+live reload — no file watcher, no reload command. Want your edits to
+take? Restart the daemon.
 
-A parse error at startup fails the boot — the daemon exits before
-opening its port. The safe pattern is to run `runwisp validate
---config <path>` against the new file before you restart.
+A parse error at startup stops the boot cold: the daemon exits before it
+ever opens its port. The safe habit is to run `runwisp validate --config
+<path>` against the new file *before* you restart.
 
-When a task disappears from the file across a restart, its schedule
-entry is gone but its run history stays. When a new task appears, its
-schedule is added; catchup does **not** apply for tasks that didn't exist
-in the previous configuration.
+If a task disappears from the file between restarts, its schedule is
+gone but its run history stays put. If a new task shows up, its schedule
+is added — and catchup does **not** apply to it, since it didn't exist
+in the previous config.
 
 ## Intentional scope
 
-A few things the scheduler doesn't try to do, on purpose:
+A couple of things the scheduler deliberately won't do:
 
-- **No clustering.** One daemon owns its tasks. Two daemons reading
-  the same TOML would both fire — that's a setup mistake, not a
+- **No clustering.** One daemon owns its tasks. Point two daemons at the
+  same TOML and they'll both fire — that's a setup mistake, not a
   feature.
-- **No "every Nth tick" semantics.** Cron is the surface; if you need
-  every other Tuesday, encode it in the cron (`30 9 */2 * 2`) or
-  filter in your script.
+- **No "every Nth tick" logic.** Cron is the whole surface. If you want
+  every other Tuesday, bake it into the cron (`30 9 */2 * 2`) or filter
+  for it in your script.
 
 ---
 

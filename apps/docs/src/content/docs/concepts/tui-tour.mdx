@@ -55,13 +55,13 @@ toggling.
 
 ## The shell
 
-A **sidebar** on the left, the active view on the right, a **help
-bar** at the bottom that updates with whatever you're focused on. The
-sidebar lists three navigation pages (Home / Info / Debug), followed
-by your tasks and services bucketed by `group`. The triangle marker
-`▸` is what's currently showing in the right pane; the highlighted
-row is your cursor — move it freely, nothing changes until you press
-`Enter`.
+There's a **sidebar** on the left, the active view on the right, and a
+**help bar** along the bottom that changes to match whatever you're
+focused on. The sidebar starts with three navigation pages (Home /
+Info / Debug), then lists your tasks and services grouped by `group`.
+The triangle marker `▸` points at whatever's currently showing in the
+right pane; the highlighted row is just your cursor — move it around
+all you like, nothing happens until you press `Enter`.
 
 ![tui-shell.png — Full TUI window: 28-column sidebar with daemon identity, Home/Info/Debug nav, grouped tasks and services; right pane Home; help bar at bottom.](../../../assets/screenshots/placeholder.svg)
 
@@ -81,9 +81,9 @@ The default view. Two modes:
 
 ### Info
 
-System metrics: CPU and memory sparklines, run-count summary,
-uptime. Useful for "is the daemon healthy right now" without opening
-a browser.
+System metrics — CPU and memory sparklines, a run-count summary, and
+uptime. This is your "is the daemon healthy right now?" glance without
+reaching for a browser.
 
 ![tui-info.png — TUI Info page: CPU and memory sparklines, run-count summary, uptime.](../../../assets/screenshots/placeholder.svg)
 
@@ -126,12 +126,12 @@ new lines arrive. Any manual scroll (`↑`, `PgUp`, `g`, `G`)
 
 ## The failure path
 
-Prime directive #1 is "nothing silently fails," so it's worth a beat
-on **where failures actually surface** in the TUI — exit code,
-captured output, and end reason are first-class fields, not buried.
+Prime directive #1 is "nothing silently fails," so it's worth pausing
+on **where failures actually show up** in the TUI — exit code, captured
+output, and end reason are right up front, not buried somewhere.
 
-When you land on the run detail view for a failed run, three things
-tell you what went wrong without scrolling:
+Open the run detail view for a failed run and three things tell you
+what went wrong before you even scroll:
 
 - **The header status badge** carries the end reason — `failed`,
   `timeout`, `crashed`, `stopped`, `skipped`, or `log_overflow`. Each
@@ -195,8 +195,8 @@ of.
 
 ## Intentional scope
 
-The TUI is a control surface, not a configuration UI. It can trigger,
-stop, restart, and observe — but it doesn't:
+The TUI is a control surface, not a config editor. It'll trigger, stop,
+restart, and observe — but it won't:
 
 - **Edit config.** `runwisp.toml` is the source of truth. Open it in
   your editor and restart the daemon to pick up changes.
