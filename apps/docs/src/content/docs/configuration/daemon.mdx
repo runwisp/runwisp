@@ -7,15 +7,15 @@ description: Daemon-wide settings — shutdown_timeout — plus the CLI flags th
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-`[daemon]` carries the small set of settings that apply to the daemon
-as a whole rather than to any individual task or service. It is optional;
-omit the section and the built-in defaults below take over.
+`[daemon]` holds the handful of settings that apply to the daemon as a
+whole, rather than to any one task or service. The whole section is
+optional — leave it out and the built-in defaults below take over.
 
-The **data directory** and **listen address** are deliberately not in
-TOML — they need to be settable before the config file is even read, so
-they live on the CLI (or in your supervisor's invocation of `runwisp`).
-They're documented here alongside the in-TOML keys because operators
-think of them together.
+You won't find the **data directory** or **listen address** in here,
+and that's on purpose: they have to be set *before* the config file is
+even read, so they live on the CLI instead (or in however your
+supervisor invokes `runwisp`). They're documented on this page anyway,
+since in practice you tend to think about them together.
 
 ## Keys
 
@@ -36,63 +36,65 @@ metrics_listen   = ""
 
 ### `shutdown_timeout`
 
-`shutdown_timeout` is the **whole-daemon** budget. Each task and service
-still gets its own [`graceful_stop`](/configuration/tasks/#retries--timeout)
-inside that cap. If any `graceful_stop` exceeds `shutdown_timeout` the
-daemon emits a boot-time warning naming the offending task — the daemon
-will SIGKILL the survivor before its per-task grace window completes.
+Think of `shutdown_timeout` as the budget for the **whole daemon**.
+Every task and service still has its own
+[`graceful_stop`](/configuration/tasks/#retries--timeout), but it has to
+fit inside that overall cap. If some task's `graceful_stop` is longer
+than `shutdown_timeout`, the daemon warns you about it by name at boot —
+because in that situation it'll SIGKILL the straggler before its
+per-task grace window is even up.
 
-Either raise `shutdown_timeout`, lower the per-task `graceful_stop`, or
-accept that the task's cleanup hook may be interrupted on daemon
-shutdown.
+You've got three ways out of that: raise `shutdown_timeout`, lower the
+per-task `graceful_stop`, or just accept that the task's cleanup hook
+might get cut short when the daemon goes down.
 
 ### `external_url`
 
-`external_url` is the **public** base URL at which an operator (or a
-notification recipient) reaches this daemon's Web UI — e.g.
-`https://runwisp.example.com` behind a reverse proxy, or
-`http://192.168.1.50:9477` on a LAN. Trailing slashes are stripped; the
-scheme must be `http` or `https`.
+`external_url` is the **public** address where someone — you, or whoever
+gets a notification — actually reaches this daemon's Web UI. That might
+be `https://runwisp.example.com` behind a reverse proxy, or
+`http://192.168.1.50:9477` on a LAN. Trailing slashes get stripped, and
+the scheme has to be `http` or `https`.
 
-The daemon never opens an outbound connection to this URL. Its only
-purpose is rendering: when a Slack or Telegram notification fires, the
-template appends a "View run" link of the form
-`<external_url>/tasks/<task>?runId=<id>` that drops the operator directly
-into the run-detail panel of the embedded dashboard.
+The daemon never calls out to this URL itself — it's purely for
+rendering. When a Slack or Telegram notification fires, the template
+tacks on a "View run" link like
+`<external_url>/tasks/<task>?runId=<id>`, which drops you straight into
+that run's detail panel in the dashboard.
 
-Leaving `external_url` unset is the supported default. Notifications
-still render fully — they just omit the link line rather than emitting
-a broken URL.
+Leaving `external_url` unset is perfectly fine and fully supported.
+Notifications still render in full — they just skip the link line rather
+than print a broken URL.
 
 ### `metrics_enabled`
 
-`metrics_enabled` gates the OpenMetrics scrape endpoint at `/metrics`.
-Default off: `runwisp_task_active_runs` carries your task names as label
-values, and `runwisp_build_info` carries the daemon version — that's
-recon detail a publicly-exposed daemon shouldn't leak by default. Flip
-this to `true` when you're ready to plug RunWisp into Prometheus,
-Grafana Agent, or an OpenTelemetry collector. See
-[Operations / Metrics](/operations/metrics/) for the full label list
-and a sample scrape config.
+`metrics_enabled` is the gate on the OpenMetrics scrape endpoint at
+`/metrics`, and it's off by default for a reason: `runwisp_task_active_runs`
+exposes your task names as label values, and `runwisp_build_info`
+exposes the daemon version — that's exactly the kind of recon detail a
+publicly-reachable daemon shouldn't be handing out unasked. Flip it to
+`true` when you're ready to wire RunWisp into Prometheus, Grafana Agent,
+or an OpenTelemetry collector. The full label list and a sample scrape
+config are over in [Operations / Metrics](/operations/metrics/).
 
 ### `metrics_listen`
 
-Once `metrics_enabled = true`, the endpoint shares the main UI/REST
-listener by default. Set `metrics_listen = "127.0.0.1:9478"` (or any
-host:port) to bind `/metrics` on a dedicated address instead — this is
-the right knob when `--host 0.0.0.0` exposes the dashboard publicly but
-the scrape surface should stay on loopback. The dedicated listener
-serves only `/metrics`; the UI, REST API, and `/health` remain on the
-main listener.
+With `metrics_enabled = true`, the endpoint rides on the main UI/REST
+listener by default. Point `metrics_listen` at something like
+`"127.0.0.1:9478"` (any host:port works) and `/metrics` binds there
+instead. That's the knob you want when `--host 0.0.0.0` puts the
+dashboard out in public but you'd rather keep the scrape surface on
+loopback. The dedicated listener serves *only* `/metrics` — the UI, REST
+API, and `/health` all stay on the main listener.
 
-Setting `metrics_listen` without `metrics_enabled = true` is rejected
-at boot rather than silently ignored.
+And if you set `metrics_listen` but never turned `metrics_enabled` on,
+the daemon rejects it at boot instead of quietly ignoring it.
 
 ## CLI flags: data directory & listen address
 
-These three flags govern where state lives and where the HTTP/Web UI
-listens. They apply to every `runwisp` subcommand (`daemon`, `tui`,
-`exec`, …):
+These three flags decide where state lives and where the HTTP/Web UI
+listens, and they apply to every `runwisp` subcommand (`daemon`, `tui`,
+`exec`, and so on):
 
 | Flag     | Default     | What it does                                                                                              |
 | -------- | ----------- | --------------------------------------------------------------------------------------------------------- |
@@ -104,18 +106,18 @@ listens. They apply to every `runwisp` subcommand (`daemon`, `tui`,
 runwisp daemon --data /var/lib/runwisp --host 0.0.0.0 --port 9477
 ```
 
-Picking `--data` once and using it consistently matters: the database
+It's worth picking `--data` once and sticking with it. The database
 file (`runwisp.db`), the local Unix socket (`runwisp.sock`), and every
-task's log files all live under that directory. Moving it after the
-fact is a directory move, not a configuration change.
+task's logs all live under that directory, so relocating later is a
+plain directory move — not a config change.
 
-The daemon **does not persist** the daemon password or the JWT signing
-key. The password comes from `RUNWISP_PASSWORD` if set, otherwise a
-fresh ephemeral one is generated every boot. The JWT key is derived
-deterministically from the password — set `RUNWISP_PASSWORD` (e.g.
-via a Docker secret or systemd `LoadCredential=`) to keep browser
-sessions stable across daemon restarts. See [Auth](/operations/auth/)
-for details.
+The daemon **never persists** the password or the JWT signing key. The
+password comes from `RUNWISP_PASSWORD` if you set it; otherwise a fresh
+ephemeral one is minted every boot. The JWT key is derived
+deterministically from the password, so setting `RUNWISP_PASSWORD` (via
+a Docker secret or systemd `LoadCredential=`, say) is what keeps browser
+sessions alive across restarts. [Auth](/operations/auth/) has the full
+story.
 
 ## Environment variables
 
@@ -127,11 +129,11 @@ for details.
 
 ## Local Unix socket
 
-The daemon creates `<datadir>/runwisp.sock` on startup. Local CLI
-commands and the TUI connect over this socket and do not require a
-password — access is gated by the data dir's `0700` mode, the
-socket's `0600` mode, and a `SO_PEERCRED` check at accept time. The
-socket file is removed on graceful shutdown.
+On startup the daemon creates `<datadir>/runwisp.sock`. Local CLI
+commands and the TUI talk to the daemon over this socket without ever
+needing a password — access is gated by the data dir's `0700` mode, the
+socket's own `0600` mode, and a `SO_PEERCRED` check when a connection is
+accepted. On a graceful shutdown, the socket file is cleaned up.
 
 ---
 

@@ -7,14 +7,15 @@ description: Every key accepted by a [tasks.<name>] table — cron, run, on_over
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-A task is a unit of work that runs and exits. The TOML key (`backup-db`
-in `[tasks.backup-db]`) is the **task name** — it appears in the CLI,
-the API, the Web UI, and the on-disk log path. Names must be unique
-across both `[tasks.*]` and `[services.*]`.
+A task is a unit of work that runs and then exits. The TOML key —
+`backup-db` in `[tasks.backup-db]` — is the **task name**, and it turns
+up everywhere: the CLI, the API, the Web UI, and the on-disk log path.
+Names have to be unique across both `[tasks.*]` and `[services.*]`.
 
-Only two fields are truly required: the table itself and `run`.
-Everything else inherits from [`[defaults]`](/configuration/defaults/)
-or has a sensible built-in default.
+Really only two things are required: the table itself and a `run`.
+Everything else either inherits from
+[`[defaults]`](/configuration/defaults/) or comes with a sensible
+built-in default.
 
 ## Minimum example
 
@@ -24,8 +25,8 @@ cron = "*/5 * * * *"
 run  = "/usr/local/bin/heartbeat"
 ```
 
-That's a complete, valid task: it fires every five minutes, captures
-stdout/stderr to a log file, and persists each run to SQLite.
+That's a complete, valid task. It fires every five minutes, captures
+stdout/stderr to a log file, and writes a row for every run to SQLite.
 
 ## Identity & metadata
 
@@ -46,25 +47,25 @@ stdout/stderr to a log file, and persists each run to SQLite.
 | `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                         |
 | `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero and negatives are rejected at config load.                                                               |
 
-Without a `cron`, the task is **manual-only** — it runs only when
-triggered explicitly. That's a valid pattern for one-shot deploy hooks
-and similar.
+Leave `cron` off and the task becomes **manual-only** — it runs only
+when something explicitly triggers it. That's a perfectly good pattern
+for one-shot deploy hooks and the like.
 
-See [How scheduling works](/concepts/scheduling/) for the full cron
-grammar and DST behaviour, and the catchup table.
+[How scheduling works](/concepts/scheduling/) has the full cron grammar,
+the DST behaviour, and the catchup details.
 
 ### `api_trigger = false` — cron-only tasks
 
-The default `api_trigger = true` lets you run the task on demand from
-the CLI (`runwisp exec <name>`), the REST API
-(`POST /api/tasks/{name}/run`), the Web UI's **Run Task** button,
-and the TUI's `r` keybinding.
+With the default `api_trigger = true`, you can kick the task off on
+demand from the CLI (`runwisp exec <name>`), the REST API
+(`POST /api/tasks/{name}/run`), the Web UI's **Run Task** button, or the
+TUI's `r` key.
 
-Setting `api_trigger = false` says **only the scheduler may start this
-task**. Use it for tasks that are dangerous to fire off-schedule —
-overnight rebuilds, idempotency-fragile data jobs, anything that
-coordinates with another schedule and would do harm if double-fired by
-a curious operator.
+Set `api_trigger = false` and the rule becomes **only the scheduler gets
+to start this task**. That's the one you want for tasks that are
+genuinely risky to fire off-schedule — an overnight rebuild, a data job
+that isn't safe to run twice, anything timed around another schedule
+that a curious operator could break by double-firing it.
 
 ```toml
 [tasks.nightly-merge]
@@ -73,17 +74,18 @@ api_trigger = false        # only fires from cron, never from the UI / API / CLI
 run         = "/usr/local/bin/merge-shards"
 ```
 
-What changes when `api_trigger = false`:
+Here's what flips when `api_trigger = false`:
 
-- A `POST /api/tasks/{name}/run` returns **403 Forbidden** with the
+- `POST /api/tasks/{name}/run` comes back **403 Forbidden** with the
   message `API triggering disabled for this task`.
-- `runwisp exec <name>` surfaces the same error and exits non-zero.
-- Cron firings, retries, and `on_overlap` behaviour are **unaffected**:
-  the scheduler is not "API triggering" and runs the task normally.
+- `runwisp exec <name>` shows the same error and exits non-zero.
+- Cron firings, retries, and `on_overlap` are **untouched** — the
+  scheduler isn't "API triggering," so it runs the task as normal.
 
-`api_trigger` is independent of `cron`. A task with `api_trigger = false`
-**and** no `cron` is a dead task — it can never start. The loader does
-not reject this combination today, but it's almost certainly a mistake.
+`api_trigger` and `cron` are independent of each other, which leaves one
+trap: a task with `api_trigger = false` **and** no `cron` is a dead task
+— nothing can ever start it. The loader won't reject that combination
+today, but it's almost always a mistake.
 
 ## Concurrency
 
@@ -93,9 +95,9 @@ not reject this combination today, but it's almost certainly a mistake.
 | `on_overlap`     | `"queue"` | What happens when a new firing arrives at the `max_concurrent` limit: `queue` / `skip` / `terminate`.                                                                         |
 | `queue_max`      | `100`     | When `on_overlap = "queue"`, cap on pending firings. New firings past the cap record `end_reason = "queue_full"`. Positive integer; hard internal cap of 10000. `0` rejected. |
 
-Most cron-style work wants `max_concurrent = 1`. See
-[Concurrency policies](/concepts/concurrency/) for when each policy is
-right.
+Most cron-style work is happiest with `max_concurrent = 1`.
+[Concurrency policies](/concepts/concurrency/) walks through when each
+policy is the right call.
 
 ## Retries & timeout
 
@@ -108,18 +110,19 @@ right.
 | `timeout`        | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                        |
 | `graceful_stop`  | `"5s"`                      | SIGTERM grace period before SIGKILL on `timeout`, `on_overlap = "terminate"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill. |
 
-A retry only fires for `failed` / `timeout` / `crashed`. Manual stops
-and `on_overlap = "terminate"` end the chain — see the
-[terminate ⇄ retries callout](/concepts/concurrency/#terminate). Full
-table of formulas on the
+Retries only fire on `failed` / `timeout` / `crashed`. A manual stop or
+an `on_overlap = "terminate"` ends the chain — see the
+[terminate ⇄ retries callout](/concepts/concurrency/#terminate). The
+full table of backoff formulas lives on the
 [Retries & timeouts](/concepts/retries/) page.
 
-`graceful_stop` is process-group-wide: a `SIGTERM` is delivered to the
-task's process group, every descendant gets the same window, and any
-survivors are `SIGKILL`'d together. If `graceful_stop` exceeds
-[`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout)
-the daemon emits a boot-time warning — naming the task — because daemon
-shutdown will SIGKILL the survivor before the per-task window expires.
+`graceful_stop` covers the whole process group: a `SIGTERM` goes to the
+task's process group, every descendant gets the same grace window, and
+anything still alive afterward is `SIGKILL`'d together. If your
+`graceful_stop` is longer than
+[`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout),
+the daemon warns you at boot and names the task — because at shutdown
+it'll SIGKILL the straggler before the per-task window is even up.
 
 ## Logs & retention
 
@@ -134,10 +137,10 @@ Duration fields throughout `runwisp.toml` accept `s` (seconds), `m`
 (minutes), `h` (hours), `d` (days), and `w` (weeks) — e.g. `"30s"`,
 `"5m"`, `"36h"`, `"30d"`, `"2w"`. Mixed forms like `"1h30m"` work too.
 
-Both `keep_runs` and `keep_for` apply if both are set; the stricter one
-wins in practice. See [Logs & retention](/concepts/logs/) for the full
-picture, including the `.prev` rotation lifecycle and the fixed
-one-hour cleanup cadence.
+Set both `keep_runs` and `keep_for` and they both apply — whichever one
+trims more aggressively is the one you'll feel. See
+[Logs & retention](/concepts/logs/) for the full picture, including the
+`.prev` rotation lifecycle and the fixed one-hour cleanup cadence.
 
 ## Environment
 
@@ -146,26 +149,25 @@ one-hour cleanup cadence.
 | `env`      | _(none)_ | Inline KEY/VALUE map overlaid on the task's process env. Visible in the API, UI, and CLI.            |
 | `env_file` | _(none)_ | Path to a dotenv file (`KEY=VALUE` per line). Path is visible, but its keys and values stay on disk. |
 
-Values from `env` and `env_file` are merged into the daemon's own
-environment when the task starts. Precedence (later wins on key
-collision):
+When the task starts, the values from `env` and `env_file` get merged on
+top of the daemon's own environment. On a key collision, later wins:
 
 1. The daemon process's own environment.
 2. `[defaults] env_file`, then `[defaults.env]`.
 3. The task's `env_file`, then the task's `env`.
 
-`env_file` paths can be absolute or relative. Relative paths are
-resolved against the directory of `runwisp.toml` (the same root the
-config loader uses for any other file lookup). The format is standard
-dotenv: `KEY=VALUE` per line, `#` introduces a comment, blank lines are
-ignored, no shell expansion or interpolation.
+An `env_file` path can be absolute or relative. Relative paths resolve
+against the directory `runwisp.toml` lives in — the same root the config
+loader uses for every other file lookup. The format is plain dotenv:
+`KEY=VALUE` per line, `#` starts a comment, blank lines are skipped, and
+there's no shell expansion or interpolation.
 
-**Why two knobs?** Anything in inline `env` is treated as openly
-visible — it shows up alongside `cron` and `run` in the dashboard, the
-TUI, and `GET /api/tasks`. Anything that should _not_ be visible (API
-tokens, signing keys) goes in `env_file`, where the file's contents
-never leave disk: the API exposes the path so operators can see where a
-value came from, but never the keys or values themselves.
+**So why two knobs?** Anything in inline `env` is treated as out in the
+open — it sits right next to `cron` and `run` in the dashboard, the TUI,
+and `GET /api/tasks`. Anything that should *not* be on display — API
+tokens, signing keys — belongs in `env_file`, whose contents never leave
+disk. The API will show you the *path* so you can tell where a value
+came from, but never the keys or the values themselves.
 
 ```toml
 [tasks.backup]
@@ -178,10 +180,10 @@ BACKUP_BUCKET = "s3://prod-backups"
 DRY_RUN       = "0"
 ```
 
-Validation is enforced at config load: keys must match
-`^[A-Za-z_][A-Za-z0-9_]*$`, values cannot contain NUL bytes, no single
-value exceeds 32 KiB, and the combined count of inline + file entries
-per task is capped at 256.
+It's all validated at config load, so a bad entry fails loudly up front:
+keys have to match `^[A-Za-z_][A-Za-z0-9_]*$`, values can't contain NUL
+bytes, no single value can top 32 KiB, and the inline + file entries for
+a task can't add up to more than 256.
 
 ## Notifications
 
@@ -190,30 +192,30 @@ per task is capped at 256.
 | `notify_on_failure` | _(none)_ | Notifier IDs to alert on `run.failed` / `run.timeout` / `run.crashed`. |
 | `notify_on_success` | _(none)_ | Notifier IDs to alert on `run.succeeded`.                              |
 
-Each entry is a notifier `id` declared in a [`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
-block. Whatever channels are listed in `[notify] append_notifiers`
-(default: `["inapp"]`) are added automatically — set
-`append_notifiers = []` to opt out, or `["slack-ops"]` to send every
-failure to that channel instead. See
-[Per-task notifications](/notifications/per-task/) for the field's full
-behaviour.
+Each entry is a notifier `id` you've declared in a
+[`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
+block. Whatever's listed in `[notify] append_notifiers` (default
+`["inapp"]`) gets tacked on automatically — set `append_notifiers = []`
+to opt out, or `["slack-ops"]` to route every failure there instead.
+[Per-task notifications](/notifications/per-task/) covers the field's
+full behaviour.
 
-These two fields are **symmetric across `[tasks.*]` and `[services.*]`** —
-same field names, same semantics, same duplicate-removal rules. The
-[Per-task notifications](/notifications/per-task/) page covers both
-surfaces and is the canonical reference; the
-[`[services.*]` notifications](/configuration/services/#notifications) section
-points back here.
+These two fields are **the same on `[tasks.*]` and `[services.*]`** —
+same names, same behaviour, same duplicate-removal rules. The
+[Per-task notifications](/notifications/per-task/) page is the canonical
+reference for both, and the
+[`[services.*]` notifications](/configuration/services/#notifications)
+section just points back here.
 
 ## What's rejected on tasks
 
-The config loader refuses these at startup so they can't fail silently
-later:
+The config loader turns these away at startup, so they can't quietly
+bite you later:
 
-- `restart = "always"` — use `[services.*]`.
-- `instances = N` — services-only field.
-- A task name that's also used by `[services.*]` — names share one namespace.
-- Empty or missing `run`.
+- `restart = "always"` — that's what `[services.*]` is for.
+- `instances = N` — a services-only field.
+- A task name that's also taken by a `[services.*]` — they share one namespace.
+- An empty or missing `run`.
 
 ## Worked example
 
@@ -239,8 +241,8 @@ echo "Draining queue at $(date -Iseconds)"
 """
 ```
 
-For a quick start, run `runwisp` in an empty directory — it offers to
-scaffold a minimal `runwisp.toml` for you.
+Want a head start? Run `runwisp` in an empty directory and it'll offer
+to scaffold a minimal `runwisp.toml` for you.
 
 ---
 

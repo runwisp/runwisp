@@ -7,17 +7,18 @@ description: Long-running processes — instances, restart backoff, graceful shu
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-A service is an always-on process that RunWisp keeps alive. It exits, it
-gets restarted. It crashes, it gets restarted. The only way a service
-stops permanently is by you stopping it from the Web UI (the **Stop
-Service** button) or the TUI (`s` on a service execution). That stop
-flag lives in memory only; restart the daemon and the service comes
-back up on its own.
+A service is an always-on process that RunWisp works to keep alive. It
+exits, it gets restarted. It crashes, it gets restarted. The only thing
+that stops a service for good is *you* — the **Stop Service** button in
+the Web UI, or `s` on a service execution in the TUI. And even that stop
+flag only lives in memory: restart the daemon and the service comes
+right back up on its own.
 
-The TOML key (`api-worker` in `[services.api-worker]`) is the **service
-name**. It shares one namespace with `[tasks.*]` — names must be unique
-across both kinds. Each instance's run shows up in the same history view
-as task runs, with its own ULID, log file, and lifecycle.
+The TOML key — `api-worker` in `[services.api-worker]` — is the
+**service name**. It shares a single namespace with `[tasks.*]`, so
+names have to be unique across both kinds. Each instance's run lands in
+the same history view as your task runs, with its own ULID, log file,
+and lifecycle.
 
 ## Minimum example
 
@@ -26,7 +27,7 @@ as task runs, with its own ULID, log file, and lifecycle.
 run = "/usr/local/bin/metrics-agent"
 ```
 
-That's a complete service — one instance, restarted forever with
+That's a fully working service: one instance, restarted forever, with
 bounded exponential backoff.
 
 ## Identity & metadata
@@ -51,10 +52,10 @@ run       = "/usr/local/bin/worker"
 | ----------- | ------- | ----------------------------------------------------------------- |
 | `instances` | `1`     | Number of concurrent instances. Bounded **`1 ≤ instances ≤ 64`**. |
 
-Each instance is its own visible run with its own `instance_index`
-(`0`, `1`, `2`, …). They share configuration, logs are unified per
-service, and instances are restarted independently when their process
-exits.
+Each instance shows up as its own run, tagged with its own
+`instance_index` (`0`, `1`, `2`, and so on). They all share the same
+config, their logs pool together per service, and when one instance's
+process exits the supervisor restarts just that one.
 
 ## Restart behaviour
 
@@ -64,14 +65,15 @@ exits.
 | `restart_backoff`     | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                                        |
 | `backoff_reset_after` | inherited       | Instance must stay up at least this long before its restart counter resets. See [`[defaults]`](/configuration/defaults/) for the inherited value (default `"60s"`). |
 
-Backoff is bounded, so even after a long flap session the next
-restart doesn't keep growing forever. An instance that stays up for
-`backoff_reset_after` resets its backoff counter, so transient
-flapping doesn't permanently slow restarts on a service that
-eventually stabilises.
+The backoff has a ceiling, so even after a long stretch of flapping the
+delay between restarts won't climb forever. And once an instance has
+stayed up for `backoff_reset_after`, its backoff counter resets — so a
+service that flaps early but eventually settles down doesn't stay stuck
+with slow restarts.
 
-`restart = "always"` is implicit and **cannot be overridden** — that's
-the contract. If you want "run once and exit," use a task.
+`restart = "always"` is baked in and **can't be overridden** — that's
+the deal with a service. If what you want is "run once and exit," that's
+a task.
 
 ## Concurrency
 
@@ -79,11 +81,11 @@ the contract. If you want "run once and exit," use a task.
 | ------------ | -------- | ------------------------------------------------------------------------ |
 | `on_overlap` | `"skip"` | What happens when something tries to start a new run while one is going. |
 
-Services default to `on_overlap = "skip"` because the supervisor keeps
-the instance count steady and overlap is unusual. Manually triggering a
-service that's already running gets cleanly rejected. Services don't
-have `max_concurrent` — instance count is governed by `instances`, not
-in-flight overlap.
+Services default to `on_overlap = "skip"` because the supervisor already
+holds the instance count steady, so overlap almost never comes up. Try
+to manually trigger a service that's already running and it's cleanly
+turned away. There's no `max_concurrent` on services either — how many
+copies run is `instances`, not some in-flight overlap count.
 
 ## Graceful shutdown
 
@@ -91,19 +93,20 @@ in-flight overlap.
 | --------------- | ------- | ------------------------------------------------------------------------------------------------------- |
 | `graceful_stop` | `"5s"`  | SIGTERM grace period per instance before SIGKILL — for manual stop, `Restart Service`, daemon shutdown. |
 
-`graceful_stop` is process-group-wide: SIGTERM goes to the instance's
-process group, every descendant gets the same window, and any
-survivors are SIGKILL'd together. If `graceful_stop` exceeds
-[`[daemon] shutdown_timeout`](/configuration/daemon#shutdown_timeout)
-the daemon emits a boot-time warning; during whole-daemon shutdown
-each instance is bounded by the daemon cap regardless of its own
-setting.
+`graceful_stop` covers the whole process group: the SIGTERM goes to the
+instance's process group, every descendant gets the same grace window,
+and anything still standing afterward is SIGKILL'd together. If your
+`graceful_stop` is longer than
+[`[daemon] shutdown_timeout`](/configuration/daemon#shutdown_timeout),
+the daemon warns you at boot — and during a whole-daemon shutdown, each
+instance is capped by the daemon-wide limit no matter what its own
+setting says.
 
 ## Logs & retention
 
-The log story is identical to tasks — same fields, same defaults. The
-[`[defaults]`](/configuration/defaults/) section is what `keep_runs`
-and `keep_for` inherit from when omitted here.
+Logs work exactly like they do on tasks — same fields, same defaults.
+When you leave `keep_runs` and `keep_for` off here, they inherit from
+the [`[defaults]`](/configuration/defaults/) section.
 
 | Key            | Default                         |
 | -------------- | ------------------------------- |
@@ -112,13 +115,14 @@ and `keep_for` inherit from when omitted here.
 | `keep_runs`    | inherits `[defaults] keep_runs` |
 | `keep_for`     | inherits `[defaults] keep_for`  |
 
-The same accept/reject rules apply as on tasks: positive numbers cap,
-omitting inherits, and bare `0` / negative values are rejected at
-config load.
+The accept/reject rules are the same as on tasks too: positive numbers
+cap, leaving a field off inherits, and bare `0` or negative values get
+rejected at config load.
 
-A service's run history can grow much faster than a task's because each
-crash is a new run row. Set `keep_runs` defensively — `200` is a
-reasonable starting point for a flap-prone service.
+One thing to keep in mind — a service's history can grow a lot faster
+than a task's, because every crash is another run row. So set `keep_runs`
+with that in mind; `200` is a sensible starting point for a service
+that's prone to flapping.
 
 See [Logs & retention](/concepts/logs/) for the underlying behaviour.
 
@@ -145,18 +149,18 @@ environment.
 | `notify_on_failure` | _(none)_ | Notifier IDs to alert when an instance exits with `failed` / `crashed`. |
 | `notify_on_success` | _(none)_ | Notifier IDs to alert on `run.succeeded` (a clean instance shutdown).   |
 
-**Identical shape and semantics as on `[tasks.*]`** — including the
-implicit addition of `[notify] global_notifiers` (default `["inapp"]`).
-The shared reference lives at
-[Per-task notifications](/notifications/per-task/); the
-[`[tasks.*]` notifications](/configuration/tasks/#notifications) section
-is the mirror entry. A failed instance in a `[services.*]` block notifies
-the same channels a failed `[tasks.*]` run would.
+**Same shape and same behaviour as on `[tasks.*]`** — right down to the
+implicit `[notify] global_notifiers` (default `["inapp"]`) getting added
+in. The shared reference lives at
+[Per-task notifications](/notifications/per-task/), with
+[`[tasks.*]` notifications](/configuration/tasks/#notifications) as the
+mirror entry. A failed instance in a `[services.*]` block reaches the
+exact same channels a failed `[tasks.*]` run would.
 
 ## Cooperating with `graceful_stop`
 
-In practice: trap `SIGTERM` in your `run` command and exit cleanly.
-The example file's pattern is a good starting point:
+The practical advice: trap `SIGTERM` in your `run` command and exit
+cleanly. The starter file's pattern is a fine place to begin:
 
 ```bash
 trap 'echo "SIGTERM — shutting down"; exit 0' TERM INT
@@ -165,7 +169,8 @@ while true; do
 done
 ```
 
-An instance that exits cleanly via `SIGTERM` records `end_reason = stopped`.
+An instance that catches `SIGTERM` and exits cleanly is recorded with
+`end_reason = stopped`.
 
 ## What's rejected on services
 

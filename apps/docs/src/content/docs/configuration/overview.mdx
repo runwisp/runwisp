@@ -5,14 +5,14 @@ title: Configuration overview
 description: How runwisp.toml is structured — storage safeguards, defaults, tasks, services, and notifications.
 ---
 
-RunWisp is configured through a single `runwisp.toml` file. It is the
-**sole source of truth** for what runs and how — the REST API and Web UI
-are read-only and trigger-only, never mutate task definitions. To pick up
-edits, **restart the daemon**.
+Everything RunWisp does is configured in one file: `runwisp.toml`. It's
+the **sole source of truth** for what runs and how — the REST API and Web
+UI can read and trigger, but they never touch your task definitions.
+Edited the file? **Restart the daemon** to pick it up.
 
-The file is divided into a handful of sections. Most are optional; the only
-thing RunWisp truly needs is at least one `[tasks.*]` or `[services.*]`
-table with a `run` key.
+The file breaks into a handful of sections, and most of them are
+optional. The one thing RunWisp genuinely can't do without is at least
+one `[tasks.*]` or `[services.*]` table with a `run` key.
 
 ## A complete example
 
@@ -53,9 +53,9 @@ description = "Always-on metrics collector"
 run         = "/usr/local/bin/metrics-agent"
 ```
 
-If you run `runwisp` in a directory without a `runwisp.toml`, it
-offers to write a minimal starter for you — see the
-[Quick start](/getting-started/quick-start/).
+Run `runwisp` in a directory that doesn't have a `runwisp.toml` yet and
+it'll offer to write a minimal starter for you — the
+[Quick start](/getting-started/quick-start/) walks through that.
 
 ## Section by section
 
@@ -72,29 +72,29 @@ offers to write a minimal starter for you — see the
 
 ## Reload semantics
 
-RunWisp **does not currently support live reload** of `runwisp.toml`.
-There is no file watcher, no `SIGHUP` handler, and no `runwisp reload`
-subcommand. A running daemon keeps the config it parsed at startup
-until you restart it — `Ctrl-C` the daemon, edit the file, and run
-`runwisp daemon` again (or restart it through whatever supervisor you
-have managing the process).
+RunWisp **doesn't do live reload** of `runwisp.toml` — no file watcher,
+no `SIGHUP` handler, no `runwisp reload` subcommand. A running daemon
+sticks with the config it parsed at startup until you restart it. So the
+loop is: `Ctrl-C` the daemon, edit the file, and run `runwisp daemon`
+again (or bounce it through whatever supervisor is managing the
+process).
 
-Restart is fast: in-flight runs are cancelled (they record as
-`stopped` if they exit within the `[daemon] shutdown_timeout` window,
-or get reconciled as `crashed` on next boot if they don't), the
-database is reopened, and the schedule is re-applied from the new
-file. See [Operations: upgrading](/operations/upgrading/) for the
-current restart-based workflow.
+Restarting is quick. In-flight runs are cancelled — they end as
+`stopped` if they bow out within the `[daemon] shutdown_timeout` window,
+or get reconciled as `crashed` on the next boot if they don't — then the
+database reopens and the schedule comes back up from the new file. See
+[Operations: upgrading](/operations/upgrading/) for the restart-based
+workflow.
 
-A startup parse error fails the boot — the daemon exits non-zero before
-opening its port. Your previous instance has already exited by then, so
-the safe pre-flight is `runwisp validate` against the new file before
-you restart.
+One thing to watch: a parse error at startup kills the boot. The daemon
+exits non-zero before it ever opens its port, and by then your previous
+instance is already gone. The safe pre-flight is to run `runwisp
+validate` against the new file *before* you restart.
 
 ## What the schema considers a breaking change
 
-Pre-1.0, any release may ship breaking changes to the TOML schema, REST
-API, or on-disk data layout, and upgrading may reset run history. Changes
-are flagged in the
+This is pre-1.0, so any release might change the TOML schema, the REST
+API, or the on-disk layout — and an upgrade may wipe run history.
+Anything like that gets flagged in the
 [CHANGELOG](https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md);
-semver guarantees land with 1.0.
+the semver guarantees kick in at 1.0.

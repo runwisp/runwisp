@@ -7,13 +7,15 @@ description: Fallback values inherited by every task and service unless overridd
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-`[defaults]` is the one section in `runwisp.toml` that doesn't define
-something to run. It defines fallback values that **every** `[tasks.*]`
-and `[services.*]` inherits unless they override the field themselves.
+`[defaults]` is the one section in `runwisp.toml` that doesn't describe
+something to run. Instead it sets fallback values that **every**
+`[tasks.*]` and `[services.*]` inherits, unless that task or service
+sets the field itself.
 
-It exists because writing the same `keep_for = "30d"` and
-`log_max_size = "100mb"` on twenty tasks gets tedious. Pull those into
-`[defaults]` once, override per-task only when the value is different.
+It's here to save you from repeating yourself. Typing
+`keep_for = "30d"` and `log_max_size = "100mb"` onto twenty different
+tasks gets old fast — so put them in `[defaults]` once, and only bother
+overriding the few tasks that actually need a different value.
 
 ## Available keys
 
@@ -38,18 +40,18 @@ backoff_reset_after = "60s"
 | `env`                 | _(none)_     | Inline KEY/VALUE map merged into every task and service. Task-level entries override on key collision. See [`[tasks.*]` Environment](/configuration/tasks/#environment). |
 | `env_file`            | _(none)_     | Path to a dotenv file whose KEY=VALUE pairs are merged into every task and service. Visibility rules match per-task `env_file`.                                          |
 
-There is no default `cron`, no default `on_overlap`, no default
-`retry_*`, no default `max_concurrent`, no default `queue_max`, no
-default `graceful_stop`. Those vary per task by intent; defaulting
-them would hide behaviour. Per-task `graceful_stop` falls back to its
-built-in default when omitted; set it on each table that needs a
-different window.
+Some things you *can't* default: `cron`, `on_overlap`, the `retry_*`
+keys, `max_concurrent`, `queue_max`, `graceful_stop`. Those are too tied
+to a task's intent — defaulting them would quietly change behaviour you
+meant to be explicit. Per-task `graceful_stop` just falls back to its
+built-in value when you leave it off, so set it only on the tables that
+need a different window.
 
-The daemon-wide `[daemon] shutdown_timeout` is a separate top-level
-setting — it bounds the **whole-daemon** shutdown
-phase. Each task/service still gets its own `graceful_stop` window
-inside that cap. If a `graceful_stop` exceeds `[daemon] shutdown_timeout`
-the daemon emits a boot-time warning naming the task.
+The daemon-wide `[daemon] shutdown_timeout` is its own separate
+top-level setting that bounds the **whole-daemon** shutdown phase. Each
+task and service still gets its own `graceful_stop` window inside that
+cap, and if a `graceful_stop` runs longer than `[daemon]
+shutdown_timeout`, the daemon warns you about that task at boot.
 
 ## Precedence
 
@@ -59,10 +61,11 @@ For each task or service:
 2. Else if it's set in `[defaults]`, use that.
 3. Else fall back to the built-in default (e.g. `100MB` for `log_max_size`).
 
-Omitting a numeric retention field at every level means **no cap** —
-runs accumulate until you set a value somewhere. Bare `0`, negative
-values, and out-of-range strings are rejected at config load, so
-"forgot to cap" never silently means "deleted everything."
+Leave a numeric retention field off at *every* level and you get **no
+cap** — runs just pile up until you set a value somewhere. Bare `0`,
+negatives, and out-of-range strings all get rejected at config load, so
+"I forgot to set a cap" can never quietly turn into "everything got
+deleted."
 
 ## Worked example
 
