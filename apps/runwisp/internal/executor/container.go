@@ -14,16 +14,11 @@ import (
 
 	"log/slog"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/build"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/docker/go-connections/nat"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -58,14 +53,14 @@ func validateVolumeMount(hostPath string) error {
 
 // dockerClient abstracts the Docker SDK methods used by ContainerBackend for testability.
 type dockerClient interface {
-	Ping(ctx context.Context) (types.Ping, error)
-	ImageBuild(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error)
-	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
-	ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
-	ContainerStart(ctx context.Context, container string, options container.StartOptions) error
-	ContainerWait(ctx context.Context, container string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
-	ContainerRemove(ctx context.Context, container string, options container.RemoveOptions) error
-	ImageRemove(ctx context.Context, imageRef string, options image.RemoveOptions) ([]image.DeleteResponse, error)
+	Ping(ctx context.Context, options client.PingOptions) (client.PingResult, error)
+	ImageBuild(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error)
+	ContainerCreate(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error)
+	ContainerAttach(ctx context.Context, containerID string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error)
+	ContainerStart(ctx context.Context, containerID string, options client.ContainerStartOptions) (client.ContainerStartResult, error)
+	ContainerWait(ctx context.Context, containerID string, options client.ContainerWaitOptions) client.ContainerWaitResult
+	ContainerRemove(ctx context.Context, containerID string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
+	ImageRemove(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error)
 }
 
 // ContainerBackend executes tasks inside Docker containers using the Docker SDK.
@@ -108,7 +103,7 @@ func NewContainerBackend(ctx context.Context) (*ContainerBackend, error) {
 			lastErr = fmt.Errorf("create client for %s: %w", sock, err)
 			continue
 		}
-		if _, err := cli.Ping(ctx); err != nil {
+		if _, err := cli.Ping(ctx, client.PingOptions{}); err != nil {
 			cli.Close()
 			lastErr = fmt.Errorf("daemon at %s unreachable: %w", sock, err)
 			continue
@@ -129,7 +124,7 @@ func tryDockerClient(ctx context.Context) (*ContainerBackend, error) {
 		return nil, fmt.Errorf("create docker client: %w", err)
 	}
 
-	if _, err := cli.Ping(ctx); err != nil {
+	if _, err := cli.Ping(ctx, client.PingOptions{}); err != nil {
 		cli.Close()
 		return nil, fmt.Errorf("docker daemon unreachable: %w", err)
 	}
@@ -148,7 +143,7 @@ func (b *ContainerBackend) Available(ctx context.Context) bool {
 	if b == nil || b.docker == nil {
 		return false
 	}
-	_, err := b.docker.Ping(ctx)
+	_, err := b.docker.Ping(ctx, client.PingOptions{})
 	return err == nil
 }
 
@@ -173,7 +168,10 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, def mode
 	containerConfig, hostConfig := b.buildContainerConfig(imageTag, ctr, task)
 
 	// Create the container
-	created, err := b.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	created, err := b.docker.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     containerConfig,
+		HostConfig: hostConfig,
+	})
 	if err != nil {
 		b.builder.Remove(ctx, imageTag)
 		return nil, fmt.Errorf("container create: %w", err)
@@ -182,7 +180,7 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, def mode
 	containerID := created.ID
 
 	// Attach to get stdout/stderr before starting
-	attachResp, err := b.docker.ContainerAttach(ctx, containerID, container.AttachOptions{
+	attachResp, err := b.docker.ContainerAttach(ctx, containerID, client.ContainerAttachOptions{
 		Stream: true,
 		Stdout: true,
 		Stderr: true,
@@ -194,7 +192,7 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, def mode
 	}
 
 	// Start the container
-	if err := b.docker.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+	if _, err := b.docker.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
 		attachResp.Close()
 		b.removeContainer(ctx, containerID)
 		b.builder.Remove(ctx, imageTag)
@@ -215,7 +213,8 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, def mode
 		Stdout: stdoutPR,
 		Stderr: stderrPR,
 		Wait: func() (int, error) {
-			statusCh, errCh := b.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+			waitRes := b.docker.ContainerWait(ctx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+			statusCh, errCh := waitRes.Result, waitRes.Error
 			for {
 				select {
 				case err := <-errCh:
@@ -237,7 +236,7 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, def mode
 }
 
 func (b *ContainerBackend) removeContainer(ctx context.Context, containerID string) {
-	if err := b.docker.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
+	if _, err := b.docker.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{Force: true}); err != nil {
 		slog.Warn("Failed to remove container", "id", containerID, "err", err)
 	}
 }
@@ -257,16 +256,16 @@ func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.Cont
 		env = baseEnv
 	}
 
-	exposedPorts := nat.PortSet{}
-	portBindings := nat.PortMap{}
+	exposedPorts := network.PortSet{}
+	portBindings := network.PortMap{}
 	for _, p := range ctr.Ports {
 		proto := strings.ToLower(p.Protocol)
 		if proto == "" {
 			proto = "tcp"
 		}
-		containerPort := nat.Port(strconv.Itoa(p.Container) + "/" + proto)
+		containerPort := network.MustParsePort(strconv.Itoa(p.Container) + "/" + proto)
 		exposedPorts[containerPort] = struct{}{}
-		portBindings[containerPort] = []nat.PortBinding{
+		portBindings[containerPort] = []network.PortBinding{
 			{HostPort: strconv.Itoa(p.Host)},
 		}
 	}
