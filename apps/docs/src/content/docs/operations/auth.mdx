@@ -5,152 +5,172 @@ title: Auth
 description: How RunWisp authenticates Web UI, TUI, and REST clients — local Unix socket for the CLI/TUI, password + session for the Web UI, rate limiting, reverse-proxy trust, and no secrets on disk.
 ---
 
-RunWisp has one password and one session for network clients (Web UI,
-remote REST), and a local Unix socket for clients that run alongside
-the daemon (TUI, CLI). No secrets are stored on disk. The trust model
-is "if you can log in over the network — or if you can already read
-the data directory — you control the daemon", and RunWisp is built for
-one operator on one machine.
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+There are really two doors into RunWisp. Network clients — the Web
+UI and remote REST callers — go through a single password and
+session. Local clients that sit on the same box as the daemon — the
+TUI and the CLI — go in through a Unix socket. No secrets are stored
+on disk. The rule of thumb is: if you can log in over the network,
+or if you can already read the data directory, you control the
+daemon. RunWisp is built for one operator on one machine, and the
+auth model leans into that.
 
 ## Local clients (CLI, TUI)
 
-The CLI and TUI talk to the daemon over a Unix domain socket at
-`<datadir>/runwisp.sock`. The socket file is created `0600` inside
-the (`0700`) data directory, so only the user that started the daemon
-can connect — exactly the same guarantee the SQLite file relies on.
-On top of that, the daemon verifies the peer UID at accept time with
-`SO_PEERCRED` (Linux) / `LOCAL_PEERCRED` (macOS); a connection from a
-foreign UID is closed immediately.
+The CLI and TUI talk to the daemon over a Unix socket at
+`<datadir>/runwisp.sock`. The socket sits at `0600` inside a `0700`
+data directory, so only the user who started the daemon can reach
+it — same guarantee the SQLite file already relies on. As an extra
+belt to that suspenders, the daemon double-checks the peer UID at
+accept time with `SO_PEERCRED` on Linux and `LOCAL_PEERCRED` on
+macOS, and slams the door on anyone whose UID doesn't match.
 
-Local CLI/TUI clients therefore need no password and no JWT — they are
-identified by being on the local socket as the right user. Commands
+That's why the CLI and TUI don't need a password or a JWT — being
+on the local socket as the right user *is* the credential. Commands
 like `runwisp`, `runwisp tui`, `runwisp list`, and `runwisp exec`
-connect over the socket automatically.
+all connect through the socket automatically.
 
-If the socket is missing or unreachable, the CLI reports `daemon not
-running at <datadir>` instead of falling back to a different transport.
-A running daemon you cannot reach over the socket is almost always a
-data-dir ownership or path mismatch, not a "the network is down"
-problem.
+If the socket isn't there, or the CLI can't reach it, you'll see
+`daemon not running at <datadir>` and that's it — no quiet fallback
+to some other transport. When a daemon is running but the CLI still
+can't get through, it's almost always a data-dir ownership or path
+mismatch, not a network problem.
 
 ## Network clients (Web UI, remote REST)
 
-The Web UI shows a single password field. Your password never travels
-over the network as plain text. The login uses a challenge-response
+The Web UI shows a single password field. Your password never goes
+across the network in the clear. Login is a challenge-response
 handshake: the browser asks the daemon for a one-time challenge,
 mixes it with your password, and sends back a hash the daemon can
 verify. Even on plain HTTP behind a TLS-terminating proxy, the
-password stays out of the wire.
+password itself never hits the wire.
 
-After a successful login the daemon issues a session in a secure
-cookie. Setting a fresh `RUNWISP_PASSWORD` and restarting the daemon
-invalidates every existing session.
+Once you're in, the daemon hands you a session inside a secure
+cookie. Set a new `RUNWISP_PASSWORD` and restart, and every
+existing session is gone.
 
-The TUI opens a browser session via the "Open in browser" action —
-the TUI mints a single-use launch ticket over the local socket, the
-browser redeems it on `127.0.0.1`, and the daemon sets a session
-cookie. The password never leaves the host.
+When you use the TUI's "Open in browser" action, the TUI mints a
+single-use launch ticket over the local socket. The browser
+redeems it on `127.0.0.1` and the daemon sets a session cookie. The
+password itself never leaves the host.
 
 ## The password
 
-RunWisp never writes the password (or the JWT signing key) to disk.
-You have two ways to set it:
+RunWisp doesn't write the password — or the JWT signing key — to
+disk, ever. You've got two ways to set it:
 
-- **`RUNWISP_PASSWORD` env var**: the daemon uses the value from the
+- **Set `RUNWISP_PASSWORD`** and the daemon picks it up from the
   environment, in memory only. This is what you want for Docker
-  secrets, systemd's `LoadCredential=`, or sealed-secrets workflows.
-  As long as the value is stable across restarts, existing browser
-  sessions survive a restart.
-- **Unset**: the daemon generates a fresh random password every boot
-  and keeps it in memory only. Restarting rotates the password,
-  which rotates every JWT key, which logs every browser out.
+  secrets, systemd's `LoadCredential=`, or any sealed-secrets
+  setup. As long as the value doesn't change between restarts,
+  your existing browser sessions survive a restart.
+- **Leave it unset** and the daemon generates a fresh random
+  password every boot, again in memory only. Every restart rotates
+  the password, which rotates the JWT key, which logs every
+  browser out.
 
-The JWT signing key is **derived** from the password via HKDF-SHA-256
-salted by the per-install fingerprint (machine ID, cwd, executable
-path, hostname). The same `RUNWISP_PASSWORD` on the same install
-yields the same key, so browser sessions persist across restarts; a
-different password — or the same password on another machine — yields
-a different key, so sessions don't leak between installs.
+The JWT signing key isn't stored anywhere — it's **derived** from
+your password using HKDF-SHA-256, salted with a per-install
+fingerprint (machine ID, cwd, executable path, hostname). Same
+password on the same install gives you the same key, so sessions
+persist across restarts. A different password — or the same
+password on a different machine — gives you a different key, so
+sessions can't leak between installs.
 
-To rotate the password, change `RUNWISP_PASSWORD` (or unset it for a
-fresh ephemeral one) and restart the daemon. Every existing browser
-session is invalidated.
+To rotate, change `RUNWISP_PASSWORD` (or unset it to get a fresh
+random one) and restart. Everyone logged in over the network is
+out.
 
 ## Retrieving the ephemeral password
 
-When the daemon mints an ephemeral password (no `RUNWISP_PASSWORD`
-set), the value never appears in a log line, the startup banner, or a
-TUI frame. Instead:
+When the daemon makes up its own password (because you didn't set
+`RUNWISP_PASSWORD`), the value never shows up in a log line, a
+startup banner, or anywhere on screen. There are two ways to pull it
+back out — and no Web UI tab here on purpose, since you need the
+password to get into the Web UI in the first place.
 
-- The TUI's **Home** view shows a `Password` field rendered as `••…`.
-  Press <kbd>Enter</kbd> while the field is focused to copy the real
-  value to the clipboard via the copy modal.
-- From any shell that can reach the daemon's data directory, run
-  `runwisp password` to print it to stdout. The output is a single
-  line so you can pipe it into a clipboard tool:
+<Tabs syncKey="surface">
+    <TabItem label="TUI" icon="seti:shell">
+        The **Home** view has a `Password` row showing `••…`. Focus
+        it and hit <kbd>Enter</kbd> — a copy modal pops up with the
+        real value already on your clipboard.
+    </TabItem>
+    <TabItem label="REST API" icon="cloud-download">
+        From any shell that can reach the daemon's data directory,
+        `runwisp password` prints it straight to stdout. It's a
+        single line, so piping it into a clipboard tool is one step:
 
-    ```bash
-    runwisp password | wl-copy          # Wayland
-    runwisp password | pbcopy           # macOS
-    runwisp password | xclip -selection clipboard
-    ```
+        ```bash
+        runwisp password | wl-copy          # Wayland
+        runwisp password | pbcopy           # macOS
+        runwisp password | xclip -selection clipboard
+        ```
+    </TabItem>
 
-The endpoint that backs `runwisp password` lives on the daemon's local
-Unix socket only — it is **403 Forbidden** over the network even with a
-valid session cookie, and it returns **404 Not Found** when the daemon
-is configured with `RUNWISP_PASSWORD`. The operator-supplied
-`RUNWISP_PASSWORD` is **never** disclosed by the daemon; retrieve it
-from wherever you originally set it (Docker secret, systemd
-`LoadCredential=`, vault, password manager, …).
+</Tabs>
 
-`runwisp password` writes the value to stdout, which lands in shell
-scrollback. Pipe to a clipboard tool when that matters.
+The endpoint behind `runwisp password` only listens on the local
+Unix socket. Try it over the network — even with a valid session
+cookie — and you'll get **403 Forbidden**. Try it when the daemon
+was started with `RUNWISP_PASSWORD` already set, and you'll get
+**404 Not Found**. The daemon **never** hands out an
+operator-supplied password; if you set one, you're the one
+responsible for stashing it — Docker secret, systemd
+`LoadCredential=`, vault, password manager, whatever you already
+use.
+
+One thing worth flagging: `runwisp password` writes to stdout,
+which means it lands in your shell scrollback. If that matters,
+pipe it straight into a clipboard tool.
 
 ## Rate limiting
 
-Failed network login attempts are rate-limited per source IP. Cross
-the limit and you get `429 Too Many Requests` until the window slides
-past; restarting the daemon clears the counter. The local-socket
-path is not subject to this limit.
+Failed network logins are rate-limited per source IP. Cross the
+limit and you'll get `429 Too Many Requests` until the window slides
+past. Restarting the daemon resets the counter. The local-socket
+path is exempt.
 
-Live log streams are limited too — at most a few dozen open at once,
-plus a small per-IP cap — so a buggy script can't accidentally exhaust
-the daemon. If you hit the limit, the response is `503 Service
-Unavailable`; close some open log views and try again.
+Live log streams are capped too — a few dozen open at once, with a
+smaller per-IP cap — so one runaway script can't exhaust the daemon
+on its own. Hit the cap and you'll get `503 Service Unavailable`;
+close some open log views and try again.
 
 ## Reverse proxies
 
 RunWisp binds to `127.0.0.1:9477` by default and serves plain HTTP.
-To expose it publicly with TLS, run a reverse proxy in front (nginx,
-Caddy, Traefik, Cloudflare Tunnel, …) and tell the daemon which IP
-ranges that proxy lives on:
+If you want to put it on the public internet with TLS, the right
+move is to drop a reverse proxy in front (nginx, Caddy, Traefik,
+Cloudflare Tunnel, your pick) and tell the daemon which IP ranges
+that proxy will be calling from:
 
 ```bash
 export RUNWISP_TRUST_PROXY='10.0.0.0/8,2001:db8::/32'
 runwisp daemon --host 127.0.0.1 --port 9477
 ```
 
-`RUNWISP_TRUST_PROXY` is a comma-separated list of CIDR ranges whose
-`X-Forwarded-Proto` and `X-Forwarded-For` headers RunWisp will trust.
-When a request from a trusted range arrives with `X-Forwarded-Proto:
-https`, the daemon treats the connection as secure and marks the
-session cookie accordingly. Rate limiting always counts the real TCP
-peer, not the forwarded header, so a misconfigured proxy can't open a
-hole.
+`RUNWISP_TRUST_PROXY` is a comma-separated list of CIDR ranges
+whose `X-Forwarded-Proto` and `X-Forwarded-For` headers the daemon
+will trust. When a request comes in from one of those ranges with
+`X-Forwarded-Proto: https`, the daemon treats the connection as
+secure and marks the session cookie accordingly. Rate limiting
+always counts the real TCP peer — never the forwarded header — so a
+misconfigured proxy can't accidentally open a hole.
 
-The daemon rejects `0.0.0.0/0` and `::/0` — trusting the entire
-internet would let any client lie about its source IP.
+The daemon refuses `0.0.0.0/0` and `::/0`. Trusting the whole
+internet would let any random client lie about where it's coming
+from.
 
 ## Public endpoints
 
-A short list of routes that intentionally bypass the password / JWT
-boundary:
+A short list of routes that intentionally skip the password/JWT
+check:
 
-- `/health` — liveness probe; always `200 OK`.
+- `/health` — liveness probe. Always `200 OK`.
 - `/metrics` — Prometheus / OpenMetrics scrape endpoint. See
-  [Metrics](/operations/metrics/) for the surface and the security
-  trade-off.
+  [Metrics](/operations/metrics/) for what's exposed and the
+  trade-off that comes with it.
 
-Everything under `/api/` (other than the auth handshake itself)
-requires either a valid session cookie or a request delivered over
-the local Unix socket.
+Everything else under `/api/` (other than the auth handshake
+itself) needs either a valid session cookie or a request coming in
+over the local Unix socket.

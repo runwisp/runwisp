@@ -5,13 +5,15 @@ title: Deploy hooks
 description: Manual-only tasks triggered from CI via the REST API — schema migrations, blue/green flips, cache warmups — with terminate-on-overlap so a stale deploy never lingers.
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-A deploy hook is a manual-only task: no `cron`, fired from CI via
-RunWisp's REST API. Use it to give every deploy a stable, browsable
-log entry — without invoking SSH from your pipeline, without keeping
-shell scripts on the build runner, and with a single canonical
-"what happened" trail in the daemon's run history.
+A deploy hook is a task that doesn't run on a schedule. There's no
+`cron` on it — instead, your CI pokes it through RunWisp's REST API
+whenever it wants a deploy to happen. The payoff: every deploy gets
+its own stable, browsable log entry in RunWisp's history. You're
+not SSHing in from CI, your shell scripts don't live on the build
+runner, and there's one canonical "what happened" trail to look at
+when things go sideways.
 
 ## The task
 
@@ -60,46 +62,59 @@ echo "[$(date -Iseconds)] deploy complete: $VERSION"
 """
 ```
 
-The interesting choices:
+A few of the choices in there are worth pulling out:
 
 ### No `cron`
 
-Omitting `cron` makes the task **manual-only**. It only runs when
-something explicitly triggers it: a `POST` to
-`/api/tasks/deploy-app/run`, the Web UI's "Run Now" button, the
-TUI's `r` key, or `runwisp exec deploy-app` from a shell on
-the host (which calls the same REST endpoint).
+Leave `cron` off and the task becomes **manual-only** — nothing
+fires it until something explicitly asks for a run.
 
-`runwisp list` shows it as `(manual)` in the SCHEDULE column.
+<Tabs syncKey="surface">
+    <TabItem label="Web UI" icon="laptop">
+        Open the task and hit **Run Now**.
+    </TabItem>
+    <TabItem label="TUI" icon="seti:shell">
+        Focus `deploy-app` in the sidebar and press <kbd>r</kbd>.
+    </TabItem>
+    <TabItem label="REST API" icon="cloud-download">
+        `POST /api/tasks/deploy-app/run` — see [Triggering from CI](#triggering-from-ci) below for
+        the full CHAP handshake plus trigger script. On the box itself, `runwisp exec deploy-app`
+        is the same call wrapped in a CLI.
+    </TabItem>
+</Tabs>
+
+`runwisp list` shows it as `(manual)` in the SCHEDULE column so
+you can tell at a glance.
 
 ### `on_overlap = "terminate"`
 
-If a deploy is still running when a fresh one arrives, **kill the
-old one and start the new**. This matches what your team probably
-expects from a deploy: the freshest commit wins; nobody waits for
-yesterday's stuck migration to finish.
+If a deploy is still running when a fresh one comes in, **kill the
+old one and start the new one**. That's what your team probably
+expects from a deploy anyway: the newest commit wins, nobody's
+waiting for yesterday's stuck migration to wrap up before they can
+ship a fix.
 
-The default of `"queue"` would lock you into a serial queue of
-deploys; `"skip"` would silently drop the new deploy on the floor
-while old one chugs. `"terminate"` is right for this scenario and
-almost no other.
+The default of `"queue"` would have you stacking deploys in a
+serial line. `"skip"` would silently drop the new deploy on the
+floor while the old one is still chugging. `"terminate"` is
+exactly right for this scenario, and almost nothing else.
 
 ### `notify_on_success = ["slack-deploys"]`
 
-The only place we recommend success notifications. A deploy is a
-high-information event for a team channel — "v1.2.3 deployed at
-14:32" is exactly the kind of thing channel members want.
+Deploys are the one place success notifications actually earn their
+keep. "v1.2.3 deployed at 14:32" is exactly the kind of update a
+team channel wants to see.
 
-For everything else, success notifications are noise. See the
-[notifications model][notif] discussion of why per-task success
-notifications are opt-in.
+For pretty much everything else, success notifications are noise.
+The [notifications model][notif] page goes into why per-task
+success notifications are opt-in.
 
 [notif]: /notifications/model/
 
 ## Triggering from CI
 
-CHAP login is a two-step exchange: GET a nonce, POST back
-`sha256(password:nonce)`, receive a JWT.
+CHAP login is a two-step dance. You GET a nonce, you POST back
+`sha256(password:nonce)`, and the daemon hands you a JWT.
 
 ```bash
 set -euo pipefail
@@ -120,16 +135,17 @@ curl -sSf -X POST "$BASE/api/tasks/deploy-app/run" \\
   -H "Authorization: Bearer $TOKEN"
 ```
 
-The trigger endpoint does **not** accept per-call env injection —
-RunWisp does not currently let CI pass a `DEPLOY_VERSION` over HTTP
-into the task's environment. Either let the task resolve the version
-itself (as the example does, by reading a registry tag's
-`org.opencontainers.image.revision` label), or have CI write a
-`/srv/app/current-version` file before triggering and have the task
-read it. The TOML is still the source of truth for _what_ runs;
-HTTP only decides _when_.
+One thing worth knowing: the trigger endpoint **does not** accept
+per-call env injection. There's no way for CI to push a
+`DEPLOY_VERSION` over HTTP into the task's environment. You've got
+two ways around that. Either have the task figure out the version
+itself (which is what the example above does — it reads the
+registry tag's `org.opencontainers.image.revision` label), or have
+CI write a file like `/srv/app/current-version` before triggering,
+and have the task read it back. The TOML stays the source of truth
+for *what* runs; HTTP only gets to say *when*.
 
-A typical GitHub Actions step:
+Here's what a typical GitHub Actions step looks like:
 
 ```yaml
 - name: Deploy to production
@@ -138,35 +154,37 @@ A typical GitHub Actions step:
   run: ./bin/runwisp-trigger.sh deploy-app
 ```
 
-Encapsulate the CHAP login dance in `bin/runwisp-trigger.sh` once,
-and reuse it across every deployable.
+Write the CHAP dance once in `bin/runwisp-trigger.sh` and reuse it
+across every deployable you've got.
 
-## Why use a RunWisp task vs. SSH-from-CI?
+## Why use a RunWisp task instead of SSH-from-CI?
 
-A running argument among ops folks. Three reasons RunWisp's model
-wins for deploys:
+A perennial ops argument. Three reasons the RunWisp model wins for
+deploys:
 
-1. **Audit trail** — every deploy is a row in the daemon with
+1. **Audit trail.** Every deploy lands as a row in the daemon with
    start/end timestamps, exit code, captured stdout/stderr, and a
    ULID you can quote in Slack. No more digging through GitHub
-   Actions logs to find what actually happened on the host.
-2. **No SSH keys for CI** — your pipeline talks to RunWisp over
-   HTTPS with a token. The actual production access — the ability
-   to run shell on the host — stays scoped to the daemon's user.
-3. **Re-runnable from a human** — when something goes wrong at 3am,
-   the on-call doesn't need to set up a CI rerun. They open the
-   Web UI / TUI and press "Run Now" with the same arguments the
-   last successful deploy used.
+   Actions logs to figure out what actually ran on the host.
+2. **No SSH keys for CI.** Your pipeline talks to RunWisp over
+   HTTPS with a token. The real production access — the ability
+   to run shell on the box — stays scoped to the daemon's user
+   and nobody else.
+3. **Anyone can re-run it.** When something breaks at 3am, the
+   on-call doesn't need to wrangle a CI re-run. They open the
+   Web UI or TUI and hit "Run Now" with the same setup that
+   worked yesterday.
 
-The downside is that secrets the task needs (DB passwords,
-registry tokens) live on the RunWisp host's filesystem, not
-ephemerally in the pipeline. That's a real trade-off — make sure
-your data dir's permissions reflect it.
+The trade-off is real: secrets the task needs (DB passwords,
+registry tokens) live on the RunWisp host's filesystem now, not
+just ephemerally inside the pipeline. Make sure your data dir's
+permissions are tight enough to deserve that trust.
 
 ## A migration-only variant
 
-Sometimes you want migrations and deploys decoupled: migrations
-during a maintenance window, the binary swap independently.
+Sometimes you want to keep migrations and deploys separate —
+migrations during a maintenance window, the binary swap on its own
+schedule.
 
 ```toml
 [tasks.migrate-app]
@@ -190,11 +208,12 @@ docker run --rm --env-file=/etc/app/migrate.env \\
 """
 ```
 
-Note `on_overlap = "skip"` here, not `terminate` — partial
-migrations are dangerous. A skipped manual trigger is recorded as
-a `skipped` row (end reason, not `failed`) with exit code `-1`
-and the message "task already running, skipping (policy: skip)"
-so the operator can see they were ignored.
+Notice that `on_overlap` is `"skip"` here, not `"terminate"` —
+killing a migration partway through is genuinely dangerous. A
+skipped manual trigger gets recorded as a `skipped` row (end
+reason, not `failed`) with exit code `-1` and the message "task
+already running, skipping (policy: skip)" so you can see what got
+ignored and why.
 
 ---
 

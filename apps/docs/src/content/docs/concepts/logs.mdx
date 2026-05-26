@@ -5,13 +5,13 @@ title: Logs & retention
 description: How RunWisp captures stdout/stderr, where logs live on disk, how rotation and retention work, and how to follow or download a run's output.
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-RunWisp captures each run's stdout and stderr to disk. You can watch
-the live tail, scroll back through finished runs, and download the
-full log. The database stores run metadata — exit code, duration,
-timestamps — but **not** the log bodies; those live on disk, one file
-per run.
+Every time a task runs, RunWisp writes its stdout and stderr to a
+file on disk. You can watch the output stream in live, scroll back
+through old runs, or download the whole thing as one file. The
+database keeps the metadata — exit code, how long it took, when it
+started — and the actual log bytes sit on disk, one file per run.
 
 ## Where logs live
 
@@ -19,23 +19,26 @@ per run.
 {data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id-suffix}.log
 ```
 
-- **One file per run.** Each invocation gets its own isolated log,
-  named after its start time and a short suffix of the run's ULID so
-  files are sortable and unique. Task names are sanitised — anything
-  outside `[a-zA-Z0-9_-]` becomes `_`. The timestamp in the filename
-  is in **UTC** so the on-disk cadence stays stable across host
-  timezone changes.
-- **Stdout and stderr are interleaved** in capture order — the same
-  bytes the script wrote, in the order it wrote them.
-- When a run is deleted by retention, the daemon removes the log file,
-  any helper files alongside it, and any parent directory that becomes
-  empty. There's no orphaning: a row never points at a missing log,
-  and a log file never lingers without a row.
+Each run gets its own file, named with the start time plus a snippet
+of the run's ULID so files sort chronologically and never collide.
+Task names get sanitised — anything that isn't `[a-zA-Z0-9_-]` turns
+into `_`. The timestamp is always **UTC**, so the filenames stay
+predictable even if you move the host between timezones or hit a DST
+shift.
+
+Stdout and stderr are interleaved in capture order — what you see in
+the file is exactly what the script wrote, in exactly the order it
+wrote it.
+
+When retention deletes a run, the daemon takes the log file with it,
+plus the little helper files next to it, plus the parent directory if
+that was the last thing in it. A run row never points at a missing
+log, and a log file never lingers without a row to match it.
 
 ## Rotation: `log_max_size` and `log_on_full`
 
-Each run's log is capped — a runaway script doesn't fill the disk with
-output from a single tick.
+There's a ceiling on how big a single run's log can grow, so one
+runaway script can't fill the disk in a single tick.
 
 ```toml
 [tasks.bulky-job]
@@ -45,31 +48,35 @@ log_max_size = "50MB"
 log_on_full  = "drop_old"
 ```
 
-- **`log_max_size`** — per-run cap. Default `100MB`. Units: `b`, `kb`,
-  `mb`, `gb`, `tb` (case-insensitive); bare numbers are bytes.
-- **`log_on_full`** — what to do when output hits the cap.
+`log_max_size` is the per-run ceiling. Default is `100MB`. You can
+write it as `b`, `kb`, `mb`, `gb`, or `tb` (case doesn't matter); a
+bare number means bytes.
 
-| Value       | Behaviour                                                                                                                                                                                                                           |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `drop_old`  | Default. Renames the current log to `.prev`, keeps writing fresh output. The end of the log (usually where the failure is) survives.                                                                                                |
-| `drop_new`  | Stops accepting new lines; the process keeps running. Right when the **start** is the interesting part (a startup banner, a long batch's preamble) and the rest is repetitive.                                                      |
-| `kill_task` | Cancels the run's context, terminating the process. The run records as `log_overflow` (a dedicated end reason that's still treated as a failure for retries and notifications), so the cause is visible without inspecting the log. |
+`log_on_full` decides what happens when output hits that ceiling:
 
-Whichever policy fires, the daemon writes a synthetic line at the
-truncation point so someone skimming the log can see exactly when the
-limit hit. Nothing is dropped without a record.
+| Value       | What it does                                                                                                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `drop_old`  | The default. Renames the current log to `.prev` and starts a fresh file. You keep the tail — which is usually where the failure shows up.                                                               |
+| `drop_new`  | Stops writing, but lets the process keep running. Pick this when the start of the log is what you actually care about (a startup banner, the preamble of a long batch) and the rest is just repetition. |
+| `kill_task` | Cancels the run and kills the process. The run ends with reason `log_overflow` — still treated as a failure for retries and notifications, so you can see what happened without opening the log.        |
 
-`log_on_full` also controls what happens when `[storage] min_free_space`
-trips during a run: `kill_task` cancels the run on disk pressure;
-`drop_new` and `drop_old` quietly stop accepting lines (and the daemon
-raises a `log.disk_pressure` notification so the operator discovers
-the dropped output). See
+Whichever way it goes, the daemon drops a marker line into the log
+at the cut-off point. You can skim the file and immediately see where
+the limit hit. Nothing gets dropped silently.
+
+`log_on_full` does double duty: it also decides what happens when
+`[storage] min_free_space` trips mid-run. `kill_task` cancels the
+run. `drop_new` and `drop_old` quietly stop writing — and the daemon
+fires a `log.disk_pressure` notification so you find out before you
+go looking for output that isn't there. More on that in
 [storage configuration](/configuration/storage/#what-min_free_space-actually-does).
 
 ## Retention: `keep_runs` and `keep_for`
 
-Retention controls how long old run rows and their log files stick
-around. Both rules apply, and **whichever cuts first wins**.
+Retention decides how long old runs hang around before getting swept
+up — both the row in the database and the log file on disk. You can
+set a count, an age, or both. If you set both, **whichever rule cuts
+first wins**.
 
 ```toml
 [tasks.metrics]
@@ -79,102 +86,126 @@ keep_runs = 500
 keep_for  = "7d"
 ```
 
-- **`keep_runs`** — keep the N most recent runs for this task. A
-  positive integer. The internal hard cap is **1 000 000**; values
-  above it (and zero / negatives) are rejected at config load.
-- **`keep_for`** — delete runs whose `created_at` is older than the
-  given duration. Accepts extended units, including days and weeks:
-  `"7d"`, `"2w"`, `"36h"`, `"30m"`. Zero and negative durations are
-  rejected.
-- **Per task**: each task's retention is evaluated independently using
-  that task's own settings (or the inherited `[defaults]`).
-- Omit either field to inherit from `[defaults]`. Set both for a hard
-  floor _and_ a hard ceiling.
+`keep_runs` is the count: the N newest runs survive, anything older
+gets pruned. It has to be a positive integer, and there's a hard
+ceiling of one million per task — set anything bigger (or zero, or
+negative) and the daemon refuses to start.
 
-Cleanup runs in the background periodically. Runs that
-are still going are never deleted; you may briefly see slightly more
-than `keep_runs` rows between sweeps. When retention triggers, both
-the SQLite row **and** the log file (with its sidecars) are removed.
+`keep_for` is the age: anything whose `created_at` is older than that
+duration gets pruned. You can use days and weeks here too —
+`"7d"`, `"2w"`, `"36h"`, `"30m"` all work. Zero and negative
+durations are rejected.
+
+Each task is on its own — retention runs independently for every
+task, using that task's settings (or whatever it inherits from
+`[defaults]`). Leave either field out and it falls back to
+`[defaults]`; set both for a hard floor *and* a hard ceiling.
+
+Cleanup runs in the background on a timer, so you might briefly see a
+few extra rows over the `keep_runs` mark between sweeps. Runs that
+are still going are never touched. When retention does kick in, the
+SQLite row and the log file (plus its sidecar files) all go together.
 
 ## Live streaming
 
-The Web UI and TUI tail logs in real time as the run produces them —
-new bytes appear within milliseconds. The stream first replays
-whatever's already on disk for the run, then switches to live, so you
-don't miss the start of the output.
+Both the Web UI and the TUI tail running logs in real time — new
+output lands in the viewer within milliseconds of the process
+printing it. When you open the view, it first replays whatever's
+already on disk, then switches over to live, so you never miss the
+opening lines.
 
-Scrolling back works on finished runs too. The viewer jumps directly
-to the byte you asked for without re-reading the file from the top,
-so even multi-megabyte logs feel instant.
+Scrolling back through a finished run feels the same way. The viewer
+seeks straight to the byte you asked for instead of re-reading from
+the top, so even a multi-megabyte log opens instantly.
 
-The on-disk file is always the source of truth — the live stream is a
-fast preview of the same bytes.
+The on-disk file is always the canonical copy. The live stream is
+just a fast preview of those same bytes.
 
 ## Downloading
 
-The full log is downloadable as a single file:
+When you want the whole log as one file, you can grab it.
 
-- **Web UI** — the **Download** button on the run detail panel.
-- **TUI** — press `d` on the run detail view. On a graphical session
-  this opens your browser straight to the download; on SSH it copies
-  the URL to your clipboard or shows it in a modal you can paste from.
-- **Raw endpoint** — `GET /api/tasks/{name}/runs/{id}/log/raw` returns
-  the same bytes; useful for `curl` and shell pipelines.
+<Tabs syncKey="surface">
+    <TabItem label="Web UI" icon="laptop">
+        Hit **Download** on the run detail panel and the whole log lands in your Downloads folder.
+    </TabItem>
+    <TabItem label="TUI" icon="seti:shell">
+        Press <kbd>d</kbd> on the run detail view. On a desktop your browser jumps straight to the
+        download. Over SSH the URL ends up on your clipboard, or a modal pops up that you can copy
+        from.
+    </TabItem>
+    <TabItem label="REST API" icon="cloud-download">
+        `GET /api/tasks/{name}/runs/{id}/log/raw` returns the same bytes — handy when you want to
+        pipe them into `curl` or another shell tool.
+    </TabItem>
+</Tabs>
 
-If a run rotated mid-stream under `drop_old`, the download includes
-the rotated-out part and the current part as a single file — you get
-the full bytestream, not just the tail.
+If a log rotated partway through the run, the download still gives
+you everything: the rotated-out chunk and the current chunk come down
+stitched together, not just the tail.
 
 ## Full-text search
 
-RunWisp can grep every captured run of a task on demand. The scan reads
-the on-disk log files directly — there is no background index, no extra
-disk usage, and no warm-up window after a fresh boot. The trade-off is
-that the cost of one query scales with the bytes you ask it to read, so
-results page through a cursor instead of being unbounded.
+Need to find a line across every run of a task? RunWisp just greps
+the files. No background index, no extra disk usage, nothing to wait
+on after a restart. The trade-off is honest: the bigger the haystack
+you ask it to read, the longer the query takes, so results come back
+in pages with a cursor instead of all at once.
 
-- **Web UI** — open a task and unfold the **Search logs** panel above
-  the run detail. Toggle case sensitivity and regex with the buttons
-  next to the input. Click any hit and the existing log viewer
-  scrolls to the matching line and pulses a brief highlight.
-- **TUI** — press <kbd>/</kbd> from the exec view (or any task that's
-  selected). Same regex / case toggles. Enter on a hit jumps the log
-  pane to that line.
-- **REST** — `GET /api/tasks/{name}/log/search?q=...` returns hits
-  ordered newest-run-first, with `next_cursor` for paging. Supported
-  flags: `regex=true` (RE2 syntax), `case=true`, `run_id=<ulid>`
-  (scope to one run), `limit=<1-1000>` (default 200), `cursor=<token>`.
+<Tabs syncKey="surface">
+    <TabItem label="Web UI" icon="laptop">
+        Open a task and unfold **Search logs** above the run detail.
+        The buttons next to the input toggle case sensitivity and
+        regex. Click a result and the log viewer scrolls to that
+        line, then pulses a quick highlight so you can spot it.
+    </TabItem>
+    <TabItem label="TUI" icon="seti:shell">
+        From the exec view (or with any task selected), press
+        <kbd>/</kbd>. Same case/regex toggles as the Web UI. Hit
+        <kbd>Enter</kbd> on a result and the log pane jumps to that
+        line.
+    </TabItem>
+    <TabItem label="REST API" icon="cloud-download">
+        `GET /api/tasks/{name}/log/search?q=...`. Results come back
+        newest-run-first with a `next_cursor` to page through. The
+        flags you'll probably want: `regex=true` (RE2 syntax),
+        `case=true`, `run_id=<ulid>` to scope to a single run,
+        `limit=<1-1000>` (default 200), and `cursor=<token>` to pick
+        up where the last page left off.
+    </TabItem>
+</Tabs>
 
-Each scan visits up to 50 of the task's most recent runs in parallel
-(up to four workers at a time, so spinning disks don't get hammered),
-stops early once the hit budget is met, and emits a cursor so the next
-request resumes mid-task. Soft-deleted runs are excluded — the same
-visibility rules as the rest of the API.
+A single scan walks up to 50 of the most recent runs for that task,
+with four workers going in parallel — enough to feel quick on an SSD
+without hammering a spinning disk. It bails out as soon as it has
+enough hits, hands back a cursor for the rest, and skips soft-deleted
+runs (same visibility rules as everywhere else in the API).
 
-When a query is malformed (an unclosed regex group, an empty `q`) the
-endpoint returns `400` immediately, before any worker starts.
+If your query is malformed — unclosed regex group, empty `q`, that
+kind of thing — you'll get a `400` straight away, before any worker
+even spins up.
 
 ## Sidecars (`.idx`, `.tidx`, `.meta`, `.prev`)
 
-RunWisp keeps small helper files next to each `.log` to make seeking
-and downloading fast. They're rebuilt as needed and removing them
-won't free notable disk; **don't delete them while a run is in
-progress.** They're cleaned up automatically with the parent log when
-retention deletes a run.
+Next to every `.log` you'll see a couple of small helper files. They
+make seeking and downloading fast — RunWisp rebuilds them whenever
+it needs to, and deleting them won't free up any meaningful disk
+space. **Don't delete them while a run is still going.** When
+retention removes a run, the sidecars go with the parent log
+automatically.
 
 ## Crash safety
 
-Logs are flushed and closed cleanly when a run ends or when the daemon
-shuts down normally.
+When a run finishes — or when the daemon shuts down gracefully — the
+log gets flushed and closed properly.
 
-If the daemon is killed mid-write (power loss, force kill):
-
-- The log file is **not truncated** — partial writes survive on disk,
-  and the viewer tolerates a partial last line.
-- On the next startup, the run is marked `crashed` (see
-  [scheduling: on startup](/concepts/scheduling/#on-startup-unfinished-runs-are-marked-crashed))
-  and its log file is left exactly as it was — those last lines are
-  usually the most useful debugging artifact.
+If the daemon dies mid-write (power yanked, `kill -9`), the log file
+is **not** truncated. Whatever made it to disk stays there, and the
+viewer is fine with a half-written last line. When the daemon comes
+back up, the run gets marked `crashed`
+(see [scheduling: on startup](/concepts/scheduling/#on-startup-unfinished-runs-are-marked-crashed))
+and its log is left exactly as it was — those final lines are usually
+the most useful thing you've got for figuring out what went wrong.
 
 ---
 
