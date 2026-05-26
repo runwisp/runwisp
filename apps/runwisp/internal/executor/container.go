@@ -147,7 +147,7 @@ func (b *ContainerBackend) Available(ctx context.Context) bool {
 	return err == nil
 }
 
-func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, def model.ExecutionDef) (*Process, error) {
+func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, _ *model.Run, def model.ExecutionDef) (*Process, error) {
 	ctr, ok := def.(*model.ContainerExecution)
 	if !ok {
 		return nil, fmt.Errorf("ContainerBackend received non-container execution: %s", def.ExecType())

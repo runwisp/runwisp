@@ -174,35 +174,35 @@ func TestHTTPClient(t *testing.T) {
 
 func TestStart_NonHTTPExecutionDef(t *testing.T) {
 	b := &HTTPBackend{}
-	_, err := b.Start(context.Background(), nil, &model.ShellExecution{Script: "echo hi"})
+	_, err := b.Start(context.Background(), nil, nil, &model.ShellExecution{Script: "echo hi"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "non-http execution")
 }
 
 func TestStart_EmptyURL(t *testing.T) {
 	b := &HTTPBackend{}
-	_, err := b.Start(context.Background(), nil, &model.HTTPExecution{Method: "GET", URL: ""})
+	_, err := b.Start(context.Background(), nil, nil, &model.HTTPExecution{Method: "GET", URL: ""})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP URL is required")
 }
 
 func TestStart_UnsupportedScheme(t *testing.T) {
 	b := &HTTPBackend{}
-	_, err := b.Start(context.Background(), nil, &model.HTTPExecution{Method: "GET", URL: "ftp://example.com"})
+	_, err := b.Start(context.Background(), nil, nil, &model.HTTPExecution{Method: "GET", URL: "ftp://example.com"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported URL scheme")
 }
 
 func TestStart_BlockedPrivateURL(t *testing.T) {
 	b := &HTTPBackend{}
-	_, err := b.Start(context.Background(), nil, &model.HTTPExecution{Method: "GET", URL: "http://127.0.0.1/admin"})
+	_, err := b.Start(context.Background(), nil, nil, &model.HTTPExecution{Method: "GET", URL: "http://127.0.0.1/admin"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "blocked")
 }
 
 func TestStart_BlockedMetadataURL(t *testing.T) {
 	b := &HTTPBackend{}
-	_, err := b.Start(context.Background(), nil, &model.HTTPExecution{Method: "GET", URL: "http://169.254.169.254/latest"})
+	_, err := b.Start(context.Background(), nil, nil, &model.HTTPExecution{Method: "GET", URL: "http://169.254.169.254/latest"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "blocked")
 }

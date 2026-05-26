@@ -1172,6 +1172,9 @@
           "catch_up": {
             "type": "string"
           },
+          "compose": {
+            "$ref": "#/components/schemas/TaskComposeRef"
+          },
           "cron": {
             "type": "string"
           },
@@ -1209,6 +1212,25 @@
         ],
         "type": "object"
       },
+      "TaskComposeRef": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "project_name"
+        ],
+        "type": "object"
+      },
       "TaskResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1228,6 +1250,10 @@
               "skip"
             ],
             "type": "string"
+          },
+          "compose": {
+            "$ref": "#/components/schemas/TaskComposeRef",
+            "description": "Provenance metadata for tasks imported from a docker compose file"
           },
           "cron": {
             "type": "string"

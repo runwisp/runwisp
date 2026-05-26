@@ -74,7 +74,7 @@ func TestShellBackend_NoEnvKeepsInheritedEnv(t *testing.T) {
 
 	ctx := context.Background()
 	backend := &ShellBackend{}
-	proc, err := backend.Start(ctx, task, &model.ShellExecution{Script: script})
+	proc, err := backend.Start(ctx, task, nil, &model.ShellExecution{Script: script})
 	require.NoError(t, err)
 	io.Copy(io.Discard, proc.Stdout)
 	io.Copy(io.Discard, proc.Stderr)
@@ -111,7 +111,7 @@ func TestShellBackend_TaskEnvOverlay(t *testing.T) {
 
 	ctx := context.Background()
 	backend := &ShellBackend{}
-	proc, err := backend.Start(ctx, task, &model.ShellExecution{Script: script})
+	proc, err := backend.Start(ctx, task, nil, &model.ShellExecution{Script: script})
 	require.NoError(t, err)
 	io.Copy(io.Discard, proc.Stdout)
 	io.Copy(io.Discard, proc.Stderr)

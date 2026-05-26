@@ -16,8 +16,10 @@ import (
 //
 // task carries the resolved task definition, including runtime knobs like
 // GracefulStop that backends use to wire the SIGTERM→wait→SIGKILL ladder.
+// run carries per-execution state — most backends ignore it, but service
+// backends use run.InstanceIndex to differentiate concurrent instances.
 type Backend interface {
-	Start(ctx context.Context, task *model.Task, def model.ExecutionDef) (*Process, error)
+	Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error)
 	Available(ctx context.Context) bool
 }
 

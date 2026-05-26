@@ -18,6 +18,13 @@ type Config struct {
 	Daemon    Daemon
 	Notify    NotifyConfig
 	Scheduler Scheduler
+
+	// pendingComposeBlocks holds raw [compose.<alias>] tables captured by
+	// decode(), to be consumed by expandComposeBlocks() during Load. Once
+	// expansion has run this field is set to nil so it never leaks into
+	// downstream consumers. Tests that call decode() directly will see the
+	// raw blocks here.
+	pendingComposeBlocks map[string]map[string]any
 }
 
 // Scheduler holds scheduler-wide settings. Timezone is the IANA name used to
@@ -211,6 +218,11 @@ type taskWire struct {
 
 	Run string `toml:"run,omitempty"`
 
+	// ComposeFile / ComposeService route the task through ComposeBackend
+	// instead of ShellBackend. Mutually exclusive with Run.
+	ComposeFile    string `toml:"compose_file,omitempty"`
+	ComposeService string `toml:"compose_service,omitempty"`
+
 	Env     map[string]string `toml:"env,omitempty"`
 	EnvFile string            `toml:"env_file,omitempty"`
 
@@ -245,6 +257,11 @@ type serviceWire struct {
 
 	Run string `toml:"run,omitempty"`
 
+	// ComposeFile / ComposeService route the service through ComposeBackend
+	// instead of ShellBackend. Mutually exclusive with Run.
+	ComposeFile    string `toml:"compose_file,omitempty"`
+	ComposeService string `toml:"compose_service,omitempty"`
+
 	Env     map[string]string `toml:"env,omitempty"`
 	EnvFile string            `toml:"env_file,omitempty"`
 
@@ -272,14 +289,20 @@ type storageWire struct {
 }
 
 // tomlConfig is the over-the-wire config shape used only during TOML decoding.
+//
+// Compose is decoded as a free-form map: each [compose.<alias>] block mixes
+// reserved scalar keys (file, mode, include, …) with per-service override
+// sub-tables, so we destructure the alias map in internal/config/compose.go
+// rather than via direct struct binding. See parseComposeBlock there.
 type tomlConfig struct {
-	Daemon    daemonWire              `toml:"daemon,omitempty"`
-	Storage   storageWire             `toml:"storage,omitempty"`
-	Defaults  defaultsWire            `toml:"defaults,omitempty"`
-	Scheduler schedulerWire           `toml:"scheduler,omitempty"`
-	Tasks     map[string]*taskWire    `toml:"tasks,omitempty"`
-	Services  map[string]*serviceWire `toml:"services,omitempty"`
-	Notify    notifyWire              `toml:"notify,omitempty"`
+	Daemon    daemonWire                `toml:"daemon,omitempty"`
+	Storage   storageWire               `toml:"storage,omitempty"`
+	Defaults  defaultsWire              `toml:"defaults,omitempty"`
+	Scheduler schedulerWire             `toml:"scheduler,omitempty"`
+	Tasks     map[string]*taskWire      `toml:"tasks,omitempty"`
+	Services  map[string]*serviceWire   `toml:"services,omitempty"`
+	Compose   map[string]map[string]any `toml:"compose,omitempty"`
+	Notify    notifyWire                `toml:"notify,omitempty"`
 
 	Notifiers []notifierWire `toml:"notifier,omitempty"`
 	Routes    []routeWire    `toml:"notification_route,omitempty"`
@@ -390,7 +413,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid log_max_size for task %q: %w", name, err)
 	}
-	return model.Task{
+	task := model.Task{
 		Name:           name,
 		Kind:           model.KindTask,
 		Group:          w.Group,
@@ -416,7 +439,27 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 		Run:            w.Run,
 		Env:            w.Env,
 		EnvFile:        w.EnvFile,
-	}, nil
+	}
+	if w.ComposeFile != "" {
+		svc := w.ComposeService
+		if svc == "" {
+			svc = name
+		}
+		task.ExecutionDef = &model.ComposeExecution{
+			File:        w.ComposeFile,
+			ProjectName: name,
+			Service:     svc,
+			Mode:        model.ComposeModeServices,
+		}
+		task.Compose = &model.TaskComposeRef{
+			File:        w.ComposeFile,
+			Service:     svc,
+			ProjectName: name,
+		}
+	} else if w.ComposeService != "" {
+		return model.Task{}, fmt.Errorf("task %q sets compose_service without compose_file", name)
+	}
+	return task, nil
 }
 
 func (w *serviceWire) toTask(name string) (model.Task, error) {
@@ -452,7 +495,7 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid log_max_size for task %q: %w", name, err)
 	}
-	return model.Task{
+	task := model.Task{
 		Name:              name,
 		Kind:              model.KindService,
 		Group:             w.Group,
@@ -473,7 +516,27 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 		Run:               w.Run,
 		Env:               w.Env,
 		EnvFile:           w.EnvFile,
-	}, nil
+	}
+	if w.ComposeFile != "" {
+		svc := w.ComposeService
+		if svc == "" {
+			svc = name
+		}
+		task.ExecutionDef = &model.ComposeExecution{
+			File:        w.ComposeFile,
+			ProjectName: name,
+			Service:     svc,
+			Mode:        model.ComposeModeServices,
+		}
+		task.Compose = &model.TaskComposeRef{
+			File:        w.ComposeFile,
+			Service:     svc,
+			ProjectName: name,
+		}
+	} else if w.ComposeService != "" {
+		return model.Task{}, fmt.Errorf("service %q sets compose_service without compose_file", name)
+	}
+	return task, nil
 }
 
 func (w *defaultsWire) toDefaults() (Defaults, error) {

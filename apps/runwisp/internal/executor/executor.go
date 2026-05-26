@@ -58,6 +58,7 @@ type Options struct {
 	CloudShellEnabled bool
 	HasLocalTasks     bool
 	Docker            Backend          // container backend; nil when Docker is unavailable
+	Compose           Backend          // compose backend; nil when docker compose is unavailable
 	MinFreeDisk       int64            // minimum free disk space in bytes; 0 = disabled
 	OnRunUpdate       func(*model.Run) // called when run state changes (e.g. LogPath set)
 }
@@ -86,6 +87,13 @@ func New(opts Options) Executor {
 		avail.Container = BackendStatus{Available: true}
 	} else {
 		avail.Container = BackendStatus{Available: false, Reason: "docker daemon unreachable"}
+	}
+
+	if opts.Compose != nil {
+		backends["compose"] = opts.Compose
+		avail.Compose = BackendStatus{Available: true}
+	} else {
+		avail.Compose = BackendStatus{Available: false, Reason: "docker compose CLI unavailable"}
 	}
 
 	if opts.HasLocalTasks {
@@ -143,7 +151,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 		return errResult
 	}
 
-	proc, errResult := r.startBackend(cancelCtx, backend, task, execDef, writer)
+	proc, errResult := r.startBackend(cancelCtx, backend, task, run, execDef, writer)
 	if errResult != nil {
 		return errResult
 	}
@@ -196,8 +204,8 @@ func (r *RoutingExecutor) resolveBackend(task *model.Task, writer *LogWriter) (B
 	return backend, execDef, nil
 }
 
-func (r *RoutingExecutor) startBackend(ctx context.Context, backend Backend, task *model.Task, execDef model.ExecutionDef, writer *LogWriter) (*Process, *ExecuteResult) {
-	proc, err := backend.Start(ctx, task, execDef)
+func (r *RoutingExecutor) startBackend(ctx context.Context, backend Backend, task *model.Task, run *model.Run, execDef model.ExecutionDef, writer *LogWriter) (*Process, *ExecuteResult) {
+	proc, err := backend.Start(ctx, task, run, execDef)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to start %s execution: %v", execDef.ExecType(), err)
 		writer.WriteLineEvent(errMsg, logutil.StreamSystem)

@@ -65,6 +65,7 @@ it'll offer to write a minimal starter for you — the
 | `[defaults]`             | Defaults inherited by every task and service unless explicitly overridden.                                | [`[defaults]`](/configuration/defaults/)                                   |
 | `[tasks.<name>]`         | Scheduled or manually-triggered units of work. Cron expression, concurrency, retries, timeout, retention. | [`[tasks.*]`](/configuration/tasks/)                                       |
 | `[services.<name>]`      | Always-on processes. One or more `instances`, exponential restart backoff, graceful shutdown.             | [`[services.*]`](/configuration/services/)                                 |
+| `[compose.<alias>]`      | Imports services from an existing `docker-compose.yml` so each becomes an observable RunWisp service.     | [`[compose.*]`](/configuration/compose/)                                   |
 | `[[notifier]]`           | Declares one outbound channel. Repeated for each channel.                                                 | [Notifications model](/notifications/model/#notifier--declaring-a-channel) |
 | `[[notification_route]]` | Sends events (`run.failed`, `run.timeout`, …) to one or more channels. One rule, many tasks.              | [Notification rules](/notifications/routes/)                               |
 | `[notify]`               | Global notification settings — queue size, retention, in-app toggle.                                      | [Global settings](/notifications/global/)                                  |

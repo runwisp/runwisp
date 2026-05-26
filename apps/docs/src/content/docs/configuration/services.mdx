@@ -142,6 +142,23 @@ env_file = "/etc/runwisp/api-secrets.env"
 Every instance of a multi-instance service receives the same merged
 environment.
 
+## Compose-backed services
+
+`[services.<name>]` can run a service defined in an existing
+`docker-compose.yml` instead of a raw shell command. Set
+`compose_file = "./docker-compose.yml"` and (optionally)
+`compose_service = "<name>"` — when omitted, the service name defaults
+to the table key. `run` and `compose_file` are mutually exclusive.
+
+For importing the whole compose file at once, see [`[compose.*]`](/configuration/compose/).
+
+```toml
+[services.api]
+compose_file    = "./docker-compose.yml"
+compose_service = "api"
+notify_on_failure = ["slack-prod"]
+```
+
 ## Notifications
 
 | Key                 | Default  | What it does                                                            |

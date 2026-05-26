@@ -5,6 +5,7 @@
     import { Activity, ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "@lucide/svelte";
     import Badge from "@runwisp/ui/components/Badge.svelte";
     import Card from "@runwisp/ui/components/Card.svelte";
+    import ComposeBadge from "../ComposeBadge.svelte";
     import { getRunStatusConfig, TaskCard } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import { isFailureEndReason, type Run } from "@runwisp/common";
@@ -175,6 +176,13 @@
                                     </span>
                                     {#if task.task.group}
                                         <Badge variant="default" size="sm">{task.task.group}</Badge>
+                                    {/if}
+                                    {#if task.task.compose}
+                                        <ComposeBadge
+                                            file={task.task.compose.file}
+                                            service={task.task.compose.service}
+                                            projectName={task.task.compose.project_name}
+                                        />
                                     {/if}
                                 </div>
                                 <p class="mt-1 text-xs text-mist-500">

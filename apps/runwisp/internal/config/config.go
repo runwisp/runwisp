@@ -23,7 +23,11 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := resolveEnvFiles(cfg, filepath.Dir(path)); err != nil {
+	baseDir := filepath.Dir(path)
+	if err := expandComposeBlocks(cfg, baseDir); err != nil {
+		return nil, err
+	}
+	if err := resolveEnvFiles(cfg, baseDir); err != nil {
 		return nil, err
 	}
 	ApplyDefaults(cfg)
@@ -130,12 +134,13 @@ func decode(data []byte) (*Config, error) {
 	}
 
 	return &Config{
-		Tasks:     tasks,
-		Defaults:  defaults,
-		Storage:   storage,
-		Daemon:    daemon,
-		Notify:    notifyCfg,
-		Scheduler: Scheduler{Timezone: raw.Scheduler.Timezone},
+		Tasks:                tasks,
+		Defaults:             defaults,
+		Storage:              storage,
+		Daemon:               daemon,
+		Notify:               notifyCfg,
+		Scheduler:            Scheduler{Timezone: raw.Scheduler.Timezone},
+		pendingComposeBlocks: raw.Compose,
 	}, nil
 }
 
@@ -305,6 +310,11 @@ func validateTaskIdentity(task *model.Task, seen map[string]struct{}) error {
 }
 
 func validateTaskCommand(task *model.Task) error {
+	// `run` and a compose backend are mutually exclusive — both set is
+	// ambiguous, so fail fast rather than pick a precedence rule.
+	if _, isCompose := task.ExecutionDef.(*model.ComposeExecution); isCompose && strings.TrimSpace(task.Run) != "" {
+		return fmt.Errorf("task %s sets both `run` and `compose_file`; pick one execution backend", task.Name)
+	}
 	execDef := task.ResolvedExecutionDef()
 	if execDef == nil {
 		return fmt.Errorf("task run command is required for task: %s", task.Name)

@@ -92,8 +92,9 @@ type Task struct {
 	// JSON/TOML so values never leak to API/UI/cloud serialization.
 	SecretEnv map[string]string `toml:"-" json:"-"`
 
-	Run          string       `toml:"run,omitempty" json:"-"`
-	ExecutionDef ExecutionDef `toml:"-"             json:"-"`
+	Run          string          `toml:"run,omitempty" json:"-"`
+	ExecutionDef ExecutionDef    `toml:"-"             json:"-"`
+	Compose      *TaskComposeRef `toml:"-"             json:"compose,omitempty" doc:"Provenance metadata for tasks imported from a docker compose file"`
 }
 
 // ResolvedExecutionDef returns the runtime execution definition for the task.
@@ -189,6 +190,15 @@ type TaskBrief struct {
 	MaxConcurrent int               `json:"max_concurrent,omitempty"`
 	OnOverlap     ConcurrencyPolicy `json:"on_overlap,omitempty"`
 	Instances     int               `json:"instances,omitempty"`
+	Compose       *TaskComposeRef   `json:"compose,omitempty"`
+}
+
+// TaskComposeRef identifies the compose file and service backing a task.
+// Used by the UI to render the "compose" provenance badge.
+type TaskComposeRef struct {
+	File        string `json:"file"`
+	Service     string `json:"service,omitempty"`
+	ProjectName string `json:"project_name"`
 }
 
 // CapInfo describes a daemon capability.

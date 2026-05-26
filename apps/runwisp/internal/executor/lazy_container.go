@@ -24,12 +24,12 @@ func NewLazyContainerBackend() Backend {
 	return &LazyContainerBackend{}
 }
 
-func (l *LazyContainerBackend) Start(ctx context.Context, task *model.Task, def model.ExecutionDef) (*Process, error) {
+func (l *LazyContainerBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {
 	b, err := l.ensureConnected(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("docker backend unavailable: %w", err)
 	}
-	return b.Start(ctx, task, def)
+	return b.Start(ctx, task, run, def)
 }
 
 func (l *LazyContainerBackend) Available(ctx context.Context) bool {

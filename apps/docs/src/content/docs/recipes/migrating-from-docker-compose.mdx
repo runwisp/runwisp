@@ -1,0 +1,116 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Migrating from docker-compose
+description: Point RunWisp at an existing docker-compose.yml in 60 seconds — every service becomes an observable RunWisp service, no rewrite required.
+---
+
+If you're currently running `docker compose up -d` on a single host, you
+can drop RunWisp in front without rewriting a line of YAML. Every
+compose service becomes an observable RunWisp service: logs streamed
+and indexed, restart policies enforced, notifications on failure,
+trigger/stop from the Web UI and REST API. The containers themselves
+still run under Docker, exactly as before — RunWisp is the supervisor
+and observability layer on top.
+
+## 60-second migration
+
+1. Drop the `runwisp` binary next to your `docker-compose.yml`.
+2. Run `runwisp daemon`. On first run, RunWisp detects the compose file
+   and scaffolds a starter `runwisp.toml` that imports every service:
+
+    ```toml
+    [compose.myapp]
+    file = "./docker-compose.yml"
+    ```
+
+3. Open the Web UI on `:8080` (default). Every compose service is a
+   RunWisp service tagged with a small "compose" badge.
+
+That's the whole migration. From here, layer on the RunWisp knobs you
+want without touching the compose file.
+
+## Common follow-ups
+
+### Restart everything on failure
+
+Compose-imported services restart `on_failure` by default. To make
+critical ones restart unconditionally:
+
+```toml
+[compose.myapp.api]
+restart = "always"
+```
+
+### Notify on failure
+
+```toml
+[[notifier]]
+id    = "slack-prod"
+kind  = "slack"
+url   = "https://hooks.slack.com/services/..."
+
+[compose.myapp.api]
+notify_on_failure = ["slack-prod"]
+```
+
+### Scale a worker horizontally
+
+```toml
+[compose.myapp.worker]
+instances = 4
+```
+
+Four containers named `myapp_worker_0` … `myapp_worker_3` come up,
+each receiving a distinct `RUNWISP_INSTANCE_INDEX` env var (0..3) so
+they can self-shard.
+
+### Run only a subset of services through RunWisp
+
+```toml
+[compose.myapp]
+include = ["api", "worker"]   # leaves `db` etc. unmanaged
+```
+
+…or:
+
+```toml
+[compose.myapp]
+exclude = ["db"]
+```
+
+### Trigger compose images as cron jobs
+
+A nightly backup using a compose-declared image, without bringing the
+container up as a long-running service:
+
+```toml
+[tasks.nightly-backup]
+cron            = "0 3 * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+```
+
+## What stays under your control
+
+- The compose file itself — networks, volumes, depends_on, image build
+  contexts, healthchecks. RunWisp reads it; it never rewrites it.
+- The Docker daemon — RunWisp shells out to `docker compose`; install
+  Docker the way you already do.
+- The application — RunWisp doesn't proxy traffic, doesn't intercept
+  stdin, doesn't change container networking. `docker compose ps`,
+  `docker logs`, and `docker exec` all keep working as before.
+
+## What RunWisp adds
+
+- **Per-run history** — every container start is a RunWisp run with a
+  ULID, start/end timestamps, exit code, and captured stdout/stderr.
+- **Restart policy** — RunWisp owns supervision now; the compose-file
+  `restart:` directive is ignored on imported services.
+- **Notifications** — wire compose services into the same notification
+  rules used for `[tasks.*]` and `[services.*]`.
+- **Manual trigger/stop** — start and stop containers from the Web UI
+  or REST API. Stops are graceful; the compose-declared
+  `stop_grace_period` is honoured.
+
+See [`[compose.*]`](/configuration/compose/) for the full reference.

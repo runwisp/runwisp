@@ -46,7 +46,7 @@ wait
 
 	ctx, cancel := context.WithCancel(context.Background())
 	backend := &ShellBackend{}
-	proc, err := backend.Start(ctx, task, &model.ShellExecution{Script: script})
+	proc, err := backend.Start(ctx, task, nil, &model.ShellExecution{Script: script})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		if proc.Stdout != nil {
@@ -108,7 +108,7 @@ sleep 30
 
 	ctx, cancel := context.WithCancel(context.Background())
 	backend := &ShellBackend{}
-	proc, err := backend.Start(ctx, task, &model.ShellExecution{Script: script})
+	proc, err := backend.Start(ctx, task, nil, &model.ShellExecution{Script: script})
 	require.NoError(t, err)
 	go func() { _, _ = io.Copy(io.Discard, proc.Stdout) }()
 	go func() { _, _ = io.Copy(io.Discard, proc.Stderr) }()
