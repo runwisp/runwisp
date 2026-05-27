@@ -161,20 +161,30 @@ func expandComposeAlias(alias string, raw map[string]any, baseDir string, existi
 
 	if block.WorkingDir == "" {
 		block.WorkingDir = filepath.Dir(resolvedFile)
-	} else if !filepath.IsAbs(block.WorkingDir) {
-		block.WorkingDir = filepath.Join(baseDir, block.WorkingDir)
-	}
-
-	envFiles := make([]string, len(block.EnvFile))
-	for i, p := range block.EnvFile {
-		if filepath.IsAbs(p) {
-			envFiles[i] = p
-		} else {
-			envFiles[i] = filepath.Join(baseDir, p)
+	} else {
+		if !filepath.IsAbs(block.WorkingDir) {
+			block.WorkingDir = filepath.Join(baseDir, block.WorkingDir)
+		}
+		block.WorkingDir, err = filepath.Abs(block.WorkingDir)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	project, err := composespec.Load(resolvedFile, block.Profiles, envFiles, block.WorkingDir)
+	// Absolutize env-file paths and write them back onto the block so the same
+	// resolved paths flow into ComposeExecution.EnvFile — like the compose file,
+	// they are passed to a CLI whose cwd is working_dir, not baseDir.
+	for i, p := range block.EnvFile {
+		if !filepath.IsAbs(p) {
+			abs, absErr := filepath.Abs(filepath.Join(baseDir, p))
+			if absErr != nil {
+				return nil, absErr
+			}
+			block.EnvFile[i] = abs
+		}
+	}
+
+	project, err := composespec.Load(resolvedFile, block.Profiles, block.EnvFile, block.WorkingDir)
 	if err != nil {
 		return nil, err
 	}
@@ -616,6 +626,11 @@ func validateComposeNameSet(names []string, available map[string]struct{}, scope
 	return nil
 }
 
+// resolveComposeFile turns a declared (or auto-discovered) compose path into an
+// absolute path. Absolute is essential: the file path becomes `docker compose
+// -f <file>` while the invocation cwd is set to working_dir, so a relative path
+// would be resolved twice (once against baseDir at load, again against
+// working_dir at exec) and miss the file.
 func resolveComposeFile(declared, baseDir string) (string, error) {
 	if declared != "" {
 		path := declared
@@ -625,12 +640,12 @@ func resolveComposeFile(declared, baseDir string) (string, error) {
 		if _, err := os.Stat(path); err != nil {
 			return "", fmt.Errorf("compose file %s: %w", path, err)
 		}
-		return path, nil
+		return filepath.Abs(path)
 	}
 	for _, name := range ComposeAutoDiscoveryFilenames {
 		candidate := filepath.Join(baseDir, name)
 		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+			return filepath.Abs(candidate)
 		}
 	}
 	return "", fmt.Errorf("no compose file found in %s (searched: %s)",

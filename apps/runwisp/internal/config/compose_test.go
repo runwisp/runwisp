@@ -180,6 +180,44 @@ compose_service = "web"
 	assert.Equal(t, "api", ce.ProjectName)
 }
 
+// TestComposeExpansion_PathsAreAbsoluteUnderRelativeConfigDir reproduces the
+// path-doubling bug seen when the daemon is launched with a relative -c path:
+// the compose file path must be absolute on the ComposeExecution, because at
+// exec time `docker compose -f <file>` runs with cwd = working_dir. A relative
+// file is then resolved twice (baseDir at load, working_dir at exec) and the
+// prefix doubles. Covers both the [compose.*] block and the standalone
+// [services.*] compose_file path. Uses a RELATIVE config path on purpose —
+// with an absolute one the joined path is already absolute and the bug hides.
+func TestComposeExpansion_PathsAreAbsoluteUnderRelativeConfigDir(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "cfgdir")
+	require.NoError(t, os.MkdirAll(sub, 0755))
+	composeBytes, err := os.ReadFile("testdata/basic-compose.yml")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(sub, "docker-compose.yml"), composeBytes, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(sub, "runwisp.toml"), []byte(`[compose.block]
+file = "./docker-compose.yml"
+
+[services.standalone]
+compose_file    = "./docker-compose.yml"
+compose_service = "web"
+`), 0644))
+
+	t.Chdir(root) // auto-restored; Load now sees baseDir = "cfgdir" (relative)
+	cfg, err := Load(filepath.Join("cfgdir", "runwisp.toml"))
+	require.NoError(t, err)
+
+	wantFile := filepath.Join(sub, "docker-compose.yml")
+	for _, name := range []string{"block.web", "standalone"} {
+		ce, ok := findTask(t, cfg, name).ExecutionDef.(*model.ComposeExecution)
+		require.True(t, ok, "%s should be a ComposeExecution", name)
+		assert.True(t, filepath.IsAbs(ce.File), "%s: File must be absolute, got %q", name, ce.File)
+		assert.Equal(t, wantFile, ce.File, "%s: File resolved to the staged compose file", name)
+		assert.Equal(t, sub, ce.WorkingDir, "%s: WorkingDir is the compose file's directory", name)
+		assert.FileExists(t, ce.File, "%s: resolved File must exist", name)
+	}
+}
+
 func TestComposeExpansion_ComposeServiceWithoutComposeFileRejected(t *testing.T) {
 	_, err := Load(writeConfig(t, `[services.api]
 compose_service = "web"

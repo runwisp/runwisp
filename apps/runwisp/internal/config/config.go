@@ -27,6 +27,9 @@ func Load(path string) (*Config, error) {
 	if err := expandComposeBlocks(cfg, baseDir); err != nil {
 		return nil, err
 	}
+	if err := resolveComposePaths(cfg, baseDir); err != nil {
+		return nil, err
+	}
 	if err := resolveEnvFiles(cfg, baseDir); err != nil {
 		return nil, err
 	}
@@ -58,6 +61,29 @@ func resolveEnvFiles(cfg *Config, baseDir string) error {
 			return fmt.Errorf("task %q: %w", task.Name, err)
 		}
 		task.SecretEnv = values
+	}
+	return nil
+}
+
+// resolveComposePaths absolutizes the compose file path on tasks/services that
+// set compose_file directly ([services.*] / [tasks.*]); the [compose.*] block
+// path already resolves to absolute during expansion, so those are skipped by
+// the IsAbs guard. WorkingDir defaults to the file's directory so the CLI runs
+// from there, matching docker compose's own behaviour.
+func resolveComposePaths(cfg *Config, baseDir string) error {
+	for i := range cfg.Tasks {
+		ce, ok := cfg.Tasks[i].ExecutionDef.(*model.ComposeExecution)
+		if !ok || ce.File == "" || filepath.IsAbs(ce.File) {
+			continue
+		}
+		resolved, err := resolveComposeFile(ce.File, baseDir)
+		if err != nil {
+			return fmt.Errorf("task %q: %w", cfg.Tasks[i].Name, err)
+		}
+		ce.File = resolved
+		if ce.WorkingDir == "" {
+			ce.WorkingDir = filepath.Dir(resolved)
+		}
 	}
 	return nil
 }
