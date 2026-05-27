@@ -127,6 +127,7 @@ won't need the password to open the dashboard from this TUI — it
 shoves a logged-in session straight at your browser. But if you'll
 ever want to hit the dashboard from another machine, or from a
 fresh browser, highlight the password row now and press
+
 <kbd>Enter</kbd> to copy it to the clipboard.
 
 Here's the `runwisp.toml` that just got written: one task you can
@@ -254,7 +255,7 @@ and it keeps `instances = N` copies running in parallel.
 
 :::note[Tasks and services share names]
 A task and a service can't share a name. Define `[tasks.worker]`
-*and* `[services.worker]` in the same file and the daemon will
+_and_ `[services.worker]` in the same file and the daemon will
 refuse to start.
 :::
 

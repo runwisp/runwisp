@@ -164,9 +164,9 @@ there's no shell expansion or interpolation.
 
 **So why two knobs?** Anything in inline `env` is treated as out in the
 open — it sits right next to `cron` and `run` in the dashboard, the TUI,
-and `GET /api/tasks`. Anything that should *not* be on display — API
+and `GET /api/tasks`. Anything that should _not_ be on display — API
 tokens, signing keys — belongs in `env_file`, whose contents never leave
-disk. The API will show you the *path* so you can tell where a value
+disk. The API will show you the _path_ so you can tell where a value
 came from, but never the keys or the values themselves.
 
 ```toml

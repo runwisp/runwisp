@@ -9,7 +9,7 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 `[storage]` is the daemon-wide safety net for disk usage. It lives one
 level up from per-task [`log_max_size`](/concepts/logs/#log_max_size):
-that field caps a *single* run's log, while this section caps the
+that field caps a _single_ run's log, while this section caps the
 daemon's total log footprint and keeps some breathing room on the
 partition underneath it.
 
@@ -63,7 +63,7 @@ and it's checked in two places:
   task's process, it stats the data partition. If free space is already
   below the threshold, the run never starts — it's recorded with exit
   code `-1` and the message `insufficient disk space: X free, minimum Y
-  required`. The daemon itself keeps running; only that run fails.
+required`. The daemon itself keeps running; only that run fails.
 - **During every run, as the logs grow.** If free space dips below the
   threshold mid-run, the log writer stops accepting new lines and the
   daemon raises a `log.disk_pressure` notification (severity `warn`) so

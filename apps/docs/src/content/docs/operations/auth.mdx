@@ -27,7 +27,7 @@ accept time with `SO_PEERCRED` on Linux and `LOCAL_PEERCRED` on
 macOS, and slams the door on anyone whose UID doesn't match.
 
 That's why the CLI and TUI don't need a password or a JWT — being
-on the local socket as the right user *is* the credential. Commands
+on the local socket as the right user _is_ the credential. Commands
 like `runwisp`, `runwisp tui`, `runwisp list`, and `runwisp exec`
 all connect through the socket automatically.
 

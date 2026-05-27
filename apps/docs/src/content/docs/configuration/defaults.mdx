@@ -40,7 +40,7 @@ backoff_reset_after = "60s"
 | `env`                 | _(none)_     | Inline KEY/VALUE map merged into every task and service. Task-level entries override on key collision. See [`[tasks.*]` Environment](/configuration/tasks/#environment). |
 | `env_file`            | _(none)_     | Path to a dotenv file whose KEY=VALUE pairs are merged into every task and service. Visibility rules match per-task `env_file`.                                          |
 
-Some things you *can't* default: `cron`, `on_overlap`, the `retry_*`
+Some things you _can't_ default: `cron`, `on_overlap`, the `retry_*`
 keys, `max_concurrent`, `queue_max`, `graceful_stop`. Those are too tied
 to a task's intent — defaulting them would quietly change behaviour you
 meant to be explicit. Per-task `graceful_stop` just falls back to its
@@ -61,7 +61,7 @@ For each task or service:
 2. Else if it's set in `[defaults]`, use that.
 3. Else fall back to the built-in default (e.g. `100MB` for `log_max_size`).
 
-Leave a numeric retention field off at *every* level and you get **no
+Leave a numeric retention field off at _every_ level and you get **no
 cap** — runs just pile up until you set a value somewhere. Bare `0`,
 negatives, and out-of-range strings all get rejected at config load, so
 "I forgot to set a cap" can never quietly turn into "everything got

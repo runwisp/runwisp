@@ -78,8 +78,8 @@ fires it until something explicitly asks for a run.
     </TabItem>
     <TabItem label="REST API" icon="cloud-download">
         `POST /api/tasks/deploy-app/run` — see [Triggering from CI](#triggering-from-ci) below for
-        the full CHAP handshake plus trigger script. On the box itself, `runwisp exec deploy-app`
-        is the same call wrapped in a CLI.
+        the full CHAP handshake plus trigger script. On the box itself, `runwisp exec deploy-app` is
+        the same call wrapped in a CLI.
     </TabItem>
 </Tabs>
 
@@ -143,7 +143,7 @@ itself (which is what the example above does — it reads the
 registry tag's `org.opencontainers.image.revision` label), or have
 CI write a file like `/srv/app/current-version` before triggering,
 and have the task read it back. The TOML stays the source of truth
-for *what* runs; HTTP only gets to say *when*.
+for _what_ runs; HTTP only gets to say _when_.
 
 Here's what a typical GitHub Actions step looks like:
 

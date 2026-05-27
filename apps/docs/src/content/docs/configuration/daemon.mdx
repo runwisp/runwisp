@@ -12,7 +12,7 @@ whole, rather than to any one task or service. The whole section is
 optional — leave it out and the built-in defaults below take over.
 
 You won't find the **data directory** or **listen address** in here,
-and that's on purpose: they have to be set *before* the config file is
+and that's on purpose: they have to be set _before_ the config file is
 even read, so they live on the CLI instead (or in however your
 supervisor invokes `runwisp`). They're documented on this page anyway,
 since in practice you tend to think about them together.
@@ -84,7 +84,7 @@ listener by default. Point `metrics_listen` at something like
 `"127.0.0.1:9478"` (any host:port works) and `/metrics` binds there
 instead. That's the knob you want when `--host 0.0.0.0` puts the
 dashboard out in public but you'd rather keep the scrape surface on
-loopback. The dedicated listener serves *only* `/metrics` — the UI, REST
+loopback. The dedicated listener serves _only_ `/metrics` — the UI, REST
 API, and `/health` all stay on the main listener.
 
 And if you set `metrics_listen` but never turned `metrics_enabled` on,

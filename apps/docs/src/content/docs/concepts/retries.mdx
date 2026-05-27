@@ -26,7 +26,7 @@ retry_delay    = "30s"
 retry_backoff  = "exponential"
 ```
 
-`retry_attempts` is the number of *extra* tries after the first one
+`retry_attempts` is the number of _extra_ tries after the first one
 fails — it defaults to `0`, so out of the box nothing retries. Set it to
 `3` and a failing run gets up to three more goes.
 
@@ -39,7 +39,7 @@ It does **not** fire on `success`, `stopped`, or `skipped`. `stopped`
 means a human deliberately killed it from the API/CLI/UI, or a sibling
 run cancelled it via `on_overlap = "terminate"` — either way, retrying
 would override an intentional decision. `skipped` means the original run
-is *still going*, so another attempt would just race it.
+is _still going_, so another attempt would just race it.
 
 ## `retry_delay` and `retry_backoff`
 

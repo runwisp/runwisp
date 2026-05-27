@@ -8,7 +8,7 @@ description: queue, skip, and terminate — what each on_overlap mode does, when
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 Every so often a task fires while the last run is still going. RunWisp
-has to do *something* about that, and `on_overlap` is how you tell it
+has to do _something_ about that, and `on_overlap` is how you tell it
 what. Three policies cover just about every real case: `queue`, `skip`,
 and `terminate`.
 
@@ -70,7 +70,7 @@ run        = "curl -sf https://example.com/health"
 It's a good fit when:
 
 - The work is **safe to skip** — a probe, a poll, a status check. Miss
-  one and it's no big deal; what matters is the *next* one runs.
+  one and it's no big deal; what matters is the _next_ one runs.
 - Stacking would actually hurt. You only want one `pg_dump` running at
   a time, say, and a skipped tick is far better than two dumps
   trampling each other.
@@ -135,7 +135,7 @@ bump it when:
 - The runs are genuinely independent — no shared state, no shared
   resource they'd fight over.
 - The schedule is uneven: a `* * * * *` tick against work that
-  *usually* wraps up in seconds but every now and then drags on much
+  _usually_ wraps up in seconds but every now and then drags on much
   longer.
 
 If what you really want is a pool of long-running parallel workers,

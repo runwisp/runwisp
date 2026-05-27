@@ -100,7 +100,7 @@ gives you:
   `success`, `failed`, `stopped`, `timeout`, `crashed`, `skipped`, or
   `log_overflow`.
 
-Whether the run *starts* right away is up to the task's
+Whether the run _starts_ right away is up to the task's
 [concurrency policy](/concepts/concurrency/). Under the default
 `on_overlap = "queue"`, a tick that fires while the last run is still
 going simply waits in line. Under `on_overlap = "skip"`, it's recorded
@@ -196,6 +196,7 @@ take? Restart the daemon.
 
 A parse error at startup stops the boot cold: the daemon exits before it
 ever opens its port. The safe habit is to run `runwisp validate --config
+
 <path>` against the new file *before* you restart.
 
 If a task disappears from the file between restarts, its schedule is

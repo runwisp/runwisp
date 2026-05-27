@@ -21,7 +21,7 @@ hood, so it's worth knowing what you're signing up for.
 A nightly backup, a health probe, a deploy hook — they do their thing
 and exit. Those are tasks. A queue worker, a metrics agent, anything
 that holds a connection open and loops waiting for events — they run
-until *you* stop them. Those are services.
+until _you_ stop them. Those are services.
 
 And if you catch yourself writing `while true; do ...; done` inside a
 `[tasks.*]`, that's a service wearing a task costume. Switch the header.
@@ -62,7 +62,7 @@ with:
   `notify_on_success`, plus full `[[notification_route]]` matching).
 
 That's really the whole idea: switching from task to service changes how
-the process gets *run*, not what you can see or how you operate it.
+the process gets _run_, not what you can see or how you operate it.
 
 ## Services scale horizontally with `instances`
 

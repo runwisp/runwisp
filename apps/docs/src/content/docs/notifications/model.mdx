@@ -15,7 +15,7 @@ When a task fails, you want to know. RunWisp has two layers for that:
    block. See the **Providers** section for the channels that ship today.
 
 All of this is baked into the binary. No plugins, no remote service to
-sign up for. Unplug the network on a laptop and a failed task *still*
+sign up for. Unplug the network on a laptop and a failed task _still_
 shows up in the bell.
 
 ## What you get with zero config
@@ -123,13 +123,13 @@ together.
   set of tasks.
 
 And they cooperate. A task with `notify_on_failure = ["slack-ops"]` that
-*also* gets matched by a rule routing to `slack-ops` still sends just one
+_also_ gets matched by a rule routing to `slack-ops` still sends just one
 message — duplicate channels get collapsed.
 
 ### `global_notifiers` — the always-on list
 
 `[notify] global_notifiers` is the one setting that decides which
-channels hear about *every* failure, no matter what an individual task
+channels hear about _every_ failure, no matter what an individual task
 says. Its built-in default is `["inapp"]` — which is exactly why the
 bell just works with no TOML at all.
 
@@ -141,7 +141,7 @@ global_notifiers = ["inapp"]                # default — bell on
 # global_notifiers = ["inapp", "slack-ops"] # both
 ```
 
-Every id in this list gets *added* to whatever channels a task already
+Every id in this list gets _added_ to whatever channels a task already
 names, duplicates removed — and it's also the catch-all for tasks that
 don't name any channel at all. So `global_notifiers = ["inapp"]` plus a
 task's `notify_on_failure = ["slack-ops"]` means the failure goes to
@@ -228,7 +228,7 @@ router. Retrying the same dead channel just to announce that the channel
 is dead would only dig the hole deeper. What you see is a yellow warning
 in the bell naming the original task and kind.
 
-You *can* still route `notify.delivery_failed` somewhere else — the
+You _can_ still route `notify.delivery_failed` somewhere else — the
 classic "if one channel goes down, ping the on-call channel on a
 different one":
 
