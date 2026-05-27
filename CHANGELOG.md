@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-27
+
 ### Added
 
 - **Full-text log search across a task's runs.** Press <kbd>/</kbd> in the TUI, or click **Search** in the task header (or <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd>) in the Web UI, to grep every captured run of a task for a substring or RE2 regex, case-sensitive or not. Hits are grouped by run with the run's start time as the heading; click one and the existing log viewer jumps to the line and pulses a highlight. The scan is on-demand — no background index, no extra disk usage — and walks runs newest-first in parallel, with an opaque cursor for paging through long histories. The Web UI modal pages through older runs as you scroll, so tasks with thousands of runs are searchable end-to-end. Exposed at `GET /api/tasks/{name}/log/search`. See [Logs / Search](https://docs.runwisp.com/concepts/logs/#full-text-search).
@@ -159,6 +161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TUI sidebar navigation while viewing a run.** Focusing the sidebar and pressing Enter on a sidebar item now consistently takes you to the selected view instead of snapping back.
 
 ## [0.1.2] - 2026-04-23
+
 ### Improved
 
 - **Friendlier error messages on the CLI.** Login rejections, retry exhaustion, port conflicts, and login rate-limits now print a clearly formatted, coloured error with concrete next steps — no more single-line log dumps.
@@ -193,6 +196,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.7.0...main
+[0.7.0]: https://github.com/runwisp/runwisp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/runwisp/runwisp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/runwisp/runwisp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/runwisp/runwisp/compare/v0.3.0...v0.4.0

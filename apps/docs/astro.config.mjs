@@ -78,6 +78,7 @@ export default defineConfig({
                         { label: "[defaults]", slug: "configuration/defaults" },
                         { label: "[tasks.*]", slug: "configuration/tasks" },
                         { label: "[services.*]", slug: "configuration/services" },
+                        { label: "[compose.*]", slug: "configuration/compose" },
                     ],
                 },
                 {
@@ -110,6 +111,10 @@ export default defineConfig({
                         { label: "Health checks", slug: "recipes/healthcheck" },
                         { label: "Deploy hooks", slug: "recipes/deploy-hooks" },
                         { label: "Docker patterns", slug: "recipes/docker" },
+                        {
+                            label: "Migrating from docker-compose",
+                            slug: "recipes/migrating-from-docker-compose",
+                        },
                     ],
                 },
                 {
