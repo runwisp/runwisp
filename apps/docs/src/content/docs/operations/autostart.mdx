@@ -11,7 +11,7 @@ so the daemon survives logout. No root, no surprise sudo — the only
 escalation is `loginctl enable-linger`, which is printed and confirmed
 before it runs.
 
-The command never edits `runwisp.toml`. It is OS integration only.
+It never touches `runwisp.toml` — this is purely OS plumbing.
 
 ## The four commands
 
@@ -22,9 +22,9 @@ runwisp service uninstall   # remove the unit (data dir is preserved)
 runwisp service install --print > custom.service   # Ansible / Nix
 ```
 
-`runwisp status` is the _daemon_ health check (is it alive right
-now?). `runwisp service status` is the _autostart_ check (will it
-come up after a reboot?).
+Don't mix up the two `status` commands: `runwisp status` answers "is the
+daemon alive right now?", while `runwisp service status` answers "will it
+come back on its own after a reboot?".
 
 ## What `install` does
 
@@ -61,8 +61,9 @@ before anything is written. `--yes` skips the prompt for CI; it does
 
 ### Resolving paths
 
-The unit needs absolute, durable paths for the binary and the data
-dir. `runwisp service install` resolves them by these rules:
+A unit that boots at login can't rely on your shell or your current
+directory, so it needs absolute, durable paths for both the binary and
+the data dir. Here's how `runwisp service install` works them out:
 
 - **Binary**: `os.Executable()` followed by `EvalSymlinks`. The
   installer **rejects** transient locations outright (`/tmp/`,
@@ -171,9 +172,9 @@ to the unit. It is the only place where `--yes` does **not** skip a
 prompt: the operator must type the literal word `delete` to proceed.
 That guard is permanent; nothing on the command line removes it.
 
-Without `--purge`, uninstall is symmetric and reversible: it stops
-the service, disables autostart, removes the managed unit, runs
-`daemon-reload`, and leaves the data dir untouched.
+Leave `--purge` off and uninstall is clean and reversible: it stops the
+service, disables autostart, removes the managed unit, runs
+`daemon-reload`, and leaves your data dir exactly where it was.
 
 ## WSL
 
