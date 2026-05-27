@@ -117,6 +117,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executor {
 	dockerBackend := executor.NewLazyContainerBackend()
+	composeBackend := executor.NewLazyComposeBackend()
 
 	minFreeDisk := cfg.Storage.MinFreeSpace
 
@@ -126,6 +127,7 @@ func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executo
 		CloudShellEnabled: cfg.IsCloudShellEnabled(),
 		HasLocalTasks:     len(cfg.Tasks) > 0,
 		Docker:            dockerBackend,
+		Compose:           composeBackend,
 		MinFreeDisk:       minFreeDisk,
 	})
 }
@@ -214,6 +216,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
 			MaxConcurrent: j.MaxConcurrent,
 			OnOverlap:     j.OnOverlap,
 			Instances:     j.Instances,
+			Compose:       j.Compose,
 		})
 	}
 
@@ -235,6 +238,7 @@ func capInfosFromAvailability(a executor.Availability) []model.CapInfo {
 	return []model.CapInfo{
 		{Name: "shell", Available: a.Shell.Available},
 		{Name: "container", Available: a.Container.Available},
+		{Name: "compose", Available: a.Compose.Available},
 		{Name: "http", Available: a.HTTP.Available},
 		{Name: "config", Available: a.Config.Available},
 	}

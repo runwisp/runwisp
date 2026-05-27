@@ -1,0 +1,177 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: "[compose.*]"
+description: Import services from a docker-compose.yml so every service becomes an observable RunWisp service — logs, restart policies, notifications, trigger/stop.
+---
+
+`[compose.<alias>]` blocks point RunWisp at an existing
+`docker-compose.yml`. Every service in the compose file becomes an
+observable RunWisp service: per-container logs are streamed and indexed,
+restart policies are enforced, failures route through your notification
+rules, and operators can trigger or stop containers from the Web UI and
+REST API — without rewriting anything.
+
+The containers themselves keep running under Docker exactly as before;
+RunWisp is the supervisor and observability layer on top.
+
+## Minimum example
+
+Drop one line next to your `docker-compose.yml`:
+
+```toml
+[compose.myapp]
+```
+
+That's it. RunWisp searches the directory of `runwisp.toml` for
+`compose.yaml`, `compose.yml`, `docker-compose.yaml`,
+`docker-compose.yml` in that order — the same fallback `docker compose`
+itself uses — and imports every service in the first file it finds.
+
+## Full surface
+
+```toml
+[compose.myapp]
+file         = "./docker-compose.yml"   # default: auto-discovered next to runwisp.toml
+include      = ["api", "worker"]         # subset; omit to import all
+exclude      = ["db"]                    # mutually exclusive with include
+mode         = "services"                # "services" (default) | "stack"
+group        = "myapp"                   # UI group; defaults to the alias
+project_name = "myapp"                   # docker compose -p; defaults to the alias
+profiles     = ["production"]            # docker compose --profile
+env_file     = ["./.env.prod"]           # docker compose --env-file
+working_dir  = "/opt/myapp"              # cwd for compose invocation; defaults to dir of `file`
+with_deps    = false                     # default: --no-deps; true starts compose deps too
+pull         = "missing"                 # "missing" (default) | "always" | "never"
+name_format  = "{alias}.{service}"       # RunWisp task naming; default shown
+```
+
+## Per-service overrides
+
+Per-service sub-tables apply RunWisp knobs to a single compose service.
+The sub-table key MUST match a compose service name (post-include /
+post-exclude):
+
+```toml
+[compose.myapp]
+file = "./docker-compose.yml"
+
+[compose.myapp.api]
+restart           = "always"
+notify_on_failure = ["slack-prod"]
+graceful_stop     = "30s"
+keep_runs         = 100
+env               = { LOG_LEVEL = "info" }  # merged on top of compose env
+
+[compose.myapp.worker]
+restart   = "on_failure"
+instances = 3                              # three identical worker instances
+```
+
+Override sub-tables accept any subset of the `[services.*]` keys:
+`restart`, `env`, `env_file`, `notify_on_failure`, `notify_on_success`,
+`graceful_stop`, `keep_runs`, `keep_for`, `instances`, `timeout`,
+`description`, `log_max_size`, `log_on_full`, `api_trigger`,
+`on_overlap`, `restart_delay`, `restart_backoff`, `backoff_reset_after`.
+
+A sub-table named the same as a reserved scalar key (`file`, `include`,
+`exclude`, `mode`, `group`, `project_name`, `profiles`, `env_file`,
+`working_dir`, `with_deps`, `pull`, `name_format`) is rejected at config
+load with a clear error suggesting the user rename the compose service.
+
+## Modes
+
+### `mode = "services"` (default)
+
+Each compose service becomes a RunWisp **service**
+(`Kind = KindService`) named per `name_format` (default `<alias>.<svc>`).
+Per-instance invocation:
+
+```
+docker compose -f <file> -p <project> [--profile ...] [--env-file ...]
+    run --rm --no-deps --service-ports --use-aliases
+        --name <project>_<svc>_<instance_index>
+        [--pull always|missing|never]
+        -e RUNWISP_INSTANCE_INDEX=<i>
+        -e KEY=VAL ...                # from task.Env + task.SecretEnv
+        <svc>
+```
+
+Why `run --rm` and not `up`: it keeps RunWisp's "one process per
+instance slot" supervisor invariant uniform with every other backend.
+`--service-ports` and `--use-aliases` make the container behave exactly
+like its compose-declared self; `--rm` cleans the container on exit so
+every restart starts fresh.
+
+### `mode = "stack"`
+
+One RunWisp service per `[compose.<alias>]`, named `<alias>`:
+
+```
+docker compose -f <file> -p <project> up --abort-on-container-exit --no-log-prefix
+```
+
+The whole stack runs together; logs from all containers stream into a
+single RunWisp run; the run exits when any container exits. Per-service
+sub-tables, `include`, `exclude`, and `instances` are all rejected in
+stack mode — use per-service mode if you want per-service knobs.
+
+## Identity
+
+Imported tasks get smarter defaults than the generic `[services.*]`
+baseline because compose users carry strong existing expectations:
+
+| Knob            | Compose-import default                                    | Reason                                                                |
+| --------------- | --------------------------------------------------------- | --------------------------------------------------------------------- |
+| `kind`          | `service`                                                 | Compose services are long-running.                                    |
+| `restart`       | `on_failure`                                              | Matches the unspoken expectation set by `docker compose up`.          |
+| `group`         | the compose alias                                         | Grouped together in the Web UI sidebar by default.                    |
+| `pull`          | `missing`                                                 | Behaviour of `docker compose up`.                                     |
+| `graceful_stop` | compose `stop_grace_period` when set, else daemon default | Honours the compose-declared grace window.                            |
+| Container name  | `{project}_{service}_{index}`                             | Matches `docker compose ps` output; `docker logs` keeps working.      |
+| Task name       | `{alias}.{service}`                                       | Override with `name_format`; must contain `{service}` (else collide). |
+
+User overrides win over every default via `[compose.<alias>.<svc>]`.
+
+## Instances (identical only)
+
+`instances = N` produces N parallel `docker compose run` invocations.
+Each instance receives a stable `RUNWISP_INSTANCE_INDEX=<i>` env var
+(0..N-1) and a container name suffix matching the index so
+`docker compose ps` shows each container separately. Use the env var to
+self-shard workloads.
+
+Parameterised instances (different env per slot) are deliberately out of
+scope — for that, declare one compose service per slot.
+
+## One-off / cron uses
+
+`[services.X]` or `[tasks.X]` can also point at a compose service
+directly, without bringing in the bulk `[compose.<alias>]` block:
+
+```toml
+# Long-running single service backed by compose:
+[services.api]
+compose_file    = "./docker-compose.yml"
+compose_service = "api"                  # defaults to the table key
+
+# Cron task running a compose-defined image once:
+[tasks.nightly-backup]
+cron            = "0 3 * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+```
+
+`run` and `compose_file` are mutually exclusive on the same table —
+RunWisp rejects the config at load if both are set.
+
+## Supervision boundary
+
+RunWisp owns supervision: when a container exits, the RunWisp service
+supervisor decides whether to restart based on the task's `restart`
+policy and backoff curve. The compose-file `restart:` directive is
+**not** consulted — RunWisp is your supervisor now.
+
+When the docker CLI is missing or the Docker daemon is unreachable,
+imported tasks remain visible in the UI but their runs fail with a clear
+system-log message pointing at install docs.

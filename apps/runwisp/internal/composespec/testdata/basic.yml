@@ -1,0 +1,10 @@
+services:
+  web:
+    image: nginx:alpine
+    stop_grace_period: 30s
+  worker:
+    image: alpine
+    command: sleep 60
+  db:
+    image: postgres:16
+    profiles: [heavy]

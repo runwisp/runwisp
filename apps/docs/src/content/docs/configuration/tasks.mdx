@@ -185,6 +185,23 @@ keys have to match `^[A-Za-z_][A-Za-z0-9_]*$`, values can't contain NUL
 bytes, no single value can top 32 KiB, and the inline + file entries for
 a task can't add up to more than 256.
 
+## Compose-backed tasks
+
+A cron-driven `[tasks.<name>]` can also point at a compose service for
+one-shot runs:
+
+```toml
+[tasks.nightly-backup]
+cron            = "0 3 * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+```
+
+Each firing invokes `docker compose run --rm <svc>`; the container is
+removed after exit and the exit code is captured. `run` and
+`compose_file` are mutually exclusive. For importing every service in a
+compose file as observable RunWisp services, see [`[compose.*]`](/configuration/compose/).
+
 ## Notifications
 
 | Key                 | Default  | What it does                                                           |

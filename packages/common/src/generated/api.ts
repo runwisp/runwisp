@@ -1058,6 +1058,7 @@ export interface components {
         TaskBrief: {
             api_trigger: boolean;
             catch_up?: string;
+            compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
             group?: string;
             /** Format: int64 */
@@ -1069,6 +1070,11 @@ export interface components {
             name: string;
             on_overlap?: string;
             restart?: string;
+        };
+        TaskComposeRef: {
+            file: string;
+            project_name: string;
+            service?: string;
         };
         TaskResponse: {
             api_trigger: boolean;
@@ -1082,6 +1088,8 @@ export interface components {
              * @enum {string}
              */
             catch_up?: "latest" | "all" | "skip";
+            /** @description Provenance metadata for tasks imported from a docker compose file */
+            compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
             description?: string;
             /** @description Environment variables overlaid on the task's process env. Values are visible in the API/UI. */

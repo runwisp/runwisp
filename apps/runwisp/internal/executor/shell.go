@@ -19,7 +19,7 @@ type ShellBackend struct{}
 
 func (b *ShellBackend) Available(_ context.Context) bool { return true }
 
-func (b *ShellBackend) Start(ctx context.Context, task *model.Task, def model.ExecutionDef) (*Process, error) {
+func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run, def model.ExecutionDef) (*Process, error) {
 	shell, ok := def.(*model.ShellExecution)
 	if !ok {
 		return nil, fmt.Errorf("ShellBackend received non-shell execution: %s", def.ExecType())

@@ -7,6 +7,7 @@
     import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
     import Input from "@runwisp/ui/components/Input.svelte";
     import Select from "@runwisp/ui/components/Select.svelte";
+    import ComposeBadge from "../ComposeBadge.svelte";
     import { getRunStatusConfig } from "@runwisp/ui";
     import { isFailureEndReason } from "@runwisp/common";
     import type {
@@ -216,6 +217,13 @@
                                 <Badge variant={taskState.badge} size="sm">{taskState.label}</Badge>
                                 {#if task.task.group}
                                     <Badge variant="default" size="sm">{task.task.group}</Badge>
+                                {/if}
+                                {#if task.task.compose}
+                                    <ComposeBadge
+                                        file={task.task.compose.file}
+                                        service={task.task.compose.service}
+                                        projectName={task.task.compose.project_name}
+                                    />
                                 {/if}
                                 {#if task.task.kind === "service"}
                                     <Badge variant="info" size="sm">

@@ -16,6 +16,7 @@ type Availability struct {
 	Container BackendStatus `json:"container"`
 	HTTP      BackendStatus `json:"http"`
 	Config    BackendStatus `json:"config"`
+	Compose   BackendStatus `json:"compose"`
 }
 
 // ForType returns the BackendStatus for the given execution type string.
@@ -29,6 +30,8 @@ func (a *Availability) ForType(execType string) BackendStatus {
 		return a.HTTP
 	case "config":
 		return a.Config
+	case "compose":
+		return a.Compose
 	default:
 		return BackendStatus{Available: false, Reason: "unknown execution type"}
 	}

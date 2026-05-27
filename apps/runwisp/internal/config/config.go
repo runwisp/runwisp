@@ -23,7 +23,14 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := resolveEnvFiles(cfg, filepath.Dir(path)); err != nil {
+	baseDir := filepath.Dir(path)
+	if err := expandComposeBlocks(cfg, baseDir); err != nil {
+		return nil, err
+	}
+	if err := resolveComposePaths(cfg, baseDir); err != nil {
+		return nil, err
+	}
+	if err := resolveEnvFiles(cfg, baseDir); err != nil {
 		return nil, err
 	}
 	ApplyDefaults(cfg)
@@ -54,6 +61,29 @@ func resolveEnvFiles(cfg *Config, baseDir string) error {
 			return fmt.Errorf("task %q: %w", task.Name, err)
 		}
 		task.SecretEnv = values
+	}
+	return nil
+}
+
+// resolveComposePaths absolutizes the compose file path on tasks/services that
+// set compose_file directly ([services.*] / [tasks.*]); the [compose.*] block
+// path already resolves to absolute during expansion, so those are skipped by
+// the IsAbs guard. WorkingDir defaults to the file's directory so the CLI runs
+// from there, matching docker compose's own behaviour.
+func resolveComposePaths(cfg *Config, baseDir string) error {
+	for i := range cfg.Tasks {
+		ce, ok := cfg.Tasks[i].ExecutionDef.(*model.ComposeExecution)
+		if !ok || ce.File == "" || filepath.IsAbs(ce.File) {
+			continue
+		}
+		resolved, err := resolveComposeFile(ce.File, baseDir)
+		if err != nil {
+			return fmt.Errorf("task %q: %w", cfg.Tasks[i].Name, err)
+		}
+		ce.File = resolved
+		if ce.WorkingDir == "" {
+			ce.WorkingDir = filepath.Dir(resolved)
+		}
 	}
 	return nil
 }
@@ -130,12 +160,13 @@ func decode(data []byte) (*Config, error) {
 	}
 
 	return &Config{
-		Tasks:     tasks,
-		Defaults:  defaults,
-		Storage:   storage,
-		Daemon:    daemon,
-		Notify:    notifyCfg,
-		Scheduler: Scheduler{Timezone: raw.Scheduler.Timezone},
+		Tasks:                tasks,
+		Defaults:             defaults,
+		Storage:              storage,
+		Daemon:               daemon,
+		Notify:               notifyCfg,
+		Scheduler:            Scheduler{Timezone: raw.Scheduler.Timezone},
+		pendingComposeBlocks: raw.Compose,
 	}, nil
 }
 
@@ -305,6 +336,11 @@ func validateTaskIdentity(task *model.Task, seen map[string]struct{}) error {
 }
 
 func validateTaskCommand(task *model.Task) error {
+	// `run` and a compose backend are mutually exclusive — both set is
+	// ambiguous, so fail fast rather than pick a precedence rule.
+	if _, isCompose := task.ExecutionDef.(*model.ComposeExecution); isCompose && strings.TrimSpace(task.Run) != "" {
+		return fmt.Errorf("task %s sets both `run` and `compose_file`; pick one execution backend", task.Name)
+	}
 	execDef := task.ResolvedExecutionDef()
 	if execDef == nil {
 		return fmt.Errorf("task run command is required for task: %s", task.Name)

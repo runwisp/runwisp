@@ -138,6 +138,38 @@ type ConfigExecution struct {
 
 func (e *ConfigExecution) ExecType() string { return "config" }
 
+// --- Compose execution ---
+
+// ComposeMode discriminates per-service runs from whole-stack runs.
+const (
+	ComposeModeServices = "services"
+	ComposeModeStack    = "stack"
+)
+
+// ComposePull controls the --pull flag passed to docker compose run.
+const (
+	ComposePullMissing = "missing"
+	ComposePullAlways  = "always"
+	ComposePullNever   = "never"
+)
+
+// ComposeExecution runs a service (or whole project) defined in a docker
+// compose file. The backend shells out to `docker compose`; the daemon never
+// parses the compose file at runtime — enumeration happens at config load.
+type ComposeExecution struct {
+	File        string   `json:"file"`
+	ProjectName string   `json:"project_name"`
+	Service     string   `json:"service,omitempty"` // empty when Mode == stack
+	Mode        string   `json:"mode"`              // "services" | "stack"
+	Profiles    []string `json:"profiles,omitempty"`
+	EnvFile     []string `json:"env_file,omitempty"`
+	WorkingDir  string   `json:"working_dir,omitempty"`
+	WithDeps    bool     `json:"with_deps,omitempty"`
+	Pull        string   `json:"pull,omitempty"` // "missing" | "always" | "never"
+}
+
+func (e *ComposeExecution) ExecType() string { return "compose" }
+
 // --- JSON parsing ---
 
 var executionFactories = map[string]func() ExecutionDef{
@@ -145,6 +177,7 @@ var executionFactories = map[string]func() ExecutionDef{
 	"container": func() ExecutionDef { return &ContainerExecution{} },
 	"http":      func() ExecutionDef { return &HTTPExecution{} },
 	"config":    func() ExecutionDef { return &ConfigExecution{} },
+	"compose":   func() ExecutionDef { return &ComposeExecution{} },
 }
 
 func ParseExecutionDef(data json.RawMessage) (ExecutionDef, error) {

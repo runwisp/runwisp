@@ -50,7 +50,14 @@ func configLocation(path string) string {
 func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 	loc := configLocation(path)
 	fmt.Fprintf(out, "No runwisp.toml at %s.\n", loc)
-	fmt.Fprint(out, "Create a starter with one example task? [Y/n] ")
+
+	composeFile, composeAlias, hasCompose := detectAdjacentCompose(path)
+	if hasCompose {
+		fmt.Fprintf(out, "Detected %s alongside.\n", composeFile)
+		fmt.Fprint(out, "Create a starter that imports its services? [Y/n] ")
+	} else {
+		fmt.Fprint(out, "Create a starter with one example task? [Y/n] ")
+	}
 
 	answer, err := bufio.NewReader(in).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -58,7 +65,11 @@ func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 	}
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "", "y", "yes":
-		if err := config.WriteInit(path); err != nil {
+		if hasCompose {
+			if err := config.WriteInitWithCompose(path, composeFile, composeAlias); err != nil {
+				return fmt.Errorf("write starter: %w", err)
+			}
+		} else if err := config.WriteInit(path); err != nil {
 			return fmt.Errorf("write starter: %w", err)
 		}
 		fmt.Fprintf(out, "Created %s\n", path)
@@ -66,4 +77,44 @@ func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 	default:
 		return fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://github.com/runwisp/runwisp)", loc)
 	}
+}
+
+// detectAdjacentCompose searches the directory containing path for the
+// first compose file matching config.ComposeAutoDiscoveryFilenames.
+// Returns the filename, a sanitized alias derived from the directory name,
+// and true when one is found.
+func detectAdjacentCompose(path string) (filename, alias string, ok bool) {
+	dir := filepath.Dir(path)
+	for _, name := range config.ComposeAutoDiscoveryFilenames {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return name, composeAliasFromDir(dir), true
+		}
+	}
+	return "", "", false
+}
+
+// composeAliasFromDir derives a [compose.<alias>] key from a directory
+// path. The directory's base name is sanitized to the TaskNamePattern
+// charset; a "." or empty result falls back to "myapp" so the scaffold
+// is always loadable.
+func composeAliasFromDir(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = dir
+	}
+	base := filepath.Base(abs)
+	var b strings.Builder
+	for _, r := range base {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-_")
+	if out == "" || out == "." {
+		return "myapp"
+	}
+	return out
 }

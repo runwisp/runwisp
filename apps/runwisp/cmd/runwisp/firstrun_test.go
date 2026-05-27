@@ -51,3 +51,35 @@ func TestScaffoldIfMissingNoopWhenFileExists(t *testing.T) {
 
 	assert.NoError(t, scaffoldIfMissing(path))
 }
+
+func TestPromptAndScaffoldDetectsAdjacentCompose(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"),
+		[]byte("services:\n  web: {image: nginx}\n"), 0644))
+	path := filepath.Join(dir, "runwisp.toml")
+
+	var out bytes.Buffer
+	require.NoError(t, promptAndScaffold(path, strings.NewReader("\n"), &out))
+
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "[compose.")
+	assert.Contains(t, string(body), "file = \"./docker-compose.yml\"")
+	assert.Contains(t, out.String(), "Detected docker-compose.yml")
+}
+
+func TestComposeAliasFromDir(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"simple", "/var/myapp", "myapp"},
+		{"hyphenated", "/var/my-app", "my-app"},
+		{"sanitized punctuation", "/var/my app!", "my-app"},
+		{"root falls back to myapp", "/", "myapp"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, composeAliasFromDir(tc.in))
+		})
+	}
+}
