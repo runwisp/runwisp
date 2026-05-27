@@ -7,6 +7,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -14,7 +15,9 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
@@ -217,6 +220,138 @@ func TestComposeBackend_Available_FalseWhenAbsent(t *testing.T) {
 	assert.False(t, b.Available(context.Background()))
 }
 
+// TestComposeBackend_ProcessGroupSIGTERMReapsChildren mirrors the ShellBackend
+// process-group test: the shim spawns a long-lived child and waits on it.
+// Cancelling the context must SIGTERM the whole group so both the docker shim
+// and its child die within the graceful window — proving setpgid + the
+// SIGTERM ladder in compose.go reach grandchildren the CLI may spawn.
+func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-shim depends on POSIX shell")
+	}
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "child.pid")
+	body := "#!/bin/sh\n" +
+		"sleep 30 &\n" +
+		"echo $! > '" + pidFile + "'\n" +
+		"wait\n"
+	installDockerShimScript(t, dir, body)
+
+	task := &model.Task{GracefulStop: 200 * time.Millisecond}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	b := &ComposeBackend{dockerCmd: "docker"}
+	proc, err := b.Start(ctx, task, &model.Run{}, ce)
+	require.NoError(t, err)
+	go drain(proc.Stdout)
+	go drain(proc.Stderr)
+
+	var childPid int
+	require.Eventually(t, func() bool {
+		pid, ok := readPidFromFile(pidFile)
+		if !ok {
+			return false
+		}
+		childPid = pid
+		return true
+	}, time.Second, 20*time.Millisecond, "shim must record the child PID")
+
+	cancel()
+	proc.Wait()
+
+	require.Eventually(t, func() bool {
+		err := syscall.Kill(childPid, 0) // signal 0 = existence probe
+		return errors.Is(err, syscall.ESRCH) || os.IsPermission(err)
+	}, time.Second, 20*time.Millisecond, "child must be reaped after the group is signalled")
+}
+
+// TestComposeBackend_ImmediateKillWhenGracefulStopZero verifies graceful_stop=0
+// sends SIGKILL to the group with no SIGTERM grace window (compose.go:85-87).
+// The shim traps SIGTERM so only SIGKILL can end it.
+func TestComposeBackend_ImmediateKillWhenGracefulStopZero(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-shim depends on POSIX shell")
+	}
+	dir := t.TempDir()
+	installDockerShimScript(t, dir, "#!/bin/sh\ntrap '' TERM\nsleep 30\n")
+
+	task := &model.Task{GracefulStop: 0}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	b := &ComposeBackend{dockerCmd: "docker"}
+	proc, err := b.Start(ctx, task, &model.Run{}, ce)
+	require.NoError(t, err)
+	go drain(proc.Stdout)
+	go drain(proc.Stderr)
+
+	time.Sleep(50 * time.Millisecond) // let the trap install
+	cancel()
+
+	done := make(chan struct{})
+	go func() { proc.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("graceful_stop=0 must SIGKILL immediately, not wait out the sleep")
+	}
+}
+
+// TestComposeBackend_WorkingDirPropagates confirms ce.WorkingDir becomes the
+// child's cwd (compose.go:65-67) by having the shim record its own $PWD.
+func TestComposeBackend_WorkingDirPropagates(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-shim depends on POSIX shell")
+	}
+	shimDir := t.TempDir()
+	workDir := t.TempDir()
+	pwdFile := filepath.Join(shimDir, "pwd.txt")
+	installDockerShimScript(t, shimDir, "#!/bin/sh\npwd > '"+pwdFile+"'\nexit 0\n")
+
+	ce := &model.ComposeExecution{
+		File:       "/tmp/dc.yml",
+		Service:    "web",
+		Mode:       model.ComposeModeServices,
+		WorkingDir: workDir,
+	}
+	b := &ComposeBackend{dockerCmd: "docker"}
+	proc, err := b.Start(context.Background(), &model.Task{}, &model.Run{}, ce)
+	require.NoError(t, err)
+	go drain(proc.Stdout)
+	go drain(proc.Stderr)
+	proc.Wait()
+
+	recorded, err := os.ReadFile(pwdFile)
+	require.NoError(t, err)
+	// macOS resolves TempDir through /private symlinks; compare the resolved
+	// paths so the assertion holds on both Linux and macOS.
+	wantResolved, err := filepath.EvalSymlinks(workDir)
+	require.NoError(t, err)
+	gotResolved, err := filepath.EvalSymlinks(strings.TrimSpace(string(recorded)))
+	require.NoError(t, err)
+	assert.Equal(t, wantResolved, gotResolved)
+}
+
+// TestComposeBackend_Start_ContextCancelledBeforeStart confirms a context that
+// is already cancelled prevents the spawn rather than leaking a process.
+func TestComposeBackend_Start_ContextCancelledBeforeStart(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-shim depends on POSIX shell")
+	}
+	dir := t.TempDir()
+	installDockerShim(t, dir, filepath.Join(dir, "args.txt"), 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	b := &ComposeBackend{dockerCmd: "docker"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices}
+	_, err := b.Start(ctx, &model.Task{}, &model.Run{}, ce)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "start docker compose")
+}
+
 func TestLazyComposeBackend_ReturnsErrorWhenUnavailable(t *testing.T) {
 	t.Setenv("PATH", "")
 	l := NewLazyComposeBackend()
@@ -232,7 +367,6 @@ func TestLazyComposeBackend_ReturnsErrorWhenUnavailable(t *testing.T) {
 // observe the exact arguments ComposeBackend passes to docker compose.
 func installDockerShim(t *testing.T, shimDir, argsFile string, exitCode int) {
 	t.Helper()
-	shim := filepath.Join(shimDir, "docker")
 	body := "#!/bin/sh\n" +
 		"echo \"$@\" > '" + argsFile + "'\n" +
 		"if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n" +
@@ -240,6 +374,17 @@ func installDockerShim(t *testing.T, shimDir, argsFile string, exitCode int) {
 		"  exit 0\n" +
 		"fi\n" +
 		"exit " + strconv.Itoa(exitCode) + "\n"
+	installDockerShimScript(t, shimDir, body)
+}
+
+// installDockerShimScript installs a custom-bodied `docker` shim so kill-ladder
+// and working-dir tests can supply their own trap/sleep behavior. The body must
+// still answer `docker compose version` for the availability probe, or callers
+// must avoid triggering it. PATH is prepended with shimDir for the test's
+// lifetime.
+func installDockerShimScript(t *testing.T, shimDir, body string) {
+	t.Helper()
+	shim := filepath.Join(shimDir, "docker")
 	require.NoError(t, os.WriteFile(shim, []byte(body), 0755))
 	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 

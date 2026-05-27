@@ -280,3 +280,81 @@ func TestExecuteCommandStartFailure(t *testing.T) {
 	result := exec.Execute(context.Background(), task, run)
 	assert.Equal(t, 127, result.ExitCode) // Shell returns 127 for command not found
 }
+
+// recordingBackend is a Backend that records the def it was asked to start and
+// returns a no-op process that exits cleanly. It lets routing tests assert the
+// executor dispatched to the right backend without spawning anything.
+type recordingBackend struct {
+	mu      sync.Mutex
+	started int
+	lastDef model.ExecutionDef
+}
+
+func (b *recordingBackend) Start(_ context.Context, _ *model.Task, _ *model.Run, def model.ExecutionDef) (*Process, error) {
+	b.mu.Lock()
+	b.started++
+	b.lastDef = def
+	b.mu.Unlock()
+	return &Process{
+		Wait: func() (int, error) { return 0, nil },
+	}, nil
+}
+
+func (b *recordingBackend) Available(context.Context) bool { return true }
+
+func newComposeTask(name string) *model.Task {
+	return &model.Task{
+		Name:         name,
+		ExecutionDef: &model.ComposeExecution{File: "./docker-compose.yml", Service: "web", Mode: model.ComposeModeServices},
+	}
+}
+
+// TestExecuteRoutesComposeToComposeBackend is the critical routing test: a task
+// whose resolved execution def is a *model.ComposeExecution must reach the
+// backend registered under Options.Compose.
+func TestExecuteRoutesComposeToComposeBackend(t *testing.T) {
+	tmpDir := t.TempDir()
+	eb := events.NewEventBus()
+	be := &recordingBackend{}
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, Compose: be, HasLocalTasks: true})
+
+	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+	result := exec.Execute(context.Background(), newComposeTask("compose-route"), run)
+
+	require.NoError(t, result.Error)
+	assert.Equal(t, 0, result.ExitCode)
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	assert.Equal(t, 1, be.started, "compose backend should be started exactly once")
+	_, ok := be.lastDef.(*model.ComposeExecution)
+	assert.True(t, ok, "backend should receive the ComposeExecution def")
+}
+
+func TestAvailabilityReflectsComposeOption(t *testing.T) {
+	tmpDir := t.TempDir()
+	eb := events.NewEventBus()
+
+	withCompose := New(Options{LogDir: tmpDir, EventBus: eb, Compose: &recordingBackend{}, HasLocalTasks: true})
+	assert.True(t, withCompose.Availability().Compose.Available)
+
+	withoutCompose := New(Options{LogDir: tmpDir, EventBus: eb, HasLocalTasks: true})
+	status := withoutCompose.Availability().Compose
+	assert.False(t, status.Available)
+	assert.NotEmpty(t, status.Reason)
+}
+
+// TestExecuteComposeWithoutBackendIsUnsupported covers the negative routing
+// path: when no compose backend is registered, a ComposeExecution task fails
+// with an "unsupported execution type" error rather than silently no-op'ing.
+func TestExecuteComposeWithoutBackendIsUnsupported(t *testing.T) {
+	tmpDir := t.TempDir()
+	eb := events.NewEventBus()
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, HasLocalTasks: true})
+
+	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+	result := exec.Execute(context.Background(), newComposeTask("compose-missing"), run)
+
+	require.Error(t, result.Error)
+	assert.Equal(t, -1, result.ExitCode)
+	assert.Contains(t, result.Error.Error(), "unsupported execution type: compose")
+}
