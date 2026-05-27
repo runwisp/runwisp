@@ -195,9 +195,9 @@ live reload — no file watcher, no reload command. Want your edits to
 take? Restart the daemon.
 
 A parse error at startup stops the boot cold: the daemon exits before it
-ever opens its port. The safe habit is to run `runwisp validate --config
-
-<path>` against the new file *before* you restart.
+ever opens its port. The safe habit is to run
+`runwisp validate --config <path>` against the new file _before_ you
+restart.
 
 If a task disappears from the file between restarts, its schedule is
 gone but its run history stays put. If a new task shows up, its schedule
