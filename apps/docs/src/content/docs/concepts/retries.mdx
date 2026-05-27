@@ -7,11 +7,12 @@ description: retry_attempts, retry_delay, retry_backoff, and timeout — how Run
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-A task that exits non-zero can be retried automatically. A run that takes
-too long can be killed. Both are configured per-task, with sensible
-defaults from `[defaults]` if you leave them off.
+If a task exits non-zero, RunWisp can take another crack at it. If a run
+drags on too long, RunWisp can pull the plug. You set both per task, and
+anything you leave off falls back to a sensible default from
+`[defaults]`.
 
-Retries apply only to **tasks**. Services don't retry — they
+Retries are a **task** thing only. Services don't retry — they
 [restart](#services-dont-retry) instead.
 
 ## `retry_attempts`
@@ -25,27 +26,30 @@ retry_delay    = "30s"
 retry_backoff  = "exponential"
 ```
 
-- **Default**: `0` (no retries).
-- **Semantics**: the number of **additional** attempts after the first
-  failure.
-- **Triggers a retry**: the run ended with `failed` (non-zero exit),
-  `timeout`, `crashed`, or `log_overflow` (cancelled by
-  `log_on_full = "kill_task"` after exceeding `log_max_size`).
-- **Does _not_ trigger a retry**: `success`, `stopped` (manual stop via
-  the API/CLI/UI, or a sibling run cancelled it via
-  `on_overlap = "terminate"`), or `skipped` (`on_overlap = "skip"`
-  rejected the firing because another run was still going). Stopped
-  is a deliberate human action; skipped means the original run is still
-  running and another attempt would just race it.
+`retry_attempts` is the number of _extra_ tries after the first one
+fails — it defaults to `0`, so out of the box nothing retries. Set it to
+`3` and a failing run gets up to three more goes.
+
+Not every ending counts as a failure worth retrying, though. A retry
+fires when a run ends in `failed` (non-zero exit), `timeout`, `crashed`,
+or `log_overflow` (which is what `log_on_full = "kill_task"` does after
+a run blows past `log_max_size`).
+
+It does **not** fire on `success`, `stopped`, or `skipped`. `stopped`
+means a human deliberately killed it from the API/CLI/UI, or a sibling
+run cancelled it via `on_overlap = "terminate"` — either way, retrying
+would override an intentional decision. `skipped` means the original run
+is _still going_, so another attempt would just race it.
 
 ## `retry_delay` and `retry_backoff`
 
-`retry_delay` is a duration string (`"5s"`, `"2m"`, `"1h"`). When
-retries are enabled, `retry_delay` defaults to `"5s"`.
+`retry_delay` is how long to wait before trying again, written as a
+duration (`"5s"`, `"2m"`, `"1h"`). Turn retries on and it defaults to
+`"5s"`.
 
-`retry_backoff` chooses how the wait between retries grows. The same
-values are used by services' `restart_backoff`, so they move between
-the two contexts cleanly.
+`retry_backoff` decides whether that wait stays put or grows with each
+attempt. Services use the same vocabulary for their `restart_backoff`,
+so once you know it here it carries over there too.
 
 | Value                   | Wait before attempt _N_ (1-indexed retries) | With `retry_delay = "10s"`       |
 | ----------------------- | ------------------------------------------- | -------------------------------- |
@@ -53,25 +57,27 @@ the two contexts cleanly.
 | `linear`                | `delay × N`                                 | 10s, 20s, 30s, 40s …             |
 | `exponential`           | `delay × 2^(N-1)`                           | 10s, 20s, 40s, 80s, 160s, 300s … |
 
-[All schedules are **capped at 5 minutes**](/notifications/global/#retry-budget--default_timeout).
-`exponential` with a short base hits the cap and stays there.
+No matter which curve you pick, [every wait is **capped at 5
+minutes**](/notifications/global/#retry-budget--default_timeout). An
+`exponential` schedule with a short base climbs up to that ceiling and
+then just sits there.
 
 ## What retries look like in history
 
-Each attempt is a separate run, with its own ID, exit code, and
-captured log file. The Web UI lists every attempt under the task's run
-history, numbered by `retry_attempt` (`0` for the first try, `1` for
-the first retry, and so on). That's deliberate: if attempt 1 silently
-corrupted state and attempt 2 succeeded, you can still go back and
-read attempt 1's stderr.
+Every attempt is its own run — its own ID, its own exit code, its own
+log file. The Web UI lists them all under the task's history, numbered
+by `retry_attempt` (`0` for the first try, `1` for the first retry, and
+on up). That's on purpose: if attempt 1 quietly corrupted something and
+attempt 2 papered over it by succeeding, you can still go back and read
+exactly what attempt 1 printed.
 
 :::caution[Each failed attempt notifies]
-A failure notification fires on **every** failed attempt, not only on the
-final one. A task that fails twice and then succeeds emits two failure
-notifications followed by one success. If that's noisy, lower
-`retry_attempts` or use the
-[coalescing window](/notifications/model/#coalescing) to quiet
-repeats.
+A failure notification fires on **every** failed attempt, not just the
+last one. A task that fails twice and then succeeds will send two
+failure alerts followed by a success. If that's too noisy, dial back
+`retry_attempts` or lean on the
+[coalescing window](/notifications/model/#coalescing) to fold the
+repeats together.
 :::
 
 ## `timeout`
@@ -83,38 +89,44 @@ run     = "/usr/local/bin/heavy-job.sh"
 timeout = "30m"
 ```
 
-- Same duration syntax as `retry_delay` (`"30s"`, `"5m"`, `"1h"`).
-- Default: inherited from `[defaults] timeout` if set; otherwise **no
-  timeout** — the run is allowed to take as long as it likes.
-- Scope: **per attempt**. A retry gets a fresh `timeout` window; time
-  spent waiting in `retry_delay` doesn't count against it.
+It takes the same duration syntax as `retry_delay` (`"30s"`, `"5m"`,
+`"1h"`). If you don't set one, it inherits from `[defaults] timeout` —
+and if that isn't set either, there's **no timeout at all** and the run
+can take as long as it needs. The window is **per attempt**, so each
+retry starts the clock fresh, and time spent waiting out `retry_delay`
+doesn't eat into it.
 
-When the deadline hits, the daemon SIGTERMs the run's process group,
-waits up to the task's `graceful_stop` (default `"5s"`), then SIGKILLs
-any survivors and records the run with end reason `timeout`. The same
-SIGTERM-then-wait flow applies to `on_overlap = "terminate"`, manual
-stops, and daemon shutdown — `graceful_stop` is the single knob.
+When the deadline passes, the daemon SIGTERMs the run's process group,
+gives it up to `graceful_stop` (default `"5s"`) to bow out, then SIGKILLs
+whatever's left and records the run with end reason `timeout`. That same
+SIGTERM-then-wait dance is what `on_overlap = "terminate"`, manual stops,
+and daemon shutdown all use — `graceful_stop` is the one knob behind all
+of it.
 
 ## Interactions
 
-- **`on_overlap = "terminate"` plus retries.** If a new firing
-  terminates the running attempt, that attempt records end reason
-  `stopped` — which **blocks any further retries**. The new run from the
-  terminate policy is a fresh execution, not a retry.
-- **Manual stop.** Same story: stopping a run from the API/UI records
-  `stopped` and ends the retry chain.
-- **`max_concurrent > 1`.** Retries don't count against `max_concurrent`.
-  A retry only fires after its predecessor has finished, so there's no
-  overlap to evaluate.
+A few places where retries bump into other features:
+
+- **`on_overlap = "terminate"` plus retries.** When a fresh firing
+  terminates the running attempt, that attempt ends as `stopped`, which
+  **shuts the retry chain down**. The run the terminate policy starts is
+  a brand-new execution, not a retry.
+- **Manual stop.** Same deal — stop a run from the API or UI and it ends
+  as `stopped`, which ends the retry chain.
+- **`max_concurrent > 1`.** Retries don't count toward `max_concurrent`.
+  A retry only starts once its predecessor has finished, so there's no
+  overlap left to evaluate.
 
 ## Services don't retry
 
-Services have a different model because they're meant to stay up:
+Services play by different rules, because the whole point of a service
+is to stay up.
 
-Tasks and services share the same backoff vocabulary —
-`constant` / `linear` / `exponential` — so one rule is easier to
-remember. Tasks add `retry_attempts` (services run forever); services
-add `restart_delay` (the supervisor owns the cadence).
+The two do share a backoff vocabulary — `constant` / `linear` /
+`exponential` — so there's only one set of words to remember. The
+difference is in the surrounding knobs: tasks have `retry_attempts`
+(services run forever, so there's nothing to count), and services have
+`restart_delay` (the supervisor sets the pace).
 
 | Field             | Tasks                                                        | Services                                                        |
 | ----------------- | ------------------------------------------------------------ | --------------------------------------------------------------- |
@@ -124,16 +136,16 @@ add `restart_delay` (the supervisor owns the cadence).
 | `restart_delay`   | ❌ rejected                                                  | ✅ default `1s`                                                 |
 | `restart_backoff` | ❌ rejected                                                  | ✅ `constant` / `linear` / `exponential`, default `exponential` |
 
-A service supervisor restarts a replica forever (with bounded
-exponential backoff) until you stop it explicitly.
+A service supervisor will restart a replica forever — with bounded
+exponential backoff — until you explicitly stop it.
 
 ### Backoff reset: `backoff_reset_after`
 
-A replica that stays up at least `backoff_reset_after` (default 60s)
-resets its restart counter, so a service that fails repeatedly at
-first doesn't keep slow restart delays once it stabilises. Configure
-it in `[defaults]` (applies to every service that doesn't override it)
-or per-service:
+Once a replica has stayed up for at least `backoff_reset_after` (default
+60s), its restart counter resets. That way a service that flapped a
+bunch on startup isn't stuck with long restart delays after it finally
+settles down. Set it in `[defaults]` to cover every service that doesn't
+say otherwise, or per service:
 
 ```toml
 [defaults]
@@ -144,10 +156,9 @@ run                 = "/usr/local/bin/worker"
 backoff_reset_after = "2m"      # this one needs longer to call "stable"
 ```
 
-If you want "finite, escalating wait" semantics on a service, model it
-as a task with `cron`/`retry_attempts` instead. If you want
-"indefinite self-healing supervision" on a workload, that's
-`[services.*]`.
+Rule of thumb: if you want a finite, escalating set of retries, that's a
+task with `cron` and `retry_attempts`. If you want a workload kept alive
+and self-healing indefinitely, that's `[services.*]`.
 
 ---
 

@@ -7,13 +7,14 @@ description: Use notify_on_failure and notify_on_success on a [tasks.*] or [serv
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-When you only need to alert on one task, put the channel names directly on
-that task. The setting lives next to the task definition, so it is easy to
-see which task sends to which channel.
+When it's just one task you care about, skip the routing rules and name
+the channels right on the task. The setting sits next to the task it
+belongs to, so a glance at the file tells you which task pages which
+channel.
 
-Every `[tasks.*]` and `[services.*]` block accepts two fields:
+Every `[tasks.*]` and `[services.*]` block takes two fields:
 `notify_on_failure` (run ended as `failed`, `timeout`, or `crashed`) and
-`notify_on_success` (run ended as `succeeded`). They behave the same on
+`notify_on_success` (run ended as `succeeded`). They work the same on
 tasks and services. The field tables in
 [`[tasks.*]`](/configuration/tasks/#notifications) and
 [`[services.*]`](/configuration/services/#notifications) list the event
@@ -28,16 +29,14 @@ run               = "/usr/local/bin/backup.sh"
 notify_on_failure = ["slack-ops"]
 ```
 
-That is the whole setup. A failed backup sends a message to the `slack-ops`
-channel, adds a row to the bell, and is recorded in the notification
-history.
-
-A failed run on this task lights up Slack and adds a row to the bell —
-the bell is on because `"inapp"` is in `[notify] global_notifiers` by
-default. Set `global_notifiers = []` to silence it (see
+That's the whole setup. A failed backup lights up the `slack-ops`
+channel, drops a row in the bell, and lands in the notification history.
+The bell part is free: `"inapp"` sits in `[notify] global_notifiers` by
+default, so it tags along on top of whatever channels you name. Don't
+want it? Set `global_notifiers = []` to silence it (see
 [Global settings](/notifications/global/#the-bell--global_notifiers)).
-If a notification rule also matches the same event, each channel still
-receives one message — duplicates are dropped.
+And if a notification rule happens to match the same event too, each
+channel still gets exactly one message — duplicates are dropped.
 
 ## Both fields together
 

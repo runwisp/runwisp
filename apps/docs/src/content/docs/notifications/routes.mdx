@@ -7,11 +7,12 @@ description: A [[notification_route]] block matches events by kind and task name
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-A `[[notification_route]]` block defines one rule: when an event
-matches the filter, send it to the listed channels. If an event
-matches more than one rule, the router collects every channel from
-every match, removes duplicates, and sends one message per unique
-channel. Rule order doesn't change which channels receive the event.
+A `[[notification_route]]` block is one rule: when an event matches the
+filter, it goes to the listed channels. An event can match several rules
+at once — when that happens the router gathers up every channel named by
+every match, throws out the duplicates, and sends one message per
+channel. The order you write the rules in doesn't matter; a channel
+either matches or it doesn't.
 
 ## Shape
 
@@ -49,20 +50,19 @@ expansion isn't supported.
 
 ## `notify`
 
-The list takes at least one entry. Each entry is one of: a
-`[[notifier]] id` declared elsewhere in the file (e.g.
-`"slack-ops"`); the literal `"inapp"`, which is always available; or
-an **inline target override** of the form `"<id>:<target>"` that
-reuses a parent notifier's credentials but posts somewhere else. For
-example `"slack-ops:#deploys"` reuses the `slack-ops` credentials and
-sends to `#deploys` for this rule only. The form of `<target>`
-depends on the provider — see the
+You need at least one entry. Each one is either a `[[notifier]] id`
+you've declared elsewhere in the file (e.g. `"slack-ops"`); the literal
+`"inapp"`, which is always there; or an **inline target override** of
+the form `"<id>:<target>"` that borrows a parent notifier's credentials
+but posts somewhere else. `"slack-ops:#deploys"` reuses the `slack-ops`
+credentials and sends to `#deploys` for this rule only. What `<target>`
+looks like depends on the provider — see the
 [worked example](/notifications/per-task/#inline-target-overrides).
 
-Notifier ids cannot themselves contain `:` — the colon is reserved
-for this separator. The router deduplicates ids across all matching
-rules: if two rules both match an event and both list `slack-ops`,
-the channel receives one message.
+A notifier id can't contain `:` itself, since the colon is what marks
+the separator. And the router dedups ids across every matching rule: if
+two rules both fire on an event and both list `slack-ops`, the channel
+hears about it once.
 
 ## Per-task notifications
 
@@ -82,13 +82,12 @@ duplicate channels.
 
 ## Delivery failures
 
-When an outbound notifier exhausts its retry budget, the daemon emits
-a `notify.delivery_failed` event. So a channel outage doesn't trigger
-yet more delivery attempts on the same channel, this event is sent
-**only to the bell** — never through the outbound router. You can
-still route delivery failures through a _different_ channel yourself,
-since the router treats `notify.delivery_failed` as a valid
-`match.kind`:
+When an outbound notifier burns through its retry budget, the daemon
+raises a `notify.delivery_failed` event. To keep a dead channel from
+generating yet more delivery attempts on itself, this one goes **only to
+the bell** — never back through the outbound router. You can still send
+delivery failures somewhere _else_, though, because the router accepts
+`notify.delivery_failed` as a valid `match.kind`:
 
 ```toml
 [[notification_route]]

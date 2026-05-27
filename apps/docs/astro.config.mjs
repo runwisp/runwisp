@@ -25,6 +25,11 @@ export default defineConfig({
             },
             social: [
                 {
+                    icon: "external",
+                    label: "Website",
+                    href: "https://runwisp.com",
+                },
+                {
                     icon: "github",
                     label: "GitHub",
                     href: "https://github.com/runwisp/runwisp",

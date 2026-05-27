@@ -7,30 +7,31 @@ description: queue, skip, and terminate — what each on_overlap mode does, when
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-When a task fires while a previous run is still going, RunWisp has to
-decide what to do. That decision is `on_overlap`. Three policies cover
-nearly every realistic case: `queue`, `skip`, and `terminate`.
+Every so often a task fires while the last run is still going. RunWisp
+has to do _something_ about that, and `on_overlap` is how you tell it
+what. Three policies cover just about every real case: `queue`, `skip`,
+and `terminate`.
 
 ## The shape of the question
 
-There are really two knobs:
+It really comes down to two knobs:
 
-- **`max_concurrent`** — the maximum number of overlapping runs allowed
-  for a task. Default `1`. Most cron-style work wants `1`.
-- **`on_overlap`** — what to do when a new run is requested and
-  `max_concurrent` is already saturated.
+- **`max_concurrent`** — how many runs of a task are allowed to overlap.
+  Defaults to `1`, which is what most cron-style work wants.
+- **`on_overlap`** — what to do when a new run shows up and you're
+  already at that limit.
 
-If `len(active) < max_concurrent`, the new run starts immediately,
-regardless of policy. `on_overlap` only kicks in when the task is at
-its concurrency limit.
+As long as there's a free slot, a new run just starts — the policy
+never even comes into it. `on_overlap` only has a say once the task is
+maxed out.
 
 ## The three policies
 
 ### `queue` (the default for tasks)
 
-**Use when each tick must eventually run.** New runs go onto a FIFO
-queue; as soon as a slot opens, the next queued run starts. Order is
-preserved.
+**Reach for this when every tick has to run eventually.** New runs line
+up in a FIFO queue, and the moment a slot frees up the next one in line
+starts. Nothing jumps ahead.
 
 ```toml
 [tasks.process-uploads]
@@ -39,24 +40,25 @@ on_overlap = "queue"          # default — could be omitted
 run        = "/usr/local/bin/process"
 ```
 
-Good fit when:
+It's a good fit when:
 
-- Each tick must eventually run; missing one means missing work.
-- Runs are short relative to the schedule, so the queue normally stays
-  empty.
-- Runs operate on disjoint inputs (a per-tick batch, a queue of jobs).
+- Skipping a tick means skipping real work.
+- Runs are short next to the schedule, so the queue mostly sits empty
+  anyway.
+- Each run works on its own inputs (a per-tick batch, a queue of jobs)
+  rather than fighting over shared state.
 
-The queue is bounded by `queue_max`. Once it's full,
-the next firing is recorded with `end_reason = "queue_full"` and the
-existing queue keeps draining FIFO. If you see queue-full firings, the
-task is over its budget — lower the cron frequency, raise
-`max_concurrent`, or pick `skip` / `terminate`.
+The queue isn't bottomless — `queue_max` caps it. Once it's full, the
+next firing gets logged with `end_reason = "queue_full"` and the
+existing queue keeps draining in order. Seeing queue-full firings is a
+signal the task is over budget: slow the cron down, bump
+`max_concurrent`, or switch to `skip` / `terminate`.
 
 ### `skip`
 
-**Use when missing a tick is preferable to stacking.** The new run is
-rejected and recorded with `end_reason = "skipped"` and exit code `-1`.
-The run that's still going keeps going untouched.
+**Reach for this when missing a tick beats piling them up.** The new run
+gets turned away — recorded with `end_reason = "skipped"` and exit code
+`-1` — while the run that's already going carries on untouched.
 
 ```toml
 [tasks.health-probe]
@@ -65,32 +67,32 @@ on_overlap = "skip"
 run        = "curl -sf https://example.com/health"
 ```
 
-Good fit when:
+It's a good fit when:
 
-- The work is **safe to skip** — a probe, a poll, a status check.
-  Missing a tick is fine; what matters is that the _next_ one runs.
-- Stacking would be actively harmful (e.g. you only want one `pg_dump`
-  process at a time, and a missed tick is preferable to two competing
-  dumps).
+- The work is **safe to skip** — a probe, a poll, a status check. Miss
+  one and it's no big deal; what matters is the _next_ one runs.
+- Stacking would actually hurt. You only want one `pg_dump` running at
+  a time, say, and a skipped tick is far better than two dumps
+  trampling each other.
 
-The rejected runs _are_ visible in history — that's the point.
-You'll see them in the Web UI under the **skipped** status (a distinct
-end-reason, not "failed"), so a task that keeps overlapping shows up
-as a pattern, not silence.
+Skipped runs still show up in history — that's the whole point. They
+land in the Web UI under the **skipped** status (its own end-reason,
+not "failed"), so a task that keeps overlapping reads as a visible
+pattern instead of just silence.
 
-Importantly, **`end_reason = "skipped"` is not a failure**:
+And to be clear, **`end_reason = "skipped"` is not a failure**:
 
-- `notify_on_failure` does not fire for skipped runs, so a
-  `* * * * *` health probe with overlap doesn't spam Slack.
-- The retry policy never retries a skip — the original run is still
-  going; another retry just races it.
-- Stats counters separate it from `failed`/`crashed`/`timeout`, so your
-  failure rate stays honest.
+- `notify_on_failure` stays quiet on skips, so a `* * * * *` health
+  probe that overlaps doesn't blow up your Slack.
+- Retries leave skips alone — the original run is still going, so a
+  retry would just race it.
+- The stats counters keep it apart from `failed` / `crashed` /
+  `timeout`, so your failure rate stays honest.
 
 ### `terminate`
 
-**Use when latest wins.** The oldest active run is stopped; once it
-exits, the new run starts.
+**Reach for this when the newest run is the one that matters.** RunWisp
+stops the oldest active run, and once it's gone the new one starts.
 
 ```toml
 [tasks.deploy-hook]
@@ -98,23 +100,22 @@ on_overlap = "terminate"
 run        = "/usr/local/bin/deploy.sh"
 ```
 
-Good fit when:
+It's a good fit when:
 
-- **Latest wins** — for a deploy hook fired twice in quick succession,
-  the second invocation is the one you actually want.
-- Long-running work that becomes obsolete the moment a new request
-  arrives (rebuild a search index, regenerate a cached report).
+- **Latest wins.** Fire a deploy hook twice in quick succession and the
+  second one is the one you actually meant.
+- The work goes stale the instant a new request lands — rebuilding a
+  search index, regenerating a cached report, that kind of thing.
 
-When `on_overlap = "terminate"` kills the in-flight run, it gets
-`graceful_stop` seconds to clean up before SIGKILL, and is recorded
-with `end_reason = "stopped"` — same as a manual stop. Stopped runs
+When `terminate` stops the in-flight run, that run gets `graceful_stop`
+seconds to tidy up before a SIGKILL, and it's recorded with
+`end_reason = "stopped"` — exactly like a manual stop. Stopped runs
 don't retry. See [Retries](/concepts/retries/#interactions).
 
 ## `max_concurrent > 1`
 
-Setting `max_concurrent = N` lets up to N runs of the same task execute
-at once. The `on_overlap` policy doesn't fire until you have N active
-runs.
+Set `max_concurrent = N` and up to N runs of the same task can be going
+at once. `on_overlap` stays out of it until all N slots are taken.
 
 ```toml
 [tasks.thumbnail-render]
@@ -124,40 +125,44 @@ on_overlap     = "queue"
 run            = "/usr/local/bin/render"
 ```
 
-Now the queue policy only engages once 4 renders are running. With
-`max_concurrent = 4 + on_overlap = "skip"`, you'd get a hard cap of 4
-concurrent renders and any 5th tick rejected.
+So here the queue only kicks in once 4 renders are running. Pair
+`max_concurrent = 4` with `on_overlap = "skip"` instead and you get a
+hard ceiling of 4 concurrent renders, with any 5th tick turned away.
 
-For most cron-style work `max_concurrent = 1` is right. Bump it only
-when:
+For most cron-style work, `max_concurrent = 1` is the right call. Only
+bump it when:
 
-- The runs are genuinely independent (no shared state, no shared
-  resource).
-- You have an uneven schedule (`* * * * *` against work that _usually_
-  finishes in seconds but occasionally takes much longer).
+- The runs are genuinely independent — no shared state, no shared
+  resource they'd fight over.
+- The schedule is uneven: a `* * * * *` tick against work that
+  _usually_ wraps up in seconds but every now and then drags on much
+  longer.
 
-For long-running parallel workers, prefer `[services.<name>]` with
-`instances = N` — that's what services are designed for.
+If what you really want is a pool of long-running parallel workers,
+reach for `[services.<name>]` with `instances = N` instead — that's
+exactly what services are for.
 
-`max_concurrent > 1` is safe: the daemon serialises the overlap
-decision even when several runs are executing at once, so two runs
-never race to claim the same slot.
+Either way, `max_concurrent > 1` is safe. The daemon makes the overlap
+decision one run at a time even when several are executing, so two runs
+can never race for the same slot.
 
 ## Manual triggers and the queue
 
-- **A manual trigger** (CLI, REST, UI) goes through the same evaluation.
-  Trigger a `skip` task while it's running and the response says the
-  firing was skipped, with the same `end_reason = "skipped"` recorded.
-- **The queue runs in order**, no matter where the trigger came from.
-  Cron and manual triggers compete fairly.
+A manual trigger — from the CLI, REST, or UI — runs through the exact
+same evaluation as a cron firing. Trigger a `skip` task while it's
+running and you'll get a response telling you the firing was skipped,
+with the same `end_reason = "skipped"` on record.
+
+And the queue doesn't care where a run came from. Cron firings and
+manual triggers line up together and drain in order, no favorites.
 
 ## Services and `on_overlap`
 
-Services default to `on_overlap = "skip"` and are usually fine with that
-default. The service supervisor keeps `instances` replicas alive, each
-in its own slot — overlap doesn't really happen unless you trigger a
-service manually while it's already running, which `skip` correctly
-refuses.
+Services default to `on_overlap = "skip"`, and that's almost always the
+right thing to leave alone. The supervisor keeps `instances` replicas
+alive, each in its own slot, so overlap basically never comes up —
+unless you manually trigger a service that's already running, which is
+exactly the case `skip` is there to refuse.
 
 ---
 

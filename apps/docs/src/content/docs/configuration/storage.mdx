@@ -7,14 +7,15 @@ description: max_size and min_free_space — the two daemon-wide disk safeguards
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-`[storage]` is the daemon-wide safety net for disk usage. It sits one
-level above per-task [`log_max_size`](/concepts/logs/#log_max_size):
-that field caps an individual run's log; this section caps the daemon's
-total log footprint and reserves headroom on the underlying partition.
+`[storage]` is the daemon-wide safety net for disk usage. It lives one
+level up from per-task [`log_max_size`](/concepts/logs/#log_max_size):
+that field caps a _single_ run's log, while this section caps the
+daemon's total log footprint and keeps some breathing room on the
+partition underneath it.
 
-Both keys are optional. With `[storage]` omitted entirely, the daemon
-will happily fill the disk one log line at a time. On a real server,
-set both.
+Both keys are optional — but leave `[storage]` out entirely and the
+daemon will cheerfully fill your disk one log line at a time. On a real
+server, set both.
 
 ## Keys
 
@@ -34,48 +35,50 @@ Both accept the same units as `log_max_size`: `b`, `kb`, `mb`, `gb`,
 
 ## What `max_size` actually does
 
-`max_size` counts **log files only**: `.log`, `.idx`, `.tidx`, and
-`.meta` sidecars across every task's log directory. SQLite, the JWT
-secret, the PID file, and other artifacts under the data dir are **not**
-counted.
+`max_size` counts **log files and nothing else** — the `.log` files
+plus their `.idx`, `.tidx`, and `.meta` sidecars across every task's log
+directory. SQLite, the JWT secret, the PID file, and the other bits
+under the data dir don't count toward it.
 
-A background sweeper checks the total periodically. If it's over the
-cap, the sweeper deletes the **oldest completed runs** (rows + log
-files) in `created_at` order until the total is back under the cap.
-The daemon writes:
+A background sweeper tots up the total every so often. If it's over the
+cap, it starts deleting the **oldest completed runs** — both the rows
+and their log files — in `created_at` order until the total drops back
+under the line. You'll see:
 
 ```
 WARN  Log storage exceeds storage.max_size, purging oldest runs
 INFO  Purged runs to enforce storage.max_size  deleted=N
 ```
 
-`max_size` is a soft ceiling — between sweeps the daemon may briefly
-exceed it. In-flight runs are never deleted to bring the total down.
+`max_size` is a soft ceiling, not a hard wall — between sweeps the total
+can drift a little over it. And a run that's still going is never
+deleted just to get the number down.
 
 ## What `min_free_space` actually does
 
-`min_free_space` is checked against the partition that holds the data
-dir, in two places:
+`min_free_space` is checked against the partition holding the data dir,
+and it's checked in two places:
 
 - **At the start of every run.** Before the executor launches the
-  task's process, it stats the data partition. If free space is below
-  the threshold, the run is recorded with exit code `-1` and the
-  message `insufficient disk space: X free, minimum Y required`.
-  The daemon itself stays up — only the run fails.
-- **During every run, as logs grow.** If free space drops below the
-  threshold, the run's log writer stops accepting new lines and the
-  daemon raises a `log.disk_pressure` notification (severity `warn`)
-  so the operator discovers the silenced output. What happens to the
-  process depends on the task's `log_on_full`: - `drop_new` / `drop_old`: a system line `"Log output stopped:
-disk space critically low"` is recorded; the process keeps
-  running. - `kill_task`: the run is cancelled (`end_reason = "stopped"`)
+  task's process, it stats the data partition. If free space is already
+  below the threshold, the run never starts — it's recorded with exit
+  code `-1` and the message `insufficient disk space: X free, minimum Y
+required`. The daemon itself keeps running; only that run fails.
+- **During every run, as the logs grow.** If free space dips below the
+  threshold mid-run, the log writer stops accepting new lines and the
+  daemon raises a `log.disk_pressure` notification (severity `warn`) so
+  you find out about the output you're no longer seeing. What happens to
+  the process itself comes down to the task's `log_on_full`: - `drop_new` / `drop_old`: a system line `"Log output stopped:
+disk space critically low"` goes into the log and the process
+  keeps running. - `kill_task`: the run is cancelled (`end_reason = "stopped"`)
   with a system line `"Process killed: disk space critically low
-…; log_on_full=\"kill_task\""`. The operator chose loud failure
-  over disk safety; we honour that.
+…; log_on_full=\"kill_task\""`. You asked for loud failure over
+  disk safety, and RunWisp honours that.
 
-The notification fires once per run, not once per check, and includes
-`free_bytes`, `min_free_bytes`, and `killed_task` so dashboards can
-distinguish the "task survived but silent" and "task killed" cases.
+That notification fires once per run, not once per check, and it carries
+`free_bytes`, `min_free_bytes`, and `killed_task` — so a dashboard can
+tell the "task survived but went quiet" case apart from the "task got
+killed" one.
 
 ## Interaction with per-task `log_max_size`
 
@@ -90,15 +93,15 @@ The two layers are independent:
   on disk (but always emit a `log.disk_pressure` notification);
   `kill_task` cancels the run.
 
-A reasonable mental model: `log_max_size` is "this one run is going to
-write too much"; `max_size` is "we've accumulated too much"; and
-`min_free_space` is "the disk is full and no policy gets us out of it
-gracefully."
+An easy way to keep them straight: `log_max_size` is "this one run is
+about to write too much," `max_size` is "we've piled up too much over
+time," and `min_free_space` is "the disk is full and no policy is going
+to get us out of this gracefully."
 
 ## Sensible values
 
-The example file ships with `5gb` / `500mb`. That's a safe starting
-point for a typical VPS. Adjust to your environment:
+The starter file ships with `5gb` / `500mb`, which is a safe baseline
+for a typical VPS. Tune it to your setup:
 
 | Environment                  | Suggested `max_size`           | Suggested `min_free_space` |
 | ---------------------------- | ------------------------------ | -------------------------- |
@@ -107,10 +110,10 @@ point for a typical VPS. Adjust to your environment:
 | Large VPS (200+ GB)          | `20gb`–`50gb`                  | `2gb`                      |
 | Docker container (ephemeral) | match volume size, `1gb`–`5gb` | `500mb`                    |
 
-If a single task can produce gigabytes of output per run, size
-`max_size` so it holds at least a few full runs. Otherwise the sweeper
-will be deleting runs as fast as they accumulate, and your history
-becomes useless.
+If a single task can churn out gigabytes per run, size `max_size` so it
+comfortably holds at least a few full runs. Set it too tight and the
+sweeper ends up deleting runs about as fast as they show up, which makes
+your history useless.
 
 ---
 

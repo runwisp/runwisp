@@ -7,12 +7,12 @@ description: Reference documentation for the RunWisp daemon — installation, TO
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-These docs cover every part of running the RunWisp daemon — installing
-the binary, writing a `runwisp.toml`, and operating the resulting
-single-machine cron + supervisor. RunWisp is a single Go binary that
-replaces `crond` plus a small supervisor: tasks and services in one
-`runwisp.toml`, run history and live logs in an embedded Web UI, and a
-REST API for automation.
+RunWisp is one small Go binary that does the job of `crond` plus a
+supervisor: you describe your tasks and services in a single
+`runwisp.toml`, and you get run history and live logs in an embedded Web
+UI, plus a REST API when you want to automate. These docs walk you
+through the whole thing — getting the binary onto a box, writing that
+config file, and keeping the daemon happy in production.
 
 :::note[Pre-1.0]
 Any pre-1.0 bump may ship breaking changes and reset run history.

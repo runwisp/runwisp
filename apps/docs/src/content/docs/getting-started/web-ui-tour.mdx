@@ -15,9 +15,9 @@ there.
 
 [tui]: /concepts/tui-tour/
 
-The dashboard is small and mostly read-only: **trigger, restart, and
-stop** are the only actions that change anything. Everything else is
-viewing — `runwisp.toml` stays the source of truth.
+The dashboard is small and mostly read-only. The only things that
+actually change anything are **trigger, restart, and stop** — the rest
+is just looking, because `runwisp.toml` stays the source of truth.
 
 ## Open from the TUI
 
@@ -47,9 +47,10 @@ challenge-response handshake. For details, see [Auth][auth].
 
 [auth]: /operations/auth/
 
-Your session expires after a while; after that, log in again. Too
-many bad password attempts trigger a temporary lockout — wait it out
-or restart the daemon. See [Auth][auth] for the exact limits.
+Your session expires after a while, and then you just log in again.
+Pile up too many wrong password attempts and you'll hit a temporary
+lockout — wait it out or restart the daemon. [Auth][auth] has the exact
+limits.
 
 ## Overview (`/`)
 
@@ -70,9 +71,9 @@ The landing page after login.
 
 ## All runs (`/runs`)
 
-A flat, newest-first list of recent runs across every task. Useful
-for "what's been happening lately" when you don't already know which
-task to open.
+A flat, newest-first list of recent runs across every task. This is
+the page for "what's been going on lately" when you don't yet know
+which task to dig into.
 
 ![web-ui-runs.png — All Runs page: flat newest-first table of recent runs across every task with status icons, durations, and timestamps.](../../../assets/screenshots/placeholder.svg)
 
@@ -142,12 +143,11 @@ the top.
 
 ## What it doesn't do
 
-The Web UI is for viewing and controlling, not configuring. You can
-trigger, stop, and restart, and you can see everything that's
-happening — but `runwisp.toml` is the source of truth. To change
-_what_ the daemon does (add a task, edit a schedule, rename a group,
-set up a notifier, scale a service), edit the file and restart the
-daemon.
+The Web UI is for watching and controlling, not configuring. You can
+trigger, stop, and restart, and you can see everything that's going
+on — but `runwisp.toml` is still the source of truth. To change _what_
+the daemon does (add a task, tweak a schedule, rename a group, set up a
+notifier, scale a service), edit the file and restart the daemon.
 
 ---
 
