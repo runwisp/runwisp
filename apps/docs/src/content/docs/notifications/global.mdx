@@ -7,13 +7,13 @@ description: Global notification settings — bell on/off, retry budget, history
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-The `[notify]` table holds daemon-wide knobs: which channels every
-failure lands in, how long to retry an outbound delivery, how long to
-keep bell history, how aggressively to coalesce. Every key is optional
-and the defaults suit a single-machine setup.
+The `[notify]` table is where the daemon-wide knobs live: which channels
+catch every failure, how long an outbound delivery keeps retrying, how
+much bell history to hang onto, how hard to coalesce. Every key is
+optional, and the defaults are tuned for a single-machine setup.
 
-This page is not where you declare channels or routing rules — see
-[`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
+This isn't the page for declaring channels or routing rules, though —
+that's [`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
 and [`[[notification_route]]`](/notifications/routes/).
 
 ## Keys
@@ -37,8 +37,8 @@ occurrence_ring   = 10          # default
 | `coalesce_window`  | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one.                   |
 | `occurrence_ring`  | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
 
-Both `history_keep` and `history_keep_for` apply at once when set, and
-the stricter one wins.
+Set both `history_keep` and `history_keep_for` and they both apply at
+once — whichever trims harder is the one that bites.
 
 ## The bell — `global_notifiers`
 
@@ -48,66 +48,66 @@ global_notifiers = []                # silence the bell entirely
 # global_notifiers = ["slack-ops"]   # or: every failure goes to that channel
 ```
 
-`global_notifiers = []` turns off the bell in the Web UI and the TUI
-footer line, and also stops `"inapp"` being added to the per-task
-fields. With it empty, `notify_on_failure = ["slack-ops"]` sends to
-`slack-ops` only.
+`global_notifiers = []` switches off the bell in both the Web UI and the
+TUI footer, and it also stops `"inapp"` from being slipped into your
+per-task fields. With it empty, `notify_on_failure = ["slack-ops"]` goes
+to `slack-ops` and nowhere else.
 
-Use the empty form when the daemon runs unattended (a build agent, a
-CI shard) and nobody opens the Web UI. Use a non-empty list when you
-want every failure to go to the same channel without writing per-task
-fields everywhere.
+Reach for the empty form when the daemon runs unattended — a build
+agent, a CI shard — and nobody's ever looking at the Web UI. Reach for a
+non-empty list when you want every failure funneled to one channel
+without sprinkling per-task fields all over the file.
 
 ## Retry budget — `default_timeout`
 
-Outbound deliveries retry on transient failures with exponential
-backoff. `default_timeout` caps the total wall-clock time the retry
-loop is allowed to spend.
+When an outbound delivery hits a transient failure, it retries with
+exponential backoff. `default_timeout` is the cap on how much
+wall-clock time that whole retry loop is allowed to burn.
 
-Unset, the budget is **5 minutes** — a delivery can keep retrying
-that long. Setting `default_timeout = "30s"` cuts that to 30 seconds,
-so a hard outage surfaces in the bell within half a minute.
+Leave it unset and the budget is **5 minutes** — a delivery can keep
+trying for that long. Set `default_timeout = "30s"` and you cut it to
+half a minute, so a hard outage shows up in the bell that much sooner.
 
-The per-attempt HTTP timeout is independent of this budget. Set
-`default_timeout` shorter than one attempt and you effectively get a
-single try.
+The per-attempt HTTP timeout is a separate thing entirely. Set
+`default_timeout` shorter than a single attempt and you've effectively
+asked for one try and no retries.
 
 ## Bell history
 
-Bell rows live in SQLite, separate from run rows. Two knobs prune
+Bell rows live in SQLite, kept separate from run rows. Two knobs prune
 them:
 
-- `history_keep` — keep at most N rows. Older rows are trimmed in
+- `history_keep` — keep at most N rows; older ones are trimmed in
   batches.
 - `history_keep_for` — delete rows older than this duration.
 
-Both apply at once; the stricter wins. A background sweeper applies
-them — you don't trigger it.
+Both run at once, and the stricter one wins. A background sweeper takes
+care of it — there's nothing for you to trigger.
 
 ## Coalescing
 
-RunWisp groups repeat events of the same kind for the same task so
-you aren't paged twice for the same thing. A task that fails every
-minute creates one bell row that ticks up, not 60 separate rows.
+RunWisp folds together repeat events of the same kind for the same task,
+so you don't get paged twice for the same thing. A task failing every
+minute leaves you one bell row that ticks upward, not 60 separate ones.
 
-- `coalesce_window` — within this window, repeats update the same
-  row. `count` goes up; the latest timestamp is recorded.
-- `occurrence_ring` — how many recent timestamps to keep on the row.
-  Used by the UI to render a sparkline.
+- `coalesce_window` — within this window, repeats update the same row:
+  `count` climbs and the latest timestamp is recorded.
+- `occurrence_ring` — how many recent timestamps to keep on the row. The
+  UI uses these to draw a sparkline.
 
-In the Web UI you see one row that says "failed 14 times in the last
-30m" instead of 14 rows. Outbound channels coalesce on the same key
-by default — see
-[Coalescing in the model page](/notifications/model/#coalescing) for
-the full timeline.
+So in the Web UI you see a single row that reads "failed 14 times in the
+last 30m" rather than 14 rows. Outbound channels coalesce on the same
+key by default too — the
+[Coalescing section of the model page](/notifications/model/#coalescing)
+has the full timeline.
 
-Set `coalesce_window = "0s"` to disable coalescing (every event makes
-a new row). Rarely useful.
+Set `coalesce_window = "0s"` to turn coalescing off entirely (every
+event spawns its own row). Rarely what you want.
 
 ## Worked examples
 
-A small server that uses one outbound channel and wants delivery
-failures to surface fast:
+A small server with one outbound channel that wants delivery failures to
+surface quickly:
 
 ```toml
 [notify]
