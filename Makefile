@@ -128,8 +128,15 @@ $(COMMON_API_TS): $(OPENAPI_JSON) packages/common/scripts/generate-api.ts
 
 # UI build -> embed in Go binary -------------------------------------------
 
+# A git worktree (e.g. Cline's) may symlink apps/ui/.svelte-kit back to the main
+# checkout. SvelteKit bakes depth-sensitive relative import paths into that dir,
+# which are only valid from one checkout's filesystem depth — so a shared dir
+# breaks any command that runs `svelte-kit sync` (build, svelte-check). Drop the
+# symlink first so sync regenerates a .svelte-kit local to this checkout.
+DROP_SHARED_SVELTEKIT := { [ -L .svelte-kit ] && rm -f .svelte-kit || true; }
+
 $(UI_BUILD_STAMP): $(UI_APP_SOURCES) $(UI_APP_CONFIGS) $(UI_LIB_SOURCES) $(COMMON_SOURCES) $(COMMON_API_TS) $(ASYNCAPI_STAMP)
-	$(call step,web UI build (apps/ui),cd apps/ui && bun run build)
+	$(call step,web UI build (apps/ui),cd apps/ui && $(DROP_SHARED_SVELTEKIT) && bun run build)
 	$(stamp)
 
 $(UI_DIST_STAMP): $(UI_BUILD_STAMP)
@@ -144,7 +151,7 @@ $(RUNWISP_BIN): $(GO_SOURCES) $(GO_MOD) $(ASYNCAPI_STAMP) $(SQLC_STAMP) $(UI_DIS
 # Lint cache stamps --------------------------------------------------------
 
 $(UI_APP_TYPES_STAMP): $(UI_APP_SOURCES) $(UI_APP_CONFIGS) $(UI_LIB_SOURCES) $(COMMON_SOURCES) $(COMMON_API_TS) $(ASYNCAPI_STAMP)
-	$(call step,svelte-check apps/ui,cd apps/ui && bun run check:types)
+	$(call step,svelte-check apps/ui,cd apps/ui && $(DROP_SHARED_SVELTEKIT) && bun run check:types)
 	$(stamp)
 
 $(UI_APP_LINT_STAMP): $(UI_APP_SOURCES) $(UI_APP_CONFIGS) prettier.base.cjs
@@ -185,8 +192,8 @@ build-dev: $(RUNWISP_BIN) ## alias of build
 build-all: $(UI_DIST_STAMP) $(ASYNCAPI_STAMP) ## cross-compile binaries for all platforms
 	$(call step,cross-compile binaries,cd apps/runwisp && ./scripts/build-all.sh)
 
-dev: $(RUNWISP_BIN) ## build then run the daemon in foreground
-	$(call step,run runwisp daemon,cd apps/runwisp && ./runwisp)
+dev: $(RUNWISP_BIN) ## build, then run; pass args via ARGS='daemon --help'
+	$(call step,run runwisp $(ARGS),cd apps/runwisp && ./runwisp $(ARGS))
 
 generate: $(ASYNCAPI_STAMP) $(SQLC_STAMP) $(OPENAPI_JSON) $(COMMON_API_TS) ## regenerate asyncapi + sqlc + openapi + common api
 

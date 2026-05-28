@@ -5,7 +5,6 @@ package tui
 
 import (
 	"bytes"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -132,6 +131,64 @@ func TestPrintStartupTo_WithScheduleWarnings(t *testing.T) {
 	assert.Contains(t, out, "task bar overlaps")
 }
 
+// TestPrintStartupTo_WithInitWarnings locks the contract that non-fatal init
+// hiccups (notify subsystem misconfig, etc.) render inside the banner with
+// the ⚠ prefix instead of slog'ing out above it.
+func TestPrintStartupTo_WithInitWarnings(t *testing.T) {
+	var buf bytes.Buffer
+	printStartupTo(&buf, uikit.StartupInfo{
+		Version:      "0.0.0-test",
+		InitWarnings: []string{"Failed to initialize notify subsystem: env var FOO unset"},
+	})
+	out := buf.String()
+	assert.Contains(t, out, "Failed to initialize notify subsystem")
+	assert.Contains(t, out, "⚠")
+}
+
+// TestPrintStartupTo_HeadlessAddsCtrlCHint verifies the dim hint shows only
+// when no TUI is attached, replacing what used to be a separate slog line.
+func TestPrintStartupTo_HeadlessAddsCtrlCHint(t *testing.T) {
+	var buf bytes.Buffer
+	printStartupTo(&buf, uikit.StartupInfo{
+		Version:   "0.0.0-test",
+		ListenURL: "http://localhost:8080",
+		Headless:  true,
+	})
+	assert.Contains(t, buf.String(), "Press Ctrl+C to stop.")
+
+	buf.Reset()
+	printStartupTo(&buf, uikit.StartupInfo{
+		Version:   "0.0.0-test",
+		ListenURL: "http://localhost:8080",
+		Headless:  false,
+	})
+	assert.NotContains(t, buf.String(), "Press Ctrl+C to stop.",
+		"the hint belongs only on the headless boot path; the TUI owns its own shutdown affordance")
+}
+
+// TestPrintStartupTo_PathsCollapseToDataOnly verifies the banner shows the
+// Data dir once and does not list Database/Logs as separate dotted fields —
+// they are deterministic suffixes of Data and were repeating the same root.
+func TestPrintStartupTo_PathsCollapseToDataOnly(t *testing.T) {
+	var buf bytes.Buffer
+	printStartupTo(&buf, uikit.StartupInfo{
+		Version: "0.0.0-test",
+		DataDir: "/var/lib/runwisp",
+		DBPath:  "/var/lib/runwisp/runwisp.db",
+		LogDir:  "/var/lib/runwisp/logs",
+	})
+	out := buf.String()
+	assert.Contains(t, out, "Data")
+	assert.Contains(t, out, "/var/lib/runwisp")
+	// The dotted-field labels for Database / Logs must be gone — the
+	// interactive Info tab still lists them, but the startup banner is one
+	// data-dir line.
+	for _, label := range []string{"Database ·", "Logs ·"} {
+		assert.NotContains(t, out, label,
+			"banner must not render %q as a dotted field — it is a suffix of Data", label)
+	}
+}
+
 func TestPrintStartupTo_WithFingerprint(t *testing.T) {
 	var buf bytes.Buffer
 	printStartupTo(&buf, uikit.StartupInfo{
@@ -205,14 +262,15 @@ func TestPrintStartupTo_WebUIDisabled(t *testing.T) {
 	assert.Contains(t, out, "Web UI disabled")
 }
 
-func TestPrintStartupTo_WithPort(t *testing.T) {
+func TestPrintStartupTo_WithListenURL(t *testing.T) {
 	var buf bytes.Buffer
 	printStartupTo(&buf, uikit.StartupInfo{
-		Version: "0.0.0-test",
-		Port:    8080,
+		Version:   "0.0.0-test",
+		ListenURL: "http://localhost:8080",
 	})
 	out := buf.String()
-	assert.Contains(t, out, "8080")
+	assert.Contains(t, out, "http://localhost:8080")
+	assert.Contains(t, out, "Listening on")
 }
 
 // --- printCapabilitiesSection ---
@@ -353,20 +411,6 @@ func TestPrintStartupTo_Minimal(t *testing.T) {
 		printStartupTo(&buf, uikit.StartupInfo{Version: "0.1.0"})
 	})
 	assert.Contains(t, buf.String(), "RunWisp")
-}
-
-// --- SetLogOutput ---
-
-// TestSetLogOutput_NonNil verifies that SetLogOutput with a non-nil writer
-// reconfigures slog so that subsequent log lines go to that writer.
-// We write a log line and confirm it appears in the buffer.
-func TestSetLogOutput_NonNil(t *testing.T) {
-	var buf bytes.Buffer
-	SetLogOutput(&buf)
-
-	slog.Info("test-marker-xyz")
-	assert.Contains(t, buf.String(), "test-marker-xyz",
-		"SetLogOutput must redirect slog output to the provided writer")
 }
 
 // --- PrintShutdown / PrintShutdownComplete ---

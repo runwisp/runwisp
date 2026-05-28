@@ -28,6 +28,10 @@ type StartupInfo struct {
 	DBPath     string
 	LogDir     string
 	Port       int
+	// ListenURL is the accurate, operator-reachable base URL of the Web UI
+	// ([daemon] external_url when set, else http://<bind-host>:<port> with
+	// wildcard binds mapped to localhost). Empty when the Web UI is disabled.
+	ListenURL string
 
 	Fingerprint    string
 	UsingDemo      bool
@@ -42,7 +46,17 @@ type StartupInfo struct {
 	CloudEnabled  bool
 	WebUIDisabled bool
 
+	// Headless is set when the daemon runs without an interactive TUI. The
+	// startup banner renders one extra dim line ("Press Ctrl+C to stop.") in
+	// that case, replacing what used to be a separate timestamped slog INFO.
+	Headless bool
+
 	ScheduleWarnings []string
+	// InitWarnings holds non-fatal startup hiccups (notify subsystem failures,
+	// crashed-run marking errors, scheduler start hiccups). Rendered inside
+	// the banner with the same ⚠ prefix as schedule warnings so they appear
+	// in the banner rather than fragmenting it from above.
+	InitWarnings     []string
 	CrashedRuns      int64
 	PendingRuns      PendingRunsSummary
 	CatchUpTriggered int

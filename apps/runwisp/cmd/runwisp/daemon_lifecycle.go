@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/signal"
 	"sync"
@@ -14,7 +15,9 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/cloud"
+	"github.com/runwisp/runwisp/internal/runlog"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -101,6 +104,7 @@ func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, s
 // cancelled. Once both return, downstream subsystems are no longer being
 // called into and can be torn down without racing.
 func waitInput(ctx context.Context, cloudWG *sync.WaitGroup, srv *server.Server) {
+	slog.Info("draining HTTP requests and closing cloud connection")
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -127,6 +131,13 @@ func waitInput(ctx context.Context, cloudWG *sync.WaitGroup, srv *server.Server)
 // manager drain is bounded by taskTimeout so survivors get SIGKILLed and
 // recorded as ReasonDaemonStopped if their per-task graceful_stop overruns.
 func waitDrain(ctx context.Context, svc *daemonServices, taskTimeout time.Duration) {
+	if inflight := inflightRunCount(svc); inflight > 0 {
+		slog.Info("stopping scheduler and waiting for in-flight runs",
+			"in_flight", inflight, "timeout", taskTimeout)
+	} else {
+		slog.Info("stopping scheduler", "timeout", taskTimeout)
+	}
+
 	var wg sync.WaitGroup
 
 	if svc.Scheduler != nil {
@@ -154,6 +165,17 @@ func waitDrain(ctx context.Context, svc *daemonServices, taskTimeout time.Durati
 	awaitOrLog(ctx, &wg, "drain layer")
 }
 
+// inflightRunCount sums active runs across all tasks. Cheap enough at shutdown
+// (one short read-locked count per task) to narrate what the drain is waiting
+// on without adding a dedicated counter to the TaskManager interface.
+func inflightRunCount(svc *daemonServices) int {
+	total := 0
+	for name := range svc.TasksMap {
+		total += len(svc.TaskManager.GetActiveRuns(name))
+	}
+	return total
+}
+
 func awaitOrLog(ctx context.Context, wg *sync.WaitGroup, label string) {
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
@@ -165,17 +187,18 @@ func awaitOrLog(ctx context.Context, wg *sync.WaitGroup, label string) {
 	}
 }
 
-// runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down.
+// runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down. The
+// banner (or its non-TTY summary) already conveys "ready, listening" and, when
+// no TUI is attached, a dim "Press Ctrl+C to stop." line — no slog cue here.
 func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices, srv *server.Server) error {
-	slog.Info("Running in daemon mode (no TUI). Press Ctrl+C to stop.")
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
+	sig := <-sigCh
 
-	slog.Info("Shutting down...")
+	start := time.Now()
+	slog.Info("received signal, shutting down", "signal", sig.String())
 	gracefulShutdown(cancelCloud, cloudWG, svc, srv)
-	slog.Info("Goodbye!")
+	slog.Info("shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))
 	return nil
 }
 
@@ -186,6 +209,7 @@ func runWithTUI(
 	svc *daemonServices,
 	info uikit.StartupInfo,
 	debugWriter *tui.DebugLogWriter,
+	logBuffer *server.DaemonLogBuffer,
 	cancelCloud context.CancelFunc,
 	cloudWG *sync.WaitGroup,
 ) error {
@@ -197,7 +221,21 @@ func runWithTUI(
 	}
 
 	if debugWriter != nil {
-		tui.SetLogOutput(debugWriter)
+		// Route slog into the TUI debug panel and the ring buffer (so remote
+		// TUI clients see the same lines): plain text, no timestamps, and the
+		// lipgloss color profile is left untouched (the TUI owns the screen).
+		// The panel is named "Debug" and described as "Internal events and
+		// diagnostics" — operators who open it want full verbosity, including
+		// the HTTP access lines that the headless stream demotes to DEBUG.
+		// So pin the slog level to DEBUG here regardless of --log-level; the
+		// flag still governs the headless / JSON output, which is the
+		// public-facing surface.
+		clilog.Configure(clilog.Options{
+			Level:   slog.LevelDebug,
+			Format:  clilog.FormatText,
+			Output:  io.MultiWriter(debugWriter, logBuffer),
+			TUIMode: true,
+		})
 	}
 
 	shutdownFunc := func() error {
@@ -211,13 +249,23 @@ func runWithTUI(
 	}
 
 	quitAction, tuiErr := tui.StartTUI(info, client, debugWriter, shutdownFunc, launchTicketFunc)
+	clilog.SetOutput(io.MultiWriter(os.Stderr, logBuffer))
 	if tuiErr != nil {
-		tui.SetLogOutput(os.Stderr)
 		slog.Warn("TUI exited with error", "err", tuiErr)
 	}
-	tui.SetLogOutput(os.Stderr)
 
 	if quitAction == uikit.QuitKeepDaemon {
+		// The panel is gone; restore full daemon-mode logging (timestamps,
+		// color gating) and narrate run lifecycle to stderr like a headless
+		// boot would. The ring buffer stays tee'd so remote TUI clients still
+		// see daemon logs.
+		clilog.Configure(clilog.Options{
+			Level:      flags.LogLevel,
+			Format:     flags.LogFormat,
+			Output:     io.MultiWriter(os.Stderr, logBuffer),
+			DaemonMode: true,
+		})
+		defer runlog.Subscribe(svc.EventBus)()
 		slog.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
 		return runHeadless(cancelCloud, cloudWG, svc, srv)
 	}

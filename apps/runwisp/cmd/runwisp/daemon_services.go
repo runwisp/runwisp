@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"time"
 
@@ -36,15 +38,28 @@ type daemonServices struct {
 	PendingSummary      uikit.PendingRunsSummary
 	CatchUpResult       runtime.CatchUpResult
 	TaskShutdownTimeout time.Duration
+	// InitWarnings holds non-fatal warnings collected during service init
+	// (notify subsystem failures, scheduler start hiccups, etc.) so the
+	// caller can render them inside the startup banner instead of having
+	// them slog out and fragment the banner above it.
+	InitWarnings []string
 }
 
 // initDaemonServices creates and wires together the core daemon services.
 // db must already be open; initDaemonServices marks crashed runs and then
 // builds all higher-level services on top of it.
 func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Database, mode daemonMode) (*daemonServices, error) {
+	// initWarnings accumulates non-fatal startup hiccups so the caller can
+	// render them inside the banner instead of emitting slog.Warn lines that
+	// would print before the banner exists.
+	var initWarnings []string
+	addWarning := func(format string, args ...any) {
+		initWarnings = append(initWarnings, fmt.Sprintf(format, args...))
+	}
+
 	crashed, err := db.MarkCrashedRuns(ctx)
 	if err != nil {
-		slog.Warn("Failed to mark crashed runs", "err", err)
+		addWarning("Failed to mark crashed runs: %v", err)
 	}
 
 	eventBus := events.NewEventBus()
@@ -69,14 +84,21 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		scheduler = runtime.NewScheduler(taskManager, tasksMap, schedLoc)
 		schedResult, err = scheduler.Start()
 		if err != nil {
-			slog.Warn("Failed to start scheduler", "err", err)
+			addWarning("Failed to start scheduler: %v", err)
 		}
 
 		pendingSummary = resumePendingRuns(ctx, db, taskManager)
 
 		catchUpResult = runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now())
-		if catchUpResult.Triggered > 0 {
-			slog.Info("Missed-tick catch-up completed", "triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
+		// Banner already shows the triggered total. Only narrate via slog when
+		// something actually went wrong; otherwise stay quiet so INFO output
+		// at default verbosity is uncluttered.
+		if catchUpResult.Errors > 0 {
+			slog.Warn("Missed-tick catch-up completed with errors",
+				"triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
+		} else if catchUpResult.Triggered > 0 {
+			slog.Debug("Missed-tick catch-up completed",
+				"triggered", catchUpResult.Triggered)
 		}
 
 		startServiceInstances(taskManager, tasksMap)
@@ -89,11 +111,11 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
 	if err != nil {
-		slog.Warn("Failed to initialize notify subsystem", "err", err)
+		addWarning("Failed to initialize notify subsystem: %v", err)
 	}
 	if notifyB.Service != nil {
 		if startErr := notifyB.Service.Start(context.Background()); startErr != nil {
-			slog.Warn("Failed to start notify subsystem", "err", startErr)
+			addWarning("Failed to start notify subsystem: %v", startErr)
 		}
 	}
 
@@ -112,6 +134,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		PendingSummary:      pendingSummary,
 		CatchUpResult:       catchUpResult,
 		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
+		InitWarnings:        initWarnings,
 	}, nil
 }
 
@@ -141,9 +164,18 @@ func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.
 		} else {
 			dbErr = db.UpdateRun(ctx, run)
 		}
-		if dbErr != nil {
-			slog.Error("Failed to persist run", "id", run.ID, "err", dbErr)
+		if dbErr == nil {
+			return
 		}
+		// During graceful shutdown the persist context is cancelled out from
+		// under in-flight runs — that is expected, not a real persistence
+		// failure. Demote to DEBUG so a clean Ctrl+C doesn't read like a
+		// database fault; genuine DB errors still surface at ERROR.
+		if errors.Is(dbErr, context.Canceled) {
+			slog.Debug("Skipped persisting run during shutdown", "id", run.ID)
+			return
+		}
+		slog.Error("Failed to persist run", "id", run.ID, "err", dbErr)
 	})
 
 	tasksMap := make(map[string]*model.Task)

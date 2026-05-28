@@ -6,7 +6,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -105,20 +105,19 @@ func securityHeaders(next http.Handler) http.Handler {
 }
 
 func (srv *Server) setupRoutes() error {
-	requestLogger := &middleware.DefaultLogFormatter{Logger: log.New(srv.logOutput, "", log.LstdFlags)}
 	// savePeerAddr MUST be first: captures the raw TCP peer address before
 	// any proxy-aware middleware (XFF, RealIP) can overwrite r.RemoteAddr.
 	srv.router.Use(savePeerAddr)
 	if srv.trustedProxies != nil {
 		xffmw, err := xff.New(*srv.trustedProxies)
 		if err != nil {
-			log.Printf("WARNING: invalid trusted_proxies configuration, XFF middleware disabled: %v", err)
+			slog.Warn("Invalid trusted_proxies configuration; XFF middleware disabled", "err", err)
 		} else {
 			srv.router.Use(xffmw.Handler)
 		}
 	}
 	srv.router.Use(securityHeaders)
-	srv.router.Use(middleware.RequestLogger(requestLogger))
+	srv.router.Use(middleware.RequestLogger(slogAccessLogger{}))
 	srv.router.Use(middleware.Recoverer)
 	srv.router.Use(middleware.RequestID)
 	srv.router.Use(middleware.RealIP)

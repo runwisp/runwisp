@@ -145,12 +145,16 @@ func (s *tuiSuite) selectInfoScreen(t *testing.T) string {
 func (s *tuiSuite) selectDebugScreen(t *testing.T) string {
 	t.Helper()
 
-	// Debug log is the item immediately below Info in the sidebar.
+	// Debug log is the item immediately below Info in the sidebar. We assert
+	// on a stable INFO-level startup line (rather than e.g. an HTTP access
+	// path) because the headless daemon emits HTTP access at DEBUG by
+	// default — the Debug panel still receives daemon diagnostics at INFO,
+	// which is what "Internal events and diagnostics" promises.
 	s.tui.press(t, keyDown, keyEnter)
 	return s.tui.waitForAll(t, 5*time.Second,
 		"Debug Log",
 		"Internal events and diagnostics",
-		"/api",
+		"RunWisp starting",
 	)
 }
 
