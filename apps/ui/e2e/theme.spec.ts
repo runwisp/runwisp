@@ -112,10 +112,15 @@ test.describe("theme switch", () => {
 
         // The CPU wrapper carries `text-primary`; Memory carries `text-info`.
         // `fill="none"` picks the stroke path (vs. the filled area underneath).
+        // Use `toBeAttached` rather than `toBeVisible`: when CPU/Mem readings are
+        // flat (common on a freshly-booted CI runner — e.g. macOS), the path's
+        // bounding box has zero height and Playwright treats it as hidden, even
+        // though it paints. The regression check only needs the stroke to exist
+        // so its computed color can be sampled.
         const cpuStroke = page.locator('div.text-primary svg path[fill="none"]').first();
         const memStroke = page.locator('div.text-info svg path[fill="none"]').first();
-        await expect(cpuStroke).toBeVisible();
-        await expect(memStroke).toBeVisible();
+        await expect(cpuStroke).toBeAttached();
+        await expect(memStroke).toBeAttached();
 
         const lightSurface = await surfaceLuminance(page);
         const cpuLight = await luminanceOf(cpuStroke, "stroke");
