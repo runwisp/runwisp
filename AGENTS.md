@@ -131,7 +131,8 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 1. **Validation**: `make ci` is the **only** validation command you must run — it chains generate → format → check → test → test-e2e (build is covered via `test-e2e`'s binary dependency). Run it from repo root before wrapping up any session that touched code. Don't bother with `make build` / `make test` / `make check` / `make generate` individually unless you're iterating on a single stage — `make ci` supersedes them.
 2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, and the README config reference if user-visible.
 3. **AsyncAPI changes**: edit `packages/asyncapi/asyncapi.yaml` first, then `bun run generate`, then consume the regenerated types in `internal/generated/protocol/`. Never the other way round.
-4. **User-facing changes** require a `CHANGELOG.md` entry. The changelog is marketing-facing — tell users what they can do, not how it was implemented. Concise but informative.
-5. **Stop and ask** when Prime Directives / Non-Goals / Invariants don't resolve a judgment call. Do not silently pick a direction that might violate the vision.
-6. **Pre-1.0, no back-compat hedges.** No deprecation shims, no "tolerate old shape", no migration warnings — reject wrong shapes with errors and move on. (There are no users yet.)
-7. **Commits**: Do not add `Co-Authored-By: Claude` trailers. Plain commit messages only.
+4. **User-facing changes** require a `CHANGELOG.md` entry. Keep entries short — one or two sentences naming what changed, plus a docs link for the "how". Don't explain usage in the changelog itself; readers can follow the link.
+5. **Docs voice (`apps/docs/`)**: write conversationally — talk to the operator like a colleague, not a spec. Short paragraphs, contractions OK, second person ("you"), examples before exhaustive tables. The reference details belong in docs, not the changelog.
+6. **Stop and ask** when Prime Directives / Non-Goals / Invariants don't resolve a judgment call. Do not silently pick a direction that might violate the vision.
+7. **Pre-1.0, no back-compat hedges.** No deprecation shims, no "tolerate old shape", no migration warnings — reject wrong shapes with errors and move on. (There are no users yet.)
+8. **Commits**: Do not add `Co-Authored-By: Claude` trailers. Plain commit messages only.

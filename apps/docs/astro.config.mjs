@@ -121,6 +121,7 @@ export default defineConfig({
                     label: "Operations",
                     items: [
                         { label: "Auth", slug: "operations/auth" },
+                        { label: "Logging", slug: "operations/logging" },
                         { label: "Metrics", slug: "operations/metrics" },
                     ],
                 },
