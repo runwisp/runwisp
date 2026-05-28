@@ -38,7 +38,9 @@
         title="Modal Title"
         description="This is a description of the modal."
     >
-        <p class="text-mist-600">This is the modal content. You can put any content here.</p>
+        <p class="text-on-surface-muted">
+            This is the modal content. You can put any content here.
+        </p>
     </Modal>
 </Story>
 
@@ -62,7 +64,7 @@
 <Story name="Confirmation Dialog" asChild>
     <Button variant="danger" onclick={() => (confirmOpen = true)}>Delete Task</Button>
     <Modal bind:open={confirmOpen} title="Delete Task?" size="sm">
-        <p class="text-mist-600">
+        <p class="text-on-surface-muted">
             Are you sure you want to delete <strong>backup-database</strong>? This action cannot be
             undone.
         </p>
@@ -81,15 +83,15 @@
         <div
             class="max-h-96 overflow-auto rounded-lg bg-mist-900 p-4 font-mono text-sm text-mist-100"
         >
-            <p class="text-aurora-400">Starting task execution...</p>
-            <p class="text-mist-300">Connecting to database...</p>
-            <p class="text-mist-300">Connection established</p>
-            <p class="text-mist-300">Running backup query...</p>
-            <p class="text-mist-300">Processing 1,234 records...</p>
-            <p class="text-mist-300">Compressing backup file...</p>
-            <p class="text-mist-300">Uploading to storage...</p>
+            <p class="text-info">Starting task execution...</p>
+            <p class="text-on-surface-faint">Connecting to database...</p>
+            <p class="text-on-surface-faint">Connection established</p>
+            <p class="text-on-surface-faint">Running backup query...</p>
+            <p class="text-on-surface-faint">Processing 1,234 records...</p>
+            <p class="text-on-surface-faint">Compressing backup file...</p>
+            <p class="text-on-surface-faint">Uploading to storage...</p>
             <p class="text-success-400">Task completed successfully</p>
-            <p class="text-mist-500">Total execution time: 90s</p>
+            <p class="text-on-surface-muted">Total execution time: 90s</p>
         </div>
         {#snippet footer()}
             <div class="flex justify-between">

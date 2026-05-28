@@ -44,8 +44,8 @@
 </Story>
 
 <Story name="Usage Example" asChild>
-    <div class="max-w-md space-y-4 rounded-xl border border-mist-200 bg-white p-4">
-        <h3 class="font-semibold text-mist-900">Resource Usage</h3>
+    <div class="max-w-md space-y-4 rounded-xl border border-outline bg-white p-4">
+        <h3 class="font-semibold text-on-surface">Resource Usage</h3>
         <Progress value={45} label="CPU Usage" showLabel />
         <Progress value={72} label="Memory" showLabel variant="warning" />
         <Progress value={23} label="Storage" showLabel variant="success" />
@@ -54,12 +54,12 @@
 </Story>
 
 <Story name="Task Execution Progress" asChild>
-    <div class="max-w-md space-y-4 rounded-xl border border-mist-200 bg-white p-4">
+    <div class="max-w-md space-y-4 rounded-xl border border-outline bg-white p-4">
         <div class="flex items-center justify-between">
-            <h3 class="font-semibold text-mist-900">backup-database</h3>
-            <span class="text-sm text-mist-500">Running...</span>
+            <h3 class="font-semibold text-on-surface">backup-database</h3>
+            <span class="text-sm text-on-surface-muted">Running...</span>
         </div>
         <Progress value={67} showLabel />
-        <p class="text-sm text-mist-500">Processing 847 of 1,234 records</p>
+        <p class="text-sm text-on-surface-muted">Processing 847 of 1,234 records</p>
     </div>
 </Story>

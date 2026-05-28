@@ -44,16 +44,16 @@
     <!-- Needs attention -->
     <Card>
         <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-mist-950">Needs attention</h3>
+            <h3 class="text-sm font-semibold text-on-surface">Needs attention</h3>
             <Badge variant={attentionTasks.length > 0 ? "danger" : "success"}>
                 {attentionTasks.length}
             </Badge>
         </div>
 
         {#if attentionTasks.length === 0}
-            <div class="mt-4 flex items-center gap-2 rounded-lg bg-success-50 px-3 py-2.5">
-                <ShieldCheck size={14} class="text-success-700" />
-                <span class="text-sm text-success-700">Nothing waiting for triage</span>
+            <div class="mt-4 flex items-center gap-2 rounded-lg bg-success-soft px-3 py-2.5">
+                <ShieldCheck size={14} class="text-success-soft-text" />
+                <span class="text-sm text-success-soft-text">Nothing waiting for triage</span>
             </div>
         {:else}
             <div class="mt-4 space-y-2">
@@ -66,7 +66,7 @@
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-center gap-1.5">
-                                    <span class="truncate text-sm font-medium text-mist-950">
+                                    <span class="truncate text-sm font-medium text-on-surface">
                                         {task.task.name}
                                     </span>
                                     {#if statusConfig}
@@ -77,19 +77,19 @@
                                         </span>
                                     {/if}
                                 </div>
-                                <p class="mt-1 text-xs text-mist-500">
+                                <p class="mt-1 text-xs text-on-surface-muted">
                                     Last run {formatTaskLastRunLabel(task)}
                                 </p>
                             </div>
-                            <ShieldAlert size={14} class="shrink-0 text-danger-400" />
+                            <ShieldAlert size={14} class="shrink-0 text-danger-soft-text" />
                         </div>
 
                         <div
-                            class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-mist-500"
+                            class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-on-surface-muted"
                         >
                             <span>Next {formatTaskNextRunLabel(task)}</span>
                             {#if isFailureEndReason(task.lastRun?.end_reason)}
-                                <span class="text-danger-600">
+                                <span class="text-danger-soft-text">
                                     Exit {task.lastRun?.exit_code}
                                 </span>
                             {/if}
@@ -103,16 +103,16 @@
     <!-- Running now -->
     <Card>
         <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-mist-950">Running now</h3>
+            <h3 class="text-sm font-semibold text-on-surface">Running now</h3>
             <Badge variant={runningNow.length > 0 ? "primary" : "default"}>
                 {runningNow.length}
             </Badge>
         </div>
 
         {#if runningNow.length === 0}
-            <div class="mt-4 flex items-center gap-2 rounded-lg bg-mist-50 px-3 py-2.5">
-                <Activity size={14} class="text-mist-500" />
-                <span class="text-sm text-mist-500">Nothing is running</span>
+            <div class="mt-4 flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2.5">
+                <Activity size={14} class="text-on-surface-muted" />
+                <span class="text-sm text-on-surface-muted">Nothing is running</span>
             </div>
         {:else}
             <div class="mt-4 space-y-2">
@@ -123,19 +123,20 @@
                                 <div class="flex items-center gap-2">
                                     <span class="relative flex h-2 w-2 shrink-0">
                                         <span
-                                            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-wisp-400 opacity-75"
+                                            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"
                                         ></span>
                                         <span
-                                            class="relative inline-flex h-2 w-2 rounded-full bg-wisp-500"
+                                            class="relative inline-flex h-2 w-2 rounded-full bg-primary"
                                         ></span>
                                     </span>
-                                    <span class="truncate text-sm font-medium text-mist-950">
+                                    <span class="truncate text-sm font-medium text-on-surface">
                                         {run.task_name}{#if run.instance_index > 0}<span
-                                                class="text-mist-500">#{run.instance_index}</span
+                                                class="text-on-surface-muted"
+                                                >#{run.instance_index}</span
                                             >{/if}
                                     </span>
                                 </div>
-                                <p class="mt-1 text-xs text-mist-500">
+                                <p class="mt-1 text-xs text-on-surface-muted">
                                     {formatRunDurationLabel(run)} &middot; {formatTriggeredByLabel(
                                         run.triggered_by,
                                     )}
@@ -143,7 +144,7 @@
                             </div>
                             <ArrowRight
                                 size={14}
-                                class="shrink-0 text-mist-300 transition-colors group-hover:text-wisp-600"
+                                class="shrink-0 text-on-surface-faint transition-colors group-hover:text-primary"
                             />
                         </div>
                     </TaskCard>
@@ -155,14 +156,14 @@
     <!-- Up next -->
     <Card>
         <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-mist-950">Up next</h3>
+            <h3 class="text-sm font-semibold text-on-surface">Up next</h3>
             <Badge variant="info">{upcomingTasks.length}</Badge>
         </div>
 
         {#if upcomingTasks.length === 0}
-            <div class="mt-4 flex items-center gap-2 rounded-lg bg-mist-50 px-3 py-2.5">
-                <Clock3 size={14} class="text-mist-500" />
-                <span class="text-sm text-mist-500">No scheduled runs queued</span>
+            <div class="mt-4 flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2.5">
+                <Clock3 size={14} class="text-on-surface-muted" />
+                <span class="text-sm text-on-surface-muted">No scheduled runs queued</span>
             </div>
         {:else}
             <div class="mt-4 space-y-2">
@@ -171,7 +172,7 @@
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-center gap-1.5">
-                                    <span class="truncate text-sm font-medium text-mist-950">
+                                    <span class="truncate text-sm font-medium text-on-surface">
                                         {task.task.name}
                                     </span>
                                     {#if task.task.group}
@@ -185,18 +186,18 @@
                                         />
                                     {/if}
                                 </div>
-                                <p class="mt-1 text-xs text-mist-500">
+                                <p class="mt-1 text-xs text-on-surface-muted">
                                     {formatTaskNextRunLabel(task)}
                                 </p>
                             </div>
                             <ArrowRight
                                 size={14}
-                                class="shrink-0 text-mist-300 transition-colors group-hover:text-aurora-600"
+                                class="shrink-0 text-on-surface-faint transition-colors group-hover:text-info"
                             />
                         </div>
 
                         {#if task.task.cron}
-                            <p class="mt-2 font-mono text-xs text-mist-500">
+                            <p class="mt-2 font-mono text-xs text-on-surface-muted">
                                 {task.task.cron}
                             </p>
                         {/if}

@@ -16,15 +16,15 @@
     let { accent = "wisp", onclick, children, class: className = "" }: Props = $props();
 
     const accentClasses: Record<TaskCardAccent, string> = {
-        danger: "hover:border-danger-200",
-        wisp: "hover:border-wisp-200",
-        aurora: "hover:border-aurora-200",
+        danger: "hover:border-danger-soft-border",
+        wisp: "hover:border-primary-soft-border",
+        aurora: "hover:border-info-soft-border",
     };
 </script>
 
 <button
     type="button"
-    class="group w-full rounded-lg border border-mist-100 bg-surface-raised p-3 text-left transition-all hover:shadow-sm {accentClasses[
+    class="group w-full rounded-lg border border-outline-faint bg-surface-raised p-3 text-left transition-all hover:shadow-sm {accentClasses[
         accent
     ]} {className}"
     {onclick}

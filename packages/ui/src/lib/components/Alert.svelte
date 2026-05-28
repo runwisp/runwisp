@@ -35,25 +35,25 @@
     > = {
         info: {
             bg: "bg-info-soft",
-            border: "border-aurora-200",
+            border: "border-info-soft-border",
             icon: Info,
             iconColor: "text-info",
         },
         success: {
             bg: "bg-success-soft",
-            border: "border-success-200",
+            border: "border-success-soft-border",
             icon: CircleCheckBig,
             iconColor: "text-success-surface",
         },
         warning: {
             bg: "bg-warning-soft",
-            border: "border-warning-200",
+            border: "border-warning-soft-border",
             icon: TriangleAlert,
             iconColor: "text-warning-surface",
         },
         danger: {
             bg: "bg-danger-soft",
-            border: "border-danger-200",
+            border: "border-danger-soft-border",
             icon: CircleX,
             iconColor: "text-danger-surface",
         },

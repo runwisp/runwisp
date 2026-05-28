@@ -43,8 +43,8 @@
 <Story name="Underline (Default)" asChild>
     <Tabs tabs={basicTabs} variant="underline">
         {#snippet children(activeTab)}
-            <div class="rounded-lg border border-mist-200 bg-white p-4">
-                <p class="text-mist-600">Content for <strong>{activeTab}</strong> tab</p>
+            <div class="rounded-lg border border-outline bg-white p-4">
+                <p class="text-on-surface-muted">Content for <strong>{activeTab}</strong> tab</p>
             </div>
         {/snippet}
     </Tabs>
@@ -53,8 +53,8 @@
 <Story name="Pills" asChild>
     <Tabs tabs={basicTabs} variant="pills">
         {#snippet children(activeTab)}
-            <div class="rounded-lg border border-mist-200 bg-white p-4">
-                <p class="text-mist-600">Content for <strong>{activeTab}</strong> tab</p>
+            <div class="rounded-lg border border-outline bg-white p-4">
+                <p class="text-on-surface-muted">Content for <strong>{activeTab}</strong> tab</p>
             </div>
         {/snippet}
     </Tabs>
@@ -63,8 +63,8 @@
 <Story name="Enclosed" asChild>
     <Tabs tabs={basicTabs} variant="enclosed">
         {#snippet children(activeTab)}
-            <div class="rounded-lg border border-mist-200 bg-white p-4">
-                <p class="text-mist-600">Content for <strong>{activeTab}</strong> tab</p>
+            <div class="rounded-lg border border-outline bg-white p-4">
+                <p class="text-on-surface-muted">Content for <strong>{activeTab}</strong> tab</p>
             </div>
         {/snippet}
     </Tabs>
@@ -73,8 +73,10 @@
 <Story name="With Icons and Badges" asChild>
     <Tabs tabs={iconTabs} variant="underline">
         {#snippet children(activeTab)}
-            <div class="rounded-lg border border-mist-200 bg-white p-4">
-                <p class="text-mist-600">You're viewing the <strong>{activeTab}</strong> section</p>
+            <div class="rounded-lg border border-outline bg-white p-4">
+                <p class="text-on-surface-muted">
+                    You're viewing the <strong>{activeTab}</strong> section
+                </p>
             </div>
         {/snippet}
     </Tabs>
@@ -84,8 +86,10 @@
     <div class="max-w-md">
         <Tabs tabs={basicTabs} variant="pills" fullWidth>
             {#snippet children(activeTab)}
-                <div class="rounded-lg border border-mist-200 bg-white p-4">
-                    <p class="text-mist-600">Content for <strong>{activeTab}</strong> tab</p>
+                <div class="rounded-lg border border-outline bg-white p-4">
+                    <p class="text-on-surface-muted">
+                        Content for <strong>{activeTab}</strong> tab
+                    </p>
                 </div>
             {/snippet}
         </Tabs>
@@ -95,8 +99,8 @@
 <Story name="With Disabled Tab" asChild>
     <Tabs tabs={disabledTabs} variant="underline">
         {#snippet children(activeTab)}
-            <div class="rounded-lg border border-mist-200 bg-white p-4">
-                <p class="text-mist-600">Showing <strong>{activeTab}</strong> tasks</p>
+            <div class="rounded-lg border border-outline bg-white p-4">
+                <p class="text-on-surface-muted">Showing <strong>{activeTab}</strong> tasks</p>
             </div>
         {/snippet}
     </Tabs>

@@ -60,31 +60,31 @@
             label: "Needs attention",
             badge: "danger",
             accentClass: "border-l-danger-300",
-            toneClass: "bg-danger-50 text-danger-700",
+            toneClass: "bg-danger-soft text-danger-soft-text",
         },
         running: {
             label: "Running now",
             badge: "primary",
             accentClass: "border-l-wisp-300",
-            toneClass: "bg-wisp-50 text-wisp-700",
+            toneClass: "bg-primary-soft text-primary-soft-text",
         },
         scheduled: {
             label: "Scheduled",
             badge: "info",
             accentClass: "border-l-aurora-300",
-            toneClass: "bg-aurora-50 text-aurora-700",
+            toneClass: "bg-info-soft text-info-soft-text",
         },
         manual: {
             label: "Manual only",
             badge: "warning",
             accentClass: "border-l-warning-300",
-            toneClass: "bg-warning-50 text-warning-700",
+            toneClass: "bg-warning-soft text-warning-soft-text",
         },
         idle: {
             label: "Idle",
             badge: "default",
             accentClass: "border-l-mist-200",
-            toneClass: "bg-mist-100 text-mist-700",
+            toneClass: "bg-surface-sunken text-on-surface-muted",
         },
     };
 
@@ -123,8 +123,8 @@
     <!-- Toolbar -->
     <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div class="flex items-center gap-3">
-            <h2 class="text-sm font-semibold text-mist-950">Tasks</h2>
-            <span class="text-xs text-mist-500">
+            <h2 class="text-sm font-semibold text-on-surface">Tasks</h2>
+            <span class="text-xs text-on-surface-muted">
                 {taskOverviews.length} total
             </span>
         </div>
@@ -137,7 +137,10 @@
                     bind:value={searchQuery}
                     class="w-full pl-9 text-sm"
                 />
-                <Search class="absolute top-1/2 left-3 -translate-y-1/2 text-mist-400" size={14} />
+                <Search
+                    class="absolute top-1/2 left-3 -translate-y-1/2 text-on-surface-faint"
+                    size={14}
+                />
             </div>
 
             <div class="flex items-center gap-2">
@@ -147,8 +150,8 @@
                             class={[
                                 "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-all",
                                 taskFilter === filter.value
-                                    ? "border-wisp-200 bg-wisp-50 text-wisp-700"
-                                    : "border-mist-200 bg-surface-raised text-mist-600 hover:border-mist-300 hover:text-mist-950",
+                                    ? "border-primary-soft-border bg-primary-soft text-primary-soft-text"
+                                    : "border-outline bg-surface-raised text-on-surface-muted hover:border-outline-hover hover:text-on-surface",
                             ]}
                             onclick={() => (taskFilter = filter.value)}
                         >
@@ -157,8 +160,8 @@
                                 class={[
                                     "rounded-md px-1.5 py-0.5 text-2xs font-semibold",
                                     taskFilter === filter.value
-                                        ? "bg-surface-raised text-wisp-700"
-                                        : "bg-mist-100 text-mist-500",
+                                        ? "bg-surface-raised text-primary-soft-text"
+                                        : "bg-surface-sunken text-on-surface-muted",
                                 ]}
                             >
                                 {taskCounts[filter.value]}
@@ -197,7 +200,7 @@
                 {@const TaskIcon = taskIcon(task.task)}
 
                 <button
-                    class="group w-full rounded-xl border border-l-4 border-mist-200 bg-surface-raised px-4 py-3 text-left transition-all hover:border-mist-300 hover:shadow-sm {taskState.accentClass}"
+                    class="group w-full rounded-xl border border-l-4 border-outline bg-surface-raised px-4 py-3 text-left transition-all hover:border-outline-hover hover:shadow-sm {taskState.accentClass}"
                     onclick={() => viewTask(task.task.name)}
                 >
                     <div class="flex items-center gap-4">
@@ -205,11 +208,11 @@
                             <div class="flex flex-wrap items-center gap-1.5">
                                 <TaskIcon
                                     size={14}
-                                    class="shrink-0 text-mist-400 group-hover:text-wisp-600"
+                                    class="shrink-0 text-on-surface-faint group-hover:text-primary"
                                     aria-hidden="true"
                                 />
                                 <span
-                                    class="text-sm font-semibold text-mist-950"
+                                    class="text-sm font-semibold text-on-surface"
                                     title={taskTriggerTooltip(task.task)}
                                 >
                                     {task.task.name}
@@ -234,14 +237,14 @@
                                 {/if}
                             </div>
 
-                            <p class="mt-1 truncate text-xs text-mist-500">
+                            <p class="mt-1 truncate text-xs text-on-surface-muted">
                                 {formatTaskDescription(task.task)}
                             </p>
                         </div>
 
                         <div class="hidden shrink-0 items-center gap-4 text-xs sm:flex">
                             <div class="w-28">
-                                <p class="text-mist-400">Latest</p>
+                                <p class="text-on-surface-faint">Latest</p>
                                 <span
                                     class={[
                                         "inline-flex rounded-full px-1.5 py-0.5 text-2xs font-semibold",
@@ -253,17 +256,17 @@
                             </div>
 
                             <div class="w-32">
-                                <p class="text-mist-400">Next run</p>
-                                <p class="font-medium text-mist-950">
+                                <p class="text-on-surface-faint">Next run</p>
+                                <p class="font-medium text-on-surface">
                                     {formatTaskNextRunLabel(task)}
                                 </p>
                             </div>
 
                             <div class="w-24">
-                                <p class="text-mist-400">Trigger</p>
+                                <p class="text-on-surface-faint">Trigger</p>
                                 <p
                                     class={[
-                                        "font-medium text-mist-950",
+                                        "font-medium text-on-surface",
                                         task.task.cron ? "font-mono" : "",
                                     ]}
                                 >
@@ -274,13 +277,13 @@
 
                         <ArrowRight
                             size={14}
-                            class="shrink-0 text-mist-300 transition-colors group-hover:text-wisp-600"
+                            class="shrink-0 text-on-surface-faint transition-colors group-hover:text-primary"
                         />
                     </div>
 
                     {#if isFailureEndReason(task.lastRun?.end_reason)}
                         <div
-                            class="mt-2 rounded-lg border border-danger-100 bg-danger-50/80 px-3 py-2 text-xs text-danger-700"
+                            class="mt-2 rounded-lg border border-danger-soft-border bg-danger-soft/80 px-3 py-2 text-xs text-danger-soft-text"
                         >
                             Last run exited with code {task.lastRun?.exit_code}
                         </div>

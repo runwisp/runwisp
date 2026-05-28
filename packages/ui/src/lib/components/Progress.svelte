@@ -28,10 +28,10 @@
     const percentage = $derived(Math.min(Math.max((value / max) * 100, 0), 100));
 
     const variantClasses: Record<ProgressVariant, string> = {
-        default: "bg-wisp-500",
-        success: "bg-success-500",
-        warning: "bg-warning-500",
-        danger: "bg-danger-500",
+        default: "bg-primary",
+        success: "bg-success-surface",
+        warning: "bg-warning-surface",
+        danger: "bg-danger-surface",
     };
 
     const sizeClasses: Record<ProgressSize, string> = {

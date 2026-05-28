@@ -53,8 +53,8 @@
 </Story>
 
 <Story name="Settings Example" asChild>
-    <div class="max-w-md space-y-4 rounded-xl border border-mist-200 bg-white p-4">
-        <h3 class="font-semibold text-mist-900">Notification Preferences</h3>
+    <div class="max-w-md space-y-4 rounded-xl border border-outline bg-white p-4">
+        <h3 class="font-semibold text-on-surface">Notification Preferences</h3>
         <div class="space-y-3">
             <Checkbox
                 label="Task completion alerts"

@@ -30,10 +30,10 @@
     };
 
     const statusClasses: Record<string, string> = {
-        online: "bg-success-500",
+        online: "bg-success-surface",
         offline: "bg-on-surface-faint",
-        busy: "bg-danger-500",
-        away: "bg-warning-500",
+        busy: "bg-danger-surface",
+        away: "bg-warning-surface",
     };
 
     const statusSizes: Record<string, string> = {
@@ -46,11 +46,11 @@
 
     // Generate a consistent color based on name
     const colors = [
-        "bg-wisp-500",
-        "bg-aurora-500",
-        "bg-success-500",
-        "bg-warning-500",
-        "bg-danger-500",
+        "bg-primary",
+        "bg-info",
+        "bg-success-surface",
+        "bg-warning-surface",
+        "bg-danger-surface",
     ];
 
     const colorIndex = $derived(

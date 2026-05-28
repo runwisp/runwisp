@@ -30,9 +30,9 @@
 
 <Card padding="lg">
     <div class="flex items-center justify-between gap-3">
-        <h2 class="text-sm font-semibold text-mist-950">Recent activity</h2>
+        <h2 class="text-sm font-semibold text-on-surface">Recent activity</h2>
         <button
-            class="inline-flex items-center gap-1 text-xs font-medium text-mist-500 transition-colors hover:text-mist-950"
+            class="inline-flex items-center gap-1 text-xs font-medium text-on-surface-muted transition-colors hover:text-on-surface"
             onclick={() => onViewAllRuns?.()}
         >
             All runs
@@ -56,7 +56,7 @@
                 {@const StatusIcon = statusConfig.icon}
 
                 <button
-                    class="group flex w-full items-start gap-3 rounded-lg p-2.5 text-left transition-colors hover:bg-mist-50"
+                    class="group flex w-full items-start gap-3 rounded-lg p-2.5 text-left transition-colors hover:bg-surface-sunken"
                     onclick={() => viewRun(run)}
                 >
                     <div
@@ -68,9 +68,10 @@
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex min-w-0 items-center gap-1.5">
-                                <span class="truncate text-sm font-medium text-mist-950">
+                                <span class="truncate text-sm font-medium text-on-surface">
                                     {run.task_name}{#if run.instance_index > 0}<span
-                                            class="text-mist-500">#{run.instance_index}</span
+                                            class="text-on-surface-muted"
+                                            >#{run.instance_index}</span
                                         >{/if}
                                 </span>
                                 <span
@@ -81,16 +82,16 @@
                             </div>
                             <ArrowRight
                                 size={12}
-                                class="shrink-0 text-mist-300 transition-colors group-hover:text-mist-600"
+                                class="shrink-0 text-on-surface-faint transition-colors group-hover:text-on-surface-muted"
                             />
                         </div>
 
-                        <p class="mt-0.5 text-xs text-mist-500">
+                        <p class="mt-0.5 text-xs text-on-surface-muted">
                             {formatRunStartedLabel(run)} &middot;
                             {formatRunDurationLabel(run)}
                             &middot; {formatTriggeredByLabel(run.triggered_by)}
                             {#if isFailureEndReason(run.end_reason)}
-                                <span class="text-danger-600">· Exit {run.exit_code}</span>
+                                <span class="text-danger-soft-text">· Exit {run.exit_code}</span>
                             {/if}
                         </p>
                     </div>

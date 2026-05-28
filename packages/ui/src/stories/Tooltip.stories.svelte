@@ -48,17 +48,17 @@
 <Story name="On Icons" asChild>
     <div class="flex items-center justify-center gap-6 py-8">
         <Tooltip content="More information">
-            <button class="rounded-lg p-2 text-mist-500 hover:bg-mist-100">
+            <button class="rounded-lg p-2 text-on-surface-muted hover:bg-surface-sunken">
                 <Info size={20} />
             </button>
         </Tooltip>
         <Tooltip content="Get help">
-            <button class="rounded-lg p-2 text-mist-500 hover:bg-mist-100">
+            <button class="rounded-lg p-2 text-on-surface-muted hover:bg-surface-sunken">
                 <CircleQuestionMark size={20} />
             </button>
         </Tooltip>
         <Tooltip content="Settings">
-            <button class="rounded-lg p-2 text-mist-500 hover:bg-mist-100">
+            <button class="rounded-lg p-2 text-on-surface-muted hover:bg-surface-sunken">
                 <Settings size={20} />
             </button>
         </Tooltip>
@@ -67,9 +67,9 @@
 
 <Story name="Usage Example" asChild>
     <div class="flex items-center gap-2 py-8">
-        <span class="text-sm text-mist-700">Cron Expression</span>
+        <span class="text-sm text-on-surface-muted">Cron Expression</span>
         <Tooltip content="Use standard cron syntax: minute hour day month weekday">
-            <button class="text-mist-400 hover:text-mist-600">
+            <button class="text-on-surface-faint hover:text-on-surface-muted">
                 <CircleQuestionMark size={16} />
             </button>
         </Tooltip>

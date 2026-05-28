@@ -136,6 +136,12 @@
     --rw-on-info: white;
     --rw-info-soft: var(--rw-color-aurora-50);
     --rw-info-soft-text: var(--rw-color-aurora-700);
+    /* Soft callout borders — sit on the matching *-soft surface */
+    --rw-primary-soft-border: var(--rw-color-wisp-200);
+    --rw-danger-soft-border: var(--rw-color-danger-200);
+    --rw-success-soft-border: var(--rw-color-success-200);
+    --rw-warning-soft-border: var(--rw-color-warning-200);
+    --rw-info-soft-border: var(--rw-color-aurora-200);
     /* Glass */
     --rw-glass: oklch(1 0 0 / 0.8);
     --rw-glass-blur: blur(12px);
@@ -189,6 +195,12 @@
     --rw-on-info: white;
     --rw-info-soft: oklch(0.2 0.04 180);
     --rw-info-soft-text: var(--rw-color-aurora-300);
+    /* Soft callout borders */
+    --rw-primary-soft-border: oklch(0.32 0.06 270);
+    --rw-danger-soft-border: oklch(0.32 0.06 355);
+    --rw-success-soft-border: oklch(0.32 0.06 165);
+    --rw-warning-soft-border: oklch(0.32 0.06 85);
+    --rw-info-soft-border: oklch(0.32 0.06 180);
     /* Glass */
     --rw-glass: oklch(0.12 0.012 280 / 0.9);
 }

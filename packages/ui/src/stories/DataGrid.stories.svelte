@@ -81,7 +81,7 @@
 {/snippet}
 
 {#snippet durationCell(/** @type {any} */ row)}
-    <span class="font-mono text-mist-700">{row.duration}</span>
+    <span class="font-mono text-on-surface-muted">{row.duration}</span>
 {/snippet}
 
 <Story name="Basic" args={{ columns, data: tasks }} />

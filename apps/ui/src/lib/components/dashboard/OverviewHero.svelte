@@ -111,10 +111,10 @@
                     : "No tasks loaded yet",
             icon: ShieldCheck,
             accentClass: isFullyHealthy
-                ? "border-success-200 bg-success-50/80"
+                ? "border-success-soft-border bg-success-soft/80"
                 : "border-outline bg-surface-raised/80",
-            iconWrapClass: isFullyHealthy ? "bg-success-100" : "bg-mist-100",
-            iconClass: isFullyHealthy ? "text-success-700" : "text-mist-500",
+            iconWrapClass: isFullyHealthy ? "bg-success-soft" : "bg-surface-sunken",
+            iconClass: isFullyHealthy ? "text-success-soft-text" : "text-on-surface-muted",
         };
     }
 
@@ -129,10 +129,10 @@
                 : "No incidents waiting",
             icon: CircleAlert,
             accentClass: hasAttentionTasks
-                ? "border-danger-200 bg-danger-50/80"
+                ? "border-danger-soft-border bg-danger-soft/80"
                 : "border-outline bg-surface-raised/80",
-            iconWrapClass: hasAttentionTasks ? "bg-danger-100" : "bg-mist-100",
-            iconClass: hasAttentionTasks ? "text-danger-700" : "text-mist-500",
+            iconWrapClass: hasAttentionTasks ? "bg-danger-soft" : "bg-surface-sunken",
+            iconClass: hasAttentionTasks ? "text-danger-soft-text" : "text-on-surface-muted",
         };
     }
 
@@ -147,10 +147,10 @@
                 : "Nothing executing",
             icon: Zap,
             accentClass: hasRunningTasks
-                ? "border-wisp-200 bg-wisp-50/80"
+                ? "border-primary-soft-border bg-primary-soft/80"
                 : "border-outline bg-surface-raised/80",
-            iconWrapClass: hasRunningTasks ? "bg-wisp-100" : "bg-mist-100",
-            iconClass: hasRunningTasks ? "text-wisp-700" : "text-mist-500",
+            iconWrapClass: hasRunningTasks ? "bg-primary-soft" : "bg-surface-sunken",
+            iconClass: hasRunningTasks ? "text-primary-soft-text" : "text-on-surface-muted",
         };
     }
 
@@ -169,20 +169,20 @@
                 : "Waiting for first completed run",
             icon: Sparkles,
             accentClass: isPerfectSuccessRate
-                ? "border-success-200 bg-success-50/80"
+                ? "border-success-soft-border bg-success-soft/80"
                 : hasCompletedRuns
-                  ? "border-warning-200 bg-warning-50/80"
+                  ? "border-warning-soft-border bg-warning-soft/80"
                   : "border-outline bg-surface-raised/80",
             iconWrapClass: isPerfectSuccessRate
-                ? "bg-success-100"
+                ? "bg-success-soft"
                 : hasCompletedRuns
-                  ? "bg-warning-100"
-                  : "bg-mist-100",
+                  ? "bg-warning-soft"
+                  : "bg-surface-sunken",
             iconClass: isPerfectSuccessRate
-                ? "text-success-700"
+                ? "text-success-soft-text"
                 : hasCompletedRuns
-                  ? "text-warning-700"
-                  : "text-mist-500",
+                  ? "text-warning-soft-text"
+                  : "text-on-surface-muted",
         };
     }
 
@@ -251,13 +251,13 @@
                 <Badge variant={systemHealth.variant} class="px-3 py-1">
                     {systemHealth.label}
                 </Badge>
-                <span class="text-sm text-mist-500">
+                <span class="text-sm text-on-surface-muted">
                     {summary.totalTasks} task{pluralize(summary.totalTasks)}
                 </span>
             </div>
 
             <button
-                class="inline-flex items-center gap-1.5 text-sm font-medium text-mist-600 transition-colors hover:text-mist-950"
+                class="inline-flex items-center gap-1.5 text-sm font-medium text-on-surface-muted transition-colors hover:text-on-surface"
                 onclick={() => onViewAllRuns?.()}
             >
                 View all runs
@@ -273,11 +273,11 @@
                     <div class="flex items-start justify-between gap-3">
                         <div class="space-y-1">
                             <p
-                                class="text-2xs font-semibold tracking-widest text-mist-500 uppercase"
+                                class="text-2xs font-semibold tracking-widest text-on-surface-muted uppercase"
                             >
                                 {card.label}
                             </p>
-                            <p class="text-2xl font-semibold tracking-tight text-mist-950">
+                            <p class="text-2xl font-semibold tracking-tight text-on-surface">
                                 {card.value}
                             </p>
                         </div>
@@ -287,22 +287,22 @@
                             <Icon size={16} class={card.iconClass} />
                         </div>
                     </div>
-                    <p class="mt-2 text-xs text-mist-500">{card.detail}</p>
+                    <p class="mt-2 text-xs text-on-surface-muted">{card.detail}</p>
                 </div>
             {/each}
         </div>
 
         <!-- Runner facts -->
         <div
-            class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-mist-100 bg-mist-50/60 px-5 py-3 text-sm"
+            class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-outline-faint bg-surface-sunken/60 px-5 py-3 text-sm"
         >
             {#each daemonFacts as fact, i (fact.label)}
                 {#if i > 0}
-                    <span class="hidden text-mist-300 sm:inline">|</span>
+                    <span class="hidden text-on-surface-faint sm:inline">|</span>
                 {/if}
                 <span>
-                    <span class="font-medium text-mist-500">{fact.label}</span>
-                    <span class="ml-1.5 text-mist-950">{fact.value}</span>
+                    <span class="font-medium text-on-surface-muted">{fact.label}</span>
+                    <span class="ml-1.5 text-on-surface">{fact.value}</span>
                 </span>
             {/each}
         </div>
@@ -311,7 +311,7 @@
     <!-- System resources sidebar -->
     <Card padding="lg">
         <div class="flex items-center justify-between gap-3">
-            <h2 class="text-sm font-semibold text-mist-950">System resources</h2>
+            <h2 class="text-sm font-semibold text-on-surface">System resources</h2>
             <Badge variant={stats.cpuUsage >= 85 || stats.memUsage >= 85 ? "warning" : "success"}>
                 {stats.cpuUsage >= 85 || stats.memUsage >= 85 ? "High load" : "Steady"}
             </Badge>
@@ -320,32 +320,36 @@
         <div class="mt-4 space-y-4">
             <div>
                 <div class="mb-1.5 flex items-center justify-between text-sm">
-                    <span class="text-mist-500">CPU</span>
-                    <span class="font-semibold text-mist-950">{formatUsage(stats.cpuUsage)}</span>
+                    <span class="text-on-surface-muted">CPU</span>
+                    <span class="font-semibold text-on-surface">{formatUsage(stats.cpuUsage)}</span>
                 </div>
-                <div class="overflow-hidden rounded-lg border border-mist-100 bg-mist-50/50">
-                    <Sparkline data={cpuData} color="#1e293b" height={44} />
+                <div
+                    class="overflow-hidden rounded-lg border border-outline-faint bg-surface-sunken/50 text-primary"
+                >
+                    <Sparkline data={cpuData} height={44} />
                 </div>
             </div>
 
             <div>
                 <div class="mb-1.5 flex items-baseline justify-between text-sm">
-                    <span class="text-mist-500">Memory</span>
+                    <span class="text-on-surface-muted">Memory</span>
                     <span class="flex items-baseline gap-2">
                         {#if latestSample}
-                            <span class="text-xs text-mist-400">
+                            <span class="text-xs text-on-surface-faint">
                                 {formatBytes(latestSample.mem_used)} / {formatBytes(
                                     latestSample.mem_total,
                                 )}
                             </span>
                         {/if}
-                        <span class="font-semibold text-mist-950"
+                        <span class="font-semibold text-on-surface"
                             >{formatUsage(stats.memUsage)}</span
                         >
                     </span>
                 </div>
-                <div class="overflow-hidden rounded-lg border border-mist-100 bg-mist-50/50">
-                    <Sparkline data={memData} color="#0284c7" height={44} />
+                <div
+                    class="overflow-hidden rounded-lg border border-outline-faint bg-surface-sunken/50 text-info"
+                >
+                    <Sparkline data={memData} height={44} />
                 </div>
             </div>
         </div>

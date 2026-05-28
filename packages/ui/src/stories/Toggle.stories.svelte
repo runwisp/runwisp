@@ -48,8 +48,8 @@
 </Story>
 
 <Story name="Settings Panel" asChild>
-    <div class="max-w-md space-y-4 rounded-xl border border-mist-200 bg-white p-4">
-        <h3 class="font-semibold text-mist-900">Task Settings</h3>
+    <div class="max-w-md space-y-4 rounded-xl border border-outline bg-white p-4">
+        <h3 class="font-semibold text-on-surface">Task Settings</h3>
         <div class="space-y-4">
             <Toggle
                 label="Enable task"

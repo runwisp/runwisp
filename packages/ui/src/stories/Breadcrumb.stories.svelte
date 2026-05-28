@@ -49,7 +49,7 @@
 />
 
 <Story name="In Page Context" asChild>
-    <div class="rounded-xl border border-mist-200 bg-white p-6">
+    <div class="rounded-xl border border-outline bg-white p-6">
         <Breadcrumb
             items={[
                 { label: "Dashboard", href: "/" },
@@ -58,7 +58,7 @@
             ]}
             class="mb-4"
         />
-        <h1 class="text-2xl font-semibold text-mist-900">backup-database</h1>
-        <p class="mt-1 text-mist-500">Daily database backup task</p>
+        <h1 class="text-2xl font-semibold text-on-surface">backup-database</h1>
+        <p class="mt-1 text-on-surface-muted">Daily database backup task</p>
     </div>
 </Story>

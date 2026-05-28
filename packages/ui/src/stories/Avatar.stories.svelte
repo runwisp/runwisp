@@ -68,7 +68,7 @@
         <Avatar name="Charlie Brown" size="md" />
         <Avatar name="Diana Ross" size="md" />
         <div
-            class="flex h-10 w-10 items-center justify-center rounded-full bg-mist-200 text-sm font-medium text-mist-600 ring-2 ring-white"
+            class="flex h-10 w-10 items-center justify-center rounded-full bg-mist-200 text-sm font-medium text-on-surface-muted ring-2 ring-white"
         >
             +5
         </div>

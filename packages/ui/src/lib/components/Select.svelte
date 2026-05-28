@@ -385,7 +385,7 @@
     {/if}
 
     {#if error}
-        <p class="animate-in slide-in-from-top-1 fade-in mt-1.5 text-sm text-danger-600">
+        <p class="animate-in slide-in-from-top-1 fade-in mt-1.5 text-sm text-danger-soft-text">
             {error}
         </p>
     {:else if hint}

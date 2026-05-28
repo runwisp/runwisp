@@ -389,7 +389,7 @@
     >
         <div class="flex items-center gap-3">
             {#if isStreaming}
-                <div class="flex items-center gap-1.5 text-aurora-400">
+                <div class="flex items-center gap-1.5 text-info">
                     <div class="h-1.5 w-1.5 animate-pulse rounded-full bg-aurora-400"></div>
                     Streaming
                 </div>
@@ -406,7 +406,7 @@
                 <span>{formatBytes(cache.totalBytes)}</span>
             {/if}
             {#if isAutoScroll}
-                <span class="text-aurora-500">Auto-scroll</span>
+                <span class="text-info">Auto-scroll</span>
             {/if}
         </div>
     </div>

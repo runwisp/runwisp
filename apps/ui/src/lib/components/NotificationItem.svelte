@@ -42,11 +42,11 @@
     let dotClass = $derived.by(() => {
         switch (notification.severity) {
             case "error":
-                return "bg-danger-500";
+                return "bg-danger-surface";
             case "warn":
-                return "bg-warning-500";
+                return "bg-warning-surface";
             default:
-                return "bg-aurora-500";
+                return "bg-info";
         }
     });
 </script>
@@ -57,25 +57,25 @@
 
     <div class="min-w-0 flex-1 space-y-1">
         <div class="flex items-baseline justify-between gap-2">
-            <h3 class="truncate text-sm font-semibold text-mist-900 hover:text-wisp-700">
+            <h3 class="truncate text-sm font-semibold text-on-surface hover:text-primary-soft-text">
                 {notification.title || notification.kind}
             </h3>
-            <span class="shrink-0 text-2xs text-mist-400">{rhythm}</span>
+            <span class="shrink-0 text-2xs text-on-surface-faint">{rhythm}</span>
         </div>
 
         {#if !compact && notification.body}
-            <p class="line-clamp-2 text-xs text-mist-600">{notification.body}</p>
+            <p class="line-clamp-2 text-xs text-on-surface-muted">{notification.body}</p>
         {/if}
 
         {#if notification.run_id}
             <span
-                class="inline-flex items-center gap-1 rounded-md bg-wisp-50 px-1.5 py-0.5 font-mono text-2xs font-medium text-wisp-700"
+                class="inline-flex items-center gap-1 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-2xs font-medium text-primary-soft-text"
             >
                 View run #{formatShortId(notification.run_id)} <span aria-hidden="true">→</span>
             </span>
         {/if}
 
-        <div class="flex items-center justify-between gap-2 text-2xs text-mist-400">
+        <div class="flex items-center justify-between gap-2 text-2xs text-on-surface-faint">
             {#if notification.task_name}
                 <span class="truncate">{notification.task_name}</span>
             {:else}
@@ -84,7 +84,7 @@
             <NotificationSparkline
                 occurrences={notification.occurrences}
                 {now}
-                class="text-mist-500"
+                class="text-on-surface-muted"
             />
         </div>
     </div>
@@ -99,7 +99,7 @@
             : resolve(`/tasks/${encodeURIComponent(notification.task_name)}`)}
         {onclick}
         data-testid="notification-item"
-        class="flex gap-3 rounded-lg border border-mist-100 bg-surface-raised p-3 no-underline transition-colors hover:bg-mist-50"
+        class="flex gap-3 rounded-lg border border-outline-faint bg-surface-raised p-3 no-underline transition-colors hover:bg-surface-sunken"
         aria-label={notification.title || notification.kind}
     >
         {@render body()}
@@ -107,7 +107,7 @@
 {:else}
     <article
         data-testid="notification-item"
-        class="flex gap-3 rounded-lg border border-mist-100 bg-surface-raised p-3 transition-colors hover:bg-mist-50"
+        class="flex gap-3 rounded-lg border border-outline-faint bg-surface-raised p-3 transition-colors hover:bg-surface-sunken"
         aria-label={notification.title || notification.kind}
     >
         {@render body()}

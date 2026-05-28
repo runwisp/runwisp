@@ -5,7 +5,7 @@
     import type { Snippet } from "svelte";
     import type { Component } from "svelte";
     import { tick, onDestroy } from "svelte";
-    import { EllipsisVertical } from "@lucide/svelte";
+    import { EllipsisVertical, Check } from "@lucide/svelte";
     import { scale } from "svelte/transition";
     import { quintOut } from "svelte/easing";
     import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
@@ -18,6 +18,7 @@
         danger?: boolean;
         disabled?: boolean;
         divider?: boolean;
+        selected?: boolean;
         title?: string;
     }
 
@@ -26,10 +27,18 @@
         trigger?: Snippet;
         children?: Snippet;
         align?: "left" | "right";
+        triggerLabel?: string;
         class?: string;
     }
 
-    let { items = [], trigger, children, align = "right", class: className = "" }: Props = $props();
+    let {
+        items = [],
+        trigger,
+        children,
+        align = "right",
+        triggerLabel = "Options",
+        class: className = "",
+    }: Props = $props();
 
     let open = $state(false);
     let triggerEl = $state<HTMLElement | null>(null);
@@ -116,7 +125,8 @@
             toggle(!open);
         }}
         bind:this={triggerEl}
-        aria-label="Options"
+        aria-label={triggerLabel}
+        aria-expanded={open}
         class="rounded-lg p-2 text-on-surface-muted transition-colors hover:bg-surface-sunken hover:text-on-surface focus:ring-2 focus:ring-outline focus:outline-none active:bg-surface-sunken"
     >
         {#if trigger}
@@ -186,6 +196,9 @@
                                 <Icon size={16} class="opacity-70" />
                             {/if}
                             {item.label}
+                            {#if item.selected}
+                                <Check size={16} class="ml-auto text-primary" />
+                            {/if}
                         </button>
                     {/if}
                 {/each}

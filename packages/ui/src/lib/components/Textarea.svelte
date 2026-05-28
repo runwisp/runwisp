@@ -67,14 +67,14 @@
         ></textarea>
 
         {#if error}
-            <div class="pointer-events-none absolute top-3 right-3 text-danger-500">
+            <div class="pointer-events-none absolute top-3 right-3 text-danger-soft-text">
                 <CircleAlert size={18} />
             </div>
         {/if}
     </div>
 
     {#if error}
-        <p class="text-sm text-danger-600">{error}</p>
+        <p class="text-sm text-danger-soft-text">{error}</p>
     {:else if hint}
         <p class="text-sm text-on-surface-muted">{hint}</p>
     {/if}

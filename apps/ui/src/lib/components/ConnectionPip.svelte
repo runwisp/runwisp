@@ -16,22 +16,22 @@
         connected: {
             label: "Online",
             title: "Connected to the runner API",
-            container: "bg-success-soft text-success-soft-text border-success-200",
+            container: "bg-success-soft text-success-soft-text border-success-soft-border",
             dot: "bg-success-surface",
             ping: null,
         },
         connecting: {
             label: "Connecting",
             title: "Attempting to reach the runner API",
-            container: "bg-warning-soft text-warning-soft-text border-warning-200",
+            container: "bg-warning-soft text-warning-soft-text border-warning-soft-border",
             dot: "bg-warning-surface",
-            ping: "bg-warning-400",
+            ping: "bg-warning-surface",
         },
         disconnected: {
             label: "Offline",
             title: "Click to retry connecting to the runner API",
             container:
-                "bg-danger-soft text-danger-soft-text border-danger-200 hover:bg-danger-soft/80",
+                "bg-danger-soft text-danger-soft-text border-danger-soft-border hover:bg-danger-soft/80",
             dot: "bg-danger-surface",
             ping: null,
         },
