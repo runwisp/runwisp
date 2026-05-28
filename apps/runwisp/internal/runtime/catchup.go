@@ -77,7 +77,12 @@ func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.P
 			"policy", task.CatchUp,
 		)
 	} else {
-		slog.Info("Triggering missed run catch-up",
+		// DEBUG, not INFO: per-task catch-up detail is operator-visible via
+		// --log-level=debug, but at the default INFO level the startup banner
+		// already shows the total ("Triggered N catch-up runs for missed cron
+		// ticks") — flooding stderr with one INFO per task fragments the
+		// banner for no extra signal.
+		slog.Debug("Triggering missed run catch-up",
 			"task", task.Name,
 			"missed", missedCount,
 			"triggering", triggerCount,

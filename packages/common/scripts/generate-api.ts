@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import openapiTS, { astToString } from "openapi-typescript";
@@ -13,8 +19,15 @@ const appDir = join(rootDir, "../../apps/runwisp");
 const openapiSpec = join(appDir, "openapi.json");
 const outputFile = join(rootDir, "src/generated/api.ts");
 
+function specIsUsable(path: string): boolean {
+  if (!existsSync(path)) return false;
+  return statSync(path).size > 0;
+}
+
 // Generate the OpenAPI spec from the Go app if needed or when --fresh is set.
-if (!existsSync(openapiSpec) || process.argv.includes("--fresh")) {
+// Treat an empty file as missing — a prior failed run can leave a 0-byte file
+// behind, which would otherwise blow up at JSON.parse with "Unexpected EOF".
+if (!specIsUsable(openapiSpec) || process.argv.includes("--fresh")) {
   console.log("Generating OpenAPI spec from Go app...");
   execSync("bun run openapi", {
     cwd: appDir,
@@ -22,8 +35,8 @@ if (!existsSync(openapiSpec) || process.argv.includes("--fresh")) {
   });
 }
 
-if (!existsSync(openapiSpec)) {
-  console.error("OpenAPI spec not found at", openapiSpec);
+if (!specIsUsable(openapiSpec)) {
+  console.error("OpenAPI spec missing or empty at", openapiSpec);
   process.exit(1);
 }
 

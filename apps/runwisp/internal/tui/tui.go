@@ -12,8 +12,6 @@ import (
 	"strings"
 	"syscall"
 
-	"log/slog"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -93,26 +91,6 @@ const (
 	taskPad  = 36
 )
 
-// ConfigureLogger sets up slog for clean runtime output: info level, no timestamps.
-func ConfigureLogger() {
-	SetLogOutput(os.Stderr)
-}
-
-// SetLogOutput redirects slog's default logger to the given writer,
-// preserving our level/format settings (info level, no timestamps).
-func SetLogOutput(w io.Writer) {
-	handler := slog.NewTextHandler(w, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
-			if a.Key == slog.TimeKey {
-				return slog.Attr{}
-			}
-			return a
-		},
-	})
-	slog.SetDefault(slog.New(handler))
-}
-
 // PrintStartup renders the polished startup display to stderr.
 func PrintStartup(info uikit.StartupInfo) {
 	printStartupTo(os.Stderr, info)
@@ -131,10 +109,13 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	fmt.Fprintf(w, "    %s\n", dimStyle.Render(runtime.GOOS+"/"+runtime.GOARCH))
 	fmt.Fprintln(w)
 
+	// Database and log paths are deterministic suffixes of Data
+	// (<data>/runwisp.db and <data>/logs), so listing them as separate fields
+	// padded the banner with three lines for the same root directory. The
+	// banner shows the absolute Data dir once; the interactive Info tab still
+	// breaks it down for operators who want the full layout.
 	printDotField(w, "Config", info.ConfigPath)
 	printDotField(w, "Data", info.DataDir)
-	printDotField(w, "Database", info.DBPath)
-	printDotField(w, "Logs", info.LogDir)
 	if info.Fingerprint != "" {
 		printDotField(w, "Fingerprint", info.Fingerprint)
 	}
@@ -170,10 +151,13 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 		fmt.Fprintln(w)
 	}
 
+	for _, warn := range info.InitWarnings {
+		fmt.Fprintf(w, "  %s %s\n", yellowSt.Render("⚠"), warn)
+	}
 	for _, warn := range info.ScheduleWarnings {
 		fmt.Fprintf(w, "  %s %s\n", yellowSt.Render("⚠"), warn)
 	}
-	if len(info.ScheduleWarnings) > 0 {
+	if len(info.InitWarnings)+len(info.ScheduleWarnings) > 0 {
 		fmt.Fprintln(w)
 	}
 
@@ -189,10 +173,11 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 
 	if info.WebUIDisabled {
 		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Web UI disabled (no password in cloud-only mode)"))
-	} else if info.Port > 0 {
-		fmt.Fprintf(w, "  Listening on %s\n",
-			cyanBold.Render(fmt.Sprintf("http://localhost:%d", info.Port)),
-		)
+	} else if info.ListenURL != "" {
+		fmt.Fprintf(w, "  Listening on %s\n", cyanBold.Render(info.ListenURL))
+	}
+	if info.Headless {
+		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Press Ctrl+C to stop."))
 	}
 
 	fmt.Fprintln(w)

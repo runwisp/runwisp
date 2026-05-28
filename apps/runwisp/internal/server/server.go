@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -43,7 +42,6 @@ type Server struct {
 	auth              *auth.Service
 	passwordEphemeral bool
 	trustedProxies    *xff.Options
-	logOutput         io.Writer
 	daemonLogBuffer   *DaemonLogBuffer
 	runService        *runService
 	stats             *statsProvider
@@ -76,7 +74,6 @@ type Options struct {
 	JWTSecret         string            // JWT signing secret (derived in-memory)
 	DaemonInfo        *model.DaemonInfo // Static identity/config info for /api/info
 	DaemonLogBuffer   *DaemonLogBuffer  // Ring buffer for daemon log streaming (optional)
-	LogOutput         io.Writer         // Destination for HTTP request logs (default: os.Stderr)
 	MetricsEnabled    bool              // When false, /metrics is not mounted anywhere
 	MetricsListen     string            // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
 }
@@ -124,10 +121,6 @@ func New(opts Options) (*Server, error) {
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals
 	s.metrics.Start(5 * time.Second)
-	s.logOutput = opts.LogOutput
-	if s.logOutput == nil {
-		s.logOutput = os.Stderr
-	}
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)
 	if err := s.setupRoutes(); err != nil {

@@ -8,14 +8,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"log/slog"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runlog"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
@@ -56,18 +61,38 @@ echo "Create a runwisp.toml to define your own tasks — see https://docs.runwis
 }
 
 func runDaemon(mode daemonMode) error {
-	// Set up log routing before opening the database so GORM logs go to the
-	// right destination from the very first query.
-	var debugWriter *tui.DebugLogWriter
-	var logOutput io.Writer = os.Stderr
-	if !noTUI {
-		debugWriter = tui.NewDebugLogWriter()
-		logOutput = debugWriter
-	}
-
 	// Ring buffer for streaming daemon logs to remote TUI clients.
 	logBuffer := server.NewDaemonLogBuffer(1000)
-	logOutput = io.MultiWriter(logOutput, logBuffer)
+
+	// Set up log routing before opening the database so storage logs go to the
+	// right destination from the very first query. HTTP access logs flow
+	// through slog too (see internal/server/access_log.go), so the same
+	// destination is shared by every log line the daemon emits.
+	var debugWriter *tui.DebugLogWriter
+	if noTUI {
+		// Headless: slog → stderr (tee'd to the ring buffer for remote TUI
+		// streaming) with daemon-mode timestamps and TTY-aware color gating.
+		clilog.Configure(clilog.Options{
+			Level:      flags.LogLevel,
+			Format:     flags.LogFormat,
+			Output:     io.MultiWriter(os.Stderr, logBuffer),
+			DaemonMode: true,
+		})
+	} else {
+		// TUI host: route slog into the debug panel + ring buffer right away,
+		// at DEBUG, so every line (including HTTP access at DEBUG) is captured
+		// from the first query — even before the bubbletea program attaches.
+		// DebugLogWriter buffers up to 256 lines until SetProgram is called,
+		// then flushes them. The fancy startup banner still prints to stderr
+		// via tui.PrintStartup; this only redirects the slog stream.
+		debugWriter = tui.NewDebugLogWriter()
+		clilog.Configure(clilog.Options{
+			Level:   slog.LevelDebug,
+			Format:  clilog.FormatText,
+			Output:  io.MultiWriter(debugWriter, logBuffer),
+			TUIMode: true,
+		})
+	}
 
 	// Open database first — config values (fingerprint, jwt_secret) live there.
 	db, err := storage.New(flags.DBPath())
@@ -119,7 +144,6 @@ func runDaemon(mode daemonMode) error {
 		JWTSecret:         cfg.JWTSecret,
 		DaemonInfo:        daemonInfo,
 		DaemonLogBuffer:   logBuffer,
-		LogOutput:         logOutput,
 		MetricsEnabled:    cfg.Config.Daemon.MetricsEnabled,
 		MetricsListen:     cfg.Config.Daemon.MetricsListen,
 	})
@@ -129,11 +153,12 @@ func runDaemon(mode daemonMode) error {
 
 	startupInfo := uikit.StartupInfo{
 		Version:    version.Version,
-		ConfigPath: flags.CfgFile,
-		DataDir:    flags.DataDir,
+		ConfigPath: absPathOrFallback(flags.CfgFile),
+		DataDir:    absPathOrFallback(flags.DataDir),
 		DBPath:     flags.DBPath(),
 		LogDir:     flags.LogDir(),
 		Port:       flags.Port,
+		ListenURL:  daemonListenURL(cfg),
 
 		Fingerprint:    cfg.Fingerprint,
 		UsingDemo:      cfg.UsingDemo,
@@ -146,8 +171,10 @@ func runDaemon(mode daemonMode) error {
 		Password:          cfg.Password,
 
 		CloudEnabled: cfg.CloudConfig.Enabled,
+		Headless:     noTUI,
 
 		ScheduleWarnings: svc.ScheduleResult.Warnings,
+		InitWarnings:     svc.InitWarnings,
 		CrashedRuns:      svc.CrashedRuns,
 		PendingRuns:      svc.PendingSummary,
 		CatchUpTriggered: svc.CatchUpResult.Triggered,
@@ -172,13 +199,124 @@ func runDaemon(mode daemonMode) error {
 		}
 	}()
 
-	tui.PrintStartup(startupInfo)
+	// The fancy multi-section banner is for interactive terminals. Piped into
+	// Docker logs / journald (non-TTY) or under --log-format=json it would be
+	// escape-code noise, so emit the same essential facts as plain slog lines.
+	if clilog.FancyBanner(flags.LogFormat) {
+		tui.PrintStartup(startupInfo)
+	} else {
+		logStartupSummary(startupInfo)
+	}
 
+	// Headless: subscribe runlog AFTER the banner is on screen, then signal
+	// readiness, then block on signals. Subscribing later matters because
+	// catch-up / service-instance auto-starts during initDaemonServices fire
+	// events asynchronously; an earlier subscribe would race the banner print
+	// and intersperse `run started` lines through the middle of it. Their
+	// existence is already visible in the banner ("Triggered N catch-up
+	// runs", "service xN"). The TUI path narrates runs visually and so
+	// skips this subscription.
 	if noTUI {
+		defer runlog.Subscribe(svc.EventBus)()
+		emitReadiness(startupInfo.ListenURL)
 		return runHeadless(cancelCloud, cloudWG, svc, srv)
 	}
 
-	return runWithTUI(srv, svc, startupInfo, debugWriter, cancelCloud, cloudWG)
+	return runWithTUI(srv, svc, startupInfo, debugWriter, logBuffer, cancelCloud, cloudWG)
+}
+
+// logStartupSummary emits the banner's essential facts as plain slog lines for
+// non-TTY / JSON output, so a headless operator still sees version, paths, task
+// count, and any startup warnings without ANSI escapes in the log stream. The
+// listen URL is reported separately by emitReadiness once the daemon is up.
+func logStartupSummary(info uikit.StartupInfo) {
+	slog.Info("RunWisp starting",
+		"version", info.Version,
+		"config", info.ConfigPath,
+		"data_dir", info.DataDir,
+		"db", info.DBPath,
+		"log_dir", info.LogDir,
+		"tasks", len(info.Tasks),
+	)
+	if info.Fingerprint != "" {
+		slog.Info("instance fingerprint", "fingerprint", info.Fingerprint)
+	}
+	if info.Timezone != "" {
+		slog.Info("scheduler timezone", "timezone", info.Timezone, "source", info.TimezoneSource)
+	}
+	if info.UsingDemo {
+		slog.Warn("no runwisp.toml found — running built-in demo task; create runwisp.toml to define your own tasks")
+	}
+	if info.CrashedRuns > 0 {
+		slog.Warn("marked crashed runs from previous session", "count", info.CrashedRuns)
+	}
+	if pr := info.PendingRuns; pr.Total > 0 {
+		slog.Info("recovered pending runs",
+			"resumed", pr.Resumed, "requeued", pr.Queued,
+			"skipped", pr.Skipped, "failed", pr.Failed)
+	}
+	if info.CatchUpTriggered > 0 {
+		slog.Info("triggered catch-up runs for missed cron ticks", "count", info.CatchUpTriggered)
+	}
+	for _, w := range info.InitWarnings {
+		slog.Warn("init warning", "detail", w)
+	}
+	for _, w := range info.ScheduleWarnings {
+		slog.Warn("schedule warning", "detail", w)
+	}
+	if info.WebUIDisabled {
+		slog.Info("web UI disabled (no password in cloud-only mode)")
+	}
+}
+
+// absPathOrFallback resolves p to an absolute path, falling back to the
+// original value if resolution fails (e.g. unreadable CWD). Refusing to
+// boot over a cosmetic resolution failure would be the wrong trade.
+func absPathOrFallback(p string) string {
+	if p == "" {
+		return p
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
+}
+
+// daemonListenURL returns the operator-reachable base URL of the Web UI:
+// [daemon] external_url when configured, else http://<bind-host>:<port>.
+// Wildcard binds are mapped to localhost because 0.0.0.0/:: are not themselves
+// connectable addresses.
+func daemonListenURL(cfg *daemonConfig) string {
+	if u := cfg.Config.Daemon.ExternalURL; u != "" {
+		return u
+	}
+	host := flags.Host
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "localhost"
+	}
+	return fmt.Sprintf("http://%s:%d", host, flags.Port)
+}
+
+// emitReadiness waits for the daemon's local API to answer, then logs an
+// accurate readiness line. Headless operators (Docker / systemd / JSON
+// pipelines) rely on this as the "daemon is up" signal in the absence of a
+// banner cue. When the fancy TTY banner is shown it already prints
+// "Listening on <url>" — emitting an extra slog line on top would duplicate
+// the message and break the clean visual hand-off from banner → run events.
+func emitReadiness(listenURL string) {
+	client := apiclient.NewUnix(localAPISocketPath())
+	if err := pollHealth(client, 3*time.Second); err != nil {
+		slog.Warn("health check did not pass during startup", "err", err)
+	}
+	if clilog.FancyBanner(flags.LogFormat) {
+		return
+	}
+	if listenURL == "" {
+		slog.Info("ready")
+		return
+	}
+	slog.Info("ready, listening", "url", listenURL)
 }
 
 // logSecurityWarnings emits log warnings for security-sensitive configurations.
