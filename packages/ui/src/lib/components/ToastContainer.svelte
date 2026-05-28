@@ -26,13 +26,13 @@
     function getColorClasses(type: Toast["type"]) {
         switch (type) {
             case "success":
-                return "border-success-200 text-success-700";
+                return "border-success-soft-border text-success-soft-text";
             case "error":
-                return "border-danger-200 text-danger-700";
+                return "border-danger-soft-border text-danger-soft-text";
             case "warning":
-                return "border-warning-200 text-warning-700";
+                return "border-warning-soft-border text-warning-soft-text";
             case "info":
-                return "border-wisp-200 text-wisp-700";
+                return "border-primary-soft-border text-primary-soft-text";
         }
     }
 

@@ -60,7 +60,7 @@
 </Story>
 
 <Story name="In Card Context" asChild>
-    <div class="max-w-lg rounded-xl border border-mist-200 bg-white p-6">
+    <div class="max-w-lg rounded-xl border border-outline bg-white p-6">
         <EmptyState
             icon={Calendar}
             title="No upcoming executions"

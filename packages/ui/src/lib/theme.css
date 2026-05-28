@@ -201,6 +201,12 @@
     --color-on-info: var(--rw-on-info);
     --color-info-soft: var(--rw-info-soft);
     --color-info-soft-text: var(--rw-info-soft-text);
+    /* Soft callout borders */
+    --color-primary-soft-border: var(--rw-primary-soft-border);
+    --color-danger-soft-border: var(--rw-danger-soft-border);
+    --color-success-soft-border: var(--rw-success-soft-border);
+    --color-warning-soft-border: var(--rw-warning-soft-border);
+    --color-info-soft-border: var(--rw-info-soft-border);
 
     /* Transition durations */
     --duration-fast: 100ms;

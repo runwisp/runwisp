@@ -69,11 +69,11 @@
 />
 
 <Story name="In Context" asChild>
-    <div class="max-w-md rounded-xl border border-mist-200 bg-white p-4">
+    <div class="max-w-md rounded-xl border border-outline bg-white p-4">
         <div class="flex items-center justify-between">
             <div>
-                <h3 class="font-semibold text-mist-900">backup-database</h3>
-                <p class="text-sm text-mist-500">Daily at 2:00 AM</p>
+                <h3 class="font-semibold text-on-surface">backup-database</h3>
+                <p class="text-sm text-on-surface-muted">Daily at 2:00 AM</p>
             </div>
             <Dropdown items={taskActions} />
         </div>

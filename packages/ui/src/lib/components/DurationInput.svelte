@@ -147,7 +147,7 @@
 
         {#if error}
             <div
-                class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-danger-500"
+                class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-danger-soft-text"
             >
                 <CircleAlert size={18} />
             </div>
@@ -161,7 +161,9 @@
             {parsedHuman}
         </p>
     {:else if error}
-        <p class="animate-in slide-in-from-top-1 fade-in text-sm text-danger-600 duration-200">
+        <p
+            class="animate-in slide-in-from-top-1 fade-in text-sm text-danger-soft-text duration-200"
+        >
             {error}
         </p>
     {:else if hint}

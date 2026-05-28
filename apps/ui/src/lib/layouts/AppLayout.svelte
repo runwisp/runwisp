@@ -10,6 +10,7 @@
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import ConnectionPip from "$lib/components/ConnectionPip.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
+    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import { systemStore } from "$lib/stores/system.svelte";
 
     let {
@@ -78,7 +79,7 @@
 <svelte:window onkeydown={handleKey} />
 
 <div
-    class="flex h-screen w-full bg-mist-50 font-sans text-mist-900 selection:bg-wisp-100 selection:text-wisp-900"
+    class="flex h-screen w-full bg-surface-sunken font-sans text-on-surface selection:bg-primary-soft selection:text-primary-soft-text"
 >
     {#if sidebarOpen}
         <button
@@ -93,24 +94,24 @@
     <aside
         id="app-sidebar"
         aria-label="Primary"
-        class="duration-normal fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-mist-200 bg-surface-raised shadow-sm transition-transform ease-out md:static md:translate-x-0 {sidebarOpen
+        class="duration-normal fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-outline bg-surface-raised shadow-sm transition-transform ease-out md:static md:translate-x-0 {sidebarOpen
             ? 'translate-x-0'
             : '-translate-x-full'}"
     >
         <!-- Brand -->
         <div
-            class="flex h-16 items-center gap-3 border-b border-mist-100 px-5 transition-all hover:bg-mist-50/50"
+            class="flex h-16 items-center gap-3 border-b border-outline-faint px-5 transition-all hover:bg-surface-sunken/50"
         >
             <div class="flex h-8 w-8 items-center justify-center rounded-lg">
                 <Logo size="lg" />
             </div>
             <div class="flex flex-1 flex-col leading-none">
-                <span class="text-base font-bold tracking-tight text-mist-900">RunWisp</span>
+                <span class="text-base font-bold tracking-tight text-on-surface">RunWisp</span>
             </div>
             <button
                 type="button"
                 aria-label="Close navigation"
-                class="rounded-md p-1 text-mist-500 hover:bg-mist-100 hover:text-mist-900 md:hidden"
+                class="rounded-md p-1 text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface md:hidden"
                 onclick={closeDrawer}
             >
                 <X size={18} />
@@ -125,14 +126,14 @@
                     href={resolve(urls.overview)}
                     class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
                     'overview'
-                        ? 'bg-wisp-50 text-wisp-700 shadow-sm shadow-wisp-500/5'
-                        : 'text-mist-600 hover:bg-mist-50 hover:text-mist-900'}"
+                        ? 'bg-primary-soft text-primary-soft-text shadow-sm shadow-wisp-500/5'
+                        : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}"
                 >
                     <Activity
                         size={18}
                         class={activePage === "overview"
-                            ? "text-wisp-600"
-                            : "text-mist-400 transition-colors group-hover:text-mist-600"}
+                            ? "text-primary"
+                            : "text-on-surface-faint transition-colors group-hover:text-on-surface-muted"}
                     />
                     Overview
                 </a>
@@ -140,14 +141,14 @@
                     href={resolve(urls.runs)}
                     class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
                     'runs'
-                        ? 'bg-wisp-50 text-wisp-700 shadow-sm shadow-wisp-500/5'
-                        : 'text-mist-600 hover:bg-mist-50 hover:text-mist-900'}"
+                        ? 'bg-primary-soft text-primary-soft-text shadow-sm shadow-wisp-500/5'
+                        : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}"
                 >
                     <History
                         size={18}
                         class={activePage === "runs"
-                            ? "text-wisp-600"
-                            : "text-mist-400 transition-colors group-hover:text-mist-600"}
+                            ? "text-primary"
+                            : "text-on-surface-faint transition-colors group-hover:text-on-surface-muted"}
                     />
                     All Runs
                 </a>
@@ -156,7 +157,7 @@
             {#if showGroupHeaders}
                 {#each taskGroups as group (group.name)}
                     <div
-                        class="mt-4 mb-2 px-3 text-2xs font-bold tracking-wider text-mist-400 uppercase first:mt-0"
+                        class="mt-4 mb-2 px-3 text-2xs font-bold tracking-wider text-on-surface-faint uppercase first:mt-0"
                     >
                         {group.name}
                     </div>
@@ -167,14 +168,14 @@
                                 href={resolve(task.href || "#")}
                                 class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
                                 task.id
-                                    ? 'bg-wisp-50 text-wisp-700 shadow-sm shadow-wisp-500/5'
-                                    : 'text-mist-600 hover:bg-mist-50 hover:text-mist-900'}"
+                                    ? 'bg-primary-soft text-primary-soft-text shadow-sm shadow-wisp-500/5'
+                                    : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}"
                             >
                                 <TaskIcon
                                     size={18}
                                     class={activePage === task.id
-                                        ? "text-wisp-600"
-                                        : "text-mist-400 transition-colors group-hover:text-mist-600"}
+                                        ? "text-primary"
+                                        : "text-on-surface-faint transition-colors group-hover:text-on-surface-muted"}
                                 />
                                 {task.name}
                             </a>
@@ -182,7 +183,9 @@
                     </nav>
                 {/each}
             {:else}
-                <div class="mb-2 px-3 text-2xs font-bold tracking-wider text-mist-400 uppercase">
+                <div
+                    class="mb-2 px-3 text-2xs font-bold tracking-wider text-on-surface-faint uppercase"
+                >
                     Tasks
                 </div>
                 <nav class="mb-8 space-y-0.5">
@@ -192,14 +195,14 @@
                             href={resolve(task.href || "#")}
                             class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
                             task.id
-                                ? 'bg-wisp-50 text-wisp-700 shadow-sm shadow-wisp-500/5'
-                                : 'text-mist-600 hover:bg-mist-50 hover:text-mist-900'}"
+                                ? 'bg-primary-soft text-primary-soft-text shadow-sm shadow-wisp-500/5'
+                                : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}"
                         >
                             <TaskIcon
                                 size={18}
                                 class={activePage === task.id
-                                    ? "text-wisp-600"
-                                    : "text-mist-400 transition-colors group-hover:text-mist-600"}
+                                    ? "text-primary"
+                                    : "text-on-surface-faint transition-colors group-hover:text-on-surface-muted"}
                             />
                             {task.name}
                         </a>
@@ -216,7 +219,7 @@
     <main class="flex flex-1 flex-col overflow-hidden">
         <!-- Topbar -->
         <header
-            class="flex h-16 items-center justify-between border-b border-mist-200 bg-surface-raised px-6 shadow-sm"
+            class="flex h-16 items-center justify-between border-b border-outline bg-surface-raised px-6 shadow-sm"
         >
             <!-- Breadcrumb / Title -->
             <div class="flex items-center gap-3">
@@ -225,33 +228,35 @@
                     aria-label="Open navigation"
                     aria-expanded={sidebarOpen}
                     aria-controls="app-sidebar"
-                    class="-ml-2 rounded-md p-2 text-mist-600 hover:bg-mist-100 hover:text-mist-900 md:hidden"
+                    class="-ml-2 rounded-md p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface md:hidden"
                     onclick={openDrawer}
                 >
                     <Menu size={20} />
                 </button>
-                <span class="hidden text-mist-400 sm:inline">RunWisp</span>
-                <span class="hidden text-mist-300 sm:inline">/</span>
-                <span class="font-semibold text-mist-900 capitalize"
+                <span class="hidden text-on-surface-faint sm:inline">RunWisp</span>
+                <span class="hidden text-on-surface-faint sm:inline">/</span>
+                <span class="font-semibold text-on-surface capitalize"
                     >{activePage.replace("task_", "").replace(/_/g, " ")}</span
                 >
             </div>
             <div class="flex items-center gap-3">
                 {#if systemStore.timezone}
                     <span
-                        class="flex items-center gap-1.5 rounded-full border border-mist-200 bg-mist-50 px-2.5 py-1 text-xs font-medium text-mist-600"
+                        class="flex items-center gap-1.5 rounded-full border border-outline bg-surface-sunken px-2.5 py-1 text-xs font-medium text-on-surface-muted"
                         title={systemStore.timezoneSource === "system"
                             ? "Detected from the host system; pin [scheduler] timezone in runwisp.toml to make it explicit."
                             : "Set in runwisp.toml under [scheduler] timezone."}
                     >
-                        <Globe size={12} class="text-mist-400" />
+                        <Globe size={12} class="text-on-surface-faint" />
                         {systemStore.timezone}
                         {#if systemStore.timezoneSource}
-                            <span class="text-mist-400">({systemStore.timezoneSource})</span>
+                            <span class="text-on-surface-faint">({systemStore.timezoneSource})</span
+                            >
                         {/if}
                     </span>
                 {/if}
                 <ConnectionPip />
+                <ThemeToggle />
                 <NotificationBell />
             </div>
         </header>

@@ -88,7 +88,7 @@
     <!-- Live Feedback -->
     <div
         class="flex items-start gap-3 rounded-md border p-3 transition-colors duration-200
-        {isError ? 'border-danger-200 bg-danger-soft' : 'border-outline bg-surface-sunken'}"
+        {isError ? 'border-danger-soft-border bg-danger-soft' : 'border-outline bg-surface-sunken'}"
     >
         <Info size={18} class="mt-0.5 {isError ? 'text-danger-surface' : 'text-primary'}" />
         <div>

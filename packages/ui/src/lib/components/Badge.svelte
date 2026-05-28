@@ -35,28 +35,28 @@
 
     const variantClasses: Record<BadgeVariant, { solid: string; outline: string }> = {
         default: {
-            solid: "bg-mist-100 text-mist-700",
-            outline: "bg-transparent border border-mist-300 text-mist-700",
+            solid: "bg-surface-sunken text-on-surface-muted",
+            outline: "bg-transparent border border-outline-hover text-on-surface-muted",
         },
         primary: {
-            solid: "bg-wisp-100 text-wisp-700",
-            outline: "bg-transparent border border-wisp-300 text-wisp-700",
+            solid: "bg-primary-soft text-primary-soft-text",
+            outline: "bg-transparent border border-wisp-300 text-primary-soft-text",
         },
         success: {
-            solid: "bg-success-100 text-success-700",
-            outline: "bg-transparent border border-success-300 text-success-700",
+            solid: "bg-success-soft text-success-soft-text",
+            outline: "bg-transparent border border-success-300 text-success-soft-text",
         },
         warning: {
-            solid: "bg-warning-100 text-warning-700",
-            outline: "bg-transparent border border-warning-400 text-warning-700",
+            solid: "bg-warning-soft text-warning-soft-text",
+            outline: "bg-transparent border border-warning-400 text-warning-soft-text",
         },
         danger: {
-            solid: "bg-danger-100 text-danger-700",
-            outline: "bg-transparent border border-danger-300 text-danger-700",
+            solid: "bg-danger-soft text-danger-soft-text",
+            outline: "bg-transparent border border-danger-300 text-danger-soft-text",
         },
         info: {
-            solid: "bg-aurora-100 text-aurora-700",
-            outline: "bg-transparent border border-aurora-300 text-aurora-700",
+            solid: "bg-info-soft text-info-soft-text",
+            outline: "bg-transparent border border-aurora-300 text-info-soft-text",
         },
     };
 
@@ -68,20 +68,20 @@
 
     const dotColors: Record<BadgeVariant, string> = {
         default: "bg-mist-500",
-        primary: "bg-wisp-500",
-        success: "bg-success-500",
-        warning: "bg-warning-500",
-        danger: "bg-danger-500",
-        info: "bg-aurora-500",
+        primary: "bg-primary",
+        success: "bg-success-surface",
+        warning: "bg-warning-surface",
+        danger: "bg-danger-surface",
+        info: "bg-info",
     };
 
     const indicatorTextColors: Record<BadgeVariant, string> = {
-        default: "text-mist-500",
-        primary: "text-wisp-500",
-        success: "text-success-500",
-        warning: "text-warning-500",
-        danger: "text-danger-500",
-        info: "text-aurora-500",
+        default: "text-on-surface-muted",
+        primary: "text-primary",
+        success: "text-success-soft-text",
+        warning: "text-warning-soft-text",
+        danger: "text-danger-soft-text",
+        info: "text-info",
     };
 
     const spinnerSizeClasses: Record<BadgeSize, string> = {

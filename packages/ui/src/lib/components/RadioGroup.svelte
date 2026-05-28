@@ -44,7 +44,9 @@
     </div>
 
     {#if error}
-        <p class="animate-in slide-in-from-top-1 fade-in text-sm text-danger-600 duration-200">
+        <p
+            class="animate-in slide-in-from-top-1 fade-in text-sm text-danger-soft-text duration-200"
+        >
             {error}
         </p>
     {:else if hint}

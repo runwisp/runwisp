@@ -30,7 +30,7 @@
 </script>
 
 <div
-    class="flex flex-col items-center justify-center gap-5 rounded-xl border border-danger-200 bg-danger-50/40 px-6 py-12 text-center"
+    class="flex flex-col items-center justify-center gap-5 rounded-xl border border-danger-soft-border bg-danger-soft/40 px-6 py-12 text-center"
     role="alert"
     aria-live="polite"
 >

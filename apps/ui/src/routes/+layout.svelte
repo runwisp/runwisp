@@ -96,11 +96,11 @@
         {@render children()}
     </AppLayout>
 {:else if !hydrated || !authStore.current.loaded}
-    <div class="flex h-screen items-center justify-center bg-mist-50">
+    <div class="flex h-screen items-center justify-center bg-surface-sunken">
         <div
             class="border-primary-600 h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
         ></div>
     </div>
 {:else}
-    <div class="h-screen bg-mist-50"></div>
+    <div class="h-screen bg-surface-sunken"></div>
 {/if}

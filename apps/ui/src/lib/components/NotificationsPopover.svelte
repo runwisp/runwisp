@@ -31,7 +31,7 @@
                     {#if notificationStore.unread > 0}
                         <button
                             type="button"
-                            class="text-wisp-700 hover:text-wisp-800"
+                            class="text-primary-soft-text hover:text-primary-soft-text"
                             onclick={() => void markAllRead()}>Mark all read</button
                         >
                     {/if}

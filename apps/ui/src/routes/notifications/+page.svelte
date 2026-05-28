@@ -26,17 +26,18 @@
 <div class="mx-auto max-w-3xl space-y-4">
     <header class="flex items-center justify-between">
         <div>
-            <h1 class="text-2xl font-bold text-mist-900">Notifications</h1>
-            <p class="text-sm text-mist-500">
+            <h1 class="text-2xl font-bold text-on-surface">Notifications</h1>
+            <p class="text-sm text-on-surface-muted">
                 Recent notifications across all tasks
-                {#if unread > 0}· <span class="font-medium text-wisp-700">{unread} unread</span
+                {#if unread > 0}· <span class="font-medium text-primary-soft-text"
+                        >{unread} unread</span
                     >{/if}
             </p>
         </div>
         {#if unread > 0}
             <button
                 type="button"
-                class="rounded-md bg-wisp-50 px-3 py-1.5 text-sm font-medium text-wisp-700 hover:bg-wisp-100"
+                class="rounded-md bg-primary-soft px-3 py-1.5 text-sm font-medium text-primary-soft-text hover:bg-primary-soft"
                 onclick={() => void markAllRead()}>Mark all read</button
             >
         {/if}
@@ -61,7 +62,7 @@
             <div class="flex justify-center pt-4">
                 <button
                     type="button"
-                    class="rounded-md border border-mist-200 bg-surface-raised px-4 py-1.5 text-sm font-medium text-mist-700 hover:bg-mist-50"
+                    class="rounded-md border border-outline bg-surface-raised px-4 py-1.5 text-sm font-medium text-on-surface-muted hover:bg-surface-sunken"
                     onclick={() => void loadMore()}>Load more</button
                 >
             </div>

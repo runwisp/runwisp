@@ -31,7 +31,7 @@
 <div class="relative">
     <button
         type="button"
-        class="relative flex h-9 w-9 items-center justify-center rounded-lg text-mist-500 transition-colors hover:bg-mist-100 hover:text-mist-900"
+        class="relative flex h-9 w-9 items-center justify-center rounded-lg text-on-surface-muted transition-colors hover:bg-surface-sunken hover:text-on-surface"
         aria-label="Notifications"
         aria-expanded={open}
         onclick={toggle}
@@ -40,8 +40,8 @@
         {#if unread > 0}
             <span
                 class="absolute -top-0.5 -right-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-2xs font-bold text-white {hasError
-                    ? 'bg-danger-500'
-                    : 'bg-wisp-600'}"
+                    ? 'bg-danger-surface'
+                    : 'bg-primary'}"
                 aria-label={`${unread.toString()} unread notifications`}
             >
                 {unread > 99 ? "99+" : unread}

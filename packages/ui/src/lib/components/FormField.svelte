@@ -32,7 +32,7 @@
         <label for={generatedId} class="block text-sm font-medium text-on-surface-muted">
             {label}
             {#if required}
-                <span class="text-danger-500">*</span>
+                <span class="text-danger-soft-text">*</span>
             {/if}
         </label>
     {/if}
@@ -44,7 +44,9 @@
     {@render children()}
 
     {#if error}
-        <p class="animate-in slide-in-from-top-1 fade-in text-sm text-danger-600 duration-200">
+        <p
+            class="animate-in slide-in-from-top-1 fade-in text-sm text-danger-soft-text duration-200"
+        >
             {error}
         </p>
     {:else if hint}

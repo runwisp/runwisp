@@ -90,7 +90,7 @@
 >
     <div class="flex flex-col items-center gap-4">
         <div
-            class="flex h-16 w-16 items-center justify-center rounded-2xl bg-wisp-50 ring-1 ring-mist-200"
+            class="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-soft ring-1 ring-outline"
         >
             <Logo size="lg" />
         </div>
