@@ -98,7 +98,7 @@
 {:else if !hydrated || !authStore.current.loaded}
     <div class="flex h-screen items-center justify-center bg-surface-sunken">
         <div
-            class="border-primary-600 h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
+            class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
         ></div>
     </div>
 {:else}
