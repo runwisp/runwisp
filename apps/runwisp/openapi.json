@@ -3015,12 +3015,13 @@
             }
           },
           {
-            "description": "Anchor line number; negative values count from end (default -1000)",
+            "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
             "explode": false,
             "in": "query",
             "name": "from",
             "schema": {
-              "description": "Anchor line number; negative values count from end (default -1000)",
+              "default": -1000,
+              "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
               "format": "int64",
               "type": "integer"
             }
@@ -3167,12 +3168,13 @@
             }
           },
           {
-            "description": "Anchor line number; negative values count from end (default -1000)",
+            "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
             "explode": false,
             "in": "query",
             "name": "from",
             "schema": {
-              "description": "Anchor line number; negative values count from end (default -1000)",
+              "default": -1000,
+              "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
               "format": "int64",
               "type": "integer"
             }

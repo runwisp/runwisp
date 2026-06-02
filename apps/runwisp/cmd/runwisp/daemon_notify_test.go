@@ -9,9 +9,29 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestServerHub(t *testing.T) {
+	// Regression: returning a nil *inapp.Hub straight through the
+	// server.NotificationHub interface yields a typed-nil — a non-nil
+	// interface wrapping a nil pointer — which slips past the server's
+	// `notifyHub == nil` guard and panics /api/notifications/stream when it
+	// calls Subscribe(). serverHub() must hand back a true-nil interface so the
+	// guard fires and the stream falls back to ping-only.
+	t.Run("nil hub yields nil interface", func(t *testing.T) {
+		var b notifyBundle
+		assert.Nil(t, b.serverHub(), "serverHub() leaked a typed-nil interface")
+	})
+	t.Run("real hub passes through", func(t *testing.T) {
+		b := notifyBundle{Hub: inapp.NewHub(32, 50)}
+		got := b.serverHub()
+		require.NotNil(t, got)
+		assert.Same(t, b.Hub, got)
+	})
+}
 
 func TestBackoffOverride(t *testing.T) {
 	t.Run("nil when zero", func(t *testing.T) {

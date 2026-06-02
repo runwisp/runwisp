@@ -97,6 +97,17 @@ dependencies, so as soon as it lands on your `PATH`, you're done.
 
 </Tabs>
 
+:::tip[Just want a look first?]
+`runwisp demo` boots a throwaway instance with a realistic config and
+**hundreds of historical runs already on disk** — backups, health
+checks, a couple of background services, and some manual jobs with
+nice long logs to scroll. It behaves exactly like a real `runwisp`:
+the daemon runs in the background and the TUI opens, with the Web UI
+live at `http://localhost:9477`. Everything lives in a temp directory
+that's deleted the moment the daemon stops, so it never touches your
+real config or data. Quit the TUI and pick **Shut Down** to clean up.
+:::
+
 ## 2. First run
 
 Pick a directory where you'd like your tasks to live — a project

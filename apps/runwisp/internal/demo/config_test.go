@@ -1,24 +1,21 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package config
+package demo
 
 import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-// TestDemoConfig pins the checked-in demo file (apps/runwisp/demo/runwisp.toml)
-// to a working schema and a meaningful surface area. The demo is used for
-// marketing screenshots; this test guards it against silent schema drift and
-// against accidental gut-outs that would make screenshots look threadbare.
+// TestDemoConfig pins the embedded demo file (internal/demo/runwisp.toml) to a
+// working schema and a meaningful surface area. The demo backs `runwisp demo`
+// and marketing screenshots; this test guards it against silent schema drift
+// and against accidental gut-outs that would make screenshots look threadbare.
 func TestDemoConfig(t *testing.T) {
-	// Test cwd is the package directory, so the path is relative from there.
-	cfg, err := Load("../../demo/runwisp.toml")
-	require.NoError(t, err, "demo/runwisp.toml must load cleanly under the current schema")
+	cfg := loadDemoConfig(t)
 
 	var services, cronTasks int
 	for i := range cfg.Tasks {

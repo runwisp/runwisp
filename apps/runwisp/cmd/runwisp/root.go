@@ -83,6 +83,7 @@ func init() {
 	rootCmd.AddCommand(passwordCmd)
 	rootCmd.AddCommand(openapiCmd)
 	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(demoCmd)
 }
 
 // resolveLogConfig folds the --log-level/--log-format flags together with their

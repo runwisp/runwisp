@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure the embedded UI dist directory exists so go vet
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+# Ensure the embedded UI dist directory is a real, non-empty directory so go vet
 # can resolve the //go:embed directive without a full UI build.
-if [[ ! -d internal/ui/dist ]]; then
-  mkdir -p internal/ui/dist
-  echo '<!-- placeholder for go:embed -->' > internal/ui/dist/index.html
-fi
+# shellcheck source=./ensure-ui-dist.sh
+source "${script_dir}/ensure-ui-dist.sh"
+ensure_real_ui_dist
 
 go vet ./...
 

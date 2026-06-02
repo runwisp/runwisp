@@ -221,7 +221,7 @@ test: test-runwisp test-ui-unit ## unit tests (go + vitest); see test-e2e for pl
 test-runwisp:
 	@rm -rf $(E2E_COVDIR) && mkdir -p $(E2E_COVDIR)
 	$(call step,go test apps/runwisp,\
-		cd apps/runwisp && RUNWISP_E2E_COVDIR=$(E2E_COVDIR) \
+		cd apps/runwisp && ./scripts/ensure-ui-dist.sh && RUNWISP_E2E_COVDIR=$(E2E_COVDIR) \
 		go test -covermode=atomic -coverpkg=./... -coverprofile=.coverage_unit.out ./...)
 	@cd apps/runwisp && \
 		go tool covdata textfmt -i $(E2E_COVDIR) -o .coverage_e2e.out 2>/dev/null; \

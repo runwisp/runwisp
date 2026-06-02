@@ -20,6 +20,10 @@ set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 app_dir=$(cd -- "${script_dir}/.." && pwd)
 
+# shellcheck source=./ensure-ui-dist.sh
+source "${script_dir}/ensure-ui-dist.sh"
+ensure_real_ui_dist
+
 duration_s="${1:-20}"
 period_s="${2:-1}"
 out_file="${3:-${script_dir}/mem-bench.json}"
