@@ -50,6 +50,7 @@ type RoutingExecutor struct {
 	availability     Availability
 	diskChecker      *DiskChecker
 	streamer         *StreamManager
+	clock            func() time.Time
 }
 
 type Options struct {
@@ -61,6 +62,11 @@ type Options struct {
 	Compose           Backend          // compose backend; nil when docker compose is unavailable
 	MinFreeDisk       int64            // minimum free disk space in bytes; 0 = disabled
 	OnRunUpdate       func(*model.Run) // called when run state changes (e.g. LogPath set)
+	// Clock is the wall-clock source for captured-output timestamps (system
+	// lines and the per-line timestamp index). nil defaults to time.Now;
+	// the demo seeder injects a backdated clock so historical runs carry
+	// their original date.
+	Clock func() time.Time
 }
 
 // New creates a routing executor with available backends.
@@ -102,6 +108,11 @@ func New(opts Options) Executor {
 		avail.Config = BackendStatus{Available: false, Reason: "no local tasks configured"}
 	}
 
+	clock := opts.Clock
+	if clock == nil {
+		clock = time.Now
+	}
+
 	return &RoutingExecutor{
 		logDir:       opts.LogDir,
 		onUpdate:     opts.OnRunUpdate,
@@ -110,6 +121,7 @@ func New(opts Options) Executor {
 		availability: avail,
 		diskChecker:  NewDiskChecker(opts.LogDir, opts.MinFreeDisk),
 		streamer:     NewStreamManager(opts.EventBus),
+		clock:        clock,
 	}
 }
 
@@ -285,7 +297,7 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		CancelFunc:  cancelFunc,
 		MinFreeDisk: r.diskChecker.minFreeDisk,
 		LogDir:      r.logDir,
-		Now:         time.Now,
+		Now:         r.clock,
 		OnDiskPressure: func(free, min int64, killed bool) {
 			if bus == nil {
 				return
