@@ -103,7 +103,7 @@ func TestShellBackend_TaskEnvOverlay(t *testing.T) {
 			"INLINE":                "from-task",
 			"RUNWISP_TEST_OVERRIDE": "from-task",
 		},
-		SecretEnv: map[string]string{
+		Secrets: map[string]string{
 			"SECRET": "from-file",
 		},
 	}
@@ -127,7 +127,7 @@ func TestShellBackend_TaskEnvOverlay(t *testing.T) {
 }
 
 // TestContainerBuildContainerConfigOverlay verifies that task.Env and
-// task.SecretEnv overlay on top of ContainerExecution.Env without invoking
+// task.Secrets overlay on top of ContainerExecution.Env without invoking
 // Docker. Direct unit test on buildContainerConfig.
 func TestContainerBuildContainerConfigOverlay(t *testing.T) {
 	b := &ContainerBackend{}
@@ -143,7 +143,7 @@ func TestContainerBuildContainerConfigOverlay(t *testing.T) {
 			"TASK_ONLY": "task",
 			"SHARED":    "from-task",
 		},
-		SecretEnv: map[string]string{
+		Secrets: map[string]string{
 			"SECRET": "from-file",
 		},
 	}

@@ -29,16 +29,18 @@ keep_for            = "30d"
 backoff_reset_after = "60s"
 ```
 
-| Key                   | Default      | What it does                                                                                                                                                             |
-| --------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `timeout`             | _(unset)_    | Default per-attempt wall-clock cap. Unset means no timeout. **Tasks only** — services don't have a per-attempt timeout.                                                  |
-| `log_max_size`        | `100MB`      | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                                                                             |
-| `log_on_full`         | `"drop_old"` | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                                                            |
-| `keep_runs`           | _(unset)_    | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected.                                                      |
-| `keep_for`            | _(unset)_    | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected.                                                                      |
-| `backoff_reset_after` | `"60s"`      | A service instance that stays up at least this long resets its restart counter. **Services only.** Per-service override supported.                                       |
-| `env`                 | _(none)_     | Inline KEY/VALUE map merged into every task and service. Task-level entries override on key collision. See [`[tasks.*]` Environment](/configuration/tasks/#environment). |
-| `env_file`            | _(none)_     | Path to a dotenv file whose KEY=VALUE pairs are merged into every task and service. Visibility rules match per-task `env_file`.                                          |
+| Key                   | Default      | What it does                                                                                                                                                                                |
+| --------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`             | _(unset)_    | Default per-attempt wall-clock cap. Unset means no timeout. **Tasks only** — services don't have a per-attempt timeout.                                                                     |
+| `log_max_size`        | `100MB`      | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                                                                                                |
+| `log_on_full`         | `"drop_old"` | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                                                                               |
+| `keep_runs`           | _(unset)_    | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected.                                                                         |
+| `keep_for`            | _(unset)_    | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected.                                                                                         |
+| `backoff_reset_after` | `"60s"`      | A service instance that stays up at least this long resets its restart counter. **Services only.** Per-service override supported.                                                          |
+| `env`                 | _(none)_     | Inline KEY/VALUE map merged into every task and service. Task-level entries override on key collision. See [`[tasks.*]` Environment & secrets](/configuration/tasks/#environment--secrets). |
+| `env_file`            | _(none)_     | Path to a dotenv file merged beneath `[defaults.env]`. Values are visible in the API/UI, like the rest of `env`.                                                                            |
+| `secrets`             | _(none)_     | Inline KEY/VALUE map merged into every task and service, but never shown in the API/UI. Task-level `secrets` override on key collision.                                                     |
+| `secrets_file`        | _(none)_     | Path to a dotenv file merged beneath `[defaults.secrets]`. Only the path is visible; keys and values never leave the daemon.                                                                |
 
 Some things you _can't_ default: `cron`, `on_overlap`, the `retry_*`
 keys, `max_concurrent`, `queue_max`, `graceful_stop`. Those are too tied

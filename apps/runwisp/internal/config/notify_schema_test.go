@@ -22,12 +22,12 @@ func TestDecode_NotifierAndRoutes(t *testing.T) {
 [[notifier]]
 id = "ops"
 type = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+webhook_url = "https://hooks.slack.test/ops"
 
 [[notifier]]
 id = "oncall"
 type = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
+bot_token = "tok"
 chat_id = "-1001"
 
 [[notification_route]]
@@ -45,7 +45,7 @@ on_overlap = "queue"
 run = "backup.sh"
 notify_on_failure = ["ops"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
@@ -80,7 +80,7 @@ max_concurrent = 1
 on_overlap  = "queue"
 run         = "exit 1"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
@@ -105,26 +105,35 @@ type = "telegram"
 bot_token = "t"
 chat_id = "-1"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate notifier id")
 }
 
-func TestValidate_RejectsConflictingSecretSources(t *testing.T) {
-	src := `
+// TestDecode_RejectsRemovedSecretSourceKeys pins the breaking change: the
+// per-key _env/_file triplets are gone; ${VAR} / ${file:...} substitution
+// replaced them. DisallowUnknownFields turns each removed key into a hard
+// decode error naming the key.
+func TestDecode_RejectsRemovedSecretSourceKeys(t *testing.T) {
+	for _, key := range []string{
+		"webhook_url_env", "webhook_url_file",
+		"bot_token_env", "bot_token_file",
+		"password_env", "password_file",
+	} {
+		t.Run(key, func(t *testing.T) {
+			src := `
 [[notifier]]
 id = "x"
 type = "slack"
-webhook_url = "https://example/x"
-webhook_url_env = "ENV"
+` + key + ` = "whatever"
 `
-	cfg, err := decode([]byte(src))
-	require.NoError(t, err)
-	err = Validate(cfg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only one of")
+			_, err := decode([]byte(src), "")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), key)
+		})
+	}
 }
 
 func TestValidate_RejectsReservedInappID(t *testing.T) {
@@ -134,7 +143,7 @@ id = "inapp"
 type = "slack"
 webhook_url = "https://example/x"
 `
-	_, err := decode([]byte(src))
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reserved")
 }
@@ -145,7 +154,7 @@ func TestValidate_RejectsRouteWithUnknownNotifier(t *testing.T) {
 match = { kind = ["run.failed"] }
 notify = ["does-not-exist"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -158,7 +167,7 @@ func TestValidate_RejectsBadKind(t *testing.T) {
 match = { kind = ["run.bogus"] }
 notify = ["inapp"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -192,10 +201,10 @@ func TestParseNotifyToken(t *testing.T) {
 func TestInlineToken_SlackChannelOverride(t *testing.T) {
 	src := schedulerTZHeader + `
 [[notifier]]
-id              = "slack"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_URL"
-channel         = "#default"
+id          = "slack"
+type        = "slack"
+webhook_url = "https://hooks.slack.test/T/B/Z"
+channel     = "#default"
 
 [tasks.audit]
 cron              = "0 4 * * *"
@@ -204,7 +213,7 @@ on_overlap        = "queue"
 run               = "audit.sh"
 notify_on_failure = ["slack:#ops"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
@@ -216,7 +225,7 @@ notify_on_failure = ["slack:#ops"]
 	assert.Equal(t, "slack:#ops", synth.ID)
 	assert.Equal(t, "slack", synth.Type)
 	assert.Equal(t, "#ops", synth.SlackChannel, "override replaces parent channel")
-	assert.Equal(t, parent.WebhookURLEnv, synth.WebhookURLEnv, "creds cloned from parent")
+	assert.Equal(t, parent.WebhookURL, synth.WebhookURL, "creds cloned from parent")
 
 	var taskRoute NotificationRoute
 	for _, r := range cfg.Notify.Routes {
@@ -231,10 +240,10 @@ notify_on_failure = ["slack:#ops"]
 func TestInlineToken_TelegramChatIDOverride(t *testing.T) {
 	src := schedulerTZHeader + `
 [[notifier]]
-id            = "tg"
-type          = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
-chat_id       = "-1001"
+id        = "tg"
+type      = "telegram"
+bot_token = "tok"
+chat_id   = "-1001"
 
 [tasks.deploy]
 cron              = "0 9 * * 1"
@@ -244,7 +253,7 @@ run               = "deploy.sh"
 notify_on_failure = ["tg:-2002"]
 notify_on_success = ["tg:-3003"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
@@ -262,7 +271,7 @@ func TestInlineToken_DedupAcrossTasks(t *testing.T) {
 [[notifier]]
 id              = "slack"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "https://example/hook"
 
 [tasks.a]
 cron              = "* * * * *"
@@ -285,7 +294,7 @@ on_overlap        = "queue"
 run               = "z"
 notify_on_failure = ["slack:#ops", "slack:#fyi"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
@@ -303,13 +312,13 @@ func TestInlineToken_InRouteNotifyList(t *testing.T) {
 [[notifier]]
 id              = "slack"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "https://example/hook"
 
 [[notification_route]]
 match  = { kind = ["run.failed"], task = "backup-*" }
 notify = ["slack:#ops"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
@@ -332,7 +341,7 @@ on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["slack:#ops"]
 `
-	_, err := decode([]byte(src))
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown parent notifier id")
 }
@@ -346,7 +355,7 @@ on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["inapp:foo"]
 `
-	_, err := decode([]byte(src))
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no target to override")
 }
@@ -356,7 +365,7 @@ func TestInlineToken_EmptyOverride(t *testing.T) {
 [[notifier]]
 id              = "slack"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "https://example/hook"
 
 [tasks.x]
 cron              = "* * * * *"
@@ -365,7 +374,7 @@ on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["slack:"]
 `
-	_, err := decode([]byte(src))
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "target override is empty")
 }
@@ -375,7 +384,7 @@ func TestInlineToken_SlackOverrideMustStartWithHashOrAt(t *testing.T) {
 [[notifier]]
 id              = "slack"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "https://example/hook"
 
 [tasks.x]
 cron              = "* * * * *"
@@ -384,7 +393,7 @@ on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["slack:ops"]
 `
-	_, err := decode([]byte(src))
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must start with # or @")
 }
@@ -394,9 +403,9 @@ func TestValidate_RejectsColonInNotifierID(t *testing.T) {
 [[notifier]]
 id              = "slack:foo"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "https://example/hook"
 `
-	_, err := decode([]byte(src))
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must not contain")
 }
@@ -418,7 +427,7 @@ on_overlap = "queue"
 run = "backup.sh"
 notify_on_failure = ["ops"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
@@ -443,7 +452,7 @@ max_concurrent = 1
 on_overlap = "queue"
 run = "backup.sh"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
@@ -458,7 +467,7 @@ func TestValidate_RejectsUnknownAppendNotifier(t *testing.T) {
 [notify]
 global_notifiers = ["does-not-exist"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -471,7 +480,7 @@ func TestDecode_NotifyDefaultTimeout(t *testing.T) {
 default_timeout = "5m"
 history_keep_for = "720h"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 	assert.NotZero(t, cfg.Notify.DefaultTimeout)
@@ -483,7 +492,7 @@ func TestDecode_NotifyDefaultTimeout_Invalid(t *testing.T) {
 [notify]
 default_timeout = "not-a-duration"
 `
-	_, err := decode([]byte(src))
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "default_timeout")
 }
@@ -493,7 +502,7 @@ func TestDecode_NotifyHistoryKeepFor_Invalid(t *testing.T) {
 [notify]
 history_keep_for = "bad-value"
 `
-	_, err := decode([]byte(src))
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "history_keep_for")
 }
@@ -505,7 +514,7 @@ id = "tg"
 type = "telegram"
 bot_token = "tok"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -519,7 +528,7 @@ id = "tg"
 type = "telegram"
 chat_id = "-1001"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -535,7 +544,7 @@ bot_token = "tok"
 chat_id = "-1001"
 parse_mode = "MarkdownV2"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -552,7 +561,7 @@ chat_id = "-1001"
 parse_mode = "MarkdownV2"
 template_path = "/etc/runwisp/tg.html"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 }
@@ -565,7 +574,7 @@ type = "slack"
 webhook_url = "https://example.com/hook"
 channel = "ops"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -580,7 +589,7 @@ type = "slack"
 webhook_url = "https://example.com/hook"
 channel = "@user"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 }
@@ -591,23 +600,24 @@ func TestValidate_UnknownNotifierType(t *testing.T) {
 id = "x"
 type = "pagerduty"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pagerduty")
 }
 
-func TestValidate_RequireOneSecretSource_FileOnly(t *testing.T) {
+func TestValidate_RejectsSlackMissingWebhookURL(t *testing.T) {
 	src := schedulerTZHeader + `
 [[notifier]]
 id = "s"
 type = "slack"
-webhook_url_file = "/run/secrets/webhook"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
-	require.NoError(t, Validate(cfg))
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "webhook_url is required")
 }
 
 func TestDesugarServiceNotify(t *testing.T) {
@@ -623,7 +633,7 @@ on_overlap = "queue"
 instances = 1
 notify_on_failure = ["ops"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 	// Service task must still produce a route
@@ -643,7 +653,7 @@ func TestValidate_RouteWithEmptySeverity(t *testing.T) {
 match = { kind = ["run.failed"] }
 notify = ["inapp"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 }
@@ -654,7 +664,7 @@ func TestValidate_RouteWithBadSeverity(t *testing.T) {
 match = { kind = ["run.failed"], severity = "unknown-sev" }
 notify = ["inapp"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -667,7 +677,7 @@ func TestValidate_RouteWithInvalidGlob(t *testing.T) {
 match = { kind = ["run.failed"], task = "[invalid" }
 notify = ["inapp"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -687,10 +697,10 @@ from         = "RunWisp <runwisp@example.com>"
 to           = ["ops@example.com", "Alerts Team <alerts@example.com>"]
 cc           = ["audit@example.com"]
 username     = "apikey"
-password_env = "RUNWISP_SMTP_PASSWORD"
+password     = "secret"
 tls          = "starttls"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 	require.Len(t, cfg.Notify.Notifiers, 1)
@@ -712,7 +722,7 @@ port = 25
 from = "RunWisp <runwisp@example.com>"
 to   = ["ops@example.com"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg), "auth-less local relay must be accepted")
 }
@@ -725,7 +735,7 @@ type = "smtp"
 from = "runwisp@example.com"
 to   = ["ops@example.com"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -740,7 +750,7 @@ type = "smtp"
 host = "smtp.example.com"
 to   = ["ops@example.com"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -756,7 +766,7 @@ host = "smtp.example.com"
 from = "not-an-email"
 to   = ["ops@example.com"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -771,30 +781,11 @@ type = "smtp"
 host = "smtp.example.com"
 from = "runwisp@example.com"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "to is required")
-}
-
-func TestValidate_SMTP_ConflictingPasswordSources(t *testing.T) {
-	src := schedulerTZHeader + `
-[[notifier]]
-id           = "email-ops"
-type         = "smtp"
-host         = "smtp.example.com"
-from         = "runwisp@example.com"
-to           = ["ops@example.com"]
-username     = "u"
-password     = "inline"
-password_env = "PW"
-`
-	cfg, err := decode([]byte(src))
-	require.NoError(t, err)
-	err = Validate(cfg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only one of")
 }
 
 func TestValidate_SMTP_TLSNoneRejectedWithCreds(t *testing.T) {
@@ -809,7 +800,7 @@ username = "u"
 password = "p"
 tls      = "none"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -826,7 +817,7 @@ from = "runwisp@example.com"
 to   = ["ops@example.com"]
 tls  = "wat"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -842,7 +833,7 @@ host = "smtp.example.com"
 from = "runwisp@example.com"
 to   = ["not-an-email"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
@@ -859,11 +850,11 @@ from     = "runwisp@example.com"
 to       = ["ops@example.com"]
 username = "u"
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "username and a password source must be set together")
+	assert.Contains(t, err.Error(), "username and password must be set together")
 }
 
 func TestInlineToken_SMTPRecipientOverride(t *testing.T) {
@@ -875,7 +866,7 @@ host         = "smtp.example.com"
 from         = "RunWisp <runwisp@example.com>"
 to           = ["ops@example.com"]
 username     = "apikey"
-password_env = "RUNWISP_SMTP_PASSWORD"
+password     = "secret"
 
 [tasks.backup-db]
 cron              = "0 3 * * *"
@@ -884,7 +875,7 @@ on_overlap        = "queue"
 run               = "backup.sh"
 notify_on_failure = ["email-ops:alerts@example.com"]
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
@@ -909,7 +900,7 @@ host         = "smtp.example.com"
 from         = "runwisp@example.com"
 to           = ["ops@example.com"]
 username     = "u"
-password_env = "P"
+password     = "p"
 
 [tasks.x]
 cron              = "* * * * *"
@@ -918,7 +909,7 @@ on_overlap        = "queue"
 run               = "x"
 notify_on_failure = ["email-ops:bad@@@"]
 `
-	_, err := decode([]byte(src))
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a valid email")
 }
@@ -929,7 +920,7 @@ func TestValidate_RouteEmptyNotifyList(t *testing.T) {
 match = { kind = ["run.failed"] }
 notify = []
 `
-	cfg, err := decode([]byte(src))
+	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)

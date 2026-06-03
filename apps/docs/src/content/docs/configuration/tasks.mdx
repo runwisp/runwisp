@@ -142,47 +142,65 @@ trims more aggressively is the one you'll feel. See
 [Logs & retention](/concepts/logs/) for the full picture, including the
 `.prev` rotation lifecycle and the fixed one-hour cleanup cadence.
 
-## Environment
+## Environment & secrets
 
-| Key        | Default  | What it does                                                                                         |
-| ---------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `env`      | _(none)_ | Inline KEY/VALUE map overlaid on the task's process env. Visible in the API, UI, and CLI.            |
-| `env_file` | _(none)_ | Path to a dotenv file (`KEY=VALUE` per line). Path is visible, but its keys and values stay on disk. |
+| Key            | Default  | What it does                                                                                        |
+| -------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `env`          | _(none)_ | Inline KEY/VALUE map overlaid on the task's process env. **Visible** in the API, UI, and CLI.       |
+| `env_file`     | _(none)_ | Path to a dotenv file merged beneath `env`. Its values are **visible** too.                         |
+| `secrets`      | _(none)_ | Inline KEY/VALUE map, same mechanics as `env` — but its keys and values **never leave the daemon**. |
+| `secrets_file` | _(none)_ | Path to a dotenv file merged beneath `secrets`. Only the **path** is visible; contents are not.     |
 
-When the task starts, the values from `env` and `env_file` get merged on
-top of the daemon's own environment. On a key collision, later wins:
+The split is about **visibility**, not mechanics. Everything under
+`env` / `env_file` is treated as out in the open — it sits right next to
+`cron` and `run` in the dashboard, the TUI, and `GET /api/tasks`, so
+anyone logged into the daemon can read it. Everything under
+`secrets` / `secrets_file` reaches the spawned process exactly the same
+way, but the API and UI never show the keys or values — at most you'll
+see the `secrets_file` path, so you can tell where values come from.
+
+When the task starts, all four layers merge on top of the daemon's own
+environment. On a key collision, later wins:
 
 1. The daemon process's own environment.
-2. `[defaults] env_file`, then `[defaults.env]`.
-3. The task's `env_file`, then the task's `env`.
+2. `env_file`, then `env` — defaults first, then the task's own.
+3. `secrets_file`, then `secrets` — defaults first, then the task's own.
 
-An `env_file` path can be absolute or relative. Relative paths resolve
-against the directory `runwisp.toml` lives in — the same root the config
-loader uses for every other file lookup. The format is plain dotenv:
-`KEY=VALUE` per line, `#` starts a comment, blank lines are skipped, and
-there's no shell expansion or interpolation.
+So within each pair the file merges _beneath_ the inline map
+(docker-compose style: inline entries win), and secrets sit above plain
+env, so a secret always beats a same-named public value.
 
-**So why two knobs?** Anything in inline `env` is treated as out in the
-open — it sits right next to `cron` and `run` in the dashboard, the TUI,
-and `GET /api/tasks`. Anything that should _not_ be on display — API
-tokens, signing keys — belongs in `env_file`, whose contents never leave
-disk. The API will show you the _path_ so you can tell where a value
-came from, but never the keys or the values themselves.
+File paths can be absolute, `~/`-relative, or relative to the directory
+`runwisp.toml` lives in — the same resolution as every other file
+reference. The format is plain dotenv: `KEY=VALUE` per line, `#` starts
+a comment, blank lines are skipped, and the contents are read literally
+— no shell expansion, and no [`${...}` substitution](/configuration/substitution/)
+either.
 
 ```toml
 [tasks.backup]
-cron     = "0 3 * * *"
-run      = "/usr/local/bin/backup.sh"
-env_file = "/etc/runwisp/backup-secrets.env"
+cron         = "0 3 * * *"
+run          = "/usr/local/bin/backup.sh"
+env_file     = "backup.env"                       # visible config
+secrets_file = "/etc/runwisp/backup-secrets.env"  # invisible credentials
 
 [tasks.backup.env]
 BACKUP_BUCKET = "s3://prod-backups"
 DRY_RUN       = "0"
+
+[tasks.backup.secrets]
+RESTIC_PASSWORD = "${file:~/.config/runwisp/restic.pass}"
 ```
+
+That last line shows the other tool in the box:
+[`${...}` substitution](/configuration/substitution/) pulls a value from
+an env var or a file into any string at config load — including into
+inline `secrets`. Use whichever reads better; the visibility rule is
+decided by _which key_ the value lands in, not where it came from.
 
 It's all validated at config load, so a bad entry fails loudly up front:
 keys have to match `^[A-Za-z_][A-Za-z0-9_]*$`, values can't contain NUL
-bytes, no single value can top 32 KiB, and the inline + file entries for
+bytes, no single value can top 32 KiB, and the env + secrets entries for
 a task can't add up to more than 256.
 
 ## Compose-backed tasks

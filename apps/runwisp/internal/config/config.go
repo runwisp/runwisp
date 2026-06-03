@@ -30,7 +30,7 @@ func Load(path string) (*Config, error) {
 	if err := resolveComposePaths(cfg, baseDir); err != nil {
 		return nil, err
 	}
-	if err := resolveEnvFiles(cfg, baseDir); err != nil {
+	if err := resolveEnvLayers(cfg, baseDir); err != nil {
 		return nil, err
 	}
 	ApplyDefaults(cfg)
@@ -40,29 +40,43 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// resolveEnvFiles reads each env_file referenced by the config and stashes the
-// resulting KEY=VALUE map in the corresponding SecretEnv field. Relative paths
-// are resolved against baseDir (the runwisp.toml directory).
-func resolveEnvFiles(cfg *Config, baseDir string) error {
-	if cfg.Defaults.EnvFile != "" {
-		values, err := loadEnvFile(baseDir, cfg.Defaults.EnvFile)
-		if err != nil {
-			return fmt.Errorf("defaults: %w", err)
-		}
-		cfg.Defaults.SecretEnv = values
+// resolveEnvLayers reads each env_file / secrets_file referenced by the config
+// and merges the file's KEY=VALUE pairs beneath the corresponding inline map —
+// inline entries override file entries, docker-compose-style. Relative paths
+// are resolved against baseDir (the runwisp.toml directory). Dotenv file
+// contents are taken literally; ${...} substitution applies only to TOML.
+func resolveEnvLayers(cfg *Config, baseDir string) error {
+	var err error
+	if cfg.Defaults.Env, err = mergeEnvFileLayer(baseDir, cfg.Defaults.EnvFile, cfg.Defaults.Env, "defaults"); err != nil {
+		return err
+	}
+	if cfg.Defaults.Secrets, err = mergeEnvFileLayer(baseDir, cfg.Defaults.SecretsFile, cfg.Defaults.Secrets, "defaults"); err != nil {
+		return err
 	}
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
-		if task.EnvFile == "" {
-			continue
+		scope := fmt.Sprintf("task %q", task.Name)
+		if task.Env, err = mergeEnvFileLayer(baseDir, task.EnvFile, task.Env, scope); err != nil {
+			return err
 		}
-		values, err := loadEnvFile(baseDir, task.EnvFile)
-		if err != nil {
-			return fmt.Errorf("task %q: %w", task.Name, err)
+		if task.Secrets, err = mergeEnvFileLayer(baseDir, task.SecretsFile, task.Secrets, scope); err != nil {
+			return err
 		}
-		task.SecretEnv = values
 	}
 	return nil
+}
+
+// mergeEnvFileLayer loads a dotenv file (when set) and merges the inline map
+// over it. Returns the inline map untouched when no file is configured.
+func mergeEnvFileLayer(baseDir, file string, inline map[string]string, scope string) (map[string]string, error) {
+	if file == "" {
+		return inline, nil
+	}
+	values, err := loadEnvFile(baseDir, file)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", scope, err)
+	}
+	return mergeEnv(values, inline), nil
 }
 
 // resolveComposePaths absolutizes the compose file path on tasks/services that
@@ -117,15 +131,20 @@ func LoadRaw(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	return decode(data)
+	return decode(data, filepath.Dir(path))
 }
 
-func decode(data []byte) (*Config, error) {
+// decode parses TOML bytes into a Config. baseDir is the runwisp.toml
+// directory; ${file:...} substitutions resolve relative paths against it.
+func decode(data []byte, baseDir string) (*Config, error) {
 	var raw tomlConfig
 	dec := toml.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&raw); err != nil {
 		return nil, formatDecodeError(err)
+	}
+	if err := expandConfig(&raw, baseDir, os.LookupEnv); err != nil {
+		return nil, err
 	}
 
 	taskNames, err := collectTaskNames(&raw)
@@ -285,19 +304,20 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 // names: letters, digits, and underscores; not starting with a digit.
 var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// validateTaskEnv enforces shape and size limits on env. Inline env and
-// env_file-derived SecretEnv are validated together so the merged map can
-// safely be turned into KEY=VALUE strings without producing malformed entries.
+// validateTaskEnv enforces shape and size limits on env and secrets. Both maps
+// are validated with the same rules and counted against one combined cap so
+// the merged process env can safely be turned into KEY=VALUE strings without
+// producing malformed entries.
 func validateTaskEnv(task *model.Task) error {
 	scope := fmt.Sprintf("env for task %s", task.Name)
 	if err := validateEnvMap(scope, task.Env); err != nil {
 		return err
 	}
-	secretScope := fmt.Sprintf("env_file for task %s", task.Name)
-	if err := validateEnvMap(secretScope, task.SecretEnv); err != nil {
+	secretScope := fmt.Sprintf("secrets for task %s", task.Name)
+	if err := validateEnvMap(secretScope, task.Secrets); err != nil {
 		return err
 	}
-	if total := len(task.Env) + len(task.SecretEnv); total > EnvMaxEntries {
+	if total := len(task.Env) + len(task.Secrets); total > EnvMaxEntries {
 		return fmt.Errorf("invalid env for task %s: %d entries exceeds the cap of %d", task.Name, total, EnvMaxEntries)
 	}
 	return nil
@@ -600,7 +620,7 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 		task.LogOnFull = model.LogOverflowDropOld
 	}
 	task.Env = mergeEnv(d.Env, task.Env)
-	task.SecretEnv = mergeEnv(d.SecretEnv, task.SecretEnv)
+	task.Secrets = mergeEnv(d.Secrets, task.Secrets)
 }
 
 // mergeEnv returns a map containing every key in base then in overlay, with

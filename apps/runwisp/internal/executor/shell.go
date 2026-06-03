@@ -37,8 +37,8 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 
 	// Only set cmd.Env when the task asked for overlays — leaving it nil
 	// preserves Go's default of inheriting the daemon's env verbatim.
-	if len(task.Env) > 0 || len(task.SecretEnv) > 0 {
-		cmd.Env = buildProcessEnv(os.Environ(), task.Env, task.SecretEnv)
+	if len(task.Env) > 0 || len(task.Secrets) > 0 {
+		cmd.Env = buildProcessEnv(os.Environ(), task.Env, task.Secrets)
 	}
 
 	grace := task.GracefulStop

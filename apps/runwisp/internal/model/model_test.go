@@ -203,21 +203,24 @@ func TestTask_ResolvedExecutionDef_EmptyRun(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-// TestTaskJSON_HidesSecretEnv guards the invariant that env_file-derived
-// values never escape the daemon over JSON (API, UI, cloud). Inline env and
-// the env_file path remain visible because operators expect them in the UI.
-func TestTaskJSON_HidesSecretEnv(t *testing.T) {
+// TestTaskJSON_HidesSecrets guards the invariant that secrets / secrets_file
+// values never escape the daemon over JSON (API, UI, cloud). Inline env, the
+// env_file path, and the secrets_file path remain visible because operators
+// expect them in the UI.
+func TestTaskJSON_HidesSecrets(t *testing.T) {
 	task := Task{
-		Name:      "demo",
-		Env:       map[string]string{"VISIBLE": "ok"},
-		EnvFile:   "/etc/runwisp/secrets.env",
-		SecretEnv: map[string]string{"AWS_SECRET_KEY": "do-not-leak"},
+		Name:        "demo",
+		Env:         map[string]string{"VISIBLE": "ok"},
+		EnvFile:     "/etc/runwisp/env.env",
+		SecretsFile: "/etc/runwisp/secrets.env",
+		Secrets:     map[string]string{"AWS_SECRET_KEY": "do-not-leak"},
 	}
 	data, err := json.Marshal(&task)
 	require.NoError(t, err)
 	body := string(data)
 	assert.Contains(t, body, `"env":{"VISIBLE":"ok"}`)
-	assert.Contains(t, body, `"env_file":"/etc/runwisp/secrets.env"`)
+	assert.Contains(t, body, `"env_file":"/etc/runwisp/env.env"`)
+	assert.Contains(t, body, `"secrets_file":"/etc/runwisp/secrets.env"`)
 	assert.NotContains(t, body, "AWS_SECRET_KEY")
 	assert.NotContains(t, body, "do-not-leak")
 }

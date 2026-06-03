@@ -69,10 +69,11 @@ instances = 3                              # three identical worker instances
 ```
 
 Override sub-tables accept any subset of the `[services.*]` keys:
-`restart`, `env`, `env_file`, `notify_on_failure`, `notify_on_success`,
-`graceful_stop`, `keep_runs`, `keep_for`, `instances`, `timeout`,
-`description`, `log_max_size`, `log_on_full`, `api_trigger`,
-`on_overlap`, `restart_delay`, `restart_backoff`, `backoff_reset_after`.
+`restart`, `env`, `env_file`, `secrets`, `secrets_file`,
+`notify_on_failure`, `notify_on_success`, `graceful_stop`, `keep_runs`,
+`keep_for`, `instances`, `timeout`, `description`, `log_max_size`,
+`log_on_full`, `api_trigger`, `on_overlap`, `restart_delay`,
+`restart_backoff`, `backoff_reset_after`.
 
 A sub-table named the same as a reserved scalar key (`file`, `include`,
 `exclude`, `mode`, `group`, `project_name`, `profiles`, `env_file`,

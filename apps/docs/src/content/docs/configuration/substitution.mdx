@@ -1,0 +1,153 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: "${...} substitution"
+description: Pull values from environment variables or files into any string in runwisp.toml with ${VAR} and ${file:path}.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Any string value in `runwisp.toml` can pull its content from the
+daemon's environment or from a file on disk:
+
+```toml
+[tasks.backup]
+cron        = "${BACKUP_CRON}"          # from the daemon's environment
+description = "backs up ${REGION}"      # works mid-string too
+run         = "/usr/local/bin/backup.sh"
+
+[[notifier]]
+id          = "slack-ops"
+type        = "slack"
+webhook_url = "${file:secrets/slack.url}"   # from a file
+```
+
+This works on **every** string in the file — cron expressions, paths,
+env values, notifier credentials, compose blocks — with one deliberate
+exception covered below. It's how you keep credentials out of the TOML
+file without RunWisp needing a separate "secret source" key for each
+field.
+
+## `${VAR}` — environment variables
+
+`${VAR}` is replaced with the value of `VAR` from the **daemon's**
+environment — whatever was set in the shell, systemd unit, or container
+that started `runwisp daemon`.
+
+If the variable isn't set, the config fails to load, and the error names
+both the variable and where you used it:
+
+```text
+tasks.backup.cron: environment variable BACKUP_CRON is not set
+```
+
+A variable that's set but empty substitutes an empty string — only a
+genuinely _unset_ variable is an error. That's deliberate: a typo'd
+variable name should stop the daemon at boot, not silently schedule
+nothing.
+
+## `${file:path}` — file contents
+
+`${file:path}` is replaced with the contents of the file, with leading
+and trailing whitespace trimmed (so a trailing newline won't corrupt a
+token). An unreadable or missing file is a config-load error.
+
+Paths resolve the same way as every other file reference in
+`runwisp.toml`:
+
+- **Absolute** paths are used as-is.
+- **`~/...`** expands to your home directory.
+- **Relative** paths resolve against the directory `runwisp.toml` lives
+  in.
+
+This is the natural fit when a secrets manager (Vault agent, sops,
+Docker secrets at `/run/secrets/...`) drops the value on disk for you —
+just `chmod 600` the file.
+
+## When it runs
+
+Substitution happens **once, at config load**. The daemon never
+re-reads the environment or the files while it's running — that's the
+same [restart-only reload](/configuration/overview/) rule as the rest of
+the config. Change a variable or a file, restart the daemon.
+
+## The exception: `run`
+
+`run` (on tasks and services) is **never** substituted. Your shell
+already expands `${VAR}` at runtime, against the full process
+environment — including everything from `env`, `env_file`, `secrets`,
+and `secrets_file`:
+
+```toml
+[tasks.backup]
+run = "backup.sh --bucket ${BACKUP_BUCKET}"   # the shell expands this, not RunWisp
+
+[tasks.backup.env]
+BACKUP_BUCKET = "s3://prod-backups"
+```
+
+Two expansion passes over the same string would be a recipe for
+surprises, so RunWisp leaves `run` alone and lets the shell do its job.
+
+## What else stays literal
+
+- **Map keys** are never substituted — env var names, task names, and
+  compose service names stay exactly as written. Only values expand.
+- **Referenced files keep their own syntax.** A dotenv file named by
+  `env_file` / `secrets_file` and a compose YAML named by `compose_file`
+  are read literally — `${...}` inside them is not RunWisp's business.
+
+## Escaping
+
+Need a literal `${` in a config value? Double the dollar:
+
+```toml
+description = "template is $${VAR}"   # → template is ${VAR}
+```
+
+- `$${` produces a literal `${`.
+- A lone `$` (like `cost: $5`) passes through untouched — no escaping
+  needed.
+- An unterminated `${` (an opening brace with no closing `}`) is a
+  config-load error.
+
+## Worked example
+
+```toml
+[tasks.export]
+cron = "${EXPORT_CRON}"               # schedule decided by the deploy env
+run  = "/usr/local/bin/export"
+
+[tasks.export.secrets]
+API_TOKEN = "${file:secrets/export.token}"
+
+[[notifier]]
+id          = "slack-ops"
+type        = "slack"
+webhook_url = "${SLACK_OPS_WEBHOOK}"
+
+[[notifier]]
+id        = "tg-oncall"
+type      = "telegram"
+bot_token = "${file:~/.config/runwisp/tg.token}"
+chat_id   = "-1001234567890"
+```
+
+Start the daemon with `EXPORT_CRON` and `SLACK_OPS_WEBHOOK` set, keep
+the token files at `0600`, and the TOML file itself contains nothing
+worth stealing.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="[tasks.*] Environment"
+        href="/configuration/tasks/#environment--secrets"
+        description="env, env_file, secrets, secrets_file — and who gets to see what."
+    />
+    <LinkCard
+        title="Notifier credentials"
+        href="/notifications/model/#storing-the-secret"
+        description="Webhook URLs and bot tokens via ${...}."
+    />
+</CardGrid>

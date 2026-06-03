@@ -236,7 +236,7 @@
     const envEntries = $derived(
         task.env ? Object.entries(task.env).sort(([a], [b]) => a.localeCompare(b)) : [],
     );
-    const showEnvPanel = $derived(envEntries.length > 0 || !!task.env_file);
+    const showEnvPanel = $derived(envEntries.length > 0 || !!task.env_file || !!task.secrets_file);
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -338,7 +338,12 @@
                 {/if}
                 {#if task.env_file}
                     <p class="mt-2 font-mono text-xs text-on-surface-faint">
-                        Loaded from {task.env_file} (values not exposed)
+                        Includes values from {task.env_file}
+                    </p>
+                {/if}
+                {#if task.secrets_file}
+                    <p class="mt-2 font-mono text-xs text-on-surface-faint">
+                        Secrets from {task.secrets_file} (values not exposed)
                     </p>
                 {/if}
             </section>

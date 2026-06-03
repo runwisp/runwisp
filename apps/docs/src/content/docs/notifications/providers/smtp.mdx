@@ -17,39 +17,38 @@ Mailgun, Postmark, SendGrid, or your own Postfix on `127.0.0.1`.
 
 ```toml
 [[notifier]]
-id           = "email-ops"
-type         = "smtp"
-host         = "smtp.example.com"
-port         = 587
-from         = "RunWisp <runwisp@example.com>"
-to           = ["alerts@example.com"]
-username     = "apikey"
-password_env = "RUNWISP_SMTP_PASSWORD"
+id       = "email-ops"
+type     = "smtp"
+host     = "smtp.example.com"
+port     = 587
+from     = "RunWisp <runwisp@example.com>"
+to       = ["alerts@example.com"]
+username = "apikey"
+password = "${RUNWISP_SMTP_PASSWORD}"
 ```
 
 `id`, `type`, `host`, `from`, and at least one `to` are required.
-Credentials are optional — leave `username` and the password fields
-unset to talk to a local relay (Postfix listening on
-`127.0.0.1:25`, an internal MTA, etc.). When `username` is set,
-exactly one of `password`, `password_env`, `password_file` must
-also be set — [the secret rule](/notifications/model/#storing-the-secret).
+Credentials are optional — leave `username` and `password` unset to
+talk to a local relay (Postfix listening on `127.0.0.1:25`, an
+internal MTA, etc.). Set them together or not at all. Use
+[`${...}` substitution](/configuration/substitution/) to pull the
+password from an env var or a file —
+[storing the secret](/notifications/model/#storing-the-secret).
 
-| Key               | Required           | What it does                                                                       |
-| ----------------- | ------------------ | ---------------------------------------------------------------------------------- |
-| `host`            | yes                | SMTP relay hostname (e.g. `smtp.gmail.com`).                                       |
-| `port`            | no                 | TCP port. Defaults to 25; common values: 587 (STARTTLS), 465 (implicit TLS).       |
-| `tls`             | no                 | `"starttls"` (default for 25/587), `"implicit"` (default for 465), `"none"`.       |
-| `tls_skip_verify` | no                 | Skip TLS certificate verification. **Do not** set this in production.              |
-| `username`        | no                 | SMTP AUTH username. Required when sending creds.                                   |
-| `password`        | one-of (see below) | Inline password. Avoid in committed configs.                                       |
-| `password_env`    | one-of             | Name of an env var holding the password.                                           |
-| `password_file`   | one-of             | Path to a file containing the password. Relative paths resolve under the data dir. |
-| `from`            | yes                | `From:` header. Accepts `"name@example.com"` or `"Name <name@example.com>"`.       |
-| `reply_to`        | no                 | Optional `Reply-To:` header.                                                       |
-| `to`              | yes                | Array of `To:` recipients (at least one).                                          |
-| `cc`              | no                 | Array of `Cc:` recipients.                                                         |
-| `bcc`             | no                 | Array of `Bcc:` recipients.                                                        |
-| `template_path`   | no                 | Override the embedded HTML message template.                                       |
+| Key               | Required | What it does                                                                 |
+| ----------------- | -------- | ---------------------------------------------------------------------------- |
+| `host`            | yes      | SMTP relay hostname (e.g. `smtp.gmail.com`).                                 |
+| `port`            | no       | TCP port. Defaults to 25; common values: 587 (STARTTLS), 465 (implicit TLS). |
+| `tls`             | no       | `"starttls"` (default for 25/587), `"implicit"` (default for 465), `"none"`. |
+| `tls_skip_verify` | no       | Skip TLS certificate verification. **Do not** set this in production.        |
+| `username`        | no       | SMTP AUTH username. Required when sending creds.                             |
+| `password`        | no       | SMTP AUTH password — inline, `${VAR}`, or `${file:path}`.                    |
+| `from`            | yes      | `From:` header. Accepts `"name@example.com"` or `"Name <name@example.com>"`. |
+| `reply_to`        | no       | Optional `Reply-To:` header.                                                 |
+| `to`              | yes      | Array of `To:` recipients (at least one).                                    |
+| `cc`              | no       | Array of `Cc:` recipients.                                                   |
+| `bcc`             | no       | Array of `Bcc:` recipients.                                                  |
+| `template_path`   | no       | Override the embedded HTML message template.                                 |
 
 ## 1. Configure the SMTP server
 
@@ -61,14 +60,14 @@ also be set — [the secret rule](/notifications/model/#storing-the-secret).
 
         ```toml
         [[notifier]]
-        id           = "email-ops"
-        type         = "smtp"
-        host         = "smtp.gmail.com"
-        port         = 587
-        from         = "Your Name <you@gmail.com>"
-        to           = ["alerts@example.com"]
-        username     = "you@gmail.com"
-        password_env = "RUNWISP_GMAIL_APP_PASSWORD"
+        id       = "email-ops"
+        type     = "smtp"
+        host     = "smtp.gmail.com"
+        port     = 587
+        from     = "Your Name <you@gmail.com>"
+        to       = ["alerts@example.com"]
+        username = "you@gmail.com"
+        password = "${RUNWISP_GMAIL_APP_PASSWORD}"
         ```
 
         ```bash
@@ -81,14 +80,14 @@ also be set — [the secret rule](/notifications/model/#storing-the-secret).
 
         ```toml
         [[notifier]]
-        id           = "email-ops"
-        type         = "smtp"
-        host         = "smtp.sendgrid.net"
-        port         = 587
-        from         = "RunWisp <alerts@yourdomain.com>"
-        to           = ["ops@yourdomain.com"]
-        username     = "apikey"
-        password_env = "RUNWISP_SENDGRID_API_KEY"
+        id       = "email-ops"
+        type     = "smtp"
+        host     = "smtp.sendgrid.net"
+        port     = 587
+        from     = "RunWisp <alerts@yourdomain.com>"
+        to       = ["ops@yourdomain.com"]
+        username = "apikey"
+        password = "${RUNWISP_SENDGRID_API_KEY}"
         ```
     </TabItem>
     <TabItem label="Amazon SES" icon="seti:shell">
@@ -97,14 +96,14 @@ also be set — [the secret rule](/notifications/model/#storing-the-secret).
 
         ```toml
         [[notifier]]
-        id           = "email-ops"
-        type         = "smtp"
-        host         = "email-smtp.eu-west-1.amazonaws.com"
-        port         = 587
-        from         = "RunWisp <alerts@yourdomain.com>"
-        to           = ["ops@yourdomain.com"]
-        username     = "AKIA..."
-        password_env = "RUNWISP_SES_SMTP_PASSWORD"
+        id       = "email-ops"
+        type     = "smtp"
+        host     = "email-smtp.eu-west-1.amazonaws.com"
+        port     = 587
+        from     = "RunWisp <alerts@yourdomain.com>"
+        to       = ["ops@yourdomain.com"]
+        username = "AKIA..."
+        password = "${RUNWISP_SES_SMTP_PASSWORD}"
         ```
     </TabItem>
     <TabItem label="Mailgun / Postmark" icon="seti:shell">
@@ -114,27 +113,27 @@ also be set — [the secret rule](/notifications/model/#storing-the-secret).
         ```toml
         # Mailgun
         [[notifier]]
-        id           = "email-ops"
-        type         = "smtp"
-        host         = "smtp.eu.mailgun.org"
-        port         = 587
-        from         = "RunWisp <alerts@yourdomain.com>"
-        to           = ["ops@yourdomain.com"]
-        username     = "postmaster@yourdomain.com"
-        password_env = "RUNWISP_MAILGUN_PASSWORD"
+        id       = "email-ops"
+        type     = "smtp"
+        host     = "smtp.eu.mailgun.org"
+        port     = 587
+        from     = "RunWisp <alerts@yourdomain.com>"
+        to       = ["ops@yourdomain.com"]
+        username = "postmaster@yourdomain.com"
+        password = "${RUNWISP_MAILGUN_PASSWORD}"
         ```
 
         ```toml
         # Postmark
         [[notifier]]
-        id           = "email-ops"
-        type         = "smtp"
-        host         = "smtp.postmarkapp.com"
-        port         = 587
-        from         = "RunWisp <alerts@yourdomain.com>"
-        to           = ["ops@yourdomain.com"]
-        username     = "<server-token>"
-        password_env = "RUNWISP_POSTMARK_TOKEN"
+        id       = "email-ops"
+        type     = "smtp"
+        host     = "smtp.postmarkapp.com"
+        port     = 587
+        from     = "RunWisp <alerts@yourdomain.com>"
+        to       = ["ops@yourdomain.com"]
+        username = "<server-token>"
+        password = "${RUNWISP_POSTMARK_TOKEN}"
         ```
     </TabItem>
     <TabItem label="Local Postfix" icon="seti:shell">
@@ -158,8 +157,8 @@ also be set — [the secret rule](/notifications/model/#storing-the-secret).
 
 ## 2. Store the password
 
-Pick one of the three options below. Setting more than one is a
-config-load error.
+Pick where the password lives and reference it with
+[`${...}` substitution](/configuration/substitution/).
 
 <Tabs syncKey="smtp-secret">
     <TabItem label="Env var" icon="seti:shell">
@@ -174,20 +173,20 @@ config-load error.
 
         ```toml
         [[notifier]]
-        id           = "email-ops"
-        type         = "smtp"
-        host         = "smtp.example.com"
-        from         = "runwisp@example.com"
-        to           = ["ops@example.com"]
-        username     = "apikey"
-        password_env = "RUNWISP_SMTP_PASSWORD"
+        id       = "email-ops"
+        type     = "smtp"
+        host     = "smtp.example.com"
+        from     = "runwisp@example.com"
+        to       = ["ops@example.com"]
+        username = "apikey"
+        password = "${RUNWISP_SMTP_PASSWORD}"
         ```
     </TabItem>
     <TabItem label="File on disk" icon="document">
         Useful when a secrets manager (Vault agent, sops, Docker
         secrets at `/run/secrets/...`) writes the password to a
-        known path for you. Relative paths resolve under the data
-        dir.
+        known path for you. Relative paths resolve next to
+        `runwisp.toml`; `~/` works too.
 
         ```bash
         mkdir -p ~/.config/runwisp
@@ -198,13 +197,13 @@ config-load error.
 
         ```toml
         [[notifier]]
-        id            = "email-ops"
-        type          = "smtp"
-        host          = "smtp.example.com"
-        from          = "runwisp@example.com"
-        to            = ["ops@example.com"]
-        username      = "apikey"
-        password_file = "/home/you/.config/runwisp/smtp.password"
+        id       = "email-ops"
+        type     = "smtp"
+        host     = "smtp.example.com"
+        from     = "runwisp@example.com"
+        to       = ["ops@example.com"]
+        username = "apikey"
+        password = "${file:~/.config/runwisp/smtp.password}"
         ```
     </TabItem>
     <TabItem label="Inline (don't)" icon="warning">
@@ -321,10 +320,8 @@ as your starting point. The helpers `statusEmoji`, `statusVerb`,
 
 ## What the loader rejects
 
-- Two of `password`, `password_env`, `password_file` set at the
-  same time.
-- `username` set without any password source — or a password
-  source set without `username`. Either both or neither.
+- `username` set without `password` — or `password` set without
+  `username`. Either both or neither.
 - `tls = "none"` combined with credentials — RunWisp refuses to
   send PLAIN auth over cleartext.
 - A `from`, `reply_to`, `to`, `cc`, or `bcc` value that doesn't

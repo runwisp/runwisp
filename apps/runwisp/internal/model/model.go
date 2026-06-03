@@ -86,11 +86,12 @@ type Task struct {
 	KeepRuns int           `toml:"keep_runs,omitempty" json:"keep_runs,omitempty" doc:"Row-count retention cap; 0 means no cap was configured"`
 	KeepFor  time.Duration `toml:"-"                   json:"keep_for,omitempty" doc:"Retention window in nanoseconds; 0 means no cap was configured"`
 
-	Env     map[string]string `toml:"env,omitempty"      json:"env,omitempty"      doc:"Environment variables overlaid on the task's process env. Values are visible in the API/UI."`
-	EnvFile string            `toml:"env_file,omitempty" json:"env_file,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs are loaded into the task's process env. Keys and values are not exposed via API/UI."`
-	// SecretEnv is populated by the config loader from EnvFile. Hidden from
-	// JSON/TOML so values never leak to API/UI/cloud serialization.
-	SecretEnv map[string]string `toml:"-" json:"-"`
+	Env     map[string]string `toml:"env,omitempty"      json:"env,omitempty"      doc:"Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries."`
+	EnvFile string            `toml:"env_file,omitempty" json:"env_file,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env."`
+	// Secrets holds [tasks.*.secrets] plus secrets_file-derived pairs. Hidden
+	// from JSON/TOML so values never leak to API/UI/cloud serialization.
+	Secrets     map[string]string `toml:"-" json:"-"`
+	SecretsFile string            `toml:"secrets_file,omitempty" json:"secrets_file,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon."`
 
 	Run          string          `toml:"run,omitempty" json:"-"`
 	ExecutionDef ExecutionDef    `toml:"-"             json:"-"`

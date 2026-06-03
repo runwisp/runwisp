@@ -63,10 +63,10 @@ cron = "*/5 * * * *"
 run  = "curl -sf https://myapp.example.com/health || exit 1"
 
 [services.worker]
-instances = 3              # keep three replicas always running
-env       = { NODE_ENV = "production" }   # inline env, visible in the UI
-env_file  = "/etc/runwisp/worker.env"     # secrets stay on disk
-run       = "node /app/worker.js"
+instances    = 3              # keep three replicas always running
+env          = { NODE_ENV = "production" }   # visible in the UI
+secrets_file = "/etc/runwisp/worker.env"     # never shown in the API/UI
+run          = "node /app/worker.js"
 ```
 
 `[tasks.*]` are scheduled or manually triggered jobs. `[services.*]` are always-on processes that RunWisp keeps alive with exponential restart backoff; each replica is its own visible run with its own exit code, duration, and captured logs.

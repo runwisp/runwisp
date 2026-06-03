@@ -126,17 +126,18 @@ that's prone to flapping.
 
 See [Logs & retention](/concepts/logs/) for the underlying behaviour.
 
-## Environment
+## Environment & secrets
 
-`env` and `env_file` work exactly the same way they do on tasks — see
-[`[tasks.*]` Environment](/configuration/tasks/#environment) for the
-merge order, visibility rules, and validation.
+`env`, `env_file`, `secrets`, and `secrets_file` work exactly the same
+way they do on tasks — see
+[`[tasks.*]` Environment & secrets](/configuration/tasks/#environment--secrets)
+for the merge order, visibility rules, and validation.
 
 ```toml
 [services.api]
-run      = "/srv/api/bin/server"
-env      = { PORT = "8080", LOG_LEVEL = "info" }
-env_file = "/etc/runwisp/api-secrets.env"
+run          = "/srv/api/bin/server"
+env          = { PORT = "8080", LOG_LEVEL = "info" }
+secrets_file = "/etc/runwisp/api-secrets.env"
 ```
 
 Every instance of a multi-instance service receives the same merged

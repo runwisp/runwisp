@@ -18,21 +18,24 @@ import (
 )
 
 // TestEnvMergedIntoSpawnedProcessAndAPIHidesSecrets verifies the end-to-end
-// behavior of `env` / `env_file`: defaults are flattened into the task, the
-// task overrides defaults on collision, and the daemon spawns a process whose
-// env contains the merged set. It also asserts that the API exposes inline
-// env + env_file path while keeping env_file values entirely off the wire.
+// behavior of the env/secrets split: defaults are flattened into the task,
+// inline env wins over env_file, and the daemon spawns a process whose env
+// contains all five layers merged (env_file < env < secrets_file < secrets).
+// On the API side, env + env_file values are visible while secrets keys and
+// values never reach the wire — only the secrets_file path is exposed.
 func TestEnvMergedIntoSpawnedProcessAndAPIHidesSecrets(t *testing.T) {
 	const (
-		taskName    = "env-task"
-		secretValue = "secret-value-do-not-leak"
+		taskName          = "env-task"
+		fileSecretValue   = "file-secret-do-not-leak"
+		inlineSecretValue = "inline-secret-do-not-leak"
 	)
 
 	dir := t.TempDir()
 	envOut := filepath.Join(dir, "env.out")
-	envFile := filepath.Join(dir, "secrets.env")
-	require.NoError(t, os.WriteFile(envFile,
-		[]byte("SECRET="+secretValue+"\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "vars.env"),
+		[]byte("PUBLIC=from-env-file\nTASK=env-file-loses\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "secrets.env"),
+		[]byte("FILE_SECRET="+fileSecretValue+"\n"), 0o600))
 
 	configPath := filepath.Join(dir, "runwisp.toml")
 	body := fmt.Sprintf(`
@@ -43,13 +46,17 @@ shutdown_timeout = "500ms"
 GLOBAL = "from-defaults"
 
 [tasks.%s]
-run = "env | grep -E '^(GLOBAL|TASK|SECRET)=' | sort > %s"
-env_file = "secrets.env"
+run = "env | grep -E '^(GLOBAL|TASK|PUBLIC|FILE_SECRET|INLINE_SECRET)=' | sort > %s"
+env_file = "vars.env"
+secrets_file = "secrets.env"
 
 [tasks.%s.env]
 TASK = "from-task"
 GLOBAL = "task-overrides-defaults"
-`, taskName, envOut, taskName)
+
+[tasks.%s.secrets]
+INLINE_SECRET = "%s"
+`, taskName, envOut, taskName, taskName, inlineSecretValue)
 	require.NoError(t, os.WriteFile(configPath, []byte(body), 0o600))
 
 	projectDir := runwispProjectDir(t)
@@ -75,24 +82,34 @@ GLOBAL = "task-overrides-defaults"
 	require.NotEmpty(t, captured, "env capture file never materialized")
 
 	assert.Equal(t,
-		"GLOBAL=task-overrides-defaults\nSECRET="+secretValue+"\nTASK=from-task\n",
+		"FILE_SECRET="+fileSecretValue+"\n"+
+			"GLOBAL=task-overrides-defaults\n"+
+			"INLINE_SECRET="+inlineSecretValue+"\n"+
+			"PUBLIC=from-env-file\n"+
+			"TASK=from-task\n",
 		string(captured),
-		"spawned process must see the merged env with task overriding defaults",
+		"spawned process must see env_file, inline env, and both secrets layers merged, with inline env winning over env_file",
 	)
 
-	// Verify the API exposes inline env + env_file path but never the env_file
-	// content. Reach for the typed response *and* the raw JSON so a future
-	// `json:"-"` regression on Task.SecretEnv is caught at the wire level.
+	// Verify the API exposes env (including merged env_file values) and both
+	// file paths, but never secrets keys or values. Reach for the typed
+	// response *and* the raw JSON so a future `json:"-"` regression on
+	// Task.Secrets is caught at the wire level.
 	tasks, err := client.ListTasks()
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
-	assert.Equal(t, "from-task", tasks[0].Env["TASK"])
+	assert.Equal(t, "from-task", tasks[0].Env["TASK"], "inline env wins over env_file")
 	assert.Equal(t, "task-overrides-defaults", tasks[0].Env["GLOBAL"])
-	assert.Equal(t, "secrets.env", tasks[0].EnvFile)
+	assert.Equal(t, "from-env-file", tasks[0].Env["PUBLIC"], "env_file values are visible in the API")
+	assert.Equal(t, "vars.env", tasks[0].EnvFile)
+	assert.Equal(t, "secrets.env", tasks[0].SecretsFile, "secrets_file path is visible — only keys/values are hidden")
 
 	rawJSON, err := json.Marshal(tasks)
 	require.NoError(t, err)
 	body2 := string(rawJSON)
-	assert.NotContains(t, body2, secretValue, "env_file values must never reach the API surface")
-	assert.NotContains(t, body2, "SECRET", "env_file keys must never reach the API surface")
+	assert.Contains(t, body2, "from-env-file", "env_file values are part of the visible env")
+	assert.NotContains(t, body2, fileSecretValue, "secrets_file values must never reach the API surface")
+	assert.NotContains(t, body2, inlineSecretValue, "inline secrets values must never reach the API surface")
+	assert.NotContains(t, body2, "FILE_SECRET", "secrets keys must never reach the API surface")
+	assert.NotContains(t, body2, "INLINE_SECRET", "secrets keys must never reach the API surface")
 }

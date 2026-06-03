@@ -246,12 +246,12 @@ func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.Cont
 	for _, kv := range ctr.Env {
 		baseEnv = append(baseEnv, kv.Key+"="+kv.Value)
 	}
-	// Overlay Task.Env then Task.SecretEnv on top of the container-execution
+	// Overlay Task.Env then Task.Secrets on top of the container-execution
 	// env so task-level entries (defined alongside cron/run) win over
 	// container-specific defaults, matching the shell backend's precedence.
 	var env []string
-	if task != nil && (len(task.Env) > 0 || len(task.SecretEnv) > 0) {
-		env = buildProcessEnv(baseEnv, task.Env, task.SecretEnv)
+	if task != nil && (len(task.Env) > 0 || len(task.Secrets) > 0) {
+		env = buildProcessEnv(baseEnv, task.Env, task.Secrets)
 	} else {
 		env = baseEnv
 	}

@@ -62,7 +62,7 @@ func initNotify(
 		Fingerprint: cfg.Fingerprint,
 		OutputTail:  render.NewOutputTail(),
 	}
-	resolved, err := configload.Resolve(notifyCfg, flags.DataDir, renderCtx)
+	resolved, err := configload.Resolve(notifyCfg, renderCtx)
 	if err != nil {
 		return notifyBundle{}, fmt.Errorf("resolve notify config: %w", err)
 	}
