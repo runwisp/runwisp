@@ -29,7 +29,7 @@ function specIsUsable(path: string): boolean {
 // behind, which would otherwise blow up at JSON.parse with "Unexpected EOF".
 if (!specIsUsable(openapiSpec) || process.argv.includes("--fresh")) {
   console.log("Generating OpenAPI spec from Go app...");
-  execSync("bun run openapi", {
+  execSync("./scripts/generate-openapi.sh", {
     cwd: appDir,
     stdio: "inherit",
   });

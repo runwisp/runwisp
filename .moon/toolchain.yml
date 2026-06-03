@@ -1,0 +1,6 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: 'https://moonrepo.dev/schemas/toolchain.json'
+
+# No version pin: moon uses the bun binary already on PATH (setup-bun in CI,
+# the developer's install locally). Go tasks declare `toolchain: 'system'`.
+bun: {}

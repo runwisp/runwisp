@@ -31,17 +31,8 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Generate OpenAPI spec from Go app
-        run: bun run openapi -- --verbose
-        working-directory: apps/runwisp
-
-      - name: Generate AsyncAPI types (TS Zod + Go structs)
+      - name: Regenerate all (sqlc, AsyncAPI, OpenAPI, common API types)
         run: bun run generate
-        working-directory: packages/asyncapi
-
-      - name: Generate API types (TS from OpenAPI)
-        run: bun run generate:api
-        working-directory: packages/common
 
       - name: Fail if generated files are stale
         run: git diff --exit-code
@@ -167,16 +158,19 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: bun run playwright:install
+        run: bunx playwright install --with-deps chromium
         working-directory: apps/ui
 
       - name: Install Playwright system deps
         if: steps.playwright-cache.outputs.cache-hit == 'true' && runner.os == 'Linux'
-        run: bun run playwright:install-deps
+        run: bunx playwright install-deps chromium
         working-directory: apps/ui
 
+      # Direct playwright invocation, not moon's runwisp:test-e2e — that task
+      # depends on runwisp:build, but this job runs against the binary built by
+      # the `build` job (downloaded above), deliberately avoiding a rebuild.
       - name: Run E2E tests
-        run: bun run test
+        run: bunx playwright test
         working-directory: apps/ui
 
       - name: Upload test artifacts

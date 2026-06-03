@@ -1,0 +1,133 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'go'
+layer: 'application'
+
+fileGroups:
+  # ensure-ui-dist.sh is sourced by every Go entry-point script.
+  go: ['cmd/**/*.go', 'internal/**/*.go', 'go.mod', 'go.sum', 'scripts/ensure-ui-dist.sh']
+
+tasks:
+  sqlc-generate:
+    description: 'Generate Go storage code from SQL via a pinned sqlc.'
+    command: './scripts/sqlc-generate.sh'
+    toolchain: 'system'
+    inputs:
+      - 'scripts/sqlc-generate.sh'
+      - 'sqlc.yaml'
+      - 'internal/storage/schema.sql'
+      - 'internal/storage/query/**/*.sql'
+    outputs:
+      - 'internal/storage/sqlcdb'
+
+  openapi:
+    description: 'Regenerate openapi.json from the Go app.'
+    command: './scripts/generate-openapi.sh'
+    toolchain: 'system'
+    deps:
+      - 'asyncapi:generate'
+      - '~:sqlc-generate'
+    inputs:
+      - '@globs(go)'
+      - 'scripts/generate-openapi.sh'
+    outputs:
+      - 'openapi.json'
+
+  sync-ui-dist:
+    description: 'Copy the built web UI into the go:embed directory.'
+    command: './scripts/sync-ui-dist.sh'
+    toolchain: 'system'
+    deps:
+      - 'web-ui:build'
+    inputs:
+      - 'scripts/sync-ui-dist.sh'
+    outputs:
+      - 'internal/ui/dist'
+
+  build:
+    description: 'Build the runwisp binary (web UI embedded).'
+    command: './scripts/build.sh'
+    toolchain: 'system'
+    deps:
+      - '~:sync-ui-dist'
+      - '~:sqlc-generate'
+      - 'asyncapi:generate'
+    inputs:
+      - '@globs(go)'
+      - 'scripts/build.sh'
+      - 'scripts/metadata.sh'
+      - '/CHANGELOG.md'
+    outputs:
+      - 'runwisp'
+
+  build-all:
+    description: 'Cross-compile binaries for all supported platforms.'
+    command: './scripts/build-all.sh'
+    toolchain: 'system'
+    deps:
+      - '~:sync-ui-dist'
+      - '~:sqlc-generate'
+      - 'asyncapi:generate'
+    options:
+      # Output varies with TARGETS / RELEASE env vars.
+      cache: false
+
+  check:
+    description: 'go vet + gofmt.'
+    command: './scripts/check-go.sh'
+    toolchain: 'system'
+    deps:
+      - '~:sqlc-generate'
+      - 'asyncapi:generate'
+    inputs:
+      - '@globs(go)'
+      - 'tests/**/*.go'
+      - 'scripts/check-go.sh'
+
+  format:
+    command: 'go fmt ./...'
+    toolchain: 'system'
+    options:
+      cache: false
+
+  test:
+    description: 'Go unit + e2e tests with merged coverage profile.'
+    command: './scripts/test-go.sh'
+    toolchain: 'system'
+    deps:
+      - '~:sqlc-generate'
+      - 'asyncapi:generate'
+    inputs:
+      - 'cmd/**/*'
+      - 'internal/**/*'
+      - 'tests/**/*'
+      - 'go.mod'
+      - 'go.sum'
+      - 'scripts/test-go.sh'
+      - 'scripts/merge-coverage.sh'
+      - 'scripts/ensure-ui-dist.sh'
+    outputs:
+      - 'coverage.out'
+
+  test-e2e:
+    # Lives here, not on web-ui: it exercises the built daemon binary, and a
+    # web-ui task depending on runwisp:build would cycle the project graph
+    # (runwisp already depends on web-ui via sync-ui-dist).
+    description: 'Playwright e2e against the built runwisp binary.'
+    script: 'cd ../ui && playwright test'
+    deps:
+      - '~:build'
+    inputs:
+      - '/apps/ui/e2e/**/*'
+      - '/apps/ui/playwright.config.ts'
+
+  dev:
+    description: 'Build, then run the binary (pass args after --).'
+    command: './runwisp'
+    toolchain: 'system'
+    deps:
+      - '~:build'
+    preset: 'server'
+    options:
+      interactive: true

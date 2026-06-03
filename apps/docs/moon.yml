@@ -1,0 +1,48 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+language: "typescript"
+layer: "application"
+
+tasks:
+    dev:
+        script: "bun scripts/sync-openapi.ts && bunx --bun astro dev"
+        deps:
+            - "runwisp:openapi"
+        preset: "server"
+
+    build:
+        description: "Astro/Starlight docs build."
+        script: "bun scripts/sync-openapi.ts && bunx --bun astro build"
+        deps:
+            - "runwisp:openapi"
+        inputs:
+            - "**/*"
+            - "/apps/runwisp/openapi.json"
+            - "/packages/ui/src/**/*"
+        outputs:
+            - "dist"
+
+    preview:
+        command: "bunx --bun astro preview"
+        deps:
+            - "~:build"
+        preset: "server"
+
+    check:
+        # One sequential task, not split types/lint: eslint's typed linting
+        # needs .astro/types.d.ts, which `astro check` generates first.
+        description: "astro check, then prettier --check + eslint."
+        script: "bun scripts/sync-openapi.ts && bunx --bun astro check && prettier --check . && eslint ."
+        deps:
+            - "runwisp:openapi"
+        inputs:
+            - "**/*"
+            - "/apps/runwisp/openapi.json"
+            - "/packages/ui/src/**/*"
+            - "/prettier.base.cjs"
+
+    format:
+        command: "prettier --write ."
+        options:
+            cache: false

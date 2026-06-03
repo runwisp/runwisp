@@ -18,8 +18,10 @@ coverage
 coverage.out
 apps/runwisp/.gocoverdir/
 
-# Build cache (Makefile stamps)
+# Build caches
 .cache/
+.moon/cache/
+.moon/docker/
 
 # Local tooling installed via `go install`
 /.bin/

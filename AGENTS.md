@@ -1,7 +1,7 @@
 # RunWisp — Agent Directives
 
 **License**: Apache-2.0 · **Status**: Pre-1.0 (breaking changes permitted)
-**Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + Make, embedded SQLite (`database/sql` + `modernc.org/sqlite`), AsyncAPI-defined optional control-plane protocol.
+**Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + moon (`bunx moon`), embedded SQLite (`database/sql` + `modernc.org/sqlite`), AsyncAPI-defined optional control-plane protocol.
 
 ## 🎯 PRODUCT VISION (read this first — it outranks everything below)
 
@@ -128,7 +128,7 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 
 ## 🤖 AGENT EXECUTION RULES
 
-1. **Validation**: `make ci` is the **only** validation command you must run — it chains generate → format → check → test → test-e2e (build is covered via `test-e2e`'s binary dependency). Run it from repo root before wrapping up any session that touched code. Don't bother with `make build` / `make test` / `make check` / `make generate` individually unless you're iterating on a single stage — `make ci` supersedes them.
+1. **Validation**: `bun run ci` is the **only** validation command you must run — it chains generate → format → check → test → test-e2e (build is covered via `test-e2e`'s binary dependency). Run it from repo root before wrapping up any session that touched code. Don't bother with `bun run build` / `bun run test` / `bun run check` / `bun run generate` individually unless you're iterating on a single stage — `bun run ci` supersedes them. Tasks are moon targets (`bunx moon run <project>:<task>`); moon caches each task by input hash, so re-runs are cheap.
 2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, and the README config reference if user-visible.
 3. **AsyncAPI changes**: edit `packages/asyncapi/asyncapi.yaml` first, then `bun run generate`, then consume the regenerated types in `internal/generated/protocol/`. Never the other way round.
 4. **User-facing changes** require a `CHANGELOG.md` entry. Keep entries short — one or two sentences naming what changed, plus a docs link for the "how". Don't explain usage in the changelog itself; readers can follow the link.

@@ -4,15 +4,6 @@
     "license": "Apache-2.0",
     "private": true,
     "type": "module",
-    "scripts": {
-        "dev": "bun scripts/sync-openapi.ts && bunx --bun astro dev",
-        "build": "bun scripts/sync-openapi.ts && bunx --bun astro build",
-        "preview": "bunx --bun astro preview",
-        "check": "bun run check:types && bun run check:lint",
-        "check:types": "bun scripts/sync-openapi.ts && bunx --bun astro check",
-        "check:lint": "prettier --check . && eslint .",
-        "format": "prettier --write ."
-    },
     "dependencies": {
         "@astrojs/starlight": "^0.39.0",
         "@fontsource/jetbrains-mono": "^5.2.8",

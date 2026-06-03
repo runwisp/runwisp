@@ -1,0 +1,22 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: 'https://moonrepo.dev/schemas/workspace.json'
+
+# Explicit map (not globs): apps/ui and packages/ui would both derive the id "ui".
+projects:
+  root: '.'
+  runwisp: 'apps/runwisp'
+  web-ui: 'apps/ui'
+  docs: 'apps/docs'
+  ui: 'packages/ui'
+  common: 'packages/common'
+  asyncapi: 'packages/asyncapi'
+  eslint-config: 'packages/eslint-config'
+  typescript-config: 'packages/typescript-config'
+
+vcs:
+  defaultBranch: 'main'
+
+pipeline:
+  # Dependency installs stay explicit (`bun install` locally, with
+  # --frozen-lockfile --ignore-scripts in CI); moon never runs its own.
+  installDependencies: false
