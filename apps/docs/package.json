@@ -4,6 +4,9 @@
     "license": "Apache-2.0",
     "private": true,
     "type": "module",
+    "scripts": {
+        "build": "bun scripts/sync-openapi.ts && bunx --bun astro build"
+    },
     "dependencies": {
         "@astrojs/starlight": "^0.39.0",
         "@fontsource/jetbrains-mono": "^5.2.8",

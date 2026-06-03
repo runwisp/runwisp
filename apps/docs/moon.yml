@@ -12,8 +12,11 @@ tasks:
         preset: "server"
 
     build:
+        # Delegates to the package.json script: Cloudflare Pages runs that
+        # script directly (it can't run moon's Go-dependent task graph), so
+        # package.json stays the single definition of the docs build.
         description: "Astro/Starlight docs build."
-        script: "bun scripts/sync-openapi.ts && bunx --bun astro build"
+        command: "bun run build"
         deps:
             - "runwisp:openapi"
         inputs:
