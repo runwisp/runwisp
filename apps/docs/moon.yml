@@ -30,8 +30,7 @@ tasks:
         preset: "server"
 
     check:
-        # One sequential task, not split types/lint: eslint's typed linting
-        # needs .astro/types.d.ts, which `astro check` generates first.
+        # Not split types/lint: eslint needs the .astro/types.d.ts that `astro check` generates.
         description: "astro check, then prettier --check + eslint."
         script: "bun scripts/sync-openapi.ts && bunx --bun astro check && prettier --check . && eslint ."
         deps:

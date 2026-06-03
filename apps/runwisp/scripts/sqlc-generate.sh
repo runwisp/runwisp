@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
-# Install sqlc at a pinned version into <repo>/.bin (if missing or outdated)
-# and regenerate the Go storage code declared in sqlc.yaml.
+# Install pinned sqlc into <repo>/.bin if needed, then run `sqlc generate`.
 set -euo pipefail
 
 SQLC_VERSION="v1.29.0"

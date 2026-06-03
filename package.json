@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "dev": "moon run runwisp:dev",
+    "demo": "moon run runwisp:demo",
     "build": "moon run runwisp:build",
     "build:all": "moon run runwisp:build-all",
     "generate": "moon run root:generate",

@@ -16,12 +16,11 @@ fileGroups:
         - "/packages/ui/src/**/*"
         - "/packages/common/src/**/*"
 
-# Two shared quirks across the tasks below:
-# - A git worktree may symlink .svelte-kit back to the main checkout; SvelteKit
-#   bakes depth-sensitive paths into it, so the script-form tasks drop the link
-#   before running `svelte-kit sync`.
-# - Every task that runs `svelte-kit sync` (directly or via the vite plugin)
-#   shares the `svelte-kit-sync` mutex: concurrent syncs corrupt .svelte-kit.
+# Two quirks shared by the tasks below:
+# - a worktree may symlink .svelte-kit to the main checkout (its baked paths
+#   are depth-sensitive), so tasks drop the link before `svelte-kit sync`.
+# - concurrent `svelte-kit sync` runs corrupt .svelte-kit, hence the shared
+#   `svelte-kit-sync` mutex.
 tasks:
     dev:
         command: "vite dev"

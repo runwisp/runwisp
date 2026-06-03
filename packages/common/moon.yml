@@ -6,10 +6,9 @@ layer: 'library'
 
 tasks:
   generate-api:
-    # No task dep on runwisp:openapi — that edge would cycle the project graph
-    # (runwisp depends on web-ui, which depends on common). openapi.json is a
-    # committed artifact, so it's consumed as a plain file input; root:generate
-    # sequences regeneration ahead of this task.
+    # No task dep on runwisp:openapi — it would cycle the project graph
+    # (runwisp → web-ui → common). The committed openapi.json is a plain file
+    # input; root:generate sequences regeneration ahead of this task.
     description: 'Generate TS API types from the runwisp OpenAPI spec.'
     command: 'bun scripts/generate-api.ts'
     inputs:

@@ -1,18 +1,15 @@
 # Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
-# Workspace orchestration. The root package.json scripts are aliases onto
-# these targets. The `ci` alias chains three moon invocations with && because
-# stages need true barriers: format mutates the files that check/test read,
-# and moon deps can't express transitive stage barriers (runDepsInParallel
-# only orders the listed targets, not their dep subtrees).
+# Workspace orchestration; the root package.json scripts alias these targets.
+# The `ci` script chains separate moon invocations because format mutates
+# files that check/test read, and moon deps can't express that barrier.
 layer: 'automation'
 
 tasks:
   generate:
-    # Ordered, not parallel: common:generate-api reads the openapi.json that
-    # runwisp:openapi writes, and that edge can't be a task dep (it would
-    # cycle the project graph — runwisp depends on web-ui depends on common).
+    # Ordered: common:generate-api reads the openapi.json that runwisp:openapi
+    # writes; that edge can't be a task dep (see common/moon.yml).
     description: 'Regenerate sqlc + AsyncAPI + openapi.json + common API types.'
     deps:
       - 'runwisp:openapi'

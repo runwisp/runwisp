@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
-# Run the Go test suite with coverage. The e2e tests spawn real runwisp
-# binaries that write binary coverage into RUNWISP_E2E_COVDIR (GOCOVERDIR);
-# that profile is merged with the unit profile into coverage.out, keeping the
-# max count per block (see merge-coverage.sh).
+# Go tests with coverage. E2E tests spawn real binaries that write coverage
+# into RUNWISP_E2E_COVDIR; merge-coverage.sh merges it with the unit profile
+# into coverage.out.
 set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)

@@ -166,9 +166,8 @@ jobs:
         run: bunx playwright install-deps chromium
         working-directory: apps/ui
 
-      # Direct playwright invocation, not moon's runwisp:test-e2e — that task
-      # depends on runwisp:build, but this job runs against the binary built by
-      # the `build` job (downloaded above), deliberately avoiding a rebuild.
+      # Not moon's runwisp:test-e2e — that would rebuild the binary; this job
+      # runs against the one downloaded from the `build` job.
       - name: Run E2E tests
         run: bunx playwright test
         working-directory: apps/ui

@@ -111,9 +111,8 @@ tasks:
       - 'coverage.out'
 
   test-e2e:
-    # Lives here, not on web-ui: it exercises the built daemon binary, and a
-    # web-ui task depending on runwisp:build would cycle the project graph
-    # (runwisp already depends on web-ui via sync-ui-dist).
+    # On runwisp, not web-ui: a web-ui dep on runwisp:build would cycle the
+    # project graph (runwisp already depends on web-ui via sync-ui-dist).
     description: 'Playwright e2e against the built runwisp binary.'
     script: 'cd ../ui && playwright test'
     deps:
@@ -131,3 +130,8 @@ tasks:
     preset: 'server'
     options:
       interactive: true
+
+  demo:
+    description: 'Build, then run the binary in demo mode (pass args after --).'
+    extends: 'dev'
+    args: 'demo'

@@ -1,6 +1,10 @@
 # Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
 $schema: 'https://moonrepo.dev/schemas/workspace.json'
 
+# Unscoped targets (`moon run dev`, `moon run demo`) resolve to the runwisp
+# app directly, so passthrough args (`moon run dev -- <args>`) reach the binary.
+defaultProject: 'runwisp'
+
 # Explicit map (not globs): apps/ui and packages/ui would both derive the id "ui".
 projects:
   root: '.'
@@ -17,6 +21,5 @@ vcs:
   defaultBranch: 'main'
 
 pipeline:
-  # Dependency installs stay explicit (`bun install` locally, with
-  # --frozen-lockfile --ignore-scripts in CI); moon never runs its own.
+  # `bun install` is run explicitly; moon never installs.
   installDependencies: false
