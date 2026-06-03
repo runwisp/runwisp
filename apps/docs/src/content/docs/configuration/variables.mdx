@@ -1,0 +1,149 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Variables & secrets
+description: ${VAR} interpolation in runwisp.toml — pulling values from the environment and files, and keeping secrets out of the API, Web UI, and logs.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+You don't want credentials sitting inline in a `runwisp.toml` that ends
+up in git, and you don't want to maintain three near-identical files for
+dev, staging, and prod. So RunWisp lets you write a **placeholder** in
+any field and fill it in from the environment or a file when the daemon
+starts.
+
+```toml
+[tasks.deploy]
+api_trigger = true
+timeout     = "${DEPLOY_TIMEOUT:-10m}"
+run         = "deploy.sh --token $DEPLOY_TOKEN"
+
+[tasks.deploy.env]
+DEPLOY_TOKEN = "${file:/run/secrets/deploy_token}"
+API_BASE     = "${API_BASE_URL}"
+```
+
+## The three forms
+
+Anything wrapped in `${...}` is a placeholder. There are three kinds:
+
+- **`${NAME}`** — the value of environment variable `NAME`. If `NAME` is
+  unset or empty, the daemon (and `runwisp validate`) **refuses to
+  start** and names the variable. A missing value fails loudly instead
+  of silently running with a blank.
+- **`${NAME:-default}`** — the same, but falls back to `default` when
+  `NAME` is unset or empty. This is the escape hatch for genuinely
+  optional values: `${LOG_LEVEL:-info}` works whether or not anyone set
+  `LOG_LEVEL`, and an empty default like `${SMTP_PASSWORD:-}` makes a
+  secret truly optional.
+- **`${file:/path}`** — the contents of a file, with surrounding
+  whitespace trimmed. Relative paths resolve under the data directory.
+  Perfect for Docker secrets at `/run/secrets/...`, a Vault agent sink,
+  or a sops-decrypted file — just `chmod 600` it.
+
+A value with no `${` is taken literally, so an inline value still works
+for quick local experiments. And a bare `$` is safe — only `${` starts a
+placeholder — so a password like `p@ss$word` passes through untouched.
+
+## It works everywhere
+
+Interpolation isn't scoped to a handful of fields. Every value in
+`runwisp.toml` is eligible: durations and sizes (`timeout = "${T}"`),
+the cron expression, `env` values, `env_file` and `compose_file` paths,
+notifier secrets, `external_url` — all of it. Resolution is fully
+**offline**: RunWisp reads environment variables and local files only,
+never the network, so a NIC-unplugged box validates and boots just fine.
+
+:::caution[`${...}` vs the shell in `run`]
+Your `run` command is a shell script, and the shell has its _own_
+`${var}` syntax. RunWisp resolves `${...}` **first**, before `/bin/sh`
+ever sees the script — so `${HOME}` would be substituted by RunWisp, not
+the shell. For variables you want the **shell** to expand at runtime
+(loop variables, command substitution results, anything you `export`
+inside the script), write the **bare** form `$var` without braces:
+
+```toml
+run = '''
+since=$(date -d 'last monday' +%F)
+echo "window starts $since"          # $since → shell expands at runtime
+deploy.sh --token $DEPLOY_TOKEN      # $DEPLOY_TOKEN → from the task env
+'''
+```
+
+If you genuinely need braces for a shell variable, `${VAR}` will be
+caught by RunWisp at validate time (it'll complain the variable isn't
+set), which is your cue to drop the braces.
+:::
+
+## Secrets stay out of the API, UI, and logs
+
+Here's the rule that makes interpolation safe to use for credentials:
+
+> A value RunWisp pulled out of a variable is **hidden by default**. The
+> REST API and Web UI show the raw `${NAME}` placeholder, never the
+> resolved value — unless you explicitly opt in.
+
+`config.Config`, the thing the API and UI read from, only ever holds the
+raw placeholder. The real value is resolved at the last possible moment —
+when a process spawns, or when a notification sends — and never written
+back. So an `env` value of `${DB_PASSWORD}` shows up in `GET /api/tasks`
+as the literal string `${DB_PASSWORD}`.
+
+On top of that, there's a **content backstop**: every hidden resolved
+value is also scrubbed from captured run output. If a task echoes its
+own secret to stdout, the line lands on disk and on the live log stream
+as `[redacted]` — the raw secret never touches the log file.
+
+### Showing a value on purpose
+
+Not every variable is a secret. A log level or a base URL is often
+something you _want_ to see in the dashboard. List those names in
+[`[daemon] reveal_vars`](/configuration/daemon/#reveal_vars):
+
+```toml
+[daemon]
+reveal_vars = ["LOG_LEVEL", "API_BASE"]
+```
+
+Now a field like `API_BASE = "${API_BASE}"` shows its resolved value in
+the API and UI, while `DB_PASSWORD = "${DB_PASSWORD}"` (not listed) keeps
+showing the placeholder. Two guarantees make this safe to live with:
+
+- **Forgetting hides.** A name you don't list stays a placeholder. The
+  failure mode is "too hidden", never "leaked".
+- **Files are never revealable.** `${file:...}` values are always
+  hidden, no matter what's in `reveal_vars` — a file is the
+  always-secret channel.
+
+### What's shown automatically
+
+Type-constrained fields show their resolved value without needing
+`reveal_vars`, because a secret can't survive their parser anyway —
+`timeout = "${DB_PASSWORD}"` would fail to parse as a duration. Durations,
+sizes, integers, enums, the cron expression, timezones, email addresses,
+and file paths all resolve at load and display normally. Only the
+free-form fields — `env` values, `description`, `group` — default to
+hidden, since those are where a credential can actually hide.
+
+## Validate requires the variables
+
+Because resolution now happens at validate time too, `runwisp validate`
+needs every referenced `${NAME}` and `${file:...}` to be present — same
+as a real boot. That's the trade for `${...}` working everywhere: a typo
+or a missing variable is caught the moment you validate, not silently at
+3 a.m. when the task fires. Reach for `${NAME:-default}` whenever a value
+is genuinely optional.
+
+<CardGrid>
+    <LinkCard
+        title="[daemon] reveal_vars"
+        href="/configuration/daemon/#reveal_vars"
+        description="Opt specific variable names into being shown in the API and UI."
+    />
+    <LinkCard
+        title="Notifications: storing the secret"
+        href="/notifications/model/#storing-the-secret"
+        description="How notifier credentials use the same ${...} forms."
+    />
+</CardGrid>

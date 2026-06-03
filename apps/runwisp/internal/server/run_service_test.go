@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/redact"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/testutil"
@@ -83,7 +84,62 @@ func (m *mockTaskRunner) GetActiveRunCount(taskName string) int {
 // helpers
 
 func makeRunService(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner) *runService {
-	return newRunService(repo, runner, tasks, nil, "", nil)
+	return newRunService(repo, runner, tasks, nil, "", nil, nil, "", nil)
+}
+
+// ---- ListTasks secret view ----
+
+func TestListTasks_RevealAndRedactFreeFormFields(t *testing.T) {
+	t.Setenv("RW_SRV_HIDDEN", "hidden-val-abc")
+	t.Setenv("RW_SRV_REVEAL", "shown-val-xyz")
+
+	task := &model.Task{
+		Name:        "build",
+		Group:       "${RW_SRV_HIDDEN}",
+		Description: "deploy ${RW_SRV_REVEAL}",
+		Env: map[string]string{
+			"SECRET": "${RW_SRV_HIDDEN}",
+			"SHOWN":  "${RW_SRV_REVEAL}",
+			"PLAIN":  "literal",
+		},
+	}
+	tasks := map[string]*model.Task{"build": task}
+
+	red := redact.New()
+	red.Add("hidden-val-abc") // the boot redactor would seed this hidden value
+	reveal := map[string]bool{"RW_SRV_REVEAL": true}
+
+	svc := newRunService(nil, nil, tasks, nil, "", nil, reveal, "", red)
+	got := svc.ListTasks()
+	require.Len(t, got, 1)
+	dto := got[0]
+
+	// Unrevealed → raw placeholder kept; revealed → resolved value shown.
+	assert.Equal(t, "${RW_SRV_HIDDEN}", dto.Env["SECRET"], "unrevealed var stays a placeholder")
+	assert.Equal(t, "shown-val-xyz", dto.Env["SHOWN"], "revealed var resolves")
+	assert.Equal(t, "literal", dto.Env["PLAIN"])
+	assert.Equal(t, "${RW_SRV_HIDDEN}", dto.Group, "unrevealed group stays a placeholder")
+	assert.Equal(t, "deploy shown-val-xyz", dto.Description, "revealed var resolves in description")
+
+	// The in-memory task is never mutated by the DTO transform.
+	assert.Equal(t, "${RW_SRV_HIDDEN}", task.Env["SECRET"], "source task keeps the raw placeholder")
+	assert.Equal(t, "deploy ${RW_SRV_REVEAL}", task.Description)
+}
+
+func TestListTasks_RedactorMasksHiddenValueInDTO(t *testing.T) {
+	// A free-form field that happens to contain a hidden secret value verbatim
+	// (no placeholder) is still masked by the content backstop.
+	task := &model.Task{
+		Name:        "leaky",
+		Description: "token is hidden-val-abc do not show",
+	}
+	red := redact.New()
+	red.Add("hidden-val-abc")
+
+	svc := newRunService(nil, nil, map[string]*model.Task{"leaky": task}, nil, "", nil, nil, "", red)
+	got := svc.ListTasks()
+	require.Len(t, got, 1)
+	assert.Equal(t, "token is [redacted] do not show", got[0].Description)
 }
 
 // ---- mapNotFound ----

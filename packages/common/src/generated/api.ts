@@ -1092,7 +1092,7 @@ export interface components {
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
             description?: string;
-            /** @description Environment variables overlaid on the task's process env. Values are visible in the API/UI. */
+            /** @description Environment variables overlaid on the task's process env. A value using ${VAR}/${file:...} shows the raw placeholder unless every variable it references is listed in [daemon] reveal_vars. */
             env?: {
                 [key: string]: string;
             };

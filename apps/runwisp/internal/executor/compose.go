@@ -30,13 +30,16 @@ const composeAvailableTimeout = 2 * time.Second
 type ComposeBackend struct {
 	// dockerCmd is the binary name; "docker" by default. Tests inject a shim.
 	dockerCmd string
+	// resolver interpolates ${...} in inline env values before they are passed
+	// to the container as -e flags. Nil in unit tests disables resolution.
+	resolver *SecretResolver
 }
 
 // NewComposeBackend returns a ComposeBackend ready for use. Availability is
 // not probed eagerly — wrap in NewLazyComposeBackend when you want startup
 // to survive a missing or slow docker CLI.
-func NewComposeBackend() *ComposeBackend {
-	return &ComposeBackend{dockerCmd: "docker"}
+func NewComposeBackend(resolver *SecretResolver) *ComposeBackend {
+	return &ComposeBackend{dockerCmd: "docker", resolver: resolver}
 }
 
 // Available probes `docker compose version` with a short timeout. Returns
@@ -58,6 +61,14 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	}
 	if ce.File == "" {
 		return nil, fmt.Errorf("compose execution missing file path")
+	}
+
+	// Resolve ${...} in inline env values before they become -e flags. We copy
+	// the task rather than mutating the shared one so the resolved secret lives
+	// only in this spawn's argv, never back in the in-memory task set.
+	task, err := b.resolveTaskEnv(task)
+	if err != nil {
+		return nil, err
 	}
 
 	args := buildComposeArgs(ce, task, run)
@@ -124,6 +135,23 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 			}
 		},
 	}, nil
+}
+
+// resolveTaskEnv returns a shallow task copy whose Env values have every
+// ${...} placeholder resolved. It returns the task unchanged when there is no
+// resolver or no inline env, preserving the no-overlay fast path. SecretEnv is
+// left as-is — it carries already-final values, not placeholders.
+func (b *ComposeBackend) resolveTaskEnv(task *model.Task) (*model.Task, error) {
+	if b.resolver == nil || len(task.Env) == 0 {
+		return task, nil
+	}
+	resolved, err := b.resolver.envMap(task.Env)
+	if err != nil {
+		return nil, fmt.Errorf("resolve compose env: %w", err)
+	}
+	cp := *task
+	cp.Env = resolved
+	return &cp, nil
 }
 
 // buildComposeArgs assembles the argv tail (after the docker binary) for
@@ -213,16 +241,18 @@ func composeEnvFlags(task *model.Task, instanceIndex int) []string {
 // use. Mirrors LazyContainerBackend so the daemon boots fast even when the
 // docker CLI is slow to respond (or absent).
 type LazyComposeBackend struct {
-	mu      sync.Mutex
-	backend *ComposeBackend
-	probed  bool
-	avail   bool
+	mu       sync.Mutex
+	backend  *ComposeBackend
+	probed   bool
+	avail    bool
+	resolver *SecretResolver
 }
 
 // NewLazyComposeBackend returns a backend that probes `docker compose` on
-// first call to Available()/Start().
-func NewLazyComposeBackend() *LazyComposeBackend {
-	return &LazyComposeBackend{}
+// first call to Available()/Start(). The resolver is handed to the real
+// backend once probed.
+func NewLazyComposeBackend(resolver *SecretResolver) *LazyComposeBackend {
+	return &LazyComposeBackend{resolver: resolver}
 }
 
 func (l *LazyComposeBackend) ensureProbed(ctx context.Context) (*ComposeBackend, bool) {
@@ -231,7 +261,7 @@ func (l *LazyComposeBackend) ensureProbed(ctx context.Context) (*ComposeBackend,
 	if l.probed {
 		return l.backend, l.avail
 	}
-	l.backend = NewComposeBackend()
+	l.backend = NewComposeBackend(l.resolver)
 	l.avail = l.backend.Available(ctx)
 	l.probed = true
 	return l.backend, l.avail

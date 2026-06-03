@@ -12,7 +12,9 @@ import (
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/redact"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/secretref"
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
@@ -41,16 +43,24 @@ type runService struct {
 	scheduler   runtime.NextRunGetter
 	logDir      string
 	eventBus    events.EventBus
+	// secretView controls how free-form ${...} fields are rendered in task DTOs:
+	// the reveal set decides which resolve, dataDir locates ${file:...}, and the
+	// redactor is the content-matching backstop. All may be zero (no reveal, raw
+	// shown, no masking) — the daemon always sets them.
+	reveal   map[string]bool
+	dataDir  string
+	redactor *redact.Redactor
 }
 
-func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks map[string]*model.Task, sched runtime.NextRunGetter, logDir string, bus events.EventBus) *runService {
-	return &runService{db: db, taskManager: jm, tasks: tasks, scheduler: sched, logDir: logDir, eventBus: bus}
+func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks map[string]*model.Task, sched runtime.NextRunGetter, logDir string, bus events.EventBus, reveal map[string]bool, dataDir string, redactor *redact.Redactor) *runService {
+	return &runService{db: db, taskManager: jm, tasks: tasks, scheduler: sched, logDir: logDir, eventBus: bus, reveal: reveal, dataDir: dataDir, redactor: redactor}
 }
 
 func (s *runService) ListTasks() []model.TaskResponse {
 	tasks := make([]model.TaskResponse, 0, len(s.tasks))
 	for _, task := range s.tasks {
 		tr := model.TaskResponse{Task: *task}
+		s.applySecretView(&tr.Task)
 		if task.Cron != "" && s.scheduler != nil {
 			tr.NextRunAt = s.scheduler.GetNextRun(task.Name)
 		}
@@ -58,6 +68,31 @@ func (s *runService) ListTasks() []model.TaskResponse {
 	}
 	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Name < tasks[j].Name })
 	return tasks
+}
+
+// applySecretView rewrites the free-form fields of a task DTO so a hidden
+// secret never leaves the daemon. Each field is first revealed when every
+// placeholder it uses is in reveal_vars (otherwise the raw ${...} is kept), then
+// run through the redactor as a content backstop. Type-constrained and path
+// fields were resolved at load and are safe to show as-is; Run is json:"-" and
+// never serialized, so it is left untouched. The DTO is a copy, so this never
+// mutates the in-memory task set. The Env map is cloned to avoid aliasing it.
+func (s *runService) applySecretView(t *model.Task) {
+	t.Group = s.viewField(t.Group)
+	t.Description = s.viewField(t.Description)
+	if len(t.Env) > 0 {
+		env := make(map[string]string, len(t.Env))
+		for k, v := range t.Env {
+			env[k] = s.viewField(v)
+		}
+		t.Env = env
+	}
+}
+
+// viewField reveals raw when all its refs are revealable, then redacts the
+// result as a backstop against a hidden value slipping through.
+func (s *runService) viewField(raw string) string {
+	return s.redactor.Redact(secretref.Reveal(raw, s.dataDir, s.reveal))
 }
 
 // mapNotFound translates storage.ErrNotFound to ErrRunNotFound.

@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/redact"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/storage"
@@ -76,6 +77,9 @@ type Options struct {
 	DaemonLogBuffer   *DaemonLogBuffer  // Ring buffer for daemon log streaming (optional)
 	MetricsEnabled    bool              // When false, /metrics is not mounted anywhere
 	MetricsListen     string            // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
+	RevealVars        map[string]bool   // Variable names whose resolved value may be shown in task DTOs
+	DataDir           string            // Resolves ${file:...} refs when revealing fields
+	Redactor          *redact.Redactor  // Content backstop masking hidden secrets in task DTOs
 }
 
 func New(opts Options) (*Server, error) {
@@ -117,7 +121,7 @@ func New(opts Options) (*Server, error) {
 		metricsListen:     opts.MetricsListen,
 	}
 
-	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)
+	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus, opts.RevealVars, opts.DataDir, opts.Redactor)
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals
 	s.metrics.Start(5 * time.Second)

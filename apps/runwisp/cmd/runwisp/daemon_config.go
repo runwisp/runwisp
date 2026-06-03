@@ -163,7 +163,7 @@ func resolveConfigValue(
 }
 
 func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error) {
-	cfg, err := config.Load(path)
+	cfg, err := config.LoadWithDataDir(path, flags.DataDir)
 	if err == nil {
 		return cfg, false, nil
 	}

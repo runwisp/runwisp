@@ -17,23 +17,21 @@ catches people out the first time is finding their `chat_id`.
 
 ```toml
 [[notifier]]
-id            = "tg-oncall"
-type          = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
-chat_id       = "-1001234567890"
+id        = "tg-oncall"
+type      = "telegram"
+bot_token = "${RUNWISP_TG_TOKEN}"
+chat_id   = "-1001234567890"
 ```
 
-`id` and `type` are required on every notifier. Exactly one of
-`bot_token`, `bot_token_env`, `bot_token_file` must be set —
-[the secret rule](/notifications/model/#storing-the-secret).
+`id`, `type`, `bot_token`, and `chat_id` are required. Keep the real
+token out of the file with `${...}` interpolation —
+[storing the secret](/notifications/model/#storing-the-secret).
 
-| Key              | Required           | What it does                                                                    |
-| ---------------- | ------------------ | ------------------------------------------------------------------------------- |
-| `bot_token`      | one-of (see below) | Inline bot token.                                                               |
-| `bot_token_env`  | one-of             | Name of an env var holding the token.                                           |
-| `bot_token_file` | one-of             | Path to a file containing the token. Relative paths resolve under the data dir. |
-| `chat_id`        | yes                | Chat ID. Stored as a string so negative IDs (groups) round-trip cleanly.        |
-| `template_path`  | no                 | Override the embedded HTML message template.                                    |
+| Key             | Required | What it does                                                                      |
+| --------------- | -------- | --------------------------------------------------------------------------------- |
+| `bot_token`     | yes      | The bot token. Use `${VAR}` or `${file:/path}` to keep the value out of the file. |
+| `chat_id`       | yes      | Chat ID. Stored as a string so negative IDs (groups) round-trip cleanly.          |
+| `template_path` | no       | Override the embedded HTML message template.                                      |
 
 ## 1. Create the bot
 
@@ -77,8 +75,8 @@ a message, hit `getUpdates`. Channel IDs also start with `-100`.
 
 ## 3. Store the token
 
-Pick one of the three options below. Setting more than one is a
-config-load error.
+Put a `${...}` placeholder in `bot_token` and let the daemon fill it in
+at startup. Pick whichever source fits your deployment.
 
 <Tabs syncKey="telegram-secret">
     <TabItem label="Env var" icon="seti:shell">
@@ -93,10 +91,10 @@ config-load error.
 
         ```toml
         [[notifier]]
-        id            = "tg-oncall"
-        type          = "telegram"
-        bot_token_env = "RUNWISP_TG_TOKEN"
-        chat_id       = "-1001234567890"
+        id        = "tg-oncall"
+        type      = "telegram"
+        bot_token = "${RUNWISP_TG_TOKEN}"
+        chat_id   = "-1001234567890"
         ```
     </TabItem>
     <TabItem label="File on disk" icon="document">
@@ -113,16 +111,16 @@ config-load error.
 
         ```toml
         [[notifier]]
-        id             = "tg-oncall"
-        type           = "telegram"
-        bot_token_file = "/home/you/.config/runwisp/tg-oncall.token"
-        chat_id        = "-1001234567890"
+        id        = "tg-oncall"
+        type      = "telegram"
+        bot_token = "${file:/home/you/.config/runwisp/tg-oncall.token}"
+        chat_id   = "-1001234567890"
         ```
     </TabItem>
     <TabItem label="Inline (don't)" icon="warning">
-        The notifier accepts `bot_token = "123456789:..."` directly.
-        Avoid it — config files are often committed to git or shared
-        in chat.
+        A value with no `${` is taken literally, so you _can_ paste
+        the token straight in. Avoid it — config files are often
+        committed to git or shared in chat.
 
         ```toml
         [[notifier]]
@@ -219,8 +217,9 @@ as your starting point. The helpers `statusEmoji`, `statusVerb`,
 
 ## What the loader rejects
 
-- Two of `bot_token`, `bot_token_env`, `bot_token_file` set at the
-  same time, or none of them set.
+- A missing or empty `bot_token` or `chat_id`.
+- A `${VAR}` whose env var is unset at daemon start (with no
+  `:-default`) — the daemon refuses to start and names the variable.
 - An `id` containing `:` (reserved for inline target overrides) or
   equal to `"inapp"` (reserved).
 

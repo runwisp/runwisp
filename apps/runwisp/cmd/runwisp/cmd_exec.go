@@ -173,7 +173,7 @@ func exitCodeFromRun(run *model.Run) int {
 // runExecStandalone runs the task in this CLI process. The data dir must not
 // already be owned by a daemon (isDaemonRunning's caller has confirmed that).
 func runExecStandalone(taskName string) (int, error) {
-	cfg, err := config.Load(flags.CfgFile)
+	cfg, err := config.LoadWithDataDir(flags.CfgFile, flags.DataDir)
 	if err != nil {
 		return 0, fmt.Errorf("failed to load %s: %w", flags.CfgFile, err)
 	}
@@ -194,7 +194,11 @@ func runExecStandalone(taskName string) (int, error) {
 	}
 
 	eventBus := events.NewEventBus()
-	exec := initExecutor(cfg, eventBus)
+	_, redactor, err := buildSecretRedaction(cfg)
+	if err != nil {
+		return 0, err
+	}
+	exec := initExecutor(cfg, eventBus, redactor)
 
 	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
 	defer taskManager.Shutdown()

@@ -14,8 +14,12 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// ShellBackend executes shell scripts on the host via /bin/sh.
-type ShellBackend struct{}
+// ShellBackend executes shell scripts on the host via /bin/sh. resolver
+// interpolates ${...} placeholders in the script and inline env values at spawn
+// time; it is nil in unit tests, which disables resolution.
+type ShellBackend struct {
+	resolver *SecretResolver
+}
 
 func (b *ShellBackend) Available(_ context.Context) bool { return true }
 
@@ -29,7 +33,27 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 		return nil, fmt.Errorf("shell execution has an empty script")
 	}
 
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", shell.Script)
+	script := shell.Script
+	// ${...} interpolation is a runwisp.toml feature, so it only applies to a
+	// script that came from `run =` on disk (task.Run). A cloud-dispatched
+	// ad-hoc script arrives as a pre-built ExecutionDef with an empty task.Run;
+	// it runs verbatim. The operator who opted into cloud shell dispatch didn't
+	// author that script, so resolving daemon env/files into it would both
+	// change its shell semantics unexpectedly and hand daemon state to an
+	// untrusted peer. TRUST MODEL: `run =` comes from disk only.
+	//
+	// Our ${...} forms resolve here, before /bin/sh sees the script; any bare
+	// $VAR the operator wrote is still expanded by the shell at runtime. A
+	// resolution failure surfaces as a start error captured in the run log.
+	if task.Run != "" {
+		resolved, err := b.resolver.value(shell.Script)
+		if err != nil {
+			return nil, fmt.Errorf("resolve script: %w", err)
+		}
+		script = resolved
+	}
+
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
 	// Setpgid puts the child in its own process group so SIGTERM/SIGKILL can
 	// be delivered to the entire group (including grandchildren spawned by
 	// the script) rather than just the /bin/sh leader.
@@ -38,7 +62,11 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 	// Only set cmd.Env when the task asked for overlays — leaving it nil
 	// preserves Go's default of inheriting the daemon's env verbatim.
 	if len(task.Env) > 0 || len(task.SecretEnv) > 0 {
-		cmd.Env = buildProcessEnv(os.Environ(), task.Env, task.SecretEnv)
+		resolvedEnv, err := b.resolver.envMap(task.Env)
+		if err != nil {
+			return nil, fmt.Errorf("resolve env: %w", err)
+		}
+		cmd.Env = buildProcessEnv(os.Environ(), resolvedEnv, task.SecretEnv)
 	}
 
 	grace := task.GracefulStop

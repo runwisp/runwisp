@@ -18,6 +18,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/redact"
 )
 
 const (
@@ -62,6 +63,8 @@ type Options struct {
 	Compose           Backend          // compose backend; nil when docker compose is unavailable
 	MinFreeDisk       int64            // minimum free disk space in bytes; 0 = disabled
 	OnRunUpdate       func(*model.Run) // called when run state changes (e.g. LogPath set)
+	Resolver          *SecretResolver  // resolves ${...} in shell scripts/env at spawn; nil disables
+	Redactor          *redact.Redactor // masks hidden secrets in captured output; nil disables
 	// Clock is the wall-clock source for captured-output timestamps (system
 	// lines and the per-line timestamp index). nil defaults to time.Now;
 	// the demo seeder injects a backdated clock so historical runs carry
@@ -80,7 +83,7 @@ func New(opts Options) Executor {
 	}
 
 	backends["http"] = &HTTPBackend{}
-	backends["shell"] = &ShellBackend{}
+	backends["shell"] = &ShellBackend{resolver: opts.Resolver}
 
 	if opts.CloudShellEnabled {
 		avail.Shell = BackendStatus{Available: true}
@@ -120,7 +123,7 @@ func New(opts Options) Executor {
 		backends:     backends,
 		availability: avail,
 		diskChecker:  NewDiskChecker(opts.LogDir, opts.MinFreeDisk),
-		streamer:     NewStreamManager(opts.EventBus),
+		streamer:     NewStreamManager(opts.EventBus, opts.Redactor),
 		clock:        clock,
 	}
 }

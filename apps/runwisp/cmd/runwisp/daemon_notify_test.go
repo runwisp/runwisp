@@ -5,6 +5,7 @@ package main
 
 import (
 	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -28,6 +29,30 @@ func TestServerHub(t *testing.T) {
 		require.NotNil(t, got)
 		assert.Same(t, b.Hub, got)
 	})
+}
+
+// TestInitNotify_UnresolvableSecretIsFatal locks the prime-directive contract
+// that a configured notifier whose ${VAR} secret can't resolve fails daemon
+// startup loudly rather than booting with notifications silently disabled.
+// Resolution happens before the db/bus are touched, so nil dependencies are
+// fine here — the call must error out at secret resolution.
+func TestInitNotify_UnresolvableSecretIsFatal(t *testing.T) {
+	require.NoError(t, os.Unsetenv("RUNWISP_TEST_INITNOTIFY_MISSING"))
+	cfg := &daemonConfig{
+		Config: &config.Config{
+			Notify: config.NotifyConfig{
+				Notifiers: []config.NotifierSpec{{
+					ID:         "ops",
+					Type:       "slack",
+					WebhookURL: "${RUNWISP_TEST_INITNOTIFY_MISSING}",
+				}},
+			},
+		},
+	}
+	_, err := initNotify(cfg, nil, nil, slog.Default())
+	require.Error(t, err, "an unresolvable ${VAR} secret must fail startup, not warn")
+	assert.Contains(t, err.Error(), "RUNWISP_TEST_INITNOTIFY_MISSING",
+		"the error must name the offending variable so the operator knows what to fix")
 }
 
 func TestBackoffOverride(t *testing.T) {

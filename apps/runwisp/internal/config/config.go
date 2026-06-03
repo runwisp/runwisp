@@ -17,9 +17,26 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// Load reads, decodes, defaults, and validates a runwisp.toml file.
+// Load reads, decodes, defaults, and validates a runwisp.toml file. It resolves
+// ${file:...} placeholders relative to the working directory; the daemon and
+// CLI use LoadWithDataDir to pin them to the data directory instead.
 func Load(path string) (*Config, error) {
-	cfg, err := LoadRaw(path)
+	return LoadWithDataDir(path, "")
+}
+
+// LoadWithDataDir is Load with an explicit data directory used to resolve
+// ${...} placeholders: env vars and ${file:...} references (relative file paths
+// resolve against dataDir). Type-constrained and path fields are resolved
+// during decode so they validate on their resolved value; free-form runtime
+// fields keep their raw placeholder but are resolved here once to verify the
+// referenced vars/files exist, so a missing secret fails the load loudly rather
+// than surfacing later.
+func LoadWithDataDir(path, dataDir string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+	cfg, err := decodeWithDataDir(data, dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -35,6 +52,12 @@ func Load(path string) (*Config, error) {
 	}
 	ApplyDefaults(cfg)
 	if err := Validate(cfg); err != nil {
+		return nil, err
+	}
+	// Presence check: resolve every free-form runtime value and notifier secret
+	// so an unset ${VAR} or unreadable ${file:...} fails here. The reveal set is
+	// irrelevant to presence, so pass nil and discard the resolved values.
+	if _, err := CollectHiddenSecrets(cfg, dataDir, nil); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -111,7 +134,8 @@ func GracefulStopWarnings(cfg *Config) []string {
 }
 
 // LoadRaw reads and decodes a runwisp.toml file without applying defaults or
-// running validation.
+// running validation. ${file:...} relative paths resolve against the working
+// directory.
 func LoadRaw(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -120,12 +144,22 @@ func LoadRaw(path string) (*Config, error) {
 	return decode(data)
 }
 
+// decode decodes without resolving against a data dir; ${file:...} relative
+// paths fall back to the working directory. It is the seam unit tests use.
 func decode(data []byte) (*Config, error) {
+	return decodeWithDataDir(data, "")
+}
+
+func decodeWithDataDir(data []byte, dataDir string) (*Config, error) {
 	var raw tomlConfig
 	dec := toml.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&raw); err != nil {
 		return nil, formatDecodeError(err)
+	}
+
+	if err := resolveTypedFields(&raw, dataDir); err != nil {
+		return nil, err
 	}
 
 	taskNames, err := collectTaskNames(&raw)

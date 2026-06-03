@@ -29,7 +29,7 @@ var validateCmd = &cobra.Command{
 // double-check after editing the file: task / service counts and the
 // resolved scheduler timezone (config-pinned vs system-detected).
 func runValidate(w io.Writer) error {
-	cfg, err := config.Load(flags.CfgFile)
+	cfg, err := config.LoadWithDataDir(flags.CfgFile, flags.DataDir)
 	if err != nil {
 		return &userFacingError{
 			title:   fmt.Sprintf("%s is not valid", flags.CfgFile),

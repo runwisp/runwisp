@@ -68,25 +68,23 @@ type NotifyConfig struct {
 }
 
 // NotifierSpec is one [[notifier]] block, post-decode but pre-secret-resolution.
-// The Source* fields tell the secret resolver which channel to read from
-// (env, file, inline). Exactly one of the three is set per secret-bearing
-// field, enforced by Validate.
+// The secret-bearing fields (WebhookURL, BotToken, Password) hold the raw value
+// exactly as written in TOML — an inline literal or a ${VAR} / ${file:/path}
+// placeholder. Placeholders are resolved late, in internal/notify/configload,
+// so the resolved secret never lives in config.Config and never reaches the
+// REST API or UI.
 type NotifierSpec struct {
 	ID   string
 	Type string
 
 	// Slack-specific
-	WebhookURL     string
-	WebhookURLEnv  string
-	WebhookURLFile string
-	SlackChannel   string
+	WebhookURL   string
+	SlackChannel string
 
 	// Telegram-specific
-	BotToken     string
-	BotTokenEnv  string
-	BotTokenFile string
-	ChatID       string
-	ParseMode    string
+	BotToken  string
+	ChatID    string
+	ParseMode string
 
 	// SMTP-specific
 	Host          string
@@ -95,8 +93,6 @@ type NotifierSpec struct {
 	TLSSkipVerify bool
 	Username      string
 	Password      string
-	PasswordEnv   string
-	PasswordFile  string
 	From          string
 	ReplyTo       string
 	Recipients    []string // To:
@@ -127,6 +123,13 @@ type NotificationRoute struct {
 // build deep-links into the dashboard; when empty, link lines are omitted
 // from outbound messages rather than rendered as broken URLs.
 //
+// RevealVars lists environment-variable names whose resolved value may be
+// shown in the REST API / Web UI. Free-form fields (inline env values,
+// description, group) that interpolate only revealed vars display their
+// resolved value; anything else displays the raw ${...} placeholder. The
+// default — forgetting to list a var — always hides, so a secret can never
+// leak by omission. ${file:...} values can never be revealed.
+//
 // MetricsEnabled gates the OpenMetrics /metrics endpoint. Default off: the
 // per-task labels and the daemon version label are information disclosure
 // that a publicly-exposed daemon shouldn't leak by default. Operators who
@@ -140,6 +143,7 @@ type Daemon struct {
 	ExternalURL        string        `toml:"-"`
 	MetricsEnabled     bool          `toml:"-"`
 	MetricsListen      string        `toml:"-"`
+	RevealVars         []string      `toml:"-"`
 }
 
 // Defaults provides fallback values applied to every task.
@@ -311,11 +315,12 @@ type tomlConfig struct {
 // daemonWire mirrors [daemon] before parsing — the duration string for
 // shutdown_timeout is parsed at config-load time.
 type daemonWire struct {
-	AllowCloudDispatch bool   `toml:"allow_cloud_dispatch,omitempty"`
-	ShutdownTimeout    string `toml:"shutdown_timeout,omitempty"`
-	ExternalURL        string `toml:"external_url,omitempty"`
-	MetricsEnabled     bool   `toml:"metrics_enabled,omitempty"`
-	MetricsListen      string `toml:"metrics_listen,omitempty"`
+	AllowCloudDispatch bool     `toml:"allow_cloud_dispatch,omitempty"`
+	ShutdownTimeout    string   `toml:"shutdown_timeout,omitempty"`
+	ExternalURL        string   `toml:"external_url,omitempty"`
+	MetricsEnabled     bool     `toml:"metrics_enabled,omitempty"`
+	MetricsListen      string   `toml:"metrics_listen,omitempty"`
+	RevealVars         []string `toml:"reveal_vars,omitempty"`
 }
 
 // schedulerWire mirrors [scheduler] before parsing.
@@ -344,16 +349,12 @@ type notifierWire struct {
 	ID   string `toml:"id"`
 	Type string `toml:"type"`
 
-	WebhookURL     string `toml:"webhook_url,omitempty"`
-	WebhookURLEnv  string `toml:"webhook_url_env,omitempty"`
-	WebhookURLFile string `toml:"webhook_url_file,omitempty"`
-	Channel        string `toml:"channel,omitempty"`
+	WebhookURL string `toml:"webhook_url,omitempty"`
+	Channel    string `toml:"channel,omitempty"`
 
-	BotToken     string `toml:"bot_token,omitempty"`
-	BotTokenEnv  string `toml:"bot_token_env,omitempty"`
-	BotTokenFile string `toml:"bot_token_file,omitempty"`
-	ChatID       string `toml:"chat_id,omitempty"`
-	ParseMode    string `toml:"parse_mode,omitempty"`
+	BotToken  string `toml:"bot_token,omitempty"`
+	ChatID    string `toml:"chat_id,omitempty"`
+	ParseMode string `toml:"parse_mode,omitempty"`
 
 	Host          string   `toml:"host,omitempty"`
 	Port          int      `toml:"port,omitempty"`
@@ -361,8 +362,6 @@ type notifierWire struct {
 	TLSSkipVerify bool     `toml:"tls_skip_verify,omitempty"`
 	Username      string   `toml:"username,omitempty"`
 	Password      string   `toml:"password,omitempty"`
-	PasswordEnv   string   `toml:"password_env,omitempty"`
-	PasswordFile  string   `toml:"password_file,omitempty"`
 	From          string   `toml:"from,omitempty"`
 	ReplyTo       string   `toml:"reply_to,omitempty"`
 	To            []string `toml:"to,omitempty"`
@@ -594,6 +593,7 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		ExternalURL:        externalURL,
 		MetricsEnabled:     w.MetricsEnabled,
 		MetricsListen:      metricsListen,
+		RevealVars:         w.RevealVars,
 	}, nil
 }
 

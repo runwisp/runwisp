@@ -354,7 +354,7 @@ func TestComposeBackend_Start_ContextCancelledBeforeStart(t *testing.T) {
 
 func TestLazyComposeBackend_ReturnsErrorWhenUnavailable(t *testing.T) {
 	t.Setenv("PATH", "")
-	l := NewLazyComposeBackend()
+	l := NewLazyComposeBackend(nil)
 	_, err := l.Start(context.Background(), &model.Task{}, &model.Run{},
 		&model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices})
 	require.Error(t, err)

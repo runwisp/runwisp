@@ -42,9 +42,9 @@ It's three steps, and the shape is the same for every provider:
 
 ```toml
 [[notifier]]
-id              = "slack-ops"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+id          = "slack-ops"
+type        = "slack"
+webhook_url = "${RUNWISP_SLACK_OPS_URL}"
 
 [tasks.backup-postgres]
 cron              = "30 2 * * *"
@@ -72,36 +72,68 @@ has the full list for each.
 
 ```toml
 [[notifier]]
-id              = "slack-ops"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
-channel         = "#ops-alerts"   # optional
+id          = "slack-ops"
+type        = "slack"
+webhook_url = "${RUNWISP_SLACK_OPS_URL}"
+channel     = "#ops-alerts"   # optional
 
 [[notifier]]
-id            = "tg-oncall"
-type          = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
-chat_id       = "-1001234567890"
+id        = "tg-oncall"
+type      = "telegram"
+bot_token = "${RUNWISP_TG_TOKEN}"
+chat_id   = "-1001234567890"
 ```
 
 ## Storing the secret
 
 Every notifier needs a credential of some kind — a webhook URL, a bot
-token, that sort of thing. There are three ways to hand it over:
+token, that sort of thing. You don't want that value sitting inline in a
+TOML file that ends up in git, so the secret-bearing fields —
+`webhook_url` (Slack), `bot_token` (Telegram), and `password` (SMTP) —
+understand `${...}` interpolation. Write the placeholder; RunWisp fills
+it in when the daemon starts.
 
-- **Env var** (the one to reach for): set
-  `webhook_url_env = "RUNWISP_SLACK_URL"` and put the actual value in
-  your shell or systemd unit. Works the same way everywhere.
-- **File**: set `webhook_url_file = "secrets/slack.url"`. Relative paths
-  resolve under the data directory. Handy when a secrets manager drops
-  the value on disk for you — just `chmod 600` the file.
-- **Inline**: drop the value straight into `runwisp.toml`. Convenient,
-  sure, but TOML files have a way of ending up in git or pasted into
-  chat. Keep inline values to local experiments.
+```toml
+webhook_url = "${SLACK_WEBHOOK_URL}"          # from an env var
+bot_token   = "${file:/run/secrets/tg_token}" # from a file
+password    = "${SMTP_PASSWORD:-}"             # optional, empty when unset
+```
 
-Pick **exactly one** of the three per secret. Set two and it's a
-config-load error — the loader won't try to guess which you meant, it
-just refuses to start.
+There are three forms:
+
+- **`${NAME}`** — the value of env var `NAME`. The one to reach for:
+  set it in your shell, systemd unit, or Docker env. If `NAME` is unset
+  or empty the daemon **refuses to start** and names the variable, so a
+  missing secret fails loudly instead of silently sending nothing.
+- **`${NAME:-default}`** — same, but falls back to `default` when `NAME`
+  is unset or empty. An empty default like `${SMTP_PASSWORD:-}` is how
+  you make a genuinely optional secret optional — handy for an SMTP
+  relay that may or may not need auth. (`webhook_url` and `bot_token`
+  are required, so a `:-` fallback there only papers over a real
+  misconfig.)
+- **`${file:/path}`** — the contents of a file, with surrounding
+  whitespace trimmed. Relative paths resolve under the data directory.
+  Handy when a secrets manager (Vault agent, sops, Docker secrets at
+  `/run/secrets/...`) drops the value on disk — just `chmod 600` it.
+
+A value with no `${` is taken literally, so an inline secret still
+works for local experiments — and a password with a bare `$` in it is
+safe, since only `${` starts a placeholder.
+
+These same `${...}` forms work in [every `runwisp.toml`
+field](/configuration/variables/), not just these three — that page has
+the full picture, including how resolved values are hidden from the API
+and Web UI. What's special about `webhook_url`, `bot_token`, and
+`password` is that they're **always** treated as secrets: their resolved
+value is never displayed and can never be opted into `reveal_vars`. The
+API and Web UI only ever see the raw `${...}` placeholder.
+
+Resolution stays fully offline — environment variables and local files
+only, never the network — but `runwisp validate` and daemon start now
+both **require** every referenced variable and file to be present. That's
+the trade for `${...}` working everywhere: a typo'd or missing secret is
+caught the moment you validate, not silently at send time. Use a `:-`
+default for anything genuinely optional.
 
 And if a delivery ever errors out, the secret is swapped for
 `[redacted]` before anything hits the bell or the daemon log. A 5xx from

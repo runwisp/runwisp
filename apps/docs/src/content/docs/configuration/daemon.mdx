@@ -25,6 +25,7 @@ shutdown_timeout = "10s"
 external_url     = "https://runwisp.example.com"
 metrics_enabled  = false
 metrics_listen   = ""
+reveal_vars      = ["LOG_LEVEL", "BASE_URL"]
 ```
 
 | Key                | Default | What it does                                                                                                                                                                                                                    |
@@ -33,6 +34,7 @@ metrics_listen   = ""
 | `external_url`     | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                           |
 | `metrics_enabled`  | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.            |
 | `metrics_listen`   | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`. |
+| `reveal_vars`      | _empty_ | Names of variables whose resolved `${...}` value may be shown in the REST API and Web UI. Everything not listed stays hidden. See [Variables & secrets](/configuration/variables/).                                             |
 
 ### `shutdown_timeout`
 
@@ -89,6 +91,27 @@ API, and `/health` all stay on the main listener.
 
 And if you set `metrics_listen` but never turned `metrics_enabled` on,
 the daemon rejects it at boot instead of quietly ignoring it.
+
+### `reveal_vars`
+
+`${...}` placeholders work in [every `runwisp.toml`
+field](/configuration/variables/), and anything RunWisp pulled out of a
+variable is **hidden by default** — the API and Web UI show the raw
+`${NAME}` placeholder, not the value. `reveal_vars` is the opt-in
+override: list the variable names whose resolved value is safe to
+display, and only those show through.
+
+```toml
+[daemon]
+reveal_vars = ["LOG_LEVEL", "BASE_URL"]
+```
+
+The list holds **variable names**, declared once — not per use site. A
+name you forget to add just keeps showing as `${NAME}`, so the failure
+mode is "too hidden", never "leaked". `${file:...}` values can never be
+revealed; a file is the always-secret channel. The full model — what's
+hidden, what's shown automatically, and how it's redacted from logs —
+is on the [Variables & secrets](/configuration/variables/) page.
 
 ## CLI flags: data directory & listen address
 

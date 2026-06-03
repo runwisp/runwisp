@@ -137,14 +137,14 @@ coalesce_outbound: bool =true           — coalesce outbound bursts too
 Common: `id` (req, non-empty, not "inapp", no ":"), `type` (req: `slack`|`telegram`|`smtp`), `template_path` (optional).
 
 ```
-slack:    one of webhook_url | webhook_url_env | webhook_url_file (req); channel (starts # or @)
-telegram: one of bot_token | bot_token_env | bot_token_file (req); chat_id (req); parse_mode (MarkdownV2 needs template_path)
+slack:    webhook_url (req); channel (starts # or @)
+telegram: bot_token (req); chat_id (req); parse_mode (MarkdownV2 needs template_path)
 smtp:     host(req); port 0..65535; tls starttls|implicit|none (default: 465→implicit else starttls);
           tls_skip_verify bool; from(req email); reply_to(email); to(req,>=1) + cc/bcc(emails);
-          username + one of password|password_env|password_file (set together or all omitted); tls=none forbids credentials
+          username + password (set together or both omitted); tls=none forbids credentials
 ```
 
-Secrets: prefer `*_env` / `*_file` forms; never inline secrets you don't control. Secrets are never logged or sent over the cloud integration.
+Secrets: the secret-bearing fields `webhook_url` / `bot_token` / `password` accept `${VAR}`, `${VAR:-default}`, and `${file:/path}` interpolation — resolved late, at daemon start, so the raw `${...}` placeholder is what lives in `config.Config` / REST / UI, never the secret. Other fields are taken verbatim. Secrets are never logged or sent over the cloud integration.
 
 ### [[notification_route]] (route events to channels; repeatable)
 

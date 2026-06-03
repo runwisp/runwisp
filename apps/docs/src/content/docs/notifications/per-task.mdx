@@ -62,9 +62,9 @@ workspace covering several channels:
 
 ```toml
 [[notifier]]
-id              = "slack"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_URL"
+id          = "slack"
+type        = "slack"
+webhook_url = "${RUNWISP_SLACK_URL}"
 # no `channel` set — each task picks one inline
 
 [tasks.nightly-db-backup]
@@ -83,10 +83,10 @@ channel (`#name` or `@user`); for Telegram it is the chat id.
 
 ```toml
 [[notifier]]
-id            = "tg"
-type          = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
-chat_id       = "-1001"
+id        = "tg"
+type      = "telegram"
+bot_token = "${RUNWISP_TG_TOKEN}"
+chat_id   = "-1001"
 
 [tasks.payments-reconcile]
 notify_on_failure = ["tg:-1009998887"]
@@ -121,9 +121,9 @@ unique channel.
 
 ```toml
 [[notifier]]
-id              = "slack-ops"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+id          = "slack-ops"
+type        = "slack"
+webhook_url = "${RUNWISP_SLACK_OPS_URL}"
 
 [tasks.nightly-db-backup]
 cron              = "30 2 * * *"

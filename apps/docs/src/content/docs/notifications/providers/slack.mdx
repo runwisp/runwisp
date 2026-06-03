@@ -17,23 +17,21 @@ override lets a single webhook fan out to several destinations.
 
 ```toml
 [[notifier]]
-id              = "slack-ops"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
-channel         = "#ops"          # optional override
+id          = "slack-ops"
+type        = "slack"
+webhook_url = "${RUNWISP_SLACK_OPS_URL}"
+channel     = "#ops"          # optional override
 ```
 
-`id` and `type` are required on every notifier. Exactly one of
-`webhook_url`, `webhook_url_env`, `webhook_url_file` must be set —
-[the secret rule](/notifications/model/#storing-the-secret).
+`id`, `type`, and `webhook_url` are required. Keep the real URL out of
+the file with `${...}` interpolation —
+[storing the secret](/notifications/model/#storing-the-secret).
 
-| Key                | Required           | What it does                                                                  |
-| ------------------ | ------------------ | ----------------------------------------------------------------------------- |
-| `webhook_url`      | one-of (see below) | Inline webhook URL.                                                           |
-| `webhook_url_env`  | one-of             | Name of an env var holding the URL.                                           |
-| `webhook_url_file` | one-of             | Path to a file containing the URL. Relative paths resolve under the data dir. |
-| `channel`          | no                 | Override the webhook's default. Must start with `#` (channel) or `@` (user).  |
-| `template_path`    | no                 | Path to a Go-template file overriding the embedded message format.            |
+| Key             | Required | What it does                                                                        |
+| --------------- | -------- | ----------------------------------------------------------------------------------- |
+| `webhook_url`   | yes      | The webhook URL. Use `${VAR}` or `${file:/path}` to keep the value out of the file. |
+| `channel`       | no       | Override the webhook's default. Must start with `#` (channel) or `@` (user).        |
+| `template_path` | no       | Path to a Go-template file overriding the embedded message format.                  |
 
 ## 1. Create the webhook in Slack
 
@@ -52,8 +50,8 @@ Treat the URL as a secret — anyone with it can post to your channel.
 
 ## 2. Store the URL
 
-Pick one of the three options below. Setting more than one is a
-config-load error.
+Put a `${...}` placeholder in `webhook_url` and let the daemon fill it
+in at startup. Pick whichever source fits your deployment.
 
 <Tabs syncKey="slack-secret">
     <TabItem label="Env var" icon="seti:shell">
@@ -68,10 +66,10 @@ config-load error.
 
         ```toml
         [[notifier]]
-        id              = "slack-ops"
-        type            = "slack"
-        webhook_url_env = "RUNWISP_SLACK_OPS_URL"
-        channel         = "#ops"
+        id          = "slack-ops"
+        type        = "slack"
+        webhook_url = "${RUNWISP_SLACK_OPS_URL}"
+        channel     = "#ops"
         ```
     </TabItem>
     <TabItem label="File on disk" icon="document">
@@ -88,16 +86,17 @@ config-load error.
 
         ```toml
         [[notifier]]
-        id               = "slack-ops"
-        type             = "slack"
-        webhook_url_file = "/home/you/.config/runwisp/slack-ops.url"
-        channel          = "#ops"
+        id          = "slack-ops"
+        type        = "slack"
+        webhook_url = "${file:/home/you/.config/runwisp/slack-ops.url}"
+        channel     = "#ops"
         ```
     </TabItem>
     <TabItem label="Inline (don't)" icon="warning">
-        The notifier accepts `webhook_url = "https://…"` directly.
-        Avoid it — config files are often committed to git or shared
-        in chat, and an inline URL will leak.
+        A value with no `${` is taken literally, so you _can_ paste
+        the URL straight in. Avoid it — config files are often
+        committed to git or shared in chat, and an inline URL will
+        leak.
 
         ```toml
         [[notifier]]
@@ -201,8 +200,9 @@ task name, run id, exit code, end reason, timestamp, captured tail.
 ## What the loader rejects
 
 - `channel` that doesn't start with `#` (channel) or `@` (user).
-- Two of `webhook_url`, `webhook_url_env`, `webhook_url_file` set at
-  the same time, or none of them set.
+- A missing or empty `webhook_url`.
+- A `${VAR}` whose env var is unset at daemon start (with no
+  `:-default`) — the daemon refuses to start and names the variable.
 - An `id` containing `:` (reserved for inline target overrides) or
   equal to `"inapp"` (reserved).
 

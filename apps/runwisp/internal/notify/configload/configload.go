@@ -9,14 +9,13 @@ package configload
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
 	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/internal/secretref"
 )
 
 // ResolvedNotify carries everything the daemon needs to construct a
@@ -68,14 +67,14 @@ func resolveNotifier(n config.NotifierSpec, dataDir string, renderCtx render.Tem
 	}
 	switch n.Type {
 	case "slack":
-		url, err := resolveSecret(n.WebhookURL, n.WebhookURLEnv, n.WebhookURLFile, dataDir)
+		url, _, err := secretref.Resolve(n.WebhookURL, dataDir)
 		if err != nil {
 			return channel.NotifierSpec{}, fmt.Errorf("notifier %q webhook_url: %w", n.ID, err)
 		}
 		spec.WebhookURL = url
 		spec.SlackChannel = n.SlackChannel
 	case "telegram":
-		token, err := resolveSecret(n.BotToken, n.BotTokenEnv, n.BotTokenFile, dataDir)
+		token, _, err := secretref.Resolve(n.BotToken, dataDir)
 		if err != nil {
 			return channel.NotifierSpec{}, fmt.Errorf("notifier %q bot_token: %w", n.ID, err)
 		}
@@ -99,47 +98,16 @@ func fillSMTPSpec(spec *channel.NotifierSpec, n config.NotifierSpec, dataDir str
 	spec.Recipients = append([]string(nil), n.Recipients...)
 	spec.CC = append([]string(nil), n.CC...)
 	spec.BCC = append([]string(nil), n.BCC...)
-	if strings.TrimSpace(n.Password) == "" &&
-		strings.TrimSpace(n.PasswordEnv) == "" &&
-		strings.TrimSpace(n.PasswordFile) == "" {
+	if strings.TrimSpace(n.Password) == "" {
 		// Auth-less local relay (e.g. Postfix on 127.0.0.1:25); leave empty.
 		return nil
 	}
-	pw, err := resolveSecret(n.Password, n.PasswordEnv, n.PasswordFile, dataDir)
+	pw, _, err := secretref.Resolve(n.Password, dataDir)
 	if err != nil {
 		return fmt.Errorf("notifier %q password: %w", n.ID, err)
 	}
 	spec.Password = pw
 	return nil
-}
-
-// resolveSecret applies the standard env > file > inline precedence; exactly
-// one is set after config validation, so this just reads whichever is
-// non-empty. File paths are interpreted relative to dataDir when not
-// absolute.
-func resolveSecret(inline, envName, file, dataDir string) (string, error) {
-	if inline = strings.TrimSpace(inline); inline != "" {
-		return inline, nil
-	}
-	if envName = strings.TrimSpace(envName); envName != "" {
-		v := os.Getenv(envName)
-		if v == "" {
-			return "", fmt.Errorf("env var %s is not set", envName)
-		}
-		return v, nil
-	}
-	if file = strings.TrimSpace(file); file != "" {
-		path := file
-		if !filepath.IsAbs(path) && dataDir != "" {
-			path = filepath.Join(dataDir, file)
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return "", fmt.Errorf("read secret file %s: %w", path, err)
-		}
-		return strings.TrimSpace(string(b)), nil
-	}
-	return "", fmt.Errorf("secret source missing (validation should have caught this)")
 }
 
 func compileRoute(r config.NotificationRoute) (notify.Rule, error) {

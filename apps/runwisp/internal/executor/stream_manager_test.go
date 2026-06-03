@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -59,7 +60,7 @@ func TestStreamManager_OneEventPerLine(t *testing.T) {
 
 	eb := events.NewEventBus()
 	drain := captureLogEvents(t, eb)
-	sm := NewStreamManager(eb)
+	sm := NewStreamManager(eb, nil)
 
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}
@@ -97,7 +98,7 @@ func TestStreamManager_StderrTaggedNoPrefixInText(t *testing.T) {
 
 	eb := events.NewEventBus()
 	drain := captureLogEvents(t, eb)
-	sm := NewStreamManager(eb)
+	sm := NewStreamManager(eb, nil)
 
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}
@@ -117,6 +118,43 @@ func TestStreamManager_StderrTaggedNoPrefixInText(t *testing.T) {
 	assert.Contains(t, string(disk), "[ERR] uh oh\n")
 }
 
+// TestStreamManager_RedactsHiddenValue asserts a hidden secret a task echoes
+// back is masked in BOTH the SSE event text and the on-disk log line — the
+// single redaction point in the line callback feeds both sinks.
+func TestStreamManager_RedactsHiddenValue(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "test.log")
+	w, err := NewLogWriter(LogWriterOpts{
+		LogPath:  logPath,
+		IdxPath:  logPath + ".idx",
+		TidxPath: logPath + ".tidx",
+	})
+	require.NoError(t, err)
+
+	red := redact.New()
+	red.Add("s3cr3t-token-value")
+
+	eb := events.NewEventBus()
+	drain := captureLogEvents(t, eb)
+	sm := NewStreamManager(eb, red)
+
+	task := &model.Task{Name: "t"}
+	run := &model.Run{ID: "r1"}
+
+	sm.StreamToFile(strings.NewReader("using token s3cr3t-token-value now\n"), w, task, run, logutil.StreamStdout)
+	require.NoError(t, w.Close())
+
+	got := drain()
+	require.Len(t, got, 1)
+	assert.Equal(t, "using token [redacted] now", got[0].Text, "SSE line is masked")
+	assert.NotContains(t, got[0].Text, "s3cr3t-token-value")
+
+	disk, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(disk), "using token [redacted] now")
+	assert.NotContains(t, string(disk), "s3cr3t-token-value", "secret never lands on disk")
+}
+
 // TestStreamManager_OversizedLineSplit exercises LineBuffer's >64KB split:
 // the logical line shows up as multiple events with monotonic LineNums, and
 // segments 2..N carry Continued=true.
@@ -132,7 +170,7 @@ func TestStreamManager_OversizedLineSplit(t *testing.T) {
 
 	eb := events.NewEventBus()
 	drain := captureLogEvents(t, eb)
-	sm := NewStreamManager(eb)
+	sm := NewStreamManager(eb, nil)
 
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}

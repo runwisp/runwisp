@@ -73,6 +73,7 @@ export default defineConfig({
                     label: "Configuration Reference",
                     items: [
                         { label: "Overview", slug: "configuration/overview" },
+                        { label: "Variables & secrets", slug: "configuration/variables" },
                         { label: "[storage]", slug: "configuration/storage" },
                         { label: "[daemon]", slug: "configuration/daemon" },
                         { label: "[defaults]", slug: "configuration/defaults" },

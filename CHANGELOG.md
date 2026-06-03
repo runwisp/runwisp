@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`${...}` interpolation in every field.** `${VAR}`, `${VAR:-default}`, and `${file:/path}` now work in any `runwisp.toml` value — `env`, `timeout`, `cron`, paths, notifier secrets, and the rest — resolved offline from the environment and local files. Values pulled from a variable are hidden from the REST API and Web UI by default and redacted from captured run output; opt specific names into being shown with `[daemon] reveal_vars`. See [Variables & secrets](https://docs.runwisp.com/configuration/variables/).
 - **`runwisp demo`.** Boots a throwaway instance with a realistic config and hundreds of pre-seeded historical runs (with real on-disk logs) so you can explore the TUI and Web UI without writing a `runwisp.toml`. Everything lives in a temp directory that's deleted when the daemon stops; `--cloud` connects to the control plane instead. See [Quick start](https://docs.runwisp.com/getting-started/quick-start/).
 - **Structured daemon logging.** `runwisp daemon` logs every run start, success, and failure with exit code, end reason, and duration. New `--log-level` / `--log-format` flags and `RUNWISP_LOG_LEVEL` / `RUNWISP_LOG_FORMAT` env vars; JSON output for log pipelines. See [Operations / Logging](https://docs.runwisp.com/operations/logging/).
 
 ### Changed
 
+- **`runwisp validate` and daemon start now require referenced variables.** With `${...}` resolving everywhere, a missing `${VAR}` (no `:-default`) or an unreadable `${file:...}` fails loudly at validate and boot instead of silently running blank. In `run` scripts, `${...}` is resolved by RunWisp before the shell sees it — use the bare `$VAR` form for shell expansion. See [Variables & secrets](https://docs.runwisp.com/configuration/variables/).
+- **Notifier secrets use `${...}` interpolation.** Replaces the `*_env` / `*_file` keys: `webhook_url`, `bot_token`, and `password` now accept `${VAR}`, `${VAR:-default}`, and `${file:/path}` directly in the value. These three fields are always treated as secrets — never shown in the API/UI and never eligible for `reveal_vars`. See [Notifications / Storing the secret](https://docs.runwisp.com/notifications/model/#storing-the-secret).
 - **Quieter daemon output.** HTTP access lines share the slog shape and destination; routine 200/401 traffic (health, SSE keepalives, anonymous polling) moves to `debug`; startup banner absorbs init warnings; redundant post-banner lines are gone; data-directory section collapses to one absolute `Data` line; Ctrl+C-triggered failures no longer surface as `WARN`/`ERROR`.
 
 ### Fixed

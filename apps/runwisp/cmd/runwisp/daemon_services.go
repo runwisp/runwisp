@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/redact"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -38,10 +39,16 @@ type daemonServices struct {
 	PendingSummary      uikit.PendingRunsSummary
 	CatchUpResult       runtime.CatchUpResult
 	TaskShutdownTimeout time.Duration
+	// Redactor masks hidden resolved secrets in captured output and API DTOs;
+	// RevealVars is the set of variable names whose resolved value may be shown.
+	// Both are built once at boot from the config's ${...} references.
+	Redactor   *redact.Redactor
+	RevealVars map[string]bool
 	// InitWarnings holds non-fatal warnings collected during service init
-	// (notify subsystem failures, scheduler start hiccups, etc.) so the
-	// caller can render them inside the startup banner instead of having
-	// them slog out and fragment the banner above it.
+	// (crashed-run marking, scheduler start hiccups, etc.) so the caller can
+	// render them inside the startup banner instead of having them slog out
+	// and fragment the banner above it. Notify misconfiguration is fatal, not
+	// a warning — see initNotify's call site.
 	InitWarnings []string
 }
 
@@ -64,7 +71,12 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	eventBus := events.NewEventBus()
 
-	exec := initExecutor(cfg.Config, eventBus)
+	reveal, redactor, err := buildSecretRedaction(cfg.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	exec := initExecutor(cfg.Config, eventBus, redactor)
 
 	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)
 
@@ -109,13 +121,19 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	softDeletePurger := runtime.NewSoftDeletePurger(db, flags.LogDir())
 	softDeletePurger.Start()
 
+	// A configured notify block that can't be brought up — most commonly a
+	// ${VAR} secret whose env var is unset or a ${file:...} that can't be read
+	// — is a fatal config error, not a warning. Booting anyway would leave the
+	// operator believing alerts are wired when they silently never fire, which
+	// violates the prime directive that nothing fails silently. The error names
+	// the offending notifier and field, so it tells the operator what to fix.
 	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
 	if err != nil {
-		addWarning("Failed to initialize notify subsystem: %v", err)
+		return nil, fmt.Errorf("notify subsystem: %w", err)
 	}
 	if notifyB.Service != nil {
 		if startErr := notifyB.Service.Start(context.Background()); startErr != nil {
-			addWarning("Failed to start notify subsystem: %v", startErr)
+			return nil, fmt.Errorf("start notify subsystem: %w", startErr)
 		}
 	}
 
@@ -135,12 +153,40 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		CatchUpResult:       catchUpResult,
 		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
 		InitWarnings:        initWarnings,
+		Redactor:            redactor,
+		RevealVars:          reveal,
 	}, nil
 }
 
-func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executor {
+// buildSecretRedaction turns the config's reveal_vars list into a lookup set and
+// seeds a Redactor with every hidden resolved secret. Resolution here re-reads
+// the same env/files the load-time presence check already verified, so an error
+// is fatal — it means a referenced ${VAR}/file went missing between validate and
+// boot. Forgetting to list a name in reveal_vars hides its value (safe).
+func buildSecretRedaction(cfg *config.Config) (map[string]bool, *redact.Redactor, error) {
+	reveal := make(map[string]bool, len(cfg.Daemon.RevealVars))
+	for _, name := range cfg.Daemon.RevealVars {
+		reveal[name] = true
+	}
+	hidden, err := config.CollectHiddenSecrets(cfg, flags.DataDir, reveal)
+	if err != nil {
+		return nil, nil, err
+	}
+	redactor := redact.New()
+	for _, v := range hidden {
+		redactor.Add(v)
+	}
+	return reveal, redactor, nil
+}
+
+func initExecutor(cfg *config.Config, eventBus events.EventBus, redactor *redact.Redactor) executor.Executor {
+	// One resolver per daemon: it turns ${...} in shell scripts and inline env
+	// values into their real values at spawn, and re-seeds the redactor with
+	// file-sourced secrets read at run time (file contents can change post-boot).
+	resolver := &executor.SecretResolver{DataDir: flags.DataDir, Redactor: redactor}
+
 	dockerBackend := executor.NewLazyContainerBackend()
-	composeBackend := executor.NewLazyComposeBackend()
+	composeBackend := executor.NewLazyComposeBackend(resolver)
 
 	minFreeDisk := cfg.Storage.MinFreeSpace
 
@@ -152,6 +198,8 @@ func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executo
 		Docker:            dockerBackend,
 		Compose:           composeBackend,
 		MinFreeDisk:       minFreeDisk,
+		Resolver:          resolver,
+		Redactor:          redactor,
 	})
 }
 

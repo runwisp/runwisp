@@ -16,7 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/render"
 )
 
-func TestResolve_InlineSecretWins(t *testing.T) {
+func TestResolve_InlineLiteralPassthrough(t *testing.T) {
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{
 			ID:         "ops",
@@ -34,9 +34,9 @@ func TestResolve_EnvSecret(t *testing.T) {
 	t.Setenv("RUNWISP_TEST_SLACK_URL", "https://hooks.slack.test/from-env")
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{
-			ID:            "ops",
-			Type:          "slack",
-			WebhookURLEnv: "RUNWISP_TEST_SLACK_URL",
+			ID:         "ops",
+			Type:       "slack",
+			WebhookURL: "${RUNWISP_TEST_SLACK_URL}",
 		}},
 	}
 	got, err := Resolve(cfg, t.TempDir(), render.TemplateContext{})
@@ -50,9 +50,9 @@ func TestResolve_EnvSecretMissing(t *testing.T) {
 	require.NoError(t, os.Unsetenv("RUNWISP_TEST_MISSING_URL"))
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{
-			ID:            "ops",
-			Type:          "slack",
-			WebhookURLEnv: "RUNWISP_TEST_MISSING_URL",
+			ID:         "ops",
+			Type:       "slack",
+			WebhookURL: "${RUNWISP_TEST_MISSING_URL}",
 		}},
 	}
 	_, err := Resolve(cfg, t.TempDir(), render.TemplateContext{})
@@ -67,9 +67,9 @@ func TestResolve_FileSecretRelativeToDataDir(t *testing.T) {
 
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{
-			ID:             "ops",
-			Type:           "slack",
-			WebhookURLFile: "slack.url",
+			ID:         "ops",
+			Type:       "slack",
+			WebhookURL: "${file:slack.url}",
 		}},
 	}
 	got, err := Resolve(cfg, dir, render.TemplateContext{})
@@ -85,10 +85,10 @@ func TestResolve_FileSecretAbsolutePath(t *testing.T) {
 
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{
-			ID:           "tg",
-			Type:         "telegram",
-			BotTokenFile: abs,
-			ChatID:       "-100123",
+			ID:       "tg",
+			Type:     "telegram",
+			BotToken: "${file:" + abs + "}",
+			ChatID:   "-100123",
 		}},
 	}
 	got, err := Resolve(cfg, t.TempDir(), render.TemplateContext{})
@@ -101,14 +101,14 @@ func TestResolve_SMTP_PasswordViaEnv(t *testing.T) {
 	t.Setenv("RUNWISP_TEST_SMTP_PASSWORD", "shh-from-env")
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{
-			ID:          "email-ops",
-			Type:        "smtp",
-			Host:        "smtp.example.com",
-			Port:        587,
-			Username:    "apikey",
-			PasswordEnv: "RUNWISP_TEST_SMTP_PASSWORD",
-			From:        "runwisp@example.com",
-			Recipients:  []string{"ops@example.com"},
+			ID:         "email-ops",
+			Type:       "smtp",
+			Host:       "smtp.example.com",
+			Port:       587,
+			Username:   "apikey",
+			Password:   "${RUNWISP_TEST_SMTP_PASSWORD}",
+			From:       "runwisp@example.com",
+			Recipients: []string{"ops@example.com"},
 		}},
 	}
 	got, err := Resolve(cfg, t.TempDir(), render.TemplateContext{})
@@ -125,14 +125,14 @@ func TestResolve_SMTP_PasswordViaFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "smtp.pw"), []byte("from-file\n"), 0o600))
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{
-			ID:           "email-ops",
-			Type:         "smtp",
-			Host:         "smtp.example.com",
-			Port:         587,
-			Username:     "apikey",
-			PasswordFile: "smtp.pw",
-			From:         "runwisp@example.com",
-			Recipients:   []string{"ops@example.com"},
+			ID:         "email-ops",
+			Type:       "smtp",
+			Host:       "smtp.example.com",
+			Port:       587,
+			Username:   "apikey",
+			Password:   "${file:smtp.pw}",
+			From:       "runwisp@example.com",
+			Recipients: []string{"ops@example.com"},
 		}},
 	}
 	got, err := Resolve(cfg, dir, render.TemplateContext{})

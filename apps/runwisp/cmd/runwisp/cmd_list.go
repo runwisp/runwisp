@@ -22,7 +22,7 @@ var listCmd = &cobra.Command{
 }
 
 func runList() error {
-	cfg, err := config.Load(flags.CfgFile)
+	cfg, err := config.LoadWithDataDir(flags.CfgFile, flags.DataDir)
 	if err != nil {
 		return fmt.Errorf("failed to load %s: %w", flags.CfgFile, err)
 	}

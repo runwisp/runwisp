@@ -66,6 +66,7 @@ run  = "curl -sf https://myapp.example.com/health || exit 1"
 instances = 3              # keep three replicas always running
 env       = { NODE_ENV = "production" }   # inline env, visible in the UI
 env_file  = "/etc/runwisp/worker.env"     # secrets stay on disk
+# or pull a secret from the environment: API_KEY = "${API_KEY}" (hidden in the UI)
 run       = "node /app/worker.js"
 ```
 
@@ -126,6 +127,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - Crash-safe: `kill -9` and power loss are recoverable; in-flight runs are marked **interrupted** on restart, never silently lost
 - Local-first, offline-complete. No signup, no telemetry, no account required.
 - TOML configuration: one file, version-controllable, reviewable in pull requests
+- `${VAR}` / `${VAR:-default}` / `${file:/path}` interpolation in every field, resolved offline; secrets stay hidden from the API, UI, and logs unless you opt them in. See [Variables & secrets](https://docs.runwisp.com/configuration/variables/)
 
 <div align="center">
 <img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="apps/docs/src/assets/screenshots/tui-overview.png" width="780">

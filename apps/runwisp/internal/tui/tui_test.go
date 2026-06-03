@@ -132,16 +132,16 @@ func TestPrintStartupTo_WithScheduleWarnings(t *testing.T) {
 }
 
 // TestPrintStartupTo_WithInitWarnings locks the contract that non-fatal init
-// hiccups (notify subsystem misconfig, etc.) render inside the banner with
-// the ⚠ prefix instead of slog'ing out above it.
+// hiccups (scheduler start hiccups, crashed-run marking, etc.) render inside
+// the banner with the ⚠ prefix instead of slog'ing out above it.
 func TestPrintStartupTo_WithInitWarnings(t *testing.T) {
 	var buf bytes.Buffer
 	printStartupTo(&buf, uikit.StartupInfo{
 		Version:      "0.0.0-test",
-		InitWarnings: []string{"Failed to initialize notify subsystem: env var FOO unset"},
+		InitWarnings: []string{"Failed to start scheduler: clock drift"},
 	})
 	out := buf.String()
-	assert.Contains(t, out, "Failed to initialize notify subsystem")
+	assert.Contains(t, out, "Failed to start scheduler")
 	assert.Contains(t, out, "⚠")
 }
 

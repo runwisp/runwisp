@@ -22,12 +22,12 @@ func TestDecode_NotifierAndRoutes(t *testing.T) {
 [[notifier]]
 id = "ops"
 type = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+webhook_url = "${RUNWISP_SLACK_OPS_URL}"
 
 [[notifier]]
 id = "oncall"
 type = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
+bot_token = "${RUNWISP_TG_TOKEN}"
 chat_id = "-1001"
 
 [[notification_route]]
@@ -112,19 +112,35 @@ chat_id = "-1"
 	assert.Contains(t, err.Error(), "duplicate notifier id")
 }
 
-func TestValidate_RejectsConflictingSecretSources(t *testing.T) {
+func TestValidate_RejectsSlackMissingWebhookURL(t *testing.T) {
 	src := `
 [[notifier]]
 id = "x"
 type = "slack"
-webhook_url = "https://example/x"
-webhook_url_env = "ENV"
 `
 	cfg, err := decode([]byte(src))
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only one of")
+	assert.Contains(t, err.Error(), "webhook_url is required")
+}
+
+// Load-time validation must not resolve ${...} placeholders — it only checks
+// that the secret-bearing field is present. The raw placeholder is preserved
+// in config.Config so the resolved secret never reaches the REST API or UI.
+func TestValidate_SlackWebhookPlaceholderPassesLoad(t *testing.T) {
+	src := `
+[[notifier]]
+id = "x"
+type = "slack"
+webhook_url = "${RUNWISP_SLACK_NOT_SET_AT_LOAD}"
+`
+	cfg, err := decode([]byte(src))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg), "a ${...} placeholder must pass offline load-time validation")
+	require.Len(t, cfg.Notify.Notifiers, 1)
+	assert.Equal(t, "${RUNWISP_SLACK_NOT_SET_AT_LOAD}", cfg.Notify.Notifiers[0].WebhookURL,
+		"load must store the raw placeholder, never the resolved secret")
 }
 
 func TestValidate_RejectsReservedInappID(t *testing.T) {
@@ -194,7 +210,7 @@ func TestInlineToken_SlackChannelOverride(t *testing.T) {
 [[notifier]]
 id              = "slack"
 type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_URL"
+webhook_url     = "${RUNWISP_SLACK_URL}"
 channel         = "#default"
 
 [tasks.audit]
@@ -216,7 +232,8 @@ notify_on_failure = ["slack:#ops"]
 	assert.Equal(t, "slack:#ops", synth.ID)
 	assert.Equal(t, "slack", synth.Type)
 	assert.Equal(t, "#ops", synth.SlackChannel, "override replaces parent channel")
-	assert.Equal(t, parent.WebhookURLEnv, synth.WebhookURLEnv, "creds cloned from parent")
+	assert.Equal(t, parent.WebhookURL, synth.WebhookURL, "creds cloned from parent")
+	assert.Equal(t, "${RUNWISP_SLACK_URL}", synth.WebhookURL, "raw placeholder cloned, not resolved")
 
 	var taskRoute NotificationRoute
 	for _, r := range cfg.Notify.Routes {
@@ -233,7 +250,7 @@ func TestInlineToken_TelegramChatIDOverride(t *testing.T) {
 [[notifier]]
 id            = "tg"
 type          = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
+bot_token     = "${RUNWISP_TG_TOKEN}"
 chat_id       = "-1001"
 
 [tasks.deploy]
@@ -262,7 +279,7 @@ func TestInlineToken_DedupAcrossTasks(t *testing.T) {
 [[notifier]]
 id              = "slack"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "${URL}"
 
 [tasks.a]
 cron              = "* * * * *"
@@ -303,7 +320,7 @@ func TestInlineToken_InRouteNotifyList(t *testing.T) {
 [[notifier]]
 id              = "slack"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "${URL}"
 
 [[notification_route]]
 match  = { kind = ["run.failed"], task = "backup-*" }
@@ -356,7 +373,7 @@ func TestInlineToken_EmptyOverride(t *testing.T) {
 [[notifier]]
 id              = "slack"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "${URL}"
 
 [tasks.x]
 cron              = "* * * * *"
@@ -375,7 +392,7 @@ func TestInlineToken_SlackOverrideMustStartWithHashOrAt(t *testing.T) {
 [[notifier]]
 id              = "slack"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "${URL}"
 
 [tasks.x]
 cron              = "* * * * *"
@@ -394,7 +411,7 @@ func TestValidate_RejectsColonInNotifierID(t *testing.T) {
 [[notifier]]
 id              = "slack:foo"
 type            = "slack"
-webhook_url_env = "URL"
+webhook_url     = "${URL}"
 `
 	_, err := decode([]byte(src))
 	require.Error(t, err)
@@ -598,16 +615,16 @@ type = "pagerduty"
 	assert.Contains(t, err.Error(), "pagerduty")
 }
 
-func TestValidate_RequireOneSecretSource_FileOnly(t *testing.T) {
+func TestValidate_SlackWebhookFilePlaceholder(t *testing.T) {
 	src := schedulerTZHeader + `
 [[notifier]]
 id = "s"
 type = "slack"
-webhook_url_file = "/run/secrets/webhook"
+webhook_url = "${file:/run/secrets/webhook}"
 `
 	cfg, err := decode([]byte(src))
 	require.NoError(t, err)
-	require.NoError(t, Validate(cfg))
+	require.NoError(t, Validate(cfg), "a ${file:...} placeholder must pass offline validation without reading the file")
 }
 
 func TestDesugarServiceNotify(t *testing.T) {
@@ -687,7 +704,7 @@ from         = "RunWisp <runwisp@example.com>"
 to           = ["ops@example.com", "Alerts Team <alerts@example.com>"]
 cc           = ["audit@example.com"]
 username     = "apikey"
-password_env = "RUNWISP_SMTP_PASSWORD"
+password     = "${RUNWISP_SMTP_PASSWORD}"
 tls          = "starttls"
 `
 	cfg, err := decode([]byte(src))
@@ -778,25 +795,6 @@ from = "runwisp@example.com"
 	assert.Contains(t, err.Error(), "to is required")
 }
 
-func TestValidate_SMTP_ConflictingPasswordSources(t *testing.T) {
-	src := schedulerTZHeader + `
-[[notifier]]
-id           = "email-ops"
-type         = "smtp"
-host         = "smtp.example.com"
-from         = "runwisp@example.com"
-to           = ["ops@example.com"]
-username     = "u"
-password     = "inline"
-password_env = "PW"
-`
-	cfg, err := decode([]byte(src))
-	require.NoError(t, err)
-	err = Validate(cfg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only one of")
-}
-
 func TestValidate_SMTP_TLSNoneRejectedWithCreds(t *testing.T) {
 	src := schedulerTZHeader + `
 [[notifier]]
@@ -863,7 +861,7 @@ username = "u"
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "username and a password source must be set together")
+	assert.Contains(t, err.Error(), "username and password must be set together")
 }
 
 func TestInlineToken_SMTPRecipientOverride(t *testing.T) {
@@ -875,7 +873,7 @@ host         = "smtp.example.com"
 from         = "RunWisp <runwisp@example.com>"
 to           = ["ops@example.com"]
 username     = "apikey"
-password_env = "RUNWISP_SMTP_PASSWORD"
+password     = "${RUNWISP_SMTP_PASSWORD}"
 
 [tasks.backup-db]
 cron              = "0 3 * * *"
@@ -909,7 +907,7 @@ host         = "smtp.example.com"
 from         = "runwisp@example.com"
 to           = ["ops@example.com"]
 username     = "u"
-password_env = "P"
+password     = "${P}"
 
 [tasks.x]
 cron              = "* * * * *"

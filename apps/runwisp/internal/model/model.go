@@ -86,7 +86,7 @@ type Task struct {
 	KeepRuns int           `toml:"keep_runs,omitempty" json:"keep_runs,omitempty" doc:"Row-count retention cap; 0 means no cap was configured"`
 	KeepFor  time.Duration `toml:"-"                   json:"keep_for,omitempty" doc:"Retention window in nanoseconds; 0 means no cap was configured"`
 
-	Env     map[string]string `toml:"env,omitempty"      json:"env,omitempty"      doc:"Environment variables overlaid on the task's process env. Values are visible in the API/UI."`
+	Env     map[string]string `toml:"env,omitempty"      json:"env,omitempty"      doc:"Environment variables overlaid on the task's process env. A value using ${VAR}/${file:...} shows the raw placeholder unless every variable it references is listed in [daemon] reveal_vars."`
 	EnvFile string            `toml:"env_file,omitempty" json:"env_file,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs are loaded into the task's process env. Keys and values are not exposed via API/UI."`
 	// SecretEnv is populated by the config loader from EnvFile. Hidden from
 	// JSON/TOML so values never leak to API/UI/cloud serialization.

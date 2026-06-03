@@ -11,14 +11,19 @@
 # It also doubles as a manual screenshot config:
 #   runwisp daemon -c apps/runwisp/internal/demo/runwisp.toml --data /tmp/runwisp-demo
 #
-# `runwisp demo` is zero-setup, so the Slack and Telegram notifiers below carry
-# inline *placeholder* secrets (the `.invalid` TLD never resolves). The notify
-# subsystem boots cleanly offline and the in-app bell — the live notification
-# surface — works out of the box. Outbound delivery to these placeholders just
-# fails in the background, which is exactly how RunWisp treats any unreachable
-# notifier: it's optional and never blocks a run. For real delivery during a
-# shoot, swap in a working webhook URL / bot token (a webhook.site bin is
-# enough for screenshots).
+# `runwisp demo` is zero-setup, so the Slack and Telegram notifiers below pull
+# their secrets via ${VAR:-default} interpolation with *placeholder* defaults
+# (the `.invalid` TLD never resolves). The notify subsystem boots cleanly
+# offline and the in-app bell — the live notification surface — works out of
+# the box. Outbound delivery to these placeholders just fails in the
+# background, which is exactly how RunWisp treats any unreachable notifier:
+# it's optional and never blocks a run. For real delivery during a shoot,
+# point each variable at a working endpoint (a webhook.site bin is enough for
+# screenshots):
+#
+#   export DEMO_SLACK_WEBHOOK_OPS=https://hooks.slack.com/services/...
+#   export DEMO_SLACK_WEBHOOK_DEPLOYS=https://hooks.slack.com/services/...
+#   export DEMO_TELEGRAM_BOT_TOKEN=1234:abcd...
 #
 # Every `run` body uses commands available on a stock Linux/macOS box — no
 # Postgres, no Docker — so screenshots reflect a genuinely running daemon.
@@ -48,25 +53,25 @@ history_keep     = 500
 history_keep_for = "30d"
 
 # ── Notifiers ────────────────────────────────────────────────────────────────
-# Placeholder secrets (`.invalid` never resolves) keep the demo self-contained
-# and offline. Swap in real values for actual delivery; see the header comment.
+# Placeholder defaults (`.invalid` never resolves) keep the demo self-contained
+# and offline. Set the env vars for actual delivery; see the header comment.
 
 [[notifier]]
 id          = "slack-ops"
 type        = "slack"
-webhook_url = "https://hooks.slack.invalid/services/T0DEMO/B0DEMO/ops"
+webhook_url = "${DEMO_SLACK_WEBHOOK_OPS:-https://hooks.slack.invalid/services/T0DEMO/B0DEMO/ops}"
 channel     = "#ops-alerts"
 
 [[notifier]]
 id          = "slack-deploys"
 type        = "slack"
-webhook_url = "https://hooks.slack.invalid/services/T0DEMO/B0DEMO/deploys"
+webhook_url = "${DEMO_SLACK_WEBHOOK_DEPLOYS:-https://hooks.slack.invalid/services/T0DEMO/B0DEMO/deploys}"
 channel     = "#deploys"
 
 [[notifier]]
 id        = "telegram-oncall"
 type      = "telegram"
-bot_token = "123456789:DEMO-not-a-real-telegram-token"
+bot_token = "${DEMO_TELEGRAM_BOT_TOKEN:-123456789:DEMO-not-a-real-telegram-token}"
 chat_id   = "-1001234567890"
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -262,13 +267,13 @@ run = '''
 set -eu
 echo "[import] opening legacy_dump.sql (3.2 GB)"
 for table in users orgs notes attachments audit_log; do
-  echo "[import] === table ${table} ==="
+  echo "[import] === table $table ==="
   r=0
   while [ "$r" -lt 500 ]; do
     r=$((r + 1))
     printf "[import] %s row %06d migrated (rewrote %s columns)\n" "$table" "$r" "$((r % 4))"
   done
-  echo "[import] ${table}: 500 rows in 1.1s"
+  echo "[import] $table: 500 rows in 1.1s"
 done
 echo "[import] rebuilding foreign keys"
 echo "[import] complete"
@@ -285,7 +290,7 @@ notify_on_success = ["slack-deploys:#finance"]
 run = '''
 set -eu
 since=$(date -u -d 'last monday' +%F 2>/dev/null || date -u -v -monday +%F)
-echo "[billing] window: ${since} → $(date -u +%F)"
+echo "[billing] window: $since → $(date -u +%F)"
 echo "[billing] 18,432 events processed"
 echo "[billing] usage_rollup.csv (412 KB) generated"
 echo "[billing] report mailed to finance@acme-notes.example"

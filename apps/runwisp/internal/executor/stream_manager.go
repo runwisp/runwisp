@@ -12,6 +12,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/redact"
 )
 
 // StreamManager reads process output, writes each line to the LogWriter (which
@@ -19,12 +20,17 @@ import (
 // LogLineEvent per line on the bus.
 type StreamManager struct {
 	eventBus events.EventBus
+	redactor *redact.Redactor
 	nowMs    func() int64
 }
 
-func NewStreamManager(eventBus events.EventBus) *StreamManager {
+// NewStreamManager wires the line tee. redactor masks hidden secret values in
+// captured output before they touch either disk or the bus; a nil redactor
+// passes text through unchanged (Redact is nil-safe).
+func NewStreamManager(eventBus events.EventBus, redactor *redact.Redactor) *StreamManager {
 	return &StreamManager{
 		eventBus: eventBus,
+		redactor: redactor,
 		nowMs:    func() int64 { return time.Now().UnixMilli() },
 	}
 }
@@ -64,7 +70,9 @@ func (s *StreamManager) StreamToFile(reader io.Reader, writer *LogWriter, task *
 	lineBuf := NewLineBuffer(func(line string) {
 		isContinuation := incomplete
 		incomplete = !strings.HasSuffix(line, "\n")
-		text := strings.TrimSuffix(line, "\n")
+		// Redact before the line touches disk or the bus, so a hidden secret a
+		// task echoes back never lands in the log file or an SSE subscriber.
+		text := s.redactor.Redact(strings.TrimSuffix(line, "\n"))
 
 		n, err := writer.WriteLineEvent(text, stream)
 		if err != nil {
