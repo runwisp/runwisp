@@ -37,7 +37,7 @@ bun run build              # builds the web UI, then the daemon
 
 Daemon internals live under `apps/runwisp/internal/`:
 `runtime/` (scheduler + run manager), `executor/` (process spawning, stdio capture),
-`server/` (REST, CHAP auth, JWT, SSE), `storage/` (GORM + SQLite),
+`server/` (REST, CHAP auth, JWT, SSE), `storage/` (`database/sql` + embedded SQLite),
 `notify/` (notification routing), `cloud/` (optional outbound control plane),
 `tui/` (Bubbletea TUI), `events/` (in-memory pub/sub bus).
 
@@ -48,17 +48,23 @@ Branch off `main`. One PR per logical change.
 Before pushing, run the full pipeline from the repo root:
 
 ```bash
-make ci              # generate + format + check + test + test-e2e
-make build           # Go binary build — required for daemon changes
+bun run ci             # generate + format + check + test + test-e2e
+bun run build          # Go binary build — required for daemon changes
 ```
 
-`ci` chains `make generate` (regenerates AsyncAPI Go types, common API types, and `apps/runwisp/openapi.json`), `make format`, `make check` (Go vet/lint + TS/Svelte type checks), `make test`, and `make test-e2e` (playwright against the built binary). Run the individual steps directly when iterating — they're all valid Make targets (or `bun run <name>` aliases). Slow lint (svelte-check, eslint) is cached at `<pkg>/.cache/*.stamp`; `make clean` or branch switches invalidate.
+The build system has three layers, each with one job:
+
+1. **bun** installs dependencies and provides the root `package.json` scripts — thin aliases onto moon targets, nothing more. There are no per-package `package.json` scripts.
+2. **[moon](https://moonrepo.dev/)** (a dev dependency; `bunx moon ...`) owns the task graph: every task, its inputs, outputs, and dependencies lives in the `moon.yml` next to the code it builds. Tasks invoke tools directly (`vite`, `eslint`, `go test`, ...).
+3. **Shell scripts** (`scripts/`, `apps/runwisp/scripts/`) implement anything bigger than a one-liner.
+
+`ci` chains three moon invocations — `generate` (sqlc, AsyncAPI Go types, `openapi.json`, common API types), then `format`, then `check` + `test` + `test-e2e` (playwright against the built binary) in parallel — chained because `format` mutates files the later stages read. When iterating, run a single target with `bunx moon run <project>:<task>` (list them with `bunx moon query tasks`). Moon caches every task by its input hashes under `.moon/cache/`; `bun run clean` resets everything.
 
 Iterating on the UI:
 
-- `make dev` — dev build + launches the daemon
-- `make web-ui` — Svelte dev server against an already-running daemon
-- `make theme` — the shared component library playground
+- `bun run dev` — dev build + launches the daemon
+- `bun run web-ui` — Svelte dev server against an already-running daemon
+- `bun run theme` — the shared component library playground
 
 ## Making changes
 

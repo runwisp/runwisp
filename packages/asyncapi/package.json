@@ -19,12 +19,6 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "scripts": {
-    "generate": "node scripts/generate.js",
-    "check": "bun run check:types && bun run check:lint",
-    "check:types": "tsc --noEmit",
-    "check:lint": "eslint ."
-  },
   "dependencies": {
     "zod": "^3.25.76"
   },

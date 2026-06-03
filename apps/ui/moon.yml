@@ -1,0 +1,89 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+language: "typescript"
+layer: "application"
+
+fileGroups:
+    sources:
+        - "src/**/*"
+        - "static/**/*"
+        - "svelte.config.js"
+        - "vite.config.ts"
+        - "tsconfig.json"
+        - "package.json"
+    upstream:
+        - "/packages/ui/src/**/*"
+        - "/packages/common/src/**/*"
+
+# Two quirks shared by the tasks below:
+# - a worktree may symlink .svelte-kit to the main checkout (its baked paths
+#   are depth-sensitive), so tasks drop the link before `svelte-kit sync`.
+# - concurrent `svelte-kit sync` runs corrupt .svelte-kit, hence the shared
+#   `svelte-kit-sync` mutex.
+tasks:
+    dev:
+        command: "vite dev"
+        preset: "server"
+
+    build:
+        description: "Vite build of the embedded dashboard."
+        script: "{ [ -L .svelte-kit ] && rm -f .svelte-kit || true; } && vite build"
+        deps:
+            - "common:generate-api"
+            - "asyncapi:generate"
+        inputs:
+            - "@globs(sources)"
+            - "@globs(upstream)"
+        outputs:
+            - "build"
+        options:
+            mutex: "svelte-kit-sync"
+
+    check-types:
+        description: "svelte-check."
+        script: "{ [ -L .svelte-kit ] && rm -f .svelte-kit || true; } && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+        deps:
+            - "common:generate-api"
+            - "asyncapi:generate"
+        inputs:
+            - "@globs(sources)"
+            - "@globs(upstream)"
+        options:
+            mutex: "svelte-kit-sync"
+
+    check-lint:
+        description: "prettier --check + eslint."
+        script: "svelte-kit sync && prettier --check . && eslint ."
+        inputs:
+            - "**/*"
+            - "/prettier.base.cjs"
+        options:
+            mutex: "svelte-kit-sync"
+
+    check:
+        command: "noop"
+        deps:
+            - "~:check-types"
+            - "~:check-lint"
+
+    format:
+        command: "prettier --write ."
+        options:
+            cache: false
+
+    test:
+        description: "vitest with coverage."
+        script: "svelte-kit sync && vitest run --coverage"
+        deps:
+            - "common:generate-api"
+            - "asyncapi:generate"
+        inputs:
+            - "@globs(sources)"
+            - "@globs(upstream)"
+            - "test/**/*"
+            - "vitest.config.ts"
+        outputs:
+            - "coverage"
+        options:
+            mutex: "svelte-kit-sync"

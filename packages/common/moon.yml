@@ -1,0 +1,40 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'library'
+
+tasks:
+  generate-api:
+    # No task dep on runwisp:openapi — it would cycle the project graph
+    # (runwisp → web-ui → common). The committed openapi.json is a plain file
+    # input; root:generate sequences regeneration ahead of this task.
+    description: 'Generate TS API types from the runwisp OpenAPI spec.'
+    command: 'bun scripts/generate-api.ts'
+    inputs:
+      - 'scripts/generate-api.ts'
+      - '/apps/runwisp/openapi.json'
+    outputs:
+      - 'src/generated/api.ts'
+
+  check-types:
+    command: 'tsc --noEmit'
+    deps:
+      - '~:generate-api'
+    inputs:
+      - 'src/**/*'
+      - 'tsconfig.json'
+      - 'package.json'
+
+  check-lint:
+    command: 'eslint .'
+    deps:
+      - '~:generate-api'
+    inputs:
+      - '**/*'
+
+  check:
+    command: 'noop'
+    deps:
+      - '~:check-types'
+      - '~:check-lint'

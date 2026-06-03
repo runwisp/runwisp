@@ -1,0 +1,46 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+# Workspace orchestration; the root package.json scripts alias these targets.
+# The `ci` script chains separate moon invocations because format mutates
+# files that check/test read, and moon deps can't express that barrier.
+layer: 'automation'
+
+tasks:
+  generate:
+    # Ordered: common:generate-api reads the openapi.json that runwisp:openapi
+    # writes; that edge can't be a task dep (see common/moon.yml).
+    description: 'Regenerate sqlc + AsyncAPI + openapi.json + common API types.'
+    deps:
+      - 'runwisp:openapi'
+      - 'common:generate-api'
+    options:
+      cache: false
+      runDepsInParallel: false
+
+  format:
+    deps:
+      - 'runwisp:format'
+      - 'web-ui:format'
+      - 'docs:format'
+      - 'ui:format'
+    options:
+      cache: false
+
+  check:
+    deps:
+      - 'runwisp:check'
+      - 'web-ui:check'
+      - 'docs:check'
+      - 'ui:check'
+      - 'common:check'
+      - 'asyncapi:check'
+    options:
+      cache: false
+
+  test:
+    deps:
+      - 'runwisp:test'
+      - 'web-ui:test'
+    options:
+      cache: false

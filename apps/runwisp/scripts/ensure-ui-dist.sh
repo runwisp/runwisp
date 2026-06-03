@@ -14,7 +14,7 @@
 #     that doesn't need the real UI (openapi generation, go vet).
 #
 # A no-op once dist is real and populated, so it's safe and cheap to call from
-# every Go entry point, including concurrently under make -j.
+# every Go entry point, including concurrently under moon's parallel pipeline.
 
 ensure_real_ui_dist() {
   local lib_dir dist target
@@ -39,10 +39,3 @@ ensure_real_ui_dist() {
 
   return 0
 }
-
-# When executed directly (not sourced), run the function — lets Makefile recipes
-# that invoke `go` without a wrapper script use this as a guard.
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  set -euo pipefail
-  ensure_real_ui_dist
-fi

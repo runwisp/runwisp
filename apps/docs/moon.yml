@@ -1,0 +1,50 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+language: "typescript"
+layer: "application"
+
+tasks:
+    dev:
+        script: "bun scripts/sync-openapi.ts && bunx --bun astro dev"
+        deps:
+            - "runwisp:openapi"
+        preset: "server"
+
+    build:
+        # Delegates to the package.json script: Cloudflare Pages runs that
+        # script directly (it can't run moon's Go-dependent task graph), so
+        # package.json stays the single definition of the docs build.
+        description: "Astro/Starlight docs build."
+        command: "bun run build"
+        deps:
+            - "runwisp:openapi"
+        inputs:
+            - "**/*"
+            - "/apps/runwisp/openapi.json"
+            - "/packages/ui/src/**/*"
+        outputs:
+            - "dist"
+
+    preview:
+        command: "bunx --bun astro preview"
+        deps:
+            - "~:build"
+        preset: "server"
+
+    check:
+        # Not split types/lint: eslint needs the .astro/types.d.ts that `astro check` generates.
+        description: "astro check, then prettier --check + eslint."
+        script: "bun scripts/sync-openapi.ts && bunx --bun astro check && prettier --check . && eslint ."
+        deps:
+            - "runwisp:openapi"
+        inputs:
+            - "**/*"
+            - "/apps/runwisp/openapi.json"
+            - "/packages/ui/src/**/*"
+            - "/prettier.base.cjs"
+
+    format:
+        command: "prettier --write ."
+        options:
+            cache: false

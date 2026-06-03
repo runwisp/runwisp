@@ -38,6 +38,10 @@ const (
 	// its own) so execOne captures a representative sample instead of blocking
 	// forever.
 	defaultServiceWindow = 1200 * time.Millisecond
+
+	// defaultServicePerInstance is how many past restart runs each service
+	// instance gets.
+	defaultServicePerInstance = 45
 )
 
 // seederDeps is the slice of storage the seeder needs. SQLiteDatabase satisfies
@@ -50,9 +54,10 @@ type seederDeps interface {
 // seedOptions tunes the planning/execution knobs. Production uses the defaults
 // (see Seed); tests pass small values so a synthetic config seeds fast.
 type seedOptions struct {
-	lookback        time.Duration
-	maxPerScheduled int
-	serviceWindow   time.Duration
+	lookback           time.Duration
+	maxPerScheduled    int
+	serviceWindow      time.Duration
+	servicePerInstance int
 }
 
 // Seed populates the database and on-disk log directory with believable
@@ -63,9 +68,10 @@ type seedOptions struct {
 // single-threaded (order-sensitive); subprocess execution fans out across CPUs.
 func Seed(ctx context.Context, db seederDeps, cfg *config.Config, logDir string, now time.Time) (int, error) {
 	return seedWith(ctx, db, cfg, logDir, now, seedOptions{
-		lookback:        defaultLookback,
-		maxPerScheduled: defaultMaxPerScheduled,
-		serviceWindow:   defaultServiceWindow,
+		lookback:           defaultLookback,
+		maxPerScheduled:    defaultMaxPerScheduled,
+		serviceWindow:      defaultServiceWindow,
+		servicePerInstance: defaultServicePerInstance,
 	})
 }
 
@@ -95,7 +101,7 @@ func (s *seeder) run(ctx context.Context) (int, error) {
 
 	// Backdate each task's "first seen" to its oldest run so the UI doesn't
 	// claim every task appeared the instant the demo booted.
-	firstSeen := oldestPerTask(specs, s.now)
+	firstSeen := oldestPerTask(specs)
 	for i := range s.cfg.Tasks {
 		name := s.cfg.Tasks[i].Name
 		ts, ok := firstSeen[name]
@@ -220,10 +226,9 @@ func (s *seeder) planService(task *model.Task, rng *rand.Rand) []*runSpec {
 	if instances < 1 {
 		instances = 1
 	}
-	const perInstance = 45
 	var specs []*runSpec
 	for inst := 0; inst < instances; inst++ {
-		for i := 0; i < perInstance; i++ {
+		for i := 0; i < s.opts.servicePerInstance; i++ {
 			off := time.Duration(rng.Int63n(int64(s.opts.lookback)))
 			spec := newSpec(task, s.now.Add(-off))
 			spec.run.InstanceIndex = inst
@@ -496,7 +501,7 @@ func retryGap(task *model.Task) time.Duration {
 
 // oldestPerTask finds the earliest run start per task name for backdating
 // task-registration "first seen" timestamps.
-func oldestPerTask(specs []*runSpec, now time.Time) map[string]time.Time {
+func oldestPerTask(specs []*runSpec) map[string]time.Time {
 	out := make(map[string]time.Time)
 	for _, s := range specs {
 		ts := *s.run.StartAt

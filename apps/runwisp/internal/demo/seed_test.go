@@ -43,7 +43,9 @@ func loadConfigTOML(t *testing.T, toml string) *config.Config {
 // cron task, an always-red cron task that allows a retry, a manual task, and a
 // two-instance service. It exercises every seeding mechanic (cron alignment,
 // real outcomes, retry linkage, instance indexing) cheaply, over a short
-// lookback with a 50ms service window.
+// lookback with only a few service runs. The service window stays generous:
+// on a loaded CI runner, shell spawn alone can take tens of ms, and a window
+// shorter than that kills the worker before it logs its first line.
 const syntheticConfig = `
 [scheduler]
 timezone = "UTC"
@@ -89,9 +91,10 @@ func TestSeed(t *testing.T) {
 	now := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
 
 	n, err := seedWith(ctx, db, cfg, logDir, now, seedOptions{
-		lookback:        6 * time.Hour,
-		maxPerScheduled: 50,
-		serviceWindow:   50 * time.Millisecond,
+		lookback:           6 * time.Hour,
+		maxPerScheduled:    50,
+		serviceWindow:      time.Second,
+		servicePerInstance: 4,
 	})
 	if err != nil {
 		t.Fatalf("seed: %v", err)

@@ -1,0 +1,38 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'library'
+
+tasks:
+  generate:
+    description: 'Generate TS Zod schemas + Go protocol structs from asyncapi.yaml.'
+    command: 'node scripts/generate.js'
+    inputs:
+      - 'asyncapi.yaml'
+      - 'scripts/**/*'
+    outputs:
+      - 'src/generated'
+      - '/apps/runwisp/internal/generated/protocol'
+
+  check-types:
+    command: 'tsc --noEmit'
+    deps:
+      - '~:generate'
+    inputs:
+      - 'src/**/*'
+      - 'tsconfig.json'
+      - 'package.json'
+
+  check-lint:
+    command: 'eslint .'
+    deps:
+      - '~:generate'
+    inputs:
+      - '**/*'
+
+  check:
+    command: 'noop'
+    deps:
+      - '~:check-types'
+      - '~:check-lint'

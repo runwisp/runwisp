@@ -6,6 +6,7 @@
       "name": "runwisp",
       "devDependencies": {
         "@astrojs/svelte": "^8.0.0",
+        "@moonrepo/cli": "^2.3.0",
         "ajv": "^8.17.1",
         "prettier": "^3.8.3",
         "prettier-plugin-svelte": "^3.5.1",
@@ -35,9 +36,6 @@
         "prettier-plugin-astro": "^0.14.1",
         "typescript": "5.9.2",
       },
-    },
-    "apps/runwisp": {
-      "name": "@runwisp/app",
     },
     "apps/ui": {
       "name": "@runwisp/web-ui",
@@ -473,6 +471,22 @@
 
     "@mdx-js/react": ["@mdx-js/react@3.1.1", "", { "dependencies": { "@types/mdx": "^2.0.0" }, "peerDependencies": { "@types/react": ">=16", "react": ">=16" } }, "sha512-f++rKLQgUVYDAtECQ6fn/is15GkEH9+nZPM3MS0RcxVqoTfawHvDlSCH7JbMhAM6uJ32v3eXLvLmLvjGu7PTQw=="],
 
+    "@moonrepo/cli": ["@moonrepo/cli@2.3.0", "", { "dependencies": { "detect-libc": "^2.1.2" }, "optionalDependencies": { "@moonrepo/core-linux-arm64-gnu": "2.3.0", "@moonrepo/core-linux-arm64-musl": "2.3.0", "@moonrepo/core-linux-x64-gnu": "2.3.0", "@moonrepo/core-linux-x64-musl": "2.3.0", "@moonrepo/core-macos-arm64": "2.3.0", "@moonrepo/core-macos-x64": "2.3.0", "@moonrepo/core-windows-x64-msvc": "2.3.0" }, "bin": { "moon": "moon.js", "moonx": "moonx.js" } }, "sha512-8Za9r9sLPvnzvaaDWqEBnoSRG1QRsHZHWZZmQBp2s/Fr6qAcqMS1sF3zZonqo3zL1lW4srOUICUR1JQUzhlBvQ=="],
+
+    "@moonrepo/core-linux-arm64-gnu": ["@moonrepo/core-linux-arm64-gnu@2.3.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-mXB5y58BihYwafRGY8K+LRsEYcB6qmBh30J+0bE3sYNPum1eT2QAuG+fQhhbLhTos1REP1eUJgjSAZ2pIjrQmA=="],
+
+    "@moonrepo/core-linux-arm64-musl": ["@moonrepo/core-linux-arm64-musl@2.3.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-gCw9fL/XqEGGqjUxCs0awCY5QZIm4V7UJIZ8eHm0OlospNmjMXJbCzAOgp+XYIns4kezINcs+bmm4cUl7VaszA=="],
+
+    "@moonrepo/core-linux-x64-gnu": ["@moonrepo/core-linux-x64-gnu@2.3.0", "", { "os": "linux", "cpu": "x64" }, "sha512-vZmzqSJbzqIwdkAROlbkb5OIXL+pFWbu96P4hc3SG7iu3e9TQ8JnuL21i2Jd1mULbqA4zfcu25gbzECdSXPpOA=="],
+
+    "@moonrepo/core-linux-x64-musl": ["@moonrepo/core-linux-x64-musl@2.3.0", "", { "os": "linux", "cpu": "x64" }, "sha512-5oA4/q3/ryI7YCYbKEKZ0ZWGyU7KoKqi60Eqe2HfAXvkMiJCfUtsAmdZ8ybsWFQlQcbnKUPbqDCiacm67fcmdA=="],
+
+    "@moonrepo/core-macos-arm64": ["@moonrepo/core-macos-arm64@2.3.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-QZaqPABNid8pDBfQFp6I/G78qY2vTjQrpoAjhB936LXt4GrQAGJTDQSzdyIkuzLZaHrkw7jeLAD3ktVtgI/94w=="],
+
+    "@moonrepo/core-macos-x64": ["@moonrepo/core-macos-x64@2.3.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-UP8P0y0VyXTy2PwLOnC5LXasV5OQYlmZIVaGFyDZK60SAtBjJ8pcq8L2P+gBYYjkbseejs8GJiL0peM/B621vg=="],
+
+    "@moonrepo/core-windows-x64-msvc": ["@moonrepo/core-windows-x64-msvc@2.3.0", "", { "os": "win32", "cpu": "x64" }, "sha512-4is1mItYa/zYHDkSkFZZfVsqg0gIHZGzMpjRT9XRn4XZ+SOILCqGX2tDtdOecuI+jHYKZ1V5ElnFsX7a3L6Nwg=="],
+
     "@neoconfetti/react": ["@neoconfetti/react@1.0.0", "", {}, "sha512-klcSooChXXOzIm+SE5IISIAn3bYzYfPjbX7D7HoqZL84oAfgREeSg5vSIaSFH+DaGzzvImTyWe1OyrJ67vik4A=="],
 
     "@nodable/entities": ["@nodable/entities@2.1.0", "", {}, "sha512-nyT7T3nbMyBI/lvr6L5TyWbFJAI9FTgVRakNoBqCD+PmID8DzFrrNdLLtHMwMszOtqZa8PAOV24ZqDnQrhQINA=="],
@@ -592,8 +606,6 @@
     "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.60.1", "", { "os": "win32", "cpu": "x64" }, "sha512-k+600V9Zl1CM7eZxJgMyTUzmrmhB/0XZnF4pRypKAlAgxmedUA+1v9R+XOFv56W4SlHEzfeMtzujLJD22Uz5zg=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.60.1", "", { "os": "win32", "cpu": "x64" }, "sha512-lWMnixq/QzxyhTV6NjQJ4SFo1J6PvOX8vUx5Wb4bBPsEb+8xZ89Bz6kOXpfXj9ak9AHTQVQzlgzBEc1SyM27xQ=="],
-
-    "@runwisp/app": ["@runwisp/app@workspace:apps/runwisp"],
 
     "@runwisp/asyncapi": ["@runwisp/asyncapi@workspace:packages/asyncapi"],
 

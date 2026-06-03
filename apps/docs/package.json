@@ -5,13 +5,7 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "dev": "bun scripts/sync-openapi.ts && bunx --bun astro dev",
-        "build": "bun scripts/sync-openapi.ts && bunx --bun astro build",
-        "preview": "bunx --bun astro preview",
-        "check": "bun run check:types && bun run check:lint",
-        "check:types": "bun scripts/sync-openapi.ts && bunx --bun astro check",
-        "check:lint": "prettier --check . && eslint .",
-        "format": "prettier --write ."
+        "build": "bun scripts/sync-openapi.ts && bunx --bun astro build"
     },
     "dependencies": {
         "@astrojs/starlight": "^0.39.0",

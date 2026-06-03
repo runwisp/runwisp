@@ -1,0 +1,41 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+language: "typescript"
+layer: "library"
+
+tasks:
+    dev:
+        description: "Storybook component playground."
+        command: "storybook dev -p 6006 --no-open"
+        preset: "server"
+
+    check-types:
+        description: "svelte-check."
+        command: "svelte-check --tsconfig ./tsconfig.json"
+        deps:
+            - "common:generate-api"
+        inputs:
+            - "src/**/*"
+            - "svelte.config.js"
+            - "tsconfig.json"
+            - "package.json"
+            - "/packages/common/src/**/*"
+
+    check-lint:
+        description: "prettier --check + eslint."
+        script: "prettier --check . && eslint ."
+        inputs:
+            - "**/*"
+            - "/prettier.base.cjs"
+
+    check:
+        command: "noop"
+        deps:
+            - "~:check-types"
+            - "~:check-lint"
+
+    format:
+        command: "prettier --write ."
+        options:
+            cache: false

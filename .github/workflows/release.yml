@@ -50,13 +50,8 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Build web UI
-        run: bun run build
-        working-directory: apps/ui
-
-      - name: Sync UI assets into Go embed directory
-        run: ./scripts/sync-ui-dist.sh
-        working-directory: apps/runwisp
+      - name: Build web UI and sync into Go embed directory
+        run: bunx moon run runwisp:sync-ui-dist
 
       - name: Extract version from tag
         id: version

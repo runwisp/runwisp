@@ -11,7 +11,7 @@ const destination = resolve(here, "../public/openapi.json");
 
 if (!existsSync(source)) {
     console.error(`sync-openapi: source not found at ${source}`);
-    console.error("Run `make generate` (or `cd apps/runwisp && bun run openapi`) first.");
+    console.error("Run `bun run generate` (or `bunx moon run runwisp:openapi`) first.");
     process.exit(1);
 }
 
