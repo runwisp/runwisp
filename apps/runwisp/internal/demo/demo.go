@@ -13,15 +13,14 @@ import (
 	"os"
 )
 
-// ConfigTOML is the embedded demo runwisp.toml ("Acme Notes" persona). It is
-// the single source of truth for the demo task set — the same file used for
-// manual screenshot sessions.
+// ConfigTOML is the embedded demo runwisp.toml ("Acme Notes" persona), the
+// single source of truth for the demo task set.
 //
 //go:embed runwisp.toml
 var ConfigTOML []byte
 
 // WriteConfig writes the embedded demo configuration to path with operator-only
-// permissions, matching how a hand-authored runwisp.toml would sit on disk.
+// permissions, as a hand-authored runwisp.toml would sit on disk.
 func WriteConfig(path string) error {
 	if err := os.WriteFile(path, ConfigTOML, 0600); err != nil {
 		return fmt.Errorf("write demo config: %w", err)

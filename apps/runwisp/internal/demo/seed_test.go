@@ -39,12 +39,11 @@ func loadConfigTOML(t *testing.T, toml string) *config.Config {
 	return cfg
 }
 
-// syntheticConfig is a tiny stand-in for the real demo config: one always-green
-// cron task, one always-red cron task that allows a retry, one manual task, and
-// a two-instance service. It exercises every seeding mechanic (cron alignment,
-// real outcomes, retry linkage, instance indexing) without paying the full
-// 30-day real-execution cost — services are bounded to a 50ms sample window and
-// the lookback is a few hours.
+// syntheticConfig is a tiny stand-in for the real demo config: an always-green
+// cron task, an always-red cron task that allows a retry, a manual task, and a
+// two-instance service. It exercises every seeding mechanic (cron alignment,
+// real outcomes, retry linkage, instance indexing) cheaply, over a short
+// lookback with a 50ms service window.
 const syntheticConfig = `
 [scheduler]
 timezone = "UTC"

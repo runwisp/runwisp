@@ -30,13 +30,11 @@ type notifyBundle struct {
 	Hub     *inapp.Hub
 }
 
-// serverHub exposes the in-app Hub as the server's NotificationHub interface,
-// returning an explicit nil interface when no Hub was built — no inapp route,
-// or notify init failed (e.g. a misconfigured outbound notifier). This guards
-// the typed-nil interface footgun: assigning a nil *inapp.Hub straight into the
-// interface field yields a non-nil interface wrapping a nil pointer, which slips
-// past the server's `notifyHub == nil` check and panics the notifications SSE
-// stream when it calls Subscribe().
+// serverHub exposes the in-app Hub as the server's NotificationHub, returning an
+// explicit nil interface when no Hub was built. This avoids the typed-nil
+// footgun: a nil *inapp.Hub assigned straight into the interface wraps a nil
+// pointer in a non-nil interface, slipping past the server's `notifyHub == nil`
+// check and panicking the notifications SSE stream when it calls Subscribe().
 func (b notifyBundle) serverHub() server.NotificationHub {
 	if b.Hub == nil {
 		return nil

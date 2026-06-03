@@ -1,25 +1,20 @@
 #!/usr/bin/env bash
-# Guarantee apps/runwisp/internal/ui/dist is a real, non-empty directory before
-# any Go compilation that consumes the //go:embed all:dist directive in
-# internal/ui/serve.go (go build / go run / go vet / go test).
-#
-# Two failure modes this prevents:
+# Guarantee internal/ui/dist is a real, non-empty directory before any Go build
+# that consumes the //go:embed all:dist directive in internal/ui/serve.go.
+# Handles two failure modes:
 #
 #  1. Symlinked dist. Git worktrees (e.g. Cline's) symlink the gitignored dist/
-#     build artifact back to the main checkout so the heavy Svelte build isn't
-#     repeated. Go's go:embed rejects a symlinked embed root with
-#     "cannot embed irregular file dist", which breaks every Go build in the
-#     worktree. We can't just delete the link — that would drop the already
-#     built UI and serve a blank Web UI — so we replace it with a real directory
-#     holding a copy of the link target's contents.
+#     back to the main checkout to skip the heavy Svelte build, but go:embed
+#     rejects a symlinked root ("cannot embed irregular file dist"). Deleting
+#     the link would serve a blank UI, so we replace it with a real directory
+#     copied from the link target.
 #
-#  2. Missing/empty dist. A fresh checkout that has not run the UI build yet has
-#     nothing to embed, and go:embed needs at least one file. We drop in a
-#     placeholder so tooling that does not need the real UI (openapi generation,
-#     go vet) still compiles.
+#  2. Missing/empty dist. A fresh checkout has nothing to embed and go:embed
+#     needs at least one file, so we drop in a placeholder — enough for tooling
+#     that doesn't need the real UI (openapi generation, go vet).
 #
-# A no-op once dist is a real, populated directory, so it is safe (and cheap) to
-# call from every Go entry point, including concurrently under make -j.
+# A no-op once dist is real and populated, so it's safe and cheap to call from
+# every Go entry point, including concurrently under make -j.
 
 ensure_real_ui_dist() {
   local lib_dir dist target
@@ -45,9 +40,8 @@ ensure_real_ui_dist() {
   return 0
 }
 
-# When executed directly (not sourced), run the function. This lets Makefile
-# recipes that invoke `go` without a wrapper script (e.g. the test target) use
-# `./scripts/ensure-ui-dist.sh` as a guard.
+# When executed directly (not sourced), run the function — lets Makefile recipes
+# that invoke `go` without a wrapper script use this as a guard.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   set -euo pipefail
   ensure_real_ui_dist

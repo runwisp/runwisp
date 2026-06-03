@@ -15,12 +15,9 @@ import (
 )
 
 func TestServerHub(t *testing.T) {
-	// Regression: returning a nil *inapp.Hub straight through the
-	// server.NotificationHub interface yields a typed-nil — a non-nil
-	// interface wrapping a nil pointer — which slips past the server's
-	// `notifyHub == nil` guard and panics /api/notifications/stream when it
-	// calls Subscribe(). serverHub() must hand back a true-nil interface so the
-	// guard fires and the stream falls back to ping-only.
+	// Regression: a nil Hub must come back as a true-nil interface, not a
+	// typed-nil that slips past the server's `notifyHub == nil` guard and
+	// panics the notifications stream. See serverHub.
 	t.Run("nil hub yields nil interface", func(t *testing.T) {
 		var b notifyBundle
 		assert.Nil(t, b.serverHub(), "serverHub() leaked a typed-nil interface")

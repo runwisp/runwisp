@@ -10,10 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestDemoConfig pins the embedded demo file (internal/demo/runwisp.toml) to a
-// working schema and a meaningful surface area. The demo backs `runwisp demo`
-// and marketing screenshots; this test guards it against silent schema drift
-// and against accidental gut-outs that would make screenshots look threadbare.
+// TestDemoConfig pins the embedded demo file to a working schema and a
+// meaningful surface area, guarding it against silent schema drift and against
+// gut-outs that would make `runwisp demo` and screenshots look threadbare.
 func TestDemoConfig(t *testing.T) {
 	cfg := loadDemoConfig(t)
 

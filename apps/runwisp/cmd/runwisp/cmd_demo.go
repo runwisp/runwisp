@@ -20,11 +20,9 @@ import (
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
-// envDemoTempDir names the env var that hands a spawned daemon the path of the
-// throwaway demo directory it should delete on shutdown. Cleanup is bound to
-// the daemon's lifecycle (see runDaemon), not the foreground TUI's, so the
-// directory survives a "Keep Running" quit and is removed only once the daemon
-// itself stops.
+// envDemoTempDir hands a spawned daemon the path of the throwaway demo directory
+// it should delete on shutdown. Cleanup is bound to the daemon's lifecycle (see
+// runDaemon), not the TUI's, so the dir survives a "Keep Running" quit.
 const envDemoTempDir = "RUNWISP_DEMO_TEMP"
 
 var demoFlags struct {
@@ -84,8 +82,7 @@ func runDemo(cmd *cobra.Command) error {
 		return err
 	}
 
-	// Fail fast on a port conflict (e.g. a real daemon already on this port)
-	// before paying to spawn a background process that would fail to bind.
+	// Fail fast on a port conflict before spawning a daemon that can't bind.
 	if bindErr := probePortAvailable(flags.Host, flags.Port); bindErr != nil {
 		os.RemoveAll(tmp)
 		return portConflictError(flags.Host, flags.Port, bindErr)

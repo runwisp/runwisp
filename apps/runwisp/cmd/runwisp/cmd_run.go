@@ -61,11 +61,9 @@ echo "Create a runwisp.toml to define your own tasks — see https://docs.runwis
 }
 
 func runDaemon(mode daemonMode) error {
-	// `runwisp demo` boots this daemon against a throwaway temp dir and passes
-	// its path here. Cleanup is bound to the daemon's lifecycle (not the TUI's)
-	// so the directory survives a "Keep Running" quit and is removed only once
-	// the daemon itself stops. Registered first ⇒ runs last, after the DB is
-	// closed and the PID file is cleaned.
+	// `runwisp demo` boots this daemon against a throwaway temp dir (see
+	// envDemoTempDir). Registered first ⇒ runs last, after the DB is closed and
+	// the PID file is cleaned.
 	if demoTmp := os.Getenv(envDemoTempDir); demoTmp != "" {
 		defer os.RemoveAll(demoTmp)
 	}

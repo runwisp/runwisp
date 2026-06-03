@@ -20,26 +20,23 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// minRuns is the floor on how many historical runs Seed produces. The per-task
-// caps below comfortably exceed it; the assertion in the demo command guards
-// against a future edit that quietly drops below it.
+// minRuns is the floor on how many historical runs Seed produces; plan() tops
+// up below it so the demo never looks sparse.
 const minRuns = 500
 
 const (
-	// defaultLookback bounds how far back historical runs are scattered. 30
-	// days keeps everything inside the demo config's default keep_for window so
-	// the daemon's boot-time retention never trims a seeded row.
+	// defaultLookback bounds how far back runs are scattered. 30 days stays
+	// inside the config's default keep_for, so boot-time retention never trims a
+	// seeded row.
 	defaultLookback = 30 * 24 * time.Hour
 
-	// defaultMaxPerScheduled caps fires per scheduled task so a `*/5` health
-	// probe doesn't alone write thousands of files; it still leaves a dense,
-	// scroll-worthy history.
+	// defaultMaxPerScheduled caps fires per scheduled task so a `*/5` probe
+	// doesn't alone write thousands of files, while still leaving a dense history.
 	defaultMaxPerScheduled = 180
 
-	// defaultServiceWindow bounds how long the seeder lets a service's infinite
-	// loop run before cancelling it. Services never exit on their own, so
-	// without a bound Execute would block forever; the window captures a
-	// representative sample of real output.
+	// defaultServiceWindow bounds a service's infinite loop (which never exits on
+	// its own) so execOne captures a representative sample instead of blocking
+	// forever.
 	defaultServiceWindow = 1200 * time.Millisecond
 )
 
@@ -61,10 +58,9 @@ type seedOptions struct {
 // Seed populates the database and on-disk log directory with believable
 // historical runs for every task in cfg, then returns how many it created.
 //
-// It runs each task's real command through the real executor under a backdated
-// clock: the captured output is the log and the exit code is the outcome —
-// nothing is fabricated. Planning (fire times, IDs) is single-threaded because
-// it is order-sensitive; the actual subprocess execution fans out across CPUs.
+// Each command runs through the real executor under a backdated clock: captured
+// output is the log, exit code is the outcome, nothing fabricated. Planning is
+// single-threaded (order-sensitive); subprocess execution fans out across CPUs.
 func Seed(ctx context.Context, db seederDeps, cfg *config.Config, logDir string, now time.Time) (int, error) {
 	return seedWith(ctx, db, cfg, logDir, now, seedOptions{
 		lookback:        defaultLookback,
@@ -134,8 +130,8 @@ func (s *seeder) run(ctx context.Context) (int, error) {
 
 // runSpec is one planned run plus the task it executes. forceReason overrides
 // the reason derived from the real run; it is non-nil only for the crashed
-// fraction of service restarts (a SIGKILL'd service genuinely crashed, but the
-// executor cannot infer that from a bounded sample window).
+// fraction of service restarts, which the executor can't infer from a bounded
+// sample window.
 type runSpec struct {
 	run         *model.Run
 	task        *model.Task
@@ -217,9 +213,8 @@ func (s *seeder) planManual(task *model.Task, rng *rand.Rand) []*runSpec {
 }
 
 // planService emits past restart runs for each instance. Services are infinite
-// loops, so execOne bounds them with a sample window and their terminal reason
-// is assigned, not derived: most restarts are clean cycles (Stopped, from the
-// real cancellation), a fraction model a crashed instance (forced Crashed).
+// loops, so their terminal reason is assigned, not derived: most are clean
+// cycles (Stopped, from the real cancellation), a fraction are forced Crashed.
 func (s *seeder) planService(task *model.Task, rng *rand.Rand) []*runSpec {
 	instances := task.Instances
 	if instances < 1 {
@@ -241,9 +236,8 @@ func (s *seeder) planService(task *model.Task, rng *rand.Rand) []*runSpec {
 	return specs
 }
 
-// planRetries follows up the primaries that genuinely failed on a retrying cron
-// task with a single linked retry run. A retry exists only where a real run
-// really failed; its ULID is minted after the parent so ULID order matches
+// planRetries follows each genuinely-failed primary on a retrying cron task with
+// one linked retry run, minting its ULID after the parent so ULID order matches
 // causal order.
 func (s *seeder) planRetries(primaries []*runSpec, rng *rand.Rand) []*runSpec {
 	var retries []*runSpec
@@ -369,11 +363,10 @@ func (s *seeder) execOne(ctx context.Context, spec *runSpec) error {
 	return s.db.CreateRun(ctx, spec.run)
 }
 
-// runContext bounds a run the way the manager does. Non-services get
-// task.Timeout (mirrors manager.go applying the per-task timeout) so a run that
-// blows its budget really times out. Services are infinite loops: a short
-// sample window cancels them, which the executor reports as Stopped — a clean
-// instance cycle, not a timeout.
+// runContext bounds a run the way the manager does: non-services get
+// task.Timeout, so a run that blows its budget really times out. A service's
+// infinite loop is cancelled by a short sample window, which the executor
+// reports as Stopped — a clean instance cycle, not a timeout.
 func (s *seeder) runContext(ctx context.Context, task *model.Task) (context.Context, context.CancelFunc) {
 	if task.Kind.IsService() {
 		runCtx, cancel := context.WithCancel(ctx)

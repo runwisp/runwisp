@@ -548,15 +548,11 @@ func TestGetLogPage_NegativeFrom_Tail(t *testing.T) {
 }
 
 func TestGetLogPage_FromZero_FirstLine(t *testing.T) {
-	// Regression: from=0 must return the FIRST lines, not be conflated with an
-	// absent `from` (which defaults to the -1000 tail anchor). The Web UI's
-	// scroll-to-top requests the top chunk as from=0; if the server reads that
-	// as "unset" and returns the tail instead, line 0 never arrives,
-	// isRangeComplete(0,…) stays false, and the viewport loads forever.
-	//
-	// The two anchors only diverge when totalLines > limit, so seed >1000
-	// lines: from=0 must start at line 0, while an absent from must start at
-	// the -1000 tail anchor (line 100 here).
+	// Regression: from=0 (the Web UI's scroll-to-top request) must return the
+	// FIRST lines, not be conflated with an absent `from` that defaults to the
+	// -1000 tail anchor — otherwise line 0 never arrives and the viewport loads
+	// forever. The anchors only diverge when totalLines > limit, so seed >1000
+	// lines: from=0 starts at line 0, absent from starts at line 100.
 	s, repo, _, logDir := setupServer(t)
 
 	id := ulid.Make().String()

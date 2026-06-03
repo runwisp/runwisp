@@ -11,9 +11,8 @@ ensure_real_ui_dist
 source "${script_dir}/metadata.sh"
 
 # A git worktree (e.g. Cline's) symlinks the gitignored binary back to the main
-# checkout. Building through that link would clobber the main checkout's binary
-# — or, if it is currently running, fail with "text file busy". Drop the link so
-# the build writes a fresh binary local to this checkout.
+# checkout; building through it would clobber that binary or fail with "text
+# file busy" if it's running. Drop the link so the build writes a fresh local one.
 if [[ -L runwisp ]]; then
   rm -f runwisp
 fi

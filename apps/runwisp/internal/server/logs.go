@@ -31,11 +31,10 @@ const (
 	LogPageDefaultLimit = 1000
 	// LogPageMaxLimit caps the JSON page size to prevent unbounded memory.
 	LogPageMaxLimit = 10000
-	// The default anchor when no `from` is given (a tail of the last 1000
-	// lines) is expressed as the `default:"-1000"` struct tag on the From
-	// query field, so huma can distinguish an absent param from an explicit
-	// from=0 (the first line). Don't reintroduce a `from == 0` fallback here:
-	// that conflates "first line" with "unset" and hangs scroll-to-top.
+	// The default tail anchor lives in the From field's `default:"-1000"` struct
+	// tag so huma can tell an absent param from an explicit from=0 (first line).
+	// Don't reintroduce a `from == 0` fallback here: it conflates "first line"
+	// with "unset" and hangs scroll-to-top.
 
 	// LogStreamReplayDefault is the default replay window for /log/stream.
 	LogStreamReplayDefault = 5000
