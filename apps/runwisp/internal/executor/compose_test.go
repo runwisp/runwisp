@@ -94,8 +94,8 @@ func TestComposeBackend_BuildArgs_OmitsPullWhenMissing(t *testing.T) {
 
 func TestComposeBackend_EnvFlags_DeterministicOrder(t *testing.T) {
 	task := &model.Task{
-		Env:       map[string]string{"FOO": "1", "BAR": "2"},
-		SecretEnv: map[string]string{"ZED": "secret"},
+		Env:     map[string]string{"FOO": "1", "BAR": "2"},
+		Secrets: map[string]string{"ZED": "secret"},
 	}
 	flags := composeEnvFlags(task, 0)
 	// alphabetical ordering keeps test assertions stable
@@ -109,8 +109,8 @@ func TestComposeBackend_EnvFlags_DeterministicOrder(t *testing.T) {
 
 func TestComposeBackend_EnvFlags_SecretOverridesEnv(t *testing.T) {
 	task := &model.Task{
-		Env:       map[string]string{"PASSWORD": "plain"},
-		SecretEnv: map[string]string{"PASSWORD": "from-secret"},
+		Env:     map[string]string{"PASSWORD": "plain"},
+		Secrets: map[string]string{"PASSWORD": "from-secret"},
 	}
 	flags := composeEnvFlags(task, 0)
 	assert.Contains(t, flags, "PASSWORD=from-secret")

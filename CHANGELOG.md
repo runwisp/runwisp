@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`${VAR}` / `${file:path}` substitution in `runwisp.toml`.** Any string value can pull from the daemon's environment or a file at config load; `run` is left to the shell. See [Substitution](https://docs.runwisp.com/configuration/substitution/).
+- **`secrets` and `secrets_file` on `[tasks.*]` / `[services.*]` / `[defaults]`.** Same mechanics as `env`, but keys and values never leave the daemon. See [Environment & secrets](https://docs.runwisp.com/configuration/tasks/#environment--secrets).
 - **`runwisp demo`.** Boots a throwaway instance with a realistic config and hundreds of pre-seeded historical runs (with real on-disk logs) so you can explore the TUI and Web UI without writing a `runwisp.toml`. Everything lives in a temp directory that's deleted when the daemon stops; `--cloud` connects to the control plane instead. See [Quick start](https://docs.runwisp.com/getting-started/quick-start/).
 - **Structured daemon logging.** `runwisp daemon` logs every run start, success, and failure with exit code, end reason, and duration. New `--log-level` / `--log-format` flags and `RUNWISP_LOG_LEVEL` / `RUNWISP_LOG_FORMAT` env vars; JSON output for log pipelines. See [Operations / Logging](https://docs.runwisp.com/operations/logging/).
 
 ### Changed
 
+- **Breaking: `env_file` values are now visible in the API/UI** — use `secrets_file` for credentials.
+- **Breaking: notifier `*_env` / `*_file` keys are gone.** Set `webhook_url`, `bot_token`, `password` directly, with `${...}` substitution for env vars and files.
 - **Quieter daemon output.** HTTP access lines share the slog shape and destination; routine 200/401 traffic (health, SSE keepalives, anonymous polling) moves to `debug`; startup banner absorbs init warnings; redundant post-banner lines are gone; data-directory section collapses to one absolute `Data` line; Ctrl+C-triggered failures no longer surface as `WARN`/`ERROR`.
 
 ### Fixed

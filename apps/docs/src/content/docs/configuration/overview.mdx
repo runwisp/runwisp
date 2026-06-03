@@ -71,6 +71,10 @@ it'll offer to write a minimal starter for you — the
 | `[notify]`               | Global notification settings — queue size, retention, in-app toggle.                                      | [Global settings](/notifications/global/)                                  |
 | `notify_on_failure`      | Sets the channels to notify when one specific task ends `failed`, `timeout`, or `crashed`.                | [Per-task notifications](/notifications/per-task/)                         |
 
+One rule cuts across every section: any string value can pull from an
+env var or a file with `${VAR}` / `${file:path}` —
+[`${...}` substitution](/configuration/substitution/) has the details.
+
 ## Reload semantics
 
 RunWisp **doesn't do live reload** of `runwisp.toml` — no file watcher,

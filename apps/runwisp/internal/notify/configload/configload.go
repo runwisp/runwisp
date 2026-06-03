@@ -2,17 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package configload turns a parsed config.NotifyConfig into the runtime
-// objects the notify.Service needs: secret-resolved channel.NotifierSpec
-// values and compiled notify.Rule predicates. The split exists so the
-// internal/config package stays free of secret I/O and runtime types.
+// objects the notify.Service needs: channel.NotifierSpec values and compiled
+// notify.Rule predicates. The split exists so the internal/config package
+// stays free of runtime types.
 package configload
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
@@ -20,26 +15,22 @@ import (
 )
 
 // ResolvedNotify carries everything the daemon needs to construct a
-// notify.Service: secret-resolved notifier specs and compiled routing rules.
+// notify.Service: notifier specs and compiled routing rules.
 type ResolvedNotify struct {
 	Notifiers []channel.NotifierSpec
 	Rules     []notify.Rule
 }
 
-// Resolve takes the post-parse config and the daemon's data dir, reads any
-// file-backed secrets relative to the data dir, and produces a ready-to-use
-// ResolvedNotify. The renderCtx carries per-daemon values (external URL,
-// fingerprint, output-tail reader) that bind into each channel's template
-// func map. Returns an error when a secret source is missing or when a
-// route refers to an unknown notifier.
-func Resolve(cfg config.NotifyConfig, dataDir string, renderCtx render.TemplateContext) (ResolvedNotify, error) {
+// Resolve takes the post-parse config and produces a ready-to-use
+// ResolvedNotify. Secret values (webhook URLs, tokens, passwords) arrive
+// final — ${VAR} / ${file:...} substitution already ran at config load. The
+// renderCtx carries per-daemon values (external URL, fingerprint, output-tail
+// reader) that bind into each channel's template func map. Returns an error
+// when a route refers to an unknown notifier.
+func Resolve(cfg config.NotifyConfig, renderCtx render.TemplateContext) (ResolvedNotify, error) {
 	specs := make([]channel.NotifierSpec, 0, len(cfg.Notifiers))
 	for _, n := range cfg.Notifiers {
-		spec, err := resolveNotifier(n, dataDir, renderCtx)
-		if err != nil {
-			return ResolvedNotify{}, err
-		}
-		specs = append(specs, spec)
+		specs = append(specs, resolveNotifier(n, renderCtx))
 	}
 
 	rules := make([]notify.Rule, 0, len(cfg.Routes))
@@ -57,7 +48,7 @@ func Resolve(cfg config.NotifyConfig, dataDir string, renderCtx render.TemplateC
 	}, nil
 }
 
-func resolveNotifier(n config.NotifierSpec, dataDir string, renderCtx render.TemplateContext) (channel.NotifierSpec, error) {
+func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) channel.NotifierSpec {
 	spec := channel.NotifierSpec{
 		ID:            n.ID,
 		Type:          n.Type,
@@ -68,78 +59,30 @@ func resolveNotifier(n config.NotifierSpec, dataDir string, renderCtx render.Tem
 	}
 	switch n.Type {
 	case "slack":
-		url, err := resolveSecret(n.WebhookURL, n.WebhookURLEnv, n.WebhookURLFile, dataDir)
-		if err != nil {
-			return channel.NotifierSpec{}, fmt.Errorf("notifier %q webhook_url: %w", n.ID, err)
-		}
-		spec.WebhookURL = url
+		spec.WebhookURL = n.WebhookURL
 		spec.SlackChannel = n.SlackChannel
 	case "telegram":
-		token, err := resolveSecret(n.BotToken, n.BotTokenEnv, n.BotTokenFile, dataDir)
-		if err != nil {
-			return channel.NotifierSpec{}, fmt.Errorf("notifier %q bot_token: %w", n.ID, err)
-		}
-		spec.BotToken = token
+		spec.BotToken = n.BotToken
 	case "smtp":
-		if err := fillSMTPSpec(&spec, n, dataDir); err != nil {
-			return channel.NotifierSpec{}, err
-		}
+		fillSMTPSpec(&spec, n)
 	}
-	return spec, nil
+	return spec
 }
 
-func fillSMTPSpec(spec *channel.NotifierSpec, n config.NotifierSpec, dataDir string) error {
+func fillSMTPSpec(spec *channel.NotifierSpec, n config.NotifierSpec) {
 	spec.Host = n.Host
 	spec.Port = n.Port
 	spec.TLSMode = n.TLSMode
 	spec.TLSSkipVerify = n.TLSSkipVerify
 	spec.Username = n.Username
+	// Empty Password means an auth-less local relay (e.g. Postfix on
+	// 127.0.0.1:25); validation guarantees username/password come together.
+	spec.Password = n.Password
 	spec.From = n.From
 	spec.ReplyTo = n.ReplyTo
 	spec.Recipients = append([]string(nil), n.Recipients...)
 	spec.CC = append([]string(nil), n.CC...)
 	spec.BCC = append([]string(nil), n.BCC...)
-	if strings.TrimSpace(n.Password) == "" &&
-		strings.TrimSpace(n.PasswordEnv) == "" &&
-		strings.TrimSpace(n.PasswordFile) == "" {
-		// Auth-less local relay (e.g. Postfix on 127.0.0.1:25); leave empty.
-		return nil
-	}
-	pw, err := resolveSecret(n.Password, n.PasswordEnv, n.PasswordFile, dataDir)
-	if err != nil {
-		return fmt.Errorf("notifier %q password: %w", n.ID, err)
-	}
-	spec.Password = pw
-	return nil
-}
-
-// resolveSecret applies the standard env > file > inline precedence; exactly
-// one is set after config validation, so this just reads whichever is
-// non-empty. File paths are interpreted relative to dataDir when not
-// absolute.
-func resolveSecret(inline, envName, file, dataDir string) (string, error) {
-	if inline = strings.TrimSpace(inline); inline != "" {
-		return inline, nil
-	}
-	if envName = strings.TrimSpace(envName); envName != "" {
-		v := os.Getenv(envName)
-		if v == "" {
-			return "", fmt.Errorf("env var %s is not set", envName)
-		}
-		return v, nil
-	}
-	if file = strings.TrimSpace(file); file != "" {
-		path := file
-		if !filepath.IsAbs(path) && dataDir != "" {
-			path = filepath.Join(dataDir, file)
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return "", fmt.Errorf("read secret file %s: %w", path, err)
-		}
-		return strings.TrimSpace(string(b)), nil
-	}
-	return "", fmt.Errorf("secret source missing (validation should have caught this)")
 }
 
 func compileRoute(r config.NotificationRoute) (notify.Rule, error) {

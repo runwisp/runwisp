@@ -13,7 +13,7 @@ import (
 // Output is "KEY=VALUE" strings sorted by key for deterministic process env.
 //
 // Variadic so a future per-run env layer (from the REST/UI trigger surface)
-// is a single extra argument: buildProcessEnv(os.Environ(), task.Env, task.SecretEnv, run.Env).
+// is a single extra argument: buildProcessEnv(os.Environ(), task.Env, task.Secrets, run.Env).
 func buildProcessEnv(parent []string, layers ...map[string]string) []string {
 	merged := make(map[string]string, len(parent))
 	for _, entry := range parent {

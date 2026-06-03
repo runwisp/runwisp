@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -57,7 +58,7 @@ var validComposePull = []string{
 // expandComposeBlocks consumes cfg.pendingComposeBlocks, enumerates each
 // referenced compose file via composespec.Load, and appends a model.Task
 // per imported service (services mode) or per project (stack mode). The
-// generated tasks flow through resolveEnvFiles, ApplyDefaults and Validate
+// generated tasks flow through resolveEnvLayers, ApplyDefaults and Validate
 // like any hand-written [services.*] or [tasks.*] entry.
 func expandComposeBlocks(cfg *Config, baseDir string) error {
 	blocks := cfg.pendingComposeBlocks
@@ -140,8 +141,10 @@ type composeServiceOverrideWire struct {
 	KeepRuns int    `toml:"keep_runs,omitempty"`
 	KeepFor  string `toml:"keep_for,omitempty"`
 
-	Env     map[string]string `toml:"env,omitempty"`
-	EnvFile string            `toml:"env_file,omitempty"`
+	Env         map[string]string `toml:"env,omitempty"`
+	EnvFile     string            `toml:"env_file,omitempty"`
+	Secrets     map[string]string `toml:"secrets,omitempty"`
+	SecretsFile string            `toml:"secrets_file,omitempty"`
 
 	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
 	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
@@ -234,10 +237,10 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 	if len(block.Include) > 0 && len(block.Exclude) > 0 {
 		return nil, fmt.Errorf("`include` and `exclude` are mutually exclusive")
 	}
-	if !contains(validComposeMode, block.Mode) {
+	if !slices.Contains(validComposeMode, block.Mode) {
 		return nil, fmt.Errorf("invalid mode %q: must be one of %s", block.Mode, strings.Join(validComposeMode, ", "))
 	}
-	if !contains(validComposePull, block.Pull) {
+	if !slices.Contains(validComposePull, block.Pull) {
 		return nil, fmt.Errorf("invalid pull %q: must be one of %s", block.Pull, strings.Join(validComposePull[:3], ", "))
 	}
 	if !strings.Contains(block.NameFormat, "{service}") && block.Mode == model.ComposeModeServices {
@@ -527,6 +530,12 @@ func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcNa
 	if w.EnvFile != "" {
 		task.EnvFile = w.EnvFile
 	}
+	if len(w.Secrets) > 0 {
+		task.Secrets = w.Secrets
+	}
+	if w.SecretsFile != "" {
+		task.SecretsFile = w.SecretsFile
+	}
 	if len(w.NotifyOnFailure) > 0 {
 		// Field not on Task today; consumed by notify config at expansion time.
 		// Stored on task via the same pathway as [services.*] — but the
@@ -591,11 +600,8 @@ func selectComposeServices(available, include, exclude []string) []string {
 	if len(include) > 0 {
 		out := make([]string, 0, len(include))
 		for _, n := range available {
-			for _, want := range include {
-				if want == n {
-					out = append(out, n)
-					break
-				}
+			if slices.Contains(include, n) {
+				out = append(out, n)
 			}
 		}
 		return out
@@ -633,9 +639,9 @@ func validateComposeNameSet(names []string, available map[string]struct{}, scope
 // working_dir at exec) and miss the file.
 func resolveComposeFile(declared, baseDir string) (string, error) {
 	if declared != "" {
-		path := declared
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(baseDir, path)
+		path, err := resolvePath(baseDir, declared)
+		if err != nil {
+			return "", err
 		}
 		if _, err := os.Stat(path); err != nil {
 			return "", fmt.Errorf("compose file %s: %w", path, err)
@@ -678,15 +684,6 @@ func asStringSlice(key string, value any) ([]string, error) {
 		out[i] = s
 	}
 	return out, nil
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
 }
 
 func sortedKeys(m map[string]struct{}) []string {

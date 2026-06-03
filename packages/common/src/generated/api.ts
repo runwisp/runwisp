@@ -1092,11 +1092,11 @@ export interface components {
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
             description?: string;
-            /** @description Environment variables overlaid on the task's process env. Values are visible in the API/UI. */
+            /** @description Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries. */
             env?: {
                 [key: string]: string;
             };
-            /** @description Path to a dotenv file whose KEY=VALUE pairs are loaded into the task's process env. Keys and values are not exposed via API/UI. */
+            /** @description Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env. */
             env_file?: string;
             /**
              * Format: int64
@@ -1183,6 +1183,8 @@ export interface components {
              * @description Base delay before each retry, in nanoseconds
              */
             retry_delay?: number;
+            /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon. */
+            secrets_file?: string;
             /**
              * Format: int64
              * @description Per-run timeout in nanoseconds

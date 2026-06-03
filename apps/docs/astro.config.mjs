@@ -79,6 +79,7 @@ export default defineConfig({
                         { label: "[tasks.*]", slug: "configuration/tasks" },
                         { label: "[services.*]", slug: "configuration/services" },
                         { label: "[compose.*]", slug: "configuration/compose" },
+                        { label: "${...} substitution", slug: "configuration/substitution" },
                     ],
                 },
                 {

@@ -42,9 +42,9 @@ It's three steps, and the shape is the same for every provider:
 
 ```toml
 [[notifier]]
-id              = "slack-ops"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
+id          = "slack-ops"
+type        = "slack"
+webhook_url = "${RUNWISP_SLACK_OPS_URL}"
 
 [tasks.backup-postgres]
 cron              = "30 2 * * *"
@@ -72,36 +72,38 @@ has the full list for each.
 
 ```toml
 [[notifier]]
-id              = "slack-ops"
-type            = "slack"
-webhook_url_env = "RUNWISP_SLACK_OPS_URL"
-channel         = "#ops-alerts"   # optional
+id          = "slack-ops"
+type        = "slack"
+webhook_url = "${RUNWISP_SLACK_OPS_URL}"
+channel     = "#ops-alerts"   # optional
 
 [[notifier]]
-id            = "tg-oncall"
-type          = "telegram"
-bot_token_env = "RUNWISP_TG_TOKEN"
-chat_id       = "-1001234567890"
+id        = "tg-oncall"
+type      = "telegram"
+bot_token = "${RUNWISP_TG_TOKEN}"
+chat_id   = "-1001234567890"
 ```
 
 ## Storing the secret
 
 Every notifier needs a credential of some kind — a webhook URL, a bot
-token, that sort of thing. There are three ways to hand it over:
+token, that sort of thing. It's one field (`webhook_url`, `bot_token`,
+`password`), and [`${...}` substitution](/configuration/substitution/)
+decides where the value comes from:
 
 - **Env var** (the one to reach for): set
-  `webhook_url_env = "RUNWISP_SLACK_URL"` and put the actual value in
+  `webhook_url = "${RUNWISP_SLACK_URL}"` and put the actual value in
   your shell or systemd unit. Works the same way everywhere.
-- **File**: set `webhook_url_file = "secrets/slack.url"`. Relative paths
-  resolve under the data directory. Handy when a secrets manager drops
-  the value on disk for you — just `chmod 600` the file.
+- **File**: set `webhook_url = "${file:secrets/slack.url}"`. Relative
+  paths resolve next to `runwisp.toml`. Handy when a secrets manager
+  drops the value on disk for you — just `chmod 600` the file.
 - **Inline**: drop the value straight into `runwisp.toml`. Convenient,
   sure, but TOML files have a way of ending up in git or pasted into
   chat. Keep inline values to local experiments.
 
-Pick **exactly one** of the three per secret. Set two and it's a
-config-load error — the loader won't try to guess which you meant, it
-just refuses to start.
+Either way the value resolves once, at config load — an unset variable
+or a missing file stops the daemon at boot with an error naming the
+field, instead of failing silently at delivery time.
 
 And if a delivery ever errors out, the secret is swapped for
 `[redacted]` before anything hits the bell or the daemon log. A 5xx from
@@ -240,9 +242,9 @@ notify = ["tg-oncall"]
 
 ## Trust model
 
-- **Secrets stay local.** They live in env vars, files under the data
-  dir, or inline TOML, and the only place they ever travel is the HTTPS
-  request body going to the channel endpoint.
+- **Secrets stay local.** They live in env vars, files next to
+  `runwisp.toml`, or inline TOML, and the only place they ever travel is
+  the HTTPS request body going to the channel endpoint.
 - **Secrets are never logged.** Webhook URLs and bot tokens get redacted
   from any error message before it reaches the daemon log or the bell.
 - **Secrets are never handed to the optional control-plane integration.**

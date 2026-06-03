@@ -128,7 +128,7 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 
 // buildComposeArgs assembles the argv tail (after the docker binary) for
 // either per-service (`run --rm`) or stack-mode (`up --abort-on-container-exit`)
-// invocations. RUNWISP_INSTANCE_INDEX + task.Env + task.SecretEnv flow into
+// invocations. RUNWISP_INSTANCE_INDEX + task.Env + task.Secrets flow into
 // the target container via repeated -e flags, deterministically ordered.
 func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.Run) []string {
 	args := []string{"compose", "-f", ce.File}
@@ -194,7 +194,7 @@ func composeEnvFlags(task *model.Task, instanceIndex int) []string {
 	for k, v := range task.Env {
 		merged[k] = v
 	}
-	for k, v := range task.SecretEnv {
+	for k, v := range task.Secrets {
 		merged[k] = v
 	}
 	keys := make([]string, 0, len(merged))

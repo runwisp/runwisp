@@ -127,18 +127,14 @@ func (t *tomlConfig) applyNotifyDurations(out *NotifyConfig) error {
 func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
 	for i, n := range notifiers {
 		spec := NotifierSpec{
-			ID:             strings.TrimSpace(n.ID),
-			Type:           strings.TrimSpace(n.Type),
-			WebhookURL:     n.WebhookURL,
-			WebhookURLEnv:  n.WebhookURLEnv,
-			WebhookURLFile: n.WebhookURLFile,
-			SlackChannel:   n.Channel,
-			BotToken:       n.BotToken,
-			BotTokenEnv:    n.BotTokenEnv,
-			BotTokenFile:   n.BotTokenFile,
-			ChatID:         n.ChatID,
-			ParseMode:      n.ParseMode,
-			TemplatePath:   n.TemplatePath,
+			ID:           strings.TrimSpace(n.ID),
+			Type:         strings.TrimSpace(n.Type),
+			WebhookURL:   n.WebhookURL,
+			SlackChannel: n.Channel,
+			BotToken:     n.BotToken,
+			ChatID:       n.ChatID,
+			ParseMode:    n.ParseMode,
+			TemplatePath: n.TemplatePath,
 
 			Host:          n.Host,
 			Port:          n.Port,
@@ -146,8 +142,6 @@ func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
 			TLSSkipVerify: n.TLSSkipVerify,
 			Username:      n.Username,
 			Password:      n.Password,
-			PasswordEnv:   n.PasswordEnv,
-			PasswordFile:  n.PasswordFile,
 			From:          n.From,
 			ReplyTo:       n.ReplyTo,
 			Recipients:    append([]string(nil), n.To...),
@@ -350,9 +344,8 @@ func mergeWithAppended(explicit, appended []string) []string {
 }
 
 // validateNotify enforces structural rules: unique IDs, correct types,
-// exactly-one secret source per secret-bearing field, route IDs reference a
-// known notifier (or "inapp"), kinds and severity are recognized, glob is
-// well-formed.
+// required per-type fields, route IDs reference a known notifier (or
+// "inapp"), kinds and severity are recognized, glob is well-formed.
 func validateNotify(cfg *NotifyConfig) error {
 	if cfg == nil {
 		return nil
@@ -379,8 +372,8 @@ func validateNotify(cfg *NotifyConfig) error {
 }
 
 // validateNotifierSpecs runs per-spec structural checks (unique id, correct
-// type, type-specific secret/target requirements) and returns the set of
-// declared ids on success.
+// type, type-specific required fields) and returns the set of declared ids
+// on success.
 func validateNotifierSpecs(specs []NotifierSpec) (map[string]struct{}, error) {
 	seenID := make(map[string]struct{}, len(specs))
 	for i := range specs {
@@ -414,9 +407,8 @@ func validateNotifierByType(spec *NotifierSpec) error {
 }
 
 func validateSlackNotifier(spec *NotifierSpec) error {
-	if err := requireOneSecretSource(spec.ID, "webhook_url",
-		spec.WebhookURL, spec.WebhookURLEnv, spec.WebhookURLFile); err != nil {
-		return err
+	if strings.TrimSpace(spec.WebhookURL) == "" {
+		return fmt.Errorf("notifier %q: webhook_url is required for type=slack", spec.ID)
 	}
 	ch := strings.TrimSpace(spec.SlackChannel)
 	if ch != "" && ch[0] != '#' && ch[0] != '@' {
@@ -485,28 +477,19 @@ func validateAddressList(notifierID, label string, addrs []string) error {
 
 func validateSMTPAuth(spec *NotifierSpec) error {
 	hasUser := strings.TrimSpace(spec.Username) != ""
-	hasAnyPasswordSource := strings.TrimSpace(spec.Password) != "" ||
-		strings.TrimSpace(spec.PasswordEnv) != "" ||
-		strings.TrimSpace(spec.PasswordFile) != ""
-	if hasAnyPasswordSource {
-		if err := requireOneSecretSource(spec.ID, "password",
-			spec.Password, spec.PasswordEnv, spec.PasswordFile); err != nil {
-			return err
-		}
+	hasPassword := strings.TrimSpace(spec.Password) != ""
+	if hasUser != hasPassword {
+		return fmt.Errorf("notifier %q: username and password must be set together (or both omitted for auth-less relays)", spec.ID)
 	}
-	if hasUser != hasAnyPasswordSource {
-		return fmt.Errorf("notifier %q: username and a password source must be set together (or both omitted for auth-less relays)", spec.ID)
-	}
-	if hasAnyPasswordSource && strings.TrimSpace(spec.TLSMode) == "none" {
+	if hasPassword && strings.TrimSpace(spec.TLSMode) == "none" {
 		return fmt.Errorf("notifier %q: tls=\"none\" is not allowed with credentials — refuse to send PLAIN auth over cleartext", spec.ID)
 	}
 	return nil
 }
 
 func validateTelegramNotifier(spec *NotifierSpec) error {
-	if err := requireOneSecretSource(spec.ID, "bot_token",
-		spec.BotToken, spec.BotTokenEnv, spec.BotTokenFile); err != nil {
-		return err
+	if strings.TrimSpace(spec.BotToken) == "" {
+		return fmt.Errorf("notifier %q: bot_token is required for type=telegram", spec.ID)
 	}
 	if strings.TrimSpace(spec.ChatID) == "" {
 		return fmt.Errorf("notifier %q: chat_id is required for type=telegram", spec.ID)
@@ -550,27 +533,4 @@ func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) erro
 		}
 	}
 	return nil
-}
-
-// requireOneSecretSource ensures exactly one of {inline, env, file} is set for
-// a secret-bearing field. Mirrors the shape of requireOneOf.
-func requireOneSecretSource(id, field, inline, env, file string) error {
-	count := 0
-	if strings.TrimSpace(inline) != "" {
-		count++
-	}
-	if strings.TrimSpace(env) != "" {
-		count++
-	}
-	if strings.TrimSpace(file) != "" {
-		count++
-	}
-	switch count {
-	case 0:
-		return fmt.Errorf("notifier %q: %s requires one of %s, %s_env, %s_file", id, field, field, field, field)
-	case 1:
-		return nil
-	default:
-		return fmt.Errorf("notifier %q: only one of %s, %s_env, %s_file may be set", id, field, field, field)
-	}
 }
