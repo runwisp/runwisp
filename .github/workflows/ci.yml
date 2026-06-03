@@ -19,6 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # On PRs, moon diffs changed files against vcs.defaultBranch, but the
+      # checkout only has the merge ref — give it a local `main` to resolve.
+      - name: Fetch base branch for moon
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin main:main
+
       - uses: actions/setup-go@v6
         with:
           go-version-file: apps/runwisp/go.mod
@@ -42,6 +48,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Fetch base branch for moon
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin main:main
 
       - uses: actions/setup-go@v6
         with:
@@ -67,6 +77,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
+
+      - name: Fetch base branch for moon
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin main:main
 
       - uses: actions/setup-go@v6
         with:
@@ -99,6 +113,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
+
+      - name: Fetch base branch for moon
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin main:main
 
       - uses: actions/setup-go@v6
         with:
