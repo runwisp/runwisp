@@ -61,6 +61,13 @@ echo "Create a runwisp.toml to define your own tasks — see https://docs.runwis
 }
 
 func runDaemon(mode daemonMode) error {
+	// `runwisp demo` boots this daemon against a throwaway temp dir (see
+	// envDemoTempDir). Registered first ⇒ runs last, after the DB is closed and
+	// the PID file is cleaned.
+	if demoTmp := os.Getenv(envDemoTempDir); demoTmp != "" {
+		defer os.RemoveAll(demoTmp)
+	}
+
 	// Ring buffer for streaming daemon logs to remote TUI clients.
 	logBuffer := server.NewDaemonLogBuffer(1000)
 
@@ -130,7 +137,7 @@ func runDaemon(mode daemonMode) error {
 	srv, err := server.New(server.Options{
 		DB:                svc.DB,
 		NotificationDB:    svc.DB,
-		NotificationHub:   svc.Notify.Hub,
+		NotificationHub:   svc.Notify.serverHub(),
 		TaskManager:       svc.TaskManager,
 		Tasks:             svc.TasksMap,
 		Scheduler:         svc.Scheduler,

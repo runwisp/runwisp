@@ -263,6 +263,18 @@ RunWisp doesn't watch `runwisp.toml` for changes. When you've
 edited the file, quit the TUI with <kbd>Ctrl</kbd>+<kbd>C</kbd>
 and run `runwisp` again. Your edits take effect on the next boot.
 
+:::tip[Want to see it full of history?]
+Your fresh instance starts empty, so there's not much to scroll
+through yet. `runwisp demo` boots a throwaway instance preloaded with
+**hundreds of historical runs** — backups, health checks, a couple of
+background services, and some manual jobs with nice long logs. It
+behaves exactly like the real thing: the daemon runs in the
+background, the TUI opens, and the Web UI is live at
+`http://localhost:9477`. Everything lives in a temp directory that's
+deleted the moment the daemon stops, so it never touches your real
+config or data. Quit the TUI and pick **Shut Down** to clean up.
+:::
+
 ---
 
 <CardGrid>

@@ -31,8 +31,10 @@ const (
 	LogPageDefaultLimit = 1000
 	// LogPageMaxLimit caps the JSON page size to prevent unbounded memory.
 	LogPageMaxLimit = 10000
-	// LogPageDefaultFrom is the default tail size when no `from` is given.
-	LogPageDefaultFrom = -1000
+	// The default tail anchor lives in the From field's `default:"-1000"` struct
+	// tag so huma can tell an absent param from an explicit from=0 (first line).
+	// Don't reintroduce a `from == 0` fallback here: it conflates "first line"
+	// with "unset" and hangs scroll-to-top.
 
 	// LogStreamReplayDefault is the default replay window for /log/stream.
 	LogStreamReplayDefault = 5000
@@ -44,7 +46,7 @@ const (
 type LogPageInput struct {
 	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
 	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
-	From     int64  `query:"from" doc:"Anchor line number; negative values count from end (default -1000)"`
+	From     int64  `query:"from" default:"-1000" doc:"Anchor line number; 0 is the first line, negative values count from end (default -1000)"`
 	Limit    int64  `query:"limit" minimum:"1" maximum:"10000" doc:"Max lines returned (default 1000)"`
 }
 
@@ -106,9 +108,6 @@ func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*Lo
 	}
 
 	from := input.From
-	if from == 0 {
-		from = LogPageDefaultFrom
-	}
 	limit := input.Limit
 	if limit <= 0 {
 		limit = LogPageDefaultLimit
@@ -181,7 +180,7 @@ func readRawLog(logPath string) ([]byte, error) {
 type LogStreamInput struct {
 	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
 	RunID       string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
-	From        int64  `query:"from" doc:"Anchor line number; negative values count from end (default -1000)"`
+	From        int64  `query:"from" default:"-1000" doc:"Anchor line number; 0 is the first line, negative values count from end (default -1000)"`
 	ReplayLimit int64  `query:"replay_limit" minimum:"1" maximum:"50000" doc:"Cap on backfilled lines (default 5000)"`
 	LastEventID string `header:"Last-Event-ID" doc:"Native SSE resume cursor; takes precedence over the from query"`
 }
@@ -221,9 +220,6 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		logPath := logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt)
 
 		from := input.From
-		if from == 0 {
-			from = LogPageDefaultFrom
-		}
 		if resume, ok := parseResumeID(input.LastEventID); ok {
 			from = resume + 1
 		}

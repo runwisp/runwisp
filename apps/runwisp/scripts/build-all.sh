@@ -13,6 +13,10 @@ set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "${script_dir}/.."
 
+# shellcheck source=./ensure-ui-dist.sh
+source "${script_dir}/ensure-ui-dist.sh"
+ensure_real_ui_dist
+
 # shellcheck source=./metadata.sh
 source "${script_dir}/metadata.sh"
 

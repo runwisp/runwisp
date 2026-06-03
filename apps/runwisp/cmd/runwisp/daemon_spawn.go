@@ -39,15 +39,21 @@ func pollHealth(client *apiclient.Client, timeout time.Duration) error {
 // spawnDaemon starts a new daemon process in the background, detached from the
 // current terminal session so it survives after the TUI exits.
 func spawnDaemon() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("cannot find executable: %w", err)
-	}
-
-	args := []string{"daemon",
+	return spawnDaemonProcess([]string{"daemon",
 		"--config", flags.CfgFile,
 		"--data", flags.DataDir,
 		"--port", strconv.Itoa(flags.Port),
+	})
+}
+
+// spawnDaemonProcess execs `runwisp <args...>` as a detached background process
+// (new session, stdio redirected to the data dir's daemon.log) so it outlives
+// the foreground process that launched it. The leading arg selects the
+// subcommand — "daemon" for standalone, "cloud --no-tui" for cloud mode.
+func spawnDaemonProcess(args []string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("cannot find executable: %w", err)
 	}
 
 	cmd := exec.Command(exe, args...)

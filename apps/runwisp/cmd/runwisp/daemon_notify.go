@@ -17,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/coalesce"
 	"github.com/runwisp/runwisp/internal/notify/configload"
 	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
@@ -27,6 +28,18 @@ import (
 type notifyBundle struct {
 	Service *notify.Service
 	Hub     *inapp.Hub
+}
+
+// serverHub exposes the in-app Hub as the server's NotificationHub, returning an
+// explicit nil interface when no Hub was built. This avoids the typed-nil
+// footgun: a nil *inapp.Hub assigned straight into the interface wraps a nil
+// pointer in a non-nil interface, slipping past the server's `notifyHub == nil`
+// check and panicking the notifications SSE stream when it calls Subscribe().
+func (b notifyBundle) serverHub() server.NotificationHub {
+	if b.Hub == nil {
+		return nil
+	}
+	return b.Hub
 }
 
 // initNotify constructs the notification subsystem from the daemon config.

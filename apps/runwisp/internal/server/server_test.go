@@ -547,6 +547,58 @@ func TestGetLogPage_NegativeFrom_Tail(t *testing.T) {
 	assert.Equal(t, "line 20", page.Lines[4].Text)
 }
 
+func TestGetLogPage_FromZero_FirstLine(t *testing.T) {
+	// Regression: from=0 (the Web UI's scroll-to-top request) must return the
+	// FIRST lines, not be conflated with an absent `from` that defaults to the
+	// -1000 tail anchor — otherwise line 0 never arrives and the viewport loads
+	// forever. The anchors only diverge when totalLines > limit, so seed >1000
+	// lines: from=0 starts at line 0, absent from starts at line 100.
+	s, repo, _, logDir := setupServer(t)
+
+	id := ulid.Make().String()
+	now := time.Now()
+	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseEnded, CreatedAt: now}
+	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
+	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
+
+	const total = 1100
+	var content strings.Builder
+	for i := 1; i <= total; i++ {
+		fmt.Fprintf(&content, "line %d\n", i)
+	}
+	require.NoError(t, os.WriteFile(logPath, []byte(content.String()), 0644))
+	require.NoError(t, os.WriteFile(logPath+".idx", nil, 0644))
+
+	repo.On("GetRun", mock.Anything, id).Return(run, nil)
+
+	// from=0 → the first lines.
+	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log?from=0&limit=5", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var page LogPageBody
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
+	assert.Equal(t, int64(total), page.TotalLines)
+	require.Len(t, page.Lines, 5)
+	assert.Equal(t, int64(0), page.Lines[0].N, "from=0 must return line 0 first")
+	assert.Equal(t, "line 1", page.Lines[0].Text)
+	assert.Equal(t, int64(4), page.Lines[4].N)
+
+	// Absent from → default -1000 tail anchor: startLine = 1100-1000 = 100.
+	reqDef := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log?limit=5", nil)
+	wDef := httptest.NewRecorder()
+	addAuth(reqDef, s)
+	s.router.ServeHTTP(wDef, reqDef)
+
+	assert.Equal(t, http.StatusOK, wDef.Code)
+	var pageDef LogPageBody
+	require.NoError(t, json.Unmarshal(wDef.Body.Bytes(), &pageDef))
+	require.Len(t, pageDef.Lines, 5)
+	assert.Equal(t, int64(100), pageDef.Lines[0].N, "absent from must use the -1000 tail anchor")
+}
+
 func addAuth(req *http.Request, s *Server) {
 	_, ts, _ := s.auth.JWTAuth().Encode(map[string]any{
 		"exp": time.Now().Add(time.Hour).Unix(),

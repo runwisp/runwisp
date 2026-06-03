@@ -2149,7 +2149,7 @@ export interface operations {
     getLogPage: {
         parameters: {
             query?: {
-                /** @description Anchor line number; negative values count from end (default -1000) */
+                /** @description Anchor line number; 0 is the first line, negative values count from end (default -1000) */
                 from?: number;
                 /** @description Max lines returned (default 1000) */
                 limit?: number;
@@ -2223,7 +2223,7 @@ export interface operations {
     streamLog: {
         parameters: {
             query?: {
-                /** @description Anchor line number; negative values count from end (default -1000) */
+                /** @description Anchor line number; 0 is the first line, negative values count from end (default -1000) */
                 from?: number;
                 /** @description Cap on backfilled lines (default 5000) */
                 replay_limit?: number;

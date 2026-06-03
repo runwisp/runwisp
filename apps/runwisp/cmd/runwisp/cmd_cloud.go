@@ -24,23 +24,30 @@ var cloudCmd = &cobra.Command{
 Requires RUNWISP_CLOUD_TOKEN to be set (via environment or .env file).
 The local scheduler is not started — task scheduling is managed by the cloud.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := loadCloudEnvFile(cmd); err != nil {
+		if err := resolveCloudEnv(cloudFlags.EnvFile, cmd.Flags().Changed("env-file"), cloudFlags.Token, cloudFlags.URL); err != nil {
 			return err
 		}
-
-		if cloudFlags.Token != "" {
-			os.Setenv("RUNWISP_CLOUD_TOKEN", cloudFlags.Token)
-		}
-		if cloudFlags.URL != "" {
-			os.Setenv("RUNWISP_CLOUD_URL", cloudFlags.URL)
-		}
-
-		if os.Getenv("RUNWISP_CLOUD_TOKEN") == "" {
-			return fmt.Errorf("RUNWISP_CLOUD_TOKEN is required — set it via environment, .env file, or --token flag")
-		}
-
 		return runDaemon(modeCloud)
 	},
+}
+
+// resolveCloudEnv loads the .env file (if present) and applies the --token /
+// --url overrides into the process environment, then requires a cloud token.
+// Shared by the `cloud` command and `demo --cloud`.
+func resolveCloudEnv(envFile string, envFileExplicit bool, token, url string) error {
+	if err := loadEnvFileInto(envFile, envFileExplicit); err != nil {
+		return err
+	}
+	if token != "" {
+		os.Setenv("RUNWISP_CLOUD_TOKEN", token)
+	}
+	if url != "" {
+		os.Setenv("RUNWISP_CLOUD_URL", url)
+	}
+	if os.Getenv("RUNWISP_CLOUD_TOKEN") == "" {
+		return fmt.Errorf("RUNWISP_CLOUD_TOKEN is required — set it via environment, .env file, or --token flag")
+	}
+	return nil
 }
 
 func init() {
@@ -50,21 +57,16 @@ func init() {
 	cloudCmd.Flags().BoolVar(&noTUI, "no-tui", false, "run in headless daemon mode (no interactive TUI)")
 }
 
-// loadCloudEnvFile loads variables from the .env file into the process
-// environment. If --env-file was explicitly set and the file is missing, an
-// error is returned. If using the default ".env" and the file is missing, the
-// function silently continues.
-func loadCloudEnvFile(cmd *cobra.Command) error {
-	envFileExplicit := cmd.Flags().Changed("env-file")
-	err := godotenv.Load(cloudFlags.EnvFile)
+// loadEnvFileInto loads variables from the .env file into the process
+// environment. If the file is missing and was explicitly requested, an error is
+// returned; a missing default ".env" is silently ignored.
+func loadEnvFileInto(envFile string, envFileExplicit bool) error {
+	err := godotenv.Load(envFile)
 	if err == nil {
 		return nil
 	}
 	if os.IsNotExist(err) && !envFileExplicit {
 		return nil
 	}
-	if envFileExplicit {
-		return fmt.Errorf("cannot load env file %q: %w", cloudFlags.EnvFile, err)
-	}
-	return fmt.Errorf("cannot load env file %q: %w", cloudFlags.EnvFile, err)
+	return fmt.Errorf("cannot load env file %q: %w", envFile, err)
 }
