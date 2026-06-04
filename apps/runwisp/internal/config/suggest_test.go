@@ -59,7 +59,7 @@ func TestDecodeUnknownKeySuggestions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := decode([]byte(tt.toml))
+			_, err := decode([]byte(tt.toml), "")
 			require.Error(t, err)
 			for _, want := range tt.want {
 				assert.Contains(t, err.Error(), want)
@@ -69,7 +69,7 @@ func TestDecodeUnknownKeySuggestions(t *testing.T) {
 }
 
 func TestDecodeUnknownKeyNoSuggestionForGibberish(t *testing.T) {
-	_, err := decode([]byte("[tasks.backup]\nrun = \"echo hi\"\nzzqxwy = 1\n"))
+	_, err := decode([]byte("[tasks.backup]\nrun = \"echo hi\"\nzzqxwy = 1\n"), "")
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "did you mean")
 }
@@ -78,6 +78,6 @@ func TestDecodeUnknownKeyNoSuggestionForGibberish(t *testing.T) {
 // strict-mode errors — this guards that the suggestion walker doesn't panic
 // on paths through them either way.
 func TestComposeBlockKeysDecodeWithoutError(t *testing.T) {
-	_, err := decode([]byte("[compose.app]\nfile = \"docker-compose.yml\"\nanything_goes = 1\n"))
+	_, err := decode([]byte("[compose.app]\nfile = \"docker-compose.yml\"\nanything_goes = 1\n"), "")
 	require.NoError(t, err)
 }

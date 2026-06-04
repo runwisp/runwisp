@@ -49,22 +49,37 @@ func unwrap(t reflect.Type) reflect.Type {
 	return t
 }
 
-// tomlTags returns the TOML key names declared on a wire struct.
+// tomlTags returns the TOML key names declared on a wire struct,
+// recursing into anonymous (embedded) fields whose promoted keys are
+// part of the decode surface.
 func tomlTags(t reflect.Type) []string {
-	tags := make([]string, 0, t.NumField())
+	var tags []string
 	for i := 0; i < t.NumField(); i++ {
-		if name := tomlTagName(t.Field(i)); name != "" {
+		f := t.Field(i)
+		if f.Anonymous {
+			tags = append(tags, tomlTags(unwrap(f.Type))...)
+			continue
+		}
+		if name := tomlTagName(f); name != "" {
 			tags = append(tags, name)
 		}
 	}
 	return tags
 }
 
-// fieldByTag resolves a TOML key name to the corresponding field type.
+// fieldByTag resolves a TOML key name to the corresponding field type,
+// recursing into anonymous (embedded) fields.
 func fieldByTag(t reflect.Type, name string) (reflect.Type, bool) {
 	for i := 0; i < t.NumField(); i++ {
-		if tomlTagName(t.Field(i)) == name {
-			return t.Field(i).Type, true
+		f := t.Field(i)
+		if f.Anonymous {
+			if ft, ok := fieldByTag(unwrap(f.Type), name); ok {
+				return ft, true
+			}
+			continue
+		}
+		if tomlTagName(f) == name {
+			return f.Type, true
 		}
 	}
 	return nil, false
