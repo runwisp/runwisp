@@ -7,6 +7,7 @@
     import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
     import Input from "@runwisp/ui/components/Input.svelte";
     import Select from "@runwisp/ui/components/Select.svelte";
+    import Tooltip from "@runwisp/ui/components/Tooltip.svelte";
     import ComposeBadge from "../ComposeBadge.svelte";
     import { getRunStatusConfig } from "@runwisp/ui";
     import { isFailureEndReason } from "@runwisp/common";
@@ -21,6 +22,7 @@
         formatTaskLastResultLabel,
         formatTaskNextRunLabel,
         formatTaskTriggerLabel,
+        taskTriggerIsHumanizedCron,
     } from "./overview-format.js";
     import { taskIcon, taskTriggerTooltip } from "$lib/utils/task-icon";
 
@@ -181,9 +183,26 @@
     {#if taskOverviews.length === 0}
         <EmptyState
             title="No tasks configured yet"
-            description="Tasks will appear here as soon as RunWisp loads its configuration."
+            description="Tasks are defined in your runwisp.toml — the daemon never edits them for you. Add one and restart the daemon:"
             icon={Box}
-        />
+        >
+            {#snippet actions()}
+                <div class="flex flex-col items-center gap-3">
+                    <pre
+                        class="rounded-lg border border-outline bg-surface-sunken px-4 py-3 text-left font-mono text-xs text-on-surface-muted">[tasks.hello]
+cron = "*/5 * * * *"
+run  = "echo hello"</pre>
+                    <a
+                        href="https://docs.runwisp.com/configuration/tasks/"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="text-sm font-medium text-primary hover:underline"
+                    >
+                        Task configuration docs →
+                    </a>
+                </div>
+            {/snippet}
+        </EmptyState>
     {:else if filteredTasks.length === 0}
         <EmptyState
             title="No tasks match this view"
@@ -245,14 +264,31 @@
                         <div class="hidden shrink-0 items-center gap-4 text-xs sm:flex">
                             <div class="w-28">
                                 <p class="text-on-surface-faint">Latest</p>
-                                <span
-                                    class={[
-                                        "inline-flex rounded-full px-1.5 py-0.5 text-2xs font-semibold",
-                                        lastStatusConfig?.badge ?? taskState.toneClass,
-                                    ]}
-                                >
-                                    {formatTaskLastResultLabel(task)}
-                                </span>
+                                {#if lastStatusConfig}
+                                    <Tooltip
+                                        content={lastStatusConfig.description}
+                                        position="left"
+                                        wide
+                                    >
+                                        <span
+                                            class={[
+                                                "inline-flex rounded-full px-1.5 py-0.5 text-2xs font-semibold",
+                                                lastStatusConfig.badge,
+                                            ]}
+                                        >
+                                            {formatTaskLastResultLabel(task)}
+                                        </span>
+                                    </Tooltip>
+                                {:else}
+                                    <span
+                                        class={[
+                                            "inline-flex rounded-full px-1.5 py-0.5 text-2xs font-semibold",
+                                            taskState.toneClass,
+                                        ]}
+                                    >
+                                        {formatTaskLastResultLabel(task)}
+                                    </span>
+                                {/if}
                             </div>
 
                             <div class="w-32">
@@ -264,14 +300,25 @@
 
                             <div class="w-24">
                                 <p class="text-on-surface-faint">Trigger</p>
-                                <p
-                                    class={[
-                                        "font-medium text-on-surface",
-                                        task.task.cron ? "font-mono" : "",
-                                    ]}
-                                >
-                                    {formatTaskTriggerLabel(task)}
-                                </p>
+                                {#if task.task.cron && task.task.kind !== "service"}
+                                    <Tooltip
+                                        content={taskTriggerTooltip(task.task)}
+                                        position="left"
+                                    >
+                                        <p
+                                            class={[
+                                                "font-medium text-on-surface",
+                                                taskTriggerIsHumanizedCron(task) ? "" : "font-mono",
+                                            ]}
+                                        >
+                                            {formatTaskTriggerLabel(task)}
+                                        </p>
+                                    </Tooltip>
+                                {:else}
+                                    <p class="font-medium text-on-surface">
+                                        {formatTaskTriggerLabel(task)}
+                                    </p>
+                                {/if}
                             </div>
                         </div>
 

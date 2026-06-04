@@ -75,9 +75,12 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 	want := []string{
 		"capabilities",
 		"cloud_enabled",
+		"config_loaded_at",
+		"config_stale",
 		"fingerprint",
 		"port",
 		"resolved_timezone",
+		"service_managed",
 		"tasks",
 		"timezone_source",
 		"version",

@@ -11,9 +11,17 @@
         position?: TooltipPosition;
         children: Snippet;
         class?: string;
+        /** Wrap long content across lines instead of one nowrap line. */
+        wide?: boolean;
     }
 
-    let { content, position = "top", children, class: className = "" }: Props = $props();
+    let {
+        content,
+        position = "top",
+        children,
+        class: className = "",
+        wide = false,
+    }: Props = $props();
 
     const positionClasses: Record<TooltipPosition, string> = {
         top: "bottom-full left-1/2 -translate-x-1/2 mb-2",
@@ -39,7 +47,8 @@
 			pointer-events-none invisible rounded-lg
 			bg-mist-800 px-2.5 py-1.5 text-xs
 			font-medium
-			whitespace-nowrap text-white opacity-0 transition-opacity
+			{wide ? 'w-max max-w-xs whitespace-normal' : 'whitespace-nowrap'}
+			text-white opacity-0 transition-opacity
 			duration-150 group-hover:visible
 			group-hover:opacity-100
 		"

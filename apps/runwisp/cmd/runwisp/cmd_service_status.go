@@ -50,7 +50,7 @@ func runServiceStatus(cmd *cobra.Command) error {
 		return err
 	}
 
-	opts, err := resolveStatusOptions(cmd, deps)
+	opts, err := resolveStatusOptions()
 	if err != nil {
 		return err
 	}
@@ -70,8 +70,9 @@ func runServiceStatus(cmd *cobra.Command) error {
 // resolveStatusOptions is the lighter-weight cousin of
 // resolveServiceOptions used by `service install`. Status does not
 // prompt — it tolerates ambiguous defaults and only complains when a
-// caller-supplied explicit value is invalid.
-func resolveStatusOptions(_ *cobra.Command, deps autostart.Deps) (autostart.InstallOptions, error) {
+// caller-supplied explicit value is invalid. Also reused by
+// `runwisp stop` / `runwisp restart` for their service-managed probe.
+func resolveStatusOptions() (autostart.InstallOptions, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return autostart.InstallOptions{}, fmt.Errorf("locate runwisp binary: %w", err)

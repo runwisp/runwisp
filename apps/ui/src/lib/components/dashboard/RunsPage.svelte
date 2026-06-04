@@ -162,6 +162,7 @@
             showTaskName
             headerLabel="Runs"
             emptyText="No runs found"
+            emptyDescription="Trigger a task manually with Re-run, or wait for a schedule to fire."
             bulkActions
             onBulkCancel={handleBulkCancel}
             onBulkDelete={handleBulkDelete}

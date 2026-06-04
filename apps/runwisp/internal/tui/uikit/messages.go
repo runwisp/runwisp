@@ -178,6 +178,13 @@ type SystemStatsMsg struct {
 	Err   error
 }
 
+// DaemonInfoMsg delivers a fresh /api/info read — the TUI polls it to keep
+// the config-stale notice current while the operator edits runwisp.toml.
+type DaemonInfoMsg struct {
+	Info *model.DaemonInfo
+	Err  error
+}
+
 // MetricsHistoryMsg delivers historical metrics for sparkline pre-fill.
 type MetricsHistoryMsg struct {
 	Samples []model.MetricsSample

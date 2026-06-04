@@ -12,6 +12,7 @@ import (
 
 	"log/slog"
 
+	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
@@ -227,7 +228,9 @@ func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManage
 }
 
 // buildDaemonInfo assembles static identity and capability info for the API.
-func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
+// configLoadedAt is when the boot path snapshotted runwisp.toml; the dynamic
+// config_stale flag is injected per request by the server, not stored here.
+func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time.Time) *model.DaemonInfo {
 	taskNames := make([]string, 0, len(svc.TasksMap))
 	for name := range svc.TasksMap {
 		taskNames = append(taskNames, name)
@@ -259,6 +262,8 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices) *model.DaemonInfo {
 		Fingerprint:      cfg.Fingerprint,
 		Port:             flags.Port,
 		CloudEnabled:     cfg.CloudConfig.Enabled,
+		ServiceManaged:   autostart.RunningUnderServiceManager(),
+		ConfigLoadedAt:   configLoadedAt,
 		ResolvedTimezone: cfg.Config.Scheduler.Timezone,
 		TimezoneSource:   cfg.Config.Scheduler.Source,
 		Tasks:            tasks,

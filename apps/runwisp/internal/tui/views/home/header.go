@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/robfig/cron/v3"
+	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -68,18 +68,26 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w int, homeCurso
 	b.WriteString("\n")
 	lineCount++
 
+	muted := lipgloss.NewStyle().
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorTextMuted)
 	var parts []string
 	if info.WebUIDisabled {
-		parts = append(parts, "Web UI disabled")
+		parts = append(parts, muted.Render("Web UI disabled"))
 	}
 	if info.CloudEnabled {
-		parts = append(parts, "Cloud connected")
+		parts = append(parts, muted.Render("Cloud connected"))
+	}
+	if info.ConfigStale {
+		// Warning color, not muted \u2014 a pending config change is actionable.
+		warn := lipgloss.NewStyle().
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorWarning).
+			Render("\u26a0 runwisp.toml changed \u2014 run 'runwisp restart' to apply")
+		parts = append(parts, warn)
 	}
 	if len(parts) > 0 {
-		sub := lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorTextMuted).
-			Render("  " + strings.Join(parts, "  \u00b7  "))
+		sub := muted.Render("  ") + strings.Join(parts, muted.Render("  \u00b7  "))
 		b.WriteString(uikit.PadLine(sub, w, uikit.ColorBgLight))
 		b.WriteString("\n")
 		lineCount++
@@ -227,10 +235,7 @@ func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 
 	schedWidth := lipgloss.Width(schedText)
 	btnWidth := lipgloss.Width(btn)
-	gap := w - schedWidth - btnWidth - 1
-	if gap < 2 {
-		gap = 2
-	}
+	gap := max(w-schedWidth-btnWidth-1, 2)
 
 	schedLine := schedText +
 		lipgloss.NewStyle().Background(uikit.ColorBgLight).Render(strings.Repeat(" ", gap)) +
@@ -252,8 +257,7 @@ func nextCronRun(schedule string) string {
 	if schedule == "" {
 		return ""
 	}
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
-	sched, err := parser.Parse(schedule)
+	sched, err := cronspec.NewParser().Parse(schedule)
 	if err != nil {
 		return ""
 	}

@@ -45,6 +45,7 @@ type Server struct {
 	daemonLogBuffer   *DaemonLogBuffer
 	runService        *runService
 	stats             *statsProvider
+	configStale       func() bool
 	metrics           *MetricsCollector
 	streams           *streamLimiter
 	httpServer        *http.Server
@@ -73,6 +74,7 @@ type Options struct {
 	PasswordEphemeral bool              // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
 	JWTSecret         string            // JWT signing secret (derived in-memory)
 	DaemonInfo        *model.DaemonInfo // Static identity/config info for /api/info
+	ConfigStale       func() bool       // Per-request staleness probe for /api/info (optional; nil reports never-stale)
 	DaemonLogBuffer   *DaemonLogBuffer  // Ring buffer for daemon log streaming (optional)
 	MetricsEnabled    bool              // When false, /metrics is not mounted anywhere
 	MetricsListen     string            // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
@@ -119,6 +121,7 @@ func New(opts Options) (*Server, error) {
 
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
+	s.configStale = opts.ConfigStale
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals
 	s.metrics.Start(5 * time.Second)
 	s.daemonLogBuffer = opts.DaemonLogBuffer
@@ -287,25 +290,13 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 	var tcpErr, unixErr, metricsErr error
 
 	if srv.httpServer != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			tcpErr = srv.httpServer.Shutdown(ctx)
-		}()
+		wg.Go(func() { tcpErr = srv.httpServer.Shutdown(ctx) })
 	}
 	if srv.unixServer != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			unixErr = srv.unixServer.Shutdown(ctx)
-		}()
+		wg.Go(func() { unixErr = srv.unixServer.Shutdown(ctx) })
 	}
 	if srv.metricsServer != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			metricsErr = srv.metricsServer.Shutdown(ctx)
-		}()
+		wg.Go(func() { metricsErr = srv.metricsServer.Shutdown(ctx) })
 	}
 	wg.Wait()
 

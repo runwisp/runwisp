@@ -168,11 +168,23 @@ const (
 // system zone the daemon detected at boot. TimezoneSource ("config" or
 // "system") tells the UI which path produced the value, so the Web UI header
 // can label the chip without re-implementing the resolver.
+// ServiceManaged is true when the daemon process was started by an init
+// system (systemd / launchd) rather than by hand. UIs use it to steer the
+// operator toward `runwisp stop` / `runwisp restart` instead of raw signals
+// that would desync the service manager.
+//
+// ConfigLoadedAt is when the daemon read runwisp.toml; ConfigStale flips to
+// true when the file (or a referenced env_file) has changed on disk since —
+// config reload is restart-only, so UIs surface a "restart to apply" hint.
+// ConfigStale is recomputed per request, not cached.
 type DaemonInfo struct {
 	Version          string      `json:"version"`
 	Fingerprint      string      `json:"fingerprint"`
 	Port             int         `json:"port"`
 	CloudEnabled     bool        `json:"cloud_enabled"`
+	ServiceManaged   bool        `json:"service_managed"`
+	ConfigLoadedAt   time.Time   `json:"config_loaded_at"`
+	ConfigStale      bool        `json:"config_stale"`
 	ResolvedTimezone string      `json:"resolved_timezone"`
 	TimezoneSource   string      `json:"timezone_source" enum:"config,system"`
 	Tasks            []TaskBrief `json:"tasks"`

@@ -28,6 +28,27 @@ Don't mix up the two `status` commands: `runwisp status` answers "is the
 daemon alive right now?", while `runwisp service status` answers "will it
 come back on its own after a reboot?".
 
+## Stop & restart
+
+`runwisp stop` and `runwisp restart` are service-aware. When the
+daemon runs under a unit installed by `service install`, they
+delegate to the service manager (`systemctl --user stop|restart`,
+or `launchctl` on macOS) so its view of the unit stays in sync —
+a raw SIGTERM would just make systemd restart the daemon behind
+your back, and stopping it by hand would leave the manager thinking
+it crashed. Without a managed unit, they fall back to a plain
+SIGTERM + wait against the PID file.
+
+```sh
+runwisp restart   # the way to apply runwisp.toml edits
+runwisp stop      # stops the daemon; the unit stays enabled for next boot
+```
+
+`restart` is also the answer to the "runwisp.toml has changed since
+the daemon started" notice that `runwisp status`, the TUI header,
+and the Web UI banner show after you edit the config — the daemon
+never hot-reloads, so a restart is how edits take effect.
+
 ## What `install` does
 
 On Linux and WSL:

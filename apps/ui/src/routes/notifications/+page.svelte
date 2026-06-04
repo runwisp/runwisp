@@ -47,9 +47,20 @@
         <div class="rounded-xl border border-dashed border-outline bg-surface-raised">
             <EmptyState
                 title="No notifications yet"
-                description="Failed runs and notifier delivery problems will appear here."
+                description="Failed runs and notifier delivery problems will appear here. Configure Slack or Telegram notifiers in your runwisp.toml."
                 icon={Bell}
-            />
+            >
+                {#snippet actions()}
+                    <a
+                        href="https://docs.runwisp.com/notifications/"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="text-sm font-medium text-primary hover:underline"
+                    >
+                        Notification docs →
+                    </a>
+                {/snippet}
+            </EmptyState>
         </div>
     {:else}
         <div class="space-y-2">

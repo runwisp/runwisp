@@ -114,6 +114,11 @@
             >
                 Login
             </Button>
+            <p class="text-xs text-on-surface-muted">
+                Your password comes from <code class="font-mono">RUNWISP_PASSWORD</code> if it's
+                set. Otherwise the daemon picks a random one each boot — run
+                <code class="font-mono">runwisp password</code> on the host to print it.
+            </p>
         </form>
     </div>
 </Modal>

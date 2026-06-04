@@ -10,6 +10,7 @@
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import ConnectionPip from "$lib/components/ConnectionPip.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
+    import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import { systemStore } from "$lib/stores/system.svelte";
 
@@ -260,6 +261,8 @@
                 <NotificationBell />
             </div>
         </header>
+
+        <StaleConfigBanner />
 
         <!-- Scrollable Area -->
         <div class="flex-1 overflow-y-auto scroll-smooth p-6">

@@ -76,6 +76,7 @@ func runPassword(stdout, stderr io.Writer, client credentialsFetcher, socketPath
 	}
 	if isTransportError(err) {
 		fmt.Fprintf(stderr, "daemon not running at %s: %v\n", socketPath, err)
+		fmt.Fprintf(stderr, "The ephemeral password only exists while a daemon is up — %s.\n", daemonNotRunningHint)
 		return passwordExitUnreachable
 	}
 	fmt.Fprintf(stderr, "unexpected error: %v\n", err)

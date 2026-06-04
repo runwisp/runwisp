@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -102,11 +103,18 @@ func resolveComposePaths(cfg *Config, baseDir string) error {
 	return nil
 }
 
-// GracefulStopWarnings reports tasks whose graceful_stop exceeds the daemon
+// Warnings reports non-fatal findings an operator should see after a
+// successful config load. Both daemon boot and `runwisp validate` print from
+// here, so future advisory checks land in one place and stay in sync.
+func Warnings(cfg *Config) []string {
+	return gracefulStopWarnings(cfg)
+}
+
+// gracefulStopWarnings reports tasks whose graceful_stop exceeds the daemon
 // shutdown_timeout. The daemon will SIGKILL such tasks before their grace
 // window completes during a daemon-wide shutdown — operators usually want
 // to either lengthen [daemon] shutdown_timeout or shorten the per-task value.
-func GracefulStopWarnings(cfg *Config) []string {
+func gracefulStopWarnings(cfg *Config) []string {
 	limit := cfg.Daemon.ShutdownTimeout
 	if limit <= 0 {
 		return nil
@@ -297,7 +305,27 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 			return err
 		}
 	}
-	return validateTaskRetention(task)
+	if err := validateTaskRetention(task); err != nil {
+		return err
+	}
+	return validateTaskCron(task)
+}
+
+// validateTaskCron rejects cron expressions the scheduler would refuse at
+// boot, so `runwisp validate` and daemon startup fail identically. Runs after
+// validateTaskRetention so an invalid per-task timezone surfaces as the
+// friendlier timezone error rather than a CRON_TZ parse failure. An empty
+// cron is a trigger-only task and is allowed.
+func validateTaskCron(task *model.Task) error {
+	if task.Cron == "" {
+		return nil
+	}
+	if err := cronspec.Validate(task.Cron, task.Timezone); err != nil {
+		return fmt.Errorf(
+			"invalid cron for task %q: %q — %v; expected 5 fields \"min hour day month weekday\" (e.g. \"0 3 * * *\" = 03:00 daily), a descriptor like @hourly/@daily/@weekly, or @every 1h30m",
+			task.Name, task.Cron, err)
+	}
+	return nil
 }
 
 // envKeyPattern is the POSIX-ish shape required for environment variable

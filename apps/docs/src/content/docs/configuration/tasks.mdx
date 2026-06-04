@@ -54,6 +54,14 @@ for one-shot deploy hooks and the like.
 [How scheduling works](/concepts/scheduling/) has the full cron grammar,
 the DST behaviour, and the catchup details.
 
+:::tip[Catch mistakes before deploy]
+`runwisp validate` runs the exact same checks as daemon boot. A bad
+cron expression, a misspelled key (it'll suggest the one you meant),
+or a duration like `"5 minutes"` instead of `"5m"` all fail with an
+actionable message — and advisory warnings print without failing the
+exit code, so it slots into CI.
+:::
+
 ### `api_trigger = false` — cron-only tasks
 
 With the default `api_trigger = true`, you can kick the task off on

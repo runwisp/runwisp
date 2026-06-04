@@ -563,10 +563,14 @@ export interface components {
             readonly $schema?: string;
             capabilities: components["schemas"]["CapInfo"][] | null;
             cloud_enabled: boolean;
+            /** Format: date-time */
+            config_loaded_at: string;
+            config_stale: boolean;
             fingerprint: string;
             /** Format: int64 */
             port: number;
             resolved_timezone: string;
+            service_managed: boolean;
             tasks: components["schemas"]["TaskBrief"][] | null;
             /** @enum {string} */
             timezone_source: "config" | "system";

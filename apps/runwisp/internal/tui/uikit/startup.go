@@ -45,6 +45,14 @@ type StartupInfo struct {
 
 	CloudEnabled  bool
 	WebUIDisabled bool
+	// ServiceManaged is true when the daemon runs under systemd / launchd.
+	// The quit dialog then drops its "Shut Down" option in favour of a
+	// `runwisp stop` hint, so the TUI never fights the service manager.
+	ServiceManaged bool
+	// ConfigStale is true when runwisp.toml (or an env_file) changed on disk
+	// after the daemon loaded it. Kept current by the TUI's periodic
+	// /api/info poll; renders as a "restart to apply" notice in the header.
+	ConfigStale bool
 
 	// Headless is set when the daemon runs without an interactive TUI. The
 	// startup banner renders one extra dim line ("Press Ctrl+C to stop.") in

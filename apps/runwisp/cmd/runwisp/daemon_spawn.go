@@ -81,8 +81,16 @@ func spawnDaemonProcess(args []string) error {
 	return nil
 }
 
-// shutdownDaemon sends SIGTERM to the daemon process and waits for it to exit.
+// shutdownDaemon sends SIGTERM to the daemon process and waits for it to
+// exit, with the default grace window. Used as the TUI's shutdown callback.
 func shutdownDaemon() error {
+	return shutdownDaemonWait(15 * time.Second)
+}
+
+// shutdownDaemonWait is shutdownDaemon with a caller-chosen wait window —
+// `runwisp stop`/`restart` size it from [daemon] shutdown_timeout so a
+// long-draining daemon isn't reported as stuck.
+func shutdownDaemonWait(timeout time.Duration) error {
 	pid, err := datadir.ReadPidFile(flags.DataDir)
 	if err != nil {
 		return fmt.Errorf("cannot read daemon PID file: %w", err)
@@ -99,7 +107,7 @@ func shutdownDaemon() error {
 
 	fmt.Fprintf(os.Stderr, "Waiting for daemon (pid %d) to shut down...\n", pid)
 
-	return waitForProcessExit(pid, 15*time.Second)
+	return waitForProcessExit(pid, timeout)
 }
 
 // waitForProcessExit polls until the daemon has exited. It checks two signals:

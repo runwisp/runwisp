@@ -8,6 +8,7 @@ package autostart
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -254,3 +255,40 @@ func assertErrFake(msg string) error {
 type fakeErr string
 
 func (f fakeErr) Error() string { return string(f) }
+
+func TestSystemdStopRestart_RunSystemctlUserVerbs(t *testing.T) {
+	inst, _, cmd, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+
+	cmd.Expect("systemctl", []string{"--user", "stop", "runwisp-bright-falcon.service"}, nil, nil, nil)
+	require.NoError(t, inst.Stop(context.Background(), opts))
+
+	cmd.Expect("systemctl", []string{"--user", "restart", "runwisp-bright-falcon.service"}, nil, nil, nil)
+	require.NoError(t, inst.Restart(context.Background(), opts))
+
+	assert.Zero(t, cmd.Remaining())
+}
+
+func TestSystemdStopRestart_SystemWideUsesSudo(t *testing.T) {
+	inst, _, cmd, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+
+	cmd.Expect("sudo", []string{"systemctl", "stop", "runwisp-bright-falcon.service"}, nil, nil, nil)
+	require.NoError(t, inst.Stop(context.Background(), opts))
+
+	cmd.Expect("sudo", []string{"systemctl", "restart", "runwisp-bright-falcon.service"}, nil, nil, nil)
+	require.NoError(t, inst.Restart(context.Background(), opts))
+
+	assert.Zero(t, cmd.Remaining())
+}
+
+func TestSystemdStop_SurfacesStderr(t *testing.T) {
+	inst, _, cmd, _, binary := newFakeInstaller(t, false)
+	cmd.Expect("systemctl", []string{"--user", "stop", "runwisp-bright-falcon.service"},
+		nil, []byte("Failed to stop unit"), errors.New("exit status 1"))
+
+	err := inst.Stop(context.Background(), defaultInstallOpts(binary))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Failed to stop unit")
+}

@@ -15,12 +15,18 @@ import (
 )
 
 // parseDuration parses a human-readable duration accepted by time.ParseDuration
-// (e.g. "30m", "2h45m"). An empty string yields zero with no error.
+// (e.g. "30m", "2h45m"). An empty string yields zero with no error. Parse
+// failures are rewrapped into an operator-readable hint — Go's own
+// "time: invalid duration" message never reaches a config error.
 func parseDuration(raw string) (time.Duration, error) {
 	if strings.TrimSpace(raw) == "" {
 		return 0, nil
 	}
-	return time.ParseDuration(raw)
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a valid duration; use a duration like \"30s\", \"5m\", \"2h30m\" (h/m/s)", raw)
+	}
+	return d, nil
 }
 
 // parseKeepFor parses a retention window using the extended syntax that also
@@ -33,7 +39,7 @@ func parseKeepFor(raw string) (time.Duration, error) {
 	}
 	d, err := str2duration.ParseDuration(trimmed)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%q is not a valid duration; use a duration like \"30s\", \"5m\", \"2h30m\", \"30d\", \"2w\"", raw)
 	}
 	if d <= 0 {
 		return 0, fmt.Errorf("non-positive duration %q is not allowed; pick a positive duration or omit the field to inherit the default", raw)

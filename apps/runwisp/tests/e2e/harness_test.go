@@ -554,9 +554,15 @@ func killProcessGroup(pid int, signal syscall.Signal) error {
 func subprocEnv(extra ...string) []string {
 	env := make([]string, 0, len(os.Environ())+len(extra)+1)
 	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "GOCOVERDIR=") {
-			env = append(env, e)
+		// INVOCATION_ID / RUNWISP_SERVICE_MANAGED leak in when the CI runner
+		// itself is a systemd unit; spawned daemons would then self-detect as
+		// service-managed. Strip them so e2e behavior is host-independent.
+		if strings.HasPrefix(e, "GOCOVERDIR=") ||
+			strings.HasPrefix(e, "INVOCATION_ID=") ||
+			strings.HasPrefix(e, "RUNWISP_SERVICE_MANAGED=") {
+			continue
 		}
+		env = append(env, e)
 	}
 	covdir := os.Getenv("RUNWISP_E2E_COVDIR")
 	if covdir == "" {

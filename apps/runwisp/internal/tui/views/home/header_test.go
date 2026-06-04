@@ -222,6 +222,22 @@ func TestRenderHeader_WebUIDisabled(t *testing.T) {
 	assert.Contains(t, header, "Web UI disabled")
 }
 
+func TestRenderHeader_ConfigStale(t *testing.T) {
+	info := uikit.StartupInfo{
+		Port:        9477,
+		ConfigStale: true,
+	}
+	header, _ := RenderHeader(info, false, 80, -1, -1)
+	assert.Contains(t, header, "runwisp.toml changed")
+	assert.Contains(t, header, "runwisp restart")
+}
+
+func TestRenderHeader_ConfigFresh_NoNotice(t *testing.T) {
+	info := uikit.StartupInfo{Port: 9477}
+	header, _ := RenderHeader(info, false, 80, -1, -1)
+	assert.NotContains(t, header, "runwisp.toml changed")
+}
+
 func TestRenderHeader_FieldsStartY(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477}
 	_, fieldsStartY := RenderHeader(info, false, 80, -1, -1)

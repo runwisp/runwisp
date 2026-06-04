@@ -116,10 +116,7 @@ func (sm *StreamManager) FetchOlderLogs(taskName, runID string, beforeLine, coun
 	}
 
 	client := sm.client
-	startLine := beforeLine - count
-	if startLine < 0 {
-		startLine = 0
-	}
+	startLine := max(beforeLine-count, 0)
 	limit := beforeLine - startLine
 	if limit <= 0 {
 		return nil
@@ -190,6 +187,20 @@ func (sm *StreamManager) FetchSystemStats() tea.Cmd {
 	return func() tea.Msg {
 		stats, err := client.GetSystemStats()
 		return uikit.SystemStatsMsg{Stats: stats, Err: err}
+	}
+}
+
+// FetchDaemonInfo returns a command that re-reads /api/info. The daemon
+// recomputes config_stale per request, so polling this keeps the
+// "restart to apply" notice live.
+func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		info, err := client.GetDaemonInfo()
+		return uikit.DaemonInfoMsg{Info: info, Err: err}
 	}
 }
 

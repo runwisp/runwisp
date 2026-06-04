@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -101,11 +102,14 @@ func isDaemonRunning() bool {
 func runExecViaDaemon(taskName string) (int, error) {
 	client := apiclient.NewUnix(localAPISocketPath())
 	if err := client.HealthCheck(); err != nil {
-		return 0, fmt.Errorf("daemon is not reachable at %s: %w", localAPISocketPath(), err)
+		return 0, fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(), err, daemonNotRunningHint)
 	}
 
 	run, err := client.TriggerRun(taskName)
 	if err != nil {
+		if apiclient.IsHTTPStatus(err, http.StatusNotFound) {
+			return 0, unknownTaskError(taskName, daemonTaskNames(client))
+		}
 		return 0, fmt.Errorf("trigger %q: %w", taskName, err)
 	}
 
@@ -160,6 +164,20 @@ func runExecViaDaemon(taskName string) (int, error) {
 	return exitCodeFromRun(final), nil
 }
 
+// daemonTaskNames fetches the daemon's task list for the unknown-task
+// suggestion. Best-effort: a failed fetch just means no list in the error.
+func daemonTaskNames(client *apiclient.Client) []string {
+	tasks, err := client.ListTasks()
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(tasks))
+	for _, t := range tasks {
+		names = append(names, t.Name)
+	}
+	return names
+}
+
 func exitCodeFromRun(run *model.Run) int {
 	if run == nil {
 		return 0
@@ -183,14 +201,15 @@ func runExecStandalone(taskName string) (int, error) {
 	}
 
 	var target *model.Task
+	names := make([]string, 0, len(cfg.Tasks))
 	for i := range cfg.Tasks {
+		names = append(names, cfg.Tasks[i].Name)
 		if cfg.Tasks[i].Name == taskName {
 			target = &cfg.Tasks[i]
-			break
 		}
 	}
 	if target == nil {
-		return 0, fmt.Errorf("task %q not found in %s", taskName, flags.CfgFile)
+		return 0, unknownTaskError(taskName, names)
 	}
 
 	eventBus := events.NewEventBus()

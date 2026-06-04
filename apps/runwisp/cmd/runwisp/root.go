@@ -80,6 +80,8 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(restartCmd)
 	rootCmd.AddCommand(passwordCmd)
 	rootCmd.AddCommand(openapiCmd)
 	rootCmd.AddCommand(serviceCmd)

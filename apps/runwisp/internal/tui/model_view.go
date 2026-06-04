@@ -78,6 +78,10 @@ func (m Model) renderHomeContent(mainW int, panelView string) string {
 }
 
 func (m Model) buildHelpText() string {
+	return m.buildContextHelpText() + "  ? help"
+}
+
+func (m Model) buildContextHelpText() string {
 	if m.notifications.IsExpanded() {
 		return "↑/↓ navigate  enter open  r mark read  n/esc collapse  q/^C quit"
 	}

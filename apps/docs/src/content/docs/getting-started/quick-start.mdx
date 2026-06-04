@@ -273,9 +273,15 @@ _and_ `[services.worker]` in the same file and the daemon will
 refuse to start.
 :::
 
-RunWisp doesn't watch `runwisp.toml` for changes. When you've
-edited the file, quit the TUI with <kbd>Ctrl</kbd>+<kbd>C</kbd>
-and run `runwisp` again. Your edits take effect on the next boot.
+RunWisp doesn't watch `runwisp.toml` for changes — edits take
+effect on the next boot. When you've changed the file, run
+`runwisp restart`: it stops the daemon and starts a fresh one with
+your edits loaded. (If you installed RunWisp as a service, it asks
+systemd or launchd to do the restart so the service manager stays
+in the loop.) Until you do, the TUI header, `runwisp status`, and
+the Web UI all show a notice that the config on disk no longer
+matches what the daemon is running. `runwisp stop` shuts the
+daemon down without starting a new one.
 
 :::tip[Want to see it full of history?]
 Your fresh instance starts empty, so there's not much to scroll

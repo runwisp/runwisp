@@ -4,66 +4,54 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"time"
+	"io"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/spf13/cobra"
 )
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check if the daemon is alive",
-	Long:  `Pings the daemon health endpoint to verify it is running and responsive.`,
+	Long: `Pings the daemon over its local Unix socket to verify it is running and
+responsive, prints a short system summary, and warns when runwisp.toml has
+changed on disk since the daemon started (config changes apply on restart).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStatus()
+		return runStatus(cmd.OutOrStdout())
 	},
 }
 
-func runStatus() error {
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get(localAPIBaseURL() + "/health")
-	if err != nil {
-		return fmt.Errorf("daemon is not reachable at :%d — %w", flags.Port, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("daemon returned status %d", resp.StatusCode)
+func runStatus(out io.Writer) error {
+	// The Unix socket is the local-trusted transport (same as exec/tui):
+	// no password needed, and unlike a TCP probe it cannot hit a different
+	// process that happens to squat on the port.
+	client := apiclient.NewUnix(localAPISocketPath())
+	if err := client.HealthCheck(); err != nil {
+		return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(), err, daemonNotRunningHint)
 	}
 
-	statsResp, err := client.Get(localAPIBaseURL() + "/api/system")
-	if err != nil {
-		fmt.Printf("RunWisp is healthy at :%d\n", flags.Port)
-		return nil
-	}
-	defer statsResp.Body.Close()
-
-	if statsResp.StatusCode == http.StatusOK {
-		var stats map[string]interface{}
-		if err := json.NewDecoder(statsResp.Body).Decode(&stats); err == nil {
-			fmt.Printf("RunWisp is healthy at :%d\n", flags.Port)
-			printSystemStats(stats)
-			return nil
-		}
+	info, infoErr := client.GetDaemonInfo()
+	if infoErr == nil {
+		fmt.Fprintf(out, "RunWisp is healthy at :%d\n", info.Port)
+	} else {
+		fmt.Fprintln(out, "RunWisp is healthy")
 	}
 
-	fmt.Printf("RunWisp is healthy at :%d\n", flags.Port)
+	if stats, err := client.GetSystemStats(); err == nil {
+		printSystemStats(out, stats)
+	}
+
+	if infoErr == nil && info.ConfigStale {
+		fmt.Fprintln(out, "\n⚠ runwisp.toml has changed since the daemon started — run 'runwisp restart' to apply")
+	}
 	return nil
 }
 
-func printSystemStats(stats map[string]interface{}) {
-	if v, ok := stats["version"]; ok {
-		fmt.Printf("  Version:  %v\n", v)
-	}
-	if v, ok := stats["uptime"]; ok {
-		fmt.Printf("  Uptime:   %v\n", v)
-	}
-	if v, ok := stats["cpuCores"]; ok {
-		fmt.Printf("  CPU:      %.0f cores\n", v)
-	}
-	if v, ok := stats["host"]; ok {
-		fmt.Printf("  Host:     %v\n", v)
-	}
+func printSystemStats(out io.Writer, stats *model.SystemStats) {
+	fmt.Fprintf(out, "  Version:  %s\n", stats.Version)
+	fmt.Fprintf(out, "  Uptime:   %s\n", stats.Uptime)
+	fmt.Fprintf(out, "  CPU:      %d cores\n", stats.CPUCores)
+	fmt.Fprintf(out, "  Host:     %s\n", stats.Host)
 }
