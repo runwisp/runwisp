@@ -96,6 +96,10 @@ type NotifierSpec struct {
 	CC            []string
 	BCC           []string
 
+	// Webhook-specific
+	URL     string
+	Headers map[string]string
+
 	TemplatePath string
 }
 

@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"net/mail"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -14,7 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/kinds"
 )
 
-var allowedNotifierTypes = []string{"slack", "telegram", "smtp"}
+var allowedNotifierTypes = []string{"slack", "telegram", "smtp", "webhook"}
 
 // allowedSMTPTLSModes enumerates the values accepted for [[notifier]].tls. An
 // empty string falls back to a port-derived default (465 → implicit; everything
@@ -135,6 +136,8 @@ func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
 			ChatID:       n.ChatID,
 			ParseMode:    n.ParseMode,
 			TemplatePath: n.TemplatePath,
+			URL:          n.URL,
+			Headers:      n.Headers,
 
 			Host:          n.Host,
 			Port:          n.Port,
@@ -247,6 +250,8 @@ func cloneNotifierWithOverride(parent NotifierSpec, syntheticID, override string
 		spec.Recipients = []string{override}
 		spec.CC = nil
 		spec.BCC = nil
+	case "webhook":
+		return NotifierSpec{}, fmt.Errorf("notify token %q: webhook notifiers do not support inline target overrides", syntheticID)
 	default:
 		return NotifierSpec{}, fmt.Errorf("notify token %q: notifier type %q does not support inline target overrides", syntheticID, parent.Type)
 	}
@@ -402,6 +407,8 @@ func validateNotifierByType(spec *NotifierSpec) error {
 		return validateTelegramNotifier(spec)
 	case "smtp":
 		return validateSMTPNotifier(spec)
+	case "webhook":
+		return validateWebhookNotifier(spec)
 	}
 	return nil
 }
@@ -496,6 +503,29 @@ func validateTelegramNotifier(spec *NotifierSpec) error {
 	}
 	if strings.TrimSpace(spec.ParseMode) == "MarkdownV2" && strings.TrimSpace(spec.TemplatePath) == "" {
 		return fmt.Errorf("notifier %q: parse_mode=MarkdownV2 requires template_path (the embedded default uses HTML)", spec.ID)
+	}
+	return nil
+}
+
+func validateWebhookNotifier(spec *NotifierSpec) error {
+	raw := strings.TrimSpace(spec.URL)
+	if raw == "" {
+		return fmt.Errorf("notifier %q: url is required for type=webhook", spec.ID)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("notifier %q: invalid url: %w", spec.ID, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("notifier %q: url must use http or https scheme (got %q)", spec.ID, u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("notifier %q: url is missing host", spec.ID)
+	}
+	for k := range spec.Headers {
+		if strings.TrimSpace(k) == "" {
+			return fmt.Errorf("notifier %q: header key must not be empty", spec.ID)
+		}
 	}
 	return nil
 }

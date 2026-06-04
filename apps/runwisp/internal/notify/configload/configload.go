@@ -65,6 +65,15 @@ func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) ch
 		spec.BotToken = n.BotToken
 	case "smtp":
 		fillSMTPSpec(&spec, n)
+	case "webhook":
+		spec.URL = n.URL
+		if n.Headers != nil {
+			h := make(map[string]string, len(n.Headers))
+			for k, v := range n.Headers {
+				h[k] = v
+			}
+			spec.Headers = h
+		}
 	}
 	return spec
 }

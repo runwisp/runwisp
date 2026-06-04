@@ -84,6 +84,36 @@ func TestResolve_SMTP_AuthlessRelay(t *testing.T) {
 	assert.Equal(t, "127.0.0.1", got.Notifiers[0].Host)
 }
 
+func TestResolve_Webhook(t *testing.T) {
+	cfg := config.NotifyConfig{
+		Notifiers: []config.NotifierSpec{{
+			ID:      "my-hook",
+			Type:    "webhook",
+			URL:     "https://example.com/hook",
+			Headers: map[string]string{"Authorization": "Bearer tok"},
+		}},
+	}
+	got, err := Resolve(cfg, render.TemplateContext{})
+	require.NoError(t, err)
+	require.Len(t, got.Notifiers, 1)
+	assert.Equal(t, "https://example.com/hook", got.Notifiers[0].URL)
+	assert.Equal(t, "Bearer tok", got.Notifiers[0].Headers["Authorization"])
+}
+
+func TestResolve_WebhookNoHeaders(t *testing.T) {
+	cfg := config.NotifyConfig{
+		Notifiers: []config.NotifierSpec{{
+			ID:   "my-hook",
+			Type: "webhook",
+			URL:  "https://example.com/hook",
+		}},
+	}
+	got, err := Resolve(cfg, render.TemplateContext{})
+	require.NoError(t, err)
+	require.Len(t, got.Notifiers, 1)
+	assert.Nil(t, got.Notifiers[0].Headers)
+}
+
 func TestResolve_CompiledRulePredicates(t *testing.T) {
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{
