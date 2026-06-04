@@ -5,6 +5,8 @@ title: Metrics
 description: Scrape RunWisp from Prometheus, Grafana Agent, or any OpenMetrics-compatible collector via the daemon's public /metrics endpoint.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 RunWisp exposes a Prometheus-compatible `/metrics` endpoint in
 OpenMetrics 1.0 text format. It is **opt-in**: flip
 [`[daemon] metrics_enabled = true`](/configuration/daemon/#metrics_enabled)
@@ -133,3 +135,23 @@ curl -sX POST http://localhost:9477/api/tasks/$NAME/run -H "Authorization: Beare
 # In another, watch the gauge climb and fall
 watch -n1 'curl -s http://localhost:9477/metrics | grep runwisp_task_active_runs'
 ```
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="[daemon] ref"
+        href="/configuration/daemon/"
+        description="metrics_enabled and metrics_listen — the two TOML knobs."
+    />
+    <LinkCard
+        title="Auth"
+        href="/operations/auth/"
+        description="Reverse proxies, RUNWISP_TRUST_PROXY, and the public endpoints."
+    />
+    <LinkCard
+        title="Logging"
+        href="/operations/logging/"
+        description="The daemon's own log lines — the other observability surface."
+    />
+</CardGrid>

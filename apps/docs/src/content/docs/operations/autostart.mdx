@@ -5,6 +5,8 @@ title: Autostart
 description: Wire RunWisp into systemd (Linux, WSL) or launchd (macOS) with one command, so the daemon survives a reboot. Covers install, status, uninstall, --purge, --print for Ansible/Nix, secrets-on-systemd patterns, and the WSL Task Scheduler recipe.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 `runwisp service install` writes a managed systemd user unit (Linux,
 WSL) or a launchd LaunchAgent (macOS), enables it, and turns on linger
 so the daemon survives logout. No root, no surprise sudo — the only
@@ -71,7 +73,9 @@ the data dir. Here's how `runwisp service install` works them out:
   It **warns** on awkward-but-acceptable ones (`~/go/bin`,
   `~/.cache`, paths with spaces) and suggests copying to
   `~/.local/bin/runwisp`. Override with `--binary` for Ansible/Nix.
-- **Data dir**: an absolute `--data` is accepted silently. A relative
+- **Data dir**: an absolute
+  [`--data`](/configuration/daemon/#cli-flags-config-data-directory--listen-address)
+  is accepted silently. A relative
   `--data` is rejected with the resolved absolute path as a hint — a
   boot-launched unit has `cwd=/` and would otherwise silently miss the
   data. The default `./.runwisp` is upgraded interactively: if a DB already
@@ -123,7 +127,8 @@ Exit codes are part of the contract:
 
 ## Secrets on systemd
 
-`runwisp service install` never copies `RUNWISP_PASSWORD` into the
+`runwisp service install` never copies
+[`RUNWISP_PASSWORD`](/operations/auth/#the-password) into the
 unit — secrets stay off disk. The recommended pattern is a drop-in
 file alongside the managed unit:
 
@@ -216,3 +221,23 @@ runwisp service uninstall
       --purge     also remove the data dir (typed 'delete' to confirm)
       --force     remove a hand-edited unit
 ```
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Auth"
+        href="/operations/auth/"
+        description="Where the password comes from and how sessions survive restarts."
+    />
+    <LinkCard
+        title="[daemon] ref"
+        href="/configuration/daemon/"
+        description="--config, --data, --host, --port — the flags the unit bakes in."
+    />
+    <LinkCard
+        title="Logging"
+        href="/operations/logging/"
+        description="What you'll see in journalctl once the unit is running."
+    />
+</CardGrid>

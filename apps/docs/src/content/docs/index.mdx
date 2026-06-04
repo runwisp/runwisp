@@ -8,11 +8,13 @@ description: Reference documentation for the RunWisp daemon — installation, TO
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 RunWisp is one small Go binary that does the job of `crond` plus a
-supervisor: you describe your tasks and services in a single
-`runwisp.toml`, and you get run history and live logs in an embedded Web
-UI, plus a REST API when you want to automate. These docs walk you
-through the whole thing — getting the binary onto a box, writing that
-config file, and keeping the daemon happy in production.
+supervisor — and never lets a failure slip past silently. You describe
+your tasks and services in a single `runwisp.toml`, and every run gets
+an exit code, duration, and captured output you can browse in the
+embedded Web UI, watch live in the TUI, or pull over the REST API.
+These docs walk you through the whole thing — getting the binary onto a
+box, writing that config file, and keeping the daemon happy in
+production.
 
 :::note[Pre-1.0]
 Any pre-1.0 bump may ship breaking changes and reset run history.
@@ -55,11 +57,6 @@ before upgrading. Semver guarantees land with 1.0.
         href="/notifications/model/"
     />
     <LinkCard
-        title="CLI reference"
-        description="Every subcommand and flag — daemon, exec, list, status, validate."
-        href="/cli/"
-    />
-    <LinkCard
         title="API reference"
         description="REST endpoints and SSE log streams — generated from the OpenAPI schema."
         href="/api/"
@@ -70,9 +67,19 @@ before upgrading. Semver guarantees land with 1.0.
 
 <CardGrid>
     <LinkCard
-        title="Operations"
-        description="Auth, data directory, upgrades between versions, and troubleshooting."
+        title="Auth"
+        description="The password, CHAP login, sessions, and the local Unix socket."
         href="/operations/auth/"
+    />
+    <LinkCard
+        title="Autostart"
+        description="One command to survive reboots — systemd, launchd, and the WSL recipe."
+        href="/operations/autostart/"
+    />
+    <LinkCard
+        title="Logging & metrics"
+        description="The daemon's own logs, plus the Prometheus-compatible /metrics endpoint."
+        href="/operations/logging/"
     />
     <LinkCard
         title="Recipes"
@@ -85,15 +92,12 @@ before upgrading. Semver guarantees land with 1.0.
 
 - **A TOML field you saw in an example** — search this site or jump
   straight to [Configuration overview](/configuration/overview/).
-- **A subcommand or flag** — [CLI reference](/cli/) lists every one.
 - **A REST endpoint** — [API reference](/api/) is generated from the
   OpenAPI schema; the same schema ships as `/openapi.json` from a
   running daemon.
-- **An error message** —
-  [Troubleshooting](/operations/troubleshooting/) is organised by
-  symptom and lists the exact strings the daemon emits.
-- **A version's breaking changes** —
-  [Upgrading](/operations/upgrading/) maps each bump (0.1 → 0.2 → 0.3 → 0.4).
+- **A version's breaking changes** — the
+  [CHANGELOG](https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md)
+  lists them per release.
 
 ## Source and contributing
 

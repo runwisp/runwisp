@@ -78,8 +78,9 @@ fires it until something explicitly asks for a run.
     </TabItem>
     <TabItem label="REST API" icon="cloud-download">
         `POST /api/tasks/deploy-app/run` — see [Triggering from CI](#triggering-from-ci) below for
-        the full CHAP handshake plus trigger script. On the box itself, `runwisp exec deploy-app` is
-        the same call wrapped in a CLI.
+        the full CHAP handshake plus trigger script. On the box itself, [`runwisp exec
+        deploy-app`](/getting-started/quick-start/#3-run-the-example-task) is the same call wrapped
+        in a CLI.
     </TabItem>
 </Tabs>
 
@@ -96,12 +97,14 @@ ship a fix.
 
 The default of `"queue"` would have you stacking deploys in a
 serial line. `"skip"` would silently drop the new deploy on the
-floor while the old one is still chugging. `"terminate"` is
+floor while the old one is still chugging.
+[`"terminate"`](/concepts/concurrency/#terminate) is
 exactly right for this scenario, and almost nothing else.
 
 ### `notify_on_success = ["slack-deploys"]`
 
-Deploys are the one place success notifications actually earn their
+Deploys are the one place
+[success notifications](/notifications/per-task/) actually earn their
 keep. "v1.2.3 deployed at 14:32" is exactly the kind of update a
 team channel wants to see.
 
@@ -113,7 +116,8 @@ success notifications are opt-in.
 
 ## Triggering from CI
 
-CHAP login is a two-step dance. You GET a nonce, you POST back
+[CHAP login](/operations/auth/#network-clients-web-ui-remote-rest)
+is a two-step dance. You GET a nonce, you POST back
 `sha256(password:nonce)`, and the daemon hands you a JWT.
 
 ```bash

@@ -63,7 +63,8 @@ back.
 
 A health check that takes 30 seconds because the service is
 struggling shouldn't fire a second probe while the first is still
-in flight — that just adds load. `skip` drops the new firing.
+in flight — that just adds load.
+[`skip`](/concepts/concurrency/#skip) drops the new firing.
 The rejected firing is recorded with `end_reason = "skipped"` and
 exit code `-1` — a distinct status from `failed`, so your health
 metrics don't get polluted by overlap-induced rows and
@@ -82,7 +83,8 @@ The trick: a real outage shows up as **all three attempts
 failing**, which fires the notification. A single dropped packet
 shows up as one failure followed by a passing retry — silent.
 
-Math: with `linear` and `delay = 30s`, attempts wait `30s, 60s`
+Math: with [`linear`](/concepts/retries/#retry_delay-and-retry_backoff)
+and `delay = 30s`, attempts wait `30s, 60s`
 between them. Total alert latency from start of first probe to
 notification: ~90s. That's faster than most humans-on-call
 expect, and it eliminates the "alert bot pages me at 3am for one
@@ -101,7 +103,9 @@ sparkline, rather than dozens of separate alerts.
 Five-minute checks generate ~288 rows per day. 500 keeps not
 quite two days of probes — usually enough to correlate "the
 service was unhappy from 14:30 onwards" without flooding the run
-list. Bump it for finer-grained probes.
+list. Bump it for finer-grained probes —
+[Logs & retention](/concepts/logs/#retention-keep_runs-and-keep_for)
+covers how the trimming works.
 
 ### `--silent --show-error --fail-with-body`
 
@@ -143,7 +147,8 @@ run = "curl --silent --show-error --fail-with-body --max-time 25 https://api.exa
 coalesce_window = "30m"
 ```
 
-Now an outage that lasts 30 minutes is one in-app row with
+The [`coalesce_window`](/notifications/global/#coalescing) folds
+repeats together. Now an outage that lasts 30 minutes is one in-app row with
 `count = 6` and a sparkline. The bell glows red, but you don't
 get a Slack barrage.
 

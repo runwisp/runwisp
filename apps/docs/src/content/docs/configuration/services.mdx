@@ -67,13 +67,15 @@ process exits the supervisor restarts just that one.
 
 The backoff has a ceiling, so even after a long stretch of flapping the
 delay between restarts won't climb forever. And once an instance has
-stayed up for `backoff_reset_after`, its backoff counter resets — so a
+stayed up for
+[`backoff_reset_after`](/concepts/retries/#backoff-reset-backoff_reset_after),
+its backoff counter resets — so a
 service that flaps early but eventually settles down doesn't stay stuck
 with slow restarts.
 
 `restart = "always"` is baked in and **can't be overridden** — that's
 the deal with a service. If what you want is "run once and exit," that's
-a task.
+a [task](/concepts/tasks-vs-services/).
 
 ## Concurrency
 
@@ -81,7 +83,9 @@ a task.
 | ------------ | -------- | ------------------------------------------------------------------------ |
 | `on_overlap` | `"skip"` | What happens when something tries to start a new run while one is going. |
 
-Services default to `on_overlap = "skip"` because the supervisor already
+Services default to
+[`on_overlap = "skip"`](/concepts/concurrency/#services-and-on_overlap)
+because the supervisor already
 holds the instance count steady, so overlap almost never comes up. Try
 to manually trigger a service that's already running and it's cleanly
 turned away. There's no `max_concurrent` on services either — how many
@@ -97,7 +101,7 @@ copies run is `instances`, not some in-flight overlap count.
 instance's process group, every descendant gets the same grace window,
 and anything still standing afterward is SIGKILL'd together. If your
 `graceful_stop` is longer than
-[`[daemon] shutdown_timeout`](/configuration/daemon#shutdown_timeout),
+[`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout),
 the daemon warns you at boot — and during a whole-daemon shutdown, each
 instance is capped by the daemon-wide limit no matter what its own
 setting says.

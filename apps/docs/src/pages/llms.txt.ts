@@ -23,7 +23,11 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
     { label: "Overview", slugs: ["index"] },
     {
         label: "Getting started",
-        slugs: ["getting-started/quick-start", "getting-started/web-ui-tour"],
+        slugs: [
+            "getting-started/quick-start",
+            "getting-started/web-ui-tour",
+            "getting-started/tui-tour",
+        ],
     },
     {
         label: "Concepts",
@@ -33,7 +37,6 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "concepts/concurrency",
             "concepts/retries",
             "concepts/logs",
-            "concepts/tui-tour",
         ],
     },
     {
@@ -46,6 +49,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "configuration/tasks",
             "configuration/services",
             "configuration/compose",
+            "configuration/substitution",
         ],
     },
     {
@@ -62,7 +66,12 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
     },
     {
         label: "Operations",
-        slugs: ["operations/auth", "operations/metrics", "operations/autostart"],
+        slugs: [
+            "operations/auth",
+            "operations/autostart",
+            "operations/logging",
+            "operations/metrics",
+        ],
     },
     {
         label: "Recipes",

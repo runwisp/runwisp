@@ -28,25 +28,28 @@ And if you catch yourself writing `while true; do ...; done` inside a
 
 ## What changes when you switch the header
 
-| Field             | `[tasks.*]`                                            | `[services.*]`                                                  |
-| ----------------- | ------------------------------------------------------ | --------------------------------------------------------------- |
-| `cron`            | ✅ schedule firings                                    | ❌ rejected (services aren't cron-driven)                       |
-| `catch_up`        | ✅ `latest` / `all` / `skip` for missed ticks          | ❌ N/A                                                          |
-| `instances`       | ❌ rejected                                            | ✅ N replicas, default `1`, max `64`                            |
-| `restart`         | ✅ `never` / `on_failure`; `always` is rejected        | Forced to `always` — that's the contract                        |
-| `restart_delay`   | ❌ N/A                                                 | ✅ base delay before restart, default `1s`                      |
-| `restart_backoff` | ❌ N/A                                                 | ✅ `constant` / `linear` / `exponential`, default `exponential` |
-| `retry_attempts`  | ✅ retry the failing run before recording final status | ❌ services restart instead of retry                            |
-| `retry_delay`     | ✅ base delay between retries                          | ❌ N/A                                                          |
-| `retry_backoff`   | ✅ `constant` / `linear` / `exponential`               | ❌ N/A                                                          |
-| `on_overlap`      | ✅ default `queue`                                     | ✅ default `skip` (overlap is unusual for an always-on service) |
-| `group`           | ✅ default `"Tasks"`                                   | ✅ default `"Services"`                                         |
+| Field                                                               | `[tasks.*]`                                            | `[services.*]`                                                  |
+| ------------------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------- |
+| [`cron`](/configuration/tasks/#scheduling)                          | ✅ schedule firings                                    | ❌ rejected (services aren't cron-driven)                       |
+| [`catch_up`](/concepts/scheduling/#missed-ticks-catchup)            | ✅ `latest` / `all` / `skip` for missed ticks          | ❌ N/A                                                          |
+| [`instances`](/configuration/services/#instances)                   | ❌ rejected                                            | ✅ N replicas, default `1`, max `64`                            |
+| [`restart`](/configuration/services/#restart-behaviour)             | ✅ `never` / `on_failure`; `always` is rejected        | Forced to `always` — that's the contract                        |
+| [`restart_delay`](/configuration/services/#restart-behaviour)       | ❌ N/A                                                 | ✅ base delay before restart, default `1s`                      |
+| [`restart_backoff`](/configuration/services/#restart-behaviour)     | ❌ N/A                                                 | ✅ `constant` / `linear` / `exponential`, default `exponential` |
+| [`retry_attempts`](/concepts/retries/#retry_attempts)               | ✅ retry the failing run before recording final status | ❌ services restart instead of retry                            |
+| [`retry_delay`](/concepts/retries/#retry_delay-and-retry_backoff)   | ✅ base delay between retries                          | ❌ N/A                                                          |
+| [`retry_backoff`](/concepts/retries/#retry_delay-and-retry_backoff) | ✅ `constant` / `linear` / `exponential`               | ❌ N/A                                                          |
+| [`on_overlap`](/concepts/concurrency/)                              | ✅ default `queue`                                     | ✅ default `skip` (overlap is unusual for an always-on service) |
+| `group`                                                             | ✅ default `"Tasks"`                                   | ✅ default `"Services"`                                         |
 
 Everything else behaves identically on both sides — `timeout`,
 `graceful_stop`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`,
 `notify_on_failure`, `notify_on_success`, `description`, `api_trigger`.
-The only stragglers: `max_concurrent` and `queue_max` are task-only, and
-`backoff_reset_after` is service-only.
+The only stragglers:
+[`max_concurrent` and `queue_max`](/configuration/tasks/#concurrency)
+are task-only, and
+[`backoff_reset_after`](/concepts/retries/#backoff-reset-backoff_reset_after)
+is service-only.
 
 ## What both share
 
@@ -58,8 +61,8 @@ with:
   tailed live in the Web UI.
 - An end reason — `success`, `failed`, `stopped`, `timeout`,
   `crashed`, `skipped`, or `log_overflow`.
-- The same notification surface (per-task `notify_on_failure` /
-  `notify_on_success`, plus full `[[notification_route]]` matching).
+- The same notification surface (per-task [`notify_on_failure` /
+  `notify_on_success`](/notifications/per-task/), plus full [`[[notification_route]]`](/notifications/routes/) matching).
 
 That's really the whole idea: switching from task to service changes how
 the process gets _run_, not what you can see or how you operate it.
@@ -118,8 +121,8 @@ built up in memory — it's a service.
 ### A one-off you only ever trigger from the API or UI
 
 Still a task — just leave `cron` off. It shows up in the UI and takes
-manual triggers from `runwisp exec <name>`, the Web UI's **Run Task**
-button, the TUI, or `POST /api/tasks/{name}/run`. Set
+manual triggers from `runwisp exec <name>`, the [Web UI](/getting-started/web-ui-tour/)'s **Run Task**
+button, the [TUI](/getting-started/tui-tour/), or `POST /api/tasks/{name}/run`. Set
 `api_trigger = false` if you want it to be cron-only and not runnable
 over the API.
 

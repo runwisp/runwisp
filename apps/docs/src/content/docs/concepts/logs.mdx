@@ -19,6 +19,8 @@ started — and the actual log bytes sit on disk, one file per run.
 {data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id-suffix}.log
 ```
 
+[`data_dir`](/configuration/daemon/#cli-flags-config-data-directory--listen-address) is the directory you pass via `--data` (default `.runwisp`).
+
 Each run gets its own file, named with the start time plus a snippet
 of the run's ULID so files sort chronologically and never collide.
 Task names get sanitised — anything that isn't `[a-zA-Z0-9_-]` turns
@@ -98,7 +100,7 @@ durations are rejected.
 
 Each task is on its own — retention runs independently for every
 task, using that task's settings (or whatever it inherits from
-`[defaults]`). Leave either field out and it falls back to
+[`[defaults]`](/configuration/defaults/)). Leave either field out and it falls back to
 `[defaults]`; set both for a hard floor _and_ a hard ceiling.
 
 Cleanup runs in the background on a timer, so you might briefly see a
@@ -108,7 +110,7 @@ SQLite row and the log file (plus its sidecar files) all go together.
 
 ## Live streaming
 
-Both the Web UI and the TUI tail running logs in real time — new
+Both the [Web UI](/getting-started/web-ui-tour/) and the [TUI](/getting-started/tui-tour/) tail running logs in real time — new
 output lands in the viewer within milliseconds of the process
 printing it. When you open the view, it first replays whatever's
 already on disk, then switches over to live, so you never miss the
@@ -175,15 +177,14 @@ in pages with a cursor instead of all at once.
     </TabItem>
 </Tabs>
 
-A single scan walks up to 50 of the most recent runs for that task,
-with four workers going in parallel — enough to feel quick on an SSD
-without hammering a spinning disk. It bails out as soon as it has
-enough hits, hands back a cursor for the rest, and skips soft-deleted
-runs (same visibility rules as everywhere else in the API).
+A single scan walks up to 50 of the most recent runs for that task.
+It bails out as soon as it has enough hits, hands back a cursor for
+the rest, and skips soft-deleted runs (same visibility rules as
+everywhere else in the API).
 
 If your query is malformed — unclosed regex group, empty `q`, that
-kind of thing — you'll get a `400` straight away, before any worker
-even spins up.
+kind of thing — you'll get a `400` straight away, before any
+scanning starts.
 
 ## Sidecars (`.idx`, `.tidx`, `.meta`, `.prev`)
 

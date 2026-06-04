@@ -62,13 +62,15 @@ it'll offer to write a minimal starter for you — the
 | Section                  | Purpose                                                                                                   | Reference                                                                  |
 | ------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `[storage]`              | Disk-usage limits — caps total bytes used and reserves headroom on the data partition.                    | [`[storage]`](/configuration/storage/)                                     |
+| `[daemon]`               | Daemon-wide settings — shutdown budget, public URL for notification links, the metrics endpoint.          | [`[daemon]`](/configuration/daemon/)                                       |
+| `[scheduler]`            | Scheduler-wide settings — the default timezone every cron expression is evaluated in.                     | [Timezone](/concepts/scheduling/#timezone)                                 |
 | `[defaults]`             | Defaults inherited by every task and service unless explicitly overridden.                                | [`[defaults]`](/configuration/defaults/)                                   |
 | `[tasks.<name>]`         | Scheduled or manually-triggered units of work. Cron expression, concurrency, retries, timeout, retention. | [`[tasks.*]`](/configuration/tasks/)                                       |
 | `[services.<name>]`      | Always-on processes. One or more `instances`, exponential restart backoff, graceful shutdown.             | [`[services.*]`](/configuration/services/)                                 |
 | `[compose.<alias>]`      | Imports services from an existing `docker-compose.yml` so each becomes an observable RunWisp service.     | [`[compose.*]`](/configuration/compose/)                                   |
 | `[[notifier]]`           | Declares one outbound channel. Repeated for each channel.                                                 | [Notifications model](/notifications/model/#notifier--declaring-a-channel) |
 | `[[notification_route]]` | Sends events (`run.failed`, `run.timeout`, …) to one or more channels. One rule, many tasks.              | [Notification rules](/notifications/routes/)                               |
-| `[notify]`               | Global notification settings — queue size, retention, in-app toggle.                                      | [Global settings](/notifications/global/)                                  |
+| `[notify]`               | Global notification settings — bell channels, retry budget, history retention, coalescing.                | [Global settings](/notifications/global/)                                  |
 | `notify_on_failure`      | Sets the channels to notify when one specific task ends `failed`, `timeout`, or `crashed`.                | [Per-task notifications](/notifications/per-task/)                         |
 
 One rule cuts across every section: any string value can pull from an
@@ -87,9 +89,9 @@ process).
 Restarting is quick. In-flight runs are cancelled — they end as
 `stopped` if they bow out within the `[daemon] shutdown_timeout` window,
 or get reconciled as `crashed` on the next boot if they don't — then the
-database reopens and the schedule comes back up from the new file. See
-[Operations: upgrading](/operations/upgrading/) for the restart-based
-workflow.
+database reopens and the schedule comes back up from the new file.
+Upgrading the binary works the same way: stop the daemon, swap the
+binary, start it again.
 
 One thing to watch: a parse error at startup kills the boot. The daemon
 exits non-zero before it ever opens its port, and by then your previous

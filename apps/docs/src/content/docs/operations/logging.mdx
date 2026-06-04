@@ -5,6 +5,8 @@ title: Logging
 description: Control the RunWisp daemon's own log output — level, format, timestamps — and read the run-lifecycle lines it emits in headless mode.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 When you run `runwisp daemon` (in Docker, under systemd, or on a VPS), the daemon
 is your only window into what's happening — there's no TUI in front of it. So it
 talks: a line every time a task starts, succeeds, or fails, plus startup,
@@ -108,3 +110,23 @@ msg="draining HTTP requests and closing cloud connection"
 msg="stopping scheduler and waiting for in-flight runs" in_flight=1 timeout=30s
 msg="shutdown complete" elapsed=842ms
 ```
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Logs & retention"
+        href="/concepts/logs/"
+        description="Per-run stdout/stderr capture — the other kind of logs."
+    />
+    <LinkCard
+        title="Metrics"
+        href="/operations/metrics/"
+        description="The Prometheus-compatible /metrics endpoint."
+    />
+    <LinkCard
+        title="Autostart"
+        href="/operations/autostart/"
+        description="Under systemd, these lines land in journalctl."
+    />
+</CardGrid>

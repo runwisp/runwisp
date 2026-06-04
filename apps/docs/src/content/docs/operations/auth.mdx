@@ -20,7 +20,7 @@ auth model leans into that.
 
 The CLI and TUI talk to the daemon over a Unix socket at
 `<datadir>/runwisp.sock`. The socket sits at `0600` inside a `0700`
-data directory, so only the user who started the daemon can reach
+[data directory](/configuration/daemon/#cli-flags-config-data-directory--listen-address), so only the user who started the daemon can reach
 it — same guarantee the SQLite file already relies on. As an extra
 belt to that suspenders, the daemon double-checks the peer UID at
 accept time with `SO_PEERCRED` on Linux and `LOCAL_PEERCRED` on

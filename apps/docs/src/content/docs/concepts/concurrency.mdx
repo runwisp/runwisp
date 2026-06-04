@@ -48,7 +48,8 @@ It's a good fit when:
 - Each run works on its own inputs (a per-tick batch, a queue of jobs)
   rather than fighting over shared state.
 
-The queue isn't bottomless — `queue_max` caps it. Once it's full, the
+The queue isn't bottomless —
+[`queue_max`](/configuration/tasks/#concurrency) caps it. Once it's full, the
 next firing gets logged with `end_reason = "queue_full"` and the
 existing queue keeps draining in order. Seeing queue-full firings is a
 signal the task is over budget: slow the cron down, bump
@@ -76,7 +77,7 @@ It's a good fit when:
   trampling each other.
 
 Skipped runs still show up in history — that's the whole point. They
-land in the Web UI under the **skipped** status (its own end-reason,
+land in the [Web UI](/getting-started/web-ui-tour/) under the **skipped** status (its own end-reason,
 not "failed"), so a task that keeps overlapping reads as a visible
 pattern instead of just silence.
 
@@ -139,7 +140,7 @@ bump it when:
   longer.
 
 If what you really want is a pool of long-running parallel workers,
-reach for `[services.<name>]` with `instances = N` instead — that's
+reach for [`[services.<name>]`](/configuration/services/#instances) with `instances = N` instead — that's
 exactly what services are for.
 
 Either way, `max_concurrent > 1` is safe. The daemon makes the overlap
