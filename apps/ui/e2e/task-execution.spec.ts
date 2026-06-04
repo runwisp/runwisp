@@ -16,7 +16,7 @@ test.describe("task execution", () => {
         // the lowercase "success" in the run list which uses CSS capitalize)
         await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
 
-        await expect(page.getByText("Code 0")).toBeVisible();
+        await expect(page.getByText("Code 0", { exact: true })).toBeVisible();
 
         await expect(page.getByText("echo-line-1")).toBeVisible({ timeout: 10_000 });
         await expect(page.getByText("echo-line-2")).toBeVisible();
@@ -31,7 +31,7 @@ test.describe("task execution", () => {
         await page.getByRole("button", { name: "Run Now" }).click();
 
         await expect(page.getByText("FAILED", { exact: true })).toBeVisible({ timeout: 30_000 });
-        await expect(page.getByText("Code 1")).toBeVisible();
+        await expect(page.getByText("Code 1", { exact: true })).toBeVisible();
         await expect(page.getByText("fail-line-1")).toBeVisible({ timeout: 10_000 });
     });
 

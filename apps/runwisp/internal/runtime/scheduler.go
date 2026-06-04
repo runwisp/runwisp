@@ -11,6 +11,7 @@ import (
 	"log/slog"
 
 	"github.com/robfig/cron/v3"
+	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -84,7 +85,7 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		location = time.UTC
 	}
 	s := &Scheduler{
-		cron:        cron.New(cron.WithLocation(location)),
+		cron:        cron.New(cron.WithLocation(location), cron.WithParser(cronspec.NewParser())),
 		location:    location,
 		taskManager: taskManager,
 		tasks:       tasks,

@@ -121,6 +121,12 @@ func runDaemon(mode daemonMode) error {
 
 	logSecurityWarnings(cfg)
 
+	// Pin the on-disk identity of runwisp.toml + env_files. Reload is
+	// restart-only; the snapshot lets /api/info report config_stale so every
+	// surface can show a "restart to apply" hint instead of silently ignoring
+	// edits.
+	configSnap := config.NewSnapshot(flags.CfgFile, cfg.Config, time.Now())
+
 	svc, err := initDaemonServices(context.Background(), cfg, db, mode)
 	if err != nil {
 		return err
@@ -132,7 +138,7 @@ func runDaemon(mode daemonMode) error {
 	}
 	defer datadir.CleanPidFile(flags.DataDir)
 
-	daemonInfo := buildDaemonInfo(cfg, svc)
+	daemonInfo := buildDaemonInfo(cfg, svc, configSnap.LoadedAt())
 
 	srv, err := server.New(server.Options{
 		DB:                svc.DB,
@@ -150,6 +156,7 @@ func runDaemon(mode daemonMode) error {
 		PasswordEphemeral: cfg.PasswordEphemeral,
 		JWTSecret:         cfg.JWTSecret,
 		DaemonInfo:        daemonInfo,
+		ConfigStale:       configSnap.Stale,
 		DaemonLogBuffer:   logBuffer,
 		MetricsEnabled:    cfg.Config.Daemon.MetricsEnabled,
 		MetricsListen:     cfg.Config.Daemon.MetricsListen,
@@ -165,7 +172,7 @@ func runDaemon(mode daemonMode) error {
 		DBPath:     flags.DBPath(),
 		LogDir:     flags.LogDir(),
 		Port:       flags.Port,
-		ListenURL:  daemonListenURL(cfg),
+		ListenURL:  daemonListenURL(cfg.Config),
 
 		Fingerprint:    cfg.Fingerprint,
 		UsingDemo:      cfg.UsingDemo,
@@ -173,6 +180,7 @@ func runDaemon(mode daemonMode) error {
 		Tasks:          daemonInfo.Tasks,
 		Timezone:       daemonInfo.ResolvedTimezone,
 		TimezoneSource: daemonInfo.TimezoneSource,
+		ServiceManaged: daemonInfo.ServiceManaged,
 
 		PasswordEphemeral: cfg.PasswordEphemeral,
 		Password:          cfg.Password,
@@ -293,8 +301,8 @@ func absPathOrFallback(p string) string {
 // [daemon] external_url when configured, else http://<bind-host>:<port>.
 // Wildcard binds are mapped to localhost because 0.0.0.0/:: are not themselves
 // connectable addresses.
-func daemonListenURL(cfg *daemonConfig) string {
-	if u := cfg.Config.Daemon.ExternalURL; u != "" {
+func daemonListenURL(cfg *config.Config) string {
+	if u := cfg.Daemon.ExternalURL; u != "" {
 		return u
 	}
 	host := flags.Host
@@ -334,7 +342,7 @@ func logSecurityWarnings(cfg *daemonConfig) {
 	if flags.Host != "127.0.0.1" && flags.Host != "::1" && flags.Host != "localhost" {
 		printNonLoopbackBanner(flags.Host)
 	}
-	for _, w := range config.GracefulStopWarnings(cfg.Config) {
+	for _, w := range config.Warnings(cfg.Config) {
 		slog.Warn(w)
 	}
 }

@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -82,13 +81,30 @@ func TestCLIStatusCmd(t *testing.T) {
 	configPath := writeE2EConfig(t, configDir)
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
+	// status talks over the daemon's Unix socket, so it needs --data.
 	out, err := runCLI(t, projectDir, binaryPath,
 		"status",
-		"--port", strconv.Itoa(daemon.port),
+		"--data", daemon.dataDir,
 	)
 	require.NoError(t, err, "status should succeed: %s", out)
-	require.True(t, strings.Contains(out, "healthy") || strings.Contains(out, "RunWisp"),
-		"expected healthy output, got: %s", out)
+	require.Contains(t, out, "healthy", "expected healthy output, got: %s", out)
+	require.Contains(t, out, strconv.Itoa(daemon.port), "status should report the daemon's port")
+	require.NotContains(t, out, "runwisp restart", "fresh config must not be reported stale")
+
+	// Edit runwisp.toml while the daemon runs: reload is restart-only, so
+	// status must call out that the on-disk config is no longer what's live.
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+[tasks.edited-after-boot]
+run = "echo changed"
+`), 0o600))
+
+	out, err = runCLI(t, projectDir, binaryPath,
+		"status",
+		"--data", daemon.dataDir,
+	)
+	require.NoError(t, err, "status should still succeed: %s", out)
+	require.Contains(t, out, "changed since the daemon started")
+	require.Contains(t, out, "runwisp restart")
 }
 
 func TestCLIOpenAPICmd(t *testing.T) {

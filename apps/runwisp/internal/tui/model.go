@@ -6,6 +6,7 @@ package tui
 import (
 	"fmt"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
@@ -23,6 +24,10 @@ import (
 const (
 	tickInterval  = 1 * time.Second
 	maxDebugLines = 500
+	// infoPollInterval paces the /api/info refresh that keeps the
+	// config-stale notice live. The probe re-hashes a handful of small
+	// files over the local socket — cheap, but no need to do it every tick.
+	infoPollInterval = 5 * time.Second
 )
 
 // mouseState tracks mouse position and double-click detection.
@@ -77,6 +82,9 @@ type Model struct {
 	launchTicketFunc func() (string, error)
 
 	mouse mouseState
+
+	// lastInfoFetch paces the periodic /api/info poll (see infoPollInterval).
+	lastInfoFetch time.Time
 
 	width    int
 	height   int
@@ -245,13 +253,8 @@ func (m *Model) mainSize() (int, int) {
 	if !m.isExecFullscreen() {
 		w -= uikit.SidebarWidth
 	}
-	if w < 20 {
-		w = 20
-	}
-	h := m.height - 1 // help bar
-	if h < 5 {
-		h = 5
-	}
+	w = max(w, 20)
+	h := max(m.height-1, 5) // -1 for help bar
 	return w, h
 }
 
@@ -340,7 +343,26 @@ func (m Model) QuitAction() uikit.QuitAction {
 }
 
 // showQuitConfirm displays the quit dialog with keep-daemon/shutdown options.
+// A service-managed daemon (systemd / launchd) gets no "Shut Down" option —
+// SIGTERM from the TUI would desync the manager — just a `runwisp stop` hint.
 func (m *Model) showQuitConfirm() {
+	if m.info.ServiceManaged {
+		dialog := NewChoiceDialog(
+			"Quit",
+			"The daemon keeps running in the background.",
+			"Quit TUI",
+			"Cancel",
+			func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} },
+			nil,
+		).WithNote(
+			"",
+			"Managed by "+serviceManagerLabel()+" — to stop it, run:",
+			"runwisp stop",
+		)
+		m.dialogs.ShowConfirm(dialog)
+		return
+	}
+
 	dialog := NewChoiceDialog(
 		"Quit",
 		"Keep the daemon running in the background?",
@@ -360,6 +382,20 @@ func (m *Model) showQuitConfirm() {
 		)
 	}
 	m.dialogs.ShowConfirm(dialog)
+}
+
+// serviceManagerLabel names the init system for dialog copy. The TUI talks
+// to the daemon over its local Unix socket, so GOOS here matches the host
+// the daemon runs under.
+func serviceManagerLabel() string {
+	switch runtime.GOOS {
+	case "linux":
+		return "systemd"
+	case "darwin":
+		return "launchd"
+	default:
+		return "a service manager"
+	}
 }
 
 // resolveTaskName determines which task to act on based on current focus.

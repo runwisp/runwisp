@@ -778,3 +778,85 @@ func TestHandleKeyDown_NotificationsScrollable(t *testing.T) {
 		t.Fatal("expected handled=true when notifications expanded")
 	}
 }
+
+// ─── handleKeyHelp ──────────────────────────────────────────────────────────
+
+func TestHandleKeyHelp_OpensOverlay(t *testing.T) {
+	m := newTestModel(nil)
+
+	updated, _ := m.handleKey(keyMsg("?"))
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("expected Model")
+	}
+	if !got.dialogs.HasHelp() {
+		t.Fatal("expected '?' to open the help overlay")
+	}
+}
+
+func TestHandleKeyHelp_SecondQuestionMarkCloses(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowHelp()
+
+	updated, _ := m.Update(keyMsg("?"))
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("expected Model")
+	}
+	if got.dialogs.HasHelp() {
+		t.Fatal("expected '?' to close an open help overlay")
+	}
+}
+
+func TestHandleKeyHelp_CtrlCEscalatesToQuitConfirm(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowHelp()
+
+	updated, _ := m.Update(keyMsgSpecial(tea.KeyCtrlC))
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("expected Model")
+	}
+	if got.dialogs.HasHelp() {
+		t.Fatal("expected ctrl+c to dismiss the help overlay")
+	}
+	if !got.dialogs.HasConfirm() {
+		t.Fatal("expected ctrl+c to open the quit confirm")
+	}
+}
+
+func TestInterceptHelpDialog_NonCloseKeyPassesThrough(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowHelp()
+
+	got, _, intercepted := m.interceptHelpDialog(keyMsgSpecial(tea.KeyDown))
+	if intercepted {
+		t.Fatal("expected arrow-down to pass through (intercepted=false)")
+	}
+	gotModel := got.(Model)
+	if !gotModel.dialogs.HasHelp() {
+		t.Fatal("expected help overlay to remain open")
+	}
+}
+
+func TestInterceptHelpDialog_CloseKeysIntercept(t *testing.T) {
+	closeKeys := []tea.Msg{
+		keyMsg("?"),
+		keyMsgSpecial(tea.KeyEsc),
+		keyMsgSpecial(tea.KeyEnter),
+		keyMsg("q"),
+	}
+	for _, key := range closeKeys {
+		m := newTestModel(nil)
+		m.dialogs.ShowHelp()
+
+		got, _, intercepted := m.interceptHelpDialog(key)
+		if !intercepted {
+			t.Fatalf("expected close key %v to be intercepted", key)
+		}
+		gotModel := got.(Model)
+		if gotModel.dialogs.HasHelp() {
+			t.Fatalf("expected help overlay dismissed after close key %v", key)
+		}
+	}
+}

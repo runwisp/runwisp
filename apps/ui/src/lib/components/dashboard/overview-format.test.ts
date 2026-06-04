@@ -13,6 +13,7 @@ import {
     formatTaskTriggerLabel,
     formatTriggeredByLabel,
     getTaskStatusDot,
+    taskTriggerIsHumanizedCron,
 } from "./overview-format";
 
 function makeTask(overrides: Partial<Task> = {}): TaskWithId {
@@ -111,9 +112,14 @@ describe("formatTaskTriggerLabel", () => {
         expect(formatTaskTriggerLabel(overview)).toBe("Service ×3");
     });
 
-    it("returns the cron expression when task has cron set", () => {
+    it("returns the humanized cron when task has cron set", () => {
         const overview = makeOverview({ task: makeTask({ cron: "0 * * * *" }) });
-        expect(formatTaskTriggerLabel(overview)).toBe("0 * * * *");
+        expect(formatTaskTriggerLabel(overview)).toBe("Every hour");
+    });
+
+    it("returns the raw cron when humanizing fails", () => {
+        const overview = makeOverview({ task: makeTask({ cron: "not a cron" }) });
+        expect(formatTaskTriggerLabel(overview)).toBe("not a cron");
     });
 
     it("returns 'API trigger' when no cron and isApiOnly is true", () => {
@@ -124,6 +130,25 @@ describe("formatTaskTriggerLabel", () => {
     it("returns 'Manual trigger' when no cron and isApiOnly is false", () => {
         const overview = makeOverview({ task: makeTask({}), isApiOnly: false });
         expect(formatTaskTriggerLabel(overview)).toBe("Manual trigger");
+    });
+});
+
+describe("taskTriggerIsHumanizedCron", () => {
+    it("is true for a humanizable cron", () => {
+        const overview = makeOverview({ task: makeTask({ cron: "*/5 * * * *" }) });
+        expect(taskTriggerIsHumanizedCron(overview)).toBe(true);
+    });
+
+    it("is false for an unparseable cron", () => {
+        const overview = makeOverview({ task: makeTask({ cron: "not a cron" }) });
+        expect(taskTriggerIsHumanizedCron(overview)).toBe(false);
+    });
+
+    it("is false for services and cron-less tasks", () => {
+        expect(
+            taskTriggerIsHumanizedCron(makeOverview({ task: makeTask({ kind: "service" }) })),
+        ).toBe(false);
+        expect(taskTriggerIsHumanizedCron(makeOverview({ task: makeTask({}) }))).toBe(false);
     });
 });
 

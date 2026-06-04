@@ -41,6 +41,7 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	"k":         handleKeyUp,
 	"down":      handleKeyDown,
 	"j":         handleKeyDown,
+	"?":         handleKeyHelp,
 }
 
 // handleKey processes keyboard input. Global shortcuts are dispatched through
@@ -109,6 +110,14 @@ func delegateToExecList(m *Model, msg tea.KeyMsg) []tea.Cmd {
 
 func handleKeyQuit(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	m.showQuitConfirm()
+	return m, nil, true
+}
+
+// handleKeyHelp opens the keyboard-shortcut overlay. Confirm/copy dialogs and
+// the log-search overlay intercept keys before this handler runs, so no extra
+// guards are needed here.
+func handleKeyHelp(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	m.dialogs.ShowHelp()
 	return m, nil, true
 }
 

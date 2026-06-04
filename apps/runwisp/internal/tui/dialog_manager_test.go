@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -296,5 +297,85 @@ func TestDialogManager_UpdateConfirmKeep_YesCmd(t *testing.T) {
 	cmd() //nolint:errcheck
 	if !fired {
 		t.Fatal("expected confirm callback to fire")
+	}
+}
+
+func TestDialogManager_HelpLifecycle(t *testing.T) {
+	var dm DialogManager
+
+	if dm.HasHelp() {
+		t.Fatal("expected no help dialog initially")
+	}
+
+	dm.ShowHelp()
+
+	if !dm.HasHelp() {
+		t.Fatal("expected help dialog after ShowHelp")
+	}
+
+	dm.DismissHelp()
+
+	if dm.HasHelp() {
+		t.Fatal("expected no help dialog after DismissHelp")
+	}
+}
+
+func TestDialogManager_UpdateHelp_ClosesOnCloseKeys(t *testing.T) {
+	for _, key := range []string{"?", "esc", "enter", "q"} {
+		var dm DialogManager
+		dm.ShowHelp()
+
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+		if key == "esc" {
+			msg = tea.KeyMsg{Type: tea.KeyEscape}
+		}
+		if key == "enter" {
+			msg = tea.KeyMsg{Type: tea.KeyEnter}
+		}
+		if !dm.UpdateHelp(msg) {
+			t.Fatalf("expected %q to close the help dialog", key)
+		}
+		if dm.HasHelp() {
+			t.Fatalf("expected help dialog dismissed after %q", key)
+		}
+	}
+}
+
+func TestDialogManager_UpdateHelp_IgnoresOtherKeys(t *testing.T) {
+	var dm DialogManager
+	dm.ShowHelp()
+
+	if dm.UpdateHelp(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}) {
+		t.Fatal("expected 'x' to keep the help dialog open")
+	}
+	if !dm.HasHelp() {
+		t.Fatal("expected help dialog still active")
+	}
+}
+
+func TestDialogManager_RenderOverlays_ConfirmTakesPrecedenceOverHelp(t *testing.T) {
+	var dm DialogManager
+	dm.ShowHelp()
+	dialog := NewConfirmDialog("Quit", "Sure?", func() tea.Msg { return nil })
+	dm.ShowConfirm(dialog)
+
+	out := dm.RenderOverlays("base", 80, 40)
+	if out == "base" {
+		t.Fatal("expected an overlay, got base output")
+	}
+	// The confirm dialog renders its title; the help overlay would render
+	// "Keyboard Shortcuts" instead.
+	if !strings.Contains(out, "Quit") || strings.Contains(out, "Keyboard Shortcuts") {
+		t.Fatal("expected confirm dialog to take precedence over help overlay")
+	}
+}
+
+func TestHelpDialog_ViewListsSections(t *testing.T) {
+	d := NewHelpDialog()
+	out := d.View(100, 50)
+	for _, want := range []string{"Keyboard Shortcuts", "Global", "Navigate", "Exec view", "Notifications"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected help view to contain %q", want)
+		}
 	}
 }

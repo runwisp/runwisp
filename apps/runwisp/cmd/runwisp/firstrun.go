@@ -75,7 +75,7 @@ func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 		fmt.Fprintf(out, "Created %s\n", path)
 		return nil
 	default:
-		return fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://github.com/runwisp/runwisp)", loc)
+		return fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://docs.runwisp.com/configuration/overview/)", loc)
 	}
 }
 

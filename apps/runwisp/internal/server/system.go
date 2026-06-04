@@ -72,7 +72,13 @@ func (p *statsProvider) GetDaemonInfo() *model.DaemonInfo {
 }
 
 func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInfoOutput, error) {
-	return &DaemonInfoOutput{Body: *srv.stats.GetDaemonInfo()}, nil
+	info := *srv.stats.GetDaemonInfo()
+	// Staleness is probed per request — the browser can't read the daemon's
+	// disk, and a cached answer would defeat the point of the indicator.
+	if srv.configStale != nil {
+		info.ConfigStale = srv.configStale()
+	}
+	return &DaemonInfoOutput{Body: info}, nil
 }
 
 func (srv *Server) humaGetSystemStats(ctx context.Context, input *struct{}) (*SystemStatsOutput, error) {

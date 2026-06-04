@@ -35,6 +35,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return newModel, cmd
 		}
 	}
+	if m.dialogs.HasHelp() {
+		if newModel, cmd, intercepted := m.interceptHelpDialog(msg); intercepted {
+			return newModel, cmd
+		}
+	}
 
 	dispatchers := []func(tea.Msg) (tea.Model, tea.Cmd, bool){
 		m.dispatchInputMsg,
@@ -194,6 +199,9 @@ func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return model, cmd, true
 	case uikit.SystemStatsMsg:
 		model, cmd := m.handleSystemStats(msg)
+		return model, cmd, true
+	case uikit.DaemonInfoMsg:
+		model, cmd := m.handleDaemonInfo(msg)
 		return model, cmd, true
 	case uikit.MetricsHistoryMsg:
 		model, cmd := m.handleMetricsHistory(msg)
@@ -361,6 +369,29 @@ func (m Model) interceptCopyDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			return m, m.dialogs.SyncMouseState(), true
 		}
 		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// interceptHelpDialog handles input while the help overlay is visible. Any
+// close key dismisses it; ctrl+c escalates to the quit confirm.
+func (m Model) interceptHelpDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == keyCtrlC {
+			m.dialogs.DismissHelp()
+			m.showQuitConfirm()
+			return m, nil, true
+		}
+		if m.dialogs.UpdateHelp(msg) {
+			return m, nil, true
+		}
+		return m, nil, false
+	case tea.MouseMsg:
+		if m.dialogs.UpdateHelp(msg) {
+			return m, nil, true
+		}
+		return m, nil, false
 	}
 	return m, nil, false
 }
@@ -561,6 +592,10 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 	if m.sidebar.ActivePage() == uikit.PageInfo {
 		cmds = append(cmds, m.streams.FetchSystemStats())
 	}
+	if time.Since(m.lastInfoFetch) >= infoPollInterval {
+		m.lastInfoFetch = time.Now()
+		cmds = append(cmds, m.streams.FetchDaemonInfo())
+	}
 	if m.notifications.PanelHeight() > 0 {
 		m.notifications.RefreshLabels()
 	}
@@ -584,6 +619,18 @@ func (m Model) handleFlashExpired() (tea.Model, tea.Cmd) {
 func (m Model) handleSystemStats(msg uikit.SystemStatsMsg) (tea.Model, tea.Cmd) {
 	if msg.Err == nil && msg.Stats != nil {
 		m.infoView.UpdateStats(msg.Stats)
+	}
+	return m, nil
+}
+
+// handleDaemonInfo refreshes the live bits of StartupInfo from the periodic
+// /api/info poll — currently the config-stale notice and the service-managed
+// flag (the daemon may be restarted under a service manager mid-session).
+// Errors are ignored: the header just keeps its last known state.
+func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
+	if msg.Err == nil && msg.Info != nil {
+		m.info.ConfigStale = msg.Info.ConfigStale
+		m.info.ServiceManaged = msg.Info.ServiceManaged
 	}
 	return m, nil
 }

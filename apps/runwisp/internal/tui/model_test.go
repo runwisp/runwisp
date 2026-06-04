@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -260,5 +261,28 @@ func TestShowQuitConfirm_OpensConfirmDialog(t *testing.T) {
 	m.showQuitConfirm()
 	if !m.dialogs.HasConfirm() {
 		t.Fatal("expected confirm dialog after showQuitConfirm")
+	}
+}
+
+// A service-managed daemon must not be shut down from the TUI — the dialog
+// drops the "Shut Down" action and points at `runwisp stop` instead.
+func TestShowQuitConfirm_ServiceManagedDropsShutdownOption(t *testing.T) {
+	m := newTestModel(nil)
+	m.info.ServiceManaged = true
+	m.showQuitConfirm()
+
+	d := m.dialogs.confirmDialog
+	if d == nil {
+		t.Fatal("expected confirm dialog after showQuitConfirm")
+	}
+	if d.yesLabel != "Quit TUI" {
+		t.Fatalf("expected Quit TUI option, got %q", d.yesLabel)
+	}
+	if d.onDeny != nil {
+		t.Fatal("service-managed quit dialog must not offer a shutdown action")
+	}
+	note := strings.Join(d.noteLines, "\n")
+	if !strings.Contains(note, "runwisp stop") {
+		t.Fatalf("expected `runwisp stop` hint in note, got %q", note)
 	}
 }

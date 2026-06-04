@@ -55,5 +55,10 @@ func runValidate(w io.Writer) error {
 	fmt.Fprintf(w, "  tasks:    %d\n", tasks)
 	fmt.Fprintf(w, "  services: %d\n", services)
 	fmt.Fprintf(w, "  timezone: %s\n", tz)
+	// Advisory findings the daemon would log at boot — shown here so a CI
+	// `validate` run surfaces them before deploy. They don't affect exit code.
+	for _, warning := range config.Warnings(cfg) {
+		fmt.Fprintf(w, "! %s\n", warning)
+	}
 	return nil
 }

@@ -27,7 +27,7 @@ func runTUIClient() error {
 	client := apiclient.NewUnix(localAPISocketPath())
 
 	if err := pollHealth(client, 5*time.Second); err != nil {
-		return fmt.Errorf("cannot reach daemon at %s — is it running? (%w)", localAPISocketPath(), err)
+		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(), err, daemonNotRunningHint)
 	}
 
 	err := runTUIConnect(client)
@@ -47,6 +47,8 @@ func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
 	si.Fingerprint = info.Fingerprint
 	si.Port = info.Port
 	si.CloudEnabled = info.CloudEnabled
+	si.ServiceManaged = info.ServiceManaged
+	si.ConfigStale = info.ConfigStale
 	si.Timezone = info.ResolvedTimezone
 	si.TimezoneSource = info.TimezoneSource
 

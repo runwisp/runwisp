@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"time"
 )
 
@@ -185,6 +186,35 @@ type Installer interface {
 	ComputeUninstallPlan(ctx context.Context, opts UninstallOptions) (Plan, error)
 	Uninstall(ctx context.Context, opts UninstallOptions, out io.Writer) error
 	Status(ctx context.Context, opts InstallOptions) (Status, error)
+
+	// Stop stops the managed daemon through the init system (systemctl
+	// --user stop / launchctl kill SIGTERM). The unit stays installed and
+	// enabled — it will come back on the next boot or `Restart`. Going
+	// through the manager instead of signalling the PID directly keeps the
+	// manager's view of the service in sync.
+	Stop(ctx context.Context, opts InstallOptions) error
+	// Restart restarts the managed daemon through the init system
+	// (systemctl --user restart / launchctl kickstart -k).
+	Restart(ctx context.Context, opts InstallOptions) error
+}
+
+// ServiceManagedEnv is set to "1" in the generated systemd unit and
+// launchd plist so a daemon can tell it was started by the init system
+// rather than by hand. Quitting such a daemon via SIGTERM would just get
+// it respawned (or leave the manager's view stale), so UIs use this to
+// steer the operator toward `runwisp stop` / `systemctl --user stop`.
+const ServiceManagedEnv = "RUNWISP_SERVICE_MANAGED"
+
+// RunningUnderServiceManager reports whether the current process was
+// launched by an init system. Primary signal is ServiceManagedEnv from
+// our generated unit files; INVOCATION_ID is the systemd fallback for
+// hand-written units.
+func RunningUnderServiceManager() bool {
+	if os.Getenv(ServiceManagedEnv) == "1" {
+		return true
+	}
+	// systemd sets INVOCATION_ID for every unit it starts.
+	return os.Getenv("INVOCATION_ID") != ""
 }
 
 // ErrUnsupported is returned by `New` on platforms without an installer.

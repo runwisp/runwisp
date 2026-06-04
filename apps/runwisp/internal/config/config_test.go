@@ -921,7 +921,7 @@ func TestGracefulStopWarnings(t *testing.T) {
 			Tasks:  []model.Task{testTask("t1")},
 		}
 		cfg.Tasks[0].GracefulStop = 30 * time.Second
-		warnings := GracefulStopWarnings(cfg)
+		warnings := gracefulStopWarnings(cfg)
 		assert.Nil(t, warnings)
 	})
 
@@ -931,7 +931,7 @@ func TestGracefulStopWarnings(t *testing.T) {
 			Tasks:  []model.Task{testTask("t1")},
 		}
 		cfg.Tasks[0].GracefulStop = 30 * time.Second
-		warnings := GracefulStopWarnings(cfg)
+		warnings := gracefulStopWarnings(cfg)
 		assert.Nil(t, warnings)
 	})
 
@@ -941,7 +941,7 @@ func TestGracefulStopWarnings(t *testing.T) {
 			Tasks:  []model.Task{testTask("t1")},
 		}
 		cfg.Tasks[0].GracefulStop = 30 * time.Second
-		warnings := GracefulStopWarnings(cfg)
+		warnings := gracefulStopWarnings(cfg)
 		require.Len(t, warnings, 1)
 		assert.Contains(t, warnings[0], "t1")
 		assert.Contains(t, warnings[0], "graceful_stop")
@@ -954,7 +954,7 @@ func TestGracefulStopWarnings(t *testing.T) {
 			Tasks:  []model.Task{testTask("t1")},
 		}
 		cfg.Tasks[0].GracefulStop = 10 * time.Second
-		warnings := GracefulStopWarnings(cfg)
+		warnings := gracefulStopWarnings(cfg)
 		assert.Empty(t, warnings)
 	})
 }

@@ -8,7 +8,7 @@
 
     interface Props {
         title?: string;
-        description?: string;
+        description?: string | undefined;
         icon?: Component;
         iconSize?: number;
         actions?: Snippet;

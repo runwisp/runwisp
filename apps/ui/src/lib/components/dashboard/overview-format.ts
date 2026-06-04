@@ -5,6 +5,7 @@ import {
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
     getRunStatusConfig,
+    humanizeCron,
     runDuration,
 } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
@@ -53,10 +54,19 @@ export function formatTaskTriggerLabel(task: TaskOverview): string {
     }
 
     if (task.task.cron) {
-        return task.task.cron;
+        return humanizeCron(task.task.cron).humanized;
     }
 
     return task.isApiOnly ? "API trigger" : "Manual trigger";
+}
+
+// taskTriggerIsHumanizedCron reports whether the trigger label is plain
+// English (proportional font) rather than a raw cron expression (mono).
+export function taskTriggerIsHumanizedCron(task: TaskOverview): boolean {
+    if (task.task.kind === "service" || !task.task.cron) {
+        return false;
+    }
+    return humanizeCron(task.task.cron).isHumanized;
 }
 
 export function getTaskStatusDot(status: TaskOverview["lastStatus"]): string {

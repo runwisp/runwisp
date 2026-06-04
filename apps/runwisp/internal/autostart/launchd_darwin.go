@@ -233,6 +233,27 @@ func (l *launchdInstaller) Uninstall(ctx context.Context, opts UninstallOptions,
 	return nil
 }
 
+// Stop implements Installer: asks launchd to SIGTERM the job. The daemon's
+// graceful shutdown exits 0, and KeepAlive{SuccessfulExit:false} does not
+// respawn successful exits, so the job stays down until login or Restart.
+func (l *launchdInstaller) Stop(ctx context.Context, _ InstallOptions) error {
+	uid := strconv.Itoa(os.Getuid())
+	if _, stderr, err := l.deps.Cmd.Run(ctx, "launchctl", "kill", "SIGTERM", "gui/"+uid+"/"+l.label()); err != nil {
+		return fmt.Errorf("launchctl kill SIGTERM: %w: %s", err, string(stderr))
+	}
+	return nil
+}
+
+// Restart implements Installer: kickstart -k kills the running instance (if
+// any) and starts a fresh one.
+func (l *launchdInstaller) Restart(ctx context.Context, _ InstallOptions) error {
+	uid := strconv.Itoa(os.Getuid())
+	if _, stderr, err := l.deps.Cmd.Run(ctx, "launchctl", "kickstart", "-k", "gui/"+uid+"/"+l.label()); err != nil {
+		return fmt.Errorf("launchctl kickstart -k: %w: %s", err, string(stderr))
+	}
+	return nil
+}
+
 func (l *launchdInstaller) Status(ctx context.Context, opts InstallOptions) (Status, error) {
 	plistPath := l.plistPath()
 	st := Status{

@@ -19,6 +19,7 @@ function createSystemStore() {
     let fingerprint = $state("—");
     let timezone = $state("");
     let timezoneSource = $state("");
+    let configStale = $state(false);
 
     async function refresh() {
         if (connectionStore.status === "disconnected") return;
@@ -38,6 +39,7 @@ function createSystemStore() {
             fingerprint = info.fingerprint;
             timezone = info.resolved_timezone;
             timezoneSource = info.timezone_source;
+            configStale = info.config_stale;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
             // silent — system stats are secondary
@@ -86,6 +88,9 @@ function createSystemStore() {
         },
         get timezoneSource() {
             return timezoneSource;
+        },
+        get configStale() {
+            return configStale;
         },
         refresh,
     };

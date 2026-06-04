@@ -6,10 +6,17 @@ package main
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
+
+// daemonNotRunningHint is appended to "daemon not reachable" errors so a
+// failed connection never dead-ends — the operator learns the next command
+// without a docs lookup.
+const daemonNotRunningHint = "start it with 'runwisp' (interactive) or 'runwisp daemon' (headless)"
 
 // userFacingError carries an already-formatted, human-readable message that
 // the top-level error renderer should print verbatim instead of through slog.
@@ -66,6 +73,32 @@ func renderUserFacingError(w io.Writer, e *userFacingError) {
 			}
 			fmt.Fprintln(w, line)
 		}
+	}
+}
+
+// unknownTaskError is returned when `runwisp exec` names a task that doesn't
+// exist. It suggests the closest match for a likely typo and lists what is
+// actually defined, so the operator never has to open runwisp.toml to find
+// the right name.
+func unknownTaskError(taskName string, available []string) error {
+	sorted := append([]string(nil), available...)
+	sort.Strings(sorted)
+
+	var b strings.Builder
+	if suggestion := textutil.Closest(taskName, sorted); suggestion != "" {
+		fmt.Fprintf(&b, "Did you mean %q?\n\n", suggestion)
+	}
+	if len(sorted) == 0 {
+		b.WriteString("No tasks are defined. Add a [tasks.<name>] block to runwisp.toml first.")
+	} else {
+		b.WriteString("Available tasks:\n")
+		for _, name := range sorted {
+			b.WriteString("  - " + name + "\n")
+		}
+	}
+	return &userFacingError{
+		title:   fmt.Sprintf("task %q not found", taskName),
+		details: b.String(),
 	}
 }
 

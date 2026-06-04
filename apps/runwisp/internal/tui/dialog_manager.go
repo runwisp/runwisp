@@ -16,6 +16,7 @@ import (
 type DialogManager struct {
 	confirmDialog *ConfirmDialog
 	copyDialog    *CopyDialog
+	helpDialog    *HelpDialog
 
 	flashMessage string
 	flashExpiry  time.Time
@@ -84,6 +85,31 @@ func (dm *DialogManager) ShowCopy(title, value string) {
 
 func (dm *DialogManager) DismissCopy() {
 	dm.copyDialog = nil
+}
+
+// HasHelp reports whether the help overlay is active.
+func (dm *DialogManager) HasHelp() bool {
+	return dm.helpDialog != nil
+}
+
+// ShowHelp activates the keyboard-shortcut overlay.
+func (dm *DialogManager) ShowHelp() {
+	d := NewHelpDialog()
+	dm.helpDialog = &d
+}
+
+func (dm *DialogManager) DismissHelp() {
+	dm.helpDialog = nil
+}
+
+// UpdateHelp dispatches input to the active help dialog.
+// Returns true when the dialog closed.
+func (dm *DialogManager) UpdateHelp(msg tea.Msg) bool {
+	if dm.helpDialog.Update(msg) {
+		dm.helpDialog = nil
+		return true
+	}
+	return false
 }
 
 // UpdateConfirm dispatches input to the active confirm dialog.
@@ -168,13 +194,17 @@ func (dm *DialogManager) SyncMouseState() tea.Cmd {
 	return nil
 }
 
-// RenderOverlays renders confirm/copy dialogs on top of the base output if active.
+// RenderOverlays renders confirm/copy/help dialogs on top of the base output
+// if active. Confirm and copy take precedence over help.
 func (dm *DialogManager) RenderOverlays(base string, width, height int) string {
 	if dm.confirmDialog != nil {
 		return dm.confirmDialog.View(width, height)
 	}
 	if dm.copyDialog != nil {
 		return dm.copyDialog.View(width, height)
+	}
+	if dm.helpDialog != nil {
+		return dm.helpDialog.View(width, height)
 	}
 	return base
 }

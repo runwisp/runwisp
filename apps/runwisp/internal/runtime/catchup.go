@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/robfig/cron/v3"
+	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
 )
@@ -25,7 +26,7 @@ type CatchUpResult struct {
 // for cron ticks that were missed while the daemon was down.
 func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks map[string]*model.Task, runner TaskRunner, now time.Time) CatchUpResult {
 	var result CatchUpResult
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	parser := cronspec.NewParser()
 
 	for _, task := range tasks {
 		if task.Cron == "" || task.CatchUp == model.MissedRunSkip {

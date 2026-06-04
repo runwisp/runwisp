@@ -45,14 +45,17 @@
 
     $effect(() => {
         const status = authStore.current;
-        if (!status.loaded) return;
+        if (!status.loaded || !status.authenticated) return;
 
-        if (status.authenticated) {
-            runUpdatesStore.connect();
-            void taskStore.loadIfNeeded();
-            void notificationStore.init();
-            void systemStore.refresh();
-        }
+        runUpdatesStore.connect();
+        void taskStore.loadIfNeeded();
+        void notificationStore.init();
+        void systemStore.refresh();
+
+        // Keep the stale-config banner live on every page; the overview page
+        // polls faster (2s) for its stats, this is just the app-wide floor.
+        const infoInterval = setInterval(() => void systemStore.refresh(), 10000);
+        return () => clearInterval(infoInterval);
     });
 
     let activePage = $derived.by(() => {

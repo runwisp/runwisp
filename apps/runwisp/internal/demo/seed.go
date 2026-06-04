@@ -16,6 +16,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -418,7 +419,7 @@ func serviceUptime(spec *runSpec) time.Duration {
 // --- helpers -----------------------------------------------------------------
 
 func cronParser() cron.Parser {
-	return cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	return cronspec.NewParser()
 }
 
 // pastFires returns the schedule's fire times within [now-window, now), oldest

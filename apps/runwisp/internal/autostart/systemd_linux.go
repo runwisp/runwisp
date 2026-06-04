@@ -280,6 +280,31 @@ func (s *systemdInstaller) runEnableNow(ctx context.Context, systemWide bool) er
 	return nil
 }
 
+// Stop implements Installer: stops the unit without disabling it.
+func (s *systemdInstaller) Stop(ctx context.Context, opts InstallOptions) error {
+	return s.runSystemctlVerb(ctx, opts.System, "stop")
+}
+
+// Restart implements Installer.
+func (s *systemdInstaller) Restart(ctx context.Context, opts InstallOptions) error {
+	return s.runSystemctlVerb(ctx, opts.System, "restart")
+}
+
+func (s *systemdInstaller) runSystemctlVerb(ctx context.Context, systemWide bool, verb string) error {
+	if systemWide {
+		_, stderr, err := s.deps.Cmd.Run(ctx, "sudo", "systemctl", verb, s.serviceName())
+		if err != nil {
+			return fmt.Errorf("sudo systemctl %s: %w: %s", verb, err, string(stderr))
+		}
+		return nil
+	}
+	_, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, verb, s.serviceName())
+	if err != nil {
+		return fmt.Errorf("systemctl --user %s: %w: %s", verb, err, string(stderr))
+	}
+	return nil
+}
+
 // ComputeUninstallPlan implements Installer.
 func (s *systemdInstaller) ComputeUninstallPlan(_ context.Context, opts UninstallOptions) (Plan, error) {
 	unitPath := s.unitPath(false)

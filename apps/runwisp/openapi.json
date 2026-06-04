@@ -92,6 +92,13 @@
           "cloud_enabled": {
             "type": "boolean"
           },
+          "config_loaded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "config_stale": {
+            "type": "boolean"
+          },
           "fingerprint": {
             "type": "string"
           },
@@ -101,6 +108,9 @@
           },
           "resolved_timezone": {
             "type": "string"
+          },
+          "service_managed": {
+            "type": "boolean"
           },
           "tasks": {
             "items": {
@@ -127,6 +137,9 @@
           "fingerprint",
           "port",
           "cloud_enabled",
+          "service_managed",
+          "config_loaded_at",
+          "config_stale",
           "resolved_timezone",
           "timezone_source",
           "tasks",

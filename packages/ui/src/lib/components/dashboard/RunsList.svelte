@@ -28,6 +28,7 @@
     import Button from "../Button.svelte";
     import Badge from "../Badge.svelte";
     import EmptyState from "../EmptyState.svelte";
+    import Tooltip from "../Tooltip.svelte";
     import type { Run } from "./types.js";
     import type { RunSelector } from "@runwisp/common";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
@@ -50,6 +51,7 @@
         taskNameFilter,
         headerLabel = "Run History",
         emptyText = "No runs yet",
+        emptyDescription,
         bulkActions = false,
         onBulkCancel,
         onBulkDelete,
@@ -67,6 +69,7 @@
         taskNameFilter?: string;
         headerLabel?: string;
         emptyText?: string;
+        emptyDescription?: string;
         bulkActions?: boolean;
         onBulkCancel?: BulkHandler;
         onBulkDelete?: BulkHandler;
@@ -341,7 +344,13 @@
 
     <div bind:this={scrollElement} class="min-h-0 flex-1 overflow-y-auto p-2">
         {#if items.length === 0 && !loading}
-            <EmptyState title={emptyText} icon={Clock} iconSize={32} class="py-8" />
+            <EmptyState
+                title={emptyText}
+                description={emptyDescription}
+                icon={Clock}
+                iconSize={32}
+                class="py-8"
+            />
         {:else}
             <div
                 style:height="{$virtualizer.getTotalSize()}px"
@@ -463,7 +472,15 @@
 
                                     <div class="flex items-center justify-between text-xs">
                                         <div class="flex items-center gap-2 text-on-surface-muted">
-                                            <span class="capitalize">{runDisplayStatus(run)}</span>
+                                            <Tooltip
+                                                content={config.description}
+                                                position="right"
+                                                wide
+                                            >
+                                                <span class="capitalize"
+                                                    >{runDisplayStatus(run)}</span
+                                                >
+                                            </Tooltip>
                                             {#if run.instance_index > 0}
                                                 <span
                                                     class="font-mono text-2xs text-on-surface-faint"

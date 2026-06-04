@@ -39,6 +39,14 @@ func (u *unsupportedInstaller) Status(_ context.Context, _ InstallOptions) (Stat
 	return Status{}, ErrUnsupported
 }
 
+func (u *unsupportedInstaller) Stop(_ context.Context, _ InstallOptions) error {
+	return ErrUnsupported
+}
+
+func (u *unsupportedInstaller) Restart(_ context.Context, _ InstallOptions) error {
+	return ErrUnsupported
+}
+
 // Render is the --print contract; on unsupported OSes it just errors.
 func (u *unsupportedInstaller) Render(_ InstallOptions) ([]byte, error) {
 	return nil, ErrUnsupported

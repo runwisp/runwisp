@@ -44,6 +44,7 @@ func TestRenderSystemdUnit_Golden(t *testing.T) {
 		"Environment=HOME=/home/alice",
 		"Environment=PATH=/usr/local/bin:/usr/bin:/bin",
 		"Environment=LANG=C.UTF-8",
+		"Environment=RUNWISP_SERVICE_MANAGED=1",
 		"",
 		"[Install]",
 		"WantedBy=default.target",
@@ -83,6 +84,7 @@ func TestRenderLaunchdPlist_Golden(t *testing.T) {
 	assert.Contains(t, s, "<key>SuccessfulExit</key>")
 	assert.Contains(t, s, "<key>StandardOutPath</key>")
 	assert.Contains(t, s, "<key>EnvironmentVariables</key>")
+	assert.Contains(t, s, "<key>RUNWISP_SERVICE_MANAGED</key>")
 
 	// Marker round-trip: extractMarkers must recognise the file
 	// we just rendered.

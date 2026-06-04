@@ -15,6 +15,7 @@
     import Button from "../Button.svelte";
     import EmptyState from "../EmptyState.svelte";
     import LogConsole from "../LogConsole.svelte";
+    import Tooltip from "../Tooltip.svelte";
     import type { Run } from "./types.js";
     import type { LogEvent, LogSlice } from "../../log-console/types.js";
     import { formatDateTime } from "../../utils/format.js";
@@ -119,15 +120,17 @@
                                 {/if}
                             {/if}
                         </h2>
-                        <Badge
-                            variant={runDisplayStatus(run) === "success"
-                                ? "success"
-                                : run.status === "running"
-                                  ? "info"
-                                  : "danger"}
-                        >
-                            {runDisplayStatus(run).toUpperCase()}
-                        </Badge>
+                        <Tooltip content={config.description} position="bottom" wide>
+                            <Badge
+                                variant={runDisplayStatus(run) === "success"
+                                    ? "success"
+                                    : run.status === "running"
+                                      ? "info"
+                                      : "danger"}
+                            >
+                                {runDisplayStatus(run).toUpperCase()}
+                            </Badge>
+                        </Tooltip>
                         {#if canDelete}
                             <Button
                                 variant="ghost"
