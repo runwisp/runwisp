@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -65,65 +64,13 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	if ce.WorkingDir != "" {
 		cmd.Dir = ce.WorkingDir
 	}
-	// Mirror ShellBackend: own process group so SIGTERM/SIGKILL reaches the
-	// whole subtree (docker CLI + grandchildren it may spawn).
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// Compose CLI inherits the daemon's env so users' DOCKER_HOST etc. work;
 	// task env is passed to the container itself via -e flags (see
-	// buildComposeArgs). Note: we deliberately do NOT overlay task.Env onto
-	// the compose CLI process, only into the target container.
+	// buildComposeArgs).
 	cmd.Env = os.Environ()
 
-	grace := task.GracefulStop
-	done := make(chan struct{})
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		pgid := cmd.Process.Pid
-		if grace <= 0 {
-			return syscall.Kill(-pgid, syscall.SIGKILL)
-		}
-		_ = syscall.Kill(-pgid, syscall.SIGTERM)
-		go func() {
-			select {
-			case <-time.After(grace):
-				_ = syscall.Kill(-pgid, syscall.SIGKILL)
-			case <-done:
-			}
-		}()
-		return nil
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stderr pipe: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start docker compose: %w", err)
-	}
-
-	var waitOnce sync.Once
-	return &Process{
-		Stdout: stdout,
-		Stderr: stderr,
-		Wait: func() (int, error) {
-			err := cmd.Wait()
-			waitOnce.Do(func() { close(done) })
-			return exitCodeFromError(err), err
-		},
-		ForceKill: func() {
-			if cmd.Process != nil {
-				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			}
-		},
-	}, nil
+	return startCmd(cmd, task.GracefulStop, "start docker compose")
 }
 
 // buildComposeArgs assembles the argv tail (after the docker binary) for

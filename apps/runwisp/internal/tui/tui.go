@@ -260,16 +260,6 @@ func printDotField(w io.Writer, label, value string) {
 	)
 }
 
-// PrintShutdown renders the shutdown banner.
-func PrintShutdown() {
-	w := os.Stderr
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  %s %s\n",
-		brandMark.Render("⟡"),
-		dimStyle.Render("Shutting down..."),
-	)
-}
-
 // PrintShutdownComplete renders the goodbye message.
 func PrintShutdownComplete() {
 	w := os.Stderr

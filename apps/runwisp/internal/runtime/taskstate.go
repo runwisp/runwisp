@@ -66,7 +66,7 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 	case model.PolicySkip:
 		return actionRejected, fmt.Errorf("task already running, skipping (policy: skip)")
 	case model.PolicyQueue:
-		queueMax := getQueueMax(ts.task)
+		queueMax := ts.task.QueueMax
 		if queueMax > 0 && len(ts.queue) >= queueMax {
 			return actionQueueFull, fmt.Errorf("queue full (%d pending) for task %s", queueMax, ts.task.Name)
 		}
@@ -113,11 +113,4 @@ func (m *defaultTaskManager) getConcurrencyLimit(task *model.Task) int {
 		return DefaultConcurrencyLimit
 	}
 	return task.MaxConcurrent
-}
-
-// getQueueMax returns the configured queue_max for a queue-policy task. The
-// config layer applies a default; the zero return means "unbounded" only if
-// the operator deliberately sets queue_max=0 (which the validator rejects).
-func getQueueMax(task *model.Task) int {
-	return task.QueueMax
 }

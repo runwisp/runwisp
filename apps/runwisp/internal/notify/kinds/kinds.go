@@ -14,6 +14,7 @@ var AllKindStrings = []string{
 	"run.timeout",
 	"run.stopped",
 	"run.crashed",
+	"log.disk_pressure",
 	"notify.delivery_failed",
 }
 

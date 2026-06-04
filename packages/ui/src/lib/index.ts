@@ -43,8 +43,6 @@ export { default as AccordionItem } from "./components/AccordionItem.svelte";
 export { default as Breadcrumb } from "./components/Breadcrumb.svelte";
 export { default as Pagination } from "./components/Pagination.svelte";
 export { default as Tabs } from "./components/Tabs.svelte";
-export { default as ThemeToggle } from "./components/ThemeToggle.svelte";
-
 export { default as Avatar } from "./components/Avatar.svelte";
 export { default as Badge } from "./components/Badge.svelte";
 export { default as Card } from "./components/Card.svelte";
@@ -71,8 +69,6 @@ export { default as ToastContainer } from "./components/ToastContainer.svelte";
 export { default as Tooltip } from "./components/Tooltip.svelte";
 
 export { default as CodeBlock } from "./components/CodeBlock.svelte";
-export { default as FeatureCard } from "./components/FeatureCard.svelte";
-export { default as FeatureGrid } from "./components/FeatureGrid.svelte";
 export { default as TaskCard } from "./components/TaskCard.svelte";
 export type { TaskCardAccent } from "./components/TaskCard.svelte";
 

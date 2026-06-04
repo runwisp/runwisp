@@ -351,7 +351,7 @@ func (s *seeder) execOne(ctx context.Context, spec *runSpec) error {
 	t0 = time.Now()
 	res := exec.Execute(runCtx, spec.task, spec.run) // writes the real log + finalized sidecars
 
-	reason := resultReason(res)
+	reason := res.EndReason()
 	if spec.forceReason != nil {
 		reason = *spec.forceReason
 	}
@@ -383,24 +383,6 @@ func (s *seeder) runContext(ctx context.Context, task *model.Task) (context.Cont
 		return context.WithTimeout(ctx, task.Timeout)
 	}
 	return context.WithCancel(ctx)
-}
-
-// resultReason maps an executor result to a terminal reason. It mirrors
-// resolveRunOutcome in internal/runtime/manager.go (the canonical mapping),
-// kept as a local copy here to avoid importing runtime (dependency cycle).
-func resultReason(res *executor.ExecuteResult) model.EndReason {
-	switch {
-	case res.TimedOut:
-		return model.ReasonTimeout
-	case res.KilledByPolicy:
-		return model.ReasonLogOverflow
-	case res.Stopped:
-		return model.ReasonStopped
-	case res.ExitCode == 0:
-		return model.ReasonSuccess
-	default:
-		return model.ReasonFailed
-	}
 }
 
 // serviceUptime returns a believable uptime for a seeded service instance run.

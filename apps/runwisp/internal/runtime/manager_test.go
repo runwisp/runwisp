@@ -584,8 +584,8 @@ func TestResolveRunOutcomeKilledByPolicy(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := resolveRunOutcome(&tc.result)
-			assert.Equal(t, tc.wantReason, got.endReason)
+			got := tc.result.EndReason()
+			assert.Equal(t, tc.wantReason, got)
 		})
 	}
 }

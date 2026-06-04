@@ -94,21 +94,28 @@ func expandComposeBlocks(cfg *Config, baseDir string) error {
 	return nil
 }
 
+// composeBlockWire is the TOML-decodable form of the scalar/array keys in a
+// [compose.<alias>] table. Sub-tables (per-service overrides) are separated
+// before decoding.
+type composeBlockWire struct {
+	File        string   `toml:"file,omitempty"`
+	Include     []string `toml:"include,omitempty"`
+	Exclude     []string `toml:"exclude,omitempty"`
+	Mode        string   `toml:"mode,omitempty"`
+	Group       string   `toml:"group,omitempty"`
+	ProjectName string   `toml:"project_name,omitempty"`
+	Profiles    []string `toml:"profiles,omitempty"`
+	EnvFile     []string `toml:"env_file,omitempty"`
+	WorkingDir  string   `toml:"working_dir,omitempty"`
+	WithDeps    bool     `toml:"with_deps,omitempty"`
+	Pull        string   `toml:"pull,omitempty"`
+	NameFormat  string   `toml:"name_format,omitempty"`
+}
+
 // composeBlock is the destructured form of one [compose.<alias>] table.
 type composeBlock struct {
-	Alias       string
-	File        string
-	Include     []string
-	Exclude     []string
-	Mode        string
-	Group       string
-	ProjectName string
-	Profiles    []string
-	EnvFile     []string
-	WorkingDir  string
-	WithDeps    bool
-	Pull        string
-	NameFormat  string
+	composeBlockWire
+	Alias string
 
 	// Overrides keyed by compose-service name (post-include/post-exclude).
 	Overrides map[string]*composeServiceOverrideWire
@@ -203,22 +210,14 @@ func expandComposeAlias(alias string, raw map[string]any, baseDir string, existi
 // parseComposeBlock destructures the raw map into scalar fields + per-service
 // override sub-tables. Returns clean error messages naming the offending key.
 func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) {
-	block := &composeBlock{
-		Alias:      alias,
-		Mode:       model.ComposeModeServices,
-		Pull:       model.ComposePullMissing,
-		NameFormat: "{alias}.{service}",
-		Overrides:  make(map[string]*composeServiceOverrideWire),
-	}
+	scalars := make(map[string]any, len(composeReservedKeys))
+	overrides := make(map[string]*composeServiceOverrideWire)
 
 	for key, value := range raw {
 		if _, reserved := composeReservedKeys[key]; reserved {
-			if err := setComposeScalar(block, key, value); err != nil {
-				return nil, err
-			}
+			scalars[key] = value
 			continue
 		}
-		// Non-reserved key — must be a sub-table (per-service override).
 		subTable, ok := value.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("unknown key %q (not a per-service override table; reserved keys: %s)",
@@ -228,12 +227,29 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 		if err != nil {
 			return nil, err
 		}
-		block.Overrides[key] = override
+		overrides[key] = override
 	}
 
-	if block.File == "" && block.Mode != model.ComposeModeStack {
-		// File auto-discovery happens later. Stack mode is allowed without file.
+	wire, err := decodeComposeBlockWire(scalars)
+	if err != nil {
+		return nil, err
 	}
+
+	block := &composeBlock{
+		composeBlockWire: *wire,
+		Alias:            alias,
+		Overrides:        overrides,
+	}
+	if block.Mode == "" {
+		block.Mode = model.ComposeModeServices
+	}
+	if block.Pull == "" {
+		block.Pull = model.ComposePullMissing
+	}
+	if block.NameFormat == "" {
+		block.NameFormat = "{alias}.{service}"
+	}
+
 	if len(block.Include) > 0 && len(block.Exclude) > 0 {
 		return nil, fmt.Errorf("`include` and `exclude` are mutually exclusive")
 	}
@@ -264,82 +280,18 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 	return block, nil
 }
 
-func setComposeScalar(block *composeBlock, key string, value any) error {
-	switch key {
-	case "file":
-		s, err := asString(key, value)
-		if err != nil {
-			return err
-		}
-		block.File = s
-	case "include":
-		ss, err := asStringSlice(key, value)
-		if err != nil {
-			return err
-		}
-		block.Include = ss
-	case "exclude":
-		ss, err := asStringSlice(key, value)
-		if err != nil {
-			return err
-		}
-		block.Exclude = ss
-	case "mode":
-		s, err := asString(key, value)
-		if err != nil {
-			return err
-		}
-		block.Mode = s
-	case "group":
-		s, err := asString(key, value)
-		if err != nil {
-			return err
-		}
-		block.Group = s
-	case "project_name":
-		s, err := asString(key, value)
-		if err != nil {
-			return err
-		}
-		block.ProjectName = s
-	case "profiles":
-		ss, err := asStringSlice(key, value)
-		if err != nil {
-			return err
-		}
-		block.Profiles = ss
-	case "env_file":
-		ss, err := asStringSlice(key, value)
-		if err != nil {
-			return err
-		}
-		block.EnvFile = ss
-	case "working_dir":
-		s, err := asString(key, value)
-		if err != nil {
-			return err
-		}
-		block.WorkingDir = s
-	case "with_deps":
-		b, ok := value.(bool)
-		if !ok {
-			return fmt.Errorf("`with_deps` must be a bool, got %T", value)
-		}
-		block.WithDeps = b
-	case "pull":
-		s, err := asString(key, value)
-		if err != nil {
-			return err
-		}
-		block.Pull = s
-	case "name_format":
-		s, err := asString(key, value)
-		if err != nil {
-			return err
-		}
-		block.NameFormat = s
+func decodeComposeBlockWire(scalars map[string]any) (*composeBlockWire, error) {
+	buf, err := toml.Marshal(scalars)
+	if err != nil {
+		return nil, fmt.Errorf("compose block: %w", err)
 	}
-	return nil
+	var w composeBlockWire
+	dec := toml.NewDecoder(bytes.NewReader(buf))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&w); err != nil {
+		return nil, fmt.Errorf("compose block: %w", err)
+	}
+	return &w, nil
 }
 
 // decodeServiceOverride re-marshals the raw sub-table to TOML and decodes it
@@ -656,34 +608,6 @@ func resolveComposeFile(declared, baseDir string) (string, error) {
 	}
 	return "", fmt.Errorf("no compose file found in %s (searched: %s)",
 		baseDir, strings.Join(ComposeAutoDiscoveryFilenames, ", "))
-}
-
-func asString(key string, value any) (string, error) {
-	s, ok := value.(string)
-	if !ok {
-		return "", fmt.Errorf("`%s` must be a string, got %T", key, value)
-	}
-	return s, nil
-}
-
-func asStringSlice(key string, value any) ([]string, error) {
-	raw, ok := value.([]any)
-	if !ok {
-		// go-toml/v2 might pass through as []string directly in some shapes.
-		if ss, alt := value.([]string); alt {
-			return ss, nil
-		}
-		return nil, fmt.Errorf("`%s` must be an array of strings, got %T", key, value)
-	}
-	out := make([]string, len(raw))
-	for i, v := range raw {
-		s, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("`%s`[%d] must be a string, got %T", key, i, v)
-		}
-		out[i] = s
-	}
-	return out, nil
 }
 
 func sortedKeys(m map[string]struct{}) []string {

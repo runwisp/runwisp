@@ -59,13 +59,13 @@ func TestStreamManager_OneEventPerLine(t *testing.T) {
 
 	eb := events.NewEventBus()
 	drain := captureLogEvents(t, eb)
-	sm := NewStreamManager(eb)
+	sm := &RoutingExecutor{eventBus: eb}
 
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}
 
 	source := strings.NewReader("alpha\nbeta\ngamma\n")
-	sm.StreamToFile(source, w, task, run, logutil.StreamStdout)
+	sm.streamToFile(source, w, task, run, logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	got := drain()
@@ -97,12 +97,12 @@ func TestStreamManager_StderrTaggedNoPrefixInText(t *testing.T) {
 
 	eb := events.NewEventBus()
 	drain := captureLogEvents(t, eb)
-	sm := NewStreamManager(eb)
+	sm := &RoutingExecutor{eventBus: eb}
 
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}
 
-	sm.StreamToFile(strings.NewReader("uh oh\n"), w, task, run, logutil.StreamStderr)
+	sm.streamToFile(strings.NewReader("uh oh\n"), w, task, run, logutil.StreamStderr)
 	require.NoError(t, w.Close())
 
 	got := drain()
@@ -132,7 +132,7 @@ func TestStreamManager_OversizedLineSplit(t *testing.T) {
 
 	eb := events.NewEventBus()
 	drain := captureLogEvents(t, eb)
-	sm := NewStreamManager(eb)
+	sm := &RoutingExecutor{eventBus: eb}
 
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}
@@ -140,7 +140,7 @@ func TestStreamManager_OversizedLineSplit(t *testing.T) {
 	// 200 KB of one logical line, no newline until the very end → forces
 	// LineBuffer overflow flushes (each ~64KB).
 	huge := strings.Repeat("x", 200*1024) + "\n"
-	sm.StreamToFile(strings.NewReader(huge), w, task, run, logutil.StreamStdout)
+	sm.streamToFile(strings.NewReader(huge), w, task, run, logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	got := drain()

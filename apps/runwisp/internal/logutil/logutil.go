@@ -18,24 +18,15 @@ import (
 // Used by both the executor (writer) and server (reader) packages.
 const LogIndexInterval = 1024
 
-// RunLogPath generates a human-readable, filesystem-friendly log path.
+// ResolveRunLogPath computes the log path for a run from its fields.
 // Format: {logDir}/{sanitizedTask}/{YYYYMMDD}_{HHMMSS}_{ulidSuffix}.log
 // Timestamps are formatted in UTC so the on-disk cadence stays stable when
 // the host timezone changes (DST flips, traveling laptops, container moves).
-func RunLogPath(logDir, sanitizedTaskName, runID string, createdAt time.Time) string {
+func ResolveRunLogPath(logDir, taskName, runID string, createdAt time.Time) string {
+	sanitized := model.SanitizeTaskName(taskName)
 	ts := createdAt.UTC().Format("20060102_150405")
 	suffix := runID[len(runID)-4:]
-	return filepath.Join(logDir, sanitizedTaskName, fmt.Sprintf("%s_%s.log", ts, suffix))
-}
-
-// TaskLogDir returns the subdirectory for a task's logs.
-func TaskLogDir(logDir, sanitizedTaskName string) string {
-	return filepath.Join(logDir, sanitizedTaskName)
-}
-
-// ResolveRunLogPath computes the log path for a run from its fields.
-func ResolveRunLogPath(logDir, taskName, runID string, createdAt time.Time) string {
-	return RunLogPath(logDir, model.SanitizeTaskName(taskName), runID, createdAt)
+	return filepath.Join(logDir, sanitized, fmt.Sprintf("%s_%s.log", ts, suffix))
 }
 
 // RemoveLogFiles removes a log file and its associated index/rotation artifacts.

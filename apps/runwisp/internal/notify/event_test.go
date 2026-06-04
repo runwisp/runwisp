@@ -17,13 +17,6 @@ func TestKind_TitleCoversAllKinds(t *testing.T) {
 	}
 }
 
-func TestKind_FingerprintTokenCoversAllKinds(t *testing.T) {
-	for _, k := range AllKinds {
-		token := k.FingerprintToken()
-		assert.NotEmpty(t, token, "Kind.FingerprintToken() must return a non-empty string for %s", k)
-	}
-}
-
 func TestKindNotifyDeliveryFailed_Title_WithChannel(t *testing.T) {
 	ev := &Event{
 		Kind:  KindNotifyDeliveryFailed,

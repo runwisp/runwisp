@@ -9,19 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// WalkANSISegments splits s into segments and calls fn for each one.
-//
-// fn receives the raw segment text and whether the segment is printable content
-// (printable=true) or an ANSI/C1 escape sequence (printable=false). Escape
-// sequences carry zero visual width; printable segments carry the visible
-// characters that consume terminal columns.
-//
-// Supported sequences:
-//   - CSI: ESC [ … final-byte  (covers all SGR colour codes)
-//   - OSC: ESC ] … BEL or ESC ]  … ST
-//   - DCS / APC / PM / SOS: ESC P/_ ^/X … ST
-//   - Any other two-byte ESC + char sequence
-func WalkANSISegments(s string, fn func(seg string, printable bool)) {
+func walkANSISegments(s string, fn func(seg string, printable bool)) {
 	runes := []rune(s)
 	n := len(runes)
 	segStart := 0
@@ -119,7 +107,7 @@ func SliceLineColumns(s string, start, cols int) (string, bool) {
 	}
 	s = strings.ReplaceAll(s, "\t", "    ")
 	cs := &columnSlicer{start: start, cols: cols}
-	WalkANSISegments(s, cs.processSegment)
+	walkANSISegments(s, cs.processSegment)
 	return cs.buf.String(), cs.beyond
 }
 

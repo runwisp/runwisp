@@ -57,10 +57,6 @@ func respondBadRequest(resp http.ResponseWriter, publicMsg string) {
 	respondError(resp, http.StatusBadRequest, publicMsg, nil)
 }
 
-func respondNotFound(resp http.ResponseWriter, publicMsg string) {
-	respondError(resp, http.StatusNotFound, publicMsg, nil)
-}
-
 func respondForbidden(resp http.ResponseWriter, publicMsg string) {
 	respondError(resp, http.StatusForbidden, publicMsg, nil)
 }
