@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"log/slog"
+	"strings"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
@@ -39,6 +41,21 @@ type ExecuteResult struct {
 	KilledByPolicy bool // log_on_full = "kill_task" tripped — recorded as failed, not stopped
 }
 
+func (r *ExecuteResult) EndReason() model.EndReason {
+	switch {
+	case r.TimedOut:
+		return model.ReasonTimeout
+	case r.KilledByPolicy:
+		return model.ReasonLogOverflow
+	case r.Stopped:
+		return model.ReasonStopped
+	case r.ExitCode == 0:
+		return model.ReasonSuccess
+	default:
+		return model.ReasonFailed
+	}
+}
+
 // RoutingExecutor dispatches task execution to the appropriate Backend
 // based on the task's execution type, while managing log files and events.
 type RoutingExecutor struct {
@@ -48,8 +65,7 @@ type RoutingExecutor struct {
 	eventBus         events.EventBus
 	backends         map[string]Backend
 	availability     Availability
-	diskChecker      *DiskChecker
-	streamer         *StreamManager
+	minFreeDisk      int64
 	clock            func() time.Time
 }
 
@@ -119,8 +135,7 @@ func New(opts Options) Executor {
 		eventBus:     opts.EventBus,
 		backends:     backends,
 		availability: avail,
-		diskChecker:  NewDiskChecker(opts.LogDir, opts.MinFreeDisk),
-		streamer:     NewStreamManager(opts.EventBus),
+		minFreeDisk:  opts.MinFreeDisk,
 		clock:        clock,
 	}
 }
@@ -145,7 +160,7 @@ func (r *RoutingExecutor) SetOnProcessStarted(callback func(runID string, forceK
 
 // Execute resolves the execution backend and runs the task, streaming output.
 func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult {
-	if err := r.diskChecker.Check(); err != nil {
+	if err := r.checkDisk(); err != nil {
 		return &ExecuteResult{ExitCode: -1, Error: err}
 	}
 
@@ -248,7 +263,7 @@ func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, wr
 				slog.Error("Recovered from panic in stream", "stream", stream, "task", task.Name, "err", rec)
 			}
 		}()
-		r.streamer.StreamToFile(reader, writer, task, run, stream)
+		r.streamToFile(reader, writer, task, run, stream)
 	}()
 }
 
@@ -295,7 +310,7 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		MaxSize:     task.LogMaxSize,
 		Overflow:    task.LogOnFull,
 		CancelFunc:  cancelFunc,
-		MinFreeDisk: r.diskChecker.minFreeDisk,
+		MinFreeDisk: r.minFreeDisk,
 		LogDir:      r.logDir,
 		Now:         r.clock,
 		OnDiskPressure: func(free, min int64, killed bool) {
@@ -316,4 +331,74 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		return nil, "", nil, nil, err
 	}
 	return writer, logPath, cancelCtx, cancelFunc, nil
+}
+
+func (r *RoutingExecutor) checkDisk() error {
+	if err := os.MkdirAll(r.logDir, 0755); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+	if r.minFreeDisk > 0 {
+		if free := freeDiskSpace(r.logDir); free >= 0 && free < r.minFreeDisk {
+			return fmt.Errorf(
+				"insufficient disk space: %s free, minimum %s required",
+				config.FormatByteSize(free), config.FormatByteSize(r.minFreeDisk))
+		}
+	}
+	return nil
+}
+
+func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
+	externalExecutionID := ""
+	if run.ExternalExecutionID != nil {
+		externalExecutionID = *run.ExternalExecutionID
+	}
+
+	nowMs := func() int64 { return time.Now().UnixMilli() }
+
+	incomplete := false
+
+	publish := func(text string, lineNum int64, continued bool) {
+		if r.eventBus == nil {
+			return
+		}
+		r.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
+			TaskName:            task.Name,
+			RunID:               run.ID,
+			ExternalExecutionID: externalExecutionID,
+			LineNum:             lineNum,
+			Timestamp:           nowMs(),
+			Stream:              stream,
+			Text:                text,
+			Continued:           continued,
+		})
+	}
+
+	lineBuf := NewLineBuffer(func(line string) {
+		isContinuation := incomplete
+		incomplete = !strings.HasSuffix(line, "\n")
+		text := strings.TrimSuffix(line, "\n")
+
+		n, err := writer.WriteLineEvent(text, stream)
+		if err != nil {
+			slog.Warn("Failed to write log line to file", "stream", stream, "err", err)
+			return
+		}
+		if n < 0 {
+			return
+		}
+		publish(text, n, isContinuation)
+	})
+
+	buf := make([]byte, StreamReadBufferSize)
+	for {
+		n, err := reader.Read(buf)
+		if n > 0 {
+			lineBuf.Write(buf[:n])
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	lineBuf.Flush()
 }

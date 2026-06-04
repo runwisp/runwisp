@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 )
 
 // Clocker is the time source used by the dispatcher and coalescer. The
@@ -169,4 +171,23 @@ func (d *dispatcher) executeOne(ctx context.Context, id string, ch Channel, ev *
 // a per-action queue was full. Cleared only by service restart.
 func (d *dispatcher) DroppedActionCount() uint64 {
 	return d.droppedAction.Load()
+}
+
+func reportDeliveryFailure(sink SyntheticIngester, clock Clocker, actionID string, original *Event, cause error) {
+	syn := &Event{
+		ID:        ulid.Make().String(),
+		Kind:      KindNotifyDeliveryFailed,
+		Severity:  SevWarn,
+		Timestamp: clock.Now(),
+		Reason:    cause.Error(),
+		Extra: map[string]any{
+			"channel":       actionID,
+			"original_kind": string(original.Kind),
+			"task_name":     original.TaskName,
+		},
+	}
+	if original != nil {
+		syn.TaskName = original.TaskName
+	}
+	sink.IngestSynthetic(syn)
 }

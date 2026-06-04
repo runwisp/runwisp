@@ -206,7 +206,7 @@ func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, resul
 }
 
 func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
-	queueMax := getQueueMax(ts.task)
+	queueMax := ts.task.QueueMax
 	if queueMax > 0 && len(ts.queue) >= queueMax {
 		r.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(r)
@@ -466,7 +466,13 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	result := m.executor.Execute(ctx, task, run)
 
 	endTime := m.clock()
-	outcome := resolveRunOutcome(result)
+	outcome := runOutcome{
+		endReason: result.EndReason(),
+		eventType: events.EventRunCompleted,
+	}
+	if outcome.endReason != model.ReasonSuccess {
+		outcome.eventType = events.EventRunFailed
+	}
 	if m.deadlineExceeded.Load() {
 		// Daemon shutdown ran past its bound — the run was force-killed by
 		// the shutdown coordinator. Override the per-task outcome so the
@@ -523,33 +529,6 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 type runOutcome struct {
 	endReason model.EndReason
 	eventType events.EventType
-}
-
-func resolveRunOutcome(result *executor.ExecuteResult) runOutcome {
-	var reason model.EndReason
-	switch {
-	case result.TimedOut:
-		reason = model.ReasonTimeout
-	case result.KilledByPolicy:
-		// log_on_full = "kill_task" tripped: the run failed to stay inside
-		// its log budget. Recorded as log_overflow so the cause is visible
-		// at a glance; still treated as a failure for retry and notification
-		// policy.
-		reason = model.ReasonLogOverflow
-	case result.Stopped:
-		reason = model.ReasonStopped
-	case result.ExitCode == 0:
-		reason = model.ReasonSuccess
-	default:
-		reason = model.ReasonFailed
-	}
-
-	eventType := events.EventRunCompleted
-	if reason != model.ReasonSuccess {
-		eventType = events.EventRunFailed
-	}
-
-	return runOutcome{endReason: reason, eventType: eventType}
 }
 
 func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.Run) {

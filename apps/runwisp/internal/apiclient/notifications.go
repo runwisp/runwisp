@@ -4,25 +4,17 @@
 package apiclient
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/runwisp/runwisp/internal/server"
 )
 
-// NotificationStreamEvent is a parsed SSE event from /api/notifications/stream.
-// Type is one of "notification.created", "notification.updated",
-// "notifications.unread_count_changed", or "ping".
-type NotificationStreamEvent struct {
-	Type string
-	Data json.RawMessage
-}
+// NotificationStreamEvent is an SSEEvent from /api/notifications/stream.
+type NotificationStreamEvent = SSEEvent
 
 // ListNotifications fetches one page of notifications. Pass before="" for the
 // most recent page; subsequent pages use NextCursor from the previous response.
@@ -83,45 +75,8 @@ func (c *Client) StreamNotifications(ctx context.Context) (<-chan NotificationSt
 		return nil, err
 	}
 	ch := make(chan NotificationStreamEvent, 32)
-	go c.streamNotificationsLoop(ctx, resp.Body, ch)
+	go simpleSSELoop(ctx, resp.Body, ch)
 	return ch, nil
-}
-
-func (c *Client) streamNotificationsLoop(ctx context.Context, body io.ReadCloser, ch chan<- NotificationStreamEvent) {
-	defer close(ch)
-	defer body.Close()
-
-	scanner := bufio.NewScanner(body)
-	var eventType string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if strings.HasPrefix(line, "event: ") {
-			eventType = strings.TrimPrefix(line, "event: ")
-			continue
-		}
-
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
-			if eventType != "" {
-				select {
-				case ch <- NotificationStreamEvent{
-					Type: eventType,
-					Data: json.RawMessage(data),
-				}:
-				case <-ctx.Done():
-					return
-				}
-				eventType = ""
-			}
-			continue
-		}
-
-		if line == "" {
-			eventType = ""
-		}
-	}
 }
 
 // DecodeNotificationEnvelope unwraps a notification.created or

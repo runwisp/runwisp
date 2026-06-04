@@ -20,7 +20,7 @@ import (
 
 // Load reads, decodes, defaults, and validates a runwisp.toml file.
 func Load(path string) (*Config, error) {
-	cfg, err := LoadRaw(path)
+	cfg, err := loadRaw(path)
 	if err != nil {
 		return nil, err
 	}
@@ -132,9 +132,7 @@ func gracefulStopWarnings(cfg *Config) []string {
 	return warnings
 }
 
-// LoadRaw reads and decodes a runwisp.toml file without applying defaults or
-// running validation.
-func LoadRaw(path string) (*Config, error) {
+func loadRaw(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)

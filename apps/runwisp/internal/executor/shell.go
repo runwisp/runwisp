@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 
@@ -30,10 +31,6 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 	}
 
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", shell.Script)
-	// Setpgid puts the child in its own process group so SIGTERM/SIGKILL can
-	// be delivered to the entire group (including grandchildren spawned by
-	// the script) rather than just the /bin/sh leader.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// Only set cmd.Env when the task asked for overlays — leaving it nil
 	// preserves Go's default of inheriting the daemon's env verbatim.
@@ -41,7 +38,16 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 		cmd.Env = buildProcessEnv(os.Environ(), task.Env, task.Secrets)
 	}
 
-	grace := task.GracefulStop
+	return startCmd(cmd, task.GracefulStop, "start command")
+}
+
+// startCmd sets up process-group isolation, graceful-stop cancellation, stdio
+// pipes, and starts the command. It is the shared plumbing for ShellBackend
+// and ComposeBackend — callers configure cmd.Env, cmd.Dir, and the argv
+// before handing off.
+func startCmd(cmd *exec.Cmd, grace time.Duration, startErrPrefix string) (*Process, error) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
 	done := make(chan struct{})
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
@@ -51,9 +57,6 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 		if grace <= 0 {
 			return syscall.Kill(-pgid, syscall.SIGKILL)
 		}
-		// Politely ask the group to exit; escalate to SIGKILL if it overstays
-		// its grace period. The done channel cancels the SIGKILL when the
-		// process exits cleanly during the grace window.
 		_ = syscall.Kill(-pgid, syscall.SIGTERM)
 		go func() {
 			select {
@@ -69,22 +72,22 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 	if err != nil {
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
-
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start command: %w", err)
+		return nil, fmt.Errorf("%s: %w", startErrPrefix, err)
 	}
 
+	var waitOnce sync.Once
 	return &Process{
 		Stdout: stdout,
 		Stderr: stderr,
 		Wait: func() (int, error) {
 			err := cmd.Wait()
-			close(done)
+			waitOnce.Do(func() { close(done) })
 			return exitCodeFromError(err), err
 		},
 		ForceKill: func() {
@@ -95,7 +98,6 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 	}, nil
 }
 
-// exitCodeFromError extracts the process exit code from an exec error.
 func exitCodeFromError(err error) int {
 	if err == nil {
 		return 0

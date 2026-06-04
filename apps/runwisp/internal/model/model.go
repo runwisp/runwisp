@@ -226,9 +226,3 @@ type TaskRegistration struct {
 	TaskName    string
 	FirstSeenAt time.Time
 }
-
-// ConfigEntry stores a named daemon configuration value persisted in the database.
-type ConfigEntry struct {
-	Key   string
-	Value string
-}

@@ -65,21 +65,11 @@ func ShouldRetry(task *model.Task, run *model.Run) bool {
 
 // ComputeRetryDelay calculates the delay before the next retry attempt.
 func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
-	baseDelay := task.RetryDelay
-	if baseDelay <= 0 {
-		baseDelay = 5 * time.Second
+	base := task.RetryDelay
+	if base <= 0 {
+		base = 5 * time.Second
 	}
-
-	switch task.RetryBackoff {
-	case model.BackoffExponential:
-		delay := baseDelay * (1 << min(attempt, 30))
-		return min(delay, retryDelayCap)
-	case model.BackoffLinear:
-		delay := baseDelay * time.Duration(attempt+1)
-		return min(delay, retryDelayCap)
-	default:
-		return baseDelay
-	}
+	return computeBackoff(task.RetryBackoff, base, attempt, retryDelayCap)
 }
 
 // ComputeRestartDelay calculates the delay before a service instance is
@@ -94,20 +84,21 @@ func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
 	if attempt <= 0 {
 		return base
 	}
-	switch task.RestartBackoff {
+	return computeBackoff(task.RestartBackoff, base, attempt, RestartBackoffCap)
+}
+
+func computeBackoff(strategy string, base time.Duration, attempt int, cap time.Duration) time.Duration {
+	var delay time.Duration
+	switch strategy {
 	case model.BackoffExponential:
-		delay := base * (1 << min(attempt, 30))
-		if delay > RestartBackoffCap || delay <= 0 {
-			return RestartBackoffCap
-		}
-		return delay
+		delay = base * (1 << min(attempt, 30))
 	case model.BackoffLinear:
-		delay := base * time.Duration(attempt+1)
-		if delay > RestartBackoffCap || delay <= 0 {
-			return RestartBackoffCap
-		}
-		return delay
+		delay = base * time.Duration(attempt+1)
 	default:
 		return base
 	}
+	if delay > cap || delay <= 0 {
+		return cap
+	}
+	return delay
 }

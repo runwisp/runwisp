@@ -22,7 +22,12 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
+// ErrNotFound is returned when a requested record does not exist.
+var ErrNotFound = errors.New("record not found")
+
 const (
+	ConfigKeyFingerprint = "fingerprint"
+
 	MaxSearchQueryLength = 100
 	RetentionBatchSize   = 1000
 	SQLiteBusyTimeout    = 5000
@@ -51,6 +56,28 @@ type RunRepository interface {
 	ResolveSelectorIDs(ctx context.Context, sel model.RunSelector, statusFilter string) ([]RunRef, error)
 	PurgeExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error)
 	Close() error
+}
+
+// ConfigRepository stores and retrieves named daemon configuration values.
+type ConfigRepository interface {
+	GetConfigValue(ctx context.Context, key string) (string, bool, error)
+	SetConfigValue(ctx context.Context, key, value string) error
+}
+
+// PendingLogUploadRepository persists dispatch metadata so the daemon can
+// resume terminal log archival after a crash.
+type PendingLogUploadRepository interface {
+	UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error
+	DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error
+	ListPendingLogUploads(ctx context.Context) ([]model.PendingLogUpload, error)
+}
+
+// Database is the full persistent store for the daemon: runs + configuration + notifications.
+type Database interface {
+	RunRepository
+	ConfigRepository
+	NotificationRepository
+	PendingLogUploadRepository
 }
 
 // SQLiteDatabase wraps persistence concerns for runs and configuration. The

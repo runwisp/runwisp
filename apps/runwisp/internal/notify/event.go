@@ -85,12 +85,6 @@ func (k Kind) Title(ev *Event) string {
 	}
 }
 
-// FingerprintToken returns the stable token used by the coalescer to bucket
-// events of this Kind. Must be updated when AllKinds grows.
-func (k Kind) FingerprintToken() string {
-	return string(k)
-}
-
 // AllSeverities mirrors AllKinds for severity validation.
 var AllSeverities = []Severity{SevInfo, SevWarn, SevError}
 

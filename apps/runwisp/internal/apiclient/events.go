@@ -30,47 +30,8 @@ func (c *Client) StreamRunEvents(ctx context.Context) (<-chan RunStreamEvent, er
 	}
 
 	ch := make(chan RunStreamEvent, 32)
-	go c.streamRunEventsLoop(ctx, resp.Body, ch)
+	go simpleSSELoop(ctx, resp.Body, ch)
 	return ch, nil
-}
-
-func (c *Client) streamRunEventsLoop(ctx context.Context, body io.ReadCloser, ch chan<- RunStreamEvent) {
-	defer close(ch)
-	defer body.Close()
-
-	scanner := bufio.NewScanner(body)
-	var eventType string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if strings.HasPrefix(line, ssePrefixEvent) {
-			eventType = strings.TrimPrefix(line, ssePrefixEvent)
-			continue
-		}
-
-		if strings.HasPrefix(line, ssePrefixData) {
-			data := strings.TrimPrefix(line, ssePrefixData)
-			if eventType != "" {
-				evt := RunStreamEvent{
-					Type: eventType,
-					Data: json.RawMessage(data),
-				}
-				select {
-				case ch <- evt:
-				case <-ctx.Done():
-					return
-				}
-				eventType = ""
-			}
-			continue
-		}
-
-		// Empty line or comment — reset.
-		if line == "" {
-			eventType = ""
-		}
-	}
 }
 
 // LogStreamMsgKind discriminates the line-stream message types delivered to
@@ -217,10 +178,48 @@ func parseLogStreamFrame(event, data string) (LogStreamMsg, bool) {
 	return LogStreamMsg{}, false
 }
 
-// RunStreamEvent is the client-side SSE dispatch frame for the runs stream.
-// Type comes from the SSE `event:` field; Data is the raw wire payload.
-// No server-side envelope struct combines both, so this is a client concern.
-type RunStreamEvent struct {
+// SSEEvent is the client-side SSE dispatch frame: event type + raw JSON payload.
+type SSEEvent struct {
 	Type string
 	Data json.RawMessage
+}
+
+// RunStreamEvent is an SSEEvent from the /api/runs/stream endpoint.
+type RunStreamEvent = SSEEvent
+
+// simpleSSELoop is the shared parse loop for SSE streams that deliver
+// single-line data frames. It reads lines from body, pairs event:/data: into
+// SSEEvent values, and sends them on ch until the body closes or ctx cancels.
+func simpleSSELoop(ctx context.Context, body io.ReadCloser, ch chan<- SSEEvent) {
+	defer close(ch)
+	defer body.Close()
+
+	scanner := bufio.NewScanner(body)
+	var eventType string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, ssePrefixEvent) {
+			eventType = strings.TrimPrefix(line, ssePrefixEvent)
+			continue
+		}
+
+		if strings.HasPrefix(line, ssePrefixData) {
+			data := strings.TrimPrefix(line, ssePrefixData)
+			if eventType != "" {
+				select {
+				case ch <- SSEEvent{Type: eventType, Data: json.RawMessage(data)}:
+				case <-ctx.Done():
+					return
+				}
+				eventType = ""
+			}
+			continue
+		}
+
+		if line == "" {
+			eventType = ""
+		}
+	}
 }

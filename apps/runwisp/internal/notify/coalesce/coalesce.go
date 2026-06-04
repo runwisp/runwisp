@@ -288,5 +288,5 @@ func fingerprintKey(ev *notify.Event) string {
 		ok, _ := ev.Extra["original_kind"].(string)
 		extra = ch + "|" + ok
 	}
-	return ev.Kind.FingerprintToken() + "|" + ev.TaskName + "|" + extra
+	return string(ev.Kind) + "|" + ev.TaskName + "|" + extra
 }

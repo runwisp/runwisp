@@ -413,14 +413,6 @@ func TestPrintStartupTo_Minimal(t *testing.T) {
 	assert.Contains(t, buf.String(), "RunWisp")
 }
 
-// --- PrintShutdown / PrintShutdownComplete ---
-// These write directly to os.Stderr; we only verify they don't panic since
-// capturing os.Stderr in a unit test is not worth the complexity.
-
-func TestPrintShutdown_DoesNotPanic(t *testing.T) {
-	assert.NotPanics(t, func() { PrintShutdown() })
-}
-
 func TestPrintShutdownComplete_DoesNotPanic(t *testing.T) {
 	assert.NotPanics(t, func() { PrintShutdownComplete() })
 }

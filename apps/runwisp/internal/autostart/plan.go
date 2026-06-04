@@ -51,17 +51,6 @@ func SettingsHash(binary, config, dataDir, host string, port int) string {
 	return hashContent([]byte(repr))
 }
 
-// BinarySHAShort hashes the binary on disk and returns 12 hex chars.
-// Used so `service status` can tell whether the operator replaced the
-// binary since installing the unit.
-func BinarySHAShort(read func() ([]byte, error)) (string, error) {
-	data, err := read()
-	if err != nil {
-		return "", err
-	}
-	return hashContent(data), nil
-}
-
 // parsedUnit is what extractMarkers returns.
 type parsedUnit struct {
 	managed    bool

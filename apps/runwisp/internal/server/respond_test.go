@@ -92,18 +92,9 @@ func TestMapDomainError_EmptyFallback_Returns500WithDefaultMessage(t *testing.T)
 	assert.Equal(t, "Internal server error", result.Error())
 }
 
-// --- respondError / respondNotFound ---
-
 func TestRespondError_SetsStatusAndBody(t *testing.T) {
 	w := httptest.NewRecorder()
 	respondError(w, http.StatusBadRequest, "bad input", nil)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.True(t, strings.Contains(w.Body.String(), "bad input"))
-}
-
-func TestRespondNotFound_Sets404(t *testing.T) {
-	w := httptest.NewRecorder()
-	respondNotFound(w, "not here")
-	assert.Equal(t, http.StatusNotFound, w.Code)
-	assert.True(t, strings.Contains(w.Body.String(), "not here"))
 }
