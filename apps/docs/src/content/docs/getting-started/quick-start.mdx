@@ -11,7 +11,8 @@ RunWisp is one small Go binary. You list the shell commands you want
 to run in a `runwisp.toml`, and RunWisp takes care of the rest —
 firing jobs on cron, restarting services when they crash, and
 capturing every line of stdout and stderr so you can go back and
-look at what happened. There's a TUI in your terminal and a Web UI
+look at what happened. There's a [TUI](/getting-started/tui-tour/)
+in your terminal and a [Web UI](/getting-started/web-ui-tour/)
 in your browser for poking around. No external database, no agent,
 no sidecar.
 
@@ -116,13 +117,16 @@ Create a starter with one example task? [Y/n]
 ```
 
 Hit <kbd>Enter</kbd>. RunWisp writes a starter file, fires up its
-daemon in the background, and drops you into the **TUI**.
+daemon in the background, and drops you into the **TUI**. (The
+screenshot below shows a demo instance with some history; yours
+will start with just the `hello` task.)
 
-![TUI Home page on first start: ▸ ⮕ Open Web UI focused at the top, with the Web UI URL and an auto-generated password row below it.](../../../assets/screenshots/tui-home-default.png)
+![TUI Home page: sidebar with task groups, right pane showing Open Web UI row, Web UI URL, masked password, and a recent-activity table.](../../../assets/screenshots/tui-home.png)
 
 The Home page hands you two things worth remembering: the **Web UI
 URL** (`http://localhost:9477` out of the box) and an
-**auto-generated password** for logging in from the browser. You
+**[auto-generated password](/operations/auth/#the-password)** for
+logging in from the browser. You
 won't need the password to open the dashboard from this TUI — it
 shoves a logged-in session straight at your browser. But if you'll
 ever want to hit the dashboard from another machine, or from a
@@ -159,6 +163,9 @@ daemon with `runwisp daemon` instead of bare `runwisp`. That skips
 the scaffold prompt entirely and exits with a non-zero code if
 there's no `runwisp.toml`. Missing config fails loudly in your
 init scripts instead of hanging on a prompt nobody can answer.
+And when you're ready for the daemon to survive reboots,
+[`runwisp service install`](/operations/autostart/) wires it into
+systemd or launchd with one command.
 :::
 
 ## 3. Run the example task
@@ -178,9 +185,9 @@ to where your hands already are.
         The sidebar on the left lists every task and service in your
         config. Press <kbd>←</kbd> (or just click) to focus the
         sidebar, arrow down to `hello`, and hit <kbd>r</kbd>. The
-        exec view opens and `hello from runwisp` streams in live.
+        run detail view opens and the output streams in live.
 
-        ![TUI exec view mid-run for the `hello` task: run ID and elapsed time in the header, line-numbered log output streaming below.](../../../assets/screenshots/tui-exec-running.png)
+        ![TUI run detail view: header with task name, run ID, timestamp, duration, and status badge; line-numbered log output below.](../../../assets/screenshots/tui-run-detail.png)
 
         From here, <kbd>r</kbd> kicks off another run, <kbd>s</kbd>
         stops one that's still going, <kbd>d</kbd> downloads the
@@ -200,7 +207,8 @@ to where your hands already are.
         terminal and exits with the run's own exit code, so it slots
         cleanly into a script or a one-off command. If a daemon's
         running, it goes through the REST API. If not, it just runs
-        the task in-process from `runwisp.toml`.
+        the task in-process from `runwisp.toml`. Force one mode or
+        the other with `--daemon` / `--standalone`.
     </TabItem>
 
 </Tabs>
@@ -211,8 +219,9 @@ Press <kbd>Esc</kbd> to leave the exec view, arrow back up to
 `Home` in the sidebar, then highlight `⮕  Open Web UI` on the
 Home page and hit <kbd>Enter</kbd>. Your default browser opens the
 dashboard, already logged in. Behind the scenes, the TUI mints a
-single-use launch ticket and hands it to the browser, so your
-password never travels through the URL. On a host without a
+single-use
+[launch ticket](/getting-started/web-ui-tour/#open-from-the-tui), so
+your password never travels through the URL. On a host without a
 browser, the TUI just prints the URL — open it from another
 machine and sign in with the password you copied in step 2.
 
@@ -220,11 +229,11 @@ machine and sign in with the password you copied in step 2.
 
 Two knobs worth knowing while you're here:
 
-- Set `RUNWISP_PASSWORD` to pick your own password instead of the
-  generated one. The daemon reads it in memory only, never writes
-  it to disk, so it plays nicely with Docker secrets and systemd's
-  `LoadCredential`.
-- Use `--host` and `--port` to move the dashboard somewhere else.
+- Set [`RUNWISP_PASSWORD`](/operations/auth/#the-password) to pick
+  your own password instead of the generated one. The daemon reads
+  it in memory only, never writes it to disk, so it plays nicely
+  with Docker secrets and systemd's `LoadCredential`.
+- Use [`--host` and `--port`](/configuration/daemon/#cli-flags-config-data-directory--listen-address) to move the dashboard somewhere else.
   Defaults are `127.0.0.1` and `9477` — loopback only — which is
   almost always what you want.
 
@@ -249,9 +258,14 @@ instances = 3                 # keep three copies alive at all times
 run       = "node /app/worker.js"
 ```
 
-`[tasks.*]` run on a schedule or on demand and then exit. `[services.*]`
-are meant to stay up — when one falls over, RunWisp restarts it,
-and it keeps `instances = N` copies running in parallel.
+[`[tasks.*]`](/configuration/tasks/) run on a
+[cron schedule](/concepts/scheduling/) or on demand and then exit.
+[`[services.*]`](/configuration/services/) are meant to stay up —
+when one falls over, RunWisp restarts it, and it keeps
+[`instances = N`](/configuration/services/#instances) copies running
+in parallel. And that `on_overlap = "skip"` up there is one of three
+[concurrency policies](/concepts/concurrency/) for when a run is
+still going as the next one comes due.
 
 :::note[Tasks and services share names]
 A task and a service can't share a name. Define `[tasks.worker]`

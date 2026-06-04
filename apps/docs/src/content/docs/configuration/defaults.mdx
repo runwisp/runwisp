@@ -49,7 +49,7 @@ meant to be explicit. Per-task `graceful_stop` just falls back to its
 built-in value when you leave it off, so set it only on the tables that
 need a different window.
 
-The daemon-wide `[daemon] shutdown_timeout` is its own separate
+The daemon-wide [`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout) is its own separate
 top-level setting that bounds the **whole-daemon** shutdown phase. Each
 task and service still gets its own `graceful_stop` window inside that
 cap, and if a `graceful_stop` runs longer than `[daemon]
@@ -99,7 +99,7 @@ run                 = "/usr/local/bin/worker"
 ## What `[defaults]` doesn't do
 
 - It doesn't apply to `[storage]` — that's a global cap, not a per-task default.
-- It doesn't apply to `[notify]` settings (`coalesce_window`, `queue_size`, etc.).
+- It doesn't apply to `[notify]` settings (`coalesce_window`, `history_keep`, etc.).
 - It doesn't apply to `[daemon] shutdown_timeout` — that's a daemon-wide setting, not a per-task value to inherit.
 - Notification routing (`notify_on_failure`, `notify_on_success`) has no
   defaulting layer — you set it per task.

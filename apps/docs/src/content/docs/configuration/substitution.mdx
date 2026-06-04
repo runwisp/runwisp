@@ -94,7 +94,7 @@ surprises, so RunWisp leaves `run` alone and lets the shell do its job.
 - **Map keys** are never substituted — env var names, task names, and
   compose service names stay exactly as written. Only values expand.
 - **Referenced files keep their own syntax.** A dotenv file named by
-  `env_file` / `secrets_file` and a compose YAML named by `compose_file`
+  `env_file` / `secrets_file` and a compose YAML named by [`compose_file`](/configuration/compose/)
   are read literally — `${...}` inside them is not RunWisp's business.
 
 ## Escaping

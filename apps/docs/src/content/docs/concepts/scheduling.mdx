@@ -43,13 +43,13 @@ something finer than a minute, use `@every 30s` or reach for a service.
 
 ## Timezone
 
-Cron expressions get evaluated in whatever zone `[scheduler] timezone`
+Cron expressions get evaluated in whatever zone [`[scheduler] timezone`](/configuration/overview/#sections-at-a-glance)
 says. Leave it unset and the daemon just uses the host's system
 timezone.
 
 You never have to guess which zone is actually in play: the resolved
 zone — and whether it came from your config or the system — is printed
-in the TUI startup banner and shown in the Web UI header.
+in the [TUI](/getting-started/tui-tour/) startup banner and shown in the [Web UI](/getting-started/web-ui-tour/) header.
 
 ```toml
 # Daemon-wide default for every task without its own timezone.

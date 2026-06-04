@@ -8,7 +8,7 @@ description: max_size and min_free_space — the two daemon-wide disk safeguards
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 `[storage]` is the daemon-wide safety net for disk usage. It lives one
-level up from per-task [`log_max_size`](/concepts/logs/#log_max_size):
+level up from per-task [`log_max_size`](/concepts/logs/#rotation-log_max_size-and-log_on_full):
 that field caps a _single_ run's log, while this section caps the
 daemon's total log footprint and keeps some breathing room on the
 partition underneath it.

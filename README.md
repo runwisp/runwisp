@@ -128,7 +128,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - TOML configuration: one file, version-controllable, reviewable in pull requests
 
 <div align="center">
-<img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="apps/docs/src/assets/screenshots/tui-overview.png" width="780">
+<img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="apps/docs/src/assets/screenshots/tui-home.png" width="780">
 <p><em>Terminal UI: full task management from your terminal, over SSH, without leaving the session.</em></p>
 </div>
 

@@ -9,7 +9,7 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 When a task fails, you want to know. RunWisp has two layers for that:
 
-1. **The bell** in the Web UI and the alert line in the TUI. Always on, no
+1. **The bell** in the [Web UI](/getting-started/web-ui-tour/) and the alert line in the [TUI](/getting-started/tui-tour/). Always on, no
    config required.
 2. **Outbound channels** — off by default. Add one with a `[[notifier]]`
    block. See the **Providers** section for the channels that ship today.
@@ -65,7 +65,7 @@ Every notifier needs two things:
 | Key    | Type   | Required | What it does                                                                                                                                                                                                                |
 | ------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`   | string | yes      | Name you use to refer to the channel from routes and per-task fields. Must be unique. `"inapp"` is reserved. Cannot contain `:` (reserved for [inline target overrides](/notifications/per-task/#inline-target-overrides)). |
-| `type` | enum   | yes      | `"slack"` or `"telegram"` for now. More drivers will land later.                                                                                                                                                            |
+| `type` | enum   | yes      | `"slack"`, `"telegram"`, or `"smtp"` for now. More drivers will land later.                                                                                                                                                 |
 
 Everything beyond those two depends on the `type` — the provider page
 has the full list for each.
@@ -130,7 +130,7 @@ message — duplicate channels get collapsed.
 
 ### `global_notifiers` — the always-on list
 
-`[notify] global_notifiers` is the one setting that decides which
+[`[notify] global_notifiers`](/notifications/global/#the-bell--global_notifiers) is the one setting that decides which
 channels hear about _every_ failure, no matter what an individual task
 says. Its built-in default is `["inapp"]` — which is exactly why the
 bell just works with no TOML at all.

@@ -61,13 +61,16 @@ The matching `[[notifier]]` block — described on the
 
 Off-peak. Avoid landing on the hour or half-hour — a host running
 many cron daemons at exactly `0 2 * * *` and `0 3 * * *` will
-serialise its own writes and cause backup contention.
+serialise its own writes and cause backup contention. Cron syntax
+and timezone handling are covered in
+[How scheduling works](/concepts/scheduling/).
 
 ### `on_overlap = "skip"`
 
 If a previous dump is still running at the next firing,
-**don't start a second one**. The default of `"queue"` would line
-up overlapping firings; for a nightly task that doesn't help and
+**don't start a second one**. The default of
+[`"queue"`](/concepts/concurrency/#queue-the-default-for-tasks)
+would line up overlapping firings; for a nightly task that doesn't help and
 can cause a backup pile-up if a slow night extends past 02:30 the
 next morning.
 
@@ -109,7 +112,7 @@ did the schema change?") and to outlast a long incident
 operators actually reason about; the row count falls out of the
 cadence. See [Logs & retention][logs].
 
-[logs]: /concepts/logs/
+[logs]: /concepts/logs/#retention-keep_runs-and-keep_for
 
 ### `notify_on_failure`
 

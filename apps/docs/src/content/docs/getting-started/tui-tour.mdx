@@ -29,7 +29,7 @@ you point at a remote instance.
 The TUI lands on **Home**, with the focus already on
 `▸ ⮕ Open Web UI`:
 
-![tui-home-default.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused at top, Web UI URL row, auto-generated password row, recent activity below.](../../../assets/screenshots/placeholder.svg)
+![TUI Home page: sidebar listing task groups, right pane showing Open Web UI row, Web UI URL, masked password, and a recent-activity table with status, duration, and trigger columns.](../../../assets/screenshots/tui-home.png)
 
 Press `Enter` and the TUI opens your default browser straight into the
 dashboard, already logged in — no copy-pasting the password, no
@@ -42,28 +42,24 @@ The other rows on Home:
 - **Password** — only shown when the daemon **auto-generated** the
   password on first run. `Enter` copies it.
 
-If you set the password yourself, the password row is hidden — the
-TUI doesn't have your secret in plaintext form to display:
-
-![tui-home-no-password.png — TUI Home page when the password is user-supplied: only Open Web UI and Web UI URL rows visible, no password row.](../../../assets/screenshots/placeholder.svg)
+If you set the password yourself, the password row disappears — the
+TUI doesn't have your secret in plaintext form to display, so the
+Home page shows only the Open Web UI action and the Web UI URL.
 
 Press `n` while on Home to expand the **notifications panel** at the
-top — a scrollable list of in-app notifications with read-state
-toggling.
-
-![tui-notifications.png — TUI notifications panel expanded over the Home view, showing severity, age, and read-state toggles.](../../../assets/screenshots/placeholder.svg)
+top — a scrollable list of in-app notifications with severity dots,
+timestamps, and read-state toggling.
 
 ## The shell
 
 There's a **sidebar** on the left, the active view on the right, and a
 **help bar** along the bottom that changes to match whatever you're
-focused on. The sidebar starts with three navigation pages (Home /
-Info / Debug), then lists your tasks and services grouped by `group`.
+focused on. You can see all three in the Home screenshot above. The
+sidebar starts with three navigation pages (Home / Info / Debug),
+then lists your tasks and services grouped by [`group`](/configuration/tasks/#identity--metadata).
 The triangle marker `▸` points at whatever's currently showing in the
 right pane; the highlighted row is just your cursor — move it around
 all you like, nothing happens until you press `Enter`.
-
-![tui-shell.png — Full TUI window: 28-column sidebar with daemon identity, Home/Info/Debug nav, grouped tasks and services; right pane Home; help bar at bottom.](../../../assets/screenshots/placeholder.svg)
 
 ## The three pages
 
@@ -77,7 +73,7 @@ The default view. Two modes:
   schedule line, a **Run Now** / **Restart** button, and the run
   history for that one task.
 
-![tui-task-detail.png — TUI task detail mode: schedule line, Run Now button, recent run history for the selected task.](../../../assets/screenshots/placeholder.svg)
+![TUI task detail for healthcheck-api: header with task name, cron schedule, next-fire countdown, and Run Now button; run history table below showing status, start time, duration, and trigger columns.](../../../assets/screenshots/tui-task-detail.png)
 
 ### Info
 
@@ -85,15 +81,14 @@ System metrics — CPU and memory sparklines, a run-count summary, and
 uptime. This is your "is the daemon healthy right now?" glance without
 reaching for a browser.
 
-![tui-info.png — TUI Info page: CPU and memory sparklines, run-count summary, uptime.](../../../assets/screenshots/placeholder.svg)
+![TUI Info page: CPU and memory sparklines, activity summary, version and platform details, configuration checkmarks, and task list.](../../../assets/screenshots/tui-info.png)
 
 ### Debug
 
-The daemon's own log stream. When you're attached to a remote daemon,
-this is also where reconnect notices show up. Scrollable in both
-directions.
-
-![tui-debug.png — TUI Debug page streaming the daemon's own log lines.](../../../assets/screenshots/placeholder.svg)
+The daemon's own log stream, scrollable in both directions. When
+you're attached to a remote daemon, this is also where reconnect
+notices show up. Think of it as `journalctl` for the RunWisp process
+itself.
 
 ## Following a run
 
@@ -107,7 +102,7 @@ The keybindings live in the help bar at the bottom of the screen — the
 TUI footer is the source of truth, so look there for whatever's
 currently available.
 
-![tui-run-detail.png — TUI run detail: header with run ID, start time, duration, Run Again button; line-numbered log below.](../../../assets/screenshots/placeholder.svg)
+![TUI run detail for reindex-search: header with Back button, run ID, timestamp, duration, SUCCESS badge, and exit code; line-numbered log output below.](../../../assets/screenshots/tui-run-detail.png)
 
 A few keys worth flagging since they aren't obvious:
 
@@ -122,7 +117,7 @@ The log starts in **follow mode** — it auto-scrolls to the tail as
 new lines arrive. Any manual scroll (`↑`, `PgUp`, `g`, `G`)
 **pauses the follow**; press `G` to jump back to the tail and resume.
 
-![tui-run-fullscreen.png — TUI run detail in fullscreen mode: header and gutter hidden so native terminal selection works on the raw log.](../../../assets/screenshots/placeholder.svg)
+![TUI fullscreen log view: no sidebar, no header, pure log lines filling the terminal.](../../../assets/screenshots/tui-fullscreen-mode.png)
 
 ## The failure path
 
@@ -145,20 +140,20 @@ what went wrong before you even scroll:
 - **The captured log** below is the raw stdout/stderr of the
   attempt — the same bytes the script wrote, line-numbered, with
   ANSI colours rendered. Press `f` to fullscreen it for a copy/paste.
-
-![tui-run-failed.png — TUI run detail for a failed run: red status badge, exit code in the header, captured stderr in the log pane.](../../../assets/screenshots/placeholder.svg)
+  The layout is the same run-detail view shown above, just with a
+  different status badge and exit code in the header.
 
 The sidebar's task entry also reflects status: a task whose **last
 run failed** shows up with a coloured marker, so a glance at the
 sidebar tells you which tasks need attention without opening each one.
 
-For a task with retries, every attempt is a separate row in the run
+For a task with [retries](/concepts/retries/), every attempt is a separate row in the run
 history with its own end reason — attempt 0 might be `failed` and
 attempt 1 `success`. Read attempt 0's log to find out why the first
 try failed even when the retry recovered; that's the bug-hunting use
-of `keep_runs`.
+of [`keep_runs`](/concepts/logs/#retention-keep_runs-and-keep_for).
 
-If a run never ran at all (`skipped` because of `on_overlap`,
+If a run never ran at all (`skipped` because of [`on_overlap`](/concepts/concurrency/),
 `stopped` because of `on_overlap = "terminate"`), the row is still
 there with the policy's reason in the log and a sentinel exit code.
 A skipped firing is not silence — it's a row.
@@ -187,7 +182,7 @@ Press `q` (or `Ctrl+C`). A two-button dialog asks **"Keep the daemon
 running in the background?"** with **Keep Running** and **Shut Down**.
 `Esc` closes the dialog without acting.
 
-![tui-quit-dialog.png — TUI quit dialog: two buttons, Keep Running and Shut Down, over the dimmed UI.](../../../assets/screenshots/placeholder.svg)
+![TUI quit confirmation dialog: modal asking "Keep the daemon running in the background?" with Keep Running and Shut Down buttons.](../../../assets/screenshots/tui-quit-confirmation.png)
 
 If you're attached via `runwisp tui` to a daemon you didn't spawn,
 **Shut Down** is a no-op — the TUI never stops a daemon it's a guest

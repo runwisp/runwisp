@@ -90,21 +90,26 @@ API, and `/health` all stay on the main listener.
 And if you set `metrics_listen` but never turned `metrics_enabled` on,
 the daemon rejects it at boot instead of quietly ignoring it.
 
-## CLI flags: data directory & listen address
+## CLI flags: config, data directory & listen address
 
-These three flags decide where state lives and where the HTTP/Web UI
-listens, and they apply to every `runwisp` subcommand (`daemon`, `tui`,
-`exec`, and so on):
+These flags decide which config file gets read, where state lives, and
+where the HTTP/Web UI listens. They apply to every `runwisp` subcommand
+(`daemon`, `tui`, `exec`, and so on):
 
-| Flag     | Default     | What it does                                                                                              |
-| -------- | ----------- | --------------------------------------------------------------------------------------------------------- |
-| `--data` | `.runwisp`  | Directory for all persistent state — SQLite database, per-task logs, PID file, and the local Unix socket. |
-| `--host` | `127.0.0.1` | Bind address for the HTTP server. Use `0.0.0.0` to listen on every interface.                             |
-| `--port` | `9477`      | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                                          |
+| Flag             | Default        | What it does                                                                                              |
+| ---------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
+| `--config`, `-c` | `runwisp.toml` | Path to the TOML config file, resolved against the working directory.                                     |
+| `--data`         | `.runwisp`     | Directory for all persistent state — SQLite database, per-task logs, PID file, and the local Unix socket. |
+| `--host`         | `127.0.0.1`    | Bind address for the HTTP server. Use `0.0.0.0` to listen on every interface.                             |
+| `--port`         | `9477`         | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                                          |
 
 ```sh
 runwisp daemon --data /var/lib/runwisp --host 0.0.0.0 --port 9477
 ```
+
+Two more global flags — `--log-level` and `--log-format` — shape the
+daemon's own log output; [Operations: Logging](/operations/logging/)
+covers them.
 
 It's worth picking `--data` once and sticking with it. The database
 file (`runwisp.db`), the local Unix socket (`runwisp.sock`), and every

@@ -4,7 +4,7 @@
 
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
-import starlightOpenAPI from "starlight-openapi";
+import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 
 export default defineConfig({
     site: "https://docs.runwisp.com",
@@ -56,6 +56,7 @@ export default defineConfig({
                     items: [
                         { label: "Quick start", slug: "getting-started/quick-start" },
                         { label: "The Web UI tour", slug: "getting-started/web-ui-tour" },
+                        { label: "The TUI tour", slug: "getting-started/tui-tour" },
                     ],
                 },
                 {
@@ -66,7 +67,6 @@ export default defineConfig({
                         { label: "Concurrency policies", slug: "concepts/concurrency" },
                         { label: "Retries & timeouts", slug: "concepts/retries" },
                         { label: "Logs & retention", slug: "concepts/logs" },
-                        { label: "The TUI tour", slug: "concepts/tui-tour" },
                     ],
                 },
                 {
@@ -122,11 +122,12 @@ export default defineConfig({
                     label: "Operations",
                     items: [
                         { label: "Auth", slug: "operations/auth" },
+                        { label: "Autostart", slug: "operations/autostart" },
                         { label: "Logging", slug: "operations/logging" },
                         { label: "Metrics", slug: "operations/metrics" },
                     ],
                 },
-                // ...openAPISidebarGroups,
+                ...openAPISidebarGroups,
             ],
         }),
     ],

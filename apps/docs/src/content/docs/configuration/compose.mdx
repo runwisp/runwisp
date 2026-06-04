@@ -5,15 +5,22 @@ title: "[compose.*]"
 description: Import services from a docker-compose.yml so every service becomes an observable RunWisp service — logs, restart policies, notifications, trigger/stop.
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 `[compose.<alias>]` blocks point RunWisp at an existing
 `docker-compose.yml`. Every service in the compose file becomes an
-observable RunWisp service: per-container logs are streamed and indexed,
-restart policies are enforced, failures route through your notification
-rules, and operators can trigger or stop containers from the Web UI and
+observable RunWisp [service](/concepts/tasks-vs-services/):
+per-container logs are streamed and indexed,
+restart policies are enforced, failures route through your
+[notification rules](/notifications/model/), and you can trigger or
+stop containers from the Web UI and
 REST API — without rewriting anything.
 
 The containers themselves keep running under Docker exactly as before;
-RunWisp is the supervisor and observability layer on top.
+RunWisp is the supervisor and observability layer on top. For the
+worked walkthrough, see
+[Migrating from docker-compose](/recipes/migrating-from-docker-compose/) —
+this page is the key-by-key reference.
 
 ## Minimum example
 
@@ -49,8 +56,8 @@ name_format  = "{alias}.{service}"       # RunWisp task naming; default shown
 ## Per-service overrides
 
 Per-service sub-tables apply RunWisp knobs to a single compose service.
-The sub-table key MUST match a compose service name (post-include /
-post-exclude):
+The sub-table key has to match a compose service name — and one that
+survived your `include` / `exclude` filters:
 
 ```toml
 [compose.myapp]
@@ -68,25 +75,27 @@ restart   = "on_failure"
 instances = 3                              # three identical worker instances
 ```
 
-Override sub-tables accept any subset of the `[services.*]` keys:
+Override sub-tables accept any subset of the
+[`[services.*]`](/configuration/services/) keys:
 `restart`, `env`, `env_file`, `secrets`, `secrets_file`,
 `notify_on_failure`, `notify_on_success`, `graceful_stop`, `keep_runs`,
 `keep_for`, `instances`, `timeout`, `description`, `log_max_size`,
 `log_on_full`, `api_trigger`, `on_overlap`, `restart_delay`,
 `restart_backoff`, `backoff_reset_after`.
 
-A sub-table named the same as a reserved scalar key (`file`, `include`,
-`exclude`, `mode`, `group`, `project_name`, `profiles`, `env_file`,
-`working_dir`, `with_deps`, `pull`, `name_format`) is rejected at config
-load with a clear error suggesting the user rename the compose service.
+One sharp edge: a compose service that happens to share a name with one
+of the scalar keys above (`file`, `include`, `exclude`, `mode`, `group`,
+`project_name`, `profiles`, `env_file`, `working_dir`, `with_deps`,
+`pull`, `name_format`) can't get a sub-table — the loader rejects the
+config with an error asking you to rename the compose service.
 
 ## Modes
 
 ### `mode = "services"` (default)
 
-Each compose service becomes a RunWisp **service**
-(`Kind = KindService`) named per `name_format` (default `<alias>.<svc>`).
-Per-instance invocation:
+Each compose service becomes its own RunWisp **service**, named per
+`name_format` (default `<alias>.<svc>`). Here's the exact command each
+instance runs under the hood:
 
 ```
 docker compose -f <file> -p <project> [--profile ...] [--env-file ...]
@@ -94,7 +103,7 @@ docker compose -f <file> -p <project> [--profile ...] [--env-file ...]
         --name <project>_<svc>_<instance_index>
         [--pull always|missing|never]
         -e RUNWISP_INSTANCE_INDEX=<i>
-        -e KEY=VAL ...                # from task.Env + task.SecretEnv
+        -e KEY=VAL ...                # your env + secrets overrides
         <svc>
 ```
 
@@ -122,15 +131,15 @@ stack mode — use per-service mode if you want per-service knobs.
 Imported tasks get smarter defaults than the generic `[services.*]`
 baseline because compose users carry strong existing expectations:
 
-| Knob            | Compose-import default                                    | Reason                                                                |
-| --------------- | --------------------------------------------------------- | --------------------------------------------------------------------- |
-| `kind`          | `service`                                                 | Compose services are long-running.                                    |
-| `restart`       | `on_failure`                                              | Matches the unspoken expectation set by `docker compose up`.          |
-| `group`         | the compose alias                                         | Grouped together in the Web UI sidebar by default.                    |
-| `pull`          | `missing`                                                 | Behaviour of `docker compose up`.                                     |
-| `graceful_stop` | compose `stop_grace_period` when set, else daemon default | Honours the compose-declared grace window.                            |
-| Container name  | `{project}_{service}_{index}`                             | Matches `docker compose ps` output; `docker logs` keeps working.      |
-| Task name       | `{alias}.{service}`                                       | Override with `name_format`; must contain `{service}` (else collide). |
+| Knob                                                          | Compose-import default                                    | Reason                                                                |
+| ------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------- |
+| `kind`                                                        | `service`                                                 | Compose services are long-running.                                    |
+| `restart`                                                     | `on_failure`                                              | Matches the unspoken expectation set by `docker compose up`.          |
+| `group`                                                       | the compose alias                                         | Grouped together in the Web UI sidebar by default.                    |
+| `pull`                                                        | `missing`                                                 | Behaviour of `docker compose up`.                                     |
+| [`graceful_stop`](/configuration/services/#graceful-shutdown) | compose `stop_grace_period` when set, else daemon default | Honours the compose-declared grace window.                            |
+| Container name                                                | `{project}_{service}_{index}`                             | Matches `docker compose ps` output; `docker logs` keeps working.      |
+| Task name                                                     | `{alias}.{service}`                                       | Override with `name_format`; must contain `{service}` (else collide). |
 
 User overrides win over every default via `[compose.<alias>.<svc>]`.
 
@@ -176,3 +185,28 @@ policy and backoff curve. The compose-file `restart:` directive is
 When the docker CLI is missing or the Docker daemon is unreachable,
 imported tasks remain visible in the UI but their runs fail with a clear
 system-log message pointing at install docs.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Migrating from docker-compose"
+        href="/recipes/migrating-from-docker-compose/"
+        description="The 60-second walkthrough this reference backs."
+    />
+    <LinkCard
+        title="[services.*] ref"
+        href="/configuration/services/"
+        description="Every key the per-service override sub-tables accept."
+    />
+    <LinkCard
+        title="Tasks vs Services"
+        href="/concepts/tasks-vs-services/"
+        description="Why a compose service maps to a RunWisp service."
+    />
+    <LinkCard
+        title="Docker patterns"
+        href="/recipes/docker/"
+        description="Using Docker from inside plain RunWisp tasks."
+    />
+</CardGrid>

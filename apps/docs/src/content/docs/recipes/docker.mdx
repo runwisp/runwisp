@@ -9,7 +9,11 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 This recipe is about **using Docker from inside a RunWisp task** —
 e.g. running an analytics job in a one-shot container, pruning unused
-images, or pre-pulling the next deploy's image.
+images, or pre-pulling the next deploy's image. If what you actually
+want is to supervise the services in an existing `docker-compose.yml`,
+that's the
+[migrating from docker-compose](/recipes/migrating-from-docker-compose/)
+recipe instead.
 
 :::caution[Always use `docker run --rm`]
 Every `docker run` invocation in this recipe — and every one you write —
@@ -52,7 +56,12 @@ docker run --rm \\
 """
 ```
 
-The non-obvious bits — beyond the mandatory `--rm` called out above:
+The RunWisp knobs themselves — [`cron`](/concepts/scheduling/),
+[`on_overlap`](/concepts/concurrency/),
+[`timeout`](/concepts/retries/#timeout),
+[`notify_on_failure`](/notifications/per-task/) — are covered on their
+own pages; here's the Docker side. The non-obvious bits, beyond the
+mandatory `--rm` called out above:
 
 ### `--memory` and `--cpus`
 
@@ -199,5 +208,10 @@ is replaced and signals propagate cleanly.
         title="Tasks vs Services"
         href="/concepts/tasks-vs-services/"
         description="Why long-running container is a service, not a cron task."
+    />
+    <LinkCard
+        title="Migrating from docker-compose"
+        href="/recipes/migrating-from-docker-compose/"
+        description="Point RunWisp at a compose file and supervise every service in it."
     />
 </CardGrid>

@@ -114,7 +114,7 @@ notify = ["tg-oncall"]
 
 A failure of `backup-postgres` sends one message to `slack-ops`, one
 to `tg-oncall`, and adds one row to the bell (added automatically by
-`global_notifiers`). A failure of `metrics-export` sends one message
+[`global_notifiers`](/notifications/global/#the-bell--global_notifiers)). A failure of `metrics-export` sends one message
 to `slack-ops` and adds one row to the bell.
 
 ## What the config loader rejects

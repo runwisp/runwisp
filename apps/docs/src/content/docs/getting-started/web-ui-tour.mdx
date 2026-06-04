@@ -13,7 +13,7 @@ binary** — no separate web server, no CDN, no extra port. Go to
 `http://<host>:<port>` (default `http://localhost:9477`) and you're
 there.
 
-[tui]: /concepts/tui-tour/
+[tui]: /getting-started/tui-tour/
 
 The dashboard is small and mostly read-only. The only things that
 actually change anything are **trigger, restart, and stop** — the rest
@@ -29,10 +29,13 @@ Web UI** row on the Home page is the easiest way in:
 3. Press `Enter` and your browser opens the dashboard, already logged
    in — no need to paste the password.
 
+Behind the scenes, the TUI mints a single-use launch ticket and hands
+it to the browser, so your password never travels through the URL.
+
 On a server with no browser, the TUI prints the URL instead, so you
 can paste it on another machine.
 
-![tui-home-default.png — TUI Home page on first start: ▸ ⮕ Open Web UI focused, Web UI URL row, and auto-generated password row.](../../../assets/screenshots/placeholder.svg)
+![TUI Home page: Open Web UI row focused at the top, Web UI URL and masked password below, recent-activity table filling the rest of the pane.](../../../assets/screenshots/tui-home.png)
 
 ## Open from a browser
 
@@ -104,7 +107,7 @@ gives you the whole file as a single download.
 
 Nothing silently fails. A failed run shows up in the same run history
 as a successful one, marked with a coloured status pill — `failed`,
-`timeout`, `crashed`, `stopped`, `skipped`, or `log_overflow` —
+`timeout`, `crashed`, `stopped`, `skipped`, or [`log_overflow`](/concepts/logs/#rotation-log_max_size-and-log_on_full) —
 alongside its exit code and duration. Click the row to open the run,
 and the captured stdout/stderr appears in the same log pane you'd
 use for any other run. The sidebar flags tasks whose last run
@@ -154,7 +157,7 @@ notifier, scale a service), edit the file and restart the daemon.
 <CardGrid>
     <LinkCard
         title="TUI tour"
-        href="/concepts/tui-tour/"
+        href="/getting-started/tui-tour/"
         description="The same dashboard in your terminal, with keyboard shortcuts."
     />
     <LinkCard

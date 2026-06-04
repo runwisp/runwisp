@@ -10,7 +10,7 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 If a task exits non-zero, RunWisp can take another crack at it. If a run
 drags on too long, RunWisp can pull the plug. You set both per task, and
 anything you leave off falls back to a sensible default from
-`[defaults]`.
+[`[defaults]`](/configuration/defaults/).
 
 Retries are a **task** thing only. Services don't retry — they
 [restart](#services-dont-retry) instead.
@@ -32,7 +32,7 @@ fails — it defaults to `0`, so out of the box nothing retries. Set it to
 
 Not every ending counts as a failure worth retrying, though. A retry
 fires when a run ends in `failed` (non-zero exit), `timeout`, `crashed`,
-or `log_overflow` (which is what `log_on_full = "kill_task"` does after
+or `log_overflow` (which is what [`log_on_full = "kill_task"`](/concepts/logs/#rotation-log_max_size-and-log_on_full) does after
 a run blows past `log_max_size`).
 
 It does **not** fire on `success`, `stopped`, or `skipped`. `stopped`
@@ -57,8 +57,8 @@ so once you know it here it carries over there too.
 | `linear`                | `delay × N`                                 | 10s, 20s, 30s, 40s …             |
 | `exponential`           | `delay × 2^(N-1)`                           | 10s, 20s, 40s, 80s, 160s, 300s … |
 
-No matter which curve you pick, [every wait is **capped at 5
-minutes**](/notifications/global/#retry-budget--default_timeout). An
+No matter which curve you pick, every wait is **capped at 5
+minutes**. An
 `exponential` schedule with a short base climbs up to that ceiling and
 then just sits there.
 
@@ -97,7 +97,7 @@ retry starts the clock fresh, and time spent waiting out `retry_delay`
 doesn't eat into it.
 
 When the deadline passes, the daemon SIGTERMs the run's process group,
-gives it up to `graceful_stop` (default `"5s"`) to bow out, then SIGKILLs
+gives it up to [`graceful_stop`](/configuration/tasks/#retries--timeout) (default `"5s"`) to bow out, then SIGKILLs
 whatever's left and records the run with end reason `timeout`. That same
 SIGTERM-then-wait dance is what `on_overlap = "terminate"`, manual stops,
 and daemon shutdown all use — `graceful_stop` is the one knob behind all
@@ -144,7 +144,7 @@ exponential backoff — until you explicitly stop it.
 Once a replica has stayed up for at least `backoff_reset_after` (default
 60s), its restart counter resets. That way a service that flapped a
 bunch on startup isn't stuck with long restart delays after it finally
-settles down. Set it in `[defaults]` to cover every service that doesn't
+settles down. Set it in [`[defaults]`](/configuration/defaults/) to cover every service that doesn't
 say otherwise, or per service:
 
 ```toml

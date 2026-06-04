@@ -10,7 +10,7 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 A task is a unit of work that runs and then exits. The TOML key —
 `backup-db` in `[tasks.backup-db]` — is the **task name**, and it turns
 up everywhere: the CLI, the API, the Web UI, and the on-disk log path.
-Names have to be unique across both `[tasks.*]` and `[services.*]`.
+Names have to be unique across both `[tasks.*]` and [`[services.*]`](/configuration/services/).
 
 Really only two things are required: the table itself and a `run`.
 Everything else either inherits from
@@ -40,12 +40,12 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 
 ## Scheduling
 
-| Key                 | Default    | What it does                                                                                                                                                                  |
-| ------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cron`              | _(none)_   | 5-field cron expression. Supports `@hourly`, `@every 1h30m`.                                                                                                                  |
-| `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to `[scheduler] timezone`, which itself falls back to the host's system zone if unset. |
-| `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                         |
-| `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero and negatives are rejected at config load.                                                               |
+| Key                 | Default    | What it does                                                                                                                                                                                                    |
+| ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cron`              | _(none)_   | 5-field cron expression. Supports `@hourly`, `@every 1h30m`.                                                                                                                                                    |
+| `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset. |
+| `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                                                           |
+| `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero and negatives are rejected at config load.                                                                                                 |
 
 Leave `cron` off and the task becomes **manual-only** — it runs only
 when something explicitly triggers it. That's a perfectly good pattern
@@ -101,14 +101,14 @@ policy is the right call.
 
 ## Retries & timeout
 
-| Key              | Default                     | What it does                                                                                                                               |
-| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `retry_attempts` | `0`                         | Additional attempts after the initial failure. Non-negative integer; hard internal cap of 100.                                             |
-| `retry_delay`    | `"5s"`                      | Base delay between attempts. Only consulted when `retry_attempts > 0`.                                                                     |
-| `retry_backoff`  | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                    |
-| `restart`        | `"never"`                   | What to do after a run ends: `"never"` or `"on_failure"`. `"always"` is rejected on tasks — use `[services.*]` for an always-on process.   |
-| `timeout`        | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                        |
-| `graceful_stop`  | `"5s"`                      | SIGTERM grace period before SIGKILL on `timeout`, `on_overlap = "terminate"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill. |
+| Key              | Default                     | What it does                                                                                                                                                         |
+| ---------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `retry_attempts` | `0`                         | Additional attempts after the initial failure. Non-negative integer; hard internal cap of 100.                                                                       |
+| `retry_delay`    | `"5s"`                      | Base delay between attempts. Only consulted when `retry_attempts > 0`.                                                                                               |
+| `retry_backoff`  | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                                              |
+| `restart`        | `"never"`                   | What to do after a run ends: `"never"` or `"on_failure"`. `"always"` is rejected on tasks — use [`[services.*]`](/configuration/services/) for an always-on process. |
+| `timeout`        | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                                                  |
+| `graceful_stop`  | `"5s"`                      | SIGTERM grace period before SIGKILL on `timeout`, `on_overlap = "terminate"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill.                           |
 
 Retries only fire on `failed` / `timeout` / `crashed`. A manual stop or
 an `on_overlap = "terminate"` ends the chain — see the
@@ -229,8 +229,8 @@ compose file as observable RunWisp services, see [`[compose.*]`](/configuration/
 
 Each entry is a notifier `id` you've declared in a
 [`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
-block. Whatever's listed in `[notify] append_notifiers` (default
-`["inapp"]`) gets tacked on automatically — set `append_notifiers = []`
+block. Whatever's listed in `[notify] global_notifiers` (default
+`["inapp"]`) gets tacked on automatically — set `global_notifiers = []`
 to opt out, or `["slack-ops"]` to route every failure there instead.
 [Per-task notifications](/notifications/per-task/) covers the field's
 full behaviour.
