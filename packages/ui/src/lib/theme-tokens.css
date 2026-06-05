@@ -88,6 +88,27 @@
     --rw-color-warning-600: oklch(0.65 0.14 60);
     --rw-color-warning-700: oklch(0.55 0.12 55);
 
+    /* ANSI console palette — 16-color map for the log console, tuned for
+     * its always-dark surface (no .dark override needed). Hues follow the
+     * semantic scales: red→danger, green→success, yellow→warning,
+     * blue→wisp, cyan→aurora, grays→mist. */
+    --rw-ansi-black: var(--rw-color-mist-700);
+    --rw-ansi-red: var(--rw-color-danger-400);
+    --rw-ansi-green: var(--rw-color-success-400);
+    --rw-ansi-yellow: var(--rw-color-warning-400);
+    --rw-ansi-blue: var(--rw-color-wisp-400);
+    --rw-ansi-magenta: oklch(0.68 0.14 320); /* between wisp and danger hues */
+    --rw-ansi-cyan: var(--rw-color-aurora-400);
+    --rw-ansi-white: var(--rw-color-mist-300);
+    --rw-ansi-bright-black: var(--rw-color-mist-500);
+    --rw-ansi-bright-red: var(--rw-color-danger-300);
+    --rw-ansi-bright-green: var(--rw-color-success-300);
+    --rw-ansi-bright-yellow: var(--rw-color-warning-300);
+    --rw-ansi-bright-blue: var(--rw-color-wisp-300);
+    --rw-ansi-bright-magenta: oklch(0.78 0.1 320);
+    --rw-ansi-bright-cyan: var(--rw-color-aurora-300);
+    --rw-ansi-bright-white: var(--rw-color-mist-50);
+
     /* Light-mode semantic tokens (default) */
     /* Surfaces */
     --rw-surface: var(--rw-color-mist-50);
