@@ -44,7 +44,7 @@ const (
 
 // LogPageInput drives GET /api/tasks/{taskName}/runs/{runId}/log.
 type LogPageInput struct {
-	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
+	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 	From     int64  `query:"from" default:"-1000" doc:"Anchor line number; 0 is the first line, negative values count from end (default -1000)"`
 	Limit    int64  `query:"limit" minimum:"1" maximum:"10000" doc:"Max lines returned (default 1000)"`
@@ -74,7 +74,7 @@ type LogPageOutput struct {
 
 // LogRawInput drives GET /api/tasks/{taskName}/runs/{runId}/log/raw.
 type LogRawInput struct {
-	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
+	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 }
 
@@ -178,7 +178,7 @@ func readRawLog(logPath string) ([]byte, error) {
 // LogStreamInput drives the SSE log endpoint. Huma performs path/query/header
 // validation against these tags so the handler only sees vetted values.
 type LogStreamInput struct {
-	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
+	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 	RunID       string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 	From        int64  `query:"from" default:"-1000" doc:"Anchor line number; 0 is the first line, negative values count from end (default -1000)"`
 	ReplayLimit int64  `query:"replay_limit" minimum:"1" maximum:"50000" doc:"Cap on backfilled lines (default 5000)"`

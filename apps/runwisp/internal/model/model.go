@@ -13,7 +13,10 @@ import (
 var taskNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 // SanitizeTaskName replaces unsafe characters with underscores, making the
-// name safe for use in file paths and other identifiers.
+// name safe for use in file paths and other identifiers. Deliberately
+// stricter than TaskNamePattern: characters like `:` and `.` are valid in
+// task names but get flattened here so log directories stay portable
+// (e.g. NTFS mounts under WSL reject colons).
 func SanitizeTaskName(name string) string {
 	return taskNameSanitizer.ReplaceAllString(name, "_")
 }
@@ -26,7 +29,7 @@ const TaskNameMaxLength = 100
 // valid task name. Kept in sync with the huma `pattern:` tags on REST
 // request inputs so an operator who passes TOML validation can also call
 // the API for the same name.
-const TaskNamePatternString = `^[a-zA-Z0-9._-]+$`
+const TaskNamePatternString = `^[a-zA-Z0-9._:-]+$`
 
 var TaskNamePattern = regexp.MustCompile(TaskNamePatternString)
 

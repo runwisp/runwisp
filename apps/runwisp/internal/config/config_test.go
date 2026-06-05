@@ -82,6 +82,18 @@ run = "echo hello"
 		assert.Equal(t, TimezoneSourceConfig, cfg.Scheduler.Source)
 	})
 
+	t.Run("colon in quoted task name", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks."db:backup"]
+cron = "*/5 * * * *"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		assert.Equal(t, "db:backup", cfg.Tasks[0].Name)
+	})
+
 	t.Run("api_trigger explicit false is preserved", func(t *testing.T) {
 		path := writeTOML(t, `
 [scheduler]

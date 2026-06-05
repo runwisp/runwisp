@@ -12,6 +12,11 @@ A task is a unit of work that runs and then exits. The TOML key —
 up everywhere: the CLI, the API, the Web UI, and the on-disk log path.
 Names have to be unique across both `[tasks.*]` and [`[services.*]`](/configuration/services/).
 
+Names can use letters, digits, and `. _ - :` (up to 100 characters).
+Anything beyond TOML's bare-key set needs quotes around the table key —
+`[tasks."db:backup"]`. On disk, log directories flatten `:` and `.`
+to `_`, so `db:backup` logs land under `db_backup/`.
+
 Really only two things are required: the table itself and a `run`.
 Everything else either inherits from
 [`[defaults]`](/configuration/defaults/) or comes with a sensible

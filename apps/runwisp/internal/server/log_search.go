@@ -37,7 +37,7 @@ const (
 
 // LogSearchInput is the input to GET /api/tasks/{taskName}/log/search.
 type LogSearchInput struct {
-	TaskName      string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._-]+$" doc:"Task name"`
+	TaskName      string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 	RunID         string `query:"run_id" doc:"Restrict the search to one run (ULID). Empty searches every non-deleted run of the task."`
 	Q             string `query:"q" minLength:"1" maxLength:"1024" doc:"Substring (or regex when regex=true) to search for"`
 	Regex         bool   `query:"regex" doc:"Treat q as an RE2 regular expression"`

@@ -2564,7 +2564,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           },
@@ -2675,7 +2675,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           }
@@ -2721,7 +2721,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           }
@@ -2767,7 +2767,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           },
@@ -2904,7 +2904,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           },
@@ -2954,7 +2954,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           },
@@ -3014,7 +3014,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           },
@@ -3099,7 +3099,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           },
@@ -3167,7 +3167,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           },
@@ -3370,7 +3370,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           },
@@ -3430,7 +3430,7 @@
               "description": "Task name",
               "maxLength": 100,
               "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._-]+$",
+              "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
             }
           }
