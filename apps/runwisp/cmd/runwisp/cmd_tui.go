@@ -48,6 +48,7 @@ func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
 	si.Port = info.Port
 	si.CloudEnabled = info.CloudEnabled
 	si.ServiceManaged = info.ServiceManaged
+	si.AuthDisabled = info.AuthDisabled
 	si.ConfigStale = info.ConfigStale
 	si.Timezone = info.ResolvedTimezone
 	si.TimezoneSource = info.TimezoneSource

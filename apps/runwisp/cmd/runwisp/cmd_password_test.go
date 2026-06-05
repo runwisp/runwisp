@@ -47,6 +47,19 @@ func TestRunPassword_EnvVarRefusal(t *testing.T) {
 	assert.Contains(t, stderr.String(), "will not disclose")
 }
 
+func TestRunPassword_AuthDisabled(t *testing.T) {
+	client := &fakeCredentialsClient{err: apiclient.ErrAuthDisabled}
+	var stdout, stderr bytes.Buffer
+
+	code := runPassword(&stdout, &stderr, client, "/tmp/runwisp.sock")
+	assert.Equal(t, passwordExitNoAuth, code,
+		"no-auth must exit with its own code, never the env-var refusal code")
+	assert.Empty(t, stdout.String(),
+		"no-auth path must never write anything to stdout")
+	assert.Contains(t, stderr.String(), "RUNWISP_NO_AUTH")
+	assert.Contains(t, stderr.String(), "no password")
+}
+
 func TestRunPassword_DaemonUnreachable(t *testing.T) {
 	client := &fakeCredentialsClient{err: errors.New("request failed: dial unix: no such file")}
 	var stdout, stderr bytes.Buffer

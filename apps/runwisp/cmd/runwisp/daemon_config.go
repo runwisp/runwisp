@@ -38,6 +38,7 @@ type daemonConfig struct {
 	Password          string
 	PasswordEphemeral bool
 	JWTSecret         string
+	NoAuth            bool
 }
 
 func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, mode daemonMode) (*daemonConfig, error) {
@@ -71,6 +72,11 @@ func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, 
 		return nil, err
 	}
 
+	noAuth, err := resolveAuthMode()
+	if err != nil {
+		return nil, err
+	}
+
 	password, ephemeral, err := resolvePassword()
 	if err != nil {
 		return nil, err
@@ -89,7 +95,30 @@ func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, 
 		Password:          password,
 		PasswordEphemeral: ephemeral,
 		JWTSecret:         jwtSecret,
+		NoAuth:            noAuth,
 	}, nil
+}
+
+// resolveAuthMode reads RUNWISP_NO_AUTH and decides whether the daemon runs
+// with authentication disabled. Only the unambiguous values "1" and "true"
+// (case-insensitive) enable it; anything else non-empty is a configuration
+// mistake the operator must see, not a value to be guessed at. Combining it
+// with RUNWISP_PASSWORD is contradictory — a password that is never checked
+// gives a false sense of security — so that is rejected too.
+func resolveAuthMode() (noAuth bool, err error) {
+	raw := strings.TrimSpace(os.Getenv("RUNWISP_NO_AUTH"))
+	if raw == "" {
+		return false, nil
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true":
+	default:
+		return false, fmt.Errorf("RUNWISP_NO_AUTH must be \"1\" or \"true\" when set (got %q)", raw)
+	}
+	if os.Getenv("RUNWISP_PASSWORD") != "" {
+		return false, errors.New("RUNWISP_NO_AUTH and RUNWISP_PASSWORD are mutually exclusive — unset one of them")
+	}
+	return true, nil
 }
 
 // resolvePassword returns the daemon password. If RUNWISP_PASSWORD is set, the

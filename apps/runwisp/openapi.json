@@ -80,6 +80,9 @@
             "readOnly": true,
             "type": "string"
           },
+          "auth_disabled": {
+            "type": "boolean"
+          },
           "capabilities": {
             "items": {
               "$ref": "#/components/schemas/CapInfo"
@@ -138,6 +141,7 @@
           "port",
           "cloud_enabled",
           "service_managed",
+          "auth_disabled",
           "config_loaded_at",
           "config_stale",
           "resolved_timezone",

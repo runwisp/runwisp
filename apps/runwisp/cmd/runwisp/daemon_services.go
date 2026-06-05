@@ -263,6 +263,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 		Port:             flags.Port,
 		CloudEnabled:     cfg.CloudConfig.Enabled,
 		ServiceManaged:   autostart.RunningUnderServiceManager(),
+		AuthDisabled:     cfg.NoAuth,
 		ConfigLoadedAt:   configLoadedAt,
 		ResolvedTimezone: cfg.Config.Scheduler.Timezone,
 		TimezoneSource:   cfg.Config.Scheduler.Source,

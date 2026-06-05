@@ -561,6 +561,7 @@ export interface components {
              * @example http://localhost:9477/schemas/DaemonInfo.json
              */
             readonly $schema?: string;
+            auth_disabled: boolean;
             capabilities: components["schemas"]["CapInfo"][] | null;
             cloud_enabled: boolean;
             /** Format: date-time */

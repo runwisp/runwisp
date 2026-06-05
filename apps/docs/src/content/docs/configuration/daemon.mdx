@@ -126,11 +126,12 @@ story.
 
 ## Environment variables
 
-| Variable              | What it does                                                                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `RUNWISP_PASSWORD`    | Sets the daemon password in memory. When unset, a fresh ephemeral password is minted every boot (and every session rotates with it). |
-| `RUNWISP_TRUST_PROXY` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                     |
-| `RUNWISP_CLOUD_TOKEN` | Used by `runwisp cloud` to connect to a control plane. Ignored in standalone mode.                                                   |
+| Variable              | What it does                                                                                                                                                                              |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RUNWISP_PASSWORD`    | Sets the daemon password in memory. When unset, a fresh ephemeral password is minted every boot (and every session rotates with it).                                                      |
+| `RUNWISP_NO_AUTH`     | `1` or `true` disables authentication entirely — local dev / trusted networks only. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
+| `RUNWISP_TRUST_PROXY` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                          |
+| `RUNWISP_CLOUD_TOKEN` | Used by `runwisp cloud` to connect to a control plane. Ignored in standalone mode.                                                                                                        |
 
 ## Local Unix socket
 

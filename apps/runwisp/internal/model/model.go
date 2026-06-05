@@ -183,6 +183,7 @@ type DaemonInfo struct {
 	Port             int         `json:"port"`
 	CloudEnabled     bool        `json:"cloud_enabled"`
 	ServiceManaged   bool        `json:"service_managed"`
+	AuthDisabled     bool        `json:"auth_disabled"`
 	ConfigLoadedAt   time.Time   `json:"config_loaded_at"`
 	ConfigStale      bool        `json:"config_stale"`
 	ResolvedTimezone string      `json:"resolved_timezone"`

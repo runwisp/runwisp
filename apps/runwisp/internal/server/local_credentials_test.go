@@ -98,6 +98,26 @@ func TestLocalCredentials_SocketEnvVarReturns404(t *testing.T) {
 		"the env-var password must never appear in the response body")
 }
 
+// TestLocalCredentials_NoAuthReturns409 guards the RUNWISP_NO_AUTH contract:
+// the internally-minted password gates nothing, so disclosing it would
+// present a non-credential as a credential. 409 is distinct from the env-var
+// 404 so `runwisp password` can print the right explanation for each.
+func TestLocalCredentials_NoAuthReturns409(t *testing.T) {
+	s, _, _, _ := setupServerWithOpts(t, func(o *Options) {
+		o.NoAuth = true
+		o.PasswordEphemeral = true
+	})
+
+	req := httptest.NewRequest("GET", "/api/local/credentials", nil)
+	req = req.WithContext(context.WithValue(req.Context(), localTrustedKey{}, true))
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.NotContains(t, w.Body.String(), "secret",
+		"the minted password must never appear in the response body")
+}
+
 func TestLocalCredentials_TCPWithJWTReturns403(t *testing.T) {
 	s := newServerForCredentialsTest(t, "in-memory-pw", true)
 

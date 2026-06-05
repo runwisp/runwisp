@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -155,6 +156,7 @@ func runDaemon(mode daemonMode) error {
 		Password:          cfg.Password,
 		PasswordEphemeral: cfg.PasswordEphemeral,
 		JWTSecret:         cfg.JWTSecret,
+		NoAuth:            cfg.NoAuth,
 		DaemonInfo:        daemonInfo,
 		ConfigStale:       configSnap.Stale,
 		DaemonLogBuffer:   logBuffer,
@@ -184,6 +186,7 @@ func runDaemon(mode daemonMode) error {
 
 		PasswordEphemeral: cfg.PasswordEphemeral,
 		Password:          cfg.Password,
+		AuthDisabled:      cfg.NoAuth,
 
 		CloudEnabled: cfg.CloudConfig.Enabled,
 		Headless:     noTUI,
@@ -282,6 +285,8 @@ func logStartupSummary(info uikit.StartupInfo) {
 	if info.WebUIDisabled {
 		slog.Info("web UI disabled (no password in cloud-only mode)")
 	}
+	// AuthDisabled needs no line here: logSecurityWarnings already emits the
+	// WARN (and the stderr banner) in every mode before this summary runs.
 }
 
 // absPathOrFallback resolves p to an absolute path, falling back to the
@@ -339,7 +344,13 @@ func logSecurityWarnings(cfg *daemonConfig) {
 	if cfg.Config.Daemon.AllowCloudDispatch {
 		slog.Warn("Cloud shell dispatch enabled — the cloud control plane can execute arbitrary shell commands on this host")
 	}
-	if flags.Host != "127.0.0.1" && flags.Host != "::1" && flags.Host != "localhost" {
+	nonLoopback := flags.Host != "127.0.0.1" && flags.Host != "::1" && flags.Host != "localhost"
+	// Exactly one banner: when auth is disabled it subsumes the non-loopback
+	// message, so the two warnings never stack.
+	if cfg.NoAuth {
+		slog.Warn("Authentication is DISABLED (RUNWISP_NO_AUTH) — the API and Web UI accept unauthenticated requests")
+		printNoAuthBanner(flags.Host, nonLoopback)
+	} else if nonLoopback {
 		printNonLoopbackBanner(flags.Host)
 	}
 	for _, w := range config.Warnings(cfg.Config) {
@@ -353,6 +364,27 @@ func logSecurityWarnings(cfg *daemonConfig) {
 // see this clearly without forcing them to add extra flags or terminate the
 // process — they may know what they're doing (private LAN, behind a TLS proxy,
 // etc.) and just need a visible reminder, not a roadblock.
+// printNoAuthBanner writes an unmissable stderr banner when the daemon runs
+// with RUNWISP_NO_AUTH. Like printNonLoopbackBanner it warns without blocking:
+// the operator opted in explicitly and may be on a trusted setup (local dev,
+// container on a private network) — they get a clear statement of what is
+// exposed, not a roadblock. When the bind address is also non-loopback, this
+// single banner carries both warnings so they never stack.
+func printNoAuthBanner(host string, nonLoopback bool) {
+	var b strings.Builder
+	b.WriteString("\n================================================================================\n")
+	b.WriteString("  SECURITY: Authentication is DISABLED (RUNWISP_NO_AUTH).\n")
+	if nonLoopback {
+		fmt.Fprintf(&b, "  The HTTP server is binding to %q (not loopback), so this applies to\n  anyone on the network.\n", host)
+	}
+	b.WriteString("  Whoever can reach this port has FULL control of the daemon: browsing run\n")
+	b.WriteString("  history and logs, and triggering tasks that execute shell commands as this\n")
+	b.WriteString("  user. Only use this for local development or on a trusted, isolated\n")
+	b.WriteString("  network. Never expose this port to the public internet.\n")
+	b.WriteString("================================================================================\n")
+	_, _ = fmt.Fprint(os.Stderr, b.String())
+}
+
 func printNonLoopbackBanner(host string) {
 	banner := fmt.Sprintf(
 		"\n"+
