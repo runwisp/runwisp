@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration, formatRelativeTimeWithAbsolute } from "./format.js";
+import {
+    formatBytes,
+    formatDuration,
+    formatRelativeTime,
+    formatRelativeTimeWithAbsolute,
+} from "./format.js";
 
 describe("formatBytes", () => {
     it("formats 0 bytes", () => {
@@ -84,5 +89,36 @@ describe("formatRelativeTimeWithAbsolute", () => {
         // contract we assert is: parens contain a day digit and no time colon.
         expect(r).toMatch(/\([^)]*\d[^)]*\)$/);
         expect(r).not.toMatch(/\(\d{1,2}:\d{2}\)$/);
+    });
+    it("computes the relative part against the supplied now", () => {
+        const date = new Date("2024-01-01T12:00:00Z");
+        const twoHoursBefore = formatRelativeTimeWithAbsolute(
+            date,
+            new Date("2024-01-01T10:00:00Z"),
+        );
+        const oneHourBefore = formatRelativeTimeWithAbsolute(
+            date,
+            new Date("2024-01-01T11:00:00Z"),
+        );
+        expect(twoHoursBefore).toMatch(/^in 2 hours/);
+        expect(oneHourBefore).toMatch(/^in 1 hour/);
+    });
+    it("picks the day-boundary branch against the supplied now", () => {
+        const date = new Date("2024-01-01T12:00:00Z");
+        // 2 days after the date → calendar-date suffix, not HH:MM.
+        const r = formatRelativeTimeWithAbsolute(date, new Date("2024-01-03T12:00:00Z"));
+        expect(r).not.toMatch(/\(\d{1,2}:\d{2}\)$/);
+    });
+});
+
+describe("formatRelativeTime", () => {
+    it("advances as the supplied now advances", () => {
+        const date = new Date("2024-01-01T12:00:00Z");
+        expect(formatRelativeTime(date, new Date("2024-01-01T14:00:00Z"))).toBe(
+            "about 2 hours ago",
+        );
+        expect(formatRelativeTime(date, new Date("2024-01-01T15:00:00Z"))).toBe(
+            "about 3 hours ago",
+        );
     });
 });

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { formatDistanceToNow } from "date-fns";
+import { formatDistance } from "date-fns";
 
 export function formatBytes(bytes: number): string {
     const units: [string, ...string[]] = ["B", "KB", "MB", "GB", "TB", "PB"];
@@ -16,14 +16,16 @@ export function formatBytes(bytes: number): string {
     return `${new Intl.NumberFormat("en", { maximumFractionDigits: digits }).format(value)} ${unit}`;
 }
 
-export function formatRelativeTime(dateStr: string | Date): string {
-    return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+export function formatRelativeTime(dateStr: string | Date, now: Date = new Date()): string {
+    return formatDistance(new Date(dateStr), now, { addSuffix: true });
 }
 
-export function formatRelativeTimeWithAbsolute(dateStr: string | Date): string {
+export function formatRelativeTimeWithAbsolute(
+    dateStr: string | Date,
+    now: Date = new Date(),
+): string {
     const date = new Date(dateStr);
-    const relative = formatDistanceToNow(date, { addSuffix: true }).replace("about ", "");
-    const now = new Date();
+    const relative = formatDistance(date, now, { addSuffix: true }).replace("about ", "");
     const diffMs = Math.abs(now.getTime() - date.getTime());
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
 

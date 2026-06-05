@@ -22,6 +22,7 @@
 
     const RECENT_RUN_LIMIT = 16;
     const RUNNING_RUN_LIMIT = 8;
+    const TASKS_REFRESH_DEBOUNCE_MS = 1000;
 
     interface DashboardState {
         tasks: Task[];
@@ -106,6 +107,12 @@
 
             dashState.recentRuns = upsertRun(dashState.recentRuns, run).slice(0, RECENT_RUN_LIMIT);
             dashState.runningRuns = upsertRunningRun(dashState.runningRuns, run, RUNNING_RUN_LIMIT);
+
+            // A new run means the scheduler advanced that task's next_run_at —
+            // refetch tasks so "Up next" and next-run columns stay current.
+            if (event.type === "run.created") {
+                scheduleTasksRefresh();
+            }
         });
 
         const statsInterval = setInterval(() => void loadSystemStats(), 2000);
@@ -116,6 +123,10 @@
         return () => {
             unsubscribe();
             clearInterval(statsInterval);
+            if (tasksRefreshTimer) {
+                clearTimeout(tasksRefreshTimer);
+                tasksRefreshTimer = null;
+            }
         };
     });
 
@@ -126,6 +137,26 @@
             dashState.runningRuns = pageData.data.runningRuns;
         }
     });
+
+    let tasksRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Trailing debounce so a burst of simultaneous cron fires coalesces into
+    // a single /api/tasks refetch.
+    function scheduleTasksRefresh() {
+        if (tasksRefreshTimer) return;
+        tasksRefreshTimer = setTimeout(() => {
+            tasksRefreshTimer = null;
+            void refreshTasks();
+        }, TASKS_REFRESH_DEBOUNCE_MS);
+    }
+
+    async function refreshTasks() {
+        try {
+            dashState.tasks = await tasksApi.getAll();
+        } catch {
+            // keep the stale list — connection loss is surfaced by connectionStore
+        }
+    }
 
     async function loadSystemStats() {
         await systemStore.refresh();

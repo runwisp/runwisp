@@ -19,12 +19,12 @@ export function formatTaskDescription(task: Task): string {
     return task.description ?? "No description yet. Open the task to review its execution details.";
 }
 
-export function formatTaskLastRunLabel(task: TaskOverview): string {
+export function formatTaskLastRunLabel(task: TaskOverview, now: Date = new Date()): string {
     if (!task.lastRun) {
         return "No runs yet";
     }
 
-    return formatRelativeTimeWithAbsolute(task.lastRun.start_at ?? task.lastRun.created_at);
+    return formatRelativeTimeWithAbsolute(task.lastRun.start_at ?? task.lastRun.created_at, now);
 }
 
 export function formatTaskLastResultLabel(task: TaskOverview): string {
@@ -35,13 +35,13 @@ export function formatTaskLastResultLabel(task: TaskOverview): string {
     return formatStatusLabel(task.lastStatus);
 }
 
-export function formatTaskNextRunLabel(task: TaskOverview): string {
+export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date()): string {
     if (task.task.kind === "service") {
         return "Always on";
     }
 
     if (task.nextRunMs !== undefined) {
-        return formatRelativeTimeWithAbsolute(new Date(task.nextRunMs));
+        return formatRelativeTimeWithAbsolute(new Date(task.nextRunMs), now);
     }
 
     return task.isApiOnly ? "Manual only" : "Not scheduled";
@@ -77,8 +77,8 @@ export function getTaskStatusDot(status: TaskOverview["lastStatus"]): string {
     return getRunStatusConfig(status).dot.split(" ")[0] ?? "bg-mist-300";
 }
 
-export function formatRunStartedLabel(run: Run): string {
-    return formatRelativeTime(run.start_at ?? run.created_at);
+export function formatRunStartedLabel(run: Run, now: Date = new Date()): string {
+    return formatRelativeTime(run.start_at ?? run.created_at, now);
 }
 
 export function formatRunDurationLabel(run: Run): string {
