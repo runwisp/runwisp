@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Run detail stats no longer overlap at narrow widths.** The Started / Duration / Exited box now reflows with the panel width instead of letting the date spill into the duration.
 - **`runwisp status` now talks to the daemon over the local Unix socket.** It works without a password and actually prints version/uptime — the old TCP path silently dropped the system-stats call as unauthorized.
 - **Scroll-to-top in the log viewer no longer spins forever.** The first log page (`from=0`) was mistaken for an unset anchor and served the tail instead, so the top of a multi-thousand-line run never loaded.
 - **The in-app notification stream no longer panics when notifications fail to initialize.** A nil hub leaked through as a non-nil interface and crashed `/api/notifications/stream`; it now falls back to a keepalive-only stream.
