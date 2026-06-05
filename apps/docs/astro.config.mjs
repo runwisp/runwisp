@@ -98,6 +98,10 @@ export default defineConfig({
                                     label: "Email (SMTP)",
                                     slug: "notifications/providers/smtp",
                                 },
+                                {
+                                    label: "Webhook",
+                                    slug: "notifications/providers/webhook",
+                                },
                             ],
                         },
                         { label: "Per-task notifications", slug: "notifications/per-task" },
