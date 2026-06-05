@@ -8,6 +8,7 @@ package e2e
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -110,6 +111,87 @@ notify = ["ops", "inapp"]
 		t.Fatal("outbound webhook fired a second time within the coalescing window — outbound coalescing is broken")
 	case <-time.After(2 * time.Second):
 	}
+}
+
+// TestNotificationsGenericWebhookFires covers the generic webhook channel
+// end-to-end: a failing run must produce exactly one POST to the configured
+// URL with the default JSON template body, the application/json content
+// type, and any custom headers from the TOML passed through verbatim.
+func TestNotificationsGenericWebhookFires(t *testing.T) {
+	type capturedRequest struct {
+		method      string
+		contentType string
+		authHeader  string
+		body        []byte
+	}
+	received := make(chan capturedRequest, 8)
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		select {
+		case received <- capturedRequest{
+			method:      r.Method,
+			contentType: r.Header.Get("Content-Type"),
+			authHeader:  r.Header.Get("Authorization"),
+			body:        body,
+		}:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(hook.Close)
+
+	configPath := writeNotifyConfig(t, fmt.Sprintf(`
+[tasks.fail-task]
+run = "exit 1"
+
+[[notifier]]
+id      = "hook"
+type    = "webhook"
+url     = "%s"
+headers = { Authorization = "Bearer e2e-test-token" }
+
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["hook"]
+`, hook.URL))
+
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+
+	client := socketClient(t, daemon.dataDir)
+
+	_, err := client.TriggerRun("fail-task")
+	require.NoError(t, err)
+
+	var req capturedRequest
+	select {
+	case req = <-received:
+	case <-time.After(10 * time.Second):
+		t.Fatal("webhook never received a request within 10s")
+	}
+
+	require.Equal(t, http.MethodPost, req.method)
+	require.Equal(t, "application/json", req.contentType)
+	require.Equal(t, "Bearer e2e-test-token", req.authHeader,
+		"custom headers from TOML must pass through verbatim")
+
+	var payload struct {
+		Kind     string `json:"kind"`
+		Severity string `json:"severity"`
+		Task     string `json:"task"`
+		Run      struct {
+			ID       string `json:"id"`
+			ExitCode int    `json:"exit_code"`
+		} `json:"run"`
+	}
+	require.NoError(t, json.Unmarshal(req.body, &payload),
+		"webhook body must be valid JSON, got: %s", req.body)
+	require.Equal(t, "run.failed", payload.Kind)
+	require.Equal(t, "error", payload.Severity)
+	require.Equal(t, "fail-task", payload.Task)
+	require.NotEmpty(t, payload.Run.ID)
+	require.Equal(t, 1, payload.Run.ExitCode)
 }
 
 // TestNotificationsOutboundCoalesceOptOut verifies the rare opt-out path:
