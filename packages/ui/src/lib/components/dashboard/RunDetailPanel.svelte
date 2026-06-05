@@ -95,8 +95,8 @@
     {@const DetailIcon = config.icon}
     {@const duration = runDuration(run)}
     <!-- Detailed Header -->
-    <div class="shrink-0 border-b border-outline-faint bg-surface-raised p-6">
-        <div class="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
+    <div class="@container shrink-0 border-b border-outline-faint bg-surface-raised p-6">
+        <div class="flex flex-col justify-between gap-6 @4xl:flex-row @4xl:items-start">
             <div class="flex items-start gap-4">
                 <!-- Large Status Icon -->
                 <div
@@ -190,7 +190,7 @@
 
             <!-- Stats Grid -->
             <div
-                class="grid grid-cols-3 gap-6 rounded-xl border border-outline-faint bg-surface-sunken px-6 py-3"
+                class="grid grid-cols-1 gap-3 rounded-xl border border-outline-faint bg-surface-sunken px-6 py-3 @lg:grid-cols-3 @lg:gap-6 @4xl:shrink-0"
             >
                 <div class="flex flex-col gap-1">
                     <span
@@ -202,7 +202,9 @@
                     </span>
                 </div>
 
-                <div class="flex flex-col gap-1 border-l border-outline pl-6">
+                <div
+                    class="flex flex-col gap-1 border-t border-outline pt-3 @lg:border-t-0 @lg:border-l @lg:pt-0 @lg:pl-6"
+                >
                     <span
                         class="text-xs font-semibold tracking-wide text-on-surface-faint uppercase"
                         >Duration</span
@@ -212,7 +214,9 @@
                     </span>
                 </div>
 
-                <div class="flex flex-col gap-1 border-l border-outline pl-6">
+                <div
+                    class="flex flex-col gap-1 border-t border-outline pt-3 @lg:border-t-0 @lg:border-l @lg:pt-0 @lg:pl-6"
+                >
                     <span
                         class="text-xs font-semibold tracking-wide text-on-surface-faint uppercase"
                         >Exited</span
