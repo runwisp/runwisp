@@ -3,18 +3,11 @@
 
 <script lang="ts">
     import { untrack } from "svelte";
-    import Convert from "ansi-to-html";
+    import { ansiLineToHtml } from "../log-console/ansi.js";
     import { LogCache } from "../log-console/LogCache.svelte.js";
     import { LogFetcher } from "../log-console/LogFetcher.svelte.js";
     import type { FetchLogsFn, LogEvent } from "../log-console/types.js";
     import { formatBytes } from "../utils/format.js";
-
-    // Convert ANSI escape sequences in a single log line to safe HTML spans.
-    // A fresh converter per call ensures no colour state leaks between
-    // independently virtualised lines.
-    function ansiLineToHtml(text: string): string {
-        return new Convert({ escapeXML: true }).toHtml(text);
-    }
 
     interface Props {
         fetchLogs?: FetchLogsFn;
@@ -256,13 +249,13 @@
 </script>
 
 <div
-    class="log-console relative flex h-full w-full flex-col overflow-hidden bg-slate-950 font-mono text-sm {className}"
+    class="log-console relative flex h-full w-full flex-col overflow-hidden bg-mist-950 font-mono text-sm {className}"
 >
     <div bind:this={containerEl} class="flex-1 overflow-auto" onscroll={onScroll}>
         <div class="relative" style="height: {totalHeight}px; min-height: 100%;">
             {#if cache.firstAvailableLine > 0}
                 <div
-                    class="absolute right-0 left-0 flex items-center bg-amber-950/60 text-amber-400"
+                    class="absolute right-0 left-0 flex items-center bg-warning-700/20 text-warning-400"
                     style="top: 0px; height: {lineHeight}px;"
                 >
                     <div
@@ -280,24 +273,24 @@
 
             {#each renderedLines as line (line.num)}
                 <div
-                    class="log-line absolute right-0 left-0 flex items-center hover:bg-slate-900/50 {flashLine ===
+                    class="log-line absolute right-0 left-0 flex items-center hover:bg-mist-900/50 {flashLine ===
                     line.num
                         ? 'log-line--flash'
                         : ''}"
                     style="top: {lineTop(line.num)}px; height: {lineHeight}px;"
                 >
                     <div
-                        class="flex-shrink-0 pr-3 text-right text-slate-600 select-none"
+                        class="flex-shrink-0 pr-3 text-right text-mist-500 select-none"
                         style="width: {gutterWidth}px;"
                     >
                         {line.num + 1}
                     </div>
-                    <div class="flex-1 truncate pr-4 text-slate-300">
+                    <div class="flex-1 truncate pr-4 text-mist-200">
                         {#if line.text !== undefined}
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             <span class="whitespace-pre">{@html ansiLineToHtml(line.text)}</span>
                         {:else}
-                            <span class="text-slate-700 italic">Loading...</span>
+                            <span class="text-mist-600 italic">Loading...</span>
                         {/if}
                     </div>
                 </div>
@@ -312,7 +305,7 @@
                         class="flex-shrink-0 pr-3 text-right select-none"
                         style="width: {gutterWidth}px;"
                     ></div>
-                    <div class="flex items-center gap-1 text-slate-500">
+                    <div class="flex items-center gap-1 text-mist-400">
                         <span class="dot" style="animation-delay: 0ms;"></span>
                         <span class="dot" style="animation-delay: 150ms;"></span>
                         <span class="dot" style="animation-delay: 300ms;"></span>
@@ -329,7 +322,7 @@
                         )}px; height: {lineHeight}px;"
                     >
                         <div
-                            class="flex-shrink-0 pr-3 text-right text-slate-800 opacity-0 select-none"
+                            class="flex-shrink-0 pr-3 text-right text-mist-700 opacity-0 select-none"
                             style="width: {gutterWidth}px;"
                         >
                             ~
@@ -339,16 +332,16 @@
             {/if}
 
             {#if cache.totalLines === 0 && !fetcher?.isFetching}
-                <div class="absolute inset-0 flex items-center justify-center text-slate-600">
+                <div class="absolute inset-0 flex items-center justify-center text-mist-500">
                     <div class="text-center">
                         <div class="mb-1 text-lg">No output yet</div>
-                        <div class="text-sm text-slate-700">Waiting for logs...</div>
+                        <div class="text-sm text-mist-600">Waiting for logs...</div>
                     </div>
                 </div>
             {/if}
 
             {#if cache.totalLines === 0 && fetcher?.isFetching}
-                <div class="absolute inset-0 flex items-center justify-center text-slate-600">
+                <div class="absolute inset-0 flex items-center justify-center text-mist-500">
                     <div class="flex items-center gap-2">
                         <span class="dot" style="animation-delay: 0ms;"></span>
                         <span class="dot" style="animation-delay: 150ms;"></span>
@@ -363,11 +356,11 @@
     {#if userScrolledUp && cache.totalLines > 0}
         <button
             class="absolute right-4 bottom-12 z-10 flex items-center gap-2 rounded-full border
-                   border-slate-700 bg-slate-800
+                   border-mist-700 bg-mist-800
                    px-3 py-1.5 text-xs
-                   font-medium text-slate-300 shadow-lg
+                   font-medium text-mist-200 shadow-lg
                    transition-all duration-200 hover:scale-105
-                   hover:bg-slate-700 active:scale-95"
+                   hover:bg-mist-700 active:scale-95"
             onclick={enableAutoScroll}
         >
             <svg
@@ -384,8 +377,8 @@
     {/if}
 
     <div
-        class="flex flex-shrink-0 items-center justify-between border-t border-slate-800
-               bg-slate-900/80 px-3 py-1.5 text-xs text-slate-500"
+        class="flex flex-shrink-0 items-center justify-between border-t border-mist-800
+               bg-mist-900/80 px-3 py-1.5 text-xs text-mist-400"
     >
         <div class="flex items-center gap-3">
             {#if isStreaming}
@@ -394,10 +387,10 @@
                     Streaming
                 </div>
             {:else if cache.finished}
-                <span class="text-slate-600">Stream ended</span>
+                <span class="text-mist-500">Stream ended</span>
             {/if}
             {#if fetcher?.isFetching}
-                <span class="text-slate-600">Fetching...</span>
+                <span class="text-mist-500">Fetching...</span>
             {/if}
         </div>
         <div class="flex items-center gap-4">
@@ -423,7 +416,7 @@
 
     @keyframes log-line-flash {
         0% {
-            background-color: rgba(251, 191, 36, 0.45);
+            background-color: oklch(0.8 0.18 70 / 0.45);
         }
         100% {
             background-color: transparent;

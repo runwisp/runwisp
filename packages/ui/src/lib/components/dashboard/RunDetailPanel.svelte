@@ -234,9 +234,9 @@
     </div>
 
     <!-- Console View -->
-    <div class="flex min-h-0 flex-1 flex-col bg-slate-950">
+    <div class="flex min-h-0 flex-1 flex-col bg-mist-950">
         <div
-            class="flex shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900/50 px-4 py-2 font-mono text-xs text-slate-400"
+            class="flex shrink-0 items-center justify-between border-b border-mist-800 bg-mist-900/50 px-4 py-2 font-mono text-xs text-mist-400"
         >
             <div class="flex items-center gap-2">
                 <TerminalIcon size={14} />
@@ -261,7 +261,7 @@
                         run.id,
                     )}/log/raw"
                     download="{run.task_name}-{run.id}.log"
-                    class="flex items-center gap-1.5 rounded border border-slate-700 px-2 py-1 text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-800 hover:text-slate-100"
+                    class="flex items-center gap-1.5 rounded border border-mist-700 px-2 py-1 text-mist-200 transition-colors hover:border-mist-500 hover:bg-mist-800 hover:text-mist-100"
                     title="Download the full log (rotated and current parts as one file)"
                 >
                     <Download size={12} />
