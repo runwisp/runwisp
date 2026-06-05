@@ -988,6 +988,64 @@ notify_on_failure = ["my-hook:override"]
 	assert.Contains(t, err.Error(), "do not support inline target overrides")
 }
 
+func TestValidate_DiscordHappyPath(t *testing.T) {
+	src := `
+[[notifier]]
+id          = "discord-ops"
+type        = "discord"
+webhook_url = "https://discord.com/api/webhooks/123/token"
+`
+	cfg, err := decode([]byte(src), "")
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+	require.Len(t, cfg.Notify.Notifiers, 1)
+	assert.Equal(t, "https://discord.com/api/webhooks/123/token", cfg.Notify.Notifiers[0].WebhookURL)
+}
+
+func TestValidate_DiscordMissingWebhookURL(t *testing.T) {
+	src := `
+[[notifier]]
+id   = "discord-ops"
+type = "discord"
+`
+	cfg, err := decode([]byte(src), "")
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "webhook_url is required for type=discord")
+}
+
+func TestValidate_DiscordInvalidScheme(t *testing.T) {
+	src := `
+[[notifier]]
+id          = "discord-ops"
+type        = "discord"
+webhook_url = "ftp://discord.com/api/webhooks/123/token"
+`
+	cfg, err := decode([]byte(src), "")
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "http or https")
+}
+
+func TestInlineToken_DiscordRejectsOverride(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id          = "discord-ops"
+type        = "discord"
+webhook_url = "https://discord.com/api/webhooks/123/token"
+
+[tasks.foo]
+cron              = "* * * * *"
+run               = "true"
+notify_on_failure = ["discord-ops:override"]
+`
+	_, err := decode([]byte(src), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "do not support inline target overrides")
+}
+
 func TestValidate_RouteEmptyNotifyList(t *testing.T) {
 	src := `
 [[notification_route]]

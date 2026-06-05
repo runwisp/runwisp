@@ -61,6 +61,8 @@ func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) ch
 	case "slack":
 		spec.WebhookURL = n.WebhookURL
 		spec.SlackChannel = n.SlackChannel
+	case "discord":
+		spec.WebhookURL = n.WebhookURL
 	case "telegram":
 		spec.BotToken = n.BotToken
 	case "smtp":

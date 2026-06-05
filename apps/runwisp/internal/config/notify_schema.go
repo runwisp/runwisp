@@ -15,7 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/kinds"
 )
 
-var allowedNotifierTypes = []string{"slack", "telegram", "smtp", "webhook"}
+var allowedNotifierTypes = []string{"slack", "discord", "telegram", "smtp", "webhook"}
 
 // allowedSMTPTLSModes enumerates the values accepted for [[notifier]].tls. An
 // empty string falls back to a port-derived default (465 → implicit; everything
@@ -250,6 +250,8 @@ func cloneNotifierWithOverride(parent NotifierSpec, syntheticID, override string
 		spec.Recipients = []string{override}
 		spec.CC = nil
 		spec.BCC = nil
+	case "discord":
+		return NotifierSpec{}, fmt.Errorf("notify token %q: discord notifiers do not support inline target overrides (a Discord webhook is bound to one channel)", syntheticID)
 	case "webhook":
 		return NotifierSpec{}, fmt.Errorf("notify token %q: webhook notifiers do not support inline target overrides", syntheticID)
 	default:
@@ -403,6 +405,8 @@ func validateNotifierByType(spec *NotifierSpec) error {
 	switch spec.Type {
 	case "slack":
 		return validateSlackNotifier(spec)
+	case "discord":
+		return validateDiscordNotifier(spec)
 	case "telegram":
 		return validateTelegramNotifier(spec)
 	case "smtp":
@@ -507,25 +511,42 @@ func validateTelegramNotifier(spec *NotifierSpec) error {
 	return nil
 }
 
+func validateDiscordNotifier(spec *NotifierSpec) error {
+	raw := strings.TrimSpace(spec.WebhookURL)
+	if raw == "" {
+		return fmt.Errorf("notifier %q: webhook_url is required for type=discord", spec.ID)
+	}
+	return validateHTTPURL(spec.ID, "webhook_url", raw)
+}
+
 func validateWebhookNotifier(spec *NotifierSpec) error {
 	raw := strings.TrimSpace(spec.URL)
 	if raw == "" {
 		return fmt.Errorf("notifier %q: url is required for type=webhook", spec.ID)
 	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("notifier %q: invalid url: %w", spec.ID, err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("notifier %q: url must use http or https scheme (got %q)", spec.ID, u.Scheme)
-	}
-	if u.Host == "" {
-		return fmt.Errorf("notifier %q: url is missing host", spec.ID)
+	if err := validateHTTPURL(spec.ID, "url", raw); err != nil {
+		return err
 	}
 	for k := range spec.Headers {
 		if strings.TrimSpace(k) == "" {
 			return fmt.Errorf("notifier %q: header key must not be empty", spec.ID)
 		}
+	}
+	return nil
+}
+
+// validateHTTPURL checks that raw parses as an absolute http(s) URL with a
+// host. key names the offending TOML key in error messages.
+func validateHTTPURL(notifierID, key, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("notifier %q: invalid %s: %w", notifierID, key, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("notifier %q: %s must use http or https scheme (got %q)", notifierID, key, u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("notifier %q: %s is missing host", notifierID, key)
 	}
 	return nil
 }

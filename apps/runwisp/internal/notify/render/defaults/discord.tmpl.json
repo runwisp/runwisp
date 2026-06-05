@@ -1,0 +1,22 @@
+{{- /* Discord notification — single embed, color-coded by outcome. */ -}}
+{{- $tail := "" -}}{{- if or (eq .Kind "run.failed") (eq .Kind "run.timeout") -}}{{- $tail = outputTail . -}}{{- end -}}
+{{- $url := "" -}}{{- if eq .Kind "log.disk_pressure" -}}{{- $url = taskURL .TaskName -}}{{- else -}}{{- $url = runURL .Run -}}{{- end -}}
+{{- $footer := "from runwisp" -}}{{- with fingerprint -}}{{- $footer = printf "from runwisp · %s" . -}}{{- end -}}
+{{- $color := "5793266" -}}
+{{- if eq .Kind "run.succeeded" -}}{{- $color = "5763719" -}}
+{{- else if eq .Severity "error" -}}{{- $color = "15548997" -}}
+{{- else if eq .Severity "warn" -}}{{- $color = "16705372" -}}
+{{- end -}}
+{
+  "embeds": [
+    {
+      "title": "{{ jsonStr (printf "%s %s %s" (statusEmoji .Kind) .TaskName (statusVerb .Kind)) }}",{{ if $url }}
+      "url": "{{ jsonStr $url }}",{{ end }}
+      "description": "{{ jsonStr (printf "%s\n%s · %s." (eventSentence .) (eventTrigger .) (humanTime .Timestamp)) }}{{ if $tail }}{{ jsonStr (printf "\n```\n%s\n```" $tail) }}{{ end }}",
+      "color": {{ $color }},
+      "footer": { "text": "{{ jsonStr $footer }}" },
+      "timestamp": "{{ timeRFC .Timestamp }}"
+    }
+  ],
+  "allowed_mentions": { "parse": [] }
+}

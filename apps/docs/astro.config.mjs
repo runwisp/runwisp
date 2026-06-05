@@ -91,6 +91,10 @@ export default defineConfig({
                             items: [
                                 { label: "Slack", slug: "notifications/providers/slack" },
                                 {
+                                    label: "Discord",
+                                    slug: "notifications/providers/discord",
+                                },
+                                {
                                     label: "Telegram",
                                     slug: "notifications/providers/telegram",
                                 },

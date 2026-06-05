@@ -194,5 +194,6 @@ func TestWebhook_IDAndClose(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "my-hook", ch.ID())
+	assert.Equal(t, "webhook:my-hook", ch.String(), "empty Kind must default to webhook")
 	assert.NoError(t, ch.Close(context.Background()))
 }

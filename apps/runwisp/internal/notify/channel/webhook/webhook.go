@@ -17,6 +17,7 @@ import (
 
 // Channel is a generic HTTP webhook notifier.
 type Channel struct {
+	kind      string
 	id        string
 	url       string
 	headers   http.Header
@@ -26,6 +27,9 @@ type Channel struct {
 
 // Config is the inputs the factory needs to build a webhook Channel.
 type Config struct {
+	// Kind labels the channel in errors and logs (e.g. "discord" for
+	// providers built on top of this one). Empty means "webhook".
+	Kind      string
 	ID        string
 	URL       string
 	Headers   map[string]string // optional; merged into every request
@@ -35,11 +39,15 @@ type Config struct {
 
 // New constructs a webhook channel.
 func New(cfg Config) (*Channel, error) {
+	kind := cfg.Kind
+	if kind == "" {
+		kind = "webhook"
+	}
 	if cfg.URL == "" {
-		return nil, fmt.Errorf("webhook channel %q: url is required", cfg.ID)
+		return nil, fmt.Errorf("%s channel %q: url is required", kind, cfg.ID)
 	}
 	if cfg.Renderer == nil {
-		return nil, fmt.Errorf("webhook channel %q: renderer is required", cfg.ID)
+		return nil, fmt.Errorf("%s channel %q: renderer is required", kind, cfg.ID)
 	}
 	transport := cfg.Transport
 	if transport == nil {
@@ -53,6 +61,7 @@ func New(cfg Config) (*Channel, error) {
 		}
 	}
 	return &Channel{
+		kind:      kind,
 		id:        cfg.ID,
 		url:       cfg.URL,
 		headers:   h,
@@ -64,7 +73,7 @@ func New(cfg Config) (*Channel, error) {
 func (c *Channel) ID() string                  { return c.id }
 func (c *Channel) Close(context.Context) error { return nil }
 
-func (c *Channel) String() string { return "webhook:" + c.id }
+func (c *Channel) String() string { return c.kind + ":" + c.id }
 
 // Execute renders the event and POSTs the JSON body to the configured URL.
 func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
