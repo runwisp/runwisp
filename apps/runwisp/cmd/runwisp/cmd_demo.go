@@ -141,7 +141,7 @@ func seedDemoHistory() error {
 	}
 	defer db.Close()
 
-	fmt.Fprintln(os.Stderr, "Seeding demo history by running your tasks (this can take a minute)...")
+	fmt.Fprintln(os.Stderr, "Seeding demo history by running your tasks (a few seconds)...")
 	n, err := demo.Seed(context.Background(), db, cfg, flags.LogDir(), time.Now())
 	if err != nil {
 		return fmt.Errorf("seed demo data: %w", err)

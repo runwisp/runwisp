@@ -37,8 +37,9 @@ const (
 
 	// defaultServiceWindow bounds a service's infinite loop (which never exits on
 	// its own) so execOne captures a representative sample instead of blocking
-	// forever.
-	defaultServiceWindow = 1200 * time.Millisecond
+	// forever. The demo services log their sample lines within milliseconds of
+	// spawning; the window just needs headroom for shell startup under load.
+	defaultServiceWindow = 400 * time.Millisecond
 
 	// defaultServicePerInstance is how many past restart runs each service
 	// instance gets.
@@ -290,15 +291,16 @@ func newSpec(task *model.Task, start time.Time) *runSpec {
 	}
 }
 
-// runAll executes every spec through the real executor, fanning out across CPUs
-// (subprocess execution dominates), then inserts each run row.
+// runAll executes every spec through the real executor, fanning out well past
+// the core count — the subprocesses spend their time in `sleep`, so a
+// CPU-sized pool would sit >90% idle — then inserts each run row.
 func (s *seeder) runAll(ctx context.Context, specs []*runSpec) error {
 	if len(specs) == 0 {
 		return nil
 	}
-	workers := runtime.NumCPU()
-	if workers < 1 {
-		workers = 1
+	workers := 8 * runtime.NumCPU()
+	if workers < 8 {
+		workers = 8
 	}
 	jobs := make(chan *runSpec)
 	errs := make(chan error, len(specs))
