@@ -99,6 +99,17 @@ describe("formatTaskNextRunLabel", () => {
         const overview = makeOverview({ nextRunMs: undefined, isApiOnly: false });
         expect(formatTaskNextRunLabel(overview)).toBe("Not scheduled");
     });
+
+    it("ticks down as the supplied now advances", () => {
+        const nextRun = new Date("2024-01-01T12:00:00Z");
+        const overview = makeOverview({ nextRunMs: nextRun.getTime() });
+        expect(formatTaskNextRunLabel(overview, new Date("2024-01-01T10:00:00Z"))).toMatch(
+            /^in 2 hours/,
+        );
+        expect(formatTaskNextRunLabel(overview, new Date("2024-01-01T11:00:00Z"))).toMatch(
+            /^in 1 hour/,
+        );
+    });
 });
 
 describe("formatTaskTriggerLabel", () => {

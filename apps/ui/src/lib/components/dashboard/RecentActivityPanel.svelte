@@ -15,10 +15,12 @@
 
     let {
         recentActivity = [],
+        now = new Date(),
         onRunClick,
         onViewAllRuns,
     } = $props<{
         recentActivity?: Run[];
+        now?: Date;
         onRunClick?: (taskName: string, runId: string) => void;
         onViewAllRuns?: () => void;
     }>();
@@ -87,7 +89,7 @@
                         </div>
 
                         <p class="mt-0.5 text-xs text-on-surface-muted">
-                            {formatRunStartedLabel(run)} &middot;
+                            {formatRunStartedLabel(run, now)} &middot;
                             {formatRunDurationLabel(run)}
                             &middot; {formatTriggeredByLabel(run.triggered_by)}
                             {#if isFailureEndReason(run.end_reason)}

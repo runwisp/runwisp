@@ -99,6 +99,7 @@
         taskCounts = EMPTY_COUNTS,
         filterOptions = EMPTY_FILTERS,
         sortOptions = EMPTY_SORT_OPTIONS,
+        now = new Date(),
         onTaskClick,
     } = $props<{
         taskOverviews?: TaskOverview[];
@@ -109,6 +110,7 @@
         taskCounts?: TaskCounts;
         filterOptions?: FilterOption[];
         sortOptions?: SortOption[];
+        now?: Date;
         onTaskClick?: (taskName: string) => void;
     }>();
 
@@ -294,7 +296,7 @@ run  = "echo hello"</pre>
                             <div class="w-32">
                                 <p class="text-on-surface-faint">Next run</p>
                                 <p class="font-medium text-on-surface">
-                                    {formatTaskNextRunLabel(task)}
+                                    {formatTaskNextRunLabel(task, now)}
                                 </p>
                             </div>
 

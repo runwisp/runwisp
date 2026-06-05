@@ -21,12 +21,14 @@
         attentionTasks = [],
         runningNow = [],
         upcomingTasks = [],
+        now = new Date(),
         onTaskClick,
         onRunClick,
     } = $props<{
         attentionTasks?: TaskOverview[];
         runningNow?: Run[];
         upcomingTasks?: TaskOverview[];
+        now?: Date;
         onTaskClick?: (taskName: string) => void;
         onRunClick?: (taskName: string, runId: string) => void;
     }>();
@@ -78,7 +80,7 @@
                                     {/if}
                                 </div>
                                 <p class="mt-1 text-xs text-on-surface-muted">
-                                    Last run {formatTaskLastRunLabel(task)}
+                                    Last run {formatTaskLastRunLabel(task, now)}
                                 </p>
                             </div>
                             <ShieldAlert size={14} class="shrink-0 text-danger-soft-text" />
@@ -87,7 +89,7 @@
                         <div
                             class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-on-surface-muted"
                         >
-                            <span>Next {formatTaskNextRunLabel(task)}</span>
+                            <span>Next {formatTaskNextRunLabel(task, now)}</span>
                             {#if isFailureEndReason(task.lastRun?.end_reason)}
                                 <span class="text-danger-soft-text">
                                     Exit {task.lastRun?.exit_code}
@@ -187,7 +189,7 @@
                                     {/if}
                                 </div>
                                 <p class="mt-1 text-xs text-on-surface-muted">
-                                    {formatTaskNextRunLabel(task)}
+                                    {formatTaskNextRunLabel(task, now)}
                                 </p>
                             </div>
                             <ArrowRight

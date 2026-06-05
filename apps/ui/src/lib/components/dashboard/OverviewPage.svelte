@@ -20,6 +20,7 @@
         type TaskOverview,
     } from "./overview.js";
     import { pluralize } from "./overview-format.js";
+    import { TickingNow } from "$lib/utils/ticking-now.svelte";
     import type { DaemonState, DaemonStats } from "@runwisp/ui";
     import type { Run, Task } from "@runwisp/common";
 
@@ -74,6 +75,11 @@
     let searchQuery = $state("");
     let taskFilter = $state<OverviewTaskFilter>("all");
     let sortBy = $state<OverviewTaskSortKey>("attention");
+
+    // Tick every 30s so relative-time labels ("in 2 hours") stay current
+    // while the page sits open.
+    const ticker = new TickingNow();
+    $effect(() => ticker.start());
 
     let taskOverviews = $derived(buildTaskOverviews(tasks, recentRuns, runningRuns));
     let summary = $derived(buildOverviewSummary(taskOverviews, runningRuns));
@@ -150,17 +156,19 @@
             {attentionTasks}
             {runningNow}
             {upcomingTasks}
+            now={ticker.now}
             {onTaskClick}
             {onRunClick}
         />
 
-        <RecentActivityPanel {recentActivity} {onRunClick} {onViewAllRuns} />
+        <RecentActivityPanel {recentActivity} now={ticker.now} {onRunClick} {onViewAllRuns} />
     </section>
 
     <Card padding="lg">
         <TaskOverviewList
             {taskOverviews}
             {filteredTasks}
+            now={ticker.now}
             bind:searchQuery
             bind:taskFilter
             bind:sortBy
