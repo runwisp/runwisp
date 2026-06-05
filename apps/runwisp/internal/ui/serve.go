@@ -62,12 +62,22 @@ func serve(stripped fs.FS, w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if strings.HasPrefix(reqPath, "_app/") || (path.Ext(reqPath) != "" && reqPath != indexHTML) {
+	// A path with an extension is only a missing asset when the request does
+	// not accept HTML. Browser navigations (refresh, direct URL entry) always
+	// send Accept: text/html — and task names may legally contain dots, so
+	// /tasks/backup.daily must still reach the SPA fallback.
+	if strings.HasPrefix(reqPath, "_app/") || (path.Ext(reqPath) != "" && !acceptsHTML(req)) {
 		http.NotFound(w, req)
 		return
 	}
 
 	serveIndexFallback(stripped, w, req)
+}
+
+// acceptsHTML reports whether the request's Accept header includes text/html,
+// i.e. it is a browser navigation rather than an asset fetch.
+func acceptsHTML(req *http.Request) bool {
+	return strings.Contains(req.Header.Get("Accept"), "text/html")
 }
 
 // tryServeFile attempts to serve reqPath from the embedded FS. Returns true
