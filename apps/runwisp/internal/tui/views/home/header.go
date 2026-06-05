@@ -39,7 +39,10 @@ func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
 		}
 		fields = append(fields, FieldWebUI)
 	}
-	if info.PasswordEphemeral && info.Password != "" {
+	// No password row to copy when auth is disabled — the daemon still mints
+	// one internally, but it gates nothing and must not be presented as a
+	// credential.
+	if !info.AuthDisabled && info.PasswordEphemeral && info.Password != "" {
 		fields = append(fields, FieldPassword)
 	}
 	return fields
@@ -120,7 +123,13 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w int, homeCurso
 		}
 	}
 
-	if len(fields) > 0 {
+	// Auth disabled: render a static, non-focusable Password row so the
+	// operator sees the security state at a glance instead of a masked value.
+	if info.AuthDisabled {
+		renderFieldRow(&b, "Password", "disabled (RUNWISP_NO_AUTH)", uikit.ColorWarning, w, false, false)
+	}
+
+	if len(fields) > 0 || info.AuthDisabled {
 		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
 		b.WriteString("\n")
 	}

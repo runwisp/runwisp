@@ -151,10 +151,14 @@ func (srv *Server) setupRoutes() error {
 	srv.router.With(authLimiter).Post("/api/auth", srv.auth.HandleLogin)
 	srv.router.With(authLimiter).Get("/api/auth/launch", srv.handleLaunchTicket)
 
-	// Protected routes
+	// Protected routes. With RUNWISP_NO_AUTH the JWT gate is skipped entirely
+	// — an explicit operator opt-in, warned about loudly at startup — but the
+	// body-size cap stays in place.
 	srv.router.Group(func(r chi.Router) {
 		r.Use(maxBodySize(maxProtectedBodySize))
-		r.Use(authOrLocalTrusted(srv.auth))
+		if !srv.noAuth {
+			r.Use(authOrLocalTrusted(srv.auth))
+		}
 
 		// Huma operations (registered on the chi sub-router group)
 		srv.registerProtectedHumaRoutes(r)

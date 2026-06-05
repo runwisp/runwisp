@@ -7,6 +7,7 @@
     import { type Snippet, type Component, tick } from "svelte";
     import { resolve } from "$app/paths";
     import { page } from "$app/stores";
+    import AuthDisabledBadge from "$lib/components/AuthDisabledBadge.svelte";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import ConnectionPip from "$lib/components/ConnectionPip.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
@@ -256,6 +257,7 @@
                         {/if}
                     </span>
                 {/if}
+                <AuthDisabledBadge />
                 <ConnectionPip />
                 <ThemeToggle />
                 <NotificationBell />

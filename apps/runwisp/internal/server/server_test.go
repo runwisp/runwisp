@@ -32,6 +32,12 @@ import (
 )
 
 func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.MockExecutor, string) {
+	return setupServerWithOpts(t, nil)
+}
+
+// setupServerWithOpts builds the standard test server, letting a test tweak
+// the Options (e.g. NoAuth) before construction.
+func setupServerWithOpts(t *testing.T, mutate func(*Options)) (*Server, *testutil.MockRunRepository, *testutil.MockExecutor, string) {
 	repo := new(testutil.MockRunRepository)
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
@@ -55,7 +61,7 @@ func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
 
-	s, err := New(Options{
+	opts := Options{
 		DB:          repo,
 		TaskManager: jm,
 		Tasks:       tasks,
@@ -65,7 +71,11 @@ func setupServer(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.
 		EventBus:    eb,
 		Password:    "secret",
 		JWTSecret:   "test-jwt-secret",
-	})
+	}
+	if mutate != nil {
+		mutate(&opts)
+	}
+	s, err := New(opts)
 	require.NoError(t, err)
 	return s, repo, exec, tmpDir
 }

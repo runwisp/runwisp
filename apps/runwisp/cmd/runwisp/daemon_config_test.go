@@ -46,6 +46,58 @@ func TestResolvePassword_EphemeralWhenEnvAbsent(t *testing.T) {
 	}
 }
 
+// TestResolveAuthMode_Values locks the parse contract: only the unambiguous
+// "1"/"true" (case-insensitive) enable no-auth; anything else non-empty is a
+// startup error rather than a guess.
+func TestResolveAuthMode_Values(t *testing.T) {
+	tests := []struct {
+		value   string
+		noAuth  bool
+		wantErr bool
+	}{
+		{"", false, false},
+		{"1", true, false},
+		{"true", true, false},
+		{"TRUE", true, false},
+		{" true ", true, false},
+		{"0", false, true},
+		{"yes", false, true},
+		{"on", false, true},
+	}
+	for _, tt := range tests {
+		t.Run("value="+tt.value, func(t *testing.T) {
+			t.Setenv("RUNWISP_NO_AUTH", tt.value)
+			t.Setenv("RUNWISP_PASSWORD", "")
+
+			noAuth, err := resolveAuthMode()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for RUNWISP_NO_AUTH=%q", tt.value)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if noAuth != tt.noAuth {
+				t.Fatalf("RUNWISP_NO_AUTH=%q: expected noAuth=%v, got %v", tt.value, tt.noAuth, noAuth)
+			}
+		})
+	}
+}
+
+// TestResolveAuthMode_ConflictWithPassword rejects the contradictory combo of
+// a configured password and disabled auth — a password that is never checked
+// gives a false sense of security.
+func TestResolveAuthMode_ConflictWithPassword(t *testing.T) {
+	t.Setenv("RUNWISP_NO_AUTH", "1")
+	t.Setenv("RUNWISP_PASSWORD", "some-password")
+
+	if _, err := resolveAuthMode(); err == nil {
+		t.Fatal("expected error when RUNWISP_NO_AUTH and RUNWISP_PASSWORD are both set")
+	}
+}
+
 // TestDeriveJWTSecret_DeterministicWithSameInputs is the property that lets
 // browser sessions survive a daemon restart when RUNWISP_PASSWORD is stable.
 func TestDeriveJWTSecret_DeterministicWithSameInputs(t *testing.T) {

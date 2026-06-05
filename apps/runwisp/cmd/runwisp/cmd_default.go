@@ -71,13 +71,15 @@ func runTUIConnect(client *apiclient.Client) error {
 
 	// Fetch the ephemeral password over the local socket so the TUI's
 	// "Password" home field can copy it to the clipboard. The env-var case
-	// (ErrLocalCredentialsUnavailable) is expected, not an error — the
-	// operator already knows the value they configured, and the TUI simply
-	// hides the field.
+	// (ErrLocalCredentialsUnavailable) and the RUNWISP_NO_AUTH case
+	// (ErrAuthDisabled) are expected, not errors — the TUI hides or replaces
+	// the field based on the daemon info it already fetched.
 	if creds, credErr := client.GetLocalCredentials(); credErr == nil && creds != nil {
 		startupInfo.Password = creds.Password
 		startupInfo.PasswordEphemeral = creds.Ephemeral
-	} else if credErr != nil && !errors.Is(credErr, apiclient.ErrLocalCredentialsUnavailable) {
+	} else if credErr != nil &&
+		!errors.Is(credErr, apiclient.ErrLocalCredentialsUnavailable) &&
+		!errors.Is(credErr, apiclient.ErrAuthDisabled) {
 		slog.Warn("Could not fetch local credentials", "err", credErr)
 	}
 

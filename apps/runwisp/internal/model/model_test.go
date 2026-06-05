@@ -73,6 +73,7 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &decoded))
 
 	want := []string{
+		"auth_disabled",
 		"capabilities",
 		"cloud_enabled",
 		"config_loaded_at",

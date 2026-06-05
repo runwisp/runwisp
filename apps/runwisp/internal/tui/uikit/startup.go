@@ -42,6 +42,9 @@ type StartupInfo struct {
 
 	PasswordEphemeral bool
 	Password          string
+	// AuthDisabled is true when the daemon runs with RUNWISP_NO_AUTH — there
+	// is no password to show; the Home header renders "disabled" instead.
+	AuthDisabled bool
 
 	CloudEnabled  bool
 	WebUIDisabled bool

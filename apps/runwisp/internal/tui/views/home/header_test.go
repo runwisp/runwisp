@@ -67,6 +67,30 @@ func TestRenderHomeHeader_OmitsPasswordWhenNotEphemeral(t *testing.T) {
 	assert.NotContains(t, header, "should-be-ignored")
 }
 
+// TestRenderHomeHeader_AuthDisabled locks the RUNWISP_NO_AUTH presentation:
+// the Password row reads "disabled" instead of a masked value, the minted
+// password never leaks into the render, and the row is not focusable (no
+// FieldPassword), so it can't be copied as if it were a credential.
+func TestRenderHomeHeader_AuthDisabled(t *testing.T) {
+	const minted = "Kj2x9pQ7mN4vL8rT5wYz1c"
+	info := uikit.StartupInfo{
+		Port:              9477,
+		AuthDisabled:      true,
+		PasswordEphemeral: true,
+		Password:          minted,
+	}
+
+	header, _ := RenderHeader(info, false, 80, -1, -1)
+	assert.Contains(t, header, "disabled (RUNWISP_NO_AUTH)")
+	assert.NotContains(t, header, minted,
+		"the internally minted password must never appear when auth is disabled")
+	assert.NotContains(t, header, strings.Repeat("•", PasswordMaskWidth),
+		"no masked value — there is no credential to hint at")
+
+	assert.NotContains(t, Fields(info, false), FieldPassword,
+		"the disabled row must not be focusable/copyable")
+}
+
 // TestNextCronRun_ResultShapes covers every shape nextCronRun can produce:
 // the seconds/minutes/hours buckets via different schedules, the empty-input
 // and invalid-input zero cases, and the documented `HH:MM:SS (in …)` format.

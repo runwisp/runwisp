@@ -22,6 +22,7 @@ const (
 	passwordExitUnreachable   = 2 // socket missing, transport error
 	passwordExitInternalGate  = 3 // 403 from a socket request — should not happen
 	passwordExitUnexpectedErr = 4 // anything else
+	passwordExitNoAuth        = 5 // daemon runs with RUNWISP_NO_AUTH — no password exists
 )
 
 var passwordCmd = &cobra.Command{
@@ -69,6 +70,10 @@ func runPassword(stdout, stderr io.Writer, client credentialsFetcher, socketPath
 		fmt.Fprintln(stderr, "Error: this daemon is configured with RUNWISP_PASSWORD; RunWisp will not disclose it.")
 		fmt.Fprintln(stderr, "Retrieve it from wherever you set it (Docker secret, systemd credential, vault, password manager, …).")
 		return passwordExitRefused
+	}
+	if errors.Is(err, apiclient.ErrAuthDisabled) {
+		fmt.Fprintln(stderr, "Error: this daemon runs with RUNWISP_NO_AUTH — authentication is disabled, so there is no password.")
+		return passwordExitNoAuth
 	}
 	if apiclient.IsHTTPStatus(err, http.StatusForbidden) {
 		fmt.Fprintln(stderr, "internal error: socket request was not local-trusted")

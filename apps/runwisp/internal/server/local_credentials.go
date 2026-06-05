@@ -47,6 +47,12 @@ func (srv *Server) handleGetLocalCredentials(ctx context.Context, _ *struct{}) (
 	if !IsLocalTrustedCtx(ctx) {
 		return nil, huma.Error403Forbidden("local-credentials endpoint is only available on the Unix socket")
 	}
+	// RUNWISP_NO_AUTH: a password is still minted internally to keep the
+	// cookie machinery alive, but it gates nothing — handing it out would
+	// present a non-credential as a credential.
+	if srv.noAuth {
+		return nil, huma.Error409Conflict("daemon is running with RUNWISP_NO_AUTH; there is no password to retrieve")
+	}
 	if !srv.passwordEphemeral {
 		return nil, huma.Error404NotFound("daemon is configured with RUNWISP_PASSWORD; no shareable password is disclosed")
 	}

@@ -124,6 +124,76 @@ One thing worth flagging: `runwisp password` writes to stdout,
 which means it lands in your shell scrollback. If that matters,
 pipe it straight into a clipboard tool.
 
+## Running without a password
+
+Sometimes a login wall is just in the way — a local dev container, a
+demo on your own laptop, a throwaway instance on an isolated network.
+For those cases you can switch auth off entirely:
+
+```bash
+RUNWISP_NO_AUTH=1 runwisp daemon
+```
+
+Set `RUNWISP_NO_AUTH=1` (or `true`) and every `/api/` route answers
+without a password, the Web UI skips the login screen, and a
+persistent **Auth disabled** badge sits in the Web UI header so the
+instance can never be mistaken for a secured one. The TUI's Home page
+shows `Password disabled (RUNWISP_NO_AUTH)` for the same reason, and
+the daemon prints an unmissable warning banner at startup.
+
+Be clear-eyed about what you're switching off: **anyone who can reach
+the port has full control of the daemon** — browsing run history and
+logs, and triggering tasks that execute shell commands as the user who
+started it. Only use this for local development or on a trusted,
+isolated network. Never expose the port to the public internet, and if
+you need remote access without a login, put an authenticating reverse
+proxy in front instead.
+
+A few sharp edges, sanded:
+
+- `RUNWISP_NO_AUTH` and `RUNWISP_PASSWORD` are mutually exclusive —
+  the daemon refuses to start with both set, because a password that
+  is never checked is worse than no password.
+- Any value other than `1` / `true` is a startup error, not a guess.
+- `runwisp password` exits with code **5** and an explanation — there
+  is no password to print.
+- The local Unix socket and the optional cloud connection are
+  unaffected; this switch only opens the local HTTP API and Web UI.
+
+### Docker for local dev
+
+This is the headline use case. Inside a container the daemon has to
+bind `0.0.0.0` for port mapping to work, so pair the two:
+
+```bash
+docker run --rm \
+  -e RUNWISP_NO_AUTH=1 \
+  -p 127.0.0.1:9477:9477 \
+  -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
+  your-runwisp-image \
+  runwisp --config /etc/runwisp/runwisp.toml --host 0.0.0.0 daemon
+```
+
+Or in a `compose.yaml`:
+
+```yaml
+services:
+    runwisp:
+        image: your-runwisp-image
+        command: runwisp --config /etc/runwisp/runwisp.toml --host 0.0.0.0 daemon
+        environment:
+            - RUNWISP_NO_AUTH=1
+        ports:
+            - "127.0.0.1:9477:9477"
+        volumes:
+            - ./runwisp.toml:/etc/runwisp/runwisp.toml:ro
+```
+
+Note the `127.0.0.1:` prefix on the port mapping — it keeps the
+passwordless daemon reachable from your machine only, not from
+everything on your LAN. Drop it only when the network between you and
+the container is genuinely trusted.
+
 ## Rate limiting
 
 Failed network logins are rate-limited per source IP. Cross the
