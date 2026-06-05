@@ -28,6 +28,20 @@ func TestResolve_Slack(t *testing.T) {
 	assert.Equal(t, "https://hooks.slack.test/T/B/Z", got.Notifiers[0].WebhookURL)
 }
 
+func TestResolve_Discord(t *testing.T) {
+	cfg := config.NotifyConfig{
+		Notifiers: []config.NotifierSpec{{
+			ID:         "discord-ops",
+			Type:       "discord",
+			WebhookURL: "https://discord.com/api/webhooks/123/token",
+		}},
+	}
+	got, err := Resolve(cfg, render.TemplateContext{})
+	require.NoError(t, err)
+	require.Len(t, got.Notifiers, 1)
+	assert.Equal(t, "https://discord.com/api/webhooks/123/token", got.Notifiers[0].WebhookURL)
+}
+
 func TestResolve_Telegram(t *testing.T) {
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{

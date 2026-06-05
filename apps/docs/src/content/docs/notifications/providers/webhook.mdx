@@ -8,9 +8,11 @@ description: Set up the generic webhook notifier — POST structured JSON to any
 import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 The webhook driver POSTs a JSON body to any HTTP endpoint you control.
-It's the catch-all for services that accept incoming webhooks but aren't
-Slack or Telegram — Discord, PagerDuty, n8n, a custom server, anything
-that speaks HTTP.
+It's the catch-all for services that accept incoming webhooks but don't
+have a dedicated provider — PagerDuty, n8n, a custom server, anything
+that speaks HTTP. (For Discord, use the
+[native provider](/notifications/providers/discord/) instead — it sends
+embeds Discord actually renders.)
 
 ## Fields
 
@@ -185,6 +187,11 @@ Webhook notifiers do not support inline target overrides (like
         title="Slack"
         href="/notifications/providers/slack/"
         description="Rich Block Kit messages in Slack channels."
+    />
+    <LinkCard
+        title="Discord"
+        href="/notifications/providers/discord/"
+        description="Color-coded embeds via a Discord channel webhook."
     />
     <LinkCard
         title="Telegram"

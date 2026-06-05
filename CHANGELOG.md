@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Passwordless mode.** Opt-in `RUNWISP_NO_AUTH=1` disables the login boundary for local dev / trusted networks, with a startup banner and a persistent Web UI badge. See [Auth](https://docs.runwisp.com/operations/auth/#running-without-a-password).
+- **Discord notifications.** New `type = "discord"` notifier — color-coded embeds posted to a Discord channel webhook. See [Discord provider](https://docs.runwisp.com/notifications/providers/discord/).
 - **Webhook notifications.** New `type = "webhook"` notifier — POSTs structured JSON to any URL with optional custom headers. See [Webhook provider](https://docs.runwisp.com/notifications/providers/webhook/).
 - **`${VAR}` / `${file:path}` substitution in `runwisp.toml`.** Any string value can pull from the daemon's environment or a file at config load; `run` is left to the shell. See [Substitution](https://docs.runwisp.com/configuration/substitution/).
 - **`secrets` and `secrets_file` on `[tasks.*]` / `[services.*]` / `[defaults]`.** Same mechanics as `env`, but keys and values never leave the daemon. See [Environment & secrets](https://docs.runwisp.com/configuration/tasks/#environment--secrets).

@@ -1,0 +1,249 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Discord
+description: Set up the Discord notifier end-to-end — create a channel webhook, store the URL safely, route failures to it, and test it.
+---
+
+import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+The Discord driver posts color-coded embeds through a [channel
+webhook][dw] — red for failures, green for successes, yellow for
+warnings. No bot to host, no token to refresh: a webhook URL is all
+Discord needs.
+
+[dw]: https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks
+
+## Fields
+
+```toml
+[[notifier]]
+id          = "discord-ops"
+type        = "discord"
+webhook_url = "${RUNWISP_DISCORD_OPS_URL}"
+```
+
+`id`, `type`, and `webhook_url` are required. Use
+[`${...}` substitution](/configuration/substitution/) to pull the URL
+from an env var or a file instead of writing it inline —
+[storing the secret](/notifications/model/#storing-the-secret).
+
+| Key             | Required | What it does                                                       |
+| --------------- | -------- | ------------------------------------------------------------------ |
+| `webhook_url`   | yes      | The webhook URL — inline, `${VAR}`, or `${file:path}`.             |
+| `template_path` | no       | Path to a Go-template file overriding the embedded message format. |
+
+## 1. Create the webhook in Discord
+
+In the server you want notifications in:
+
+1. Open **Server Settings → Integrations → Webhooks** and click
+   **New Webhook**.
+2. Pick the destination channel (e.g. `#ops-alerts`).
+3. Set the name and avatar here too — that's what messages post as.
+4. Click **Copy Webhook URL**. It looks like
+   `https://discord.com/api/webhooks/1234567890/XXXXXXXXXXXXXXXXXXXX`.
+
+Treat the URL as a secret — anyone with it can post to your channel.
+
+## 2. Store the URL
+
+Pick where the URL lives and reference it with
+[`${...}` substitution](/configuration/substitution/).
+
+<Tabs syncKey="discord-secret">
+    <TabItem label="Env var" icon="seti:shell">
+        The simplest option for any deployment — Docker, systemd,
+        bare metal. Set the variable in whatever already manages
+        your environment.
+
+        ```bash
+        export RUNWISP_DISCORD_OPS_URL=https://discord.com/api/webhooks/123.../XXX...
+        runwisp daemon
+        ```
+
+        ```toml
+        [[notifier]]
+        id          = "discord-ops"
+        type        = "discord"
+        webhook_url = "${RUNWISP_DISCORD_OPS_URL}"
+        ```
+    </TabItem>
+    <TabItem label="File on disk" icon="document">
+        Useful when a secrets manager (Vault agent, sops, Docker
+        secrets at `/run/secrets/...`) writes the URL to a known
+        path for you. Relative paths resolve next to `runwisp.toml`;
+        `~/` works too.
+
+        ```bash
+        mkdir -p ~/.config/runwisp
+        chmod 0700 ~/.config/runwisp
+        printf '%s\n' 'https://discord.com/api/webhooks/...' > ~/.config/runwisp/discord-ops.url
+        chmod 0600 ~/.config/runwisp/discord-ops.url
+        ```
+
+        ```toml
+        [[notifier]]
+        id          = "discord-ops"
+        type        = "discord"
+        webhook_url = "${file:~/.config/runwisp/discord-ops.url}"
+        ```
+    </TabItem>
+    <TabItem label="Inline (don't)" icon="warning">
+        The notifier accepts the literal URL directly. Avoid it —
+        config files are often committed to git or shared in chat,
+        and an inline URL will leak.
+
+        ```toml
+        [[notifier]]
+        id          = "discord-ops"
+        type        = "discord"
+        webhook_url = "https://discord.com/api/webhooks/123.../XXX..."
+        ```
+    </TabItem>
+
+</Tabs>
+
+The `id` is what other parts of `runwisp.toml` refer to. Pick
+something readable — `discord-ops`, `discord-deploys` both work. A
+webhook is bound to the channel it was created in; for a second
+channel, create a second webhook and a second `[[notifier]]`.
+
+## 3. Route failures to it
+
+There are two places this channel id can appear. Pick whichever reads
+better in your file.
+
+### On one task
+
+```toml
+[tasks.backup-postgres]
+cron              = "30 2 * * *"
+notify_on_failure = ["discord-ops"]
+run               = "..."
+```
+
+That single line is enough. The bell receives the same event by default,
+so if the Discord request fails you still see the failure in the bell.
+See [Per-task notifications](/notifications/per-task/) for the full list
+of options, including `notify_on_success`.
+
+### In a notification rule (one rule covering many tasks)
+
+```toml
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["discord-ops"]
+```
+
+Omit `match.task` and the rule matches every task. Add a `match.task`
+pattern for finer control:
+
+```toml
+# Backup failures also ping the on-call channel
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notify = ["discord-ops", "discord-oncall"]
+```
+
+The router removes duplicates — if a backup failure matches both a
+generic rule and a backup-specific rule, the channel receives one
+message.
+
+## 4. Test it
+
+Trigger a task you know will fail:
+
+```bash
+runwisp exec smoke-test       # whatever you have that exits non-zero
+```
+
+Within a few seconds you should see a red embed in your channel with
+the task name, end reason, and a preview of the captured stderr, plus a
+new row in the Web UI's bell. If only the bell shows a row, Discord
+delivery failed — open the bell and look for a
+`notify.delivery_failed` event with the underlying reason.
+
+## What a message looks like
+
+The default template builds one embed per event. The title carries the
+task name and verb and links to the run (when
+[`[daemon] external_url`](/configuration/daemon/#external_url) is set),
+the description carries the event sentence, the trigger, and a
+code-block tail of captured stderr (failures and timeouts only), and
+the footer carries the daemon's fingerprint. The embed's color strip
+tells you the outcome at a glance:
+
+| Color   | When                                 |
+| ------- | ------------------------------------ |
+| Red     | `run.failed`, `run.timeout`, crashes |
+| Green   | `run.succeeded`                      |
+| Yellow  | Warnings like `log.disk_pressure`    |
+| Blurple | Everything else (e.g. `run.started`) |
+
+Rendered in a channel, a failure looks like:
+
+```
+❌ backup-postgres failed
+
+Exited with code 1 after 0.3s.
+Manually triggered via API · 14 May, 17:11.
+
+    Error: connection refused
+    dial tcp 127.0.0.1:5432: connect:
+    connection refused
+
+from runwisp · bright-falcon
+```
+
+No `external_url`? The title just isn't a link. No log file? The
+code-block tail drops off. Both happen quietly, no broken layout. The
+payload also suppresses mentions, so a task that prints `@everyone`
+can't ping your whole server.
+
+## Customising the message
+
+Point `template_path` at a Go-template file to override the embedded
+message format. Copy
+[`discord.tmpl.json`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/discord.tmpl.json)
+as your starting point — it has the embed shape and the color table.
+The template receives the full event struct and the same helpers as the
+other providers: `statusEmoji`, `statusVerb`, `eventSentence`,
+`eventTrigger`, `humanTime`, `runURL`, `taskURL`, `outputTail`,
+`fingerprint`, and more.
+
+## What the loader rejects
+
+- A missing or empty `webhook_url`.
+- A `webhook_url` that isn't `http://` or `https://`.
+- An `id` containing `:` (reserved for inline target overrides) or
+  equal to `"inapp"` (reserved).
+
+Discord notifiers do not support inline target overrides (like
+`discord-ops:something`) — a webhook is bound to one channel, so
+there's no target to override.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Slack"
+        href="/notifications/providers/slack/"
+        description="Rich Block Kit messages in Slack channels."
+    />
+    <LinkCard
+        title="Telegram"
+        href="/notifications/providers/telegram/"
+        description="Bot messages to Telegram chats."
+    />
+    <LinkCard
+        title="Webhook"
+        href="/notifications/providers/webhook/"
+        description="POST structured JSON to any HTTP endpoint."
+    />
+    <LinkCard
+        title="Notification rules"
+        href="/notifications/routes/"
+        description="One rule covering many tasks."
+    />
+</CardGrid>

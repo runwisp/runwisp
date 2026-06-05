@@ -323,6 +323,132 @@ func TestSlack_RunFailed_NoURL(t *testing.T) {
 	}
 }
 
+func renderDiscord(t *testing.T, ctx TemplateContext, ev *notify.Event) string {
+	t.Helper()
+	body, err := LoadDefaultTemplate("discord")
+	require.NoError(t, err)
+	r, err := NewTemplateRendererWithContext("discord:test", body, "application/json", DefaultTitle, ctx)
+	require.NoError(t, err)
+	out, err := r.Render(ev)
+	require.NoError(t, err)
+	return string(out.Body)
+}
+
+type discordPayload struct {
+	Embeds []struct {
+		Title       string `json:"title"`
+		URL         string `json:"url"`
+		Description string `json:"description"`
+		Color       int    `json:"color"`
+		Footer      struct {
+			Text string `json:"text"`
+		} `json:"footer"`
+		Timestamp string `json:"timestamp"`
+	} `json:"embeds"`
+	AllowedMentions struct {
+		Parse []string `json:"parse"`
+	} `json:"allowed_mentions"`
+}
+
+func TestDiscord_RunFailed_WithURLAndTail(t *testing.T) {
+	logPath := makeLogTail(t)
+	start := eventTime(t)
+	end := start.Add(300 * time.Millisecond)
+	run := &model.Run{
+		ID:          "01KRK9",
+		TaskName:    "dc-fail",
+		ExitCode:    1,
+		StartAt:     &start,
+		EndAt:       &end,
+		TriggeredBy: model.TriggeredByAPI,
+	}
+	ev := &notify.Event{
+		Kind:      notify.KindRunFailed,
+		Severity:  notify.SevError,
+		Timestamp: start,
+		TaskName:  "dc-fail",
+		Run:       run,
+		LogPath:   logPath,
+	}
+	ctx := TemplateContext{
+		ExternalURL: "https://r.example.com",
+		Fingerprint: "bright-falcon",
+		OutputTail:  NewOutputTail(),
+	}
+	got := renderDiscord(t, ctx, ev)
+
+	var parsed discordPayload
+	require.NoError(t, json.Unmarshal([]byte(got), &parsed), "rendered discord body must be valid JSON:\n%s", got)
+	require.Len(t, parsed.Embeds, 1)
+	embed := parsed.Embeds[0]
+	assert.Equal(t, "❌ dc-fail failed", embed.Title)
+	assert.Equal(t, "https://r.example.com/tasks/dc-fail?runId=01KRK9", embed.URL)
+	assert.Contains(t, embed.Description, "Exited with code 1 after 0.3s.\nManually triggered via API · 14 May, 17:11.")
+	assert.Contains(t, embed.Description, "```\nError: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused\n```")
+	assert.Equal(t, 15548997, embed.Color, "error must render red")
+	assert.Equal(t, "from runwisp · bright-falcon", embed.Footer.Text)
+	assert.NotEmpty(t, embed.Timestamp)
+	require.NotNil(t, parsed.AllowedMentions.Parse, "allowed_mentions.parse must be present to suppress pings")
+	assert.Empty(t, parsed.AllowedMentions.Parse)
+}
+
+func TestDiscord_RunFailed_NoURL_NoTail(t *testing.T) {
+	start := eventTime(t)
+	end := start.Add(300 * time.Millisecond)
+	run := &model.Run{ID: "01KRK9", TaskName: "dc-fail", ExitCode: 1, StartAt: &start, EndAt: &end, TriggeredBy: model.TriggeredByAPI}
+	ev := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, Timestamp: start, TaskName: "dc-fail", Run: run}
+	got := renderDiscord(t, TemplateContext{Fingerprint: "fp"}, ev)
+	var parsed discordPayload
+	require.NoError(t, json.Unmarshal([]byte(got), &parsed), got)
+	require.Len(t, parsed.Embeds, 1)
+	assert.Empty(t, parsed.Embeds[0].URL, "embed url must be omitted when external_url is unset")
+	assert.NotContains(t, parsed.Embeds[0].Description, "```", "no code block when log tail is empty")
+}
+
+func TestDiscord_RunSucceeded_Green(t *testing.T) {
+	start := eventTime(t)
+	end := start.Add(12 * time.Second)
+	run := &model.Run{ID: "01KRK9", TaskName: "nightly-backup", StartAt: &start, EndAt: &end, TriggeredBy: model.TriggeredByCron}
+	ev := &notify.Event{Kind: notify.KindRunSucceeded, Severity: notify.SevInfo, Timestamp: start, TaskName: "nightly-backup", Run: run}
+	got := renderDiscord(t, TemplateContext{Fingerprint: "fp"}, ev)
+	var parsed discordPayload
+	require.NoError(t, json.Unmarshal([]byte(got), &parsed), got)
+	require.Len(t, parsed.Embeds, 1)
+	assert.Equal(t, "✅ nightly-backup succeeded", parsed.Embeds[0].Title)
+	assert.Equal(t, 5763719, parsed.Embeds[0].Color, "success must render green")
+}
+
+func TestDiscord_LogDiskPressure_TaskLinkAndYellow(t *testing.T) {
+	ev := &notify.Event{
+		Kind:      notify.KindLogDiskPressure,
+		Severity:  notify.SevWarn,
+		Timestamp: eventTime(t),
+		TaskName:  "noisy-task",
+	}
+	ctx := TemplateContext{ExternalURL: "https://r.example.com", Fingerprint: "fp"}
+	got := renderDiscord(t, ctx, ev)
+	var parsed discordPayload
+	require.NoError(t, json.Unmarshal([]byte(got), &parsed), got)
+	require.Len(t, parsed.Embeds, 1)
+	assert.Equal(t, "https://r.example.com/tasks/noisy-task", parsed.Embeds[0].URL)
+	assert.Equal(t, 16705372, parsed.Embeds[0].Color, "warn must render yellow")
+}
+
+func TestDiscord_EscapesUntrustedFields(t *testing.T) {
+	ev := &notify.Event{
+		Kind:      notify.KindRunCrashed,
+		Severity:  notify.SevError,
+		Timestamp: eventTime(t),
+		TaskName:  `evil"task\name`,
+		Reason:    "boom \"quoted\"",
+	}
+	got := renderDiscord(t, TemplateContext{Fingerprint: "fp"}, ev)
+	var parsed discordPayload
+	require.NoError(t, json.Unmarshal([]byte(got), &parsed), "untrusted fields must not break JSON:\n%s", got)
+	require.Len(t, parsed.Embeds, 1)
+	assert.Contains(t, parsed.Embeds[0].Title, `evil"task\name`)
+}
+
 func slackTexts(blocks []any) string {
 	var b strings.Builder
 	for _, blk := range blocks {

@@ -55,6 +55,7 @@ notify_on_failure = ["slack-ops"]
 That's a working setup right there. The same shape carries over to every
 provider — see the **Providers** section:
 [Slack](/notifications/providers/slack/) ·
+[Discord](/notifications/providers/discord/) ·
 [Telegram](/notifications/providers/telegram/) ·
 [Email (SMTP)](/notifications/providers/smtp/) ·
 [Webhook](/notifications/providers/webhook/).
@@ -66,7 +67,7 @@ Every notifier needs two things:
 | Key    | Type   | Required | What it does                                                                                                                                                                                                                |
 | ------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`   | string | yes      | Name you use to refer to the channel from routes and per-task fields. Must be unique. `"inapp"` is reserved. Cannot contain `:` (reserved for [inline target overrides](/notifications/per-task/#inline-target-overrides)). |
-| `type` | enum   | yes      | `"slack"`, `"telegram"`, `"smtp"`, or `"webhook"`.                                                                                                                                                                          |
+| `type` | enum   | yes      | `"slack"`, `"discord"`, `"telegram"`, `"smtp"`, or `"webhook"`.                                                                                                                                                             |
 
 Everything beyond those two depends on the `type` — the provider page
 has the full list for each.
@@ -267,6 +268,11 @@ notify = ["tg-oncall"]
         title="Slack"
         href="/notifications/providers/slack/"
         description="Declare an outbound Slack channel."
+    />
+    <LinkCard
+        title="Discord"
+        href="/notifications/providers/discord/"
+        description="Declare an outbound Discord channel."
     />
     <LinkCard
         title="Telegram"

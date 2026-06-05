@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/notify/channel/discord"
 	"github.com/runwisp/runwisp/internal/notify/channel/slack"
 	"github.com/runwisp/runwisp/internal/notify/channel/smtp"
 	"github.com/runwisp/runwisp/internal/notify/channel/telegram"
@@ -24,7 +25,7 @@ import (
 type NotifierSpec struct {
 	ID           string
 	Type         string
-	WebhookURL   string // slack
+	WebhookURL   string // slack, discord
 	SlackChannel string // slack channel override (e.g. "#ops")
 	BotToken     string // telegram
 	ChatID       string // telegram
@@ -81,6 +82,21 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 			ID:         spec.ID,
 			WebhookURL: spec.WebhookURL,
 			Channel:    spec.SlackChannel,
+			Renderer:   r,
+			Transport:  httpTransport(spec),
+		})
+	case "discord":
+		body, err := render.LoadTemplate("discord", spec.TemplatePath)
+		if err != nil {
+			return nil, err
+		}
+		r, err := render.NewTemplateRendererWithContext("discord:"+spec.ID, body, "application/json", render.DefaultTitle, spec.RenderContext)
+		if err != nil {
+			return nil, err
+		}
+		return discord.New(discord.Config{
+			ID:         spec.ID,
+			WebhookURL: spec.WebhookURL,
 			Renderer:   r,
 			Transport:  httpTransport(spec),
 		})
