@@ -1,0 +1,204 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Webhook
+description: Set up the generic webhook notifier — POST structured JSON to any HTTP endpoint with optional custom headers for auth.
+---
+
+import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+The webhook driver POSTs a JSON body to any HTTP endpoint you control.
+It's the catch-all for services that accept incoming webhooks but aren't
+Slack or Telegram — Discord, PagerDuty, n8n, a custom server, anything
+that speaks HTTP.
+
+## Fields
+
+```toml
+[[notifier]]
+id   = "my-hook"
+type = "webhook"
+url  = "${WEBHOOK_URL}"
+
+[notifier.headers]
+Authorization = "Bearer ${WEBHOOK_TOKEN}"
+```
+
+`id`, `type`, and `url` are required.
+
+| Key             | Required | What it does                                                     |
+| --------------- | -------- | ---------------------------------------------------------------- |
+| `url`           | yes      | The endpoint URL — inline, `${VAR}`, or `${file:path}`.          |
+| `headers`       | no       | Extra HTTP headers sent with every request (e.g. auth tokens).   |
+| `template_path` | no       | Path to a Go-template file overriding the embedded JSON payload. |
+
+Use [`${...}` substitution](/configuration/substitution/) in both `url`
+and header values to pull secrets from env vars or files —
+[storing the secret](/notifications/model/#storing-the-secret).
+
+## 1. Store the URL
+
+Pick where the URL lives and reference it with
+[`${...}` substitution](/configuration/substitution/).
+
+<Tabs syncKey="webhook-secret">
+    <TabItem label="Env var" icon="seti:shell">
+        The simplest option. Set the variable in whatever already
+        manages your environment.
+
+        ```bash
+        export WEBHOOK_URL=https://example.com/hooks/abc123
+        export WEBHOOK_TOKEN=my-secret-token
+        runwisp daemon
+        ```
+
+        ```toml
+        [[notifier]]
+        id   = "my-hook"
+        type = "webhook"
+        url  = "${WEBHOOK_URL}"
+
+        [notifier.headers]
+        Authorization = "Bearer ${WEBHOOK_TOKEN}"
+        ```
+    </TabItem>
+    <TabItem label="File on disk" icon="document">
+        Useful when a secrets manager writes the URL to a known path.
+
+        ```bash
+        mkdir -p ~/.config/runwisp
+        chmod 0700 ~/.config/runwisp
+        printf '%s\n' 'https://example.com/hooks/abc123' > ~/.config/runwisp/webhook.url
+        chmod 0600 ~/.config/runwisp/webhook.url
+        ```
+
+        ```toml
+        [[notifier]]
+        id   = "my-hook"
+        type = "webhook"
+        url  = "${file:~/.config/runwisp/webhook.url}"
+        ```
+    </TabItem>
+    <TabItem label="Inline (don't)" icon="warning">
+        The notifier accepts the literal URL directly. Avoid it —
+        config files are often committed to git.
+
+        ```toml
+        [[notifier]]
+        id   = "my-hook"
+        type = "webhook"
+        url  = "https://example.com/hooks/abc123"
+        ```
+    </TabItem>
+
+</Tabs>
+
+## 2. Route failures to it
+
+### On one task
+
+```toml
+[tasks.backup-postgres]
+cron              = "30 2 * * *"
+notify_on_failure = ["my-hook"]
+run               = "..."
+```
+
+### In a notification rule
+
+```toml
+[[notification_route]]
+match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+notify = ["my-hook"]
+```
+
+See [Per-task notifications](/notifications/per-task/) and
+[Notification rules](/notifications/routes/) for the full options.
+
+## 3. Test it
+
+Trigger a task you know will fail:
+
+```bash
+runwisp exec smoke-test
+```
+
+Your endpoint should receive a `POST` with `Content-Type: application/json`
+within a few seconds. If only the in-app bell shows, delivery failed —
+look for a `notify.delivery_failed` event in the bell for the reason.
+
+## What the payload looks like
+
+The default template produces a flat, machine-readable JSON object.
+Every field uses a stable key that's safe to parse downstream.
+
+```json
+{
+    "kind": "run.failed",
+    "severity": "error",
+    "timestamp": "2025-01-15T02:30:45Z",
+    "task": "backup-postgres",
+    "title": "backup-postgres failed",
+    "message": "Exited with code 1 after 3m 4s.",
+    "trigger": "Scheduled run",
+    "run": {
+        "id": "01JXYZ...",
+        "exit_code": 1,
+        "triggered_by": "cron",
+        "url": "https://runwisp.example.com/tasks/backup-postgres?runId=01JXYZ...",
+        "duration": "3m 4s"
+    },
+    "output_tail": "Error: connection refused\ndial tcp ...",
+    "reason": "exit 1",
+    "source": "runwisp (bright-falcon)"
+}
+```
+
+`run`, `output_tail`, and `reason` are conditional — they appear only
+when applicable. `run.url` and `run.duration` are also conditional
+within the `run` object.
+
+## Customising the payload
+
+Point `template_path` at a Go-template file. Copy
+[`webhook.tmpl.json`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/webhook.tmpl.json)
+as your starting point. The template receives the full event struct and
+the same helpers available to other providers: `statusEmoji`,
+`statusVerb`, `eventSentence`, `eventTrigger`, `runURL`, `outputTail`,
+`fingerprint`, and more.
+
+## What the loader rejects
+
+- A missing or empty `url`.
+- A `url` that isn't `http://` or `https://`.
+- An empty key in `headers`.
+- An `id` containing `:` (reserved for inline target overrides) or
+  equal to `"inapp"` (reserved).
+
+Webhook notifiers do not support inline target overrides (like
+`my-hook:something`) — there's no natural "target" to override.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Slack"
+        href="/notifications/providers/slack/"
+        description="Rich Block Kit messages in Slack channels."
+    />
+    <LinkCard
+        title="Telegram"
+        href="/notifications/providers/telegram/"
+        description="Bot messages to Telegram chats."
+    />
+    <LinkCard
+        title="Email (SMTP)"
+        href="/notifications/providers/smtp/"
+        description="Send failure alerts to any inbox via any SMTP server."
+    />
+    <LinkCard
+        title="Notification rules"
+        href="/notifications/routes/"
+        description="One rule covering many tasks."
+    />
+</CardGrid>

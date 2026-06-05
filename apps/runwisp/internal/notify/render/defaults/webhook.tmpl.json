@@ -1,0 +1,22 @@
+{{- /* Generic webhook notification — clean structured JSON. */ -}}
+{{- $tail := "" -}}{{- if or (eq .Kind "run.failed") (eq .Kind "run.timeout") -}}{{- $tail = outputTail . -}}{{- end -}}
+{{- $url := "" -}}{{- if eq .Kind "log.disk_pressure" -}}{{- $url = taskURL .TaskName -}}{{- else -}}{{- $url = runURL .Run -}}{{- end -}}
+{
+  "kind": "{{ jsonStr (printf "%s" .Kind) }}",
+  "severity": "{{ jsonStr (printf "%s" .Severity) }}",
+  "timestamp": "{{ timeRFC .Timestamp }}",
+  "task": "{{ jsonStr .TaskName }}",
+  "title": "{{ jsonStr (printf "%s %s" .TaskName (statusVerb .Kind)) }}",
+  "message": "{{ jsonStr (eventSentence .) }}",
+  "trigger": "{{ jsonStr (eventTrigger .) }}"{{ if .Run }},
+  "run": {
+    "id": "{{ jsonStr .Run.ID }}",
+    "exit_code": {{ .Run.ExitCode }},
+    "triggered_by": "{{ jsonStr (printf "%s" .Run.TriggeredBy) }}"{{ with runURL .Run }},
+    "url": "{{ jsonStr . }}"{{ end }}{{ with runDuration .Run }},
+    "duration": "{{ jsonStr . }}"{{ end }}
+  }{{ end }}{{ if $tail }},
+  "output_tail": "{{ jsonStr $tail }}"{{ end }}{{ if .Reason }},
+  "reason": "{{ jsonStr .Reason }}"{{ end }},
+  "source": "runwisp{{ with fingerprint }} ({{ jsonStr . }}){{ end }}"
+}

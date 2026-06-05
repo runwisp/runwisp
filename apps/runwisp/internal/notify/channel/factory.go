@@ -14,6 +14,7 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/channel/slack"
 	"github.com/runwisp/runwisp/internal/notify/channel/smtp"
 	"github.com/runwisp/runwisp/internal/notify/channel/telegram"
+	"github.com/runwisp/runwisp/internal/notify/channel/webhook"
 	"github.com/runwisp/runwisp/internal/notify/render"
 )
 
@@ -41,6 +42,10 @@ type NotifierSpec struct {
 	Recipients    []string
 	CC            []string
 	BCC           []string
+
+	// Webhook-specific
+	URL     string
+	Headers map[string]string
 
 	TemplatePath string // optional override
 	// Transport overrides the channel's HTTP transport. Nil means use defaults.
@@ -120,6 +125,22 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 			BCC:           spec.BCC,
 			Backoff:       spec.Backoff,
 			Renderer:      r,
+		})
+	case "webhook":
+		body, err := render.LoadTemplate("webhook", spec.TemplatePath)
+		if err != nil {
+			return nil, err
+		}
+		r, err := render.NewTemplateRendererWithContext("webhook:"+spec.ID, body, "application/json", render.DefaultTitle, spec.RenderContext)
+		if err != nil {
+			return nil, err
+		}
+		return webhook.New(webhook.Config{
+			ID:        spec.ID,
+			URL:       spec.URL,
+			Headers:   spec.Headers,
+			Renderer:  r,
+			Transport: httpTransport(spec),
 		})
 	default:
 		return nil, fmt.Errorf("unknown notifier type %q (id=%s)", spec.Type, spec.ID)

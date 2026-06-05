@@ -43,12 +43,18 @@ func NewHTTPProvider() *HTTPProvider {
 // 2xx, a permanent error on 4xx (except 408/429), and the last transport
 // error on backoff exhaustion.
 func (p *HTTPProvider) PostJSON(ctx context.Context, url string, contentType string, body []byte) error {
+	return p.PostJSONWithHeaders(ctx, url, contentType, body, nil)
+}
+
+// PostJSONWithHeaders is like PostJSON but merges extra into the request
+// headers. Used by the webhook channel for operator-configured auth headers.
+func (p *HTTPProvider) PostJSONWithHeaders(ctx context.Context, url string, contentType string, body []byte, extra http.Header) error {
 	return RetryWithBackoff(ctx, p.Backoff, func() error {
-		return p.doHTTPRequest(ctx, url, contentType, body)
+		return p.doHTTPRequest(ctx, url, contentType, body, extra)
 	})
 }
 
-func (p *HTTPProvider) doHTTPRequest(ctx context.Context, url, contentType string, body []byte) error {
+func (p *HTTPProvider) doHTTPRequest(ctx context.Context, url, contentType string, body []byte, extra http.Header) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return backoff.Permanent(err)
@@ -56,6 +62,11 @@ func (p *HTTPProvider) doHTTPRequest(ctx context.Context, url, contentType strin
 	req.Header.Set("Content-Type", contentType)
 	if p.UserAgent != "" {
 		req.Header.Set("User-Agent", p.UserAgent)
+	}
+	for k, vals := range extra {
+		for _, v := range vals {
+			req.Header.Add(k, v)
+		}
 	}
 	resp, err := p.Client.Do(req)
 	if err != nil {

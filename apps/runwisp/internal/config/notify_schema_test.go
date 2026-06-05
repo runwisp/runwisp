@@ -914,6 +914,80 @@ notify_on_failure = ["email-ops:bad@@@"]
 	assert.Contains(t, err.Error(), "not a valid email")
 }
 
+func TestValidate_WebhookHappyPath(t *testing.T) {
+	src := `
+[[notifier]]
+id   = "my-hook"
+type = "webhook"
+url  = "https://example.com/hook"
+
+[notifier.headers]
+Authorization = "Bearer tok"
+`
+	cfg, err := decode([]byte(src), "")
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+	require.Len(t, cfg.Notify.Notifiers, 1)
+	assert.Equal(t, "https://example.com/hook", cfg.Notify.Notifiers[0].URL)
+	assert.Equal(t, "Bearer tok", cfg.Notify.Notifiers[0].Headers["Authorization"])
+}
+
+func TestValidate_WebhookMissingURL(t *testing.T) {
+	src := `
+[[notifier]]
+id   = "my-hook"
+type = "webhook"
+`
+	cfg, err := decode([]byte(src), "")
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "url is required")
+}
+
+func TestValidate_WebhookInvalidScheme(t *testing.T) {
+	src := `
+[[notifier]]
+id   = "my-hook"
+type = "webhook"
+url  = "ftp://example.com/hook"
+`
+	cfg, err := decode([]byte(src), "")
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "http or https")
+}
+
+func TestValidate_WebhookEmptyHeaderKey(t *testing.T) {
+	spec := &NotifierSpec{
+		ID:      "my-hook",
+		Type:    "webhook",
+		URL:     "https://example.com/hook",
+		Headers: map[string]string{"": "val"},
+	}
+	err := validateWebhookNotifier(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "header key must not be empty")
+}
+
+func TestInlineToken_WebhookRejectsOverride(t *testing.T) {
+	src := schedulerTZHeader + `
+[[notifier]]
+id   = "my-hook"
+type = "webhook"
+url  = "https://example.com/hook"
+
+[tasks.foo]
+cron              = "* * * * *"
+run               = "true"
+notify_on_failure = ["my-hook:override"]
+`
+	_, err := decode([]byte(src), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "do not support inline target overrides")
+}
+
 func TestValidate_RouteEmptyNotifyList(t *testing.T) {
 	src := `
 [[notification_route]]

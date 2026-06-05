@@ -68,3 +68,33 @@ func TestBuild_TelegramDefaultParseModeIsHTML(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ch)
 }
+
+func TestBuild_WebhookPropagatesTransport(t *testing.T) {
+	tr := notify.NewHTTPProvider()
+	ch, err := Build(NotifierSpec{
+		ID:        "my-hook",
+		Type:      "webhook",
+		URL:       "https://example.com/hook",
+		Transport: tr,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, ch)
+	assert.Equal(t, "my-hook", ch.ID())
+}
+
+func TestBuild_WebhookEmptyURLReturnsError(t *testing.T) {
+	_, err := Build(NotifierSpec{ID: "my-hook", Type: "webhook"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "url is required")
+}
+
+func TestBuild_WebhookWithHeaders(t *testing.T) {
+	ch, err := Build(NotifierSpec{
+		ID:      "my-hook",
+		Type:    "webhook",
+		URL:     "https://example.com/hook",
+		Headers: map[string]string{"Authorization": "Bearer tok"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, ch)
+}
