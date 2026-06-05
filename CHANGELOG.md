@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Task and service names may now contain `:`** (e.g. `[tasks."db:backup"]` — TOML needs the quotes). See [\[tasks.*\]](https://docs.runwisp.com/configuration/tasks/).
 - **Breaking: `env_file` values are now visible in the API/UI** — use `secrets_file` for credentials.
 - **Breaking: notifier `*_env` / `*_file` keys are gone.** Set `webhook_url`, `bot_token`, `password` directly, with `${...}` substitution for env vars and files.
 - **CLI dead ends now point somewhere.** `runwisp exec <typo>` suggests matching task names, unreachable-daemon errors say how to start one, and first-run output links the docs.

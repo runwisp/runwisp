@@ -27,7 +27,6 @@ func TestValidateTaskName_RejectsBadInputs(t *testing.T) {
 		{"whitespace only", "   "},
 		{"contains slash", "foo/bar"},
 		{"contains space", "foo bar"},
-		{"contains colon", "foo:bar"},
 		{"contains hash", "foo#bar"},
 		{"too long", strings.Repeat("a", TaskNameMaxLength+1)},
 	}
@@ -44,6 +43,7 @@ func TestValidateTaskName_AcceptsGoodInputs(t *testing.T) {
 		"my-task",
 		"my_task",
 		"task.with.dots",
+		"db:backup",
 		"a",
 		strings.Repeat("a", TaskNameMaxLength),
 	} {
