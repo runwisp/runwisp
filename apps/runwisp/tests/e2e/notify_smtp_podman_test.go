@@ -268,7 +268,12 @@ func startMailpit(t *testing.T, opts mailpitOptions) *mailpitContainer {
 
 	args = append(args, "docker.io/axllent/mailpit:latest")
 
-	out, err := exec.Command("podman", args...).CombinedOutput()
+	// `podman run` pulls the image on first boot. Bound it so a slow or stalled
+	// registry fails this test fast instead of starving the whole go-test
+	// timeout (a hung pull once ate the full 10m CI budget).
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "podman", args...).CombinedOutput()
 	require.NoErrorf(t, err, "podman run failed: %s", string(out))
 
 	t.Cleanup(func() {

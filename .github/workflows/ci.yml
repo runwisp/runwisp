@@ -111,6 +111,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+    # The podman SMTP e2e tests pull a container image over the network, which
+    # is non-hermetic and flaky in CI (and hung the ubuntu runner's `podman run`
+    # for the full test timeout). ubuntu-latest ships podman, so requirePodman
+    # would otherwise run them; skip them everywhere — the in-process SMTP fake
+    # covers the no-deps path. Run them locally with podman to exercise real TLS.
+    env:
+      RUNWISP_SKIP_PODMAN_TESTS: '1'
     steps:
       - uses: actions/checkout@v6
 
