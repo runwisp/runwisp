@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-09
+
 ### Added
 
 - **Passwordless mode.** Opt-in `RUNWISP_NO_AUTH=1` disables the login boundary for local dev / trusted networks, with a startup banner and a persistent Web UI badge. See [Auth](https://docs.runwisp.com/operations/auth/#running-without-a-password).
@@ -213,7 +215,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.7.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.8.0...main
+[0.8.0]: https://github.com/runwisp/runwisp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/runwisp/runwisp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/runwisp/runwisp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/runwisp/runwisp/compare/v0.4.0...v0.5.0
