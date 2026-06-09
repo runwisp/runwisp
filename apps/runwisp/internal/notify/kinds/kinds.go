@@ -15,6 +15,7 @@ var AllKindStrings = []string{
 	"run.stopped",
 	"run.crashed",
 	"run.missed",
+	"service.fatal",
 	"log.disk_pressure",
 	"notify.delivery_failed",
 }

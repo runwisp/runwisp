@@ -37,6 +37,7 @@ const (
 	KindRunStopped           Kind = "run.stopped"
 	KindRunCrashed           Kind = "run.crashed"
 	KindRunMissed            Kind = "run.missed"
+	KindServiceFatal         Kind = "service.fatal"
 	KindLogDiskPressure      Kind = "log.disk_pressure"
 	KindNotifyDeliveryFailed Kind = "notify.delivery_failed"
 )
@@ -50,6 +51,7 @@ var AllKinds = []Kind{
 	KindRunStopped,
 	KindRunCrashed,
 	KindRunMissed,
+	KindServiceFatal,
 	KindLogDiskPressure,
 	KindNotifyDeliveryFailed,
 }
@@ -71,6 +73,8 @@ func (k Kind) Title(ev *Event) string {
 		return fmt.Sprintf("%s crashed", ev.TaskName)
 	case KindRunMissed:
 		return fmt.Sprintf("%s missed", ev.TaskName)
+	case KindServiceFatal:
+		return fmt.Sprintf("%s gave up: instance keeps failing to start", ev.TaskName)
 	case KindLogDiskPressure:
 		return fmt.Sprintf("%s log output paused: low disk", ev.TaskName)
 	case KindNotifyDeliveryFailed:

@@ -20,6 +20,7 @@ func TestIsFailureReason(t *testing.T) {
 		{model.ReasonTimeout, true},
 		{model.ReasonCrashed, true},
 		{model.ReasonLogOverflow, true},
+		{model.ReasonStartFailed, true},
 		{model.ReasonSuccess, false},
 		{model.ReasonStopped, false},
 		{model.ReasonSkipped, false},

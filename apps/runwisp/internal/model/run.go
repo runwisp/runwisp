@@ -67,6 +67,12 @@ const (
 	// policy (even catch_up = "skip" records it). Exit code is conventionally
 	// -1, like other never-executed reasons.
 	ReasonMissed EndReason = "missed"
+	// ReasonStartFailed marks the final, FATAL instance run of a service that
+	// fast-failed more than `start_retries` times in a row without ever
+	// reaching `healthy_after` of uptime. The supervisor stops restarting it;
+	// this run row is the durable record of the give-up. Treated as a failure
+	// for retry/notify/cloud classification.
+	ReasonStartFailed EndReason = "start_failed"
 )
 
 // AllEndReasons is the canonical, ordered list of end-reason values. The order
@@ -85,6 +91,7 @@ var AllEndReasons = []EndReason{
 	ReasonDSTSkipped,
 	ReasonDaemonStopped,
 	ReasonMissed,
+	ReasonStartFailed,
 }
 
 const endReasonSchemaName = "EndReason"
@@ -120,6 +127,7 @@ const (
 	TriggeredByAPI     TriggeredBy = "api"
 	TriggeredByCloud   TriggeredBy = "cloud"
 	TriggeredByService TriggeredBy = "service"
+	TriggeredByStartup TriggeredBy = "startup"
 )
 
 // Run is the domain representation of an execution. The storage layer keeps a
@@ -134,7 +142,7 @@ type Run struct {
 	ExitCode            int         `json:"exit_code"`
 	StartAt             *time.Time  `json:"start_at,omitempty"`
 	EndAt               *time.Time  `json:"end_at,omitempty"`
-	TriggeredBy         TriggeredBy `json:"triggered_by" enum:"cron,api,cloud,service" doc:"How the run was triggered"`
+	TriggeredBy         TriggeredBy `json:"triggered_by" enum:"cron,api,cloud,service,startup" doc:"How the run was triggered"`
 	CreatedAt           time.Time   `json:"created_at"`
 	RetryAttempt        int         `json:"retry_attempt"`
 	RetryOfRunID        *string     `json:"retry_of_run_id,omitempty"`

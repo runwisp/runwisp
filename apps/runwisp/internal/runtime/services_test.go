@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -18,14 +19,22 @@ import (
 
 func serviceTask(name string, instances int) *model.Task {
 	return &model.Task{
-		Name:           name,
-		Kind:           model.KindService,
-		Run:            "echo hi",
-		Restart:        model.RestartAlways,
-		MaxConcurrent:  1,
-		OnOverlap:      model.PolicySkip,
-		Instances:      instances,
-		RestartDelay:   time.Millisecond,
+		Name:          name,
+		Kind:          model.KindService,
+		Run:           "echo hi",
+		Restart:       model.RestartAlways,
+		MaxConcurrent: 1,
+		OnOverlap:     model.PolicySkip,
+		Instances:     instances,
+		Autostart:     true,
+		RestartDelay:  time.Millisecond,
+		// A tiny healthy_after means every test exit clears the healthy bar and
+		// counts as a successful start — these helpers model services that come
+		// up fine and later exit (refill), not ones that fail to start (FATAL).
+		// Tests exercising FATAL or backoff accumulation set HealthyAfter /
+		// StartRetries explicitly.
+		HealthyAfter:   time.Nanosecond,
+		StartRetries:   3,
 		RestartBackoff: model.BackoffConstant,
 	}
 }
@@ -247,9 +256,14 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 	// Long enough delay between restarts that we can sample mid-cycle without
 	// races, but short enough to keep the test quick.
 	task.RestartDelay = 30 * time.Millisecond
+	// Pin the healthy bar high and the FATAL budget out of reach so every quick
+	// exit stays a "fast failure": the backoff counter (the subject here) climbs
+	// without the instance going FATAL and halting the climb.
+	task.HealthyAfter = time.Hour
+	task.StartRetries = 1_000_000
 	jm.UpsertTask(task)
 
-	// Each instance run exits quickly with failure; well under the 60s reset
+	// Each instance run exits quickly with failure; well under the healthy_after
 	// threshold so the counter must keep climbing.
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
 		&executor.ExecuteResult{ExitCode: 1}, 5*time.Millisecond,
@@ -265,6 +279,82 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 
 	assert.Greater(t, attempts, 1,
 		"counter should accumulate across multiple quick exits, got %d", attempts)
+}
+
+// TestServiceFatalAfterStartRetries is the bug-first guard for B3: a service
+// that can never stay up must reach a loud terminal FATAL state instead of
+// flapping forever (which is what happens without start_retries). It asserts
+// the supervisor gives up after start_retries+1 fast failures, stops refilling,
+// records the give-up as a start_failed run, and fires a single service.fatal
+// event — then an operator restart re-attempts with a fresh budget.
+func TestServiceFatalAfterStartRetries(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	defer jm.Shutdown()
+
+	var (
+		mu          sync.Mutex
+		fatalEvents []events.ServiceFatalEvent
+		startFailed int
+	)
+	eb.SubscribeAll(func(e events.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch d := e.Data.(type) {
+		case events.ServiceFatalEvent:
+			fatalEvents = append(fatalEvents, d)
+		case events.RunEvent:
+			if d.Run != nil && d.Run.EndReason != nil && *d.Run.EndReason == model.ReasonStartFailed {
+				startFailed++
+			}
+		}
+	})
+
+	task := serviceTask("flapper", 1)
+	task.StartRetries = 2
+	task.HealthyAfter = 2 * time.Second // every quick exit is a "fast failure"
+	task.RestartDelay = time.Millisecond
+	jm.UpsertTask(task)
+
+	// Each run fails fast, well under healthy_after.
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
+		&executor.ExecuteResult{ExitCode: 1}, 5*time.Millisecond,
+	)
+
+	require.NoError(t, jm.StartServiceInstances("flapper", model.TriggeredByService))
+
+	djm := jm.(*defaultTaskManager)
+	require.Eventually(t, func() bool {
+		djm.mu.RLock()
+		defer djm.mu.RUnlock()
+		return djm.tasks["flapper"].supervisor.IsFatal(0)
+	}, 2*time.Second, 5*time.Millisecond, "service must reach FATAL, not flap forever")
+
+	djm.mu.RLock()
+	active := len(djm.tasks["flapper"].active)
+	djm.mu.RUnlock()
+	assert.Equal(t, 0, active, "a FATAL service holds no live instances")
+
+	callsAtFatal := len(exec.Calls)
+	assert.Equal(t, 3, callsAtFatal, "start_retries=2 → 3 fast failures, then give up")
+	time.Sleep(150 * time.Millisecond)
+	assert.Equal(t, callsAtFatal, len(exec.Calls), "no restarts after FATAL")
+
+	mu.Lock()
+	require.Len(t, fatalEvents, 1, "exactly one service.fatal event")
+	assert.Equal(t, "flapper", fatalEvents[0].TaskName)
+	assert.Equal(t, 0, fatalEvents[0].InstanceIndex)
+	assert.Equal(t, 3, fatalEvents[0].Attempts)
+	assert.Equal(t, 1, fatalEvents[0].LastExitCode)
+	assert.Equal(t, 1, startFailed, "the give-up is recorded as a start_failed run row")
+	mu.Unlock()
+
+	// An operator restart clears FATAL and re-attempts with a fresh budget.
+	require.NoError(t, jm.RestartServiceInstances("flapper"))
+	require.Eventually(t, func() bool {
+		return len(exec.Calls) > callsAtFatal
+	}, time.Second, 5*time.Millisecond, "restart must re-attempt a FATAL service")
 }
 
 func TestRestartServiceInstancesRejectsNonService(t *testing.T) {
@@ -283,6 +373,53 @@ func TestRestartServiceInstancesRejectsNonService(t *testing.T) {
 	err := jm.RestartServiceInstances("cron-job")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a service")
+}
+
+// TestAutostartFalseBootsStopped proves an autostart=false service stays at
+// zero instances when the boot path calls StartServiceInstances, while an
+// autostart=true sibling comes up — and that an explicit Restart starts the
+// stopped one on demand.
+func TestAutostartFalseBootsStopped(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	defer jm.Shutdown()
+
+	manual := serviceTask("manual", 1)
+	manual.Autostart = false
+	auto := serviceTask("auto", 1)
+
+	jm.UpsertTask(manual)
+	jm.UpsertTask(auto)
+
+	exec.On("Execute", mock.Anything, manual, mock.Anything).Return(
+		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 200*time.Millisecond,
+	)
+	exec.On("Execute", mock.Anything, auto, mock.Anything).Return(
+		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 200*time.Millisecond,
+	)
+
+	// Boot: the daemon calls StartServiceInstances for every service.
+	require.NoError(t, jm.StartServiceInstances("manual", model.TriggeredByService))
+	require.NoError(t, jm.StartServiceInstances("auto", model.TriggeredByService))
+	time.Sleep(50 * time.Millisecond)
+
+	djm := jm.(*defaultTaskManager)
+	djm.mu.RLock()
+	manualActive := len(djm.tasks["manual"].active)
+	autoActive := len(djm.tasks["auto"].active)
+	djm.mu.RUnlock()
+	assert.Equal(t, 0, manualActive, "autostart=false service must not start at boot")
+	assert.Equal(t, 1, autoActive, "autostart=true service starts at boot")
+
+	// Operator starts the manual service explicitly.
+	require.NoError(t, jm.RestartServiceInstances("manual"))
+	time.Sleep(50 * time.Millisecond)
+
+	djm.mu.RLock()
+	manualActive = len(djm.tasks["manual"].active)
+	djm.mu.RUnlock()
+	assert.Equal(t, 1, manualActive, "Restart starts an autostart=false service on demand")
 }
 
 // TestStopServiceHaltsRestarts verifies that operator-initiated Stop prevents

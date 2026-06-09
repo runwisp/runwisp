@@ -295,7 +295,7 @@ func appendCatchAllRoute(out *NotifyConfig) {
 		return
 	}
 	out.Routes = append(out.Routes, NotificationRoute{
-		Kinds:      []string{"run.failed", "run.timeout", "run.crashed", "run.missed"},
+		Kinds:      []string{"run.failed", "run.timeout", "run.crashed", "run.missed", "service.fatal"},
 		NotifierID: append([]string(nil), out.GlobalNotifiers...),
 	})
 }
@@ -332,7 +332,7 @@ func appendSynthRoutes(out *NotifyConfig, taskName string, onFailure, onSuccess 
 		// alerts there. Silencing misses is a one-line notify_on_missed = false,
 		// not a rewrite of this list into a hand-authored route.
 		out.Routes = append(out.Routes, NotificationRoute{
-			Kinds:      []string{"run.failed", "run.timeout", "run.crashed", "run.missed"},
+			Kinds:      []string{"run.failed", "run.timeout", "run.crashed", "run.missed", "service.fatal"},
 			TaskGlob:   taskName,
 			NotifierID: mergeWithAppended(onFailure, out.GlobalNotifiers),
 		})

@@ -144,16 +144,24 @@ type Daemon struct {
 // All durations / sizes are parsed from their TOML string form (e.g. "1h",
 // "100mb") at config load time and stored as native Go types.
 //
-// BackoffResetAfter is the minimum service-instance run duration that resets
-// the per-instance restart counter. Instances that survive at least this long
+// HealthyAfter is the minimum service-instance run duration that marks an
+// instance as healthy: reaching it both resets the per-instance restart counter
+// and clears the failed-start streak. Instances that survive at least this long
 // are treated as healthy; the next failure starts the backoff curve over.
 type Defaults struct {
-	Timeout           time.Duration
-	LogMaxSize        int64
-	LogOnFull         string
-	KeepRuns          int
-	KeepFor           time.Duration
-	BackoffResetAfter time.Duration
+	Timeout      time.Duration
+	Shell        string
+	StopSignal   string
+	ExitCodes    []int
+	LogMaxSize   int64
+	LogOnFull    string
+	KeepRuns     int
+	KeepFor      time.Duration
+	HealthyAfter time.Duration
+	// StartRetries is the default number of consecutive fast failures a service
+	// instance may accrue before going FATAL. Zero means "unset" — services
+	// fall back to DefaultStartRetries.
+	StartRetries int
 
 	// NotifyOnMissed is the [defaults] override for per-task missed-run alerts.
 	// nil means the operator didn't set it, so the built-in default (true)

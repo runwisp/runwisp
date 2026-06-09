@@ -134,13 +134,23 @@ type composeServiceOverrideWire struct {
 
 	Timeout      string                  `toml:"timeout,omitempty"`
 	GracefulStop string                  `toml:"graceful_stop,omitempty"`
+	StopSignal   string                  `toml:"stop_signal,omitempty"`
 	OnOverlap    model.ConcurrencyPolicy `toml:"on_overlap,omitempty"`
 	Restart      model.RestartPolicy     `toml:"restart,omitempty"`
 	Instances    int                     `toml:"instances,omitempty"`
 
-	RestartDelay      string `toml:"restart_delay,omitempty"`
-	RestartBackoff    string `toml:"restart_backoff,omitempty"`
-	BackoffResetAfter string `toml:"backoff_reset_after,omitempty"`
+	RestartDelay   string `toml:"restart_delay,omitempty"`
+	RestartBackoff string `toml:"restart_backoff,omitempty"`
+	HealthyAfter   string `toml:"healthy_after,omitempty"`
+	StartRetries   int    `toml:"start_retries,omitempty"`
+
+	// Priority orders boot start; Autostart is a pointer so an omitted key
+	// (nil → keep the compose-import default of true) is distinguishable from
+	// an explicit autostart = false.
+	Priority  int   `toml:"priority,omitempty"`
+	Autostart *bool `toml:"autostart,omitempty"`
+
+	ExitCodes []int `toml:"exit_codes,omitempty"`
 
 	LogMaxSize string `toml:"log_max_size,omitempty"`
 	LogOnFull  string `toml:"log_on_full,omitempty"`
@@ -383,6 +393,7 @@ func expandComposeStack(block *composeBlock, _ *composespec.Project, existingNam
 		Kind:       model.KindService,
 		Group:      block.Group,
 		APITrigger: true,
+		Autostart:  true,
 		Restart:    model.RestartOnFailure,
 		Instances:  1,
 		ExecutionDef: &model.ComposeExecution{
@@ -414,6 +425,7 @@ func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcN
 		Kind:       model.KindService,
 		Group:      block.Group,
 		APITrigger: true,
+		Autostart:  true,
 		Restart:    model.RestartOnFailure,
 		Instances:  1,
 	}
@@ -467,6 +479,21 @@ func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcNa
 	if w.Instances > 0 {
 		task.Instances = w.Instances
 	}
+	if w.StopSignal != "" {
+		task.StopSignal = w.StopSignal
+	}
+	if w.ExitCodes != nil {
+		task.ExitCodes = w.ExitCodes
+	}
+	if w.StartRetries != 0 {
+		task.StartRetries = w.StartRetries
+	}
+	if w.Priority != 0 {
+		task.Priority = w.Priority
+	}
+	if w.Autostart != nil {
+		task.Autostart = *w.Autostart
+	}
 	if w.LogOnFull != "" {
 		task.LogOnFull = w.LogOnFull
 	}
@@ -518,12 +545,12 @@ func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcNa
 		}
 		task.RestartDelay = d
 	}
-	if w.BackoffResetAfter != "" {
-		d, err := parseDuration(w.BackoffResetAfter)
+	if w.HealthyAfter != "" {
+		d, err := parseDuration(w.HealthyAfter)
 		if err != nil {
-			return fmt.Errorf("service %q override: invalid backoff_reset_after: %w", svcName, err)
+			return fmt.Errorf("service %q override: invalid healthy_after: %w", svcName, err)
 		}
-		task.BackoffResetAfter = d
+		task.HealthyAfter = d
 	}
 	if w.KeepFor != "" {
 		d, err := parseKeepFor(w.KeepFor)

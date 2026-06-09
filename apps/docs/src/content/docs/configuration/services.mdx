@@ -59,16 +59,17 @@ process exits the supervisor restarts just that one.
 
 ## Restart behaviour
 
-| Key                   | Default         | What it does                                                                                                                                                        |
-| --------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `restart_delay`       | `1s`            | Base delay between restarts. Go duration string.                                                                                                                    |
-| `restart_backoff`     | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                                        |
-| `backoff_reset_after` | inherited       | Instance must stay up at least this long before its restart counter resets. See [`[defaults]`](/configuration/defaults/) for the inherited value (default `"60s"`). |
+| Key               | Default         | What it does                                                                                                                                                                                                                                                  |
+| ----------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restart_delay`   | `1s`            | Base delay between restarts. Go duration string.                                                                                                                                                                                                              |
+| `restart_backoff` | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                                                                                                                                  |
+| `healthy_after`   | inherited       | Uptime an instance must reach to count as healthy — resets its restart counter **and** clears the failed-start streak. Exits faster than this count as failed starts. See [`[defaults]`](/configuration/defaults/) for the inherited value (default `"60s"`). |
+| `start_retries`   | `3`             | Consecutive failed starts an instance tolerates before it's marked **FATAL** and stops restarting.                                                                                                                                                            |
 
 The backoff has a ceiling, so even after a long stretch of flapping the
 delay between restarts won't climb forever. And once an instance has
 stayed up for
-[`backoff_reset_after`](/concepts/retries/#backoff-reset-backoff_reset_after),
+[`healthy_after`](/concepts/retries/#healthy-threshold-healthy_after),
 its backoff counter resets — so a
 service that flaps early but eventually settles down doesn't stay stuck
 with slow restarts.
@@ -76,6 +77,73 @@ with slow restarts.
 `restart = "always"` is baked in and **can't be overridden** — that's
 the deal with a service. If what you want is "run once and exit," that's
 a [task](/concepts/tasks-vs-services/).
+
+### When a service can't start: FATAL
+
+Restarting forever is the right move for a service that _occasionally_
+falls over. It's the wrong move for one that can _never_ start — a typo in
+the command, a missing binary, a bad config. Without a backstop that
+service would flap silently until you happened to look. RunWisp's first
+rule is _nothing silently fails_, so there's a backstop.
+
+Every time an instance exits, RunWisp checks how long it stayed up. Reach
+`healthy_after` and it counts as a successful start: the failed-start
+counter resets to zero. Exit _faster_ than `healthy_after` with a failure
+([what counts as failure](/configuration/tasks/#exit_codes) — a clean exit
+on a success code never does), and that's a failed start. Rack up more
+than `start_retries` failed starts in a row and the instance goes
+**FATAL**: it stops restarting, a `start_failed` run is recorded, and a
+`service.fatal` notification lights the in-app bell and any configured
+[notifiers](/configuration/notifications/). The loud terminal failure you
+want instead of an invisible flap.
+
+`healthy_after` is the one bar for both jobs: the same uptime that resets
+the restart backoff also marks the instance as successfully started. So
+"stable enough to reset the backoff" and "stable enough to count as
+started" are one number to reason about — the way supervisord's
+`startsecs` does both.
+
+FATAL lives in memory only — like every other in-memory supervisor flag,
+it's the runtime's idea of desired state, never persisted. Restarting the
+daemon, or hitting **Restart** on the service in the UI/API, gives it a
+fresh `start_retries` budget and tries again; a restart is your "try
+again" signal. The `start_failed` runs stay in history either way, so the
+failures remain visible after the daemon comes back.
+
+```toml
+[services.flaky]
+run           = "exit 1"   # can never come up
+healthy_after = "5s"       # must stay up 5s to count as healthy
+start_retries = 2          # give up after 2 failed starts in a row
+```
+
+This service tries to start, fails fast, retries twice more, then goes
+FATAL and stops — instead of burning a restart every second forever.
+
+## Startup
+
+| Key         | Default | What it does                                                                                       |
+| ----------- | ------- | -------------------------------------------------------------------------------------------------- |
+| `priority`  | `0`     | Boot start order across services — lower starts first. Ties break on name. Start order **only**.   |
+| `autostart` | `true`  | Whether the service comes up at boot. `false` boots it stopped until you start it from the UI/API. |
+
+`priority` decides the order the daemon _spawns_ services at boot: the
+lowest number goes first, and services that share a number start in
+alphabetical order. That's the whole contract — it is **not** a
+dependency graph or a readiness gate. RunWisp doesn't wait for one
+service to be "up" before starting the next (that'd be
+[orchestration](/concepts/tasks-vs-services/), which is a non-goal); it
+just fixes the otherwise-random start order so the service that wants a
+shared port first reliably gets it first. Shutdown stays parallel.
+
+`autostart = false` is for services you want defined but not running on
+every boot — a maintenance worker, a one-off migration runner you trigger
+by hand. The service shows up stopped; hit **Start** in the Web UI (or
+the REST restart endpoint) to bring it up. This desired state isn't
+persisted: it's re-read from `runwisp.toml` every boot, so a manually
+started `autostart = false` service is stopped again after a restart, and
+a manually stopped `autostart = true` service comes back up. The TOML is
+always the source of truth.
 
 ## Concurrency
 
@@ -93,13 +161,16 @@ copies run is `instances`, not some in-flight overlap count.
 
 ## Graceful shutdown
 
-| Key             | Default | What it does                                                                                            |
-| --------------- | ------- | ------------------------------------------------------------------------------------------------------- |
-| `graceful_stop` | `"5s"`  | SIGTERM grace period per instance before SIGKILL — for manual stop, `Restart Service`, daemon shutdown. |
+| Key             | Default     | What it does                                                                                                                                        |
+| --------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `graceful_stop` | `"5s"`      | Grace period per instance after the stop signal, before SIGKILL — for manual stop, `Restart Service`, daemon shutdown.                              |
+| `stop_signal`   | `"SIGTERM"` | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2` (the `SIG` prefix is optional). |
 
-`graceful_stop` covers the whole process group: the SIGTERM goes to the
+`graceful_stop` covers the whole process group: the stop signal goes to the
 instance's process group, every descendant gets the same grace window,
-and anything still standing afterward is SIGKILL'd together. If your
+and anything still standing afterward is SIGKILL'd together. The signal is
+`SIGTERM` unless you set `stop_signal`; `SIGKILL` skips the grace window
+entirely. If your
 `graceful_stop` is longer than
 [`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout),
 the daemon warns you at boot — and during a whole-daemon shutdown, each
@@ -146,6 +217,11 @@ secrets_file = "/etc/runwisp/api-secrets.env"
 
 Every instance of a multi-instance service receives the same merged
 environment.
+
+`working_dir`, `shell`, `umask`, and `user` also work the same as on tasks — see
+[`[tasks.*]` Working directory & shell](/configuration/tasks/#working-directory--shell).
+Every instance runs in the same directory, under the same interpreter and mask,
+as the same OS user (`user` needs the daemon running as root).
 
 ## Compose-backed services
 
@@ -211,7 +287,7 @@ description         = "Three always-on workers consuming the same job queue"
 instances           = 3
 restart_delay       = "2s"
 restart_backoff     = "exponential"
-backoff_reset_after = "2m"     # this one needs longer to call "stable"
+healthy_after       = "2m"     # this one needs longer to call "stable"
 graceful_stop       = "20s"    # leave time to finish the in-flight job
 keep_runs           = 500
 notify_on_failure   = ["slack-ops"]

@@ -70,7 +70,7 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	// buildComposeArgs).
 	cmd.Env = os.Environ()
 
-	return startCmd(cmd, task.GracefulStop, "start docker compose")
+	return startCmd(cmd, task.GracefulStop, signalFromName(task.StopSignal), nil, "start docker compose")
 }
 
 // buildComposeArgs assembles the argv tail (after the docker binary) for

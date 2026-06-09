@@ -18,6 +18,7 @@ function makeTask(name: string, overrides: Partial<TaskWithId> = {}): TaskWithId
         id: name,
         name,
         api_trigger: false,
+        autostart: true,
         ...overrides,
     };
 }

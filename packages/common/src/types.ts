@@ -46,6 +46,7 @@ export const END_REASONS = [
   "dst_skipped",
   "daemon_stopped",
   "missed",
+  "start_failed",
 ] as const satisfies readonly EndReason[];
 
 // Compile-time exhaustiveness: identity-asserts that every EndReason
@@ -74,6 +75,7 @@ export const FAILURE_END_REASONS = [
   "crashed",
   "timeout",
   "log_overflow",
+  "start_failed",
 ] as const satisfies readonly EndReason[];
 export type FailureEndReason = (typeof FAILURE_END_REASONS)[number];
 
@@ -92,7 +94,7 @@ export const RUN_STATUSES = [...RUN_PHASES, ...END_REASONS] as const;
 
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
-export const TRIGGERS = ["cron", "api", "cloud", "service"] as const;
+export const TRIGGERS = ["cron", "api", "cloud", "service", "startup"] as const;
 
 export type Trigger = (typeof TRIGGERS)[number];
 

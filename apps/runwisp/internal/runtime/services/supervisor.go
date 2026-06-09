@@ -16,10 +16,10 @@ import (
 	"time"
 )
 
-// defaultBackoffReset is the fallback "healthy run" threshold when a caller
+// defaultHealthyAfter is the fallback "healthy run" threshold when a caller
 // constructs a Supervisor without a configured value. The config layer
 // applies a default during load; this only protects direct test usage.
-const defaultBackoffReset = 60 * time.Second
+const defaultHealthyAfter = 60 * time.Second
 
 // Supervisor tracks the live instance slots for one service task and the
 // consecutive-restart attempt counter per slot.
@@ -28,24 +28,39 @@ type Supervisor struct {
 	instances    int
 	live         map[int]struct{}
 	attempts     map[int]int
-	backoffReset time.Duration
+	healthyAfter time.Duration
 	stopped      bool
+
+	// startFails counts consecutive fast failures per slot — exits that
+	// happened before the instance reached healthy_after of uptime. A healthy
+	// run (or a clean, non-failure exit) resets it; exceeding start_retries
+	// trips the slot into the FATAL state.
+	startFails map[int]int
+	// fatal flags slots that exhausted their start-retry budget. A FATAL slot
+	// is not refilled until an operator restart (or daemon restart) clears it.
+	fatal map[int]bool
 }
 
 // NewSupervisor creates a Supervisor for a service with the given desired
-// instance count. instances < 1 is normalised to 1. backoffReset is the
-// minimum live duration that resets an instance's consecutive-restart counter;
-// non-positive values fall back to the package default.
-func NewSupervisor(taskName string, instances int, backoffReset time.Duration) *Supervisor {
-	if backoffReset <= 0 {
-		backoffReset = defaultBackoffReset
+// instance count. instances < 1 is normalised to 1. healthyAfter is the
+// minimum live duration that marks an instance as healthy — it both resets the
+// consecutive-restart counter and clears the failed-start streak; non-positive
+// values fall back to the package default. startStopped seeds the operator-stop
+// flag so an autostart=false service boots without spawning instances until an
+// operator starts it.
+func NewSupervisor(taskName string, instances int, healthyAfter time.Duration, startStopped bool) *Supervisor {
+	if healthyAfter <= 0 {
+		healthyAfter = defaultHealthyAfter
 	}
 	return &Supervisor{
 		taskName:     taskName,
 		instances:    clampInstances(instances),
 		live:         make(map[int]struct{}),
 		attempts:     make(map[int]int),
-		backoffReset: backoffReset,
+		healthyAfter: healthyAfter,
+		stopped:      startStopped,
+		startFails:   make(map[int]int),
+		fatal:        make(map[int]bool),
 	}
 }
 
@@ -56,13 +71,14 @@ func (s *Supervisor) SetInstances(instances int) {
 	s.instances = clampInstances(instances)
 }
 
-// SetBackoffReset updates the "run was healthy" threshold for restart
-// counter resets. A non-positive value reverts to the package default.
-func (s *Supervisor) SetBackoffReset(backoffReset time.Duration) {
-	if backoffReset <= 0 {
-		backoffReset = defaultBackoffReset
+// SetHealthyAfter updates the "run was healthy" threshold that drives both the
+// restart-counter reset and the failed-start streak. A non-positive value
+// reverts to the package default.
+func (s *Supervisor) SetHealthyAfter(healthyAfter time.Duration) {
+	if healthyAfter <= 0 {
+		healthyAfter = defaultHealthyAfter
 	}
-	s.backoffReset = backoffReset
+	s.healthyAfter = healthyAfter
 }
 
 // Instances returns the configured instance count (always >= 1).
@@ -92,19 +108,39 @@ func (s *Supervisor) Reserve(requested *int) (int, error) {
 	return 0, fmt.Errorf("no free instance slots for service %s (instances=%d)", s.taskName, s.instances)
 }
 
-// RecordExit releases an instance slot and advances the consecutive-restart
-// counter for that slot. The returned int is the attempt index to feed into
-// retry.ComputeRestartDelay for the *next* restart (0 means "first restart in
-// this backoff cycle"). Runs that lasted at least the supervisor's configured
-// backoff_reset_after reset the counter before the return value is captured.
-func (s *Supervisor) RecordExit(idx int, runDuration time.Duration) int {
+// RecordExit releases an instance slot, advances its restart-backoff counter,
+// and tracks consecutive fast failures toward the FATAL threshold.
+//
+// The returned nextAttempt is the index to feed into retry.ComputeRestartDelay
+// for the next restart (0 means "first restart in this backoff cycle"). Runs
+// that lasted at least the supervisor's configured healthy_after reset that
+// counter before the value is captured.
+//
+// fatal reports whether this exit tripped the slot into the FATAL state: the
+// instance fast-failed (wasFailure, before reaching healthy_after of uptime)
+// more than startRetries times in a row. A FATAL slot is left empty — the
+// caller must not restart it. A healthy run (reached healthy_after) or any
+// non-failure exit clears the fast-failure streak and any prior FATAL flag.
+func (s *Supervisor) RecordExit(idx int, runDuration time.Duration, startRetries int, wasFailure bool) (nextAttempt int, fatal bool) {
 	delete(s.live, idx)
-	if runDuration >= s.backoffReset {
+
+	if runDuration >= s.healthyAfter {
 		s.attempts[idx] = 0
 	}
-	next := s.attempts[idx]
-	s.attempts[idx] = next + 1
-	return next
+	nextAttempt = s.attempts[idx]
+	s.attempts[idx] = nextAttempt + 1
+
+	if !wasFailure || runDuration >= s.healthyAfter {
+		s.startFails[idx] = 0
+		delete(s.fatal, idx)
+		return nextAttempt, false
+	}
+	s.startFails[idx]++
+	if s.startFails[idx] > startRetries {
+		s.fatal[idx] = true
+		return nextAttempt, true
+	}
+	return nextAttempt, false
 }
 
 // IsLive reports whether a given instance index is currently occupied.
@@ -139,11 +175,37 @@ func (s *Supervisor) Attempts(idx int) int { return s.attempts[idx] }
 func (s *Supervisor) MarkStopped() { s.stopped = true }
 
 // MarkRunning clears the operator-stop flag so the supervisor can refill
-// instance slots again.
-func (s *Supervisor) MarkRunning() { s.stopped = false }
+// instance slots again. It also clears any FATAL flags: an operator bringing
+// the service back up is an explicit "try again" that resets the start-retry
+// budget for every slot.
+func (s *Supervisor) MarkRunning() {
+	s.stopped = false
+	s.ClearFatal()
+}
 
 // IsStopped reports whether an operator has stopped the service.
 func (s *Supervisor) IsStopped() bool { return s.stopped }
+
+// StartFails returns the current consecutive fast-failure count for a slot —
+// the number of below-healthy_after exits since its last healthy run. Exposed
+// for the FATAL event payload and tests.
+func (s *Supervisor) StartFails(idx int) int { return s.startFails[idx] }
+
+// IsFatal reports whether a specific instance slot has exhausted its
+// start-retry budget and been given up on.
+func (s *Supervisor) IsFatal(idx int) bool { return s.fatal[idx] }
+
+// IsAnyFatal reports whether any instance slot is in the FATAL state.
+func (s *Supervisor) IsAnyFatal() bool { return len(s.fatal) > 0 }
+
+// ClearFatal drops every FATAL flag and the fast-failure streak that produced
+// it, so the affected slots can be refilled with a fresh start-retry budget.
+func (s *Supervisor) ClearFatal() {
+	for idx := range s.fatal {
+		delete(s.fatal, idx)
+		s.startFails[idx] = 0
+	}
+}
 
 func clampInstances(n int) int {
 	if n < 1 {

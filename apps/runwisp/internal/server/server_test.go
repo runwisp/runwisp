@@ -656,7 +656,14 @@ func addAuth(req *http.Request, s *Server) {
 // the default "task1" cron task.
 func setupServerWithService(t *testing.T) (*Server, string) {
 	t.Helper()
-	s, _, _, _ := setupServer(t)
+	s, _, exec, _ := setupServer(t)
+
+	// A service instance is a long-running process: block the spawned run
+	// until its context is cancelled (operator stop / restart / shutdown),
+	// mirroring `tail -f /dev/null`. Without this the instant exit would
+	// drive the supervisor's restart loop and Execute would be unmocked.
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).
+		Return(&executor.ExecuteResult{ExitCode: 0}, time.Hour)
 
 	svcName := "svc1"
 	svcTask := &model.Task{

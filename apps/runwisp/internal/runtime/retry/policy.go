@@ -25,7 +25,7 @@ const retryDelayCap = 5 * time.Minute
 // not a failure to retry.
 func IsFailureReason(reason model.EndReason) bool {
 	switch reason {
-	case model.ReasonFailed, model.ReasonTimeout, model.ReasonCrashed, model.ReasonLogOverflow:
+	case model.ReasonFailed, model.ReasonTimeout, model.ReasonCrashed, model.ReasonLogOverflow, model.ReasonStartFailed:
 		return true
 	default:
 		return false
@@ -75,7 +75,7 @@ func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
 // ComputeRestartDelay calculates the delay before a service instance is
 // re-spawned after exiting. attempt is the number of consecutive prior
 // restarts without a healthy run (a run that lived past the supervisor's
-// configured backoff_reset_after).
+// configured healthy_after).
 func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
 	base := task.RestartDelay
 	if base <= 0 {

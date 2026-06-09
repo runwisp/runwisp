@@ -93,6 +93,7 @@ var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
 	model.ReasonFailed:      protocol.ExecutionStatusErr,
 	model.ReasonCrashed:     protocol.ExecutionStatusErr,
 	model.ReasonLogOverflow: protocol.ExecutionStatusErr,
+	model.ReasonStartFailed: protocol.ExecutionStatusErr,
 }
 
 func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {

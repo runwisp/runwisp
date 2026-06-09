@@ -49,7 +49,8 @@ log_max_size:        size =100mb  — per-run log cap (effective task default)
 log_on_full:         enum =drop_old — drop_new | drop_old | kill_task
 keep_runs:           int          — row-count retention; 1..1000000
 keep_for:            dur          — age retention; positive
-backoff_reset_after: dur  =60s    — service uptime that resets the restart counter
+healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak
+start_retries:       int  =3      — consecutive fast failures before an instance goes FATAL
 env:                 map<str,str> — inline env merged into every task; key ^[A-Za-z_][A-Za-z0-9_]*$, <=256 entries, value <=32KiB, no NUL
 env_file:            path         — dotenv file merged into every task; relative to runwisp.toml dir
 ```
@@ -96,7 +97,8 @@ notify_on_success: []string         — sugar → route on run.succeeded
 instances:           int  =1           — parallel instances; 1..64
 restart_delay:       dur  =1s          — delay before a restart
 restart_backoff:     enum =exponential — constant | linear | exponential
-backoff_reset_after: dur  =60s         — uptime that resets the restart counter
+healthy_after:       dur  =60s         — uptime that counts as healthy: resets the restart counter and clears the failed-start streak
+start_retries:       int  =3           — consecutive fast failures (exit below healthy_after) before an instance goes FATAL and stops restarting
 ```
 
 ### [compose.&lt;alias&gt;] (import docker-compose services)
@@ -118,7 +120,7 @@ pull:         enum =missing        — missing | always | never
 name_format:  string ={alias}.{service} — generated task name; must contain {service} in services mode
 ```
 
-Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `api_trigger`, `timeout`, `graceful_stop`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `backoff_reset_after`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`. Not allowed: `run`/`compose_file`/`compose_service`. `mode="stack"` forbids overrides and include/exclude. Caveat: per-service `notify_on_*` is currently parsed but NOT wired to notifications for compose imports.
+Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `api_trigger`, `timeout`, `graceful_stop`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`. Not allowed: `run`/`compose_file`/`compose_service`. `mode="stack"` forbids overrides and include/exclude. Caveat: per-service `notify_on_*` is currently parsed but NOT wired to notifications for compose imports.
 
 ### [notify] (global notification settings)
 

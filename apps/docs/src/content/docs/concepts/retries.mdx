@@ -139,21 +139,25 @@ difference is in the surrounding knobs: tasks have `retry_attempts`
 A service supervisor will restart a replica forever — with bounded
 exponential backoff — until you explicitly stop it.
 
-### Backoff reset: `backoff_reset_after`
+### Healthy threshold: `healthy_after`
 
-Once a replica has stayed up for at least `backoff_reset_after` (default
-60s), its restart counter resets. That way a service that flapped a
-bunch on startup isn't stuck with long restart delays after it finally
-settles down. Set it in [`[defaults]`](/configuration/defaults/) to cover every service that doesn't
-say otherwise, or per service:
+Once a replica has stayed up for at least `healthy_after` (default 60s),
+RunWisp calls it healthy — and that one threshold pulls double duty. It
+resets the restart counter, so a service that flapped a bunch on startup
+isn't stuck with long restart delays after it finally settles down. And
+it clears the failed-start streak behind
+[FATAL](/configuration/services/#when-a-service-cant-start-fatal), so a
+service that comes up and stays up is never given up on. Set it in
+[`[defaults]`](/configuration/defaults/) to cover every service that
+doesn't say otherwise, or per service:
 
 ```toml
 [defaults]
-backoff_reset_after = "30s"     # global default
+healthy_after = "30s"     # global default
 
 [services.flaky-worker]
-run                 = "/usr/local/bin/worker"
-backoff_reset_after = "2m"      # this one needs longer to call "stable"
+run           = "/usr/local/bin/worker"
+healthy_after = "2m"      # this one needs longer to call "stable"
 ```
 
 Rule of thumb: if you want a finite, escalating set of retries, that's a

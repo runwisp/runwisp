@@ -105,6 +105,31 @@ env       = { LOG_LEVEL = "info" }
 	assert.Equal(t, 1, worker.Instances)
 }
 
+func TestComposeExpansion_PerServiceOverrideServiceKnobs(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[compose.myapp]
+
+[compose.myapp.web]
+stop_signal   = "SIGINT"
+exit_codes    = [0, 42]
+start_retries = 1
+priority      = 5
+autostart     = false
+`))
+	require.NoError(t, err)
+
+	web := findTask(t, cfg, "myapp.web")
+	assert.Equal(t, "SIGINT", web.StopSignal)
+	assert.Equal(t, []int{0, 42}, web.ExitCodes)
+	assert.Equal(t, 1, web.StartRetries)
+	assert.Equal(t, 5, web.Priority)
+	assert.False(t, web.Autostart)
+
+	// A non-overridden service keeps the compose-import defaults.
+	worker := findTask(t, cfg, "myapp.worker")
+	assert.True(t, worker.Autostart)
+	assert.Equal(t, 0, worker.Priority)
+}
+
 func TestComposeExpansion_StackModeProducesSingleTask(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
 mode = "stack"

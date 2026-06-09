@@ -136,6 +136,27 @@ func TestMapRunToExecutionUpdateEndedSuccess(t *testing.T) {
 	assert.Equal(t, protocol.ExecutionStatusOk, *result.Status)
 }
 
+func TestMapRunToExecutionUpdateEndedStartFailed(t *testing.T) {
+	execID := "ext-fatal"
+	reason := model.ReasonStartFailed
+	now := time.Now()
+	run := &model.Run{
+		Status:              model.PhaseEnded,
+		ExternalExecutionID: &execID,
+		EndReason:           &reason,
+		ExitCode:            1,
+		StartAt:             &now,
+		EndAt:               &now,
+	}
+
+	// Without ReasonStartFailed in terminalReasonMap the control plane would
+	// silently drop the give-up; it must surface as an error.
+	result := mapRunToExecutionUpdate(run)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status)
+	assert.Equal(t, protocol.ExecutionStatusErr, *result.Status)
+}
+
 func TestMapRunToExecutionUpdateEndedNilReason(t *testing.T) {
 	execID := "ext-789"
 	run := &model.Run{
