@@ -32,6 +32,66 @@ func failedRunEvent() events.Event {
 	}
 }
 
+func missedRunEvent(taskName string) events.Event {
+	reason := model.ReasonMissed
+	run := &model.Run{
+		ID:        "01HMISS",
+		TaskName:  taskName,
+		Status:    model.PhaseEnded,
+		EndReason: &reason,
+		ExitCode:  -1,
+	}
+	return events.Event{
+		Type:      events.EventRunFailed,
+		Timestamp: time.Now(),
+		Data:      events.RunEvent{Run: run, Error: "2 scheduled runs missed (daemon was down)"},
+	}
+}
+
+// TestOnBusEvent_MutedMissedTaskDropped verifies notify_on_missed = false drops
+// the run.missed alert at ingress without counting it as a backpressure drop.
+func TestOnBusEvent_MutedMissedTaskDropped(t *testing.T) {
+	svc := New(Config{MutedMissedTasks: map[string]struct{}{"quiet-task": {}}})
+
+	before := svc.droppedIngress.Load()
+	svc.onBusEvent(missedRunEvent("quiet-task"))
+
+	assert.Empty(t, svc.ingressCh, "muted task's run.missed must not reach routing")
+	assert.Equal(t, before, svc.droppedIngress.Load(),
+		"an intentional mute is not a backpressure drop")
+}
+
+// TestOnBusEvent_UnmutedMissedTaskRoutes verifies a task without the mute still
+// delivers its run.missed event, and that the mute is strictly per-task.
+func TestOnBusEvent_UnmutedMissedTaskRoutes(t *testing.T) {
+	svc := New(Config{MutedMissedTasks: map[string]struct{}{"quiet-task": {}}})
+
+	svc.onBusEvent(missedRunEvent("loud-task"))
+
+	select {
+	case ev := <-svc.ingressCh:
+		assert.Equal(t, KindRunMissed, ev.Kind)
+		assert.Equal(t, "loud-task", ev.TaskName)
+	default:
+		t.Fatal("expected the un-muted task's run.missed in ingressCh")
+	}
+}
+
+// TestOnBusEvent_MissedRoutesByDefault confirms misses alert with no mute set —
+// the default-on behaviour (decision: misses reach failure subscribers).
+func TestOnBusEvent_MissedRoutesByDefault(t *testing.T) {
+	svc := New(Config{})
+
+	svc.onBusEvent(missedRunEvent("task-x"))
+
+	select {
+	case ev := <-svc.ingressCh:
+		assert.Equal(t, KindRunMissed, ev.Kind)
+	default:
+		t.Fatal("with no mute configured, run.missed must route by default")
+	}
+}
+
 // TestServiceStart_IsIdempotent covers the early-return branch when Start is
 // called twice in a row.
 func TestServiceStart_IsIdempotent(t *testing.T) {

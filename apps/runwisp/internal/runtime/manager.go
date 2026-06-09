@@ -346,6 +346,38 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 	return nil
 }
 
+// RecordMissedRun persists a terminal end_reason = "missed" run that documents
+// a cron downtime gap, then publishes a failure-level event whose RunEvent.Error
+// carries the human sentence built by the catch-up detector. Modeled on
+// RecordSkippedFiring, with two deliberate differences: CreatedAt is the latest
+// missed tick (scheduledAt) rather than now — so resolveCatchupAnchor reads it
+// back as the last-alerted point and the next restart counts only ticks after
+// it, never re-alerting — and the event carries the reason string verbatim so
+// it renders as the notification body. No process is started, no log file
+// exists; the run is created and immediately ended.
+func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.Time, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.tasks[taskName]; !exists {
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
+	}
+
+	run := &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    taskName,
+		Status:      model.PhasePending,
+		TriggeredBy: model.TriggeredByCron,
+		CreatedAt:   scheduledAt,
+	}
+	m.persistence.PersistNew(run)
+	m.publishRun(events.EventRunCreated, run)
+	run.End(model.ReasonMissed, -1, scheduledAt)
+	m.persistence.PersistExisting(run)
+	m.publishRunErr(events.EventRunFailed, run, reason)
+	return nil
+}
+
 // StartServiceInstances brings every instance of a service up to its desired
 // count. Idempotent — already-running instances are left untouched. The
 // triggeredBy argument labels the resulting runs: daemon boot passes
@@ -540,6 +572,19 @@ func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.R
 	// provides the async decoupling.
 	m.eventBus.Publish(eventType, events.RunEvent{
 		Run: run.Copy(),
+	})
+}
+
+// publishRunErr is publishRun with an error/reason string attached to the
+// envelope. Used for runs that never executed but carry a human-readable
+// explanation (e.g. a missed-run summary), surfaced as the notification body.
+func (m *defaultTaskManager) publishRunErr(eventType events.EventType, run *model.Run, errMsg string) {
+	if m.eventBus == nil {
+		return
+	}
+	m.eventBus.Publish(eventType, events.RunEvent{
+		Run:   run.Copy(),
+		Error: errMsg,
 	})
 }
 

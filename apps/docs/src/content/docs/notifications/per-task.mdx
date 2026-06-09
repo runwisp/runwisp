@@ -51,6 +51,31 @@ notify_on_success = ["slack-ops"]
 A failure sends to two channels. A clean shutdown sends to one. The two
 lists are independent.
 
+## Missed-run alerts
+
+There's no `notify_on_missed = [...]` channel list, and that's
+deliberate. A [missed scheduled run](/concepts/scheduling/#alerting-on-missed-runs) —
+one the daemon was down for — is a failure, so it rides the **exact same
+channels you already named in `notify_on_failure`** (plus the bell, via
+`global_notifiers`). You don't wire it up; it's just there.
+
+What you _can_ do is turn it off for a task that's expected to miss
+ticks — a laptop job that only runs while you're at your desk, say:
+
+```toml
+[tasks.daytime-sync]
+cron              = "*/30 9-17 * * 1-5"
+run               = "/usr/local/bin/sync"
+notify_on_failure = ["slack-ops"]
+notify_on_missed  = false   # failures still page; missed ticks stay quiet
+```
+
+`notify_on_missed` is a boolean, not a channel list. It defaults to
+`true`, inherits from `[defaults]`, and only silences the **alert** —
+the `missed` run row is still recorded and browsable, so nothing
+actually goes invisible. Use it instead of hollowing out
+`notify_on_failure`, which would also drop your real failure alerts.
+
 ## Inline target overrides
 
 Each entry in the list is one of three forms: a bare notifier id

@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"log/slog"
@@ -29,7 +30,10 @@ func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks m
 	parser := cronspec.NewParser()
 
 	for _, task := range tasks {
-		if task.Cron == "" || task.CatchUp == model.MissedRunSkip {
+		// Only the no-cron guard remains: detection is independent of the
+		// re-run policy, so even catch_up = "skip" records and alerts on the
+		// gap. Services (no cron) have no schedule to miss.
+		if task.Cron == "" {
 			continue
 		}
 		triggered, errors := catchupOneTask(ctx, db, parser, task, runner, now)
@@ -62,7 +66,7 @@ func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.P
 		return 0, errCount
 	}
 
-	missedCount := countMissedTicks(schedule, anchor, now)
+	missedCount, lastTick := countMissedTicks(schedule, anchor, now)
 	if missedCount == 0 {
 		return 0, 0
 	}
@@ -83,12 +87,24 @@ func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.P
 		// already shows the total ("Triggered N catch-up runs for missed cron
 		// ticks") — flooding stderr with one INFO per task fragments the
 		// banner for no extra signal.
-		slog.Debug("Triggering missed run catch-up",
+		slog.Debug("Recorded missed cron ticks",
 			"task", task.Name,
 			"missed", missedCount,
 			"triggering", triggerCount,
 			"policy", task.CatchUp,
 		)
+	}
+
+	// Record one browsable terminal "missed" row per task per downtime gap and
+	// raise a failure-level alert. This happens regardless of the re-run policy
+	// (including skip, which triggers nothing) — the detected total is reported
+	// even when MaxCatchUpRuns drops older ticks from the re-run. firstTick is
+	// the first tick after the anchor; lastTick anchors the next restart.
+	firstTick := schedule.Next(anchor)
+	reason := missedRunReason(missedCount, firstTick, capped, triggerCount)
+	if err := runner.RecordMissedRun(task.Name, lastTick, reason); err != nil {
+		slog.Error("Failed to record missed run", "task", task.Name, "err", err)
+		errors++
 	}
 
 	for range triggerCount {
@@ -126,8 +142,15 @@ func resolveCatchupAnchor(ctx context.Context, db storage.RunRepository, task *m
 }
 
 // computeCatchupTriggers returns the number of runs to trigger and whether the
-// count was capped by MaxCatchUpRuns.
+// count was capped by MaxCatchUpRuns. Detection is policy-independent (the
+// caller always records a missed row); this governs only re-running:
+//   - skip:   re-run nothing (the gap is alerted but never re-fired)
+//   - latest: re-run only the most recent missed tick
+//   - all:    re-run every missed tick, capped at MaxCatchUpRuns
 func computeCatchupTriggers(task *model.Task, missedCount int) (triggers int, capped bool) {
+	if task.CatchUp == model.MissedRunSkip {
+		return 0, false
+	}
 	if task.CatchUp == model.MissedRunLatest {
 		return 1, false
 	}
@@ -138,13 +161,33 @@ func computeCatchupTriggers(task *model.Task, missedCount int) (triggers int, ca
 }
 
 // countMissedTicks counts how many cron ticks fall strictly between lastRunTime
-// and now. The tick at lastRunTime itself is not counted (it was already executed).
-func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time) int {
-	count := 0
+// and now, and returns the latest such tick (<= now). The tick at lastRunTime
+// itself is not counted (it was already executed). lastTick is the zero time
+// when count is 0.
+func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time) (count int, lastTick time.Time) {
 	next := schedule.Next(lastRunTime)
 	for !next.After(now) {
 		count++
+		lastTick = next
 		next = schedule.Next(next)
 	}
-	return count
+	return count, lastTick
+}
+
+// missedRunReason builds the human sentence recorded on the missed run and
+// surfaced as the notification body. since is the first missed tick; the count
+// is always the detected total even when MaxCatchUpRuns capped the re-run, so
+// the operator sees the true size of the gap. When capped, it notes how many of
+// the backlog were re-fired.
+func missedRunReason(missedCount int, since time.Time, capped bool, triggered int) string {
+	plural := "s"
+	if missedCount == 1 {
+		plural = ""
+	}
+	reason := fmt.Sprintf("%d scheduled run%s missed since %s (daemon was down)",
+		missedCount, plural, since.Format("2006-01-02 15:04"))
+	if capped {
+		reason += fmt.Sprintf("; re-ran the most recent %d, older ticks dropped per max_catch_up_runs", triggered)
+	}
+	return reason
 }

@@ -11,6 +11,7 @@ import {
     CircleDashed,
     SkipForward,
     FileExclamationPoint,
+    CalendarX,
 } from "@lucide/svelte";
 import type { Component } from "svelte";
 import { displayStatus, type RunStatus, type Run } from "@runwisp/common";
@@ -129,6 +130,16 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         badge: "bg-warning-soft text-warning-soft-text",
         description:
             "The daemon shut down while this run was in flight and it exceeded shutdown_timeout; it was not resumed.",
+    },
+    missed: {
+        icon: CalendarX,
+        color: "text-danger-surface",
+        bg: "bg-danger-soft",
+        border: "border-danger-soft",
+        dot: "bg-danger-surface",
+        badge: "bg-danger-soft text-danger-soft-text",
+        description:
+            "A scheduled run never happened because the daemon was down. Detected and recorded on restart.",
     },
     pending: {
         icon: Clock,

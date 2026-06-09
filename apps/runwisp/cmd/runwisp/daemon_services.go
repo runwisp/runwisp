@@ -90,18 +90,11 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 		pendingSummary = resumePendingRuns(ctx, db, taskManager)
 
-		catchUpResult = runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now())
-		// Banner already shows the triggered total. Only narrate via slog when
-		// something actually went wrong; otherwise stay quiet so INFO output
-		// at default verbosity is uncluttered.
-		if catchUpResult.Errors > 0 {
-			slog.Warn("Missed-tick catch-up completed with errors",
-				"triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
-		} else if catchUpResult.Triggered > 0 {
-			slog.Debug("Missed-tick catch-up completed",
-				"triggered", catchUpResult.Triggered)
-		}
-
+		// Service instances start before notify (like crashed/pending
+		// reconciliation): a restart bringing services back up should keep its
+		// pre-notify timing and not page. Missed-tick catch-up is the lone
+		// exception — it is deferred to after notify starts (below) so the
+		// run.missed events it emits actually reach a subscriber.
 		startServiceInstances(taskManager, tasksMap)
 	}
 
@@ -117,6 +110,23 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	if notifyB.Service != nil {
 		if startErr := notifyB.Service.Start(context.Background()); startErr != nil {
 			addWarning("Failed to start notify subsystem: %v", startErr)
+		}
+	}
+
+	if mode == modeStandalone {
+		// Run catch-up now that notify is subscribed, so a missed-run gap
+		// detected from persisted history raises a run.missed alert instead of
+		// emitting into a bus nobody is listening on yet.
+		catchUpResult = runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now())
+		// Banner already shows the triggered total. Only narrate via slog when
+		// something actually went wrong; otherwise stay quiet so INFO output
+		// at default verbosity is uncluttered.
+		if catchUpResult.Errors > 0 {
+			slog.Warn("Missed-tick catch-up completed with errors",
+				"triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
+		} else if catchUpResult.Triggered > 0 {
+			slog.Debug("Missed-tick catch-up completed",
+				"triggered", catchUpResult.Triggered)
 		}
 	}
 

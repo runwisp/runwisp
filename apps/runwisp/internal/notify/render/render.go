@@ -196,6 +196,8 @@ func statusEmoji(k notify.Kind) string {
 		return "⏹️"
 	case notify.KindRunCrashed:
 		return "💥"
+	case notify.KindRunMissed:
+		return "🕳️"
 	case notify.KindRunStarted:
 		return "▶️"
 	case notify.KindLogDiskPressure:
@@ -221,6 +223,8 @@ func statusVerb(k notify.Kind) string {
 		return "was stopped"
 	case notify.KindRunCrashed:
 		return "crashed"
+	case notify.KindRunMissed:
+		return "missed a scheduled run"
 	case notify.KindRunStarted:
 		return "started"
 	case notify.KindLogDiskPressure:
@@ -338,6 +342,13 @@ func eventSentence(e *notify.Event) string {
 			return fmt.Sprintf("The process couldn't start: %s.", e.Reason)
 		}
 		return "The process couldn't start."
+	case notify.KindRunMissed:
+		// The reason already reads as a full sentence built at detection time
+		// (count + window + optional cap note), so it is rendered verbatim.
+		if e.Reason != "" {
+			return e.Reason
+		}
+		return "A scheduled run was missed while the daemon was down."
 	case notify.KindRunStarted:
 		return "Run started."
 	case notify.KindLogDiskPressure:

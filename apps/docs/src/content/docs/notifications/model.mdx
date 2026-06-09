@@ -21,9 +21,11 @@ shows up in the bell.
 ## What you get with zero config
 
 Any task or service that ends in `run.failed`, `run.timeout`, or
-`run.crashed` writes a row in SQLite and pushes it straight to the Web
-UI bell and the TUI footer. That row sticks around across a daemon
-restart, so the badge count is still correct after a reboot.
+`run.crashed` — or [misses a scheduled run](/concepts/scheduling/#alerting-on-missed-runs)
+while the daemon was down (`run.missed`) — writes a row in SQLite and
+pushes it straight to the Web UI bell and the TUI footer. That row
+sticks around across a daemon restart, so the badge count is still
+correct after a reboot.
 
 That's the default behaviour — you don't write a line of TOML to get it.
 

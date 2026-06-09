@@ -39,6 +39,9 @@ func (srv *Server) handleOpenMetrics(w http.ResponseWriter, r *http.Request) {
 	writeHelpType(w, "runwisp_runs_total", "counter", "Total runs that reached a terminal status, partitioned by status.")
 	writeSample(w, "runwisp_runs_total", []labelPair{{"status", "success"}}, float64(summary.Success))
 	writeSample(w, "runwisp_runs_total", []labelPair{{"status", "failed"}}, float64(summary.Failed))
+	// 'missed' is its own status label, not folded into 'failed': a scheduled
+	// run that never executed is a distinct signal from one that ran and failed.
+	writeSample(w, "runwisp_runs_total", []labelPair{{"status", "missed"}}, float64(summary.Missed))
 
 	if summary.LastFailure != nil {
 		writeHelpType(w, "runwisp_runs_last_failure_timestamp_seconds", "gauge", "Unix timestamp of the most recent failed run.")

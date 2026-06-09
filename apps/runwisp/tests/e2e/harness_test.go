@@ -219,8 +219,16 @@ type daemonProcess struct {
 func startDaemon(t *testing.T, projectDir string, binaryPath string, configPath string) *daemonProcess {
 	t.Helper()
 
-	dataDir := testutil.ShortTempDir(t)
-	port := reserveTCPPort(t)
+	return startDaemonOn(t, projectDir, binaryPath, configPath, testutil.ShortTempDir(t), reserveTCPPort(t))
+}
+
+// startDaemonOn boots a daemon against a caller-chosen data dir and port. Tests
+// that must survive a daemon restart (or pre-seed the data dir before first
+// boot) own the dir/port and reuse them across boots; startDaemon is the
+// convenience wrapper that picks a throwaway dir and a free port.
+func startDaemonOn(t *testing.T, projectDir string, binaryPath string, configPath string, dataDir string, port int) *daemonProcess {
+	t.Helper()
+
 	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
 
 	output := &lockedBuffer{}

@@ -257,6 +257,7 @@ SELECT
   CAST(COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
   CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow')
                          THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed,
+  CAST(COALESCE(SUM(CASE WHEN end_reason = 'missed' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missed,
   (SELECT end_at FROM runs
    WHERE end_reason IN ('failed','crashed','timeout','log_overflow')
      AND deleted_at IS NULL
@@ -268,9 +269,13 @@ type GetRunSummaryRow struct {
 	Total   int64      `json:"total"`
 	Success int64      `json:"success"`
 	Failed  int64      `json:"failed"`
+	Missed  int64      `json:"missed"`
 	EndAt   *time.Time `json:"end_at"`
 }
 
+// 'missed' is counted on its own and deliberately excluded from 'failed':
+// a missed run never executed, so folding it into the execution-failure
+// count (and last_failure timestamp) would skew failure metrics.
 func (q *Queries) GetRunSummary(ctx context.Context) (GetRunSummaryRow, error) {
 	row := q.db.QueryRowContext(ctx, getRunSummary)
 	var i GetRunSummaryRow
@@ -278,6 +283,7 @@ func (q *Queries) GetRunSummary(ctx context.Context) (GetRunSummaryRow, error) {
 		&i.Total,
 		&i.Success,
 		&i.Failed,
+		&i.Missed,
 		&i.EndAt,
 	)
 	return i, err

@@ -282,18 +282,20 @@ func resolveGlobalNotifiers(raw *[]string) []string {
 }
 
 // appendCatchAllRoute installs the zero-config safety net: every failed,
-// timed-out, or crashed run fans out to every channel in global_notifiers.
-// With the default ["inapp"], the bell in the Web UI and the footer in the
-// TUI always light up. With ["slack-ops"], every failure pages Slack. With
-// [], no synthetic route is added at all. The router deduplicates channel
-// IDs across matching rules, so this is harmless when the same task also
-// has explicit notify_on_failure sugar.
+// timed-out, crashed, or missed run fans out to every channel in
+// global_notifiers. With the default ["inapp"], the bell in the Web UI and the
+// footer in the TUI always light up. With ["slack-ops"], every failure pages
+// Slack. With [], no synthetic route is added at all. The router deduplicates
+// channel IDs across matching rules, so this is harmless when the same task
+// also has explicit notify_on_failure sugar. run.missed rides this route by
+// default (decision: misses reach whoever gets failures); a task silences it
+// with notify_on_missed = false, applied as a mute in the notify subsystem.
 func appendCatchAllRoute(out *NotifyConfig) {
 	if len(out.GlobalNotifiers) == 0 {
 		return
 	}
 	out.Routes = append(out.Routes, NotificationRoute{
-		Kinds:      []string{"run.failed", "run.timeout", "run.crashed"},
+		Kinds:      []string{"run.failed", "run.timeout", "run.crashed", "run.missed"},
 		NotifierID: append([]string(nil), out.GlobalNotifiers...),
 	})
 }
@@ -325,8 +327,12 @@ func desugarServiceNotify(names []string, wires map[string]*serviceWire, out *No
 
 func appendSynthRoutes(out *NotifyConfig, taskName string, onFailure, onSuccess []string) {
 	if len(onFailure) > 0 {
+		// run.missed joins the failure kinds so notify_on_failure = ["slack"]
+		// also pages Slack on a missed run — the operator opted into failure
+		// alerts there. Silencing misses is a one-line notify_on_missed = false,
+		// not a rewrite of this list into a hand-authored route.
 		out.Routes = append(out.Routes, NotificationRoute{
-			Kinds:      []string{"run.failed", "run.timeout", "run.crashed"},
+			Kinds:      []string{"run.failed", "run.timeout", "run.crashed", "run.missed"},
 			TaskGlob:   taskName,
 			NotifierID: mergeWithAppended(onFailure, out.GlobalNotifiers),
 		})

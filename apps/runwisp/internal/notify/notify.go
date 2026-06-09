@@ -28,6 +28,13 @@ type Service struct {
 	channels []Channel
 	failures SyntheticIngester
 
+	// mutedMissed is the set of task names whose run.missed events are
+	// suppressed (notify_on_missed = false). The browsable missed run row is
+	// still persisted by the runtime; only the active notification is dropped,
+	// at ingress, before routing. Restart-static — config reload is
+	// restart-only — so a plain set is correct.
+	mutedMissed map[string]struct{}
+
 	clock  Clocker
 	logger *slog.Logger
 
@@ -60,6 +67,10 @@ type Config struct {
 	Logger         *slog.Logger          // 0 → slog.Default
 	RetentionEvery time.Duration         // 0 → 5min
 	RetentionFn    func(context.Context) // executed on each tick; injected by Service builder
+	// MutedMissedTasks names the tasks with notify_on_missed = false. Their
+	// run.missed events are dropped at ingress. Nil/empty means every task
+	// alerts on misses (the default).
+	MutedMissedTasks map[string]struct{}
 }
 
 // New constructs a Service from already-built channels and pre-compiled rules.
@@ -99,6 +110,7 @@ func New(cfg Config) *Service {
 		logger:         logger,
 		retentionEvery: retentionEvery,
 		retentionFn:    cfg.RetentionFn,
+		mutedMissed:    cfg.MutedMissedTasks,
 	}
 }
 
@@ -211,6 +223,15 @@ func (s *Service) onBusEvent(e events.Event) {
 	ev := MapEvent(e)
 	if ev == nil {
 		return
+	}
+	// Per-task mute: notify_on_missed = false suppresses the active alert while
+	// the runtime still persists the browsable missed run row. Applied here,
+	// after mapping, because the additive route model can't express a per-task
+	// deny against the global catch-all that delivers run.missed by default.
+	if ev.Kind == KindRunMissed {
+		if _, muted := s.mutedMissed[ev.TaskName]; muted {
+			return
+		}
 	}
 	select {
 	case s.ingressCh <- ev:

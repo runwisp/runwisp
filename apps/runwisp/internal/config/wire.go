@@ -64,6 +64,9 @@ type taskServiceWireCore struct {
 
 	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
 	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
+	// NotifyOnMissed is a *bool so "unset" (nil → inherit [defaults], then
+	// default true) is distinct from an explicit `notify_on_missed = false`.
+	NotifyOnMissed *bool `toml:"notify_on_missed,omitempty"`
 }
 
 // toTaskCore parses the shared wire fields into a model.Task skeleton with
@@ -96,23 +99,24 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		return model.Task{}, fmt.Errorf("invalid log_max_size for task %q: %w", name, err)
 	}
 	task := model.Task{
-		Name:         name,
-		Kind:         kind,
-		Group:        w.Group,
-		Description:  w.Description,
-		APITrigger:   apiTrigger,
-		OnOverlap:    w.OnOverlap,
-		Timeout:      timeout,
-		GracefulStop: gracefulStop,
-		LogMaxSize:   logMaxSize,
-		LogOnFull:    w.LogOnFull,
-		KeepRuns:     keepRuns,
-		KeepFor:      keepFor,
-		Run:          w.Run,
-		Env:          w.Env,
-		EnvFile:      w.EnvFile,
-		Secrets:      w.Secrets,
-		SecretsFile:  w.SecretsFile,
+		Name:           name,
+		Kind:           kind,
+		Group:          w.Group,
+		Description:    w.Description,
+		APITrigger:     apiTrigger,
+		OnOverlap:      w.OnOverlap,
+		Timeout:        timeout,
+		GracefulStop:   gracefulStop,
+		LogMaxSize:     logMaxSize,
+		LogOnFull:      w.LogOnFull,
+		KeepRuns:       keepRuns,
+		KeepFor:        keepFor,
+		Run:            w.Run,
+		Env:            w.Env,
+		EnvFile:        w.EnvFile,
+		Secrets:        w.Secrets,
+		SecretsFile:    w.SecretsFile,
+		NotifyOnMissed: w.NotifyOnMissed,
 	}
 	if w.ComposeFile != "" {
 		svc := w.ComposeService
@@ -226,6 +230,10 @@ type defaultsWire struct {
 	KeepFor           string `toml:"keep_for,omitempty"`
 	BackoffResetAfter string `toml:"backoff_reset_after,omitempty"`
 
+	// NotifyOnMissed sets the global default for missed-run alerts; a task may
+	// still override it. *bool so an unset key leaves the built-in true.
+	NotifyOnMissed *bool `toml:"notify_on_missed,omitempty"`
+
 	Env         map[string]string `toml:"env,omitempty"`
 	EnvFile     string            `toml:"env_file,omitempty"`
 	Secrets     map[string]string `toml:"secrets,omitempty"`
@@ -260,6 +268,7 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 		KeepRuns:          keepRuns,
 		KeepFor:           keepFor,
 		BackoffResetAfter: backoffReset,
+		NotifyOnMissed:    w.NotifyOnMissed,
 		Env:               w.Env,
 		EnvFile:           w.EnvFile,
 		Secrets:           w.Secrets,

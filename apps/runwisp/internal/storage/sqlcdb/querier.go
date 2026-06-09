@@ -30,6 +30,9 @@ type Querier interface {
 	GetPendingRuns(ctx context.Context) ([]Run, error)
 	GetRun(ctx context.Context, id string) (Run, error)
 	GetRunByExternalExecutionID(ctx context.Context, externalExecutionID *string) (Run, error)
+	// 'missed' is counted on its own and deliberately excluded from 'failed':
+	// a missed run never executed, so folding it into the execution-failure
+	// count (and last_failure timestamp) would skew failure metrics.
 	GetRunSummary(ctx context.Context) (GetRunSummaryRow, error)
 	GetTaskRegistration(ctx context.Context, taskName string) (TaskRegistration, error)
 	InsertNotification(ctx context.Context, arg InsertNotificationParams) error

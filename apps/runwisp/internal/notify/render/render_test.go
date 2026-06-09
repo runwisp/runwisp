@@ -113,6 +113,8 @@ func TestEventSentence(t *testing.T) {
 		{"stopped without duration", &notify.Event{Kind: notify.KindRunStopped}, "Stopped manually."},
 		{"crashed with reason", &notify.Event{Kind: notify.KindRunCrashed, Reason: "exec format error"}, "The process couldn't start: exec format error."},
 		{"crashed without reason", &notify.Event{Kind: notify.KindRunCrashed}, "The process couldn't start."},
+		{"missed with reason", &notify.Event{Kind: notify.KindRunMissed, Reason: "3 scheduled runs missed since 2026-06-09 03:00 (daemon was down)"}, "3 scheduled runs missed since 2026-06-09 03:00 (daemon was down)"},
+		{"missed without reason", &notify.Event{Kind: notify.KindRunMissed}, "A scheduled run was missed while the daemon was down."},
 		{"started", &notify.Event{Kind: notify.KindRunStarted}, "Run started."},
 		{"log disk pressure", &notify.Event{Kind: notify.KindLogDiskPressure}, "Disk pressure is high; log capture is paused for this task until disk space is recovered."},
 		{"delivery failed with reason", &notify.Event{Kind: notify.KindNotifyDeliveryFailed, Reason: "timeout"}, "A notification could not be delivered: timeout."},
@@ -143,6 +145,7 @@ func TestLinkLabel(t *testing.T) {
 		notify.KindRunTimeout:           "View run",
 		notify.KindRunStopped:           "View run",
 		notify.KindRunCrashed:           "View run",
+		notify.KindRunMissed:            "View run",
 		notify.KindRunStarted:           "View run",
 		notify.KindNotifyDeliveryFailed: "View run",
 	}

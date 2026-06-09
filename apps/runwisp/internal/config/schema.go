@@ -155,6 +155,11 @@ type Defaults struct {
 	KeepFor           time.Duration
 	BackoffResetAfter time.Duration
 
+	// NotifyOnMissed is the [defaults] override for per-task missed-run alerts.
+	// nil means the operator didn't set it, so the built-in default (true)
+	// applies. ApplyDefaults resolves each task's pointer from this.
+	NotifyOnMissed *bool
+
 	// Env is the inline env block from [defaults.env]; env_file values merge
 	// in beneath it at load time. Visible in API/UI.
 	Env map[string]string

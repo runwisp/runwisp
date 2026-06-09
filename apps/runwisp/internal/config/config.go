@@ -645,6 +645,16 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if task.LogOnFull == "" {
 		task.LogOnFull = model.LogOverflowDropOld
 	}
+	if task.NotifyOnMissed == nil {
+		// Per-task unset → inherit [defaults], then fall back to the built-in
+		// true. Resolve to a concrete pointer so downstream readers never see
+		// nil and the value is stable regardless of how the task was built.
+		resolved := true
+		if d.NotifyOnMissed != nil {
+			resolved = *d.NotifyOnMissed
+		}
+		task.NotifyOnMissed = &resolved
+	}
 	task.Env = mergeEnv(d.Env, task.Env)
 	task.Secrets = mergeEnv(d.Secrets, task.Secrets)
 }
