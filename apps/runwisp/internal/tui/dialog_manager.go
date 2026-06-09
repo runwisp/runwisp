@@ -139,10 +139,14 @@ func (dm *DialogManager) UpdateCopy(msg tea.Msg) bool {
 	return false
 }
 
+// clipboardWriteAll is the seam tests use to deterministically force the
+// fallback path. Production code points to atotto/clipboard.WriteAll.
+var clipboardWriteAll = clipboard.WriteAll
+
 // CopyToClipboard attempts clipboard copy. On failure, opens a CopyDialog
 // so the user can manually select the text.
 func (dm *DialogManager) CopyToClipboard(value string) tea.Cmd {
-	err := clipboard.WriteAll(value)
+	err := clipboardWriteAll(value)
 	if err == nil {
 		dm.flashMessage = "✓ Copied!"
 		dm.flashExpiry = time.Now().Add(2 * time.Second)

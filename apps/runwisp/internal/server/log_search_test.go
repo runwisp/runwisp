@@ -41,8 +41,12 @@ func TestSearchLogs_TaskWide(t *testing.T) {
 	writeRunLog(t, logDir, &run1, "hello", "connection refused: redis")
 	writeRunLog(t, logDir, &run2, "Connection Refused: db", "ok")
 
-	repo.On("QueryRuns", mock.Anything, "task1", LogSearchRunPageSize, 0, "",
-		storage.SortColumnCreatedAt, storage.SortDesc, "").Return([]model.Run{run2, run1}, nil)
+	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
+		Filter:        model.RunFilter{TaskName: "task1"},
+		Limit:         LogSearchRunPageSize,
+		SortField:     storage.SortColumnCreatedAt,
+		SortDirection: storage.SortDesc,
+	}).Return([]model.Run{run2, run1}, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q="+url.QueryEscape("connection refused"), nil)
@@ -69,8 +73,12 @@ func TestSearchLogs_CaseSensitiveMisses(t *testing.T) {
 	run := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now}
 	writeRunLog(t, logDir, &run, "Hello", "WORLD")
 
-	repo.On("QueryRuns", mock.Anything, "task1", LogSearchRunPageSize, 0, "",
-		storage.SortColumnCreatedAt, storage.SortDesc, "").Return([]model.Run{run}, nil)
+	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
+		Filter:        model.RunFilter{TaskName: "task1"},
+		Limit:         LogSearchRunPageSize,
+		SortField:     storage.SortColumnCreatedAt,
+		SortDirection: storage.SortDesc,
+	}).Return([]model.Run{run}, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q=hello&case=true", nil)
@@ -150,8 +158,12 @@ func TestSearchLogs_BadCursor(t *testing.T) {
 func TestSearchLogs_NoRuns(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
-	repo.On("QueryRuns", mock.Anything, "task1", LogSearchRunPageSize, 0, "",
-		storage.SortColumnCreatedAt, storage.SortDesc, "").Return([]model.Run{}, nil)
+	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
+		Filter:        model.RunFilter{TaskName: "task1"},
+		Limit:         LogSearchRunPageSize,
+		SortField:     storage.SortColumnCreatedAt,
+		SortDirection: storage.SortDesc,
+	}).Return([]model.Run{}, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q=anything", nil)
@@ -173,8 +185,12 @@ func TestSearchLogs_CursorResume(t *testing.T) {
 	run := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now}
 	writeRunLog(t, logDir, &run, "foo", "foo", "foo", "foo")
 
-	repo.On("QueryRuns", mock.Anything, "task1", LogSearchRunPageSize, 0, "",
-		storage.SortColumnCreatedAt, storage.SortDesc, "").Return([]model.Run{run}, nil)
+	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
+		Filter:        model.RunFilter{TaskName: "task1"},
+		Limit:         LogSearchRunPageSize,
+		SortField:     storage.SortColumnCreatedAt,
+		SortDirection: storage.SortDesc,
+	}).Return([]model.Run{run}, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q=foo&limit=2", nil)

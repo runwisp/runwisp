@@ -89,9 +89,15 @@ func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
 
 	run := model.Run{ID: runID, TaskName: "task1", CreatedAt: now, Status: model.PhaseEnded}
 
-	repo.On("QueryRuns", mock.Anything, "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{run}, nil)
+	enforceQuery := storage.RunQuery{
+		Limit:         100,
+		Offset:        0,
+		SortField:     storage.SortColumnCreatedAt,
+		SortDirection: storage.SortAsc,
+	}
+	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{run}, nil)
 	// Second call returns empty to stop the loop
-	repo.On("QueryRuns", mock.Anything, "", 100, 0, "", storage.SortColumnCreatedAt, storage.SortAsc, "").Return([]model.Run{}, nil)
+	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{}, nil)
 	repo.On("DeleteRun", mock.Anything, runID).Return(nil)
 
 	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 100)

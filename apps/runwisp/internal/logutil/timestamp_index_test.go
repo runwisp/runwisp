@@ -21,6 +21,11 @@ func buildTidx(entries []TimestampEntry) *bytes.Reader {
 	return bytes.NewReader(buf)
 }
 
+func TestTidxPath(t *testing.T) {
+	assert.Equal(t, "/var/log/task/run.log.tidx", TidxPath("/var/log/task/run.log"))
+	assert.Equal(t, ".tidx", TidxPath(""))
+}
+
 func TestTimestampEntryCount(t *testing.T) {
 	assert.Equal(t, 0, TimestampEntryCount(0))
 	assert.Equal(t, 1, TimestampEntryCount(12))

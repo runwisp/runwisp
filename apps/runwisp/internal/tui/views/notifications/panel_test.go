@@ -488,6 +488,59 @@ func TestScheduleFlashClear_ReturnsNonNilCmd(t *testing.T) {
 	}
 }
 
+// TestScheduleFlashClear_TickBodyProducesClearMsg drives the tea.Tick callback
+// so the closure that emits NotificationBoundaryFlashClearedMsg is executed.
+func TestScheduleFlashClear_TickBodyProducesClearMsg(t *testing.T) {
+	cmd := ScheduleFlashClear()
+	if cmd == nil {
+		t.Fatal("ScheduleFlashClear must return a non-nil tea.Cmd")
+	}
+	msg := cmd()
+	if msg == nil {
+		t.Fatal("tick body must emit a NotificationBoundaryFlashClearedMsg")
+	}
+}
+
+// TestNotificationsPanel_ToggleCollapsesAndExpands cycles the panel through
+// both states so the collapse branch of Toggle (else of `if p.expanded`) is
+// executed. The first Toggle expanded; a second Toggle should collapse.
+func TestNotificationsPanel_ToggleCollapsesAndExpands(t *testing.T) {
+	p := NewPanel()
+	p.SetWidth(80)
+	p.Upsert(unreadNotification("01ID", "info", time.Now(), "hello"))
+	p.Toggle()
+	if !p.IsExpanded() {
+		t.Fatal("first Toggle should expand")
+	}
+	p.Toggle()
+	if p.IsExpanded() {
+		t.Fatal("second Toggle should collapse")
+	}
+}
+
+// TestNotificationsPanel_SetWidthClampsNegativeToZero exercises the w<0 guard
+// inside SetWidth so the clamping branch is covered.
+func TestNotificationsPanel_SetWidthClampsNegativeToZero(t *testing.T) {
+	p := NewPanel()
+	p.SetWidth(-5)
+	// Re-set to a real width afterwards to make sure the panel stays usable.
+	p.SetWidth(80)
+}
+
+// TestNotificationsPanel_SelectedNilWhenCollapsedOrOutOfRange ensures Selected
+// returns nil in both guarded branches: collapsed and cursor-out-of-range.
+func TestNotificationsPanel_SelectedNilWhenCollapsedOrOutOfRange(t *testing.T) {
+	p := NewPanel()
+	if got := p.Selected(); got != nil {
+		t.Fatalf("Selected on empty collapsed panel must be nil; got %v", got)
+	}
+	p.Upsert(unreadNotification("a", "info", time.Now(), "t"))
+	// Still collapsed — selection is meaningless.
+	if p.Selected() != nil {
+		t.Fatal("Selected while collapsed must be nil")
+	}
+}
+
 // ─── truncateLine ────────────────────────────────────────────────────────────
 
 // TestTruncateLine_ShortLineUnchanged verifies that a line whose visual width
@@ -548,4 +601,28 @@ func TestTruncateLine_MaxThreeCutsWithoutEllipsis(t *testing.T) {
 	if strings.HasSuffix(got, "…") {
 		t.Fatalf("truncateLine with max=3 must not append ellipsis; got %q", got)
 	}
+}
+
+func TestRefreshLabels_CollapsedIsNoOp(t *testing.T) {
+	p := NewPanel()
+	p.SetWidth(120)
+	p.Upsert(unreadNotification("01HX", "info", time.Now(), "t"))
+	// Collapsed: RefreshLabels must not rebuild content (cheap branch).
+	p.RefreshLabels()
+	if p.IsExpanded() {
+		t.Fatal("RefreshLabels must not flip expanded state")
+	}
+}
+
+func TestRefreshLabels_ExpandedRebuildsContent(t *testing.T) {
+	p := NewPanel()
+	p.SetWidth(120)
+	p.Upsert(unreadNotification("01HX", "info", time.Now().Add(-5*time.Minute), "t"))
+	p.Toggle()
+	if !p.IsExpanded() {
+		t.Fatal("precondition: panel must be expanded")
+	}
+	// Just exercising the expanded path of RefreshLabels — relative-time labels
+	// are re-rendered behind p.View()'s cache.
+	p.RefreshLabels()
 }

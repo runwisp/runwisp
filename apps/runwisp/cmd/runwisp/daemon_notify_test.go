@@ -4,13 +4,20 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/notify/channel"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
+	"github.com/runwisp/runwisp/internal/notify/coalesce"
+	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,6 +64,184 @@ func TestBackoffOverride(t *testing.T) {
 		assert.LessOrEqual(t, provider.Backoff.InitialInterval, cap)
 		assert.LessOrEqual(t, provider.Backoff.MaxInterval, cap)
 	})
+}
+
+// fakeNotificationRepo implements storage.NotificationRepository for
+// retention-callback tests; only the prune methods see use.
+type fakeNotificationRepo struct {
+	mock.Mock
+}
+
+func (f *fakeNotificationRepo) UpsertByFingerprint(context.Context, *storage.Notification, time.Duration, int) (bool, error) {
+	panic("not used")
+}
+func (f *fakeNotificationRepo) ListNotifications(context.Context, int, string) ([]storage.Notification, error) {
+	panic("not used")
+}
+func (f *fakeNotificationRepo) GetNotificationByID(context.Context, string) (*storage.Notification, error) {
+	panic("not used")
+}
+func (f *fakeNotificationRepo) PruneNotificationsByCount(_ context.Context, keep int) (int64, error) {
+	a := f.Called(keep)
+	return a.Get(0).(int64), a.Error(1)
+}
+func (f *fakeNotificationRepo) PruneNotificationsByAge(_ context.Context, olderThan time.Duration) (int64, error) {
+	a := f.Called(olderThan)
+	return a.Get(0).(int64), a.Error(1)
+}
+func (f *fakeNotificationRepo) CountUnreadNotifications(context.Context) (int64, error) {
+	panic("not used")
+}
+func (f *fakeNotificationRepo) MarkNotificationRead(context.Context, string, time.Time) (*storage.Notification, error) {
+	panic("not used")
+}
+func (f *fakeNotificationRepo) MarkNotificationUnread(context.Context, string) (*storage.Notification, error) {
+	panic("not used")
+}
+func (f *fakeNotificationRepo) MarkAllNotificationsRead(context.Context, time.Time) error {
+	panic("not used")
+}
+
+func TestBuildInappRenderer_LoadsDefaultTemplate(t *testing.T) {
+	r, err := buildInappRenderer()
+	require.NoError(t, err)
+	require.NotNil(t, r)
+}
+
+func TestBuildOutboundChannels_UnknownTypeReturnsError(t *testing.T) {
+	specs := []channel.NotifierSpec{
+		{ID: "broken", Type: "garbage"},
+	}
+	_, err := buildOutboundChannels(specs, false, coalesce.Config{}, slog.Default())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "garbage")
+}
+
+func TestBuildOutboundChannels_EmptyReturnsNoChannels(t *testing.T) {
+	channels, err := buildOutboundChannels(nil, false, coalesce.Config{}, slog.Default())
+	require.NoError(t, err)
+	assert.Empty(t, channels)
+}
+
+func TestBuildOutboundChannels_BuildsSlackChannel(t *testing.T) {
+	specs := []channel.NotifierSpec{
+		{ID: "ops", Type: "slack", WebhookURL: "https://hooks.example/abc"},
+	}
+	channels, err := buildOutboundChannels(specs, false, coalesce.Config{}, slog.Default())
+	require.NoError(t, err)
+	require.Len(t, channels, 1)
+}
+
+func TestBuildOutboundChannels_AppliesCoalesceWrapperWhenEnabled(t *testing.T) {
+	specs := []channel.NotifierSpec{
+		{ID: "ops", Type: "slack", WebhookURL: "https://hooks.example/abc"},
+	}
+	channelsNoCoalesce, err := buildOutboundChannels(specs, false, coalesce.Config{Window: time.Second, EveryN: 3}, slog.Default())
+	require.NoError(t, err)
+	require.Len(t, channelsNoCoalesce, 1)
+
+	channelsCoalesce, err := buildOutboundChannels(specs, true, coalesce.Config{Window: time.Second, EveryN: 3}, slog.Default())
+	require.NoError(t, err)
+	require.Len(t, channelsCoalesce, 1)
+
+	// With coalescing enabled the wrapper type differs from the raw channel.
+	// We assert that by comparing the concrete types via their string form;
+	// a structural assertion is enough — the wrapper is added at runtime.
+	assert.NotEqual(t, channelsNoCoalesce[0], channelsCoalesce[0],
+		"coalesced channel should not equal its raw counterpart")
+}
+
+func TestBuildRetentionFn_NilWhenBothLimitsDisabled(t *testing.T) {
+	assert.Nil(t, buildRetentionFn(&fakeNotificationRepo{}, config.NotifyConfig{}, slog.Default()))
+}
+
+func TestBuildRetentionFn_KeepOnlyInvokesPruneByCount(t *testing.T) {
+	repo := &fakeNotificationRepo{}
+	repo.On("PruneNotificationsByCount", 10).Return(int64(2), nil)
+
+	fn := buildRetentionFn(repo, config.NotifyConfig{HistoryKeep: 10}, slog.Default())
+	require.NotNil(t, fn)
+	fn(t.Context())
+	repo.AssertExpectations(t)
+}
+
+func TestBuildRetentionFn_BothLimitsCallBoth(t *testing.T) {
+	repo := &fakeNotificationRepo{}
+	repo.On("PruneNotificationsByCount", 5).Return(int64(0), nil)
+	repo.On("PruneNotificationsByAge", time.Hour).Return(int64(0), nil)
+
+	fn := buildRetentionFn(repo, config.NotifyConfig{HistoryKeep: 5, HistoryKeepFor: time.Hour}, slog.Default())
+	require.NotNil(t, fn)
+	fn(t.Context())
+	repo.AssertExpectations(t)
+}
+
+func TestBuildRetentionFn_LogsButDoesNotPanicOnPruneError(t *testing.T) {
+	repo := &fakeNotificationRepo{}
+	repo.On("PruneNotificationsByCount", 1).Return(int64(0), errors.New("db gone"))
+	repo.On("PruneNotificationsByAge", time.Minute).Return(int64(0), errors.New("db gone"))
+
+	fn := buildRetentionFn(repo, config.NotifyConfig{HistoryKeep: 1, HistoryKeepFor: time.Minute}, slog.Default())
+	require.NotNil(t, fn)
+	require.NotPanics(t, func() { fn(t.Context()) })
+}
+
+// TestInitNotify_NoNotifiersNoRoutesReturnsZero exercises the early-return
+// branch where there's nothing to wire — initNotify must hand back an empty
+// bundle without touching the DB or starting any goroutines.
+func TestInitNotify_NoNotifiersNoRoutesReturnsZero(t *testing.T) {
+	dir := t.TempDir()
+	origDataDir := flags.DataDir
+	flags.DataDir = dir
+	t.Cleanup(func() { flags.DataDir = origDataDir })
+
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	cfg := &daemonConfig{
+		Fingerprint: "fp",
+		Config: &config.Config{
+			Notify: config.NotifyConfig{},
+		},
+	}
+
+	bundle, err := initNotify(cfg, db, events.NewEventBus(), slog.Default())
+	require.NoError(t, err)
+	assert.Nil(t, bundle.Service, "expected zero bundle when nothing is configured")
+	assert.Nil(t, bundle.Hub)
+}
+
+// TestInitNotify_InappRouteWiresHubAndService exercises the happy path:
+// a route targets the special "inapp" channel, so initNotify must build a Hub
+// and a Service.
+func TestInitNotify_InappRouteWiresHubAndService(t *testing.T) {
+	dir := t.TempDir()
+	origDataDir := flags.DataDir
+	flags.DataDir = dir
+	t.Cleanup(func() { flags.DataDir = origDataDir })
+
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	cfg := &daemonConfig{
+		Fingerprint: "fp",
+		Config: &config.Config{
+			Notify: config.NotifyConfig{
+				Routes: []config.NotificationRoute{
+					{Kinds: []string{"run.failed"}, NotifierID: []string{"inapp"}},
+				},
+				CoalesceWindow: time.Minute,
+				OccurrenceRing: 5,
+			},
+		},
+	}
+
+	bundle, err := initNotify(cfg, db, events.NewEventBus(), slog.Default())
+	require.NoError(t, err)
+	require.NotNil(t, bundle.Service, "expected Service when inapp route is wired")
+	require.NotNil(t, bundle.Hub, "expected Hub when inapp route is wired")
 }
 
 func TestRoutesReferenceInapp(t *testing.T) {

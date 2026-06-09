@@ -8,7 +8,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -125,7 +127,7 @@ func TestGetAllRuns(t *testing.T) {
 	runs := []model.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
-	repo.On("QueryRuns", mock.Anything, "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
+	repo.On("QueryRuns", mock.Anything, storage.RunQuery{Limit: 50}).Return(runs, nil)
 	repo.On("CountRunsFiltered", mock.Anything, "", "", "").Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/runs", nil)
@@ -148,7 +150,10 @@ func TestGetTaskRuns(t *testing.T) {
 	runs := []model.Run{
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
-	repo.On("QueryRuns", mock.Anything, "task1", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
+	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
+		Filter: model.RunFilter{TaskName: "task1"},
+		Limit:  50,
+	}).Return(runs, nil)
 	repo.On("CountRunsFiltered", mock.Anything, "", "task1", "").Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs", nil)
@@ -163,6 +168,35 @@ func TestGetTaskRuns(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, resp.Runs, 1)
 	assert.Equal(t, int64(1), resp.Total)
+}
+
+func TestGetRunSummary(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+	repo.On("GetRunSummary", mock.Anything).Return(&model.RunSummary{Total: 10, Success: 8, Failed: 2}, nil)
+
+	req := httptest.NewRequest("GET", "/api/runs/summary", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var summary model.RunSummary
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &summary))
+	assert.Equal(t, int64(10), summary.Total)
+	assert.Equal(t, int64(8), summary.Success)
+	assert.Equal(t, int64(2), summary.Failed)
+}
+
+func TestGetRunSummary_RepoError(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+	repo.On("GetRunSummary", mock.Anything).Return((*model.RunSummary)(nil), errors.New("db down"))
+
+	req := httptest.NewRequest("GET", "/api/runs/summary", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
 func TestGetRun(t *testing.T) {
@@ -715,4 +749,127 @@ func TestStopServiceHTTP_NotAService(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestRemoveStaleSocket_MissingPathNoError(t *testing.T) {
+	if err := removeStaleSocket(filepath.Join(t.TempDir(), "nope.sock")); err != nil {
+		t.Fatalf("removeStaleSocket on missing path: %v", err)
+	}
+}
+
+func TestRemoveStaleSocket_RegularFileRefuses(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "imposter.sock")
+	if err := os.WriteFile(p, []byte("not a socket"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := removeStaleSocket(p)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a socket")
+	// File must still exist.
+	if _, statErr := os.Stat(p); statErr != nil {
+		t.Fatalf("removeStaleSocket should not delete non-sockets: %v", statErr)
+	}
+}
+
+func TestRemoveStaleSocket_SymlinkRefuses(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real")
+	if err := os.WriteFile(target, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link.sock")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	err := removeStaleSocket(link)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symlink")
+}
+
+func TestRemoveStaleSocket_DeadSocketRemoved(t *testing.T) {
+	dir := testutil.ShortTempDir(t)
+	p := filepath.Join(dir, "dead.sock")
+	// UnixListener auto-unlinks on Close; disable that so the socket file
+	// remains on disk with no peer answering, mimicking a crashed daemon.
+	ln, err := net.Listen("unix", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ul, ok := ln.(*net.UnixListener); ok {
+		ul.SetUnlinkOnClose(false)
+	}
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("expected dead socket file to remain after Close: %v", err)
+	}
+	if err := removeStaleSocket(p); err != nil {
+		t.Fatalf("removeStaleSocket on dead socket: %v", err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatalf("expected dead socket file removed, got %v", err)
+	}
+}
+
+func TestOpenUnixListener_EmptyPathRejected(t *testing.T) {
+	srv := &Server{}
+	_, err := srv.openUnixListener()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "socket path required")
+}
+
+func TestOpenUnixListener_HappyPathBindsAt0600(t *testing.T) {
+	dir := testutil.ShortTempDir(t)
+	p := filepath.Join(dir, "ok.sock")
+	srv := &Server{socketPath: p}
+	ln, err := srv.openUnixListener()
+	require.NoError(t, err)
+	defer ln.Close()
+	info, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Fatalf("expected socket perm 0600, got %#o", perm)
+	}
+}
+
+func TestOpenUnixListener_PropagatesStaleSocketRejection(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "imposter.sock")
+	if err := os.WriteFile(p, []byte("not a socket"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{socketPath: p}
+	_, err := srv.openUnixListener()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "remove stale socket")
+}
+
+func TestRemoveStaleSocket_LivePeerReports(t *testing.T) {
+	dir := testutil.ShortTempDir(t)
+	p := filepath.Join(dir, "live.sock")
+	ln, err := net.Listen("unix", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	// Accept loop runs in the background so Dial succeeds inside removeStaleSocket.
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	err = removeStaleSocket(p)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "in use")
+	// File must still exist — caller will see EADDRINUSE on listen.
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("removeStaleSocket should not delete a live socket: %v", err)
+	}
 }

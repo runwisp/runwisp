@@ -358,3 +358,93 @@ func TestExecuteComposeWithoutBackendIsUnsupported(t *testing.T) {
 	assert.Equal(t, -1, result.ExitCode)
 	assert.Contains(t, result.Error.Error(), "unsupported execution type: compose")
 }
+
+func newTestExecutor(t *testing.T, opts Options) *RoutingExecutor {
+	t.Helper()
+	if opts.EventBus == nil {
+		opts.EventBus = events.NewEventBus()
+	}
+	if opts.LogDir == "" {
+		opts.LogDir = t.TempDir()
+	}
+	e, ok := New(opts).(*RoutingExecutor)
+	require.True(t, ok, "New must return *RoutingExecutor")
+	return e
+}
+
+func TestRoutingExecutor_Availability_DefaultsHTTPOnly(t *testing.T) {
+	e := newTestExecutor(t, Options{})
+	avail := e.Availability()
+
+	assert.True(t, avail.HTTP.Available)
+	assert.False(t, avail.Shell.Available, "shell defaults to unavailable when CloudShellEnabled is false")
+	assert.NotEmpty(t, avail.Shell.Reason)
+	assert.False(t, avail.Container.Available, "no container backend supplied")
+	assert.False(t, avail.Config.Available, "no local tasks declared")
+}
+
+func TestRoutingExecutor_Availability_CloudShellEnabled(t *testing.T) {
+	e := newTestExecutor(t, Options{CloudShellEnabled: true})
+	assert.True(t, e.Availability().Shell.Available)
+}
+
+func TestRoutingExecutor_Availability_HasLocalTasks(t *testing.T) {
+	e := newTestExecutor(t, Options{HasLocalTasks: true})
+	assert.True(t, e.Availability().Config.Available)
+}
+
+func TestRoutingExecutor_SetRunUpdateCallback_ReceivesUpdates(t *testing.T) {
+	e := newTestExecutor(t, Options{})
+
+	called := false
+	e.SetRunUpdateCallback(func(r *model.Run) {
+		called = true
+	})
+
+	// notifyRunUpdated forwards to whichever callback is installed; reach
+	// in through the package-internal method to verify the wiring.
+	e.notifyRunUpdated(&model.Run{ID: "r1"}, "")
+	assert.True(t, called)
+}
+
+func TestRoutingExecutor_SetOnProcessStarted_ReceivesCall(t *testing.T) {
+	e := newTestExecutor(t, Options{})
+
+	gotID := ""
+	e.SetOnProcessStarted(func(runID string, _ func()) {
+		gotID = runID
+	})
+
+	// Manually invoke the registered hook — startBackend would call it in
+	// production, but we cover the registration wiring here.
+	require.NotNil(t, e.onProcessStarted)
+	e.onProcessStarted("r1", func() {})
+	assert.Equal(t, "r1", gotID)
+}
+
+func TestRoutingExecutor_Execute_MissingExecutionDefinition(t *testing.T) {
+	e := newTestExecutor(t, Options{CloudShellEnabled: true})
+	// Task with no run and no resolved execution definition → resolveBackend
+	// returns the "missing execution definition" error.
+	task := &model.Task{Name: "nodef"}
+	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+	result := e.Execute(context.Background(), task, run)
+	require.NotNil(t, result.Error)
+	assert.Equal(t, -1, result.ExitCode)
+	assert.Contains(t, result.Error.Error(), "missing execution definition")
+}
+
+func TestRoutingExecutor_Execute_BlockedURLSurfacesStartFailure(t *testing.T) {
+	// HTTPBackend.Start rejects private IPs; routing executor must surface that
+	// via startBackend's error path with a system log line.
+	e := newTestExecutor(t, Options{})
+	task := &model.Task{
+		Name:         "blocked",
+		ExecutionDef: &model.HTTPExecution{Method: "GET", URL: "http://127.0.0.1/admin"},
+	}
+	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+	result := e.Execute(context.Background(), task, run)
+	require.NotNil(t, result.Error)
+	assert.Equal(t, -1, result.ExitCode)
+	assert.Contains(t, result.Error.Error(), "failed to start")
+}

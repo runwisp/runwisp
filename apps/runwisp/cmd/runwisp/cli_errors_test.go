@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"testing"
@@ -11,6 +12,71 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUserFacingError_ErrorTitleOnly(t *testing.T) {
+	e := &userFacingError{title: "boom"}
+	assert.Equal(t, "boom", e.Error())
+}
+
+func TestUserFacingError_ErrorWithDetails(t *testing.T) {
+	e := &userFacingError{title: "boom", details: "more context"}
+	out := e.Error()
+	assert.Contains(t, out, "boom")
+	assert.Contains(t, out, "more context")
+}
+
+func TestRenderUserFacingError_TitleOnly(t *testing.T) {
+	var buf bytes.Buffer
+	renderUserFacingError(&buf, &userFacingError{title: "boom"})
+	out := buf.String()
+	assert.Contains(t, out, "Error")
+	assert.Contains(t, out, "boom")
+}
+
+func TestRenderUserFacingError_WithDetailsAndBullets(t *testing.T) {
+	var buf bytes.Buffer
+	renderUserFacingError(&buf, &userFacingError{
+		title:   "boom",
+		details: "context line\n  - fix one\n  - fix two\n",
+	})
+	out := buf.String()
+	assert.Contains(t, out, "boom")
+	assert.Contains(t, out, "context line")
+	assert.Contains(t, out, "fix one")
+	assert.Contains(t, out, "fix two")
+}
+
+func TestPasswordMismatchError_PortInTitle(t *testing.T) {
+	err := passwordMismatchError(9477)
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, "9477")
+	assert.Contains(t, ufe.details, "RUNWISP_PASSWORD")
+}
+
+func TestTUIPasswordMismatchError_Explicit(t *testing.T) {
+	err := tuiPasswordMismatchError(9477, true)
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, "does not match")
+	assert.Empty(t, ufe.details)
+}
+
+func TestTUIPasswordMismatchError_Implicit(t *testing.T) {
+	err := tuiPasswordMismatchError(9477, false)
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, "password mismatch")
+	assert.Contains(t, ufe.details, "--password")
+}
+
+func TestAuthRateLimitedError_HasHints(t *testing.T) {
+	err := authRateLimitedError(9477)
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, "9477")
+	assert.Contains(t, ufe.details, "Wait")
+}
 
 func TestIsUserFacing_Direct(t *testing.T) {
 	e := &userFacingError{title: "direct error"}

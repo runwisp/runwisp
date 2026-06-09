@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -62,6 +63,12 @@ echo "Create a runwisp.toml to define your own tasks — see https://docs.runwis
 }
 
 func runDaemon(mode daemonMode) error {
+	// Arm SIGINT/SIGTERM before any goroutine could self-signal (superviseServerStart
+	// raises SIGTERM on its own PID when srv.Start fails). Registered first so the
+	// stop func runs last, after every other defer has unwound.
+	sigCh, stopSignals := installSignalHandler()
+	defer stopSignals()
+
 	// `runwisp demo` boots this daemon against a throwaway temp dir (see
 	// envDemoTempDir). Registered first ⇒ runs last, after the DB is closed and
 	// the PID file is cleaned.
@@ -71,36 +78,7 @@ func runDaemon(mode daemonMode) error {
 
 	// Ring buffer for streaming daemon logs to remote TUI clients.
 	logBuffer := server.NewDaemonLogBuffer(1000)
-
-	// Set up log routing before opening the database so storage logs go to the
-	// right destination from the very first query. HTTP access logs flow
-	// through slog too (see internal/server/access_log.go), so the same
-	// destination is shared by every log line the daemon emits.
-	var debugWriter *tui.DebugLogWriter
-	if noTUI {
-		// Headless: slog → stderr (tee'd to the ring buffer for remote TUI
-		// streaming) with daemon-mode timestamps and TTY-aware color gating.
-		clilog.Configure(clilog.Options{
-			Level:      flags.LogLevel,
-			Format:     flags.LogFormat,
-			Output:     io.MultiWriter(os.Stderr, logBuffer),
-			DaemonMode: true,
-		})
-	} else {
-		// TUI host: route slog into the debug panel + ring buffer right away,
-		// at DEBUG, so every line (including HTTP access at DEBUG) is captured
-		// from the first query — even before the bubbletea program attaches.
-		// DebugLogWriter buffers up to 256 lines until SetProgram is called,
-		// then flushes them. The fancy startup banner still prints to stderr
-		// via tui.PrintStartup; this only redirects the slog stream.
-		debugWriter = tui.NewDebugLogWriter()
-		clilog.Configure(clilog.Options{
-			Level:   slog.LevelDebug,
-			Format:  clilog.FormatText,
-			Output:  io.MultiWriter(debugWriter, logBuffer),
-			TUIMode: true,
-		})
-	}
+	debugWriter := configureBootLogRouting(logBuffer)
 
 	// Open database first — config values (fingerprint, jwt_secret) live there.
 	db, err := storage.New(flags.DBPath())
@@ -199,32 +177,12 @@ func runDaemon(mode daemonMode) error {
 	}
 
 	// Cloud client is only started in cloud mode; standalone gets no-ops.
-	var cancelCloud context.CancelFunc
-	var cloudWG *sync.WaitGroup
-	if mode == modeCloud {
-		cancelCloud, cloudWG = startCloudClient(context.Background(), cfg, svc)
-	} else {
-		cancelCloud = func() {}
-		cloudWG = &sync.WaitGroup{}
-	}
+	cancelCloud, cloudWG := startCloudIfEnabled(mode, cfg, svc)
 	defer cancelCloud()
 
-	go func() {
-		if startErr := srv.Start(); startErr != nil {
-			slog.Error("Server failed", "err", startErr)
-			p, _ := os.FindProcess(os.Getpid())
-			_ = p.Signal(syscall.SIGTERM)
-		}
-	}()
+	go superviseServerStart(srv)
 
-	// The fancy multi-section banner is for interactive terminals. Piped into
-	// Docker logs / journald (non-TTY) or under --log-format=json it would be
-	// escape-code noise, so emit the same essential facts as plain slog lines.
-	if clilog.FancyBanner(flags.LogFormat) {
-		tui.PrintStartup(startupInfo)
-	} else {
-		logStartupSummary(startupInfo)
-	}
+	emitStartupBanner(startupInfo)
 
 	// Headless: subscribe runlog AFTER the banner is on screen, then signal
 	// readiness, then block on signals. Subscribing later matters because
@@ -234,13 +192,104 @@ func runDaemon(mode daemonMode) error {
 	// existence is already visible in the banner ("Triggered N catch-up
 	// runs", "service xN"). The TUI path narrates runs visually and so
 	// skips this subscription.
+	rt := &daemonRuntime{
+		sigCh:       sigCh,
+		svc:         svc,
+		srv:         srv,
+		debugWriter: debugWriter,
+		logBuffer:   logBuffer,
+		cancelCloud: cancelCloud,
+		cloudWG:     cloudWG,
+	}
+
 	if noTUI {
 		defer runlog.Subscribe(svc.EventBus)()
 		emitReadiness(startupInfo.ListenURL)
-		return runHeadless(cancelCloud, cloudWG, svc, srv)
+		return runHeadless(rt)
 	}
 
-	return runWithTUI(srv, svc, startupInfo, debugWriter, logBuffer, cancelCloud, cloudWG)
+	return runWithTUI(rt, startupInfo)
+}
+
+// installSignalHandler arms SIGINT/SIGTERM on a buffered channel before any
+// goroutine could self-signal (superviseServerStart raises SIGTERM on itself
+// when srv.Start fails). The returned stop func reverses signal.Notify so
+// subsequent processes inherit the default disposition.
+func installSignalHandler() (<-chan os.Signal, func()) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	return sigCh, func() { signal.Stop(sigCh) }
+}
+
+// configureBootLogRouting wires the slog default to the right destination for
+// the boot path: stderr (tee'd to logBuffer) when headless, or the TUI debug
+// panel (also tee'd to logBuffer) when interactive. Returns the debug writer
+// the TUI path needs to wire into the bubbletea program later; nil headless.
+//
+// Routing is set before the database opens so storage logs go to the right
+// destination from the very first query. HTTP access logs flow through slog
+// too (see internal/server/access_log.go), so the same destination is shared
+// by every log line the daemon emits.
+func configureBootLogRouting(logBuffer *server.DaemonLogBuffer) *tui.DebugLogWriter {
+	if noTUI {
+		// Headless: slog → stderr (tee'd to the ring buffer for remote TUI
+		// streaming) with daemon-mode timestamps and TTY-aware color gating.
+		clilog.Configure(clilog.Options{
+			Level:      flags.LogLevel,
+			Format:     flags.LogFormat,
+			Output:     io.MultiWriter(os.Stderr, logBuffer),
+			DaemonMode: true,
+		})
+		return nil
+	}
+	// TUI host: route slog into the debug panel + ring buffer right away, at
+	// DEBUG, so every line (including HTTP access at DEBUG) is captured from
+	// the first query — even before the bubbletea program attaches.
+	// DebugLogWriter buffers up to 256 lines until SetProgram is called, then
+	// flushes them. The fancy startup banner still prints to stderr via
+	// tui.PrintStartup; this only redirects the slog stream.
+	debugWriter := tui.NewDebugLogWriter()
+	clilog.Configure(clilog.Options{
+		Level:   slog.LevelDebug,
+		Format:  clilog.FormatText,
+		Output:  io.MultiWriter(debugWriter, logBuffer),
+		TUIMode: true,
+	})
+	return debugWriter
+}
+
+// startCloudIfEnabled spins up the cloud client when running in cloud mode and
+// returns the cancel/wait pair the shutdown path needs. Standalone gets a
+// no-op cancel and empty WaitGroup so callers can defer/wait unconditionally.
+func startCloudIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices) (context.CancelFunc, *sync.WaitGroup) {
+	if mode == modeCloud {
+		return startCloudClient(context.Background(), cfg, svc)
+	}
+	return func() {}, &sync.WaitGroup{}
+}
+
+// superviseServerStart runs srv.Start in this goroutine and, on failure,
+// self-signals SIGTERM so the daemon's signal handler tears the rest of the
+// process down cleanly instead of leaving us in a half-initialized state.
+func superviseServerStart(srv *server.Server) {
+	if startErr := srv.Start(); startErr != nil {
+		slog.Error("Server failed", "err", startErr)
+		p, _ := os.FindProcess(os.Getpid())
+		_ = p.Signal(syscall.SIGTERM)
+	}
+}
+
+// emitStartupBanner picks between the fancy multi-section TTY banner and the
+// plain slog summary. The fancy banner is for interactive terminals; piped
+// into Docker logs / journald (non-TTY) or under --log-format=json it would
+// be escape-code noise, so headless emits the same essential facts as plain
+// slog lines.
+func emitStartupBanner(info uikit.StartupInfo) {
+	if clilog.FancyBanner(flags.LogFormat) {
+		tui.PrintStartup(info)
+		return
+	}
+	logStartupSummary(info)
 }
 
 // logStartupSummary emits the banner's essential facts as plain slog lines for

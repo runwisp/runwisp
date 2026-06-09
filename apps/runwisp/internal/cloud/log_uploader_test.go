@@ -5,6 +5,7 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/stretchr/testify/assert"
 )
 
 type fakePendingRepo struct {
@@ -238,6 +240,72 @@ func TestArchiveNoPendingEntryIsNoop(t *testing.T) {
 	}
 }
 
+// Nil receiver and empty executionID are documented no-ops.
+func TestArchiveNilReceiverIsNoop(t *testing.T) {
+	var u *LogUploader
+	result, err := u.Archive(context.Background(), "exec-1", "/tmp/x")
+	if err != nil {
+		t.Fatalf("Archive on nil receiver returned err: %v", err)
+	}
+	if result != nil {
+		t.Errorf("Archive on nil receiver result = %+v, want nil", result)
+	}
+}
+
+func TestArchiveEmptyExecutionIDIsNoop(t *testing.T) {
+	u := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, t.TempDir(), fixedClock())
+	result, err := u.Archive(context.Background(), "", "/tmp/x")
+	if err != nil {
+		t.Fatalf("Archive with empty id returned err: %v", err)
+	}
+	if result != nil {
+		t.Errorf("Archive with empty id result = %+v, want nil", result)
+	}
+}
+
+// Archive rejects an empty log file path once a pending entry exists for the
+// execution — otherwise we'd PUT an empty body to S3.
+func TestArchiveEmptyLogPathErrors(t *testing.T) {
+	repo := newFakePendingRepo()
+	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+		t.Fatalf("RegisterDispatch: %v", err)
+	}
+	_, err := u.Archive(context.Background(), "exec-1", "")
+	if err == nil {
+		t.Fatal("expected error for empty log file path")
+	}
+}
+
+// When the remote PUT fails with a permanent error, Archive surfaces the
+// error without dropping the pending row (operator can retry on next boot).
+func TestArchiveUploadFailureKeepsRow(t *testing.T) {
+	logDir := t.TempDir()
+	run := newTerminalRun("greet", "01HX-RUN", "exec-archive-err")
+	logPath := writeRunLog(t, logDir, run, "hello\n")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden) // PermanentError → no retries
+	}))
+	defer srv.Close()
+
+	repo := newFakePendingRepo()
+	u := NewLogUploader(repo, &fakeRunRepo{}, logDir, fixedClock())
+	u.httpClient = srv.Client()
+
+	if err := u.RegisterDispatch(context.Background(), "exec-archive-err", srv.URL, "key/x.log.gz"); err != nil {
+		t.Fatalf("RegisterDispatch: %v", err)
+	}
+
+	_, err := u.Archive(context.Background(), "exec-archive-err", logPath)
+	if err == nil {
+		t.Fatal("expected upload failure to bubble up")
+	}
+	if got := repo.count(); got != 1 {
+		t.Errorf("repo rows = %d, want 1 (failed upload must keep the row for retry)", got)
+	}
+}
+
 func TestArchiveMissingLogFileForgetsEntry(t *testing.T) {
 	logDir := t.TempDir()
 	repo := newFakePendingRepo()
@@ -369,6 +437,177 @@ func TestRecoverOrphansNilUploaderIsNoop(t *testing.T) {
 	var u *LogUploader
 	// Must not panic.
 	u.RecoverOrphans(context.Background(), func(string, LogUploaderResult) {})
+}
+
+// fakeRunRepoError fakes a transient RunRepo failure so recoverOrphanRecord
+// exercises the "lookup failed but row not dropped" branch.
+type fakeRunRepoError struct {
+	err error
+}
+
+func (f *fakeRunRepoError) GetRunByExternalExecutionID(_ context.Context, _ string) (*model.Run, error) {
+	return nil, f.err
+}
+
+func TestRecoverOrphansKeepsRowOnTransientLookupError(t *testing.T) {
+	repo := newFakePendingRepo()
+	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
+		ExternalExecutionID: "exec-flaky",
+		UploadURL:           "https://upload/x",
+		LogPath:             "key/x.log.gz",
+		InsertedAt:          time.Now().Unix(),
+	})
+
+	transient := &fakeRunRepoError{err: context.DeadlineExceeded}
+	u := NewLogUploader(repo, transient, t.TempDir(), fixedClock())
+
+	var emitted int
+	u.RecoverOrphans(context.Background(), func(string, LogUploaderResult) {
+		emitted++
+	})
+
+	assert.Equal(t, 0, emitted, "no emit when lookup fails transiently")
+	assert.Equal(t, 1, repo.count(), "transient errors must keep the row for the next boot")
+}
+
+// --- RegisterDispatch: edge cases ---
+
+func TestRegisterDispatchNilUploaderIsNoop(t *testing.T) {
+	var u *LogUploader
+	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
+		t.Fatalf("RegisterDispatch on nil receiver returned err: %v", err)
+	}
+}
+
+func TestRegisterDispatchEmptyExecutionIDIsNoop(t *testing.T) {
+	repo := newFakePendingRepo()
+	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
+	if err := u.RegisterDispatch(context.Background(), "", "https://upload/x", "key/x.log.gz"); err != nil {
+		t.Fatalf("RegisterDispatch with empty id returned err: %v", err)
+	}
+	if got := repo.count(); got != 0 {
+		t.Errorf("repo rows = %d, want 0", got)
+	}
+}
+
+// failingPendingRepo lets us hit RegisterDispatch's persistence-error branch.
+// Implements only the methods RegisterDispatch needs.
+type failingPendingRepo struct {
+	upsertErr error
+}
+
+func (f *failingPendingRepo) UpsertPendingLogUpload(_ context.Context, _ model.PendingLogUpload) error {
+	return f.upsertErr
+}
+
+func (f *failingPendingRepo) DeletePendingLogUpload(_ context.Context, _ string) error { return nil }
+
+func (f *failingPendingRepo) ListPendingLogUploads(_ context.Context) ([]model.PendingLogUpload, error) {
+	return nil, nil
+}
+
+// failingDeleteRepo lets us hit forget's "delete returns error" branch.
+type failingDeleteRepo struct {
+	failingPendingRepo
+}
+
+func (f *failingDeleteRepo) DeletePendingLogUpload(_ context.Context, _ string) error {
+	return errors.New("delete failed")
+}
+
+// listErrorPendingRepo lets us hit RecoverOrphans' list-error branch.
+type listErrorPendingRepo struct {
+	failingPendingRepo
+}
+
+func (l *listErrorPendingRepo) ListPendingLogUploads(_ context.Context) ([]model.PendingLogUpload, error) {
+	return nil, errors.New("list failed")
+}
+
+func TestRecoverOrphansListErrorReturnsCleanly(t *testing.T) {
+	u := NewLogUploader(&listErrorPendingRepo{}, &fakeRunRepo{}, t.TempDir(), fixedClock())
+	// Must not panic; logs and returns.
+	u.RecoverOrphans(context.Background(), func(string, LogUploaderResult) {
+		t.Fatal("emit must not be called when listing fails")
+	})
+}
+
+// Orphan rows for runs that haven't terminated yet are skipped without
+// dropping the row — the next boot or terminal event handles them.
+func TestRecoverOrphansArchiveErrorKeepsRow(t *testing.T) {
+	logDir := t.TempDir()
+	run := newTerminalRun("greet", "01HX-RUN", "exec-archive-fail")
+	writeRunLog(t, logDir, run, "hello\n")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	repo := newFakePendingRepo()
+	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
+		ExternalExecutionID: "exec-archive-fail",
+		UploadURL:           srv.URL,
+		LogPath:             "key/x.log.gz",
+		InsertedAt:          time.Now().Unix(),
+	})
+
+	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-archive-fail": run}}, logDir, fixedClock())
+	u.httpClient = srv.Client()
+
+	emitCalls := 0
+	u.RecoverOrphans(context.Background(), func(string, LogUploaderResult) { emitCalls++ })
+
+	assert.Equal(t, 0, emitCalls, "no emit when archival fails")
+	assert.Equal(t, 1, repo.count(), "failed archival must keep the row for the next attempt")
+}
+
+// RecoverOrphans tolerates a nil emit callback (operator wants the recovery to
+// happen but doesn't care about the resulting terminal updates).
+func TestRecoverOrphansNilEmitIsSafe(t *testing.T) {
+	logDir := t.TempDir()
+	run := newTerminalRun("greet", "01HX-RUN", "exec-niloemit")
+	writeRunLog(t, logDir, run, "hi\n")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	repo := newFakePendingRepo()
+	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
+		ExternalExecutionID: "exec-niloemit",
+		UploadURL:           srv.URL,
+		LogPath:             "key/x.log.gz",
+		InsertedAt:          time.Now().Unix(),
+	})
+	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-niloemit": run}}, logDir, fixedClock())
+	u.httpClient = srv.Client()
+
+	u.RecoverOrphans(context.Background(), nil)
+	assert.Equal(t, 0, repo.count(), "successful recovery must still drop the row even with nil emit")
+}
+
+func TestForgetTolerantOfRepoDeleteError(t *testing.T) {
+	u := NewLogUploader(&failingDeleteRepo{}, &fakeRunRepo{}, t.TempDir(), fixedClock())
+	// Must not panic; the error is logged and swallowed.
+	u.Forget(context.Background(), "exec-1")
+}
+
+func TestRegisterDispatchPropagatesUpsertError(t *testing.T) {
+	want := errors.New("simulated upsert failure")
+	repo := &failingPendingRepo{upsertErr: want}
+
+	u := NewLogUploader(repo, &fakeRunRepo{}, t.TempDir(), fixedClock())
+	err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz")
+	if !errors.Is(err, want) {
+		t.Fatalf("RegisterDispatch err = %v, want %v", err, want)
+	}
+	// Persistence error must keep the in-memory entry out so the next boot's
+	// recovery path is the single source of truth.
+	if _, ok := u.lookup("exec-1"); ok {
+		t.Error("in-memory entry must not be cached when persistence fails")
+	}
 }
 
 func strPtr(s string) *string { return &s }

@@ -13,7 +13,12 @@ import (
 // canOpenBrowser reports whether the current environment has a graphical
 // session capable of opening a browser. Returns false for SSH sessions
 // without X11/Wayland forwarding, headless servers, and containers.
-func canOpenBrowser() bool {
+//
+// Indirected through a function variable so tests can force the headless
+// branch on graphical platforms (macOS CI runners, Windows).
+var canOpenBrowser = canOpenBrowserDefault
+
+func canOpenBrowserDefault() bool {
 	switch runtime.GOOS {
 	case "linux":
 		return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""

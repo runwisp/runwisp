@@ -73,7 +73,17 @@ func (s *runService) ListRuns(ctx context.Context, taskName string, p Pagination
 	if filterTaskName == "" {
 		filterTaskName = p.TaskName
 	}
-	runs, err := s.db.QueryRuns(ctx, filterTaskName, p.Limit, p.Offset, p.Status, p.SortField, p.SortDirection, p.SearchQuery)
+	runs, err := s.db.QueryRuns(ctx, storage.RunQuery{
+		Filter: model.RunFilter{
+			Status:   p.Status,
+			TaskName: filterTaskName,
+			Search:   p.SearchQuery,
+		},
+		Limit:         p.Limit,
+		Offset:        p.Offset,
+		SortField:     p.SortField,
+		SortDirection: p.SortDirection,
+	})
 	if err != nil {
 		return nil, err
 	}

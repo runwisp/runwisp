@@ -625,10 +625,154 @@ func TestGetActiveRuns_NotFound(t *testing.T) {
 	assert.Nil(t, runs)
 }
 
+// TestGetActiveRuns_KnownTaskReturnsCopy verifies the positive path: a known
+// task with one active run returns a non-empty slice and the slice is a copy
+// (mutating it does not affect the manager's internal state).
+func TestGetActiveRuns_KnownTaskReturnsCopy(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	defer jm.Shutdown()
+
+	task := testTask("task1", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
+		&executor.ExecuteResult{ExitCode: 0}, 500*time.Millisecond,
+	)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	time.Sleep(20 * time.Millisecond)
+
+	runs := jm.GetActiveRuns("task1")
+	require.Len(t, runs, 1)
+	// Mutating the returned slice does not affect manager state.
+	runs[0] = nil
+	assert.Len(t, jm.GetActiveRuns("task1"), 1)
+}
+
+// TestNewTaskManager_NilClockFallsBackToTimeNow guards the nil-clock branch,
+// which production code must never rely on but exists as a defensive default.
+func TestNewTaskManager_NilClockFallsBackToTimeNow(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), nil)
+	defer jm.Shutdown()
+
+	dm, ok := jm.(*defaultTaskManager)
+	require.True(t, ok)
+	require.NotNil(t, dm.clock)
+	assert.WithinDuration(t, time.Now(), dm.clock(), time.Second)
+}
+
+func TestGetActiveRunCount_UnknownTaskIsZero(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	assert.Equal(t, 0, jm.GetActiveRunCount("unknown"))
+}
+
+func TestGetActiveRunCount_KnownTaskWithNoActiveIsZero(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	defer jm.Shutdown()
+	jm.UpsertTask(testTask("idle", model.PolicySkip, 1))
+	assert.Equal(t, 0, jm.GetActiveRunCount("idle"))
+}
+
 func TestTerminateRunByExternalExecutionID_NotFound(t *testing.T) {
 	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
 	err := jm.TerminateRunByExternalExecutionID("unknown-ext-id")
 	assert.Error(t, err)
+}
+
+// TestTerminateRunByExternalExecutionID_MatchesActiveRun exercises the positive
+// path: a run triggered with an ExternalExecutionID is cancelled by passing the
+// same external ID into TerminateRunByExternalExecutionID.
+func TestTerminateRunByExternalExecutionID_MatchesActiveRun(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	defer jm.Shutdown()
+
+	task := testTask("task1", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+
+	// Long enough that the run is definitely active when we cancel it.
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
+		&executor.ExecuteResult{ExitCode: 0}, 500*time.Millisecond,
+	)
+
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{
+		TriggeredBy:         model.TriggeredByCloud,
+		ExternalExecutionID: "ext-123",
+	})
+	require.NoError(t, err)
+
+	time.Sleep(20 * time.Millisecond)
+	require.NoError(t, jm.TerminateRunByExternalExecutionID("ext-123"))
+}
+
+func TestStopService_TaskNotFound(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	defer jm.Shutdown()
+	err := jm.StopService("missing")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing")
+}
+
+func TestStopService_NotAService(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	defer jm.Shutdown()
+	jm.UpsertTask(testTask("cron", model.PolicySkip, 1))
+	err := jm.StopService("cron")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a service")
+}
+
+func TestRestartServiceInstances_TaskNotFound(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	defer jm.Shutdown()
+	err := jm.RestartServiceInstances("missing")
+	require.Error(t, err)
+}
+
+func TestStartServiceInstances_TaskNotFound(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	defer jm.Shutdown()
+	err := jm.StartServiceInstances("missing", model.TriggeredByService)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing")
+}
+
+func TestStartServiceInstances_NotAServiceTask(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	defer jm.Shutdown()
+	jm.UpsertTask(testTask("cron", model.PolicySkip, 1))
+	err := jm.StartServiceInstances("cron", model.TriggeredByService)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a service")
+}
+
+// TestStartServiceInstances_StoppedServiceIsNoop verifies the early-return
+// branch when the supervisor's stop flag is set: no instances start and no
+// error is returned.
+func TestStartServiceInstances_StoppedServiceIsNoop(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	defer jm.Shutdown()
+
+	task := &model.Task{
+		Name:           "svc",
+		Kind:           model.KindService,
+		Run:            "echo hi",
+		Restart:        model.RestartAlways,
+		MaxConcurrent:  1,
+		OnOverlap:      model.PolicySkip,
+		Instances:      2,
+		RestartDelay:   time.Millisecond,
+		RestartBackoff: model.BackoffConstant,
+	}
+	jm.UpsertTask(task)
+	require.NoError(t, jm.StopService("svc"))
+
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	exec.AssertNotCalled(t, "Execute", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestInjectedClockStampsCreatedAt pins the determinism guarantee added with

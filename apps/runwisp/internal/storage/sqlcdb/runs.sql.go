@@ -26,10 +26,10 @@ func (q *Queries) CountRuns(ctx context.Context, taskName string) (int64, error)
 
 const countRunsFiltered = `-- name: CountRunsFiltered :one
 SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
-  AND (?1 = '' OR end_reason = ?1)
-  AND (?2 = '' OR status = ?2)
-  AND (?3 = '' OR task_name = ?3)
-  AND (?4 = '' OR (task_name LIKE ?5 OR id LIKE ?5))
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
 `
 
 type CountRunsFilteredParams struct {
@@ -154,7 +154,10 @@ func (q *Queries) GetLastRunByTask(ctx context.Context, taskName string) (Run, e
 }
 
 const getPendingRuns = `-- name: GetPendingRuns :many
-SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, deleted_at FROM runs WHERE status = 'pending' AND deleted_at IS NULL
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
+  instance_index, deleted_at
+FROM runs WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC
 `
 
@@ -291,6 +294,990 @@ func (q *Queries) MarkCrashedRuns(ctx context.Context, endAt *time.Time) (int64,
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const queryRunsCreatedAtAsc = `-- name: QueryRunsCreatedAtAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY created_at ASC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsCreatedAtAscParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsCreatedAtAscRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]QueryRunsCreatedAtAscRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsCreatedAtAsc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsCreatedAtAscRow{}
+	for rows.Next() {
+		var i QueryRunsCreatedAtAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsCreatedAtDesc = `-- name: QueryRunsCreatedAtDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY created_at DESC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsCreatedAtDescParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsCreatedAtDescRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreatedAtDescParams) ([]QueryRunsCreatedAtDescRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsCreatedAtDesc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsCreatedAtDescRow{}
+	for rows.Next() {
+		var i QueryRunsCreatedAtDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsDurationAsc = `-- name: QueryRunsDurationAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) ASC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsDurationAscParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsDurationAscRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDurationAscParams) ([]QueryRunsDurationAscRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsDurationAsc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsDurationAscRow{}
+	for rows.Next() {
+		var i QueryRunsDurationAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsDurationDesc = `-- name: QueryRunsDurationDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) DESC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsDurationDescParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsDurationDescRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurationDescParams) ([]QueryRunsDurationDescRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsDurationDesc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsDurationDescRow{}
+	for rows.Next() {
+		var i QueryRunsDurationDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsExitCodeAsc = `-- name: QueryRunsExitCodeAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY exit_code ASC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsExitCodeAscParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsExitCodeAscRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCodeAscParams) ([]QueryRunsExitCodeAscRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsExitCodeAsc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsExitCodeAscRow{}
+	for rows.Next() {
+		var i QueryRunsExitCodeAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsExitCodeDesc = `-- name: QueryRunsExitCodeDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY exit_code DESC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsExitCodeDescParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsExitCodeDescRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCodeDescParams) ([]QueryRunsExitCodeDescRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsExitCodeDesc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsExitCodeDescRow{}
+	for rows.Next() {
+		var i QueryRunsExitCodeDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsStartAtAsc = `-- name: QueryRunsStartAtAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY COALESCE(start_at, created_at) ASC, created_at ASC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsStartAtAscParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsStartAtAscRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtAscParams) ([]QueryRunsStartAtAscRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsStartAtAsc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsStartAtAscRow{}
+	for rows.Next() {
+		var i QueryRunsStartAtAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsStartAtDesc = `-- name: QueryRunsStartAtDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY COALESCE(start_at, created_at) DESC, created_at DESC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsStartAtDescParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsStartAtDescRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAtDescParams) ([]QueryRunsStartAtDescRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsStartAtDesc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsStartAtDescRow{}
+	for rows.Next() {
+		var i QueryRunsStartAtDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsStatusAsc = `-- name: QueryRunsStatusAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY status ASC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsStatusAscParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsStatusAscRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAscParams) ([]QueryRunsStatusAscRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsStatusAsc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsStatusAscRow{}
+	for rows.Next() {
+		var i QueryRunsStatusAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsStatusDesc = `-- name: QueryRunsStatusDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY status DESC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsStatusDescParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsStatusDescRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDescParams) ([]QueryRunsStatusDescRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsStatusDesc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsStatusDescRow{}
+	for rows.Next() {
+		var i QueryRunsStatusDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsTaskNameAsc = `-- name: QueryRunsTaskNameAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY task_name ASC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsTaskNameAscParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsTaskNameAscRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNameAscParams) ([]QueryRunsTaskNameAscRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsTaskNameAsc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsTaskNameAscRow{}
+	for rows.Next() {
+		var i QueryRunsTaskNameAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const queryRunsTaskNameDesc = `-- name: QueryRunsTaskNameDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+ORDER BY task_name DESC LIMIT ?7 OFFSET ?6
+`
+
+type QueryRunsTaskNameDescParams struct {
+	EndReasonFilter   interface{} `json:"end_reason_filter"`
+	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	TaskNameFilter    interface{} `json:"task_name_filter"`
+	SearchFilter      interface{} `json:"search_filter"`
+	SearchPattern     string      `json:"search_pattern"`
+	RowsOffset        int64       `json:"rows_offset"`
+	RowsLimit         int64       `json:"rows_limit"`
+}
+
+type QueryRunsTaskNameDescRow struct {
+	ID                  string            `json:"id"`
+	ExternalExecutionID *string           `json:"external_execution_id"`
+	TaskName            string            `json:"task_name"`
+	Status              model.RunPhase    `json:"status"`
+	EndReason           *model.EndReason  `json:"end_reason"`
+	ExitCode            int               `json:"exit_code"`
+	StartAt             *time.Time        `json:"start_at"`
+	EndAt               *time.Time        `json:"end_at"`
+	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	RetryAttempt        int               `json:"retry_attempt"`
+	RetryOfRunID        *string           `json:"retry_of_run_id"`
+	InstanceIndex       int               `json:"instance_index"`
+}
+
+func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNameDescParams) ([]QueryRunsTaskNameDescRow, error) {
+	rows, err := q.db.QueryContext(ctx, queryRunsTaskNameDesc,
+		arg.EndReasonFilter,
+		arg.StatusPhaseFilter,
+		arg.TaskNameFilter,
+		arg.SearchFilter,
+		arg.SearchPattern,
+		arg.RowsOffset,
+		arg.RowsLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []QueryRunsTaskNameDescRow{}
+	for rows.Next() {
+		var i QueryRunsTaskNameDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalExecutionID,
+			&i.TaskName,
+			&i.Status,
+			&i.EndReason,
+			&i.ExitCode,
+			&i.StartAt,
+			&i.EndAt,
+			&i.TriggeredBy,
+			&i.CreatedAt,
+			&i.RetryAttempt,
+			&i.RetryOfRunID,
+			&i.InstanceIndex,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateRun = `-- name: UpdateRun :exec

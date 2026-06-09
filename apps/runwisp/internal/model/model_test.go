@@ -184,6 +184,21 @@ func TestMarshalExecutionDef_Config(t *testing.T) {
 	assert.Contains(t, s, `"task_name":`)
 }
 
+func TestMarshalExecutionDef_Container(t *testing.T) {
+	raw, err := MarshalExecutionDef(&ContainerExecution{BaseImage: "alpine", Script: "echo"})
+	require.NoError(t, err)
+	s := string(raw)
+	assert.Contains(t, s, `"type":"container"`)
+	assert.Contains(t, s, `"base_image":"alpine"`)
+}
+
+func TestExecType_AllVariants(t *testing.T) {
+	assert.Equal(t, "shell", (&ShellExecution{}).ExecType())
+	assert.Equal(t, "container", (&ContainerExecution{}).ExecType())
+	assert.Equal(t, "http", (&HTTPExecution{}).ExecType())
+	assert.Equal(t, "config", (&ConfigExecution{}).ExecType())
+}
+
 // --- Task.ResolvedExecutionDef ---
 
 func TestTask_ResolvedExecutionDef_WithExecutionDef(t *testing.T) {

@@ -141,3 +141,36 @@ func TestEventBus(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
+
+// TestEventDataMarkers exercises the sealed-type marker methods so they show
+// up in coverage. They have no behaviour — calling them just confirms the
+// types satisfy the EventData interface at runtime. Call on concrete values
+// to avoid inlining hiding the line from the coverage profile.
+func TestEventDataMarkers(t *testing.T) {
+	RunEvent{}.eventData()
+	RunDeletedEvent{}.eventData()
+	LogLineEvent{}.eventData()
+	LogDiskPressureEvent{}.eventData()
+
+	// Also confirm interface satisfaction at runtime.
+	for _, d := range []EventData{
+		RunEvent{},
+		RunDeletedEvent{},
+		LogLineEvent{},
+		LogDiskPressureEvent{},
+	} {
+		d.eventData()
+	}
+}
+
+func TestPublish_RecoversFromHandlerPanic(t *testing.T) {
+	eb := NewEventBus()
+	called := 0
+	eb.Subscribe(EventRunCreated, func(e Event) {
+		called++
+		panic("boom")
+	})
+	// Should not propagate panic from the handler.
+	eb.Publish(EventRunCreated, RunEvent{Run: &model.Run{ID: "1"}})
+	assert.Equal(t, 1, called)
+}

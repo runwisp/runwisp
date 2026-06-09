@@ -47,7 +47,23 @@ type Querier interface {
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: Apache-2.0
 	PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]PurgeExpiredSoftDeletesRow, error)
+	QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]QueryRunsCreatedAtAscRow, error)
+	QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreatedAtDescParams) ([]QueryRunsCreatedAtDescRow, error)
+	QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDurationAscParams) ([]QueryRunsDurationAscRow, error)
+	QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurationDescParams) ([]QueryRunsDurationDescRow, error)
+	QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCodeAscParams) ([]QueryRunsExitCodeAscRow, error)
+	QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCodeDescParams) ([]QueryRunsExitCodeDescRow, error)
+	QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtAscParams) ([]QueryRunsStartAtAscRow, error)
+	QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAtDescParams) ([]QueryRunsStartAtDescRow, error)
+	QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAscParams) ([]QueryRunsStatusAscRow, error)
+	QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDescParams) ([]QueryRunsStatusDescRow, error)
+	QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNameAscParams) ([]QueryRunsTaskNameAscRow, error)
+	QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNameDescParams) ([]QueryRunsTaskNameDescRow, error)
 	ResolveSelectorIDsByFilter(ctx context.Context, arg ResolveSelectorIDsByFilterParams) ([]ResolveSelectorIDsByFilterRow, error)
+	// Slice must come AFTER scalar args. sqlc emits `?N` for named scalars and
+	// positional `?` for slices; it appends scalar params to queryParams first,
+	// then expands the slice. Putting `id IN (?, ?...)` first would shift the
+	// `?N` positions, so the slice is placed at the end.
 	ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelectorIDsByIDsParams) ([]ResolveSelectorIDsByIDsRow, error)
 	RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilterParams) error
 	RestoreRunsByIDs(ctx context.Context, ids []string) error

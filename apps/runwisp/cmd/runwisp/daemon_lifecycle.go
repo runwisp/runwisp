@@ -7,9 +7,7 @@ import (
 	"context"
 	"io"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"log/slog"
@@ -187,40 +185,48 @@ func awaitOrLog(ctx context.Context, wg *sync.WaitGroup, label string) {
 	}
 }
 
+// daemonRuntime carries the long-lived daemon state that the headless and TUI
+// shutdown paths both need: the pre-armed signal channel, the services bundle,
+// the HTTP server, log routing handles, and the cloud cancel/wait pair.
+// Bundling them keeps runHeadless / runWithTUI signatures narrow while leaving
+// each field individually named.
+type daemonRuntime struct {
+	sigCh       <-chan os.Signal
+	svc         *daemonServices
+	srv         *server.Server
+	debugWriter *tui.DebugLogWriter
+	logBuffer   *server.DaemonLogBuffer
+	cancelCloud context.CancelFunc
+	cloudWG     *sync.WaitGroup
+}
+
 // runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down. The
 // banner (or its non-TTY summary) already conveys "ready, listening" and, when
 // no TUI is attached, a dim "Press Ctrl+C to stop." line — no slog cue here.
-func runHeadless(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices, srv *server.Server) error {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	sig := <-sigCh
+// sigCh is owned by runDaemon, which installs signal.Notify before any
+// goroutine could self-signal — closing the race where a SIGTERM arriving
+// during early init would terminate the process unhandled.
+func runHeadless(rt *daemonRuntime) error {
+	sig := <-rt.sigCh
 
 	start := time.Now()
 	slog.Info("received signal, shutting down", "signal", sig.String())
-	gracefulShutdown(cancelCloud, cloudWG, svc, srv)
+	gracefulShutdown(rt.cancelCloud, rt.cloudWG, rt.svc, rt.srv)
 	slog.Info("shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))
 	return nil
 }
 
 // runWithTUI starts the interactive TUI, waits for it to exit, then shuts down
 // or transitions to headless mode depending on user choice.
-func runWithTUI(
-	srv *server.Server,
-	svc *daemonServices,
-	info uikit.StartupInfo,
-	debugWriter *tui.DebugLogWriter,
-	logBuffer *server.DaemonLogBuffer,
-	cancelCloud context.CancelFunc,
-	cloudWG *sync.WaitGroup,
-) error {
+func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo) error {
 	client := apiclient.NewUnix(localAPISocketPath())
-	if srv != nil {
+	if rt.srv != nil {
 		if err := pollHealth(client, 3*time.Second); err != nil {
 			slog.Warn("Health check did not pass before TUI start", "err", err)
 		}
 	}
 
-	if debugWriter != nil {
+	if rt.debugWriter != nil {
 		// Route slog into the TUI debug panel and the ring buffer (so remote
 		// TUI clients see the same lines): plain text, no timestamps, and the
 		// lipgloss color profile is left untouched (the TUI owns the screen).
@@ -233,23 +239,23 @@ func runWithTUI(
 		clilog.Configure(clilog.Options{
 			Level:   slog.LevelDebug,
 			Format:  clilog.FormatText,
-			Output:  io.MultiWriter(debugWriter, logBuffer),
+			Output:  io.MultiWriter(rt.debugWriter, rt.logBuffer),
 			TUIMode: true,
 		})
 	}
 
 	shutdownFunc := func() error {
-		gracefulShutdown(cancelCloud, cloudWG, svc, srv)
+		gracefulShutdown(rt.cancelCloud, rt.cloudWG, rt.svc, rt.srv)
 		return nil
 	}
 
 	var launchTicketFunc func() (string, error)
-	if srv != nil {
+	if rt.srv != nil {
 		launchTicketFunc = client.CreateLaunchTicket
 	}
 
-	quitAction, tuiErr := tui.StartTUI(info, client, debugWriter, shutdownFunc, launchTicketFunc)
-	clilog.SetOutput(io.MultiWriter(os.Stderr, logBuffer))
+	quitAction, tuiErr := tui.StartTUI(info, client, rt.debugWriter, shutdownFunc, launchTicketFunc)
+	clilog.SetOutput(io.MultiWriter(os.Stderr, rt.logBuffer))
 	if tuiErr != nil {
 		slog.Warn("TUI exited with error", "err", tuiErr)
 	}
@@ -262,12 +268,12 @@ func runWithTUI(
 		clilog.Configure(clilog.Options{
 			Level:      flags.LogLevel,
 			Format:     flags.LogFormat,
-			Output:     io.MultiWriter(os.Stderr, logBuffer),
+			Output:     io.MultiWriter(os.Stderr, rt.logBuffer),
 			DaemonMode: true,
 		})
-		defer runlog.Subscribe(svc.EventBus)()
+		defer runlog.Subscribe(rt.svc.EventBus)()
 		slog.Info("TUI detached. Daemon running in background. Press Ctrl+C to stop.")
-		return runHeadless(cancelCloud, cloudWG, svc, srv)
+		return runHeadless(rt)
 	}
 
 	tui.PrintShutdownComplete()

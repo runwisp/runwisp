@@ -13,22 +13,22 @@ import (
 
 func TestBuildRunFilterArgs_EmptyFilterDisablesEveryGate(t *testing.T) {
 	args := buildRunFilterArgs(model.RunFilter{})
-	assert.Equal(t, "", args.EndReasonFilter)
-	assert.Equal(t, "", args.StatusPhaseFilter)
-	assert.Equal(t, "", args.TaskNameFilter)
-	assert.Equal(t, "", args.SearchFilter)
+	assert.Nil(t, args.EndReasonFilter)
+	assert.Nil(t, args.StatusPhaseFilter)
+	assert.Nil(t, args.TaskNameFilter)
+	assert.Nil(t, args.SearchFilter)
 	assert.Equal(t, "", args.SearchPattern)
 }
 
 func TestBuildRunFilterArgs_EndReasonStatusGoesToReasonColumn(t *testing.T) {
 	args := buildRunFilterArgs(model.RunFilter{Status: string(model.ReasonSuccess)})
 	assert.Equal(t, "success", args.EndReasonFilter)
-	assert.Equal(t, "", args.StatusPhaseFilter)
+	assert.Nil(t, args.StatusPhaseFilter)
 }
 
 func TestBuildRunFilterArgs_PhaseStatusGoesToStatusColumn(t *testing.T) {
 	args := buildRunFilterArgs(model.RunFilter{Status: string(model.PhaseRunning)})
-	assert.Equal(t, "", args.EndReasonFilter)
+	assert.Nil(t, args.EndReasonFilter)
 	assert.Equal(t, "running", args.StatusPhaseFilter)
 }
 

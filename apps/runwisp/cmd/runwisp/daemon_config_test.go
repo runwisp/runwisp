@@ -4,9 +4,215 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func writeMinimalTOML(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runwisp.toml")
+	body := `
+[tasks.example]
+run = "echo hi"
+`
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	return path
+}
+
+// fakeConfigRepo is an in-memory ConfigRepository for resolveConfigValue tests.
+type fakeConfigRepo struct {
+	store  map[string]string
+	getErr error
+	setErr error
+}
+
+func (f *fakeConfigRepo) GetConfigValue(_ context.Context, k string) (string, bool, error) {
+	if f.getErr != nil {
+		return "", false, f.getErr
+	}
+	v, ok := f.store[k]
+	return v, ok, nil
+}
+
+func (f *fakeConfigRepo) SetConfigValue(_ context.Context, k, v string) error {
+	if f.setErr != nil {
+		return f.setErr
+	}
+	if f.store == nil {
+		f.store = map[string]string{}
+	}
+	f.store[k] = v
+	return nil
+}
+
+func TestResolveConfigValue_EnvOverridesDB(t *testing.T) {
+	t.Setenv("RUNWISP_TEST_KEY", "from-env")
+	repo := &fakeConfigRepo{store: map[string]string{"key": "from-db"}}
+
+	v, err := resolveConfigValue(t.Context(), repo, "key", "RUNWISP_TEST_KEY", func() (string, error) {
+		t.Fatal("generate must not run when env override is set")
+		return "", nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "from-env", v)
+}
+
+func TestResolveConfigValue_ReadsFromDB(t *testing.T) {
+	repo := &fakeConfigRepo{store: map[string]string{"key": "from-db"}}
+	v, err := resolveConfigValue(t.Context(), repo, "key", "RUNWISP_MISSING_KEY", func() (string, error) {
+		t.Fatal("generate must not run when DB has the key")
+		return "", nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "from-db", v)
+}
+
+func TestResolveConfigValue_GeneratesAndPersists(t *testing.T) {
+	repo := &fakeConfigRepo{}
+	called := 0
+	v, err := resolveConfigValue(t.Context(), repo, "key", "RUNWISP_MISSING_KEY", func() (string, error) {
+		called++
+		return "newly-generated", nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "newly-generated", v)
+	assert.Equal(t, 1, called)
+	assert.Equal(t, "newly-generated", repo.store["key"])
+}
+
+func TestResolveConfigValue_DBErrorPropagates(t *testing.T) {
+	repo := &fakeConfigRepo{getErr: errors.New("db read failure")}
+	_, err := resolveConfigValue(t.Context(), repo, "key", "RUNWISP_MISSING_KEY", nil)
+	assert.Error(t, err)
+}
+
+func TestResolveConfigValue_GenerateErrorPropagates(t *testing.T) {
+	repo := &fakeConfigRepo{}
+	_, err := resolveConfigValue(t.Context(), repo, "key", "RUNWISP_MISSING_KEY", func() (string, error) {
+		return "", errors.New("generate failed")
+	})
+	assert.Error(t, err)
+}
+
+func TestResolveConfigValue_PersistErrorPropagates(t *testing.T) {
+	repo := &fakeConfigRepo{setErr: errors.New("write failed")}
+	_, err := resolveConfigValue(t.Context(), repo, "key", "RUNWISP_MISSING_KEY", func() (string, error) {
+		return "ok", nil
+	})
+	assert.Error(t, err)
+}
+
+func TestResolveConfigValue_BlankEnvFallsThrough(t *testing.T) {
+	t.Setenv("RUNWISP_BLANK_KEY", "   ") // whitespace-only counts as empty
+	repo := &fakeConfigRepo{store: map[string]string{"k": "db"}}
+	v, err := resolveConfigValue(t.Context(), repo, "k", "RUNWISP_BLANK_KEY", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "db", v)
+}
+
+func TestLoadConfigFile_MissingWithCloudReturnsDefaults(t *testing.T) {
+	cfg, _, err := loadConfigFile("/this/does/not/exist/runwisp.toml", true)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+}
+
+func TestLoadConfigFile_MissingWithoutCloudErrors(t *testing.T) {
+	_, _, err := loadConfigFile("/this/does/not/exist/runwisp.toml", false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no runwisp.toml")
+}
+
+// loadDaemonConfig integrates loadConfigFile + resolveConfigValue +
+// resolvePassword + deriveJWTSecret. We exercise the standalone path with a
+// stable RUNWISP_PASSWORD so PasswordEphemeral is deterministic.
+func TestLoadDaemonConfig_StandaloneWithStablePassword(t *testing.T) {
+	t.Setenv("RUNWISP_PASSWORD", "stable-test-secret")
+	t.Setenv("RUNWISP_FINGERPRINT", "test-fp-123")
+
+	origCfg := flags.CfgFile
+	flags.CfgFile = writeMinimalTOML(t)
+	t.Cleanup(func() { flags.CfgFile = origCfg })
+
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	assert.Equal(t, "test-fp-123", cfg.Fingerprint)
+	assert.Equal(t, "stable-test-secret", cfg.Password)
+	assert.False(t, cfg.PasswordEphemeral, "env password must not be ephemeral")
+	assert.NotEmpty(t, cfg.JWTSecret)
+	require.Len(t, cfg.Config.Tasks, 1)
+	assert.Equal(t, "example", cfg.Config.Tasks[0].Name)
+	assert.False(t, cfg.CloudConfig.Enabled)
+}
+
+func TestLoadDaemonConfig_StandaloneEphemeralPassword(t *testing.T) {
+	require.NoError(t, os.Unsetenv("RUNWISP_PASSWORD"))
+	t.Setenv("RUNWISP_FINGERPRINT", "eph-fp")
+
+	origCfg := flags.CfgFile
+	flags.CfgFile = writeMinimalTOML(t)
+	t.Cleanup(func() { flags.CfgFile = origCfg })
+
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone)
+	require.NoError(t, err)
+	assert.True(t, cfg.PasswordEphemeral)
+	assert.NotEmpty(t, cfg.Password)
+}
+
+func TestLoadDaemonConfig_MissingTOMLInStandaloneErrors(t *testing.T) {
+	t.Setenv("RUNWISP_PASSWORD", "x")
+	t.Setenv("RUNWISP_FINGERPRINT", "fp")
+
+	origCfg := flags.CfgFile
+	flags.CfgFile = filepath.Join(t.TempDir(), "missing.toml")
+	t.Cleanup(func() { flags.CfgFile = origCfg })
+
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = loadDaemonConfig(t.Context(), db, modeStandalone)
+	assert.Error(t, err)
+}
+
+func TestLoadDaemonConfig_FingerprintPersistsAcrossCalls(t *testing.T) {
+	require.NoError(t, os.Unsetenv("RUNWISP_FINGERPRINT"))
+	t.Setenv("RUNWISP_PASSWORD", "stable")
+
+	origCfg := flags.CfgFile
+	flags.CfgFile = writeMinimalTOML(t)
+	t.Cleanup(func() { flags.CfgFile = origCfg })
+
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	first, err := loadDaemonConfig(t.Context(), db, modeStandalone)
+	require.NoError(t, err)
+	require.NotEmpty(t, first.Fingerprint)
+
+	second, err := loadDaemonConfig(t.Context(), db, modeStandalone)
+	require.NoError(t, err)
+	assert.Equal(t, first.Fingerprint, second.Fingerprint,
+		"fingerprint persisted to DB on first call must be returned on subsequent calls")
+}
 
 // TestResolvePassword_EnvVarUsedInMemory guards the contract that when
 // RUNWISP_PASSWORD is set, the value is returned in memory only and

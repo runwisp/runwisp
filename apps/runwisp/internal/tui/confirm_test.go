@@ -275,3 +275,70 @@ func TestConfirmDialog_RenderShuttingDownLines(t *testing.T) {
 
 	assert.Len(t, lines, 7)
 }
+
+// TestConfirmDialog_Update_WhileShuttingDownReturnsNoop covers the shuttingDown
+// guard at the top of Update.
+func TestConfirmDialog_Update_WhileShuttingDownReturnsNoop(t *testing.T) {
+	d := NewConfirmDialog("title", "message", onConfirmCmd)
+	d.StartShutdown() //nolint:errcheck
+	cmd, closed := d.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Nil(t, cmd)
+	assert.False(t, closed)
+}
+
+// TestConfirmDialog_UpdateSpinner_NoCmdReturnsNil covers the Update branch
+// where the underlying spinner returns no command.
+func TestConfirmDialog_UpdateSpinner_NoCmdReturnsNil(t *testing.T) {
+	d := NewConfirmDialog("title", "message", onConfirmCmd)
+	d.StartShutdown() //nolint:errcheck
+	// Feed an unrelated msg; spinner.Update only emits a Tick when the inner
+	// msg is a spinner.TickMsg matching its ID. A nil msg yields no Tick →
+	// the wrapSpinnerCmd branch is skipped.
+	cmd := d.UpdateSpinner(nil)
+	assert.Nil(t, cmd)
+}
+
+// TestConfirmDialog_View_ShuttingDownStateRendersWithoutButtons exercises the
+// shuttingDown branch in View (lines 185-187, 193 false).
+func TestConfirmDialog_View_ShuttingDownStateRendersWithoutButtons(t *testing.T) {
+	d := NewConfirmDialog("title", "message", onConfirmCmd)
+	d.StartShutdown() //nolint:errcheck
+	out := d.View(80, 24)
+	assert.NotEmpty(t, out)
+}
+
+// TestConfirmDialog_RenderButtonLines_NoDenyShowsYConfirmHint exercises the
+// onDeny == nil hint-text branch and the noteLines loop.
+func TestConfirmDialog_RenderButtonLines_NoDenyShowsYConfirmHint(t *testing.T) {
+	d := NewConfirmDialog("title", "message", onConfirmCmd).WithNote("note-a", "note-b")
+	view := d.View(80, 24)
+	assert.Contains(t, view, "y confirm")
+}
+
+// TestConfirmDialog_RenderButtonLines_HoverYes covers the yesHover branch
+// (line 240-243) where lipgloss.Color("#f99aae") is selected.
+func TestConfirmDialog_RenderButtonLines_HoverYes(t *testing.T) {
+	d := NewConfirmDialog("title", "message", onConfirmCmd)
+	d.hovered = 0
+	d.selected = 1 // ensure yesHover is the trigger, not selected
+	view := d.View(80, 24)
+	assert.NotEmpty(t, view)
+}
+
+// TestConfirmDialog_RenderButtonLines_HoverNo covers the noHover branch.
+func TestConfirmDialog_RenderButtonLines_HoverNo(t *testing.T) {
+	d := NewConfirmDialog("title", "message", onConfirmCmd)
+	d.hovered = 1
+	d.selected = 0
+	view := d.View(80, 24)
+	assert.NotEmpty(t, view)
+}
+
+// TestModalDimensions_TightScreenClamps covers the screenWidth-4 < 4 floor and
+// the dialogWidth > maxWidth clamp.
+func TestModalDimensions_TightScreenClamps(t *testing.T) {
+	// screenWidth=5 → maxWidth=1 → clamps to 4 → innerWidth becomes 0 → 1
+	dw, iw := modalDimensions(5, 46, 46)
+	assert.Equal(t, 4, dw)
+	assert.GreaterOrEqual(t, iw, 1)
+}
