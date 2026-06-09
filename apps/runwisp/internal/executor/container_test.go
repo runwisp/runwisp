@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,62 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestValidateVolumeMount_AllowsTmpPath(t *testing.T) {
+	require.NoError(t, validateVolumeMount("/tmp/data"))
+}
+
+func TestValidateVolumeMount_AllowsCwd(t *testing.T) {
+	// The current working directory is on the allowed list at validate time.
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, validateVolumeMount(cwd))
+}
+
+func TestValidateVolumeMount_RejectsArbitraryHostPath(t *testing.T) {
+	err := validateVolumeMount("/etc/passwd")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not allowed")
+}
+
+// TestNewContainerBackend_DockerHostUnreachable forces the DOCKER_HOST branch
+// by pointing at a guaranteed-dead socket. tryDockerClient runs but Ping fails
+// so the function surfaces the unreachable error.
+func TestNewContainerBackend_DockerHostUnreachable(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "unix:///dev/null/does-not-exist-runwisp-test.sock")
+	_, err := NewContainerBackend(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "docker daemon unreachable")
+}
+
+// TestNewContainerBackend_NoDockerNoPodmanSurfacesHelpMessage exercises the
+// fallback path. DOCKER_HOST is forced empty; the default Docker socket call
+// will fail in CI (no daemon), and we also redirect Podman candidates by
+// preventing /run/user/<uid>/podman/podman.sock and /run/podman/podman.sock
+// existence checks from finding them — they don't exist in CI either, so the
+// loop simply ends with the "no Docker or Podman" help message.
+func TestNewContainerBackend_NoDockerNoPodmanSurfacesHelpMessage(t *testing.T) {
+	// Skip if a real Docker daemon is reachable — we'd accidentally connect.
+	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+		t.Skip("Docker socket present; cannot assert no-daemon path")
+	}
+	if _, err := os.Stat(fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())); err == nil {
+		t.Skip("rootless Podman socket present; cannot assert no-daemon path")
+	}
+	if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
+		t.Skip("rootful Podman socket present; cannot assert no-daemon path")
+	}
+
+	t.Setenv("DOCKER_HOST", "")
+	_, err := NewContainerBackend(context.Background())
+	require.Error(t, err)
+	// Either tryDockerClient's error (default socket) or the fallback help.
+	msg := err.Error()
+	assert.Truef(t,
+		strings.Contains(msg, "no Docker or Podman daemon found") ||
+			strings.Contains(msg, "docker daemon unreachable"),
+		"unexpected error message: %s", msg)
+}
 
 // --- Mock Docker client ---
 

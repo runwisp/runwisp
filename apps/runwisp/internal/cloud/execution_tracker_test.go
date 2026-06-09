@@ -145,3 +145,79 @@ func TestMapRunToExecutionUpdateEndedNilReason(t *testing.T) {
 	}
 	assert.Nil(t, mapRunToExecutionUpdate(run))
 }
+
+// FlushPending must include synthetic "running" snapshots for every currently
+// tracked execution alongside the buffered updates.
+func TestFlushPendingEmitsRunningSnapshotsForActiveExecutions(t *testing.T) {
+	tracker := NewExecutionTracker()
+	now := time.Now()
+	tracker.TrackRunning("active-1", &now)
+
+	// Buffer one terminal update.
+	tracker.QueueUpdate(
+		NewExecutionUpdateMessage("buffered-1", protocol.ExecutionStatusOk, nil, nil, nil),
+		nil,
+	)
+
+	var delivered []protocol.ExecutionUpdateMessage
+	tracker.FlushPending(func(msg any) error {
+		if upd, ok := msg.(protocol.ExecutionUpdateMessage); ok {
+			delivered = append(delivered, upd)
+		}
+		return nil
+	})
+
+	require.Len(t, delivered, 2, "must flush both buffered update and active snapshot")
+	ids := []string{delivered[0].ExecutionID, delivered[1].ExecutionID}
+	assert.Contains(t, ids, "buffered-1")
+	assert.Contains(t, ids, "active-1")
+}
+
+// bufferUpdate drops the oldest entry when the buffer is at the cap so a
+// long-disconnected daemon doesn't grow memory without bound.
+func TestBufferUpdateDropsOldestAtCap(t *testing.T) {
+	tracker := NewExecutionTracker()
+
+	// Fill the buffer to its capacity by directly invoking bufferUpdate.
+	for i := 0; i < maxPendingExecutionUpdates; i++ {
+		tracker.bufferUpdate(NewExecutionUpdateMessage("first-batch", protocol.ExecutionStatusOk, nil, nil, nil))
+	}
+	tracker.mu.Lock()
+	assert.Equal(t, maxPendingExecutionUpdates, len(tracker.pendingExecutionUpdates))
+	tracker.mu.Unlock()
+
+	// One more update — the oldest must be dropped, the newest appended.
+	tracker.bufferUpdate(NewExecutionUpdateMessage("overflow", protocol.ExecutionStatusOk, nil, nil, nil))
+
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	require.Equal(t, maxPendingExecutionUpdates, len(tracker.pendingExecutionUpdates),
+		"buffer length must stay at the cap")
+	assert.Equal(t, "overflow", tracker.pendingExecutionUpdates[maxPendingExecutionUpdates-1].ExecutionID,
+		"newest update must be at the tail after the drop-oldest shift")
+}
+
+// FlushPending must re-queue any updates that haven't been delivered yet when
+// send returns an error part-way through the slice.
+func TestFlushPendingPartialFailureRequeuesRemainder(t *testing.T) {
+	tracker := NewExecutionTracker()
+	tracker.QueueUpdate(NewExecutionUpdateMessage("first", protocol.ExecutionStatusOk, nil, nil, nil), nil)
+	tracker.QueueUpdate(NewExecutionUpdateMessage("second", protocol.ExecutionStatusOk, nil, nil, nil), nil)
+	tracker.QueueUpdate(NewExecutionUpdateMessage("third", protocol.ExecutionStatusOk, nil, nil, nil), nil)
+
+	delivered := 0
+	tracker.FlushPending(func(any) error {
+		delivered++
+		if delivered == 2 {
+			return errors.New("transient send failure")
+		}
+		return nil
+	})
+
+	// Second send failed → second and third must be re-buffered for the next attempt.
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	require.Len(t, tracker.pendingExecutionUpdates, 2)
+	assert.Equal(t, "second", tracker.pendingExecutionUpdates[0].ExecutionID)
+	assert.Equal(t, "third", tracker.pendingExecutionUpdates[1].ExecutionID)
+}

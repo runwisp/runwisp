@@ -10,16 +10,26 @@ import (
 )
 
 // runFilterArgs is the shared set of filter-gate parameters threaded through
-// every selector-driven sqlc query. Each Foo/FooFilter pair acts as a gate:
-// when the Foo value is "", the gate is open and the predicate is skipped;
-// when it is non-empty, the column must equal it. Search additionally drives
-// the LIKE pattern via SearchPattern, which is pre-rendered here.
+// every selector-driven sqlc query. Each filter field is an interface{} so
+// it can hold either nil (gate open, predicate skipped via SQL IS NULL) or
+// a non-empty string (column must equal it). Search additionally drives the
+// LIKE pattern via SearchPattern, which is pre-rendered here.
 type runFilterArgs struct {
-	EndReasonFilter   string
-	StatusPhaseFilter string
-	TaskNameFilter    string
-	SearchFilter      string
+	EndReasonFilter   interface{}
+	StatusPhaseFilter interface{}
+	TaskNameFilter    interface{}
+	SearchFilter      interface{}
 	SearchPattern     string
+}
+
+// nullable maps the empty-string "no filter" convention to a nil interface{}
+// so the SQL gate `arg IS NULL OR field = arg` can short-circuit. Non-empty
+// values box into the interface unchanged.
+func nullable(v string) interface{} {
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
 // buildRunFilterArgs decomposes a RunFilter into the values consumed by the
@@ -29,16 +39,16 @@ type runFilterArgs struct {
 // built.
 func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
 	args := runFilterArgs{
-		TaskNameFilter: f.TaskName,
-		SearchFilter:   f.Search,
+		TaskNameFilter: nullable(f.TaskName),
+		SearchFilter:   nullable(f.Search),
 	}
 	switch model.EndReason(f.Status) {
 	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped,
 		model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped,
 		model.ReasonLogOverflow:
-		args.EndReasonFilter = f.Status
+		args.EndReasonFilter = nullable(f.Status)
 	default:
-		args.StatusPhaseFilter = f.Status
+		args.StatusPhaseFilter = nullable(f.Status)
 	}
 	if f.Search != "" {
 		s := f.Search

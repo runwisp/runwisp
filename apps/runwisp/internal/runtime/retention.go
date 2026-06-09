@@ -130,7 +130,12 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize(ctx context.Context) {
 	deleted := 0
 	offset := 0
 	for totalSize > cleaner.maxTotalSize {
-		runs, err := cleaner.db.QueryRuns(ctx, "", 100, offset, "", storage.SortColumnCreatedAt, storage.SortAsc, "")
+		runs, err := cleaner.db.QueryRuns(ctx, storage.RunQuery{
+			Limit:         100,
+			Offset:        offset,
+			SortField:     storage.SortColumnCreatedAt,
+			SortDirection: storage.SortAsc,
+		})
 		if err != nil || len(runs) == 0 {
 			break
 		}

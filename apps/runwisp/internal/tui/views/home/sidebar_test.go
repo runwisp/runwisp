@@ -135,6 +135,52 @@ func TestSidebar_Update_Navigation(t *testing.T) {
 	assert.Equal(t, lastCursor, s.selected)
 }
 
+// TestSidebar_Update_PageKeys exercises the pgup/pgdown branches and the
+// named arrow keys (up/down/home/end) so the cases shared with k/j/g/G are
+// hit through both name forms.
+func TestSidebar_Update_PageKeys(t *testing.T) {
+	tasks := makeTasks("alpha", "bravo", "charlie", "delta", "echo", "foxtrot")
+	s := NewSidebar("RunWisp", "0.1.0", "", tasks)
+	s.SetSize(20, 8)
+	s.cursor = 0
+
+	s.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	assert.Greater(t, s.cursor, 0, "pgdown should advance the cursor")
+
+	s.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	assert.Equal(t, 0, s.cursor, "pgup should return to top")
+
+	s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	assert.Equal(t, 1, s.cursor, "named Down arrow should advance cursor")
+
+	s.Update(tea.KeyMsg{Type: tea.KeyUp})
+	assert.Equal(t, 0, s.cursor, "named Up arrow should retreat cursor")
+
+	s.Update(tea.KeyMsg{Type: tea.KeyHome})
+	assert.Equal(t, 0, s.cursor, "named Home should reset cursor")
+}
+
+// TestSidebar_Update_UnhandledKeyReturnsNil verifies the default branch which
+// produces no state change and returns nil.
+func TestSidebar_Update_UnhandledKeyReturnsNil(t *testing.T) {
+	tasks := makeTasks("a")
+	s := NewSidebar("RunWisp", "0.1.0", "", tasks)
+	s.cursor = 0
+	got := s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	assert.Nil(t, got)
+	assert.Equal(t, 0, s.cursor)
+}
+
+// TestSidebar_Update_PressEnterSelects covers the "enter" branch (the existing
+// navigation test only uses space).
+func TestSidebar_Update_PressEnterSelects(t *testing.T) {
+	tasks := makeTasks("alpha", "bravo")
+	s := NewSidebar("RunWisp", "0.1.0", "", tasks)
+	s.cursor = 1
+	s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Equal(t, 1, s.selected)
+}
+
 func TestSidebar_Update_NotFocused_IgnoresInput(t *testing.T) {
 	tasks := makeTasks("t1")
 	s := NewSidebar("RunWisp", "0.1.0", "", tasks)
@@ -218,4 +264,129 @@ func TestSidebar_ActivePage_OutOfBounds(t *testing.T) {
 
 	s.selected = 999
 	assert.Equal(t, uikit.PageHome, s.ActivePage())
+}
+
+// TestSidebar_ActiveTaskAndCursorTaskName_OutOfBounds covers the "return \"\""
+// fallback branches when selected/cursor land outside the items slice.
+func TestSidebar_ActiveTaskAndCursorTaskName_OutOfBounds(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("t1"))
+	s.selected = -1
+	assert.Equal(t, "", s.ActiveTask())
+	s.selected = 999
+	assert.Equal(t, "", s.ActiveTask())
+	s.cursor = -1
+	assert.Equal(t, "", s.CursorTaskName())
+	s.cursor = 999
+	assert.Equal(t, "", s.CursorTaskName())
+}
+
+// TestSidebar_Update_NonKeyMsgReturnsNil covers the "msg is not tea.KeyMsg"
+// early-return branch.
+func TestSidebar_Update_NonKeyMsgReturnsNil(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("a"))
+	got := s.Update(tea.WindowSizeMsg{Width: 1, Height: 1})
+	assert.Nil(t, got)
+}
+
+// TestSidebar_View_WithFingerprint covers the brandHeight=5 and fingerprint
+// render branches in View.
+func TestSidebar_View_WithFingerprint(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "fp-abc", makeTasks("alpha"))
+	s.SetSize(30, 15)
+	out := s.View()
+	assert.Contains(t, out, "RunWisp")
+	assert.Contains(t, out, "fp-abc")
+}
+
+// TestSidebar_View_GroupHeaderAndStylesFire iterates focus/hover combinations
+// so renderItem walks each style-switch arm.
+func TestSidebar_View_GroupHeaderAndStylesFire(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeGroupedTasks())
+	s.SetSize(40, 30)
+	// focused + cursor + selected match same row
+	s.cursor = 1
+	s.selected = 1
+	s.focused = true
+	_ = s.View()
+	// focused + cursor different from selected
+	s.cursor = 2
+	s.selected = 1
+	_ = s.View()
+	// focused + selected only (cursor elsewhere)
+	s.cursor = 4
+	s.selected = 1
+	_ = s.View()
+	// blurred + selected (no focus)
+	s.focused = false
+	s.selected = 1
+	_ = s.View()
+	// blurred + hovered branch
+	s.selected = 0
+	s.SetHovered(1)
+	_ = s.View()
+}
+
+// TestSidebar_SkipGroupHeaders covers both directions and the clamp branches.
+func TestSidebar_SkipGroupHeaders(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeGroupedTasks())
+	s.SetSize(20, 30)
+	// cursor on a group header — direction +1 should advance to a task
+	for i, item := range s.items {
+		if item.kind == entryGroupHeader {
+			s.cursor = i
+			s.skipGroupHeaders(1)
+			assert.NotEqual(t, entryGroupHeader, s.items[s.cursor].kind)
+			break
+		}
+	}
+	// cursor far past the end → clamp to len-1
+	s.cursor = 9999
+	s.skipGroupHeaders(1)
+	assert.Equal(t, len(s.items)-1, s.cursor)
+	// cursor before zero → clamp to 0
+	s.cursor = -5
+	s.skipGroupHeaders(-1)
+	assert.Equal(t, 0, s.cursor)
+}
+
+// TestSidebar_RowIndexAt_OutOfVisibleRange exercises localY < 0 and
+// localY >= visibleHeight branches.
+func TestSidebar_RowIndexAt_OutOfVisibleRange(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("a", "b"))
+	s.SetSize(20, 30)
+	bh := s.brandHeight()
+	// localY < 0 (above the list)
+	assert.Equal(t, -1, s.RowIndexAt(bh-1))
+	// localY >= visibleHeight (below the list)
+	assert.Equal(t, -1, s.RowIndexAt(bh+1000))
+}
+
+// TestSidebar_EnsureVisible_EmptyItemsResetsCursorAndScroll covers the
+// len(items)==0 branch.
+func TestSidebar_EnsureVisible_EmptyItemsResetsCursorAndScroll(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", nil)
+	s.items = nil
+	s.cursor = 5
+	s.scroll = 5
+	s.SetSize(20, 10)
+	assert.Equal(t, 0, s.cursor)
+	assert.Equal(t, 0, s.scroll)
+}
+
+// TestSidebar_EnsureVisible_ScrollClampAndCursorBounds runs the cursor<0 /
+// cursor>=len(items) / scroll>maxScroll branches in ensureVisible.
+func TestSidebar_EnsureVisible_ScrollClampAndCursorBounds(t *testing.T) {
+	tasks := makeTasks("a", "b", "c", "d", "e", "f", "g", "h")
+	s := NewSidebar("RunWisp", "0.1.0", "", tasks)
+	s.SetSize(20, 6) // small height to force scroll
+	// cursor below zero — ensureVisible should clamp to 0
+	s.cursor = -3
+	s.scroll = 100
+	s.SetSize(20, 6)
+	assert.GreaterOrEqual(t, s.cursor, 0)
+	assert.GreaterOrEqual(t, s.scroll, 0)
+	// cursor far past the end — ensureVisible should clamp to len-1
+	s.cursor = 9999
+	s.SetSize(20, 6)
+	assert.Equal(t, len(s.items)-1, s.cursor)
 }

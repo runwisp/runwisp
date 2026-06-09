@@ -127,6 +127,14 @@ func (b *HTTPBackend) Start(ctx context.Context, _ *model.Task, _ *model.Run, de
 		return nil, err
 	}
 
+	return b.startProcess(ctx, httpDef), nil
+}
+
+// startProcess wires up a pipe, kicks off the execute goroutine, and packages
+// the result into a Process. Extracted from Start so unit tests can exercise
+// the goroutine/Process bookkeeping without going through validateHTTPURL,
+// which rejects loopback addresses used by httptest.
+func (b *HTTPBackend) startProcess(ctx context.Context, httpDef *model.HTTPExecution) *Process {
 	pr, pw := io.Pipe()
 	var exitCode int
 
@@ -143,7 +151,7 @@ func (b *HTTPBackend) Start(ctx context.Context, _ *model.Task, _ *model.Run, de
 			<-done
 			return exitCode, nil
 		},
-	}, nil
+	}
 }
 
 func (b *HTTPBackend) execute(ctx context.Context, def *model.HTTPExecution, out io.Writer) int {

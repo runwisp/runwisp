@@ -319,12 +319,12 @@ func TestStopServiceHaltsRestarts(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	assert.Equal(t, callsAtStop, len(exec.Calls), "no restarts while stopped")
 
-	// Restart clears the flag and brings instances back.
+	// Restart clears the flag and brings instances back. Goroutine scheduling
+	// on slower CI runners can take longer than a fixed sleep; poll instead.
 	require.NoError(t, jm.RestartServiceInstances("svc"))
-	time.Sleep(150 * time.Millisecond)
-
-	djm.mu.RLock()
-	active = len(djm.tasks["svc"].active)
-	djm.mu.RUnlock()
-	assert.Equal(t, 2, active, "Restart should bring instances back")
+	require.Eventually(t, func() bool {
+		djm.mu.RLock()
+		defer djm.mu.RUnlock()
+		return len(djm.tasks["svc"].active) == 2
+	}, 2*time.Second, 10*time.Millisecond, "Restart should bring instances back")
 }

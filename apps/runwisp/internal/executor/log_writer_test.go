@@ -39,6 +39,7 @@ func TestLogWriter_BasicWrite(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "hello")
 	assert.False(t, w.Truncated())
+	assert.Greater(t, w.TotalProduced(), int64(0))
 }
 
 func TestLogWriter_DropNewOverflow(t *testing.T) {

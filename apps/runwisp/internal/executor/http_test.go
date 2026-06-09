@@ -329,7 +329,144 @@ func TestExecute_RequestFailedReturnsOne(t *testing.T) {
 	assert.Contains(t, buf.String(), "[ERROR]")
 }
 
+// --- ssrfSafeDialer ---
+//
+// The dialer's contract is: split addr, resolve host, reject if any resolved
+// IP is private, dial the first allowed IP. We exercise the four observable
+// paths: malformed addr, DNS failure, private-IP rejection, and a public IP
+// happy path (via 127.0.0.1 reverse — a loopback IP is rejected so the dial
+// path is not entered, but the private-IP rejection IS).
+
+func TestSsrfSafeDialer_RejectsMalformedAddr(t *testing.T) {
+	d := ssrfSafeDialer()
+	_, err := d(context.Background(), "tcp", "no-colon-no-port")
+	require.Error(t, err)
+}
+
+func TestSsrfSafeDialer_RejectsPrivateIP(t *testing.T) {
+	// Localhost resolves to a loopback address; rejectPrivateIP must block it.
+	d := ssrfSafeDialer()
+	_, err := d(context.Background(), "tcp", "127.0.0.1:1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "blocked")
+}
+
+func TestSsrfSafeDialer_DnsFailureBubblesUp(t *testing.T) {
+	d := ssrfSafeDialer()
+	// `.invalid` is reserved by RFC 2606 to always fail resolution.
+	_, err := d(context.Background(), "tcp", "nonexistent.invalid:80")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "resolve host")
+}
+
 func TestHTTPBackend_Available(t *testing.T) {
 	b := &HTTPBackend{}
 	assert.True(t, b.Available(context.Background()))
+}
+
+// TestStartProcess_SuccessRunsExecuteAndReturnsExitCode exercises the goroutine
+// + Process bookkeeping path that Start sets up after validateHTTPURL passes.
+// validateHTTPURL rejects loopback, so we drive startProcess directly to keep
+// httptest's 127.0.0.1 listener usable.
+func TestStartProcess_SuccessRunsExecuteAndReturnsExitCode(t *testing.T) {
+	srvURL, srvClient := newLocalTestServer(t, 200, "hello")
+	b := &HTTPBackend{Client: srvClient}
+	proc := b.startProcess(context.Background(), &model.HTTPExecution{
+		Method: "GET",
+		URL:    srvURL,
+	})
+	require.NotNil(t, proc)
+	require.NotNil(t, proc.Stdout)
+
+	body, err := io.ReadAll(proc.Stdout)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "hello")
+
+	code, err := proc.Wait()
+	require.NoError(t, err)
+	assert.Equal(t, 0, code)
+}
+
+// TestStartProcess_PropagatesNonZeroExitFromExecute confirms the Wait callback
+// surfaces the exit code execute computed (here, 1 from a 5xx response).
+func TestStartProcess_PropagatesNonZeroExitFromExecute(t *testing.T) {
+	srvURL, srvClient := newLocalTestServer(t, 500, "boom")
+	b := &HTTPBackend{Client: srvClient}
+	proc := b.startProcess(context.Background(), &model.HTTPExecution{Method: "GET", URL: srvURL})
+	_, _ = io.ReadAll(proc.Stdout)
+	code, err := proc.Wait()
+	require.NoError(t, err)
+	assert.Equal(t, 1, code)
+}
+
+// TestExecute_NewRequestErrorReturnsOne triggers the http.NewRequestWithContext
+// error path (e.g. an invalid HTTP method).
+func TestExecute_NewRequestErrorReturnsOne(t *testing.T) {
+	srvURL, srvClient := newLocalTestServer(t, 200, "ok")
+	b := &HTTPBackend{Client: srvClient}
+	var buf bytes.Buffer
+	code := b.execute(context.Background(), &model.HTTPExecution{
+		Method: "GET\x00with-bad-byte",
+		URL:    srvURL,
+	}, &buf)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, buf.String(), "Failed to create request")
+}
+
+// TestHTTPClientCheckRedirect_BlocksLoopback verifies the redirect re-validator
+// rejects a redirect destination that resolves to a private/loopback address.
+func TestHTTPClientCheckRedirect_BlocksLoopback(t *testing.T) {
+	b := &HTTPBackend{}
+	client := b.httpClient()
+	require.NotNil(t, client.CheckRedirect)
+	// Build a minimal Request with a private-IP URL to trigger validateHTTPURL.
+	req, err := http.NewRequest("GET", "http://127.0.0.1/", nil)
+	require.NoError(t, err)
+	err = client.CheckRedirect(req, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "blocked")
+}
+
+// TestStart_HappyPathReturnsProcess covers Start's terminal `return
+// b.startProcess(...), nil` branch — the only happy path through validateHTTPURL.
+// Uses an IP literal as the host (net.LookupHost short-circuits without DNS)
+// and a stub RoundTripper so the goroutine spawned by startProcess completes
+// without touching the network.
+func TestStart_HappyPathReturnsProcess(t *testing.T) {
+	stub := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBufferString("ok")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	b := &HTTPBackend{Client: stub}
+	// 8.8.8.8 is public, so validateHTTPURL's rejectPrivateIP gate passes.
+	proc, err := b.Start(context.Background(), nil, nil, &model.HTTPExecution{Method: "GET", URL: "http://8.8.8.8/"})
+	require.NoError(t, err)
+	require.NotNil(t, proc)
+	_, _ = io.ReadAll(proc.Stdout)
+	code, waitErr := proc.Wait()
+	require.NoError(t, waitErr)
+	assert.Equal(t, 0, code)
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// TestHTTPClientCheckRedirect_StopsAfter10 covers the "stopped after 10
+// redirects" branch.
+func TestHTTPClientCheckRedirect_StopsAfter10(t *testing.T) {
+	b := &HTTPBackend{}
+	client := b.httpClient()
+	via := make([]*http.Request, 10)
+	for i := range via {
+		via[i] = &http.Request{}
+	}
+	req, err := http.NewRequest("GET", "http://example.com/", nil)
+	require.NoError(t, err)
+	err = client.CheckRedirect(req, via)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "stopped after 10 redirects")
 }

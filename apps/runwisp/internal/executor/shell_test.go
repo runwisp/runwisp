@@ -20,6 +20,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestShellBackend_AlwaysAvailable(t *testing.T) {
+	b := &ShellBackend{}
+	assert.True(t, b.Available(context.Background()))
+}
+
 // TestShellBackend_ProcessGroupSIGTERMKillsChildren exercises the new
 // setpgid-on-fork + SIGTERM-to-pgid logic: a /bin/sh script that spawns a
 // long-lived `sleep` child must die — both shell and child — when the

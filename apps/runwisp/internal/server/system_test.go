@@ -1,0 +1,151 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package server
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2/sse"
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestStatsProvider_GetSystemStats_PopulatesBasicFields(t *testing.T) {
+	p := newStatsProvider(&model.DaemonInfo{Version: "vTest"}, time.Now().Add(-2*time.Hour))
+	stats := p.GetSystemStats()
+
+	assert.Equal(t, AppName, stats.Name)
+	assert.NotEmpty(t, stats.Host)
+	assert.NotEmpty(t, stats.OS)
+	assert.NotEmpty(t, stats.Arch)
+	assert.Greater(t, stats.CPUCores, 0)
+	assert.NotEmpty(t, stats.Uptime)
+}
+
+func TestStatsProvider_GetDaemonInfo_PassThrough(t *testing.T) {
+	info := &model.DaemonInfo{Fingerprint: "fp1"}
+	p := newStatsProvider(info, time.Now())
+	got := p.GetDaemonInfo()
+	assert.Equal(t, "fp1", got.Fingerprint)
+}
+
+func TestStatsProvider_GetDaemonInfo_NilFallback(t *testing.T) {
+	p := newStatsProvider(nil, time.Now())
+	got := p.GetDaemonInfo()
+	require.NotNil(t, got, "must always return a non-nil struct, even when no info was supplied")
+	assert.Empty(t, got.Fingerprint)
+}
+
+func TestFormatUptime(t *testing.T) {
+	cases := map[time.Duration]string{
+		0:                             "0m",
+		30 * time.Second:              "0m",
+		5 * time.Minute:               "5m",
+		2*time.Hour + 15*time.Minute:  "2h 15m",
+		3*24*time.Hour + 4*time.Hour:  "3d 4h 0m",
+		24*time.Hour + 30*time.Minute: "1d 0h 30m",
+	}
+	for d, want := range cases {
+		assert.Equal(t, want, formatUptime(d), "%v", d)
+	}
+}
+
+func TestHumaGetInfo(t *testing.T) {
+	srv := &Server{
+		stats: newStatsProvider(&model.DaemonInfo{Fingerprint: "test-fp"}, time.Now()),
+	}
+	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
+	require.NoError(t, err)
+	assert.Equal(t, "test-fp", out.Body.Fingerprint)
+}
+
+func TestHumaGetSystemStats(t *testing.T) {
+	srv := &Server{
+		stats: newStatsProvider(&model.DaemonInfo{}, time.Now()),
+	}
+	out, err := srv.humaGetSystemStats(context.Background(), &struct{}{})
+	require.NoError(t, err)
+	assert.Equal(t, AppName, out.Body.Name)
+}
+
+func TestHumaGetMetricsHistory_ReturnsCollectorHistory(t *testing.T) {
+	mc := NewMetricsCollector(4)
+	// Seed by collecting once — collect() appends a sample synchronously.
+	mc.collect()
+	srv := &Server{metrics: mc}
+	out, err := srv.humaGetMetricsHistory(context.Background(), &struct{}{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, out.Body)
+}
+
+func TestPopulateFallbackStats_PopulatesMemFields(t *testing.T) {
+	var stats model.SystemStats
+	populateFallbackStats(&stats)
+	// MemTotal should reflect the process memory ceiling from runtime.MemStats.
+	assert.Greater(t, stats.MemTotal, uint64(0))
+}
+
+// TestSseDaemonLogHandler_RejectsWhenLimiterFull verifies the early-return
+// path when the streamLimiter has no remaining slots: the handler must not
+// call the sender at all.
+func TestSseDaemonLogHandler_RejectsWhenLimiterFull(t *testing.T) {
+	limiter := newStreamLimiter(0, 0) // zero capacity ⇒ acquire always fails
+	srv := &Server{streams: limiter}
+
+	called := false
+	send := func(_ sse.Message) error {
+		called = true
+		return nil
+	}
+	srv.sseDaemonLogHandler(context.Background(), &struct{}{}, send)
+	assert.False(t, called, "send must not fire when the limiter rejects the connection")
+}
+
+// TestSseDaemonLogHandler_ReturnsEarlyWhenBufferNil exercises the
+// daemonLogBuffer-nil branch: the handler still acquires/releases a slot but
+// emits no events.
+func TestSseDaemonLogHandler_ReturnsEarlyWhenBufferNil(t *testing.T) {
+	srv := &Server{
+		streams:         newStreamLimiter(2, 2),
+		daemonLogBuffer: nil,
+	}
+	called := false
+	send := func(_ sse.Message) error {
+		called = true
+		return nil
+	}
+	srv.sseDaemonLogHandler(context.Background(), &struct{}{}, send)
+	assert.False(t, called, "send must not fire with nil daemonLogBuffer")
+}
+
+// TestSseDaemonLogHandler_ReplaysBufferedLines exercises the happy path: the
+// handler must replay buffered lines via send before subscribing to new lines.
+// We cancel the context immediately so the subscribe loop exits cleanly.
+func TestSseDaemonLogHandler_ReplaysBufferedLines(t *testing.T) {
+	buf := NewDaemonLogBuffer(16)
+	_, _ = buf.Write([]byte("hello\n"))
+
+	srv := &Server{
+		streams:         newStreamLimiter(2, 2),
+		daemonLogBuffer: buf,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // ensure the subscribe loop returns immediately after the replay
+
+	var seen []string
+	send := func(m sse.Message) error {
+		if line, ok := m.Data.(DaemonLogLineEvent); ok {
+			seen = append(seen, line.Line)
+		}
+		return nil
+	}
+	srv.sseDaemonLogHandler(ctx, &struct{}{}, send)
+
+	require.NotEmpty(t, seen, "expected at least one replayed line")
+	assert.Contains(t, seen[0], "hello")
+}

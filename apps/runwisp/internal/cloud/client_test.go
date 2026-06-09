@@ -476,6 +476,411 @@ func TestWebSocketURLDerivation(t *testing.T) {
 
 // ---------- Inbound payload dispatch (via handler) ----------
 
+func TestRecoverArchiveBacklog_NilClientReturnsImmediately(t *testing.T) {
+	var c *Client
+	// Must not panic on a nil receiver — RecoverArchiveBacklog is safe before Run().
+	c.RecoverArchiveBacklog(context.Background())
+}
+
+func TestRecoverArchiveBacklog_NilUploaderReturnsImmediately(t *testing.T) {
+	// Uploader is nil when LogUploader bootstrapping skipped; the recovery
+	// path must short-circuit without panicking on the uploader field.
+	c := &Client{}
+	c.RecoverArchiveBacklog(context.Background())
+}
+
+// newClientWithUploader builds a Client wired with a real LogUploader, fake
+// pending repo, and fake run repo — the minimum surface RecoverArchiveBacklog
+// needs. We bypass NewClient because it requires a TaskRunner and event bus
+// that aren't relevant to backlog recovery.
+func newClientWithUploader(uploader *LogUploader, runRepo ExternalRunGetter) *Client {
+	tracker := NewExecutionTracker()
+	connMgr := newConnectionManager(tracker)
+	return &Client{
+		runRepo:  runRepo,
+		uploader: uploader,
+		tracker:  tracker,
+		conn:     connMgr,
+	}
+}
+
+func TestRecoverArchiveBacklog_EmptyBacklogIsNoop(t *testing.T) {
+	repo := newFakePendingRepo()
+	runs := &fakeRunRepo{byExt: map[string]*model.Run{}}
+	u := NewLogUploader(repo, runs, t.TempDir(), fixedClock())
+
+	c := newClientWithUploader(u, runs)
+	// No rows, nothing to recover; must not panic.
+	c.RecoverArchiveBacklog(context.Background())
+
+	assert.Equal(t, 0, repo.count())
+}
+
+func TestRecoverArchiveBacklog_SuccessfulUploadQueuesTerminalUpdate(t *testing.T) {
+	logDir := t.TempDir()
+	run := newTerminalRun("greet", "01HX-BACKLOG", "exec-backlog-1")
+	reason := model.ReasonSuccess
+	run.EndReason = &reason
+	writeRunLog(t, logDir, run, "recovered log body\n")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	repo := newFakePendingRepo()
+	require.NoError(t, repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
+		ExternalExecutionID: "exec-backlog-1",
+		UploadURL:           srv.URL,
+		LogPath:             "archive/exec-backlog-1.log.gz",
+		InsertedAt:          time.Now().Unix(),
+	}))
+
+	runs := &fakeRunRepo{byExt: map[string]*model.Run{"exec-backlog-1": run}}
+	u := NewLogUploader(repo, runs, logDir, fixedClock())
+	u.httpClient = srv.Client()
+
+	c := newClientWithUploader(u, runs)
+
+	c.RecoverArchiveBacklog(context.Background())
+
+	// Persistence row cleared on success.
+	assert.Equal(t, 0, repo.count(), "successful recovery must drop the pending row")
+
+	// The terminal update is buffered because the connection isn't ready.
+	c.tracker.mu.Lock()
+	defer c.tracker.mu.Unlock()
+	require.Len(t, c.tracker.pendingExecutionUpdates, 1)
+	update := c.tracker.pendingExecutionUpdates[0]
+	assert.Equal(t, "exec-backlog-1", update.ExecutionID)
+	assert.Equal(t, "archive/exec-backlog-1.log.gz", update.LogPath)
+	assert.Greater(t, update.LogSize, int64(0))
+}
+
+func TestRecoverArchiveBacklog_RunMissingDropsRow(t *testing.T) {
+	repo := newFakePendingRepo()
+	require.NoError(t, repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
+		ExternalExecutionID: "exec-orphan",
+		UploadURL:           "https://upload.invalid/x",
+		LogPath:             "archive/exec-orphan.log.gz",
+		InsertedAt:          time.Now().Unix(),
+	}))
+
+	runs := &fakeRunRepo{byExt: map[string]*model.Run{}} // ErrNotFound for every lookup
+	u := NewLogUploader(repo, runs, t.TempDir(), fixedClock())
+
+	c := newClientWithUploader(u, runs)
+	c.RecoverArchiveBacklog(context.Background())
+
+	assert.Equal(t, 0, repo.count(), "orphan rows must be dropped when the run is gone")
+	c.tracker.mu.Lock()
+	defer c.tracker.mu.Unlock()
+	assert.Empty(t, c.tracker.pendingExecutionUpdates, "no update should be queued when the run is missing")
+}
+
+// ---------- writeLoop tests ----------
+
+// startWriteLoopServer accepts a single WebSocket connection and pushes every
+// received payload to msgs. It returns the server, client conn, and a cleanup
+// for them both. Used to exercise writeLoop end-to-end.
+func startWriteLoopServer(t *testing.T, msgs chan<- []byte) (*httptest.Server, *websocket.Conn) {
+	t.Helper()
+	serverReady := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+		if err != nil {
+			t.Logf("ws accept: %v", err)
+			return
+		}
+		close(serverReady)
+		for {
+			_, payload, err := conn.Read(context.Background())
+			if err != nil {
+				return
+			}
+			select {
+			case msgs <- payload:
+			default:
+			}
+		}
+	}))
+
+	clientConn, _, err := websocket.Dial(context.Background(), strings.Replace(srv.URL, "http", "ws", 1), nil)
+	require.NoError(t, err)
+	<-serverReady
+	return srv, clientConn
+}
+
+func TestWriteLoop_DeliversQueuedPayload(t *testing.T) {
+	msgs := make(chan []byte, 4)
+	srv, clientConn := startWriteLoopServer(t, msgs)
+	defer srv.Close()
+	defer clientConn.Close(websocket.StatusNormalClosure, "")
+
+	session := &wsSession{
+		conn:     clientConn,
+		outbound: make(chan []byte, 4),
+	}
+	session.outbound <- []byte(`{"type":"ping"}`)
+
+	sr := &sessionRunner{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- sr.writeLoop(ctx, session) }()
+
+	select {
+	case got := <-msgs:
+		assert.Equal(t, `{"type":"ping"}`, string(got), "writeLoop must forward the queued payload to the peer")
+	case <-time.After(2 * time.Second):
+		t.Fatal("peer never received the payload")
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		assert.NoError(t, err, "writeLoop must exit cleanly on context cancel")
+	case <-time.After(2 * time.Second):
+		t.Fatal("writeLoop did not exit after context cancel")
+	}
+}
+
+func TestWriteLoop_ContextCancelExitsCleanly(t *testing.T) {
+	msgs := make(chan []byte, 1)
+	srv, clientConn := startWriteLoopServer(t, msgs)
+	defer srv.Close()
+	defer clientConn.Close(websocket.StatusNormalClosure, "")
+
+	session := &wsSession{
+		conn:     clientConn,
+		outbound: make(chan []byte, 1),
+	}
+	sr := &sessionRunner{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() { done <- sr.writeLoop(ctx, session) }()
+
+	cancel()
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("writeLoop did not exit after context cancel")
+	}
+}
+
+// ---------- NewClient validation ----------
+
+func TestNewClient_DisabledReturnsNil(t *testing.T) {
+	client, err := NewClient(Config{Enabled: false}, Dependencies{})
+	require.NoError(t, err)
+	assert.Nil(t, client, "disabled config must produce no client")
+}
+
+func TestNewClient_MissingTaskManager(t *testing.T) {
+	_, err := NewClient(Config{Enabled: true}, Dependencies{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "task manager")
+}
+
+func TestNewClient_MissingRunRepo(t *testing.T) {
+	bus := events.NewEventBus()
+	mockExec := &testutil.MockExecutor{}
+	jm := runtime.NewTaskManager(mockExec, bus, time.Now)
+	defer jm.Shutdown()
+
+	_, err := NewClient(Config{Enabled: true}, Dependencies{
+		TaskManager: &testTaskRunnerAdapter{inner: jm},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "run repository")
+}
+
+func TestNewClient_MissingEventBus(t *testing.T) {
+	bus := events.NewEventBus()
+	mockExec := &testutil.MockExecutor{}
+	jm := runtime.NewTaskManager(mockExec, bus, time.Now)
+	defer jm.Shutdown()
+
+	_, err := NewClient(Config{Enabled: true}, Dependencies{
+		TaskManager: &testTaskRunnerAdapter{inner: jm},
+		RunRepo:     &testutil.MockRunRepository{},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "event bus")
+}
+
+func TestNewClient_CopiesLocalTasksAndSkipsNil(t *testing.T) {
+	baseURL, _ := url.Parse("http://localhost:0")
+	bus := events.NewEventBus()
+	mockExec := &testutil.MockExecutor{}
+	jm := runtime.NewTaskManager(mockExec, bus, time.Now)
+	defer jm.Shutdown()
+
+	original := &model.Task{Name: "alpha"}
+	client, err := NewClient(Config{
+		Enabled:         true,
+		BaseURL:         baseURL,
+		RequestTimeout:  time.Second,
+		TaskSyncTimeout: time.Second,
+	}, Dependencies{
+		TaskManager: &testTaskRunnerAdapter{inner: jm},
+		RunRepo:     &testutil.MockRunRepository{},
+		EventBus:    bus,
+		LocalTasks:  map[string]*model.Task{"alpha": original, "beta": nil},
+		LogDir:      t.TempDir(),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, client)
+
+	// localTasks copy must contain "alpha" but skip the nil "beta" entry.
+	require.Contains(t, client.localTasks, "alpha")
+	assert.NotContains(t, client.localTasks, "beta")
+	// And the copy is a distinct pointer from the caller-supplied value.
+	assert.NotSame(t, original, client.localTasks["alpha"])
+	assert.Equal(t, "alpha", client.localTasks["alpha"].Name)
+}
+
+// Nil-receiver Run is a safe no-op so callers can wire the cloud client
+// unconditionally and let NewClient's disabled-config check return nil.
+func TestRun_NilClientIsNoop(t *testing.T) {
+	var c *Client
+	require.NoError(t, c.Run(context.Background()))
+}
+
+// readLoop reads frames until the websocket closes, then returns the wrapped
+// error. We push a single inbound pong, then close the server side and assert
+// the readLoop exits with a wrapped error.
+func TestReadLoop_PassesMessageThroughThenExitsOnClose(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		_ = sendJSON(conn, protocol.PongMessage{Type: "pong"})
+		// Hold briefly so the client reads, then close.
+		time.Sleep(100 * time.Millisecond)
+		conn.Close(websocket.StatusNormalClosure, "done")
+	})
+	defer env.close()
+
+	clientConn, _, err := websocket.Dial(context.Background(), strings.Replace(env.wsServer.URL, "http", "ws", 1), nil)
+	require.NoError(t, err)
+	defer clientConn.Close(websocket.StatusNormalClosure, "")
+
+	session := &wsSession{
+		conn:     clientConn,
+		outbound: make(chan []byte, 4),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	loopErr := env.client.sessions.readLoop(ctx, session)
+	require.Error(t, loopErr, "readLoop must surface the websocket close as an error")
+	assert.Contains(t, loopErr.Error(), "read loop")
+	// The pong frame must have updated lastReceived.
+	assert.NotZero(t, session.lastReceived.Load(), "lastReceived should be stamped on inbound traffic")
+}
+
+func TestReadLoop_ExitsOnContextCancel(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		// Hold the connection open; the client cancels the context instead.
+		time.Sleep(2 * time.Second)
+		conn.Close(websocket.StatusNormalClosure, "done")
+	})
+	defer env.close()
+
+	clientConn, _, err := websocket.Dial(context.Background(), strings.Replace(env.wsServer.URL, "http", "ws", 1), nil)
+	require.NoError(t, err)
+	defer clientConn.Close(websocket.StatusNormalClosure, "")
+
+	session := &wsSession{conn: clientConn, outbound: make(chan []byte, 4)}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so the read fails immediately
+
+	loopErr := env.client.sessions.readLoop(ctx, session)
+	require.Error(t, loopErr)
+}
+
+// closeConnection logs (rather than panics) when the underlying Close already
+// returned its error — exercised by closing twice.
+func TestCloseConnection_AlreadyClosedIsLogged(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+		time.Sleep(50 * time.Millisecond)
+	}))
+	defer srv.Close()
+
+	conn, _, err := websocket.Dial(context.Background(), strings.Replace(srv.URL, "http", "ws", 1), nil)
+	require.NoError(t, err)
+
+	// First close succeeds; second close hits the error branch in closeConnection.
+	closeConnection(conn, "first")
+	closeConnection(conn, "second-already-closed")
+}
+
+// sendProtocolError swallows send errors (best-effort). Cover the error branch
+// by filling the outbound buffer before invoking it.
+func TestSendProtocolError_DropsOnFullBuffer(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 1)}
+	session.outbound <- []byte("filler")
+
+	// Must not panic — the function logs and returns on send failure.
+	env.client.sessions.sendProtocolError(session, CloudErrorKindValidation, "boom", "req-1")
+}
+
+func TestHeartbeatLoop_ContextCancelExitsCleanly(t *testing.T) {
+	sr := &sessionRunner{}
+	session := &wsSession{outbound: make(chan []byte, 1)}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := sr.heartbeatLoop(ctx, session)
+	assert.NoError(t, err)
+}
+
+func TestWriteLoop_WriteErrorReturnsErr(t *testing.T) {
+	msgs := make(chan []byte, 1)
+	srv, clientConn := startWriteLoopServer(t, msgs)
+	defer srv.Close()
+
+	session := &wsSession{
+		conn:     clientConn,
+		outbound: make(chan []byte, 1),
+	}
+
+	// Forcibly close the connection so the subsequent Write errors out.
+	_ = clientConn.Close(websocket.StatusNormalClosure, "force close")
+
+	session.outbound <- []byte(`{"type":"ping"}`)
+
+	sr := &sessionRunner{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- sr.writeLoop(ctx, session) }()
+
+	select {
+	case err := <-done:
+		require.Error(t, err, "writeLoop must return an error when the underlying Write fails")
+		assert.Contains(t, err.Error(), "write loop")
+	case <-time.After(2 * time.Second):
+		t.Fatal("writeLoop did not exit after write error")
+	}
+}
+
 func TestHandleInboundPayloadPong(t *testing.T) {
 	env := newTestEnv(t, func(conn *websocket.Conn) {
 		conn.Close(websocket.StatusNormalClosure, "")
@@ -509,6 +914,158 @@ func TestHandleInboundPayloadInvalidJSON(t *testing.T) {
 	session := &wsSession{outbound: make(chan []byte, 16)}
 	err := env.client.sessions.handleInboundPayload(context.Background(), session, []byte("not json"))
 	assert.Error(t, err)
+}
+
+func TestHandleInboundPayloadProtocolError(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 16)}
+	payload := []byte(`{"type":"error","code":"validation","message":"bad","requestId":"req-1"}`)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	assert.NoError(t, err)
+}
+
+func TestHandleInboundPayloadAuthResultSuccess(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 16)}
+	payload := []byte(`{"type":"auth:result","success":true,"connectionId":"c1"}`)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	assert.NoError(t, err)
+}
+
+func TestHandleInboundPayloadAuthResultFailureReturnsError(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 16)}
+	payload := []byte(`{"type":"auth:result","success":false,"error":"bad token"}`)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	require.Error(t, err)
+	ce, ok := err.(*CloudError)
+	require.True(t, ok)
+	assert.Equal(t, CloudErrorKindAuth, ce.Kind)
+	assert.Equal(t, "bad token", ce.Message)
+}
+
+func TestHandleInboundPayloadLogListenMissingExecID(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 16)}
+	// Empty executionId triggers the validation error branch in HandleLogListen,
+	// which the dispatcher converts to a protocol error response.
+	payload := []byte(`{"type":"log:listen","executionId":""}`)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	assert.NoError(t, err, "validation errors are sent back to peer, not bubbled up")
+
+	// Verify the outbound queue received a protocol-error message.
+	select {
+	case out := <-session.outbound:
+		assert.Contains(t, string(out), `"type":"error"`)
+	default:
+		t.Fatal("expected protocol error to be queued for the peer")
+	}
+}
+
+func TestHandleInboundPayloadLogListenSuccessAndStop(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 16)}
+
+	payload := []byte(`{"type":"log:listen","executionId":"exec-1"}`)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	assert.NoError(t, err)
+	assert.True(t, env.client.handler.IsLogListener("exec-1"))
+
+	// log:stop must remove the listener.
+	payload = []byte(`{"type":"log:stop","executionId":"exec-1"}`)
+	err = env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	assert.NoError(t, err)
+	assert.False(t, env.client.handler.IsLogListener("exec-1"))
+}
+
+func TestHandleInboundPayloadExecutionStopMissingExecID(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 16)}
+	// Empty executionId fails validation inside HandleExecutionStop, dispatcher
+	// sends a protocol error back without bubbling up.
+	payload := []byte(`{"type":"execution:stop","executionId":""}`)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	assert.NoError(t, err)
+	select {
+	case out := <-session.outbound:
+		assert.Contains(t, string(out), `"type":"error"`)
+	default:
+		t.Fatal("expected protocol error to be queued for the peer")
+	}
+}
+
+func TestHandleInboundPayloadExecutionDispatchInvalid(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 16)}
+	// Empty Execution.executionId fails handler-side validation. The dispatcher
+	// must convert that to a protocol error rather than bubbling up.
+	payload := []byte(`{"type":"execution:dispatch","execution":{"executionId":""}}`)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	assert.NoError(t, err)
+	select {
+	case out := <-session.outbound:
+		assert.Contains(t, string(out), `"type":"error"`)
+	default:
+		t.Fatal("expected protocol error to be queued for the peer")
+	}
+}
+
+func TestHandleInboundPayloadLogReplayRequestMissingExecID(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 16)}
+	payload := []byte(`{"type":"log:replayRequest","id":"req-1","executionId":""}`)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	assert.NoError(t, err)
+	// Two messages: the protocol error, plus the empty replay chunk reply.
+	gotError := false
+	gotReply := false
+	for i := 0; i < 2; i++ {
+		select {
+		case out := <-session.outbound:
+			s := string(out)
+			if strings.Contains(s, `"type":"error"`) {
+				gotError = true
+			}
+			if strings.Contains(s, `"type":"log:replayChunk"`) {
+				gotReply = true
+			}
+		default:
+		}
+	}
+	assert.True(t, gotError, "validation error should be queued")
+	assert.True(t, gotReply, "empty replay chunk should still be sent")
 }
 
 // ---------- Error classification ----------

@@ -273,3 +273,19 @@ func TestRenderHeader_Hovered(t *testing.T) {
 	header, _ := RenderHeader(info, false, 80, -1, 0)
 	assert.NotEmpty(t, header)
 }
+
+func TestRenderHeader_LaunchTicketRendersOpenWebUIAction(t *testing.T) {
+	info := uikit.StartupInfo{Port: 9477}
+	// hasLaunchTicket=true puts FieldOpenWebUI first; cursor 0 = selected,
+	// hover 0 = (ignored because selected wins). Exercises renderActionRow's
+	// selected branch.
+	header, _ := RenderHeader(info, true, 80, 0, -1)
+	assert.Contains(t, header, "Open Web UI")
+}
+
+func TestRenderHeader_LaunchTicketHoveredOpenWebUI(t *testing.T) {
+	info := uikit.StartupInfo{Port: 9477}
+	// cursor=-1, hover=0 exercises renderActionRow's hovered (not selected) branch.
+	header, _ := RenderHeader(info, true, 80, -1, 0)
+	assert.Contains(t, header, "Open Web UI")
+}

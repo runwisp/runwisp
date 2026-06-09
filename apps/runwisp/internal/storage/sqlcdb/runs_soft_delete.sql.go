@@ -53,11 +53,11 @@ func (q *Queries) PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.T
 const resolveSelectorIDsByFilter = `-- name: ResolveSelectorIDsByFilter :many
 SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL
-  AND (?1 = '' OR end_reason = ?1)
-  AND (?2 = '' OR status = ?2)
-  AND (?3 = '' OR task_name = ?3)
-  AND (?4 = '' OR (task_name LIKE ?5 OR id LIKE ?5))
-  AND (?6 = '' OR status = ?6)
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+  AND (?6 IS NULL OR status = ?6)
   AND id NOT IN (/*SLICE:except_ids*/?)
 `
 
@@ -119,13 +119,13 @@ func (q *Queries) ResolveSelectorIDsByFilter(ctx context.Context, arg ResolveSel
 const resolveSelectorIDsByIDs = `-- name: ResolveSelectorIDsByIDs :many
 SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR status = ?1)
   AND id IN (/*SLICE:ids*/?)
-  AND (?2 = '' OR status = ?2)
 `
 
 type ResolveSelectorIDsByIDsParams struct {
-	Ids              []string    `json:"ids"`
 	BulkStatusFilter interface{} `json:"bulk_status_filter"`
+	Ids              []string    `json:"ids"`
 }
 
 type ResolveSelectorIDsByIDsRow struct {
@@ -134,9 +134,14 @@ type ResolveSelectorIDsByIDsRow struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Slice must come AFTER scalar args. sqlc emits `?N` for named scalars and
+// positional `?` for slices; it appends scalar params to queryParams first,
+// then expands the slice. Putting `id IN (?, ?...)` first would shift the
+// `?N` positions, so the slice is placed at the end.
 func (q *Queries) ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelectorIDsByIDsParams) ([]ResolveSelectorIDsByIDsRow, error) {
 	query := resolveSelectorIDsByIDs
 	var queryParams []interface{}
+	queryParams = append(queryParams, arg.BulkStatusFilter)
 	if len(arg.Ids) > 0 {
 		for _, v := range arg.Ids {
 			queryParams = append(queryParams, v)
@@ -145,7 +150,6 @@ func (q *Queries) ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelect
 	} else {
 		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
 	}
-	queryParams = append(queryParams, arg.BulkStatusFilter)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
@@ -171,10 +175,10 @@ func (q *Queries) ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelect
 const restoreRunsByFilter = `-- name: RestoreRunsByFilter :exec
 UPDATE runs SET deleted_at = NULL
 WHERE deleted_at IS NOT NULL
-  AND (?1 = '' OR end_reason = ?1)
-  AND (?2 = '' OR status = ?2)
-  AND (?3 = '' OR task_name = ?3)
-  AND (?4 = '' OR (task_name LIKE ?5 OR id LIKE ?5))
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
   AND id NOT IN (/*SLICE:except_ids*/?)
 `
 
@@ -229,11 +233,14 @@ func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) error {
 }
 
 const selectRestoredRunsByFilter = `-- name: SelectRestoredRunsByFilter :many
-SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, deleted_at FROM runs WHERE deleted_at IS NULL
-  AND (?1 = '' OR end_reason = ?1)
-  AND (?2 = '' OR status = ?2)
-  AND (?3 = '' OR task_name = ?3)
-  AND (?4 = '' OR (task_name LIKE ?5 OR id LIKE ?5))
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
+  instance_index, deleted_at
+FROM runs WHERE deleted_at IS NULL
+  AND (?1 IS NULL OR end_reason = ?1)
+  AND (?2 IS NULL OR status = ?2)
+  AND (?3 IS NULL OR task_name = ?3)
+  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
   AND id NOT IN (/*SLICE:except_ids*/?)
 `
 
@@ -300,7 +307,10 @@ func (q *Queries) SelectRestoredRunsByFilter(ctx context.Context, arg SelectRest
 }
 
 const selectRestoredRunsByIDs = `-- name: SelectRestoredRunsByIDs :many
-SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, deleted_at FROM runs WHERE deleted_at IS NULL
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
+  instance_index, deleted_at
+FROM runs WHERE deleted_at IS NULL
   AND id IN (/*SLICE:ids*/?)
 `
 
@@ -356,10 +366,10 @@ const softDeleteRunsByFilter = `-- name: SoftDeleteRunsByFilter :many
 UPDATE runs SET deleted_at = ?1
 WHERE deleted_at IS NULL
   AND status = ?2
-  AND (?3 = '' OR end_reason = ?3)
-  AND (?4 = '' OR status = ?4)
-  AND (?5 = '' OR task_name = ?5)
-  AND (?6 = '' OR (task_name LIKE ?7 OR id LIKE ?7))
+  AND (?3 IS NULL OR end_reason = ?3)
+  AND (?4 IS NULL OR status = ?4)
+  AND (?5 IS NULL OR task_name = ?5)
+  AND (?6 IS NULL OR (task_name LIKE ?7 OR id LIKE ?7))
   AND id NOT IN (/*SLICE:except_ids*/?)
 RETURNING id, task_name, created_at
 `

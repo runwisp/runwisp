@@ -55,8 +55,8 @@ func (m *MockRunRepository) CountRunsFiltered(ctx context.Context, status, taskN
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *MockRunRepository) QueryRuns(ctx context.Context, taskName string, limit, offset int, status string, sortField storage.SortColumn, sortDirection storage.SortDirection, searchQuery string) ([]model.Run, error) {
-	args := m.Called(ctx, taskName, limit, offset, status, sortField, sortDirection, searchQuery)
+func (m *MockRunRepository) QueryRuns(ctx context.Context, q storage.RunQuery) ([]model.Run, error) {
+	args := m.Called(ctx, q)
 	return args.Get(0).([]model.Run), args.Error(1)
 }
 

@@ -152,6 +152,23 @@ func TestEscapeLabelValue(t *testing.T) {
 	}
 }
 
+func TestEscapeHelp(t *testing.T) {
+	// HELP text allows unescaped double quotes per the OpenMetrics spec, so the
+	// only characters that need escaping are backslash and newline.
+	cases := map[string]string{
+		"plain":          "plain",
+		`with "quote"`:   `with "quote"`,
+		`back\slash`:     `back\\slash`,
+		"line1\nline2":   `line1\nline2`,
+		"\\\n":           `\\\n`,
+		"":               "",
+		"no escape here": "no escape here",
+	}
+	for in, want := range cases {
+		assert.Equalf(t, want, escapeHelp(in), "input=%q", in)
+	}
+}
+
 func TestOpenMetrics_LabelValueEscaping(t *testing.T) {
 	// Real task names can't contain quotes/backslashes, but the encoder still
 	// has to be correct — exercise it via a synthetic DaemonInfo entry so a

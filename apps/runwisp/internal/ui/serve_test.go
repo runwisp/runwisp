@@ -10,6 +10,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -131,4 +132,25 @@ func TestServeMissingIndexIs404(t *testing.T) {
 	serve(fstest.MapFS{}, rec, req)
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func get(t *testing.T, h http.Handler, urlPath string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, urlPath, nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	return rr
+}
+
+func TestHandlerAndMount(t *testing.T) {
+	h, err := Handler()
+	require.NoError(t, err)
+	require.NotNil(t, h)
+
+	router := chi.NewRouter()
+	require.NoError(t, Mount(router))
+
+	// The real embedded dist has an index.html (committed for tests).
+	rr := get(t, router, "/")
+	assert.Equal(t, http.StatusOK, rr.Code)
 }

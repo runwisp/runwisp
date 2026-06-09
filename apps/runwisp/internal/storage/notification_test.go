@@ -150,6 +150,41 @@ func TestPruneByCount(t *testing.T) {
 	assert.Len(t, rows, 3)
 }
 
+func TestPruneByCount_KeepLEZeroIsNoop(t *testing.T) {
+	ctx := t.Context()
+	db := setupNotificationDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err := db.UpsertByFingerprint(ctx, newNotification(now, "fp-1"), time.Hour, 10)
+	require.NoError(t, err)
+
+	deleted, err := db.PruneNotificationsByCount(ctx, 0)
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, deleted, "keep<=0 must be a no-op")
+
+	deleted, err = db.PruneNotificationsByCount(ctx, -5)
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, deleted, "negative keep must be a no-op")
+}
+
+func TestPruneByAge_OlderThanLEZeroIsNoop(t *testing.T) {
+	ctx := t.Context()
+	db := setupNotificationDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err := db.UpsertByFingerprint(ctx, newNotification(now, "fp-1"), time.Hour, 10)
+	require.NoError(t, err)
+
+	deleted, err := db.PruneNotificationsByAge(ctx, 0)
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, deleted, "olderThan<=0 must be a no-op")
+}
+
+func TestGetNotificationByID_NotFoundReturnsErrNotFound(t *testing.T) {
+	ctx := t.Context()
+	db := setupNotificationDB(t)
+	_, err := db.GetNotificationByID(ctx, ulid.Make().String())
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
 func TestPruneByAge(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationDB(t)

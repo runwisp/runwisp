@@ -235,6 +235,150 @@ func TestResolveConfigPath(t *testing.T) {
 	})
 }
 
+func TestResolveBinary_EmptyPathErrors(t *testing.T) {
+	_, _, err := ResolveBinary(ResolveBinaryOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty executable path")
+}
+
+func TestResolveBinary_EvalSymlinksErrorIgnored(t *testing.T) {
+	// On error the function falls back to the unresolved exe path —
+	// confirm that flow doesn't surface the symlink error.
+	p, _, err := ResolveBinary(ResolveBinaryOptions{
+		ExecutablePath: "/usr/local/bin/runwisp",
+		EvalSymlinks: func(string) (string, error) {
+			return "", errors.New("nope")
+		},
+		HomeDir: "/home/alice",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "/usr/local/bin/runwisp", p)
+}
+
+func TestResolveBinary_RelativeBecomesAbsolute(t *testing.T) {
+	p, _, err := ResolveBinary(ResolveBinaryOptions{
+		ExecutablePath: "relative/runwisp",
+		EvalSymlinks:   identitySymlinks,
+		HomeDir:        "/home/alice",
+	})
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(p), "relative paths must be made absolute")
+}
+
+func TestResolveDataDir_ErrorsWhenNoHomeNoXDG(t *testing.T) {
+	_, err := ResolveDataDir(ResolveDataDirOptions{
+		ExplicitSet:      false,
+		HomeDir:          "",
+		XDGDataHome:      "",
+		BareDefaultHasDB: false,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HOME is unset")
+}
+
+func TestTransientDataDirReason(t *testing.T) {
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"/tmp/runwisp", "wiped on reboot"},
+		{"/tmp", "wiped on reboot"},
+		{"/var/tmp/runwisp", "tmpwatch"},
+		{"/var/tmp", "tmpwatch"},
+		{"/dev/shm/runwisp", "tmpfs"},
+		{"/dev/shm", "tmpfs"},
+		{"/srv/runwisp", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			got := transientDataDirReason(tc.path)
+			if tc.want == "" {
+				assert.Empty(t, got)
+			} else {
+				assert.Contains(t, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestXDGDataDir(t *testing.T) {
+	assert.Equal(t, "/xdg/runwisp", xdgDataDir("/home/alice", "/xdg"))
+	assert.Equal(t, "/home/alice/.local/share/runwisp", xdgDataDir("/home/alice", ""))
+	assert.Empty(t, xdgDataDir("", ""))
+}
+
+func TestXDGConfigPath(t *testing.T) {
+	assert.Equal(t, "/xdg/runwisp/runwisp.toml", XDGConfigPath("/home/alice", "/xdg"))
+	assert.Equal(t, "/home/alice/.config/runwisp/runwisp.toml", XDGConfigPath("/home/alice", ""))
+	assert.Empty(t, XDGConfigPath("", ""))
+}
+
+func TestResolveConfigPath_ExplicitRelativeBecomesAbsolute(t *testing.T) {
+	p, err := ResolveConfigPath(ResolveConfigOptions{
+		Explicit: "subdir/runwisp.toml", ExplicitSet: true,
+	})
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(p))
+}
+
+func TestResolveConfigPath_NeitherExistsFallsBackToXDG(t *testing.T) {
+	p, err := ResolveConfigPath(ResolveConfigOptions{
+		HomeDir:    "/home/alice",
+		XDGExists:  false,
+		BareExists: false,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "/home/alice/.config/runwisp/runwisp.toml", p)
+}
+
+func TestResolveConfigPath_NeitherExistsNoHomeFallsBackToBareAbs(t *testing.T) {
+	p, err := ResolveConfigPath(ResolveConfigOptions{
+		HomeDir:    "",
+		XDGExists:  false,
+		BareExists: false,
+	})
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(p))
+	assert.Contains(t, p, configFileName)
+}
+
+func TestResolveConfigPath_ExplicitDefaultIgnored(t *testing.T) {
+	// Passing ExplicitSet=true with the default filename should be
+	// treated as "no explicit value" and fall back to XDG.
+	p, err := ResolveConfigPath(ResolveConfigOptions{
+		Explicit: configFileName, ExplicitSet: true,
+		HomeDir: "/home/alice", XDGExists: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "/home/alice/.config/runwisp/runwisp.toml", p)
+}
+
+func TestUserHomeDir_PrefersHOMEEnv(t *testing.T) {
+	t.Setenv("HOME", "/custom/home")
+	got, err := UserHomeDir()
+	require.NoError(t, err)
+	assert.Equal(t, "/custom/home", got)
+}
+
+func TestUserHomeDir_FallsBackWhenHOMEEmpty(t *testing.T) {
+	// On Linux/macOS the os.UserHomeDir() fallback also reads $HOME;
+	// to actually hit os.UserHomeDir() we have to unset HOME entirely.
+	t.Setenv("HOME", "")
+	got, err := UserHomeDir()
+	// We don't assert success — on a stripped env os.UserHomeDir
+	// may legitimately fail. We only need both branches executed.
+	if err == nil {
+		assert.NotEmpty(t, got)
+	}
+}
+
+func TestDetectWSLFromEnv_NoSignals(t *testing.T) {
+	t.Setenv("WSL_DISTRO_NAME", "")
+	// We can't unset /proc/sys/kernel/osrelease, but DetectWSL is the
+	// pure logic — this just exercises the env-reading wrapper.
+	_ = DetectWSLFromEnv()
+}
+
 func TestDetectWSL(t *testing.T) {
 	cases := []struct {
 		name string

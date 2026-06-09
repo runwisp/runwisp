@@ -218,8 +218,13 @@ func queryAll(t *testing.T, db storage.Database, taskName string) []model.Run {
 	var all []model.Run
 	const page = 500
 	for offset := 0; ; offset += page {
-		runs, err := db.QueryRuns(context.Background(), taskName, page, offset,
-			"", storage.SortColumnDefault, storage.SortDirectionDefault, "")
+		runs, err := db.QueryRuns(context.Background(), storage.RunQuery{
+			Filter:        model.RunFilter{TaskName: taskName},
+			Limit:         page,
+			Offset:        offset,
+			SortField:     storage.SortColumnDefault,
+			SortDirection: storage.SortDirectionDefault,
+		})
 		if err != nil {
 			t.Fatalf("query runs: %v", err)
 		}

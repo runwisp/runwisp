@@ -410,3 +410,176 @@ func TestStopRun_RunPending_NotRunning(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotRunning)
 	repo.AssertExpectations(t)
 }
+
+// ---- bulkCancel ----
+
+func TestBulkCancel_InvalidSelector(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(nil, repo, runner)
+
+	// Both IDs and MatchAll set — invalid.
+	_, err := svc.bulkCancel(t.Context(), model.RunSelector{MatchAll: true, IDs: []string{"a"}})
+	assert.Error(t, err)
+}
+
+func TestBulkCancel_TerminatesEachResolvedRun(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(nil, repo, runner)
+
+	sel := model.RunSelector{IDs: []string{"a", "b", "c"}}
+	repo.On("ResolveSelectorIDs", mock.Anything, sel, string(model.PhaseRunning)).Return(
+		[]storage.RunRef{
+			{ID: "a", TaskName: "t1"},
+			{ID: "b", TaskName: "t1"},
+			{ID: "c", TaskName: "t2"},
+		}, nil)
+	runner.On("TerminateRun", "a").Return(nil)
+	runner.On("TerminateRun", "b").Return(errors.New("already gone"))
+	runner.On("TerminateRun", "c").Return(nil)
+
+	signalled, err := svc.bulkCancel(t.Context(), sel)
+	require.NoError(t, err)
+	// Only two succeeded; the middle one returned an error.
+	assert.Equal(t, 2, signalled)
+	repo.AssertExpectations(t)
+	runner.AssertExpectations(t)
+}
+
+func TestBulkCancel_ResolveError(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(nil, repo, runner)
+
+	sel := model.RunSelector{IDs: []string{"a"}}
+	repo.On("ResolveSelectorIDs", mock.Anything, sel, string(model.PhaseRunning)).Return(nil, errors.New("db boom"))
+
+	_, err := svc.bulkCancel(t.Context(), sel)
+	assert.Error(t, err)
+	repo.AssertExpectations(t)
+}
+
+// ---- bulkRerun ----
+
+func TestBulkRerun_InvalidSelector(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(nil, repo, runner)
+
+	_, err := svc.bulkRerun(t.Context(), model.RunSelector{}) // empty IDs + not MatchAll
+	assert.Error(t, err)
+}
+
+func TestBulkRerun_TriggersOnePerTaskAndDedupes(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"alpha": {Name: "alpha", APITrigger: true, Kind: model.KindTask},
+		"beta":  {Name: "beta", APITrigger: true, Kind: model.KindTask},
+		"svc":   {Name: "svc", APITrigger: true, Kind: model.KindService},
+		"noapi": {Name: "noapi", APITrigger: false, Kind: model.KindTask},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	sel := model.RunSelector{IDs: []string{"r1", "r2", "r3", "r4", "r5"}}
+	repo.On("ResolveSelectorIDs", mock.Anything, sel, "").Return([]storage.RunRef{
+		{ID: "r1", TaskName: "alpha"},
+		{ID: "r2", TaskName: "alpha"},
+		{ID: "r3", TaskName: "beta"},
+		{ID: "r4", TaskName: "svc"},   // service task — should be skipped
+		{ID: "r5", TaskName: "noapi"}, // APITrigger=false — skipped
+	}, nil)
+	runner.On("TriggerRun", "alpha", model.TriggeredByAPI).Return(&model.Run{ID: "newA"}, nil)
+	runner.On("TriggerRun", "beta", model.TriggeredByAPI).Return(&model.Run{ID: "newB"}, nil)
+
+	out, err := svc.bulkRerun(t.Context(), sel)
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	assert.Equal(t, "alpha", out[0].TaskName)
+	assert.Equal(t, "newA", out[0].RunID)
+	assert.Equal(t, "beta", out[1].TaskName)
+	assert.Equal(t, "newB", out[1].RunID)
+	repo.AssertExpectations(t)
+	runner.AssertExpectations(t)
+}
+
+func TestBulkRerun_TriggerErrorIsSkipped(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"alpha": {Name: "alpha", APITrigger: true, Kind: model.KindTask},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	sel := model.RunSelector{IDs: []string{"r1"}}
+	repo.On("ResolveSelectorIDs", mock.Anything, sel, "").Return([]storage.RunRef{
+		{ID: "r1", TaskName: "alpha"},
+	}, nil)
+	runner.On("TriggerRun", "alpha", model.TriggeredByAPI).Return(nil, errors.New("trigger boom"))
+
+	out, err := svc.bulkRerun(t.Context(), sel)
+	require.NoError(t, err)
+	assert.Empty(t, out)
+}
+
+// ---- huma bulk handlers ----
+
+func TestHumaBulkCancelRuns_SignalsTroughService(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(nil, repo, runner)
+
+	sel := model.RunSelector{IDs: []string{"r1"}}
+	repo.On("ResolveSelectorIDs", mock.Anything, sel, string(model.PhaseRunning)).Return(
+		[]storage.RunRef{{ID: "r1", TaskName: "t"}}, nil)
+	runner.On("TerminateRun", "r1").Return(nil)
+
+	srv := &Server{runService: svc}
+	out, err := srv.humaBulkCancelRuns(context.Background(), &BulkRunSelectorInput{Body: sel})
+	require.NoError(t, err)
+	assert.Equal(t, 1, out.Body.Affected)
+}
+
+func TestHumaBulkCancelRuns_InvalidSelectorReturnsError(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(nil, repo, runner)
+	srv := &Server{runService: svc}
+
+	_, err := srv.humaBulkCancelRuns(context.Background(),
+		&BulkRunSelectorInput{Body: model.RunSelector{MatchAll: true, IDs: []string{"x"}}})
+	assert.Error(t, err)
+}
+
+func TestHumaBulkRerunRuns_ReturnsTriggeredList(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"alpha": {Name: "alpha", APITrigger: true, Kind: model.KindTask},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	sel := model.RunSelector{IDs: []string{"r1"}}
+	repo.On("ResolveSelectorIDs", mock.Anything, sel, "").Return(
+		[]storage.RunRef{{ID: "r1", TaskName: "alpha"}}, nil)
+	runner.On("TriggerRun", "alpha", model.TriggeredByAPI).Return(&model.Run{ID: "newA"}, nil)
+
+	srv := &Server{runService: svc}
+	out, err := srv.humaBulkRerunRuns(context.Background(), &BulkRunSelectorInput{Body: sel})
+	require.NoError(t, err)
+	require.Len(t, out.Body.Triggered, 1)
+	assert.Equal(t, "alpha", out.Body.Triggered[0].TaskName)
+	assert.Equal(t, "newA", out.Body.Triggered[0].RunID)
+}
+
+func TestHumaBulkRerunRuns_InvalidSelectorReturnsError(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(nil, repo, runner)
+	srv := &Server{runService: svc}
+
+	_, err := srv.humaBulkRerunRuns(context.Background(),
+		&BulkRunSelectorInput{Body: model.RunSelector{}})
+	assert.Error(t, err)
+}

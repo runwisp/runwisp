@@ -24,10 +24,130 @@ SELECT COUNT(*) FROM runs WHERE task_name = ? AND deleted_at IS NULL;
 
 -- name: CountRunsFiltered :one
 SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(end_reason_filter) = '' OR end_reason = sqlc.arg(end_reason_filter))
-  AND (sqlc.arg(status_phase_filter) = '' OR status = sqlc.arg(status_phase_filter))
-  AND (sqlc.arg(task_name_filter) = '' OR task_name = sqlc.arg(task_name_filter))
-  AND (sqlc.arg(search_filter) = '' OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)));
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)));
+
+-- name: QueryRunsCreatedAtDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY created_at DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsCreatedAtAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY created_at ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsStartAtDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY COALESCE(start_at, created_at) DESC, created_at DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsStartAtAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY COALESCE(start_at, created_at) ASC, created_at ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsTaskNameDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY task_name DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsTaskNameAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY task_name ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsStatusDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY status DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsStatusAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY status ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsExitCodeDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY exit_code DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsExitCodeAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY exit_code ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsDurationDesc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
+
+-- name: QueryRunsDurationAsc :many
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+FROM runs WHERE deleted_at IS NULL
+  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
+  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
+  AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
+ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: GetRunSummary :one
 SELECT
@@ -46,7 +166,10 @@ UPDATE runs SET status = 'ended', end_reason = 'crashed', end_at = ?, exit_code 
 WHERE status = 'running' AND end_at IS NULL AND deleted_at IS NULL;
 
 -- name: GetPendingRuns :many
-SELECT * FROM runs WHERE status = 'pending' AND deleted_at IS NULL
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
+  instance_index, deleted_at
+FROM runs WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC;
 
 -- name: GetLastRunByTask :one

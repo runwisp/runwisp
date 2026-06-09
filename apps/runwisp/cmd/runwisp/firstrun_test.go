@@ -83,3 +83,42 @@ func TestComposeAliasFromDir(t *testing.T) {
 		})
 	}
 }
+
+func TestScaffoldIfMissing_NoTTYReturnsNilWithoutWritingFile(t *testing.T) {
+	// go test invocation has no TTY on stdin, so missing config path
+	// short-circuits to nil without creating a file.
+	path := filepath.Join(t.TempDir(), "runwisp.toml")
+	require.NoError(t, scaffoldIfMissing(path))
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected no file created, got %v", err)
+	}
+}
+
+func TestScaffoldIfMissing_StatErrorBubblesUp(t *testing.T) {
+	// Create a dir, then point scaffoldIfMissing at a path *through* a regular
+	// file — that yields a non-ErrNotExist Stat error (ENOTDIR).
+	dir := t.TempDir()
+	regular := filepath.Join(dir, "blocker")
+	require.NoError(t, os.WriteFile(regular, []byte("x"), 0600))
+	bad := filepath.Join(regular, "subdir", "runwisp.toml")
+	if err := scaffoldIfMissing(bad); err == nil {
+		t.Fatal("expected ENOTDIR-style error to bubble up")
+	}
+}
+
+func TestConfigLocation_DefaultNameReturnsDir(t *testing.T) {
+	dir := t.TempDir()
+	got := configLocation(filepath.Join(dir, "runwisp.toml"))
+	if got != dir {
+		t.Fatalf("configLocation default name = %q, want dir %q", got, dir)
+	}
+}
+
+func TestConfigLocation_CustomNameReturnsAbsPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom.toml")
+	got := configLocation(path)
+	if got != path {
+		t.Fatalf("configLocation custom = %q, want %q", got, path)
+	}
+}

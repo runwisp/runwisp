@@ -82,6 +82,33 @@ func TestSoftDeletePurger_KeepsRunsInsideTTL(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSoftDeletePurger_StartAndStop(t *testing.T) {
+	logDir := t.TempDir()
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Pre-seed a soft-deleted run with an old deleted_at so the boot drain
+	// reclaims it immediately on Start.
+	runID, logPath := makeRunWithLog(t, db, logDir, time.Now().Add(-time.Hour))
+
+	p := NewSoftDeletePurger(db, logDir)
+	p.Start()
+	t.Cleanup(p.Stop)
+
+	// Boot drain ran synchronously inside Start, so the row should already be gone.
+	_, err = db.GetRun(t.Context(), runID)
+	assert.ErrorIs(t, err, storage.ErrNotFound)
+	_, err = os.Stat(logPath)
+	assert.True(t, os.IsNotExist(err))
+
+	// Calling Stop twice (or after a no-Start construct) must be safe.
+	p.Stop()
+
+	other := NewSoftDeletePurger(db, logDir)
+	assert.NotPanics(t, func() { other.Stop() })
+}
+
 func TestSoftDeletePurger_RemovesExpiredButKeepsFresh(t *testing.T) {
 	logDir := t.TempDir()
 	db, err := storage.New(":memory:")

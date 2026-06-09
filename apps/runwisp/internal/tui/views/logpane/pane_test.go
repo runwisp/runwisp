@@ -698,6 +698,91 @@ func TestLogPane_EffectiveEndPadding_CappedAtHalfVisible(t *testing.T) {
 	assert.LessOrEqual(t, ep, p.VisibleLines()/2)
 }
 
+// ---- JumpToLine ----
+
+func TestLogPane_JumpToLine_InBuffer_CentresAndHighlights(t *testing.T) {
+	p := newTestPane(100_000)
+	p.SetFirstLoadedLine(100)
+	for i := 0; i < 50; i++ {
+		p.AppendLine(int64(100+i), "stdout", "x")
+	}
+	p.Follow = true
+	p.Scroll = 0
+
+	p.JumpToLine(120)
+	if p.HighlightLine != 120 {
+		t.Fatalf("HighlightLine: got %d want 120", p.HighlightLine)
+	}
+	if p.Follow {
+		t.Fatal("Follow should be cleared after jump")
+	}
+	// Scroll should target roughly the middle of the visible window.
+	if p.Scroll < 0 || p.Scroll > p.maxScroll() {
+		t.Fatalf("Scroll out of range: %d (max %d)", p.Scroll, p.maxScroll())
+	}
+}
+
+func TestLogPane_JumpToLine_OutOfBuffer_OnlyRecordsHighlight(t *testing.T) {
+	p := newTestPane(100_000)
+	p.SetFirstLoadedLine(100)
+	for i := 0; i < 5; i++ {
+		p.AppendLine(int64(100+i), "stdout", "y")
+	}
+	prevScroll := p.Scroll
+
+	p.JumpToLine(9999)
+	if p.HighlightLine != 9999 {
+		t.Fatalf("HighlightLine: got %d want 9999", p.HighlightLine)
+	}
+	// Scroll should be unchanged because the line is outside the buffer.
+	if p.Scroll != prevScroll {
+		t.Fatalf("Scroll should be untouched: got %d want %d", p.Scroll, prevScroll)
+	}
+}
+
+func TestLogPane_JumpToLine_ClampsTargetAtZero(t *testing.T) {
+	p := newTestPane(100_000)
+	p.SetFirstLoadedLine(100)
+	for i := 0; i < 50; i++ {
+		p.AppendLine(int64(100+i), "stdout", "z")
+	}
+
+	// Line near the start of the buffer would compute a negative target.
+	p.JumpToLine(101)
+	if p.Scroll != 0 {
+		t.Fatalf("Scroll should be clamped to 0: got %d", p.Scroll)
+	}
+	if p.HighlightLine != 101 {
+		t.Fatalf("HighlightLine: got %d want 101", p.HighlightLine)
+	}
+}
+
+func TestLogPane_JumpToLine_ClampsTargetAtMaxScroll(t *testing.T) {
+	p := newTestPane(100_000)
+	p.SetFirstLoadedLine(0)
+	for i := 0; i < 100; i++ {
+		p.AppendLine(int64(i), "stdout", "w")
+	}
+
+	// Jump near the very end — target before clamping exceeds maxScroll.
+	p.JumpToLine(99)
+	ms := p.maxScroll()
+	if p.Scroll > ms {
+		t.Fatalf("Scroll exceeded maxScroll: %d > %d", p.Scroll, ms)
+	}
+}
+
+// ---- ClearHighlight ----
+
+func TestLogPane_ClearHighlight(t *testing.T) {
+	p := newTestPane(100_000)
+	p.HighlightLine = 42
+	p.ClearHighlight()
+	if p.HighlightLine != 0 {
+		t.Fatalf("HighlightLine: got %d want 0", p.HighlightLine)
+	}
+}
+
 // ---- PrependLines: negative firstLine clamped to zero ----
 
 func TestLogPane_PrependLines_NegativeFirstLineClamped(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logsearch"
 	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
@@ -157,7 +158,12 @@ func (srv *Server) resolveSearchRuns(ctx context.Context, input *LogSearchInput)
 		}}, nil
 	}
 
-	runs, err := srv.db.QueryRuns(ctx, input.TaskName, LogSearchRunPageSize, 0, "", storage.SortColumnCreatedAt, storage.SortDesc, "")
+	runs, err := srv.db.QueryRuns(ctx, storage.RunQuery{
+		Filter:        model.RunFilter{TaskName: input.TaskName},
+		Limit:         LogSearchRunPageSize,
+		SortField:     storage.SortColumnCreatedAt,
+		SortDirection: storage.SortDesc,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list runs")
 	}

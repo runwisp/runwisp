@@ -96,6 +96,42 @@ func TestInfoView_Update_Keys(t *testing.T) {
 	assert.Equal(t, 0, v.scroll)
 }
 
+// TestInfoView_Update_PageKeys covers the pgup/pgdown branches that
+// TestInfoView_Update_Keys skipped. pgup must clamp at zero and pgdown at
+// maxScroll.
+func TestInfoView_Update_PageKeys(t *testing.T) {
+	v := NewInfoView(uikit.StartupInfo{})
+	v.SetSize(80, 20)
+	v.contentHeight = 100 // force maxScroll > 0
+
+	v.scroll = 50
+	v.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	assert.Greater(t, v.scroll, 50, "pgdown should advance scroll")
+
+	v.scroll = 5
+	v.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	assert.Equal(t, 0, v.scroll, "pgup with small scroll should clamp at 0")
+
+	v.scroll = 1000 // beyond maxScroll
+	v.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	assert.Equal(t, v.contentHeight-v.height, v.scroll, "pgdown should clamp at maxScroll")
+}
+
+// TestInfoView_Update_UpDownArrowKeys hits the named arrow key strings, which
+// share their case labels with k/j but distinct rune values would otherwise be
+// uncovered.
+func TestInfoView_Update_UpDownArrowKeys(t *testing.T) {
+	v := NewInfoView(uikit.StartupInfo{})
+	v.SetSize(80, 20)
+	v.contentHeight = 100
+	v.scroll = 10
+
+	v.Update(tea.KeyMsg{Type: tea.KeyUp})
+	assert.Equal(t, 9, v.scroll)
+	v.Update(tea.KeyMsg{Type: tea.KeyDown})
+	assert.Equal(t, 10, v.scroll)
+}
+
 func TestInfoView_SetSize_ClampsScroll(t *testing.T) {
 	v := NewInfoView(uikit.StartupInfo{})
 	v.SetSize(80, 20)

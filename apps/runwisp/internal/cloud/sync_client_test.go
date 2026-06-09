@@ -251,6 +251,46 @@ func TestSyncTasksSendsDirectPayload(t *testing.T) {
 	assert.True(t, result.Success)
 }
 
+func TestSyncTasksHTTPErrorBubblesUpAsCloudError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, _ *http.Request) {
+		resp.WriteHeader(http.StatusUnauthorized)
+		_, _ = resp.Write([]byte(`{"error":"invalid token"}`))
+	}))
+	defer server.Close()
+
+	client := NewTaskSyncClient(server.URL, 5*time.Second)
+	_, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindAuth, ce.Kind)
+	assert.Contains(t, ce.Message, "401")
+}
+
+func TestSyncTasksTransportFailureIsTransient(t *testing.T) {
+	// Unreachable URL — net.Dial fails, surfaced as a transient CloudError.
+	client := NewTaskSyncClient("http://127.0.0.1:1/invalid", 1*time.Second)
+	_, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindTransient, ce.Kind)
+}
+
+func TestSyncTasksInvalidJSONBodyIsValidationError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, _ *http.Request) {
+		resp.Header().Set("Content-Type", "application/json")
+		_, _ = resp.Write([]byte(`{not json`))
+	}))
+	defer server.Close()
+
+	client := NewTaskSyncClient(server.URL, 5*time.Second)
+	_, err := client.SyncTasks(context.Background(), "rt_test", map[string]*model.Task{})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+}
+
 func TestSyncTasksParsesCurrentResponseShape(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 		resp.Header().Set("Content-Type", "application/json")

@@ -105,6 +105,76 @@ func notificationServer(t *testing.T, repo *mockNotificationRepository, hub Noti
 	return s
 }
 
+// --- humaUnreadNotificationCount ---
+
+func TestHumaUnreadNotificationCount_Success(t *testing.T) {
+	repo := new(mockNotificationRepository)
+	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(17), nil)
+
+	s := notificationServer(t, repo, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/notifications/unread-count", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var body struct {
+		Count int64 `json:"count"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, int64(17), body.Count)
+	repo.AssertExpectations(t)
+}
+
+func TestHumaUnreadNotificationCount_RepoError(t *testing.T) {
+	repo := new(mockNotificationRepository)
+	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(0), errors.New("db down"))
+
+	s := notificationServer(t, repo, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/notifications/unread-count", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// --- notifyUpdateToPayload ---
+
+func TestNotifyUpdateToPayload_Created(t *testing.T) {
+	n := storage.Notification{ID: "n1", Title: "hello"}
+	got := notifyUpdateToPayload(inapp.Update{Type: inapp.UpdateTypeCreated, Notification: n, UnreadCount: 5})
+	ev, ok := got.(NotificationCreatedEvent)
+	require.True(t, ok)
+	assert.Equal(t, int64(5), ev.UnreadCount)
+	assert.Equal(t, "n1", ev.Notification.ID)
+}
+
+func TestNotifyUpdateToPayload_Updated(t *testing.T) {
+	n := storage.Notification{ID: "n2"}
+	got := notifyUpdateToPayload(inapp.Update{Type: inapp.UpdateTypeUpdated, Notification: n, UnreadCount: 1})
+	ev, ok := got.(NotificationUpdatedEvent)
+	require.True(t, ok)
+	assert.Equal(t, "n2", ev.Notification.ID)
+}
+
+func TestNotifyUpdateToPayload_UnreadCountChanged(t *testing.T) {
+	got := notifyUpdateToPayload(inapp.Update{Type: inapp.UpdateTypeUnreadCountChanged, UnreadCount: 99})
+	ev, ok := got.(NotificationUnreadCountEvent)
+	require.True(t, ok)
+	assert.Equal(t, int64(99), ev.UnreadCount)
+}
+
+func TestNotifyUpdateToPayload_UnknownTypeFallsBackToUpdated(t *testing.T) {
+	n := storage.Notification{ID: "fallback"}
+	got := notifyUpdateToPayload(inapp.Update{Type: "made-up-type", Notification: n, UnreadCount: 2})
+	ev, ok := got.(NotificationUpdatedEvent)
+	require.True(t, ok)
+	assert.Equal(t, "fallback", ev.Notification.ID)
+}
+
 // --- humaMarkAllNotificationsRead ---
 
 func TestHumaMarkAllNotificationsRead_Success(t *testing.T) {
@@ -359,6 +429,66 @@ func TestNotificationsStream_NoHub_SendsPing(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "event: ping")
+}
+
+// --- sseNotificationsLiveLoop ---
+
+func TestSseNotificationsLiveLoop_DeliversPublishedUpdate(t *testing.T) {
+	hub := inapp.NewHub(8, 0)
+	s, _, _, _ := setupServer(t)
+	s.notifyHub = hub
+
+	received := make(chan sse.Message, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.sseNotificationsLiveLoop(ctx, func(m sse.Message) error {
+			received <- m
+			return nil
+		})
+	}()
+
+	// Subscribe registration races with the goroutine startup; a short sleep
+	// is enough for the goroutine to call Subscribe().
+	require.Eventually(t, func() bool {
+		hub.Publish(inapp.Update{Type: inapp.UpdateTypeUnreadCountChanged, UnreadCount: 3})
+		select {
+		case <-received:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond, "expected at least one message to be sent")
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sseNotificationsLiveLoop did not exit after context cancellation")
+	}
+}
+
+func TestSseNotificationsLiveLoop_ExitsOnContextCancel(t *testing.T) {
+	hub := inapp.NewHub(4, 0)
+	s, _, _, _ := setupServer(t)
+	s.notifyHub = hub
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.sseNotificationsLiveLoop(ctx, func(sse.Message) error { return nil })
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sseNotificationsLiveLoop did not exit after context cancellation")
+	}
 }
 
 // --- List notifications ---

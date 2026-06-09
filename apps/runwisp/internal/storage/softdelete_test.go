@@ -50,7 +50,7 @@ func TestSoftDeleteHidesRunFromReads(t *testing.T) {
 	assert.Equal(t, r2.ID, got.ID)
 
 	// QueryRuns: only the surviving run shows up.
-	runs, err := db.QueryRuns(ctx, "task1", 10, 0, "", SortColumnDefault, SortDirectionDefault, "")
+	runs, err := db.QueryRuns(ctx, RunQuery{Filter: model.RunFilter{TaskName: "task1"}, Limit: 10})
 	require.NoError(t, err)
 	assert.Len(t, runs, 1)
 	assert.Equal(t, r2.ID, runs[0].ID)
@@ -162,6 +162,32 @@ func TestPurgeExpiredSoftDeletesHardDeletesPastTTL(t *testing.T) {
 	assert.Empty(t, restored)
 }
 
+func TestRestoreRunsMatchAllReversesSoftDelete(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	r1 := newTerminalRun("task1")
+	r2 := newTerminalRun("task1")
+	r3 := newTerminalRun("task2")
+	for _, r := range []*model.Run{r1, r2, r3} {
+		require.NoError(t, db.CreateRun(ctx, r))
+	}
+
+	// Soft-delete all three runs.
+	_, err := db.SoftDeleteRuns(ctx, model.RunSelector{IDs: []string{r1.ID, r2.ID, r3.ID}}, time.Now())
+	require.NoError(t, err)
+
+	// MatchAll for task1 restores both r1 and r2 (task2's r3 is untouched).
+	restored, err := db.RestoreRuns(ctx, model.RunSelector{MatchAll: true, Filter: model.RunFilter{TaskName: "task1"}})
+	require.NoError(t, err)
+	require.Len(t, restored, 2)
+
+	// r3 is still soft-deleted.
+	_, err = db.GetRun(ctx, r3.ID)
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
 func TestPurgeAllOnBoot(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)
@@ -219,6 +245,51 @@ func TestResolveSelectorIDsHonorsStatusFilter(t *testing.T) {
 	require.NoError(t, err)
 	refs, err = db.ResolveSelectorIDs(ctx,
 		model.RunSelector{MatchAll: true, Filter: model.RunFilter{TaskName: "task1"}},
+		"",
+	)
+	require.NoError(t, err)
+	require.Len(t, refs, 1)
+	assert.Equal(t, running.ID, refs[0].ID)
+}
+
+func TestResolveSelectorIDsByExplicitIDs(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	terminal := newTerminalRun("task1")
+	running := &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    "task1",
+		Status:      model.PhaseRunning,
+		TriggeredBy: model.TriggeredByAPI,
+		CreatedAt:   time.Now(),
+	}
+	require.NoError(t, db.CreateRun(ctx, terminal))
+	require.NoError(t, db.CreateRun(ctx, running))
+
+	// Explicit IDs path without a status filter resolves both rows.
+	refs, err := db.ResolveSelectorIDs(ctx,
+		model.RunSelector{IDs: []string{terminal.ID, running.ID}},
+		"",
+	)
+	require.NoError(t, err)
+	assert.Len(t, refs, 2)
+
+	// Status filter narrows the explicit-ID set.
+	refs, err = db.ResolveSelectorIDs(ctx,
+		model.RunSelector{IDs: []string{terminal.ID, running.ID}},
+		string(model.PhaseRunning),
+	)
+	require.NoError(t, err)
+	require.Len(t, refs, 1)
+	assert.Equal(t, running.ID, refs[0].ID)
+
+	// Soft-deleted rows drop out of the IDs path too.
+	_, err = db.SoftDeleteRuns(ctx, model.RunSelector{IDs: []string{terminal.ID}}, time.Now())
+	require.NoError(t, err)
+	refs, err = db.ResolveSelectorIDs(ctx,
+		model.RunSelector{IDs: []string{terminal.ID, running.ID}},
 		"",
 	)
 	require.NoError(t, err)

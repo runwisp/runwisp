@@ -57,3 +57,37 @@ func TestCountTailLines_WithLines(t *testing.T) {
 	got := CountTailLines(logPath)
 	assert.Equal(t, int64(5), got)
 }
+
+// TestWriteLogMeta_RoundTripsViaReadLogMeta covers the happy path of
+// WriteLogMeta + ReadLogMeta, and incidentally proves the file is created at
+// the .meta sidecar path next to the log.
+func TestWriteLogMeta_RoundTripsViaReadLogMeta(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "run.log")
+	meta := LogMeta{RotatedLines: 42, RotatedBytes: 4096, FinalLines: 10, Finalized: true}
+	WriteLogMeta(logPath, meta)
+
+	got := ReadLogMeta(logPath)
+	assert.Equal(t, meta, got)
+}
+
+// TestWriteLogMeta_FailedWriteDoesNotPanic exercises the os.WriteFile error
+// branch by pointing the log path inside a non-existent directory. The
+// function should swallow the error and log a warning rather than panic.
+func TestWriteLogMeta_FailedWriteDoesNotPanic(t *testing.T) {
+	// Build a path whose parent directory does not exist — WriteFile rejects it.
+	bogus := filepath.Join(t.TempDir(), "nonexistent-dir", "run.log")
+	WriteLogMeta(bogus, LogMeta{RotatedLines: 1})
+	// Nothing to assert beyond "didn't panic" — slog warning is fire-and-forget.
+}
+
+// TestReadLogMeta_CorruptFileReturnsZeroValue exercises the json.Unmarshal
+// failure branch by writing garbage bytes to the meta path.
+func TestReadLogMeta_CorruptFileReturnsZeroValue(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "run.log")
+	require.NoError(t, os.WriteFile(MetaPath(logPath), []byte("not-json"), 0644))
+
+	got := ReadLogMeta(logPath)
+	assert.Equal(t, LogMeta{}, got, "corrupt meta must yield zero value")
+}

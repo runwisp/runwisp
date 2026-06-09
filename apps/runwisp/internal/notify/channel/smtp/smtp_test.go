@@ -273,6 +273,102 @@ func TestSMTP_IDAndClose(t *testing.T) {
 	assert.Equal(t, "smtp:ops", ch.String())
 }
 
+func TestSMTP_BuildMsg_IncludesCcBccReplyTo(t *testing.T) {
+	fake := &fakeSender{}
+	ch := mkChannel(t, fake, func(c *Config) {
+		c.CC = []string{"cc1@example.test", "cc2@example.test"}
+		c.BCC = []string{"bcc@example.test"}
+		c.ReplyTo = "noreply@example.test"
+	})
+	require.NoError(t, ch.Execute(context.Background(), failingEvent()))
+
+	raw := fake.captured.String()
+	assert.Contains(t, raw, "Cc:")
+	assert.Contains(t, raw, "cc1@example.test")
+	assert.Contains(t, raw, "cc2@example.test")
+	// BCC is intentionally NOT serialized to the wire by go-mail.
+	assert.Contains(t, raw, "Reply-To:")
+	assert.Contains(t, raw, "noreply@example.test")
+	assert.Contains(t, raw, "User-Agent: runwisp-notify/1")
+	assert.Contains(t, raw, "Auto-Submitted: auto-generated")
+}
+
+func TestSMTP_BuildMsg_RejectsCRLFInSubject(t *testing.T) {
+	// We can't easily inject a CRLF subject via the renderer, so call the
+	// private buildMsg helper directly and verify the guard fires.
+	ch := mkChannel(t, &fakeSender{})
+	_, err := ch.buildMsg("legit subject\r\nBcc: attacker@evil", "<p>x</p>", "x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "subject")
+	assert.Contains(t, err.Error(), "CR or LF")
+}
+
+func TestSMTP_BuildMsg_RejectsCRLFInReplyTo(t *testing.T) {
+	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
+		c.ReplyTo = "noreply@example.test\r\nBcc: attacker@evil"
+	})
+	_, err := ch.buildMsg("ok", "<p>x</p>", "x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reply-to")
+}
+
+func TestSMTP_BuildMsg_RejectsCRLFInRecipients(t *testing.T) {
+	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
+		c.Recipients = []string{"good@example.test", "bad@example.test\r\nBcc: x"}
+	})
+	_, err := ch.buildMsg("ok", "<p>x</p>", "x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "to")
+}
+
+func TestSMTP_RejectCRLFEdgeCases(t *testing.T) {
+	require.NoError(t, rejectCRLF("subject", ""))
+	require.NoError(t, rejectCRLF("subject", "no crlf here"))
+	require.Error(t, rejectCRLF("subject", "with\rCR"))
+	require.Error(t, rejectCRLF("subject", "with\nLF"))
+}
+
+func TestSMTP_Dial_PrefersInjectedClient(t *testing.T) {
+	fake := &fakeSender{}
+	called := false
+	ch := mkChannel(t, fake, func(c *Config) {
+		c.NewClient = func(_ string, _ int, _ string, _ bool, _, _ string) (sender, error) {
+			called = true
+			return fake, nil
+		}
+	})
+	s, err := ch.dial()
+	require.NoError(t, err)
+	assert.NotNil(t, s)
+	assert.True(t, called, "injected client must be preferred")
+}
+
+func TestSMTP_Dial_FallsBackToDefaultClient(t *testing.T) {
+	// With newClient unset, dial() exercises defaultClient. We don't actually
+	// send anything — just confirm the constructor returns a non-nil client.
+	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
+		c.NewClient = nil
+		c.Username = "user"
+		c.Password = "pw"
+		c.TLSMode = "starttls"
+	})
+	s, err := ch.dial()
+	require.NoError(t, err)
+	assert.NotNil(t, s)
+}
+
+func TestSMTP_DefaultClient_ImplicitTLSWithSkipVerify(t *testing.T) {
+	s, err := defaultClient("smtp.example.test", 465, "implicit", true, "user", "pw")
+	require.NoError(t, err)
+	assert.NotNil(t, s)
+}
+
+func TestSMTP_DefaultClient_NoTLSNoAuth(t *testing.T) {
+	s, err := defaultClient("smtp.example.test", 25, "none", false, "", "")
+	require.NoError(t, err)
+	assert.NotNil(t, s)
+}
+
 func TestSMTP_New_ValidatesConfig(t *testing.T) {
 	r := newTestRenderer(t)
 	_, err := New(Config{ID: "x", Renderer: r, Recipients: []string{"a@b"}})
@@ -289,4 +385,103 @@ func TestSMTP_New_ValidatesConfig(t *testing.T) {
 
 	_, err = New(Config{ID: "x", Host: "h", From: "f@b", Recipients: []string{"a@b"}, Renderer: r})
 	require.NoError(t, err)
+}
+
+// TestSMTP_New_LogsWarningWhenTLSSkipVerify covers the tlsSkipVerify warning
+// branch in New (line 131-134).
+func TestSMTP_New_LogsWarningWhenTLSSkipVerify(t *testing.T) {
+	r := newTestRenderer(t)
+	c, err := New(Config{
+		ID: "x", Host: "h", From: "f@b", Recipients: []string{"a@b"},
+		Renderer: r, TLSSkipVerify: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, c)
+}
+
+// rendererFunc adapts a plain Render function into the render.Renderer
+// interface, letting tests inject success or failure outcomes.
+type rendererFunc func(*notify.Event) (render.RenderedMessage, error)
+
+func (f rendererFunc) Render(ev *notify.Event) (render.RenderedMessage, error) { return f(ev) }
+
+// TestSMTP_Execute_RenderErrorPropagates covers the render-error branch.
+func TestSMTP_Execute_RenderErrorPropagates(t *testing.T) {
+	fake := &fakeSender{}
+	ch := mkChannel(t, fake, func(c *Config) {
+		c.Renderer = rendererFunc(func(_ *notify.Event) (render.RenderedMessage, error) {
+			return render.RenderedMessage{}, errors.New("renderfail")
+		})
+	})
+	err := ch.Execute(context.Background(), failingEvent())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "render")
+}
+
+// TestSMTP_Execute_EmptyTitleFallsBackToDefaultSubject covers the
+// "subject = \"RunWisp notification\"" fallback branch.
+func TestSMTP_Execute_EmptyTitleFallsBackToDefaultSubject(t *testing.T) {
+	fake := &fakeSender{}
+	ch := mkChannel(t, fake, func(c *Config) {
+		c.Renderer = rendererFunc(func(_ *notify.Event) (render.RenderedMessage, error) {
+			return render.RenderedMessage{Title: "", Body: []byte("<p>hi</p>")}, nil
+		})
+	})
+	require.NoError(t, ch.Execute(context.Background(), failingEvent()))
+	assert.Contains(t, fake.captured.String(), "Subject: RunWisp notification")
+}
+
+// TestSMTP_BuildMsg_RejectsBadFromAddress triggers the gomail rejection branch
+// at m.From().
+func TestSMTP_BuildMsg_RejectsBadFromAddress(t *testing.T) {
+	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
+		c.From = "this is not an address"
+	})
+	_, err := ch.buildMsg("ok", "<p>x</p>", "x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "from")
+}
+
+// TestSMTP_BuildMsg_RejectsBadToAddress triggers the gomail rejection branch
+// at m.To().
+func TestSMTP_BuildMsg_RejectsBadToAddress(t *testing.T) {
+	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
+		c.Recipients = []string{"not-an-email"}
+	})
+	_, err := ch.buildMsg("ok", "<p>x</p>", "x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "to")
+}
+
+// TestSMTP_BuildMsg_RejectsBadCcAddress triggers the gomail rejection branch
+// at m.Cc().
+func TestSMTP_BuildMsg_RejectsBadCcAddress(t *testing.T) {
+	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
+		c.CC = []string{"not-an-email"}
+	})
+	_, err := ch.buildMsg("ok", "<p>x</p>", "x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cc")
+}
+
+// TestSMTP_BuildMsg_RejectsBadBccAddress triggers the gomail rejection branch
+// at m.Bcc().
+func TestSMTP_BuildMsg_RejectsBadBccAddress(t *testing.T) {
+	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
+		c.BCC = []string{"not-an-email"}
+	})
+	_, err := ch.buildMsg("ok", "<p>x</p>", "x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bcc")
+}
+
+// TestSMTP_BuildMsg_RejectsBadReplyToAddress triggers the gomail rejection
+// branch at m.ReplyTo().
+func TestSMTP_BuildMsg_RejectsBadReplyToAddress(t *testing.T) {
+	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
+		c.ReplyTo = "not-an-email"
+	})
+	_, err := ch.buildMsg("ok", "<p>x</p>", "x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reply-to")
 }

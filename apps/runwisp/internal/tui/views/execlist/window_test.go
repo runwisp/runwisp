@@ -4,9 +4,14 @@
 package execlist
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -250,6 +255,63 @@ func TestItem_AtWindowOffset(t *testing.T) {
 	}
 }
 
+// --- NeedsFetch with a non-nil client (real branch coverage) ---
+
+func newWindowWithClient(t *testing.T) *ExecWindow {
+	t.Helper()
+	// A real apiclient.Client is sufficient — NeedsFetch never calls it.
+	c := apiclient.New("http://127.0.0.1:0", "")
+	return NewExecWindow(c)
+}
+
+func TestNeedsFetch_EmptyItemsTriggersFetch(t *testing.T) {
+	w := newWindowWithClient(t)
+	if !w.NeedsFetch(0, 10) {
+		t.Fatal("expected NeedsFetch=true when window has no items")
+	}
+}
+
+func TestNeedsFetch_NearBottomTriggersFetch(t *testing.T) {
+	w := newWindowWithClient(t)
+	// Window of 50 items starting at 0; total 200. Viewport scrolled near bottom.
+	items := make([]uikit.ExecListItem, 50)
+	w.ApplyFetch(items, 0, 200)
+	// scroll=30 + vpH=20 = 50 (= windowEnd) → within margin, total > windowEnd.
+	if !w.NeedsFetch(30, 20) {
+		t.Fatal("expected NeedsFetch=true near bottom of window")
+	}
+}
+
+func TestNeedsFetch_NearTopTriggersFetch(t *testing.T) {
+	w := newWindowWithClient(t)
+	items := make([]uikit.ExecListItem, 50)
+	// windowStart=100, so scrolling near top should trigger a fetch.
+	w.ApplyFetch(items, 100, 200)
+	if !w.NeedsFetch(105, 10) {
+		t.Fatal("expected NeedsFetch=true near top when windowStart > 0")
+	}
+}
+
+func TestNeedsFetch_MiddleNoFetch(t *testing.T) {
+	w := newWindowWithClient(t)
+	items := make([]uikit.ExecListItem, 200)
+	w.ApplyFetch(items, 0, 200)
+	// Viewport firmly inside the window — should NOT trigger a fetch.
+	if w.NeedsFetch(80, 20) {
+		t.Fatal("expected NeedsFetch=false when viewport is mid-window")
+	}
+}
+
+func TestNeedsFetch_NearBottomButAtTotal_NoFetch(t *testing.T) {
+	w := newWindowWithClient(t)
+	items := make([]uikit.ExecListItem, 50)
+	// totalCount equals window end — nothing more to load.
+	w.ApplyFetch(items, 0, 50)
+	if w.NeedsFetch(30, 20) {
+		t.Fatal("expected NeedsFetch=false when windowEnd == totalCount")
+	}
+}
+
 func TestNeedsFetch_EmptyItems(t *testing.T) {
 	// With nil client, NeedsFetch must always return false regardless of items.
 	w := NewExecWindow(nil)
@@ -350,6 +412,62 @@ func TestUpsertRun_NonZeroWindowStart_NotPrepended(t *testing.T) {
 	// The new item must not appear in the window (window starts at 10).
 	if item := w.Item(0); item != nil {
 		t.Fatalf("expected nil at index 0 (before window start), got %+v", item)
+	}
+}
+
+func TestFetchAroundCmd_RunsRequest_ReturnsItemsAndTotal(t *testing.T) {
+	resp := server.RunsResponseBody{
+		Runs:  []model.Run{{ID: "r-1", TaskName: "t"}, {ID: "r-2", TaskName: "t"}},
+		Total: 100,
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	w := NewExecWindow(apiclient.New(srv.URL, ""))
+	fn := w.FetchAroundCmd(50, 20)
+	if fn == nil {
+		t.Fatal("expected non-nil closure")
+	}
+	items, offset, total, err := fn()
+	if err != nil {
+		t.Fatalf("FetchAroundCmd closure: %v", err)
+	}
+	if total != 100 {
+		t.Fatalf("total = %d, want 100", total)
+	}
+	if offset != 50-windowSize/2 {
+		// Offset should be `scroll - windowSize/2` (50-100 = -50, clamped to 0).
+		// scroll=50, windowSize/2=100 → -50 → 0.
+		if offset != 0 {
+			t.Fatalf("offset = %d, want 0 (clamped)", offset)
+		}
+	}
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2", len(items))
+	}
+}
+
+func TestFetchAroundCmd_ClientErrorResetsLoading(t *testing.T) {
+	// Server that returns 500.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	w := NewExecWindow(apiclient.New(srv.URL, ""))
+	fn := w.FetchAroundCmd(0, 10)
+	if fn == nil {
+		t.Fatal("expected non-nil closure")
+	}
+	_, _, _, err := fn()
+	if err == nil {
+		t.Fatal("expected error from failing server")
+	}
+	// loading must have been reset so the next FetchAroundCmd returns non-nil.
+	if w.FetchAroundCmd(0, 10) == nil {
+		t.Fatal("expected non-nil closure after error reset loading")
 	}
 }
 

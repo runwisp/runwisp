@@ -236,6 +236,62 @@ func TestHandleLaunchTicket_NonLoopbackRejected(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// TestHandleCreateLaunchTicket_LoopbackSucceeds covers the happy path: a
+// loopback request authenticated via the local-trusted middleware mints a
+// fresh single-use launch ticket.
+func TestHandleCreateLaunchTicket_LoopbackSucceeds(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest("POST", "/api/auth/launch-ticket", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	// The protected-routes middleware allows local-trusted requests without
+	// JWT, so we must mark this one as such.
+	req = req.WithContext(context.WithValue(req.Context(), localTrustedKey{}, true))
+
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	assert.NotEmpty(t, body["ticket"], "expected a non-empty ticket field in response")
+}
+
+// TestHandleCreateLaunchTicket_NonLoopbackRejected covers the rejection
+// branch — a request from a non-local origin must be forbidden even after
+// passing the JWT gate.
+func TestHandleCreateLaunchTicket_NonLoopbackRejected(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	// Mint a valid JWT cookie via the launch path.
+	ticket, err := s.auth.CreateLaunchTicket()
+	require.NoError(t, err)
+	launchReq := httptest.NewRequest("GET", "/api/auth/launch?ticket="+ticket, nil)
+	launchReq.RemoteAddr = "127.0.0.1:54321"
+	launchW := httptest.NewRecorder()
+	s.router.ServeHTTP(launchW, launchReq)
+	require.Equal(t, http.StatusSeeOther, launchW.Code)
+	var authCookie *http.Cookie
+	for _, c := range launchW.Result().Cookies() {
+		if c.Name == auth.CookieName {
+			authCookie = c
+			break
+		}
+	}
+	require.NotNil(t, authCookie)
+
+	// Re-use the JWT cookie but from a non-loopback address.
+	req := httptest.NewRequest("POST", "/api/auth/launch-ticket", nil)
+	req.RemoteAddr = "192.168.1.100:54321"
+	req.AddCookie(authCookie)
+
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"non-loopback origin must be rejected even with a valid JWT cookie")
+}
+
 func TestHandleLaunchTicket_MissingTicket(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 

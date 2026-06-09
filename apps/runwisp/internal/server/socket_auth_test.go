@@ -82,7 +82,7 @@ func TestSocketServer_EndToEnd(t *testing.T) {
 	s, repo, _, _ := setupServerWithSocket(t)
 
 	runs := []model.Run{}
-	repo.On("QueryRuns", mock.Anything, "", 50, 0, "", storage.SortColumnDefault, storage.SortDirectionDefault, "").Return(runs, nil)
+	repo.On("QueryRuns", mock.Anything, storage.RunQuery{Limit: 50}).Return(runs, nil)
 	repo.On("CountRunsFiltered", mock.Anything, "", "", "").Return(int64(0), nil)
 
 	// --- TCP path: no JWT, no local flag → 401 ---

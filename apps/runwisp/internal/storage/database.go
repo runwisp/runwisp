@@ -6,11 +6,10 @@ package storage
 import (
 	"context"
 	"database/sql"
-	_ "embed"
+	_ "embed" // embeds schema.sql into schemaSQL via the //go:embed directive below
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
@@ -42,7 +41,7 @@ type RunRepository interface {
 	GetRunByExternalExecutionID(ctx context.Context, externalExecutionID string) (*model.Run, error)
 	CountRuns(ctx context.Context, taskName string) (int64, error)
 	CountRunsFiltered(ctx context.Context, status, taskName, searchQuery string) (int64, error)
-	QueryRuns(ctx context.Context, taskName string, limit, offset int, status string, sortField SortColumn, sortDirection SortDirection, searchQuery string) ([]model.Run, error)
+	QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error)
 	DeleteRun(ctx context.Context, id string) error
 	DeleteOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error)
 	MarkCrashedRuns(ctx context.Context) (int64, error)
@@ -121,33 +120,6 @@ func (db *SQLiteDatabase) UpdateRun(ctx context.Context, run *model.Run) error {
 	return db.q.UpdateRun(ctx, runToUpdateParams(run))
 }
 
-func scanRun(scanner interface {
-	Scan(dest ...any) error
-}) (*model.Run, error) {
-	var run model.Run
-	err := scanner.Scan(
-		&run.ID, &run.ExternalExecutionID, &run.TaskName, &run.Status, &run.EndReason, &run.ExitCode,
-		&run.StartAt, &run.EndAt, &run.TriggeredBy, &run.CreatedAt, &run.RetryAttempt, &run.RetryOfRunID, &run.InstanceIndex,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &run, nil
-}
-
-func collectRows[T any](rows *sql.Rows, scan func(interface{ Scan(...any) error }) (*T, error)) ([]T, error) {
-	defer rows.Close()
-	var out []T
-	for rows.Next() {
-		item, err := scan(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *item)
-	}
-	return out, rows.Err()
-}
-
 func (db *SQLiteDatabase) GetRun(ctx context.Context, id string) (*model.Run, error) {
 	row, err := db.q.GetRun(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -202,61 +174,24 @@ func (db *SQLiteDatabase) CountRunsFiltered(ctx context.Context, status, taskNam
 	})
 }
 
-// runColumns is the canonical column list QueryRuns reads. Kept inline here
-// because QueryRuns is the last hand-written read path — every other full-row
-// read goes through sqlc-generated scans that name the columns themselves.
-const runColumns = `id, external_execution_id, task_name, status, end_reason, exit_code,
-start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index`
-
-func (db *SQLiteDatabase) QueryRuns(ctx context.Context, taskName string, limit, offset int, status string, sortField SortColumn, sortDirection SortDirection, searchQuery string) ([]model.Run, error) {
-	var (
-		where []string
-		args  []any
-	)
-	add := func(clause string, vals ...any) {
-		where = append(where, clause)
-		args = append(args, vals...)
+// QueryRuns dispatches to one of 12 sqlc-generated queries, picked by
+// (q.SortField, q.SortDirection). Each underlying query is a constant SQL
+// string emitted by sqlc, so the call sites are static — no hand-built
+// SQL leaks into the daemon. All 12 row types are structurally identical
+// (the SELECT list is shared); they're collapsed onto QueryRunsCreatedAtAscRow
+// via Go's struct conversion for a single conversion path to model.Run.
+func (db *SQLiteDatabase) QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error) {
+	filter := buildRunFilterArgs(q.Filter)
+	params := sqlcdb.QueryRunsCreatedAtAscParams{
+		EndReasonFilter:   filter.EndReasonFilter,
+		StatusPhaseFilter: filter.StatusPhaseFilter,
+		TaskNameFilter:    filter.TaskNameFilter,
+		SearchFilter:      filter.SearchFilter,
+		SearchPattern:     filter.SearchPattern,
+		RowsLimit:         int64(q.Limit),
+		RowsOffset:        int64(q.Offset),
 	}
-
-	add("deleted_at IS NULL")
-	if taskName != "" {
-		add("task_name = ?", taskName)
-	}
-	if status != "" {
-		switch model.EndReason(status) {
-		case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped,
-			model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped,
-			model.ReasonLogOverflow:
-			add("end_reason = ?", status)
-		default:
-			add("status = ?", status)
-		}
-	}
-	if searchQuery != "" {
-		s := searchQuery
-		if len(s) > MaxSearchQueryLength {
-			s = s[:MaxSearchQueryLength]
-		}
-		s = strings.ReplaceAll(s, "%", "")
-		s = strings.ReplaceAll(s, "_", "")
-		pattern := "%" + s + "%"
-		add("(task_name LIKE ? OR id LIKE ?)", pattern, pattern)
-	}
-
-	order, err := buildOrderClause(sortField, sortDirection)
-	if err != nil {
-		return nil, err
-	}
-
-	query := "SELECT " + runColumns + " FROM runs WHERE " + strings.Join(where, " AND ") +
-		" ORDER BY " + order + " LIMIT ? OFFSET ?"
-	args = append(args, limit, offset)
-
-	rows, err := db.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	return collectRows(rows, scanRun)
+	return dispatchQueryRuns(ctx, db.q, q.SortField, q.SortDirection, params)
 }
 
 // DeleteRun hard-deletes a single run by id, bypassing the soft-delete
@@ -376,7 +311,7 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 			TaskNameFilter:    args.TaskNameFilter,
 			SearchFilter:      args.SearchFilter,
 			SearchPattern:     args.SearchPattern,
-			BulkStatusFilter:  statusFilter,
+			BulkStatusFilter:  nullable(statusFilter),
 			ExceptIds:         exceptIDsForSlice(sel.ExceptIDs),
 		})
 		if err != nil {
@@ -390,7 +325,7 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 	}
 	rows, err := db.q.ResolveSelectorIDsByIDs(ctx, sqlcdb.ResolveSelectorIDsByIDsParams{
 		Ids:              sel.IDs,
-		BulkStatusFilter: statusFilter,
+		BulkStatusFilter: nullable(statusFilter),
 	})
 	if err != nil {
 		return nil, err
