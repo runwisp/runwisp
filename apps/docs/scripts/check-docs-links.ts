@@ -68,7 +68,7 @@ function getFrontmatterField(src: string, field: string): string | undefined {
     const end = src.indexOf("\n---", 3);
     if (end < 0) return undefined;
     const block = src.slice(0, end);
-    const re = new RegExp(`^${field}:\\s*(.+?)\\s*$`, "m");
+    const re = new RegExp(String.raw`^${field}:\s*(.+?)\s*$`, "m");
     const m = re.exec(block);
     if (!m) return undefined;
     const raw = m[1];
@@ -87,7 +87,7 @@ function buildLineOffsets(src: string): number[] {
     let line = 1;
     for (let i = 0; i < src.length; i++) {
         offsets.push(line);
-        if (src.charCodeAt(i) === 10) line++;
+        if (src.codePointAt(i) === 10) line++;
     }
     offsets.push(line);
     return offsets;
