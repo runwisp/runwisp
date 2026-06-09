@@ -12,6 +12,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify/channel"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/internal/notify/coalesce"
@@ -242,6 +243,36 @@ func TestInitNotify_InappRouteWiresHubAndService(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, bundle.Service, "expected Service when inapp route is wired")
 	require.NotNil(t, bundle.Hub, "expected Hub when inapp route is wired")
+}
+
+func TestMutedMissedTasks(t *testing.T) {
+	muteFalse := false
+	muteTrue := true
+
+	t.Run("nil when nothing is muted", func(t *testing.T) {
+		tasks := []model.Task{
+			{Name: "a"},                            // omitted → notifies
+			{Name: "b", NotifyOnMissed: &muteTrue}, // explicit true → notifies
+		}
+		assert.Nil(t, mutedMissedTasks(tasks),
+			"the common case must allocate nothing")
+	})
+
+	t.Run("collects only the explicit-false tasks", func(t *testing.T) {
+		tasks := []model.Task{
+			{Name: "loud"},
+			{Name: "quiet", NotifyOnMissed: &muteFalse},
+			{Name: "also-quiet", NotifyOnMissed: &muteFalse},
+		}
+		muted := mutedMissedTasks(tasks)
+		require.Len(t, muted, 2)
+		_, hasQuiet := muted["quiet"]
+		_, hasAlsoQuiet := muted["also-quiet"]
+		_, hasLoud := muted["loud"]
+		assert.True(t, hasQuiet)
+		assert.True(t, hasAlsoQuiet)
+		assert.False(t, hasLoud, "a notifying task must not be muted")
+	})
 }
 
 func TestRoutesReferenceInapp(t *testing.T) {

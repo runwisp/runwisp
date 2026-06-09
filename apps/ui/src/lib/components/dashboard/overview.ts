@@ -34,6 +34,7 @@ const ATTENTION_STATUSES = new Set<RunStatus>([
     "stopped",
     "timeout",
     "log_overflow",
+    "missed",
 ]);
 const TASK_STATE_ORDER: Record<OverviewTaskState, number> = {
     attention: 0,

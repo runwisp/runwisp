@@ -585,7 +585,7 @@ export interface components {
          * @description Why a run ended. Set when status=ended.
          * @enum {string}
          */
-        EndReason: "success" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped";
+        EndReason: "success" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped" | "missed";
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -973,6 +973,11 @@ export interface components {
              * @description Timestamp of most recent failure
              */
             last_failure?: string;
+            /**
+             * Format: int64
+             * @description Number of scheduled runs missed during downtime
+             */
+            missed: number;
             /**
              * Format: int64
              * @description Number of successful runs

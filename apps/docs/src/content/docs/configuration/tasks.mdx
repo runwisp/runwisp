@@ -235,12 +235,13 @@ compose file as observable RunWisp services, see [`[compose.*]`](/configuration/
 
 ## Notifications
 
-| Key                 | Default  | What it does                                                           |
-| ------------------- | -------- | ---------------------------------------------------------------------- |
-| `notify_on_failure` | _(none)_ | Notifier IDs to alert on `run.failed` / `run.timeout` / `run.crashed`. |
-| `notify_on_success` | _(none)_ | Notifier IDs to alert on `run.succeeded`.                              |
+| Key                 | Default  | What it does                                                                                                                                                                                                              |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notify_on_failure` | _(none)_ | Notifier IDs to alert on `run.failed` / `run.timeout` / `run.crashed`.                                                                                                                                                    |
+| `notify_on_success` | _(none)_ | Notifier IDs to alert on `run.succeeded`.                                                                                                                                                                                 |
+| `notify_on_missed`  | `true`   | Whether a [missed scheduled run](/concepts/scheduling/#alerting-on-missed-runs) alerts. It rides `notify_on_failure`'s channels automatically; set `false` to silence the alert (the `missed` run row is still recorded). |
 
-Each entry is a notifier `id` you've declared in a
+Each entry of `notify_on_failure` / `notify_on_success` is a notifier `id` you've declared in a
 [`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
 block. Whatever's listed in `[notify] global_notifiers` (default
 `["inapp"]`) gets tacked on automatically — set `global_notifiers = []`

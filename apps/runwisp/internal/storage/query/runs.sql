@@ -150,11 +150,15 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: GetRunSummary :one
+-- 'missed' is counted on its own and deliberately excluded from 'failed':
+-- a missed run never executed, so folding it into the execution-failure
+-- count (and last_failure timestamp) would skew failure metrics.
 SELECT
   CAST(COUNT(*) AS INTEGER) AS total,
   CAST(COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
   CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow')
                          THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed,
+  CAST(COALESCE(SUM(CASE WHEN end_reason = 'missed' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missed,
   (SELECT end_at FROM runs
    WHERE end_reason IN ('failed','crashed','timeout','log_overflow')
      AND deleted_at IS NULL

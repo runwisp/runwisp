@@ -151,6 +151,7 @@ func (db *SQLiteDatabase) GetRunSummary(ctx context.Context) (*model.RunSummary,
 		Total:       row.Total,
 		Success:     row.Success,
 		Failed:      row.Failed,
+		Missed:      row.Missed,
 		LastFailure: row.EndAt,
 	}, nil
 }

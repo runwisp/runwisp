@@ -59,6 +59,14 @@ const (
 	// could clean up. Distinct from ReasonStopped (which is operator-initiated
 	// per-run) and ReasonCrashed (which is reserved for unrecoverable kills).
 	ReasonDaemonStopped EndReason = "daemon_stopped"
+	// ReasonMissed marks a scheduled cron tick (or a run of consecutive ticks)
+	// that never executed because the daemon was down during its window. It is
+	// detected at restart from persisted history, not at the time of the miss —
+	// a stopped process cannot observe its own absence. The row is a browsable
+	// audit record of the gap, recorded independently of the catch_up re-run
+	// policy (even catch_up = "skip" records it). Exit code is conventionally
+	// -1, like other never-executed reasons.
+	ReasonMissed EndReason = "missed"
 )
 
 // AllEndReasons is the canonical, ordered list of end-reason values. The order
@@ -76,6 +84,7 @@ var AllEndReasons = []EndReason{
 	ReasonQueueFull,
 	ReasonDSTSkipped,
 	ReasonDaemonStopped,
+	ReasonMissed,
 }
 
 const endReasonSchemaName = "EndReason"
@@ -172,12 +181,14 @@ func (r *Run) End(reason EndReason, exitCode int, endAt time.Time) {
 // IsRetryable reports whether a run ended with a reason that warrants
 // re-running it. Skipped runs are excluded — the policy already decided
 // the firing was redundant; another retry just races the original again.
+// Missed runs are excluded too — they never executed, so there is no failed
+// attempt to retry; catch_up already governs whether the tick is re-fired.
 func (r *Run) IsRetryable() bool {
 	if r.Status != PhaseEnded || r.EndReason == nil {
 		return false
 	}
 	switch *r.EndReason {
-	case ReasonSuccess, ReasonSkipped:
+	case ReasonSuccess, ReasonSkipped, ReasonMissed:
 		return false
 	default:
 		return true
@@ -201,5 +212,6 @@ type RunSummary struct {
 	Total       int64      `json:"total" doc:"Total number of runs"`
 	Success     int64      `json:"success" doc:"Number of successful runs"`
 	Failed      int64      `json:"failed" doc:"Number of failed runs"`
+	Missed      int64      `json:"missed" doc:"Number of scheduled runs missed during downtime"`
 	LastFailure *time.Time `json:"last_failure,omitempty" doc:"Timestamp of most recent failure"`
 }

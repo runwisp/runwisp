@@ -28,6 +28,12 @@ type TaskRunner interface {
 	// executor started — currently used by the scheduler to log DST wall-clock
 	// duplicates with end_reason = "dst_skipped".
 	RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error
+	// RecordMissedRun persists one terminal end_reason = "missed" run as the
+	// browsable record of a downtime gap, then publishes a failure-level event
+	// carrying reason as the human sentence. scheduledAt is the latest missed
+	// tick and becomes the row's CreatedAt — the anchor that prevents
+	// re-alerting on the next restart. Used by missed-tick catch-up.
+	RecordMissedRun(taskName string, scheduledAt time.Time, reason string) error
 	// GetActiveRunCount reports how many runs for the given task are currently
 	// in flight. Unknown tasks return 0.
 	GetActiveRunCount(taskName string) int

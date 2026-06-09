@@ -176,7 +176,8 @@
           "log_overflow",
           "queue_full",
           "dst_skipped",
-          "daemon_stopped"
+          "daemon_stopped",
+          "missed"
         ],
         "type": "string"
       },
@@ -1007,6 +1008,11 @@
             "format": "date-time",
             "type": "string"
           },
+          "missed": {
+            "description": "Number of scheduled runs missed during downtime",
+            "format": "int64",
+            "type": "integer"
+          },
           "success": {
             "description": "Number of successful runs",
             "format": "int64",
@@ -1021,7 +1027,8 @@
         "required": [
           "total",
           "success",
-          "failed"
+          "failed",
+          "missed"
         ],
         "type": "object"
       },

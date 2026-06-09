@@ -45,6 +45,7 @@ export const END_REASONS = [
   "queue_full",
   "dst_skipped",
   "daemon_stopped",
+  "missed",
 ] as const satisfies readonly EndReason[];
 
 // Compile-time exhaustiveness: identity-asserts that every EndReason

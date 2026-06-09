@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Missed-run alerts.** A scheduled run skipped because the daemon was down is detected on restart, recorded as a browsable `missed` run, and raised as a failure-level alert — silence it per task or globally with `notify_on_missed`. See [Missed ticks](https://docs.runwisp.com/concepts/scheduling/#missed-ticks-catchup).
+
 ## [0.8.0] - 2026-06-09
 
 ### Added

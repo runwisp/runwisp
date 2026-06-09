@@ -176,6 +176,8 @@ func (r *recordingTaskRunner) RecordSkippedFiring(name string, reason model.EndR
 	return nil
 }
 
+func (r *recordingTaskRunner) RecordMissedRun(string, time.Time, string) error { return nil }
+
 func (r *recordingTaskRunner) GetTask(string) (*model.Task, bool)             { return nil, false }
 func (r *recordingTaskRunner) UpsertTask(*model.Task)                         {}
 func (r *recordingTaskRunner) TerminateRun(string) error                      { return nil }

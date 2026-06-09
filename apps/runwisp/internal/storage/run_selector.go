@@ -45,7 +45,7 @@ func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
 	switch model.EndReason(f.Status) {
 	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped,
 		model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped,
-		model.ReasonLogOverflow:
+		model.ReasonLogOverflow, model.ReasonMissed:
 		args.EndReasonFilter = nullable(f.Status)
 	default:
 		args.StatusPhaseFilter = nullable(f.Status)

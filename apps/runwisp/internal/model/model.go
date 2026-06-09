@@ -99,6 +99,20 @@ type Task struct {
 	Run          string          `toml:"run,omitempty" json:"-"`
 	ExecutionDef ExecutionDef    `toml:"-"             json:"-"`
 	Compose      *TaskComposeRef `toml:"-"             json:"compose,omitempty" doc:"Provenance metadata for tasks imported from a docker compose file"`
+
+	// NotifyOnMissed gates whether a missed-run alert (run.missed) reaches the
+	// failure subscribers for this task. A nil pointer means "not configured"
+	// during loading; ApplyDefaults resolves it to a concrete value (default
+	// true, or the [defaults] value). Config-internal like notify_on_failure —
+	// never serialized to API/UI/cloud. Read it via NotifiesOnMissed.
+	NotifyOnMissed *bool `toml:"-" json:"-"`
+}
+
+// NotifiesOnMissed reports whether missed-run alerts are enabled for this task.
+// Defaults to true when unset so a Task literal built outside the config loader
+// (tests, ad-hoc dispatch) alerts by default.
+func (t *Task) NotifiesOnMissed() bool {
+	return t.NotifyOnMissed == nil || *t.NotifyOnMissed
 }
 
 // ResolvedExecutionDef returns the runtime execution definition for the task.

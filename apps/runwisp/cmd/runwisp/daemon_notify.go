@@ -11,6 +11,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
@@ -122,16 +123,36 @@ func initNotify(
 	retentionFn := buildRetentionFn(db, notifyCfg, logger)
 
 	svc := notify.New(notify.Config{
-		Bus:            bus,
-		Channels:       channels,
-		Rules:          resolved.Rules,
-		FailureSink:    failureSink,
-		Logger:         logger,
-		RetentionEvery: 5 * time.Minute,
-		RetentionFn:    retentionFn,
+		Bus:              bus,
+		Channels:         channels,
+		Rules:            resolved.Rules,
+		FailureSink:      failureSink,
+		Logger:           logger,
+		RetentionEvery:   5 * time.Minute,
+		RetentionFn:      retentionFn,
+		MutedMissedTasks: mutedMissedTasks(cfg.Config.Tasks),
 	})
 
 	return notifyBundle{Service: svc, Hub: hub}, nil
+}
+
+// mutedMissedTasks collects the names of tasks with notify_on_missed = false.
+// The notify Service drops run.missed events for these at ingress, leaving the
+// browsable missed run row untouched. Returns nil when none are muted so the
+// common case allocates nothing.
+func mutedMissedTasks(tasks []model.Task) map[string]struct{} {
+	var muted map[string]struct{}
+	for i := range tasks {
+		t := &tasks[i]
+		if t.NotifiesOnMissed() {
+			continue
+		}
+		if muted == nil {
+			muted = make(map[string]struct{})
+		}
+		muted[t.Name] = struct{}{}
+	}
+	return muted
 }
 
 // backoffOverride returns a transport-builder that shrinks the outbound retry

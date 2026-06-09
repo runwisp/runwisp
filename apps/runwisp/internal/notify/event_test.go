@@ -17,6 +17,11 @@ func TestKind_TitleCoversAllKinds(t *testing.T) {
 	}
 }
 
+func TestKindRunMissed_Title(t *testing.T) {
+	ev := &Event{TaskName: "nightly"}
+	assert.Equal(t, "nightly missed", KindRunMissed.Title(ev))
+}
+
 func TestKindNotifyDeliveryFailed_Title_WithChannel(t *testing.T) {
 	ev := &Event{
 		Kind:  KindNotifyDeliveryFailed,

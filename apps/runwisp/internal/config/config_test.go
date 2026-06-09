@@ -490,6 +490,64 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, DefaultBackoffResetAfter, cfg.Defaults.BackoffResetAfter)
 }
 
+func TestNotifyOnMissedRules(t *testing.T) {
+	t.Run("omitted defaults to notifying (true)", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Tasks[0].NotifyOnMissed)
+		assert.True(t, *cfg.Tasks[0].NotifyOnMissed)
+		assert.True(t, cfg.Tasks[0].NotifiesOnMissed())
+	})
+
+	t.Run("explicit false on a task mutes that task", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+notify_on_missed = false
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Tasks[0].NotifyOnMissed)
+		assert.False(t, *cfg.Tasks[0].NotifyOnMissed)
+		assert.False(t, cfg.Tasks[0].NotifiesOnMissed())
+	})
+
+	t.Run("omitted inherits notify_on_missed = false from defaults", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+notify_on_missed = false
+
+[tasks.inheritor]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Tasks[0].NotifyOnMissed)
+		assert.False(t, *cfg.Tasks[0].NotifyOnMissed,
+			"a task that omits the key inherits the muted default")
+	})
+
+	t.Run("explicit true overrides a muted default", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+notify_on_missed = false
+
+[tasks.loud]
+run = "echo hi"
+notify_on_missed = true
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Tasks[0].NotifyOnMissed)
+		assert.True(t, *cfg.Tasks[0].NotifyOnMissed,
+			"a per-task true wins over a muted [defaults]")
+	})
+}
+
 func TestKeepRunsRules(t *testing.T) {
 	t.Run("positive integer is preserved", func(t *testing.T) {
 		path := writeTOML(t, `

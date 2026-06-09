@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
@@ -72,6 +73,11 @@ func (m *mockTaskRunner) StopService(taskName string) error {
 
 func (m *mockTaskRunner) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
 	args := m.Called(taskName, reason, triggeredBy)
+	return args.Error(0)
+}
+
+func (m *mockTaskRunner) RecordMissedRun(taskName string, scheduledAt time.Time, reason string) error {
+	args := m.Called(taskName, scheduledAt, reason)
 	return args.Error(0)
 }
 

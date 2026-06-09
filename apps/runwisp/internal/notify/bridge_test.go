@@ -145,6 +145,15 @@ func TestMapRunEventType_RunFailed_ReasonCrashed(t *testing.T) {
 	assert.Equal(t, KindRunCrashed, kind)
 }
 
+func TestMapRunEventType_RunFailed_ReasonMissed(t *testing.T) {
+	r := model.ReasonMissed
+	run := &model.Run{EndReason: &r}
+	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.True(t, ok)
+	assert.Equal(t, KindRunMissed, kind)
+	assert.Equal(t, SevError, sev, "a missed run alerts at failure level")
+}
+
 func TestMapRunEventType_RunFailed_DefaultReason(t *testing.T) {
 	r := model.ReasonSuccess // not a typical failure reason, hits default branch
 	run := &model.Run{EndReason: &r}

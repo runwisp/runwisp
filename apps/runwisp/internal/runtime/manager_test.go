@@ -303,6 +303,80 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 	assert.True(t, sawDaemonStopped, "shutdown survivor must be recorded with ReasonDaemonStopped")
 }
 
+func TestRecordMissedRun(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+
+	var mu sync.Mutex
+	persisted := make([]*model.Run, 0, 2)
+	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, _ bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		persisted = append(persisted, run.Copy())
+	})
+
+	var sawCreated bool
+	var failedErr string
+	var failedReason *model.EndReason
+	eb.Subscribe(events.EventRunCreated, func(e events.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		sawCreated = true
+		_ = e
+	})
+	eb.Subscribe(events.EventRunFailed, func(e events.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		re, ok := e.Data.(events.RunEvent)
+		if !ok {
+			return
+		}
+		failedErr = re.Error
+		if re.Run != nil {
+			failedReason = re.Run.EndReason
+		}
+	})
+
+	task := testTask("nightly", model.PolicyQueue, 1)
+	jm.UpsertTask(task)
+
+	scheduledAt := time.Date(2026, 6, 9, 3, 0, 0, 0, time.UTC)
+	const reason = "3 scheduled runs missed since 2026-06-09 03:00 (daemon was down)"
+	require.NoError(t, jm.RecordMissedRun("nightly", scheduledAt, reason))
+
+	// Persistence is drained by an async worker; the event publishes are inline.
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(persisted) == 2
+	}, time.Second, 5*time.Millisecond, "missed run is persisted as create + terminal update")
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	final := persisted[len(persisted)-1]
+	assert.Equal(t, model.PhaseEnded, final.Status)
+	require.NotNil(t, final.EndReason)
+	assert.Equal(t, model.ReasonMissed, *final.EndReason)
+	assert.Equal(t, -1, final.ExitCode)
+	assert.Equal(t, model.TriggeredByCron, final.TriggeredBy)
+	assert.True(t, scheduledAt.Equal(final.CreatedAt),
+		"CreatedAt must be the scheduled tick (the next-restart anchor): want %s, got %s", scheduledAt, final.CreatedAt)
+
+	assert.True(t, sawCreated, "RecordMissedRun must publish EventRunCreated")
+	require.NotNil(t, failedReason, "RecordMissedRun must publish EventRunFailed carrying the run")
+	assert.Equal(t, model.ReasonMissed, *failedReason)
+	assert.Equal(t, reason, failedErr,
+		"the human sentence must ride the event as RunEvent.Error so it renders as the notification body")
+}
+
+func TestRecordMissedRunUnknownTask(t *testing.T) {
+	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
+	err := jm.RecordMissedRun("ghost", time.Date(2026, 6, 9, 3, 0, 0, 0, time.UTC), "irrelevant")
+	require.Error(t, err, "recording a miss for an unknown task is an error, not a silent no-op")
+}
+
 func TestPersistenceHook(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
