@@ -68,6 +68,54 @@ func TestSnapshot_EditedEnvFileIsStale(t *testing.T) {
 	assert.True(t, snap.Stale())
 }
 
+func TestSnapshot_EditedIncludedFileIsStale(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml":  "[daemon]\ninclude = [\"conf.d/*.toml\"]\n",
+		"conf.d/a.toml": "[tasks.a]\nrun = \"echo hi\"\n",
+	})
+	path := filepath.Join(dir, "runwisp.toml")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	snap := NewSnapshot(path, cfg, time.Now())
+	require.False(t, snap.Stale())
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "conf.d", "a.toml"),
+		[]byte("[tasks.a]\nrun = \"echo bye\"\n"), 0o600))
+	assert.True(t, snap.Stale())
+}
+
+func TestSnapshot_AddedMatchingFileIsStale(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml":  "[daemon]\ninclude = [\"conf.d/*.toml\"]\n",
+		"conf.d/a.toml": "[tasks.a]\nrun = \"echo hi\"\n",
+	})
+	path := filepath.Join(dir, "runwisp.toml")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	snap := NewSnapshot(path, cfg, time.Now())
+	require.False(t, snap.Stale())
+
+	// A brand-new file matching the glob must flip stale via the re-glob path.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "conf.d", "b.toml"),
+		[]byte("[tasks.b]\nrun = \"echo new\"\n"), 0o600))
+	assert.True(t, snap.Stale())
+}
+
+func TestSnapshot_DeletedIncludedFileIsStale(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml":  "[daemon]\ninclude = [\"conf.d/*.toml\"]\n",
+		"conf.d/a.toml": "[tasks.a]\nrun = \"echo hi\"\n",
+	})
+	path := filepath.Join(dir, "runwisp.toml")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	snap := NewSnapshot(path, cfg, time.Now())
+	require.False(t, snap.Stale())
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "conf.d", "a.toml")))
+	assert.True(t, snap.Stale())
+}
+
 func TestSnapshot_MissingFileAppearingIsStale(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runwisp.toml")

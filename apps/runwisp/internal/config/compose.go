@@ -60,7 +60,7 @@ var validComposePull = []string{
 // per imported service (services mode) or per project (stack mode). The
 // generated tasks flow through resolveEnvLayers, ApplyDefaults and Validate
 // like any hand-written [services.*] or [tasks.*] entry.
-func expandComposeBlocks(cfg *Config, baseDir string) error {
+func expandComposeBlocks(cfg *Config, dirs sourceDirs) error {
 	blocks := cfg.pendingComposeBlocks
 	cfg.pendingComposeBlocks = nil
 	if len(blocks) == 0 {
@@ -82,7 +82,7 @@ func expandComposeBlocks(cfg *Config, baseDir string) error {
 		if err := model.ValidateTaskName(alias); err != nil {
 			return fmt.Errorf("invalid compose alias %q: %w", alias, err)
 		}
-		newTasks, err := expandComposeAlias(alias, blocks[alias], baseDir, existingNames)
+		newTasks, err := expandComposeAlias(alias, blocks[alias], dirs.dir(alias), existingNames)
 		if err != nil {
 			return fmt.Errorf("compose.%s: %w", alias, err)
 		}
