@@ -31,33 +31,37 @@ type Scheduler struct {
 	taskManager TaskRunner
 	tasks       map[string]*model.Task
 	entryIDs    map[string]cron.EntryID
-	// lastFired stores the wall-clock minute (in the task's effective TZ) of
+	// lastFired stores the wall-clock second (in the task's effective TZ) of
 	// the last firing for each task. A second firing whose tuple matches is
 	// the DST duplicate to suppress.
-	lastFired map[string]wallMinute
+	lastFired map[string]wallSecond
 	now       func() time.Time
 	mutex     sync.Mutex
 	started   bool
 }
 
-// wallMinute is a (date, hour, minute) tuple that lets us compare two
-// firings as "the same wall-clock minute" without depending on UTC offsets,
-// which is the whole point on DST fall-back days.
-type wallMinute struct {
+// wallSecond is a (date, hour, minute, second) tuple that lets us compare two
+// firings as "the same wall-clock instant" without depending on UTC offsets,
+// which is the whole point on DST fall-back days. Second granularity matters
+// for 6-field specs: two sub-minute firings in the same minute (e.g. :00 and
+// :30) differ in second and must not be treated as DST duplicates.
+type wallSecond struct {
 	year   int
 	month  time.Month
 	day    int
 	hour   int
 	minute int
+	second int
 }
 
-func newWallMinute(t time.Time) wallMinute {
-	return wallMinute{
+func newWallSecond(t time.Time) wallSecond {
+	return wallSecond{
 		year:   t.Year(),
 		month:  t.Month(),
 		day:    t.Day(),
 		hour:   t.Hour(),
 		minute: t.Minute(),
+		second: t.Second(),
 	}
 }
 
@@ -90,7 +94,7 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		taskManager: taskManager,
 		tasks:       tasks,
 		entryIDs:    make(map[string]cron.EntryID),
-		lastFired:   make(map[string]wallMinute),
+		lastFired:   make(map[string]wallSecond),
 		now:         time.Now,
 	}
 	for _, opt := range opts {
@@ -169,7 +173,7 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 // never reaches the executor.
 func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 	nowLocal := scheduler.now().In(loc)
-	wm := newWallMinute(nowLocal)
+	wm := newWallSecond(nowLocal)
 
 	scheduler.mutex.Lock()
 	last, hadLast := scheduler.lastFired[taskName]
@@ -182,7 +186,7 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 	if duplicate {
 		slog.Info("Suppressed duplicate cron firing on DST fall-back",
 			"task", taskName,
-			"wall_clock", nowLocal.Format("2006-01-02 15:04 MST"),
+			"wall_clock", nowLocal.Format("2006-01-02 15:04:05 MST"),
 		)
 		if err := scheduler.taskManager.RecordSkippedFiring(taskName, model.ReasonDSTSkipped, model.TriggeredByCron); err != nil {
 			slog.Error("Failed to record DST-skipped firing", "task", taskName, "err", err)

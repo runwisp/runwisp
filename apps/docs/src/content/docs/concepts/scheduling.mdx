@@ -38,8 +38,18 @@ day-of-week** — and the familiar shorthand aliases work too:
 | `@yearly` / `@annually` | January 1st at 00:00             |
 | `@every 1h30m`          | every 90 minutes                 |
 
-Six fields (the version with seconds) is **not** supported. If you need
-something finer than a minute, use `@every 30s` or reach for a service.
+Need finer than a minute? Prepend a **seconds** field for a 6-field spec.
+Your existing 5-field expressions are unchanged — they just fire on the `:00`
+second, exactly as before.
+
+| Expression       | Meaning                         |
+| ---------------- | ------------------------------- |
+| `*/30 * * * * *` | every 30 seconds (`:00`, `:30`) |
+| `15 * * * * *`   | once a minute, at the `:15`     |
+| `0 */5 * * * *`  | every 5 minutes, on the `:00`   |
+
+`@every 30s` is still around for a plain fixed interval that doesn't care about
+where it lands on the wall clock.
 
 ## Timezone
 
@@ -78,10 +88,10 @@ wondering.
 Across DST transitions, RunWisp makes sure a schedule fires once and
 only once:
 
-- **Fall-back** (clocks go back). The wall-clock minute that happens
+- **Fall-back** (clocks go back). The wall-clock instant that happens
   twice — say 02:30 — only fires once. The scheduler dedupes on
-  `(local-date, hour, minute)`, and the suppressed firing still gets a
-  row in history.
+  `(local-date, hour, minute, second)`, and the suppressed firing still
+  gets a row in history.
 - **Spring-forward** (clocks jump ahead). If a cron like `0 2 * * *`
   lands on a minute that simply doesn't exist that day, it fires at the
   next valid time — again, once.

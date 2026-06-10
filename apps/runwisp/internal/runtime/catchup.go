@@ -66,7 +66,12 @@ func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.P
 		return 0, errCount
 	}
 
-	missedCount, lastTick := countMissedTicks(schedule, anchor, now)
+	// Bound counting at max(cap, floor)+1: the +1 lets computeCatchupTriggers
+	// still see missedCount > MaxCatchUpRuns (so all/latest/skip cap correctly)
+	// no matter how high the operator set the cap, while the floor keeps the
+	// reported gap honest for realistic backlogs.
+	countCap := max(task.MaxCatchUpRuns, catchupCountDisplayFloor) + 1
+	missedCount, lastTick, truncated := countMissedTicks(schedule, anchor, now, countCap)
 	if missedCount == 0 {
 		return 0, 0
 	}
@@ -101,7 +106,7 @@ func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.P
 	// even when MaxCatchUpRuns drops older ticks from the re-run. firstTick is
 	// the first tick after the anchor; lastTick anchors the next restart.
 	firstTick := schedule.Next(anchor)
-	reason := missedRunReason(missedCount, firstTick, capped, triggerCount)
+	reason := missedRunReason(missedCount, firstTick, capped, triggerCount, truncated)
 	if err := runner.RecordMissedRun(task.Name, lastTick, reason); err != nil {
 		slog.Error("Failed to record missed run", "task", task.Name, "err", err)
 		errors++
@@ -160,32 +165,49 @@ func computeCatchupTriggers(task *model.Task, missedCount int) (triggers int, ca
 	return missedCount, false
 }
 
+// catchupCountDisplayFloor bounds how far countMissedTicks walks even when the
+// re-run cap is small. A sub-minute schedule over a long outage would otherwise
+// step millions of ticks one Next() call at a time. The floor keeps the
+// reported gap size accurate for any realistic backlog while still bounding the
+// work; beyond it the count is reported as "at least N+".
+const catchupCountDisplayFloor = 1000
+
 // countMissedTicks counts how many cron ticks fall strictly between lastRunTime
 // and now, and returns the latest such tick (<= now). The tick at lastRunTime
 // itself is not counted (it was already executed). lastTick is the zero time
-// when count is 0.
-func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time) (count int, lastTick time.Time) {
+// when count is 0. Counting stops once count reaches maxCount, returning
+// truncated=true so callers can report the gap as "at least N+" rather than
+// walking an unbounded per-second backlog.
+func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCount int) (count int, lastTick time.Time, truncated bool) {
 	next := schedule.Next(lastRunTime)
 	for !next.After(now) {
 		count++
 		lastTick = next
+		if count >= maxCount {
+			return count, lastTick, true
+		}
 		next = schedule.Next(next)
 	}
-	return count, lastTick
+	return count, lastTick, false
 }
 
 // missedRunReason builds the human sentence recorded on the missed run and
 // surfaced as the notification body. since is the first missed tick; the count
-// is always the detected total even when MaxCatchUpRuns capped the re-run, so
-// the operator sees the true size of the gap. When capped, it notes how many of
-// the backlog were re-fired.
-func missedRunReason(missedCount int, since time.Time, capped bool, triggered int) string {
+// is the detected total even when MaxCatchUpRuns capped the re-run, so the
+// operator sees the true size of the gap. When counting was truncated (a huge
+// sub-minute backlog), the count is reported as "at least N+" rather than
+// understated. When capped, it notes how many of the backlog were re-fired.
+func missedRunReason(missedCount int, since time.Time, capped bool, triggered int, truncated bool) string {
 	plural := "s"
 	if missedCount == 1 {
 		plural = ""
 	}
-	reason := fmt.Sprintf("%d scheduled run%s missed since %s (daemon was down)",
-		missedCount, plural, since.Format("2006-01-02 15:04"))
+	atLeast, plus := "", ""
+	if truncated {
+		atLeast, plus = "at least ", "+"
+	}
+	reason := fmt.Sprintf("%s%d%s scheduled run%s missed since %s (daemon was down)",
+		atLeast, missedCount, plus, plural, since.Format("2006-01-02 15:04"))
 	if capped {
 		reason += fmt.Sprintf("; re-ran the most recent %d, older ticks dropped per max_catch_up_runs", triggered)
 	}

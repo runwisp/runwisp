@@ -18,11 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`run_on_start` on `[tasks.*]`.** Fire a task once at daemon boot, on top of any `cron` — the `@reboot` equivalent, tagged `triggered_by = startup`. See [Scheduling](https://docs.runwisp.com/configuration/tasks/#scheduling).
 - **`user` on `[tasks.*]` / `[services.*]`.** Run as another OS user (`user` or `user:group`, name or numeric id) when the daemon runs as root. See [Working directory & shell](https://docs.runwisp.com/configuration/tasks/#working-directory--shell).
 - **`start_retries` on `[services.*]` / `[defaults]`, plus FATAL services.** A service that keeps fast-failing (exits below `healthy_after`) now tolerates `start_retries` failed starts in a row before going FATAL — it stops restarting, records a `start_failed` run, and rings the bell instead of flapping forever. See [When a service can't start](https://docs.runwisp.com/configuration/services/#when-a-service-cant-start-fatal).
+- **Six-field cron with second precision.** `cron` now accepts an optional leading seconds field, so `*/30 * * * * *` fires every 30 seconds aligned to the wall clock. Existing 5-field specs are unchanged. See [Scheduling](https://docs.runwisp.com/configuration/tasks/#scheduling).
 
 ### Changed
 
 - **`backoff_reset_after` renamed to `healthy_after`**, which now governs both the restart-backoff reset and the failed-start/FATAL threshold. See [Healthy threshold](https://docs.runwisp.com/concepts/retries/#healthy-threshold-healthy_after).
-- **Invalid-cron errors now point at `@every 30s` for sub-minute schedules**, clarifying that six-field/seconds cron is intentionally unsupported. See [Scheduling](https://docs.runwisp.com/configuration/tasks/#scheduling).
 
 ## [0.8.0] - 2026-06-09
 

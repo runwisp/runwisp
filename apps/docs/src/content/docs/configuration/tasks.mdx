@@ -47,7 +47,7 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 
 | Key                 | Default    | What it does                                                                                                                                                                                                    |
 | ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cron`              | _(none)_   | 5-field cron expression. Supports `@hourly`, `@every 1h30m`.                                                                                                                                                    |
+| `cron`              | _(none)_   | 5- or 6-field cron expression (the optional 6th field is leading seconds). Supports `@hourly`, `@every 1h30m`.                                                                                                  |
 | `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset. |
 | `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                                                           |
 | `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero and negatives are rejected at config load.                                                                                                 |
@@ -56,6 +56,20 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 Leave `cron` off and the task becomes **manual-only** — it runs only
 when something explicitly triggers it. That's a perfectly good pattern
 for one-shot deploy hooks and the like.
+
+The familiar 5-field form (`min hour day month weekday`) still does exactly
+what it always did — `0 3 * * *` fires at 03:00, on the `:00` second. If you
+need sub-minute precision, prepend a seconds field for a 6-field spec:
+`*/30 * * * * *` fires every 30 seconds (on the `:00` and `:30`), and
+`15 * * * * *` fires once a minute at the `:15` second. When you want a plain
+fixed interval that doesn't care about wall-clock alignment, `@every 30s` is
+still the simpler choice.
+
+```toml
+[tasks.healthcheck]
+cron = "*/30 * * * * *" # every 30 seconds, aligned to :00 and :30
+run  = "curl -fsS http://localhost:8080/healthz"
+```
 
 `run_on_start = true` fires the task once at daemon boot — the cron
 equivalent of `@reboot`. It's orthogonal to `cron`: a task can fire at
