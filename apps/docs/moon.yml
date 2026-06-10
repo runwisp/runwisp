@@ -34,15 +34,32 @@ tasks:
 
     check:
         # Not split types/lint: eslint needs the .astro/types.d.ts that `astro check` generates.
-        description: "astro check, then prettier --check + eslint."
+        # `~:links` dep means moon runs the link check as part of this task —
+        # it also gives `links` its own cache key and lets it be run on its own.
+        description: "astro check, then prettier --check + eslint + docs link check."
         script: "bun scripts/sync-openapi.ts && bunx --bun astro check && prettier --check . && eslint ."
         deps:
             - "runwisp:openapi"
+            - "~:links"
         inputs:
             - "**/*"
             - "/apps/runwisp/openapi.json"
             - "/packages/ui/src/**/*"
             - "/prettier.base.cjs"
+
+    links:
+        # Validates every docs-to-docs link in src/content/docs resolves to a
+        # real file and, when an anchor is present, to a real heading there.
+        # /api/<operationId> links are checked against openapi.json so the
+        # starlight-openapi generated routes are also covered.
+        description: "Validate all intra-docs links resolve (file + anchor)."
+        command: "bun scripts/check-docs-links.ts"
+        deps:
+            - "runwisp:openapi"
+        inputs:
+            - "src/content/docs/**/*"
+            - "scripts/check-docs-links.ts"
+            - "/apps/runwisp/openapi.json"
 
     format:
         command: "prettier --write ."
