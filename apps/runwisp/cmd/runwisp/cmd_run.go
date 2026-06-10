@@ -38,8 +38,11 @@ const (
 	modeCloud
 )
 
-// noTUI controls whether runDaemon attaches the interactive TUI.
-// `runwisp daemon` flips it to true; `runwisp cloud` exposes it as a flag.
+// noTUI is the bind target for `runwisp cloud --no-tui`; cobra needs a stable
+// address. The resolved value is read once at the cloud RunE boundary and
+// passed into runDaemon as the headless argument — no logic helper reads it.
+// (`runwisp daemon` passes headless=true directly; the bare `runwisp` passes
+// false.)
 var noTUI bool
 
 // demoTask is kept available for cloud-managed and other explicit branches
@@ -62,7 +65,7 @@ echo "Create a runwisp.toml to define your own tasks — see https://docs.runwis
 	OnOverlap:     model.PolicySkip,
 }
 
-func runDaemon(mode daemonMode) error {
+func runDaemon(mode daemonMode, f Flags, headless bool) error {
 	// Arm SIGINT/SIGTERM before any goroutine could self-signal (superviseServerStart
 	// raises SIGTERM on its own PID when srv.Start fails). Registered first so the
 	// stop func runs last, after every other defer has unwound.
@@ -78,15 +81,15 @@ func runDaemon(mode daemonMode) error {
 
 	// Ring buffer for streaming daemon logs to remote TUI clients.
 	logBuffer := server.NewDaemonLogBuffer(1000)
-	debugWriter := configureBootLogRouting(logBuffer)
+	debugWriter := configureBootLogRouting(logBuffer, f, headless)
 
 	// Open database first — config values (fingerprint, jwt_secret) live there.
-	db, err := storage.New(flags.DBPath())
+	db, err := storage.New(f.DBPath())
 	if err != nil {
 		return err
 	}
 
-	cfg, err := loadDaemonConfig(context.Background(), db, mode)
+	cfg, err := loadDaemonConfig(context.Background(), db, mode, f)
 	if err != nil {
 		_ = db.Close()
 		return err
@@ -98,26 +101,26 @@ func runDaemon(mode daemonMode) error {
 		slog.Warn("RUNWISP_CLOUD_TOKEN is set but ignored in standalone mode — use 'runwisp cloud' to start in cloud mode")
 	}
 
-	logSecurityWarnings(cfg)
+	logSecurityWarnings(cfg, f)
 
 	// Pin the on-disk identity of runwisp.toml + env_files. Reload is
 	// restart-only; the snapshot lets /api/info report config_stale so every
 	// surface can show a "restart to apply" hint instead of silently ignoring
 	// edits.
-	configSnap := config.NewSnapshot(flags.CfgFile, cfg.Config, time.Now())
+	configSnap := config.NewSnapshot(f.CfgFile, cfg.Config, time.Now())
 
-	svc, err := initDaemonServices(context.Background(), cfg, db, mode)
+	svc, err := initDaemonServices(context.Background(), cfg, db, mode, f)
 	if err != nil {
 		return err
 	}
 	defer svc.DB.Close()
 
-	if pidErr := datadir.WritePidFile(flags.DataDir); pidErr != nil {
+	if pidErr := datadir.WritePidFile(f.DataDir); pidErr != nil {
 		slog.Warn("Failed to write PID file", "err", pidErr)
 	}
-	defer datadir.CleanPidFile(flags.DataDir)
+	defer datadir.CleanPidFile(f.DataDir)
 
-	daemonInfo := buildDaemonInfo(cfg, svc, configSnap.LoadedAt())
+	daemonInfo := buildDaemonInfo(cfg, svc, configSnap.LoadedAt(), f.Port)
 
 	srv, err := server.New(server.Options{
 		DB:                svc.DB,
@@ -126,15 +129,16 @@ func runDaemon(mode daemonMode) error {
 		TaskManager:       svc.TaskManager,
 		Tasks:             svc.TasksMap,
 		Scheduler:         svc.Scheduler,
-		Host:              flags.Host,
-		Port:              flags.Port,
-		SocketPath:        datadir.SocketPath(flags.DataDir),
-		LogDir:            flags.LogDir(),
+		Host:              f.Host,
+		Port:              f.Port,
+		SocketPath:        datadir.SocketPath(f.DataDir),
+		LogDir:            f.LogDir(),
 		EventBus:          svc.EventBus,
 		Password:          cfg.Password,
 		PasswordEphemeral: cfg.PasswordEphemeral,
 		JWTSecret:         cfg.JWTSecret,
 		NoAuth:            cfg.NoAuth,
+		TrustedProxies:    os.Getenv("RUNWISP_TRUST_PROXY"),
 		DaemonInfo:        daemonInfo,
 		ConfigStale:       configSnap.Stale,
 		DaemonLogBuffer:   logBuffer,
@@ -147,12 +151,12 @@ func runDaemon(mode daemonMode) error {
 
 	startupInfo := uikit.StartupInfo{
 		Version:    version.Version,
-		ConfigPath: absPathOrFallback(flags.CfgFile),
-		DataDir:    absPathOrFallback(flags.DataDir),
-		DBPath:     flags.DBPath(),
-		LogDir:     flags.LogDir(),
-		Port:       flags.Port,
-		ListenURL:  daemonListenURL(cfg.Config),
+		ConfigPath: absPathOrFallback(f.CfgFile),
+		DataDir:    absPathOrFallback(f.DataDir),
+		DBPath:     f.DBPath(),
+		LogDir:     f.LogDir(),
+		Port:       f.Port,
+		ListenURL:  daemonListenURL(cfg.Config, f),
 
 		Fingerprint:    cfg.Fingerprint,
 		UsingDemo:      cfg.UsingDemo,
@@ -167,7 +171,7 @@ func runDaemon(mode daemonMode) error {
 		AuthDisabled:      cfg.NoAuth,
 
 		CloudEnabled: cfg.CloudConfig.Enabled,
-		Headless:     noTUI,
+		Headless:     headless,
 
 		ScheduleWarnings: svc.ScheduleResult.Warnings,
 		InitWarnings:     svc.InitWarnings,
@@ -177,12 +181,12 @@ func runDaemon(mode daemonMode) error {
 	}
 
 	// Cloud client is only started in cloud mode; standalone gets no-ops.
-	cancelCloud, cloudWG := startCloudIfEnabled(mode, cfg, svc)
+	cancelCloud, cloudWG := startCloudIfEnabled(mode, cfg, svc, f)
 	defer cancelCloud()
 
 	go superviseServerStart(srv)
 
-	emitStartupBanner(startupInfo)
+	emitStartupBanner(startupInfo, f)
 
 	// Headless: subscribe runlog AFTER the banner is on screen, then signal
 	// readiness, then block on signals. Subscribing later matters because
@@ -202,13 +206,13 @@ func runDaemon(mode daemonMode) error {
 		cloudWG:     cloudWG,
 	}
 
-	if noTUI {
+	if headless {
 		defer runlog.Subscribe(svc.EventBus)()
-		emitReadiness(startupInfo.ListenURL)
+		emitReadiness(startupInfo.ListenURL, f)
 		return runHeadless(rt)
 	}
 
-	return runWithTUI(rt, startupInfo)
+	return runWithTUI(rt, startupInfo, f)
 }
 
 // installSignalHandler arms SIGINT/SIGTERM on a buffered channel before any
@@ -230,13 +234,13 @@ func installSignalHandler() (<-chan os.Signal, func()) {
 // destination from the very first query. HTTP access logs flow through slog
 // too (see internal/server/access_log.go), so the same destination is shared
 // by every log line the daemon emits.
-func configureBootLogRouting(logBuffer *server.DaemonLogBuffer) *tui.DebugLogWriter {
-	if noTUI {
+func configureBootLogRouting(logBuffer *server.DaemonLogBuffer, f Flags, headless bool) *tui.DebugLogWriter {
+	if headless {
 		// Headless: slog → stderr (tee'd to the ring buffer for remote TUI
 		// streaming) with daemon-mode timestamps and TTY-aware color gating.
 		clilog.Configure(clilog.Options{
-			Level:      flags.LogLevel,
-			Format:     flags.LogFormat,
+			Level:      f.LogLevel,
+			Format:     f.LogFormat,
 			Output:     io.MultiWriter(os.Stderr, logBuffer),
 			DaemonMode: true,
 		})
@@ -261,9 +265,9 @@ func configureBootLogRouting(logBuffer *server.DaemonLogBuffer) *tui.DebugLogWri
 // startCloudIfEnabled spins up the cloud client when running in cloud mode and
 // returns the cancel/wait pair the shutdown path needs. Standalone gets a
 // no-op cancel and empty WaitGroup so callers can defer/wait unconditionally.
-func startCloudIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices) (context.CancelFunc, *sync.WaitGroup) {
+func startCloudIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Flags) (context.CancelFunc, *sync.WaitGroup) {
 	if mode == modeCloud {
-		return startCloudClient(context.Background(), cfg, svc)
+		return startCloudClient(context.Background(), cfg, svc, f)
 	}
 	return func() {}, &sync.WaitGroup{}
 }
@@ -284,8 +288,8 @@ func superviseServerStart(srv *server.Server) {
 // into Docker logs / journald (non-TTY) or under --log-format=json it would
 // be escape-code noise, so headless emits the same essential facts as plain
 // slog lines.
-func emitStartupBanner(info uikit.StartupInfo) {
-	if clilog.FancyBanner(flags.LogFormat) {
+func emitStartupBanner(info uikit.StartupInfo, f Flags) {
+	if clilog.FancyBanner(f.LogFormat) {
 		tui.PrintStartup(info)
 		return
 	}
@@ -355,16 +359,16 @@ func absPathOrFallback(p string) string {
 // [daemon] external_url when configured, else http://<bind-host>:<port>.
 // Wildcard binds are mapped to localhost because 0.0.0.0/:: are not themselves
 // connectable addresses.
-func daemonListenURL(cfg *config.Config) string {
+func daemonListenURL(cfg *config.Config, f Flags) string {
 	if u := cfg.Daemon.ExternalURL; u != "" {
 		return u
 	}
-	host := flags.Host
+	host := f.Host
 	switch host {
 	case "", "0.0.0.0", "::", "[::]":
 		host = "localhost"
 	}
-	return fmt.Sprintf("http://%s:%d", host, flags.Port)
+	return fmt.Sprintf("http://%s:%d", host, f.Port)
 }
 
 // emitReadiness waits for the daemon's local API to answer, then logs an
@@ -373,12 +377,12 @@ func daemonListenURL(cfg *config.Config) string {
 // banner cue. When the fancy TTY banner is shown it already prints
 // "Listening on <url>" — emitting an extra slog line on top would duplicate
 // the message and break the clean visual hand-off from banner → run events.
-func emitReadiness(listenURL string) {
-	client := apiclient.NewUnix(localAPISocketPath())
+func emitReadiness(listenURL string, f Flags) {
+	client := apiclient.NewUnix(localAPISocketPath(f))
 	if err := pollHealth(client, 3*time.Second); err != nil {
 		slog.Warn("health check did not pass during startup", "err", err)
 	}
-	if clilog.FancyBanner(flags.LogFormat) {
+	if clilog.FancyBanner(f.LogFormat) {
 		return
 	}
 	if listenURL == "" {
@@ -389,18 +393,18 @@ func emitReadiness(listenURL string) {
 }
 
 // logSecurityWarnings emits log warnings for security-sensitive configurations.
-func logSecurityWarnings(cfg *daemonConfig) {
+func logSecurityWarnings(cfg *daemonConfig, f Flags) {
 	if cfg.Config.Daemon.AllowCloudDispatch {
 		slog.Warn("Cloud shell dispatch enabled — the cloud control plane can execute arbitrary shell commands on this host")
 	}
-	nonLoopback := flags.Host != "127.0.0.1" && flags.Host != "::1" && flags.Host != "localhost"
+	nonLoopback := f.Host != "127.0.0.1" && f.Host != "::1" && f.Host != "localhost"
 	// Exactly one banner: when auth is disabled it subsumes the non-loopback
 	// message, so the two warnings never stack.
 	if cfg.NoAuth {
 		slog.Warn("Authentication is DISABLED (RUNWISP_NO_AUTH) — the API and Web UI accept unauthenticated requests")
-		printNoAuthBanner(flags.Host, nonLoopback)
+		printNoAuthBanner(f.Host, nonLoopback)
 	} else if nonLoopback {
-		printNonLoopbackBanner(flags.Host)
+		printNonLoopbackBanner(f.Host)
 	}
 	for _, w := range config.Warnings(cfg.Config) {
 		slog.Warn(w)

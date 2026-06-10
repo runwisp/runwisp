@@ -13,20 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestResolveStatusOptions_PullsFromGlobalFlags(t *testing.T) {
-	origCfg, origData, origHost, origPort := flags.CfgFile, flags.DataDir, flags.Host, flags.Port
-	flags.CfgFile = "/tmp/status-test.toml"
-	flags.DataDir = "/tmp/status-data"
-	flags.Host = "10.0.0.1"
-	flags.Port = 9911
-	t.Cleanup(func() {
-		flags.CfgFile = origCfg
-		flags.DataDir = origData
-		flags.Host = origHost
-		flags.Port = origPort
-	})
+func TestResolveStatusOptions_PullsFromFlags(t *testing.T) {
+	t.Parallel()
+	f := Flags{
+		CfgFile: "/tmp/status-test.toml",
+		DataDir: "/tmp/status-data",
+		Host:    "10.0.0.1",
+		Port:    9911,
+	}
 
-	opts, err := resolveStatusOptions()
+	opts, err := resolveStatusOptions(f)
 	require.NoError(t, err)
 	assert.NotEmpty(t, opts.Binary, "binary path must come from os.Executable")
 	assert.Equal(t, "/tmp/status-test.toml", opts.Config)

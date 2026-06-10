@@ -41,7 +41,7 @@ type daemonConfig struct {
 	NoAuth            bool
 }
 
-func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, mode daemonMode) (*daemonConfig, error) {
+func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, mode daemonMode, f Flags) (*daemonConfig, error) {
 	fp, err := resolveConfigValue(
 		ctx,
 		configRepo,
@@ -63,7 +63,7 @@ func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, 
 		}
 	}
 
-	cfg, usingDemo, err := loadConfigFile(flags.CfgFile, cloudCfg.Enabled)
+	cfg, usingDemo, err := loadConfigFile(f.CfgFile, cloudCfg.Enabled)
 	if err != nil {
 		return nil, err
 	}

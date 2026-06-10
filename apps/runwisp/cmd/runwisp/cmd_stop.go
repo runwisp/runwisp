@@ -31,24 +31,24 @@ running after that is recorded with a terminal status — nothing is lost
 silently.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		return runStop(cmd)
+		return runStop(cmd, flags)
 	},
 }
 
-func runStop(cmd *cobra.Command) error {
+func runStop(cmd *cobra.Command, f Flags) error {
 	out := cmd.OutOrStdout()
 
-	installer, opts, st, ok := serviceState(cmd)
+	installer, opts, st, ok := serviceState(cmd, f)
 	if ok && shouldDelegateStop(st) {
-		return stopViaService(out, installer, opts, st)
+		return stopViaService(out, installer, opts, st, f)
 	}
 
-	if !isDaemonRunning() {
-		fmt.Fprintf(out, "No daemon is running on data dir %s — nothing to stop.\n", absPathOrFallback(flags.DataDir))
+	if !isDaemonRunning(f) {
+		fmt.Fprintf(out, "No daemon is running on data dir %s — nothing to stop.\n", absPathOrFallback(f.DataDir))
 		return nil
 	}
 
-	if err := shutdownDaemonWait(stopWaitTimeout()); err != nil {
+	if err := shutdownDaemonWait(stopWaitTimeout(f), f); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, "Daemon stopped.")
@@ -57,13 +57,13 @@ func runStop(cmd *cobra.Command) error {
 
 // stopViaService delegates the stop to systemd/launchd and waits for the
 // process to actually exit (launchctl kill returns before the job dies).
-func stopViaService(out io.Writer, installer autostart.Installer, opts autostart.InstallOptions, st autostart.Status) error {
+func stopViaService(out io.Writer, installer autostart.Installer, opts autostart.InstallOptions, st autostart.Status, f Flags) error {
 	fmt.Fprintf(out, "Daemon is managed by %s — stopping %s...\n", serviceManagerName(st), filepath.Base(st.UnitPath))
 	if err := installer.Stop(context.Background(), opts); err != nil {
 		return err
 	}
-	if pid, err := datadir.ReadPidFile(flags.DataDir); err == nil {
-		if err := waitForProcessExit(pid, stopWaitTimeout()); err != nil {
+	if pid, err := datadir.ReadPidFile(f.DataDir); err == nil {
+		if err := waitForProcessExit(pid, stopWaitTimeout(f), f.DataDir); err != nil {
 			return err
 		}
 	}

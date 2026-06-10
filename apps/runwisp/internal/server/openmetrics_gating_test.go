@@ -44,7 +44,7 @@ func setupServerForMetrics(t *testing.T, metricsEnabled bool, metricsListen stri
 		Tasks:          tasks,
 		Scheduler:      scheduler,
 		Host:           "127.0.0.1",
-		Port:           pickFreePort(t),
+		Port:           testutil.PickFreePort(t),
 		SocketPath:     filepath.Join(tmpDir, "runwisp.sock"),
 		LogDir:         tmpDir,
 		EventBus:       eb,
@@ -115,7 +115,7 @@ func TestMetricsRouter_SeparateListenerUnmountsFromMain(t *testing.T) {
 // metrics http.Server on the configured address, a scrape over real TCP
 // returns the payload, and Shutdown() drains the listener cleanly.
 func TestMetricsServer_DedicatedListenerServesAndShutsDown(t *testing.T) {
-	metricsPort := pickFreePort(t)
+	metricsPort := testutil.PickFreePort(t)
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	s, repo := setupServerForMetrics(t, true, metricsAddr)
 	repo.On("GetRunSummary", mock.Anything).Return(&model.RunSummary{Total: 0}, nil)

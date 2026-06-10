@@ -17,14 +17,14 @@ var listCmd = &cobra.Command{
 	Short: "Show configured tasks and their schedules",
 	Long:  `Reads the configuration file and displays all configured tasks as a formatted table.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runList()
+		return runList(flags)
 	},
 }
 
-func runList() error {
-	cfg, err := config.Load(flags.CfgFile)
+func runList(f Flags) error {
+	cfg, err := config.Load(f.CfgFile)
 	if err != nil {
-		return fmt.Errorf("failed to load %s: %w", flags.CfgFile, err)
+		return fmt.Errorf("failed to load %s: %w", f.CfgFile, err)
 	}
 
 	if len(cfg.Tasks) == 0 {

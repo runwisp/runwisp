@@ -16,25 +16,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/internal/notify/testutil"
 )
 
-func newTestRenderer(t *testing.T) render.Renderer {
-	t.Helper()
-	body, err := render.LoadDefaultTemplate("telegram")
-	require.NoError(t, err)
-	r, err := render.NewTemplateRenderer("telegram:test", body, "text/html", render.DefaultTitle)
-	require.NoError(t, err)
-	return r
-}
-
+// newFastTransport layers telegram's 429 Retry-After parser on top of the
+// shared fast test transport.
 func newFastTransport() *notify.HTTPProvider {
-	return &notify.HTTPProvider{
-		Client:    &http.Client{Timeout: 2 * time.Second},
-		Backoff:   notify.BackoffConfig{InitialInterval: 5 * time.Millisecond, MaxInterval: 20 * time.Millisecond, MaxElapsedTime: 100 * time.Millisecond, Multiplier: 2.0},
-		Body429Fn: parseTelegramRetryAfter,
-		UserAgent: "runwisp-notify/test",
-	}
+	tr := testutil.NewFastTransport()
+	tr.Body429Fn = parseTelegramRetryAfter
+	return tr
 }
 
 func TestTelegram_PostsForm(t *testing.T) {
@@ -51,7 +41,7 @@ func TestTelegram_PostsForm(t *testing.T) {
 
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
-		Renderer: newTestRenderer(t), APIBase: srv.URL,
+		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), APIBase: srv.URL,
 		Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
@@ -77,7 +67,7 @@ func TestTelegram_HonorsBodyRetryAfter(t *testing.T) {
 
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
-		Renderer: newTestRenderer(t), APIBase: srv.URL,
+		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), APIBase: srv.URL,
 		Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
@@ -98,7 +88,7 @@ func TestTelegram_SendsRenderedBody(t *testing.T) {
 
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
-		Renderer: newTestRenderer(t), APIBase: srv.URL,
+		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), APIBase: srv.URL,
 		Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
@@ -114,7 +104,7 @@ func TestTelegram_SendsRenderedBody(t *testing.T) {
 func TestTelegram_RedactsTokenInError(t *testing.T) {
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "TOPSECRET:Z", ChatID: "-1001",
-		Renderer: newTestRenderer(t), APIBase: "http://127.0.0.1:1",
+		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), APIBase: "http://127.0.0.1:1",
 		Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
@@ -130,7 +120,7 @@ func TestTelegram_RedactsTokenInError(t *testing.T) {
 func TestTelegram_ChannelInterface(t *testing.T) {
 	ch, err := New(Config{
 		ID: "oncall", BotToken: "abc:xyz", ChatID: "-1001",
-		Renderer: newTestRenderer(t), Transport: newFastTransport(),
+		Renderer: testutil.NewTestRenderer(t, "telegram", "text/html"), Transport: newFastTransport(),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "oncall", ch.ID())

@@ -46,7 +46,7 @@ func serviceManagerName(st autostart.Status) string {
 // Any failure — unsupported OS, missing HOME, status probe error — returns
 // ok=false and the caller falls back to the direct PID/SIGTERM path. The
 // service layer is best-effort sugar; it must never block a plain stop.
-func serviceState(cmd *cobra.Command) (autostart.Installer, autostart.InstallOptions, autostart.Status, bool) {
+func serviceState(cmd *cobra.Command, f Flags) (autostart.Installer, autostart.InstallOptions, autostart.Status, bool) {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, true)
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
@@ -55,7 +55,7 @@ func serviceState(cmd *cobra.Command) (autostart.Installer, autostart.InstallOpt
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
 	}
-	opts, err := resolveStatusOptions()
+	opts, err := resolveStatusOptions(f)
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
 	}
@@ -70,9 +70,9 @@ func serviceState(cmd *cobra.Command) (autostart.Installer, autostart.InstallOpt
 // SIGTERM: the configured [daemon] shutdown_timeout plus headroom for
 // process teardown, floored at 15s when the config is unreadable or the
 // timeout is short.
-func stopWaitTimeout() time.Duration {
+func stopWaitTimeout(f Flags) time.Duration {
 	const floor = 15 * time.Second
-	cfg, err := config.Load(flags.CfgFile)
+	cfg, err := config.Load(f.CfgFile)
 	if err != nil {
 		return floor
 	}

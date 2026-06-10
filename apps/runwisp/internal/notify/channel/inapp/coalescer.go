@@ -69,7 +69,7 @@ func (c *Coalescer) Receive(ctx context.Context, title, body string, ev *notify.
 		return
 	}
 	now := c.clock.Now()
-	fp := hashFingerprint(fingerprintBytes(ev))
+	fp := hashFingerprint([]byte(notify.FingerprintKey(ev)))
 	n := &storage.Notification{
 		ID:             ulid.Make().String(),
 		Fingerprint:    strconv.FormatUint(fp, 16),
@@ -101,19 +101,6 @@ func (c *Coalescer) Receive(ctx context.Context, title, body string, ev *notify.
 		count = -1
 	}
 	c.hub.Publish(Update{Type: updateType, Notification: *n, UnreadCount: count})
-}
-
-func fingerprintBytes(ev *notify.Event) []byte {
-	extraKey := ""
-	if ev.Run != nil && ev.Run.EndReason != nil {
-		extraKey = string(*ev.Run.EndReason)
-	}
-	if ev.Kind == notify.KindNotifyDeliveryFailed && ev.Extra != nil {
-		ch, _ := ev.Extra["channel"].(string)
-		ok, _ := ev.Extra["original_kind"].(string)
-		extraKey = ch + "|" + ok
-	}
-	return []byte(string(ev.Kind) + "|" + ev.TaskName + "|" + extraKey)
 }
 
 func hashFingerprint(b []byte) uint64 {

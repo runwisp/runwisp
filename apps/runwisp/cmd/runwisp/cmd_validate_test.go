@@ -15,17 +15,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func writeValidateConfig(t *testing.T, content string) {
+func writeValidateConfig(t *testing.T, content string) Flags {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-	prev := flags.CfgFile
-	flags.CfgFile = path
-	t.Cleanup(func() { flags.CfgFile = prev })
+	return Flags{CfgFile: path}
 }
 
 func TestRunValidatePrintsWarnings(t *testing.T) {
-	writeValidateConfig(t, `
+	t.Parallel()
+	f := writeValidateConfig(t, `
 [daemon]
 shutdown_timeout = "5s"
 
@@ -34,33 +33,36 @@ run = "echo hi"
 graceful_stop = "30s"
 `)
 	var out strings.Builder
-	require.NoError(t, runValidate(&out))
+	require.NoError(t, runValidate(&out, f))
 	assert.Contains(t, out.String(), "is valid")
 	assert.Contains(t, out.String(), "! ")
 	assert.Contains(t, out.String(), "graceful_stop")
 }
 
 func TestRunValidateNoWarnings(t *testing.T) {
-	writeValidateConfig(t, "[tasks.t]\nrun = \"echo hi\"\n")
+	t.Parallel()
+	f := writeValidateConfig(t, "[tasks.t]\nrun = \"echo hi\"\n")
 	var out strings.Builder
-	require.NoError(t, runValidate(&out))
+	require.NoError(t, runValidate(&out, f))
 	assert.Contains(t, out.String(), "is valid")
 	assert.NotContains(t, out.String(), "! ")
 }
 
 func TestRunValidateRejectsBadCron(t *testing.T) {
-	writeValidateConfig(t, "[tasks.t]\nrun = \"echo hi\"\ncron = \"61 * * * *\"\n")
+	t.Parallel()
+	f := writeValidateConfig(t, "[tasks.t]\nrun = \"echo hi\"\ncron = \"61 * * * *\"\n")
 	var out strings.Builder
-	err := runValidate(&out)
+	err := runValidate(&out, f)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid cron")
 	assert.Contains(t, err.Error(), "expected 5 fields")
 }
 
 func TestRunValidate_ValidEmpty(t *testing.T) {
-	writeValidateConfig(t, "# empty\n")
+	t.Parallel()
+	f := writeValidateConfig(t, "# empty\n")
 	var buf bytes.Buffer
-	require.NoError(t, runValidate(&buf))
+	require.NoError(t, runValidate(&buf, f))
 	out := buf.String()
 	assert.Contains(t, out, "is valid")
 	assert.Contains(t, out, "tasks:    0")
@@ -69,7 +71,8 @@ func TestRunValidate_ValidEmpty(t *testing.T) {
 }
 
 func TestRunValidate_CountsTasksAndServices(t *testing.T) {
-	writeValidateConfig(t, `
+	t.Parallel()
+	f := writeValidateConfig(t, `
 [tasks.backup]
 cron = "0 3 * * *"
 run = "true"
@@ -82,17 +85,18 @@ run = "true"
 run = "exec /usr/bin/web"
 `)
 	var buf bytes.Buffer
-	require.NoError(t, runValidate(&buf))
+	require.NoError(t, runValidate(&buf, f))
 	out := buf.String()
 	assert.Contains(t, out, "tasks:    2")
 	assert.Contains(t, out, "services: 1")
 }
 
 func TestRunValidate_InvalidTOMLReturnsUserFacingError(t *testing.T) {
-	writeValidateConfig(t, "this is not = valid toml ===\n")
+	t.Parallel()
+	f := writeValidateConfig(t, "this is not = valid toml ===\n")
 	var buf bytes.Buffer
 
-	err := runValidate(&buf)
+	err := runValidate(&buf, f)
 	require.Error(t, err)
 
 	var ufe *userFacingError
@@ -103,12 +107,11 @@ func TestRunValidate_InvalidTOMLReturnsUserFacingError(t *testing.T) {
 }
 
 func TestRunValidate_MissingFileReturnsUserFacingError(t *testing.T) {
-	orig := flags.CfgFile
-	flags.CfgFile = filepath.Join(t.TempDir(), "absent.toml")
-	t.Cleanup(func() { flags.CfgFile = orig })
+	t.Parallel()
+	f := Flags{CfgFile: filepath.Join(t.TempDir(), "absent.toml")}
 
 	var buf bytes.Buffer
-	err := runValidate(&buf)
+	err := runValidate(&buf, f)
 	require.Error(t, err)
 
 	var ufe *userFacingError

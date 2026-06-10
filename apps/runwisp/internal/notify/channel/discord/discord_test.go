@@ -18,25 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/internal/notify/testutil"
 )
-
-func newTestRenderer(t *testing.T) render.Renderer {
-	t.Helper()
-	body, err := render.LoadDefaultTemplate("discord")
-	require.NoError(t, err)
-	r, err := render.NewTemplateRenderer("discord:test", body, "application/json", render.DefaultTitle)
-	require.NoError(t, err)
-	return r
-}
-
-func newFastTransport() *notify.HTTPProvider {
-	return &notify.HTTPProvider{
-		Client:    &http.Client{Timeout: 2 * time.Second},
-		Backoff:   notify.BackoffConfig{InitialInterval: 5 * time.Millisecond, MaxInterval: 20 * time.Millisecond, MaxElapsedTime: 100 * time.Millisecond, Multiplier: 2.0},
-		UserAgent: "runwisp-notify/test",
-	}
-}
 
 func TestDiscord_PostsEmbedJSON(t *testing.T) {
 	var receivedBody []byte
@@ -52,8 +35,8 @@ func TestDiscord_PostsEmbedJSON(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "discord-ops",
 		WebhookURL: srv.URL,
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "discord", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -100,8 +83,8 @@ func TestDiscord_SucceededRendersGreen(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "discord-ops",
 		WebhookURL: srv.URL,
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "discord", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -136,8 +119,8 @@ func TestDiscord_RetriesOn429WithDiscordBody(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "discord-ops",
 		WebhookURL: srv.URL,
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "discord", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -152,8 +135,8 @@ func TestDiscord_RedactsWebhookURLInError(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "discord-ops",
 		WebhookURL: "http://127.0.0.1:1/api/webhooks/123/SECRETTOKEN",
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "discord", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -166,7 +149,7 @@ func TestDiscord_RedactsWebhookURLInError(t *testing.T) {
 }
 
 func TestDiscord_MissingURLOrRendererErrors(t *testing.T) {
-	_, err := New(Config{ID: "discord-ops", Renderer: newTestRenderer(t)})
+	_, err := New(Config{ID: "discord-ops", Renderer: testutil.NewTestRenderer(t, "discord", "application/json")})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `discord channel "discord-ops": url is required`)
 

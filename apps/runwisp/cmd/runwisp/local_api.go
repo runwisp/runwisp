@@ -8,6 +8,6 @@ import (
 )
 
 // localAPISocketPath returns the Unix socket path inside the configured data dir.
-func localAPISocketPath() string {
-	return datadir.SocketPath(flags.DataDir)
+func localAPISocketPath(f Flags) string {
+	return datadir.SocketPath(f.DataDir)
 }

@@ -89,29 +89,25 @@ func TestServiceManagerName(t *testing.T) {
 }
 
 func TestStopWaitTimeout(t *testing.T) {
-	swapCfgFile := func(t *testing.T, path string) {
-		t.Helper()
-		prev := flags.CfgFile
-		flags.CfgFile = path
-		t.Cleanup(func() { flags.CfgFile = prev })
-	}
+	t.Parallel()
 
 	t.Run("unreadable config floors at 15s", func(t *testing.T) {
-		swapCfgFile(t, filepath.Join(t.TempDir(), "missing.toml"))
-		assert.Equal(t, 15*time.Second, stopWaitTimeout())
+		t.Parallel()
+		f := Flags{CfgFile: filepath.Join(t.TempDir(), "missing.toml")}
+		assert.Equal(t, 15*time.Second, stopWaitTimeout(f))
 	})
 
 	t.Run("long shutdown_timeout gets headroom", func(t *testing.T) {
+		t.Parallel()
 		path := filepath.Join(t.TempDir(), "runwisp.toml")
 		require.NoError(t, os.WriteFile(path, []byte("[daemon]\nshutdown_timeout = \"60s\"\n\n[tasks.t]\nrun = \"echo hi\"\n"), 0o600))
-		swapCfgFile(t, path)
-		assert.Equal(t, 65*time.Second, stopWaitTimeout())
+		assert.Equal(t, 65*time.Second, stopWaitTimeout(Flags{CfgFile: path}))
 	})
 
 	t.Run("short shutdown_timeout still floors at 15s", func(t *testing.T) {
+		t.Parallel()
 		path := filepath.Join(t.TempDir(), "runwisp.toml")
 		require.NoError(t, os.WriteFile(path, []byte("[daemon]\nshutdown_timeout = \"2s\"\n\n[tasks.t]\nrun = \"echo hi\"\n"), 0o600))
-		swapCfgFile(t, path)
-		assert.Equal(t, 15*time.Second, stopWaitTimeout())
+		assert.Equal(t, 15*time.Second, stopWaitTimeout(Flags{CfgFile: path}))
 	})
 }

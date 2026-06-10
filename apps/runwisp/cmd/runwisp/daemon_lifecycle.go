@@ -27,6 +27,7 @@ func startCloudClient(
 	ctx context.Context,
 	cfg *daemonConfig,
 	svc *daemonServices,
+	f Flags,
 ) (context.CancelFunc, *sync.WaitGroup) {
 	cloudCtx, cancelCloud := context.WithCancel(ctx)
 	var cloudWG sync.WaitGroup
@@ -41,7 +42,7 @@ func startCloudClient(
 		PendingUploadRepo: svc.DB,
 		EventBus:          svc.EventBus,
 		LocalTasks:        svc.TasksMap,
-		LogDir:            flags.LogDir(),
+		LogDir:            f.LogDir(),
 		Availability:      svc.Executor.Availability(),
 		Now:               time.Now,
 		OnConnected: func() {
@@ -218,8 +219,8 @@ func runHeadless(rt *daemonRuntime) error {
 
 // runWithTUI starts the interactive TUI, waits for it to exit, then shuts down
 // or transitions to headless mode depending on user choice.
-func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo) error {
-	client := apiclient.NewUnix(localAPISocketPath())
+func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
+	client := apiclient.NewUnix(localAPISocketPath(f))
 	if rt.srv != nil {
 		if err := pollHealth(client, 3*time.Second); err != nil {
 			slog.Warn("Health check did not pass before TUI start", "err", err)
@@ -266,8 +267,8 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo) error {
 		// boot would. The ring buffer stays tee'd so remote TUI clients still
 		// see daemon logs.
 		clilog.Configure(clilog.Options{
-			Level:      flags.LogLevel,
-			Format:     flags.LogFormat,
+			Level:      f.LogLevel,
+			Format:     f.LogFormat,
 			Output:     io.MultiWriter(os.Stderr, rt.logBuffer),
 			DaemonMode: true,
 		})

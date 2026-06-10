@@ -15,16 +15,16 @@ import (
 )
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.
-func runDefault() error {
-	client := apiclient.NewUnix(localAPISocketPath())
+func runDefault(f Flags) error {
+	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	if client.HealthCheck() == nil {
-		err := runTUIConnect(client)
+		err := runTUIConnect(client, f)
 		if err == nil {
 			return nil
 		}
 		if errors.Is(err, apiclient.ErrRateLimited) {
-			return authRateLimitedError(flags.Port)
+			return authRateLimitedError(f.Port)
 		}
 		return err
 	}
@@ -33,7 +33,7 @@ func runDefault() error {
 	// there's no runwisp.toml and we're at a terminal, offer to create one.
 	// A spawned background daemon has no TTY, so the prompt must happen
 	// here in the foreground process.
-	if err := scaffoldIfMissing(flags.CfgFile); err != nil {
+	if err := scaffoldIfMissing(f.CfgFile); err != nil {
 		return err
 	}
 
@@ -41,27 +41,27 @@ func runDefault() error {
 	// then silently fail to bind), probe the port ourselves. If something
 	// is holding it but it is not a RunWisp daemon we can surface a clear,
 	// actionable error immediately.
-	if bindErr := probePortAvailable(flags.Host, flags.Port); bindErr != nil {
-		return portConflictError(flags.Host, flags.Port, bindErr)
+	if bindErr := probePortAvailable(f.Host, f.Port); bindErr != nil {
+		return portConflictError(f.Host, f.Port, bindErr)
 	}
 
-	if err := spawnDaemon(); err != nil {
+	if err := spawnDaemon(f); err != nil {
 		slog.Warn("Failed to spawn background daemon, running inline", "err", err)
-		return runDaemon(modeStandalone)
+		return runDaemon(modeStandalone, f, false)
 	}
 
-	logPath := filepath.Join(flags.DataDir, "daemon.log")
-	if err := waitForDaemon(client, logPath, 10*time.Second); err != nil {
+	logPath := filepath.Join(f.DataDir, "daemon.log")
+	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
 		return err
 	}
 
-	return runTUIConnect(client)
+	return runTUIConnect(client, f)
 }
 
 // runTUIConnect launches the TUI against an already-healthy daemon client.
 // The client is expected to already be wired (socket transport for local
 // access; no Authenticate call is needed in that mode).
-func runTUIConnect(client *apiclient.Client) error {
+func runTUIConnect(client *apiclient.Client, f Flags) error {
 	info, err := client.GetDaemonInfo()
 	if err != nil {
 		slog.Warn("Could not fetch daemon info", "err", err)
@@ -83,7 +83,8 @@ func runTUIConnect(client *apiclient.Client) error {
 		slog.Warn("Could not fetch local credentials", "err", credErr)
 	}
 
-	_, tuiErr := tui.StartTUI(startupInfo, client, nil, shutdownDaemon, client.CreateLaunchTicket)
+	shutdownFunc := func() error { return shutdownDaemon(f) }
+	_, tuiErr := tui.StartTUI(startupInfo, client, nil, shutdownFunc, client.CreateLaunchTicket)
 	if tuiErr != nil {
 		return tuiErr
 	}

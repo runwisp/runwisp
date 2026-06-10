@@ -31,58 +31,58 @@ manager. Otherwise the daemon is stopped gracefully (SIGTERM) and a
 fresh one is spawned in the background.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		return runRestart(cmd)
+		return runRestart(cmd, flags)
 	},
 }
 
-func runRestart(cmd *cobra.Command) error {
+func runRestart(cmd *cobra.Command, f Flags) error {
 	out := cmd.OutOrStdout()
 
-	installer, opts, st, ok := serviceState(cmd)
+	installer, opts, st, ok := serviceState(cmd, f)
 	if ok && shouldDelegateRestart(st) {
-		return restartViaService(out, installer, opts, st)
+		return restartViaService(out, installer, opts, st, f)
 	}
 
-	if isDaemonRunning() {
-		if err := shutdownDaemonWait(stopWaitTimeout()); err != nil {
+	if isDaemonRunning(f) {
+		if err := shutdownDaemonWait(stopWaitTimeout(f), f); err != nil {
 			return err
 		}
 	} else {
 		fmt.Fprintln(out, "No daemon was running — starting one.")
 	}
 
-	if err := spawnDaemon(); err != nil {
+	if err := spawnDaemon(f); err != nil {
 		return err
 	}
-	client := apiclient.NewUnix(localAPISocketPath())
-	logPath := filepath.Join(flags.DataDir, "daemon.log")
-	if err := waitForDaemon(client, logPath, 10*time.Second); err != nil {
+	client := apiclient.NewUnix(localAPISocketPath(f))
+	logPath := filepath.Join(f.DataDir, "daemon.log")
+	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
 		return err
 	}
-	printRestarted(out)
+	printRestarted(out, f)
 	return nil
 }
 
 // restartViaService delegates the restart to systemd/launchd, then waits for
 // the fresh daemon to answer health checks before reporting success.
-func restartViaService(out io.Writer, installer autostart.Installer, opts autostart.InstallOptions, st autostart.Status) error {
+func restartViaService(out io.Writer, installer autostart.Installer, opts autostart.InstallOptions, st autostart.Status, f Flags) error {
 	fmt.Fprintf(out, "Daemon is managed by %s — restarting %s...\n", serviceManagerName(st), filepath.Base(st.UnitPath))
 	if err := installer.Restart(context.Background(), opts); err != nil {
 		return err
 	}
-	client := apiclient.NewUnix(localAPISocketPath())
+	client := apiclient.NewUnix(localAPISocketPath(f))
 	if err := pollHealth(client, 15*time.Second); err != nil {
 		return fmt.Errorf("daemon did not come back up after restart (%w) — check logs: %s", err, st.LogsHint)
 	}
-	printRestarted(out)
+	printRestarted(out, f)
 	return nil
 }
 
 // printRestarted confirms the restart and points at the web UI. The URL is
 // best-effort — an unreadable config just drops the suffix.
-func printRestarted(out io.Writer) {
-	if cfg, err := config.Load(flags.CfgFile); err == nil {
-		fmt.Fprintf(out, "Daemon restarted — web UI at %s\n", daemonListenURL(cfg))
+func printRestarted(out io.Writer, f Flags) {
+	if cfg, err := config.Load(f.CfgFile); err == nil {
+		fmt.Fprintf(out, "Daemon restarted — web UI at %s\n", daemonListenURL(cfg, f))
 		return
 	}
 	fmt.Fprintln(out, "Daemon restarted.")

@@ -52,7 +52,7 @@ data dir). Without either flag, the mode is auto-detected.`,
 		if execFlags.Daemon && execFlags.Standalone {
 			return errors.New("--daemon and --standalone are mutually exclusive")
 		}
-		exitCode, err := runExec(args[0])
+		exitCode, err := runExec(args[0], flags)
 		if err != nil {
 			return err
 		}
@@ -68,28 +68,28 @@ func init() {
 	execCmd.Flags().BoolVar(&execFlags.Standalone, "standalone", false, "require no daemon and run the task in-process")
 }
 
-func runExec(taskName string) (int, error) {
-	daemonUp := isDaemonRunning()
+func runExec(taskName string, f Flags) (int, error) {
+	daemonUp := isDaemonRunning(f)
 
 	if execFlags.Daemon && !daemonUp {
-		return 0, fmt.Errorf("--daemon was set but no daemon is running on data dir %q", flags.DataDir)
+		return 0, fmt.Errorf("--daemon was set but no daemon is running on data dir %q", f.DataDir)
 	}
 	if execFlags.Standalone && daemonUp {
-		return 0, fmt.Errorf("--standalone was set but a daemon is already running on data dir %q", flags.DataDir)
+		return 0, fmt.Errorf("--standalone was set but a daemon is already running on data dir %q", f.DataDir)
 	}
 
 	if daemonUp {
-		return runExecViaDaemon(taskName)
+		return runExecViaDaemon(taskName, f)
 	}
-	return runExecStandalone(taskName)
+	return runExecStandalone(taskName, f)
 }
 
 // isDaemonRunning reports whether a daemon currently owns this data dir.
 // Two writers on one SQLite file would corrupt state, so the standalone
 // path must defer to the daemon when one is alive.
-func isDaemonRunning() bool {
-	pidPath := datadir.PidFilePath(flags.DataDir)
-	pid, err := datadir.ReadPidFile(flags.DataDir)
+func isDaemonRunning(f Flags) bool {
+	pidPath := datadir.PidFilePath(f.DataDir)
+	pid, err := datadir.ReadPidFile(f.DataDir)
 	if err != nil {
 		return false
 	}
@@ -99,10 +99,10 @@ func isDaemonRunning() bool {
 // runExecViaDaemon dispatches the run through the running daemon's REST API
 // (via its local Unix socket) and follows its SSE log stream until the run
 // reaches a terminal state.
-func runExecViaDaemon(taskName string) (int, error) {
-	client := apiclient.NewUnix(localAPISocketPath())
+func runExecViaDaemon(taskName string, f Flags) (int, error) {
+	client := apiclient.NewUnix(localAPISocketPath(f))
 	if err := client.HealthCheck(); err != nil {
-		return 0, fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(), err, daemonNotRunningHint)
+		return 0, fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
 	run, err := client.TriggerRun(taskName)
@@ -190,10 +190,10 @@ func exitCodeFromRun(run *model.Run) int {
 
 // runExecStandalone runs the task in this CLI process. The data dir must not
 // already be owned by a daemon (isDaemonRunning's caller has confirmed that).
-func runExecStandalone(taskName string) (int, error) {
-	cfg, err := config.Load(flags.CfgFile)
+func runExecStandalone(taskName string, f Flags) (int, error) {
+	cfg, err := config.Load(f.CfgFile)
 	if err != nil {
-		return 0, fmt.Errorf("failed to load %s: %w", flags.CfgFile, err)
+		return 0, fmt.Errorf("failed to load %s: %w", f.CfgFile, err)
 	}
 
 	if err := config.Validate(cfg); err != nil {
@@ -213,7 +213,7 @@ func runExecStandalone(taskName string) (int, error) {
 	}
 
 	eventBus := events.NewEventBus()
-	exec := initExecutor(cfg, eventBus)
+	exec := initExecutor(cfg, eventBus, f.LogDir())
 
 	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
 	defer taskManager.Shutdown()

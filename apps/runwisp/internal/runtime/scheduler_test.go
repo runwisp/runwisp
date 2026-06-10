@@ -17,30 +17,26 @@ import (
 )
 
 func TestScheduler(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-
+	runner := &fakeTaskRunner{}
 	task := &model.Task{
 		Name: "task1",
 		Cron: "@every 1s",
 		Run:  "echo hi",
 	}
-	jm.UpsertTask(task)
 	tasks := map[string]*model.Task{"task1": task}
 
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
-
-	sched := NewScheduler(jm, tasks, time.UTC)
+	sched := NewScheduler(runner, tasks, time.UTC)
 	_, err := sched.Start()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer sched.Stop()
 
-	// Wait for cron to trigger
-	time.Sleep(1500 * time.Millisecond)
+	// fireOnce is the cron callback; invoking it directly exercises our firing
+	// logic without waiting a real second for the @every tick (which would only
+	// be testing the cron library).
+	sched.fireOnce("task1", time.UTC)
+	assert.Equal(t, 1, runner.triggerCount(), "a firing must trigger the task once")
 
-	exec.AssertCalled(t, "Execute", mock.Anything, task, mock.Anything)
-
+	// Start computes next-run instants synchronously, so this is ready now.
 	next := sched.GetNextRun("task1")
 	assert.NotNil(t, next)
 }
@@ -149,43 +145,6 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	assert.Equal(t, wm, sched.lastFired["eu-mins"], "lastFired must advance when wall-clock minute differs")
 }
 
-// recordingTaskRunner is a TaskRunner stand-in that captures trigger/skip
-// calls so scheduler tests can assert on the firing sequence without booting
-// the executor or event bus.
-type recordingTaskRunner struct {
-	triggers []string
-	skips    []recordedSkip
-}
-
-type recordedSkip struct {
-	taskName string
-	reason   model.EndReason
-}
-
-func (r *recordingTaskRunner) TriggerRun(name string, _ model.TriggeredBy) (*model.Run, error) {
-	r.triggers = append(r.triggers, name)
-	return &model.Run{TaskName: name}, nil
-}
-
-func (r *recordingTaskRunner) TriggerRunWithOptions(name string, _ TriggerRunOptions) (*model.Run, error) {
-	return r.TriggerRun(name, model.TriggeredByCron)
-}
-
-func (r *recordingTaskRunner) RecordSkippedFiring(name string, reason model.EndReason, _ model.TriggeredBy) error {
-	r.skips = append(r.skips, recordedSkip{taskName: name, reason: reason})
-	return nil
-}
-
-func (r *recordingTaskRunner) RecordMissedRun(string, time.Time, string) error { return nil }
-
-func (r *recordingTaskRunner) GetTask(string) (*model.Task, bool)             { return nil, false }
-func (r *recordingTaskRunner) UpsertTask(*model.Task)                         {}
-func (r *recordingTaskRunner) TerminateRun(string) error                      { return nil }
-func (r *recordingTaskRunner) TerminateRunByExternalExecutionID(string) error { return nil }
-func (r *recordingTaskRunner) RestartServiceInstances(string) error           { return nil }
-func (r *recordingTaskRunner) StopService(string) error                       { return nil }
-func (r *recordingTaskRunner) GetActiveRunCount(string) int                   { return 0 }
-
 // TestSchedulerFireOnce_GoldenTriggerSkipSequence pins down the firing
 // pattern across the 2026-10-25 fall-back in Europe/Bratislava under the
 // realistic "0 2 * * *" cron: wall-clock 02:00 happens twice (CEST then
@@ -196,7 +155,7 @@ func (r *recordingTaskRunner) GetActiveRunCount(string) int                   { 
 // This is a contract: the (trigger, skip, trigger) sequence is the golden
 // outcome; change it only if scheduler semantics intentionally change.
 func TestSchedulerFireOnce_GoldenTriggerSkipSequence(t *testing.T) {
-	runner := &recordingTaskRunner{}
+	runner := &fakeTaskRunner{}
 	task := &model.Task{
 		Name:     "tick",
 		Cron:     "0 2 * * *",

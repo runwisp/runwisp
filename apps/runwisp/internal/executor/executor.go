@@ -157,6 +157,17 @@ func New(opts Options) Executor {
 	}
 }
 
+// now returns the executor's wall-clock instant, defaulting to time.Now when no
+// clock was injected. The constructor always sets one; this guards the
+// direct struct construction used by white-box tests so a missing clock can
+// never nil-panic in the output-timestamping path.
+func (r *RoutingExecutor) now() time.Time {
+	if r.clock == nil {
+		return time.Now()
+	}
+	return r.clock()
+}
+
 func (r *RoutingExecutor) Availability() Availability {
 	return r.availability
 }
@@ -330,7 +341,7 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		CancelFunc:  cancelFunc,
 		MinFreeDisk: r.minFreeDisk,
 		LogDir:      r.logDir,
-		Now:         r.clock,
+		Now:         r.now,
 		OnDiskPressure: func(free, min int64, killed bool) {
 			if bus == nil {
 				return
@@ -371,7 +382,7 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 		externalExecutionID = *run.ExternalExecutionID
 	}
 
-	nowMs := func() int64 { return time.Now().UnixMilli() }
+	nowMs := func() int64 { return r.now().UnixMilli() }
 
 	incomplete := false
 

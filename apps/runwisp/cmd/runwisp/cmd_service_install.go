@@ -49,7 +49,7 @@ Flags:
   --force      overwrite a hand-edited unit
   --system     install /etc/systemd/system/ instead (Linux, advanced)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runServiceInstall(cmd)
+		return runServiceInstall(cmd, flags)
 	},
 }
 
@@ -62,13 +62,13 @@ func init() {
 	serviceInstallCmd.Flags().StringVar(&serviceInstallOpts.Binary, "binary", "", "override the binary path baked into the unit (default: auto-detect)")
 }
 
-func runServiceInstall(cmd *cobra.Command) error {
+func runServiceInstall(cmd *cobra.Command, f Flags) error {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, serviceInstallOpts.Yes)
 	if err != nil {
 		return err
 	}
 
-	opts, err := resolveServiceOptions(cmd, deps)
+	opts, err := resolveServiceOptions(cmd, deps, f)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func runServiceInstall(cmd *cobra.Command) error {
 		return nil
 	}
 
-	if err := preflightDaemon(opts); err != nil {
+	if err := preflightDaemon(opts, f); err != nil {
 		return err
 	}
 
@@ -124,7 +124,7 @@ func runServiceInstall(cmd *cobra.Command) error {
 // "./data" with no DB, the bare ./runwisp.toml shadowing the XDG one,
 // etc.). The returned options are fully absolute — what we'd bake
 // into the unit.
-func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps) (autostart.InstallOptions, error) {
+func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags) (autostart.InstallOptions, error) {
 	exe := serviceInstallOpts.Binary
 	if exe == "" {
 		var err error
@@ -155,7 +155,7 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps) (autostart.I
 		bareDBExists = true
 	}
 	dataRes, err := autostart.ResolveDataDir(autostart.ResolveDataDirOptions{
-		Explicit:         flags.DataDir,
+		Explicit:         f.DataDir,
 		ExplicitSet:      dataDirExplicit,
 		HomeDir:          deps.Home,
 		XDGDataHome:      deps.XDGDataHome,
@@ -175,7 +175,7 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps) (autostart.I
 	xdgExists := xdgCfg != "" && fileExists(xdgCfg)
 	bareCfgExists := fileExists("runwisp.toml")
 	configPath, err := autostart.ResolveConfigPath(autostart.ResolveConfigOptions{
-		Explicit:    flags.CfgFile,
+		Explicit:    f.CfgFile,
 		ExplicitSet: cfgExplicit,
 		HomeDir:     deps.Home,
 		XDGConfHome: deps.XDGConfHome,
@@ -190,8 +190,8 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps) (autostart.I
 		Binary:  binary,
 		Config:  configPath,
 		DataDir: dataDir,
-		Host:    flags.Host,
-		Port:    flags.Port,
+		Host:    f.Host,
+		Port:    f.Port,
 	}, nil
 }
 
@@ -236,9 +236,9 @@ func fileExists(path string) bool {
 // preflightDaemon refuses to install while a daemon is already up
 // against the same data dir. Without this guard, the install path
 // would race the live process and end up double-binding the port.
-func preflightDaemon(opts autostart.InstallOptions) error {
-	if bindErr := probePortAvailable(flags.Host, opts.Port); bindErr != nil {
-		return portConflictError(flags.Host, opts.Port, bindErr)
+func preflightDaemon(opts autostart.InstallOptions, f Flags) error {
+	if bindErr := probePortAvailable(f.Host, opts.Port); bindErr != nil {
+		return portConflictError(f.Host, opts.Port, bindErr)
 	}
 	return nil
 }

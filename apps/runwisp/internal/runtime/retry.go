@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"errors"
 	"log/slog"
 	"time"
 
@@ -33,7 +34,7 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 		RetryAttempt: failedRun.RetryAttempt + 1,
 		RetryOfRunID: &failedRun.ID,
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errShuttingDown) {
 		slog.Error("Retry failed", "task", task.Name, "attempt", failedRun.RetryAttempt+1, "err", err)
 	}
 }
@@ -68,7 +69,7 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 	}
 
 	_, err := m.TriggerRunWithOptions(task.Name, options)
-	if err != nil {
+	if err != nil && !errors.Is(err, errShuttingDown) {
 		slog.Error("Restart failed", "task", task.Name, "instance", previousRun.InstanceIndex, "err", err)
 	}
 }

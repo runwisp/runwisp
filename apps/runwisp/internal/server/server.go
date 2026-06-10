@@ -75,6 +75,7 @@ type Options struct {
 	PasswordEphemeral bool              // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
 	JWTSecret         string            // JWT signing secret (derived in-memory)
 	NoAuth            bool              // RUNWISP_NO_AUTH: serve all /api/* routes over TCP without JWT/CHAP
+	TrustedProxies    string            // RUNWISP_TRUST_PROXY value (comma-separated CIDRs/IPs); read by the caller, parsed here
 	DaemonInfo        *model.DaemonInfo // Static identity/config info for /api/info
 	ConfigStale       func() bool       // Per-request staleness probe for /api/info (optional; nil reports never-stale)
 	DaemonLogBuffer   *DaemonLogBuffer  // Ring buffer for daemon log streaming (optional)
@@ -87,7 +88,7 @@ func New(opts Options) (*Server, error) {
 		return nil, errors.New("password must be provided to start the web server")
 	}
 
-	trustedProxies, err := parseTrustedProxies(os.Getenv("RUNWISP_TRUST_PROXY"))
+	trustedProxies, err := parseTrustedProxies(opts.TrustedProxies)
 	if err != nil {
 		return nil, fmt.Errorf("parse trusted proxies: %w", err)
 	}
@@ -125,8 +126,7 @@ func New(opts Options) (*Server, error) {
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.configStale = opts.ConfigStale
-	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals
-	s.metrics.Start(5 * time.Second)
+	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals; sampling starts in Start()
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)
 	if err := s.setupRoutes(); err != nil {
@@ -136,6 +136,10 @@ func New(opts Options) (*Server, error) {
 }
 
 func (srv *Server) Start() error {
+	// Begin sampling here rather than in New so construction stays pure — a
+	// Server built for a unit test that never calls Start spawns no goroutine.
+	srv.metrics.Start(5 * time.Second)
+
 	host := srv.host
 	if host == "" {
 		host = "127.0.0.1"
@@ -287,7 +291,9 @@ func removeStaleSocket(path string) error {
 
 // Shutdown gracefully stops the HTTP server and metrics collector.
 func (srv *Server) Shutdown(ctx context.Context) error {
-	srv.metrics.Stop()
+	if srv.metrics != nil {
+		srv.metrics.Stop()
+	}
 
 	var wg sync.WaitGroup
 	var tcpErr, unixErr, metricsErr error

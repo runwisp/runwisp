@@ -39,37 +39,27 @@ func TestExitCodeFromRun_NoEndReason(t *testing.T) {
 }
 
 func TestIsDaemonRunning_NoPidFile(t *testing.T) {
-	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
-	assert.False(t, isDaemonRunning(), "no PID file → not running")
+	t.Parallel()
+	assert.False(t, isDaemonRunning(Flags{DataDir: t.TempDir()}), "no PID file → not running")
 }
 
 func TestIsDaemonRunning_StalePidFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	// PID 0 cannot be signaled — write it so processAlive returns false.
 	pidPath := filepath.Join(dir, "daemon.pid")
 	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(0)), 0o600))
 
-	assert.False(t, isDaemonRunning(), "PID file present but PID dead → not running")
+	assert.False(t, isDaemonRunning(Flags{DataDir: dir}), "PID file present but PID dead → not running")
 }
 
 func TestIsDaemonRunning_LivePid(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	pidPath := filepath.Join(dir, "daemon.pid")
 	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
 
-	assert.True(t, isDaemonRunning(), "PID file present and live PID → running")
+	assert.True(t, isDaemonRunning(Flags{DataDir: dir}), "PID file present and live PID → running")
 }
 
 func TestExecLogLineHandler_FiltersByTaskName(t *testing.T) {
@@ -153,16 +143,11 @@ func TestExecRunTerminalHandler_DispatchesMatching(t *testing.T) {
 }
 
 func TestRunExec_DaemonFlagRequiresDaemon(t *testing.T) {
-	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	origFlag := execFlags.Daemon
 	execFlags.Daemon = true
 	t.Cleanup(func() { execFlags.Daemon = origFlag })
 
-	exitCode, err := runExec("anything")
+	exitCode, err := runExec("anything", Flags{DataDir: t.TempDir()})
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--daemon was set")
@@ -170,10 +155,6 @@ func TestRunExec_DaemonFlagRequiresDaemon(t *testing.T) {
 
 func TestRunExec_StandaloneFlagForbidsDaemon(t *testing.T) {
 	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	// Write the current PID — isDaemonRunning will see a live daemon.
 	pidPath := filepath.Join(dir, "daemon.pid")
 	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
@@ -182,7 +163,7 @@ func TestRunExec_StandaloneFlagForbidsDaemon(t *testing.T) {
 	execFlags.Standalone = true
 	t.Cleanup(func() { execFlags.Standalone = origFlag })
 
-	exitCode, err := runExec("anything")
+	exitCode, err := runExec("anything", Flags{DataDir: dir})
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--standalone was set")
@@ -202,33 +183,22 @@ run = "echo hi"
 `
 	require.NoError(t, os.WriteFile(cfgPath, []byte(minimalCfg), 0o600))
 
-	origCfg := flags.CfgFile
-	flags.CfgFile = cfgPath
-	t.Cleanup(func() { flags.CfgFile = origCfg })
-
-	exitCode, err := runExecStandalone("missing")
+	exitCode, err := runExecStandalone("missing", Flags{CfgFile: cfgPath})
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `task "missing" not found`)
 }
 
 func TestRunExecStandalone_BadConfigFile(t *testing.T) {
-	origCfg := flags.CfgFile
-	flags.CfgFile = "/does/not/exist/runwisp.toml"
-	t.Cleanup(func() { flags.CfgFile = origCfg })
-
-	_, err := runExecStandalone("anything")
+	t.Parallel()
+	_, err := runExecStandalone("anything", Flags{CfgFile: "/does/not/exist/runwisp.toml"})
 	require.Error(t, err)
 }
 
 func TestRunExecViaDaemon_DaemonUnreachable(t *testing.T) {
-	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
+	t.Parallel()
 	// No socket created — apiclient.NewUnix will fail HealthCheck.
-	exitCode, err := runExecViaDaemon("anything")
+	exitCode, err := runExecViaDaemon("anything", Flags{DataDir: t.TempDir()})
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "daemon is not reachable")
@@ -251,26 +221,18 @@ run = "echo runwisp-exec-test"
 `
 	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
 
-	origCfg, origDD := flags.CfgFile, flags.DataDir
-	flags.CfgFile = cfgPath
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.CfgFile = origCfg; flags.DataDir = origDD })
-
-	exitCode, err := runExecStandalone("greet")
+	exitCode, err := runExecStandalone("greet", Flags{CfgFile: cfgPath, DataDir: dir})
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode)
 }
 
 func TestRunExecStandalone_InvalidConfig(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte("not valid toml ============="), 0o600))
 
-	origCfg := flags.CfgFile
-	flags.CfgFile = cfgPath
-	t.Cleanup(func() { flags.CfgFile = origCfg })
-
-	_, err := runExecStandalone("x")
+	_, err := runExecStandalone("x", Flags{CfgFile: cfgPath})
 	require.Error(t, err)
 }
 

@@ -80,7 +80,7 @@ func TestStartCloudClient_DisabledReturnsZeroWG(t *testing.T) {
 	cfg := &daemonConfig{}
 	cfg.CloudConfig.Enabled = false
 
-	cancelCloud, wg := startCloudClient(context.Background(), cfg, &daemonServices{})
+	cancelCloud, wg := startCloudClient(context.Background(), cfg, &daemonServices{}, Flags{})
 	if cancelCloud == nil {
 		t.Fatal("expected non-nil cancel func")
 	}
@@ -104,16 +104,16 @@ func TestStartCloudClient_DisabledReturnsZeroWG(t *testing.T) {
 // notify so those branches are exercised harmlessly.
 func minimalServices(t *testing.T) *daemonServices {
 	t.Helper()
-	db := daemonServicesTestEnv(t)
+	f, db := daemonServicesTestEnv(t)
 	cfg := &config.Config{}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus)
+	exec := initExecutor(cfg, bus, f.LogDir())
 	dc := &daemonConfig{Config: cfg}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 
-	cleaner := initRetentionCleaner(dc, db, tasksMap)
-	purger := runtime.NewSoftDeletePurger(db, flags.LogDir())
+	cleaner := initRetentionCleaner(dc, db, tasksMap, f.LogDir())
+	purger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	purger.Start()
 
 	return &daemonServices{
@@ -166,11 +166,11 @@ func TestGracefulShutdown_AppliesFallbackTimeoutWhenUnset(t *testing.T) {
 }
 
 func TestGracefulShutdown_WithScheduler(t *testing.T) {
-	db := daemonServicesTestEnv(t)
+	f, db := daemonServicesTestEnv(t)
 	cfg := &config.Config{}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus)
+	exec := initExecutor(cfg, bus, f.LogDir())
 	dc := &daemonConfig{Config: cfg}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 
@@ -185,7 +185,7 @@ func TestGracefulShutdown_WithScheduler(t *testing.T) {
 		TaskManager:         tm,
 		TasksMap:            tasksMap,
 		Scheduler:           scheduler,
-		RetentionCleaner:    initRetentionCleaner(dc, db, tasksMap),
+		RetentionCleaner:    initRetentionCleaner(dc, db, tasksMap, f.LogDir()),
 		TaskShutdownTimeout: 100 * time.Millisecond,
 	}
 

@@ -40,24 +40,18 @@ func serviceTask(name string, instances int) *model.Task {
 }
 
 func TestStartServiceInstances(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	djm, _, eb := newGatedManager(t)
+	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 3)
 	jm.UpsertTask(task)
 
-	// Block each instance long enough to observe them all running concurrently.
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
-		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 500*time.Millisecond,
-	)
-
+	// The gated executor keeps each instance running until cancelled, so all
+	// three are observably concurrent once their start events have fired.
+	started := watchRuns(eb, events.EventRunStarted)
 	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	started.waitFor(t, 3)
 
-	time.Sleep(50 * time.Millisecond)
-
-	djm := jm.(*defaultTaskManager)
 	djm.mu.RLock()
 	ts := djm.tasks["svc"]
 	assert.Len(t, ts.active, 3, "all 3 instances should be active")
@@ -76,10 +70,8 @@ func TestStartServiceInstances(t *testing.T) {
 }
 
 func TestServiceInstanceRefillsOnExit(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	djm, exec, eb := newTestManager(t)
+	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 2)
 	jm.UpsertTask(task)
@@ -90,12 +82,12 @@ func TestServiceInstanceRefillsOnExit(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 1}, 10*time.Millisecond,
 	)
 
+	// Waiting for more starts than the instance count proves refills fired,
+	// without guessing how long several restart cycles take.
+	started := watchRuns(eb, events.EventRunStarted)
 	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	started.waitFor(t, 4)
 
-	// Allow several restart cycles.
-	time.Sleep(200 * time.Millisecond)
-
-	djm := jm.(*defaultTaskManager)
 	djm.mu.RLock()
 	ts := djm.tasks["svc"]
 	// At any point in time the supervisor should target exactly task.Instances
@@ -107,15 +99,11 @@ func TestServiceInstanceRefillsOnExit(t *testing.T) {
 			"supervisor-driven refills must label runs as TriggeredByService, not inherit")
 	}
 	djm.mu.RUnlock()
-
-	// Many Execute calls should have fired due to repeated restarts.
-	assert.Greater(t, len(exec.Calls), 2)
 }
 
 func TestServiceShutdownStopsRestarts(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
+	djm, exec, eb := newTestManager(t)
+	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 1)
 	jm.UpsertTask(task)
@@ -124,24 +112,23 @@ func TestServiceShutdownStopsRestarts(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 1}, 10*time.Millisecond,
 	)
 
+	started := watchRuns(eb, events.EventRunStarted)
 	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
-	time.Sleep(50 * time.Millisecond)
+	started.waitFor(t, 2) // initial run plus at least one restart
 
 	jm.Shutdown()
 
-	// Capture call count immediately after shutdown returned.
-	callsAtShutdown := len(exec.Calls)
-
-	// Wait past several would-be restart intervals; no new calls should appear.
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, callsAtShutdown, len(exec.Calls), "no restarts after shutdown")
+	// Shutdown waits for every execute/restart goroutine to exit, so no further
+	// start can fire afterwards — the count must hold steady.
+	settled := started.count()
+	require.Never(t, func() bool {
+		return started.count() > settled
+	}, 100*time.Millisecond, 10*time.Millisecond, "no restarts after shutdown")
 }
 
 func TestServiceLoadPendingRunsSkipsServices(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	djm, _, _ := newTestManager(t)
+	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 2)
 	jm.UpsertTask(task)
@@ -157,22 +144,16 @@ func TestServiceLoadPendingRunsSkipsServices(t *testing.T) {
 }
 
 func TestRestartServiceInstancesCancelsAll(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	djm, _, eb := newGatedManager(t)
+	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 3)
 	jm.UpsertTask(task)
 
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
-		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 200*time.Millisecond,
-	)
-
+	started := watchRuns(eb, events.EventRunStarted)
 	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
-	time.Sleep(30 * time.Millisecond)
+	started.waitFor(t, 3)
 
-	djm := jm.(*defaultTaskManager)
 	djm.mu.RLock()
 	startCount := len(djm.tasks["svc"].active)
 	djm.mu.RUnlock()
@@ -180,11 +161,9 @@ func TestRestartServiceInstancesCancelsAll(t *testing.T) {
 
 	require.NoError(t, jm.RestartServiceInstances("svc"))
 
-	// Instances should drain (Stopped) then refill via supervisor.
-	time.Sleep(300 * time.Millisecond)
-
-	// More than 3 Execute calls means refills happened.
-	assert.GreaterOrEqual(t, len(exec.Calls), 6)
+	// Each of the three instances is cancelled and refilled; six starts total
+	// proves the refills happened.
+	started.waitFor(t, 6)
 }
 
 // TestServiceInstanceRefillsAfterManualStop is the regression test for the bug
@@ -192,23 +171,17 @@ func TestRestartServiceInstancesCancelsAll(t *testing.T) {
 // A service must self-heal: cancelling one instance must refill that same
 // instance index.
 func TestServiceInstanceRefillsAfterManualStop(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	djm, _, eb := newGatedManager(t)
+	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 2)
 	jm.UpsertTask(task)
 
-	// Long block — instances only end via context cancellation.
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
-		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 5*time.Second,
-	)
-
+	// The gated executor keeps instances running until cancelled.
+	started := watchRuns(eb, events.EventRunStarted)
 	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
-	time.Sleep(50 * time.Millisecond)
+	started.waitFor(t, 2)
 
-	djm := jm.(*defaultTaskManager)
 	djm.mu.RLock()
 	require.Len(t, djm.tasks["svc"].active, 2, "both instances should be running")
 	var targetRunID string
@@ -223,8 +196,9 @@ func TestServiceInstanceRefillsAfterManualStop(t *testing.T) {
 
 	require.NoError(t, jm.TerminateRun(targetRunID))
 
-	// Wait for the cancelled run to drain and the supervisor to refill the slot.
-	time.Sleep(150 * time.Millisecond)
+	// The cancelled run drains and the supervisor refills slot 0 — the third
+	// start event marks that refill.
+	started.waitFor(t, 3)
 
 	djm.mu.RLock()
 	defer djm.mu.RUnlock()
@@ -247,14 +221,10 @@ func TestServiceInstanceRefillsAfterManualStop(t *testing.T) {
 // itself lives on the supervisor; this exercise pins the integration with
 // the manager's run-completion path.
 func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	djm, exec, eb := newTestManager(t)
+	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 1)
-	// Long enough delay between restarts that we can sample mid-cycle without
-	// races, but short enough to keep the test quick.
 	task.RestartDelay = 30 * time.Millisecond
 	// Pin the healthy bar high and the FATAL budget out of reach so every quick
 	// exit stays a "fast failure": the backoff counter (the subject here) climbs
@@ -269,10 +239,12 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 		&executor.ExecuteResult{ExitCode: 1}, 5*time.Millisecond,
 	)
 
+	// Three starts = initial + two restarts, so the attempt counter must have
+	// advanced past one by the time the third start fires.
+	started := watchRuns(eb, events.EventRunStarted)
 	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
-	time.Sleep(250 * time.Millisecond)
+	started.waitFor(t, 3)
 
-	djm := jm.(*defaultTaskManager)
 	djm.mu.RLock()
 	attempts := djm.tasks["svc"].supervisor.Attempts(0)
 	djm.mu.RUnlock()
@@ -358,10 +330,8 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 }
 
 func TestRestartServiceInstancesRejectsNonService(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	djm, _, _ := newTestManager(t)
+	jm := TaskManager(djm)
 
 	jm.UpsertTask(&model.Task{
 		Name:          "cron-job",
@@ -425,39 +395,29 @@ func TestAutostartFalseBootsStopped(t *testing.T) {
 // TestStopServiceHaltsRestarts verifies that operator-initiated Stop prevents
 // the supervisor from refilling instance slots until Restart is called.
 func TestStopServiceHaltsRestarts(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	djm, _, eb := newGatedManager(t)
+	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 2)
 	jm.UpsertTask(task)
 
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
-		&executor.ExecuteResult{ExitCode: -1, Stopped: true}, 200*time.Millisecond,
-	)
-
+	started := watchRuns(eb, events.EventRunStarted)
+	done := watchCompletions(eb)
 	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
-	time.Sleep(50 * time.Millisecond)
+	started.waitFor(t, 2)
 
 	require.NoError(t, jm.StopService("svc"))
 
-	// Give plenty of time past the would-be restart interval; the supervisor
-	// must not refill slots while the stop flag is set.
-	time.Sleep(400 * time.Millisecond)
+	// Stop cancels both instances; once they exit, the supervisor must not
+	// refill them while the stop flag is set.
+	done.waitFor(t, 2)
+	require.Never(t, func() bool {
+		djm.mu.RLock()
+		defer djm.mu.RUnlock()
+		return len(djm.tasks["svc"].active) != 0
+	}, 100*time.Millisecond, 10*time.Millisecond, "no instances should be live after Stop")
 
-	djm := jm.(*defaultTaskManager)
-	djm.mu.RLock()
-	active := len(djm.tasks["svc"].active)
-	djm.mu.RUnlock()
-	assert.Equal(t, 0, active, "no instances should be live after Stop")
-
-	callsAtStop := len(exec.Calls)
-	time.Sleep(200 * time.Millisecond)
-	assert.Equal(t, callsAtStop, len(exec.Calls), "no restarts while stopped")
-
-	// Restart clears the flag and brings instances back. Goroutine scheduling
-	// on slower CI runners can take longer than a fixed sleep; poll instead.
+	// Restart clears the flag and brings instances back.
 	require.NoError(t, jm.RestartServiceInstances("svc"))
 	require.Eventually(t, func() bool {
 		djm.mu.RLock()

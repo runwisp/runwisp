@@ -16,23 +16,23 @@ var validateCmd = &cobra.Command{
 	Short: "Validate runwisp.toml without starting anything",
 	Long:  `Parses and validates the configuration file. Prints a summary on success or a structured error on failure. Useful for CI pipelines and pre-commit checks.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runValidate(cmd.OutOrStdout())
+		return runValidate(cmd.OutOrStdout(), flags)
 	},
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
 
-// runValidate loads and validates flags.CfgFile. On success it prints a
+// runValidate loads and validates f.CfgFile. On success it prints a
 // short ✓ summary to w and returns nil; on failure it returns a userFacing
 // error so main.go renders the message in the same style as other CLI
 // errors. The summary covers the values an operator most often wants to
 // double-check after editing the file: task / service counts and the
 // resolved scheduler timezone (config-pinned vs system-detected).
-func runValidate(w io.Writer) error {
-	cfg, err := config.Load(flags.CfgFile)
+func runValidate(w io.Writer, f Flags) error {
+	cfg, err := config.Load(f.CfgFile)
 	if err != nil {
 		return &userFacingError{
-			title:   fmt.Sprintf("%s is not valid", flags.CfgFile),
+			title:   fmt.Sprintf("%s is not valid", f.CfgFile),
 			details: err.Error(),
 		}
 	}
@@ -51,7 +51,7 @@ func runValidate(w io.Writer) error {
 		}
 	}
 
-	fmt.Fprintf(w, "✓ %s is valid.\n", flags.CfgFile)
+	fmt.Fprintf(w, "✓ %s is valid.\n", f.CfgFile)
 	fmt.Fprintf(w, "  tasks:    %d\n", tasks)
 	fmt.Fprintf(w, "  services: %d\n", services)
 	fmt.Fprintf(w, "  timezone: %s\n", tz)

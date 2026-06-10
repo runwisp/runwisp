@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/testutil"
 	"github.com/stretchr/testify/assert"
@@ -21,14 +20,6 @@ func TestCoalesce_ID_DelegatesToInner(t *testing.T) {
 	defer c.Close(context.Background())
 	if c.ID() != "slack-ops" {
 		t.Fatalf("expected ID=slack-ops, got %q", c.ID())
-	}
-}
-
-func TestCoalesce_FingerprintKey_DifferentFields(t *testing.T) {
-	ev1 := &notify.Event{Kind: notify.KindRunFailed, TaskName: "a"}
-	ev2 := &notify.Event{Kind: notify.KindRunFailed, TaskName: "b"}
-	if fingerprintKey(ev1) == fingerprintKey(ev2) {
-		t.Fatal("different task names must yield different fingerprint keys")
 	}
 }
 
@@ -128,79 +119,64 @@ func TestCoalesce_NewWindowAfterExpiry(t *testing.T) {
 	assert.Nil(t, got[1].Extra, "post-window delivery is a fresh first, not a summary")
 }
 
+// withManualTimers swaps the channel's afterFunc seam for a deterministic
+// ManualTimers, so window-close flushes fire on demand instead of on the wall
+// clock. Returns the timers handle for the test to drive.
+func withManualTimers(c *Channel) *testutil.ManualTimers {
+	mt := testutil.NewManualTimers()
+	c.after = func(_ time.Duration, fn func()) timerHandle { return mt.After(0, fn) }
+	return mt
+}
+
 // TestCoalesce_WindowCloseSummary verifies the timer-driven flush: when a
-// window expires while pending events are buffered, a summary fires
-// asynchronously. Uses a real-time short window so the timer actually runs.
+// window expires while pending events are buffered, a summary fires. The timer
+// is driven manually so the assertion is deterministic.
 func TestCoalesce_WindowCloseSummary(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
-	c := New(inner, Config{Window: 50 * time.Millisecond, EveryN: 1000}, nil, nil)
+	clock := testutil.NewFakeClock(time.Unix(0, 0))
+	c := New(inner, Config{Window: time.Hour, EveryN: 1000}, clock, nil)
 	defer c.Close(context.Background())
+	mt := withManualTimers(c)
 
 	for i := 0; i < 4; i++ {
 		require.NoError(t, c.Execute(context.Background(), failEvent("health")))
 	}
+	require.Equal(t, 1, mt.Pending(), "a single window-close timer should be armed")
 
-	// Wait for the window-close timer to fire and the summary delivery to
-	// complete. Allow generous slack for slow CI.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(inner.Received()) >= 2 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	// Fire the window-close timer, then wait for the (tracked) async summary
+	// delivery to complete — no sleep, no polling.
+	mt.FireAll()
+	c.wg.Wait()
 
 	got := inner.Received()
-	require.GreaterOrEqual(t, len(got), 2, "expected first delivery + window-close summary")
+	require.Len(t, got, 2, "expected first delivery + window-close summary")
 	summary := got[len(got)-1]
 	require.NotNil(t, summary.Extra)
 	assert.Equal(t, true, summary.Extra["coalesced_summary"])
 	count, _ := summary.Extra["coalesced_count"].(int)
-	assert.GreaterOrEqual(t, count, 2, "summary count must include suppressed events")
+	assert.Equal(t, 3, count, "summary count must include all suppressed events")
 }
 
 // TestCoalesce_CloseStopsTimers verifies Close cancels pending timers without
 // leaking goroutines or causing further deliveries after shutdown.
 func TestCoalesce_CloseStopsTimers(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
-	c := New(inner, Config{Window: time.Hour, EveryN: 1000}, nil, nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 1000}, testutil.NewFakeClock(time.Unix(0, 0)), nil)
+	mt := withManualTimers(c)
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+	require.Equal(t, 1, mt.Pending(), "the suppressed second event arms a timer")
 
 	require.NoError(t, c.Close(context.Background()))
 	assert.True(t, inner.Closed(), "inner channel must be closed")
+	assert.Equal(t, 0, mt.Pending(), "Close must stop the pending timer")
 
-	// Give any leaked timers a chance to misfire — we only expect the first
-	// pre-close delivery in the count.
-	time.Sleep(20 * time.Millisecond)
+	// Even if a stopped timer somehow fired, the timerDone guard must suppress
+	// any post-close delivery. Firing manually proves it deterministically.
+	mt.FireAll()
+	c.wg.Wait()
 	assert.Len(t, inner.Received(), 1)
-}
-
-func TestFingerprintKey_NilEvent(t *testing.T) {
-	assert.Equal(t, "", fingerprintKey(nil))
-}
-
-func TestFingerprintKey_WithEndReason(t *testing.T) {
-	r := model.ReasonFailed
-	ev := &notify.Event{
-		Kind:     notify.KindRunFailed,
-		TaskName: "t1",
-		Run:      &model.Run{EndReason: &r},
-	}
-	key := fingerprintKey(ev)
-	assert.Contains(t, key, "failed")
-}
-
-func TestFingerprintKey_WithDeliveryFailed(t *testing.T) {
-	ev := &notify.Event{
-		Kind:     notify.KindNotifyDeliveryFailed,
-		TaskName: "t1",
-		Extra:    map[string]any{"channel": "slack", "original_kind": "run.failed"},
-	}
-	key := fingerprintKey(ev)
-	assert.Contains(t, key, "slack")
-	assert.Contains(t, key, "run.failed")
 }
 
 func TestSummarize_NonNilExtra(t *testing.T) {

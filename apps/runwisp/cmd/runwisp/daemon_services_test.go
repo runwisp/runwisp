@@ -51,23 +51,20 @@ func TestCapInfosFromAvailability_PreservesOrder(t *testing.T) {
 	require.Equal("config", caps[4].Name)
 }
 
-// daemonServicesTestEnv prepares a writable data dir + in-memory DB so the
-// helpers under test can call flags.LogDir() safely.
-func daemonServicesTestEnv(t *testing.T) storage.Database {
+// daemonServicesTestEnv prepares a writable data dir + in-memory DB and returns
+// Flags pointing at the dir so the helpers under test can resolve f.LogDir().
+func daemonServicesTestEnv(t *testing.T) (Flags, storage.Database) {
 	t.Helper()
-	dir := t.TempDir()
-	origDataDir := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = origDataDir })
+	f := Flags{DataDir: t.TempDir()}
 
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return f, db
 }
 
 func TestInitExecutor_BuildsExecutorWithEventBus(t *testing.T) {
-	daemonServicesTestEnv(t)
+	f, _ := daemonServicesTestEnv(t)
 	cfg := &config.Config{
 		Tasks: []model.Task{
 			{Name: "alpha", Run: "echo a", Kind: model.KindTask, OnOverlap: model.PolicyQueue, MaxConcurrent: 1},
@@ -75,7 +72,7 @@ func TestInitExecutor_BuildsExecutorWithEventBus(t *testing.T) {
 	}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus)
+	exec := initExecutor(cfg, bus, f.LogDir())
 	require.NotNil(t, exec)
 	avail := exec.Availability()
 	// HTTP is always available; Config flips on with at least one local task.
@@ -84,7 +81,7 @@ func TestInitExecutor_BuildsExecutorWithEventBus(t *testing.T) {
 }
 
 func TestInitTaskManager_PopulatesTasksMap(t *testing.T) {
-	db := daemonServicesTestEnv(t)
+	f, db := daemonServicesTestEnv(t)
 	cfg := &config.Config{
 		Tasks: []model.Task{
 			{Name: "alpha", Run: "echo a", Kind: model.KindTask, OnOverlap: model.PolicyQueue, MaxConcurrent: 1},
@@ -94,7 +91,7 @@ func TestInitTaskManager_PopulatesTasksMap(t *testing.T) {
 	config.ApplyDefaults(cfg)
 
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus)
+	exec := initExecutor(cfg, bus, f.LogDir())
 	dc := &daemonConfig{Config: cfg}
 
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
@@ -105,22 +102,22 @@ func TestInitTaskManager_PopulatesTasksMap(t *testing.T) {
 }
 
 func TestInitRetentionCleaner_StartsAndStops(t *testing.T) {
-	db := daemonServicesTestEnv(t)
+	f, db := daemonServicesTestEnv(t)
 	cfg := &config.Config{}
 	config.ApplyDefaults(cfg)
 	dc := &daemonConfig{Config: cfg}
 
-	cleaner := initRetentionCleaner(dc, db, map[string]*model.Task{})
+	cleaner := initRetentionCleaner(dc, db, map[string]*model.Task{}, f.LogDir())
 	require.NotNil(t, cleaner)
 	t.Cleanup(cleaner.Stop)
 }
 
 func TestResumePendingRuns_EmptyDBReturnsEmptySummary(t *testing.T) {
-	db := daemonServicesTestEnv(t)
+	f, db := daemonServicesTestEnv(t)
 	cfg := &config.Config{}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus)
+	exec := initExecutor(cfg, bus, f.LogDir())
 	dc := &daemonConfig{Config: cfg}
 	tm, _ := initTaskManager(dc, db, exec, bus)
 
@@ -129,7 +126,7 @@ func TestResumePendingRuns_EmptyDBReturnsEmptySummary(t *testing.T) {
 }
 
 func TestStartServiceInstances_SkipsNonServiceTasks(t *testing.T) {
-	db := daemonServicesTestEnv(t)
+	f, db := daemonServicesTestEnv(t)
 	cfg := &config.Config{
 		Tasks: []model.Task{
 			{Name: "cron-task", Run: "echo cron", Kind: model.KindTask, OnOverlap: model.PolicyQueue, MaxConcurrent: 1},
@@ -137,7 +134,7 @@ func TestStartServiceInstances_SkipsNonServiceTasks(t *testing.T) {
 	}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus)
+	exec := initExecutor(cfg, bus, f.LogDir())
 	dc := &daemonConfig{Config: cfg}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 
@@ -146,7 +143,7 @@ func TestStartServiceInstances_SkipsNonServiceTasks(t *testing.T) {
 }
 
 func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
-	db := daemonServicesTestEnv(t)
+	f, db := daemonServicesTestEnv(t)
 	cfg := &config.Config{
 		Tasks: []model.Task{
 			{Name: "zulu", Run: "echo z", Kind: model.KindTask, OnOverlap: model.PolicyQueue, MaxConcurrent: 1},
@@ -157,7 +154,7 @@ func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
 	config.ApplyDefaults(cfg)
 
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus)
+	exec := initExecutor(cfg, bus, f.LogDir())
 	dc := &daemonConfig{
 		Config:      cfg,
 		Fingerprint: "fp-test",
@@ -170,7 +167,7 @@ func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
 		TasksMap:            tasksMap,
 		TaskShutdownTimeout: 5 * time.Second,
 	}
-	info := buildDaemonInfo(dc, svc, time.Time{})
+	info := buildDaemonInfo(dc, svc, time.Time{}, f.Port)
 	require.NotNil(t, info)
 	assert.Equal(t, "fp-test", info.Fingerprint)
 	require.Len(t, info.Tasks, 2)

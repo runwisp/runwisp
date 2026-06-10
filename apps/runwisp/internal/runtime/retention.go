@@ -47,6 +47,10 @@ func NewRetentionCleaner(db storage.RunRepository, tasks map[string]*model.Task,
 func (cleaner *RetentionCleaner) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cleaner.cancel = cancel
+	// Run the first pass synchronously so a cleanup is observably complete by
+	// the time Start returns; the goroutine then only services the ticker.
+	// Tests can assert on the initial pass without sleeping for the goroutine.
+	cleaner.cleanOldRuns(ctx)
 	go cleaner.run(ctx)
 }
 
@@ -57,8 +61,6 @@ func (cleaner *RetentionCleaner) Stop() {
 func (cleaner *RetentionCleaner) run(ctx context.Context) {
 	ticker := time.NewTicker(cleaner.interval)
 	defer ticker.Stop()
-
-	cleaner.cleanOldRuns(ctx)
 
 	for {
 		select {

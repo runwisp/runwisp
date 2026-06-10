@@ -29,7 +29,7 @@ preserved by default.
 Pass --purge to also remove the data dir. --purge requires typing the
 literal word 'delete' to confirm; --yes does NOT skip that prompt.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runServiceUninstall(cmd)
+		return runServiceUninstall(cmd, flags)
 	},
 }
 
@@ -39,7 +39,7 @@ func init() {
 	serviceUninstallCmd.Flags().BoolVar(&serviceUninstallOpts.Force, "force", false, "also remove a hand-edited (non-managed) unit")
 }
 
-func runServiceUninstall(cmd *cobra.Command) error {
+func runServiceUninstall(cmd *cobra.Command, f Flags) error {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, serviceUninstallOpts.Yes)
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func runServiceUninstall(cmd *cobra.Command) error {
 	uopts := autostart.UninstallOptions{
 		Purge:   serviceUninstallOpts.Purge,
 		Force:   serviceUninstallOpts.Force,
-		DataDir: flags.DataDir,
+		DataDir: f.DataDir,
 	}
 
 	if err := installer.Uninstall(context.Background(), uopts, cmd.OutOrStdout()); err != nil {

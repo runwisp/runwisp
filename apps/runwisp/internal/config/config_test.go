@@ -1105,8 +1105,10 @@ func TestLoad_ParseErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := writeTOML(t, tt.toml)
-			_, err := Load(path)
+			// These are pure decode-layer failures (bad scalar formats caught
+			// while converting wire types), so exercise decode directly rather
+			// than writing a temp file and running the whole Load pipeline.
+			_, err := decode([]byte(tt.toml), "/")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
 		})

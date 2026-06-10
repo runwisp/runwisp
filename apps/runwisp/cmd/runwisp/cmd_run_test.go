@@ -71,105 +71,76 @@ func TestPrintNonLoopbackBanner_MentionsHost(t *testing.T) {
 }
 
 func TestLogSecurityWarnings_EmitsCloudDispatchWarning(t *testing.T) {
-	origHost := flags.Host
-	flags.Host = "127.0.0.1"
-	t.Cleanup(func() { flags.Host = origHost })
-
 	out := captureSlog(t, func() {
 		cfg := &daemonConfig{Config: &config.Config{}}
 		cfg.Config.Daemon.AllowCloudDispatch = true
-		logSecurityWarnings(cfg)
+		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"})
 	})
 	assert.Contains(t, out, "Cloud shell dispatch enabled")
 }
 
 func TestLogSecurityWarnings_PrintsBannerForNonLoopbackHost(t *testing.T) {
-	origHost := flags.Host
-	flags.Host = "0.0.0.0"
-	t.Cleanup(func() { flags.Host = origHost })
-
 	out := captureStderr(t, func() {
 		cfg := &daemonConfig{Config: &config.Config{}}
-		logSecurityWarnings(cfg)
+		logSecurityWarnings(cfg, Flags{Host: "0.0.0.0"})
 	})
 	assert.True(t, strings.Contains(out, "0.0.0.0"), "banner must include the host")
 }
 
 func TestLogSecurityWarnings_LoopbackQuiet(t *testing.T) {
-	origHost := flags.Host
-	flags.Host = "127.0.0.1"
-	t.Cleanup(func() { flags.Host = origHost })
-
 	out := captureStderr(t, func() {
 		cfg := &daemonConfig{Config: &config.Config{}}
-		logSecurityWarnings(cfg)
+		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"})
 	})
 	assert.NotContains(t, out, "SECURITY", "loopback bind must not print the banner")
 }
 
-// pickFreePort grabs an ephemeral port and immediately releases it so the
-// daemon can bind. Inherently racy but acceptable for serial tests.
-func pickFreePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	port := l.Addr().(*net.TCPAddr).Port
-	require.NoError(t, l.Close())
-	return port
-}
-
-func snapshotFlags(t *testing.T) {
-	t.Helper()
-	o := flags
-	t.Cleanup(func() { flags = o })
-}
-
 func TestRunDaemon_BadDBPathReturnsError(t *testing.T) {
-	snapshotFlags(t)
-	// Point flags.DataDir at a directory we can't write into so DBPath()
+	// Point DataDir at a directory we can't write into so DBPath()
 	// resolves under it and storage.New fails.
-	flags.DataDir = "/proc/runwisp-cannot-create"
-	flags.CfgFile = writeMinimalTOML(t)
-	noTUI = true
-	t.Cleanup(func() { noTUI = false })
-
-	err := runDaemon(modeStandalone)
+	f := Flags{
+		DataDir: "/proc/runwisp-cannot-create",
+		CfgFile: writeMinimalTOML(t),
+	}
+	err := runDaemon(modeStandalone, f, true)
 	require.Error(t, err)
 }
 
 func TestRunDaemon_MissingConfigReturnsError(t *testing.T) {
-	snapshotFlags(t)
-	dir := t.TempDir()
-	flags.DataDir = dir
-	flags.CfgFile = "/no/such/runwisp.toml"
-	flags.Host = "127.0.0.1"
-	flags.Port = pickFreePort(t)
-	noTUI = true
-	t.Cleanup(func() { noTUI = false })
+	f := Flags{
+		DataDir: t.TempDir(),
+		CfgFile: "/no/such/runwisp.toml",
+		Host:    "127.0.0.1",
+		Port:    testutil.PickFreePort(t),
+	}
 	t.Setenv("RUNWISP_PASSWORD", "x")
 
-	err := runDaemon(modeStandalone)
+	err := runDaemon(modeStandalone, f, true)
 	require.Error(t, err)
 }
 
 func TestRunDaemon_BootsAndShutsDownOnSIGTERM(t *testing.T) {
-	snapshotFlags(t)
+	if testing.Short() {
+		// Boots a full daemon and sends a real SIGTERM — too heavy for the
+		// local fast loop. CI never passes -short, so this still runs there.
+		t.Skip("skipping full daemon boot/SIGTERM test in -short mode")
+	}
 	// ShortTempDir keeps DataDir path under macOS' 104-byte sun_path limit so
 	// the daemon's runwisp.sock can actually bind. t.TempDir embeds the test
 	// name, blowing past the limit and failing with EINVAL.
 	dir := testutil.ShortTempDir(t)
-	flags.DataDir = dir
-	flags.CfgFile = writeMinimalTOML(t)
-	flags.Host = "127.0.0.1"
-	flags.Port = pickFreePort(t)
-	noTUI = true
-	t.Cleanup(func() { noTUI = false })
+	f := Flags{
+		DataDir: dir,
+		CfgFile: writeMinimalTOML(t),
+		Host:    "127.0.0.1",
+		Port:    testutil.PickFreePort(t),
+	}
 
 	t.Setenv("RUNWISP_PASSWORD", "test-password")
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDaemon(modeStandalone)
+		done <- runDaemon(modeStandalone, f, true)
 	}()
 
 	// Poll the bound HTTP port until the daemon is up. Server.Start does its
@@ -177,7 +148,7 @@ func TestRunDaemon_BootsAndShutsDownOnSIGTERM(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	ready := false
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(flags.Host, strconv.Itoa(flags.Port)), 100*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(f.Host, strconv.Itoa(f.Port)), 100*time.Millisecond)
 		if err == nil {
 			conn.Close()
 			ready = true
@@ -185,7 +156,7 @@ func TestRunDaemon_BootsAndShutsDownOnSIGTERM(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	require.True(t, ready, "daemon never bound %d", flags.Port)
+	require.True(t, ready, "daemon never bound %d", f.Port)
 
 	// SIGTERM the test process; runHeadless installed the handler.
 	require.NoError(t, sendSelfSIGTERM())
@@ -202,7 +173,7 @@ func TestRunDaemon_BootsAndShutsDownOnSIGTERM(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "PID file should be removed on clean shutdown")
 
 	// Smoke-test that the listener was actually released.
-	_, err = http.Get("http://" + net.JoinHostPort(flags.Host, strconv.Itoa(flags.Port)) + "/health")
+	_, err = http.Get("http://" + net.JoinHostPort(f.Host, strconv.Itoa(f.Port)) + "/health")
 	assert.Error(t, err, "port should be free after shutdown")
 }
 
@@ -223,34 +194,28 @@ func TestInstallSignalHandler_DeliversAndStops(t *testing.T) {
 }
 
 func TestConfigureBootLogRouting_HeadlessReturnsNilWriter(t *testing.T) {
-	prev := noTUI
-	noTUI = true
-	t.Cleanup(func() { noTUI = prev })
-
 	buf := server.NewDaemonLogBuffer(8)
-	assert.Nil(t, configureBootLogRouting(buf))
+	assert.Nil(t, configureBootLogRouting(buf, Flags{}, true))
 }
 
 func TestConfigureBootLogRouting_TUIReturnsNonNilWriter(t *testing.T) {
-	prev := noTUI
-	noTUI = false
-	t.Cleanup(func() { noTUI = prev })
-
 	buf := server.NewDaemonLogBuffer(8)
-	dw := configureBootLogRouting(buf)
+	dw := configureBootLogRouting(buf, Flags{}, false)
 	assert.NotNil(t, dw)
 }
 
 func TestStartCloudIfEnabled_StandaloneReturnsNoOps(t *testing.T) {
-	cancel, wg := startCloudIfEnabled(modeStandalone, nil, nil)
+	t.Parallel()
+	cancel, wg := startCloudIfEnabled(modeStandalone, nil, nil, Flags{})
 	require.NotNil(t, cancel)
 	require.NotNil(t, wg)
 	cancel() // must not panic
 }
 
 func TestStartCloudIfEnabled_CloudWithDisabledConfigShortCircuits(t *testing.T) {
+	t.Parallel()
 	cfg := &daemonConfig{CloudConfig: cloud.Config{Enabled: false}}
-	cancel, wg := startCloudIfEnabled(modeCloud, cfg, nil)
+	cancel, wg := startCloudIfEnabled(modeCloud, cfg, nil, Flags{})
 	require.NotNil(t, cancel)
 	require.NotNil(t, wg)
 	cancel()
@@ -294,12 +259,6 @@ func TestEmitStartupBanner_DoesNotPanic(t *testing.T) {
 	// true (TTY + non-JSON), and logStartupSummary runs otherwise.
 	info := uikit.StartupInfo{Version: "test", Tasks: nil}
 
-	prevFormat := flags.LogFormat
-	t.Cleanup(func() { flags.LogFormat = prevFormat })
-
-	flags.LogFormat = clilog.FormatJSON // forces non-fancy branch
-	emitStartupBanner(info)
-
-	flags.LogFormat = clilog.FormatText // whichever stderrTTY says
-	emitStartupBanner(info)
+	emitStartupBanner(info, Flags{LogFormat: clilog.FormatJSON}) // forces non-fancy branch
+	emitStartupBanner(info, Flags{LogFormat: clilog.FormatText}) // whichever stderrTTY says
 }

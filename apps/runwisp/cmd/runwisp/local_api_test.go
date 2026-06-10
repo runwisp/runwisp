@@ -11,11 +11,8 @@ import (
 )
 
 func TestLocalAPISocketPath_UnderDataDir(t *testing.T) {
-	orig := flags.DataDir
-	flags.DataDir = "/tmp/runwisp-test-localapi"
-	defer func() { flags.DataDir = orig }()
-
-	got := localAPISocketPath()
+	t.Parallel()
+	got := localAPISocketPath(Flags{DataDir: "/tmp/runwisp-test-localapi"})
 	assert.True(t, strings.HasPrefix(got, "/tmp/runwisp-test-localapi"))
 	assert.True(t, strings.HasSuffix(got, "runwisp.sock"))
 }
