@@ -193,7 +193,7 @@ func inflightRunCount(svc *daemonServices) int {
 // ShutdownWithDeadline safety net. Services-only — cron tasks are left to the
 // bulk drain.
 func preStopServices(ctx context.Context, svc *daemonServices) {
-	for _, task := range orderServicesForStop(svc.TasksMap) {
+	for _, task := range orderServicesForStop(svc.Tasks.Snapshot()) {
 		if ctx.Err() != nil {
 			return
 		}

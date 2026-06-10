@@ -113,7 +113,7 @@ func TestPreStopServices_StopsDependentBeforeDependency(t *testing.T) {
 		return activeCount(tm, "db") == 1 && activeCount(tm, "web") == 1
 	}, 2*time.Second, 10*time.Millisecond, "both services should be live")
 
-	svc := &daemonServices{TaskManager: tm, TasksMap: tasksMap}
+	svc := &daemonServices{TaskManager: tm, Tasks: runtime.NewTaskRegistry(tasksMap)}
 
 	// orderServicesForStop must list the dependent first.
 	stopOrder := orderServicesForStop(tasksMap)
