@@ -45,7 +45,7 @@ func TestRetentionCleaner(t *testing.T) {
 
 	repo.On("DeleteOldRuns", mock.Anything, task).Return(deletedRuns, nil)
 
-	cleaner := NewRetentionCleaner(repo, tasks, 10*time.Millisecond, logDir, 0)
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(tasks), 10*time.Millisecond, logDir, 0)
 	// Start runs the first cleanup pass synchronously, so the deletion is
 	// observable as soon as Start returns — no sleep needed.
 	cleaner.Start()
@@ -61,7 +61,7 @@ func TestEnforceMaxTotalSize_NoLimit(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	logDir := t.TempDir()
 	// maxTotalSize=0 means no limit; enforceMaxTotalSize should be a no-op
-	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 0)
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 0)
 	cleaner.enforceMaxTotalSize(context.Background()) // must not call QueryRuns
 	repo.AssertNotCalled(t, "QueryRuns")
 }
@@ -71,7 +71,7 @@ func TestEnforceMaxTotalSize_UnderLimit(t *testing.T) {
 	logDir := t.TempDir()
 	// Write a tiny file; maxTotalSize is huge → no pruning
 	require.NoError(t, os.WriteFile(filepath.Join(logDir, "small.log"), []byte("x"), 0644))
-	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 1<<30) // 1 GiB
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 1<<30) // 1 GiB
 	cleaner.enforceMaxTotalSize(context.Background())
 	repo.AssertNotCalled(t, "QueryRuns")
 }
@@ -100,7 +100,7 @@ func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
 	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{}, nil)
 	repo.On("DeleteRun", mock.Anything, runID).Return(nil)
 
-	cleaner := NewRetentionCleaner(repo, nil, time.Hour, logDir, 100)
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 100)
 	cleaner.enforceMaxTotalSize(context.Background())
 
 	repo.AssertCalled(t, "DeleteRun", mock.Anything, runID)

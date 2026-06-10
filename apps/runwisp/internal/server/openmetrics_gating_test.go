@@ -41,7 +41,7 @@ func setupServerForMetrics(t *testing.T, metricsEnabled bool, metricsListen stri
 	s, err := New(Options{
 		DB:             repo,
 		TaskManager:    jm,
-		Tasks:          tasks,
+		Tasks:          runtime.NewTaskRegistry(tasks),
 		Scheduler:      scheduler,
 		Host:           "127.0.0.1",
 		Port:           testutil.PickFreePort(t),

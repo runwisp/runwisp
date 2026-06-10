@@ -1,0 +1,103 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package config
+
+import (
+	"testing"
+
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func tasksMap(tasks ...*model.Task) map[string]*model.Task {
+	out := make(map[string]*model.Task, len(tasks))
+	for _, t := range tasks {
+		out[t.Name] = t
+	}
+	return out
+}
+
+func TestDiffTasks_AddedRemoved(t *testing.T) {
+	old := tasksMap(&model.Task{Name: "keep", Run: "echo"})
+	updated := tasksMap(
+		&model.Task{Name: "keep", Run: "echo"},
+		&model.Task{Name: "fresh", Run: "echo"},
+	)
+
+	d := DiffTasks(old, updated)
+	assert.Equal(t, []string{"fresh"}, d.Added)
+	assert.Empty(t, d.Removed)
+	assert.Empty(t, d.Changed)
+
+	// Reverse: the now-missing task is removed.
+	d = DiffTasks(updated, old)
+	assert.Equal(t, []string{"fresh"}, d.Removed)
+	assert.Empty(t, d.Added)
+}
+
+func TestDiffTasks_IdenticalIsEmpty(t *testing.T) {
+	old := tasksMap(&model.Task{Name: "a", Run: "echo", Cron: "@daily"})
+	updated := tasksMap(&model.Task{Name: "a", Run: "echo", Cron: "@daily"})
+	assert.True(t, DiffTasks(old, updated).IsEmpty())
+}
+
+func TestDiffTasks_ChangeReasons(t *testing.T) {
+	base := func() *model.Task {
+		return &model.Task{Name: "a", Run: "echo", Cron: "0 2 * * *", Kind: model.KindTask}
+	}
+
+	cases := []struct {
+		name   string
+		mutate func(*model.Task)
+		want   ChangeReason
+	}{
+		{"cron", func(tk *model.Task) { tk.Cron = "0 3 * * *" }, ReasonSchedule},
+		{"timezone", func(tk *model.Task) { tk.Timezone = "America/New_York" }, ReasonSchedule},
+		{"kind", func(tk *model.Task) { tk.Kind = model.KindService }, ReasonKind},
+		{"command", func(tk *model.Task) { tk.Run = "echo changed" }, ReasonCommand},
+		{"workdir", func(tk *model.Task) { tk.WorkingDir = "/tmp" }, ReasonCommand},
+		{"env", func(tk *model.Task) { tk.Env = map[string]string{"K": "V"} }, ReasonEnv},
+		{"env-file", func(tk *model.Task) { tk.EnvFile = ".env" }, ReasonEnv},
+		{"settings", func(tk *model.Task) { tk.MaxConcurrent = 4 }, ReasonSettings},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			updated := base()
+			tc.mutate(updated)
+			d := DiffTasks(tasksMap(base()), tasksMap(updated))
+			require.Len(t, d.Changed, 1)
+			assert.True(t, d.Changed[0].Has(tc.want),
+				"expected reason %q in %v", tc.want, d.Changed[0].Reasons)
+		})
+	}
+}
+
+func TestDiffTasks_DeterministicOrder(t *testing.T) {
+	old := tasksMap(&model.Task{Name: "stay", Run: "echo"})
+	updated := tasksMap(
+		&model.Task{Name: "stay", Run: "echo"},
+		&model.Task{Name: "zebra", Run: "echo"},
+		&model.Task{Name: "alpha", Run: "echo"},
+		&model.Task{Name: "mike", Run: "echo"},
+	)
+	d := DiffTasks(old, updated)
+	assert.Equal(t, []string{"alpha", "mike", "zebra"}, d.Added, "Added must be sorted")
+}
+
+func TestDiff_ToResult(t *testing.T) {
+	d := Diff{
+		Added:   []string{"x"},
+		Removed: []string{"y"},
+		Changed: []TaskChange{{Name: "z", Reasons: []ChangeReason{ReasonSchedule, ReasonEnv}}},
+	}
+	res := d.ToResult()
+	assert.Equal(t, []string{"x"}, res.Added)
+	assert.Equal(t, []string{"y"}, res.Removed)
+	require.Len(t, res.Changed, 1)
+	assert.Equal(t, "z", res.Changed[0].Name)
+	assert.Equal(t, []string{"schedule", "env"}, res.Changed[0].Reasons)
+	assert.False(t, res.IsEmpty())
+}

@@ -767,6 +767,80 @@
         "additionalProperties": false,
         "type": "object"
       },
+      "ReloadResult": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/ReloadResult.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "added": {
+            "description": "Names of tasks added by the reload",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "changed": {
+            "description": "Tasks whose definition changed, with the reasons",
+            "items": {
+              "$ref": "#/components/schemas/ReloadTaskChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "removed": {
+            "description": "Names of tasks removed by the reload",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "added",
+          "removed",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "ReloadTaskChange": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Task name",
+            "type": "string"
+          },
+          "reasons": {
+            "description": "Why the task is considered changed",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "reasons"
+        ],
+        "type": "object"
+      },
       "Run": {
         "additionalProperties": false,
         "properties": {
@@ -1993,6 +2067,38 @@
         "summary": "Mark a single notification unread",
         "tags": [
           "Notifications"
+        ]
+      }
+    },
+    "/api/reload": {
+      "post": {
+        "description": "Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.",
+        "operationId": "reload",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReloadResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Reload runwisp.toml",
+        "tags": [
+          "System"
         ]
       }
     },

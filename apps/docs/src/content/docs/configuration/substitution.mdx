@@ -66,10 +66,12 @@ just `chmod 600` the file.
 
 ## When it runs
 
-Substitution happens **once, at config load**. The daemon never
-re-reads the environment or the files while it's running — that's the
-same [restart-only reload](/configuration/overview/) rule as the rest of
-the config. Change a variable or a file, restart the daemon.
+Substitution happens **once, at config load** — which includes
+[`runwisp reload`](/operations/reload/), since reload re-reads and
+re-resolves the whole file. The daemon never re-reads the environment or
+the referenced files on its own while it's running. Change a variable or
+a referenced file and the daemon won't notice until the next load, so
+reload (or restart) to pick it up.
 
 ## The exception: `run`
 

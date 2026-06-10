@@ -111,8 +111,9 @@ func minimalServices(t *testing.T) *daemonServices {
 	exec := initExecutor(cfg, bus, f.LogDir())
 	dc := &daemonConfig{Config: cfg}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
+	tasks := runtime.NewTaskRegistry(tasksMap)
 
-	cleaner := initRetentionCleaner(dc, db, tasksMap, f.LogDir())
+	cleaner := initRetentionCleaner(dc, db, tasks, f.LogDir())
 	purger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	purger.Start()
 
@@ -121,7 +122,7 @@ func minimalServices(t *testing.T) *daemonServices {
 		EventBus:            bus,
 		Executor:            exec,
 		TaskManager:         tm,
-		TasksMap:            tasksMap,
+		Tasks:               tasks,
 		RetentionCleaner:    cleaner,
 		SoftDeletePurger:    purger,
 		TaskShutdownTimeout: 100 * time.Millisecond,
@@ -173,6 +174,7 @@ func TestGracefulShutdown_WithScheduler(t *testing.T) {
 	exec := initExecutor(cfg, bus, f.LogDir())
 	dc := &daemonConfig{Config: cfg}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
+	tasks := runtime.NewTaskRegistry(tasksMap)
 
 	loc, _ := config.ResolveTimezone("scheduler.timezone", "UTC")
 	scheduler := runtime.NewScheduler(tm, tasksMap, loc)
@@ -183,9 +185,9 @@ func TestGracefulShutdown_WithScheduler(t *testing.T) {
 		EventBus:            bus,
 		Executor:            exec,
 		TaskManager:         tm,
-		TasksMap:            tasksMap,
+		Tasks:               tasks,
 		Scheduler:           scheduler,
-		RetentionCleaner:    initRetentionCleaner(dc, db, tasksMap, f.LogDir()),
+		RetentionCleaner:    initRetentionCleaner(dc, db, tasks, f.LogDir()),
 		TaskShutdownTimeout: 100 * time.Millisecond,
 	}
 

@@ -45,6 +45,17 @@ func (c *Client) GetDaemonInfo() (*model.DaemonInfo, error) {
 	return &info, nil
 }
 
+// Reload asks the daemon to re-read runwisp.toml and reconcile its live task
+// set, returning the applied diff. A rejected reload (bad config or a
+// restart-only change) comes back as an error from the daemon.
+func (c *Client) Reload() (*model.ReloadResult, error) {
+	var result model.ReloadResult
+	if err := c.doJSON("POST", "/api/reload", nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (c *Client) HealthCheck() error {
 	resp, err := c.doRaw("GET", "/health")
 	if err != nil {

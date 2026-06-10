@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/runlog"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -41,7 +43,7 @@ func startCloudClient(
 		RunRepo:           svc.DB,
 		PendingUploadRepo: svc.DB,
 		EventBus:          svc.EventBus,
-		LocalTasks:        svc.TasksMap,
+		LocalTasks:        svc.Tasks.Snapshot(),
 		LogDir:            f.LogDir(),
 		Availability:      svc.Executor.Availability(),
 		Now:               time.Now,
@@ -179,7 +181,7 @@ func waitDrain(ctx context.Context, svc *daemonServices, taskTimeout time.Durati
 // on without adding a dedicated counter to the TaskManager interface.
 func inflightRunCount(svc *daemonServices) int {
 	total := 0
-	for name := range svc.TasksMap {
+	for name := range svc.Tasks.Snapshot() {
 		total += len(svc.TaskManager.GetActiveRuns(name))
 	}
 	return total
@@ -239,6 +241,7 @@ type daemonRuntime struct {
 	sigCh       <-chan os.Signal
 	svc         *daemonServices
 	srv         *server.Server
+	reconciler  *runtime.Reconciler
 	debugWriter *tui.DebugLogWriter
 	logBuffer   *server.DaemonLogBuffer
 	cancelCloud context.CancelFunc
@@ -252,13 +255,38 @@ type daemonRuntime struct {
 // goroutine could self-signal — closing the race where a SIGTERM arriving
 // during early init would terminate the process unhandled.
 func runHeadless(rt *daemonRuntime) error {
-	sig := <-rt.sigCh
+	for sig := range rt.sigCh {
+		if sig == syscall.SIGHUP {
+			handleReloadSignal(rt)
+			continue
+		}
 
-	start := time.Now()
-	slog.Info("received signal, shutting down", "signal", sig.String())
-	gracefulShutdown(rt.cancelCloud, rt.cloudWG, rt.svc, rt.srv)
-	slog.Info("shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))
+		start := time.Now()
+		slog.Info("received signal, shutting down", "signal", sig.String())
+		gracefulShutdown(rt.cancelCloud, rt.cloudWG, rt.svc, rt.srv)
+		slog.Info("shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))
+		return nil
+	}
 	return nil
+}
+
+// handleReloadSignal services a SIGHUP by reconciling runwisp.toml against the
+// live task set. A reload failure (bad config or a restart-only change) is
+// logged and the daemon keeps running on its current set — SIGHUP never tears
+// the process down. nil reconciler (cloud mode) makes this a logged no-op.
+func handleReloadSignal(rt *daemonRuntime) {
+	if rt.reconciler == nil {
+		slog.Warn("received SIGHUP but reload is not available in this mode")
+		return
+	}
+	slog.Info("received SIGHUP, reloading configuration")
+	result, err := rt.reconciler.Reconcile()
+	if err != nil {
+		slog.Error("reload rejected", "err", err)
+		return
+	}
+	slog.Info("reload applied",
+		"added", len(result.Added), "changed", len(result.Changed), "removed", len(result.Removed))
 }
 
 // runWithTUI starts the interactive TUI, waits for it to exit, then shuts down

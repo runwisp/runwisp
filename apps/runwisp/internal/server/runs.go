@@ -47,6 +47,15 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaGetSystemStats)
 
 	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "reload",
+		Method:      http.MethodPost,
+		Path:        "/api/reload",
+		Summary:     "Reload runwisp.toml",
+		Description: "Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.",
+		Tags:        []string{"System"},
+	}, srv.humaReload)
+
+	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getMetricsHistory",
 		Method:      http.MethodGet,
 		Path:        "/api/system/history",

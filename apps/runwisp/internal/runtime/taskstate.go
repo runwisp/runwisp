@@ -42,6 +42,11 @@ type taskState struct {
 	// supervisor tracks instance slots and restart-attempt counters; non-nil
 	// only when task.Kind.IsService().
 	supervisor *services.Supervisor
+
+	// removed latches when a reload drops this task. It stops the queue-drain
+	// goroutine and tells recordRunOutcome to delete the taskState once the last
+	// in-flight run retires. Guarded by m.mu like every other taskState field.
+	removed bool
 }
 
 // concurrencyAction describes what the caller should do after evaluating a
@@ -94,20 +99,26 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 	defer m.mu.Unlock()
 
 	ts := m.tasks[taskName]
+	if ts == nil {
+		// A reload removed the task before this loop acquired the lock: the
+		// taskState was deleted (it had nothing in flight), so there is nothing
+		// to drain. Exit rather than dereference a nil state.
+		return
+	}
 	for {
 		for len(ts.queue) == 0 || len(ts.active) >= m.getConcurrencyLimit(ts.task) {
-			if m.isShutdown.Load() {
+			if m.isShutdown.Load() || ts.removed {
 				return
 			}
 			ts.cond.Wait()
 		}
-		// Re-check after the inner loop: Shutdown's cond.Broadcast can wake us
-		// with a free slot and a non-empty queue. Starting a run here would
-		// happen after Shutdown's single cancel pass, leaving its context live
-		// forever — an orphaned process and a drain that never completes. The
-		// check is race-free under m.mu: Shutdown sets isShutdown before taking
-		// the lock for its cancel+broadcast pass.
-		if m.isShutdown.Load() {
+		// Re-check after the inner loop: Shutdown's (or RemoveTask's)
+		// cond.Broadcast can wake us with a free slot and a non-empty queue.
+		// Starting a run here would happen after the single cancel pass, leaving
+		// its context live forever — an orphaned process and a drain that never
+		// completes. The check is race-free under m.mu: the flag is set before
+		// the lock is taken for the cancel+broadcast pass.
+		if m.isShutdown.Load() || ts.removed {
 			return
 		}
 		run := ts.queue[0]

@@ -23,6 +23,7 @@ import (
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runlog"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
@@ -122,12 +123,22 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 
 	daemonInfo := buildDaemonInfo(cfg, svc, configSnap.LoadedAt(), f.Port)
 
+	// Reconciler powers `runwisp reload` / SIGHUP. Standalone only: cloud mode
+	// has no local scheduler to reconcile. nil leaves POST /api/reload reporting
+	// "not available in this mode".
+	var reconciler *runtime.Reconciler
+	var reloadFn func() (model.ReloadResult, error)
+	if mode == modeStandalone {
+		reconciler = runtime.NewReconciler(f.CfgFile, cfg.Config, svc.Tasks, svc.Scheduler, svc.TaskManager, svc.DB, configSnap, time.Now)
+		reloadFn = reconciler.Reconcile
+	}
+
 	srv, err := server.New(server.Options{
 		DB:                svc.DB,
 		NotificationDB:    svc.DB,
 		NotificationHub:   svc.Notify.serverHub(),
 		TaskManager:       svc.TaskManager,
-		Tasks:             svc.TasksMap,
+		Tasks:             svc.Tasks,
 		Scheduler:         svc.Scheduler,
 		Host:              f.Host,
 		Port:              f.Port,
@@ -144,6 +155,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 		DaemonLogBuffer:   logBuffer,
 		MetricsEnabled:    cfg.Config.Daemon.MetricsEnabled,
 		MetricsListen:     cfg.Config.Daemon.MetricsListen,
+		Reload:            reloadFn,
 	})
 	if err != nil {
 		return err
@@ -200,6 +212,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 		sigCh:       sigCh,
 		svc:         svc,
 		srv:         srv,
+		reconciler:  reconciler,
 		debugWriter: debugWriter,
 		logBuffer:   logBuffer,
 		cancelCloud: cancelCloud,
@@ -215,13 +228,15 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 	return runWithTUI(rt, startupInfo, f)
 }
 
-// installSignalHandler arms SIGINT/SIGTERM on a buffered channel before any
-// goroutine could self-signal (superviseServerStart raises SIGTERM on itself
-// when srv.Start fails). The returned stop func reverses signal.Notify so
-// subsequent processes inherit the default disposition.
+// installSignalHandler arms SIGINT/SIGTERM/SIGHUP on a buffered channel before
+// any goroutine could self-signal (superviseServerStart raises SIGTERM on
+// itself when srv.Start fails). SIGINT/SIGTERM shut the daemon down; SIGHUP
+// triggers an explicit config reload (see runHeadless). The returned stop func
+// reverses signal.Notify so subsequent processes inherit the default
+// disposition. The buffer is sized for the rare SIGHUP-during-shutdown overlap.
 func installSignalHandler() (<-chan os.Signal, func()) {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	sigCh := make(chan os.Signal, 4)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	return sigCh, func() { signal.Stop(sigCh) }
 }
 

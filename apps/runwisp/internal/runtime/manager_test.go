@@ -905,3 +905,101 @@ func TestInjectedClockStampsCreatedAt(t *testing.T) {
 		"CreatedAt must come from the injected clock; got %s, want %s",
 		run.CreatedAt, fixed)
 }
+
+// TestRemoveTask_DeletesIdleTask covers the simplest reload-remove: a task with
+// nothing in flight is dropped from the manager immediately.
+func TestRemoveTask_DeletesIdleTask(t *testing.T) {
+	jm, _, _ := newTestManager(t)
+
+	jm.UpsertTask(testTask("gone", model.PolicyQueue, 1))
+	jm.RemoveTask("gone")
+
+	jm.mu.RLock()
+	_, exists := jm.tasks["gone"]
+	jm.mu.RUnlock()
+	assert.False(t, exists, "an idle removed task must be deleted at once")
+
+	// Removing an unknown task is a no-op.
+	jm.RemoveTask("never")
+}
+
+// TestRemoveTask_ExitsQueueLoop proves the queue-drain goroutine for a removed
+// queue-policy task actually returns: if it leaked, Shutdown (via t.Cleanup)
+// would block on the WaitGroup past the deadline. We assert it completes fast.
+func TestRemoveTask_ExitsQueueLoop(t *testing.T) {
+	jm, _, _ := newTestManager(t)
+
+	jm.UpsertTask(testTask("q", model.PolicyQueue, 1))
+	jm.RemoveTask("q")
+
+	done := make(chan struct{})
+	go func() {
+		jm.Shutdown()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Shutdown blocked — the removed task's queue loop leaked")
+	}
+}
+
+// TestRemoveTask_InFlightCronRunFinishes is the crux of the "reload doesn't kill
+// running work" guarantee: removing a cron task while a run is in flight must
+// keep the taskState alive until that run retires under its original
+// definition, then delete it.
+func TestRemoveTask_InFlightCronRunFinishes(t *testing.T) {
+	jm, exec, eb := newGatedManager(t)
+
+	jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
+
+	done := watchCompletions(eb)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+
+	// Remove while the run is still gated open.
+	jm.RemoveTask("task1")
+
+	jm.mu.RLock()
+	ts, stillThere := jm.tasks["task1"]
+	jm.mu.RUnlock()
+	require.True(t, stillThere, "a removed task with an in-flight run must survive until it drains")
+	assert.True(t, ts.removed, "the taskState must be latched removed")
+
+	// Let the run finish; it must complete (drains under the old definition),
+	// and the taskState must then be deleted by recordRunOutcome.
+	exec.ReleaseAll()
+	done.waitFor(t, 1)
+
+	assert.Eventually(t, func() bool {
+		jm.mu.RLock()
+		defer jm.mu.RUnlock()
+		_, exists := jm.tasks["task1"]
+		return !exists
+	}, 2*time.Second, 5*time.Millisecond, "the last draining run must delete the removed task")
+}
+
+// TestRemoveTask_StopsServiceInstances verifies a removed service is torn down:
+// its instances are cancelled and the supervisor won't refill them.
+func TestRemoveTask_StopsServiceInstances(t *testing.T) {
+	djm, _, eb := newGatedManager(t)
+	jm := TaskManager(djm)
+
+	jm.UpsertTask(serviceTask("svc", 2))
+
+	started := watchRuns(eb, events.EventRunStarted)
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	started.waitFor(t, 2)
+
+	jm.RemoveTask("svc")
+
+	// Cancelled service instances must not refill, and the task must drain to
+	// deletion rather than linger.
+	assert.Eventually(t, func() bool {
+		djm.mu.RLock()
+		defer djm.mu.RUnlock()
+		_, exists := djm.tasks["svc"]
+		return !exists
+	}, 2*time.Second, 5*time.Millisecond, "a removed service must stop and be deleted")
+}

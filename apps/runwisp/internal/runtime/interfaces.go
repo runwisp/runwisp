@@ -45,6 +45,10 @@ type TaskRunner interface {
 type TaskManager interface {
 	TaskRunner
 	BindPersistenceHook(hook RunPersistenceHook)
+	// RemoveTask drops a task on reload: it stops the queue drain, cancels
+	// service instances (cron runs drain), and deletes the task's state once no
+	// run is in flight.
+	RemoveTask(taskName string)
 	GetActiveRuns(taskName string) []*ActiveRun
 	LoadPendingRuns(runs []model.Run) PendingRunsResult
 	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error

@@ -66,7 +66,7 @@ func setupServerWithOpts(t *testing.T, mutate func(*Options)) (*Server, *testuti
 	opts := Options{
 		DB:          repo,
 		TaskManager: jm,
-		Tasks:       tasks,
+		Tasks:       runtime.NewTaskRegistry(tasks),
 		Scheduler:   scheduler,
 		Port:        9477,
 		LogDir:      tmpDir,
@@ -679,8 +679,7 @@ func setupServerWithService(t *testing.T) (*Server, string) {
 		Run:  "tail -f /dev/null",
 		Kind: model.KindService,
 	}
-	s.tasks[svcName] = svcTask
-	s.runService.tasks[svcName] = svcTask
+	s.runService.tasks.Set(svcTask)
 	s.taskManager.UpsertTask(svcTask)
 	return s, svcName
 }

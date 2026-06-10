@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -30,14 +31,18 @@ func digestFile(path string) fileDigest {
 }
 
 // Snapshot records the on-disk identity of every config input — runwisp.toml,
-// each [daemon].include file, and each referenced env_file — at daemon boot.
-// Config reload is restart-only by design; Snapshot exists so the daemon can
-// *tell* the operator their edits aren't live yet, not to act on them.
+// each [daemon].include file, and each referenced env_file — at the moment a
+// config became the daemon's live set. It lets the daemon *tell* the operator
+// when on-disk edits aren't live yet (config_stale). An explicit `runwisp
+// reload` re-pins it via Refresh so the freshly-applied config no longer reads
+// as stale. The mutex guards against Stale (per /api/info request) racing a
+// concurrent Refresh.
 //
 // globs / bootMatched let Stale re-evaluate the include patterns: a file newly
 // dropped into (or removed from) a watched conf.d/ flips stale even though it
 // wasn't hashed at boot.
 type Snapshot struct {
+	mu          sync.Mutex
 	files       []fileDigest
 	root        string
 	globs       []string
@@ -50,12 +55,33 @@ type Snapshot struct {
 // declaring file's dir in collectWatchFiles). now is injected so callers
 // control the clock.
 func NewSnapshot(path string, cfg *Config, now time.Time) *Snapshot {
+	files, root, globs, bootMatched := snapshotInputs(path, cfg)
+	return &Snapshot{files: files, root: root, globs: globs, bootMatched: bootMatched, loadedAt: now}
+}
+
+// Refresh re-pins the snapshot to the config inputs as they are now, marking
+// `now` as the new load time. Called after a successful reload so config_stale
+// reflects the newly-live config rather than the boot-time one.
+func (s *Snapshot) Refresh(path string, cfg *Config, now time.Time) {
+	files, root, globs, bootMatched := snapshotInputs(path, cfg)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.files = files
+	s.root = root
+	s.globs = globs
+	s.bootMatched = bootMatched
+	s.loadedAt = now
+}
+
+// snapshotInputs hashes runwisp.toml plus every included TOML file and
+// referenced env_file, and returns the include globs / boot-matched set so
+// Stale can re-evaluate the patterns later.
+func snapshotInputs(path string, cfg *Config) (files []fileDigest, root string, globs, bootMatched []string) {
 	paths := []string{path}
-	rootAbs := path
+	root = path
 	if abs, err := filepath.Abs(path); err == nil {
-		rootAbs = abs
+		root = abs
 	}
-	var globs, bootMatched []string
 	if cfg != nil {
 		paths = append(paths, cfg.watchFiles...)
 		globs = cfg.includeGlobs
@@ -64,7 +90,7 @@ func NewSnapshot(path string, cfg *Config, now time.Time) *Snapshot {
 	}
 
 	seen := make(map[string]struct{}, len(paths))
-	files := make([]fileDigest, 0, len(paths))
+	files = make([]fileDigest, 0, len(paths))
 	for _, p := range paths {
 		if abs, err := filepath.Abs(p); err == nil {
 			p = abs
@@ -75,29 +101,36 @@ func NewSnapshot(path string, cfg *Config, now time.Time) *Snapshot {
 		seen[p] = struct{}{}
 		files = append(files, digestFile(p))
 	}
-
-	return &Snapshot{files: files, root: rootAbs, globs: globs, bootMatched: bootMatched, loadedAt: now}
+	return files, root, globs, bootMatched
 }
 
 // LoadedAt reports when the snapshot was taken (i.e. when this config
 // became the daemon's live task set).
 func (s *Snapshot) LoadedAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.loadedAt
 }
 
-// Stale re-reads every watched file and reports whether any differs from
-// boot — edited content, a deleted file, or a file that newly appeared all
+// Stale re-reads every watched file and reports whether any differs from the
+// last pin — edited content, a deleted file, or a file that newly appeared all
 // count. It also re-evaluates the include globs so a file freshly added to (or
 // removed from) a watched conf.d/ counts even though it was never hashed. It is
 // called per /api/info request rather than from a watcher, so the answer is
 // always current and the daemon never reacts on its own.
 func (s *Snapshot) Stale() bool {
-	for _, f := range s.files {
+	s.mu.Lock()
+	files := s.files
+	globs := s.globs
+	root := s.root
+	bootMatched := s.bootMatched
+	s.mu.Unlock()
+	for _, f := range files {
 		if digestFile(f.path) != f {
 			return true
 		}
 	}
-	if len(s.globs) > 0 && !slices.Equal(globMatches(s.globs, s.root), s.bootMatched) {
+	if len(globs) > 0 && !slices.Equal(globMatches(globs, root), bootMatched) {
 		return true
 	}
 	return false
