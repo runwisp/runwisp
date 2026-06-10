@@ -5,10 +5,11 @@ package runtime
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -83,21 +84,24 @@ func (m *mockTaskRunner) GetActiveRunCount(taskName string) int {
 }
 
 func TestCountMissedTicks(t *testing.T) {
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	parser := cronspec.NewParser()
 
 	tests := []struct {
-		name     string
-		schedule string
-		lastRun  time.Time
-		now      time.Time
-		want     int
-		wantLast time.Time
+		name          string
+		schedule      string
+		lastRun       time.Time
+		now           time.Time
+		maxCount      int
+		want          int
+		wantLast      time.Time
+		wantTruncated bool
 	}{
 		{
 			name:     "no missed ticks",
 			schedule: "*/5 * * * *",
 			lastRun:  time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
 			now:      time.Date(2026, 4, 7, 10, 3, 0, 0, time.UTC),
+			maxCount: 1000,
 			want:     0,
 			wantLast: time.Time{},
 		},
@@ -106,6 +110,7 @@ func TestCountMissedTicks(t *testing.T) {
 			schedule: "*/5 * * * *",
 			lastRun:  time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
 			now:      time.Date(2026, 4, 7, 10, 6, 0, 0, time.UTC),
+			maxCount: 1000,
 			want:     1,
 			wantLast: time.Date(2026, 4, 7, 10, 5, 0, 0, time.UTC),
 		},
@@ -114,6 +119,7 @@ func TestCountMissedTicks(t *testing.T) {
 			schedule: "*/5 * * * *",
 			lastRun:  time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
 			now:      time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
+			maxCount: 1000,
 			want:     12,
 			wantLast: time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
 		},
@@ -122,6 +128,7 @@ func TestCountMissedTicks(t *testing.T) {
 			schedule: "0 * * * *",
 			lastRun:  time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
 			now:      time.Date(2026, 4, 7, 13, 30, 0, 0, time.UTC),
+			maxCount: 1000,
 			want:     3,
 			wantLast: time.Date(2026, 4, 7, 13, 0, 0, 0, time.UTC),
 		},
@@ -130,8 +137,22 @@ func TestCountMissedTicks(t *testing.T) {
 			schedule: "*/5 * * * *",
 			lastRun:  time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
 			now:      time.Date(2026, 4, 7, 10, 5, 0, 0, time.UTC),
+			maxCount: 1000,
 			want:     1,
 			wantLast: time.Date(2026, 4, 7, 10, 5, 0, 0, time.UTC),
+		},
+		{
+			// A per-second schedule over an hour is 3600 ticks; counting stops
+			// at maxCount and reports truncated so the caller can say "at least
+			// N+" instead of walking the whole backlog.
+			name:          "per-second backlog truncated at maxCount",
+			schedule:      "* * * * * *",
+			lastRun:       time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
+			now:           time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
+			maxCount:      5,
+			want:          5,
+			wantLast:      time.Date(2026, 4, 7, 10, 0, 5, 0, time.UTC),
+			wantTruncated: true,
 		},
 	}
 
@@ -139,8 +160,9 @@ func TestCountMissedTicks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sched, err := parser.Parse(tt.schedule)
 			assert.NoError(t, err)
-			got, lastTick := countMissedTicks(sched, tt.lastRun, tt.now)
+			got, lastTick, truncated := countMissedTicks(sched, tt.lastRun, tt.now, tt.maxCount)
 			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantTruncated, truncated)
 			assert.True(t, tt.wantLast.Equal(lastTick),
 				"last tick: want %s, got %s", tt.wantLast, lastTick)
 		})
@@ -326,6 +348,40 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		assert.Equal(t, 5, result.Triggered, "cap of 5 must clamp the 12-tick backlog")
 		runner.AssertNumberOfCalls(t, "TriggerRun", 5)
+	})
+
+	t.Run("per-second backlog is bounded by cap and reported as 'at least'", func(t *testing.T) {
+		// A per-second schedule over a 2h outage is 7200 ticks. countMissedTicks
+		// stops at the display floor instead of walking all of them, the re-run
+		// caps at MaxCatchUpRuns, and the recorded gap is reported honestly as
+		// "at least N+" rather than understated.
+		db := new(testutil.MockRunRepository)
+		runner := new(mockTaskRunner)
+
+		now := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
+		lastRun := &model.Run{
+			ID:        "last-run",
+			TaskName:  "my-task",
+			CreatedAt: time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
+		}
+
+		task := catchupTask(model.MissedRunAll)
+		task.Cron = "* * * * * *"
+		task.MaxCatchUpRuns = 5
+		tasks := map[string]*model.Task{"my-task": task}
+
+		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
+		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
+		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.MatchedBy(func(reason string) bool {
+			return strings.Contains(reason, "at least") && strings.Contains(reason, "+")
+		})).Return(nil)
+
+		result := RunMissedTickCatchUp(context.Background(), db, tasks, runner, now)
+
+		assert.Equal(t, 5, result.Triggered, "cap of 5 must clamp the per-second backlog")
+		runner.AssertNumberOfCalls(t, "TriggerRun", 5)
+		runner.AssertNumberOfCalls(t, "RecordMissedRun", 1)
 	})
 
 	t.Run("policy=all under max_catch_up_runs backfills everything", func(t *testing.T) {

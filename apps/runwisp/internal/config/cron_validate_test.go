@@ -17,6 +17,8 @@ func TestLoadValidatesCron(t *testing.T) {
 	}{
 		{name: "five fields", cron: "0 3 * * *"},
 		{name: "step", cron: "*/5 * * * *"},
+		{name: "six fields with seconds", cron: "0 0 3 * * *"},
+		{name: "six fields sub-minute step", cron: "*/30 * * * * *"},
 		{name: "descriptor", cron: "@hourly"},
 		{name: "every", cron: "@every 1h30m"},
 	}
@@ -33,6 +35,7 @@ func TestLoadValidatesCron(t *testing.T) {
 		cron string
 	}{
 		{name: "four fields", cron: "* * * *"},
+		{name: "seven fields", cron: "0 0 0 3 * * *"},
 		{name: "out of range", cron: "61 * * * *"},
 		{name: "garbage", cron: "every day at noon"},
 	}
@@ -43,12 +46,11 @@ func TestLoadValidatesCron(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), `invalid cron for task "backup"`)
 			assert.Contains(t, err.Error(), tt.cron)
-			// The hint teaches the accepted grammar without a docs lookup,
-			// including the @every escape hatch for sub-minute cadence (the
-			// reason six-field/seconds cron is intentionally unsupported).
+			// The hint teaches the accepted grammar without a docs lookup:
+			// 5-field, optional-seconds 6-field, descriptors, and @every.
 			assert.Contains(t, err.Error(), `expected 5 fields`)
+			assert.Contains(t, err.Error(), `6 fields`)
 			assert.Contains(t, err.Error(), `@every 1h30m`)
-			assert.Contains(t, err.Error(), `@every 30s`)
 		})
 	}
 }

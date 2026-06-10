@@ -108,8 +108,8 @@ func TestSchedulerDSTWallClockDedup(t *testing.T) {
 	sched.now = func() time.Time { return secondFire }
 	sched.fireOnce("eu-2am", loc)
 
-	wm := wallMinute{year: 2026, month: time.October, day: 25, hour: 2, minute: 0}
-	assert.Equal(t, wm, sched.lastFired["eu-2am"], "lastFired must hold the 02:00 wall-clock minute on the fall-back day")
+	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 0, second: 0}
+	assert.Equal(t, wm, sched.lastFired["eu-2am"], "lastFired must hold the 02:00 wall-clock second on the fall-back day")
 }
 
 func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
@@ -141,7 +141,7 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	sched.now = func() time.Time { return second }
 	sched.fireOnce("eu-mins", loc)
 
-	wm := wallMinute{year: 2026, month: time.October, day: 25, hour: 2, minute: 1}
+	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 1, second: 0}
 	assert.Equal(t, wm, sched.lastFired["eu-mins"], "lastFired must advance when wall-clock minute differs")
 }
 
@@ -201,6 +201,84 @@ func TestSchedulerFireOnce_GoldenTriggerSkipSequence(t *testing.T) {
 		[]recordedSkip{{taskName: "tick", reason: model.ReasonDSTSkipped}},
 		runner.skips,
 		"the second 02:00 on the fall-back day must be recorded as dst_skipped")
+}
+
+// TestSchedulerSubMinuteFiresNotSuppressed guards the 6-field motivation: two
+// firings in the same wall-clock minute but different seconds (e.g. */30 firing
+// at :00 and :30) are distinct instants and must both trigger. A minute-granular
+// dedup would wrongly suppress the :30 firing as a DST duplicate.
+func TestSchedulerSubMinuteFiresNotSuppressed(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	task := &model.Task{
+		Name: "sub-minute",
+		Cron: "*/30 * * * * *",
+		Run:  "echo",
+	}
+
+	stamps := []time.Time{
+		time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC),
+		time.Date(2026, 6, 1, 12, 0, 30, 0, time.UTC),
+	}
+	idx := 0
+	clock := func() time.Time {
+		t := stamps[idx]
+		idx++
+		return t
+	}
+
+	sched := NewScheduler(runner, map[string]*model.Task{"sub-minute": task}, time.UTC, WithNow(clock))
+
+	for range stamps {
+		sched.fireOnce("sub-minute", time.UTC)
+	}
+
+	assert.Equal(t, []string{"sub-minute", "sub-minute"}, runner.triggers,
+		"firings at :00 and :30 in the same minute must each trigger a run")
+	assert.Empty(t, runner.skips, "sub-minute firings must not be recorded as DST duplicates")
+}
+
+// TestSchedulerEverySecondDSTFallbackSuppressed proves the second-granular dedup
+// still catches the real duplicate: under "* * * * * *", a wall-clock second
+// that occurs twice on a fall-back day must trigger once and be suppressed once.
+func TestSchedulerEverySecondDSTFallbackSuppressed(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	task := &model.Task{
+		Name:     "per-second",
+		Cron:     "* * * * * *",
+		Timezone: "Europe/Bratislava",
+		Run:      "echo",
+	}
+
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+
+	// 2026-10-25 fall-back: wall-clock 02:00:30 happens twice.
+	//   UTC 00:00:30 → 02:00:30 CEST (trigger)
+	//   UTC 01:00:30 → 02:00:30 CET  (duplicate, suppressed)
+	stamps := []time.Time{
+		time.Date(2026, 10, 25, 0, 0, 30, 0, time.UTC),
+		time.Date(2026, 10, 25, 1, 0, 30, 0, time.UTC),
+	}
+	require.Equal(t, 30, stamps[0].In(loc).Second(), "anchoring sanity: first fire must read :30")
+	require.Equal(t, 2, stamps[1].In(loc).Hour(), "anchoring sanity: second fire must read 02:xx (post fall-back)")
+
+	idx := 0
+	sched := NewScheduler(runner, map[string]*model.Task{"per-second": task}, time.UTC, WithNow(func() time.Time {
+		t := stamps[idx]
+		idx++
+		return t
+	}))
+
+	for range stamps {
+		sched.fireOnce("per-second", loc)
+	}
+
+	assert.Equal(t, []string{"per-second"}, runner.triggers,
+		"the first 02:00:30 must trigger exactly once")
+	assert.Equal(t,
+		[]recordedSkip{{taskName: "per-second", reason: model.ReasonDSTSkipped}},
+		runner.skips,
+		"the rewound 02:00:30 must be recorded as dst_skipped")
 }
 
 func TestSchedulerRejectsBadTaskTimezone(t *testing.T) {

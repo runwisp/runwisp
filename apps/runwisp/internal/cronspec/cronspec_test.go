@@ -23,9 +23,13 @@ func TestValidate(t *testing.T) {
 		{name: "descriptor hourly", spec: "@hourly"},
 		{name: "descriptor every", spec: "@every 1h30m"},
 		{name: "with timezone", spec: "0 3 * * *", timezone: "Europe/Bratislava"},
+		{name: "six fields with seconds", spec: "0 0 3 * * *"},
+		{name: "six fields sub-minute step", spec: "*/30 * * * * *"},
+		{name: "six fields with timezone", spec: "*/30 * * * * *", timezone: "Europe/Bratislava"},
 		{name: "four fields", spec: "* * * *", wantErr: true},
-		{name: "six fields", spec: "0 0 3 * * *", wantErr: true},
+		{name: "seven fields", spec: "0 0 0 3 * * *", wantErr: true},
 		{name: "out of range minute", spec: "61 * * * *", wantErr: true},
+		{name: "out of range second", spec: "61 * * * * *", wantErr: true},
 		{name: "garbage", spec: "every day at noon", wantErr: true},
 		{name: "bad timezone", spec: "0 3 * * *", timezone: "Mars/Olympus", wantErr: true},
 	}
@@ -41,11 +45,13 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-// TestParityWithStandardParser guards the contract that cronspec's grammar is
-// exactly robfig's standard parser — the one cron.New would use without an
-// explicit WithParser. If ParseOptions ever drifts, validation and scheduling
-// would accept different specs.
-func TestParityWithStandardParser(t *testing.T) {
+// TestSupersetOfStandardParser guards the contract that cronspec's grammar is a
+// superset of robfig's standard parser — the one cron.New would use without an
+// explicit WithParser. Every spec the standard parser accepts, cronspec must
+// also accept (no 5-field regression); cronspec additionally accepts a leading
+// seconds field. If ParseOptions ever dropped a standard option, validation and
+// scheduling would reject specs the userbase already relies on.
+func TestSupersetOfStandardParser(t *testing.T) {
 	specs := []string{
 		"0 3 * * *",
 		"*/5 * * * *",
@@ -55,13 +61,26 @@ func TestParityWithStandardParser(t *testing.T) {
 		"CRON_TZ=UTC 0 3 * * *",
 		"* * * *",
 		"61 * * * *",
-		"0 0 3 * * *",
 		"nonsense",
 	}
 	for _, spec := range specs {
 		_, oursErr := NewParser().Parse(spec)
 		_, stdErr := cron.ParseStandard(spec)
-		require.Equal(t, stdErr == nil, oursErr == nil,
-			"grammar drift for %q: cronspec err=%v, standard err=%v", spec, oursErr, stdErr)
+		if stdErr == nil {
+			require.NoError(t, oursErr,
+				"cronspec rejected a spec the standard parser accepts (5-field regression): %q", spec)
+		}
 	}
+}
+
+// TestAcceptsSixFieldSeconds is the additive half of the superset contract: the
+// leading seconds field that the standard parser rejects, cronspec accepts.
+func TestAcceptsSixFieldSeconds(t *testing.T) {
+	spec := "*/30 * * * * *"
+
+	_, oursErr := NewParser().Parse(spec)
+	require.NoError(t, oursErr, "cronspec should accept a 6-field spec")
+
+	_, stdErr := cron.ParseStandard(spec)
+	require.Error(t, stdErr, "standard parser should still reject a 6-field spec")
 }

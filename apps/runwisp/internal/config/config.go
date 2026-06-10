@@ -369,7 +369,7 @@ func validateTaskCron(task *model.Task) error {
 	}
 	if err := cronspec.Validate(task.Cron, task.Timezone); err != nil {
 		return fmt.Errorf(
-			"invalid cron for task %q: %q — %v; expected 5 fields \"min hour day month weekday\" (e.g. \"0 3 * * *\" = 03:00 daily), a descriptor like @hourly/@daily/@weekly, or @every for fixed intervals including sub-minute cadence (e.g. @every 30s, @every 1h30m). Six-field/seconds cron is not supported — use @every 30s",
+			"invalid cron for task %q: %q — %v; expected 5 fields \"min hour day month weekday\" (e.g. \"0 3 * * *\" = 03:00 daily), an optional leading seconds field for 6 fields \"sec min hour day month weekday\" (e.g. \"*/30 * * * * *\" = every 30s on the :00 and :30), a descriptor like @hourly/@daily/@weekly, or @every for fixed intervals (e.g. @every 30s, @every 1h30m)",
 			task.Name, task.Cron, err)
 	}
 	return nil
