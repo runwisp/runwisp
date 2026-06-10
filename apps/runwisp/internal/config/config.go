@@ -18,30 +18,66 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// Load reads, decodes, defaults, and validates a runwisp.toml file.
+// Load reads, decodes, defaults, and validates a runwisp.toml file, merging in
+// any files pulled via [daemon].include.
 func Load(path string) (*Config, error) {
-	cfg, err := loadRaw(path)
+	cfg, dirs, err := loadWithIncludes(path)
 	if err != nil {
 		return nil, err
 	}
-	baseDir := filepath.Dir(path)
-	if err := expandComposeBlocks(cfg, baseDir); err != nil {
+	if err := expandComposeBlocks(cfg, dirs); err != nil {
 		return nil, err
 	}
-	if err := resolveComposePaths(cfg, baseDir); err != nil {
+	if err := resolveComposePaths(cfg, dirs); err != nil {
 		return nil, err
 	}
-	if err := resolveEnvLayers(cfg, baseDir); err != nil {
+	if err := resolveEnvLayers(cfg, dirs); err != nil {
 		return nil, err
 	}
-	if err := resolveWorkingDirs(cfg, baseDir); err != nil {
+	if err := resolveWorkingDirs(cfg, dirs); err != nil {
 		return nil, err
 	}
 	ApplyDefaults(cfg)
 	if err := Validate(cfg); err != nil {
 		return nil, err
 	}
+	cfg.watchFiles = collectWatchFiles(cfg, dirs)
 	return cfg, nil
+}
+
+// collectWatchFiles resolves every on-disk input Snapshot should watch beyond
+// the root config: included TOML files plus each env_file, each against the dir
+// of the config that declared it. secrets_file is intentionally excluded,
+// matching the pre-include behavior.
+func collectWatchFiles(cfg *Config, dirs sourceDirs) []string {
+	files := append([]string(nil), cfg.includeFiles...)
+	if cfg.Defaults.EnvFile != "" {
+		files = append(files, resolveAgainst(dirs.root, cfg.Defaults.EnvFile))
+	}
+	for i := range cfg.Tasks {
+		if ef := cfg.Tasks[i].EnvFile; ef != "" {
+			files = append(files, resolveAgainst(dirs.dir(cfg.Tasks[i].Name), ef))
+		}
+	}
+	return files
+}
+
+// sourceDirs maps each task/service/compose-alias name to the directory of the
+// config file that defined it, so an included file's relative paths (env_file,
+// secrets_file, compose_file, working_dir) resolve against its own location
+// rather than the root config. Names with no recorded origin — compose-
+// generated tasks, or any task in a single-file config — fall back to root.
+type sourceDirs struct {
+	root   string
+	byName map[string]string
+}
+
+// dir returns the base directory for the named entry's relative paths.
+func (s sourceDirs) dir(name string) string {
+	if d, ok := s.byName[name]; ok {
+		return d
+	}
+	return s.root
 }
 
 // resolveEnvLayers reads each env_file / secrets_file referenced by the config
@@ -49,16 +85,19 @@ func Load(path string) (*Config, error) {
 // inline entries override file entries, docker-compose-style. Relative paths
 // are resolved against baseDir (the runwisp.toml directory). Dotenv file
 // contents are taken literally; ${...} substitution applies only to TOML.
-func resolveEnvLayers(cfg *Config, baseDir string) error {
+func resolveEnvLayers(cfg *Config, dirs sourceDirs) error {
 	var err error
-	if cfg.Defaults.Env, err = mergeEnvFileLayer(baseDir, cfg.Defaults.EnvFile, cfg.Defaults.Env, "defaults"); err != nil {
+	// [defaults] is root-only, so its env_file/secrets_file always resolve
+	// against the root config dir.
+	if cfg.Defaults.Env, err = mergeEnvFileLayer(dirs.root, cfg.Defaults.EnvFile, cfg.Defaults.Env, "defaults"); err != nil {
 		return err
 	}
-	if cfg.Defaults.Secrets, err = mergeEnvFileLayer(baseDir, cfg.Defaults.SecretsFile, cfg.Defaults.Secrets, "defaults"); err != nil {
+	if cfg.Defaults.Secrets, err = mergeEnvFileLayer(dirs.root, cfg.Defaults.SecretsFile, cfg.Defaults.Secrets, "defaults"); err != nil {
 		return err
 	}
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
+		baseDir := dirs.dir(task.Name)
 		scope := fmt.Sprintf("task %q", task.Name)
 		if task.Env, err = mergeEnvFileLayer(baseDir, task.EnvFile, task.Env, scope); err != nil {
 			return err
@@ -88,13 +127,13 @@ func mergeEnvFileLayer(baseDir, file string, inline map[string]string, scope str
 // path already resolves to absolute during expansion, so those are skipped by
 // the IsAbs guard. WorkingDir defaults to the file's directory so the CLI runs
 // from there, matching docker compose's own behaviour.
-func resolveComposePaths(cfg *Config, baseDir string) error {
+func resolveComposePaths(cfg *Config, dirs sourceDirs) error {
 	for i := range cfg.Tasks {
 		ce, ok := cfg.Tasks[i].ExecutionDef.(*model.ComposeExecution)
 		if !ok || ce.File == "" || filepath.IsAbs(ce.File) {
 			continue
 		}
-		resolved, err := resolveComposeFile(ce.File, baseDir)
+		resolved, err := resolveComposeFile(ce.File, dirs.dir(cfg.Tasks[i].Name))
 		if err != nil {
 			return fmt.Errorf("task %q: %w", cfg.Tasks[i].Name, err)
 		}
@@ -113,13 +152,13 @@ func resolveComposePaths(cfg *Config, baseDir string) error {
 // Existence is checked at run time, not load — like shell, host paths are
 // resolved against the daemon's namespace, which may differ from the one
 // `runwisp validate` runs in.
-func resolveWorkingDirs(cfg *Config, baseDir string) error {
+func resolveWorkingDirs(cfg *Config, dirs sourceDirs) error {
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
 		if task.WorkingDir == "" {
 			continue
 		}
-		resolved, err := resolvePath(baseDir, task.WorkingDir)
+		resolved, err := resolvePath(dirs.dir(task.Name), task.WorkingDir)
 		if err != nil {
 			return fmt.Errorf("working_dir for task %q: %w", task.Name, err)
 		}
@@ -160,17 +199,11 @@ func gracefulStopWarnings(cfg *Config) []string {
 	return warnings
 }
 
-func loadRaw(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-	return decode(data, filepath.Dir(path))
-}
-
-// decode parses TOML bytes into a Config. baseDir is the runwisp.toml
-// directory; ${file:...} substitutions resolve relative paths against it.
-func decode(data []byte, baseDir string) (*Config, error) {
+// parseWire decodes TOML bytes into the wire config and runs ${VAR} /
+// ${file:...} substitution against baseDir (the file's own directory). It
+// stops short of building the model so loadWithIncludes can decode each file
+// against its own dir, then merge before the single build pass.
+func parseWire(data []byte, baseDir string) (*tomlConfig, error) {
 	var raw tomlConfig
 	dec := toml.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -180,16 +213,33 @@ func decode(data []byte, baseDir string) (*Config, error) {
 	if err := expandConfig(&raw, baseDir, os.LookupEnv); err != nil {
 		return nil, err
 	}
+	return &raw, nil
+}
 
-	taskNames, err := collectTaskNames(&raw)
+// decode parses TOML bytes into a Config. baseDir is the runwisp.toml
+// directory; ${file:...} substitutions resolve relative paths against it.
+func decode(data []byte, baseDir string) (*Config, error) {
+	raw, err := parseWire(data, baseDir)
 	if err != nil {
 		return nil, err
 	}
-	serviceNames, err := collectServiceNames(&raw)
+	return buildConfig(raw)
+}
+
+// buildConfig turns a (possibly merged) wire config into a Config. It runs
+// exactly once over the combined task/service/notifier set, so cross-file
+// references (a route targeting an included task, a task naming a notifier from
+// another file) resolve correctly.
+func buildConfig(raw *tomlConfig) (*Config, error) {
+	taskNames, err := collectTaskNames(raw)
 	if err != nil {
 		return nil, err
 	}
-	tasks, err := buildTaskSlice(&raw, taskNames, serviceNames)
+	serviceNames, err := collectServiceNames(raw)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := buildTaskSlice(raw, taskNames, serviceNames)
 	if err != nil {
 		return nil, err
 	}

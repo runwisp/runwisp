@@ -24,6 +24,17 @@ type Config struct {
 	// downstream consumers. Tests that call decode() directly will see the
 	// raw blocks here.
 	pendingComposeBlocks map[string]map[string]any
+
+	// includeFiles are the absolute paths of the TOML files merged in via
+	// [daemon].include at this load. includeGlobs are those patterns resolved
+	// against the root config dir. watchFiles is every additional on-disk input
+	// Snapshot should hash (included TOMLs + env_files, each resolved against
+	// its declaring file's dir). All three are load-time bookkeeping for
+	// Snapshot and never reach the API/UI; empty for a single-file config with
+	// no env_file.
+	includeFiles []string
+	includeGlobs []string
+	watchFiles   []string
 }
 
 // Scheduler holds scheduler-wide settings. Timezone is the IANA name used to

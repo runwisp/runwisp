@@ -363,12 +363,19 @@ func (w *storageWire) toStorage() (Storage, error) {
 
 // daemonWire mirrors [daemon] before parsing — the duration string for
 // shutdown_timeout is parsed at config-load time.
+//
+// Include is consumed entirely at load time by loadWithIncludes (glob, merge)
+// and is deliberately absent from the Daemon model: it never reaches the API,
+// UI, or any runtime consumer — the merged task set is the only observable
+// result. Only the root config may set it; [daemon].include in an included
+// file is a hard error.
 type daemonWire struct {
-	AllowCloudDispatch bool   `toml:"allow_cloud_dispatch,omitempty"`
-	ShutdownTimeout    string `toml:"shutdown_timeout,omitempty"`
-	ExternalURL        string `toml:"external_url,omitempty"`
-	MetricsEnabled     bool   `toml:"metrics_enabled,omitempty"`
-	MetricsListen      string `toml:"metrics_listen,omitempty"`
+	AllowCloudDispatch bool     `toml:"allow_cloud_dispatch,omitempty"`
+	ShutdownTimeout    string   `toml:"shutdown_timeout,omitempty"`
+	ExternalURL        string   `toml:"external_url,omitempty"`
+	MetricsEnabled     bool     `toml:"metrics_enabled,omitempty"`
+	MetricsListen      string   `toml:"metrics_listen,omitempty"`
+	Include            []string `toml:"include,omitempty"`
 }
 
 func (w *daemonWire) toDaemon() (Daemon, error) {

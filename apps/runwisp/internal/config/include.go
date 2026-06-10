@@ -1,0 +1,204 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+)
+
+// loadWithIncludes loads the root config and any files pulled in via
+// [daemon].include, returning the merged result as a Config plus a sourceDirs
+// map so later path resolution honors each entry's origin file.
+//
+// Merge semantics:
+//   - collections ([tasks.*], [services.*], [compose.*], [[notifier]],
+//     [[notification_route]]) accumulate — root first, then matched globs in
+//     lexicographic order;
+//   - a task / service / compose-alias name defined in two files is a hard
+//     error naming both files;
+//   - singleton tables ([daemon], [storage], [defaults], [scheduler],
+//     [notify]) may appear only in the root — setting one in an included file
+//     is a hard error;
+//   - included files may not themselves include (flat-only).
+func loadWithIncludes(path string) (*Config, sourceDirs, error) {
+	rootDir := filepath.Dir(path)
+	rootData, err := os.ReadFile(path)
+	if err != nil {
+		return nil, sourceDirs{}, fmt.Errorf("failed to read config file: %w", err)
+	}
+	root, err := parseWire(rootData, rootDir)
+	if err != nil {
+		return nil, sourceDirs{}, err
+	}
+
+	dirs := sourceDirs{root: rootDir, byName: map[string]string{}}
+	// nameSource tracks which file defined each task/service/compose name so a
+	// cross-file collision can name both. Within-file collisions (a task and
+	// service sharing a name in one file) stay the job of buildConfig.
+	nameSource := map[string]string{}
+	for _, name := range entryNames(root) {
+		nameSource[name] = path
+		dirs.byName[name] = rootDir
+	}
+
+	globs, matched, err := resolveIncludes(root.Daemon.Include, rootDir, path)
+	if err != nil {
+		return nil, sourceDirs{}, err
+	}
+
+	for _, incPath := range matched {
+		incDir := filepath.Dir(incPath)
+		data, err := os.ReadFile(incPath)
+		if err != nil {
+			return nil, sourceDirs{}, fmt.Errorf("failed to read included config %s: %w", incPath, err)
+		}
+		inc, err := parseWire(data, incDir)
+		if err != nil {
+			return nil, sourceDirs{}, fmt.Errorf("included config %s: %w", incPath, err)
+		}
+		if len(inc.Daemon.Include) > 0 {
+			return nil, sourceDirs{}, fmt.Errorf("included config %s sets [daemon].include; includes may not be nested (included from %s)", incPath, path)
+		}
+		if err := assertNoSingletons(inc, incPath); err != nil {
+			return nil, sourceDirs{}, err
+		}
+		if err := mergeWire(root, inc, incPath, incDir, nameSource, dirs.byName); err != nil {
+			return nil, sourceDirs{}, err
+		}
+	}
+
+	cfg, err := buildConfig(root)
+	if err != nil {
+		return nil, sourceDirs{}, err
+	}
+	cfg.includeFiles = matched
+	cfg.includeGlobs = globs
+	return cfg, dirs, nil
+}
+
+// entryNames returns the task, service, and compose-alias names declared in a
+// wire — the shared namespace that must stay collision-free across files.
+func entryNames(w *tomlConfig) []string {
+	names := make([]string, 0, len(w.Tasks)+len(w.Services)+len(w.Compose))
+	for n := range w.Tasks {
+		names = append(names, n)
+	}
+	for n := range w.Services {
+		names = append(names, n)
+	}
+	for n := range w.Compose {
+		names = append(names, n)
+	}
+	return names
+}
+
+// resolveIncludes expands each include pattern against the root config dir and
+// returns the resolved (absolute) patterns plus the deduplicated, lexically
+// sorted set of matched files. The root config is skipped if it matches its
+// own glob. Zero matches is not an error — an empty conf.d/ is fine.
+func resolveIncludes(patterns []string, rootDir, rootPath string) (resolvedGlobs, matched []string, err error) {
+	rootAbs, _ := filepath.Abs(rootPath)
+	seen := map[string]struct{}{}
+	for _, pat := range patterns {
+		abs, err := resolvePath(rootDir, pat)
+		if err != nil {
+			return nil, nil, fmt.Errorf("daemon.include %q: %w", pat, err)
+		}
+		resolvedGlobs = append(resolvedGlobs, abs)
+		hits, err := filepath.Glob(abs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("daemon.include %q: %w", pat, err)
+		}
+		for _, h := range hits {
+			ha, err := filepath.Abs(h)
+			if err != nil {
+				ha = h
+			}
+			if ha == rootAbs {
+				continue
+			}
+			if _, dup := seen[ha]; dup {
+				continue
+			}
+			seen[ha] = struct{}{}
+			matched = append(matched, ha)
+		}
+	}
+	sort.Strings(matched)
+	return resolvedGlobs, matched, nil
+}
+
+// assertNoSingletons rejects any singleton table set in an included file. Empty
+// (absent) tables decode to zero values, so reflect.IsZero distinguishes
+// "section present with content" from "section omitted". Called after the
+// nested-include check, so a stray [daemon].include is reported there with a
+// more specific message rather than as a generic [daemon] violation.
+func assertNoSingletons(inc *tomlConfig, file string) error {
+	sections := []struct {
+		name string
+		v    any
+	}{
+		{"[daemon]", inc.Daemon},
+		{"[storage]", inc.Storage},
+		{"[defaults]", inc.Defaults},
+		{"[scheduler]", inc.Scheduler},
+		{"[notify]", inc.Notify},
+	}
+	for _, s := range sections {
+		if !reflect.ValueOf(s.v).IsZero() {
+			return fmt.Errorf("included config %s sets %s; that table may only appear in the root config", file, s.name)
+		}
+	}
+	return nil
+}
+
+// mergeWire folds an included wire into the root: it accumulates the
+// collections and records each entry's origin, rejecting any task / service /
+// compose-alias name already claimed by another file.
+func mergeWire(root, inc *tomlConfig, incPath, incDir string, nameSource, byName map[string]string) error {
+	for _, name := range entryNames(inc) {
+		if prev, ok := nameSource[name]; ok {
+			if prev == incPath {
+				// Two tables in this same file share a name (e.g. [tasks.x] and
+				// [services.x]); let buildConfig report it with its own phrasing.
+				continue
+			}
+			return fmt.Errorf("duplicate task/service name %q defined in both %s and %s", name, prev, incPath)
+		}
+		nameSource[name] = incPath
+		byName[name] = incDir
+	}
+
+	if len(inc.Tasks) > 0 {
+		if root.Tasks == nil {
+			root.Tasks = make(map[string]*taskWire, len(inc.Tasks))
+		}
+		for k, v := range inc.Tasks {
+			root.Tasks[k] = v
+		}
+	}
+	if len(inc.Services) > 0 {
+		if root.Services == nil {
+			root.Services = make(map[string]*serviceWire, len(inc.Services))
+		}
+		for k, v := range inc.Services {
+			root.Services[k] = v
+		}
+	}
+	if len(inc.Compose) > 0 {
+		if root.Compose == nil {
+			root.Compose = make(map[string]map[string]any, len(inc.Compose))
+		}
+		for k, v := range inc.Compose {
+			root.Compose[k] = v
+		}
+	}
+	root.Notifiers = append(root.Notifiers, inc.Notifiers...)
+	root.Routes = append(root.Routes, inc.Routes...)
+	return nil
+}

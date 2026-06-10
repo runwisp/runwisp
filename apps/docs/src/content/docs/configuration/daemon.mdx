@@ -25,6 +25,7 @@ shutdown_timeout = "10s"
 external_url     = "https://runwisp.example.com"
 metrics_enabled  = false
 metrics_listen   = ""
+include          = ["conf.d/*.toml"]
 ```
 
 | Key                | Default | What it does                                                                                                                                                                                                                    |
@@ -33,6 +34,7 @@ metrics_listen   = ""
 | `external_url`     | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                           |
 | `metrics_enabled`  | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.            |
 | `metrics_listen`   | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`. |
+| `include`          | _unset_ | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                     |
 
 ### `shutdown_timeout`
 
@@ -89,6 +91,59 @@ API, and `/health` all stay on the main listener.
 
 And if you set `metrics_listen` but never turned `metrics_enabled` on,
 the daemon rejects it at boot instead of quietly ignoring it.
+
+### `include`
+
+Once you've got more than a handful of tasks, one `runwisp.toml` gets
+unwieldy. `include` lets you break it up: point it at one or more glob
+patterns, and every matching file gets merged in as if you'd pasted it
+into the root config.
+
+```toml
+# runwisp.toml
+[daemon]
+include = ["conf.d/*.toml", "services/*.toml"]
+
+[tasks.heartbeat]
+run = "curl -fsS https://example.com/ping"
+```
+
+```toml
+# conf.d/backups.toml — no [daemon] here, just tasks
+[tasks.nightly-backup]
+run = "/opt/backup.sh"
+cron = "0 3 * * *"
+```
+
+A few rules keep "what wins" obvious:
+
+- **Patterns are relative to the file that wrote them.** A glob in the
+  root config resolves against the root config's directory; the same
+  goes for any relative path (`run`'s `working_dir`, `env_file`,
+  `compose_file`, `${file:...}`) _inside_ an included file — those
+  resolve against **that** file's directory, not the root's. So a
+  `conf.d/backups.toml` referencing `env_file = "backup.env"` looks for
+  `conf.d/backup.env`.
+- **Tasks, services, compose blocks, notifiers, and routes accumulate.**
+  Everything from the root and every matched file is pooled together.
+  Merge order is the root first, then matched files sorted by path — but
+  order only matters for tie-breaking error messages, since…
+- **Names must be unique across all files.** Two files defining a task,
+  service, or `[compose.*]` alias with the same name is a hard error
+  that names both files. No silent "last one wins".
+- **The big singleton tables stay in the root.** `[daemon]`,
+  `[scheduler]`, `[defaults]`, `[storage]`, and `[notify]` may only
+  appear in the root config — setting one in an included file is an
+  error. This keeps daemon-wide settings and `[defaults]` inheritance in
+  exactly one place.
+- **Includes don't nest.** An included file can't have its own
+  `[daemon].include`. One level, root-out.
+
+Editing — or adding, or deleting — any included file shows up the same
+way a root-config edit does: the daemon flags the config as stale in
+`/api/info` (and the UI) so you know a restart will pick up changes.
+Like all config, includes are read once at boot;
+[reload is restart-only](/configuration/overview/).
 
 ## CLI flags: config, data directory & listen address
 
