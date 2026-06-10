@@ -102,7 +102,17 @@ func TestGetTasks(t *testing.T) {
 func TestTriggerRun(t *testing.T) {
 	s, _, exec, _ := setupServer(t)
 
-	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
+	// The executor signals when the async run reaches it, so the test blocks on
+	// that signal rather than sleeping and hoping.
+	executed := make(chan struct{}, 1)
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(mock.Arguments) {
+			select {
+			case executed <- struct{}{}:
+			default:
+			}
+		}).
+		Return(&executor.ExecuteResult{ExitCode: 0})
 
 	req := httptest.NewRequest("POST", "/api/tasks/task1/run", nil)
 	w := httptest.NewRecorder()
@@ -116,8 +126,11 @@ func TestTriggerRun(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "task1", run.TaskName)
 
-	// Wait for async execution
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-executed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("triggered run never reached the executor")
+	}
 	exec.AssertExpectations(t)
 }
 
@@ -383,95 +396,84 @@ func TestInvalidRunID(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 }
 
-func TestAuth(t *testing.T) {
-	// Setup server with auth enabled
-	repo := new(testutil.MockRunRepository)
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := runtime.NewTaskManager(exec, eb, time.Now)
-	tasks := map[string]*model.Task{}
+// chapChallenge fetches a fresh login nonce from the challenge endpoint.
+func chapChallenge(t *testing.T, s *Server) string {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/auth/challenge", nil)
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotEmpty(t, resp["nonce"], "challenge must return a nonce")
+	return resp["nonce"]
+}
 
-	// Create scheduler (nil is fine for this test)
-	scheduler := runtime.NewScheduler(jm, tasks, time.UTC)
+// chapAttempt performs a full CHAP handshake (challenge → SHA-256(password:nonce)
+// → login) and returns the login response recorder for the caller to assert on.
+func chapAttempt(t *testing.T, s *Server, password string) *httptest.ResponseRecorder {
+	t.Helper()
+	nonce := chapChallenge(t, s)
+	h := sha256.Sum256([]byte(password + ":" + nonce))
+	body := fmt.Sprintf(`{"nonce":%q,"response":%q}`, nonce, hex.EncodeToString(h[:]))
+	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	return w
+}
 
-	s, err := New(Options{
-		DB:          repo,
-		TaskManager: jm,
-		Tasks:       tasks,
-		Scheduler:   scheduler,
-		Port:        9477,
-		LogDir:      "/tmp/logs",
-		EventBus:    eb,
-		Password:    "secret",
-		JWTSecret:   "test-jwt-secret",
-	})
-	require.NoError(t, err)
+func TestAuthStatus_ReportsAuthRequired(t *testing.T) {
+	s, _, _, _ := setupServer(t)
 
-	// Test Auth Status
 	req := httptest.NewRequest("GET", "/api/auth/status", nil)
 	w := httptest.NewRecorder()
-
 	s.router.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"auth_required":true`)
+}
 
-	// Test Login Success
-	// Step 1: Get challenge nonce
-	req = httptest.NewRequest("GET", "/api/auth/challenge", nil)
-	w = httptest.NewRecorder()
+func TestCHAPLogin_Success(t *testing.T) {
+	s, _, _, _ := setupServer(t)
 
-	s.router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
-	var challengeResp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &challengeResp)
-	nonce := challengeResp["nonce"]
-	assert.NotEmpty(t, nonce)
+	w := chapAttempt(t, s, "secret")
 
-	// Step 2: Compute SHA-256(password:nonce) and send
-	h := sha256.Sum256([]byte("secret:" + nonce))
-	challengeResponse := hex.EncodeToString(h[:])
-	loginBody := fmt.Sprintf(`{"nonce":%q,"response":%q}`, nonce, challengeResponse)
-	req = httptest.NewRequest("POST", "/api/auth", strings.NewReader(loginBody))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-
-	s.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	token := resp["token"]
-	assert.NotEmpty(t, token)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.NotEmpty(t, resp["token"], "a correct response must mint a session token")
+}
 
-	// Test Login Failure — wrong password
-	req = httptest.NewRequest("GET", "/api/auth/challenge", nil)
-	w = httptest.NewRecorder()
+func TestCHAPLogin_WrongPassword(t *testing.T) {
+	s, _, _, _ := setupServer(t)
 
-	s.router.ServeHTTP(w, req)
-	json.Unmarshal(w.Body.Bytes(), &challengeResp)
-	nonce = challengeResp["nonce"]
-	wrongH := sha256.Sum256([]byte("wrong:" + nonce))
-	wrongResponse := hex.EncodeToString(wrongH[:])
-	loginBody = fmt.Sprintf(`{"nonce":%q,"response":%q}`, nonce, wrongResponse)
-	req = httptest.NewRequest("POST", "/api/auth", strings.NewReader(loginBody))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
+	w := chapAttempt(t, s, "wrong")
 
-	s.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
 
-	// Test Protected Route without Token
-	req = httptest.NewRequest("GET", "/api/tasks", nil)
-	w = httptest.NewRecorder()
+func TestProtectedRoute_RejectedWithoutToken(t *testing.T) {
+	s, _, _, _ := setupServer(t)
 
+	req := httptest.NewRequest("GET", "/api/tasks", nil)
+	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
 
-	// Test Protected Route with Token
-	req = httptest.NewRequest("GET", "/api/tasks", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w = httptest.NewRecorder()
+func TestProtectedRoute_AcceptedWithValidToken(t *testing.T) {
+	s, _, _, _ := setupServer(t)
 
+	var resp map[string]string
+	require.NoError(t, json.Unmarshal(chapAttempt(t, s, "secret").Body.Bytes(), &resp))
+
+	req := httptest.NewRequest("GET", "/api/tasks", nil)
+	req.Header.Set("Authorization", "Bearer "+resp["token"])
+	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
@@ -485,6 +487,12 @@ func TestRunsStream(t *testing.T) {
 	defer cancel()
 	req = req.WithContext(ctx)
 
+	// This sequences a concurrent publish against the blocking SSE handler: the
+	// handler subscribes synchronously near the top of ServeHTTP, so the first
+	// sleep is a generous margin for that (not an async-completion wait), then we
+	// publish and give the for-loop a beat to write before cancelling. There is
+	// no completion signal to await here without a flush-watching ResponseWriter,
+	// which would be more brittle than this bounded coordination.
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		s.eventBus.Publish(events.EventRunCreated, events.RunEvent{Run: &model.Run{ID: ulid.Make().String()}})

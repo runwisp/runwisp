@@ -45,6 +45,17 @@ const (
 	DefaultEveryN = 10
 )
 
+// timerHandle is the slice of *time.Timer that coalesce relies on: the ability
+// to cancel a scheduled window-close flush. Tests inject a fake to fire
+// flushes deterministically instead of waiting on the wall clock.
+type timerHandle interface {
+	Stop() bool
+}
+
+// afterFunc schedules fn after d and returns a handle to cancel it. Production
+// wires time.AfterFunc; tests substitute a controllable fake.
+type afterFunc func(d time.Duration, fn func()) timerHandle
+
 // Channel wraps a delegate notify.Channel with outbound coalescing. It is
 // itself a notify.Channel — the dispatcher pumps events through it like any
 // other.
@@ -53,6 +64,7 @@ type Channel struct {
 	cfg    Config
 	clock  notify.Clocker
 	logger *slog.Logger
+	after  afterFunc
 
 	mu    sync.Mutex
 	state map[string]*fpState
@@ -69,7 +81,7 @@ type fpState struct {
 	lastSent  time.Time
 	pending   int
 	lastEvent *notify.Event
-	timer     *time.Timer
+	timer     timerHandle
 }
 
 // New wraps inner. The returned Channel must be Closed; otherwise pending
@@ -93,6 +105,7 @@ func New(inner notify.Channel, cfg Config, clock notify.Clocker, logger *slog.Lo
 		cfg:         cfg,
 		clock:       clock,
 		logger:      logger,
+		after:       func(d time.Duration, fn func()) timerHandle { return time.AfterFunc(d, fn) },
 		state:       make(map[string]*fpState),
 		timerDone:   ctx.Done(),
 		timerCancel: cancel,
@@ -164,7 +177,7 @@ func (c *Channel) decide(ev *notify.Event) decision {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	fp := fingerprintKey(ev)
+	fp := notify.FingerprintKey(ev)
 	now := c.clock.Now()
 	st, ok := c.state[fp]
 
@@ -210,7 +223,7 @@ func (c *Channel) decide(ev *notify.Event) decision {
 		if deadline < 0 {
 			deadline = 0
 		}
-		st.timer = time.AfterFunc(deadline, func() {
+		st.timer = c.after(deadline, func() {
 			c.timerFlush(fp)
 		})
 	}
@@ -270,23 +283,4 @@ func summarize(ev *notify.Event, count int, windowClose bool) *notify.Event {
 		out.Extra["coalesced_summary"] = true
 	}
 	return &out
-}
-
-// fingerprintKey mirrors the in-app coalescer's fingerprint shape: kind +
-// task name + (end_reason | delivery target). Two events that should be
-// folded together share this key.
-func fingerprintKey(ev *notify.Event) string {
-	if ev == nil {
-		return ""
-	}
-	extra := ""
-	if ev.Run != nil && ev.Run.EndReason != nil {
-		extra = string(*ev.Run.EndReason)
-	}
-	if ev.Kind == notify.KindNotifyDeliveryFailed && ev.Extra != nil {
-		ch, _ := ev.Extra["channel"].(string)
-		ok, _ := ev.Extra["original_kind"].(string)
-		extra = ch + "|" + ok
-	}
-	return string(ev.Kind) + "|" + ev.TaskName + "|" + extra
 }

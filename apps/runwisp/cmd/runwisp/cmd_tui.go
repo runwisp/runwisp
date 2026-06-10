@@ -19,20 +19,20 @@ var tuiCmd = &cobra.Command{
 	Short: "Connect a TUI to a running daemon",
 	Long:  `Launches the interactive terminal UI and connects it to an already-running RunWisp daemon via its Unix socket (no password required — access is gated by data-dir filesystem permissions).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runTUIClient()
+		return runTUIClient(flags)
 	},
 }
 
-func runTUIClient() error {
-	client := apiclient.NewUnix(localAPISocketPath())
+func runTUIClient(f Flags) error {
+	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	if err := pollHealth(client, 5*time.Second); err != nil {
-		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(), err, daemonNotRunningHint)
+		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
-	err := runTUIConnect(client)
+	err := runTUIConnect(client, f)
 	if err != nil && errors.Is(err, apiclient.ErrRateLimited) {
-		return authRateLimitedError(flags.Port)
+		return authRateLimitedError(f.Port)
 	}
 	return err
 }

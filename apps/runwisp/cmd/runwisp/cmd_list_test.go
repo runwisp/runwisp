@@ -69,24 +69,21 @@ func writeConfig(t *testing.T, body string) string {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
-	orig := flags.CfgFile
-	flags.CfgFile = path
-	t.Cleanup(func() { flags.CfgFile = orig })
 	return path
 }
 
 func TestRunList_NoTasks(t *testing.T) {
-	writeConfig(t, minimalCfgEmpty)
+	f := Flags{CfgFile: writeConfig(t, minimalCfgEmpty)}
 	out := withCapturedStdout(t, func() {
-		require.NoError(t, runList())
+		require.NoError(t, runList(f))
 	})
 	assert.Contains(t, out, "No tasks configured")
 }
 
 func TestRunList_OneCronTask(t *testing.T) {
-	writeConfig(t, minimalCfgOneTask)
+	f := Flags{CfgFile: writeConfig(t, minimalCfgOneTask)}
 	out := withCapturedStdout(t, func() {
-		require.NoError(t, runList())
+		require.NoError(t, runList(f))
 	})
 	assert.Contains(t, out, "hello")
 	assert.Contains(t, out, "* * * * *")
@@ -94,9 +91,9 @@ func TestRunList_OneCronTask(t *testing.T) {
 }
 
 func TestRunList_ServiceTaskShowsInstances(t *testing.T) {
-	writeConfig(t, minimalCfgServiceTask)
+	f := Flags{CfgFile: writeConfig(t, minimalCfgServiceTask)}
 	out := withCapturedStdout(t, func() {
-		require.NoError(t, runList())
+		require.NoError(t, runList(f))
 	})
 	assert.Contains(t, out, "worker")
 	assert.Contains(t, out, "(service x3)")
@@ -104,19 +101,18 @@ func TestRunList_ServiceTaskShowsInstances(t *testing.T) {
 }
 
 func TestRunList_LongDescriptionTruncated(t *testing.T) {
-	writeConfig(t, minimalCfgLongDescription)
+	f := Flags{CfgFile: writeConfig(t, minimalCfgLongDescription)}
 	out := withCapturedStdout(t, func() {
-		require.NoError(t, runList())
+		require.NoError(t, runList(f))
 	})
 	assert.Contains(t, out, "...")
 }
 
 func TestRunList_MissingConfigFile(t *testing.T) {
-	orig := flags.CfgFile
-	flags.CfgFile = filepath.Join(t.TempDir(), "absent.toml")
-	t.Cleanup(func() { flags.CfgFile = orig })
+	t.Parallel()
+	f := Flags{CfgFile: filepath.Join(t.TempDir(), "absent.toml")}
 
-	err := runList()
+	err := runList(f)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load")
 }

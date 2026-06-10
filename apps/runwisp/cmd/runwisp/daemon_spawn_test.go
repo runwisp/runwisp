@@ -121,42 +121,33 @@ func TestDaemonLogDrainer_NoFileNoFatal(t *testing.T) {
 }
 
 func TestCheckPidAlive_NoPidFileConservativelyAlive(t *testing.T) {
+	t.Parallel()
 	// No PID file → ReadPidFile errors → checkPidAlive returns (0, true).
 	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
-	pid, alive := checkPidAlive(filepath.Join(dir, "daemon.pid"))
+	pid, alive := checkPidAlive(filepath.Join(dir, "daemon.pid"), dir)
 	assert.Equal(t, 0, pid)
 	assert.True(t, alive, "missing PID file: stay conservative (assume alive)")
 }
 
 func TestCheckPidAlive_LivePid(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	pidPath := filepath.Join(dir, "daemon.pid")
 	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
 
-	pid, alive := checkPidAlive(pidPath)
+	pid, alive := checkPidAlive(pidPath, dir)
 	assert.Equal(t, os.Getpid(), pid)
 	assert.True(t, alive)
 }
 
 func TestCheckPidAlive_DeadPid(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	pidPath := filepath.Join(dir, "daemon.pid")
 	// PID 0 is dead.
 	require.NoError(t, os.WriteFile(pidPath, []byte("0"), 0o600))
 
-	pid, alive := checkPidAlive(pidPath)
+	pid, alive := checkPidAlive(pidPath, dir)
 	assert.Equal(t, 0, pid)
 	assert.False(t, alive)
 }
@@ -172,26 +163,20 @@ func TestPollHealth_TimesOut(t *testing.T) {
 }
 
 func TestWaitForProcessExit_AlreadyDead(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	// No PID file → processAlive() reports false immediately.
-	err := waitForProcessExit(0, 500*time.Millisecond)
+	err := waitForProcessExit(0, 500*time.Millisecond, dir)
 	require.NoError(t, err)
 }
 
 func TestWaitForProcessExit_TimesOutOnLivePid(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	pidPath := filepath.Join(dir, "daemon.pid")
 	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
 
-	err := waitForProcessExit(os.Getpid(), 50*time.Millisecond)
+	err := waitForProcessExit(os.Getpid(), 50*time.Millisecond, dir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "did not shut down")
 }
@@ -213,7 +198,7 @@ func TestWaitForDaemonLoop_ReturnsNilOnSuccessfulHealthCheck(t *testing.T) {
 	defer ticker.Stop()
 
 	client := apiclient.New(srv.URL, "")
-	err, timedOut := waitForDaemonLoop(client, drainer, pidPath, time.Now().Add(time.Second), ticker)
+	err, timedOut := waitForDaemonLoop(client, drainer, pidPath, time.Now().Add(time.Second), ticker, dir)
 	require.NoError(t, err)
 	assert.False(t, timedOut)
 }
@@ -231,7 +216,7 @@ func TestWaitForDaemonLoop_ReturnsFatalFromLog(t *testing.T) {
 
 	// 127.0.0.1:1 always refuses, so HealthCheck never succeeds.
 	client := apiclient.New("http://127.0.0.1:1", "")
-	err, timedOut := waitForDaemonLoop(client, drainer, pidPath, time.Now().Add(2*time.Second), ticker)
+	err, timedOut := waitForDaemonLoop(client, drainer, pidPath, time.Now().Add(2*time.Second), ticker, dir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Fatal error")
 	assert.False(t, timedOut)
@@ -249,17 +234,14 @@ func TestWaitForDaemonLoop_TimesOut(t *testing.T) {
 	defer ticker.Stop()
 
 	client := apiclient.New("http://127.0.0.1:1", "")
-	err, timedOut := waitForDaemonLoop(client, drainer, pidPath, time.Now().Add(50*time.Millisecond), ticker)
+	err, timedOut := waitForDaemonLoop(client, drainer, pidPath, time.Now().Add(50*time.Millisecond), ticker, dir)
 	require.Error(t, err)
 	assert.True(t, timedOut)
 	assert.Contains(t, err.Error(), "timed out")
 }
 
 func TestWaitForDaemonLoop_PidDisappearance(t *testing.T) {
-	orig := flags.DataDir
 	dir := t.TempDir()
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
 
 	logPath := filepath.Join(dir, "daemon.log")
 	require.NoError(t, os.WriteFile(logPath, nil, 0o600))
@@ -279,65 +261,52 @@ func TestWaitForDaemonLoop_PidDisappearance(t *testing.T) {
 	}()
 
 	client := apiclient.New("http://127.0.0.1:1", "")
-	err, timedOut := waitForDaemonLoop(client, drainer, pidPath, time.Now().Add(2*time.Second), ticker)
+	err, timedOut := waitForDaemonLoop(client, drainer, pidPath, time.Now().Add(2*time.Second), ticker, dir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exited")
 	assert.False(t, timedOut)
 }
 
 func TestWaitForDaemon_SurfacesEmptyLogTailNote(t *testing.T) {
-	orig := flags.DataDir
+	t.Parallel()
 	dir := t.TempDir()
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	logPath := filepath.Join(dir, "daemon.log")
 	require.NoError(t, os.WriteFile(logPath, nil, 0o600))
 
 	client := apiclient.New("http://127.0.0.1:1", "")
-	err := waitForDaemon(client, logPath, 50*time.Millisecond)
+	err := waitForDaemon(client, logPath, 50*time.Millisecond, Flags{DataDir: dir})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timed out")
 }
 
 func TestWaitForDaemon_PromotesBindFailureHint(t *testing.T) {
-	orig := flags.DataDir
+	t.Parallel()
 	dir := t.TempDir()
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	logPath := filepath.Join(dir, "daemon.log")
 	require.NoError(t, os.WriteFile(logPath, []byte("listen tcp 0.0.0.0:9477: bind: address already in use\n"), 0o600))
 
 	client := apiclient.New("http://127.0.0.1:1", "")
-	err := waitForDaemon(client, logPath, 50*time.Millisecond)
+	err := waitForDaemon(client, logPath, 50*time.Millisecond, Flags{DataDir: dir})
 	require.Error(t, err)
 	_, ok := isUserFacing(err)
 	assert.True(t, ok, "bind-failure must surface as a userFacingError")
 }
 
 func TestShutdownDaemon_MissingPidFile(t *testing.T) {
-	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
-	err := shutdownDaemon()
+	t.Parallel()
+	err := shutdownDaemon(Flags{DataDir: t.TempDir()})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "PID file")
 }
 
 func TestShutdownDaemon_PidFromInvalidContent(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
 	// Write garbage to the daemon PID file: ReadPidFile parses with strconv,
 	// so non-numeric content surfaces as a parse error.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "daemon.pid"), []byte("not-a-number"), 0o600))
 
-	err := shutdownDaemon()
+	err := shutdownDaemon(Flags{DataDir: dir})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "PID file")
 }

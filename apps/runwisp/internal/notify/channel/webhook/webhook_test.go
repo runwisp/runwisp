@@ -18,25 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/internal/notify/testutil"
 )
-
-func newTestRenderer(t *testing.T) render.Renderer {
-	t.Helper()
-	body, err := render.LoadDefaultTemplate("webhook")
-	require.NoError(t, err)
-	r, err := render.NewTemplateRenderer("webhook:test", body, "application/json", render.DefaultTitle)
-	require.NoError(t, err)
-	return r
-}
-
-func newFastTransport() *notify.HTTPProvider {
-	return &notify.HTTPProvider{
-		Client:    &http.Client{Timeout: 2 * time.Second},
-		Backoff:   notify.BackoffConfig{InitialInterval: 5 * time.Millisecond, MaxInterval: 20 * time.Millisecond, MaxElapsedTime: 100 * time.Millisecond, Multiplier: 2.0},
-		UserAgent: "runwisp-notify/test",
-	}
-}
 
 func TestWebhook_PostsJSON(t *testing.T) {
 	var receivedBody []byte
@@ -52,8 +35,8 @@ func TestWebhook_PostsJSON(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       srv.URL,
-		Renderer:  newTestRenderer(t),
-		Transport: newFastTransport(),
+		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -88,8 +71,8 @@ func TestWebhook_CustomHeadersSent(t *testing.T) {
 			"Authorization": "Bearer secret-token",
 			"X-Custom":      "custom-value",
 		},
-		Renderer:  newTestRenderer(t),
-		Transport: newFastTransport(),
+		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -111,8 +94,8 @@ func TestWebhook_NoHeadersOK(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       srv.URL,
-		Renderer:  newTestRenderer(t),
-		Transport: newFastTransport(),
+		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -133,8 +116,8 @@ func TestWebhook_RetriesOn5xxThenFails(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       srv.URL,
-		Renderer:  newTestRenderer(t),
-		Transport: newFastTransport(),
+		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -156,8 +139,8 @@ func TestWebhook_PermanentOn4xxNoRetries(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       srv.URL,
-		Renderer:  newTestRenderer(t),
-		Transport: newFastTransport(),
+		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -172,8 +155,8 @@ func TestWebhook_RedactsURLInError(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       "http://127.0.0.1:1/hooks/B0XXXSECRET",
-		Renderer:  newTestRenderer(t),
-		Transport: newFastTransport(),
+		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -189,8 +172,8 @@ func TestWebhook_IDAndClose(t *testing.T) {
 	ch, err := New(Config{
 		ID:        "my-hook",
 		URL:       "http://example.com",
-		Renderer:  newTestRenderer(t),
-		Transport: newFastTransport(),
+		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Transport: testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "my-hook", ch.ID())

@@ -18,25 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/internal/notify/testutil"
 )
-
-func newTestRenderer(t *testing.T) render.Renderer {
-	t.Helper()
-	body, err := render.LoadDefaultTemplate("slack")
-	require.NoError(t, err)
-	r, err := render.NewTemplateRenderer("slack:test", body, "application/json", render.DefaultTitle)
-	require.NoError(t, err)
-	return r
-}
-
-func newFastTransport() *notify.HTTPProvider {
-	return &notify.HTTPProvider{
-		Client:    &http.Client{Timeout: 2 * time.Second},
-		Backoff:   notify.BackoffConfig{InitialInterval: 5 * time.Millisecond, MaxInterval: 20 * time.Millisecond, MaxElapsedTime: 100 * time.Millisecond, Multiplier: 2.0},
-		UserAgent: "runwisp-notify/test",
-	}
-}
 
 func TestSlack_PostsBlockKitJSON(t *testing.T) {
 	var receivedBody []byte
@@ -52,8 +35,8 @@ func TestSlack_PostsBlockKitJSON(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "ops",
 		WebhookURL: srv.URL,
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "slack", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -80,8 +63,8 @@ func TestSlack_RetriesOn5xxThenFails(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "ops",
 		WebhookURL: srv.URL,
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "slack", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -103,8 +86,8 @@ func TestSlack_PermanentOn4xxNoRetries(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "ops",
 		WebhookURL: srv.URL,
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "slack", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -128,8 +111,8 @@ func TestSlack_ChannelOverrideIncludedWhenSet(t *testing.T) {
 		ID:         "ops",
 		WebhookURL: srv.URL,
 		Channel:    "#alerts",
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "slack", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -157,8 +140,8 @@ func TestSlack_ChannelOverrideAbsentWhenEmpty(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "ops",
 		WebhookURL: srv.URL,
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "slack", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -178,8 +161,8 @@ func TestSlack_RedactsURLInError(t *testing.T) {
 	ch, err := New(Config{
 		ID:         "ops",
 		WebhookURL: "http://127.0.0.1:1/hooks/B0XXXSECRET",
-		Renderer:   newTestRenderer(t),
-		Transport:  newFastTransport(),
+		Renderer:   testutil.NewTestRenderer(t, "slack", "application/json"),
+		Transport:  testutil.NewFastTransport(),
 	})
 	require.NoError(t, err)
 
@@ -194,7 +177,7 @@ func TestSlack_RedactsURLInError(t *testing.T) {
 // TestSlack_IDAndClose pins the Channel interface contract on the slack
 // adapter: ID() returns the configured id; Close is a no-op that never errs.
 func TestSlack_IDAndClose(t *testing.T) {
-	ch, err := New(Config{ID: "ops", WebhookURL: "http://example.com", Renderer: newTestRenderer(t), Transport: newFastTransport()})
+	ch, err := New(Config{ID: "ops", WebhookURL: "http://example.com", Renderer: testutil.NewTestRenderer(t, "slack", "application/json"), Transport: testutil.NewFastTransport()})
 	require.NoError(t, err)
 	assert.Equal(t, "ops", ch.ID())
 	assert.NoError(t, ch.Close(context.Background()))

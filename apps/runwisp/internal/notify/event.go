@@ -93,6 +93,30 @@ func (k Kind) Title(ev *Event) string {
 	}
 }
 
+// FingerprintKey is the coalescing identity of an event: kind + task name +
+// a discriminator (the run's end reason, or for delivery-failure events the
+// failed channel + original kind). Two events that should fold together share
+// this key. Both coalescers — the in-app dispatcher's and the routing-action
+// window — derive their fold identity from this single function so their
+// semantics can never drift apart (they previously had to be edited in
+// lockstep). The in-app side hashes the bytes; the routing side uses the
+// string directly.
+func FingerprintKey(ev *Event) string {
+	if ev == nil {
+		return ""
+	}
+	extra := ""
+	if ev.Run != nil && ev.Run.EndReason != nil {
+		extra = string(*ev.Run.EndReason)
+	}
+	if ev.Kind == KindNotifyDeliveryFailed && ev.Extra != nil {
+		ch, _ := ev.Extra["channel"].(string)
+		ok, _ := ev.Extra["original_kind"].(string)
+		extra = ch + "|" + ok
+	}
+	return string(ev.Kind) + "|" + ev.TaskName + "|" + extra
+}
+
 // AllSeverities mirrors AllKinds for severity validation.
 var AllSeverities = []Severity{SevInfo, SevWarn, SevError}
 

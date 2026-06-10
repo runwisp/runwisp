@@ -50,7 +50,7 @@ type daemonServices struct {
 // initDaemonServices creates and wires together the core daemon services.
 // db must already be open; initDaemonServices marks crashed runs and then
 // builds all higher-level services on top of it.
-func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Database, mode daemonMode) (*daemonServices, error) {
+func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Database, mode daemonMode, f Flags) (*daemonServices, error) {
 	// initWarnings accumulates non-fatal startup hiccups so the caller can
 	// render them inside the banner instead of emitting slog.Warn lines that
 	// would print before the banner exists.
@@ -66,7 +66,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	eventBus := events.NewEventBus()
 
-	exec := initExecutor(cfg.Config, eventBus)
+	exec := initExecutor(cfg.Config, eventBus, f.LogDir())
 
 	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)
 
@@ -105,9 +105,9 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		startServiceInstances(taskManager, tasksMap)
 	}
 
-	retentionCleaner := initRetentionCleaner(cfg, db, tasksMap)
+	retentionCleaner := initRetentionCleaner(cfg, db, tasksMap, f.LogDir())
 
-	softDeletePurger := runtime.NewSoftDeletePurger(db, flags.LogDir())
+	softDeletePurger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	softDeletePurger.Start()
 
 	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
@@ -157,14 +157,14 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	}, nil
 }
 
-func initExecutor(cfg *config.Config, eventBus events.EventBus) executor.Executor {
+func initExecutor(cfg *config.Config, eventBus events.EventBus, logDir string) executor.Executor {
 	dockerBackend := executor.NewLazyContainerBackend()
 	composeBackend := executor.NewLazyComposeBackend()
 
 	minFreeDisk := cfg.Storage.MinFreeSpace
 
 	return executor.New(executor.Options{
-		LogDir:            flags.LogDir(),
+		LogDir:            logDir,
 		EventBus:          eventBus,
 		CloudShellEnabled: cfg.IsCloudShellEnabled(),
 		HasLocalTasks:     len(cfg.Tasks) > 0,
@@ -207,9 +207,9 @@ func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.
 	return taskManager, tasksMap
 }
 
-func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap map[string]*model.Task) *runtime.RetentionCleaner {
+func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap map[string]*model.Task, logDir string) *runtime.RetentionCleaner {
 	maxTotalSize := cfg.Config.Storage.MaxSize
-	cleaner := runtime.NewRetentionCleaner(db, tasksMap, time.Hour, flags.LogDir(), maxTotalSize)
+	cleaner := runtime.NewRetentionCleaner(db, tasksMap, time.Hour, logDir, maxTotalSize)
 	cleaner.Start()
 	return cleaner
 }
@@ -267,7 +267,7 @@ func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManage
 // buildDaemonInfo assembles static identity and capability info for the API.
 // configLoadedAt is when the boot path snapshotted runwisp.toml; the dynamic
 // config_stale flag is injected per request by the server, not stored here.
-func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time.Time) *model.DaemonInfo {
+func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time.Time, port int) *model.DaemonInfo {
 	taskNames := make([]string, 0, len(svc.TasksMap))
 	for name := range svc.TasksMap {
 		taskNames = append(taskNames, name)
@@ -297,7 +297,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 	return &model.DaemonInfo{
 		Version:          version.Version,
 		Fingerprint:      cfg.Fingerprint,
-		Port:             flags.Port,
+		Port:             port,
 		CloudEnabled:     cfg.CloudConfig.Enabled,
 		ServiceManaged:   autostart.RunningUnderServiceManager(),
 		AuthDisabled:     cfg.NoAuth,

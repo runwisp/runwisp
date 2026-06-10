@@ -29,6 +29,12 @@ const (
 	errTaskNotServiceFmt   = "task %s is not a service"
 )
 
+// errShuttingDown is returned by TriggerRunWithOptions once Shutdown has begun.
+// Refusing to start a run under the lock is what makes shutdown race-free: a
+// run that slips past Shutdown's single cancel pass would never have its
+// context cancelled, orphaning its process and hanging the drain forever.
+var errShuttingDown = errors.New("task manager is shutting down")
+
 // TriggerRunOptions customise run creation for non-local invocations.
 type TriggerRunOptions struct {
 	TriggeredBy         model.TriggeredBy
@@ -240,6 +246,16 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Refuse new runs once shutdown has begun. Shutdown sets isShutdown before
+	// taking m.mu for its cancel pass, so checking it here under the lock is
+	// race-free: a trigger either commits before Shutdown's pass (and gets
+	// cancelled by it) or observes the flag and bails. Without this, a restart
+	// that races shutdown could append a run after the cancel pass, leaving its
+	// context live forever — an orphaned process and a hung drain.
+	if m.isShutdown.Load() {
+		return nil, errShuttingDown
+	}
+
 	ts, exists := m.tasks[taskName]
 	if !exists {
 		return nil, fmt.Errorf(errTaskNotFoundFmt, taskName)
@@ -274,8 +290,12 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		}
 		m.persistence.PersistNew(run)
 		m.publishRun(events.EventRunCreated, run)
+		// Snapshot before startRun hands the live run to its execution goroutine.
+		// The caller must never read fields (Status, StartAt, ...) that the run
+		// goroutine concurrently writes, so it gets an independent copy.
+		snapshot := run.Copy()
 		m.startRun(ts.task, run)
-		return run, nil
+		return snapshot, nil
 	}
 
 	run := &model.Run{
@@ -299,14 +319,16 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	case actionRejected:
 		run.End(model.ReasonSkipped, -1, m.clock())
 		m.persistence.PersistExisting(run)
-		return run, actionErr
+		return run.Copy(), actionErr
 	case actionQueueFull:
 		run.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(run)
 		m.publishRun(events.EventRunFailed, run)
-		return run, actionErr
+		return run.Copy(), actionErr
 	case actionQueued:
-		return run, nil
+		// The run sits in the queue; queueProcessLoop will later hand it to a
+		// goroutine. Return a snapshot so the caller never races that promotion.
+		return run.Copy(), nil
 	case actionStart:
 		// PolicyTerminate: evaluateConcurrency already cancelled the oldest
 		// run. Do NOT eagerly remove it from active here — let the goroutine
@@ -314,8 +336,10 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		// stays accurate.
 	}
 
+	// Snapshot before startRun spawns the execution goroutine (see service path).
+	snapshot := run.Copy()
 	m.startRun(ts.task, run)
-	return run, nil
+	return snapshot, nil
 }
 
 // RecordSkippedFiring persists a run that the runtime suppressed before any
@@ -493,6 +517,10 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 	}()
 }
 
+// execute drives one run through its lifecycle: mark running, hand off to the
+// executor, record the outcome, then schedule any policy-driven follow-up. The
+// three phases are split out so each reads as one concern and can be tested
+// without driving a full run.
 func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run *model.Run, active *ActiveRun) {
 	run.Status = model.PhaseRunning
 	run.StartAt = &active.StartedAt
@@ -501,6 +529,18 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 
 	result := m.executor.Execute(ctx, task, run)
 
+	nextRestartAttempt, serviceFatal := m.recordRunOutcome(task, run, active, result)
+	if !serviceFatal {
+		m.scheduleFollowup(task, run, nextRestartAttempt)
+	}
+}
+
+// recordRunOutcome classifies the executor result, ends and persists the run,
+// publishes the terminal event, and retires the run from the task's active set
+// (refreshing supervisor bookkeeping for services). It returns the next
+// restart-attempt counter for the run's instance — meaningful only for
+// services, zero otherwise — and whether the run's service instance is FATAL.
+func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, active *ActiveRun, result *executor.ExecuteResult) (int, bool) {
 	endTime := m.clock()
 	runDuration := endTime.Sub(active.StartedAt)
 	outcome := runOutcome{
@@ -565,17 +605,20 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 			"attempts", fatalAttempts, "exit_code", result.ExitCode)
 	}
 
-	// Retry logic: only for non-cloud runs (cloud retries are handled by the
-	// control plane).
+	return nextRestartAttempt, serviceFatal
+}
+
+// scheduleFollowup spawns the retry or restart goroutine dictated by the task's
+// policy after a run has ended. Cloud-triggered runs never retry locally — the
+// control plane owns their retry lifecycle.
+// Service FATAL runs never reach this method — the caller guards on the FATAL
+// flag returned by recordRunOutcome.
+func (m *defaultTaskManager) scheduleFollowup(task *model.Task, run *model.Run, nextRestartAttempt int) {
 	if run.TriggeredBy == model.TriggeredByCloud {
 		return
 	}
 	copiedRun := run.Copy()
 	switch {
-	case serviceFatal:
-		// FATAL: stop flapping. The start_failed run row and the service.fatal
-		// event are the durable, loud record; an operator restart re-attempts
-		// with a fresh start-retry budget.
 	case retry.ShouldRestart(task, run):
 		m.wg.Add(1)
 		go func() {

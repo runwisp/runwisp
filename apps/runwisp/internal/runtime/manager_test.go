@@ -41,37 +41,32 @@ func TestUpsertTask(t *testing.T) {
 }
 
 func TestTriggerRunBasic(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
+	jm, exec, eb := newTestManager(t)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
 
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
+	done := watchCompletions(eb)
 	run, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 	assert.NotNil(t, run)
 
-	// Wait for execution to finish (async)
-	time.Sleep(50 * time.Millisecond)
+	done.waitFor(t, 1)
 	exec.AssertExpectations(t)
 }
 
 func TestPolicySkip(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
+	jm, exec, _ := newGatedManager(t)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
 
-	// First run blocks
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 100*time.Millisecond)
-
+	// First run holds the only slot until the test releases it.
 	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
+	exec.WaitStarted(t)
 
 	// Second run should skip and persist with end_reason="skipped" — the skip
 	// policy is working as intended, so it must not pose as a failure to
@@ -86,51 +81,46 @@ func TestPolicySkip(t *testing.T) {
 }
 
 func TestPolicyQueue(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
+	jm, exec, eb := newGatedManager(t)
 
 	task := testTask("task1", model.PolicyQueue, 1)
 	jm.UpsertTask(task)
 
-	// First run blocks
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 100*time.Millisecond)
+	done := watchCompletions(eb)
 
+	// First run holds the only slot.
 	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
+	exec.WaitStarted(t)
 
-	// Second run should queue
+	// Second run should queue behind it.
 	run2, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 	assert.Equal(t, model.PhasePending, run2.Status)
 
-	// Wait for first to finish and second to start
-	time.Sleep(500 * time.Millisecond)
-
-	// Both should have executed
-	exec.AssertNumberOfCalls(t, "Execute", 2)
+	// Release: first finishes, second dequeues and runs. Both must execute.
+	exec.ReleaseAll()
+	done.waitFor(t, 2)
+	assert.Equal(t, 2, exec.Calls())
 }
 
 // TestPolicyQueueDropsAtCap exercises the new queue_max bound: once the
 // pending queue holds queue_max runs, the next firing is recorded with
 // end_reason = "queue_full" rather than growing the queue without bound.
 func TestPolicyQueueDropsAtCap(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
+	jm, exec, _ := newGatedManager(t)
 
 	task := testTask("task1", model.PolicyQueue, 1)
 	task.QueueMax = 1
 	jm.UpsertTask(task)
 
-	// The single executor slot stays busy long enough for the queue to fill.
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 500*time.Millisecond)
-
 	first, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
 	require.Equal(t, model.PhasePending, first.Status)
+	// Once first is executing it holds the slot and the queue is empty.
+	exec.WaitStarted(t)
 
-	// Second slot occupies the queue.
+	// Second firing occupies the queue (fills queue_max = 1).
 	queued, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
 	require.Equal(t, model.PhasePending, queued.Status)
@@ -142,73 +132,133 @@ func TestPolicyQueueDropsAtCap(t *testing.T) {
 	assert.Equal(t, model.PhaseEnded, dropped.Status)
 	require.NotNil(t, dropped.EndReason)
 	assert.Equal(t, model.ReasonQueueFull, *dropped.EndReason)
-
-	jm.Shutdown()
 }
 
 func TestPolicyTerminate(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
+	jm, exec, eb := newGatedManager(t)
 
 	task := testTask("task1", model.PolicyTerminate, 1)
 	jm.UpsertTask(task)
 
-	// First run blocks
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 200*time.Millisecond)
+	done := watchCompletions(eb)
 
 	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
+	exec.WaitStarted(t) // run1 holds the slot
 
-	time.Sleep(10 * time.Millisecond) // Ensure run1 starts
-
-	// Second run should terminate first
+	// Second run should terminate the first, then take the slot.
 	_, err = jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
 
-	time.Sleep(300 * time.Millisecond)
-
-	// Both executed, but first one likely cancelled (mock returns exit code based on context)
-	exec.AssertNumberOfCalls(t, "Execute", 2)
+	// run1 is cancelled by the terminate; release so run2 finishes too.
+	exec.ReleaseAll()
+	done.waitFor(t, 2)
+	assert.Equal(t, 2, exec.Calls())
 }
 
 func TestTerminateRun(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
+	jm, exec, eb := newGatedManager(t)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
 
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 200*time.Millisecond)
-
+	done := watchCompletions(eb)
 	run, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	assert.NoError(t, err)
-
-	time.Sleep(10 * time.Millisecond)
+	exec.WaitStarted(t)
 
 	err = jm.TerminateRun(run.ID)
 	assert.NoError(t, err)
 
-	time.Sleep(50 * time.Millisecond)
-	// Should be done
+	// Cancelling the run's context unblocks the gated executor; the run must
+	// reach a terminal state.
+	done.waitFor(t, 1)
 }
 
 func TestShutdown(t *testing.T) {
-	exec := new(testutil.MockExecutor)
+	exec := testutil.NewGateExecutor()
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, time.Now)
 
 	task := testTask("task1", model.PolicyQueue, 1)
 	jm.UpsertTask(task)
 
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0}, 200*time.Millisecond)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	exec.WaitStarted(t)
 
-	jm.TriggerRun("task1", model.TriggeredByAPI)
-	time.Sleep(10 * time.Millisecond)
+	// Shutdown must cancel the in-flight run and return without panicking.
+	jm.Shutdown()
+}
+
+// TestTriggerRefusedAfterShutdown pins the invariant that no run may start once
+// shutdown has begun. Without it a restart/retry that races Shutdown could
+// append a run after Shutdown's single cancel pass, leaving its context live
+// forever — an orphaned process and a drain that never completes. The gated
+// service tests exercise the racing path; this one nails the contract directly.
+func TestTriggerRefusedAfterShutdown(t *testing.T) {
+	exec := testutil.NewGateExecutor()
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
 
 	jm.Shutdown()
-	// Should not panic and cancel runs
+
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.ErrorIs(t, err, errShuttingDown, "a trigger after shutdown must be refused, not started")
+}
+
+// TestShutdownDoesNotPromoteQueuedRun is the regression test for a graceful-
+// shutdown bug: when Shutdown cancels the active run, the freed slot must not
+// cause queueProcessLoop to promote a queued run. A run started after the
+// single cancel pass would never have its context cancelled — an orphaned
+// process and a drain that never completes. Shutdown is run with a watchdog so
+// a regression fails fast with a clear message instead of hanging the suite.
+func TestShutdownDoesNotPromoteQueuedRun(t *testing.T) {
+	jm, exec, _ := newGatedManager(t)
+
+	task := testTask("task1", model.PolicyQueue, 1)
+	jm.UpsertTask(task)
+
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	exec.WaitStarted(t) // run holds the only slot; the gate keeps it in flight
+
+	_, err = jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err) // this run sits in the queue
+
+	done := make(chan struct{})
+	go func() {
+		jm.Shutdown()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Shutdown hung: a queued run was promoted after the cancel pass and orphaned")
+	}
+
+	assert.Equal(t, 1, exec.Calls(), "the queued run must not be promoted during shutdown")
+}
+
+// TestTriggerRunReturnsIndependentSnapshot guards the contract that the run
+// returned by TriggerRun is a snapshot, not the live pointer the execution
+// goroutine mutates. A caller (e.g. the REST trigger handler) reads the
+// returned run to build its response; sharing the live pointer would race the
+// goroutine's Status write. After WaitStarted the live run is PhaseRunning, so
+// a snapshot that still reads PhasePending proves the copy is independent — and
+// this holds without -race, so plain CI catches a regression.
+func TestTriggerRunReturnsIndependentSnapshot(t *testing.T) {
+	jm, exec, _ := newGatedManager(t)
+	jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
+
+	r, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	exec.WaitStarted(t) // the execution goroutine has now set the live run to PhaseRunning
+
+	assert.Equal(t, model.PhasePending, r.Status,
+		"returned run must be an independent snapshot, unaffected by the run goroutine")
 }
 
 // stuckExecutor blocks Execute until its ForceKill closure runs, ignoring
@@ -287,9 +337,9 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 		t.Fatal("ForceKill must have been invoked by the shutdown deadline")
 	}
 
-	// Allow the persistence worker a moment to drain the final daemon_stopped
-	// update before we read the slice.
-	time.Sleep(20 * time.Millisecond)
+	// ShutdownWithDeadline drains the persistence worker before returning (it
+	// calls persistence.Shutdown after the execute goroutine's wg.Done), so the
+	// daemon_stopped write has already been applied — no sleep required.
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -378,16 +428,14 @@ func TestRecordMissedRunUnknownTask(t *testing.T) {
 }
 
 func TestPersistenceHook(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
+	jm, exec, eb := newTestManager(t)
 
-	var created, updated bool
+	var created, updated atomic.Bool
 	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, isNew bool) {
 		if isNew {
-			created = true
+			created.Store(true)
 		} else {
-			updated = true
+			updated.Store(true)
 		}
 	})
 
@@ -396,11 +444,15 @@ func TestPersistenceHook(t *testing.T) {
 
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
+	done := watchCompletions(eb)
 	jm.TriggerRun("task1", model.TriggeredByAPI)
-	time.Sleep(50 * time.Millisecond)
+	done.waitFor(t, 1)
+	// The final (update) persist is enqueued just before the completion event;
+	// Flush guarantees the worker has applied every queued write.
+	jm.persistence.Flush()
 
-	assert.True(t, created)
-	assert.True(t, updated)
+	assert.True(t, created.Load())
+	assert.True(t, updated.Load())
 }
 
 // TestRetryFiresOnFailure exercises the retry path end-to-end: a failed
@@ -597,22 +649,15 @@ func TestLoadPendingRunsQueued(t *testing.T) {
 // TestLoadPendingRunsFailedWhenSlotFull: a non-queue policy with no free
 // slot marks the pending run as failed.
 func TestLoadPendingRunsFailedWhenSlotFull(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	jm, exec, _ := newGatedManager(t)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
 
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
-		&executor.ExecuteResult{ExitCode: 0}, 200*time.Millisecond,
-	)
-
 	// Trigger one run that holds the only slot.
 	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
-	time.Sleep(10 * time.Millisecond)
+	exec.WaitStarted(t)
 
 	pending := []model.Run{
 		{ID: "01", TaskName: "task1", Status: model.PhasePending},
@@ -703,19 +748,13 @@ func TestGetActiveRuns_NotFound(t *testing.T) {
 // task with one active run returns a non-empty slice and the slice is a copy
 // (mutating it does not affect the manager's internal state).
 func TestGetActiveRuns_KnownTaskReturnsCopy(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	jm, exec, _ := newGatedManager(t)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
-		&executor.ExecuteResult{ExitCode: 0}, 500*time.Millisecond,
-	)
 	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
-	time.Sleep(20 * time.Millisecond)
+	exec.WaitStarted(t)
 
 	runs := jm.GetActiveRuns("task1")
 	require.Len(t, runs, 1)
@@ -758,18 +797,10 @@ func TestTerminateRunByExternalExecutionID_NotFound(t *testing.T) {
 // path: a run triggered with an ExternalExecutionID is cancelled by passing the
 // same external ID into TerminateRunByExternalExecutionID.
 func TestTerminateRunByExternalExecutionID_MatchesActiveRun(t *testing.T) {
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := NewTaskManager(exec, eb, time.Now)
-	defer jm.Shutdown()
+	jm, exec, _ := newGatedManager(t)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
-
-	// Long enough that the run is definitely active when we cancel it.
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
-		&executor.ExecuteResult{ExitCode: 0}, 500*time.Millisecond,
-	)
 
 	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{
 		TriggeredBy:         model.TriggeredByCloud,
@@ -777,7 +808,7 @@ func TestTerminateRunByExternalExecutionID_MatchesActiveRun(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	time.Sleep(20 * time.Millisecond)
+	exec.WaitStarted(t) // the run is active and holds its external ID
 	require.NoError(t, jm.TerminateRunByExternalExecutionID("ext-123"))
 }
 

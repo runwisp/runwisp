@@ -38,19 +38,19 @@ func pollHealth(client *apiclient.Client, timeout time.Duration) error {
 
 // spawnDaemon starts a new daemon process in the background, detached from the
 // current terminal session so it survives after the TUI exits.
-func spawnDaemon() error {
+func spawnDaemon(f Flags) error {
 	return spawnDaemonProcess([]string{"daemon",
-		"--config", flags.CfgFile,
-		"--data", flags.DataDir,
-		"--port", strconv.Itoa(flags.Port),
-	})
+		"--config", f.CfgFile,
+		"--data", f.DataDir,
+		"--port", strconv.Itoa(f.Port),
+	}, f.DataDir)
 }
 
 // spawnDaemonProcess execs `runwisp <args...>` as a detached background process
 // (new session, stdio redirected to the data dir's daemon.log) so it outlives
 // the foreground process that launched it. The leading arg selects the
 // subcommand — "daemon" for standalone, "cloud --no-tui" for cloud mode.
-func spawnDaemonProcess(args []string) error {
+func spawnDaemonProcess(args []string, dataDir string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot find executable: %w", err)
@@ -61,7 +61,7 @@ func spawnDaemonProcess(args []string) error {
 
 	// Redirect daemon stdout/stderr to a log file (truncated per spawn so
 	// failure output only contains this session).
-	logPath := filepath.Join(flags.DataDir, "daemon.log")
+	logPath := filepath.Join(dataDir, "daemon.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("cannot open daemon log file: %w", err)
@@ -83,15 +83,15 @@ func spawnDaemonProcess(args []string) error {
 
 // shutdownDaemon sends SIGTERM to the daemon process and waits for it to
 // exit, with the default grace window. Used as the TUI's shutdown callback.
-func shutdownDaemon() error {
-	return shutdownDaemonWait(15 * time.Second)
+func shutdownDaemon(f Flags) error {
+	return shutdownDaemonWait(15*time.Second, f)
 }
 
 // shutdownDaemonWait is shutdownDaemon with a caller-chosen wait window —
 // `runwisp stop`/`restart` size it from [daemon] shutdown_timeout so a
 // long-draining daemon isn't reported as stuck.
-func shutdownDaemonWait(timeout time.Duration) error {
-	pid, err := datadir.ReadPidFile(flags.DataDir)
+func shutdownDaemonWait(timeout time.Duration, f Flags) error {
+	pid, err := datadir.ReadPidFile(f.DataDir)
 	if err != nil {
 		return fmt.Errorf("cannot read daemon PID file: %w", err)
 	}
@@ -107,14 +107,14 @@ func shutdownDaemonWait(timeout time.Duration) error {
 
 	fmt.Fprintf(os.Stderr, "Waiting for daemon (pid %d) to shut down...\n", pid)
 
-	return waitForProcessExit(pid, timeout)
+	return waitForProcessExit(pid, timeout, f.DataDir)
 }
 
 // waitForProcessExit polls until the daemon has exited. It checks two signals:
 // 1. PID file removal — the daemon deletes its PID file on clean shutdown.
 // 2. Signal 0 failure — the process no longer exists in the kernel.
-func waitForProcessExit(pid int, timeout time.Duration) error {
-	pidPath := datadir.PidFilePath(flags.DataDir)
+func waitForProcessExit(pid int, timeout time.Duration, dataDir string) error {
+	pidPath := datadir.PidFilePath(dataDir)
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if !processAlive(pid, pidPath) {
@@ -187,24 +187,24 @@ func (d *daemonLogDrainer) close() {
 // health endpoint. It returns immediately on success, aborts early on fatal
 // log lines or process exit, and always dumps a log tail when startup fails
 // so the user can see why — regardless of which detection path tripped first.
-func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Duration) error {
+func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Duration, f Flags) error {
 	fmt.Fprintf(os.Stderr, "Starting daemon...\n")
 
 	drainer := &daemonLogDrainer{path: logPath}
 	defer drainer.close()
 
-	pidPath := datadir.PidFilePath(flags.DataDir)
+	pidPath := datadir.PidFilePath(f.DataDir)
 	deadline := time.Now().Add(timeout)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	startupErr, timedOut := waitForDaemonLoop(client, drainer, pidPath, deadline, ticker)
+	startupErr, timedOut := waitForDaemonLoop(client, drainer, pidPath, deadline, ticker, f.DataDir)
 
 	// On any failure path, surface the daemon log so the user can see the
 	// underlying cause. Also promote a recognised bind error to a clearer
 	// message — this is the most common cause of a silent startup failure.
 	logTail := tailFile(logPath, 4096)
-	if hint := bindFailureHint(logTail, flags.Host, flags.Port); hint != nil {
+	if hint := bindFailureHint(logTail, f.Host, f.Port); hint != nil {
 		return hint
 	}
 	if logTail != "" {
@@ -217,7 +217,7 @@ func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Durati
 
 // waitForDaemonLoop is the polling core of waitForDaemon. It returns the
 // startup error (nil on success) and whether the loop exited due to timeout.
-func waitForDaemonLoop(client *apiclient.Client, drainer *daemonLogDrainer, pidPath string, deadline time.Time, ticker *time.Ticker) (startupErr error, timedOut bool) {
+func waitForDaemonLoop(client *apiclient.Client, drainer *daemonLogDrainer, pidPath string, deadline time.Time, ticker *time.Ticker, dataDir string) (startupErr error, timedOut bool) {
 	var pidSeen bool
 	for {
 		if msg, fatal := drainer.drain(); fatal {
@@ -239,7 +239,7 @@ func waitForDaemonLoop(client *apiclient.Client, drainer *daemonLogDrainer, pidP
 		}
 
 		if pidSeen {
-			if pid, alive := checkPidAlive(pidPath); !alive {
+			if pid, alive := checkPidAlive(pidPath, dataDir); !alive {
 				time.Sleep(200 * time.Millisecond)
 				drainer.drain()
 				return fmt.Errorf("daemon process %d exited during startup", pid), false
@@ -256,8 +256,8 @@ func waitForDaemonLoop(client *apiclient.Client, drainer *daemonLogDrainer, pidP
 
 // checkPidAlive reads the PID file and returns (pid, alive). Returns (0, true)
 // when the file is unreadable (conservative: assume alive to avoid false exits).
-func checkPidAlive(pidPath string) (pid int, alive bool) {
-	p, err := datadir.ReadPidFile(flags.DataDir)
+func checkPidAlive(pidPath string, dataDir string) (pid int, alive bool) {
+	p, err := datadir.ReadPidFile(dataDir)
 	if err != nil {
 		return 0, true
 	}

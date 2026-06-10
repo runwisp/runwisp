@@ -6,6 +6,8 @@ package testutil
 import (
 	"context"
 	"errors"
+	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/executor"
@@ -187,3 +189,70 @@ func cancelledResult(err error) *executor.ExecuteResult {
 func (m *MockExecutor) Availability() executor.Availability {
 	return executor.Availability{}
 }
+
+// GateExecutor is a deterministic executor.Executor for concurrency tests.
+// Each Execute call announces its run ID on a channel and then blocks until
+// the test releases it (or the run's context is cancelled). This lets a test
+// hold a run "in flight" while it triggers overlapping runs and asserts on
+// concurrency policy — with no sleeps to guess at timing.
+type GateExecutor struct {
+	// Result is returned when Execute is released normally. Defaults to a clean
+	// exit-0 result when nil.
+	Result *executor.ExecuteResult
+
+	started chan string
+	gate    chan struct{}
+	calls   atomic.Int32
+}
+
+func NewGateExecutor() *GateExecutor {
+	return &GateExecutor{
+		started: make(chan string, 64),
+		gate:    make(chan struct{}),
+	}
+}
+
+func (g *GateExecutor) Execute(ctx context.Context, _ *model.Task, run *model.Run) *executor.ExecuteResult {
+	g.calls.Add(1)
+	// The started-send must itself honour cancellation: if a test produces more
+	// starts than the buffer holds without draining them, an unconditional send
+	// would block here forever — immune to ctx cancellation — and hang the
+	// manager's shutdown drain. Selecting on ctx.Done() keeps the run killable.
+	select {
+	case g.started <- run.ID:
+	case <-ctx.Done():
+		return cancelledResult(ctx.Err())
+	}
+	select {
+	case <-g.gate:
+		if g.Result != nil {
+			return g.Result
+		}
+		return &executor.ExecuteResult{ExitCode: 0}
+	case <-ctx.Done():
+		return cancelledResult(ctx.Err())
+	}
+}
+
+func (g *GateExecutor) Availability() executor.Availability { return executor.Availability{} }
+
+// WaitStarted blocks until a run reports it has begun executing, returning its
+// ID. It fails the test on timeout so a wiring bug surfaces as a clear failure
+// rather than a hang.
+func (g *GateExecutor) WaitStarted(t *testing.T) string {
+	t.Helper()
+	select {
+	case id := <-g.started:
+		return id
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for a run to start executing")
+		return ""
+	}
+}
+
+// ReleaseAll unblocks every in-flight and future Execute call. Idempotent
+// only once — call it a single time per executor.
+func (g *GateExecutor) ReleaseAll() { close(g.gate) }
+
+// Calls reports how many times Execute has been invoked.
+func (g *GateExecutor) Calls() int { return int(g.calls.Load()) }

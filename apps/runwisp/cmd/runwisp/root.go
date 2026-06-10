@@ -49,7 +49,7 @@ var rootCmd = &cobra.Command{
 	Long:    `RunWisp is a standalone cron daemon and process supervisor with a web UI and a terminal UI.`,
 	Version: version.Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runDefault()
+		return runDefault(flags)
 	},
 	SilenceUsage:  true,
 	SilenceErrors: true,

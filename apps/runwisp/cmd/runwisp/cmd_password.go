@@ -44,8 +44,9 @@ stdout is captured. Pipe to a clipboard tool to keep it out of scrollback:
 Fails when the daemon is configured with RUNWISP_PASSWORD — that value is
 never disclosed via this command.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client := apiclient.NewUnix(localAPISocketPath())
-		code := runPassword(os.Stdout, os.Stderr, client, localAPISocketPath())
+		socketPath := localAPISocketPath(flags)
+		client := apiclient.NewUnix(socketPath)
+		code := runPassword(os.Stdout, os.Stderr, client, socketPath)
 		if code != passwordExitOK {
 			os.Exit(code)
 		}

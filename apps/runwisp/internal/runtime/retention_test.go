@@ -46,10 +46,10 @@ func TestRetentionCleaner(t *testing.T) {
 	repo.On("DeleteOldRuns", mock.Anything, task).Return(deletedRuns, nil)
 
 	cleaner := NewRetentionCleaner(repo, tasks, 10*time.Millisecond, logDir, 0)
+	// Start runs the first cleanup pass synchronously, so the deletion is
+	// observable as soon as Start returns — no sleep needed.
 	cleaner.Start()
 	defer cleaner.Stop()
-
-	time.Sleep(50 * time.Millisecond)
 
 	repo.AssertExpectations(t)
 

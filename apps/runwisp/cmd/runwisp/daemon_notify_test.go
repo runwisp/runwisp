@@ -191,11 +191,6 @@ func TestBuildRetentionFn_LogsButDoesNotPanicOnPruneError(t *testing.T) {
 // branch where there's nothing to wire — initNotify must hand back an empty
 // bundle without touching the DB or starting any goroutines.
 func TestInitNotify_NoNotifiersNoRoutesReturnsZero(t *testing.T) {
-	dir := t.TempDir()
-	origDataDir := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = origDataDir })
-
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
@@ -217,11 +212,6 @@ func TestInitNotify_NoNotifiersNoRoutesReturnsZero(t *testing.T) {
 // a route targets the special "inapp" channel, so initNotify must build a Hub
 // and a Service.
 func TestInitNotify_InappRouteWiresHubAndService(t *testing.T) {
-	dir := t.TempDir()
-	origDataDir := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = origDataDir })
-
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })

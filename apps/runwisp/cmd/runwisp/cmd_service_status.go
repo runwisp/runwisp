@@ -35,11 +35,11 @@ Exit codes:
   1  degraded (installed but disabled / stopped / drift detected)
   2  not installed`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runServiceStatus(cmd)
+		return runServiceStatus(cmd, flags)
 	},
 }
 
-func runServiceStatus(cmd *cobra.Command) error {
+func runServiceStatus(cmd *cobra.Command, f Flags) error {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, true)
 	if err != nil {
 		return err
@@ -50,7 +50,7 @@ func runServiceStatus(cmd *cobra.Command) error {
 		return err
 	}
 
-	opts, err := resolveStatusOptions()
+	opts, err := resolveStatusOptions(f)
 	if err != nil {
 		return err
 	}
@@ -72,17 +72,17 @@ func runServiceStatus(cmd *cobra.Command) error {
 // prompt — it tolerates ambiguous defaults and only complains when a
 // caller-supplied explicit value is invalid. Also reused by
 // `runwisp stop` / `runwisp restart` for their service-managed probe.
-func resolveStatusOptions() (autostart.InstallOptions, error) {
+func resolveStatusOptions(f Flags) (autostart.InstallOptions, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return autostart.InstallOptions{}, fmt.Errorf("locate runwisp binary: %w", err)
 	}
 	return autostart.InstallOptions{
 		Binary:  exe,
-		Config:  flags.CfgFile,
-		DataDir: flags.DataDir,
-		Host:    flags.Host,
-		Port:    flags.Port,
+		Config:  f.CfgFile,
+		DataDir: f.DataDir,
+		Host:    f.Host,
+		Port:    f.Port,
 	}, nil
 }
 

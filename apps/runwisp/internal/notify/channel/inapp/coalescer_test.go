@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/render"
 	"github.com/runwisp/runwisp/internal/notify/testutil"
@@ -194,23 +193,6 @@ func TestCoalescer_Receive_NilEvent(t *testing.T) {
 	assert.Empty(t, rows)
 }
 
-func TestFingerprintBytes_WithEndReason(t *testing.T) {
-	r := model.ReasonFailed
-	ev := &notify.Event{
-		Kind:     notify.KindRunFailed,
-		TaskName: "t1",
-		Run:      &model.Run{EndReason: &r},
-	}
-	b := fingerprintBytes(ev)
-	assert.Contains(t, string(b), "failed")
-}
-
-func TestFingerprintBytes_WithDeliveryFailed(t *testing.T) {
-	ev := &notify.Event{
-		Kind:     notify.KindNotifyDeliveryFailed,
-		TaskName: "t1",
-		Extra:    map[string]any{"channel": "slack", "original_kind": "run.failed"},
-	}
-	b := fingerprintBytes(ev)
-	assert.Contains(t, string(b), "slack")
-}
+// Fingerprint identity is now shared as notify.FingerprintKey and tested in
+// the notify package (see TestFingerprintKey_*). The in-app coalescer only
+// hashes that key, exercised by the dedup tests above.

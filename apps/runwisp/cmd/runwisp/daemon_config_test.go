@@ -137,15 +137,13 @@ func TestLoadDaemonConfig_StandaloneWithStablePassword(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "stable-test-secret")
 	t.Setenv("RUNWISP_FINGERPRINT", "test-fp-123")
 
-	origCfg := flags.CfgFile
-	flags.CfgFile = writeMinimalTOML(t)
-	t.Cleanup(func() { flags.CfgFile = origCfg })
+	f := Flags{CfgFile: writeMinimalTOML(t)}
 
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone)
+	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone, f)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
@@ -162,15 +160,13 @@ func TestLoadDaemonConfig_StandaloneEphemeralPassword(t *testing.T) {
 	require.NoError(t, os.Unsetenv("RUNWISP_PASSWORD"))
 	t.Setenv("RUNWISP_FINGERPRINT", "eph-fp")
 
-	origCfg := flags.CfgFile
-	flags.CfgFile = writeMinimalTOML(t)
-	t.Cleanup(func() { flags.CfgFile = origCfg })
+	f := Flags{CfgFile: writeMinimalTOML(t)}
 
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone)
+	cfg, err := loadDaemonConfig(t.Context(), db, modeStandalone, f)
 	require.NoError(t, err)
 	assert.True(t, cfg.PasswordEphemeral)
 	assert.NotEmpty(t, cfg.Password)
@@ -180,15 +176,13 @@ func TestLoadDaemonConfig_MissingTOMLInStandaloneErrors(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "x")
 	t.Setenv("RUNWISP_FINGERPRINT", "fp")
 
-	origCfg := flags.CfgFile
-	flags.CfgFile = filepath.Join(t.TempDir(), "missing.toml")
-	t.Cleanup(func() { flags.CfgFile = origCfg })
+	f := Flags{CfgFile: filepath.Join(t.TempDir(), "missing.toml")}
 
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	_, err = loadDaemonConfig(t.Context(), db, modeStandalone)
+	_, err = loadDaemonConfig(t.Context(), db, modeStandalone, f)
 	assert.Error(t, err)
 }
 
@@ -196,19 +190,17 @@ func TestLoadDaemonConfig_FingerprintPersistsAcrossCalls(t *testing.T) {
 	require.NoError(t, os.Unsetenv("RUNWISP_FINGERPRINT"))
 	t.Setenv("RUNWISP_PASSWORD", "stable")
 
-	origCfg := flags.CfgFile
-	flags.CfgFile = writeMinimalTOML(t)
-	t.Cleanup(func() { flags.CfgFile = origCfg })
+	f := Flags{CfgFile: writeMinimalTOML(t)}
 
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	first, err := loadDaemonConfig(t.Context(), db, modeStandalone)
+	first, err := loadDaemonConfig(t.Context(), db, modeStandalone, f)
 	require.NoError(t, err)
 	require.NotEmpty(t, first.Fingerprint)
 
-	second, err := loadDaemonConfig(t.Context(), db, modeStandalone)
+	second, err := loadDaemonConfig(t.Context(), db, modeStandalone, f)
 	require.NoError(t, err)
 	assert.Equal(t, first.Fingerprint, second.Fingerprint,
 		"fingerprint persisted to DB on first call must be returned on subsequent calls")

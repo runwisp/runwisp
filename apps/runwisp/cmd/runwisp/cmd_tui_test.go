@@ -41,12 +41,8 @@ func TestBuildStartupInfoFromDaemon_PopulatesAllFields(t *testing.T) {
 }
 
 func TestRunTUIClient_DaemonUnreachable(t *testing.T) {
-	dir := t.TempDir()
-	orig := flags.DataDir
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = orig })
-
-	err := runTUIClient()
+	t.Parallel()
+	err := runTUIClient(Flags{DataDir: t.TempDir()})
 	if err == nil {
 		t.Fatal("expected error when no daemon is reachable")
 	}

@@ -19,17 +19,17 @@ var statusCmd = &cobra.Command{
 responsive, prints a short system summary, and warns when runwisp.toml has
 changed on disk since the daemon started (config changes apply on restart).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStatus(cmd.OutOrStdout())
+		return runStatus(cmd.OutOrStdout(), flags)
 	},
 }
 
-func runStatus(out io.Writer) error {
+func runStatus(out io.Writer, f Flags) error {
 	// The Unix socket is the local-trusted transport (same as exec/tui):
 	// no password needed, and unlike a TCP probe it cannot hit a different
 	// process that happens to squat on the port.
-	client := apiclient.NewUnix(localAPISocketPath())
+	client := apiclient.NewUnix(localAPISocketPath(f))
 	if err := client.HealthCheck(); err != nil {
-		return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(), err, daemonNotRunningHint)
+		return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
 	info, infoErr := client.GetDaemonInfo()

@@ -33,15 +33,10 @@ func TestFileExists_EmptyPath(t *testing.T) {
 }
 
 func TestPreflightDaemon_PortFree(t *testing.T) {
-	// Bind a random free port to ourselves, then close it: probePortAvailable
-	// will see it as free.
-	origHost := flags.Host
-	flags.Host = "127.0.0.1"
-	t.Cleanup(func() { flags.Host = origHost })
-
+	t.Parallel()
 	// Pick a port that's almost certainly free.
 	opts := autostart.InstallOptions{Port: 0}
-	require.NoError(t, preflightDaemon(opts))
+	require.NoError(t, preflightDaemon(opts, Flags{Host: "127.0.0.1"}))
 }
 
 func TestFileExists_MissingPath(t *testing.T) {
@@ -204,17 +199,16 @@ func durableTempDir(t *testing.T) string {
 
 // installFlagsCmd wires a cobra command with --config / --data flags and
 // stdout/stderr captured into the supplied buffers.
-func installFlagsCmd(t *testing.T, stdout, stderr *bytes.Buffer) *cobra.Command {
+func installFlagsCmd(t *testing.T, f Flags, stdout, stderr *bytes.Buffer) *cobra.Command {
 	t.Helper()
 	c := newInstallTestCmd(stdout, stderr)
-	c.Flags().String("config", flags.CfgFile, "")
-	c.Flags().String("data", flags.DataDir, "")
+	c.Flags().String("config", f.CfgFile, "")
+	c.Flags().String("data", f.DataDir, "")
 	return c
 }
 
 func TestResolveServiceOptions_BuildsAbsolutePaths(t *testing.T) {
 	restoreInstallOpts(t)
-	origCfg, origData := flags.CfgFile, flags.DataDir
 	dir := durableTempDir(t)
 	tomlPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
@@ -225,14 +219,8 @@ func TestResolveServiceOptions_BuildsAbsolutePaths(t *testing.T) {
 	require.NoError(t, os.WriteFile(binary, []byte("\x7fELF"), 0o755))
 	serviceInstallOpts.Binary = binary
 
-	flags.CfgFile = tomlPath
-	flags.DataDir = dir
-	t.Cleanup(func() {
-		flags.CfgFile = origCfg
-		flags.DataDir = origData
-	})
-
-	cmd := installFlagsCmd(t, &bytes.Buffer{}, &bytes.Buffer{})
+	f := Flags{CfgFile: tomlPath, DataDir: dir}
+	cmd := installFlagsCmd(t, f, &bytes.Buffer{}, &bytes.Buffer{})
 	require.NoError(t, cmd.Flags().Set("data", dir))
 	require.NoError(t, cmd.Flags().Set("config", tomlPath))
 
@@ -242,7 +230,7 @@ func TestResolveServiceOptions_BuildsAbsolutePaths(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps)
+	opts, err := resolveServiceOptions(cmd, deps, f)
 	require.NoError(t, err)
 	assert.Equal(t, binary, opts.Binary)
 	assert.Equal(t, tomlPath, opts.Config)
@@ -259,18 +247,13 @@ func TestResolveServiceOptions_BinaryOverrideIsUsed(t *testing.T) {
 
 	serviceInstallOpts.Binary = binary
 
-	origCfg, origData := flags.CfgFile, flags.DataDir
-	flags.CfgFile = filepath.Join(dir, "runwisp.toml")
-	flags.DataDir = dir
-	require.NoError(t, os.WriteFile(flags.CfgFile, []byte(""), 0o600))
-	t.Cleanup(func() {
-		flags.CfgFile = origCfg
-		flags.DataDir = origData
-	})
+	cfgFile := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfgFile, []byte(""), 0o600))
+	f := Flags{CfgFile: cfgFile, DataDir: dir}
 
-	cmd := installFlagsCmd(t, &bytes.Buffer{}, &bytes.Buffer{})
+	cmd := installFlagsCmd(t, f, &bytes.Buffer{}, &bytes.Buffer{})
 	require.NoError(t, cmd.Flags().Set("data", dir))
-	require.NoError(t, cmd.Flags().Set("config", flags.CfgFile))
+	require.NoError(t, cmd.Flags().Set("config", cfgFile))
 
 	deps := autostart.Deps{
 		Home:        t.TempDir(),
@@ -278,7 +261,7 @@ func TestResolveServiceOptions_BinaryOverrideIsUsed(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps)
+	opts, err := resolveServiceOptions(cmd, deps, f)
 	require.NoError(t, err)
 	assert.Equal(t, binary, opts.Binary, "binary override must be honoured")
 }
@@ -296,17 +279,7 @@ func TestRunServiceInstall_PrintRendersUnit(t *testing.T) {
 	tomlPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
 
-	origCfg, origData, origHost, origPort := flags.CfgFile, flags.DataDir, flags.Host, flags.Port
-	flags.CfgFile = tomlPath
-	flags.DataDir = dir
-	flags.Host = "127.0.0.1"
-	flags.Port = 9477
-	t.Cleanup(func() {
-		flags.CfgFile = origCfg
-		flags.DataDir = origData
-		flags.Host = origHost
-		flags.Port = origPort
-	})
+	f := Flags{CfgFile: tomlPath, DataDir: dir, Host: "127.0.0.1", Port: 9477}
 
 	// Force --print so install path skips disk I/O.
 	serviceInstallOpts.Print = true
@@ -320,11 +293,11 @@ func TestRunServiceInstall_PrintRendersUnit(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
 
 	stdout := &bytes.Buffer{}
-	cmd := installFlagsCmd(t, stdout, &bytes.Buffer{})
+	cmd := installFlagsCmd(t, f, stdout, &bytes.Buffer{})
 	require.NoError(t, cmd.Flags().Set("data", dir))
 	require.NoError(t, cmd.Flags().Set("config", tomlPath))
 
-	err := runServiceInstall(cmd)
+	err := runServiceInstall(cmd, f)
 	require.NoError(t, err)
 	out := stdout.String()
 	// systemd unit always carries [Unit] and [Service] sections.
@@ -339,17 +312,7 @@ func TestRunServiceInstall_DryRunPrintsPlan(t *testing.T) {
 	tomlPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
 
-	origCfg, origData, origHost, origPort := flags.CfgFile, flags.DataDir, flags.Host, flags.Port
-	flags.CfgFile = tomlPath
-	flags.DataDir = dir
-	flags.Host = "127.0.0.1"
-	flags.Port = 9477
-	t.Cleanup(func() {
-		flags.CfgFile = origCfg
-		flags.DataDir = origData
-		flags.Host = origHost
-		flags.Port = origPort
-	})
+	f := Flags{CfgFile: tomlPath, DataDir: dir, Host: "127.0.0.1", Port: 9477}
 
 	serviceInstallOpts.DryRun = true
 	binary := filepath.Join(dir, "runwisp-binary")
@@ -361,11 +324,11 @@ func TestRunServiceInstall_DryRunPrintsPlan(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
 
 	stdout := &bytes.Buffer{}
-	cmd := installFlagsCmd(t, stdout, &bytes.Buffer{})
+	cmd := installFlagsCmd(t, f, stdout, &bytes.Buffer{})
 	require.NoError(t, cmd.Flags().Set("data", dir))
 	require.NoError(t, cmd.Flags().Set("config", tomlPath))
 
-	err := runServiceInstall(cmd)
+	err := runServiceInstall(cmd, f)
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "Plan:")
 }
@@ -376,10 +339,8 @@ func TestRunServiceUninstall_NoUnitExists(t *testing.T) {
 	t.Cleanup(func() { serviceUninstallOpts = origOpts })
 	serviceUninstallOpts.Yes = true
 
-	origData := flags.DataDir
 	dir := durableTempDir(t)
-	flags.DataDir = dir
-	t.Cleanup(func() { flags.DataDir = origData })
+	f := Flags{DataDir: dir}
 
 	// Point HOME at an empty temp dir so the systemd installer finds no unit.
 	t.Setenv("HOME", t.TempDir())
@@ -390,7 +351,7 @@ func TestRunServiceUninstall_NoUnitExists(t *testing.T) {
 	cmd := newInstallTestCmd(stdout, &bytes.Buffer{})
 
 	// Uninstall against an empty home is a no-op success on the systemd path.
-	require.NoError(t, runServiceUninstall(cmd))
+	require.NoError(t, runServiceUninstall(cmd, f))
 }
 
 func TestResolveDataDirInteractive_UnknownActionFallsThrough(t *testing.T) {

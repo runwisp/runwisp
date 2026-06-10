@@ -51,7 +51,7 @@ is deleted when the daemon shuts down.
 With --cloud the daemon connects to the control plane instead and no history is
 seeded (the cloud owns it); RUNWISP_CLOUD_TOKEN is required, as for ` + "`runwisp cloud`" + `.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runDemo(cmd)
+		return runDemo(cmd, flags)
 	},
 }
 
@@ -65,84 +65,86 @@ func init() {
 // runDemo sets up a throwaway temp dir, writes the embedded demo config, seeds
 // history (standalone only), spawns the background daemon against the temp dir,
 // and attaches the TUI — mirroring the plain `runwisp` flow.
-func runDemo(cmd *cobra.Command) error {
+func runDemo(cmd *cobra.Command, f Flags) error {
 	tmp, err := os.MkdirTemp("", "runwisp-demo-")
 	if err != nil {
 		return fmt.Errorf("create demo temp dir: %w", err)
 	}
 
 	// Redirect every path the daemon and TUI resolve at the throwaway dir.
-	flags.CfgFile = filepath.Join(tmp, "runwisp.toml")
-	flags.DataDir = filepath.Join(tmp, "data")
+	// These mutate a local copy of Flags, never the package global, so demo
+	// runs stay isolated and tests don't have to snapshot/restore state.
+	f.CfgFile = filepath.Join(tmp, "runwisp.toml")
+	f.DataDir = filepath.Join(tmp, "data")
 
 	// Until the daemon takes ownership of the temp dir (via envDemoTempDir),
 	// any early failure must clean it up here.
-	if err := setupDemoDir(cmd); err != nil {
+	if err := setupDemoDir(cmd, f); err != nil {
 		os.RemoveAll(tmp)
 		return err
 	}
 
 	// Fail fast on a port conflict before spawning a daemon that can't bind.
-	if bindErr := probePortAvailable(flags.Host, flags.Port); bindErr != nil {
+	if bindErr := probePortAvailable(f.Host, f.Port); bindErr != nil {
 		os.RemoveAll(tmp)
-		return portConflictError(flags.Host, flags.Port, bindErr)
+		return portConflictError(f.Host, f.Port, bindErr)
 	}
 
 	// Hand the temp dir to the spawned daemon; from here it owns cleanup.
 	os.Setenv(envDemoTempDir, tmp)
 
-	if err := spawnDemoDaemon(); err != nil {
+	if err := spawnDemoDaemon(f); err != nil {
 		os.RemoveAll(tmp)
 		return err
 	}
 
-	client := apiclient.NewUnix(localAPISocketPath())
-	logPath := filepath.Join(flags.DataDir, "daemon.log")
-	if err := waitForDaemon(client, logPath, 15*time.Second); err != nil {
+	client := apiclient.NewUnix(localAPISocketPath(f))
+	logPath := filepath.Join(f.DataDir, "daemon.log")
+	if err := waitForDaemon(client, logPath, 15*time.Second, f); err != nil {
 		// The daemon may have died before reaching its cleanup defer; make sure
 		// the temp dir doesn't leak.
-		_ = shutdownDaemon()
+		_ = shutdownDaemon(f)
 		os.RemoveAll(tmp)
 		return err
 	}
 
-	return runTUIConnect(client)
+	return runTUIConnect(client, f)
 }
 
 // setupDemoDir writes the embedded config, creates the data/log dirs, and either
 // resolves cloud credentials (--cloud) or seeds the fake run history.
-func setupDemoDir(cmd *cobra.Command) error {
-	if err := demo.WriteConfig(flags.CfgFile); err != nil {
+func setupDemoDir(cmd *cobra.Command, f Flags) error {
+	if err := demo.WriteConfig(f.CfgFile); err != nil {
 		return err
 	}
-	if err := datadir.EnsureDir(flags.DataDir); err != nil {
+	if err := datadir.EnsureDir(f.DataDir); err != nil {
 		return err
 	}
-	if err := datadir.EnsureDir(flags.LogDir()); err != nil {
+	if err := datadir.EnsureDir(f.LogDir()); err != nil {
 		return err
 	}
 
 	if demoFlags.Cloud {
 		return resolveCloudEnv(demoFlags.EnvFile, cmd.Flags().Changed("env-file"), demoFlags.Token, demoFlags.URL)
 	}
-	return seedDemoHistory()
+	return seedDemoHistory(f)
 }
 
 // seedDemoHistory loads the just-written demo config and populates the database
 // and log directory with believable historical runs.
-func seedDemoHistory() error {
-	cfg, err := config.Load(flags.CfgFile)
+func seedDemoHistory(f Flags) error {
+	cfg, err := config.Load(f.CfgFile)
 	if err != nil {
 		return fmt.Errorf("load demo config: %w", err)
 	}
-	db, err := storage.New(flags.DBPath())
+	db, err := storage.New(f.DBPath())
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
 	fmt.Fprintln(os.Stderr, "Seeding demo history by running your tasks (a few seconds)...")
-	n, err := demo.Seed(context.Background(), db, cfg, flags.LogDir(), time.Now())
+	n, err := demo.Seed(context.Background(), db, cfg, f.LogDir(), time.Now())
 	if err != nil {
 		return fmt.Errorf("seed demo data: %w", err)
 	}
@@ -152,13 +154,13 @@ func seedDemoHistory() error {
 
 // spawnDemoDaemon launches the background daemon against the temp dir. Cloud
 // mode spawns the headless `cloud` subcommand; standalone reuses spawnDaemon.
-func spawnDemoDaemon() error {
+func spawnDemoDaemon(f Flags) error {
 	if demoFlags.Cloud {
 		return spawnDaemonProcess([]string{"cloud", "--no-tui",
-			"--config", flags.CfgFile,
-			"--data", flags.DataDir,
-			"--port", strconv.Itoa(flags.Port),
-		})
+			"--config", f.CfgFile,
+			"--data", f.DataDir,
+			"--port", strconv.Itoa(f.Port),
+		}, f.DataDir)
 	}
-	return spawnDaemon()
+	return spawnDaemon(f)
 }

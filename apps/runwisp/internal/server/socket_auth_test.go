@@ -13,14 +13,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/testutil"
@@ -107,7 +104,7 @@ func TestSocketServer_StartUnlinksSocketOnShutdown(t *testing.T) {
 	s, _, _, _ := setupServerWithSocket(t)
 	// Pick an ephemeral port for the TCP side so multiple tests can run in
 	// parallel without colliding.
-	s.port = pickFreePort(t)
+	s.port = testutil.PickFreePort(t)
 
 	socketPath := s.socketPath
 
@@ -144,42 +141,15 @@ func TestSocketServer_StartUnlinksSocketOnShutdown(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "socket file should be removed on shutdown")
 }
 
-// setupServerWithSocket is the shared boot for socket-aware tests. It mirrors
-// setupServer but allocates a socket path inside a temp dir.
+// setupServerWithSocket is the shared boot for socket-aware tests. It reuses
+// setupServerWithOpts and adds a Unix socket bound under a short temp dir (the
+// socket path must stay well under the ~104-char sun_path limit).
 func setupServerWithSocket(t *testing.T) (*Server, *testutil.MockRunRepository, *testutil.MockExecutor, string) {
-	repo := new(testutil.MockRunRepository)
-	exec := new(testutil.MockExecutor)
-	eb := events.NewEventBus()
-	jm := runtime.NewTaskManager(exec, eb, time.Now)
-
-	task := &model.Task{
-		Name:          "task1",
-		Run:           "echo hi",
-		APITrigger:    true,
-		MaxConcurrent: 1,
-		OnOverlap:     model.PolicyQueue,
-	}
-	jm.UpsertTask(task)
-	tasks := map[string]*model.Task{"task1": task}
-
-	scheduler := runtime.NewScheduler(jm, tasks, time.UTC)
-	tmpDir := testutil.ShortTempDir(t)
-
-	s, err := New(Options{
-		DB:          repo,
-		TaskManager: jm,
-		Tasks:       tasks,
-		Scheduler:   scheduler,
-		Host:        "127.0.0.1",
-		Port:        9477,
-		SocketPath:  filepath.Join(tmpDir, "runwisp.sock"),
-		LogDir:      tmpDir,
-		EventBus:    eb,
-		Password:    "secret",
-		JWTSecret:   "test-jwt-secret",
+	sockDir := testutil.ShortTempDir(t)
+	return setupServerWithOpts(t, func(o *Options) {
+		o.Host = "127.0.0.1"
+		o.SocketPath = filepath.Join(sockDir, "runwisp.sock")
 	})
-	require.NoError(t, err)
-	return s, repo, exec, tmpDir
 }
 
 // requireSocketReady polls until a Unix socket accepts connections.
@@ -195,17 +165,4 @@ func requireSocketReady(t *testing.T, path string, timeout time.Duration) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	require.FailNowf(t, "socket not ready", "path=%s", path)
-}
-
-// pickFreePort grabs an ephemeral TCP port and lets it go so the caller can
-// bind to it. Race window between release and bind is acceptable for tests.
-func pickFreePort(t *testing.T) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := ln.Addr().String()
-	require.NoError(t, ln.Close())
-	_, portStr, _ := net.SplitHostPort(addr)
-	port, _ := strconv.Atoi(portStr)
-	return port
 }

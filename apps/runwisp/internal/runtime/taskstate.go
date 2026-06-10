@@ -101,6 +101,15 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 			}
 			ts.cond.Wait()
 		}
+		// Re-check after the inner loop: Shutdown's cond.Broadcast can wake us
+		// with a free slot and a non-empty queue. Starting a run here would
+		// happen after Shutdown's single cancel pass, leaving its context live
+		// forever — an orphaned process and a drain that never completes. The
+		// check is race-free under m.mu: Shutdown sets isShutdown before taking
+		// the lock for its cancel+broadcast pass.
+		if m.isShutdown.Load() {
+			return
+		}
 		run := ts.queue[0]
 		ts.queue = ts.queue[1:]
 		m.startRun(ts.task, run)

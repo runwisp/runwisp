@@ -26,7 +26,9 @@ func TestPersistenceCoordinatorPersistNew(t *testing.T) {
 	}
 
 	pc.PersistNew(&model.Run{TaskName: "test"})
-	time.Sleep(50 * time.Millisecond)
+	// Flush establishes a happens-before edge with the worker: the hook has run
+	// and its writes are visible here, without a sleep or a data race.
+	pc.Flush()
 
 	assert.True(t, called)
 	assert.True(t, isNewArg)
@@ -42,7 +44,7 @@ func TestPersistenceCoordinatorPersistExisting(t *testing.T) {
 	}
 
 	pc.PersistExisting(&model.Run{TaskName: "test"})
-	time.Sleep(50 * time.Millisecond)
+	pc.Flush()
 
 	assert.False(t, isNewArg)
 }
