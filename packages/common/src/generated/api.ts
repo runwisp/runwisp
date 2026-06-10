@@ -1070,6 +1070,7 @@ export interface components {
             catch_up?: string;
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
+            depends_on?: string[] | null;
             group?: string;
             /** Format: int64 */
             instances?: number;
@@ -1098,6 +1099,8 @@ export interface components {
             /** @description Provenance metadata for tasks imported from a docker compose file */
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
+            /** @description For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG */
+            depends_on?: string[] | null;
             description?: string;
             /** @description Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries. */
             env?: {

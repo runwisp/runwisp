@@ -76,6 +76,11 @@ func startCloudClient(
 // here.
 func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices, srv *server.Server) {
 	cancelCloud()
+	// Abort any depends_on launcher still waiting on a dependency so it can't
+	// start a service mid-teardown.
+	if svc.ServiceLaunchCancel != nil {
+		svc.ServiceLaunchCancel()
+	}
 	// RetentionCleaner.Stop only cancels its loop's context — non-blocking,
 	// so it's safe to call outside the deadline-bounded waits below.
 	svc.RetentionCleaner.Stop()
@@ -137,6 +142,11 @@ func waitDrain(ctx context.Context, svc *daemonServices, taskTimeout time.Durati
 		slog.Info("stopping scheduler", "timeout", taskTimeout)
 	}
 
+	// Tear services down in reverse-dependency order before the bulk drain, so
+	// a dependent stops before the services it relies on. ShutdownWithDeadline
+	// below stays the safety net for cron tasks and anything that didn't drain.
+	preStopServices(ctx, svc)
+
 	var wg sync.WaitGroup
 
 	if svc.Scheduler != nil {
@@ -173,6 +183,40 @@ func inflightRunCount(svc *daemonServices) int {
 		total += len(svc.TaskManager.GetActiveRuns(name))
 	}
 	return total
+}
+
+// preStopServices stops services in reverse-dependency order (dependents
+// first), giving each a chance to drain before moving on. The whole pass shares
+// ctx's deadline; whatever doesn't finish here is caught by the subsequent
+// ShutdownWithDeadline safety net. Services-only — cron tasks are left to the
+// bulk drain.
+func preStopServices(ctx context.Context, svc *daemonServices) {
+	for _, task := range orderServicesForStop(svc.TasksMap) {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := svc.TaskManager.StopService(task.Name); err != nil {
+			slog.Warn("failed to stop service during shutdown", "task", task.Name, "err", err)
+			continue
+		}
+		waitServiceDrained(ctx, svc, task.Name)
+	}
+}
+
+// waitServiceDrained blocks until a service has no active runs or ctx expires.
+func waitServiceDrained(ctx context.Context, svc *daemonServices, name string) {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if len(svc.TaskManager.GetActiveRuns(name)) == 0 {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func awaitOrLog(ctx context.Context, wg *sync.WaitGroup, label string) {

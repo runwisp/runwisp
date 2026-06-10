@@ -129,12 +129,11 @@ FATAL and stops — instead of burning a restart every second forever.
 
 `priority` decides the order the daemon _spawns_ services at boot: the
 lowest number goes first, and services that share a number start in
-alphabetical order. That's the whole contract — it is **not** a
-dependency graph or a readiness gate. RunWisp doesn't wait for one
-service to be "up" before starting the next (that'd be
-[orchestration](/concepts/tasks-vs-services/), which is a non-goal); it
-just fixes the otherwise-random start order so the service that wants a
-shared port first reliably gets it first. Shutdown stays parallel.
+alphabetical order. On its own it is **not** a readiness gate — it just
+fixes the otherwise-random spawn order so the service that wants a shared
+port first reliably gets it first. If you need one service to actually be
+_up_ before another starts, that's [`depends_on`](#boot-order-with-depends_on)
+below.
 
 `autostart = false` is for services you want defined but not running on
 every boot — a maintenance worker, a one-off migration runner you trigger
@@ -144,6 +143,58 @@ persisted: it's re-read from `runwisp.toml` every boot, so a manually
 started `autostart = false` service is stopped again after a restart, and
 a manually stopped `autostart = true` service comes back up. The TOML is
 always the source of truth.
+
+## Boot order with `depends_on`
+
+| Key          | Default | What it does                                                                        |
+| ------------ | ------- | ----------------------------------------------------------------------------------- |
+| `depends_on` | none    | Other **services** that must be healthy before this one starts at boot. Order only. |
+
+When a service genuinely needs another to be up first — an API that
+talks to a database, a worker that needs its broker — list the
+dependency:
+
+```toml
+[services.db]
+run          = "postgres -D /var/lib/pg"
+healthy_after = "3s"      # call it "up" once it stays alive 3s
+
+[services.api]
+run        = "./api-server"
+depends_on = ["db"]       # wait for db to be healthy, then start
+```
+
+At boot, `api` waits until `db` reports **healthy** — that is, at least
+one `db` instance has stayed live for its
+[`healthy_after`](#restart-behaviour) window — and only then starts. A
+service can depend on several at once (`depends_on = ["db", "cache"]`);
+it waits for all of them.
+
+This is deliberately small: boot ordering and a readiness gate, nothing
+more. It is **not** a workflow engine. There are no cascade restarts (if
+`db` crashes _after_ `api` came up, `api` is left alone — supervision,
+not orchestration), no run-to-completion edges, and no data passing.
+That's [orchestration](/concepts/tasks-vs-services/), which is a non-goal.
+A few rules worth knowing:
+
+- **It never deadlocks your boot.** If a dependency never becomes
+  healthy — it keeps crashing, or it's `autostart = false` — the
+  dependent waits a bounded window (the dep's `healthy_after` plus a few
+  seconds) and then **starts anyway, with a loud warning in the log**.
+  Nothing silently hangs.
+- **Manual start/restart is ungated.** `depends_on` only gates the
+  automatic boot. Hitting **Start** on a service from the UI/API brings
+  it up immediately, dependencies or not.
+- **Shutdown reverses it.** On graceful shutdown, dependents are stopped
+  before the services they depend on, so the API drains before the
+  database it was talking to goes away.
+- **Cycles are rejected at load.** `a → b → a` fails validation with the
+  cycle named, the same as any other config error. References must point
+  at services (not tasks) that actually exist.
+
+`priority` and `depends_on` cooperate: `depends_on` decides _what's
+allowed_ to start, `priority` breaks ties between services that are
+independently ready to go.
 
 ## Concurrency
 

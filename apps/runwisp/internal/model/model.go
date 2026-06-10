@@ -97,6 +97,11 @@ type Task struct {
 	// service boots in the stopped state and must be started via the API/UI.
 	// Desired state is not persisted — it is re-derived from TOML each boot.
 	Autostart bool `toml:"-" json:"autostart" doc:"For services: whether instances start at boot. False boots in the stopped state until started via API/UI."`
+	// DependsOn names other services that must become healthy before this one
+	// starts at boot. Boot ordering only — not a workflow DAG: no cascade
+	// restarts, no run-to-completion edges. Service-only. A dependent that
+	// never sees its dep go healthy starts anyway after a bounded window.
+	DependsOn []string `toml:"-" json:"depends_on,omitempty" doc:"For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG"`
 
 	RetryAttempts int           `toml:"retry_attempts,omitempty" json:"retry_attempts,omitempty"`
 	RetryDelay    time.Duration `toml:"-"                        json:"retry_delay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
@@ -261,6 +266,7 @@ type TaskBrief struct {
 	MaxConcurrent int               `json:"max_concurrent,omitempty"`
 	OnOverlap     ConcurrencyPolicy `json:"on_overlap,omitempty"`
 	Instances     int               `json:"instances,omitempty"`
+	DependsOn     []string          `json:"depends_on,omitempty"`
 	Compose       *TaskComposeRef   `json:"compose,omitempty"`
 }
 

@@ -337,6 +337,7 @@ bite you later:
 - `restart = "always"` — that's what `[services.*]` is for.
 - `instances = N` — a services-only field.
 - `priority` / `autostart` — services-only; they govern boot start order and whether a service comes up at boot.
+- `depends_on` — services-only; it gates a service's boot on other services being healthy.
 - A task name that's also taken by a `[services.*]` — they share one namespace.
 - An empty or missing `run`.
 

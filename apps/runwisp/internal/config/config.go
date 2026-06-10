@@ -235,6 +235,9 @@ func collectTaskNames(raw *tomlConfig) ([]string, error) {
 		if w.Instances != nil {
 			return nil, fmt.Errorf("task %q sets instances; instances is only valid on [services.*]", name)
 		}
+		if len(w.DependsOn) > 0 {
+			return nil, fmt.Errorf("task %q sets depends_on; depends_on is only valid on [services.*]", name)
+		}
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -316,10 +319,107 @@ func Validate(cfg *Config) error {
 			return err
 		}
 	}
+	if err := validateServiceDependencies(cfg); err != nil {
+		return err
+	}
 	if err := validateNotify(&cfg.Notify); err != nil {
 		return err
 	}
 	return nil
+}
+
+// validateServiceDependencies checks every service's depends_on graph: each ref
+// must name a known service (not a task, not itself), and the graph must be
+// acyclic. It runs after the per-task loop because it needs the whole task set.
+// depends_on is boot ordering only, so the only structural failure is a cycle —
+// which would otherwise deadlock the gated launcher.
+func validateServiceDependencies(cfg *Config) error {
+	byName := make(map[string]*model.Task, len(cfg.Tasks))
+	for i := range cfg.Tasks {
+		byName[cfg.Tasks[i].Name] = &cfg.Tasks[i]
+	}
+	for i := range cfg.Tasks {
+		t := &cfg.Tasks[i]
+		if !t.Kind.IsService() {
+			continue
+		}
+		for _, dep := range t.DependsOn {
+			if dep == t.Name {
+				return fmt.Errorf("service %q depends_on itself", t.Name)
+			}
+			target, ok := byName[dep]
+			if !ok {
+				return fmt.Errorf("service %q depends_on unknown name %q", t.Name, dep)
+			}
+			if !target.Kind.IsService() {
+				return fmt.Errorf("service %q depends_on %q, which is a task; depends_on may only reference services", t.Name, dep)
+			}
+		}
+	}
+	return detectDependencyCycle(byName)
+}
+
+// detectDependencyCycle reports the first dependency cycle among services via
+// DFS, naming the path (e.g. "a -> b -> a") so the operator can see which edges
+// to cut. Only service nodes participate; non-services have no depends_on.
+func detectDependencyCycle(byName map[string]*model.Task) error {
+	const (
+		visiting = 1
+		done     = 2
+	)
+	state := make(map[string]int, len(byName))
+	var stack []string
+
+	var visit func(name string) error
+	visit = func(name string) error {
+		state[name] = visiting
+		stack = append(stack, name)
+		t, ok := byName[name]
+		if ok && t.Kind.IsService() {
+			for _, dep := range t.DependsOn {
+				switch state[dep] {
+				case visiting:
+					return fmt.Errorf("service dependency cycle: %s -> %s", strings.Join(cycleFrom(stack, dep), " -> "), dep)
+				case done:
+					continue
+				default:
+					if err := visit(dep); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		stack = stack[:len(stack)-1]
+		state[name] = done
+		return nil
+	}
+
+	// Sort the roots so the reported cycle is deterministic regardless of map
+	// iteration order.
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if state[name] == 0 {
+			if err := visit(name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// cycleFrom returns the suffix of the DFS stack starting at the node the back
+// edge points to, so the rendered path begins where the cycle closes.
+func cycleFrom(stack []string, start string) []string {
+	for i, name := range stack {
+		if name == start {
+			return stack[i:]
+		}
+	}
+	return stack
 }
 
 func validateTask(task *model.Task, seen map[string]struct{}) error {

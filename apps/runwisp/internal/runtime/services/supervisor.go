@@ -31,6 +31,17 @@ type Supervisor struct {
 	healthyAfter time.Duration
 	stopped      bool
 
+	// liveSince records when each slot reached the running phase. A slot is
+	// only entered here by MarkLive (at PhaseRunning, not at reservation) and
+	// dropped in RecordExit, so its keys are exactly the currently-running
+	// slots. IsHealthy uses it to answer the live "is it up yet?" question that
+	// readiness gating needs — distinct from the retrospective healthy_after
+	// check RecordExit performs after an exit.
+	liveSince map[int]time.Time
+	// clock supplies "now" for liveSince math so IsHealthy needs no argument
+	// and tests can pin time. Defaults to time.Now when nil.
+	clock func() time.Time
+
 	// startFails counts consecutive fast failures per slot — exits that
 	// happened before the instance reached healthy_after of uptime. A healthy
 	// run (or a clean, non-failure exit) resets it; exceeding start_retries
@@ -47,10 +58,14 @@ type Supervisor struct {
 // consecutive-restart counter and clears the failed-start streak; non-positive
 // values fall back to the package default. startStopped seeds the operator-stop
 // flag so an autostart=false service boots without spawning instances until an
-// operator starts it.
-func NewSupervisor(taskName string, instances int, healthyAfter time.Duration, startStopped bool) *Supervisor {
+// operator starts it. clock supplies "now" for the live-readiness signal; a nil
+// clock falls back to time.Now.
+func NewSupervisor(taskName string, instances int, healthyAfter time.Duration, startStopped bool, clock func() time.Time) *Supervisor {
 	if healthyAfter <= 0 {
 		healthyAfter = defaultHealthyAfter
+	}
+	if clock == nil {
+		clock = time.Now
 	}
 	return &Supervisor{
 		taskName:     taskName,
@@ -59,6 +74,8 @@ func NewSupervisor(taskName string, instances int, healthyAfter time.Duration, s
 		attempts:     make(map[int]int),
 		healthyAfter: healthyAfter,
 		stopped:      startStopped,
+		liveSince:    make(map[int]time.Time),
+		clock:        clock,
 		startFails:   make(map[int]int),
 		fatal:        make(map[int]bool),
 	}
@@ -123,6 +140,7 @@ func (s *Supervisor) Reserve(requested *int) (int, error) {
 // non-failure exit clears the fast-failure streak and any prior FATAL flag.
 func (s *Supervisor) RecordExit(idx int, runDuration time.Duration, startRetries int, wasFailure bool) (nextAttempt int, fatal bool) {
 	delete(s.live, idx)
+	delete(s.liveSince, idx)
 
 	if runDuration >= s.healthyAfter {
 		s.attempts[idx] = 0
@@ -147,6 +165,35 @@ func (s *Supervisor) RecordExit(idx int, runDuration time.Duration, startRetries
 func (s *Supervisor) IsLive(idx int) bool {
 	_, ok := s.live[idx]
 	return ok
+}
+
+// MarkLive stamps the moment a slot reached the running phase. The runtime
+// calls it once per run, when the run transitions to PhaseRunning — that is the
+// reference point for the live readiness gate, distinct from the reservation
+// recorded by Reserve.
+func (s *Supervisor) MarkLive(idx int) {
+	s.liveSince[idx] = s.clock()
+}
+
+// IsHealthy reports whether the service currently has at least one instance
+// that has been running continuously for at least healthy_after. This is the
+// live readiness signal a dependent waits on at boot. It is false while the
+// service is operator-stopped and ignores FATAL slots (they are not coming
+// back without an operator restart).
+func (s *Supervisor) IsHealthy() bool {
+	if s.stopped {
+		return false
+	}
+	now := s.clock()
+	for idx, since := range s.liveSince {
+		if s.fatal[idx] {
+			continue
+		}
+		if now.Sub(since) >= s.healthyAfter {
+			return true
+		}
+	}
+	return false
 }
 
 // LiveCount returns the number of currently occupied instance slots.

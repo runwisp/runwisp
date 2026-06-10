@@ -40,6 +40,11 @@ type daemonServices struct {
 	CatchUpResult       runtime.CatchUpResult
 	RunOnStartResult    runtime.RunOnStartResult
 	TaskShutdownTimeout time.Duration
+	// ServiceLaunchCancel aborts the background depends_on launcher goroutines.
+	// Called at the start of graceful shutdown so a dependent still waiting on a
+	// dependency doesn't start mid-teardown. No-op in cloud mode (services don't
+	// auto-start there).
+	ServiceLaunchCancel context.CancelFunc
 	// InitWarnings holds non-fatal warnings collected during service init
 	// (notify subsystem failures, scheduler start hiccups, etc.) so the
 	// caller can render them inside the startup banner instead of having
@@ -75,6 +80,9 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	var pendingSummary uikit.PendingRunsSummary
 	var catchUpResult runtime.CatchUpResult
 	var runOnStartResult runtime.RunOnStartResult
+	// Default to a no-op cancel so cloud mode (no service auto-start) leaves a
+	// callable handle in daemonServices.
+	serviceLaunchCancel := context.CancelFunc(func() {})
 
 	if mode == modeStandalone {
 		// [scheduler] timezone is required at config-load time when any cron task
@@ -102,7 +110,9 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		} else if runOnStartResult.Triggered > 0 {
 			slog.Debug("run_on_start firing completed", "triggered", runOnStartResult.Triggered)
 		}
-		startServiceInstances(taskManager, tasksMap)
+		var launchCtx context.Context
+		launchCtx, serviceLaunchCancel = context.WithCancel(context.Background())
+		startServiceInstances(launchCtx, taskManager, tasksMap)
 	}
 
 	retentionCleaner := initRetentionCleaner(cfg, db, tasksMap, f.LogDir())
@@ -153,6 +163,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		CatchUpResult:       catchUpResult,
 		RunOnStartResult:    runOnStartResult,
 		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
+		ServiceLaunchCancel: serviceLaunchCancel,
 		InitWarnings:        initWarnings,
 	}, nil
 }
@@ -214,20 +225,60 @@ func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap 
 	return cleaner
 }
 
-func startServiceInstances(taskManager runtime.TaskManager, tasksMap map[string]*model.Task) {
+// graceWindow extends a dependency's healthy_after to bound how long a
+// dependent waits for it at boot. A dependent that doesn't see its dep go
+// healthy within dep.HealthyAfter+graceWindow starts anyway with a WARN — the
+// "nothing silently fails" rule means depends_on never deadlocks boot. It is
+// deliberately not a TOML key: the window is derived from the dep's own
+// healthy_after so operators tune readiness in one place.
+const graceWindow = 5 * time.Second
+
+// startServiceInstances brings every service up to its desired instance count
+// at boot, honouring depends_on. Each service launches in its own goroutine
+// that first waits for its direct dependencies to become healthy (bounded —
+// see graceWindow), then starts its instances. Launching in the background
+// keeps daemon boot non-blocking; the readiness gates, not the spawn order,
+// enforce ordering. ctx is cancelled at shutdown so a dependent still waiting
+// on a dependency bails instead of starting mid-teardown.
+func startServiceInstances(ctx context.Context, taskManager runtime.TaskManager, tasksMap map[string]*model.Task) {
 	for _, task := range orderServicesForStart(tasksMap) {
-		if err := taskManager.StartServiceInstances(task.Name, model.TriggeredByService); err != nil {
-			slog.Error("Failed to start service instances", "task", task.Name, "err", err)
-		}
+		go launchServiceWhenReady(ctx, taskManager, tasksMap, task)
 	}
 }
 
-// orderServicesForStart returns the service tasks in deterministic boot order:
+// launchServiceWhenReady blocks until every direct dependency of task is
+// healthy (or its bounded window elapses), then starts the service. If ctx is
+// cancelled (daemon shutting down) it returns without starting.
+func launchServiceWhenReady(ctx context.Context, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, task *model.Task) {
+	for _, dep := range task.DependsOn {
+		window := graceWindow
+		if d, ok := tasksMap[dep]; ok {
+			window += d.HealthyAfter
+		}
+		depCtx, cancel := context.WithTimeout(ctx, window)
+		err := taskManager.WaitServiceHealthy(depCtx, dep)
+		cancel()
+		if ctx.Err() != nil {
+			// Daemon is shutting down — do not start anything.
+			return
+		}
+		if err != nil {
+			slog.Warn("dependency not healthy within window; starting dependent anyway",
+				"service", task.Name, "dependency", dep, "err", err)
+		}
+	}
+	if err := taskManager.StartServiceInstances(task.Name, model.TriggeredByService); err != nil {
+		slog.Error("Failed to start service instances", "task", task.Name, "err", err)
+	}
+}
+
+// orderServicesForStart returns the service tasks in deterministic spawn order:
 // ascending priority, then name as a stable tiebreak. Ranging a Go map is
-// randomised, so without this the start order (and thus which service grabs a
-// shared port first) would differ run to run. Non-service tasks are dropped.
-// This is start ordering only — it is not a dependency or readiness gate, and
-// shutdown stays parallel.
+// randomised, so without this the goroutine spawn order (and thus which
+// independent service grabs a shared port first) would differ run to run.
+// Non-service tasks are dropped. depends_on ordering is enforced by the
+// readiness gates in launchServiceWhenReady, not here — this only breaks ties
+// between services that are independently startable.
 func orderServicesForStart(tasksMap map[string]*model.Task) []*model.Task {
 	services := make([]*model.Task, 0, len(tasksMap))
 	for _, task := range tasksMap {
@@ -242,6 +293,53 @@ func orderServicesForStart(tasksMap map[string]*model.Task) []*model.Task {
 		return services[i].Name < services[j].Name
 	})
 	return services
+}
+
+// orderServicesForStop returns services in reverse-dependency order — every
+// dependent appears before the dependencies it relies on — so shutdown can stop
+// the top of a dependency chain before the services beneath it. It is the
+// reverse of a topological start order (dependencies first), with the
+// priority/name spawn order as the tiebreak. depends_on is validated acyclic,
+// so the DFS always terminates.
+func orderServicesForStop(tasksMap map[string]*model.Task) []*model.Task {
+	start := topoStartOrder(tasksMap)
+	stop := make([]*model.Task, len(start))
+	for i, t := range start {
+		stop[len(start)-1-i] = t
+	}
+	return stop
+}
+
+// topoStartOrder returns services so each appears after all services it depends
+// on (dependencies first). DFS post-order over the priority/name-sorted roots
+// gives a deterministic, dependency-respecting order; the visited set also
+// guards the (validated-impossible) cyclic case.
+func topoStartOrder(tasksMap map[string]*model.Task) []*model.Task {
+	roots := orderServicesForStart(tasksMap)
+	byName := make(map[string]*model.Task, len(roots))
+	for _, s := range roots {
+		byName[s.Name] = s
+	}
+	visited := make(map[string]bool, len(roots))
+	ordered := make([]*model.Task, 0, len(roots))
+
+	var visit func(s *model.Task)
+	visit = func(s *model.Task) {
+		if visited[s.Name] {
+			return
+		}
+		visited[s.Name] = true
+		for _, dep := range s.DependsOn {
+			if d, ok := byName[dep]; ok {
+				visit(d)
+			}
+		}
+		ordered = append(ordered, s)
+	}
+	for _, s := range roots {
+		visit(s)
+	}
+	return ordered
 }
 
 func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManager runtime.TaskManager) uikit.PendingRunsSummary {
@@ -288,6 +386,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 			MaxConcurrent: j.MaxConcurrent,
 			OnOverlap:     j.OnOverlap,
 			Instances:     j.Instances,
+			DependsOn:     j.DependsOn,
 			Compose:       j.Compose,
 		})
 	}

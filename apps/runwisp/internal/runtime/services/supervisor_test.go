@@ -12,7 +12,7 @@ import (
 )
 
 func newSupervisorForTest(name string, instances int) *Supervisor {
-	return NewSupervisor(name, instances, 0, false)
+	return NewSupervisor(name, instances, 0, false, nil)
 }
 
 // recordExitBackoff drives RecordExit for the restart-backoff tests: each exit
@@ -117,19 +117,19 @@ func TestRecordExitIncrementsCounter(t *testing.T) {
 }
 
 func TestNewSupervisorStartStopped(t *testing.T) {
-	s := NewSupervisor("svc", 2, 0, true)
+	s := NewSupervisor("svc", 2, 0, true, nil)
 	assert.True(t, s.IsStopped(), "startStopped=true should boot in the stopped state")
 
 	s.MarkRunning()
 	assert.False(t, s.IsStopped(), "MarkRunning clears the stopped flag")
 
-	running := NewSupervisor("svc", 2, 0, false)
+	running := NewSupervisor("svc", 2, 0, false, nil)
 	assert.False(t, running.IsStopped(), "startStopped=false boots running")
 }
 
 func TestRecordExitResetsCounterAfterHealthyRun(t *testing.T) {
 	const threshold = 50 * time.Millisecond
-	s := NewSupervisor("svc", 1, threshold, false)
+	s := NewSupervisor("svc", 1, threshold, false, nil)
 
 	// Build up some attempts via two quick exits.
 	for i := 0; i < 2; i++ {
@@ -150,7 +150,7 @@ func TestRecordExitResetsCounterAfterHealthyRun(t *testing.T) {
 
 func TestSetHealthyAfterTakesEffect(t *testing.T) {
 	const lowThreshold = 5 * time.Millisecond
-	s := NewSupervisor("svc", 1, time.Hour, false)
+	s := NewSupervisor("svc", 1, time.Hour, false, nil)
 
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
@@ -185,6 +185,62 @@ func TestMissingSlots(t *testing.T) {
 
 	missing := s.MissingSlots()
 	assert.Equal(t, []int{0, 2, 3}, missing)
+}
+
+func TestIsHealthyTracksLiveUptime(t *testing.T) {
+	const threshold = 30 * time.Second
+	now := time.Unix(0, 0)
+	clock := func() time.Time { return now }
+	s := NewSupervisor("svc", 2, threshold, false, clock)
+
+	require.False(t, s.IsHealthy(), "no live instance yet")
+
+	_, err := s.Reserve(nil)
+	require.NoError(t, err)
+	s.MarkLive(0)
+	assert.False(t, s.IsHealthy(), "just-live instance has not reached the threshold")
+
+	now = now.Add(threshold - time.Second)
+	assert.False(t, s.IsHealthy(), "still one second short of healthy_after")
+
+	now = now.Add(time.Second)
+	assert.True(t, s.IsHealthy(), "instance has now been live >= healthy_after")
+
+	// The exit drops the slot from liveSince, so health falls back to false.
+	s.RecordExit(0, threshold, 0, false)
+	assert.False(t, s.IsHealthy(), "no live instance after exit")
+}
+
+func TestIsHealthyFalseWhenStopped(t *testing.T) {
+	const threshold = 10 * time.Second
+	now := time.Unix(0, 0)
+	clock := func() time.Time { return now }
+	s := NewSupervisor("svc", 1, threshold, false, clock)
+
+	_, err := s.Reserve(nil)
+	require.NoError(t, err)
+	s.MarkLive(0)
+	now = now.Add(threshold)
+	require.True(t, s.IsHealthy())
+
+	s.MarkStopped()
+	assert.False(t, s.IsHealthy(), "an operator-stopped service is never healthy")
+}
+
+func TestIsHealthyIgnoresFatalSlot(t *testing.T) {
+	const threshold = 10 * time.Second
+	now := time.Unix(0, 0)
+	clock := func() time.Time { return now }
+	s := NewSupervisor("svc", 2, threshold, false, clock)
+
+	// Slot 0 trips FATAL via a fast failure; slot 1 stays a fresh reservation.
+	_, err := s.Reserve(nil)
+	require.NoError(t, err)
+	s.MarkLive(0)
+	_, fatal := s.RecordExit(0, time.Millisecond, 0, true)
+	require.True(t, fatal)
+
+	assert.False(t, s.IsHealthy(), "a FATAL slot does not make the service healthy")
 }
 
 func TestSetInstancesAffectsSubsequentReserve(t *testing.T) {

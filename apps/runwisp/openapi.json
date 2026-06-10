@@ -1204,6 +1204,15 @@
           "cron": {
             "type": "string"
           },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "group": {
             "type": "string"
           },
@@ -1282,6 +1291,16 @@
           },
           "cron": {
             "type": "string"
+          },
+          "depends_on": {
+            "description": "For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "description": {
             "type": "string"

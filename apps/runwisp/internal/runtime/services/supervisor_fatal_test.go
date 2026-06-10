@@ -15,7 +15,7 @@ import (
 // every brief exit counts as a fast failure and the FATAL mechanic is the only
 // thing under test.
 func newFatalSupervisor(instances int) *Supervisor {
-	return NewSupervisor("svc", instances, time.Hour, false)
+	return NewSupervisor("svc", instances, time.Hour, false, nil)
 }
 
 func TestRecordExitTripsFatalAfterStartRetries(t *testing.T) {
