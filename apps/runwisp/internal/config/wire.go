@@ -191,6 +191,11 @@ type taskWire struct {
 	// can distinguish "unset" from "explicitly zero".
 	Instances *int `toml:"instances,omitempty"`
 
+	// DependsOn is rejected on [tasks.*] (services-only). A slice needs no
+	// pointer trick — nil already means "unset". It exists here only so the
+	// key decodes into a friendly rejection instead of an undecoded-key error.
+	DependsOn []string `toml:"depends_on,omitempty"`
+
 	RetryAttempts int    `toml:"retry_attempts,omitempty"`
 	RetryDelay    string `toml:"retry_delay,omitempty"`
 	RetryBackoff  string `toml:"retry_backoff,omitempty"`
@@ -238,6 +243,8 @@ type serviceWire struct {
 	// Autostart is a pointer so an omitted key (nil → default true) is
 	// distinguishable from an explicit `autostart = false`.
 	Autostart *bool `toml:"autostart,omitempty"`
+
+	DependsOn []string `toml:"depends_on,omitempty"`
 }
 
 func (w *serviceWire) toTask(name string) (model.Task, error) {
@@ -265,6 +272,7 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	task.StartRetries = w.StartRetries
 	task.Priority = w.Priority
 	task.Autostart = autostart
+	task.DependsOn = w.DependsOn
 	return task, nil
 }
 

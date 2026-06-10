@@ -139,7 +139,7 @@ func TestStartServiceInstances_SkipsNonServiceTasks(t *testing.T) {
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 
 	// Should not panic, even though there are no service tasks.
-	startServiceInstances(tm, tasksMap)
+	startServiceInstances(t.Context(), tm, tasksMap)
 }
 
 func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
@@ -202,4 +202,31 @@ func TestOrderServicesForStart_DropsNonServices(t *testing.T) {
 		"job": {Name: "job", Kind: model.KindTask},
 	}
 	assert.Empty(t, orderServicesForStart(tasksMap))
+}
+
+// TestOrderServicesForStop_DependentsFirst checks the reverse-dependency
+// teardown order over a diamond (a→b, a→c, b→d, c→d): every service must appear
+// before each service it depends on.
+func TestOrderServicesForStop_DependentsFirst(t *testing.T) {
+	tasksMap := map[string]*model.Task{
+		"a": {Name: "a", Kind: model.KindService, DependsOn: []string{"b", "c"}},
+		"b": {Name: "b", Kind: model.KindService, DependsOn: []string{"d"}},
+		"c": {Name: "c", Kind: model.KindService, DependsOn: []string{"d"}},
+		"d": {Name: "d", Kind: model.KindService},
+		"x": {Name: "x", Kind: model.KindTask}, // non-service is dropped
+	}
+
+	got := orderServicesForStop(tasksMap)
+	pos := make(map[string]int, len(got))
+	for i, task := range got {
+		assert.Equal(t, model.KindService, task.Kind, "non-services must be dropped")
+		pos[task.Name] = i
+	}
+	require.Len(t, got, 4)
+
+	// A service is stopped before any service it depends on.
+	assert.Less(t, pos["a"], pos["b"], "a depends on b → a stops first")
+	assert.Less(t, pos["a"], pos["c"], "a depends on c → a stops first")
+	assert.Less(t, pos["b"], pos["d"], "b depends on d → b stops first")
+	assert.Less(t, pos["c"], pos["d"], "c depends on d → c stops first")
 }

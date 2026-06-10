@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`depends_on` on `[services.*]`.** Gate a service's boot on other services becoming healthy, with reverse-order teardown on shutdown — boot ordering only, never a workflow DAG, and it never deadlocks (a dependency that won't come up starts the dependent anyway with a warning). See [Boot order with `depends_on`](https://docs.runwisp.com/configuration/services/#boot-order-with-depends_on).
 - **Missed-run alerts.** A scheduled run skipped because the daemon was down is detected on restart, recorded as a browsable `missed` run, and raised as a failure-level alert — silence it per task or globally with `notify_on_missed`. See [Missed ticks](https://docs.runwisp.com/concepts/scheduling/#missed-ticks-catchup).
 - **`working_dir` and `shell` on `[tasks.*]` / `[services.*]`.** Run a command in a specific directory and under a chosen interpreter (e.g. `/bin/bash`); `shell` also takes a `[defaults]` value. See [Working directory & shell](https://docs.runwisp.com/configuration/tasks/#working-directory--shell).
 - **`exit_codes` on `[tasks.*]` / `[services.*]` / `[defaults]`.** List the exit codes treated as success (default `[0]`) so a non-zero "nothing to do" code doesn't trip retries or alerts. See [Retries & timeout](https://docs.runwisp.com/configuration/tasks/#retries--timeout).

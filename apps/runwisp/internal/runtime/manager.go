@@ -29,6 +29,11 @@ const (
 	errTaskNotServiceFmt   = "task %s is not a service"
 )
 
+// serviceHealthPollInterval is how often WaitServiceHealthy re-checks a
+// dependency's readiness. Readiness is time-based, so a tick this short keeps
+// boot gating responsive without busy-looping.
+const serviceHealthPollInterval = 250 * time.Millisecond
+
 // errShuttingDown is returned by TriggerRunWithOptions once Shutdown has begun.
 // Refusing to start a run under the lock is what makes shutdown race-free: a
 // run that slips past Shutdown's single cancel pass would never have its
@@ -134,7 +139,7 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 
 	if task.Kind.IsService() {
 		if ts.supervisor == nil {
-			ts.supervisor = services.NewSupervisor(task.Name, task.Instances, task.HealthyAfter, !task.Autostart)
+			ts.supervisor = services.NewSupervisor(task.Name, task.Instances, task.HealthyAfter, !task.Autostart, m.clock)
 		} else {
 			ts.supervisor.SetInstances(task.Instances)
 			ts.supervisor.SetHealthyAfter(task.HealthyAfter)
@@ -490,6 +495,70 @@ func (m *defaultTaskManager) StopService(taskName string) error {
 	return nil
 }
 
+// ServiceHealthy reports whether a service currently has at least one instance
+// that has been running for at least its healthy_after. Non-services and
+// unknown tasks report false. This is the live readiness signal consumed by
+// depends_on boot gating.
+func (m *defaultTaskManager) ServiceHealthy(taskName string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	ts, ok := m.tasks[taskName]
+	if !ok || ts.supervisor == nil {
+		return false
+	}
+	return ts.supervisor.IsHealthy()
+}
+
+// WaitServiceHealthy blocks until the named service is healthy, the context is
+// cancelled, or the service can no longer reach healthy without operator
+// intervention (operator-stopped, or every live slot gone and a FATAL one
+// left). It returns nil only on healthy; every other exit is an error so the
+// caller can decide whether to proceed anyway. It polls rather than waiting on
+// a condition variable: readiness is time-based (healthy_after), so a slot
+// already running crosses the threshold with no state change to signal on.
+func (m *defaultTaskManager) WaitServiceHealthy(ctx context.Context, taskName string) error {
+	if m.ServiceHealthy(taskName) {
+		return nil
+	}
+	ticker := time.NewTicker(serviceHealthPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if m.ServiceHealthy(taskName) {
+				return nil
+			}
+			if giveUp, err := m.serviceUnrecoverable(taskName); giveUp {
+				return err
+			}
+		}
+	}
+}
+
+// serviceUnrecoverable reports whether a service has no path back to healthy
+// without operator action, so WaitServiceHealthy can stop polling early instead
+// of burning the whole bounded window on a service that will never come up.
+func (m *defaultTaskManager) serviceUnrecoverable(taskName string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	ts, ok := m.tasks[taskName]
+	if !ok {
+		return true, fmt.Errorf(errTaskNotFoundFmt, taskName)
+	}
+	if ts.supervisor == nil {
+		return true, fmt.Errorf(errTaskNotServiceFmt, taskName)
+	}
+	if ts.supervisor.IsStopped() {
+		return true, fmt.Errorf("service %s is stopped", taskName)
+	}
+	if ts.supervisor.IsAnyFatal() && ts.supervisor.LiveCount() == 0 {
+		return true, fmt.Errorf("service %s has no live instances and a slot is FATAL", taskName)
+	}
+	return false, nil
+}
+
 // startRun registers the run and spawns the execution goroutine. Assumes
 // m.mu is held.
 func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
@@ -524,6 +593,16 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run *model.Run, active *ActiveRun) {
 	run.Status = model.PhaseRunning
 	run.StartAt = &active.StartedAt
+	if task.Kind.IsService() {
+		// Stamp the live-readiness clock the moment the instance is running so
+		// dependents gating on this service measure uptime from here. Under the
+		// manager lock since the supervisor is not internally synchronised.
+		m.mu.Lock()
+		if ts := m.tasks[task.Name]; ts != nil && ts.supervisor != nil {
+			ts.supervisor.MarkLive(run.InstanceIndex)
+		}
+		m.mu.Unlock()
+	}
 	m.persistence.PersistExisting(run)
 	m.publishRun(events.EventRunStarted, run)
 

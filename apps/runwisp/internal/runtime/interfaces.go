@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"context"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -47,6 +48,14 @@ type TaskManager interface {
 	GetActiveRuns(taskName string) []*ActiveRun
 	LoadPendingRuns(runs []model.Run) PendingRunsResult
 	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
+	// ServiceHealthy reports whether a service has at least one instance that
+	// has been running for at least its healthy_after — the live readiness
+	// signal depends_on boot gating waits on. Non-services report false.
+	ServiceHealthy(taskName string) bool
+	// WaitServiceHealthy blocks until ServiceHealthy is true, the context is
+	// cancelled, or the service can no longer reach healthy without operator
+	// intervention. It returns nil only when the service became healthy.
+	WaitServiceHealthy(ctx context.Context, taskName string) error
 	// Shutdown cancels every active run and waits for all goroutines to
 	// drain. Equivalent to ShutdownWithDeadline(0).
 	Shutdown()
