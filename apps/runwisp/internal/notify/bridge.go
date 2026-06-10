@@ -47,9 +47,27 @@ func MapEvent(e events.Event) *Event {
 				"killed_task":    d.KilledTask,
 			},
 		}
+	case events.ServiceFatalEvent:
+		return &Event{
+			Kind:      KindServiceFatal,
+			Severity:  SevError,
+			Timestamp: e.Timestamp,
+			TaskName:  d.TaskName,
+			Reason:    serviceFatalReason(d),
+			Extra: map[string]any{
+				"instance_index": d.InstanceIndex,
+				"attempts":       d.Attempts,
+				"last_exit_code": d.LastExitCode,
+			},
+		}
 	default:
 		return nil
 	}
+}
+
+func serviceFatalReason(d events.ServiceFatalEvent) string {
+	return fmt.Sprintf("instance %d failed to start %d times in a row (last exit %d); supervisor gave up",
+		d.InstanceIndex, d.Attempts, d.LastExitCode)
 }
 
 func diskPressureReason(d events.LogDiskPressureEvent) string {
@@ -93,6 +111,13 @@ func mapRunEventType(t events.EventType, run *model.Run) (Kind, Severity, bool) 
 			// PolicySkip is the policy doing its job, not a failure: never
 			// route it through the notification system. Operators who care
 			// about chronic skips read the run history.
+			return "", "", false
+		case model.ReasonStartFailed:
+			// The give-up is announced by the dedicated EventServiceFatal →
+			// KindServiceFatal notification. Suppress the run row here so the
+			// FATAL transition rings the bell exactly once instead of pairing a
+			// generic "failed" with the specific "gave up". The run row still
+			// persists and streams over SSE for the history view.
 			return "", "", false
 		default:
 			return KindRunFailed, SevError, true

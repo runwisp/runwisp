@@ -17,7 +17,7 @@ import {
 } from "./overview-format";
 
 function makeTask(overrides: Partial<Task> = {}): TaskWithId {
-    return { id: "task-id-1", name: "my-task", api_trigger: false, ...overrides };
+    return { id: "task-id-1", name: "my-task", api_trigger: false, autostart: true, ...overrides };
 }
 
 function makeRun(overrides: Partial<Run> = {}): Run {
@@ -191,5 +191,9 @@ describe("formatTriggeredByLabel", () => {
 
     it("returns 'Service' for 'service'", () => {
         expect(formatTriggeredByLabel("service")).toBe("Service");
+    });
+
+    it("returns 'Startup' for 'startup'", () => {
+        expect(formatTriggeredByLabel("startup")).toBe("Startup");
     });
 });

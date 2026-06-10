@@ -177,7 +177,8 @@
           "queue_full",
           "dst_skipped",
           "daemon_stopped",
-          "missed"
+          "missed",
+          "start_failed"
         ],
         "type": "string"
       },
@@ -832,7 +833,8 @@
               "cron",
               "api",
               "cloud",
-              "service"
+              "service",
+              "startup"
             ],
             "type": "string"
           }
@@ -1261,10 +1263,9 @@
           "api_trigger": {
             "type": "boolean"
           },
-          "backoff_reset_after": {
-            "description": "For services: an instance that runs at least this long resets the restart counter, in nanoseconds",
-            "format": "int64",
-            "type": "integer"
+          "autostart": {
+            "description": "For services: whether instances start at boot. False boots in the stopped state until started via API/UI.",
+            "type": "boolean"
           },
           "catch_up": {
             "description": "What to do when cron ticks are missed during downtime",
@@ -1296,13 +1297,29 @@
             "description": "Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env.",
             "type": "string"
           },
+          "exit_codes": {
+            "description": "Process exit codes treated as success; defaults to [0]",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "graceful_stop": {
-            "description": "Window between SIGTERM and SIGKILL when a run is stopped, in nanoseconds",
+            "description": "Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds",
             "format": "int64",
             "type": "integer"
           },
           "group": {
             "type": "string"
+          },
+          "healthy_after": {
+            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds",
+            "format": "int64",
+            "type": "integer"
           },
           "instances": {
             "description": "For services: number of always-running instances",
@@ -1366,6 +1383,11 @@
             ],
             "type": "string"
           },
+          "priority": {
+            "description": "For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.",
+            "format": "int64",
+            "type": "integer"
+          },
           "queue_max": {
             "description": "Maximum runs that can wait when on_overlap = queue",
             "format": "int64",
@@ -1412,8 +1434,34 @@
             "format": "int64",
             "type": "integer"
           },
+          "run_on_start": {
+            "description": "For tasks: fire once at daemon startup, in addition to any cron schedule",
+            "type": "boolean"
+          },
           "secrets_file": {
             "description": "Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon.",
+            "type": "string"
+          },
+          "shell": {
+            "description": "Absolute path to the shell interpreter for run scripts; defaults to /bin/sh",
+            "type": "string"
+          },
+          "start_retries": {
+            "description": "For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting",
+            "format": "int64",
+            "type": "integer"
+          },
+          "stop_signal": {
+            "description": "Signal sent to stop a run before SIGKILL; defaults to SIGTERM",
+            "enum": [
+              "SIGTERM",
+              "SIGINT",
+              "SIGQUIT",
+              "SIGHUP",
+              "SIGKILL",
+              "SIGUSR1",
+              "SIGUSR2"
+            ],
             "type": "string"
           },
           "timeout": {
@@ -1424,11 +1472,24 @@
           "timezone": {
             "description": "IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone",
             "type": "string"
+          },
+          "umask": {
+            "description": "Octal file-creation mask applied to the run's process; empty inherits the daemon's umask",
+            "type": "string"
+          },
+          "user": {
+            "description": "Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root.",
+            "type": "string"
+          },
+          "working_dir": {
+            "description": "Resolved working directory for the task's process; empty inherits the daemon's working directory",
+            "type": "string"
           }
         },
         "required": [
           "name",
-          "api_trigger"
+          "api_trigger",
+          "autostart"
         ],
         "type": "object"
       },

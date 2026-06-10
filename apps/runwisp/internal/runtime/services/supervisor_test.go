@@ -12,7 +12,16 @@ import (
 )
 
 func newSupervisorForTest(name string, instances int) *Supervisor {
-	return NewSupervisor(name, instances, 0)
+	return NewSupervisor(name, instances, 0, false)
+}
+
+// recordExitBackoff drives RecordExit for the restart-backoff tests: each exit
+// is a failure, but start_retries is set high enough that FATAL never trips, so
+// the assertions isolate the backoff counter. Returns the next restart attempt.
+func recordExitBackoff(s *Supervisor, idx int, runDuration time.Duration) int {
+	const neverFatal = 1_000_000
+	next, _ := s.RecordExit(idx, runDuration, neverFatal, true)
+	return next
 }
 
 func TestNewSupervisorClampsInstances(t *testing.T) {
@@ -96,26 +105,37 @@ func TestRecordExitIncrementsCounter(t *testing.T) {
 	require.NoError(t, err)
 
 	// Quick exits well under the reset threshold accumulate.
-	first := s.RecordExit(0, time.Millisecond)
+	first := recordExitBackoff(s, 0, time.Millisecond)
 	assert.Equal(t, 0, first, "first exit returns the pre-increment value")
 
 	_, err = s.Reserve(nil)
 	require.NoError(t, err)
-	second := s.RecordExit(0, time.Millisecond)
+	second := recordExitBackoff(s, 0, time.Millisecond)
 	assert.Equal(t, 1, second, "second exit returns 1")
 
 	assert.Equal(t, 2, s.Attempts(0))
 }
 
+func TestNewSupervisorStartStopped(t *testing.T) {
+	s := NewSupervisor("svc", 2, 0, true)
+	assert.True(t, s.IsStopped(), "startStopped=true should boot in the stopped state")
+
+	s.MarkRunning()
+	assert.False(t, s.IsStopped(), "MarkRunning clears the stopped flag")
+
+	running := NewSupervisor("svc", 2, 0, false)
+	assert.False(t, running.IsStopped(), "startStopped=false boots running")
+}
+
 func TestRecordExitResetsCounterAfterHealthyRun(t *testing.T) {
 	const threshold = 50 * time.Millisecond
-	s := NewSupervisor("svc", 1, threshold)
+	s := NewSupervisor("svc", 1, threshold, false)
 
 	// Build up some attempts via two quick exits.
 	for i := 0; i < 2; i++ {
 		_, err := s.Reserve(nil)
 		require.NoError(t, err)
-		s.RecordExit(0, time.Millisecond)
+		recordExitBackoff(s, 0, time.Millisecond)
 	}
 	require.Equal(t, 2, s.Attempts(0))
 
@@ -123,27 +143,27 @@ func TestRecordExitResetsCounterAfterHealthyRun(t *testing.T) {
 	// before reading it: the next restart should start over.
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
-	next := s.RecordExit(0, threshold)
+	next := recordExitBackoff(s, 0, threshold)
 	assert.Equal(t, 0, next, "post-healthy exit returns 0 (base delay)")
 	assert.Equal(t, 1, s.Attempts(0))
 }
 
-func TestSetBackoffResetTakesEffect(t *testing.T) {
+func TestSetHealthyAfterTakesEffect(t *testing.T) {
 	const lowThreshold = 5 * time.Millisecond
-	s := NewSupervisor("svc", 1, time.Hour)
+	s := NewSupervisor("svc", 1, time.Hour, false)
 
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
 	// Brief run under the original 1-hour threshold accumulates.
-	first := s.RecordExit(0, lowThreshold)
+	first := recordExitBackoff(s, 0, lowThreshold)
 	assert.Equal(t, 0, first)
 	require.Equal(t, 1, s.Attempts(0))
 
 	// Lowering the threshold means the same brief run now counts as healthy.
-	s.SetBackoffReset(lowThreshold)
+	s.SetHealthyAfter(lowThreshold)
 	_, err = s.Reserve(nil)
 	require.NoError(t, err)
-	next := s.RecordExit(0, lowThreshold)
+	next := recordExitBackoff(s, 0, lowThreshold)
 	assert.Equal(t, 0, next, "lowered threshold should make this exit count as healthy")
 }
 
@@ -153,7 +173,7 @@ func TestRecordExitReleasesSlot(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, s.IsLive(0))
 
-	s.RecordExit(0, time.Millisecond)
+	recordExitBackoff(s, 0, time.Millisecond)
 	assert.False(t, s.IsLive(0))
 }
 

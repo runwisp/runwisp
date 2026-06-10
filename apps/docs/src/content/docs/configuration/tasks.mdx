@@ -51,10 +51,26 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 | `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset. |
 | `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                                                           |
 | `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero and negatives are rejected at config load.                                                                                                 |
+| `run_on_start`      | `false`    | Fire the task once every time the daemon starts, on top of any `cron`. The `@reboot` equivalent.                                                                                                                |
 
 Leave `cron` off and the task becomes **manual-only** — it runs only
 when something explicitly triggers it. That's a perfectly good pattern
 for one-shot deploy hooks and the like.
+
+`run_on_start = true` fires the task once at daemon boot — the cron
+equivalent of `@reboot`. It's orthogonal to `cron`: a task can fire at
+boot _and_ on a schedule, or at boot only (leave `cron` off). The boot
+firing is independent of `catch_up` and isn't counted against
+`max_catch_up_runs`; it's tagged `triggered_by = startup` in the run
+history so you can tell it apart from a scheduled or manual run. Use it to
+warm a cache, reconcile state, or send a "daemon is up" heartbeat.
+
+```toml
+[tasks.warm-cache]
+run_on_start = true
+run          = "/usr/local/bin/warm-cache"
+# no cron — fires once per boot and never again
+```
 
 [How scheduling works](/concepts/scheduling/) has the full cron grammar,
 the DST behaviour, and the catchup details.
@@ -121,7 +137,19 @@ policy is the right call.
 | `retry_backoff`  | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                                              |
 | `restart`        | `"never"`                   | What to do after a run ends: `"never"` or `"on_failure"`. `"always"` is rejected on tasks — use [`[services.*]`](/configuration/services/) for an always-on process. |
 | `timeout`        | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                                                  |
-| `graceful_stop`  | `"5s"`                      | SIGTERM grace period before SIGKILL on `timeout`, `on_overlap = "terminate"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill.                           |
+| `graceful_stop`  | `"5s"`                      | Grace period after the stop signal, before SIGKILL — on `timeout`, `on_overlap = "terminate"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill.          |
+| `stop_signal`    | `"SIGTERM"`                 | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2` (the `SIG` prefix is optional).                  |
+| `exit_codes`     | `[0]`                       | Exit codes treated as **success**. Anything else is `failed` (which then drives retries, `restart`, and failure notifications). Codes are `0`–`255`.                 |
+
+By default only exit `0` is success. Some tools signal "nothing to do"
+or "changes pending" with a non-zero code that isn't really a failure —
+list those alongside `0` so they don't trip retries or alerts:
+
+```toml
+[tasks.rsync-mirror]
+run        = "rsync --quiet ... ; exit $?"
+exit_codes = [0, 24]   # 24 = "some files vanished during transfer", harmless here
+```
 
 Retries only fire on `failed` / `timeout` / `crashed`. A manual stop or
 an `on_overlap = "terminate"` ends the chain — see the
@@ -129,10 +157,13 @@ an `on_overlap = "terminate"` ends the chain — see the
 full table of backoff formulas lives on the
 [Retries & timeouts](/concepts/retries/) page.
 
-`graceful_stop` covers the whole process group: a `SIGTERM` goes to the
-task's process group, every descendant gets the same grace window, and
-anything still alive afterward is `SIGKILL`'d together. If your
-`graceful_stop` is longer than
+`graceful_stop` covers the whole process group: the stop signal goes to
+the task's process group, every descendant gets the same grace window,
+and anything still alive afterward is `SIGKILL`'d together. The signal is
+`SIGTERM` unless you set `stop_signal` — pick `SIGINT` for tools that
+treat it as "Ctrl-C", or `SIGKILL` to skip the grace window entirely (the
+daemon then kills immediately, the same as `graceful_stop = "0s"`). If
+your `graceful_stop` is longer than
 [`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout),
 the daemon warns you at boot and names the task — because at shutdown
 it'll SIGKILL the straggler before the per-task window is even up.
@@ -216,6 +247,48 @@ keys have to match `^[A-Za-z_][A-Za-z0-9_]*$`, values can't contain NUL
 bytes, no single value can top 32 KiB, and the env + secrets entries for
 a task can't add up to more than 256.
 
+## Working directory & shell
+
+| Key           | Default    | What it does                                                                                                                                      |
+| ------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `working_dir` | _(daemon)_ | Directory the process runs in. Relative paths resolve against the `runwisp.toml` directory; `~` expands. Must exist and be a folder.              |
+| `shell`       | `/bin/sh`  | Interpreter for `run`. Must be an **absolute** path (e.g. `/bin/bash`). The invocation is always `<shell> -c <script>`.                           |
+| `umask`       | _(daemon)_ | Octal file-creation mask applied to the run, e.g. `"027"`. 3–4 octal digits, up to `0777`. Empty inherits the daemon's umask.                     |
+| `user`        | _(daemon)_ | Run as another OS user, in `user` or `user:group` form (name or numeric id). Empty keeps the daemon's identity. Needs the daemon running as root. |
+
+By default a `run` script executes under `/bin/sh` in whatever directory
+the daemon was started from. Set `working_dir` when a script expects to be
+somewhere specific, and `shell` when you want bash-isms (arrays, `[[ ]]`,
+brace expansion). Both are validated at config load — a missing directory
+or a relative shell path fails loudly up front. `shell` can also be set
+once in [`[defaults]`](/configuration/defaults/) for every task.
+
+`umask` controls the permission bits stripped from files the run creates —
+`"027"` makes new files `rw-r-----` and directories `rwxr-x---`, handy when
+a job writes logs or dumps that shouldn't be world-readable. It's applied
+inside the run's own process (so concurrent runs never affect each other or
+the daemon), and it's digit-only, so there's nothing to escape. Spell it
+with at least three digits — `"22"` is rejected because it's ambiguous;
+write `"022"`.
+
+`user` drops the run to another account. Write a name or a numeric id, and
+add `:group` (also name or id) when you want a specific group too — the same
+`user:group` shorthand `chown` and Docker Compose use. The daemon resolves
+the account when the run starts (not at config load, so the user can be
+created after the daemon boots), seeds `HOME`/`USER`/`LOGNAME` for it, and
+applies the user's supplementary groups. Dropping privileges only works when
+the **daemon itself runs as root** — if it doesn't, the run fails loudly with
+a start error rather than quietly staying as the daemon's user.
+
+```toml
+[tasks.report]
+working_dir = "/srv/app"
+shell       = "/bin/bash"
+umask       = "027"
+user        = "reporter:reporter"
+run         = "./bin/generate-report --out reports/"
+```
+
 ## Compose-backed tasks
 
 A cron-driven `[tasks.<name>]` can also point at a compose service for
@@ -263,6 +336,7 @@ bite you later:
 
 - `restart = "always"` — that's what `[services.*]` is for.
 - `instances = N` — a services-only field.
+- `priority` / `autostart` — services-only; they govern boot start order and whether a service comes up at boot.
 - A task name that's also taken by a `[services.*]` — they share one namespace.
 - An empty or missing `run`.
 

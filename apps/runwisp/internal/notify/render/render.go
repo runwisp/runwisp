@@ -198,6 +198,8 @@ func statusEmoji(k notify.Kind) string {
 		return "💥"
 	case notify.KindRunMissed:
 		return "🕳️"
+	case notify.KindServiceFatal:
+		return "🛑"
 	case notify.KindRunStarted:
 		return "▶️"
 	case notify.KindLogDiskPressure:
@@ -225,6 +227,8 @@ func statusVerb(k notify.Kind) string {
 		return "crashed"
 	case notify.KindRunMissed:
 		return "missed a scheduled run"
+	case notify.KindServiceFatal:
+		return "gave up restarting"
 	case notify.KindRunStarted:
 		return "started"
 	case notify.KindLogDiskPressure:
@@ -299,6 +303,8 @@ func triggerPhrase(t model.TriggeredBy) string {
 		return "Triggered from the control plane"
 	case model.TriggeredByService:
 		return "Service auto-started"
+	case model.TriggeredByStartup:
+		return "Ran on daemon startup"
 	default:
 		if t == "" {
 			return "Run"

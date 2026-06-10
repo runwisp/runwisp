@@ -41,6 +41,12 @@ type taskServiceWireCore struct {
 
 	Timeout      string `toml:"timeout,omitempty"`
 	GracefulStop string `toml:"graceful_stop,omitempty"`
+	StopSignal   string `toml:"stop_signal,omitempty"`
+
+	WorkingDir string `toml:"working_dir,omitempty"`
+	Shell      string `toml:"shell,omitempty"`
+	Umask      string `toml:"umask,omitempty"`
+	User       string `toml:"user,omitempty"`
 
 	LogMaxSize string `toml:"log_max_size,omitempty"`
 	LogOnFull  string `toml:"log_on_full,omitempty"`
@@ -67,6 +73,8 @@ type taskServiceWireCore struct {
 	// NotifyOnMissed is a *bool so "unset" (nil → inherit [defaults], then
 	// default true) is distinct from an explicit `notify_on_missed = false`.
 	NotifyOnMissed *bool `toml:"notify_on_missed,omitempty"`
+
+	ExitCodes []int `toml:"exit_codes,omitempty"`
 }
 
 // toTaskCore parses the shared wire fields into a model.Task skeleton with
@@ -98,6 +106,10 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid log_max_size for task %q: %w", name, err)
 	}
+	umask, err := parseUmask(w.Umask)
+	if err != nil {
+		return model.Task{}, fmt.Errorf("invalid umask for %s %q: %w", label, name, err)
+	}
 	task := model.Task{
 		Name:           name,
 		Kind:           kind,
@@ -107,10 +119,16 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		OnOverlap:      w.OnOverlap,
 		Timeout:        timeout,
 		GracefulStop:   gracefulStop,
+		StopSignal:     w.StopSignal,
 		LogMaxSize:     logMaxSize,
 		LogOnFull:      w.LogOnFull,
 		KeepRuns:       keepRuns,
 		KeepFor:        keepFor,
+		WorkingDir:     w.WorkingDir,
+		Shell:          w.Shell,
+		Umask:          umask,
+		RunUser:        w.User,
+		ExitCodes:      w.ExitCodes,
 		Run:            w.Run,
 		Env:            w.Env,
 		EnvFile:        w.EnvFile,
@@ -119,6 +137,19 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		NotifyOnMissed: w.NotifyOnMissed,
 	}
 	if w.ComposeFile != "" {
+		// Host-process-only keys have no meaning when the run is a `docker
+		// compose` invocation — reject them here, where the raw explicit value
+		// is still visible (applyInheritedDefaults later fills shell = /bin/sh,
+		// erasing the explicit-vs-default signal).
+		if w.Shell != "" {
+			return model.Task{}, fmt.Errorf("shell is not supported on compose-backed %s %q; it applies only to host shell runs", label, name)
+		}
+		if w.Umask != "" {
+			return model.Task{}, fmt.Errorf("umask is not supported on compose-backed %s %q; it applies only to host shell runs", label, name)
+		}
+		if w.User != "" {
+			return model.Task{}, fmt.Errorf("user is not supported on compose-backed %s %q; the container runtime owns the container's user", label, name)
+		}
 		svc := w.ComposeService
 		if svc == "" {
 			svc = name
@@ -150,6 +181,7 @@ type taskWire struct {
 	Timezone       string                `toml:"timezone,omitempty"`
 	CatchUp        model.MissedRunPolicy `toml:"catch_up,omitempty"`
 	MaxCatchUpRuns int                   `toml:"max_catch_up_runs,omitempty"`
+	RunOnStart     bool                  `toml:"run_on_start,omitempty"`
 
 	Restart       model.RestartPolicy `toml:"restart,omitempty"`
 	MaxConcurrent int                 `toml:"max_concurrent,omitempty"`
@@ -177,6 +209,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	task.Timezone = w.Timezone
 	task.CatchUp = w.CatchUp
 	task.MaxCatchUpRuns = w.MaxCatchUpRuns
+	task.RunOnStart = w.RunOnStart
 	task.Restart = w.Restart
 	task.MaxConcurrent = w.MaxConcurrent
 	task.QueueMax = w.QueueMax
@@ -195,9 +228,16 @@ type serviceWire struct {
 
 	Instances int `toml:"instances,omitempty"`
 
-	RestartDelay      string `toml:"restart_delay,omitempty"`
-	RestartBackoff    string `toml:"restart_backoff,omitempty"`
-	BackoffResetAfter string `toml:"backoff_reset_after,omitempty"`
+	RestartDelay   string `toml:"restart_delay,omitempty"`
+	RestartBackoff string `toml:"restart_backoff,omitempty"`
+	HealthyAfter   string `toml:"healthy_after,omitempty"`
+
+	StartRetries int `toml:"start_retries,omitempty"`
+
+	Priority int `toml:"priority,omitempty"`
+	// Autostart is a pointer so an omitted key (nil → default true) is
+	// distinguishable from an explicit `autostart = false`.
+	Autostart *bool `toml:"autostart,omitempty"`
 }
 
 func (w *serviceWire) toTask(name string) (model.Task, error) {
@@ -209,26 +249,38 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid restart_delay for task %q: %w", name, err)
 	}
-	backoffReset, err := parseDuration(w.BackoffResetAfter)
+	healthyAfter, err := parseDuration(w.HealthyAfter)
 	if err != nil {
-		return model.Task{}, fmt.Errorf("invalid backoff_reset_after for task %q: %w", name, err)
+		return model.Task{}, fmt.Errorf("invalid healthy_after for task %q: %w", name, err)
+	}
+	autostart := true
+	if w.Autostart != nil {
+		autostart = *w.Autostart
 	}
 	task.Restart = model.RestartAlways
 	task.Instances = w.Instances
 	task.RestartDelay = restartDelay
 	task.RestartBackoff = w.RestartBackoff
-	task.BackoffResetAfter = backoffReset
+	task.HealthyAfter = healthyAfter
+	task.StartRetries = w.StartRetries
+	task.Priority = w.Priority
+	task.Autostart = autostart
 	return task, nil
 }
 
 // defaultsWire mirrors [defaults] before parsing.
 type defaultsWire struct {
-	Timeout           string `toml:"timeout,omitempty"`
-	LogMaxSize        string `toml:"log_max_size,omitempty"`
-	LogOnFull         string `toml:"log_on_full,omitempty"`
-	KeepRuns          int    `toml:"keep_runs,omitempty"`
-	KeepFor           string `toml:"keep_for,omitempty"`
-	BackoffResetAfter string `toml:"backoff_reset_after,omitempty"`
+	Timeout      string `toml:"timeout,omitempty"`
+	Shell        string `toml:"shell,omitempty"`
+	StopSignal   string `toml:"stop_signal,omitempty"`
+	LogMaxSize   string `toml:"log_max_size,omitempty"`
+	LogOnFull    string `toml:"log_on_full,omitempty"`
+	KeepRuns     int    `toml:"keep_runs,omitempty"`
+	KeepFor      string `toml:"keep_for,omitempty"`
+	HealthyAfter string `toml:"healthy_after,omitempty"`
+	StartRetries int    `toml:"start_retries,omitempty"`
+
+	ExitCodes []int `toml:"exit_codes,omitempty"`
 
 	// NotifyOnMissed sets the global default for missed-run alerts; a task may
 	// still override it. *bool so an unset key leaves the built-in true.
@@ -257,22 +309,26 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.log_max_size: %w", err)
 	}
-	backoffReset, err := parseDuration(w.BackoffResetAfter)
+	healthyAfter, err := parseDuration(w.HealthyAfter)
 	if err != nil {
-		return Defaults{}, fmt.Errorf("invalid defaults.backoff_reset_after: %w", err)
+		return Defaults{}, fmt.Errorf("invalid defaults.healthy_after: %w", err)
 	}
 	return Defaults{
-		Timeout:           timeout,
-		LogMaxSize:        logMaxSize,
-		LogOnFull:         w.LogOnFull,
-		KeepRuns:          keepRuns,
-		KeepFor:           keepFor,
-		BackoffResetAfter: backoffReset,
-		NotifyOnMissed:    w.NotifyOnMissed,
-		Env:               w.Env,
-		EnvFile:           w.EnvFile,
-		Secrets:           w.Secrets,
-		SecretsFile:       w.SecretsFile,
+		Timeout:        timeout,
+		Shell:          w.Shell,
+		StopSignal:     w.StopSignal,
+		ExitCodes:      w.ExitCodes,
+		LogMaxSize:     logMaxSize,
+		LogOnFull:      w.LogOnFull,
+		KeepRuns:       keepRuns,
+		KeepFor:        keepFor,
+		HealthyAfter:   healthyAfter,
+		StartRetries:   w.StartRetries,
+		NotifyOnMissed: w.NotifyOnMissed,
+		Env:            w.Env,
+		EnvFile:        w.EnvFile,
+		Secrets:        w.Secrets,
+		SecretsFile:    w.SecretsFile,
 	}, nil
 }
 

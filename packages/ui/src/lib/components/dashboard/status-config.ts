@@ -12,6 +12,7 @@ import {
     SkipForward,
     FileExclamationPoint,
     CalendarX,
+    OctagonX,
 } from "@lucide/svelte";
 import type { Component } from "svelte";
 import { displayStatus, type RunStatus, type Run } from "@runwisp/common";
@@ -140,6 +141,16 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         badge: "bg-danger-soft text-danger-soft-text",
         description:
             "A scheduled run never happened because the daemon was down. Detected and recorded on restart.",
+    },
+    start_failed: {
+        icon: OctagonX,
+        color: "text-danger-surface",
+        bg: "bg-danger-soft",
+        border: "border-danger-soft",
+        dot: "bg-danger-surface",
+        badge: "bg-danger-soft text-danger-soft-text",
+        description:
+            "The service kept failing to stay up for healthy_after; after start_retries the supervisor gave up (FATAL) and stopped restarting it.",
     },
     pending: {
         icon: Clock,

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: "[defaults]"
-description: Fallback values inherited by every task and service unless overridden — timeout, log_max_size, log_on_full, keep_runs, keep_for, backoff_reset_after.
+description: Fallback values inherited by every task and service unless overridden — timeout, log_max_size, log_on_full, keep_runs, keep_for, healthy_after.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -26,22 +26,26 @@ log_max_size        = "100mb"
 log_on_full         = "drop_old"
 keep_runs           = 50
 keep_for            = "30d"
-backoff_reset_after = "60s"
+healthy_after       = "60s"
 ```
 
-| Key                   | Default      | What it does                                                                                                                                                                                |
-| --------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `timeout`             | _(unset)_    | Default per-attempt wall-clock cap. Unset means no timeout. **Tasks only** — services don't have a per-attempt timeout.                                                                     |
-| `log_max_size`        | `100MB`      | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                                                                                                |
-| `log_on_full`         | `"drop_old"` | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                                                                               |
-| `keep_runs`           | _(unset)_    | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected.                                                                         |
-| `keep_for`            | _(unset)_    | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected.                                                                                         |
-| `backoff_reset_after` | `"60s"`      | A service instance that stays up at least this long resets its restart counter. **Services only.** Per-service override supported.                                                          |
-| `env`                 | _(none)_     | Inline KEY/VALUE map merged into every task and service. Task-level entries override on key collision. See [`[tasks.*]` Environment & secrets](/configuration/tasks/#environment--secrets). |
-| `env_file`            | _(none)_     | Path to a dotenv file merged beneath `[defaults.env]`. Values are visible in the API/UI, like the rest of `env`.                                                                            |
-| `secrets`             | _(none)_     | Inline KEY/VALUE map merged into every task and service, but never shown in the API/UI. Task-level `secrets` override on key collision.                                                     |
-| `secrets_file`        | _(none)_     | Path to a dotenv file merged beneath `[defaults.secrets]`. Only the path is visible; keys and values never leave the daemon.                                                                |
-| `notify_on_missed`    | `true`       | Whether [missed scheduled runs](/concepts/scheduling/#alerting-on-missed-runs) alert. Set `false` here to silence the alert daemon-wide; a per-task `notify_on_missed` still wins.          |
+| Key                | Default      | What it does                                                                                                                                                                                                         |
+| ------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`          | _(unset)_    | Default per-attempt wall-clock cap. Unset means no timeout. **Tasks only** — services don't have a per-attempt timeout.                                                                                              |
+| `shell`            | `/bin/sh`    | Default interpreter for `run` scripts. Absolute path. Per-task `shell` overrides. See [`[tasks.*]` Working directory & shell](/configuration/tasks/#working-directory--shell).                                       |
+| `stop_signal`      | `"SIGTERM"`  | Default signal that opens the stop ladder before SIGKILL. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2`. Per-task / per-service `stop_signal` overrides.                          |
+| `exit_codes`       | `[0]`        | Default set of exit codes treated as success. Per-task / per-service `exit_codes` overrides. Codes are `0`–`255`.                                                                                                    |
+| `log_max_size`     | `100MB`      | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                                                                                                                         |
+| `log_on_full`      | `"drop_old"` | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                                                                                                        |
+| `keep_runs`        | _(unset)_    | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected.                                                                                                  |
+| `keep_for`         | _(unset)_    | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected.                                                                                                                  |
+| `healthy_after`    | `"60s"`      | Uptime a service instance must reach to count as healthy — resets its restart counter **and** clears the failed-start streak; faster failures count toward `start_retries`. **Services only.** Per-service override. |
+| `start_retries`    | `3`          | Consecutive failed starts a service instance tolerates before going [FATAL](/configuration/services/#when-a-service-cant-start-fatal) and stopping. **Services only.** Per-service override.                         |
+| `env`              | _(none)_     | Inline KEY/VALUE map merged into every task and service. Task-level entries override on key collision. See [`[tasks.*]` Environment & secrets](/configuration/tasks/#environment--secrets).                          |
+| `env_file`         | _(none)_     | Path to a dotenv file merged beneath `[defaults.env]`. Values are visible in the API/UI, like the rest of `env`.                                                                                                     |
+| `secrets`          | _(none)_     | Inline KEY/VALUE map merged into every task and service, but never shown in the API/UI. Task-level `secrets` override on key collision.                                                                              |
+| `secrets_file`     | _(none)_     | Path to a dotenv file merged beneath `[defaults.secrets]`. Only the path is visible; keys and values never leave the daemon.                                                                                         |
+| `notify_on_missed` | `true`       | Whether [missed scheduled runs](/concepts/scheduling/#alerting-on-missed-runs) alert. Set `false` here to silence the alert daemon-wide; a per-task `notify_on_missed` still wins.                                   |
 
 Some things you _can't_ default: `cron`, `on_overlap`, the `retry_*`
 keys, `max_concurrent`, `queue_max`, `graceful_stop`. Those are too tied
@@ -78,7 +82,7 @@ timeout             = "30m"     # most tasks should die after 30 minutes
 log_max_size        = "50mb"    # smaller default, override for noisy tasks
 keep_runs           = 100
 keep_for            = "30d"
-backoff_reset_after = "30s"     # services that stabilise in 30s reset
+healthy_after       = "30s"     # services that stabilise in 30s count as healthy
 
 [tasks.heartbeat]
 cron = "*/5 * * * *"
@@ -93,7 +97,7 @@ graceful_stop = "20s"     # this one needs more than the built-in 5s
 run           = "/usr/local/bin/export"
 
 [services.flaky-worker]
-backoff_reset_after = "2m"     # overrides default — this one takes longer to stabilise
+healthy_after       = "2m"     # overrides default — this one takes longer to stabilise
 run                 = "/usr/local/bin/worker"
 ```
 

@@ -66,22 +66,46 @@ type Task struct {
 	APITrigger     bool            `toml:"api_trigger,omitempty"        json:"api_trigger"`
 	CatchUp        MissedRunPolicy `toml:"catch_up,omitempty"           json:"catch_up,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
 	MaxCatchUpRuns int             `toml:"max_catch_up_runs,omitempty"  json:"max_catch_up_runs,omitempty" doc:"Cap on catch-up runs triggered when catch_up = all"`
+	// RunOnStart fires the task once at daemon boot, independent of cron and
+	// catch-up. The @reboot equivalent. Task-only — services already start every
+	// instance at boot.
+	RunOnStart bool `toml:"-" json:"run_on_start,omitempty" doc:"For tasks: fire once at daemon startup, in addition to any cron schedule"`
 
 	Timeout       time.Duration     `toml:"-"                       json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
-	GracefulStop  time.Duration     `toml:"-"                       json:"graceful_stop,omitempty" doc:"Window between SIGTERM and SIGKILL when a run is stopped, in nanoseconds"`
+	GracefulStop  time.Duration     `toml:"-"                       json:"graceful_stop,omitempty" doc:"Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds"`
+	StopSignal    string            `toml:"-"                       json:"stop_signal,omitempty" enum:"SIGTERM,SIGINT,SIGQUIT,SIGHUP,SIGKILL,SIGUSR1,SIGUSR2" doc:"Signal sent to stop a run before SIGKILL; defaults to SIGTERM"`
 	Restart       RestartPolicy     `toml:"restart,omitempty"       json:"restart,omitempty" enum:"never,always,on_failure" doc:"Whether and when a task is restarted after completion"`
 	MaxConcurrent int               `toml:"max_concurrent,omitempty" json:"max_concurrent,omitempty" doc:"Maximum overlapping runs allowed for this task"`
 	QueueMax      int               `toml:"queue_max,omitempty"     json:"queue_max,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
 	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"on_overlap,omitempty" enum:"queue,skip,terminate" doc:"How overlapping runs are handled"`
 
-	Instances         int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
-	RestartDelay      time.Duration `toml:"-"                        json:"restart_delay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
-	RestartBackoff    string        `toml:"restart_backoff,omitempty" json:"restart_backoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
-	BackoffResetAfter time.Duration `toml:"-"                        json:"backoff_reset_after,omitempty" doc:"For services: an instance that runs at least this long resets the restart counter, in nanoseconds"`
+	Instances      int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
+	RestartDelay   time.Duration `toml:"-"                        json:"restart_delay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
+	RestartBackoff string        `toml:"restart_backoff,omitempty" json:"restart_backoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
+	// HealthyAfter is the uptime an instance must reach to count as healthy.
+	// Reaching it both resets the restart-backoff counter and clears the
+	// failed-start streak; fast failures below it accrue toward StartRetries.
+	// Service-only.
+	HealthyAfter time.Duration `toml:"-" json:"healthy_after,omitempty" doc:"For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds"`
+	// StartRetries is the number of consecutive fast failures the supervisor
+	// tolerates before marking an instance FATAL and giving up. Service-only.
+	StartRetries int `toml:"-" json:"start_retries,omitempty" doc:"For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting"`
+	// Priority orders service start at boot only (lower starts first; ties break
+	// on name). It is not a dependency or readiness gate. Service-only.
+	Priority int `toml:"-" json:"priority,omitempty" doc:"For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency."`
+	// Autostart controls whether a service comes up at boot. When false the
+	// service boots in the stopped state and must be started via the API/UI.
+	// Desired state is not persisted — it is re-derived from TOML each boot.
+	Autostart bool `toml:"-" json:"autostart" doc:"For services: whether instances start at boot. False boots in the stopped state until started via API/UI."`
 
 	RetryAttempts int           `toml:"retry_attempts,omitempty" json:"retry_attempts,omitempty"`
 	RetryDelay    time.Duration `toml:"-"                        json:"retry_delay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
 	RetryBackoff  string        `toml:"retry_backoff,omitempty"  json:"retry_backoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive retries"`
+
+	// ExitCodes lists the process exit codes treated as success. Defaults to
+	// [0]. Any code not in the list ends the run as failed (which then drives
+	// restart=on_failure, retry, and notifications).
+	ExitCodes []int `toml:"-" json:"exit_codes,omitempty" doc:"Process exit codes treated as success; defaults to [0]"`
 
 	LogMaxSize int64  `toml:"-"                     json:"log_max_size,omitempty" doc:"Per-run log size cap in bytes"`
 	LogOnFull  string `toml:"log_on_full,omitempty" json:"log_on_full,omitempty" enum:"drop_new,drop_old,kill_task" doc:"What to do when log output exceeds log_max_size"`
@@ -100,6 +124,22 @@ type Task struct {
 	ExecutionDef ExecutionDef    `toml:"-"             json:"-"`
 	Compose      *TaskComposeRef `toml:"-"             json:"compose,omitempty" doc:"Provenance metadata for tasks imported from a docker compose file"`
 
+	// WorkingDir is resolved to an absolute path at config load (relative to
+	// the runwisp.toml directory). Empty inherits the daemon's working dir.
+	WorkingDir string `toml:"-" json:"working_dir,omitempty" doc:"Resolved working directory for the task's process; empty inherits the daemon's working directory"`
+	// Shell is the interpreter for `run` scripts, defaulting to /bin/sh. Must
+	// be an absolute path. The invocation is always `<shell> -c <script>`.
+	Shell string `toml:"-" json:"shell,omitempty" doc:"Absolute path to the shell interpreter for run scripts; defaults to /bin/sh"`
+	// Umask is the canonical 4-digit octal file-creation mask applied in the
+	// child before the run script executes. Empty inherits the daemon's umask.
+	Umask string `toml:"-" json:"umask,omitempty" doc:"Octal file-creation mask applied to the run's process; empty inherits the daemon's umask"`
+	// RunUser drops the run's process to another OS user (and optionally group)
+	// in `user` or `user:group` form; names or numeric ids are accepted on either
+	// side. Empty runs as the daemon's own uid/gid. Switching users needs the
+	// daemon running as root. Resolved at run time, not config load — the target
+	// account may not exist when the config is validated. Rejected on
+	// compose-backed tasks (the container runtime owns the container's user).
+	RunUser string `toml:"-" json:"user,omitempty" doc:"Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root."`
 	// NotifyOnMissed gates whether a missed-run alert (run.missed) reaches the
 	// failure subscribers for this task. A nil pointer means "not configured"
 	// during loading; ApplyDefaults resolves it to a concrete value (default
@@ -123,7 +163,7 @@ func (t *Task) ResolvedExecutionDef() ExecutionDef {
 	if strings.TrimSpace(t.Run) == "" {
 		return nil
 	}
-	return &ShellExecution{Script: t.Run}
+	return &ShellExecution{Script: t.Run, Shell: t.Shell, WorkingDir: t.WorkingDir, Umask: t.Umask}
 }
 
 // ConcurrencyPolicy controls how overlapping runs are handled.

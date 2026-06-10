@@ -7,12 +7,42 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	str2duration "github.com/xhit/go-str2duration/v2"
 )
+
+// umaskPattern requires 3 or 4 octal digits. Demanding at least three digits
+// rejects the decimal/octal-ambiguous "22" (did the operator mean octal 022 or
+// 0026?) — spelling it out as "022" removes all doubt.
+var umaskPattern = regexp.MustCompile(`^[0-7]{3,4}$`)
+
+// parseUmask validates an octal umask string and returns its canonical 4-digit
+// form (e.g. "022" → "0022"). Empty means "omitted, inherit the daemon's
+// umask". The value must be 3-4 octal digits and no greater than 0777 — the
+// leading digit of a 4-digit form is the (umask-irrelevant) special-bits slot
+// and must be 0. The result is digit-only, so it is safe to interpolate into
+// the child shell wrapper.
+func parseUmask(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	if !umaskPattern.MatchString(trimmed) {
+		return "", fmt.Errorf("%q must be 3 or 4 octal digits (e.g. \"022\" or \"0027\")", raw)
+	}
+	v, err := strconv.ParseInt(trimmed, 8, 32)
+	if err != nil {
+		return "", fmt.Errorf("%q is not a valid octal value", raw)
+	}
+	if v > 0o777 {
+		return "", fmt.Errorf("%q exceeds the maximum umask 0777", raw)
+	}
+	return fmt.Sprintf("%04o", v), nil
+}
 
 // parseDuration parses a human-readable duration accepted by time.ParseDuration
 // (e.g. "30m", "2h45m"). An empty string yields zero with no error. Parse

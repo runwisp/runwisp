@@ -128,10 +128,10 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 
 	if task.Kind.IsService() {
 		if ts.supervisor == nil {
-			ts.supervisor = services.NewSupervisor(task.Name, task.Instances, task.BackoffResetAfter)
+			ts.supervisor = services.NewSupervisor(task.Name, task.Instances, task.HealthyAfter, !task.Autostart)
 		} else {
 			ts.supervisor.SetInstances(task.Instances)
-			ts.supervisor.SetBackoffReset(task.BackoffResetAfter)
+			ts.supervisor.SetHealthyAfter(task.HealthyAfter)
 		}
 	}
 
@@ -414,9 +414,10 @@ func (m *defaultTaskManager) StartServiceInstances(taskName string, triggeredBy 
 }
 
 // RestartServiceInstances brings a service back to its desired instance count.
-// If the service was operator-stopped, the stop flag is cleared and missing
-// slots are spawned. If the service is already running, every active instance
-// is cancelled and the exit handler refills the freed slots via the supervisor.
+// If the service was operator-stopped or had FATAL instances, the stop/FATAL
+// flags are cleared and the empty slots are spawned with a fresh start-retry
+// budget. If the service is already running, every active instance is cancelled
+// and the exit handler refills the freed slots via the supervisor.
 func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	m.mu.Lock()
 	ts, exists := m.tasks[taskName]
@@ -428,14 +429,17 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 		m.mu.Unlock()
 		return fmt.Errorf(errTaskNotServiceFmt, taskName)
 	}
+	// Capture FATAL state before MarkRunning clears it: a FATAL service has no
+	// active runs in its dead slots, so they only come back if we spawn them.
 	wasStopped := ts.supervisor.IsStopped()
+	wasFatal := ts.supervisor.IsAnyFatal()
 	ts.supervisor.MarkRunning()
 	for _, ar := range ts.active {
 		ar.Cancel()
 	}
 	m.mu.Unlock()
 
-	if wasStopped {
+	if wasStopped || wasFatal {
 		return m.StartServiceInstances(taskName, model.TriggeredByAPI)
 	}
 	return nil
@@ -498,6 +502,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	result := m.executor.Execute(ctx, task, run)
 
 	endTime := m.clock()
+	runDuration := endTime.Sub(active.StartedAt)
 	outcome := runOutcome{
 		endReason: result.EndReason(),
 		eventType: events.EventRunCompleted,
@@ -508,17 +513,16 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	if m.deadlineExceeded.Load() {
 		// Daemon shutdown ran past its bound — the run was force-killed by
 		// the shutdown coordinator. Override the per-task outcome so the
-		// audit row reflects the reason the operator cares about.
+		// audit row reflects the reason the operator cares about. A
+		// daemon-stopped exit is not a failure, so it never counts toward the
+		// FATAL start-retry budget below.
 		outcome.endReason = model.ReasonDaemonStopped
 		outcome.eventType = events.EventRunFailed
 	}
-	run.End(outcome.endReason, result.ExitCode, endTime)
 
-	m.persistence.PersistExisting(run)
-	m.publishRun(outcome.eventType, run)
-
-	runDuration := endTime.Sub(active.StartedAt)
-
+	// Supervisor bookkeeping happens before run.End so a FATAL transition can
+	// rewrite the end reason: RecordExit needs runDuration, and whether the
+	// instance has exhausted its start-retry budget decides the audit row.
 	m.mu.Lock()
 	ts := m.tasks[task.Name]
 	for i, ar := range ts.active {
@@ -527,14 +531,39 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 			break
 		}
 	}
-	var nextRestartAttempt int
+	var (
+		nextRestartAttempt int
+		serviceFatal       bool
+		fatalAttempts      int
+	)
 	if task.Kind.IsService() {
-		nextRestartAttempt = ts.supervisor.RecordExit(run.InstanceIndex, runDuration)
+		wasFailure := retry.IsFailureReason(outcome.endReason)
+		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
+			run.InstanceIndex, runDuration, task.StartRetries, wasFailure)
+		if serviceFatal {
+			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
+		}
 	}
 	if ts.cond != nil {
 		ts.cond.Signal()
 	}
 	m.mu.Unlock()
+
+	if serviceFatal {
+		outcome.endReason = model.ReasonStartFailed
+		outcome.eventType = events.EventRunFailed
+	}
+	run.End(outcome.endReason, result.ExitCode, endTime)
+
+	m.persistence.PersistExisting(run)
+	m.publishRun(outcome.eventType, run)
+
+	if serviceFatal {
+		m.publishServiceFatal(task.Name, run.InstanceIndex, fatalAttempts, result.ExitCode)
+		slog.Error("Service instance gave up: marked FATAL",
+			"task", task.Name, "instance", run.InstanceIndex,
+			"attempts", fatalAttempts, "exit_code", result.ExitCode)
+	}
 
 	// Retry logic: only for non-cloud runs (cloud retries are handled by the
 	// control plane).
@@ -543,6 +572,10 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	}
 	copiedRun := run.Copy()
 	switch {
+	case serviceFatal:
+		// FATAL: stop flapping. The start_failed run row and the service.fatal
+		// event are the durable, loud record; an operator restart re-attempts
+		// with a fresh start-retry budget.
 	case retry.ShouldRestart(task, run):
 		m.wg.Add(1)
 		go func() {
@@ -585,6 +618,22 @@ func (m *defaultTaskManager) publishRunErr(eventType events.EventType, run *mode
 	m.eventBus.Publish(eventType, events.RunEvent{
 		Run:   run.Copy(),
 		Error: errMsg,
+	})
+}
+
+// publishServiceFatal announces that a service instance exhausted its
+// start-retry budget and the supervisor gave up restarting it. notify maps
+// this to a SevError in-app bell + global notifiers so the give-up is loud,
+// not silent.
+func (m *defaultTaskManager) publishServiceFatal(taskName string, instanceIndex, attempts, lastExitCode int) {
+	if m.eventBus == nil {
+		return
+	}
+	m.eventBus.Publish(events.EventServiceFatal, events.ServiceFatalEvent{
+		TaskName:      taskName,
+		InstanceIndex: instanceIndex,
+		Attempts:      attempts,
+		LastExitCode:  lastExitCode,
 	})
 }
 

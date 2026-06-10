@@ -78,10 +78,16 @@ instances = 3                              # three identical worker instances
 Override sub-tables accept any subset of the
 [`[services.*]`](/configuration/services/) keys:
 `restart`, `env`, `env_file`, `secrets`, `secrets_file`,
-`notify_on_failure`, `notify_on_success`, `graceful_stop`, `keep_runs`,
-`keep_for`, `instances`, `timeout`, `description`, `log_max_size`,
-`log_on_full`, `api_trigger`, `on_overlap`, `restart_delay`,
-`restart_backoff`, `backoff_reset_after`.
+`notify_on_failure`, `notify_on_success`, `graceful_stop`, `stop_signal`,
+`exit_codes`, `keep_runs`, `keep_for`, `instances`, `timeout`,
+`description`, `log_max_size`, `log_on_full`, `api_trigger`, `on_overlap`,
+`restart_delay`, `restart_backoff`, `healthy_after`, `start_retries`,
+`priority`, `autostart`.
+
+The host-process knobs — `shell`, `umask`, and `user` — are deliberately
+**not** accepted here: they configure a host shell run, while a compose
+service runs inside a container the runtime owns. (`working_dir` comes from
+the `[compose.<alias>]` block, not the per-service sub-table.)
 
 One sharp edge: a compose service that happens to share a name with one
 of the scalar keys above (`file`, `include`, `exclude`, `mode`, `group`,

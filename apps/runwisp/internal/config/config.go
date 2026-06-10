@@ -34,6 +34,9 @@ func Load(path string) (*Config, error) {
 	if err := resolveEnvLayers(cfg, baseDir); err != nil {
 		return nil, err
 	}
+	if err := resolveWorkingDirs(cfg, baseDir); err != nil {
+		return nil, err
+	}
 	ApplyDefaults(cfg)
 	if err := Validate(cfg); err != nil {
 		return nil, err
@@ -98,6 +101,31 @@ func resolveComposePaths(cfg *Config, baseDir string) error {
 		ce.File = resolved
 		if ce.WorkingDir == "" {
 			ce.WorkingDir = filepath.Dir(resolved)
+		}
+	}
+	return nil
+}
+
+// resolveWorkingDirs absolutizes the working_dir set on each task/service.
+// Relative paths resolve against baseDir (the runwisp.toml directory), matching
+// env_file / compose_file. For compose-backed tasks an explicit working_dir
+// overrides the compose file's directory default chosen in resolveComposePaths.
+// Existence is checked at run time, not load — like shell, host paths are
+// resolved against the daemon's namespace, which may differ from the one
+// `runwisp validate` runs in.
+func resolveWorkingDirs(cfg *Config, baseDir string) error {
+	for i := range cfg.Tasks {
+		task := &cfg.Tasks[i]
+		if task.WorkingDir == "" {
+			continue
+		}
+		resolved, err := resolvePath(baseDir, task.WorkingDir)
+		if err != nil {
+			return fmt.Errorf("working_dir for task %q: %w", task.Name, err)
+		}
+		task.WorkingDir = resolved
+		if ce, ok := task.ExecutionDef.(*model.ComposeExecution); ok {
+			ce.WorkingDir = resolved
 		}
 	}
 	return nil
@@ -260,8 +288,20 @@ func Validate(cfg *Config) error {
 	if err := validateKeepFor("defaults.keep_for", cfg.Defaults.KeepFor); err != nil {
 		return err
 	}
-	if cfg.Defaults.BackoffResetAfter < 0 {
-		return fmt.Errorf("invalid defaults.backoff_reset_after: must be a positive duration")
+	if cfg.Defaults.HealthyAfter < 0 {
+		return fmt.Errorf("invalid defaults.healthy_after: must be a positive duration")
+	}
+	if cfg.Defaults.StartRetries < 0 {
+		return fmt.Errorf("invalid defaults.start_retries: must be non-negative")
+	}
+	if cfg.Defaults.StartRetries > StartRetriesCap {
+		return fmt.Errorf("invalid defaults.start_retries: %d exceeds the cap of %d", cfg.Defaults.StartRetries, StartRetriesCap)
+	}
+	if err := validateExitCodes("defaults.exit_codes", cfg.Defaults.ExitCodes); err != nil {
+		return err
+	}
+	if err := validateStopSignal("defaults.stop_signal", cfg.Defaults.StopSignal); err != nil {
+		return err
 	}
 	if cfg.Daemon.ShutdownTimeout < 0 {
 		return fmt.Errorf("invalid daemon.shutdown_timeout: must be a positive duration")
@@ -287,6 +327,15 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 		return err
 	}
 	if err := validateTaskCommand(task); err != nil {
+		return err
+	}
+	if err := validateTaskShell(task); err != nil {
+		return err
+	}
+	if err := validateTaskStopSignal(task); err != nil {
+		return err
+	}
+	if err := validateTaskRunUser(task); err != nil {
 		return err
 	}
 	if err := validateTaskLimits(task); err != nil {
@@ -320,7 +369,7 @@ func validateTaskCron(task *model.Task) error {
 	}
 	if err := cronspec.Validate(task.Cron, task.Timezone); err != nil {
 		return fmt.Errorf(
-			"invalid cron for task %q: %q — %v; expected 5 fields \"min hour day month weekday\" (e.g. \"0 3 * * *\" = 03:00 daily), a descriptor like @hourly/@daily/@weekly, or @every 1h30m",
+			"invalid cron for task %q: %q — %v; expected 5 fields \"min hour day month weekday\" (e.g. \"0 3 * * *\" = 03:00 daily), a descriptor like @hourly/@daily/@weekly, or @every for fixed intervals including sub-minute cadence (e.g. @every 30s, @every 1h30m). Six-field/seconds cron is not supported — use @every 30s",
 			task.Name, task.Cron, err)
 	}
 	return nil
@@ -397,6 +446,56 @@ func validateTaskCommand(task *model.Task) error {
 	return nil
 }
 
+// validateTaskShell requires the resolved shell to be an absolute path. A
+// relative name would be resolved against the daemon's PATH at run time, which
+// is non-deterministic. Like working_dir, host paths and interpreters are
+// resolved at run time, not load, so `validate` stays namespace-independent —
+// the shell is never stat-ed here because the daemon may run in a different
+// mount namespace than `runwisp validate`.
+func validateTaskShell(task *model.Task) error {
+	if task.Shell == "" {
+		// Post-defaults this is always /bin/sh; the executor also falls back to
+		// /bin/sh on empty, so an unset shell is valid.
+		return nil
+	}
+	if strings.ContainsRune(task.Shell, 0) {
+		return fmt.Errorf("invalid shell for task %s: contains a NUL byte", task.Name)
+	}
+	if !filepath.IsAbs(task.Shell) {
+		return fmt.Errorf("invalid shell for task %s: %q must be an absolute path (e.g. /bin/bash)", task.Name, task.Shell)
+	}
+	return nil
+}
+
+// validateTaskStopSignal rejects a stop_signal outside the curated allowlist.
+// An empty value is accepted — the executor falls back to SIGTERM, matching the
+// post-defaults resolution. Accepts both "TERM" and "SIGTERM" spellings.
+func validateTaskStopSignal(task *model.Task) error {
+	return validateStopSignal(fmt.Sprintf("stop_signal for task %s", task.Name), task.StopSignal)
+}
+
+// validateStopSignal is the shared check for per-task and defaults.stop_signal.
+func validateStopSignal(scope, signal string) error {
+	if signal == "" {
+		return nil
+	}
+	if _, ok := model.NormalizeSignalName(signal); !ok {
+		return fmt.Errorf("invalid %s: %q (must be one of %s)", scope, signal, strings.Join(model.StopSignals, ", "))
+	}
+	return nil
+}
+
+// validateTaskRunUser checks the shape of the run-as `user` spec. Only the
+// `user` / `user:group` form is validated here — resolving the name to a uid/gid
+// is deferred to run time (the account may not exist when the config is loaded,
+// and reload is restart-only).
+func validateTaskRunUser(task *model.Task) error {
+	if _, _, err := model.ParseRunUserSpec(task.RunUser); err != nil {
+		return fmt.Errorf("invalid user for task %s: %w", task.Name, err)
+	}
+	return nil
+}
+
 func validateTaskLimits(task *model.Task) error {
 	if task.MaxConcurrent < 0 {
 		return fmt.Errorf("invalid max_concurrent for task %s: must be a positive integer", task.Name)
@@ -421,6 +520,28 @@ func validateTaskLimits(task *model.Task) error {
 	}
 	if task.MaxCatchUpRuns < 0 {
 		return fmt.Errorf("invalid max_catch_up_runs for task %s: must be a positive integer", task.Name)
+	}
+	return validateExitCodes(fmt.Sprintf("exit_codes for task %s", task.Name), task.ExitCodes)
+}
+
+// validateExitCodes enforces the shape of the success-exit-code list. A nil
+// slice means "unset" (defaults fill it); an explicit empty list is rejected
+// because it would make even exit 0 a failure. Codes must be in the POSIX
+// range 0-255 and the list is capped.
+func validateExitCodes(scope string, codes []int) error {
+	if codes == nil {
+		return nil
+	}
+	if len(codes) == 0 {
+		return fmt.Errorf("invalid %s: list at least one exit code, or omit the key to default to [0]", scope)
+	}
+	if len(codes) > ExitCodesCap {
+		return fmt.Errorf("invalid %s: %d entries exceeds the cap of %d", scope, len(codes), ExitCodesCap)
+	}
+	for _, c := range codes {
+		if c < 0 || c > 255 {
+			return fmt.Errorf("invalid %s: %d is out of range (exit codes are 0-255)", scope, c)
+		}
 	}
 	return nil
 }
@@ -470,8 +591,14 @@ func validateServiceTask(task *model.Task) error {
 		task.RestartBackoff, validRestartBackoff, true); err != nil {
 		return err
 	}
-	if task.BackoffResetAfter < 0 {
-		return fmt.Errorf("invalid backoff_reset_after for service %s: must be a positive duration", task.Name)
+	if task.HealthyAfter < 0 {
+		return fmt.Errorf("invalid healthy_after for service %s: must be a positive duration", task.Name)
+	}
+	if task.StartRetries < 0 {
+		return fmt.Errorf("invalid start_retries for service %s: must be non-negative", task.Name)
+	}
+	if task.StartRetries > StartRetriesCap {
+		return fmt.Errorf("invalid start_retries for service %s: %d exceeds the cap of %d", task.Name, task.StartRetries, StartRetriesCap)
 	}
 	return nil
 }
@@ -559,6 +686,12 @@ const (
 	QueueMaxCap      = 10000
 	KeepRunsCap      = 1_000_000
 	RetryAttemptsCap = 100
+	// ExitCodesCap bounds the success-exit-code list. POSIX exit codes are
+	// 0-255, so a list longer than this is almost certainly a mistake.
+	ExitCodesCap = 256
+	// StartRetriesCap bounds start_retries. A service that fast-fails this many
+	// times in a row is broken; allowing more just delays the FATAL signal.
+	StartRetriesCap = 100
 
 	// EnvMaxEntries caps the combined size of a task's inline env and
 	// env_file-derived secret env. Generous enough for any realistic dotenv
@@ -572,11 +705,24 @@ const (
 
 // Built-in defaults applied by ApplyDefaults when a field is omitted entirely.
 const (
-	DefaultMaxCatchUpRuns    = 100
-	DefaultQueueMax          = 100
-	DefaultGracefulStop      = 5 * time.Second
-	DefaultDaemonShutdown    = 10 * time.Second
-	DefaultBackoffResetAfter = 60 * time.Second
+	DefaultMaxCatchUpRuns = 100
+	DefaultQueueMax       = 100
+	DefaultGracefulStop   = 5 * time.Second
+	DefaultDaemonShutdown = 10 * time.Second
+	DefaultHealthyAfter   = 60 * time.Second
+	// DefaultStartRetries is the number of consecutive fast failures a service
+	// instance may accrue before the supervisor marks it FATAL and stops
+	// restarting it. Applied when neither the service nor [defaults] sets
+	// start_retries.
+	DefaultStartRetries = 3
+	// DefaultShell is the interpreter used for `run` scripts when neither the
+	// task nor [defaults] selects one. The invocation is always
+	// `<shell> -c <script>`.
+	DefaultShell = "/bin/sh"
+	// DefaultStopSignal is the first signal of the stop ladder when neither the
+	// task nor [defaults] selects one. The daemon always follows with SIGKILL
+	// after graceful_stop.
+	DefaultStopSignal = "SIGTERM"
 )
 
 // ApplyDefaults fills in zero-valued fields with sensible defaults. The
@@ -595,15 +741,15 @@ func ApplyDefaults(cfg *Config) {
 	if cfg.Daemon.ShutdownTimeout == 0 {
 		cfg.Daemon.ShutdownTimeout = DefaultDaemonShutdown
 	}
-	if cfg.Defaults.BackoffResetAfter == 0 {
-		cfg.Defaults.BackoffResetAfter = DefaultBackoffResetAfter
+	if cfg.Defaults.HealthyAfter == 0 {
+		cfg.Defaults.HealthyAfter = DefaultHealthyAfter
 	}
 
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
 
 		if task.Kind.IsService() {
-			applyServiceDefaults(task, cfg.Defaults.BackoffResetAfter)
+			applyServiceDefaults(task, cfg.Defaults)
 		} else {
 			applyTaskDefaults(task)
 		}
@@ -626,6 +772,32 @@ func ApplyDefaults(cfg *Config) {
 func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if task.Timeout == 0 {
 		task.Timeout = d.Timeout
+	}
+	if task.Shell == "" {
+		task.Shell = d.Shell
+	}
+	if task.Shell == "" {
+		task.Shell = DefaultShell
+	}
+	// stop_signal: inherit from defaults, then fall back to SIGTERM, then
+	// canonicalize to "SIGxxx" form. An unrecognised value survives unchanged so
+	// Validate can reject it with a clear error.
+	if task.StopSignal == "" {
+		task.StopSignal = d.StopSignal
+	}
+	if task.StopSignal == "" {
+		task.StopSignal = DefaultStopSignal
+	}
+	if canonical, ok := model.NormalizeSignalName(task.StopSignal); ok {
+		task.StopSignal = canonical
+	}
+	// exit_codes: nil means "unset" (inherit, then default to [0]); an explicit
+	// empty list survives so Validate can reject it.
+	if task.ExitCodes == nil {
+		task.ExitCodes = d.ExitCodes
+	}
+	if task.ExitCodes == nil {
+		task.ExitCodes = []int{0}
 	}
 	if task.LogMaxSize == 0 {
 		task.LogMaxSize = d.LogMaxSize
@@ -692,7 +864,7 @@ func applyTaskDefaults(task *model.Task) {
 	}
 }
 
-func applyServiceDefaults(task *model.Task, defaultBackoffReset time.Duration) {
+func applyServiceDefaults(task *model.Task, d Defaults) {
 	if task.Group == "" {
 		task.Group = "Services"
 	}
@@ -711,7 +883,15 @@ func applyServiceDefaults(task *model.Task, defaultBackoffReset time.Duration) {
 	if task.RestartBackoff == "" {
 		task.RestartBackoff = model.BackoffExponential
 	}
-	if task.BackoffResetAfter == 0 {
-		task.BackoffResetAfter = defaultBackoffReset
+	if task.HealthyAfter == 0 {
+		task.HealthyAfter = d.HealthyAfter
+	}
+	// start_retries: explicit on the service wins; else [defaults]; else the
+	// built-in default.
+	if task.StartRetries == 0 {
+		task.StartRetries = d.StartRetries
+	}
+	if task.StartRetries == 0 {
+		task.StartRetries = DefaultStartRetries
 	}
 }

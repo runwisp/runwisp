@@ -300,7 +300,7 @@ instances           = 2
 graceful_stop       = "15s"
 restart_delay       = "2s"
 restart_backoff     = "exponential"
-backoff_reset_after = "2m"
+healthy_after       = "2m"
 run = '''
 set -eu
 echo "[worker $$] starting"

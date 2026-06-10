@@ -23,6 +23,7 @@ const (
 	EventRunDeleted      EventType = "run.deleted"
 	EventLogLine         EventType = "log.line"
 	EventLogDiskPressure EventType = "log.disk_pressure"
+	EventServiceFatal    EventType = "service.fatal"
 )
 
 // AllEventTypes is the single source of truth for all known event types.
@@ -36,6 +37,7 @@ var AllEventTypes = []EventType{
 	EventRunDeleted,
 	EventLogLine,
 	EventLogDiskPressure,
+	EventServiceFatal,
 }
 
 // EventData is a sealed-union marker; the eventData() method exists only to constrain
@@ -56,6 +58,7 @@ func (RunEvent) eventData()             { /* sealed-type marker */ }
 func (RunDeletedEvent) eventData()      { /* sealed-type marker */ }
 func (LogLineEvent) eventData()         { /* sealed-type marker */ }
 func (LogDiskPressureEvent) eventData() { /* sealed-type marker */ }
+func (ServiceFatalEvent) eventData()    { /* sealed-type marker */ }
 
 // RunEvent tracks lifecycle updates for a run.
 //
@@ -76,6 +79,19 @@ type RunEvent struct {
 type RunDeletedEvent struct {
 	RunID    string `json:"run_id"`
 	TaskName string `json:"task_name"`
+}
+
+// ServiceFatalEvent fires when a service instance exhausts its start_retries
+// budget and the supervisor gives up restarting it. It carries enough context
+// to alert loudly (notify maps it to a SevError in-app bell + global
+// notifiers) without the subscriber needing to load the run row. Attempts is
+// the consecutive fast-failure count that tripped FATAL; LastExitCode is the
+// exit code of the final failed run.
+type ServiceFatalEvent struct {
+	TaskName      string `json:"task_name"`
+	InstanceIndex int    `json:"instance_index"`
+	Attempts      int    `json:"attempts"`
+	LastExitCode  int    `json:"last_exit_code"`
 }
 
 // LogDiskPressureEvent fires once per run when min_free_space crosses the

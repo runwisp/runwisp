@@ -180,3 +180,29 @@ func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
 	// Capabilities are populated from executor availability.
 	assert.Len(t, info.Capabilities, 5)
 }
+
+func TestOrderServicesForStart(t *testing.T) {
+	tasksMap := map[string]*model.Task{
+		"cron":  {Name: "cron", Kind: model.KindTask},
+		"beta":  {Name: "beta", Kind: model.KindService, Priority: 10},
+		"alpha": {Name: "alpha", Kind: model.KindService, Priority: 10},
+		"first": {Name: "first", Kind: model.KindService, Priority: -5},
+		"last":  {Name: "last", Kind: model.KindService, Priority: 100},
+	}
+
+	got := orderServicesForStart(tasksMap)
+
+	names := make([]string, len(got))
+	for i, task := range got {
+		names[i] = task.Name
+	}
+	// Ascending priority; equal priorities fall back to alphabetical name.
+	assert.Equal(t, []string{"first", "alpha", "beta", "last"}, names)
+}
+
+func TestOrderServicesForStart_DropsNonServices(t *testing.T) {
+	tasksMap := map[string]*model.Task{
+		"job": {Name: "job", Kind: model.KindTask},
+	}
+	assert.Empty(t, orderServicesForStart(tasksMap))
+}

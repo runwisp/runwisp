@@ -171,7 +171,7 @@ run = "exec ./bin/web"
 		assert.Equal(t, 1, s.Instances)
 		assert.Equal(t, time.Second, s.RestartDelay)
 		assert.Equal(t, model.BackoffExponential, s.RestartBackoff)
-		assert.Equal(t, DefaultBackoffResetAfter, s.BackoffResetAfter)
+		assert.Equal(t, DefaultHealthyAfter, s.HealthyAfter)
 		assert.True(t, s.APITrigger)
 	})
 
@@ -486,8 +486,8 @@ func TestApplyDefaults(t *testing.T) {
 	// Daemon shutdown_timeout fills in from the built-in default when
 	// the operator omits it.
 	assert.Equal(t, DefaultDaemonShutdown, cfg.Daemon.ShutdownTimeout)
-	// [defaults] backoff_reset_after picks up the built-in default too.
-	assert.Equal(t, DefaultBackoffResetAfter, cfg.Defaults.BackoffResetAfter)
+	// [defaults] healthy_after picks up the built-in default too.
+	assert.Equal(t, DefaultHealthyAfter, cfg.Defaults.HealthyAfter)
 }
 
 func TestNotifyOnMissedRules(t *testing.T) {
@@ -841,12 +841,12 @@ func TestValidate_MoreCases(t *testing.T) {
 			wantErr: "defaults.keep_for",
 		},
 		{
-			name: "negative defaults.backoff_reset_after",
+			name: "negative defaults.healthy_after",
 			cfg: &Config{
-				Defaults: Defaults{BackoffResetAfter: -time.Second},
+				Defaults: Defaults{HealthyAfter: -time.Second},
 				Tasks:    []model.Task{testTask("t1")},
 			},
-			wantErr: "defaults.backoff_reset_after",
+			wantErr: "defaults.healthy_after",
 		},
 		{
 			name: "whitespace-only run script",
@@ -960,15 +960,15 @@ func TestValidate_MoreCases(t *testing.T) {
 			wantErr: "restart_backoff",
 		},
 		{
-			name: "service negative backoff_reset_after",
+			name: "service negative healthy_after",
 			cfg: &Config{
 				Tasks: []model.Task{func() model.Task {
 					t := serviceTask("svc1")
-					t.BackoffResetAfter = -time.Second
+					t.HealthyAfter = -time.Second
 					return t
 				}()},
 			},
-			wantErr: "backoff_reset_after",
+			wantErr: "healthy_after",
 		},
 	}
 
@@ -1062,9 +1062,9 @@ func TestLoad_ParseErrors(t *testing.T) {
 			wantErr: "restart_delay",
 		},
 		{
-			name:    "service backoff_reset_after bad",
-			toml:    "[services.svc]\nrun = \"exec ./bin/svc\"\nbackoff_reset_after = \"bad\"\n",
-			wantErr: "backoff_reset_after",
+			name:    "service healthy_after bad",
+			toml:    "[services.svc]\nrun = \"exec ./bin/svc\"\nhealthy_after = \"bad\"\n",
+			wantErr: "healthy_after",
 		},
 		{
 			name:    "service log_max_size bad",
@@ -1082,9 +1082,9 @@ func TestLoad_ParseErrors(t *testing.T) {
 			wantErr: "log_max_size",
 		},
 		{
-			name:    "defaults backoff_reset_after bad",
-			toml:    "[defaults]\nbackoff_reset_after = \"bad\"\n\n[tasks.t]\nrun = \"echo hi\"\n",
-			wantErr: "backoff_reset_after",
+			name:    "defaults healthy_after bad",
+			toml:    "[defaults]\nhealthy_after = \"bad\"\n\n[tasks.t]\nrun = \"echo hi\"\n",
+			wantErr: "healthy_after",
 		},
 		{
 			name:    "daemon shutdown_timeout bad",
@@ -1142,24 +1142,24 @@ run            = "echo hi"
 		assert.Equal(t, 50, task.QueueMax)
 	})
 
-	t.Run("backoff_reset_after parses on services and inherits from defaults", func(t *testing.T) {
+	t.Run("healthy_after parses on services and inherits from defaults", func(t *testing.T) {
 		path := writeTOML(t, `
 [defaults]
-backoff_reset_after = "2m"
+healthy_after = "2m"
 
 [services.svc-with-default]
 run = "exec ./bin/svc"
 
 [services.svc-with-override]
-backoff_reset_after = "30s"
+healthy_after = "30s"
 run = "exec ./bin/svc"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		require.Len(t, cfg.Tasks, 2)
 		// Tasks are sorted alphabetically.
-		assert.Equal(t, 2*time.Minute, cfg.Tasks[0].BackoffResetAfter)
-		assert.Equal(t, 30*time.Second, cfg.Tasks[1].BackoffResetAfter)
+		assert.Equal(t, 2*time.Minute, cfg.Tasks[0].HealthyAfter)
+		assert.Equal(t, 30*time.Second, cfg.Tasks[1].HealthyAfter)
 	})
 
 	t.Run("daemon shutdown_timeout parses", func(t *testing.T) {

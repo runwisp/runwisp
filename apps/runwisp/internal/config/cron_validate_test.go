@@ -43,9 +43,12 @@ func TestLoadValidatesCron(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), `invalid cron for task "backup"`)
 			assert.Contains(t, err.Error(), tt.cron)
-			// The hint teaches the accepted grammar without a docs lookup.
+			// The hint teaches the accepted grammar without a docs lookup,
+			// including the @every escape hatch for sub-minute cadence (the
+			// reason six-field/seconds cron is intentionally unsupported).
 			assert.Contains(t, err.Error(), `expected 5 fields`)
 			assert.Contains(t, err.Error(), `@every 1h30m`)
+			assert.Contains(t, err.Error(), `@every 30s`)
 		})
 	}
 }

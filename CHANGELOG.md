@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Missed-run alerts.** A scheduled run skipped because the daemon was down is detected on restart, recorded as a browsable `missed` run, and raised as a failure-level alert — silence it per task or globally with `notify_on_missed`. See [Missed ticks](https://docs.runwisp.com/concepts/scheduling/#missed-ticks-catchup).
+- **`working_dir` and `shell` on `[tasks.*]` / `[services.*]`.** Run a command in a specific directory and under a chosen interpreter (e.g. `/bin/bash`); `shell` also takes a `[defaults]` value. See [Working directory & shell](https://docs.runwisp.com/configuration/tasks/#working-directory--shell).
+- **`exit_codes` on `[tasks.*]` / `[services.*]` / `[defaults]`.** List the exit codes treated as success (default `[0]`) so a non-zero "nothing to do" code doesn't trip retries or alerts. See [Retries & timeout](https://docs.runwisp.com/configuration/tasks/#retries--timeout).
+- **`stop_signal` on `[tasks.*]` / `[services.*]` / `[defaults]`.** Choose the signal that opens the stop ladder before SIGKILL (default `SIGTERM`); `SIGKILL` skips the grace window. See [Retries & timeout](https://docs.runwisp.com/configuration/tasks/#retries--timeout).
+- **`priority` and `autostart` on `[services.*]`.** `priority` fixes the boot start order (lowest first, deterministic — not a dependency); `autostart = false` defines a service that boots stopped until you start it from the UI/API. See [Startup](https://docs.runwisp.com/configuration/services/#startup).
+- **`umask` on `[tasks.*]` / `[services.*]`.** Set the octal file-creation mask for a run (e.g. `"027"`); applied per-process so concurrent runs never affect each other. See [Working directory & shell](https://docs.runwisp.com/configuration/tasks/#working-directory--shell).
+- **`run_on_start` on `[tasks.*]`.** Fire a task once at daemon boot, on top of any `cron` — the `@reboot` equivalent, tagged `triggered_by = startup`. See [Scheduling](https://docs.runwisp.com/configuration/tasks/#scheduling).
+- **`user` on `[tasks.*]` / `[services.*]`.** Run as another OS user (`user` or `user:group`, name or numeric id) when the daemon runs as root. See [Working directory & shell](https://docs.runwisp.com/configuration/tasks/#working-directory--shell).
+- **`start_retries` on `[services.*]` / `[defaults]`, plus FATAL services.** A service that keeps fast-failing (exits below `healthy_after`) now tolerates `start_retries` failed starts in a row before going FATAL — it stops restarting, records a `start_failed` run, and rings the bell instead of flapping forever. See [When a service can't start](https://docs.runwisp.com/configuration/services/#when-a-service-cant-start-fatal).
+
+### Changed
+
+- **`backoff_reset_after` renamed to `healthy_after`**, which now governs both the restart-backoff reset and the failed-start/FATAL threshold. See [Healthy threshold](https://docs.runwisp.com/concepts/retries/#healthy-threshold-healthy_after).
+- **Invalid-cron errors now point at `@every 30s` for sub-minute schedules**, clarifying that six-field/seconds cron is intentionally unsupported. See [Scheduling](https://docs.runwisp.com/configuration/tasks/#scheduling).
 
 ## [0.8.0] - 2026-06-09
 

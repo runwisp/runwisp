@@ -79,6 +79,40 @@ func TestMapEvent_LogDiskPressure(t *testing.T) {
 	assert.Equal(t, int64(1024), got.Extra["min_free_bytes"])
 }
 
+// TestMapEvent_ServiceFatal verifies the give-up signal maps to the dedicated
+// service.fatal kind at error severity, carrying the instance context so the
+// notification names which instance died and why.
+func TestMapEvent_ServiceFatal(t *testing.T) {
+	ev := events.Event{
+		Type:      events.EventServiceFatal,
+		Timestamp: time.Now(),
+		Data: events.ServiceFatalEvent{
+			TaskName:      "worker",
+			InstanceIndex: 1,
+			Attempts:      4,
+			LastExitCode:  7,
+		},
+	}
+	got := MapEvent(ev)
+	require.NotNil(t, got)
+	assert.Equal(t, KindServiceFatal, got.Kind)
+	assert.Equal(t, SevError, got.Severity)
+	assert.Equal(t, "worker", got.TaskName)
+	assert.Equal(t, 1, got.Extra["instance_index"])
+	assert.Equal(t, 4, got.Extra["attempts"])
+	assert.Equal(t, 7, got.Extra["last_exit_code"])
+}
+
+// TestMapRunEventType_StartFailedSuppressed guards the no-double-bell contract:
+// the start_failed run row is suppressed from notify because the dedicated
+// service.fatal event already rings the bell for the give-up.
+func TestMapRunEventType_StartFailedSuppressed(t *testing.T) {
+	r := model.ReasonStartFailed
+	run := &model.Run{EndReason: &r}
+	_, _, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.False(t, ok, "start_failed run row must not produce a second notification")
+}
+
 func TestMapEvent_NilRun(t *testing.T) {
 	ev := events.Event{
 		Type:      events.EventRunFailed,

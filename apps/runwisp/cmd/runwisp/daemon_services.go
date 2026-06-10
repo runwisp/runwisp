@@ -38,6 +38,7 @@ type daemonServices struct {
 	CrashedRuns         int64
 	PendingSummary      uikit.PendingRunsSummary
 	CatchUpResult       runtime.CatchUpResult
+	RunOnStartResult    runtime.RunOnStartResult
 	TaskShutdownTimeout time.Duration
 	// InitWarnings holds non-fatal warnings collected during service init
 	// (notify subsystem failures, scheduler start hiccups, etc.) so the
@@ -73,6 +74,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	var schedResult runtime.ScheduleResult
 	var pendingSummary uikit.PendingRunsSummary
 	var catchUpResult runtime.CatchUpResult
+	var runOnStartResult runtime.RunOnStartResult
 
 	if mode == modeStandalone {
 		// [scheduler] timezone is required at config-load time when any cron task
@@ -90,11 +92,16 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 		pendingSummary = resumePendingRuns(ctx, db, taskManager)
 
-		// Service instances start before notify (like crashed/pending
-		// reconciliation): a restart bringing services back up should keep its
-		// pre-notify timing and not page. Missed-tick catch-up is the lone
-		// exception — it is deferred to after notify starts (below) so the
-		// run.missed events it emits actually reach a subscriber.
+		// Fire run_on_start tasks once at boot, before notify so a boot-triggered
+		// run doesn't page. Catch-up (which pages on missed runs) is deferred to
+		// after notify starts (below) so run.missed events reach a subscriber.
+		runOnStartResult = runtime.RunStartupTasks(tasksMap, taskManager)
+		if runOnStartResult.Errors > 0 {
+			slog.Warn("run_on_start firing completed with errors",
+				"triggered", runOnStartResult.Triggered, "errors", runOnStartResult.Errors)
+		} else if runOnStartResult.Triggered > 0 {
+			slog.Debug("run_on_start firing completed", "triggered", runOnStartResult.Triggered)
+		}
 		startServiceInstances(taskManager, tasksMap)
 	}
 
@@ -144,6 +151,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		CrashedRuns:         crashed,
 		PendingSummary:      pendingSummary,
 		CatchUpResult:       catchUpResult,
+		RunOnStartResult:    runOnStartResult,
 		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
 		InitWarnings:        initWarnings,
 	}, nil
@@ -207,14 +215,33 @@ func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap 
 }
 
 func startServiceInstances(taskManager runtime.TaskManager, tasksMap map[string]*model.Task) {
-	for _, task := range tasksMap {
-		if !task.Kind.IsService() {
-			continue
-		}
+	for _, task := range orderServicesForStart(tasksMap) {
 		if err := taskManager.StartServiceInstances(task.Name, model.TriggeredByService); err != nil {
 			slog.Error("Failed to start service instances", "task", task.Name, "err", err)
 		}
 	}
+}
+
+// orderServicesForStart returns the service tasks in deterministic boot order:
+// ascending priority, then name as a stable tiebreak. Ranging a Go map is
+// randomised, so without this the start order (and thus which service grabs a
+// shared port first) would differ run to run. Non-service tasks are dropped.
+// This is start ordering only — it is not a dependency or readiness gate, and
+// shutdown stays parallel.
+func orderServicesForStart(tasksMap map[string]*model.Task) []*model.Task {
+	services := make([]*model.Task, 0, len(tasksMap))
+	for _, task := range tasksMap {
+		if task.Kind.IsService() {
+			services = append(services, task)
+		}
+	}
+	sort.SliceStable(services, func(i, j int) bool {
+		if services[i].Priority != services[j].Priority {
+			return services[i].Priority < services[j].Priority
+		}
+		return services[i].Name < services[j].Name
+	})
+	return services
 }
 
 func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManager runtime.TaskManager) uikit.PendingRunsSummary {

@@ -102,6 +102,9 @@ export function formatTriggeredByLabel(triggeredBy: Run["triggered_by"]): string
     if (triggeredBy === "service") {
         return "Service";
     }
+    if (triggeredBy === "startup") {
+        return "Startup";
+    }
 
     return "Cloud";
 }

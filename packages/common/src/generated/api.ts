@@ -585,7 +585,7 @@ export interface components {
          * @description Why a run ended. Set when status=ended.
          * @enum {string}
          */
-        EndReason: "success" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped" | "missed";
+        EndReason: "success" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped" | "missed" | "start_failed";
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -910,7 +910,7 @@ export interface components {
              * @description How the run was triggered
              * @enum {string}
              */
-            triggered_by: "cron" | "api" | "cloud" | "service";
+            triggered_by: "cron" | "api" | "cloud" | "service" | "startup";
         };
         RunCompletedEvent: {
             error?: string;
@@ -1088,11 +1088,8 @@ export interface components {
         };
         TaskResponse: {
             api_trigger: boolean;
-            /**
-             * Format: int64
-             * @description For services: an instance that runs at least this long resets the restart counter, in nanoseconds
-             */
-            backoff_reset_after?: number;
+            /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. */
+            autostart: boolean;
             /**
              * @description What to do when cron ticks are missed during downtime
              * @enum {string}
@@ -1108,12 +1105,19 @@ export interface components {
             };
             /** @description Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env. */
             env_file?: string;
+            /** @description Process exit codes treated as success; defaults to [0] */
+            exit_codes?: number[] | null;
             /**
              * Format: int64
-             * @description Window between SIGTERM and SIGKILL when a run is stopped, in nanoseconds
+             * @description Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds
              */
             graceful_stop?: number;
             group?: string;
+            /**
+             * Format: int64
+             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds
+             */
+            healthy_after?: number;
             /**
              * Format: int64
              * @description For services: number of always-running instances
@@ -1163,6 +1167,11 @@ export interface components {
             on_overlap?: "queue" | "skip" | "terminate";
             /**
              * Format: int64
+             * @description For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.
+             */
+            priority?: number;
+            /**
+             * Format: int64
              * @description Maximum runs that can wait when on_overlap = queue
              */
             queue_max?: number;
@@ -1193,8 +1202,22 @@ export interface components {
              * @description Base delay before each retry, in nanoseconds
              */
             retry_delay?: number;
+            /** @description For tasks: fire once at daemon startup, in addition to any cron schedule */
+            run_on_start?: boolean;
             /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon. */
             secrets_file?: string;
+            /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
+            shell?: string;
+            /**
+             * Format: int64
+             * @description For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting
+             */
+            start_retries?: number;
+            /**
+             * @description Signal sent to stop a run before SIGKILL; defaults to SIGTERM
+             * @enum {string}
+             */
+            stop_signal?: "SIGTERM" | "SIGINT" | "SIGQUIT" | "SIGHUP" | "SIGKILL" | "SIGUSR1" | "SIGUSR2";
             /**
              * Format: int64
              * @description Per-run timeout in nanoseconds
@@ -1202,6 +1225,12 @@ export interface components {
             timeout?: number;
             /** @description IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone */
             timezone?: string;
+            /** @description Octal file-creation mask applied to the run's process; empty inherits the daemon's umask */
+            umask?: string;
+            /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
+            user?: string;
+            /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory */
+            working_dir?: string;
         };
         TriggeredRunRef: {
             run_id: string;
