@@ -314,21 +314,21 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 		return Defaults{}, fmt.Errorf("invalid defaults.healthy_after: %w", err)
 	}
 	return Defaults{
-		Timeout:           timeout,
-		Shell:             w.Shell,
-		StopSignal:        w.StopSignal,
-		ExitCodes:         w.ExitCodes,
-		LogMaxSize:        logMaxSize,
-		LogOnFull:         w.LogOnFull,
-		KeepRuns:          keepRuns,
-		KeepFor:           keepFor,
-		HealthyAfter:      healthyAfter,
-		StartRetries:      w.StartRetries,
-		NotifyOnMissed:    w.NotifyOnMissed,
-		Env:               w.Env,
-		EnvFile:           w.EnvFile,
-		Secrets:           w.Secrets,
-		SecretsFile:       w.SecretsFile,
+		Timeout:        timeout,
+		Shell:          w.Shell,
+		StopSignal:     w.StopSignal,
+		ExitCodes:      w.ExitCodes,
+		LogMaxSize:     logMaxSize,
+		LogOnFull:      w.LogOnFull,
+		KeepRuns:       keepRuns,
+		KeepFor:        keepFor,
+		HealthyAfter:   healthyAfter,
+		StartRetries:   w.StartRetries,
+		NotifyOnMissed: w.NotifyOnMissed,
+		Env:            w.Env,
+		EnvFile:        w.EnvFile,
+		Secrets:        w.Secrets,
+		SecretsFile:    w.SecretsFile,
 	}, nil
 }
 

@@ -92,26 +92,9 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 		pendingSummary = resumePendingRuns(ctx, db, taskManager)
 
-		// Service instances start before notify (like crashed/pending
-		// reconciliation): a restart bringing services back up should keep its
-		// pre-notify timing and not page. Missed-tick catch-up is the lone
-		// exception — it is deferred to after notify starts (below) so the
-		// run.missed events it emits actually reach a subscriber.
-		catchUpResult = runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now())
-		// Banner already shows the triggered total. Only narrate via slog when
-		// something actually went wrong; otherwise stay quiet so INFO output
-		// at default verbosity is uncluttered.
-		if catchUpResult.Errors > 0 {
-			slog.Warn("Missed-tick catch-up completed with errors",
-				"triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
-		} else if catchUpResult.Triggered > 0 {
-			slog.Debug("Missed-tick catch-up completed",
-				"triggered", catchUpResult.Triggered)
-		}
-
-		// Fire run_on_start tasks once at boot, after catch-up so a task with both
-		// a backlog and run_on_start gets its missed ticks first, then its boot
-		// firing. Independent of catch_up policy and the catch-up cap.
+		// Fire run_on_start tasks once at boot, before notify so a boot-triggered
+		// run doesn't page. Catch-up (which pages on missed runs) is deferred to
+		// after notify starts (below) so run.missed events reach a subscriber.
 		runOnStartResult = runtime.RunStartupTasks(tasksMap, taskManager)
 		if runOnStartResult.Errors > 0 {
 			slog.Warn("run_on_start firing completed with errors",
