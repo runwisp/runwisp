@@ -11,6 +11,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
@@ -229,4 +230,32 @@ func TestOrderServicesForStop_DependentsFirst(t *testing.T) {
 	assert.Less(t, pos["a"], pos["c"], "a depends on c → a stops first")
 	assert.Less(t, pos["b"], pos["d"], "b depends on d → b stops first")
 	assert.Less(t, pos["c"], pos["d"], "c depends on d → c stops first")
+}
+
+// TestBuildDaemonInfo_SchedulingActiveReflectsScheduler locks the wiring that
+// drives the Web UI's cloud-mode reframe: scheduling_active must be false when
+// the local scheduler is absent (e.g. `runwisp cloud`, where the cloud owns
+// scheduling) and true when it is present. Drift here makes a scheduled task
+// look unscheduled — a Prime-Directive-#1 ("nothing silently fails") violation.
+func TestBuildDaemonInfo_SchedulingActiveReflectsScheduler(t *testing.T) {
+	f, db := daemonServicesTestEnv(t)
+	cfg := &config.Config{
+		Tasks:     []model.Task{{Name: "alpha", Run: "echo a", Kind: model.KindTask, OnOverlap: model.PolicyQueue, MaxConcurrent: 1}},
+		Scheduler: config.Scheduler{Timezone: "UTC", Source: "system"},
+	}
+	config.ApplyDefaults(cfg)
+
+	bus := events.NewEventBus()
+	exec := initExecutor(cfg, bus, f.LogDir())
+	dc := &daemonConfig{Config: cfg, Fingerprint: "fp-test"}
+	tm, tasksMap := initTaskManager(dc, db, exec, bus)
+
+	svc := &daemonServices{Executor: exec, TaskManager: tm, TasksMap: tasksMap}
+
+	// Cloud mode: no local scheduler.
+	assert.False(t, buildDaemonInfo(dc, svc, time.Time{}, f.Port).SchedulingActive)
+
+	// Standalone mode: scheduler present.
+	svc.Scheduler = runtime.NewScheduler(tm, tasksMap, time.UTC)
+	assert.True(t, buildDaemonInfo(dc, svc, time.Time{}, f.Port).SchedulingActive)
 }

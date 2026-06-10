@@ -110,7 +110,9 @@
 
             // A new run means the scheduler advanced that task's next_run_at —
             // refetch tasks so "Up next" and next-run columns stay current.
-            if (event.type === "run.created") {
+            // Pointless when the local scheduler is inactive (cloud mode):
+            // next_run_at is always empty and that UI is hidden anyway.
+            if (event.type === "run.created" && systemStore.schedulingActive) {
                 scheduleTasksRefresh();
             }
         });
@@ -194,6 +196,8 @@
         runningRuns={dashState.runningRuns}
         tasks={dashState.tasks.map((t) => ({ id: toTaskPageId(t.name), ...t }))}
         metricsHistory={dashState.metricsHistory}
+        cloudMode={systemStore.cloudEnabled}
+        schedulingActive={systemStore.schedulingActive}
         onViewAllRuns={() => goto(resolve("/runs"))}
         onTaskClick={handleTaskClick}
         onRunClick={handleRunClick}

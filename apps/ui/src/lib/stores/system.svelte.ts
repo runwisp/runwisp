@@ -20,6 +20,11 @@ function createSystemStore() {
     let timezone = $state("");
     let timezoneSource = $state("");
     let configStale = $state(false);
+    // Standalone assumptions until the first /api/info lands: a standalone
+    // daemon must never flash a cloud chip or hide its scheduling UI during
+    // hydration. Components read these getters reactively and self-correct.
+    let cloudEnabled = $state(false);
+    let schedulingActive = $state(true);
 
     async function refresh() {
         if (connectionStore.status === "disconnected") return;
@@ -40,6 +45,8 @@ function createSystemStore() {
             timezone = info.resolved_timezone;
             timezoneSource = info.timezone_source;
             configStale = info.config_stale;
+            cloudEnabled = info.cloud_enabled;
+            schedulingActive = info.scheduling_active;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
             // silent — system stats are secondary
@@ -91,6 +98,12 @@ function createSystemStore() {
         },
         get configStale() {
             return configStale;
+        },
+        get cloudEnabled() {
+            return cloudEnabled;
+        },
+        get schedulingActive() {
+            return schedulingActive;
         },
         refresh,
     };

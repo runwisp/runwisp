@@ -21,6 +21,7 @@
         attentionTasks = [],
         runningNow = [],
         upcomingTasks = [],
+        showUpcoming = true,
         now = new Date(),
         onTaskClick,
         onRunClick,
@@ -28,6 +29,7 @@
         attentionTasks?: TaskOverview[];
         runningNow?: Run[];
         upcomingTasks?: TaskOverview[];
+        showUpcoming?: boolean;
         now?: Date;
         onTaskClick?: (taskName: string) => void;
         onRunClick?: (taskName: string, runId: string) => void;
@@ -42,7 +44,7 @@
     }
 </script>
 
-<div class="grid gap-4 lg:grid-cols-3">
+<div class={["grid gap-4", showUpcoming ? "lg:grid-cols-3" : "lg:grid-cols-2"]}>
     <!-- Needs attention -->
     <Card>
         <div class="flex items-center justify-between gap-3">
@@ -156,56 +158,60 @@
     </Card>
 
     <!-- Up next -->
-    <Card>
-        <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-on-surface">Up next</h3>
-            <Badge variant="info">{upcomingTasks.length}</Badge>
-        </div>
-
-        {#if upcomingTasks.length === 0}
-            <div class="mt-4 flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2.5">
-                <Clock3 size={14} class="text-on-surface-muted" />
-                <span class="text-sm text-on-surface-muted">No scheduled runs queued</span>
+    {#if showUpcoming}
+        <Card>
+            <div class="flex items-center justify-between gap-3">
+                <h3 class="text-sm font-semibold text-on-surface">Up next</h3>
+                <Badge variant="info">{upcomingTasks.length}</Badge>
             </div>
-        {:else}
-            <div class="mt-4 space-y-2">
-                {#each upcomingTasks as task (task.task.id)}
-                    <TaskCard accent="aurora" onclick={() => viewTask(task.task.name)}>
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="min-w-0 flex-1">
-                                <div class="flex flex-wrap items-center gap-1.5">
-                                    <span class="truncate text-sm font-medium text-on-surface">
-                                        {task.task.name}
-                                    </span>
-                                    {#if task.task.group}
-                                        <Badge variant="default" size="sm">{task.task.group}</Badge>
-                                    {/if}
-                                    {#if task.task.compose}
-                                        <ComposeBadge
-                                            file={task.task.compose.file}
-                                            service={task.task.compose.service}
-                                            projectName={task.task.compose.project_name}
-                                        />
-                                    {/if}
+
+            {#if upcomingTasks.length === 0}
+                <div class="mt-4 flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2.5">
+                    <Clock3 size={14} class="text-on-surface-muted" />
+                    <span class="text-sm text-on-surface-muted">No scheduled runs queued</span>
+                </div>
+            {:else}
+                <div class="mt-4 space-y-2">
+                    {#each upcomingTasks as task (task.task.id)}
+                        <TaskCard accent="aurora" onclick={() => viewTask(task.task.name)}>
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <span class="truncate text-sm font-medium text-on-surface">
+                                            {task.task.name}
+                                        </span>
+                                        {#if task.task.group}
+                                            <Badge variant="default" size="sm"
+                                                >{task.task.group}</Badge
+                                            >
+                                        {/if}
+                                        {#if task.task.compose}
+                                            <ComposeBadge
+                                                file={task.task.compose.file}
+                                                service={task.task.compose.service}
+                                                projectName={task.task.compose.project_name}
+                                            />
+                                        {/if}
+                                    </div>
+                                    <p class="mt-1 text-xs text-on-surface-muted">
+                                        {formatTaskNextRunLabel(task, now)}
+                                    </p>
                                 </div>
-                                <p class="mt-1 text-xs text-on-surface-muted">
-                                    {formatTaskNextRunLabel(task, now)}
-                                </p>
+                                <ArrowRight
+                                    size={14}
+                                    class="shrink-0 text-on-surface-faint transition-colors group-hover:text-info"
+                                />
                             </div>
-                            <ArrowRight
-                                size={14}
-                                class="shrink-0 text-on-surface-faint transition-colors group-hover:text-info"
-                            />
-                        </div>
 
-                        {#if task.task.cron}
-                            <p class="mt-2 font-mono text-xs text-on-surface-muted">
-                                {task.task.cron}
-                            </p>
-                        {/if}
-                    </TaskCard>
-                {/each}
-            </div>
-        {/if}
-    </Card>
+                            {#if task.task.cron}
+                                <p class="mt-2 font-mono text-xs text-on-surface-muted">
+                                    {task.task.cron}
+                                </p>
+                            {/if}
+                        </TaskCard>
+                    {/each}
+                </div>
+            {/if}
+        </Card>
+    {/if}
 </div>

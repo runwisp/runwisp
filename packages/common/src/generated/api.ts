@@ -571,6 +571,7 @@ export interface components {
             /** Format: int64 */
             port: number;
             resolved_timezone: string;
+            scheduling_active: boolean;
             service_managed: boolean;
             tasks: components["schemas"]["TaskBrief"][] | null;
             /** @enum {string} */

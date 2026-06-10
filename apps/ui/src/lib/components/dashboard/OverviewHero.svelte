@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { ArrowRight, CircleAlert, ShieldCheck, Sparkles, Zap } from "@lucide/svelte";
+    import { ArrowRight, CircleAlert, Cloud, ShieldCheck, Sparkles, Zap } from "@lucide/svelte";
     import Badge from "@runwisp/ui/components/Badge.svelte";
     import Card from "@runwisp/ui/components/Card.svelte";
     import { formatBytes, Sparkline } from "@runwisp/ui";
@@ -50,6 +50,7 @@
         completedRunsCount,
         healthyTasksCount,
         metricsHistory = [],
+        cloudMode = false,
         onViewAllRuns,
     } = $props<{
         daemonState: DaemonState;
@@ -59,6 +60,7 @@
         completedRunsCount: number;
         healthyTasksCount: number;
         metricsHistory?: MetricsSample[];
+        cloudMode?: boolean;
         onViewAllRuns?: () => void;
     }>();
 
@@ -235,6 +237,13 @@
 
 <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
     <div class="space-y-5">
+        {#if cloudMode}
+            <p class="flex items-center gap-1.5 text-xs text-on-surface-muted">
+                <Cloud size={12} class="shrink-0 text-info" />
+                Managed by RunWisp Cloud · scheduling handled in the cloud.
+            </p>
+        {/if}
+
         <!-- Header bar -->
         <Card
             padding="none"
