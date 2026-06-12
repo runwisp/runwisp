@@ -22,6 +22,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -560,14 +561,14 @@ func killProcessGroup(pid int, signal syscall.Signal) error {
 // breaks tests which assert on clean stderr. Use a throwaway temp dir in
 // that case.
 func subprocEnv(extra ...string) []string {
-	env := make([]string, 0, len(os.Environ())+len(extra)+1)
-	for _, e := range os.Environ() {
-		// INVOCATION_ID / RUNWISP_SERVICE_MANAGED leak in when the CI runner
-		// itself is a systemd unit; spawned daemons would then self-detect as
-		// service-managed. Strip them so e2e behavior is host-independent.
-		if strings.HasPrefix(e, "GOCOVERDIR=") ||
-			strings.HasPrefix(e, "INVOCATION_ID=") ||
-			strings.HasPrefix(e, "RUNWISP_SERVICE_MANAGED=") {
+	// INVOCATION_ID / RUNWISP_SERVICE_MANAGED leak in when the CI runner itself
+	// is a systemd unit; spawned daemons would then self-detect as service-
+	// managed. Strip them so e2e behavior is host-independent. (Production
+	// spawns do the same via autostart.WithoutServiceEnv.)
+	base := autostart.WithoutServiceEnv(os.Environ())
+	env := make([]string, 0, len(base)+len(extra)+1)
+	for _, e := range base {
+		if strings.HasPrefix(e, "GOCOVERDIR=") {
 			continue
 		}
 		env = append(env, e)

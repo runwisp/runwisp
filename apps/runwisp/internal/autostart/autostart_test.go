@@ -32,3 +32,26 @@ func TestRunningUnderServiceManager(t *testing.T) {
 		})
 	}
 }
+
+func TestWithoutServiceEnv(t *testing.T) {
+	in := []string{
+		"PATH=/usr/bin",
+		"INVOCATION_ID=5d10ec423bcf449789f2dfd36760a4ab",
+		"HOME=/home/op",
+		"RUNWISP_SERVICE_MANAGED=1",
+		"RUNWISP_DEMO_TEMP=/tmp/runwisp-demo-x",
+	}
+	got := WithoutServiceEnv(in)
+	assert.Equal(t, []string{
+		"PATH=/usr/bin",
+		"HOME=/home/op",
+		"RUNWISP_DEMO_TEMP=/tmp/runwisp-demo-x",
+	}, got)
+}
+
+func TestWithoutServiceEnv_KeepsLookalikePrefixes(t *testing.T) {
+	// A var that merely begins with a marker key (no "=" boundary) is kept —
+	// only exact KEY=VALUE matches are stripped.
+	in := []string{"INVOCATION_ID_EXTRA=keep", "RUNWISP_SERVICE_MANAGED_FOO=keep"}
+	assert.Equal(t, in, WithoutServiceEnv(in))
+}
