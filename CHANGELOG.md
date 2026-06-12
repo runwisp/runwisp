@@ -6,7 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 ## [0.9.0] - 2026-06-12
 
 ### Added
@@ -30,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **`backoff_reset_after` renamed to `healthy_after`**, which now governs both the restart-backoff reset and the failed-start/FATAL threshold. See [Healthy threshold](https://docs.runwisp.com/concepts/retries/#healthy-threshold-healthy_after).
+
+### Fixed
+
+- **Spurious "managed by systemd" quit prompt.** A daemon spawned by `runwisp` / `runwisp demo` from a systemd-scoped terminal no longer inherits `INVOCATION_ID` and falsely self-reports as service-managed, so the TUI's quit dialog offers "Shut Down" again.
 
 ## [0.8.0] - 2026-06-09
 

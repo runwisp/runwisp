@@ -18,6 +18,7 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/datadir"
 )
 
@@ -58,6 +59,12 @@ func spawnDaemonProcess(args []string, dataDir string) error {
 
 	cmd := exec.Command(exe, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+	// runwisp is launching this daemon itself, so it is not init-managed.
+	// Strip any leaked service-manager markers (e.g. INVOCATION_ID inherited
+	// from a systemd-scoped terminal) so the daemon doesn't self-report as
+	// service-managed and hide the TUI's "Shut Down" quit option.
+	cmd.Env = autostart.WithoutServiceEnv(os.Environ())
 
 	// Redirect daemon stdout/stderr to a log file (truncated per spawn so
 	// failure output only contains this session).

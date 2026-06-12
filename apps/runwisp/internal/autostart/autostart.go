@@ -15,6 +15,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -205,6 +206,15 @@ type Installer interface {
 // steer the operator toward `runwisp stop` / `systemctl --user stop`.
 const ServiceManagedEnv = "RUNWISP_SERVICE_MANAGED"
 
+// invocationIDEnv is set by systemd for every unit it starts — our fallback
+// signal for hand-written units that don't carry ServiceManagedEnv.
+const invocationIDEnv = "INVOCATION_ID"
+
+// serviceEnvVars mark a process as init-system-managed. A daemon that runwisp
+// spawns itself must not inherit these, or it self-reports as service-managed
+// merely because the spawning shell happened to run under systemd.
+var serviceEnvVars = []string{ServiceManagedEnv, invocationIDEnv}
+
 // RunningUnderServiceManager reports whether the current process was
 // launched by an init system. Primary signal is ServiceManagedEnv from
 // our generated unit files; INVOCATION_ID is the systemd fallback for
@@ -214,7 +224,32 @@ func RunningUnderServiceManager() bool {
 		return true
 	}
 	// systemd sets INVOCATION_ID for every unit it starts.
-	return os.Getenv("INVOCATION_ID") != ""
+	return os.Getenv(invocationIDEnv) != ""
+}
+
+// WithoutServiceEnv returns env (in "KEY=VALUE" form, as from os.Environ) with
+// the service-manager marker vars removed. Use it when spawning a daemon that
+// runwisp itself launches: such a daemon is not init-managed, so it must not
+// inherit a leaked INVOCATION_ID (or a stray RUNWISP_SERVICE_MANAGED) from the
+// spawning environment.
+func WithoutServiceEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if hasServiceEnvPrefix(e) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+func hasServiceEnvPrefix(entry string) bool {
+	for _, key := range serviceEnvVars {
+		if strings.HasPrefix(entry, key+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 // ErrUnsupported is returned by `New` on platforms without an installer.
