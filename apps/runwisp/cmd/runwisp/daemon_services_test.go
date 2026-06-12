@@ -250,7 +250,7 @@ func TestBuildDaemonInfo_SchedulingActiveReflectsScheduler(t *testing.T) {
 	dc := &daemonConfig{Config: cfg, Fingerprint: "fp-test"}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 
-	svc := &daemonServices{Executor: exec, TaskManager: tm, TasksMap: tasksMap}
+	svc := &daemonServices{Executor: exec, TaskManager: tm, Tasks: runtime.NewTaskRegistry(tasksMap)}
 
 	// Cloud mode: no local scheduler.
 	assert.False(t, buildDaemonInfo(dc, svc, time.Time{}, f.Port).SchedulingActive)

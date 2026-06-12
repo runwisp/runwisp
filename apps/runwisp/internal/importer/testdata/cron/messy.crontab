@@ -1,0 +1,13 @@
+# Things that must surface as notes but still leave a valid config.
+MAILTO=ops@example.com
+SHELL=bash
+
+# Two jobs that derive the same name → deduped
+0 1 * * * /bin/job
+0 2 * * * /bin/job
+
+# A percent sign means stdin to crond; RunWisp passes it to the shell verbatim.
+0 3 * * * /usr/bin/printf 'hello%world'
+
+# Too few fields to be a schedule+command — dropped with a note, not emitted.
+0 1 2

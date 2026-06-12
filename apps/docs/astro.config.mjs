@@ -116,6 +116,14 @@ export default defineConfig({
                 {
                     label: "Recipes",
                     items: [
+                        {
+                            label: "Migrating from cron",
+                            slug: "recipes/migrating-from-cron",
+                        },
+                        {
+                            label: "Migrating from supervisord",
+                            slug: "recipes/migrating-from-supervisord",
+                        },
                         { label: "Nightly backup", slug: "recipes/backup" },
                         { label: "Health checks", slug: "recipes/healthcheck" },
                         { label: "Deploy hooks", slug: "recipes/deploy-hooks" },
