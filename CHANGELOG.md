@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-12
+
 ### Added
 
 - **`runwisp import cron` / `runwisp import supervisord`.** Convert an existing crontab or supervisord config into an annotated `runwisp.toml`, with inline `# TODO`s for anything that needs a human. See [Migrating from cron](https://docs.runwisp.com/recipes/migrating-from-cron/) and [Migrating from supervisord](https://docs.runwisp.com/recipes/migrating-from-supervisord/).
@@ -237,7 +239,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.8.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.9.0...main
+[0.9.0]: https://github.com/runwisp/runwisp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/runwisp/runwisp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/runwisp/runwisp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/runwisp/runwisp/compare/v0.5.0...v0.6.0
