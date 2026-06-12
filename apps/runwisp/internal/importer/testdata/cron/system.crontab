@@ -1,0 +1,10 @@
+# /etc/crontab — system crontab with a user column between schedule and command.
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# Run the updater as root every morning
+17 6 * * * root /usr/bin/apt-get update
+
+# Per-user maintenance
+*/10 * * * * deploy /usr/local/bin/cleanup --quiet
+0 4 * * 1 postgres /usr/bin/vacuumdb --all

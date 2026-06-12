@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`runwisp import cron` / `runwisp import supervisord`.** Convert an existing crontab or supervisord config into an annotated `runwisp.toml`, with inline `# TODO`s for anything that needs a human. See [Migrating from cron](https://docs.runwisp.com/recipes/migrating-from-cron/) and [Migrating from supervisord](https://docs.runwisp.com/recipes/migrating-from-supervisord/).
 - **`depends_on` on `[services.*]`.** Gate a service's boot on other services becoming healthy, with reverse-order teardown on shutdown — boot ordering only, never a workflow DAG, and it never deadlocks (a dependency that won't come up starts the dependent anyway with a warning). See [Boot order with `depends_on`](https://docs.runwisp.com/configuration/services/#boot-order-with-depends_on).
 - **`include` on `[daemon]`.** Glob extra TOML files (e.g. `conf.d/*.toml`) into the config so tasks can be split across files; collections accumulate, names stay unique across files, and singleton tables stay in the root. See [Splitting config across files](https://docs.runwisp.com/configuration/daemon/#include).
 - **`runwisp reload` (and `SIGHUP`) for explicit, validated config reload.** Pick up `runwisp.toml` task add/change/remove edits in a running daemon without a restart; validate-first, so a bad edit or a restart-only change is rejected and the live set is untouched. See [Reload](https://docs.runwisp.com/operations/reload/).

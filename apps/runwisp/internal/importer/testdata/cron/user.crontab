@@ -1,0 +1,16 @@
+# A typical `crontab -l` dump for a deploy user.
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+CRON_TZ=Europe/Bratislava
+
+# Nightly full backup
+30 2 * * * /usr/local/bin/backup.sh --full
+
+# Rotate logs every Sunday
+0 0 * * 0 /usr/sbin/logrotate /etc/logrotate.conf
+
+@daily /opt/app/cleanup
+@reboot /opt/app/warmup
+
+# Heavy job, deprioritized
+*/15 * * * * /usr/bin/nice -n 19 /opt/sync.sh

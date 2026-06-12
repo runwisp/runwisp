@@ -1,0 +1,91 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package importer
+
+import (
+	"bufio"
+	"io"
+	"strings"
+)
+
+// iniSection is one [header] block of an INI file. keys preserves first-seen
+// order of its keys so callers can iterate deterministically; values holds the
+// looked-up values.
+type iniSection struct {
+	name   string
+	keys   []string
+	values map[string]string
+}
+
+func (s *iniSection) set(key, value string) {
+	if _, ok := s.values[key]; !ok {
+		s.keys = append(s.keys, key)
+	}
+	s.values[key] = value
+}
+
+// get returns the value and whether the key was present.
+func (s *iniSection) get(key string) (string, bool) {
+	v, ok := s.values[key]
+	return v, ok
+}
+
+// parseINI parses the supervisord dialect of INI: `[section]` headers,
+// `key=value` (or `key:value`) pairs, full-line comments starting with `;` or
+// `#`, and ConfigParser-style continuation lines (a line indented further than
+// its key appends to the previous value). It is intentionally small — just
+// enough to read supervisord configs, not a general INI library.
+func parseINI(r io.Reader) ([]iniSection, error) {
+	var sections []iniSection
+	var cur *iniSection
+	var lastKey string
+
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		raw := sc.Text()
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			lastKey = ""
+			continue
+		}
+		// Continuation: indented line that isn't a new section/comment and we
+		// have a key in flight.
+		if (raw[0] == ' ' || raw[0] == '\t') && lastKey != "" && cur != nil &&
+			!strings.HasPrefix(trimmed, "[") {
+			cur.values[lastKey] += "\n" + trimmed
+			continue
+		}
+		if trimmed[0] == ';' || trimmed[0] == '#' {
+			lastKey = ""
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			name := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+			sections = append(sections, iniSection{name: name, values: map[string]string{}})
+			cur = &sections[len(sections)-1]
+			lastKey = ""
+			continue
+		}
+		if cur == nil {
+			continue // stray key before any section header
+		}
+		sep := strings.IndexAny(trimmed, "=:")
+		if sep < 0 {
+			lastKey = ""
+			continue
+		}
+		key := strings.TrimSpace(trimmed[:sep])
+		value := strings.TrimSpace(trimmed[sep+1:])
+		if key == "" {
+			continue
+		}
+		cur.set(key, value)
+		lastKey = key
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return sections, nil
+}

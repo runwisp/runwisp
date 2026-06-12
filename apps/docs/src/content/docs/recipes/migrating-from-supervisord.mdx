@@ -1,0 +1,175 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Migrating from supervisord
+description: Convert a supervisord config into runwisp.toml with one command — every [program] becomes a supervised RunWisp service with live logs, restart policy, and failure alerts.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+supervisord keeps your processes alive, and that's about where it stops. The
+web UI is an afterthought, the logs are flat files you `tail` by hand, and
+finding out _why_ something keeps restarting means SSHing in and reading
+`supervisord.log`. RunWisp supervises the same processes and gives you per-run
+history, streamed logs, and a notification when an instance flaps.
+
+You don't have to rewrite your config by hand. `runwisp import supervisord`
+reads it — `[include]` files and all — and writes the `runwisp.toml`.
+
+## The one-liner
+
+Point it at your config, or pipe one in — both are first-class:
+
+```bash
+runwisp import supervisord /etc/supervisor/supervisord.conf -o runwisp.toml
+cat /etc/supervisor/supervisord.conf | runwisp import supervisord
+runwisp validate
+```
+
+Given a file, it follows any `[include]` directives relative to it, so a typical
+`conf.d/`-style layout comes across in one shot. Each `[program]` becomes a
+RunWisp [service](/concepts/tasks-vs-services/). Given:
+
+```ini
+[program:web]
+command=/usr/bin/gunicorn app:app
+directory=/srv/app
+user=www-data
+autostart=true
+startsecs=10
+startretries=5
+stopsignal=INT
+environment=DJANGO_SETTINGS="prod",LOG_LEVEL=info
+stdout_logfile=/var/log/web.log
+
+[program:worker]
+command=/srv/app/worker --idx %(process_num)s
+numprocs=4
+```
+
+you get:
+
+```toml
+[services.web]
+run = "/usr/bin/gunicorn app:app"
+working_dir = "/srv/app"
+user = "www-data"
+healthy_after = "10s"
+start_retries = 5
+stop_signal = "SIGINT"
+
+[services.web.env]
+DJANGO_SETTINGS = "prod"
+LOG_LEVEL = "info"
+
+[services.worker]
+run = "/srv/app/worker --idx %(process_num)s"
+instances = 4
+```
+
+Save it, `runwisp validate`, then `runwisp daemon` — your processes come up
+under RunWisp, and you can watch them from the dashboard.
+
+:::note[Piping vs. a path]
+When you pipe a config in, `[include]` directives can't be resolved — there's no
+file to resolve the paths against. Pass the file path (not a pipe) if you use
+includes, and everything comes across in one shot.
+:::
+
+## How the pieces map
+
+A `[program]` is a long-running, auto-restarted process — which is exactly a
+RunWisp **service**. Most keys carry straight over:
+
+| supervisord                     | runwisp.toml             | Notes                                                |
+| ------------------------------- | ------------------------ | ---------------------------------------------------- |
+| `[program:web]`                 | `[services.web]`         | One program → one service.                           |
+| `command`                       | `run`                    | `%(program_name)s` is expanded.                      |
+| `directory`                     | `working_dir`            |                                                      |
+| `user`                          | `user`                   | Needs the daemon running as root to switch users.    |
+| `umask`                         | `umask`                  |                                                      |
+| `numprocs`                      | `instances`              | Each gets a `RUNWISP_INSTANCE_INDEX` (0-based).      |
+| `startsecs`                     | `healthy_after`          | Uptime that marks an instance healthy.               |
+| `startretries`                  | `start_retries`          | Fast failures tolerated before FATAL.                |
+| `stopsignal`                    | `stop_signal`            | `INT` → `SIGINT`.                                    |
+| `stopwaitsecs`                  | `graceful_stop`          | Grace window before SIGKILL.                         |
+| `exitcodes`                     | `exit_codes`             | Which codes count as success.                        |
+| `priority`                      | `priority`               | Boot start order.                                    |
+| `autostart`                     | `autostart`              | Whether instances start at boot.                     |
+| `environment`                   | `[services.NAME.env]`    | Quoted values are parsed correctly.                  |
+| `[group:site] programs=web,…`   | `group = "site"` on each | RunWisp has no program _groups_; members are tagged. |
+| `[include] files=conf.d/*.conf` | _(followed and merged)_  | Resolved relative to the config file.                |
+
+## What needs a human
+
+The importer flags everything it can't map cleanly with a `# TODO` and a note —
+nothing is dropped silently. The ones to know about:
+
+- **`autorestart`.** RunWisp services are _always-on_ — they restart whenever
+  they exit. `autorestart=true` (and supervisord's default, `unexpected`) map to
+  a service directly. `autorestart=false` is different: that's a run-once
+  process, so it's imported as a **task** with
+  [`run_on_start`](/configuration/tasks/) and `restart = "never"` instead of a
+  service. If you relied on `unexpected` to _not_ restart on a clean exit, set
+  [`exit_codes`](/configuration/services/) so RunWisp knows which codes are
+  success.
+- **`%(...)s` expansions.** `%(program_name)s` is filled in. Anything else —
+  `%(process_num)s`, `%(ENV_x)s`, `%(host_node_name)s` — is left in place with a
+  TODO. For `numprocs`, the per-instance index is `RUNWISP_INSTANCE_INDEX` in the
+  environment; swap it into your command.
+- **Log files.** `stdout_logfile` / `stderr_logfile` are dropped — RunWisp
+  captures both streams for every run automatically, no paths to manage. Tune
+  size and retention with [`log_max_size` and `keep_runs`](/concepts/logs/)
+  instead.
+- **Daemon sections.** `[supervisord]`, `[supervisorctl]`, `[unix_http_server]`,
+  `[inet_http_server]`, and `[rpcinterface]` are supervisord's own plumbing and
+  have no RunWisp equivalent — RunWisp's daemon is configured in
+  [`[daemon]`](/configuration/daemon/) and served over HTTP out of the box.
+  They're skipped.
+- **`[eventlistener]` / `[fcgi-program]`.** Not supported — RunWisp has no event
+  listener bus or FastCGI process manager. They're skipped with a note so you
+  know to handle them another way.
+
+## What you get that supervisord didn't
+
+- **Logs you don't have to `tail`.** Per-run stdout/stderr, streamed live to the
+  Web UI and TUI and indexed for search — not a flat file you rotate by hand.
+- **Restart visibility.** Every restart is recorded with timing, so a flapping
+  instance is obvious instead of buried in `supervisord.log`. Healthy uptime
+  (`healthy_after`) resets the backoff; too many fast failures mark it FATAL.
+- **Failure alerts.** [Notify](/notifications/model/) on failure through Slack,
+  Telegram, email, or a webhook.
+- **Start ordering.** [`priority`](/configuration/services/) controls boot
+  order, and [`depends_on`](/configuration/services/) gates a service on another
+  becoming healthy first — both honored at startup.
+- **Trigger / stop from anywhere.** Start and stop services from the dashboard,
+  TUI, or REST API; stops are graceful, honoring your `stop_signal` and
+  `graceful_stop`.
+
+Once it's running and you're happy, stop supervisord and let RunWisp own
+supervision. `runwisp.toml` is now the single place your processes are defined.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Tasks vs Services"
+        href="/concepts/tasks-vs-services/"
+        description="Why a [program] becomes a service — and when it becomes a task."
+    />
+    <LinkCard
+        title="[services.*] reference"
+        href="/configuration/services/"
+        description="instances, healthy_after, start_retries, priority, depends_on."
+    />
+    <LinkCard
+        title="Logs & retention"
+        href="/concepts/logs/"
+        description="The capture that replaces stdout_logfile / stderr_logfile."
+    />
+    <LinkCard
+        title="Migrating from cron"
+        href="/recipes/migrating-from-cron/"
+        description="For the scheduled half of your crontab + supervisord setup."
+    />
+</CardGrid>

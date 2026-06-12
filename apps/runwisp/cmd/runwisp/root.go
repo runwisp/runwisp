@@ -77,6 +77,7 @@ func init() {
 	rootCmd.AddCommand(cloudCmd)
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(validateCmd)
+	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(statusCmd)
