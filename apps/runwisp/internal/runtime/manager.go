@@ -680,41 +680,7 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	// Supervisor bookkeeping happens before run.End so a FATAL transition can
 	// rewrite the end reason: RecordExit needs runDuration, and whether the
 	// instance has exhausted its start-retry budget decides the audit row.
-	m.mu.Lock()
-	ts := m.tasks[task.Name]
-	var (
-		nextRestartAttempt int
-		serviceFatal       bool
-		fatalAttempts      int
-	)
-	// ts can be nil only if the task was already deleted — RemoveTask never
-	// deletes while a run is in flight, so in practice ts is present here; the
-	// guard keeps a removed-then-resurrected edge from panicking.
-	if ts != nil {
-		for i, ar := range ts.active {
-			if ar.Run.ID == run.ID {
-				ts.active = append(ts.active[:i], ts.active[i+1:]...)
-				break
-			}
-		}
-		if task.Kind.IsService() {
-			wasFailure := retry.IsFailureReason(outcome.endReason)
-			nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
-				run.InstanceIndex, runDuration, task.StartRetries, wasFailure)
-			if serviceFatal {
-				fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
-			}
-		}
-		if ts.cond != nil {
-			ts.cond.Signal()
-		}
-		// A reload removed this task while runs were draining; once the last one
-		// retires the taskState has no further owner, so delete it here.
-		if ts.removed && len(ts.active) == 0 {
-			delete(m.tasks, task.Name)
-		}
-	}
-	m.mu.Unlock()
+	nextRestartAttempt, serviceFatal, fatalAttempts := m.retireRun(task, run, runDuration, outcome.endReason)
 
 	if serviceFatal {
 		outcome.endReason = model.ReasonStartFailed
@@ -733,6 +699,45 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	}
 
 	return nextRestartAttempt, serviceFatal
+}
+
+// retireRun removes the run from its task's active set and updates supervisor
+// bookkeeping under the manager lock. It returns the next restart-attempt
+// counter (services only), whether the run's service instance is now FATAL, and
+// the recorded start-fail count when FATAL (zero otherwise).
+func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDuration time.Duration, endReason model.EndReason) (nextRestartAttempt int, serviceFatal bool, fatalAttempts int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ts := m.tasks[task.Name]
+	// ts can be nil only if the task was already deleted — RemoveTask never
+	// deletes while a run is in flight, so in practice ts is present here; the
+	// guard keeps a removed-then-resurrected edge from panicking.
+	if ts == nil {
+		return nextRestartAttempt, serviceFatal, fatalAttempts
+	}
+	for i, ar := range ts.active {
+		if ar.Run.ID == run.ID {
+			ts.active = append(ts.active[:i], ts.active[i+1:]...)
+			break
+		}
+	}
+	if task.Kind.IsService() {
+		wasFailure := retry.IsFailureReason(endReason)
+		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
+			run.InstanceIndex, runDuration, task.StartRetries, wasFailure)
+		if serviceFatal {
+			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
+		}
+	}
+	if ts.cond != nil {
+		ts.cond.Signal()
+	}
+	// A reload removed this task while runs were draining; once the last one
+	// retires the taskState has no further owner, so delete it here.
+	if ts.removed && len(ts.active) == 0 {
+		delete(m.tasks, task.Name)
+	}
+	return nextRestartAttempt, serviceFatal, fatalAttempts
 }
 
 // scheduleFollowup spawns the retry or restart goroutine dictated by the task's

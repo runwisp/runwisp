@@ -52,154 +52,164 @@ var cronInterpreters = map[string]bool{
 // losing them. The io.Reader contract makes it trivial to feed `crontab -l`
 // over a pipe.
 func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
-	res := &Result{}
-	dd := newDeduper()
-
-	// system can be flipped on mid-parse when Detect spots the header legend.
-	system := opts.System
-	ambiguous := false
-
-	env := map[string]string{}
-	var shell, timezone string
-	var pendingComment string // a "# ..." line directly above a job
-	var jobs []block
+	cp := &crontabParser{
+		res:  &Result{},
+		dd:   newDeduper(),
+		opts: opts,
+		// system can be flipped on mid-parse when Detect spots the header legend.
+		system: opts.System,
+		env:    map[string]string{},
+	}
 
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	lineNo := 0
 	for sc.Scan() {
-		lineNo++
-		raw := sc.Text()
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			pendingComment = ""
-			continue
-		}
-		if strings.HasPrefix(line, "#") {
-			comment := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-			// The classic `# m h dom mon dow user command` legend is a strong,
-			// safe signal that this is a system crontab.
-			if opts.Detect && !system && isCronHeaderLegend(comment) {
-				system = true
-				pendingComment = ""
-				continue
-			}
-			pendingComment = comment
-			continue
-		}
-
-		// Environment assignment: NAME = value, with an "=" before any
-		// whitespace-separated command would appear. Cron treats these as
-		// settings, not jobs.
-		if name, value, ok := cronEnvLine(line); ok {
-			switch strings.ToUpper(name) {
-			case "SHELL":
-				shell = value
-			case "MAILTO":
-				res.addNote(LevelAttention, "",
-					"crontab sets MAILTO="+value+" — RunWisp doesn't email job output. "+
-						"Wire a notifier instead (see notify_on_failure).")
-			case "CRON_TZ", "TZ":
-				timezone = value
-			default:
-				env[name] = value
-			}
-			pendingComment = ""
-			continue
-		}
-
-		// In per-user mode, flag a line that looks like it smuggles a user column
-		// rather than silently folding the username into the command.
-		if opts.Detect && !system && looksLikeUserColumn(line) {
-			ambiguous = true
-		}
-
-		b, ok := res.parseCronJob(line, pendingComment, system, dd)
-		pendingComment = ""
-		if !ok {
-			res.addNote(LevelAttention, "",
-				"couldn't parse crontab line: "+truncate(line, 60))
-			continue
-		}
-		jobs = append(jobs, b)
+		cp.feedLine(sc.Text())
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
 
-	if ambiguous {
-		res.topComments = append(res.topComments,
-			"⚠ TODO: some lines may carry a user column (this looks like a system",
-			"  crontab). If a `run = \"…\"` below begins with a username, re-run with",
-			"  `runwisp import cron --system`.")
-		res.addNote(LevelAttention, "",
-			"this looks like a system crontab (a user column between the schedule and "+
-				"command). Re-run with --system to split out per-task users, or "+
-				"--system=false to silence this if the commands really do start with that word.")
-	}
+	cp.warnIfAmbiguous()
+	cp.assemble()
+	return cp.res, nil
+}
 
-	// Assemble blocks in reading order: scheduler tz, defaults, then jobs.
-	if timezone != "" {
+// crontabParser carries the running state of a single crontab parse so the
+// per-line classification stays out of ParseCrontab's hot loop.
+type crontabParser struct {
+	res  *Result
+	dd   *deduper
+	opts CronOptions
+
+	system    bool
+	ambiguous bool
+
+	env            map[string]string
+	shell          string
+	timezone       string
+	pendingComment string // a "# ..." line directly above a job
+	jobs           []block
+}
+
+// feedLine classifies one raw crontab line and routes it to the right handler.
+func (cp *crontabParser) feedLine(raw string) {
+	line := strings.TrimSpace(raw)
+	if line == "" {
+		cp.pendingComment = ""
+		return
+	}
+	if strings.HasPrefix(line, "#") {
+		cp.handleComment(line)
+		return
+	}
+	// Environment assignment: NAME = value, with an "=" before any
+	// whitespace-separated command would appear. Cron treats these as
+	// settings, not jobs.
+	if name, value, ok := cronEnvLine(line); ok {
+		cp.handleEnv(name, value)
+		return
+	}
+	// In per-user mode, flag a line that looks like it smuggles a user column
+	// rather than silently folding the username into the command.
+	if cp.opts.Detect && !cp.system && looksLikeUserColumn(line) {
+		cp.ambiguous = true
+	}
+	cp.handleJob(line)
+}
+
+func (cp *crontabParser) handleComment(line string) {
+	comment := strings.TrimSpace(strings.TrimPrefix(line, "#"))
+	// The classic `# m h dom mon dow user command` legend is a strong, safe
+	// signal that this is a system crontab.
+	if cp.opts.Detect && !cp.system && isCronHeaderLegend(comment) {
+		cp.system = true
+		cp.pendingComment = ""
+		return
+	}
+	cp.pendingComment = comment
+}
+
+func (cp *crontabParser) handleEnv(name, value string) {
+	switch strings.ToUpper(name) {
+	case "SHELL":
+		cp.shell = value
+	case "MAILTO":
+		cp.res.addNote(LevelAttention, "",
+			"crontab sets MAILTO="+value+" — RunWisp doesn't email job output. "+
+				"Wire a notifier instead (see notify_on_failure).")
+	case "CRON_TZ", "TZ":
+		cp.timezone = value
+	default:
+		cp.env[name] = value
+	}
+	cp.pendingComment = ""
+}
+
+func (cp *crontabParser) handleJob(line string) {
+	b, ok := cp.res.parseCronJob(line, cp.pendingComment, cp.system, cp.dd)
+	cp.pendingComment = ""
+	if !ok {
+		cp.res.addNote(LevelAttention, "",
+			"couldn't parse crontab line: "+truncate(line, 60))
+		return
+	}
+	cp.jobs = append(cp.jobs, b)
+}
+
+func (cp *crontabParser) warnIfAmbiguous() {
+	if !cp.ambiguous {
+		return
+	}
+	cp.res.topComments = append(cp.res.topComments,
+		"⚠ TODO: some lines may carry a user column (this looks like a system",
+		"  crontab). If a `run = \"…\"` below begins with a username, re-run with",
+		"  `runwisp import cron --system`.")
+	cp.res.addNote(LevelAttention, "",
+		"this looks like a system crontab (a user column between the schedule and "+
+			"command). Re-run with --system to split out per-task users, or "+
+			"--system=false to silence this if the commands really do start with that word.")
+}
+
+// assemble emits blocks in reading order: scheduler tz, defaults, then jobs.
+func (cp *crontabParser) assemble() {
+	if cp.timezone != "" {
 		tz := block{header: "scheduler"}
-		tz.set("timezone", tomlString(timezone))
+		tz.set("timezone", tomlString(cp.timezone))
 		tz.lead = []string{"crontab CRON_TZ/TZ became the daemon-wide scheduler timezone."}
-		res.blocks = append(res.blocks, tz)
+		cp.res.blocks = append(cp.res.blocks, tz)
 	}
-	if shell != "" || len(env) > 0 {
-		def := block{header: "defaults"}
-		if shell != "" {
-			if filepath.IsAbs(shell) {
-				def.set("shell", tomlString(shell))
-			} else {
-				res.addNote(LevelAttention, "",
-					"crontab SHELL="+shell+" is not an absolute path; RunWisp needs an "+
-						"absolute shell path. Left out of [defaults].shell.")
-			}
-		}
-		if len(def.fields) > 0 {
-			res.blocks = append(res.blocks, def)
-		}
-		if eb, ok := envBlock("defaults.env", env); ok {
-			eb.lead = []string{"Environment variables that sat at the top of the crontab."}
-			res.blocks = append(res.blocks, eb)
+	if cp.shell != "" || len(cp.env) > 0 {
+		cp.assembleDefaults()
+	}
+	cp.res.blocks = append(cp.res.blocks, cp.jobs...)
+}
+
+func (cp *crontabParser) assembleDefaults() {
+	def := block{header: "defaults"}
+	if cp.shell != "" {
+		if filepath.IsAbs(cp.shell) {
+			def.set("shell", tomlString(cp.shell))
+		} else {
+			cp.res.addNote(LevelAttention, "",
+				"crontab SHELL="+cp.shell+" is not an absolute path; RunWisp needs an "+
+					"absolute shell path. Left out of [defaults].shell.")
 		}
 	}
-	res.blocks = append(res.blocks, jobs...)
-	return res, nil
+	if len(def.fields) > 0 {
+		cp.res.blocks = append(cp.res.blocks, def)
+	}
+	if eb, ok := envBlock("defaults.env", cp.env); ok {
+		eb.lead = []string{"Environment variables that sat at the top of the crontab."}
+		cp.res.blocks = append(cp.res.blocks, eb)
+	}
 }
 
 // parseCronJob turns one schedule+command line into a [tasks.NAME] block.
 func (r *Result) parseCronJob(line, comment string, system bool, dd *deduper) (block, bool) {
-	var schedule, command string
-	var runOnStart bool
-
-	if strings.HasPrefix(line, "@") {
-		tok, rest, ok := splitFields(line, 1)
-		if !ok {
-			return block{}, false
-		}
-		command = rest
-		switch strings.ToLower(tok[0]) {
-		case "@reboot":
-			runOnStart = true
-		case "@annually":
-			schedule = "@yearly"
-		case "@midnight":
-			schedule = "@daily"
-		default:
-			schedule = tok[0]
-		}
-	} else {
-		nFields := 5
-		if system {
-			nFields = 6 // schedule (5) + user column
-		}
-		tok, rest, ok := splitFields(line, nFields)
-		if !ok || rest == "" {
-			return block{}, false
-		}
-		schedule = strings.Join(tok[:5], " ")
-		command = rest
+	schedule, command, runOnStart, ok := splitCronScheduleCommand(line, system)
+	if !ok {
+		return block{}, false
 	}
 
 	name := dd.unique(deriveCronName(command))
@@ -213,23 +223,7 @@ func (r *Result) parseCronJob(line, comment string, system bool, dd *deduper) (b
 		b.set("description", tomlString(comment))
 	}
 
-	switch {
-	case runOnStart:
-		b.set("run_on_start", "true")
-		b.schedule = "@reboot"
-		b.lead = []string{"@reboot — runs once each time the daemon starts."}
-	default:
-		b.schedule = schedule
-		if err := cronspec.Validate(schedule, ""); err != nil {
-			b.setComment("cron", tomlString(schedule),
-				"TODO: RunWisp couldn't parse this cron expression — fix it.")
-			b.attention = true
-			r.addNote(LevelAttention, name,
-				"cron expression "+schedule+" didn't parse: "+err.Error())
-		} else {
-			b.set("cron", tomlString(schedule))
-		}
-	}
+	r.applyCronSchedule(&b, name, schedule, runOnStart)
 
 	if system {
 		// tok[5] held the user column; re-split to recover it cleanly.
@@ -245,6 +239,60 @@ func (r *Result) parseCronJob(line, comment string, system bool, dd *deduper) (b
 				"RunWisp passes the command to the shell verbatim; adjust if you relied on it.")
 	}
 	return b, true
+}
+
+// splitCronScheduleCommand splits a crontab job line into its schedule and
+// command. It handles both the `@keyword command` shorthand (where @reboot maps
+// to run-on-start and @annually/@midnight normalize to their canonical names)
+// and the classic five-field schedule, with an extra user column when system.
+func splitCronScheduleCommand(line string, system bool) (schedule, command string, runOnStart, ok bool) {
+	if strings.HasPrefix(line, "@") {
+		tok, rest, ok := splitFields(line, 1)
+		if !ok {
+			return "", "", false, false
+		}
+		switch strings.ToLower(tok[0]) {
+		case "@reboot":
+			return "", rest, true, true
+		case "@annually":
+			return "@yearly", rest, false, true
+		case "@midnight":
+			return "@daily", rest, false, true
+		default:
+			return tok[0], rest, false, true
+		}
+	}
+
+	nFields := 5
+	if system {
+		nFields = 6 // schedule (5) + user column
+	}
+	tok, rest, ok := splitFields(line, nFields)
+	if !ok || rest == "" {
+		return "", "", false, false
+	}
+	return strings.Join(tok[:5], " "), rest, false, true
+}
+
+// applyCronSchedule sets the schedule-related fields on b, validating a cron
+// expression and flagging it for the operator when it doesn't parse.
+func (r *Result) applyCronSchedule(b *block, name, schedule string, runOnStart bool) {
+	if runOnStart {
+		b.set("run_on_start", "true")
+		b.schedule = "@reboot"
+		b.lead = []string{"@reboot — runs once each time the daemon starts."}
+		return
+	}
+	b.schedule = schedule
+	if err := cronspec.Validate(schedule, ""); err != nil {
+		b.setComment("cron", tomlString(schedule),
+			"TODO: RunWisp couldn't parse this cron expression — fix it.")
+		b.attention = true
+		r.addNote(LevelAttention, name,
+			"cron expression "+schedule+" didn't parse: "+err.Error())
+		return
+	}
+	b.set("cron", tomlString(schedule))
 }
 
 // isCronHeaderLegend reports whether a comment is the column legend that
@@ -335,35 +383,9 @@ func cronEnvLine(line string) (name, value string, ok bool) {
 // real token (minus a script extension), sanitized to RunWisp's name rules.
 func deriveCronName(command string) string {
 	tokens := strings.Fields(command)
-	base := ""
-	// First choice: the first path-like token (contains "/") that names a real
-	// program rather than a wrapper — this skips past `nice -n 19 …` and lands
-	// on the script being run.
-	for _, t := range tokens {
-		if strings.HasPrefix(t, "-") || !strings.Contains(t, "/") {
-			continue
-		}
-		name := filepath.Base(t)
-		if cronWrappers[name] {
-			continue
-		}
-		base = name
-		break
-	}
-	// Fallback: first bare token that isn't a flag, assignment, wrapper, or a
-	// stray numeric flag value.
+	base := firstPathLikeProgram(tokens)
 	if base == "" {
-		for _, t := range tokens {
-			if strings.HasPrefix(t, "-") || isEnvAssignment(t) || isAllDigits(t) {
-				continue
-			}
-			name := filepath.Base(t)
-			if cronWrappers[name] {
-				continue
-			}
-			base = name
-			break
-		}
+		base = firstBareProgram(tokens)
 	}
 	if base == "" {
 		base = "job"
@@ -380,6 +402,40 @@ func deriveCronName(command string) string {
 		base = base[:model.TaskNameMaxLength]
 	}
 	return base
+}
+
+// firstPathLikeProgram returns the basename of the first path-like token
+// (contains "/") that names a real program rather than a wrapper — this skips
+// past `nice -n 19 …` and lands on the script being run. Empty when none match.
+func firstPathLikeProgram(tokens []string) string {
+	for _, t := range tokens {
+		if strings.HasPrefix(t, "-") || !strings.Contains(t, "/") {
+			continue
+		}
+		name := filepath.Base(t)
+		if cronWrappers[name] {
+			continue
+		}
+		return name
+	}
+	return ""
+}
+
+// firstBareProgram returns the basename of the first bare token that isn't a
+// flag, assignment, wrapper, or a stray numeric flag value. Empty when none
+// match.
+func firstBareProgram(tokens []string) string {
+	for _, t := range tokens {
+		if strings.HasPrefix(t, "-") || isEnvAssignment(t) || isAllDigits(t) {
+			continue
+		}
+		name := filepath.Base(t)
+		if cronWrappers[name] {
+			continue
+		}
+		return name
+	}
+	return ""
 }
 
 // isAllDigits reports whether s is non-empty and entirely ASCII digits.

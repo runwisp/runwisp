@@ -177,55 +177,12 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 }
 
 func (c *Channel) buildMsg(subject, htmlBody, textBody string) (*gomail.Msg, error) {
-	// Defense-in-depth: reject CRLF in any header-bound value before handing
-	// to go-mail. Addresses come from TOML (trusted) and the subject from the
-	// rendered template; this guard catches a future code path that lets
-	// untrusted text reach a header.
-	if err := rejectCRLF("subject", subject); err != nil {
-		return nil, err
-	}
-	if err := rejectCRLF("from", c.from); err != nil {
-		return nil, err
-	}
-	for _, addr := range c.to {
-		if err := rejectCRLF("to", addr); err != nil {
-			return nil, err
-		}
-	}
-	for _, addr := range c.cc {
-		if err := rejectCRLF("cc", addr); err != nil {
-			return nil, err
-		}
-	}
-	for _, addr := range c.bcc {
-		if err := rejectCRLF("bcc", addr); err != nil {
-			return nil, err
-		}
-	}
-	if err := rejectCRLF("reply-to", c.replyTo); err != nil {
+	if err := c.rejectHeaderCRLF(subject); err != nil {
 		return nil, err
 	}
 	m := gomail.NewMsg()
-	if err := m.From(c.from); err != nil {
-		return nil, fmt.Errorf("from %q: %w", c.from, err)
-	}
-	if err := m.To(c.to...); err != nil {
-		return nil, fmt.Errorf("to %v: %w", c.to, err)
-	}
-	if len(c.cc) > 0 {
-		if err := m.Cc(c.cc...); err != nil {
-			return nil, fmt.Errorf("cc %v: %w", c.cc, err)
-		}
-	}
-	if len(c.bcc) > 0 {
-		if err := m.Bcc(c.bcc...); err != nil {
-			return nil, fmt.Errorf("bcc %v: %w", c.bcc, err)
-		}
-	}
-	if c.replyTo != "" {
-		if err := m.ReplyTo(c.replyTo); err != nil {
-			return nil, fmt.Errorf("reply-to %q: %w", c.replyTo, err)
-		}
+	if err := c.setAddresses(m); err != nil {
+		return nil, err
 	}
 	m.Subject(subject)
 	// Plain text first; HTML supplied as the preferred alternative. RFC 2046
@@ -236,6 +193,61 @@ func (c *Channel) buildMsg(subject, htmlBody, textBody string) (*gomail.Msg, err
 	m.SetGenHeader("Auto-Submitted", "auto-generated")
 	m.SetGenHeader("X-Auto-Response-Suppress", "All")
 	return m, nil
+}
+
+// rejectHeaderCRLF is defense-in-depth: reject CRLF in any header-bound value
+// before handing to go-mail. Addresses come from TOML (trusted) and the subject
+// from the rendered template; this guard catches a future code path that lets
+// untrusted text reach a header.
+func (c *Channel) rejectHeaderCRLF(subject string) error {
+	if err := rejectCRLF("subject", subject); err != nil {
+		return err
+	}
+	if err := rejectCRLF("from", c.from); err != nil {
+		return err
+	}
+	for _, addr := range c.to {
+		if err := rejectCRLF("to", addr); err != nil {
+			return err
+		}
+	}
+	for _, addr := range c.cc {
+		if err := rejectCRLF("cc", addr); err != nil {
+			return err
+		}
+	}
+	for _, addr := range c.bcc {
+		if err := rejectCRLF("bcc", addr); err != nil {
+			return err
+		}
+	}
+	return rejectCRLF("reply-to", c.replyTo)
+}
+
+// setAddresses populates the From/To/Cc/Bcc/Reply-To headers on m.
+func (c *Channel) setAddresses(m *gomail.Msg) error {
+	if err := m.From(c.from); err != nil {
+		return fmt.Errorf("from %q: %w", c.from, err)
+	}
+	if err := m.To(c.to...); err != nil {
+		return fmt.Errorf("to %v: %w", c.to, err)
+	}
+	if len(c.cc) > 0 {
+		if err := m.Cc(c.cc...); err != nil {
+			return fmt.Errorf("cc %v: %w", c.cc, err)
+		}
+	}
+	if len(c.bcc) > 0 {
+		if err := m.Bcc(c.bcc...); err != nil {
+			return fmt.Errorf("bcc %v: %w", c.bcc, err)
+		}
+	}
+	if c.replyTo != "" {
+		if err := m.ReplyTo(c.replyTo); err != nil {
+			return fmt.Errorf("reply-to %q: %w", c.replyTo, err)
+		}
+	}
+	return nil
 }
 
 func (c *Channel) dial() (sender, error) {

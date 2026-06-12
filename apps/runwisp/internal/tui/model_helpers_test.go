@@ -268,14 +268,14 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 
 	t.Run("confirmAction with nil client returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if cmd := m.confirmAction(confirmActionTrigger); cmd != nil {
+		if m.confirmAction(confirmActionTrigger) != nil {
 			t.Fatal("expected nil cmd when client is nil")
 		}
 	})
 
 	t.Run("confirmRestartService with empty task returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if cmd := m.confirmRestartService(); cmd != nil {
+		if m.confirmRestartService() != nil {
 			t.Fatal("expected nil cmd when task name is empty")
 		}
 	})
@@ -293,7 +293,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 
 	t.Run("confirmStopService with empty task returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if cmd := m.confirmStopService(); cmd != nil {
+		if m.confirmStopService() != nil {
 			t.Fatal("expected nil cmd when task name is empty")
 		}
 	})
@@ -309,7 +309,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 
 	t.Run("confirmStop with nil execView returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if cmd := m.confirmStop(); cmd != nil {
+		if m.confirmStop() != nil {
 			t.Fatal("expected nil cmd when execView is nil")
 		}
 	})
@@ -319,14 +319,14 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 		run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded}
 		ev := execlist.NewExecView(run)
 		m.execView = &ev
-		if cmd := m.confirmStop(); cmd != nil {
+		if m.confirmStop() != nil {
 			t.Fatal("expected nil cmd for non-running run")
 		}
 	})
 
 	t.Run("confirmRetry with nil execView returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if cmd := m.confirmRetry(); cmd != nil {
+		if m.confirmRetry() != nil {
 			t.Fatal("expected nil cmd when execView is nil")
 		}
 	})

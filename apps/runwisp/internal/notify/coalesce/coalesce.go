@@ -45,16 +45,16 @@ const (
 	DefaultEveryN = 10
 )
 
-// timerHandle is the slice of *time.Timer that coalesce relies on: the ability
+// timerStopper is the slice of *time.Timer that coalesce relies on: the ability
 // to cancel a scheduled window-close flush. Tests inject a fake to fire
 // flushes deterministically instead of waiting on the wall clock.
-type timerHandle interface {
+type timerStopper interface {
 	Stop() bool
 }
 
 // afterFunc schedules fn after d and returns a handle to cancel it. Production
 // wires time.AfterFunc; tests substitute a controllable fake.
-type afterFunc func(d time.Duration, fn func()) timerHandle
+type afterFunc func(d time.Duration, fn func()) timerStopper
 
 // Channel wraps a delegate notify.Channel with outbound coalescing. It is
 // itself a notify.Channel — the dispatcher pumps events through it like any
@@ -81,7 +81,7 @@ type fpState struct {
 	lastSent  time.Time
 	pending   int
 	lastEvent *notify.Event
-	timer     timerHandle
+	timer     timerStopper
 }
 
 // New wraps inner. The returned Channel must be Closed; otherwise pending
@@ -105,7 +105,7 @@ func New(inner notify.Channel, cfg Config, clock notify.Clocker, logger *slog.Lo
 		cfg:         cfg,
 		clock:       clock,
 		logger:      logger,
-		after:       func(d time.Duration, fn func()) timerHandle { return time.AfterFunc(d, fn) },
+		after:       func(d time.Duration, fn func()) timerStopper { return time.AfterFunc(d, fn) },
 		state:       make(map[string]*fpState),
 		timerDone:   ctx.Done(),
 		timerCancel: cancel,

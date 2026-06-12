@@ -341,55 +341,72 @@ func (srv *Server) registerRunsSSE(api huma.API) {
 		"run.updated":   RunUpdatedEvent{},
 		"run.deleted":   RunDeletedSSEEvent{},
 		"ping":          PingEvent{},
-	}, func(ctx context.Context, input *struct{}, send sse.Sender) {
-		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
-		if !ok {
-			// huma owns the response writer here, so we communicate refusal via
-			// the SSE channel and return; the client will see a single ping then
-			// EOF, which the UI already handles as a closed stream.
-			return
-		}
-		defer release()
+	}, srv.streamRunsHandler)
+}
 
-		// Flush response headers immediately so SSE clients (e.g. EventSource
-		// polyfill using fetch) receive the 200 + text/event-stream header
-		// without waiting for the first real event.
-		if err := send(sse.Message{Data: PingEvent{}}); err != nil {
-			return
-		}
+// streamRunsHandler is the SSE callback for the run lifecycle stream. It admits
+// the client (subject to the stream limit), flushes headers, then relays run
+// events and periodic pings until the client disconnects.
+func (srv *Server) streamRunsHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
+	release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+	if !ok {
+		// huma owns the response writer here, so we communicate refusal via
+		// the SSE channel and return; the client will see a single ping then
+		// EOF, which the UI already handles as a closed stream.
+		return
+	}
+	defer release()
 
-		eventChan := make(chan events.Event, 10)
-		unsubscribe := srv.eventBus.SubscribeAll(func(event events.Event) {
-			switch event.Type {
-			case events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted, events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted:
-				select {
-				case eventChan <- event:
-				default:
-					slog.Warn("Run stream channel full", "event", event.Type)
-				}
-			}
-		})
-		defer unsubscribe()
+	// Flush response headers immediately so SSE clients (e.g. EventSource
+	// polyfill using fetch) receive the 200 + text/event-stream header
+	// without waiting for the first real event.
+	if err := send(sse.Message{Data: PingEvent{}}); err != nil {
+		return
+	}
 
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
+	eventChan := make(chan events.Event, 10)
+	unsubscribe := srv.eventBus.SubscribeAll(newRunStreamForwarder(eventChan))
+	defer unsubscribe()
 
-		for {
+	srv.pumpRunStream(ctx, eventChan, send)
+}
+
+// newRunStreamForwarder returns an event-bus subscriber that forwards run
+// lifecycle events onto eventChan, dropping (with a warning) when the buffer is
+// full so a slow client never blocks the bus.
+func newRunStreamForwarder(eventChan chan<- events.Event) func(events.Event) {
+	return func(event events.Event) {
+		switch event.Type {
+		case events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted, events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted:
 			select {
-			case <-ctx.Done():
-				return
-			case event := <-eventChan:
-				data := toSSEEventData(event)
-				if err := send(sse.Message{Data: data}); err != nil {
-					return
-				}
-			case <-ticker.C:
-				if err := send(sse.Message{Data: PingEvent{}}); err != nil {
-					return
-				}
+			case eventChan <- event:
+			default:
+				slog.Warn("Run stream channel full", "event", event.Type)
 			}
 		}
-	})
+	}
+}
+
+// pumpRunStream relays buffered run events and periodic keepalive pings to the
+// SSE client, returning when the context is cancelled or a send fails.
+func (srv *Server) pumpRunStream(ctx context.Context, eventChan <-chan events.Event, send sse.Sender) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event := <-eventChan:
+			if err := send(sse.Message{Data: toSSEEventData(event)}); err != nil {
+				return
+			}
+		case <-ticker.C:
+			if err := send(sse.Message{Data: PingEvent{}}); err != nil {
+				return
+			}
+		}
+	}
 }
 
 // toSSEEventData converts an internal event to the correct SSE wrapper type

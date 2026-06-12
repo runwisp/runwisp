@@ -70,97 +70,107 @@ type NotifierSpec struct {
 func Build(spec NotifierSpec) (notify.Channel, error) {
 	switch spec.Type {
 	case "slack":
-		body, err := render.LoadTemplate("slack", spec.TemplatePath)
-		if err != nil {
-			return nil, err
-		}
-		r, err := render.NewTemplateRendererWithContext("slack:"+spec.ID, body, "application/json", render.DefaultTitle, spec.RenderContext)
-		if err != nil {
-			return nil, err
-		}
-		return slack.New(slack.Config{
-			ID:         spec.ID,
-			WebhookURL: spec.WebhookURL,
-			Channel:    spec.SlackChannel,
-			Renderer:   r,
-			Transport:  httpTransport(spec),
-		})
+		return buildSlack(spec)
 	case "discord":
-		body, err := render.LoadTemplate("discord", spec.TemplatePath)
-		if err != nil {
-			return nil, err
-		}
-		r, err := render.NewTemplateRendererWithContext("discord:"+spec.ID, body, "application/json", render.DefaultTitle, spec.RenderContext)
-		if err != nil {
-			return nil, err
-		}
-		return discord.New(discord.Config{
-			ID:         spec.ID,
-			WebhookURL: spec.WebhookURL,
-			Renderer:   r,
-			Transport:  httpTransport(spec),
-		})
+		return buildDiscord(spec)
 	case "telegram":
-		body, err := render.LoadTemplate("telegram", spec.TemplatePath)
-		if err != nil {
-			return nil, err
-		}
-		r, err := render.NewTemplateRendererWithContext("telegram:"+spec.ID, body, "text/html", render.DefaultTitle, spec.RenderContext)
-		if err != nil {
-			return nil, err
-		}
-		return telegram.New(telegram.Config{
-			ID:        spec.ID,
-			BotToken:  spec.BotToken,
-			ChatID:    spec.ChatID,
-			ParseMode: spec.ParseMode,
-			Renderer:  r,
-			Transport: httpTransport(spec),
-		})
+		return buildTelegram(spec)
 	case "smtp":
-		body, err := render.LoadTemplate("smtp", spec.TemplatePath)
-		if err != nil {
-			return nil, err
-		}
-		r, err := render.NewTemplateRendererWithContext("smtp:"+spec.ID, body, "text/html", render.DefaultTitle, spec.RenderContext)
-		if err != nil {
-			return nil, err
-		}
-		return smtp.New(smtp.Config{
-			ID:            spec.ID,
-			Host:          spec.Host,
-			Port:          spec.Port,
-			TLSMode:       spec.TLSMode,
-			TLSSkipVerify: spec.TLSSkipVerify,
-			Username:      spec.Username,
-			Password:      spec.Password,
-			From:          spec.From,
-			ReplyTo:       spec.ReplyTo,
-			Recipients:    spec.Recipients,
-			CC:            spec.CC,
-			BCC:           spec.BCC,
-			Backoff:       spec.Backoff,
-			Renderer:      r,
-		})
+		return buildSMTP(spec)
 	case "webhook":
-		body, err := render.LoadTemplate("webhook", spec.TemplatePath)
-		if err != nil {
-			return nil, err
-		}
-		r, err := render.NewTemplateRendererWithContext("webhook:"+spec.ID, body, "application/json", render.DefaultTitle, spec.RenderContext)
-		if err != nil {
-			return nil, err
-		}
-		return webhook.New(webhook.Config{
-			ID:        spec.ID,
-			URL:       spec.URL,
-			Headers:   spec.Headers,
-			Renderer:  r,
-			Transport: httpTransport(spec),
-		})
+		return buildWebhook(spec)
 	default:
 		return nil, fmt.Errorf("unknown notifier type %q (id=%s)", spec.Type, spec.ID)
 	}
+}
+
+// renderer loads the channel's template and builds a renderer keyed by
+// "<type>:<id>", using contentType for the rendered payload's MIME type.
+func renderer(spec NotifierSpec, contentType string) (*render.TemplateRenderer, error) {
+	body, err := render.LoadTemplate(spec.Type, spec.TemplatePath)
+	if err != nil {
+		return nil, err
+	}
+	return render.NewTemplateRendererWithContext(spec.Type+":"+spec.ID, body, contentType, render.DefaultTitle, spec.RenderContext)
+}
+
+func buildSlack(spec NotifierSpec) (notify.Channel, error) {
+	r, err := renderer(spec, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	return slack.New(slack.Config{
+		ID:         spec.ID,
+		WebhookURL: spec.WebhookURL,
+		Channel:    spec.SlackChannel,
+		Renderer:   r,
+		Transport:  httpTransport(spec),
+	})
+}
+
+func buildDiscord(spec NotifierSpec) (notify.Channel, error) {
+	r, err := renderer(spec, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	return discord.New(discord.Config{
+		ID:         spec.ID,
+		WebhookURL: spec.WebhookURL,
+		Renderer:   r,
+		Transport:  httpTransport(spec),
+	})
+}
+
+func buildTelegram(spec NotifierSpec) (notify.Channel, error) {
+	r, err := renderer(spec, "text/html")
+	if err != nil {
+		return nil, err
+	}
+	return telegram.New(telegram.Config{
+		ID:        spec.ID,
+		BotToken:  spec.BotToken,
+		ChatID:    spec.ChatID,
+		ParseMode: spec.ParseMode,
+		Renderer:  r,
+		Transport: httpTransport(spec),
+	})
+}
+
+func buildSMTP(spec NotifierSpec) (notify.Channel, error) {
+	r, err := renderer(spec, "text/html")
+	if err != nil {
+		return nil, err
+	}
+	return smtp.New(smtp.Config{
+		ID:            spec.ID,
+		Host:          spec.Host,
+		Port:          spec.Port,
+		TLSMode:       spec.TLSMode,
+		TLSSkipVerify: spec.TLSSkipVerify,
+		Username:      spec.Username,
+		Password:      spec.Password,
+		From:          spec.From,
+		ReplyTo:       spec.ReplyTo,
+		Recipients:    spec.Recipients,
+		CC:            spec.CC,
+		BCC:           spec.BCC,
+		Backoff:       spec.Backoff,
+		Renderer:      r,
+	})
+}
+
+func buildWebhook(spec NotifierSpec) (notify.Channel, error) {
+	r, err := renderer(spec, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	return webhook.New(webhook.Config{
+		ID:        spec.ID,
+		URL:       spec.URL,
+		Headers:   spec.Headers,
+		Renderer:  r,
+		Transport: httpTransport(spec),
+	})
 }
 
 // httpTransport resolves the HTTP transport used by Slack/Telegram channels.

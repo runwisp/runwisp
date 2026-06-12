@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/runwisp/runwisp/internal/composespec"
@@ -179,29 +180,8 @@ func expandComposeAlias(alias string, raw map[string]any, baseDir string, existi
 	}
 	block.File = resolvedFile
 
-	if block.WorkingDir == "" {
-		block.WorkingDir = filepath.Dir(resolvedFile)
-	} else {
-		if !filepath.IsAbs(block.WorkingDir) {
-			block.WorkingDir = filepath.Join(baseDir, block.WorkingDir)
-		}
-		block.WorkingDir, err = filepath.Abs(block.WorkingDir)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Absolutize env-file paths and write them back onto the block so the same
-	// resolved paths flow into ComposeExecution.EnvFile — like the compose file,
-	// they are passed to a CLI whose cwd is working_dir, not baseDir.
-	for i, p := range block.EnvFile {
-		if !filepath.IsAbs(p) {
-			abs, absErr := filepath.Abs(filepath.Join(baseDir, p))
-			if absErr != nil {
-				return nil, absErr
-			}
-			block.EnvFile[i] = abs
-		}
+	if err := resolveComposeBlockPaths(block, baseDir, resolvedFile); err != nil {
+		return nil, err
 	}
 
 	project, err := composespec.Load(resolvedFile, block.Profiles, block.EnvFile, block.WorkingDir)
@@ -215,6 +195,35 @@ func expandComposeAlias(alias string, raw map[string]any, baseDir string, existi
 	default:
 		return expandComposeServices(block, project, existingNames)
 	}
+}
+
+// resolveComposeBlockPaths absolutizes the block's working_dir (defaulting to
+// the compose file's directory) and env-file paths in place. Both are passed
+// to a CLI whose cwd is working_dir, not baseDir, so they must be absolute.
+func resolveComposeBlockPaths(block *composeBlock, baseDir, resolvedFile string) error {
+	if block.WorkingDir == "" {
+		block.WorkingDir = filepath.Dir(resolvedFile)
+	} else {
+		if !filepath.IsAbs(block.WorkingDir) {
+			block.WorkingDir = filepath.Join(baseDir, block.WorkingDir)
+		}
+		abs, err := filepath.Abs(block.WorkingDir)
+		if err != nil {
+			return err
+		}
+		block.WorkingDir = abs
+	}
+
+	for i, p := range block.EnvFile {
+		if !filepath.IsAbs(p) {
+			abs, err := filepath.Abs(filepath.Join(baseDir, p))
+			if err != nil {
+				return err
+			}
+			block.EnvFile[i] = abs
+		}
+	}
+	return nil
 }
 
 // parseComposeBlock destructures the raw map into scalar fields + per-service
@@ -250,6 +259,17 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 		Alias:            alias,
 		Overrides:        overrides,
 	}
+	applyComposeBlockDefaults(block, alias)
+	if err := validateComposeBlock(block); err != nil {
+		return nil, err
+	}
+	return block, nil
+}
+
+// applyComposeBlockDefaults fills the unset scalar fields of a parsed block
+// with their compose-import defaults (mode, pull, name_format, group, and
+// project_name all default off the alias).
+func applyComposeBlockDefaults(block *composeBlock, alias string) {
 	if block.Mode == "" {
 		block.Mode = model.ComposeModeServices
 	}
@@ -259,35 +279,39 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 	if block.NameFormat == "" {
 		block.NameFormat = "{alias}.{service}"
 	}
-
-	if len(block.Include) > 0 && len(block.Exclude) > 0 {
-		return nil, fmt.Errorf("`include` and `exclude` are mutually exclusive")
-	}
-	if !slices.Contains(validComposeMode, block.Mode) {
-		return nil, fmt.Errorf("invalid mode %q: must be one of %s", block.Mode, strings.Join(validComposeMode, ", "))
-	}
-	if !slices.Contains(validComposePull, block.Pull) {
-		return nil, fmt.Errorf("invalid pull %q: must be one of %s", block.Pull, strings.Join(validComposePull[:3], ", "))
-	}
-	if !strings.Contains(block.NameFormat, "{service}") && block.Mode == model.ComposeModeServices {
-		return nil, fmt.Errorf("name_format %q must contain {service}", block.NameFormat)
-	}
-	if block.Mode == model.ComposeModeStack {
-		if len(block.Overrides) > 0 {
-			return nil, fmt.Errorf("per-service overrides are not allowed in mode=\"stack\"")
-		}
-		if len(block.Include) > 0 || len(block.Exclude) > 0 {
-			return nil, fmt.Errorf("include/exclude are not allowed in mode=\"stack\"")
-		}
-	}
-
 	if block.Group == "" {
 		block.Group = alias
 	}
 	if block.ProjectName == "" {
 		block.ProjectName = alias
 	}
-	return block, nil
+}
+
+// validateComposeBlock rejects mutually-exclusive or out-of-range fields on a
+// defaulted block, and enforces the stack-mode restrictions (no overrides, no
+// include/exclude).
+func validateComposeBlock(block *composeBlock) error {
+	if len(block.Include) > 0 && len(block.Exclude) > 0 {
+		return fmt.Errorf("`include` and `exclude` are mutually exclusive")
+	}
+	if !slices.Contains(validComposeMode, block.Mode) {
+		return fmt.Errorf("invalid mode %q: must be one of %s", block.Mode, strings.Join(validComposeMode, ", "))
+	}
+	if !slices.Contains(validComposePull, block.Pull) {
+		return fmt.Errorf("invalid pull %q: must be one of %s", block.Pull, strings.Join(validComposePull[:3], ", "))
+	}
+	if !strings.Contains(block.NameFormat, "{service}") && block.Mode == model.ComposeModeServices {
+		return fmt.Errorf("name_format %q must contain {service}", block.NameFormat)
+	}
+	if block.Mode == model.ComposeModeStack {
+		if len(block.Overrides) > 0 {
+			return fmt.Errorf("per-service overrides are not allowed in mode=\"stack\"")
+		}
+		if len(block.Include) > 0 || len(block.Exclude) > 0 {
+			return fmt.Errorf("include/exclude are not allowed in mode=\"stack\"")
+		}
+	}
+	return nil
 }
 
 func decodeComposeBlockWire(scalars map[string]any) (*composeBlockWire, error) {
@@ -330,33 +354,17 @@ func expandComposeServices(block *composeBlock, project *composespec.Project, ex
 		availableSet[n] = struct{}{}
 	}
 
-	// Reject service names that collide with a reserved compose-block key.
-	for _, n := range available {
-		if _, reserved := composeReservedKeys[n]; reserved {
-			return nil, fmt.Errorf("compose service %q collides with a reserved key in [compose.%s]; rename the compose service", n, block.Alias)
-		}
-	}
-
-	if err := validateComposeNameSet(block.Include, availableSet, "include"); err != nil {
+	imported, err := selectImportedComposeServices(block, available, availableSet)
+	if err != nil {
 		return nil, err
 	}
-	if err := validateComposeNameSet(block.Exclude, availableSet, "exclude"); err != nil {
-		return nil, err
-	}
-
-	imported := selectComposeServices(available, block.Include, block.Exclude)
 	importedSet := make(map[string]struct{}, len(imported))
 	for _, n := range imported {
 		importedSet[n] = struct{}{}
 	}
 
-	for name := range block.Overrides {
-		if _, ok := importedSet[name]; !ok {
-			if _, exists := availableSet[name]; !exists {
-				return nil, fmt.Errorf("override for service %q does not exist in compose file", name)
-			}
-			return nil, fmt.Errorf("override for service %q does not match any imported service (filtered out by include/exclude)", name)
-		}
+	if err := validateComposeOverridesExist(block.Overrides, importedSet, availableSet); err != nil {
+		return nil, err
 	}
 
 	tasks := make([]model.Task, 0, len(imported))
@@ -378,6 +386,39 @@ func expandComposeServices(block *composeBlock, project *composespec.Project, ex
 		existingNames[taskName] = struct{}{}
 	}
 	return tasks, nil
+}
+
+// selectImportedComposeServices rejects service names colliding with a reserved
+// compose-block key, validates the include/exclude name sets against the
+// available services, and returns the post-filter set of services to import.
+func selectImportedComposeServices(block *composeBlock, available []string, availableSet map[string]struct{}) ([]string, error) {
+	for _, n := range available {
+		if _, reserved := composeReservedKeys[n]; reserved {
+			return nil, fmt.Errorf("compose service %q collides with a reserved key in [compose.%s]; rename the compose service", n, block.Alias)
+		}
+	}
+	if err := validateComposeNameSet(block.Include, availableSet, "include"); err != nil {
+		return nil, err
+	}
+	if err := validateComposeNameSet(block.Exclude, availableSet, "exclude"); err != nil {
+		return nil, err
+	}
+	return selectComposeServices(available, block.Include, block.Exclude), nil
+}
+
+// validateComposeOverridesExist ensures every per-service override targets a
+// service that was actually imported, distinguishing "no such service" from
+// "filtered out by include/exclude".
+func validateComposeOverridesExist(overrides map[string]*composeServiceOverrideWire, importedSet, availableSet map[string]struct{}) error {
+	for name := range overrides {
+		if _, ok := importedSet[name]; !ok {
+			if _, exists := availableSet[name]; !exists {
+				return fmt.Errorf("override for service %q does not exist in compose file", name)
+			}
+			return fmt.Errorf("override for service %q does not match any imported service (filtered out by include/exclude)", name)
+		}
+	}
+	return nil
 }
 
 func expandComposeStack(block *composeBlock, _ *composespec.Project, existingNames map[string]struct{}) ([]model.Task, error) {
@@ -461,6 +502,24 @@ func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcNa
 	if w == nil {
 		return nil
 	}
+	applyComposeOverrideScalars(task, w)
+	return applyComposeOverrideParsed(task, w, svcName)
+}
+
+// applyComposeOverrideScalars copies the override's already-typed fields
+// (strings, ints, pointers, maps) onto the task. Empty/zero values leave the
+// compose-import default intact; the APITrigger/Autostart pointers distinguish
+// "unset" from an explicit boolean.
+func applyComposeOverrideScalars(task *model.Task, w *composeServiceOverrideWire) {
+	applyComposeOverrideSupervision(task, w)
+	applyComposeOverrideEnv(task, w)
+}
+
+// applyComposeOverrideSupervision copies the override's identity and
+// supervision-policy fields (group, description, trigger/overlap/restart,
+// instances, retries, priority, autostart, log-on-full, keep_runs) onto the
+// task, leaving unset values at their compose-import default.
+func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverrideWire) {
 	if w.Group != "" {
 		task.Group = w.Group
 	}
@@ -503,6 +562,11 @@ func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcNa
 	if w.KeepRuns != 0 {
 		task.KeepRuns = w.KeepRuns
 	}
+}
+
+// applyComposeOverrideEnv copies the override's env / secrets / notify fields
+// onto the task, leaving unset values at their compose-import default.
+func applyComposeOverrideEnv(task *model.Task, w *composeServiceOverrideWire) {
 	if len(w.Env) > 0 {
 		task.Env = w.Env
 	}
@@ -522,35 +586,23 @@ func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcNa
 		// for a follow-up once notify wiring is extended.
 		_ = w.NotifyOnFailure
 	}
-	// Duration / byte-size string fields require the same parsers as the
-	// regular service path. Reuse them so error messages match.
-	if w.Timeout != "" {
-		d, err := parseDuration(w.Timeout)
-		if err != nil {
-			return fmt.Errorf("service %q override: invalid timeout: %w", svcName, err)
-		}
-		task.Timeout = d
+}
+
+// applyComposeOverrideParsed parses the override's duration / byte-size string
+// fields with the same parsers as the regular service path (so error messages
+// match) and writes them onto the task. Empty strings are left untouched.
+func applyComposeOverrideParsed(task *model.Task, w *composeServiceOverrideWire, svcName string) error {
+	if err := parseOverrideDuration(w.Timeout, svcName, "timeout", &task.Timeout); err != nil {
+		return err
 	}
-	if w.GracefulStop != "" {
-		d, err := parseDuration(w.GracefulStop)
-		if err != nil {
-			return fmt.Errorf("service %q override: invalid graceful_stop: %w", svcName, err)
-		}
-		task.GracefulStop = d
+	if err := parseOverrideDuration(w.GracefulStop, svcName, "graceful_stop", &task.GracefulStop); err != nil {
+		return err
 	}
-	if w.RestartDelay != "" {
-		d, err := parseDuration(w.RestartDelay)
-		if err != nil {
-			return fmt.Errorf("service %q override: invalid restart_delay: %w", svcName, err)
-		}
-		task.RestartDelay = d
+	if err := parseOverrideDuration(w.RestartDelay, svcName, "restart_delay", &task.RestartDelay); err != nil {
+		return err
 	}
-	if w.HealthyAfter != "" {
-		d, err := parseDuration(w.HealthyAfter)
-		if err != nil {
-			return fmt.Errorf("service %q override: invalid healthy_after: %w", svcName, err)
-		}
-		task.HealthyAfter = d
+	if err := parseOverrideDuration(w.HealthyAfter, svcName, "healthy_after", &task.HealthyAfter); err != nil {
+		return err
 	}
 	if w.KeepFor != "" {
 		d, err := parseKeepFor(w.KeepFor)
@@ -566,6 +618,21 @@ func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcNa
 		}
 		task.LogMaxSize = n
 	}
+	return nil
+}
+
+// parseOverrideDuration parses one duration-valued override field into dst,
+// leaving dst untouched when raw is empty. field names the key in the error so
+// the message matches the regular service path.
+func parseOverrideDuration(raw, svcName, field string, dst *time.Duration) error {
+	if raw == "" {
+		return nil
+	}
+	d, err := parseDuration(raw)
+	if err != nil {
+		return fmt.Errorf("service %q override: invalid %s: %w", svcName, field, err)
+	}
+	*dst = d
 	return nil
 }
 

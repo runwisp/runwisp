@@ -15,7 +15,7 @@ const unitPath = "/home/alice/.config/systemd/user/runwisp-bright-falcon.service
 
 // renderManagedUnit returns a minimal managed unit body with our
 // markers — the tests don't care about the rest of the file.
-func renderManagedUnit(t *testing.T, settingsHash string, body string) []byte {
+func renderManagedUnit(t *testing.T, settingsHash, body string) []byte {
 	t.Helper()
 	return []byte(ManagedMarker + "\n" +
 		"# runwisp-config-hash: " + settingsHash + "\n" +

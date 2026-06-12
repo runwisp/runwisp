@@ -94,50 +94,72 @@ func (m *Model) SelectedHit() *server.LogSearchHit {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case resultsMsg:
-		m.loading = false
-		if msg.err != nil {
-			m.errMsg = msg.err.Error()
-			m.hits = nil
-			m.cursor = 0
-			return m, nil
-		}
-		m.errMsg = ""
-		m.hits = msg.hits
-		m.cursor = 0
-		return m, nil
+		return m.handleResults(msg), nil
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			if m.input.Focused() && m.input.Value() != "" {
-				return m.startSearch()
-			}
-			if h := m.SelectedHit(); h != nil {
-				return m, func() tea.Msg {
-					return SelectMsg{TaskName: m.taskName, RunID: h.RunID, Line: h.N}
-				}
-			}
-			return m, nil
-		case "tab":
-			m.regex = !m.regex
-			return m, nil
-		case "alt+c":
-			m.caseSensitive = !m.caseSensitive
-			return m, nil
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-			return m, nil
-		case "down", "j":
-			if m.cursor < len(m.hits)-1 {
-				m.cursor++
-			}
-			return m, nil
+		if next, cmd, handled := m.handleKey(msg); handled {
+			return next, cmd
 		}
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// handleResults folds an async search response back into the model.
+func (m Model) handleResults(msg resultsMsg) Model {
+	m.loading = false
+	if msg.err != nil {
+		m.errMsg = msg.err.Error()
+		m.hits = nil
+		m.cursor = 0
+		return m
+	}
+	m.errMsg = ""
+	m.hits = msg.hits
+	m.cursor = 0
+	return m
+}
+
+// handleKey processes the overlay's key bindings. The handled flag reports
+// whether the key was consumed; when false the caller forwards the message to
+// the text input.
+func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	switch msg.String() {
+	case "enter":
+		next, cmd := m.handleEnter()
+		return next, cmd, true
+	case "tab":
+		m.regex = !m.regex
+		return m, nil, true
+	case "alt+c":
+		m.caseSensitive = !m.caseSensitive
+		return m, nil, true
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+		return m, nil, true
+	case "down", "j":
+		if m.cursor < len(m.hits)-1 {
+			m.cursor++
+		}
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// handleEnter either fires a new search (when the input has focus and text)
+// or selects the highlighted hit.
+func (m Model) handleEnter() (Model, tea.Cmd) {
+	if m.input.Focused() && m.input.Value() != "" {
+		return m.startSearch()
+	}
+	if h := m.SelectedHit(); h != nil {
+		return m, func() tea.Msg {
+			return SelectMsg{TaskName: m.taskName, RunID: h.RunID, Line: h.N}
+		}
+	}
+	return m, nil
 }
 
 // Regex reports whether the overlay is in regex mode.

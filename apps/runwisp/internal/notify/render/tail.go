@@ -35,30 +35,40 @@ func NewOutputTail() func(logPath string, maxLines, maxBytes int) string {
 		if err != nil || len(lines) == 0 {
 			return ""
 		}
-		cleaned := make([]string, 0, len(lines))
-		for _, rec := range lines {
-			text := strings.TrimRight(rec.Text, " \t\r\n")
-			if text == "" {
-				continue
-			}
-			cleaned = append(cleaned, text)
-		}
+		cleaned := cleanTailLines(lines)
 		if len(cleaned) == 0 {
 			return ""
 		}
-		joined := strings.Join(cleaned, "\n")
-		if len(joined) <= maxBytes {
-			return joined
-		}
-		// Keep the tail of the tail — the *last* maxBytes-1 bytes — and prefix
-		// with a single character ellipsis so the reader sees the truncation
-		// marker. maxBytes <= 1 collapses to "…" with nothing else, which is
-		// honest enough.
-		const ellipsis = "…"
-		budget := maxBytes - len(ellipsis)
-		if budget <= 0 {
-			return ellipsis
-		}
-		return ellipsis + joined[len(joined)-budget:]
+		return truncateTail(strings.Join(cleaned, "\n"), maxBytes)
 	}
+}
+
+// cleanTailLines trims trailing whitespace from each record and drops the
+// empty/whitespace-only lines (they add no signal but eat budget).
+func cleanTailLines(lines []logutil.LogLineRecord) []string {
+	cleaned := make([]string, 0, len(lines))
+	for _, rec := range lines {
+		text := strings.TrimRight(rec.Text, " \t\r\n")
+		if text == "" {
+			continue
+		}
+		cleaned = append(cleaned, text)
+	}
+	return cleaned
+}
+
+// truncateTail caps joined at maxBytes. When the budget is exceeded it keeps the
+// tail of the tail — the *last* maxBytes-1 bytes — and prefixes a single
+// character ellipsis so the reader sees the truncation marker. maxBytes <= 1
+// collapses to "…" with nothing else, which is honest enough.
+func truncateTail(joined string, maxBytes int) string {
+	if len(joined) <= maxBytes {
+		return joined
+	}
+	const ellipsis = "…"
+	budget := maxBytes - len(ellipsis)
+	if budget <= 0 {
+		return ellipsis
+	}
+	return ellipsis + joined[len(joined)-budget:]
 }

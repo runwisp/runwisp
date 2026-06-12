@@ -11,7 +11,7 @@ import (
 	"github.com/runwisp/runwisp/internal/server"
 )
 
-func unreadNotification(id string, sev string, occurredAt time.Time, title string) server.NotificationDTO {
+func unreadNotification(id, sev string, occurredAt time.Time, title string) server.NotificationDTO {
 	return server.NotificationDTO{
 		ID:             id,
 		Severity:       sev,
@@ -21,7 +21,7 @@ func unreadNotification(id string, sev string, occurredAt time.Time, title strin
 	}
 }
 
-func readNotification(id string, sev string, occurredAt time.Time, title string) server.NotificationDTO {
+func readNotification(id, sev string, occurredAt time.Time, title string) server.NotificationDTO {
 	stamp := occurredAt
 	n := unreadNotification(id, sev, occurredAt, title)
 	n.ReadAt = &stamp

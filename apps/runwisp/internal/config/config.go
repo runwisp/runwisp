@@ -413,36 +413,7 @@ func validateServiceDependencies(cfg *Config) error {
 // DFS, naming the path (e.g. "a -> b -> a") so the operator can see which edges
 // to cut. Only service nodes participate; non-services have no depends_on.
 func detectDependencyCycle(byName map[string]*model.Task) error {
-	const (
-		visiting = 1
-		done     = 2
-	)
-	state := make(map[string]int, len(byName))
-	var stack []string
-
-	var visit func(name string) error
-	visit = func(name string) error {
-		state[name] = visiting
-		stack = append(stack, name)
-		t, ok := byName[name]
-		if ok && t.Kind.IsService() {
-			for _, dep := range t.DependsOn {
-				switch state[dep] {
-				case visiting:
-					return fmt.Errorf("service dependency cycle: %s -> %s", strings.Join(cycleFrom(stack, dep), " -> "), dep)
-				case done:
-					continue
-				default:
-					if err := visit(dep); err != nil {
-						return err
-					}
-				}
-			}
-		}
-		stack = stack[:len(stack)-1]
-		state[name] = done
-		return nil
-	}
+	walk := &depCycleWalk{byName: byName, state: make(map[string]int, len(byName))}
 
 	// Sort the roots so the reported cycle is deterministic regardless of map
 	// iteration order.
@@ -452,12 +423,52 @@ func detectDependencyCycle(byName map[string]*model.Task) error {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if state[name] == 0 {
-			if err := visit(name); err != nil {
+		if walk.state[name] == depStateUnseen {
+			if err := walk.visit(name); err != nil {
 				return err
 			}
 		}
 	}
+	return nil
+}
+
+const (
+	depStateUnseen   = 0
+	depStateVisiting = 1
+	depStateDone     = 2
+)
+
+// depCycleWalk carries the DFS state (per-node colour + the active path stack)
+// for detectDependencyCycle so the recursion is a plain method rather than a
+// closure capturing mutable locals.
+type depCycleWalk struct {
+	byName map[string]*model.Task
+	state  map[string]int
+	stack  []string
+}
+
+// visit performs one DFS step, returning a cycle error naming the path if it
+// reaches a node already on the active stack.
+func (w *depCycleWalk) visit(name string) error {
+	w.state[name] = depStateVisiting
+	w.stack = append(w.stack, name)
+	t, ok := w.byName[name]
+	if ok && t.Kind.IsService() {
+		for _, dep := range t.DependsOn {
+			switch w.state[dep] {
+			case depStateVisiting:
+				return fmt.Errorf("service dependency cycle: %s -> %s", strings.Join(cycleFrom(w.stack, dep), " -> "), dep)
+			case depStateDone:
+				continue
+			default:
+				if err := w.visit(dep); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	w.stack = w.stack[:len(w.stack)-1]
+	w.state[name] = depStateDone
 	return nil
 }
 
@@ -929,26 +940,8 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if task.Shell == "" {
 		task.Shell = DefaultShell
 	}
-	// stop_signal: inherit from defaults, then fall back to SIGTERM, then
-	// canonicalize to "SIGxxx" form. An unrecognised value survives unchanged so
-	// Validate can reject it with a clear error.
-	if task.StopSignal == "" {
-		task.StopSignal = d.StopSignal
-	}
-	if task.StopSignal == "" {
-		task.StopSignal = DefaultStopSignal
-	}
-	if canonical, ok := model.NormalizeSignalName(task.StopSignal); ok {
-		task.StopSignal = canonical
-	}
-	// exit_codes: nil means "unset" (inherit, then default to [0]); an explicit
-	// empty list survives so Validate can reject it.
-	if task.ExitCodes == nil {
-		task.ExitCodes = d.ExitCodes
-	}
-	if task.ExitCodes == nil {
-		task.ExitCodes = []int{0}
-	}
+	applyInheritedStopSignal(task, d)
+	applyInheritedExitCodes(task, d)
 	if task.LogMaxSize == 0 {
 		task.LogMaxSize = d.LogMaxSize
 	}
@@ -967,18 +960,50 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if task.LogOnFull == "" {
 		task.LogOnFull = model.LogOverflowDropOld
 	}
-	if task.NotifyOnMissed == nil {
-		// Per-task unset → inherit [defaults], then fall back to the built-in
-		// true. Resolve to a concrete pointer so downstream readers never see
-		// nil and the value is stable regardless of how the task was built.
-		resolved := true
-		if d.NotifyOnMissed != nil {
-			resolved = *d.NotifyOnMissed
-		}
-		task.NotifyOnMissed = &resolved
-	}
+	applyInheritedNotifyOnMissed(task, d)
 	task.Env = mergeEnv(d.Env, task.Env)
 	task.Secrets = mergeEnv(d.Secrets, task.Secrets)
+}
+
+// applyInheritedStopSignal inherits stop_signal from defaults, then falls back
+// to SIGTERM, then canonicalizes to "SIGxxx" form. An unrecognised value
+// survives unchanged so Validate can reject it with a clear error.
+func applyInheritedStopSignal(task *model.Task, d Defaults) {
+	if task.StopSignal == "" {
+		task.StopSignal = d.StopSignal
+	}
+	if task.StopSignal == "" {
+		task.StopSignal = DefaultStopSignal
+	}
+	if canonical, ok := model.NormalizeSignalName(task.StopSignal); ok {
+		task.StopSignal = canonical
+	}
+}
+
+// applyInheritedExitCodes treats nil exit_codes as "unset" (inherit, then
+// default to [0]); an explicit empty list survives so Validate can reject it.
+func applyInheritedExitCodes(task *model.Task, d Defaults) {
+	if task.ExitCodes == nil {
+		task.ExitCodes = d.ExitCodes
+	}
+	if task.ExitCodes == nil {
+		task.ExitCodes = []int{0}
+	}
+}
+
+// applyInheritedNotifyOnMissed resolves an unset per-task notify_on_missed by
+// inheriting [defaults], then falling back to the built-in true. The result is
+// a concrete pointer so downstream readers never see nil regardless of how the
+// task was built.
+func applyInheritedNotifyOnMissed(task *model.Task, d Defaults) {
+	if task.NotifyOnMissed != nil {
+		return
+	}
+	resolved := true
+	if d.NotifyOnMissed != nil {
+		resolved = *d.NotifyOnMissed
+	}
+	task.NotifyOnMissed = &resolved
 }
 
 // mergeEnv returns a map containing every key in base then in overlay, with

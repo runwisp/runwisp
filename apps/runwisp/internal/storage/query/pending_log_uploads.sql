@@ -13,4 +13,4 @@ ON CONFLICT(external_execution_id) DO UPDATE SET
 DELETE FROM pending_log_uploads WHERE external_execution_id = ?;
 
 -- name: ListPendingLogUploads :many
-SELECT * FROM pending_log_uploads;
+SELECT external_execution_id, upload_url, log_path, inserted_at FROM pending_log_uploads;

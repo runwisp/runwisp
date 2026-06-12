@@ -17,7 +17,7 @@ function createThemeStore() {
     let preference = $state<ThemePreference>("auto");
     let resolved = $state<ResolvedTheme>("light");
 
-    const media = browser ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const media = browser ? globalThis.matchMedia("(prefers-color-scheme: dark)") : null;
 
     function resolve(pref: ThemePreference): ResolvedTheme {
         if (pref === "auto") return media?.matches === true ? "dark" : "light";

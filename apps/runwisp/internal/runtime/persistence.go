@@ -118,15 +118,15 @@ func (pc *PersistenceCoordinator) enqueue(task persistTask) {
 
 func (pc *PersistenceCoordinator) worker(ctx context.Context) {
 	defer pc.wg.Done()
-	// Drain pending tasks with a fresh background ctx after cancellation so
-	// in-flight persistence still completes during shutdown — the worker
-	// ctx is only the "stop accepting new work" signal.
+	// Drain pending tasks with an uncancellable derivative of ctx after
+	// cancellation so in-flight persistence still completes during shutdown —
+	// the worker ctx is only the "stop accepting new work" signal.
 	for {
 		select {
 		case task := <-pc.ch:
 			pc.apply(ctx, task)
 		case <-ctx.Done():
-			drainCtx := context.Background()
+			drainCtx := context.WithoutCancel(ctx)
 			for {
 				select {
 				case task := <-pc.ch:

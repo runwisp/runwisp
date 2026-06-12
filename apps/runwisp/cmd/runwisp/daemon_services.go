@@ -80,44 +80,16 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	// registry so a later `runwisp reload` mutation is race-free.
 	tasks := runtime.NewTaskRegistry(tasksMap)
 
-	var scheduler *runtime.Scheduler
-	var schedResult runtime.ScheduleResult
-	var pendingSummary uikit.PendingRunsSummary
-	var catchUpResult runtime.CatchUpResult
-	var runOnStartResult runtime.RunOnStartResult
 	// Default to a no-op cancel so cloud mode (no service auto-start) leaves a
 	// callable handle in daemonServices.
 	serviceLaunchCancel := context.CancelFunc(func() {})
 
+	var boot standaloneBoot
 	if mode == modeStandalone {
-		// [scheduler] timezone is required at config-load time when any cron task
-		// lacks a per-task timezone, so by the point we get here it's either set
-		// explicitly or there are no cron expressions to interpret.
-		schedLoc, locErr := config.ResolveTimezone("scheduler.timezone", cfg.Config.Scheduler.Timezone)
-		if locErr != nil {
-			return nil, locErr
-		}
-		scheduler = runtime.NewScheduler(taskManager, tasksMap, schedLoc)
-		schedResult, err = scheduler.Start()
+		boot, serviceLaunchCancel, err = startStandaloneScheduling(ctx, cfg, db, taskManager, tasksMap, &initWarnings)
 		if err != nil {
-			addWarning("Failed to start scheduler: %v", err)
+			return nil, err
 		}
-
-		pendingSummary = resumePendingRuns(ctx, db, taskManager)
-
-		// Fire run_on_start tasks once at boot, before notify so a boot-triggered
-		// run doesn't page. Catch-up (which pages on missed runs) is deferred to
-		// after notify starts (below) so run.missed events reach a subscriber.
-		runOnStartResult = runtime.RunStartupTasks(tasksMap, taskManager)
-		if runOnStartResult.Errors > 0 {
-			slog.Warn("run_on_start firing completed with errors",
-				"triggered", runOnStartResult.Triggered, "errors", runOnStartResult.Errors)
-		} else if runOnStartResult.Triggered > 0 {
-			slog.Debug("run_on_start firing completed", "triggered", runOnStartResult.Triggered)
-		}
-		var launchCtx context.Context
-		launchCtx, serviceLaunchCancel = context.WithCancel(context.Background())
-		startServiceInstances(launchCtx, taskManager, tasksMap)
 	}
 
 	retentionCleaner := initRetentionCleaner(cfg, db, tasks, f.LogDir())
@@ -125,31 +97,13 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	softDeletePurger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	softDeletePurger.Start()
 
-	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
-	if err != nil {
-		addWarning("Failed to initialize notify subsystem: %v", err)
-	}
-	if notifyB.Service != nil {
-		if startErr := notifyB.Service.Start(context.Background()); startErr != nil {
-			addWarning("Failed to start notify subsystem: %v", startErr)
-		}
-	}
+	notifyB := startNotify(ctx, cfg, db, eventBus, addWarning)
 
 	if mode == modeStandalone {
 		// Run catch-up now that notify is subscribed, so a missed-run gap
 		// detected from persisted history raises a run.missed alert instead of
 		// emitting into a bus nobody is listening on yet.
-		catchUpResult = runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now())
-		// Banner already shows the triggered total. Only narrate via slog when
-		// something actually went wrong; otherwise stay quiet so INFO output
-		// at default verbosity is uncluttered.
-		if catchUpResult.Errors > 0 {
-			slog.Warn("Missed-tick catch-up completed with errors",
-				"triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
-		} else if catchUpResult.Triggered > 0 {
-			slog.Debug("Missed-tick catch-up completed",
-				"triggered", catchUpResult.Triggered)
-		}
+		boot.catchUpResult = runMissedTickCatchUp(ctx, db, tasksMap, taskManager)
 	}
 
 	return &daemonServices{
@@ -158,19 +112,105 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		Executor:            exec,
 		TaskManager:         taskManager,
 		Tasks:               tasks,
-		Scheduler:           scheduler,
+		Scheduler:           boot.scheduler,
 		RetentionCleaner:    retentionCleaner,
 		SoftDeletePurger:    softDeletePurger,
 		Notify:              notifyB,
-		ScheduleResult:      schedResult,
+		ScheduleResult:      boot.schedResult,
 		CrashedRuns:         crashed,
-		PendingSummary:      pendingSummary,
-		CatchUpResult:       catchUpResult,
-		RunOnStartResult:    runOnStartResult,
+		PendingSummary:      boot.pendingSummary,
+		CatchUpResult:       boot.catchUpResult,
+		RunOnStartResult:    boot.runOnStartResult,
 		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
 		ServiceLaunchCancel: serviceLaunchCancel,
 		InitWarnings:        initWarnings,
 	}, nil
+}
+
+// standaloneBoot collects the per-boot results produced only in standalone
+// mode (scheduling, pending-run resume, run_on_start, missed-tick catch-up) so
+// initDaemonServices can fold them into the returned daemonServices.
+type standaloneBoot struct {
+	scheduler        *runtime.Scheduler
+	schedResult      runtime.ScheduleResult
+	pendingSummary   uikit.PendingRunsSummary
+	runOnStartResult runtime.RunOnStartResult
+	catchUpResult    runtime.CatchUpResult
+}
+
+// startStandaloneScheduling brings up the scheduler, resumes pending runs, fires
+// run_on_start tasks, and launches service instances — the standalone-only boot
+// steps that run before notify subscribes. It returns the collected results, the
+// cancel func that aborts the background service launchers, and a hard error
+// (timezone resolution) that must abort daemon startup. Non-fatal hiccups are
+// appended to warnings.
+func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storage.Database, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, warnings *[]string) (standaloneBoot, context.CancelFunc, error) {
+	var boot standaloneBoot
+
+	// [scheduler] timezone is required at config-load time when any cron task
+	// lacks a per-task timezone, so by the point we get here it's either set
+	// explicitly or there are no cron expressions to interpret.
+	schedLoc, locErr := config.ResolveTimezone("scheduler.timezone", cfg.Config.Scheduler.Timezone)
+	if locErr != nil {
+		return boot, func() {}, locErr
+	}
+	scheduler := runtime.NewScheduler(taskManager, tasksMap, schedLoc)
+	boot.scheduler = scheduler
+	schedResult, err := scheduler.Start()
+	if err != nil {
+		*warnings = append(*warnings, fmt.Sprintf("Failed to start scheduler: %v", err))
+	}
+	boot.schedResult = schedResult
+
+	boot.pendingSummary = resumePendingRuns(ctx, db, taskManager)
+
+	// Fire run_on_start tasks once at boot, before notify so a boot-triggered
+	// run doesn't page. Catch-up (which pages on missed runs) is deferred to
+	// after notify starts so run.missed events reach a subscriber.
+	runOnStartResult := runtime.RunStartupTasks(tasksMap, taskManager)
+	if runOnStartResult.Errors > 0 {
+		slog.Warn("run_on_start firing completed with errors",
+			"triggered", runOnStartResult.Triggered, "errors", runOnStartResult.Errors)
+	} else if runOnStartResult.Triggered > 0 {
+		slog.Debug("run_on_start firing completed", "triggered", runOnStartResult.Triggered)
+	}
+	boot.runOnStartResult = runOnStartResult
+
+	launchCtx, serviceLaunchCancel := context.WithCancel(ctx)
+	startServiceInstances(launchCtx, taskManager, tasksMap)
+
+	return boot, serviceLaunchCancel, nil
+}
+
+// startNotify initializes the notify subsystem and starts its service, routing
+// both the init failure and the start failure to warnings (non-fatal: the
+// daemon must boot even when notify is misconfigured or unavailable).
+func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, eventBus events.EventBus, addWarning func(string, ...any)) notifyBundle {
+	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
+	if err != nil {
+		addWarning("Failed to initialize notify subsystem: %v", err)
+	}
+	if notifyB.Service != nil {
+		if startErr := notifyB.Service.Start(ctx); startErr != nil {
+			addWarning("Failed to start notify subsystem: %v", startErr)
+		}
+	}
+	return notifyB
+}
+
+// runMissedTickCatchUp runs missed-tick catch-up and narrates the outcome via
+// slog only when something went wrong; the banner already shows the triggered
+// total, so default-verbosity INFO output stays uncluttered.
+func runMissedTickCatchUp(ctx context.Context, db storage.Database, tasksMap map[string]*model.Task, taskManager runtime.TaskManager) runtime.CatchUpResult {
+	catchUpResult := runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now())
+	if catchUpResult.Errors > 0 {
+		slog.Warn("Missed-tick catch-up completed with errors",
+			"triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)
+	} else if catchUpResult.Triggered > 0 {
+		slog.Debug("Missed-tick catch-up completed",
+			"triggered", catchUpResult.Triggered)
+	}
+	return catchUpResult
 }
 
 func initExecutor(cfg *config.Config, eventBus events.EventBus, logDir string) executor.Executor {

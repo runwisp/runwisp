@@ -82,7 +82,7 @@ func LookupTimestampByLine(r io.ReaderAt, size int64, localLine uint32) (int64, 
 // using binary search. Returns the line of the first entry with Timestamp >= fromMs
 // as startLine and the line of the last entry with Timestamp <= toMs as endLine.
 // If no entries fall in range, returns (0, 0, nil).
-func LookupLineRangeByTime(r io.ReaderAt, size int64, fromMs, toMs int64) (startLine, endLine uint32, err error) {
+func LookupLineRangeByTime(r io.ReaderAt, size, fromMs, toMs int64) (startLine, endLine uint32, err error) {
 	count := TimestampEntryCount(size)
 	if count == 0 {
 		return 0, 0, nil

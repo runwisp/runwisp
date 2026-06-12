@@ -107,13 +107,7 @@ func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, startAfter
 // further runs, truncates the slice, and emits a Cursor pointing at the
 // next run/line to resume from on the following request.
 func ScanTask(ctx context.Context, runs []RunRef, matcherFactory func() Matcher, opts ScanOpts, startAfterRunID string, startAfterN int64) ([]Hit, *Cursor, int, error) {
-	maxHits := opts.MaxHits
-	if maxHits <= 0 {
-		maxHits = DefaultMaxHits
-	}
-	if maxHits > MaxHitsCeiling {
-		maxHits = MaxHitsCeiling
-	}
+	maxHits := clampMaxHits(opts.MaxHits)
 	if len(runs) == 0 {
 		return nil, nil, 0, nil
 	}
@@ -121,24 +115,58 @@ func ScanTask(ctx context.Context, runs []RunRef, matcherFactory func() Matcher,
 	// Skip already-consumed runs from a previous page. The cursor's
 	// `startAfterN` only applies to the run it names; subsequent runs in
 	// the same page restart at line 0.
-	startIdx := 0
-	if startAfterRunID != "" {
-		for i, r := range runs {
-			if r.ID == startAfterRunID {
-				startIdx = i
-				break
-			}
-		}
-	}
-	pending := runs[startIdx:]
+	pending := runs[runStartIndex(runs, startAfterRunID):]
 	if len(pending) == 0 {
 		return nil, nil, 0, nil
 	}
 
-	type runResult struct {
-		hits []Hit
-		more bool
+	results, scanned, err := scanPending(ctx, pending, matcherFactory, maxHits, startAfterN)
+	if err != nil {
+		return nil, nil, scanned, err
 	}
+
+	flat, cursor := flattenResults(results, pending, maxHits)
+	sortHits(flat)
+	return flat, cursor, scanned, nil
+}
+
+// runResult holds one run's hits plus whether the run still has unscanned
+// bytes (its per-run cap was hit).
+type runResult struct {
+	hits []Hit
+	more bool
+}
+
+// clampMaxHits normalizes a caller-supplied cap: non-positive falls back to
+// DefaultMaxHits, oversized clamps down to MaxHitsCeiling.
+func clampMaxHits(maxHits int) int {
+	if maxHits <= 0 {
+		return DefaultMaxHits
+	}
+	if maxHits > MaxHitsCeiling {
+		return MaxHitsCeiling
+	}
+	return maxHits
+}
+
+// runStartIndex returns the index of the run named by startAfterRunID, or 0
+// when the ID is empty or absent.
+func runStartIndex(runs []RunRef, startAfterRunID string) int {
+	if startAfterRunID == "" {
+		return 0
+	}
+	for i, r := range runs {
+		if r.ID == startAfterRunID {
+			return i
+		}
+	}
+	return 0
+}
+
+// scanPending scans every pending run in parallel (bounded by ScanWorkers),
+// returning per-run results in input order plus the count of runs scanned.
+// Only the first run honors startAfterN; later runs restart at line 0.
+func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Matcher, maxHits int, startAfterN int64) ([]runResult, int, error) {
 	results := make([]runResult, len(pending))
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -167,15 +195,17 @@ func ScanTask(ctx context.Context, runs []RunRef, matcherFactory func() Matcher,
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return nil, nil, scanned, err
+		return nil, scanned, err
 	}
+	return results, scanned, nil
+}
 
-	// Flatten in the caller's run order. Stop adding hits once the cap is
-	// reached and remember where the cut fell — that's the cursor. If a
-	// run delivered its full per-run maxHits, more=true tells us to leave
-	// a cursor even if the global slice has room.
+// flattenResults concatenates per-run hits in the caller's run order, stopping
+// once maxHits is reached and emitting a Cursor pointing at the next run/line
+// to resume from. A run that delivered its full per-run cap (more=true) leaves
+// a cursor even when the global slice still has room.
+func flattenResults(results []runResult, pending []RunRef, maxHits int) ([]Hit, *Cursor) {
 	flat := make([]Hit, 0, maxHits)
-	var cursor *Cursor
 	for i, r := range results {
 		room := maxHits - len(flat)
 		if room <= 0 {
@@ -184,21 +214,20 @@ func ScanTask(ctx context.Context, runs []RunRef, matcherFactory func() Matcher,
 		if len(r.hits) <= room {
 			flat = append(flat, r.hits...)
 			if r.more {
-				cursor = &Cursor{RunID: pending[i].ID, NextN: r.hits[len(r.hits)-1].N}
-				break
+				return flat, &Cursor{RunID: pending[i].ID, NextN: r.hits[len(r.hits)-1].N}
 			}
 			continue
 		}
 		flat = append(flat, r.hits[:room]...)
-		cursor = &Cursor{
-			RunID: pending[i].ID,
-			NextN: r.hits[room-1].N,
-		}
-		break
+		return flat, &Cursor{RunID: pending[i].ID, NextN: r.hits[room-1].N}
 	}
-	// Sort hits to enforce a deterministic newest-first ordering by run,
-	// then ascending line within a run. Workers complete out of order, so
-	// we cannot rely on append order alone.
+	return flat, nil
+}
+
+// sortHits enforces a deterministic newest-first ordering by run timestamp,
+// then ascending line within a run. Workers complete out of order, so append
+// order alone cannot be trusted.
+func sortHits(flat []Hit) {
 	sort.SliceStable(flat, func(a, b int) bool {
 		if flat[a].TS != flat[b].TS {
 			return flat[a].TS > flat[b].TS
@@ -208,5 +237,4 @@ func ScanTask(ctx context.Context, runs []RunRef, matcherFactory func() Matcher,
 		}
 		return flat[a].N < flat[b].N
 	})
-	return flat, cursor, scanned, nil
 }

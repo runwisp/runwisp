@@ -216,7 +216,7 @@ type daemonProcess struct {
 	stopOnce sync.Once
 }
 
-func startDaemon(t *testing.T, projectDir string, binaryPath string, configPath string) *daemonProcess {
+func startDaemon(t *testing.T, projectDir, binaryPath, configPath string) *daemonProcess {
 	t.Helper()
 
 	return startDaemonOn(t, projectDir, binaryPath, configPath, testutil.ShortTempDir(t), reserveTCPPort(t))
@@ -226,7 +226,7 @@ func startDaemon(t *testing.T, projectDir string, binaryPath string, configPath 
 // that must survive a daemon restart (or pre-seed the data dir before first
 // boot) own the dir/port and reuse them across boots; startDaemon is the
 // convenience wrapper that picks a throwaway dir and a free port.
-func startDaemonOn(t *testing.T, projectDir string, binaryPath string, configPath string, dataDir string, port int) *daemonProcess {
+func startDaemonOn(t *testing.T, projectDir, binaryPath, configPath, dataDir string, port int) *daemonProcess {
 	t.Helper()
 
 	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
@@ -324,7 +324,7 @@ func (d *daemonProcess) waitForReady(t testing.TB, client *apiclient.Client, tim
 	require.FailNowf(t, "daemon did not become healthy", "daemon output:\n%s", d.output.Tail(16_000))
 }
 
-func startRemoteTUI(t *testing.T, projectDir string, binaryPath string, configPath string, daemon *daemonProcess) *tuiSession {
+func startRemoteTUI(t *testing.T, projectDir, binaryPath, configPath string, daemon *daemonProcess) *tuiSession {
 	t.Helper()
 
 	cmd := exec.Command(

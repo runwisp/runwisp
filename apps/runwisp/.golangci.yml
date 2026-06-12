@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Focused lint pass that mirrors the SonarCloud rules we actually hit, so they
+# fail `bun run ci` (via runwisp:check) before the cloud scan does. go vet and
+# gofmt stay in check-go.sh; this adds only the Sonar-mapped linters.
+#
+#   gocognit  ~ go:S3776  (cognitive complexity; threshold matches Sonar's 15)
+#   revive    ~ go:S117   (var-naming) + general Go naming/style hygiene
+#   gocritic  ~ godre:S8209 (paramTypeCombine: group consecutive same-type params)
+#
+# Rules with no clean golangci equivalent — godre:S8239/S8242/S8196/S8193 and the
+# TS/JS S77xx family — stay enforced by the SonarCloud scan alone.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - gocognit
+    - gocritic
+    - revive
+  settings:
+    gocognit:
+      # Sonar S3776 flags functions scoring above 15; match that.
+      min-complexity: 16
+    gocritic:
+      disable-all: true
+      enabled-checks:
+        - paramTypeCombine
+    revive:
+      rules:
+        - name: var-naming
+  exclusions:
+    generated: strict
+    rules:
+      # Tests keep their explicit idiom — same carve-out the Sonar config makes
+      # for S3776 in *_test.go files.
+      - path: _test\.go
+        linters:
+          - gocognit
+    paths:
+      - internal/generated
+      - internal/storage/sqlcdb

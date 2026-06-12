@@ -17,9 +17,12 @@
                     var p = localStorage.getItem("runwisp-theme") || "auto";
                     var dark =
                         p === "dark" ||
-                        (p === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+                        (p === "auto" &&
+                            globalThis.matchMedia("(prefers-color-scheme: dark)").matches);
                     if (dark) document.documentElement.classList.add("dark");
-                } catch (e) {}
+                } catch {
+                    /* localStorage unavailable (e.g. private mode); fall back to light */
+                }
             })();
         </script>
         %sveltekit.head%
