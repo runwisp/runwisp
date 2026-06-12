@@ -127,6 +127,10 @@ type RunSummaryOutput struct {
 	Body model.RunSummary
 }
 
+type ReloadOutput struct {
+	Body model.ReloadResult
+}
+
 // ---------- Auth types ----------
 
 type AuthStatusOutput struct {

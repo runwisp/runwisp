@@ -79,24 +79,30 @@ env var or a file with `${VAR}` / `${file:path}` —
 
 ## Reload semantics
 
-RunWisp **doesn't do live reload** of `runwisp.toml` — no file watcher,
-no `SIGHUP` handler, no `runwisp reload` subcommand. A running daemon
-sticks with the config it parsed at startup until you restart it. So the
-loop is: `Ctrl-C` the daemon, edit the file, and run `runwisp daemon`
-again (or bounce it through whatever supervisor is managing the
-process).
+Edit `runwisp.toml`, then run `runwisp reload` (or send the daemon a
+`SIGHUP`) to pick up the change without bouncing the process. Tasks get
+added, changed, and removed live; in-flight runs finish under the
+definition they started with. It's always explicit — RunWisp never
+watches the file and reloads on its own. The reload is validate-first, so
+a typo can't take your scheduler down, and a few daemon-wide settings
+still need a full restart. The [Reload](/operations/reload/) page has the
+details.
 
-Restarting is quick. In-flight runs are cancelled — they end as
-`stopped` if they bow out within the `[daemon] shutdown_timeout` window,
-or get reconciled as `crashed` on the next boot if they don't — then the
-database reopens and the schedule comes back up from the new file.
-Upgrading the binary works the same way: stop the daemon, swap the
-binary, start it again.
+For everything reload won't do live — changing `[storage]`, the scheduler
+timezone, the bind port, or upgrading the binary — restart instead: stop
+the daemon, make the change, and run `runwisp daemon` again (or bounce it
+through whatever supervisor is managing the process). In-flight runs are
+cancelled on the way down — they end as `stopped` if they bow out within
+the `[daemon] shutdown_timeout` window, or get reconciled as `crashed` on
+the next boot if they don't — then the database reopens and the schedule
+comes back up from the new file.
 
 One thing to watch: a parse error at startup kills the boot. The daemon
 exits non-zero before it ever opens its port, and by then your previous
 instance is already gone. The safe pre-flight is to run `runwisp
-validate` against the new file _before_ you restart.
+validate` against the new file _before_ you restart. (A bad edit picked up
+by `runwisp reload` is safe by contrast — it's rejected and the running
+daemon keeps going.)
 
 ## What the schema considers a breaking change
 

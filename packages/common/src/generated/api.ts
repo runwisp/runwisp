@@ -161,6 +161,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reload runwisp.toml
+         * @description Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.
+         */
+        post: operations["reload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs": {
         parameters: {
             query?: never;
@@ -878,6 +898,26 @@ export interface components {
             next_cursor?: string;
         };
         PingEvent: Record<string, never>;
+        ReloadResult: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/ReloadResult.json
+             */
+            readonly $schema?: string;
+            /** @description Names of tasks added by the reload */
+            added: string[] | null;
+            /** @description Tasks whose definition changed, with the reasons */
+            changed: components["schemas"]["ReloadTaskChange"][] | null;
+            /** @description Names of tasks removed by the reload */
+            removed: string[] | null;
+        };
+        ReloadTaskChange: {
+            /** @description Task name */
+            name: string;
+            /** @description Why the task is considered changed */
+            reasons: string[] | null;
+        };
         Run: {
             /**
              * Format: uri
@@ -1559,6 +1599,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    reload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReloadResult"];
+                };
             };
             /** @description Error */
             default: {

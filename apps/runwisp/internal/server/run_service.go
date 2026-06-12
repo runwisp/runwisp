@@ -37,25 +37,26 @@ func wrapSelectorErr(err error) error {
 type runService struct {
 	db          storage.RunRepository
 	taskManager runtime.TaskRunner
-	tasks       map[string]*model.Task
+	tasks       *runtime.TaskRegistry
 	scheduler   runtime.NextRunGetter
 	logDir      string
 	eventBus    events.EventBus
 }
 
-func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks map[string]*model.Task, sched runtime.NextRunGetter, logDir string, bus events.EventBus) *runService {
+func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks *runtime.TaskRegistry, sched runtime.NextRunGetter, logDir string, bus events.EventBus) *runService {
 	return &runService{db: db, taskManager: jm, tasks: tasks, scheduler: sched, logDir: logDir, eventBus: bus}
 }
 
 func (s *runService) ListTasks() []model.TaskResponse {
-	tasks := make([]model.TaskResponse, 0, len(s.tasks))
-	for _, task := range s.tasks {
+	tasks := make([]model.TaskResponse, 0, s.tasks.Len())
+	s.tasks.Range(func(_ string, task *model.Task) bool {
 		tr := model.TaskResponse{Task: *task}
 		if task.Cron != "" && s.scheduler != nil {
 			tr.NextRunAt = s.scheduler.GetNextRun(task.Name)
 		}
 		tasks = append(tasks, tr)
-	}
+		return true
+	})
 	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Name < tasks[j].Name })
 	return tasks
 }
@@ -105,7 +106,7 @@ func (s *runService) GetRun(ctx context.Context, runID string) (*model.Run, erro
 }
 
 func (s *runService) TriggerRun(ctx context.Context, taskName string) (*model.Run, error) {
-	task, exists := s.tasks[taskName]
+	task, exists := s.tasks.Get(taskName)
 	if !exists {
 		return nil, ErrTaskNotFound
 	}
@@ -119,7 +120,7 @@ func (s *runService) TriggerRun(ctx context.Context, taskName string) (*model.Ru
 }
 
 func (s *runService) RestartService(taskName string) error {
-	task, exists := s.tasks[taskName]
+	task, exists := s.tasks.Get(taskName)
 	if !exists {
 		return ErrTaskNotFound
 	}
@@ -130,7 +131,7 @@ func (s *runService) RestartService(taskName string) error {
 }
 
 func (s *runService) StopService(taskName string) error {
-	task, exists := s.tasks[taskName]
+	task, exists := s.tasks.Get(taskName)
 	if !exists {
 		return ErrTaskNotFound
 	}
@@ -228,7 +229,7 @@ func (s *runService) bulkRerun(ctx context.Context, sel model.RunSelector) ([]Tr
 	sort.Strings(taskNames)
 	out := make([]TriggeredRunRef, 0, len(taskNames))
 	for _, name := range taskNames {
-		task, ok := s.tasks[name]
+		task, ok := s.tasks.Get(name)
 		if !ok || task.Kind.IsService() || !task.APITrigger {
 			continue
 		}

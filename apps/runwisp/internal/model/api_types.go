@@ -9,6 +9,27 @@ type TaskResponse struct {
 	NextRunAt *string `json:"next_run_at,omitempty"`
 }
 
+// ReloadResult is the diff produced by an explicit config reload: which tasks
+// were added, removed, or changed relative to the previously-live set. It is
+// the wire shape returned by POST /api/reload and by `runwisp reload`.
+type ReloadResult struct {
+	Added   []string           `json:"added" doc:"Names of tasks added by the reload"`
+	Removed []string           `json:"removed" doc:"Names of tasks removed by the reload"`
+	Changed []ReloadTaskChange `json:"changed" doc:"Tasks whose definition changed, with the reasons"`
+}
+
+// ReloadTaskChange names a changed task and the human-readable reasons its
+// definition differed (e.g. "schedule", "command", "env").
+type ReloadTaskChange struct {
+	Name    string   `json:"name" doc:"Task name"`
+	Reasons []string `json:"reasons" doc:"Why the task is considered changed"`
+}
+
+// IsEmpty reports whether the reload changed nothing.
+func (r ReloadResult) IsEmpty() bool {
+	return len(r.Added) == 0 && len(r.Removed) == 0 && len(r.Changed) == 0
+}
+
 // SystemStats holds live system resource and identity information.
 type SystemStats struct {
 	CPUUsage float64 `json:"cpu_usage" doc:"CPU usage percentage (0-100)"`

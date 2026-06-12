@@ -108,7 +108,7 @@ func TestInitRetentionCleaner_StartsAndStops(t *testing.T) {
 	config.ApplyDefaults(cfg)
 	dc := &daemonConfig{Config: cfg}
 
-	cleaner := initRetentionCleaner(dc, db, map[string]*model.Task{}, f.LogDir())
+	cleaner := initRetentionCleaner(dc, db, runtime.NewTaskRegistry(nil), f.LogDir())
 	require.NotNil(t, cleaner)
 	t.Cleanup(cleaner.Stop)
 }
@@ -165,7 +165,7 @@ func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
 	svc := &daemonServices{
 		Executor:            exec,
 		TaskManager:         tm,
-		TasksMap:            tasksMap,
+		Tasks:               runtime.NewTaskRegistry(tasksMap),
 		TaskShutdownTimeout: 5 * time.Second,
 	}
 	info := buildDaemonInfo(dc, svc, time.Time{}, f.Port)

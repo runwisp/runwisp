@@ -10,6 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +27,7 @@ var openapiCmd = &cobra.Command{
 func runOpenAPI() error {
 	// Construct a server with minimal dependencies — only route registration matters.
 	srv, err := server.New(server.Options{
-		Tasks:      map[string]*model.Task{},
+		Tasks:      runtime.NewTaskRegistry(nil),
 		Port:       9477,
 		LogDir:     os.TempDir(),
 		EventBus:   events.NewEventBus(),

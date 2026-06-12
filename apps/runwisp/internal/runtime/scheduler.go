@@ -143,6 +143,41 @@ func (scheduler *Scheduler) Stop() {
 	<-ctx.Done()
 }
 
+// AddTask schedules a single task after the scheduler has started, used by the
+// reconciler when a reload adds a cron task. Tasks without a cron expression
+// are ignored (services have no schedule). robfig/cron's AddFunc is safe to
+// call on a running cron.
+func (scheduler *Scheduler) AddTask(task *model.Task) error {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	if task.Cron == "" {
+		return nil
+	}
+	return scheduler.addTask(task)
+}
+
+// RemoveTask unschedules a task by name. No-op when the task has no entry (e.g.
+// a service, or a cron task that failed to schedule). cron.Remove is safe on a
+// running cron. The DST dedup state is dropped alongside the entry so a later
+// re-add starts clean.
+func (scheduler *Scheduler) RemoveTask(name string) {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	if entryID, ok := scheduler.entryIDs[name]; ok {
+		scheduler.cron.Remove(entryID)
+		delete(scheduler.entryIDs, name)
+	}
+	delete(scheduler.lastFired, name)
+}
+
+// Reschedule replaces a task's cron entry with one built from its current
+// definition, used by the reconciler when a reload changes a task's cron
+// expression or timezone.
+func (scheduler *Scheduler) Reschedule(task *model.Task) error {
+	scheduler.RemoveTask(task.Name)
+	return scheduler.AddTask(task)
+}
+
 func (scheduler *Scheduler) addTask(task *model.Task) error {
 	taskName := task.Name
 	spec := task.Cron

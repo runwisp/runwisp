@@ -236,19 +236,21 @@ cron = "5 2 * * *"
 
 ## Reload semantics
 
-The scheduler reads `runwisp.toml` exactly once, at startup. There's no
-live reload — no file watcher, no reload command. Want your edits to
-take? Restart the daemon.
+The scheduler reads `runwisp.toml` at startup, and again whenever you run
+[`runwisp reload`](/operations/reload/) (or send `SIGHUP`). Reload is the
+explicit way to pick up schedule edits without bouncing the daemon — it's
+never automatic, there's no file watcher.
 
 A parse error at startup stops the boot cold: the daemon exits before it
 ever opens its port. The safe habit is to run
 `runwisp validate --config <path>` against the new file _before_ you
-restart.
+restart. (A bad edit handed to `runwisp reload` is rejected instead, and
+the running scheduler keeps its current entries.)
 
-If a task disappears from the file between restarts, its schedule is
-gone but its run history stays put. If a new task shows up, its schedule
-is added — and catchup does **not** apply to it, since it didn't exist
-in the previous config.
+If a task disappears from the file, its schedule is dropped but its run
+history stays put. If a new task shows up, its schedule is added — and
+catchup does **not** apply to it, whether it appeared via a restart or a
+reload, since it didn't exist in the previous config.
 
 ## Intentional scope
 

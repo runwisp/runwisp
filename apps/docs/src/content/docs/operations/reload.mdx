@@ -1,0 +1,85 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Reload
+description: Pick up runwisp.toml task changes in a running daemon without a full restart. Covers runwisp reload and SIGHUP, the validate-first guarantee, what reloads live versus what needs a restart, and how in-flight runs behave.
+---
+
+You edited `runwisp.toml` — added a task, tweaked a cron, dropped one you don't
+need anymore. You don't have to restart the whole daemon to pick that up.
+
+```sh
+runwisp reload
+```
+
+That re-reads `runwisp.toml` and reconciles the running task set against it:
+new tasks start being scheduled, removed tasks stop, and changed tasks swap to
+their new definition. RunWisp prints exactly what it did:
+
+```
+Configuration reloaded.
+  + added   nightly-backup
+  ~ changed report (schedule)
+  - removed old-cleanup
+```
+
+Sending the daemon a `SIGHUP` does the same thing — handy from a deploy script
+or a file-watcher you wired up yourself:
+
+```sh
+kill -HUP "$(cat .runwisp/daemon.pid)"
+```
+
+Reload is always explicit. RunWisp never watches the file and reloads on its
+own; it does exactly what you ask, when you ask.
+
+## Validate-first, all-or-nothing
+
+Before touching anything live, RunWisp loads and validates the **whole** new
+config. If it doesn't parse, fails validation, or changes a setting that can't
+be reloaded (see below), the reload is **rejected** and your running task set is
+left exactly as it was — no half-applied state.
+
+```sh
+$ runwisp reload
+Error: reload rejected: [storage] changed; requires `runwisp restart`
+```
+
+So a typo in `runwisp.toml` can't take your scheduler down. Fix it, reload
+again.
+
+## What reloads live, and what needs a restart
+
+Most of your day-to-day edits reload cleanly:
+
+- **Adding, removing, and changing tasks and services** — new commands, cron
+  expressions, environment, instance counts, concurrency and retry policies.
+- **`[defaults]`** — because defaults are merged into each task before the
+  comparison, changing a default shows up as a change on every task it touches.
+
+A few daemon-wide settings can't be swapped under a running process. Changing
+any of these is rejected and asks you to run `runwisp restart`:
+
+- `[daemon]` — shutdown timeout, external URL, metrics, cloud dispatch
+- `[scheduler] timezone`
+- `[storage]`
+- `[notify]`
+
+The HTTP bind host and port aren't config at all — they're CLI flags — so they
+can only change on a fresh start.
+
+## Reload is not a restart
+
+A couple of boot-only behaviors deliberately **don't** fire on reload:
+
+- A newly added task does **not** run its `run_on_start` command, and it is
+  **not** caught up for ticks it "missed" before it existed. It simply starts
+  scheduling from now.
+- An **in-flight run keeps running under the definition it started with**.
+  Removing or changing a cron task never kills a run that's already going — it
+  finishes, and only the next firing uses the new definition. Removed services
+  are the exception: their instances are stopped, since the whole point is to
+  take them down.
+
+If you want the full boot path — `run_on_start`, missed-run catch-up, a fresh
+read of the restart-only settings — use `runwisp restart` instead.

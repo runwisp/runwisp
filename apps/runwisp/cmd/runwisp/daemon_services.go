@@ -29,7 +29,7 @@ type daemonServices struct {
 	EventBus            events.EventBus
 	Executor            executor.Executor
 	TaskManager         runtime.TaskManager
-	TasksMap            map[string]*model.Task
+	Tasks               *runtime.TaskRegistry
 	Scheduler           *runtime.Scheduler
 	RetentionCleaner    *runtime.RetentionCleaner
 	SoftDeletePurger    *runtime.SoftDeletePurger
@@ -74,6 +74,11 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	exec := initExecutor(cfg.Config, eventBus, f.LogDir())
 
 	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)
+	// Single guarded owner of the live task set. Boot-only helpers below still
+	// read the bare tasksMap (no reload can race them yet); long-lived readers
+	// (retention, server, cloud snapshot) and the reconciler go through the
+	// registry so a later `runwisp reload` mutation is race-free.
+	tasks := runtime.NewTaskRegistry(tasksMap)
 
 	var scheduler *runtime.Scheduler
 	var schedResult runtime.ScheduleResult
@@ -115,7 +120,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		startServiceInstances(launchCtx, taskManager, tasksMap)
 	}
 
-	retentionCleaner := initRetentionCleaner(cfg, db, tasksMap, f.LogDir())
+	retentionCleaner := initRetentionCleaner(cfg, db, tasks, f.LogDir())
 
 	softDeletePurger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	softDeletePurger.Start()
@@ -152,7 +157,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		EventBus:            eventBus,
 		Executor:            exec,
 		TaskManager:         taskManager,
-		TasksMap:            tasksMap,
+		Tasks:               tasks,
 		Scheduler:           scheduler,
 		RetentionCleaner:    retentionCleaner,
 		SoftDeletePurger:    softDeletePurger,
@@ -218,9 +223,9 @@ func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.
 	return taskManager, tasksMap
 }
 
-func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasksMap map[string]*model.Task, logDir string) *runtime.RetentionCleaner {
+func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasks *runtime.TaskRegistry, logDir string) *runtime.RetentionCleaner {
 	maxTotalSize := cfg.Config.Storage.MaxSize
-	cleaner := runtime.NewRetentionCleaner(db, tasksMap, time.Hour, logDir, maxTotalSize)
+	cleaner := runtime.NewRetentionCleaner(db, tasks, time.Hour, logDir, maxTotalSize)
 	cleaner.Start()
 	return cleaner
 }
@@ -366,15 +371,16 @@ func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManage
 // configLoadedAt is when the boot path snapshotted runwisp.toml; the dynamic
 // config_stale flag is injected per request by the server, not stored here.
 func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time.Time, port int) *model.DaemonInfo {
-	taskNames := make([]string, 0, len(svc.TasksMap))
-	for name := range svc.TasksMap {
+	snapshot := svc.Tasks.Snapshot()
+	taskNames := make([]string, 0, len(snapshot))
+	for name := range snapshot {
 		taskNames = append(taskNames, name)
 	}
 	sort.Strings(taskNames)
 
 	tasks := make([]model.TaskBrief, 0, len(taskNames))
 	for _, name := range taskNames {
-		j := svc.TasksMap[name]
+		j := snapshot[name]
 		tasks = append(tasks, model.TaskBrief{
 			Name:          j.Name,
 			Kind:          j.Kind,

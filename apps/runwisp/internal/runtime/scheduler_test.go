@@ -295,3 +295,81 @@ func TestSchedulerRejectsBadTaskTimezone(t *testing.T) {
 	assert.Equal(t, 0, res.Scheduled)
 	assert.NotEmpty(t, res.Warnings, "invalid timezone should produce a warning, not a panic")
 }
+
+func TestSchedulerAddTaskAfterStart(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	sched := NewScheduler(runner, map[string]*model.Task{}, time.UTC)
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	task := &model.Task{Name: "added", Cron: "@every 1h", Run: "echo hi"}
+	require.NoError(t, sched.AddTask(task))
+
+	_, hasEntry := sched.entryIDs["added"]
+	assert.True(t, hasEntry, "AddTask must record a cron entry")
+	assert.NotNil(t, sched.GetNextRun("added"), "an added task must have a next run")
+
+	// A firing on the freshly added entry triggers the task.
+	sched.fireOnce("added", time.UTC)
+	assert.Equal(t, 1, runner.triggerCount())
+}
+
+func TestSchedulerAddTaskIgnoresNonCron(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	sched := NewScheduler(runner, map[string]*model.Task{}, time.UTC)
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	// A service (no cron) must not get a scheduler entry.
+	require.NoError(t, sched.AddTask(&model.Task{Name: "svc", Run: "serve"}))
+	_, hasEntry := sched.entryIDs["svc"]
+	assert.False(t, hasEntry, "a task without a cron expression must not be scheduled")
+}
+
+func TestSchedulerRemoveTaskClearsState(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	task := &model.Task{Name: "tick", Cron: "@every 1h", Run: "echo hi"}
+	sched := NewScheduler(runner, map[string]*model.Task{"tick": task}, time.UTC)
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	// Fire once so lastFired is populated, then remove.
+	sched.fireOnce("tick", time.UTC)
+	_, hadEntry := sched.entryIDs["tick"]
+	require.True(t, hadEntry)
+	_, hadFired := sched.lastFired["tick"]
+	require.True(t, hadFired)
+
+	sched.RemoveTask("tick")
+
+	_, hasEntry := sched.entryIDs["tick"]
+	assert.False(t, hasEntry, "RemoveTask must drop the cron entry")
+	_, hasFired := sched.lastFired["tick"]
+	assert.False(t, hasFired, "RemoveTask must drop the DST dedup state")
+
+	// Removing again, or a never-scheduled name, is a no-op.
+	sched.RemoveTask("tick")
+	sched.RemoveTask("never")
+}
+
+func TestSchedulerReschedule(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	task := &model.Task{Name: "tick", Cron: "0 2 * * *", Run: "echo hi"}
+	sched := NewScheduler(runner, map[string]*model.Task{"tick": task}, time.UTC)
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	first := sched.entryIDs["tick"]
+
+	// Change the spec and reschedule; the entry must be rebuilt (new ID).
+	task.Cron = "0 3 * * *"
+	require.NoError(t, sched.Reschedule(task))
+
+	second, ok := sched.entryIDs["tick"]
+	require.True(t, ok)
+	assert.NotEqual(t, first, second, "Reschedule must build a fresh cron entry")
+}

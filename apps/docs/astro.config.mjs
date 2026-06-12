@@ -131,6 +131,7 @@ export default defineConfig({
                     items: [
                         { label: "Auth", slug: "operations/auth" },
                         { label: "Autostart", slug: "operations/autostart" },
+                        { label: "Reload", slug: "operations/reload" },
                         { label: "Logging", slug: "operations/logging" },
                         { label: "Metrics", slug: "operations/metrics" },
                     ],

@@ -54,7 +54,7 @@ func newServerForCredentialsTest(t *testing.T, password string, ephemeral bool) 
 	s, err := New(Options{
 		DB:                repo,
 		TaskManager:       jm,
-		Tasks:             tasks,
+		Tasks:             runtime.NewTaskRegistry(tasks),
 		Scheduler:         scheduler,
 		Host:              "127.0.0.1",
 		Port:              9477,

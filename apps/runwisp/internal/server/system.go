@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/version"
 )
@@ -84,6 +85,21 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 func (srv *Server) humaGetSystemStats(ctx context.Context, input *struct{}) (*SystemStatsOutput, error) {
 	stats := srv.stats.GetSystemStats()
 	return &SystemStatsOutput{Body: stats}, nil
+}
+
+// humaReload reconciles the live task set against runwisp.toml. A nil reload
+// hook means the daemon was started in a mode that can't reload (cloud mode has
+// no local scheduler); a rejected reload (bad config or a restart-only change)
+// surfaces as a 400 so the operator sees exactly why nothing was applied.
+func (srv *Server) humaReload(ctx context.Context, input *struct{}) (*ReloadOutput, error) {
+	if srv.reload == nil {
+		return nil, huma.Error400BadRequest("reload is not available in this mode")
+	}
+	result, err := srv.reload()
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &ReloadOutput{Body: result}, nil
 }
 
 func (srv *Server) humaGetMetricsHistory(ctx context.Context, input *struct{}) (*MetricsHistoryOutput, error) {

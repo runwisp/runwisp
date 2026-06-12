@@ -33,7 +33,6 @@ type Server struct {
 	notifyRepo        storage.NotificationRepository
 	notifyHub         NotificationHub
 	taskManager       runtime.TaskRunner
-	tasks             map[string]*model.Task
 	scheduler         runtime.NextRunGetter
 	host              string
 	port              int
@@ -55,6 +54,10 @@ type Server struct {
 	socketPath        string
 	metricsEnabled    bool
 	metricsListen     string
+	// reload re-reads runwisp.toml and reconciles the live task set. nil
+	// outside standalone mode (cloud mode has no local scheduler to reconcile),
+	// in which case POST /api/reload reports the operation is unavailable.
+	reload func() (model.ReloadResult, error)
 }
 
 // DaemonInfo, TaskBrief, and CapInfo live in the model package.
@@ -64,23 +67,24 @@ type Options struct {
 	NotificationDB    storage.NotificationRepository // optional; nil disables /api/notifications
 	NotificationHub   NotificationHub                // optional; nil disables /api/notifications/stream
 	TaskManager       runtime.TaskRunner
-	Tasks             map[string]*model.Task
+	Tasks             *runtime.TaskRegistry
 	Scheduler         runtime.NextRunGetter
 	Host              string // Bind address (default: 127.0.0.1)
 	Port              int
 	SocketPath        string // Unix socket path for local CLI/TUI; empty disables socket listener
 	LogDir            string
 	EventBus          events.EventBus
-	Password          string            // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
-	PasswordEphemeral bool              // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
-	JWTSecret         string            // JWT signing secret (derived in-memory)
-	NoAuth            bool              // RUNWISP_NO_AUTH: serve all /api/* routes over TCP without JWT/CHAP
-	TrustedProxies    string            // RUNWISP_TRUST_PROXY value (comma-separated CIDRs/IPs); read by the caller, parsed here
-	DaemonInfo        *model.DaemonInfo // Static identity/config info for /api/info
-	ConfigStale       func() bool       // Per-request staleness probe for /api/info (optional; nil reports never-stale)
-	DaemonLogBuffer   *DaemonLogBuffer  // Ring buffer for daemon log streaming (optional)
-	MetricsEnabled    bool              // When false, /metrics is not mounted anywhere
-	MetricsListen     string            // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
+	Password          string                             // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
+	PasswordEphemeral bool                               // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
+	JWTSecret         string                             // JWT signing secret (derived in-memory)
+	NoAuth            bool                               // RUNWISP_NO_AUTH: serve all /api/* routes over TCP without JWT/CHAP
+	TrustedProxies    string                             // RUNWISP_TRUST_PROXY value (comma-separated CIDRs/IPs); read by the caller, parsed here
+	DaemonInfo        *model.DaemonInfo                  // Static identity/config info for /api/info
+	ConfigStale       func() bool                        // Per-request staleness probe for /api/info (optional; nil reports never-stale)
+	DaemonLogBuffer   *DaemonLogBuffer                   // Ring buffer for daemon log streaming (optional)
+	MetricsEnabled    bool                               // When false, /metrics is not mounted anywhere
+	MetricsListen     string                             // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
+	Reload            func() (model.ReloadResult, error) // Reconciles the live task set against runwisp.toml; nil disables POST /api/reload
 }
 
 func New(opts Options) (*Server, error) {
@@ -108,7 +112,6 @@ func New(opts Options) (*Server, error) {
 		notifyRepo:        opts.NotificationDB,
 		notifyHub:         opts.NotificationHub,
 		taskManager:       opts.TaskManager,
-		tasks:             opts.Tasks,
 		scheduler:         opts.Scheduler,
 		host:              opts.Host,
 		port:              opts.Port,
@@ -121,6 +124,7 @@ func New(opts Options) (*Server, error) {
 		trustedProxies:    trustedProxies,
 		metricsEnabled:    opts.MetricsEnabled,
 		metricsListen:     opts.MetricsListen,
+		reload:            opts.Reload,
 	}
 
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)

@@ -89,7 +89,7 @@ func (m *mockTaskRunner) GetActiveRunCount(taskName string) int {
 // helpers
 
 func makeRunService(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner) *runService {
-	return newRunService(repo, runner, tasks, nil, "", nil)
+	return newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, "", nil)
 }
 
 // ---- mapNotFound ----

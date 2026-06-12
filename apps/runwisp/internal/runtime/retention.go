@@ -22,15 +22,17 @@ import (
 // RetentionCleaner periodically prunes old runs and their logs.
 type RetentionCleaner struct {
 	db           storage.RunRepository
-	tasks        map[string]*model.Task
+	tasks        *TaskRegistry
 	interval     time.Duration
 	cancel       context.CancelFunc
 	logDir       string
 	maxTotalSize int64
 }
 
-// NewRetentionCleaner builds a cleaner with the given cadence.
-func NewRetentionCleaner(db storage.RunRepository, tasks map[string]*model.Task, interval time.Duration, logDir string, maxTotalSize int64) *RetentionCleaner {
+// NewRetentionCleaner builds a cleaner with the given cadence. tasks is the
+// live registry: the cleaner's background ticker ranges it under the read lock,
+// so a reload that adds or removes tasks is picked up on the next pass.
+func NewRetentionCleaner(db storage.RunRepository, tasks *TaskRegistry, interval time.Duration, logDir string, maxTotalSize int64) *RetentionCleaner {
 	if interval == 0 {
 		interval = time.Hour
 	}
@@ -77,17 +79,17 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 	slog.Debug("Running retention cleanup")
 
 	totalDeleted := 0
-	for _, task := range cleaner.tasks {
+	cleaner.tasks.Range(func(_ string, task *model.Task) bool {
 		// KeepRuns: 0 = inherited "no cap"; -1 = explicit unlimited; >0 = cap.
 		// KeepFor:  0 = inherited "no cap"; >0 = cap. Either positive enables retention.
 		if task.KeepFor <= 0 && task.KeepRuns <= 0 {
-			continue
+			return true
 		}
 
 		deletedRuns, err := cleaner.db.DeleteOldRuns(ctx, task)
 		if err != nil {
 			slog.Error("Failed to clean runs", "task", task.Name, "err", err)
-			continue
+			return true
 		}
 
 		for _, run := range deletedRuns {
@@ -100,7 +102,8 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 			slog.Info("Retention cleaned runs", "count", len(deletedRuns), "task", task.Name)
 			totalDeleted += len(deletedRuns)
 		}
-	}
+		return true
+	})
 
 	if totalDeleted > 0 {
 		slog.Info("Retention cleanup complete", "deleted", totalDeleted)
