@@ -4,11 +4,24 @@
 package config
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// exitCodeList renders a TOML array literal of n exit codes, each cycling
+// through 0-255 so every entry is individually in range — isolating the
+// length-cap check from the per-value range check.
+func exitCodeList(n int) string {
+	parts := make([]string, n)
+	for i := range parts {
+		parts[i] = strconv.Itoa(i % 256)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
 
 func TestExitCodes_DefaultsToZero(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[tasks.job]
@@ -66,4 +79,46 @@ exit_codes = [`+code+`]
 		require.Error(t, err, "code %s should be rejected", code)
 		assert.Contains(t, err.Error(), "out of range")
 	}
+}
+
+func TestExitCodes_AtCapAccepted(t *testing.T) {
+	cfgPath, _ := writePlainConfig(t, `[tasks.job]
+run = "echo hi"
+exit_codes = `+exitCodeList(ExitCodesCap)+`
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+	assert.Len(t, findTask(t, cfg, "job").ExitCodes, ExitCodesCap)
+}
+
+func TestExitCodes_OverCapRejected(t *testing.T) {
+	cfgPath, _ := writePlainConfig(t, `[tasks.job]
+run = "echo hi"
+exit_codes = `+exitCodeList(ExitCodesCap+1)+`
+`)
+	_, err := Load(cfgPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds the cap")
+}
+
+// Duplicates are not deduplicated or rejected — locking current behavior.
+func TestExitCodes_DuplicatesAccepted(t *testing.T) {
+	cfgPath, _ := writePlainConfig(t, `[tasks.job]
+run = "echo hi"
+exit_codes = [0, 0, 1]
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(t, []int{0, 0, 1}, findTask(t, cfg, "job").ExitCodes)
+}
+
+// The 0 and 255 ends of the POSIX range are valid in a multi-entry list.
+func TestExitCodes_BoundaryValuesAccepted(t *testing.T) {
+	cfgPath, _ := writePlainConfig(t, `[tasks.job]
+run = "echo hi"
+exit_codes = [0, 128, 255]
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(t, []int{0, 128, 255}, findTask(t, cfg, "job").ExitCodes)
 }

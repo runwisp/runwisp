@@ -654,6 +654,19 @@ run = "echo hi"
 		assert.Contains(t, err.Error(), "jitter")
 	})
 
+	t.Run("zero jitter on a cron task is accepted", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+cron = "0 3 * * *"
+jitter = "0s"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, time.Duration(0), cfg.Tasks[0].Jitter,
+			"explicit zero jitter is the no-spread case, not an error")
+	})
+
 	t.Run("jitter on a cron-less task is tolerated", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]
@@ -761,6 +774,73 @@ run = "echo hi"
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "keep_for")
 	})
+
+	// KeepForCap is ~100 years (36500d). A value exactly at the cap loads; just
+	// over it is rejected as a typo guard. Covers both a per-task keep_for and
+	// the [defaults] keep_for, which share validateKeepFor.
+	t.Run("at cap is accepted", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_for = "36500d"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, KeepForCap, cfg.Tasks[0].KeepFor)
+	})
+
+	t.Run("above cap is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_for = "36501d"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "keep_for")
+		assert.Contains(t, err.Error(), "exceeds the cap")
+	})
+
+	// A value so large it overflows int64 nanoseconds is rejected even before
+	// the cap check, by the duration parser itself. Either way it never loads.
+	t.Run("overflowing value is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+keep_for = "999999d"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "keep_for")
+	})
+
+	t.Run("above cap in defaults is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+keep_for = "36501d"
+
+[tasks.t]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "keep_for")
+		assert.Contains(t, err.Error(), "exceeds the cap")
+	})
+}
+
+// graceful_stop is validated with a `< 0` check, so an explicit "0s" is not an
+// error. Zero is also the omitted-sentinel, so ApplyDefaults fills it with
+// DefaultGracefulStop rather than leaving a zero grace period. Locking that.
+func TestGracefulStopZeroAccepted(t *testing.T) {
+	path := writeTOML(t, `
+[tasks.t]
+graceful_stop = "0s"
+run = "echo hi"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, DefaultGracefulStop, cfg.Tasks[0].GracefulStop)
 }
 
 func TestLogMaxSizeRules(t *testing.T) {
