@@ -160,7 +160,12 @@ type Daemon struct {
 // and clears the failed-start streak. Instances that survive at least this long
 // are treated as healthy; the next failure starts the backoff curve over.
 type Defaults struct {
-	Timeout      time.Duration
+	Timeout time.Duration
+	// Jitter is the [defaults] start-spread window inherited by cron tasks that
+	// don't set their own. Tasks-only: services never inherit it (they start
+	// every instance at boot). The deliberate exception to "don't default
+	// cron-tied keys" — one line in [defaults] spreads the whole task set.
+	Jitter       time.Duration
 	Shell        string
 	StopSignal   string
 	ExitCodes    []int

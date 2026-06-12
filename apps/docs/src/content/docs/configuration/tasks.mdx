@@ -49,6 +49,7 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 | ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cron`              | _(none)_   | 5- or 6-field cron expression (the optional 6th field is leading seconds). Supports `@hourly`, `@every 1h30m`.                                                                                                  |
 | `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset. |
+| `jitter`            | inherited  | Cap how far this cron task's start may slip (up to this window) so tasks sharing a fire time take turns instead of stampeding. Needs a `cron` (no-op without one). [Details below](#jitter).                    |
 | `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                                                           |
 | `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero and negatives are rejected at config load.                                                                                                 |
 | `run_on_start`      | `false`    | Fire the task once every time the daemon starts, on top of any `cron`. The `@reboot` equivalent.                                                                                                                |
@@ -96,6 +97,61 @@ or a duration like `"5 minutes"` instead of `"5m"` all fail with an
 actionable message — and advisory warnings print without failing the
 exit code, so it slots into CI.
 :::
+
+### jitter
+
+When a pile of tasks share a fire time — the classic `0 3 * * *` nightly
+batch — they all launch in the same instant and spike CPU, IO, and memory
+together. `jitter` stops that stampede without making anything wait that
+doesn't have to:
+
+```toml
+[tasks.nightly-report]
+cron   = "0 3 * * *"
+jitter = "30m"           # start may slip up to 30m while other jittered runs are busy
+```
+
+RunWisp targets **one in-flight jittered run at a time** across the whole
+daemon. The window is the _most_ a start can slip — a deadline, not a
+fixed offset:
+
+- **Idle box, no delay.** Nothing else jittered in flight? The task starts
+  right at `03:00`. The window only bites when jittered runs actually
+  contend.
+- **Contention, they take turns.** Tasks that pile up release one after
+  another as the gate frees — back-to-back when runs are quick, and for a
+  big backlog, spread across the window so starts don't burst at the edge.
+- **Earliest deadline first.** Each task gets a staggered slot inside its
+  window, picked to sit as far from its neighbours as possible; when the
+  gate frees, the task with the earliest slot goes next.
+
+A few more things worth knowing:
+
+- **The window is a ceiling, not an offset.** `jitter = "30m"` means "this
+  start may slip up to 30 minutes," not "start 30 minutes late." Most days,
+  with nothing contending, it slips zero.
+- **The run records both times.** `created_at` is the cron tick, `start_at`
+  is when it actually ran; the gap between them _is_ the jitter, right
+  there in the run history. Nothing hidden.
+- **Next-run shows the tick.** Because the real start depends on how busy
+  the gate is — just like a queued run — the dashboard, TUI, and
+  `GET /api/tasks` show the cron tick (`03:00`) as the next run, not a
+  guessed start.
+- **Needs a `cron`.** Jitter paces scheduled firings, so it's a harmless
+  no-op on a manual-only task. Manual triggers, retries, restarts, and
+  catch-up runs never wait on the gate — they fire right away.
+- **It's self-limiting.** RunWisp never delays a run past its own next
+  tick: put `jitter = "30m"` on a `* * * * *` task and the window quietly
+  clamps to under a minute.
+- **Coordinated by time of day.** The slots line tasks up on a 24-hour
+  dial, so daily, weekly, and monthly jobs at the same clock time
+  cooperate. Tasks whose windows don't overlap never crowd each other's
+  slots; schedules that don't line up to a 24-hour rhythm (like `@every 7h`)
+  still get a slot within their own window but coordinate only
+  approximately.
+
+Set it once in [`[defaults]`](/configuration/defaults/) and every
+cron task inherits it — one line to pace your whole schedule.
 
 ### `api_trigger = false` — cron-only tasks
 

@@ -88,14 +88,16 @@ func (m *defaultTaskManager) isServiceStopped(taskName string) bool {
 }
 
 // waitForDelay sleeps for the given duration, returning false if the daemon
-// shuts down before the timer fires.
+// shuts down before the timer fires. It watches shutdownCtx, which is cancelled
+// at the very start of ShutdownWithDeadline — before the wg drain — so a parked
+// wait never deadlocks the drain (see defaultTaskManager.shutdownCtx).
 func (m *defaultTaskManager) waitForDelay(delay time.Duration) bool {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
 		return true
-	case <-m.persistence.Done():
+	case <-m.shutdownCtx.Done():
 		return false
 	}
 }

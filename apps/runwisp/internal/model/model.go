@@ -61,8 +61,20 @@ type Task struct {
 	Group       string   `toml:"group,omitempty"       json:"group,omitempty"`
 	Description string   `toml:"description,omitempty" json:"description,omitempty"`
 
-	Cron           string          `toml:"cron,omitempty"               json:"cron,omitempty"`
-	Timezone       string          `toml:"timezone,omitempty"           json:"timezone,omitempty" doc:"IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone"`
+	Cron     string `toml:"cron,omitempty"               json:"cron,omitempty"`
+	Timezone string `toml:"timezone,omitempty"           json:"timezone,omitempty" doc:"IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone"`
+	// Jitter caps how far a cron task's start may slip so tasks sharing a fire
+	// time take turns instead of all stampeding the machine at once. Jittered
+	// runs pass through a daemon-wide work-conserving gate that targets one run
+	// in flight at a time: a task runs as soon as the gate frees (right at its
+	// tick when nothing contends) and slips up to this window only under
+	// contention, when each task is released on its own staggered slot. The
+	// slots are computed once at startup by leveling overlapping windows on a
+	// 24-hour time-of-day dial (reload is restart-only) — same TOML + clock
+	// yields the same slots — but actual start times depend on run durations,
+	// like the queue policy. Task-only (services start every instance at boot)
+	// and a no-op without a cron.
+	Jitter         time.Duration   `toml:"-" json:"jitter,omitempty" doc:"Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds"`
 	APITrigger     bool            `toml:"api_trigger,omitempty"        json:"api_trigger"`
 	CatchUp        MissedRunPolicy `toml:"catch_up,omitempty"           json:"catch_up,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
 	MaxCatchUpRuns int             `toml:"max_catch_up_runs,omitempty"  json:"max_catch_up_runs,omitempty" doc:"Cap on catch-up runs triggered when catch_up = all"`

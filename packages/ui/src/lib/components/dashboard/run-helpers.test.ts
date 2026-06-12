@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runDuration } from "./run-helpers.js";
+import { runDuration, runStartDelay } from "./run-helpers.js";
 
 describe("runDuration", () => {
     it("returns undefined when start_at is not set", () => {
@@ -33,5 +33,29 @@ describe("runDuration", () => {
         it("uses current time when end_at is not set (run still in progress)", () => {
             expect(runDuration({ start_at: "2024-06-15T12:00:00.000Z" })).toBe("2s");
         });
+    });
+});
+
+describe("runStartDelay", () => {
+    it("returns undefined when start_at is not set", () => {
+        expect(runStartDelay({ created_at: "2024-06-15T12:00:00.000Z" })).toBeUndefined();
+    });
+
+    it("returns undefined when the run started within a second of its tick", () => {
+        expect(
+            runStartDelay({
+                created_at: "2024-06-15T12:00:00.000Z",
+                start_at: "2024-06-15T12:00:00.300Z",
+            }),
+        ).toBeUndefined();
+    });
+
+    it("formats the jitter/queue gap when the run started meaningfully later", () => {
+        expect(
+            runStartDelay({
+                created_at: "2024-06-15T03:00:00.000Z",
+                start_at: "2024-06-15T03:07:12.000Z",
+            }),
+        ).toBe("7m 12s");
     });
 });

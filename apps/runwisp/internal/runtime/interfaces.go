@@ -16,6 +16,12 @@ import (
 type TaskRunner interface {
 	TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error)
 	TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*model.Run, error)
+	// ScheduleJitteredRun submits a jittered cron fire to the work-conserving
+	// gate. tick is backdated onto the run's CreatedAt so the start delay reads
+	// as jitter; slot is the deadline (latest the start may slip) and doubles as
+	// the gate's release order; window is the free-check horizon. The scheduler
+	// calls this instead of TriggerRun when a task carries a jitter window.
+	ScheduleJitteredRun(taskName string, tick, slot time.Time, window time.Duration)
 	GetTask(taskName string) (*model.Task, bool)
 	UpsertTask(task *model.Task)
 	TerminateRun(runID string) error

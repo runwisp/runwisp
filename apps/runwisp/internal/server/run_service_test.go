@@ -39,6 +39,10 @@ func (m *mockTaskRunner) TriggerRunWithOptions(taskName string, options runtime.
 	return args.Get(0).(*model.Run), args.Error(1)
 }
 
+func (m *mockTaskRunner) ScheduleJitteredRun(taskName string, tick, slot time.Time, window time.Duration) {
+	m.Called(taskName, tick, slot, window)
+}
+
 func (m *mockTaskRunner) GetTask(taskName string) (*model.Task, bool) {
 	args := m.Called(taskName)
 	if args.Get(0) == nil {

@@ -548,6 +548,125 @@ notify_on_missed = true
 	})
 }
 
+func TestJitterRules(t *testing.T) {
+	t.Run("explicit jitter parses on a task", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+cron = "0 3 * * *"
+jitter = "30m"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 30*time.Minute, cfg.Tasks[0].Jitter)
+	})
+
+	t.Run("omitted jitter inherits from defaults", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+jitter = "5m"
+
+[tasks.inheritor]
+cron = "0 3 * * *"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 5*time.Minute, cfg.Tasks[0].Jitter,
+			"a cron task that omits jitter inherits [defaults] jitter")
+	})
+
+	t.Run("explicit task jitter overrides defaults", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+jitter = "5m"
+
+[tasks.loud]
+cron = "0 3 * * *"
+jitter = "1m"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, time.Minute, cfg.Tasks[0].Jitter)
+	})
+
+	t.Run("services never inherit defaults jitter", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+jitter = "5m"
+
+[services.svc]
+run = "exec ./bin/svc"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		assert.Equal(t, time.Duration(0), cfg.Tasks[0].Jitter,
+			"a service must not pick up [defaults] jitter — it has no fire time to spread")
+	})
+
+	t.Run("explicit jitter on a service is rejected as unknown", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.svc]
+run = "exec ./bin/svc"
+jitter = "5m"
+`)
+		_, err := Load(path)
+		require.Error(t, err, "jitter is not a [services.*] key")
+	})
+
+	t.Run("negative jitter is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+cron = "0 3 * * *"
+jitter = "-5m"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "jitter")
+	})
+
+	t.Run("above-cap jitter is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+cron = "0 3 * * *"
+jitter = "25h"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "jitter")
+	})
+
+	t.Run("above-cap defaults jitter is rejected", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+jitter = "25h"
+
+[tasks.t]
+cron = "0 3 * * *"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "jitter")
+	})
+
+	t.Run("jitter on a cron-less task is tolerated", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+jitter = "5m"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 5*time.Minute, cfg.Tasks[0].Jitter,
+			"jitter on a cron-less task is a harmless no-op, like catch_up")
+	})
+}
+
 func TestKeepRunsRules(t *testing.T) {
 	t.Run("positive integer is preserved", func(t *testing.T) {
 		path := writeTOML(t, `
@@ -1045,6 +1164,16 @@ func TestLoad_ParseErrors(t *testing.T) {
 			name:    "task graceful_stop bad",
 			toml:    "[tasks.t]\nrun = \"echo hi\"\ngraceful_stop = \"bad\"\n",
 			wantErr: "graceful_stop",
+		},
+		{
+			name:    "task jitter bad",
+			toml:    "[tasks.t]\nrun = \"echo hi\"\njitter = \"bad\"\n",
+			wantErr: "jitter",
+		},
+		{
+			name:    "defaults jitter bad",
+			toml:    "[defaults]\njitter = \"bad\"\n\n[tasks.t]\nrun = \"echo hi\"\n",
+			wantErr: "jitter",
 		},
 		{
 			name:    "service timeout bad",

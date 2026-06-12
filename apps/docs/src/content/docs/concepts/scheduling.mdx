@@ -221,18 +221,41 @@ from under it.
 
 ## Predictable timing
 
-Same TOML, same clock, same firings — there's no random jitter. Two
-tasks both set to `cron = "0 2 * * *"` fire at the exact same instant.
-If that's a problem (they both hammer the same downstream service, say),
-just stagger them yourself:
+Same TOML, same clock, same firings — RunWisp's scheduling is fully
+deterministic. Two tasks both set to `cron = "0 2 * * *"` fire at the
+exact same instant. That's fine until thirty of them do it at once and
+the machine buckles under the stampede.
+
+That's what `jitter` is for. Give a task a window and RunWisp stops the
+stampede — without making anything wait that doesn't have to:
 
 ```toml
 [tasks.backup-a]
 cron = "0 2 * * *"
+jitter = "30m"
 
 [tasks.backup-b]
-cron = "5 2 * * *"
+cron = "0 2 * * *"
+jitter = "30m"
 ```
+
+RunWisp runs **one jittered task at a time** across the whole daemon. When
+the box is idle, a task starts right at its tick — no wasted delay. When
+several land together, like these two at 02:00, they don't both jump:
+they take turns as the gate frees, and a bigger pile-up spreads its starts
+across the window instead of bursting. The window is the _most_ a start
+can slip, not where it lands — whoever's first in line still goes at 02:00.
+
+The firing schedule stays deterministic — the same ticks fire on the same
+clock, and each task's slot within its window is fixed at startup. What's
+load-dependent is when a run actually _starts_, exactly like a queued run
+under the [concurrency policy](/concepts/concurrency/): the daemon shows
+you the cron tick as the next run, and the history records when it really
+fired. Just a kinder load curve, no hidden surprises.
+
+See the [`jitter` reference](/configuration/tasks/#jitter) for the full
+picture, including the one-line `[defaults] jitter` that spreads your
+whole task set at once.
 
 ## Reload semantics
 
