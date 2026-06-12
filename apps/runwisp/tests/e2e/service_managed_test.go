@@ -13,6 +13,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
+	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +28,11 @@ func TestSpawnedDaemonNotServiceManaged(t *testing.T) {
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configDir := t.TempDir()
 	configPath := writeE2EConfig(t, configDir)
-	dataDir := t.TempDir()
+	// Use a short temp dir for the data dir: the daemon's Unix socket lives here,
+	// and on macOS a t.TempDir() path (embedding the long test name) pushes
+	// "${dataDir}/runwisp.sock" past the 104-byte sun_path limit, failing bind
+	// with "invalid argument".
+	dataDir := testutil.ShortTempDir(t)
 	port := reserveTCPPort(t)
 
 	// The root command spawns a detached background daemon, which the TUI's
