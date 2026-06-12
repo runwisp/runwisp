@@ -81,6 +81,7 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 		"fingerprint",
 		"port",
 		"resolved_timezone",
+		"scheduling_active",
 		"service_managed",
 		"tasks",
 		"timezone_source",

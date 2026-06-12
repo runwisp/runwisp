@@ -18,6 +18,7 @@
 
     let {
         task,
+        cloudMode = false,
         items,
         total,
         loading = false,
@@ -42,6 +43,7 @@
         selectRunId = null,
     } = $props<{
         task: Task;
+        cloudMode?: boolean;
         items: Run[];
         total: number;
         loading?: boolean;
@@ -198,6 +200,21 @@
         return "";
     });
 
+    // In cloud mode the cloud owns scheduling/dispatch; this button is the
+    // operator's "run it here, now" escape hatch against the local runner.
+    // Frame it honestly rather than implying it's the canonical trigger.
+    const runButtonLabel = $derived(cloudMode ? "Run Here" : "Run Task");
+    const runConfirmLabel = $derived(cloudMode ? "Run Here" : "Run Now");
+    const runActionTitle = $derived(
+        runDisabledReason || (cloudMode ? "Run on this runner now" : ""),
+    );
+    const runModalTitle = $derived(cloudMode ? "Run on this runner" : "Run Task");
+    const runModalDescription = $derived(
+        cloudMode
+            ? `Run ${task.name} on this runner now? This triggers an immediate local run; scheduling stays with the cloud.`
+            : `Trigger a new run of ${task.name}?`,
+    );
+
     let userSelectedRunId = $state<string | null>(null);
     let highlightLine = $state<number | null>(null);
 
@@ -311,10 +328,10 @@
                     onclick={() => (confirmOpen = true)}
                     loading={triggering}
                     disabled={!runLaunchable}
-                    title={runDisabledReason}
+                    title={runActionTitle}
                 >
                     {#snippet icon()}<Play size={16} />{/snippet}
-                    Run Task
+                    {runButtonLabel}
                 </Button>
             {/if}
         {/snippet}
@@ -395,8 +412,8 @@
 
     <Modal
         bind:open={confirmOpen}
-        title="Run Task"
-        description="Trigger a new run of {task.name}?"
+        title={runModalTitle}
+        description={runModalDescription}
         size="sm"
     >
         {#if concurrencyReached}
@@ -409,7 +426,7 @@
                     confirmOpen = false;
                     onRun();
                 },
-                "Run Now",
+                runConfirmLabel,
                 "primary",
                 Play,
             )}

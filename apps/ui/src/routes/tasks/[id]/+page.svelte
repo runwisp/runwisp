@@ -7,7 +7,7 @@
     import { toast, ErrorState, Skeleton } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
-    import { runUpdatesStore } from "$lib/stores";
+    import { runUpdatesStore, systemStore } from "$lib/stores";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
@@ -150,6 +150,7 @@
         {:else}
             <TaskPage
                 {task}
+                cloudMode={systemStore.cloudEnabled}
                 items={source.items}
                 total={source.total}
                 loading={source.loading}

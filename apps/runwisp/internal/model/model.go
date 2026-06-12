@@ -239,11 +239,18 @@ const (
 // true when the file (or a referenced env_file) has changed on disk since —
 // config reload is restart-only, so UIs surface a "restart to apply" hint.
 // ConfigStale is recomputed per request, not cached.
+//
+// SchedulingActive is false when the local scheduler is inactive — e.g.
+// `runwisp cloud`, where the cloud owns scheduling — so UIs hide next-run
+// affordances rather than mislabel scheduled tasks as unscheduled. It is
+// distinct from CloudEnabled, which only reports that a cloud connection is
+// configured.
 type DaemonInfo struct {
 	Version          string      `json:"version"`
 	Fingerprint      string      `json:"fingerprint"`
 	Port             int         `json:"port"`
 	CloudEnabled     bool        `json:"cloud_enabled"`
+	SchedulingActive bool        `json:"scheduling_active"`
 	ServiceManaged   bool        `json:"service_managed"`
 	AuthDisabled     bool        `json:"auth_disabled"`
 	ConfigLoadedAt   time.Time   `json:"config_loaded_at"`

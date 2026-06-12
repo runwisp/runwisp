@@ -32,6 +32,11 @@
         { value: "manual", label: "Manual" },
     ];
 
+    // Scheduling-owned filters (scheduled/manual) only make sense when the
+    // local scheduler computes next-run times. In cloud mode the cloud owns
+    // scheduling, so those are cleanly omitted rather than shown empty.
+    const SCHEDULING_FILTERS = new Set<OverviewTaskFilter>(["scheduled", "manual"]);
+
     const SORT_OPTIONS: { value: OverviewTaskSortKey; label: string }[] = [
         { value: "attention", label: "Priority first" },
         { value: "last_activity", label: "Last activity" },
@@ -57,6 +62,8 @@
         runningRuns = [],
         tasks = [],
         metricsHistory = [],
+        cloudMode = false,
+        schedulingActive = true,
         onViewAllRuns,
         onTaskClick,
         onRunClick,
@@ -67,6 +74,8 @@
         runningRuns?: Run[];
         tasks?: (Task & { id: string })[];
         metricsHistory?: MetricsSample[];
+        cloudMode?: boolean;
+        schedulingActive?: boolean;
         onViewAllRuns?: () => void;
         onTaskClick?: (taskName: string) => void;
         onRunClick?: (taskName: string, runId: string) => void;
@@ -75,6 +84,26 @@
     let searchQuery = $state("");
     let taskFilter = $state<OverviewTaskFilter>("all");
     let sortBy = $state<OverviewTaskSortKey>("attention");
+
+    // When the local scheduler is inactive, scheduling-owned controls are
+    // hidden. Reset any selection that points at one so the view stays
+    // coherent if schedulingActive flips false after first /api/info.
+    $effect(() => {
+        if (schedulingActive) return;
+        if (SCHEDULING_FILTERS.has(taskFilter)) taskFilter = "all";
+        if (sortBy === "next_run") sortBy = "attention";
+    });
+
+    let taskFilters = $derived(
+        schedulingActive
+            ? TASK_FILTERS
+            : TASK_FILTERS.filter((filter) => !SCHEDULING_FILTERS.has(filter.value)),
+    );
+    let sortOptions = $derived(
+        schedulingActive
+            ? SORT_OPTIONS
+            : SORT_OPTIONS.filter((option) => option.value !== "next_run"),
+    );
 
     // Tick every 30s so relative-time labels ("in 2 hours") stay current
     // while the page sits open.
@@ -92,7 +121,12 @@
     );
     let runningNow = $derived(sortRunsByStartDesc(runningRuns).slice(0, RUNNING_LIMIT));
     let upcomingTasks = $derived(
-        filterTaskOverviews(taskOverviews, "", "scheduled", "next_run").slice(0, UPCOMING_LIMIT),
+        schedulingActive
+            ? filterTaskOverviews(taskOverviews, "", "scheduled", "next_run").slice(
+                  0,
+                  UPCOMING_LIMIT,
+              )
+            : [],
     );
     let recentActivity = $derived(sortRunsByStartDesc(recentRuns).slice(0, RECENT_ACTIVITY_LIMIT));
     let completedRunsCount = $derived(
@@ -148,6 +182,7 @@
         {completedRunsCount}
         {healthyTasksCount}
         {metricsHistory}
+        {cloudMode}
         {onViewAllRuns}
     />
 
@@ -156,6 +191,7 @@
             {attentionTasks}
             {runningNow}
             {upcomingTasks}
+            showUpcoming={schedulingActive}
             now={ticker.now}
             {onTaskClick}
             {onRunClick}
@@ -173,8 +209,9 @@
             bind:taskFilter
             bind:sortBy
             {taskCounts}
-            filterOptions={TASK_FILTERS}
-            sortOptions={SORT_OPTIONS}
+            filterOptions={taskFilters}
+            {sortOptions}
+            {schedulingActive}
             {onTaskClick}
         />
     </Card>

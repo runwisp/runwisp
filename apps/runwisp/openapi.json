@@ -112,6 +112,9 @@
           "resolved_timezone": {
             "type": "string"
           },
+          "scheduling_active": {
+            "type": "boolean"
+          },
           "service_managed": {
             "type": "boolean"
           },
@@ -140,6 +143,7 @@
           "fingerprint",
           "port",
           "cloud_enabled",
+          "scheduling_active",
           "service_managed",
           "auth_disabled",
           "config_loaded_at",

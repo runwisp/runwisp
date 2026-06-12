@@ -100,6 +100,7 @@
         filterOptions = EMPTY_FILTERS,
         sortOptions = EMPTY_SORT_OPTIONS,
         now = new Date(),
+        schedulingActive = true,
         onTaskClick,
     } = $props<{
         taskOverviews?: TaskOverview[];
@@ -111,6 +112,7 @@
         filterOptions?: FilterOption[];
         sortOptions?: SortOption[];
         now?: Date;
+        schedulingActive?: boolean;
         onTaskClick?: (taskName: string) => void;
     }>();
 
@@ -293,35 +295,39 @@ run  = "echo hello"</pre>
                                 {/if}
                             </div>
 
-                            <div class="w-32">
-                                <p class="text-on-surface-faint">Next run</p>
-                                <p class="font-medium text-on-surface">
-                                    {formatTaskNextRunLabel(task, now)}
-                                </p>
-                            </div>
+                            {#if schedulingActive}
+                                <div class="w-32">
+                                    <p class="text-on-surface-faint">Next run</p>
+                                    <p class="font-medium text-on-surface">
+                                        {formatTaskNextRunLabel(task, now)}
+                                    </p>
+                                </div>
 
-                            <div class="w-24">
-                                <p class="text-on-surface-faint">Trigger</p>
-                                {#if task.task.cron && task.task.kind !== "service"}
-                                    <Tooltip
-                                        content={taskTriggerTooltip(task.task)}
-                                        position="left"
-                                    >
-                                        <p
-                                            class={[
-                                                "font-medium text-on-surface",
-                                                taskTriggerIsHumanizedCron(task) ? "" : "font-mono",
-                                            ]}
+                                <div class="w-24">
+                                    <p class="text-on-surface-faint">Trigger</p>
+                                    {#if task.task.cron && task.task.kind !== "service"}
+                                        <Tooltip
+                                            content={taskTriggerTooltip(task.task)}
+                                            position="left"
                                         >
+                                            <p
+                                                class={[
+                                                    "font-medium text-on-surface",
+                                                    taskTriggerIsHumanizedCron(task)
+                                                        ? ""
+                                                        : "font-mono",
+                                                ]}
+                                            >
+                                                {formatTaskTriggerLabel(task)}
+                                            </p>
+                                        </Tooltip>
+                                    {:else}
+                                        <p class="font-medium text-on-surface">
                                             {formatTaskTriggerLabel(task)}
                                         </p>
-                                    </Tooltip>
-                                {:else}
-                                    <p class="font-medium text-on-surface">
-                                        {formatTaskTriggerLabel(task)}
-                                    </p>
-                                {/if}
-                            </div>
+                                    {/if}
+                                </div>
+                            {/if}
                         </div>
 
                         <ArrowRight
