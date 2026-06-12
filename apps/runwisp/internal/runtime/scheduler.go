@@ -32,10 +32,10 @@ type Scheduler struct {
 	taskManager TaskRunner
 	tasks       map[string]*model.Task
 	entryIDs    map[string]cron.EntryID
-	// lastFired stores the wall-clock minute (in the task's effective TZ) of
+	// lastFired stores the wall-clock second (in the task's effective TZ) of
 	// the last firing for each task. A second firing whose tuple matches is
 	// the DST duplicate to suppress.
-	lastFired map[string]wallMinute
+	lastFired map[string]wallSecond
 	// jitterPlans holds, for each jittered task, its resolved slot offset, its
 	// window length (the gate's free-check horizon), and the parsed schedule
 	// used to clamp both to the live gap before the next tick. Computed once in
@@ -57,24 +57,28 @@ type jitterPlan struct {
 	schedule cron.Schedule
 }
 
-// wallMinute is a (date, hour, minute) tuple that lets us compare two
-// firings as "the same wall-clock minute" without depending on UTC offsets,
-// which is the whole point on DST fall-back days.
-type wallMinute struct {
+// wallSecond is a (date, hour, minute, second) tuple that lets us compare two
+// firings as "the same wall-clock instant" without depending on UTC offsets,
+// which is the whole point on DST fall-back days. Second granularity matters
+// for 6-field specs: two sub-minute firings in the same minute (e.g. :00 and
+// :30) differ in second and must not be treated as DST duplicates.
+type wallSecond struct {
 	year   int
 	month  time.Month
 	day    int
 	hour   int
 	minute int
+	second int
 }
 
-func newWallMinute(t time.Time) wallMinute {
-	return wallMinute{
+func newWallSecond(t time.Time) wallSecond {
+	return wallSecond{
 		year:   t.Year(),
 		month:  t.Month(),
 		day:    t.Day(),
 		hour:   t.Hour(),
 		minute: t.Minute(),
+		second: t.Second(),
 	}
 }
 
@@ -107,7 +111,7 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		taskManager: taskManager,
 		tasks:       tasks,
 		entryIDs:    make(map[string]cron.EntryID),
-		lastFired:   make(map[string]wallMinute),
+		lastFired:   make(map[string]wallSecond),
 		jitterPlans: make(map[string]jitterPlan),
 		now:         time.Now,
 	}
@@ -298,7 +302,7 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 	now := scheduler.now()
 	nowLocal := now.In(loc)
-	wm := newWallMinute(nowLocal)
+	wm := newWallSecond(nowLocal)
 
 	scheduler.mutex.Lock()
 	last, hadLast := scheduler.lastFired[taskName]

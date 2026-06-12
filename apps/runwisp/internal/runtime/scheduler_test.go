@@ -108,8 +108,8 @@ func TestSchedulerDSTWallClockDedup(t *testing.T) {
 	sched.now = func() time.Time { return secondFire }
 	sched.fireOnce("eu-2am", loc)
 
-	wm := wallMinute{year: 2026, month: time.October, day: 25, hour: 2, minute: 0}
-	assert.Equal(t, wm, sched.lastFired["eu-2am"], "lastFired must hold the 02:00 wall-clock minute on the fall-back day")
+	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 0, second: 0}
+	assert.Equal(t, wm, sched.lastFired["eu-2am"], "lastFired must hold the 02:00 wall-clock instant on the fall-back day")
 }
 
 func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
@@ -141,8 +141,8 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	sched.now = func() time.Time { return second }
 	sched.fireOnce("eu-mins", loc)
 
-	wm := wallMinute{year: 2026, month: time.October, day: 25, hour: 2, minute: 1}
-	assert.Equal(t, wm, sched.lastFired["eu-mins"], "lastFired must advance when wall-clock minute differs")
+	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 1, second: 0}
+	assert.Equal(t, wm, sched.lastFired["eu-mins"], "lastFired must advance when wall-clock instant differs")
 }
 
 // TestSchedulerFireOnce_GoldenTriggerSkipSequence pins down the firing
