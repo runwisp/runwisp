@@ -115,19 +115,8 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 
 	slog.Info("Task triggered", "name", taskName, "run", run.ID)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := newSignalCancelContext()
 	defer cancel()
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sig)
-	go func() {
-		select {
-		case <-sig:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
 
 	// Line numbers are zero-indexed; the server reads from=0 as the default
 	// tail window and clamps to anchor 0 on a fresh run, so we see every line.
@@ -136,23 +125,8 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 		return 0, fmt.Errorf("open log stream: %w", err)
 	}
 
-	for msg := range ch {
-		switch msg.Kind {
-		case apiclient.LogStreamMsgKindLine:
-			if msg.Line.Stream == logutil.StreamStderr {
-				fmt.Fprintln(os.Stderr, msg.Line.Text)
-			} else {
-				fmt.Fprintln(os.Stdout, msg.Line.Text)
-			}
-		case apiclient.LogStreamMsgKindDone:
-			final, err := client.GetRun(taskName, run.ID)
-			if err != nil {
-				return 0, fmt.Errorf("fetch final run state: %w", err)
-			}
-			return exitCodeFromRun(final), nil
-		case apiclient.LogStreamMsgKindErr:
-			return 0, fmt.Errorf("log stream error: %w", msg.ErrValue)
-		}
+	if exitCode, done, err := streamRunLogs(ch, client, taskName, run.ID); done {
+		return exitCode, err
 	}
 
 	// Stream closed without a Done event (ctx cancelled or transport ended);
@@ -162,6 +136,53 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 		return 0, fmt.Errorf("fetch final run state: %w", err)
 	}
 	return exitCodeFromRun(final), nil
+}
+
+// newSignalCancelContext returns a context cancelled either by its own cancel
+// func or by an interrupt/SIGTERM, so an exec run forwards Ctrl+C to the stream.
+func newSignalCancelContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		select {
+		case <-sig:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	return ctx, func() {
+		signal.Stop(sig)
+		cancel()
+	}
+}
+
+// streamRunLogs prints each streamed log line to stdout/stderr until the stream
+// reports the run is done or errors. The done bool reports whether a terminal
+// outcome was reached (so the caller can return exitCode/err); when the channel
+// drains without a Done event it returns done=false for the caller to poll.
+func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string) (exitCode int, done bool, err error) {
+	for msg := range ch {
+		switch msg.Kind {
+		case apiclient.LogStreamMsgKindLine:
+			if msg.Line.Stream == logutil.StreamStderr {
+				fmt.Fprintln(os.Stderr, msg.Line.Text)
+			} else {
+				fmt.Fprintln(os.Stdout, msg.Line.Text)
+			}
+		case apiclient.LogStreamMsgKindDone:
+			final, getErr := client.GetRun(taskName, runID)
+			if getErr != nil {
+				return 0, true, fmt.Errorf("fetch final run state: %w", getErr)
+			}
+			return exitCodeFromRun(final), true, nil
+		case apiclient.LogStreamMsgKindErr:
+			return 0, true, fmt.Errorf("log stream error: %w", msg.ErrValue)
+		}
+	}
+	return 0, false, nil
 }
 
 // daemonTaskNames fetches the daemon's task list for the unknown-task

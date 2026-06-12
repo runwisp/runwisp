@@ -11,6 +11,11 @@ ensure_real_ui_dist
 
 go vet ./...
 
+# Focused golangci-lint pass (pinned, installed on demand) mirroring the
+# SonarCloud rules we enforce — see .golangci.yml. Runs here so it gates
+# `bun run ci` / `moon run runwisp:check`, not just the cloud scan.
+"${script_dir}/lint-go.sh" ./...
+
 unformatted_files=$(gofmt -l .)
 if [[ -n "${unformatted_files}" ]]; then
   printf 'These Go files need gofmt:\n%s\n' "${unformatted_files}" >&2

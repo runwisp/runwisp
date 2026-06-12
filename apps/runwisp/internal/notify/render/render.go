@@ -320,56 +320,97 @@ func triggerPhrase(t model.TriggeredBy) string {
 func eventSentence(e *notify.Event) string {
 	switch e.Kind {
 	case notify.KindRunFailed:
-		code := "?"
-		if e.Run != nil {
-			code = fmt.Sprintf("%d", e.Run.ExitCode)
-		}
-		if d := runDuration(e.Run); d != "" {
-			return fmt.Sprintf("Exited with code %s after %s.", code, d)
-		}
-		return fmt.Sprintf("Exited with code %s.", code)
+		return failedSentence(e)
 	case notify.KindRunSucceeded:
-		if d := runDuration(e.Run); d != "" {
-			return fmt.Sprintf("Completed in %s.", d)
-		}
-		return "Completed."
+		return succeededSentence(e)
 	case notify.KindRunTimeout:
-		if d := runDuration(e.Run); d != "" {
-			return fmt.Sprintf("The task was killed after the configured timeout (%s elapsed).", d)
-		}
-		return "The task was killed after the configured timeout."
+		return timeoutSentence(e)
 	case notify.KindRunStopped:
-		if d := runDuration(e.Run); d != "" {
-			return fmt.Sprintf("Stopped manually after %s.", d)
-		}
-		return "Stopped manually."
+		return stoppedSentence(e)
 	case notify.KindRunCrashed:
-		if e.Reason != "" {
-			return fmt.Sprintf("The process couldn't start: %s.", e.Reason)
-		}
-		return "The process couldn't start."
+		return crashedSentence(e)
 	case notify.KindRunMissed:
-		// The reason already reads as a full sentence built at detection time
-		// (count + window + optional cap note), so it is rendered verbatim.
-		if e.Reason != "" {
-			return e.Reason
-		}
-		return "A scheduled run was missed while the daemon was down."
+		return missedSentence(e)
 	case notify.KindRunStarted:
 		return "Run started."
 	case notify.KindLogDiskPressure:
 		return "Disk pressure is high; log capture is paused for this task until disk space is recovered."
 	case notify.KindNotifyDeliveryFailed:
-		if e.Reason != "" {
-			return fmt.Sprintf("A notification could not be delivered: %s.", e.Reason)
-		}
-		return "A notification could not be delivered."
+		return deliveryFailedSentence(e)
 	default:
-		if e.Reason != "" {
-			return e.Reason
-		}
-		return statusVerb(e.Kind) + "."
+		return defaultSentence(e)
 	}
+}
+
+// failedSentence reports the exit code (and duration when known) for a failed run.
+func failedSentence(e *notify.Event) string {
+	code := "?"
+	if e.Run != nil {
+		code = fmt.Sprintf("%d", e.Run.ExitCode)
+	}
+	if d := runDuration(e.Run); d != "" {
+		return fmt.Sprintf("Exited with code %s after %s.", code, d)
+	}
+	return fmt.Sprintf("Exited with code %s.", code)
+}
+
+// succeededSentence reports a successful completion, including duration when known.
+func succeededSentence(e *notify.Event) string {
+	if d := runDuration(e.Run); d != "" {
+		return fmt.Sprintf("Completed in %s.", d)
+	}
+	return "Completed."
+}
+
+// timeoutSentence reports a run killed by the configured timeout.
+func timeoutSentence(e *notify.Event) string {
+	if d := runDuration(e.Run); d != "" {
+		return fmt.Sprintf("The task was killed after the configured timeout (%s elapsed).", d)
+	}
+	return "The task was killed after the configured timeout."
+}
+
+// stoppedSentence reports a manually stopped run, including duration when known.
+func stoppedSentence(e *notify.Event) string {
+	if d := runDuration(e.Run); d != "" {
+		return fmt.Sprintf("Stopped manually after %s.", d)
+	}
+	return "Stopped manually."
+}
+
+// crashedSentence reports a process that couldn't start, including the reason when present.
+func crashedSentence(e *notify.Event) string {
+	if e.Reason != "" {
+		return fmt.Sprintf("The process couldn't start: %s.", e.Reason)
+	}
+	return "The process couldn't start."
+}
+
+// missedSentence renders missed-run phrasing. The reason already reads as a full
+// sentence built at detection time (count + window + optional cap note), so it is
+// rendered verbatim.
+func missedSentence(e *notify.Event) string {
+	if e.Reason != "" {
+		return e.Reason
+	}
+	return "A scheduled run was missed while the daemon was down."
+}
+
+// deliveryFailedSentence reports a failed notification delivery, including the reason when present.
+func deliveryFailedSentence(e *notify.Event) string {
+	if e.Reason != "" {
+		return fmt.Sprintf("A notification could not be delivered: %s.", e.Reason)
+	}
+	return "A notification could not be delivered."
+}
+
+// defaultSentence is the fallback for kinds without bespoke phrasing: the reason
+// verbatim when present, otherwise the kind's status verb as a sentence.
+func defaultSentence(e *notify.Event) string {
+	if e.Reason != "" {
+		return e.Reason
+	}
+	return statusVerb(e.Kind) + "."
 }
 
 // eventTrigger returns just the trigger phrase ("Scheduled run", "Manually

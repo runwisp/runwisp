@@ -256,7 +256,7 @@ func waitForDaemonLoop(client *apiclient.Client, drainer *daemonLogDrainer, pidP
 
 // checkPidAlive reads the PID file and returns (pid, alive). Returns (0, true)
 // when the file is unreadable (conservative: assume alive to avoid false exits).
-func checkPidAlive(pidPath string, dataDir string) (pid int, alive bool) {
+func checkPidAlive(pidPath, dataDir string) (pid int, alive bool) {
 	p, err := datadir.ReadPidFile(dataDir)
 	if err != nil {
 		return 0, true
@@ -281,7 +281,7 @@ func classifyDaemonLogLine(line string) (string, bool) {
 // bindFailureHint inspects a daemon log tail for signs that the server could
 // not bind its port and returns a ready-to-display user-facing error. Returns
 // nil when no bind failure is detected.
-func bindFailureHint(logTail string, host string, port int) error {
+func bindFailureHint(logTail, host string, port int) error {
 	if logTail == "" {
 		return nil
 	}

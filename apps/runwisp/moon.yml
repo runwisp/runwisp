@@ -74,7 +74,7 @@ tasks:
       cache: false
 
   check:
-    description: 'go vet + gofmt.'
+    description: 'go vet + golangci-lint + gofmt.'
     command: './scripts/check-go.sh'
     toolchain: 'system'
     deps:
@@ -84,6 +84,8 @@ tasks:
       - '@globs(go)'
       - 'tests/**/*.go'
       - 'scripts/check-go.sh'
+      - 'scripts/lint-go.sh'
+      - '.golangci.yml'
 
   format:
     command: 'go fmt ./...'

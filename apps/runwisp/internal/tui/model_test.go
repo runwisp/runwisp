@@ -24,7 +24,7 @@ func errBoom() error { return errors.New("boom") }
 func TestModel_Guards(t *testing.T) {
 	t.Run("toggleSelectedNotificationRead returns nil with no selection", func(t *testing.T) {
 		m := newTestModel(nil)
-		if cmd := m.toggleSelectedNotificationRead(); cmd != nil {
+		if m.toggleSelectedNotificationRead() != nil {
 			t.Fatal("expected nil cmd when no selection")
 		}
 	})

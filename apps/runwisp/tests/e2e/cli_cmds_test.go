@@ -27,7 +27,7 @@ run = "echo 'hello world'"
 	return path
 }
 
-func runCLI(t *testing.T, projectDir string, binaryPath string, args ...string) (string, error) {
+func runCLI(t *testing.T, projectDir, binaryPath string, args ...string) (string, error) {
 	t.Helper()
 
 	cmd := exec.Command(binaryPath, args...)

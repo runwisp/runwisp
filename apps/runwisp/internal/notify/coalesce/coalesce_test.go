@@ -124,7 +124,7 @@ func TestCoalesce_NewWindowAfterExpiry(t *testing.T) {
 // clock. Returns the timers handle for the test to drive.
 func withManualTimers(c *Channel) *testutil.ManualTimers {
 	mt := testutil.NewManualTimers()
-	c.after = func(_ time.Duration, fn func()) timerHandle { return mt.After(0, fn) }
+	c.after = func(_ time.Duration, fn func()) timerStopper { return mt.After(0, fn) }
 	return mt
 }
 

@@ -53,7 +53,7 @@ func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
 // homeHover is the index of the hovered field; -1 means none.
 // Returns the rendered string and the 0-based Y line offset where interactive
 // field rows begin (used for mouse hit-testing).
-func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w int, homeCursor int, homeHover int) (string, int) {
+func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, homeHover int) (string, int) {
 	var b strings.Builder
 	fields := Fields(info, hasLaunchTicket)
 	lineCount := 0
@@ -138,7 +138,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w int, homeCurso
 }
 
 // renderFieldRow renders a single focusable field row with optional selection highlight.
-func renderFieldRow(b *strings.Builder, label, value string, valueColor lipgloss.Color, w int, selected bool, hovered bool) {
+func renderFieldRow(b *strings.Builder, label, value string, valueColor lipgloss.Color, w int, selected, hovered bool) {
 	bg := uikit.ColorBg
 	if selected {
 		bg = uikit.ColorBgLight
@@ -171,7 +171,7 @@ func renderFieldRow(b *strings.Builder, label, value string, valueColor lipgloss
 }
 
 // renderActionRow renders a primary action row (button-like) with no value — just a label.
-func renderActionRow(b *strings.Builder, label string, labelColor lipgloss.Color, w int, selected bool, hovered bool) {
+func renderActionRow(b *strings.Builder, label string, labelColor lipgloss.Color, w int, selected, hovered bool) {
 	bg := uikit.ColorBg
 	if selected {
 		bg = uikit.ColorBgLight

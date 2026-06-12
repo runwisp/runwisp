@@ -168,23 +168,33 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 	r.manager.UpsertTask(newTask)
 
 	if r.scheduler != nil && (change.Has(config.ReasonSchedule) || change.Has(config.ReasonKind)) {
-		r.scheduler.RemoveTask(newTask.Name)
-		if newTask.Cron != "" {
-			if err := r.scheduler.AddTask(newTask); err != nil {
-				slog.Warn("Failed to reschedule changed task", "task", newTask.Name, "err", err)
-			}
-		}
+		r.rescheduleChanged(newTask)
 	}
 
 	if newTask.Kind.IsService() {
-		// Recycle running instances to pick up the new definition, then fill any
-		// slots added by an instance-count increase.
-		if err := r.manager.RestartServiceInstances(newTask.Name); err != nil {
-			slog.Error("Failed to restart changed service", "task", newTask.Name, "err", err)
+		r.recycleChangedService(newTask)
+	}
+}
+
+// rescheduleChanged drops the cron entry for a changed task and re-adds it under
+// the new definition when it still has a schedule.
+func (r *Reconciler) rescheduleChanged(newTask *model.Task) {
+	r.scheduler.RemoveTask(newTask.Name)
+	if newTask.Cron != "" {
+		if err := r.scheduler.AddTask(newTask); err != nil {
+			slog.Warn("Failed to reschedule changed task", "task", newTask.Name, "err", err)
 		}
-		if err := r.manager.StartServiceInstances(newTask.Name, model.TriggeredByService); err != nil {
-			slog.Error("Failed to start instances for changed service", "task", newTask.Name, "err", err)
-		}
+	}
+}
+
+// recycleChangedService recycles running instances to pick up the new
+// definition, then fills any slots added by an instance-count increase.
+func (r *Reconciler) recycleChangedService(newTask *model.Task) {
+	if err := r.manager.RestartServiceInstances(newTask.Name); err != nil {
+		slog.Error("Failed to restart changed service", "task", newTask.Name, "err", err)
+	}
+	if err := r.manager.StartServiceInstances(newTask.Name, model.TriggeredByService); err != nil {
+		slog.Error("Failed to start instances for changed service", "task", newTask.Name, "err", err)
 	}
 }
 

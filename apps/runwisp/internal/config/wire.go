@@ -136,39 +136,50 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		SecretsFile:    w.SecretsFile,
 		NotifyOnMissed: w.NotifyOnMissed,
 	}
-	if w.ComposeFile != "" {
-		// Host-process-only keys have no meaning when the run is a `docker
-		// compose` invocation — reject them here, where the raw explicit value
-		// is still visible (applyInheritedDefaults later fills shell = /bin/sh,
-		// erasing the explicit-vs-default signal).
-		if w.Shell != "" {
-			return model.Task{}, fmt.Errorf("shell is not supported on compose-backed %s %q; it applies only to host shell runs", label, name)
-		}
-		if w.Umask != "" {
-			return model.Task{}, fmt.Errorf("umask is not supported on compose-backed %s %q; it applies only to host shell runs", label, name)
-		}
-		if w.User != "" {
-			return model.Task{}, fmt.Errorf("user is not supported on compose-backed %s %q; the container runtime owns the container's user", label, name)
-		}
-		svc := w.ComposeService
-		if svc == "" {
-			svc = name
-		}
-		task.ExecutionDef = &model.ComposeExecution{
-			File:        w.ComposeFile,
-			ProjectName: name,
-			Service:     svc,
-			Mode:        model.ComposeModeServices,
-		}
-		task.Compose = &model.TaskComposeRef{
-			File:        w.ComposeFile,
-			Service:     svc,
-			ProjectName: name,
-		}
-	} else if w.ComposeService != "" {
-		return model.Task{}, fmt.Errorf("%s %q sets compose_service without compose_file", label, name)
+	if err := w.applyComposeBackend(&task, name, label); err != nil {
+		return model.Task{}, err
 	}
 	return task, nil
+}
+
+// applyComposeBackend routes the task through the compose backend when
+// compose_file is set, rejecting host-process-only keys (shell/umask/user) that
+// have no meaning for a `docker compose` run. compose_service without
+// compose_file is rejected. Both checks run here, where the raw explicit values
+// are still visible (applyInheritedDefaults later erases the explicit-vs-default
+// signal by filling in shell = /bin/sh).
+func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label string) error {
+	if w.ComposeFile == "" {
+		if w.ComposeService != "" {
+			return fmt.Errorf("%s %q sets compose_service without compose_file", label, name)
+		}
+		return nil
+	}
+	if w.Shell != "" {
+		return fmt.Errorf("shell is not supported on compose-backed %s %q; it applies only to host shell runs", label, name)
+	}
+	if w.Umask != "" {
+		return fmt.Errorf("umask is not supported on compose-backed %s %q; it applies only to host shell runs", label, name)
+	}
+	if w.User != "" {
+		return fmt.Errorf("user is not supported on compose-backed %s %q; the container runtime owns the container's user", label, name)
+	}
+	svc := w.ComposeService
+	if svc == "" {
+		svc = name
+	}
+	task.ExecutionDef = &model.ComposeExecution{
+		File:        w.ComposeFile,
+		ProjectName: name,
+		Service:     svc,
+		Mode:        model.ComposeModeServices,
+	}
+	task.Compose = &model.TaskComposeRef{
+		File:        w.ComposeFile,
+		Service:     svc,
+		ProjectName: name,
+	}
+	return nil
 }
 
 // taskWire is the over-the-wire task shape used only during TOML decoding.

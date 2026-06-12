@@ -37,55 +37,76 @@ func (s *iniSection) get(key string) (string, bool) {
 // its key appends to the previous value). It is intentionally small — just
 // enough to read supervisord configs, not a general INI library.
 func parseINI(r io.Reader) ([]iniSection, error) {
-	var sections []iniSection
-	var cur *iniSection
-	var lastKey string
-
+	p := &iniParser{}
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
-		raw := sc.Text()
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" {
-			lastKey = ""
-			continue
-		}
-		// Continuation: indented line that isn't a new section/comment and we
-		// have a key in flight.
-		if (raw[0] == ' ' || raw[0] == '\t') && lastKey != "" && cur != nil &&
-			!strings.HasPrefix(trimmed, "[") {
-			cur.values[lastKey] += "\n" + trimmed
-			continue
-		}
-		if trimmed[0] == ';' || trimmed[0] == '#' {
-			lastKey = ""
-			continue
-		}
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			name := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
-			sections = append(sections, iniSection{name: name, values: map[string]string{}})
-			cur = &sections[len(sections)-1]
-			lastKey = ""
-			continue
-		}
-		if cur == nil {
-			continue // stray key before any section header
-		}
-		sep := strings.IndexAny(trimmed, "=:")
-		if sep < 0 {
-			lastKey = ""
-			continue
-		}
-		key := strings.TrimSpace(trimmed[:sep])
-		value := strings.TrimSpace(trimmed[sep+1:])
-		if key == "" {
-			continue
-		}
-		cur.set(key, value)
-		lastKey = key
+		p.feed(sc.Text())
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
-	return sections, nil
+	return p.sections, nil
+}
+
+// iniParser holds the running state of a parseINI scan: the sections built so
+// far, the current section, and the last key seen (for continuation lines).
+type iniParser struct {
+	sections []iniSection
+	cur      *iniSection
+	lastKey  string
+}
+
+// feed classifies one raw line and folds it into the parser state.
+func (p *iniParser) feed(raw string) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		p.lastKey = ""
+		return
+	}
+	// Continuation: indented line that isn't a new section/comment and we have a
+	// key in flight.
+	if p.isContinuation(raw, trimmed) {
+		p.cur.values[p.lastKey] += "\n" + trimmed
+		return
+	}
+	if trimmed[0] == ';' || trimmed[0] == '#' {
+		p.lastKey = ""
+		return
+	}
+	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+		p.startSection(trimmed)
+		return
+	}
+	if p.cur == nil {
+		return // stray key before any section header
+	}
+	p.addKeyValue(trimmed)
+}
+
+func (p *iniParser) isContinuation(raw, trimmed string) bool {
+	return (raw[0] == ' ' || raw[0] == '\t') && p.lastKey != "" && p.cur != nil &&
+		!strings.HasPrefix(trimmed, "[")
+}
+
+func (p *iniParser) startSection(trimmed string) {
+	name := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	p.sections = append(p.sections, iniSection{name: name, values: map[string]string{}})
+	p.cur = &p.sections[len(p.sections)-1]
+	p.lastKey = ""
+}
+
+func (p *iniParser) addKeyValue(trimmed string) {
+	sep := strings.IndexAny(trimmed, "=:")
+	if sep < 0 {
+		p.lastKey = ""
+		return
+	}
+	key := strings.TrimSpace(trimmed[:sep])
+	value := strings.TrimSpace(trimmed[sep+1:])
+	if key == "" {
+		return
+	}
+	p.cur.set(key, value)
+	p.lastKey = key
 }

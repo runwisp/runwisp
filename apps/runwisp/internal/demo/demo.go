@@ -8,7 +8,7 @@
 package demo
 
 import (
-	_ "embed"
+	_ "embed" // enables the //go:embed directive for ConfigTOML below
 	"fmt"
 	"os"
 )

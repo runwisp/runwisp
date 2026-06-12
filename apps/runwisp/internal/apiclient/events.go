@@ -95,52 +95,62 @@ func (c *Client) streamLogLinesLoop(ctx context.Context, body io.ReadCloser, ch 
 	// line plus JSON overhead; 256 KiB is a comfortable headroom.
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
-	var event string
-	var dataParts []string
-
-	flush := func() {
-		defer func() {
-			event = ""
-			dataParts = dataParts[:0]
-		}()
-		if len(dataParts) == 0 {
-			return
-		}
-		data := strings.Join(dataParts, "\n")
-		msg, ok := parseLogStreamFrame(event, data)
-		if !ok {
-			return
-		}
-		select {
-		case ch <- msg:
-		case <-ctx.Done():
-		}
-	}
-
+	acc := logStreamFrameAccumulator{}
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
-			flush()
+			if msg, ok := acc.flush(); ok {
+				sendLogStreamMsg(ctx, ch, msg)
+			}
 			continue
 		}
-		if strings.HasPrefix(line, "id: ") {
-			continue
-		}
-		if strings.HasPrefix(line, ssePrefixEvent) {
-			event = strings.TrimPrefix(line, ssePrefixEvent)
-			continue
-		}
-		if strings.HasPrefix(line, ssePrefixData) {
-			dataParts = append(dataParts, strings.TrimPrefix(line, ssePrefixData))
-			continue
-		}
-		// retry: / : (comment) / unknown — ignore.
+		acc.consume(line)
 	}
 	if err := scanner.Err(); err != nil {
-		select {
-		case ch <- LogStreamMsg{Kind: LogStreamMsgKindErr, ErrValue: err}:
-		case <-ctx.Done():
-		}
+		sendLogStreamMsg(ctx, ch, LogStreamMsg{Kind: LogStreamMsgKindErr, ErrValue: err})
+	}
+}
+
+// logStreamFrameAccumulator buffers the event:/data: lines of a single SSE
+// frame until a blank line completes it.
+type logStreamFrameAccumulator struct {
+	event     string
+	dataParts []string
+}
+
+// consume folds one non-blank SSE line into the in-progress frame, ignoring
+// id:/retry:/comment/unknown lines.
+func (a *logStreamFrameAccumulator) consume(line string) {
+	switch {
+	case strings.HasPrefix(line, "id: "):
+		// ignore
+	case strings.HasPrefix(line, ssePrefixEvent):
+		a.event = strings.TrimPrefix(line, ssePrefixEvent)
+	case strings.HasPrefix(line, ssePrefixData):
+		a.dataParts = append(a.dataParts, strings.TrimPrefix(line, ssePrefixData))
+	}
+	// retry: / : (comment) / unknown — ignore.
+}
+
+// flush parses the buffered frame into a LogStreamMsg, resets the accumulator,
+// and reports whether a deliverable message was produced.
+func (a *logStreamFrameAccumulator) flush() (LogStreamMsg, bool) {
+	defer func() {
+		a.event = ""
+		a.dataParts = a.dataParts[:0]
+	}()
+	if len(a.dataParts) == 0 {
+		return LogStreamMsg{}, false
+	}
+	data := strings.Join(a.dataParts, "\n")
+	return parseLogStreamFrame(a.event, data)
+}
+
+// sendLogStreamMsg delivers msg on ch unless ctx is cancelled first.
+func sendLogStreamMsg(ctx context.Context, ch chan<- LogStreamMsg, msg LogStreamMsg) {
+	select {
+	case ch <- msg:
+	case <-ctx.Done():
 	}
 }
 

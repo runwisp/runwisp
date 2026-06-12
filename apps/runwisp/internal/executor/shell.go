@@ -73,40 +73,14 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 // non-positive or stopSig is already SIGKILL). cred, when non-nil, drops the
 // child to another uid/gid (ShellBackend run-as); ComposeBackend passes nil.
 func startCmd(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, cred *syscall.Credential, startErrPrefix string) (*Process, error) {
-	// working_dir existence is checked here, not at config load, so a missing
-	// or non-directory cwd fails the run loudly with a clear message rather
-	// than a raw chdir error from cmd.Start.
-	if cmd.Dir != "" {
-		info, err := os.Stat(cmd.Dir)
-		if err != nil {
-			return nil, fmt.Errorf("%s: working_dir %q: %w", startErrPrefix, cmd.Dir, err)
-		}
-		if !info.IsDir() {
-			return nil, fmt.Errorf("%s: working_dir %q is not a directory", startErrPrefix, cmd.Dir)
-		}
+	if err := validateWorkingDir(cmd.Dir, startErrPrefix); err != nil {
+		return nil, err
 	}
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Credential: cred}
 
 	done := make(chan struct{})
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		pgid := cmd.Process.Pid
-		if grace <= 0 || stopSig == syscall.SIGKILL {
-			return syscall.Kill(-pgid, syscall.SIGKILL)
-		}
-		_ = syscall.Kill(-pgid, stopSig)
-		go func() {
-			select {
-			case <-time.After(grace):
-				_ = syscall.Kill(-pgid, syscall.SIGKILL)
-			case <-done:
-			}
-		}()
-		return nil
-	}
+	cmd.Cancel = makeCancelFunc(cmd, grace, stopSig, done)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -118,10 +92,7 @@ func startCmd(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, cred *
 	}
 
 	if err := cmd.Start(); err != nil {
-		if cred != nil {
-			return nil, fmt.Errorf("%s as uid=%d gid=%d: %w (the daemon must run as root to drop privileges)", startErrPrefix, cred.Uid, cred.Gid, err)
-		}
-		return nil, fmt.Errorf("%s: %w", startErrPrefix, err)
+		return nil, startError(err, cred, startErrPrefix)
 	}
 
 	var waitOnce sync.Once
@@ -139,6 +110,57 @@ func startCmd(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, cred *
 			}
 		},
 	}, nil
+}
+
+// validateWorkingDir checks cmd.Dir existence here, not at config load, so a
+// missing or non-directory cwd fails the run loudly with a clear message rather
+// than a raw chdir error from cmd.Start.
+func validateWorkingDir(dir, startErrPrefix string) error {
+	if dir == "" {
+		return nil
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("%s: working_dir %q: %w", startErrPrefix, dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s: working_dir %q is not a directory", startErrPrefix, dir)
+	}
+	return nil
+}
+
+// makeCancelFunc builds the cmd.Cancel callback that opens the stop ladder:
+// stopSig first, then SIGKILL after grace (or straight to SIGKILL when grace is
+// non-positive or stopSig is already SIGKILL). done aborts the pending kill once
+// the process has been reaped.
+func makeCancelFunc(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, done <-chan struct{}) func() error {
+	return func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		pgid := cmd.Process.Pid
+		if grace <= 0 || stopSig == syscall.SIGKILL {
+			return syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+		_ = syscall.Kill(-pgid, stopSig)
+		go func() {
+			select {
+			case <-time.After(grace):
+				_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			case <-done:
+			}
+		}()
+		return nil
+	}
+}
+
+// startError wraps a cmd.Start failure, adding the privilege-drop hint when a
+// credential was requested.
+func startError(err error, cred *syscall.Credential, startErrPrefix string) error {
+	if cred != nil {
+		return fmt.Errorf("%s as uid=%d gid=%d: %w (the daemon must run as root to drop privileges)", startErrPrefix, cred.Uid, cred.Gid, err)
+	}
+	return fmt.Errorf("%s: %w", startErrPrefix, err)
 }
 
 // wrapScriptUmask prepends a `umask <octal>` line to the run script when a mask

@@ -52,22 +52,7 @@ func loadWithIncludes(path string) (*Config, sourceDirs, error) {
 	}
 
 	for _, incPath := range matched {
-		incDir := filepath.Dir(incPath)
-		data, err := os.ReadFile(incPath)
-		if err != nil {
-			return nil, sourceDirs{}, fmt.Errorf("failed to read included config %s: %w", incPath, err)
-		}
-		inc, err := parseWire(data, incDir)
-		if err != nil {
-			return nil, sourceDirs{}, fmt.Errorf("included config %s: %w", incPath, err)
-		}
-		if len(inc.Daemon.Include) > 0 {
-			return nil, sourceDirs{}, fmt.Errorf("included config %s sets [daemon].include; includes may not be nested (included from %s)", incPath, path)
-		}
-		if err := assertNoSingletons(inc, incPath); err != nil {
-			return nil, sourceDirs{}, err
-		}
-		if err := mergeWire(root, inc, incPath, incDir, nameSource, dirs.byName); err != nil {
+		if err := mergeIncludeFile(root, incPath, path, nameSource, dirs.byName); err != nil {
 			return nil, sourceDirs{}, err
 		}
 	}
@@ -79,6 +64,28 @@ func loadWithIncludes(path string) (*Config, sourceDirs, error) {
 	cfg.includeFiles = matched
 	cfg.includeGlobs = globs
 	return cfg, dirs, nil
+}
+
+// mergeIncludeFile reads and parses one included file, enforces the flat-only
+// (no nested include) and root-only-singleton rules, then folds its entries
+// into root. rootPath names the including file in error messages.
+func mergeIncludeFile(root *tomlConfig, incPath, rootPath string, nameSource, byName map[string]string) error {
+	incDir := filepath.Dir(incPath)
+	data, err := os.ReadFile(incPath)
+	if err != nil {
+		return fmt.Errorf("failed to read included config %s: %w", incPath, err)
+	}
+	inc, err := parseWire(data, incDir)
+	if err != nil {
+		return fmt.Errorf("included config %s: %w", incPath, err)
+	}
+	if len(inc.Daemon.Include) > 0 {
+		return fmt.Errorf("included config %s sets [daemon].include; includes may not be nested (included from %s)", incPath, rootPath)
+	}
+	if err := assertNoSingletons(inc, incPath); err != nil {
+		return err
+	}
+	return mergeWire(root, inc, incPath, incDir, nameSource, byName)
 }
 
 // entryNames returns the task, service, and compose-alias names declared in a
@@ -114,23 +121,31 @@ func resolveIncludes(patterns []string, rootDir, rootPath string) (resolvedGlobs
 		if err != nil {
 			return nil, nil, fmt.Errorf("daemon.include %q: %w", pat, err)
 		}
-		for _, h := range hits {
-			ha, err := filepath.Abs(h)
-			if err != nil {
-				ha = h
-			}
-			if ha == rootAbs {
-				continue
-			}
-			if _, dup := seen[ha]; dup {
-				continue
-			}
-			seen[ha] = struct{}{}
-			matched = append(matched, ha)
-		}
+		matched = appendGlobHits(matched, hits, rootAbs, seen)
 	}
 	sort.Strings(matched)
 	return resolvedGlobs, matched, nil
+}
+
+// appendGlobHits absolutizes each glob hit and appends the new ones to matched,
+// skipping the root config itself and any already-seen path (seen is updated in
+// place). A hit whose absolute path can't be resolved is kept as-is.
+func appendGlobHits(matched, hits []string, rootAbs string, seen map[string]struct{}) []string {
+	for _, h := range hits {
+		ha, err := filepath.Abs(h)
+		if err != nil {
+			ha = h
+		}
+		if ha == rootAbs {
+			continue
+		}
+		if _, dup := seen[ha]; dup {
+			continue
+		}
+		seen[ha] = struct{}{}
+		matched = append(matched, ha)
+	}
+	return matched
 }
 
 // assertNoSingletons rejects any singleton table set in an included file. Empty
@@ -161,6 +176,19 @@ func assertNoSingletons(inc *tomlConfig, file string) error {
 // collections and records each entry's origin, rejecting any task / service /
 // compose-alias name already claimed by another file.
 func mergeWire(root, inc *tomlConfig, incPath, incDir string, nameSource, byName map[string]string) error {
+	if err := recordEntryOrigins(inc, incPath, incDir, nameSource, byName); err != nil {
+		return err
+	}
+	mergeEntryTables(root, inc)
+	root.Notifiers = append(root.Notifiers, inc.Notifiers...)
+	root.Routes = append(root.Routes, inc.Routes...)
+	return nil
+}
+
+// recordEntryOrigins records each of the included file's entry names against
+// its origin file/dir, rejecting any name already claimed by another file. A
+// name repeated within the same file is left for buildConfig to report.
+func recordEntryOrigins(inc *tomlConfig, incPath, incDir string, nameSource, byName map[string]string) error {
 	for _, name := range entryNames(inc) {
 		if prev, ok := nameSource[name]; ok {
 			if prev == incPath {
@@ -173,7 +201,12 @@ func mergeWire(root, inc *tomlConfig, incPath, incDir string, nameSource, byName
 		nameSource[name] = incPath
 		byName[name] = incDir
 	}
+	return nil
+}
 
+// mergeEntryTables folds the included file's task/service/compose maps into the
+// root, lazily allocating each map on first use.
+func mergeEntryTables(root, inc *tomlConfig) {
 	if len(inc.Tasks) > 0 {
 		if root.Tasks == nil {
 			root.Tasks = make(map[string]*taskWire, len(inc.Tasks))
@@ -198,7 +231,4 @@ func mergeWire(root, inc *tomlConfig, incPath, incDir string, nameSource, byName
 			root.Compose[k] = v
 		}
 	}
-	root.Notifiers = append(root.Notifiers, inc.Notifiers...)
-	root.Routes = append(root.Routes, inc.Routes...)
-	return nil
 }

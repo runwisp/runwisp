@@ -73,7 +73,7 @@ func (s *Substring) Match(line []byte) bool {
 	// case-folding correct for UTF-8 input without paying the unicode cost
 	// when logs are pure ASCII (the common case).
 	for i, b := range line {
-		if b < utf8MaxAscii {
+		if b < utf8MaxASCII {
 			if b >= 'A' && b <= 'Z' {
 				b += 'a' - 'A'
 			}
@@ -91,10 +91,10 @@ func (s *Substring) Match(line []byte) bool {
 	return bytes.Contains(s.caseFoldScratch, s.needle)
 }
 
-// utf8MaxAscii is one past the highest single-byte ASCII codepoint. Anything
+// utf8MaxASCII is one past the highest single-byte ASCII codepoint. Anything
 // at or above this byte is part of a multi-byte UTF-8 sequence that the
 // ASCII case-fold cannot safely touch in place.
-const utf8MaxAscii = 0x80
+const utf8MaxASCII = 0x80
 
 // Regexp matches by precompiled RE2. The regex compile happens once before
 // the scan begins, so per-line work is bounded by RE2's linear-time match.

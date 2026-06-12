@@ -91,8 +91,9 @@ export const GET: APIRoute = async () => {
 
     const lines: string[] = ["# RunWisp", "", `> ${SUMMARY}`, ""];
 
-    lines.push("## Agent reference", "");
     lines.push(
+        "## Agent reference",
+        "",
         `- [RunWisp agent reference](${SITE}/agents/reference.md): Dense, ` +
             "token-optimized full reference — complete runwisp.toml schema, CLI, and REST " +
             "surface, written for agents. Start here.",
@@ -112,8 +113,9 @@ export const GET: APIRoute = async () => {
         lines.push("");
     }
 
-    lines.push("## Optional", "");
     lines.push(
+        "## Optional",
+        "",
         `- [OpenAPI schema](${SITE}/openapi.json): Full REST API specification (OpenAPI 3.1, JSON).`,
         "",
     );

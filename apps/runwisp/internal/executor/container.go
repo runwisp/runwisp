@@ -164,22 +164,44 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, _ *model
 		}
 	}
 
-	// Configure the container
+	containerID, attachResp, err := b.createAndStartContainer(ctx, imageTag, ctr, task)
+	if err != nil {
+		return nil, err
+	}
+
+	stdoutPR, stderrPR := demuxAttachStream(attachResp)
+
+	return &Process{
+		Stdout: stdoutPR,
+		Stderr: stderrPR,
+		Wait:   b.waitFunc(ctx, containerID),
+		Cleanup: func() {
+			attachResp.Close()
+			b.removeContainer(context.Background(), containerID)
+			b.builder.Remove(context.Background(), imageTag)
+		},
+	}, nil
+}
+
+// createAndStartContainer configures, creates, attaches to, and starts the
+// container. On any failure it tears down whatever was created (container,
+// image) so callers see a clean error and no leaked resources. It returns the
+// container ID and the live attach response on success.
+func (b *ContainerBackend) createAndStartContainer(ctx context.Context, imageTag string, ctr *model.ContainerExecution, task *model.Task) (string, client.ContainerAttachResult, error) {
 	containerConfig, hostConfig := b.buildContainerConfig(imageTag, ctr, task)
 
-	// Create the container
 	created, err := b.docker.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     containerConfig,
 		HostConfig: hostConfig,
 	})
 	if err != nil {
 		b.builder.Remove(ctx, imageTag)
-		return nil, fmt.Errorf("container create: %w", err)
+		return "", client.ContainerAttachResult{}, fmt.Errorf("container create: %w", err)
 	}
 
 	containerID := created.ID
 
-	// Attach to get stdout/stderr before starting
+	// Attach to get stdout/stderr before starting.
 	attachResp, err := b.docker.ContainerAttach(ctx, containerID, client.ContainerAttachOptions{
 		Stream: true,
 		Stdout: true,
@@ -188,19 +210,23 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, _ *model
 	if err != nil {
 		b.removeContainer(ctx, containerID)
 		b.builder.Remove(ctx, imageTag)
-		return nil, fmt.Errorf("container attach: %w", err)
+		return "", client.ContainerAttachResult{}, fmt.Errorf("container attach: %w", err)
 	}
 
-	// Start the container
 	if _, err := b.docker.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
 		attachResp.Close()
 		b.removeContainer(ctx, containerID)
 		b.builder.Remove(ctx, imageTag)
-		return nil, fmt.Errorf("container start: %w", err)
+		return "", client.ContainerAttachResult{}, fmt.Errorf("container start: %w", err)
 	}
 
-	// Demultiplex the Docker attach stream into separate stdout/stderr readers.
-	// Without a TTY, Docker frames each chunk with an 8-byte header (stream type + size).
+	return containerID, attachResp, nil
+}
+
+// demuxAttachStream demultiplexes the Docker attach stream into separate
+// stdout/stderr readers. Without a TTY, Docker frames each chunk with an 8-byte
+// header (stream type + size).
+func demuxAttachStream(attachResp client.ContainerAttachResult) (io.ReadCloser, io.ReadCloser) {
 	stdoutPR, stdoutPW := io.Pipe()
 	stderrPR, stderrPW := io.Pipe()
 	go func() {
@@ -208,31 +234,27 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, _ *model
 		stdoutPW.CloseWithError(err)
 		stderrPW.CloseWithError(err)
 	}()
+	return stdoutPR, stderrPR
+}
 
-	return &Process{
-		Stdout: stdoutPR,
-		Stderr: stderrPR,
-		Wait: func() (int, error) {
-			waitRes := b.docker.ContainerWait(ctx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
-			statusCh, errCh := waitRes.Result, waitRes.Error
-			for {
-				select {
-				case err := <-errCh:
-					if err != nil {
-						return -1, err
-					}
-					errCh = nil // already drained, ignore further reads
-				case status := <-statusCh:
-					return int(status.StatusCode), nil
+// waitFunc returns the Process.Wait callback that blocks on container exit and
+// reports its status code.
+func (b *ContainerBackend) waitFunc(ctx context.Context, containerID string) func() (int, error) {
+	return func() (int, error) {
+		waitRes := b.docker.ContainerWait(ctx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+		statusCh, errCh := waitRes.Result, waitRes.Error
+		for {
+			select {
+			case err := <-errCh:
+				if err != nil {
+					return -1, err
 				}
+				errCh = nil // already drained, ignore further reads
+			case status := <-statusCh:
+				return int(status.StatusCode), nil
 			}
-		},
-		Cleanup: func() {
-			attachResp.Close()
-			b.removeContainer(context.Background(), containerID)
-			b.builder.Remove(context.Background(), imageTag)
-		},
-	}, nil
+		}
+	}
 }
 
 func (b *ContainerBackend) removeContainer(ctx context.Context, containerID string) {

@@ -189,7 +189,7 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 	}
 }
 
-func (sr *sessionRunner) sendProtocolError(session *wsSession, kind CloudErrorKind, message string, requestID string) {
+func (sr *sessionRunner) sendProtocolError(session *wsSession, kind CloudErrorKind, message, requestID string) {
 	errorMessage := NewProtocolErrorMessage(string(kind), message, requestID)
 	if err := sendMessage(session, errorMessage); err != nil {
 		slog.Info("failed to send protocol error", "error", err.Error())
