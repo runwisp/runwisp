@@ -21,7 +21,7 @@
     import { formatDateTime } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
-    import { runDuration } from "./run-helpers.js";
+    import { runDuration, runStartDelay } from "./run-helpers.js";
 
     let {
         run,
@@ -94,6 +94,7 @@
     {@const config = getRunStatusConfig(runDisplayStatus(run))}
     {@const DetailIcon = config.icon}
     {@const duration = runDuration(run)}
+    {@const startDelay = runStartDelay(run)}
     <!-- Detailed Header -->
     <div class="@container shrink-0 border-b border-outline-faint bg-surface-raised p-6">
         <div class="flex flex-col justify-between gap-6 @4xl:flex-row @4xl:items-start">
@@ -200,6 +201,14 @@
                     <span class="font-mono text-sm font-medium whitespace-nowrap text-on-surface">
                         {run.start_at ? formatDateTime(run.start_at) : "--:--"}
                     </span>
+                    {#if startDelay}
+                        <span
+                            class="font-mono text-xs whitespace-nowrap text-on-surface-faint"
+                            title="Scheduled at {formatDateTime(run.created_at)}"
+                        >
+                            +{startDelay} after scheduled
+                        </span>
+                    {/if}
                 </div>
 
                 <div

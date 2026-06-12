@@ -29,23 +29,24 @@ keep_for            = "30d"
 healthy_after       = "60s"
 ```
 
-| Key                | Default      | What it does                                                                                                                                                                                                         |
-| ------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `timeout`          | _(unset)_    | Default per-attempt wall-clock cap. Unset means no timeout. **Tasks only** — services don't have a per-attempt timeout.                                                                                              |
-| `shell`            | `/bin/sh`    | Default interpreter for `run` scripts. Absolute path. Per-task `shell` overrides. See [`[tasks.*]` Working directory & shell](/configuration/tasks/#working-directory--shell).                                       |
-| `stop_signal`      | `"SIGTERM"`  | Default signal that opens the stop ladder before SIGKILL. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2`. Per-task / per-service `stop_signal` overrides.                          |
-| `exit_codes`       | `[0]`        | Default set of exit codes treated as success. Per-task / per-service `exit_codes` overrides. Codes are `0`–`255`.                                                                                                    |
-| `log_max_size`     | `100MB`      | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                                                                                                                         |
-| `log_on_full`      | `"drop_old"` | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                                                                                                        |
-| `keep_runs`        | _(unset)_    | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected.                                                                                                  |
-| `keep_for`         | _(unset)_    | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected.                                                                                                                  |
-| `healthy_after`    | `"60s"`      | Uptime a service instance must reach to count as healthy — resets its restart counter **and** clears the failed-start streak; faster failures count toward `start_retries`. **Services only.** Per-service override. |
-| `start_retries`    | `3`          | Consecutive failed starts a service instance tolerates before going [FATAL](/configuration/services/#when-a-service-cant-start-fatal) and stopping. **Services only.** Per-service override.                         |
-| `env`              | _(none)_     | Inline KEY/VALUE map merged into every task and service. Task-level entries override on key collision. See [`[tasks.*]` Environment & secrets](/configuration/tasks/#environment--secrets).                          |
-| `env_file`         | _(none)_     | Path to a dotenv file merged beneath `[defaults.env]`. Values are visible in the API/UI, like the rest of `env`.                                                                                                     |
-| `secrets`          | _(none)_     | Inline KEY/VALUE map merged into every task and service, but never shown in the API/UI. Task-level `secrets` override on key collision.                                                                              |
-| `secrets_file`     | _(none)_     | Path to a dotenv file merged beneath `[defaults.secrets]`. Only the path is visible; keys and values never leave the daemon.                                                                                         |
-| `notify_on_missed` | `true`       | Whether [missed scheduled runs](/concepts/scheduling/#alerting-on-missed-runs) alert. Set `false` here to silence the alert daemon-wide; a per-task `notify_on_missed` still wins.                                   |
+| Key                | Default      | What it does                                                                                                                                                                                                                                     |
+| ------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `timeout`          | _(unset)_    | Default per-attempt wall-clock cap. Unset means no timeout. **Tasks only** — services don't have a per-attempt timeout.                                                                                                                          |
+| `jitter`           | _(unset)_    | Default jitter window for cron tasks; off when unset. Every cron task inherits it and joins the daemon-wide one-at-a-time gate — one line to smooth your whole schedule. **Tasks only.** See [`[tasks.*]` jitter](/configuration/tasks/#jitter). |
+| `shell`            | `/bin/sh`    | Default interpreter for `run` scripts. Absolute path. Per-task `shell` overrides. See [`[tasks.*]` Working directory & shell](/configuration/tasks/#working-directory--shell).                                                                   |
+| `stop_signal`      | `"SIGTERM"`  | Default signal that opens the stop ladder before SIGKILL. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2`. Per-task / per-service `stop_signal` overrides.                                                      |
+| `exit_codes`       | `[0]`        | Default set of exit codes treated as success. Per-task / per-service `exit_codes` overrides. Codes are `0`–`255`.                                                                                                                                |
+| `log_max_size`     | `100MB`      | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                                                                                                                                                     |
+| `log_on_full`      | `"drop_old"` | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                                                                                                                                    |
+| `keep_runs`        | _(unset)_    | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected.                                                                                                                              |
+| `keep_for`         | _(unset)_    | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected.                                                                                                                                              |
+| `healthy_after`    | `"60s"`      | Uptime a service instance must reach to count as healthy — resets its restart counter **and** clears the failed-start streak; faster failures count toward `start_retries`. **Services only.** Per-service override.                             |
+| `start_retries`    | `3`          | Consecutive failed starts a service instance tolerates before going [FATAL](/configuration/services/#when-a-service-cant-start-fatal) and stopping. **Services only.** Per-service override.                                                     |
+| `env`              | _(none)_     | Inline KEY/VALUE map merged into every task and service. Task-level entries override on key collision. See [`[tasks.*]` Environment & secrets](/configuration/tasks/#environment--secrets).                                                      |
+| `env_file`         | _(none)_     | Path to a dotenv file merged beneath `[defaults.env]`. Values are visible in the API/UI, like the rest of `env`.                                                                                                                                 |
+| `secrets`          | _(none)_     | Inline KEY/VALUE map merged into every task and service, but never shown in the API/UI. Task-level `secrets` override on key collision.                                                                                                          |
+| `secrets_file`     | _(none)_     | Path to a dotenv file merged beneath `[defaults.secrets]`. Only the path is visible; keys and values never leave the daemon.                                                                                                                     |
+| `notify_on_missed` | `true`       | Whether [missed scheduled runs](/concepts/scheduling/#alerting-on-missed-runs) alert. Set `false` here to silence the alert daemon-wide; a per-task `notify_on_missed` still wins.                                                               |
 
 Some things you _can't_ default: `cron`, `on_overlap`, the `retry_*`
 keys, `max_concurrent`, `queue_max`, `graceful_stop`. Those are too tied
@@ -53,6 +54,13 @@ to a task's intent — defaulting them would quietly change behaviour you
 meant to be explicit. Per-task `graceful_stop` just falls back to its
 built-in value when you leave it off, so set it only on the tables that
 need a different window.
+
+`jitter` is the deliberate exception. It's a pure load knob — it caps how
+far a run's start _may_ slip, never _what_ it does or whether it fires — so
+a defaulted `jitter` can't surprise you the way a defaulted `cron` or
+`retry_*` would. And pacing the whole schedule at once is exactly the
+job you want a single line for: drop `jitter = "30m"` in `[defaults]` and
+every cron task joins the same one-at-a-time gate, no per-task repetition.
 
 The daemon-wide [`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout) is its own separate
 top-level setting that bounds the **whole-daemon** shutdown phase. Each

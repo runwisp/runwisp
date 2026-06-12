@@ -49,6 +49,12 @@ type TriggerRunOptions struct {
 	// InstanceIndex pins the run to a specific instance slot. Required for
 	// supervisor-driven restarts of services; nil for cron/API/retry runs.
 	InstanceIndex *int
+	// ScheduledAt backdates a jittered run's CreatedAt to the cron tick it
+	// belongs to, while the run still starts at m.clock() (tick + offset). The
+	// StartAt − CreatedAt delta then honestly shows the jitter, the way
+	// RecordMissedRun backdates CreatedAt to the missed tick. Zero means "use
+	// the clock", which is every non-jittered path. Non-service only.
+	ScheduledAt time.Time
 }
 
 // Compile-time check: *defaultTaskManager satisfies TaskManager.
@@ -73,6 +79,20 @@ type defaultTaskManager struct {
 	// of the per-task outcome.
 	deadlineExceeded atomic.Bool
 	wg               sync.WaitGroup
+	// shutdownCtx is cancelled the instant ShutdownWithDeadline begins —
+	// before the run-cancel pass and the wg drain. Goroutines parked in
+	// waitForDelay (retry, restart, jittered dispatch) select on it so they
+	// abort promptly at shutdown start. Without it they would block the drain:
+	// wg can't reach zero until the goroutine exits, the goroutine can't exit
+	// until its wait unblocks, and waiting on persistence.Done() never unblocks
+	// because persistence shuts down only after the drain — a circular wait.
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
+	// gate is the daemon-wide work-conserving jitter gate. Jittered cron fires
+	// are submitted to it instead of started directly; it targets one in-flight
+	// jittered run at a time, pulling the next forward as soon as the box is
+	// idle and breaching held tasks at their slots under congestion.
+	gate *jitterGate
 }
 
 // NewTaskManager constructs the default run-manager. clock must not be nil;
@@ -82,13 +102,18 @@ func NewTaskManager(exec executor.Executor, bus events.EventBus, clock func() ti
 	if clock == nil {
 		clock = time.Now
 	}
-	return &defaultTaskManager{
-		executor:    exec,
-		tasks:       make(map[string]*taskState),
-		persistence: NewPersistenceCoordinator(PersistenceChannelSize),
-		eventBus:    bus,
-		clock:       clock,
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	m := &defaultTaskManager{
+		executor:       exec,
+		tasks:          make(map[string]*taskState),
+		persistence:    NewPersistenceCoordinator(PersistenceChannelSize),
+		eventBus:       bus,
+		clock:          clock,
+		shutdownCtx:    shutdownCtx,
+		shutdownCancel: shutdownCancel,
 	}
+	m.gate = newJitterGate(clock, m.triggerJittered)
+	return m
 }
 
 // BindPersistenceHook wires persistence to both the manager and executor.
@@ -341,13 +366,21 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		return snapshot, nil
 	}
 
+	// A jittered cron run records CreatedAt as the tick it belongs to (set by
+	// the scheduler), even though it starts later at tick + offset. Every other
+	// path leaves ScheduledAt zero and stamps the current clock.
+	createdAt := m.clock()
+	if !options.ScheduledAt.IsZero() {
+		createdAt = options.ScheduledAt
+	}
+
 	run := &model.Run{
 		ID:                  ulid.Make().String(),
 		ExternalExecutionID: externalExecutionID,
 		TaskName:            taskName,
 		Status:              model.PhasePending,
 		TriggeredBy:         triggeredBy,
-		CreatedAt:           m.clock(),
+		CreatedAt:           createdAt,
 		RetryAttempt:        options.RetryAttempt,
 		RetryOfRunID:        options.RetryOfRunID,
 	}
@@ -383,6 +416,38 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	snapshot := run.Copy()
 	m.startRun(ts.task, run)
 	return snapshot, nil
+}
+
+// ScheduleJitteredRun submits a jittered cron fire to the work-conserving gate
+// instead of starting it directly. tick is the cron tick (backdated onto the
+// run's CreatedAt so the start delay surfaces as jitter, not hidden), slot the
+// deadline — the latest the start may slip — and window the free-check horizon.
+// The gate runs it at min(when it frees for this task, slot): pulled forward
+// when the box is idle, released on its slot under congestion. No goroutine
+// parks here; the gate arms a breach timer for held fires. If shutdown has begun
+// the submit is dropped — the missed tick falls to catch-up on the next boot.
+func (m *defaultTaskManager) ScheduleJitteredRun(taskName string, tick, slot time.Time, window time.Duration) {
+	m.gate.submit(taskName, tick, slot, window)
+}
+
+// triggerJittered is the gate's run-start hook: it starts a jittered cron run,
+// backdating CreatedAt to the tick, and reports whether the run was accepted
+// (started or queued) so the gate knows to track it until completion. A refused
+// trigger (shutdown) or a policy-rejected run is reported as not started and
+// never tracked. Called by the gate under its own lock; TriggerRunWithOptions
+// re-acquires the manager lock beneath it.
+func (m *defaultTaskManager) triggerJittered(taskName string, tick time.Time) (string, bool) {
+	run, err := m.TriggerRunWithOptions(taskName, TriggerRunOptions{
+		TriggeredBy: model.TriggeredByCron,
+		ScheduledAt: tick,
+	})
+	if err != nil {
+		if !errors.Is(err, errShuttingDown) {
+			slog.Error("Jittered run failed to start", "task", taskName, "err", err)
+		}
+		return "", false
+	}
+	return run.ID, true
 }
 
 // RecordSkippedFiring persists a run that the runtime suppressed before any
@@ -647,6 +712,11 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	result := m.executor.Execute(ctx, task, run)
 
 	nextRestartAttempt, serviceFatal := m.recordRunOutcome(task, run, active, result)
+	// Advance the jitter gate now the run is retired from active and the
+	// manager lock is released — recordRunOutcome unlocks before returning, so
+	// the gate may re-enter TriggerRunWithOptions without deadlocking. A no-op
+	// for runs the gate never triggered.
+	m.gate.onComplete(run.ID)
 	if !serviceFatal {
 		m.scheduleFollowup(task, run, nextRestartAttempt)
 	}
@@ -884,6 +954,13 @@ func (m *defaultTaskManager) Shutdown() {
 // deadline <= 0 means "wait indefinitely" (matches old behaviour).
 func (m *defaultTaskManager) ShutdownWithDeadline(deadline time.Duration) {
 	m.isShutdown.Store(true)
+	// Cancel before the wg drain so any goroutine parked in waitForDelay exits
+	// now instead of holding the drain open. Idempotent — safe if called twice.
+	m.shutdownCancel()
+	// Abandon pending jittered fires and stop their breach timers so no held
+	// task starts a run after shutdown begins. Takes only the gate lock (no
+	// manager lock held here), preserving the gateMu → mu order.
+	m.gate.shutdown()
 	m.mu.Lock()
 	for _, ts := range m.tasks {
 		for _, ar := range ts.active {

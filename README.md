@@ -54,6 +54,7 @@ Prefer manual? Grab a tarball from [GitHub Releases](https://github.com/runwisp/
 ```toml
 [tasks.backup-db]
 cron       = "0 2 * * *"   # every night at 2 AM
+jitter     = "30m"         # if the 2 AM crowd piles up, take turns — slip up to 30 min, never stampede
 on_overlap = "skip"        # don't stack if the previous run is still going
 keep_runs  = 30
 run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"

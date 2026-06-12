@@ -109,7 +109,7 @@ func TestSchedulerDSTWallClockDedup(t *testing.T) {
 	sched.fireOnce("eu-2am", loc)
 
 	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 0, second: 0}
-	assert.Equal(t, wm, sched.lastFired["eu-2am"], "lastFired must hold the 02:00 wall-clock second on the fall-back day")
+	assert.Equal(t, wm, sched.lastFired["eu-2am"], "lastFired must hold the 02:00 wall-clock instant on the fall-back day")
 }
 
 func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
@@ -142,7 +142,7 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	sched.fireOnce("eu-mins", loc)
 
 	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 1, second: 0}
-	assert.Equal(t, wm, sched.lastFired["eu-mins"], "lastFired must advance when wall-clock minute differs")
+	assert.Equal(t, wm, sched.lastFired["eu-mins"], "lastFired must advance when wall-clock instant differs")
 }
 
 // TestSchedulerFireOnce_GoldenTriggerSkipSequence pins down the firing
@@ -203,10 +203,12 @@ func TestSchedulerFireOnce_GoldenTriggerSkipSequence(t *testing.T) {
 		"the second 02:00 on the fall-back day must be recorded as dst_skipped")
 }
 
-// TestSchedulerSubMinuteFiresNotSuppressed guards the 6-field motivation: two
-// firings in the same wall-clock minute but different seconds (e.g. */30 firing
-// at :00 and :30) are distinct instants and must both trigger. A minute-granular
-// dedup would wrongly suppress the :30 firing as a DST duplicate.
+// TestSchedulerSubMinuteFiresNotSuppressed guards that minute-granular dedup
+// does NOT suppress sub-minute firings on a regular (non-DST) day: two firings
+// in the same wall-clock minute but at different UTC instants (e.g. */30 firing
+// at :00 and :30) each have a distinct UTC timestamp. While their wall-clock
+// minute is the same, both are real cron ticks — not DST duplicates — and the
+// lastFired tracking only records the latest minute, so the second still fires.
 func TestSchedulerSubMinuteFiresNotSuppressed(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	task := &model.Task{
@@ -233,18 +235,18 @@ func TestSchedulerSubMinuteFiresNotSuppressed(t *testing.T) {
 	}
 
 	assert.Equal(t, []string{"sub-minute", "sub-minute"}, runner.triggers,
-		"firings at :00 and :30 in the same minute must each trigger a run")
+		"firings at :00 and :30 in the same minute must each trigger a run on a non-DST day")
 	assert.Empty(t, runner.skips, "sub-minute firings must not be recorded as DST duplicates")
 }
 
-// TestSchedulerEverySecondDSTFallbackSuppressed proves the second-granular dedup
-// still catches the real duplicate: under "* * * * * *", a wall-clock second
-// that occurs twice on a fall-back day must trigger once and be suppressed once.
+// TestSchedulerEverySecondDSTFallbackSuppressed proves the minute-granular dedup
+// catches the real DST duplicate: on a fall-back day, two wall-clock minutes
+// that repeat fire once and suppress the second.
 func TestSchedulerEverySecondDSTFallbackSuppressed(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	task := &model.Task{
-		Name:     "per-second",
-		Cron:     "* * * * * *",
+		Name:     "per-minute",
+		Cron:     "* * * * *",
 		Timezone: "Europe/Bratislava",
 		Run:      "echo",
 	}
@@ -252,33 +254,158 @@ func TestSchedulerEverySecondDSTFallbackSuppressed(t *testing.T) {
 	loc, err := time.LoadLocation("Europe/Bratislava")
 	require.NoError(t, err)
 
-	// 2026-10-25 fall-back: wall-clock 02:00:30 happens twice.
-	//   UTC 00:00:30 → 02:00:30 CEST (trigger)
-	//   UTC 01:00:30 → 02:00:30 CET  (duplicate, suppressed)
+	// 2026-10-25 fall-back: wall-clock 02:00 happens twice.
+	//   UTC 00:00 → 02:00 CEST (trigger)
+	//   UTC 01:00 → 02:00 CET  (duplicate, suppressed)
 	stamps := []time.Time{
-		time.Date(2026, 10, 25, 0, 0, 30, 0, time.UTC),
-		time.Date(2026, 10, 25, 1, 0, 30, 0, time.UTC),
+		time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC),
 	}
-	require.Equal(t, 30, stamps[0].In(loc).Second(), "anchoring sanity: first fire must read :30")
+	require.Equal(t, 2, stamps[0].In(loc).Hour(), "anchoring sanity: first fire must read 02:xx")
 	require.Equal(t, 2, stamps[1].In(loc).Hour(), "anchoring sanity: second fire must read 02:xx (post fall-back)")
 
 	idx := 0
-	sched := NewScheduler(runner, map[string]*model.Task{"per-second": task}, time.UTC, WithNow(func() time.Time {
+	sched := NewScheduler(runner, map[string]*model.Task{"per-minute": task}, time.UTC, WithNow(func() time.Time {
 		t := stamps[idx]
 		idx++
 		return t
 	}))
 
 	for range stamps {
-		sched.fireOnce("per-second", loc)
+		sched.fireOnce("per-minute", loc)
 	}
 
-	assert.Equal(t, []string{"per-second"}, runner.triggers,
-		"the first 02:00:30 must trigger exactly once")
+	assert.Equal(t, []string{"per-minute"}, runner.triggers,
+		"the first 02:00 must trigger exactly once")
 	assert.Equal(t,
-		[]recordedSkip{{taskName: "per-second", reason: model.ReasonDSTSkipped}},
+		[]recordedSkip{{taskName: "per-minute", reason: model.ReasonDSTSkipped}},
 		runner.skips,
-		"the rewound 02:00:30 must be recorded as dst_skipped")
+		"the rewound 02:00 must be recorded as dst_skipped")
+}
+
+// jitterTasks returns two identical cron tasks sharing a jitter window. The
+// placement levels them to slots {a: 0, b: window}, so "a" takes the earliest
+// slot and "b" the far end — a deterministic fixture for the tests below
+// without reaching into the placement internals.
+func jitterTasks(window time.Duration) map[string]*model.Task {
+	mk := func(name string) *model.Task {
+		return &model.Task{Name: name, Cron: "0 2 * * *", Jitter: window, Run: "echo hi"}
+	}
+	return map[string]*model.Task{"a": mk("a"), "b": mk("b")}
+}
+
+func TestSchedulerJitterRoutesThroughGate(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	// 01:00 sits an hour before the 02:00 tick, so the live gap comfortably
+	// exceeds the 30m offset and no clamp kicks in.
+	now := time.Date(2026, 6, 10, 1, 0, 0, 0, time.UTC)
+	tasks := jitterTasks(30 * time.Minute)
+
+	sched := NewScheduler(runner, tasks, time.UTC, WithNow(func() time.Time { return now }))
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	sched.fireOnce("a", time.UTC)
+	sched.fireOnce("b", time.UTC)
+
+	// Every jittered task — including the offset-0 one — is submitted to the
+	// gate rather than triggered directly, so the gate can hold peers while one
+	// runs. Nothing takes the immediate TriggerRun path.
+	assert.Empty(t, runner.triggers, "jittered tasks route through the gate, not direct trigger")
+
+	calls := runner.jitteredCalls()
+	require.Len(t, calls, 2)
+	byName := map[string]jitteredCall{calls[0].taskName: calls[0], calls[1].taskName: calls[1]}
+
+	// "a" takes the earliest slot (offset 0): its slot deadline is the tick.
+	a := byName["a"]
+	assert.Equal(t, now, a.tick)
+	assert.Equal(t, now, a.slot, "the earliest-slot task's deadline is the tick itself")
+
+	// "b" sits a 30m offset later: slot = tick + 30m, both backdated to the tick.
+	b := byName["b"]
+	assert.Equal(t, now, b.tick, "the run is backdated to the tick, not the delayed start")
+	assert.Equal(t, now.Add(30*time.Minute), b.slot, "b's slot is the tick plus its 30m offset")
+	assert.Equal(t, 30*time.Minute, b.window)
+}
+
+// TestSchedulerJitterClampsSlotToLiveGap proves the per-fire safety clamp: an
+// offset wider than the gap to the next tick is trimmed to just under it, so a
+// jittered slot can never land on or past its own next firing.
+func TestSchedulerJitterClampsSlotToLiveGap(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	now := time.Date(2026, 6, 10, 1, 30, 0, 0, time.UTC) // 30m before the 02:00 tick
+	// A 2h window is far wider than the 30m gap to the next tick.
+	tasks := jitterTasks(2 * time.Hour)
+
+	sched := NewScheduler(runner, tasks, time.UTC, WithNow(func() time.Time { return now }))
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	sched.fireOnce("b", time.UTC)
+
+	calls := runner.jitteredCalls()
+	require.Len(t, calls, 1)
+	assert.Equal(t, now.Add(30*time.Minute-time.Second), calls[0].slot,
+		"the slot must clamp to one second under the gap to the next tick")
+	assert.Equal(t, 30*time.Minute-time.Second, calls[0].window,
+		"the window horizon clamps to the live gap too")
+}
+
+// TestSchedulerJitterSkipsDSTDuplicate proves a DST wall-clock duplicate is
+// recorded as dst_skipped and never jittered, even for a task that carries an
+// offset — jitter applies only to genuine firings.
+func TestSchedulerJitterSkipsDSTDuplicate(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	now := time.Date(2026, 6, 10, 1, 0, 0, 0, time.UTC)
+	tasks := jitterTasks(30 * time.Minute)
+
+	sched := NewScheduler(runner, tasks, time.UTC, WithNow(func() time.Time { return now }))
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	sched.fireOnce("b", time.UTC) // genuine firing → jittered
+	sched.fireOnce("b", time.UTC) // same wall-minute → DST duplicate
+
+	assert.Len(t, runner.jitteredCalls(), 1, "only the genuine firing is jittered")
+	assert.Equal(t,
+		[]recordedSkip{{taskName: "b", reason: model.ReasonDSTSkipped}},
+		runner.skips,
+		"the duplicate must be recorded as dst_skipped, not jittered")
+}
+
+// TestSchedulerJitterGetNextRunShowsTick proves the API/TUI/UI see the bare
+// cron tick, not tick + slot. Under the gate a task starts at min(when the gate
+// frees for it, its slot), so the tick is the earliest and most common actual
+// start; surfacing the slot would overstate the delay. Both tasks share a cron,
+// so both display the same tick despite carrying different slots.
+func TestSchedulerJitterGetNextRunShowsTick(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	now := time.Date(2026, 6, 10, 1, 0, 0, 0, time.UTC)
+	tasks := jitterTasks(30 * time.Minute)
+
+	sched := NewScheduler(runner, tasks, time.UTC, WithNow(func() time.Time { return now }))
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	nextA := sched.GetNextRun("a")
+	nextB := sched.GetNextRun("b")
+	require.NotNil(t, nextA)
+	require.NotNil(t, nextB)
+	assert.Equal(t, *nextA, *nextB,
+		"both jittered tasks display the same bare tick, not tick + slot")
+
+	// The displayed instant is the bare cron tick (02:00), with no slot offset
+	// folded in. (The cron entry's next-fire is keyed off the real clock, so
+	// only the time-of-day is asserted, not the date.)
+	parsed, err := time.ParseInLocation("2006-01-02 15:04:05", *nextB, time.UTC)
+	require.NoError(t, err)
+	assert.Equal(t, 2, parsed.Hour(), "next run is the 02:00 tick, not an offset start")
+	assert.Equal(t, 0, parsed.Minute())
 }
 
 func TestSchedulerRejectsBadTaskTimezone(t *testing.T) {

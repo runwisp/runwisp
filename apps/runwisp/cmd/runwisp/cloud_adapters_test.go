@@ -62,6 +62,9 @@ func (s *stubTaskRunner) RecordSkippedFiring(string, model.EndReason, model.Trig
 }
 func (s *stubTaskRunner) RecordMissedRun(string, time.Time, string) error { panic("not used") }
 func (s *stubTaskRunner) GetActiveRunCount(string) int                    { panic("not used") }
+func (s *stubTaskRunner) ScheduleJitteredRun(string, time.Time, time.Time, time.Duration) {
+	panic("not used")
+}
 
 func TestCloudTaskRunner_GetTask_DelegatesAndPropagates(t *testing.T) {
 	inner := &stubTaskRunner{

@@ -15,6 +15,16 @@ type recordedSkip struct {
 	reason   model.EndReason
 }
 
+// jitteredCall captures one ScheduleJitteredRun invocation so the scheduler's
+// jitter tests can assert the task was routed through the gate with the
+// expected tick, slot deadline, and window horizon.
+type jitteredCall struct {
+	taskName string
+	tick     time.Time
+	slot     time.Time
+	window   time.Duration
+}
+
 // fakeTaskRunner is a recording TaskRunner stand-in for runtime tests. It
 // captures trigger/skip calls in arrival order and returns a configurable
 // result, so both the scheduler's golden firing-sequence tests and the
@@ -33,6 +43,7 @@ type fakeTaskRunner struct {
 
 	triggers []string
 	skips    []recordedSkip
+	jittered []jitteredCall
 }
 
 func (r *fakeTaskRunner) TriggerRun(name string, _ model.TriggeredBy) (*model.Run, error) {
@@ -54,6 +65,22 @@ func (r *fakeTaskRunner) RecordSkippedFiring(name string, reason model.EndReason
 	defer r.mu.Unlock()
 	r.skips = append(r.skips, recordedSkip{taskName: name, reason: reason})
 	return nil
+}
+
+func (r *fakeTaskRunner) ScheduleJitteredRun(name string, tick, slot time.Time, window time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.jittered = append(r.jittered, jitteredCall{taskName: name, tick: tick, slot: slot, window: window})
+}
+
+// jitteredCalls returns a copy of the recorded ScheduleJitteredRun calls, with
+// locking so callers don't race the recorder.
+func (r *fakeTaskRunner) jitteredCalls() []jitteredCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]jitteredCall, len(r.jittered))
+	copy(out, r.jittered)
+	return out
 }
 
 // triggerCount reports how many runs were triggered, with locking so callers

@@ -190,6 +190,7 @@ type taskWire struct {
 
 	Cron           string                `toml:"cron,omitempty"`
 	Timezone       string                `toml:"timezone,omitempty"`
+	Jitter         string                `toml:"jitter,omitempty"`
 	CatchUp        model.MissedRunPolicy `toml:"catch_up,omitempty"`
 	MaxCatchUpRuns int                   `toml:"max_catch_up_runs,omitempty"`
 	RunOnStart     bool                  `toml:"run_on_start,omitempty"`
@@ -221,8 +222,13 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid retry_delay for task %q: %w", name, err)
 	}
+	jitter, err := parseDuration(w.Jitter)
+	if err != nil {
+		return model.Task{}, fmt.Errorf("invalid jitter for task %q: %w", name, err)
+	}
 	task.Cron = w.Cron
 	task.Timezone = w.Timezone
+	task.Jitter = jitter
 	task.CatchUp = w.CatchUp
 	task.MaxCatchUpRuns = w.MaxCatchUpRuns
 	task.RunOnStart = w.RunOnStart
@@ -290,6 +296,7 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 // defaultsWire mirrors [defaults] before parsing.
 type defaultsWire struct {
 	Timeout      string `toml:"timeout,omitempty"`
+	Jitter       string `toml:"jitter,omitempty"`
 	Shell        string `toml:"shell,omitempty"`
 	StopSignal   string `toml:"stop_signal,omitempty"`
 	LogMaxSize   string `toml:"log_max_size,omitempty"`
@@ -316,6 +323,10 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.timeout: %w", err)
 	}
+	jitter, err := parseDuration(w.Jitter)
+	if err != nil {
+		return Defaults{}, fmt.Errorf("invalid defaults.jitter: %w", err)
+	}
 	keepFor, err := parseKeepFor(w.KeepFor)
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.keep_for: %w", err)
@@ -334,6 +345,7 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	}
 	return Defaults{
 		Timeout:        timeout,
+		Jitter:         jitter,
 		Shell:          w.Shell,
 		StopSignal:     w.StopSignal,
 		ExitCodes:      w.ExitCodes,

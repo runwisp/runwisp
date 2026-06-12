@@ -1169,6 +1169,11 @@ export interface components {
             instances?: number;
             /**
              * Format: int64
+             * @description Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds
+             */
+            jitter?: number;
+            /**
+             * Format: int64
              * @description Retention window in nanoseconds; 0 means no cap was configured
              */
             keep_for?: number;

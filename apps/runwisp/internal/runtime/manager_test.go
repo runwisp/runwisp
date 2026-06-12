@@ -353,6 +353,82 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 	assert.True(t, sawDaemonStopped, "shutdown survivor must be recorded with ReasonDaemonStopped")
 }
 
+// TestShutdownUnblocksParkedDelay is the regression test for a shutdown
+// deadlock. A goroutine parked in waitForDelay (retry, restart, or jittered
+// dispatch) is tracked by m.wg, so the shutdown drain cannot complete until it
+// exits. Before the fix waitForDelay watched persistence.Done(), which is only
+// cancelled AFTER the drain — a circular wait that hung shutdown for the full
+// remaining delay. The fix watches shutdownCtx, cancelled at the very start of
+// ShutdownWithDeadline. A one-hour delay plus a watchdog proves the wait is
+// interrupted promptly rather than slept through.
+func TestShutdownUnblocksParkedDelay(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now).(*defaultTaskManager)
+
+	// Park a goroutine in waitForDelay, tracked by wg exactly as the real
+	// retry/restart/jitter paths track theirs.
+	woke := make(chan bool, 1)
+	jm.wg.Add(1)
+	go func() {
+		defer jm.wg.Done()
+		woke <- jm.waitForDelay(time.Hour)
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		jm.Shutdown()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Shutdown hung: a goroutine parked in waitForDelay did not exit at shutdown start")
+	}
+
+	select {
+	case got := <-woke:
+		assert.False(t, got, "waitForDelay must report false (shutdown) rather than a fired timer")
+	case <-time.After(time.Second):
+		t.Fatal("waitForDelay never returned")
+	}
+}
+
+// TestTriggerRunScheduledAtBackdatesCreatedAt pins the jitter mechanism: a run
+// dispatched for cron tick T but started at T+offset records CreatedAt = T (the
+// tick) and StartAt = the actual start, so StartAt − CreatedAt is the jitter
+// delay — visible, never hidden. Mirrors RecordMissedRun's backdating.
+func TestTriggerRunScheduledAtBackdatesCreatedAt(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	startedAt := time.Date(2026, 6, 10, 3, 7, 0, 0, time.UTC) // tick + 7m offset
+	jm := NewTaskManager(exec, eb, func() time.Time { return startedAt })
+	t.Cleanup(jm.Shutdown)
+
+	task := testTask("t", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
+
+	tick := time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC)
+	started := watchRuns(eb, events.EventRunStarted)
+
+	run, err := jm.TriggerRunWithOptions("t", TriggerRunOptions{
+		TriggeredBy: model.TriggeredByCron,
+		ScheduledAt: tick,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, tick, run.CreatedAt, "CreatedAt must be the cron tick, not the clock")
+
+	started.waitFor(t, 1)
+	got := started.snapshot()[0]
+	require.NotNil(t, got.StartAt)
+	assert.Equal(t, tick, got.CreatedAt)
+	assert.Equal(t, startedAt, *got.StartAt)
+	assert.Equal(t, 7*time.Minute, got.StartAt.Sub(got.CreatedAt),
+		"StartAt − CreatedAt must surface the jitter delay")
+}
+
 func TestRecordMissedRun(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()

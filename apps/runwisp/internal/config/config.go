@@ -328,32 +328,44 @@ func buildTaskSlice(raw *tomlConfig, taskNames, serviceNames []string) ([]model.
 	return tasks, nil
 }
 
+// validateDefaults checks the [defaults] section: enum membership, ranges, and
+// caps for the values inherited by tasks that omit them.
+func validateDefaults(d *Defaults) error {
+	if err := requireOneOf("defaults.log_on_full", d.LogOnFull, validLogOnFull, true); err != nil {
+		return err
+	}
+	if err := validateKeepRuns("defaults.keep_runs", d.KeepRuns); err != nil {
+		return err
+	}
+	if err := validateKeepFor("defaults.keep_for", d.KeepFor); err != nil {
+		return err
+	}
+	if d.HealthyAfter < 0 {
+		return fmt.Errorf("invalid defaults.healthy_after: must be a positive duration")
+	}
+	if d.StartRetries < 0 {
+		return fmt.Errorf("invalid defaults.start_retries: must be non-negative")
+	}
+	if d.StartRetries > StartRetriesCap {
+		return fmt.Errorf("invalid defaults.start_retries: %d exceeds the cap of %d", d.StartRetries, StartRetriesCap)
+	}
+	if d.Jitter < 0 {
+		return fmt.Errorf("invalid defaults.jitter: must be zero or a positive duration")
+	}
+	if d.Jitter > JitterCap {
+		return fmt.Errorf("invalid defaults.jitter: %s exceeds the cap of %s", d.Jitter, JitterCap)
+	}
+	if err := validateExitCodes("defaults.exit_codes", d.ExitCodes); err != nil {
+		return err
+	}
+	return validateStopSignal("defaults.stop_signal", d.StopSignal)
+}
+
 // Validate checks for invalid configuration values. Durations and byte sizes
 // have already been parsed at this point — only enum membership, ranges, and
 // required fields remain.
 func Validate(cfg *Config) error {
-	if err := requireOneOf("defaults.log_on_full", cfg.Defaults.LogOnFull, validLogOnFull, true); err != nil {
-		return err
-	}
-	if err := validateKeepRuns("defaults.keep_runs", cfg.Defaults.KeepRuns); err != nil {
-		return err
-	}
-	if err := validateKeepFor("defaults.keep_for", cfg.Defaults.KeepFor); err != nil {
-		return err
-	}
-	if cfg.Defaults.HealthyAfter < 0 {
-		return fmt.Errorf("invalid defaults.healthy_after: must be a positive duration")
-	}
-	if cfg.Defaults.StartRetries < 0 {
-		return fmt.Errorf("invalid defaults.start_retries: must be non-negative")
-	}
-	if cfg.Defaults.StartRetries > StartRetriesCap {
-		return fmt.Errorf("invalid defaults.start_retries: %d exceeds the cap of %d", cfg.Defaults.StartRetries, StartRetriesCap)
-	}
-	if err := validateExitCodes("defaults.exit_codes", cfg.Defaults.ExitCodes); err != nil {
-		return err
-	}
-	if err := validateStopSignal("defaults.stop_signal", cfg.Defaults.StopSignal); err != nil {
+	if err := validateDefaults(&cfg.Defaults); err != nil {
 		return err
 	}
 	if cfg.Daemon.ShutdownTimeout < 0 {
@@ -673,6 +685,12 @@ func validateTaskLimits(task *model.Task) error {
 	if task.GracefulStop < 0 {
 		return fmt.Errorf("invalid graceful_stop for task %s: must be zero or a positive duration", task.Name)
 	}
+	if task.Jitter < 0 {
+		return fmt.Errorf("invalid jitter for task %s: must be zero or a positive duration", task.Name)
+	}
+	if task.Jitter > JitterCap {
+		return fmt.Errorf("invalid jitter for task %s: %s exceeds the cap of %s", task.Name, task.Jitter, JitterCap)
+	}
 	if task.RetryAttempts < 0 {
 		return fmt.Errorf("invalid retry_attempts for task %s: must be non-negative", task.Name)
 	}
@@ -853,6 +871,10 @@ const (
 	// StartRetriesCap bounds start_retries. A service that fast-fails this many
 	// times in a row is broken; allowing more just delays the FATAL signal.
 	StartRetriesCap = 100
+	// JitterCap bounds the jitter window at a full day. The runtime clamps each
+	// fire to the gap before the next tick, so this is pure typo protection
+	// (e.g. "30h" meant "30m") rather than a correctness limit.
+	JitterCap = 24 * time.Hour
 
 	// EnvMaxEntries caps the combined size of a task's inline env and
 	// env_file-derived secret env. Generous enough for any realistic dotenv
@@ -933,6 +955,12 @@ func ApplyDefaults(cfg *Config) {
 func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if task.Timeout == 0 {
 		task.Timeout = d.Timeout
+	}
+	// Jitter is task-only: a service never inherits [defaults] jitter (it starts
+	// every instance at boot, so there's no fire time to spread). An explicit
+	// [services.x] jitter is rejected earlier by DisallowUnknownFields.
+	if !task.Kind.IsService() && task.Jitter == 0 {
+		task.Jitter = d.Jitter
 	}
 	if task.Shell == "" {
 		task.Shell = d.Shell
