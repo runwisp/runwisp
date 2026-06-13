@@ -55,6 +55,38 @@ func TestLoadValidatesCron(t *testing.T) {
 	}
 }
 
+// validateTaskCron treats only the exact empty string as trigger-only; any
+// non-empty cron — including whitespace — is handed to the cron parser. These
+// lock how the parser treats whitespace edges.
+func TestLoadCronWhitespaceEdges(t *testing.T) {
+	// A whitespace-only cron is NOT the empty trigger-only sentinel, so it
+	// reaches the parser and is rejected as having too few fields.
+	t.Run("whitespace-only is rejected", func(t *testing.T) {
+		path := writeTOML(t, "[tasks.t]\nrun = \"echo hi\"\ncron = \"   \"\n")
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `invalid cron for task "t"`)
+	})
+
+	// Surrounding and separating whitespace around a valid expression is
+	// tolerated by the parser.
+	valid := []struct {
+		name string
+		cron string
+	}{
+		{name: "leading and trailing spaces", cron: "  0 3 * * *  "},
+		{name: "surrounding tabs", cron: "\t0 3 * * *\t"},
+		{name: "tab field separators", cron: "0\t3\t*\t*\t*"},
+	}
+	for _, tt := range valid {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTOML(t, "[tasks.t]\nrun = \"echo hi\"\ncron = \""+tt.cron+"\"\n")
+			_, err := Load(path)
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func TestLoadEmptyCronIsTriggerOnly(t *testing.T) {
 	path := writeTOML(t, "[tasks.manual]\nrun = \"echo hi\"\n")
 	cfg, err := Load(path)

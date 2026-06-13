@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **`backoff_reset_after` renamed to `healthy_after`**, which now governs both the restart-backoff reset and the failed-start/FATAL threshold. See [Healthy threshold](https://docs.runwisp.com/concepts/retries/#healthy-threshold-healthy_after).
+- **`keep_for` is now capped at ~100 years** to catch typos at config load. See [Logs & retention](https://docs.runwisp.com/configuration/tasks/#logs--retention).
 
 ### Fixed
 

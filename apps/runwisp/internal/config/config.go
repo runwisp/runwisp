@@ -810,11 +810,15 @@ func validateKeepRuns(scope string, n int) error {
 	return nil
 }
 
-// validateKeepFor rejects negative durations. Zero is the post-parse sentinel
-// for "omitted, inherit defaults"; any positive duration is accepted.
+// validateKeepFor rejects negative durations and durations above the keep_for
+// cap. Zero is the post-parse sentinel for "omitted, inherit defaults"; any
+// positive duration up to KeepForCap is accepted.
 func validateKeepFor(scope string, d time.Duration) error {
 	if d < 0 {
 		return fmt.Errorf("invalid %s: must be a positive duration", scope)
+	}
+	if d > KeepForCap {
+		return fmt.Errorf("invalid %s: %s exceeds the cap of %s", scope, d, KeepForCap)
 	}
 	return nil
 }
@@ -875,6 +879,10 @@ const (
 	// fire to the gap before the next tick, so this is pure typo protection
 	// (e.g. "30h" meant "30m") rather than a correctness limit.
 	JitterCap = 24 * time.Hour
+	// KeepForCap bounds keep_for at ~100 years. Like JitterCap this is pure typo
+	// protection (e.g. "999999d" meant "999999s") — it never constrains a real
+	// operator and stays well under time.Duration's ~292-year ceiling.
+	KeepForCap = 100 * 365 * 24 * time.Hour
 
 	// EnvMaxEntries caps the combined size of a task's inline env and
 	// env_file-derived secret env. Generous enough for any realistic dotenv

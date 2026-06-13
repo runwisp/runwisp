@@ -27,10 +27,28 @@ func TestParseByteSize(t *testing.T) {
 		{"1.5gb", int64(1.5 * float64(1<<30)), false},
 		{"  100MB  ", 100 * 1024 * 1024, false},
 
+		// Mixed case without spaces — units are case-insensitive.
+		{"1MB", 1 << 20, false},
+		{"1mB", 1 << 20, false},
+		// Fractional sizes truncate toward zero after multiplying:
+		// 1.9 * 2^30 = 2040109465.6 → 2040109465.
+		{"1.9gb", 2040109465, false},
+		// Leading dot is a valid float.
+		{".5gb", int64(0.5 * float64(1<<30)), false},
+		// Zero with any unit collapses to 0.
+		{"0b", 0, false},
+		{"0mb", 0, false},
+		// A space between number and unit is tolerated — the unit parser trims
+		// the numeric part, so "100 mb" is 100 MB, not an error. Locking current
+		// behavior.
+		{"100 mb", 100 * 1024 * 1024, false},
+
 		{"-1", 0, true},
 		{"-5mb", 0, true},
 		{"abc", 0, true},
 		{"mb", 0, true},
+		// A trailing plural is not a recognized unit.
+		{"1gbs", 0, true},
 	}
 
 	for _, tt := range tests {
