@@ -4,7 +4,9 @@
 
 # RunWisp
 
-**The open-source, self-hosted cron job manager and process supervisor. Built-in web dashboard, terminal UI, and REST API.**
+**See what ran, when, why it failed, and what it printed.**
+
+The open-source, self-hosted cron job manager and process supervisor — with a built-in web dashboard, terminal UI, and REST API. One static Go binary, zero runtime dependencies.
 
 [runwisp.com](https://runwisp.com) · [Documentation](https://docs.runwisp.com) · [Install](#install) · [Quick Start](#quick-start) · [Why RunWisp](#why-runwisp)
 
@@ -17,9 +19,9 @@
 
 ---
 
-**RunWisp** is a single-binary replacement for `crond` and `supervisord`. Define your scheduled jobs (database backups, health checks, log rotation, ETL scripts) and long-running services like queue workers and background daemons in one `runwisp.toml` file. Get a built-in web dashboard, terminal UI, REST API, real-time log streaming, and persistent run history out of the box. Zero runtime dependencies. Embedded SQLite. Embedded UI. Runs anywhere a static Go binary runs: Linux, macOS, WSL, Docker, a Raspberry Pi, or a $5 VPS.
+**RunWisp** is a single-binary replacement for `crond` and `supervisord`. If you've ever SSH'd into a server at 3 AM to figure out *why* a cron job silently failed, RunWisp is for you.
 
-If you've ever SSH'd into a server at 3 AM to figure out *why* a cron job silently failed, RunWisp is for you.
+Define your scheduled jobs — database backups, health checks, log rotation, ETL scripts — and long-running services like queue workers and background daemons in one `runwisp.toml` file. Every run is captured: exit code, duration, timestamps, and full stdout/stderr. You get a built-in web dashboard, terminal UI, REST API, real-time log streaming, and persistent run history out of the box — zero runtime dependencies, embedded SQLite, embedded UI. Runs anywhere a static Go binary runs: Linux, macOS, WSL, Docker, a Raspberry Pi, or a $5 VPS.
 
 <div align="center">
 <img alt="RunWisp web dashboard screenshot: cron job list, execution history, and live log streaming in a self-hosted UI" src="apps/docs/src/assets/screenshots/web-ui-overview.png" width="780">
