@@ -20,6 +20,7 @@ import (
 type Flags struct {
 	CfgFile string
 	DataDir string
+	Socket  string
 	Host    string
 	Port    int
 
@@ -68,6 +69,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVarP(&flags.CfgFile, "config", "c", "runwisp.toml", "path to configuration file")
 	rootCmd.PersistentFlags().StringVar(&flags.DataDir, "data", ".runwisp", "directory for all persistent data (db, logs, secrets)")
+	rootCmd.PersistentFlags().StringVar(&flags.Socket, "socket", os.Getenv("RUNWISP_SOCKET"), "control socket path; daemon binds it, CLI connects to it (default: <data>/runwisp.sock; env: RUNWISP_SOCKET)")
 	rootCmd.PersistentFlags().IntVarP(&flags.Port, "port", "p", 9477, "HTTP server port")
 	rootCmd.PersistentFlags().StringVar(&flags.Host, "host", "127.0.0.1", "HTTP server bind address (use 0.0.0.0 to listen on all interfaces)")
 	rootCmd.PersistentFlags().StringVar(&flags.logLevelRaw, "log-level", "", "log verbosity: debug, info, warn, error (env: RUNWISP_LOG_LEVEL)")

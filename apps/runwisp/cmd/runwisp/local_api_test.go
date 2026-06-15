@@ -16,3 +16,11 @@ func TestLocalAPISocketPath_UnderDataDir(t *testing.T) {
 	assert.True(t, strings.HasPrefix(got, "/tmp/runwisp-test-localapi"))
 	assert.True(t, strings.HasSuffix(got, "runwisp.sock"))
 }
+
+func TestLocalAPISocketPath_ExplicitSocketWins(t *testing.T) {
+	t.Parallel()
+	// --socket overrides the data-dir default, so a CLI can reach a daemon
+	// without restating --data.
+	got := localAPISocketPath(Flags{DataDir: "/tmp/ignored", Socket: "/run/rw.sock"})
+	assert.Equal(t, "/run/rw.sock", got)
+}

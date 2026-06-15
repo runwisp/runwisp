@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -826,6 +827,26 @@ func TestRemoveStaleSocket_DeadSocketRemoved(t *testing.T) {
 	}
 }
 
+func TestIsUnsupportedChmod(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"EINVAL tolerated", syscall.EINVAL, true},
+		{"ENOTSUP tolerated", syscall.ENOTSUP, true},
+		{"EOPNOTSUPP tolerated", syscall.EOPNOTSUPP, true},
+		{"EPERM fatal", syscall.EPERM, false},
+		{"wrapped EINVAL tolerated", fmt.Errorf("chmod: %w", syscall.EINVAL), true},
+		{"nil-ish other fatal", errors.New("boom"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isUnsupportedChmod(tt.err))
+		})
+	}
+}
+
 func TestOpenUnixListener_EmptyPathRejected(t *testing.T) {
 	srv := &Server{}
 	_, err := srv.openUnixListener()
@@ -881,7 +902,8 @@ func TestRemoveStaleSocket_LivePeerReports(t *testing.T) {
 	}()
 	err = removeStaleSocket(p)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "in use")
+	assert.Contains(t, err.Error(), "already listening")
+	assert.Contains(t, err.Error(), "already be running")
 	// File must still exist — caller will see EADDRINUSE on listen.
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("removeStaleSocket should not delete a live socket: %v", err)

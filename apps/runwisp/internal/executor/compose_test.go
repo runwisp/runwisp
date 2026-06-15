@@ -35,11 +35,12 @@ func TestComposeBackend_BuildArgs_ServicesMode(t *testing.T) {
 		Pull:        model.ComposePullAlways,
 	}
 	task := &model.Task{
-		Env: map[string]string{"LOG_LEVEL": "info"},
+		Name: "boxes.web",
+		Env:  map[string]string{"LOG_LEVEL": "info"},
 	}
 	run := &model.Run{InstanceIndex: 2}
 
-	args := buildComposeArgs(ce, task, run)
+	args := buildComposeArgs(ce, task, run, "fp-123")
 	joined := strings.Join(args, " ")
 
 	assert.Contains(t, joined, "compose -f ./docker-compose.yml")
@@ -50,6 +51,10 @@ func TestComposeBackend_BuildArgs_ServicesMode(t *testing.T) {
 	assert.Contains(t, joined, "--no-deps")
 	assert.Contains(t, joined, "--pull always")
 	assert.Contains(t, joined, "--name myapp_web_2")
+	assert.Contains(t, joined, "--label com.runwisp.managed=true")
+	assert.Contains(t, joined, "--label com.runwisp.task=boxes.web")
+	assert.Contains(t, joined, "--label com.runwisp.instance=2")
+	assert.Contains(t, joined, "--label com.runwisp.instance-fp=fp-123")
 	assert.Contains(t, joined, "-e RUNWISP_INSTANCE_INDEX=2")
 	assert.Contains(t, joined, "-e LOG_LEVEL=info")
 	// service name is the final positional argument
@@ -62,7 +67,7 @@ func TestComposeBackend_BuildArgs_StackMode(t *testing.T) {
 		ProjectName: "myapp",
 		Mode:        model.ComposeModeStack,
 	}
-	args := buildComposeArgs(ce, &model.Task{}, nil)
+	args := buildComposeArgs(ce, &model.Task{}, nil, "")
 	joined := strings.Join(args, " ")
 
 	assert.Contains(t, joined, "compose -f ./docker-compose.yml -p myapp up --abort-on-container-exit --no-log-prefix")
@@ -77,7 +82,7 @@ func TestComposeBackend_BuildArgs_OmitsNoDepsWhenWithDeps(t *testing.T) {
 		Mode:     model.ComposeModeServices,
 		WithDeps: true,
 	}
-	args := buildComposeArgs(ce, &model.Task{}, nil)
+	args := buildComposeArgs(ce, &model.Task{}, nil, "")
 	assert.NotContains(t, strings.Join(args, " "), "--no-deps")
 }
 
@@ -88,7 +93,7 @@ func TestComposeBackend_BuildArgs_OmitsPullWhenMissing(t *testing.T) {
 		Mode:    model.ComposeModeServices,
 		Pull:    model.ComposePullMissing,
 	}
-	args := buildComposeArgs(ce, &model.Task{}, nil)
+	args := buildComposeArgs(ce, &model.Task{}, nil, "")
 	assert.NotContains(t, strings.Join(args, " "), "--pull")
 }
 
@@ -172,6 +177,87 @@ func TestComposeBackend_Start_RecordsArgs(t *testing.T) {
 	assert.Contains(t, rec, "--name demo_web_1")
 	assert.Contains(t, rec, "RUNWISP_INSTANCE_INDEX=1")
 	assert.Contains(t, rec, "FOO=bar")
+}
+
+// TestComposeBackend_Start_ReclaimsStaleInstance verifies that, before
+// launching, Start force-removes a container our prior daemon life left behind
+// for this slot — the kill -9 / restart orphan that otherwise collides with
+// the deterministic --name.
+func TestComposeBackend_Start_ReclaimsStaleInstance(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-shim depends on POSIX shell")
+	}
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "calls.log")
+	installRecordingDockerShim(t, dir, logFile, "stale123\n")
+
+	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeServices}
+	task := &model.Task{Name: "boxes.web"}
+
+	proc, err := b.Start(context.Background(), task, &model.Run{InstanceIndex: 0}, ce)
+	require.NoError(t, err)
+	go drain(proc.Stdout)
+	go drain(proc.Stderr)
+	proc.Wait()
+
+	calls := readDockerCalls(t, logFile)
+	assert.Contains(t, calls, "ps -aq --filter label=com.runwisp.task=boxes.web --filter label=com.runwisp.instance=0 --filter label=com.runwisp.instance-fp=fp-test",
+		"reclaim must query our own labelled containers for this slot")
+	assert.Contains(t, calls, "rm -f stale123", "the discovered orphan must be force-removed before launch")
+}
+
+// TestComposeBackend_Start_CleanupRemovesInstance verifies Process.Cleanup
+// force-removes the instance container, covering the SIGKILL / graceful-stop
+// overrun where `--rm` never fires.
+func TestComposeBackend_Start_CleanupRemovesInstance(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-shim depends on POSIX shell")
+	}
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "calls.log")
+	installRecordingDockerShim(t, dir, logFile, "live456\n")
+
+	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeServices}
+	task := &model.Task{Name: "boxes.web"}
+
+	proc, err := b.Start(context.Background(), task, &model.Run{InstanceIndex: 2}, ce)
+	require.NoError(t, err)
+	go drain(proc.Stdout)
+	go drain(proc.Stderr)
+	proc.Wait()
+
+	require.NotNil(t, proc.Cleanup, "services-mode Process must carry a Cleanup")
+	require.NoError(t, os.WriteFile(logFile, nil, 0644)) // isolate cleanup's calls
+	proc.Cleanup()
+
+	calls := readDockerCalls(t, logFile)
+	assert.Contains(t, calls, "ps -aq --filter label=com.runwisp.task=boxes.web --filter label=com.runwisp.instance=2 --filter label=com.runwisp.instance-fp=fp-test")
+	assert.Contains(t, calls, "rm -f live456")
+}
+
+// TestComposeBackend_Start_StackModeNoReclaimOrCleanup confirms stack mode
+// neither reclaims nor sets a Cleanup — compose owns those container lifecycles.
+func TestComposeBackend_Start_StackModeNoReclaimOrCleanup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-shim depends on POSIX shell")
+	}
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "calls.log")
+	installRecordingDockerShim(t, dir, logFile, "")
+
+	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Mode: model.ComposeModeStack}
+
+	proc, err := b.Start(context.Background(), &model.Task{Name: "boxes.stack"}, &model.Run{}, ce)
+	require.NoError(t, err)
+	go drain(proc.Stdout)
+	go drain(proc.Stderr)
+	proc.Wait()
+
+	assert.Nil(t, proc.Cleanup, "stack mode lets compose own container cleanup")
+	assert.NotContains(t, readDockerCalls(t, logFile), "ps -aq", "stack mode must not reclaim")
 }
 
 func TestComposeBackend_Start_RejectsWrongExecutionType(t *testing.T) {
@@ -354,7 +440,7 @@ func TestComposeBackend_Start_ContextCancelledBeforeStart(t *testing.T) {
 
 func TestLazyComposeBackend_ReturnsErrorWhenUnavailable(t *testing.T) {
 	t.Setenv("PATH", "")
-	l := NewLazyComposeBackend()
+	l := NewLazyComposeBackend("fp-test")
 	_, err := l.Start(context.Background(), &model.Task{}, &model.Run{},
 		&model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices})
 	require.Error(t, err)
@@ -391,6 +477,39 @@ func installDockerShimScript(t *testing.T, shimDir, body string) {
 	// Sanity-check the shim is actually resolvable on PATH.
 	_, err := exec.LookPath("docker")
 	require.NoError(t, err, "docker shim should resolve via PATH")
+}
+
+// installRecordingDockerShim drops a `docker` shim that appends every
+// invocation's argv (one line each) to logFile, answers the availability probe,
+// and prints psOutput on `docker ps ...` so reclaim/cleanup can discover IDs.
+// Unlike installDockerShim (which overwrites a single args file) this preserves
+// the full call sequence so tests can assert reclaim/cleanup ran.
+func installRecordingDockerShim(t *testing.T, shimDir, logFile, psOutput string) {
+	t.Helper()
+	body := "#!/bin/sh\n" +
+		"echo \"$@\" >> '" + logFile + "'\n" +
+		"if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n" +
+		"  echo 'Docker Compose v2.test'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"ps\" ]; then\n" +
+		"  printf '%s' '" + psOutput + "'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"exit 0\n"
+	installDockerShimScript(t, shimDir, body)
+}
+
+// readDockerCalls returns the recorded shim invocations as a newline-joined
+// string for substring assertions. A missing log file means no calls.
+func readDockerCalls(t *testing.T, logFile string) string {
+	t.Helper()
+	data, err := os.ReadFile(logFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
+	require.NoError(t, err)
+	return string(data)
 }
 
 func drain(r io.ReadCloser) {

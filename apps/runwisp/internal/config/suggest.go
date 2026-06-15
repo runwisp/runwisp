@@ -10,6 +10,33 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+// misplacedKeyHints maps "<table>.<key>" to guidance for keys operators
+// commonly put in the wrong section. Same-level did-you-mean (unknownKeyInfo)
+// can't catch these because the key is valid *somewhere else* in the schema.
+// Keyed on the failing key's immediate table + leaf name.
+var misplacedKeyHints = map[string]string{
+	"defaults.on_overlap":  "on_overlap is a per-task setting — move it under [tasks.<name>]",
+	"scheduler.on_overlap": "on_overlap is a per-task setting — move it under [tasks.<name>]",
+	"defaults.timezone":    "set the daemon-wide timezone in [scheduler] timezone, or a per-task timezone under [tasks.<name>]",
+	"daemon.timezone":      "the daemon-wide timezone lives in [scheduler] timezone, not [daemon]",
+	"daemon.host":          "host is set with the --host flag (or RUNWISP_HOST), not in [daemon]",
+	"daemon.port":          "port is set with the --port flag (or RUNWISP_PORT), not in [daemon]",
+}
+
+// sectionHint returns curated cross-section guidance for a misplaced key, or ""
+// when none applies. It matches on the failing key's immediate table and leaf
+// name (e.g. "defaults"+"on_overlap"), so it only fires for the specific
+// table/key combinations operators trip on — a correctly-placed key never has a
+// strict-mode error to begin with.
+func sectionHint(key toml.Key) string {
+	if len(key) < 2 {
+		return ""
+	}
+	table := key[len(key)-2]
+	leaf := key[len(key)-1]
+	return misplacedKeyHints[table+"."+leaf]
+}
+
 // unknownKeyInfo walks the wire-struct tree along a strict-mode error's key
 // path and pinpoints the segment that failed to match, plus the valid keys at
 // that level. Candidates come from reflecting `toml:` tags, so they can never

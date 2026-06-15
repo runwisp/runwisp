@@ -8,6 +8,11 @@ import (
 	rdebug "runtime/debug"
 
 	"log/slog"
+
+	// Embed the IANA time zone database so [scheduler] timezone and per-task
+	// timezone resolve on slim images (Alpine/distroless) without an installed
+	// tzdata package — one binary, zero runtime deps. Costs ~450 KB.
+	_ "time/tzdata"
 )
 
 // defaultMemoryLimitBytes caps the Go heap so the daemon trades CPU for RSS

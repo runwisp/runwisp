@@ -95,6 +95,53 @@ of the scalar keys above (`file`, `include`, `exclude`, `mode`, `group`,
 `pull`, `name_format`) can't get a sub-table — the loader rejects the
 config with an error asking you to rename the compose service.
 
+## Profiles
+
+If your `docker-compose.yml` puts services behind
+[Compose profiles](https://docs.docker.com/compose/profiles/), Compose
+hides them by default — a service tagged `profiles: ["workers"]` simply
+doesn't exist as far as `docker compose` is concerned until that profile
+is turned on. RunWisp is no different: it only sees the services Compose
+would, so a profile-gated service is invisible until you activate its
+profile.
+
+You activate profiles with the `profiles` key, and that has to happen
+**before** `include`/`exclude` make sense. Think of it as two steps:
+
+1. `profiles = [...]` decides which services exist at all.
+2. `include` / `exclude` then pick from that activated set.
+
+So this imports the `worker` service that lives behind the `workers`
+profile, and nothing else:
+
+```toml
+[compose.myapp]
+file     = "./docker-compose.yml"
+profiles = ["workers"]      # turn the profile on first…
+include  = ["worker"]       # …then select from what it exposes
+```
+
+Two failure modes worth naming, because both look like "RunWisp ignored
+my service":
+
+- **`include`-ing a profiled service without activating its profile.**
+  The service isn't in the activated set, so the `include` reference
+  doesn't resolve — `runwisp validate` flags it as an unknown service.
+  Add the profile to `profiles`.
+- **Activating a profile but forgetting it widens the default set.**
+  With `profiles` set and no `include`, RunWisp imports _every_
+  now-visible service, profiled ones included. Use `include` (or
+  `exclude`) to narrow it back down if you only wanted a subset.
+
+A quick way to see what a given `profiles` value exposes before wiring
+it into RunWisp is to ask Compose directly:
+
+```sh
+docker compose --profile workers config --services
+```
+
+That prints exactly the service set RunWisp will choose from.
+
 ## Modes
 
 ### `mode = "services"` (default)

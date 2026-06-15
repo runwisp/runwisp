@@ -7,10 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable control socket (`--socket` / `RUNWISP_SOCKET`).** Set the daemon's socket path explicitly so a bind-mounted `--data` can't break it and CLI commands can reach a daemon without restating `--data`. See [Daemon](https://docs.runwisp.com/configuration/daemon/#control-socket).
+- **Bundled tzdata.** IANA time zones now resolve on slim images (Alpine/distroless) without installing `tzdata`.
+
+### Changed
+
+- **Daemon-owned compose containers.** Services-mode containers are labelled, reclaimed before launch, and removed on exit, so a daemon restart or `kill -9` no longer collides with its own leftover container and drives the service FATAL. See [Compose profiles](https://docs.runwisp.com/configuration/compose/#profiles).
+- **Clearer startup/shutdown logs.** A fatal server error logs its real cause instead of a phantom `signal=terminated`, the stale-socket message says a daemon may already be running, and a slow listener bind no longer emits a spurious health-check warning.
+- **Section-aware config errors.** A misplaced `on_overlap`/`timezone`/`host`/`port` now hints at the correct section in the unknown-key error.
+
 ### Fixed
 
 - **Skipped runs now show up live.** A run dropped by an `on_overlap = "skip"` policy emits a terminal event, so it reaches the Web UI as `skipped` over SSE instead of appearing stuck in `pending` until a page reload.
 - **Spring-forward cron ticks no longer vanish.** A cron like `0 2 * * *` whose time falls in the DST gap now fires once at the gap end (the next valid instant) instead of being dropped to the next day. See [DST behaviour](https://docs.runwisp.com/concepts/scheduling/#dst-behaviour).
+- **Control socket on bind mounts.** A socket whose filesystem rejects `chmod` (Docker Desktop bind mounts, some network FS) is tolerated with a warning instead of failing the daemon to start.
 
 ## [0.9.0] - 2026-06-12
 

@@ -7,7 +7,13 @@ import (
 	"github.com/runwisp/runwisp/internal/datadir"
 )
 
-// localAPISocketPath returns the Unix socket path inside the configured data dir.
+// localAPISocketPath resolves the daemon control socket: the explicit --socket
+// / RUNWISP_SOCKET path when set, otherwise the default inside the data dir.
+// Every CLI subcommand routes through here, so --socket lets them reach a
+// daemon without also restating --data.
 func localAPISocketPath(f Flags) string {
+	if f.Socket != "" {
+		return f.Socket
+	}
 	return datadir.SocketPath(f.DataDir)
 }
