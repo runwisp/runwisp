@@ -72,7 +72,10 @@ disk, ever. You've got two ways to set it:
 
 The JWT signing key isn't stored anywhere — it's **derived** from
 your password using HKDF-SHA-256, salted with a per-install
-fingerprint (machine ID, cwd, executable path, hostname). Same
+fingerprint (machine ID, cwd, executable path, hostname). The salt
+isn't stored either; it's recomputed each boot from that
+machine-stable identity, so the key survives restarts because both
+inputs do — not because anything sensitive was written to disk. Same
 password on the same install gives you the same key, so sessions
 persist across restarts. A different password — or the same
 password on a different machine — gives you a different key, so

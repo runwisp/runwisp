@@ -80,6 +80,39 @@ func TestPolicySkip(t *testing.T) {
 	assert.False(t, run2.IsRetryable(), "skipped runs must not be flagged as retryable")
 }
 
+// TestPolicySkipPublishesTerminalEvent is the regression test for skipped runs
+// being invisible to the live UI: the skip persists with end_reason="skipped"
+// but, without a terminal event, an SSE subscriber sees the run stuck in
+// pending until a page reload re-queries storage. The skip must publish
+// EventRunFailed (the same terminal transition queue_full and start_failed
+// already rely on) so the UI advances it live. ReasonSkipped is mapped to
+// "not a notification" in bridge.go, so this rings no bell.
+func TestPolicySkipPublishesTerminalEvent(t *testing.T) {
+	jm, exec, eb := newGatedManager(t)
+
+	task := testTask("task1", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+
+	// Subscribe before triggering so we never race the publish.
+	failed := watchRuns(eb, events.EventRunFailed)
+
+	// First run holds the only slot until cleanup releases it.
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+
+	// Overlapping second run is skipped: it must emit a terminal failed event.
+	_, err = jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.Error(t, err)
+
+	failed.waitFor(t, 1)
+	skipped := failed.snapshot()[0]
+	require.NotNil(t, skipped.EndReason)
+	assert.Equal(t, model.ReasonSkipped, *skipped.EndReason,
+		"the terminal event must carry the skip reason so the UI shows it skipped, not failed")
+	assert.Equal(t, model.PhaseEnded, skipped.Status)
+}
+
 func TestPolicyQueue(t *testing.T) {
 	jm, exec, eb := newGatedManager(t)
 

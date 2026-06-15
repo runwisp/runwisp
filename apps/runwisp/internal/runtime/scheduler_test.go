@@ -283,6 +283,45 @@ func TestSchedulerEverySecondDSTFallbackSuppressed(t *testing.T) {
 		"the rewound 02:00 must be recorded as dst_skipped")
 }
 
+// TestSchedulerWiresDSTGapRecovery proves the scheduler consults a schedule
+// that recovers a spring-forward gap tick, rather than robfig's raw one that
+// drops it. The cron engine (scheduler.go) and the jitter gap math both parse
+// through cronspec.NewScheduleParser; this asserts the schedule the scheduler
+// actually stores fires "0 2 * * *" at the 03:00 gap end on the 2024-03-31
+// spring-forward day in Europe/Bratislava, where 02:00 never occurs. (The cron
+// loop's own clock is robfig-internal and not injectable, so the firing *time*
+// — not a live trigger count — is the deterministic contract here.)
+func TestSchedulerWiresDSTGapRecovery(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+
+	// A normal day so the jitter plan computes a real window; the schedule it
+	// stores is the very one the scheduler consults for every fire.
+	now := time.Date(2024, 6, 10, 1, 0, 0, 0, loc)
+	task := &model.Task{
+		Name:     "nightly",
+		Cron:     "0 2 * * *",
+		Timezone: "Europe/Bratislava",
+		Jitter:   10 * time.Minute,
+		Run:      "echo",
+	}
+	sched := NewScheduler(runner, map[string]*model.Task{"nightly": task}, time.UTC, WithNow(func() time.Time { return now }))
+	_, err = sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	plan, ok := sched.jitterPlans["nightly"]
+	require.True(t, ok, "jittered task must have a plan whose schedule the scheduler consults")
+
+	from := time.Date(2024, 3, 31, 0, 30, 0, 0, loc)
+	next := plan.schedule.Next(from)
+	want := time.Date(2024, 3, 31, 3, 0, 0, 0, loc)
+	assert.True(t, want.Equal(next),
+		"scheduler's schedule must fire the gap tick at the 03:00 gap end, not drop it: want %s, got %s",
+		want, next.In(loc))
+}
+
 // jitterTasks returns two identical cron tasks sharing a jitter window. The
 // placement levels them to slots {a: 0, b: window}, so "a" takes the earliest
 // slot and "b" the far end — a deterministic fixture for the tests below
