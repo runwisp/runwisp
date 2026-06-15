@@ -142,7 +142,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 		Scheduler:         svc.Scheduler,
 		Host:              f.Host,
 		Port:              f.Port,
-		SocketPath:        datadir.SocketPath(f.DataDir),
+		SocketPath:        localAPISocketPath(f),
 		LogDir:            f.LogDir(),
 		EventBus:          svc.EventBus,
 		Password:          cfg.Password,
@@ -196,7 +196,12 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 	cancelCloud, cloudWG := startCloudIfEnabled(mode, cfg, svc, f)
 	defer cancelCloud()
 
-	go superviseServerStart(srv)
+	// fatalCh carries a fatal server-start error from the supervisor goroutine
+	// back to the shutdown path, so a self-triggered teardown logs the real
+	// cause instead of a phantom signal. Buffered + send-before-self-signal so
+	// the value is visible by the time the signal handler reads it.
+	fatalCh := make(chan error, 1)
+	go superviseServerStart(srv, fatalCh)
 
 	emitStartupBanner(startupInfo, f)
 
@@ -212,6 +217,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 		sigCh:       sigCh,
 		svc:         svc,
 		srv:         srv,
+		fatalCh:     fatalCh,
 		reconciler:  reconciler,
 		debugWriter: debugWriter,
 		logBuffer:   logBuffer,
@@ -221,7 +227,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 
 	if headless {
 		defer runlog.Subscribe(svc.EventBus)()
-		emitReadiness(startupInfo.ListenURL, f)
+		emitReadiness(rt, startupInfo.ListenURL, f)
 		return runHeadless(rt)
 	}
 
@@ -288,11 +294,17 @@ func startCloudIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices
 }
 
 // superviseServerStart runs srv.Start in this goroutine and, on failure,
-// self-signals SIGTERM so the daemon's signal handler tears the rest of the
-// process down cleanly instead of leaving us in a half-initialized state.
-func superviseServerStart(srv *server.Server) {
+// reports the cause on fatalCh and then self-signals SIGTERM so the daemon's
+// signal handler tears the rest of the process down cleanly instead of leaving
+// us in a half-initialized state. The send happens before the signal so the
+// handler can distinguish a fatal-error teardown from an external signal.
+func superviseServerStart(srv *server.Server, fatalCh chan<- error) {
 	if startErr := srv.Start(); startErr != nil {
 		slog.Error("Server failed", "err", startErr)
+		select {
+		case fatalCh <- startErr:
+		default:
+		}
 		p, _ := os.FindProcess(os.Getpid())
 		_ = p.Signal(syscall.SIGTERM)
 	}
@@ -386,13 +398,39 @@ func daemonListenURL(cfg *config.Config, f Flags) string {
 	return fmt.Sprintf("http://%s:%d", host, f.Port)
 }
 
+// serverReadyTimeout bounds how long readiness probes wait for the listeners
+// to bind before giving up and proceeding. Generous because a bind-mounted
+// data dir can make the first socket bind slow; a genuine bind failure
+// short-circuits via fatalCh long before this elapses.
+const serverReadyTimeout = 10 * time.Second
+
+// waitServerReady blocks until the server's listeners are bound, a fatal
+// server-start error occurs, or timeout elapses. A consumed fatal error is put
+// back on fatalCh so the shutdown path can still read it (readiness and
+// shutdown run sequentially on the same goroutine, so the re-send never races).
+func waitServerReady(rt *daemonRuntime, timeout time.Duration) {
+	if rt.srv == nil {
+		return
+	}
+	select {
+	case <-rt.srv.Ready():
+	case err := <-rt.fatalCh:
+		rt.fatalCh <- err
+	case <-time.After(timeout):
+	}
+}
+
 // emitReadiness waits for the daemon's local API to answer, then logs an
 // accurate readiness line. Headless operators (Docker / systemd / JSON
 // pipelines) rely on this as the "daemon is up" signal in the absence of a
 // banner cue. When the fancy TTY banner is shown it already prints
 // "Listening on <url>" — emitting an extra slog line on top would duplicate
 // the message and break the clean visual hand-off from banner → run events.
-func emitReadiness(listenURL string, f Flags) {
+func emitReadiness(rt *daemonRuntime, listenURL string, f Flags) {
+	// Wait for the listeners to bind before probing, so a slow (bind-mount)
+	// boot doesn't trip a spurious "health check did not pass" warning. A fatal
+	// bind error short-circuits the wait and flows through the shutdown path.
+	waitServerReady(rt, serverReadyTimeout)
 	client := apiclient.NewUnix(localAPISocketPath(f))
 	if err := pollHealth(client, 3*time.Second); err != nil {
 		slog.Warn("health check did not pass during startup", "err", err)

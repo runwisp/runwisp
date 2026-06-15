@@ -141,6 +141,37 @@ func TestSocketServer_StartUnlinksSocketOnShutdown(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "socket file should be removed on shutdown")
 }
 
+// TestServer_ReadySignalsAfterListenersBound verifies Ready() closes only once
+// the server is actually serving, so readiness probes don't race the bind.
+func TestServer_ReadySignalsAfterListenersBound(t *testing.T) {
+	s, _, _, _ := setupServerWithSocket(t)
+	s.port = testutil.PickFreePort(t)
+
+	// Not ready before Start.
+	select {
+	case <-s.Ready():
+		t.Fatal("Ready() closed before Start()")
+	default:
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Start() }()
+
+	select {
+	case <-s.Ready():
+	case <-time.After(3 * time.Second):
+		t.Fatal("Ready() did not close after Start()")
+	}
+
+	// Once Ready is closed the socket must actually accept connections.
+	requireSocketReady(t, s.socketPath, 2*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	require.NoError(t, s.Shutdown(ctx))
+	<-errCh
+}
+
 // setupServerWithSocket is the shared boot for socket-aware tests. It reuses
 // setupServerWithOpts and adds a Unix socket bound under a short temp dir (the
 // socket path must stay well under the ~104-char sun_path limit).

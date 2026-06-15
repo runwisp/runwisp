@@ -68,6 +68,54 @@ func TestDecodeUnknownKeySuggestions(t *testing.T) {
 	}
 }
 
+func TestDecodeMisplacedKeySectionHints(t *testing.T) {
+	tests := []struct {
+		name string
+		toml string
+		want []string // substrings expected in the error
+	}{
+		{
+			name: "on_overlap in defaults is per-task",
+			toml: "[defaults]\non_overlap = \"skip\"\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "on_overlap"`, "per-task", "[tasks.<name>]"},
+		},
+		{
+			name: "on_overlap in scheduler is per-task",
+			toml: "[scheduler]\non_overlap = \"skip\"\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "on_overlap"`, "per-task"},
+		},
+		{
+			name: "timezone in defaults points at scheduler",
+			toml: "[defaults]\ntimezone = \"Europe/Bratislava\"\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "timezone"`, "[scheduler] timezone"},
+		},
+		{
+			name: "timezone in daemon points at scheduler",
+			toml: "[daemon]\ntimezone = \"Europe/Bratislava\"\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "timezone"`, "[scheduler] timezone"},
+		},
+		{
+			name: "host in daemon points at flag",
+			toml: "[daemon]\nhost = \"0.0.0.0\"\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "host"`, "--host"},
+		},
+		{
+			name: "port in daemon points at flag",
+			toml: "[daemon]\nport = 9477\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "port"`, "--port"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := decode([]byte(tt.toml), "")
+			require.Error(t, err)
+			for _, want := range tt.want {
+				assert.Contains(t, err.Error(), want)
+			}
+		})
+	}
+}
+
 func TestDecodeUnknownKeyNoSuggestionForGibberish(t *testing.T) {
 	_, err := decode([]byte("[tasks.backup]\nrun = \"echo hi\"\nzzqxwy = 1\n"), "")
 	require.Error(t, err)

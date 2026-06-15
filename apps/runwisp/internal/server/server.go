@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"log/slog"
@@ -52,8 +53,12 @@ type Server struct {
 	unixServer        *http.Server
 	metricsServer     *http.Server
 	socketPath        string
-	metricsEnabled    bool
-	metricsListen     string
+	// ready is closed once every listener (TCP + Unix [+ metrics]) is bound and
+	// about to serve, so readiness probes don't race the bind on a slow boot.
+	ready          chan struct{}
+	readyOnce      sync.Once
+	metricsEnabled bool
+	metricsListen  string
 	// reload re-reads runwisp.toml and reconciles the live task set. nil
 	// outside standalone mode (cloud mode has no local scheduler to reconcile),
 	// in which case POST /api/reload reports the operation is unavailable.
@@ -125,6 +130,7 @@ func New(opts Options) (*Server, error) {
 		metricsEnabled:    opts.MetricsEnabled,
 		metricsListen:     opts.MetricsListen,
 		reload:            opts.Reload,
+		ready:             make(chan struct{}),
 	}
 
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)
@@ -159,13 +165,37 @@ func (srv *Server) Start() error {
 		return err
 	}
 
-	if err := srv.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	// Bind the TCP listener explicitly (rather than ListenAndServe) so we can
+	// signal readiness only once every listener is actually bound — the Unix
+	// socket above is already serving by now. A bind failure returns here and
+	// flows to the caller; readiness is never signalled, so probes fall through
+	// to the fatal path instead of waiting out their timeout.
+	tcpLn, err := net.Listen("tcp", srv.httpServer.Addr)
+	if err != nil {
+		return fmt.Errorf("listen tcp %s: %w", srv.httpServer.Addr, err)
+	}
+	srv.signalReady()
+
+	if err := srv.httpServer.Serve(tcpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	if err := <-unixErrCh; err != nil {
 		return err
 	}
 	return <-metricsErrCh
+}
+
+// Ready returns a channel that is closed once all listeners are bound and the
+// server is about to serve. It never sends, only closes — safe to select on
+// from multiple goroutines. On a bind failure it stays open (the caller's
+// Start returns the error instead).
+func (srv *Server) Ready() <-chan struct{} {
+	return srv.ready
+}
+
+// signalReady closes the readiness channel exactly once.
+func (srv *Server) signalReady() {
+	srv.readyOnce.Do(func() { close(srv.ready) })
 }
 
 // newHTTPServer builds the primary HTTP server with the timeouts and header
@@ -258,11 +288,32 @@ func (srv *Server) openUnixListener() (net.Listener, error) {
 		return nil, fmt.Errorf("listen unix %s: %w", srv.socketPath, err)
 	}
 	if err := os.Chmod(srv.socketPath, 0600); err != nil {
-		ln.Close()
-		_ = os.Remove(srv.socketPath)
-		return nil, fmt.Errorf("chmod socket: %w", err)
+		// Some bind-mounted filesystems (Docker Desktop's osxfs/virtiofs, some
+		// network FS) let us bind the socket but reject chmod on it with
+		// EINVAL/ENOTSUP. The chmod is belt-and-suspenders — the socket already
+		// lives in a 0700 data dir and every accept verifies peer UID via
+		// PEERCRED — so downgrade those to a warning and keep serving. Other
+		// errors (e.g. EPERM) still mean something is wrong and stay fatal.
+		if isUnsupportedChmod(err) {
+			slog.Warn("could not chmod control socket; relying on data-dir perms + PEERCRED",
+				"path", srv.socketPath, "err", err)
+		} else {
+			ln.Close()
+			_ = os.Remove(srv.socketPath)
+			return nil, fmt.Errorf("chmod socket: %w", err)
+		}
 	}
 	return &peercredListener{Listener: ln, selfUID: uint32(os.Getuid())}, nil
+}
+
+// isUnsupportedChmod reports whether a chmod error means the filesystem simply
+// doesn't support chmod-ing this socket (rather than a real permission fault),
+// which is safe to tolerate. ENOTSUP and EOPNOTSUPP share a value on Linux but
+// are distinct on some BSDs, so both are checked.
+func isUnsupportedChmod(err error) bool {
+	return errors.Is(err, syscall.EINVAL) ||
+		errors.Is(err, syscall.ENOTSUP) ||
+		errors.Is(err, syscall.EOPNOTSUPP)
 }
 
 // removeStaleSocket unlinks an existing socket file iff no peer accepts on
@@ -288,7 +339,7 @@ func removeStaleSocket(path string) error {
 	conn, dialErr := net.DialTimeout("unix", path, 100*time.Millisecond)
 	if dialErr == nil {
 		conn.Close()
-		return fmt.Errorf("%s is in use by another process", path)
+		return fmt.Errorf("another process is already listening on %s — a RunWisp daemon may already be running on this data dir; stop it or use a different --data/--socket", path)
 	}
 	return os.Remove(path)
 }

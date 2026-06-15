@@ -151,12 +151,13 @@ These flags decide which config file gets read, where state lives, and
 where the HTTP/Web UI listens. They apply to every `runwisp` subcommand
 (`daemon`, `tui`, `exec`, and so on):
 
-| Flag             | Default        | What it does                                                                                              |
-| ---------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
-| `--config`, `-c` | `runwisp.toml` | Path to the TOML config file, resolved against the working directory.                                     |
-| `--data`         | `.runwisp`     | Directory for all persistent state — SQLite database, per-task logs, PID file, and the local Unix socket. |
-| `--host`         | `127.0.0.1`    | Bind address for the HTTP server. Use `0.0.0.0` to listen on every interface.                             |
-| `--port`         | `9477`         | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                                          |
+| Flag             | Default               | What it does                                                                                                                                        |
+| ---------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--config`, `-c` | `runwisp.toml`        | Path to the TOML config file, resolved against the working directory.                                                                               |
+| `--data`         | `.runwisp`            | Directory for all persistent state — SQLite database, per-task logs, PID file, and the local Unix socket.                                           |
+| `--socket`       | `<data>/runwisp.sock` | Path to the control socket. The daemon binds it; every CLI subcommand connects to it. Also `RUNWISP_SOCKET`. See [Control socket](#control-socket). |
+| `--host`         | `127.0.0.1`           | Bind address for the HTTP server. Use `0.0.0.0` to listen on every interface.                                                                       |
+| `--port`         | `9477`                | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                                                                                    |
 
 ```sh
 runwisp daemon --data /var/lib/runwisp --host 0.0.0.0 --port 9477
@@ -187,14 +188,37 @@ story.
 | `RUNWISP_NO_AUTH`     | `1` or `true` disables authentication entirely — local dev / trusted networks only. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
 | `RUNWISP_TRUST_PROXY` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                          |
 | `RUNWISP_CLOUD_TOKEN` | Used by `runwisp cloud` to connect to a control plane. Ignored in standalone mode.                                                                                                        |
+| `RUNWISP_SOCKET`      | Control socket path. Same effect as `--socket`; the flag wins when both are set.                                                                                                          |
 
-## Local Unix socket
+## Control socket
 
-On startup the daemon creates `<datadir>/runwisp.sock`. Local CLI
-commands and the TUI talk to the daemon over this socket without ever
-needing a password — access is gated by the data dir's `0700` mode, the
-socket's own `0600` mode, and a `SO_PEERCRED` check when a connection is
-accepted. On a graceful shutdown, the socket file is cleaned up.
+On startup the daemon creates a Unix socket — `<datadir>/runwisp.sock`
+by default. Local CLI commands and the TUI talk to the daemon over this
+socket without ever needing a password — access is gated by the data
+dir's `0700` mode, the socket's own `0600` mode, and a `SO_PEERCRED`
+check when a connection is accepted. On a graceful shutdown, the socket
+file is cleaned up.
+
+You can move the socket off the data dir with `--socket` (or
+`RUNWISP_SOCKET`). Two cases where that's the difference between working
+and not:
+
+- **Bind-mounted data dir.** Some filesystems — Docker Desktop's
+  osxfs/virtiofs bind mounts, a few network filesystems — let the daemon
+  bind a socket but reject the `chmod` that locks it to `0600`. RunWisp
+  tolerates that (it warns and keeps serving, since the `0700` data dir
+  and the `SO_PEERCRED` check still gate access), but if you'd rather
+  avoid it entirely, point `--socket` at a Linux-native path like
+  `/run/runwisp.sock` and keep the database and logs on the bind mount.
+- **Reaching a non-default daemon from the CLI.** Because every
+  subcommand connects to `--socket`, you can talk to a daemon by its
+  socket alone — `runwisp status --socket /run/runwisp.sock` — without
+  restating the `--data` directory it was started with.
+
+The daemon and the CLI must agree on the path: whatever you pass to
+`runwisp daemon --socket …`, pass the same to `runwisp status`,
+`runwisp exec`, and friends (or set `RUNWISP_SOCKET` once in the
+environment they share).
 
 ---
 

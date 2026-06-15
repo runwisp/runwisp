@@ -241,6 +241,7 @@ type daemonRuntime struct {
 	sigCh       <-chan os.Signal
 	svc         *daemonServices
 	srv         *server.Server
+	fatalCh     chan error
 	reconciler  *runtime.Reconciler
 	debugWriter *tui.DebugLogWriter
 	logBuffer   *server.DaemonLogBuffer
@@ -262,12 +263,34 @@ func runHeadless(rt *daemonRuntime) error {
 		}
 
 		start := time.Now()
-		slog.Info("received signal, shutting down", "signal", sig.String())
+		// A fatal server error self-signals SIGTERM (superviseServerStart); when
+		// that's the cause, log it as such instead of implying a phantom
+		// external signal.
+		if ferr := readFatal(rt.fatalCh); ferr != nil {
+			slog.Error("shutting down due to fatal server error", "err", ferr)
+		} else {
+			slog.Info("received signal, shutting down", "signal", sig.String())
+		}
 		gracefulShutdown(rt.cancelCloud, rt.cloudWG, rt.svc, rt.srv)
 		slog.Info("shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))
 		return nil
 	}
 	return nil
+}
+
+// readFatal non-blockingly reads a fatal server error if one is pending. Nil
+// means the shutdown was triggered by a genuine external signal, not a
+// self-signalled server failure.
+func readFatal(ch <-chan error) error {
+	if ch == nil {
+		return nil
+	}
+	select {
+	case err := <-ch:
+		return err
+	default:
+		return nil
+	}
 }
 
 // handleReloadSignal services a SIGHUP by reconciling runwisp.toml against the
@@ -294,6 +317,9 @@ func handleReloadSignal(rt *daemonRuntime) {
 func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 	if rt.srv != nil {
+		// Wait for the listeners to bind first so a slow boot doesn't trip a
+		// spurious health-check warning (same race emitReadiness guards).
+		waitServerReady(rt, serverReadyTimeout)
 		if err := pollHealth(client, 3*time.Second); err != nil {
 			slog.Warn("Health check did not pass before TUI start", "err", err)
 		}

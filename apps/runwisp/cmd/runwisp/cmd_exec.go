@@ -234,7 +234,10 @@ func runExecStandalone(taskName string, f Flags) (int, error) {
 	}
 
 	eventBus := events.NewEventBus()
-	exec := initExecutor(cfg, eventBus, f.LogDir())
+	// One-shot CLI exec carries no daemon fingerprint; an empty one keeps its
+	// managed-container labels distinct from any running daemon's, so exec never
+	// reclaims a live daemon's container for the same slot.
+	exec := initExecutor(cfg, eventBus, f.LogDir(), "")
 
 	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
 	defer taskManager.Shutdown()

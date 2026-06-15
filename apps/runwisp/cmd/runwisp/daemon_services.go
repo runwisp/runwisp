@@ -71,7 +71,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	eventBus := events.NewEventBus()
 
-	exec := initExecutor(cfg.Config, eventBus, f.LogDir())
+	exec := initExecutor(cfg.Config, eventBus, f.LogDir(), cfg.Fingerprint)
 
 	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)
 	// Single guarded owner of the live task set. Boot-only helpers below still
@@ -213,9 +213,9 @@ func runMissedTickCatchUp(ctx context.Context, db storage.Database, tasksMap map
 	return catchUpResult
 }
 
-func initExecutor(cfg *config.Config, eventBus events.EventBus, logDir string) executor.Executor {
+func initExecutor(cfg *config.Config, eventBus events.EventBus, logDir, fingerprint string) executor.Executor {
 	dockerBackend := executor.NewLazyContainerBackend()
-	composeBackend := executor.NewLazyComposeBackend()
+	composeBackend := executor.NewLazyComposeBackend(fingerprint)
 
 	minFreeDisk := cfg.Storage.MinFreeSpace
 

@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -239,10 +240,11 @@ func TestSuperviseServerStart_SelfSignalsOnStartError(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	fatalCh := make(chan error, 1)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		superviseServerStart(srv)
+		superviseServerStart(srv, fatalCh)
 	}()
 
 	select {
@@ -252,6 +254,26 @@ func TestSuperviseServerStart_SelfSignalsOnStartError(t *testing.T) {
 		t.Fatal("supervisor did not self-signal SIGTERM")
 	}
 	<-done
+
+	// The fatal cause must be reported on fatalCh before the self-signal, so the
+	// shutdown path can log it instead of a phantom external signal.
+	select {
+	case err := <-fatalCh:
+		assert.Error(t, err)
+	default:
+		t.Fatal("supervisor did not report the fatal error on fatalCh")
+	}
+}
+
+func TestReadFatal(t *testing.T) {
+	// Empty channel → external signal, no fatal cause.
+	assert.NoError(t, readFatal(make(chan error, 1)))
+	// nil channel is treated as no fatal cause.
+	assert.NoError(t, readFatal(nil))
+	// A reported fatal error is surfaced so shutdown logs the real cause.
+	ch := make(chan error, 1)
+	ch <- errors.New("server failed")
+	assert.Error(t, readFatal(ch))
 }
 
 func TestEmitStartupBanner_DoesNotPanic(t *testing.T) {

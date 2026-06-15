@@ -48,6 +48,9 @@ func formatStrictMissing(s *toml.StrictMissingError) string {
 			if suggestion := textutil.Closest(field, candidates); suggestion != "" {
 				fmt.Fprintf(&b, " (did you mean %q?)", suggestion)
 			}
+			if hint := sectionHint(key); hint != "" {
+				fmt.Fprintf(&b, " — %s", hint)
+			}
 		} else {
 			b.WriteString(de.Error())
 		}
