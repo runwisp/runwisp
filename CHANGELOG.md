@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed
+
+- **Skipped runs now show up live.** A run dropped by an `on_overlap = "skip"` policy emits a terminal event, so it reaches the Web UI as `skipped` over SSE instead of appearing stuck in `pending` until a page reload.
+- **Spring-forward cron ticks no longer vanish.** A cron like `0 2 * * *` whose time falls in the DST gap now fires once at the gap end (the next valid instant) instead of being dropped to the next day. See [DST behaviour](https://docs.runwisp.com/concepts/scheduling/#dst-behaviour).
+
 ## [0.9.0] - 2026-06-12
 
 ### Added

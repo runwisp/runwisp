@@ -5,6 +5,7 @@ package cronspec
 
 import (
 	"testing"
+	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/stretchr/testify/assert"
@@ -83,4 +84,94 @@ func TestAcceptsSixFieldSeconds(t *testing.T) {
 
 	_, stdErr := cron.ParseStandard(spec)
 	require.Error(t, stdErr, "standard parser should still reject a 6-field spec")
+}
+
+// TestSpringForwardGapRecovered is the regression test for the spring-forward
+// DST skip: a daily tick whose wall-clock time falls in the missing hour must
+// fire at the gap end ("the next valid time, once"), not silently vanish and
+// wrap to the next day. Europe/Bratislava springs forward on 2024-03-31, when
+// 02:00 → 03:00 and the whole 02:00 hour never occurs locally.
+func TestSpringForwardGapRecovered(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+
+	parser := NewScheduleParser()
+	// Evaluate from just after midnight on the spring-forward day.
+	from := time.Date(2024, 3, 31, 0, 30, 0, 0, loc)
+
+	tests := []struct {
+		name string
+		spec string
+		// want is the expected local wall-clock of the next firing, in loc.
+		want time.Time
+	}{
+		{
+			// The bug: naive Next steps 01:xx straight to 03:00, never matches
+			// hour 2, and wraps to 2024-04-01 02:00. We must fire at the gap end.
+			name: "tick in the gap fires at gap end",
+			spec: "0 2 * * *",
+			want: time.Date(2024, 3, 31, 3, 0, 0, 0, loc),
+		},
+		{
+			// :30 inside the missing hour normalizes forward by the gap (one
+			// hour), exactly as time.Date would for the non-existent 02:30.
+			name: "sub-hour tick in the gap normalizes forward",
+			spec: "30 2 * * *",
+			want: time.Date(2024, 3, 31, 3, 30, 0, 0, loc),
+		},
+		{
+			// A tick after the gap is untouched — the recovery must not move it.
+			name: "tick after the gap is untouched",
+			spec: "0 5 * * *",
+			want: time.Date(2024, 3, 31, 5, 0, 0, 0, loc),
+		},
+		{
+			// The gap-end time itself exists and is matched normally.
+			name: "tick at the gap end is untouched",
+			spec: "0 3 * * *",
+			want: time.Date(2024, 3, 31, 3, 0, 0, 0, loc),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sched, err := parser.Parse(tt.spec)
+			require.NoError(t, err)
+			got := sched.Next(from)
+			assert.True(t, tt.want.Equal(got),
+				"want %s, got %s", tt.want.Format("2006-01-02 15:04:05 MST"), got.In(loc).Format("2006-01-02 15:04:05 MST"))
+		})
+	}
+}
+
+// TestSpringForwardFiresOnce confirms the recovered gap tick is a single real
+// instant: stepping Next forward from it yields the following day's tick, not a
+// repeat of the same firing.
+func TestSpringForwardFiresOnce(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+
+	sched, err := NewScheduleParser().Parse("0 2 * * *")
+	require.NoError(t, err)
+
+	first := sched.Next(time.Date(2024, 3, 31, 0, 30, 0, 0, loc))
+	require.True(t, time.Date(2024, 3, 31, 3, 0, 0, 0, loc).Equal(first))
+
+	next := sched.Next(first)
+	want := time.Date(2024, 4, 1, 2, 0, 0, 0, loc)
+	assert.True(t, want.Equal(next), "want %s, got %s", want, next.In(loc))
+}
+
+// TestNonDSTDayUnaffected guards that the wrapper is a no-op on an ordinary day
+// with no transition between the evaluation point and the next firing.
+func TestNonDSTDayUnaffected(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+
+	sched, err := NewScheduleParser().Parse("0 2 * * *")
+	require.NoError(t, err)
+
+	from := time.Date(2024, 6, 15, 0, 30, 0, 0, loc)
+	got := sched.Next(from)
+	want := time.Date(2024, 6, 15, 2, 0, 0, 0, loc)
+	assert.True(t, want.Equal(got), "want %s, got %s", want, got.In(loc))
 }

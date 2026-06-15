@@ -93,8 +93,10 @@ only once:
   `(local-date, hour, minute, second)`, and the suppressed firing still
   gets a row in history.
 - **Spring-forward** (clocks jump ahead). If a cron like `0 2 * * *`
-  lands on a minute that simply doesn't exist that day, it fires at the
-  next valid time — again, once.
+  lands on a minute that simply doesn't exist that day — the clock jumps
+  straight from 01:59 to 03:00 — it fires once at the gap end (here,
+  03:00), the next valid instant, instead of being skipped to the next
+  day.
 
 UTC has no DST, so none of this touches it.
 

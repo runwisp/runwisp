@@ -10,6 +10,12 @@ the **sole source of truth** for what runs and how — the REST API and Web
 UI can read and trigger, but they never touch your task definitions.
 Edited the file? **Restart the daemon** to pick it up.
 
+The one path that can introduce a task RunWisp didn't read from disk is
+the opt-in cloud dispatch (`[daemon] allow_cloud_dispatch`, off by
+default): a connected control-plane peer can ask the daemon to run a
+one-shot ad-hoc task. Even then the task lives only in memory for that
+single run — it's never written into your `runwisp.toml` task set.
+
 The file breaks into a handful of sections, and most of them are
 optional. The one thing RunWisp genuinely can't do without is at least
 one `[tasks.*]` or `[services.*]` table with a `run` key.

@@ -395,6 +395,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	case actionRejected:
 		run.End(model.ReasonSkipped, -1, m.clock())
 		m.persistence.PersistExisting(run)
+		m.publishRun(events.EventRunFailed, run)
 		return run.Copy(), actionErr
 	case actionQueueFull:
 		run.End(model.ReasonQueueFull, -1, m.clock())

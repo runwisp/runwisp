@@ -106,7 +106,7 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		location = time.UTC
 	}
 	s := &Scheduler{
-		cron:        cron.New(cron.WithLocation(location), cron.WithParser(cronspec.NewParser())),
+		cron:        cron.New(cron.WithLocation(location), cron.WithParser(cronspec.NewScheduleParser())),
 		location:    location,
 		taskManager: taskManager,
 		tasks:       tasks,
@@ -177,7 +177,7 @@ func (scheduler *Scheduler) computeJitterPlans() {
 			continue
 		}
 		spec, _ := scheduler.effectiveSpec(task)
-		sched, err := cronspec.NewParser().Parse(spec)
+		sched, err := cronspec.NewScheduleParser().Parse(spec)
 		if err != nil {
 			// Already surfaced as a scheduling warning by addTask; skip silently.
 			continue
