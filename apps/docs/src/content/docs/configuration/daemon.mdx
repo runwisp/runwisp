@@ -141,9 +141,10 @@ A few rules keep "what wins" obvious:
 
 Editing — or adding, or deleting — any included file shows up the same
 way a root-config edit does: the daemon flags the config as stale in
-`/api/info` (and the UI) so you know a restart will pick up changes.
-Like all config, includes are read once at boot;
-[reload is restart-only](/configuration/overview/).
+`/api/info` (and the UI), and a [`runwisp reload`](/operations/reload/)
+(or a restart) re-globs the patterns and picks up the change. Includes
+are resolved fresh on every load, so dropping a new `conf.d/*.toml` in
+place gets it merged on the next reload — no restart required.
 
 ## CLI flags: config, data directory & listen address
 
@@ -158,14 +159,17 @@ where the HTTP/Web UI listens. They apply to every `runwisp` subcommand
 | `--socket`       | `<data>/runwisp.sock` | Path to the control socket. The daemon binds it; every CLI subcommand connects to it. Also `RUNWISP_SOCKET`. See [Control socket](#control-socket). |
 | `--host`         | `127.0.0.1`           | Bind address for the HTTP server. Use `0.0.0.0` to listen on every interface.                                                                       |
 | `--port`         | `9477`                | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                                                                                    |
+| `--log-level`    | `info`                | Log verbosity — `debug`, `info`, `warn`, `error`. Also reads `RUNWISP_LOG_LEVEL`.                                                                   |
+| `--log-format`   | `auto`                | Log shape — `auto`, `text`, `json`. Also reads `RUNWISP_LOG_FORMAT`.                                                                                |
 
 ```sh
 runwisp daemon --data /var/lib/runwisp --host 0.0.0.0 --port 9477
 ```
 
-Two more global flags — `--log-level` and `--log-format` — shape the
-daemon's own log output; [Operations: Logging](/operations/logging/)
-covers them.
+`--log-level` and `--log-format` shape the daemon's own log output —
+[Operations: Logging](/operations/logging/) covers what each value does.
+For the complete list of `runwisp` subcommands and flags in one place, see
+the [CLI reference](/operations/cli/).
 
 It's worth picking `--data` once and sticking with it. The database
 file (`runwisp.db`), the local Unix socket (`runwisp.sock`), and every

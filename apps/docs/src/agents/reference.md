@@ -10,7 +10,7 @@ Notation in schema blocks: `key: type =default — note`. `=default` omitted mea
 ## Model
 
 - `runwisp.toml` is the ONLY source of task definitions. REST/UI/TUI can read + trigger/stop/restart runs, never create or edit definitions.
-- Config reload is restart-only: a running daemon never re-reads TOML. No SIGHUP, no watcher, no reload command. Change TOML → restart daemon.
+- Config reload is explicit: `runwisp reload` / `SIGHUP` / `POST /api/reload` re-read the whole TOML and reconcile the live task set (add/change/remove tasks, services, `[defaults]`). Validate-first/atomic — a parse/validation failure, or a change to a restart-only setting (`[daemon]`, `[scheduler] timezone`, `[storage]`, `[notify]`, bind host/port), is rejected and leaves the running set untouched. Reload is NOT a restart: added tasks get no `run_on_start`/catch-up, in-flight runs finish under their old definition. The daemon never auto-watches the file. Restart-only settings (and re-firing `run_on_start`/catch-up) need `runwisp restart`.
 - Two unit kinds: `[tasks.<name>]` run-to-exit (cron or manual); `[services.<name>]` long-running, `restart=always` forced. Names must be unique across both tables. `name` validated by RunWisp's task-name rules.
 - `run =` is shell, executed from disk only — never from an HTTP/WS body.
 - Inheritance: `[defaults]` → each task/service → per-key override. `env` merges (task wins); `[compose.<alias>.<svc>]` overrides per imported service.
@@ -39,20 +39,28 @@ shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flig
 external_url:         string      — public Web UI base for notification deep-links; absolute http(s) w/ host
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; REQUIRES metrics_enabled=true
+include:              []string    — glob(s) of extra TOML files merged at load; root config only, no nesting
 ```
 
 ### [defaults] (inherited by every task & service)
 
 ```
-timeout:             dur          — per-attempt wall-clock cap (tasks); unset = no timeout
+timeout:             dur          — per-attempt wall-clock cap; unset = no timeout (TASKS only)
+jitter:              dur          — start-spread window inherited by cron tasks; off when unset (TASKS only)
+shell:               path =/bin/sh — interpreter for run scripts (absolute path)
+stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
+exit_codes:          []int =[0]   — exit codes treated as success (0..255)
 log_max_size:        size =100mb  — per-run log cap (effective task default)
 log_on_full:         enum =drop_old — drop_new | drop_old | kill_task
 keep_runs:           int          — row-count retention; 1..1000000
 keep_for:            dur          — age retention; positive
-healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak
-start_retries:       int  =3      — consecutive fast failures before an instance goes FATAL
+healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only)
+start_retries:       int  =3      — consecutive fast failures before an instance goes FATAL (SERVICES only)
+notify_on_missed:    bool =true   — alert on missed scheduled runs; false silences daemon-wide (per-task still wins)
 env:                 map<str,str> — inline env merged into every task; key ^[A-Za-z_][A-Za-z0-9_]*$, <=256 entries, value <=32KiB, no NUL
 env_file:            path         — dotenv file merged into every task; relative to runwisp.toml dir
+secrets:             map<str,str> — inline secrets merged into every task; never shown in API/UI
+secrets_file:        path         — dotenv file merged beneath secrets; only the path is visible
 ```
 
 ### [tasks.&lt;name&gt;] (run-to-exit)
@@ -62,20 +70,28 @@ Required: the table + `run` (unless `compose_file`). `restart="always"` and `ins
 ```
 group:             string =Tasks   — UI grouping label
 description:        string          — human description
-cron:              string          — 5-field cron; also @hourly, @every 1h30m; omit => manual-only
+cron:              string          — 5- or 6-field cron (optional leading seconds); also @hourly, @every 1h30m; omit => manual-only
 timezone:          IANA string      — per-task TZ override (else [scheduler] timezone)
+jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
+run_on_start:      bool =false      — fire once at daemon start, on top of any cron (the @reboot equivalent)
 api_trigger:       bool =true       — allow CLI/API/UI trigger; false = cron-only
 catch_up:          enum =latest     — missed-firing policy: latest | all | skip
 max_catch_up_runs: int  =100        — cap when catch_up=all; >=1
 timeout:           dur              — per-attempt cap (inherits [defaults])
-graceful_stop:     dur  =5s         — SIGTERM→SIGKILL grace on stop
+graceful_stop:     dur  =5s         — grace before SIGKILL on stop
+stop_signal:       enum =SIGTERM    — stop-ladder signal (inherits [defaults]); SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
 restart:           enum             — never | on_failure   (always => rejected on tasks)
 max_concurrent:    int  =1          — concurrent run cap; 1..1024
 queue_max:         int  =100        — queued-run depth; 0..10000
 on_overlap:        enum =queue      — queue | skip | terminate
 retry_attempts:    int  =0          — retries after a failed attempt; 0..100
-retry_delay:       dur  =0          — delay between retries
+retry_delay:       dur  =5s         — delay between retries (<=0 floors to 5s)
 retry_backoff:     enum             — constant | linear | exponential
+exit_codes:        []int =[0]       — exit codes treated as success (inherits [defaults]); 0..255
+working_dir:       path             — process cwd; relative to runwisp.toml dir, ~ expands (else daemon cwd)
+shell:             path =/bin/sh    — interpreter for run (absolute path); invoked as <shell> -c <script>
+umask:             string           — octal file-creation mask, e.g. "027" (else daemon umask)
+user:              string           — run as user or user:group (name/numeric id); needs daemon as root
 log_max_size:      size =100mb      — per-run log cap
 log_on_full:       enum =drop_old   — drop_new | drop_old | kill_task
 keep_runs:         int              — row retention (inherits [defaults]); 1..1000000
@@ -85,13 +101,16 @@ compose_file:      path             — run a compose service instead of run=
 compose_service:   string =taskname — which compose service; requires compose_file
 env:               map<str,str>     — inline env (merged over defaults.env)
 env_file:          path             — dotenv file
-notify_on_failure: []string         — sugar → route on run.failed/timeout/crashed; notifier ids, "id:override", or "inapp"
+secrets:           map<str,str>     — inline secrets (merged over defaults.secrets); never shown in API/UI
+secrets_file:      path             — dotenv file merged beneath secrets; only the path is visible
+notify_on_failure: []string         — sugar → route on run.failed/timeout/crashed/missed; notifier ids, "id:override", or "inapp"
 notify_on_success: []string         — sugar → route on run.succeeded
+notify_on_missed:  bool =true       — alert on missed scheduled runs (inherits [defaults]); false silences
 ```
 
 ### [services.&lt;name&gt;] (long-running)
 
-`restart=always` is forced. Not allowed: `cron`, `catch_up`, `max_concurrent`, `queue_max`, `retry_*`. Shares all other task keys (`group` default `Services`, `on_overlap` default `skip`). Service-only:
+`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `queue_max`, `retry_*`. Shares the core task keys: `group` (default `Services`), `description`, `api_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `user`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`/`notify_on_missed`. Service-only:
 
 ```
 instances:           int  =1           — parallel instances; 1..64
@@ -99,6 +118,9 @@ restart_delay:       dur  =1s          — delay before a restart
 restart_backoff:     enum =exponential — constant | linear | exponential
 healthy_after:       dur  =60s         — uptime that counts as healthy: resets the restart counter and clears the failed-start streak
 start_retries:       int  =3           — consecutive fast failures (exit below healthy_after) before an instance goes FATAL and stops restarting
+priority:            int  =0           — boot start order across services; lower starts first, ties break on name
+autostart:           bool =true        — start at boot; false boots it stopped until started from UI/API
+depends_on:          []string          — services that must be healthy before this one starts at boot (order only)
 ```
 
 ### [compose.&lt;alias&gt;] (import docker-compose services)
@@ -120,7 +142,7 @@ pull:         enum =missing        — missing | always | never
 name_format:  string ={alias}.{service} — generated task name; must contain {service} in services mode
 ```
 
-Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `api_trigger`, `timeout`, `graceful_stop`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`. Not allowed: `run`/`compose_file`/`compose_service`. `mode="stack"` forbids overrides and include/exclude. Caveat: per-service `notify_on_*` is currently parsed but NOT wired to notifications for compose imports.
+Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `api_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `start_retries`, `priority`, `autostart`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`user`. `mode="stack"` forbids overrides and include/exclude. Caveat: per-service `notify_on_*` is currently parsed but NOT wired to notifications for compose imports.
 
 ### [notify] (global notification settings)
 
@@ -136,22 +158,24 @@ coalesce_outbound: bool =true           — coalesce outbound bursts too
 
 ### [[notifier]] (outbound channel; repeatable)
 
-Common: `id` (req, non-empty, not "inapp", no ":"), `type` (req: `slack`|`telegram`|`smtp`), `template_path` (optional).
+Common: `id` (req, non-empty, not "inapp", no ":"), `type` (req: `slack`|`discord`|`telegram`|`smtp`|`webhook`), `template_path` (optional).
 
 ```
-slack:    one of webhook_url | webhook_url_env | webhook_url_file (req); channel (starts # or @)
-telegram: one of bot_token | bot_token_env | bot_token_file (req); chat_id (req); parse_mode (MarkdownV2 needs template_path)
+slack:    webhook_url (req); channel (optional; starts # or @)
+discord:  webhook_url (req; http/https)
+telegram: bot_token (req); chat_id (req); parse_mode (MarkdownV2 needs template_path)
 smtp:     host(req); port 0..65535; tls starttls|implicit|none (default: 465→implicit else starttls);
           tls_skip_verify bool; from(req email); reply_to(email); to(req,>=1) + cc/bcc(emails);
-          username + one of password|password_env|password_file (set together or all omitted); tls=none forbids credentials
+          username + password (set together or both omitted); tls=none forbids credentials
+webhook:  url (req; http/https); headers (optional map<str,str>)
 ```
 
-Secrets: prefer `*_env` / `*_file` forms; never inline secrets you don't control. Secrets are never logged or sent over the cloud integration.
+Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final — use `${VAR}` / `${file:...}` substitution for indirection; never inline a secret you don't control. Secrets are never logged or sent over the cloud integration.
 
 ### [[notification_route]] (route events to channels; repeatable)
 
 ```
-match.kind:     []string — run.started | run.succeeded | run.failed | run.timeout | run.stopped | run.crashed | notify.delivery_failed
+match.kind:     []string — run.started | run.succeeded | run.failed | run.timeout | run.stopped | run.crashed | run.missed | service.fatal | notify.delivery_failed
 match.severity: string   — info | warn | error (optional)
 match.task:     string   — glob over task name (optional)
 notify:         []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp email)
@@ -159,20 +183,26 @@ notify:         []string (req, non-empty) — notifier ids (or "inapp"); "id:#ov
 
 ## CLI
 
-Persistent flags: `-c/--config` (=`runwisp.toml`), `--data` (=`.runwisp`), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`).
-Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_TRUST_PROXY` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`.
+Persistent flags: `-c/--config` (=`runwisp.toml`), `--data` (=`.runwisp`), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`), `--log-level` (debug|info|warn|error), `--log-format` (auto|text|json).
+Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_NO_AUTH` (1/true disables auth; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TRUST_PROXY` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`, `RUNWISP_LOG_LEVEL`, `RUNWISP_LOG_FORMAT`.
 
 ```
 runwisp                      — no subcommand: attach TUI to running daemon, else scaffold toml + spawn daemon + attach
 runwisp daemon               — start headless daemon (no TUI)
-runwisp validate             — validate runwisp.toml without starting anything
-runwisp status               — is the daemon alive?
-runwisp list                 — list configured tasks and schedules
-runwisp exec <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
 runwisp tui                  — attach a TUI to a running daemon
-runwisp cloud                — start in cloud mode; --token --url --env-file(=.env) --no-tui
-runwisp password             — print the daemon's ephemeral password (local socket)
+runwisp validate             — validate runwisp.toml without starting anything
+runwisp list                 — list configured tasks and schedules
+runwisp status               — is the daemon alive?
+runwisp exec <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
+runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHUP); validate-first, no run_on_start/catch-up
+runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed
+runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed)
+runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --quiet --system
+runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --quiet
+runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_NO_AUTH, refuses if RUNWISP_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
+runwisp cloud                — start in cloud mode; --token --url --env-file(=.env) --no-tui
+runwisp demo                 — boot a throwaway, fully-populated instance; --cloud --token --url --env-file
 runwisp service install      — install autostart (systemd/launchd); -y --print --dry-run --force --system --binary <path>
 runwisp service uninstall    — remove autostart; -y --purge (also data dir) --force
 runwisp service status       — show autostart status
@@ -208,6 +238,7 @@ Read (GET):
 Trigger / stop / mutate runs (POST/DELETE — never touches definitions):
 
 ```
+POST   /api/reload                               re-read runwisp.toml + reconcile live task set (validate-first; reads from disk, never edits definitions)
 POST   /api/tasks/{task}/run                     trigger a new run
 POST   /api/tasks/{task}/stop                    stop service (for daemon lifetime)
 POST   /api/tasks/{task}/restart                 restart all service instances

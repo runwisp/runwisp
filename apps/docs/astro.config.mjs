@@ -137,6 +137,7 @@ export default defineConfig({
                 {
                     label: "Operations",
                     items: [
+                        { label: "CLI reference", slug: "operations/cli" },
                         { label: "Auth", slug: "operations/auth" },
                         { label: "Autostart", slug: "operations/autostart" },
                         { label: "Reload", slug: "operations/reload" },

@@ -8,7 +8,8 @@ description: How runwisp.toml is structured — storage safeguards, defaults, ta
 Everything RunWisp does is configured in one file: `runwisp.toml`. It's
 the **sole source of truth** for what runs and how — the REST API and Web
 UI can read and trigger, but they never touch your task definitions.
-Edited the file? **Restart the daemon** to pick it up.
+Edited the file? Run `runwisp reload` (or send `SIGHUP`) to pick it up;
+a few daemon-wide settings need a full restart.
 
 The file breaks into a handful of sections, and most of them are
 optional. The one thing RunWisp genuinely can't do without is at least

@@ -162,7 +162,7 @@ Full user and operator documentation lives at **[docs.runwisp.com](https://docs.
 - [Security Policy](SECURITY.md) - responsible disclosure
 - [Issue tracker](https://github.com/runwisp/runwisp/issues) - bug reports and feature requests
 
-> **Status: pre-1.0.** RunWisp is stable for single-machine workloads today. Any pre-1.0 bump may ship breaking changes and reset run history, so check [CHANGELOG.md](CHANGELOG.md) before upgrading. Some roadmap items (cloud control plane, log search, reload-without-restart) aren't here yet; see the [roadmap](https://docs.runwisp.com/roadmap/).
+> **Status: pre-1.0.** RunWisp is stable for single-machine workloads today. Any pre-1.0 bump may ship breaking changes and reset run history, so check [CHANGELOG.md](CHANGELOG.md) before upgrading. Some roadmap items (like the cloud control plane) aren't here yet; see the [roadmap](https://docs.runwisp.com/roadmap/).
 
 ---
 
