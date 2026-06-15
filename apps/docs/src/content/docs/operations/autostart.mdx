@@ -44,10 +44,13 @@ runwisp restart   # the way to apply runwisp.toml edits
 runwisp stop      # stops the daemon; the unit stays enabled for next boot
 ```
 
-`restart` is also the answer to the "runwisp.toml has changed since
+`restart` is also one answer to the "runwisp.toml has changed since
 the daemon started" notice that `runwisp status`, the TUI header,
-and the Web UI banner show after you edit the config — the daemon
-never hot-reloads, so a restart is how edits take effect.
+and the Web UI banner show after you edit the config. For most edits
+[`runwisp reload`](/operations/reload/) clears it without bouncing the
+process; reach for `restart` when you've changed a restart-only setting
+(`[daemon]`, scheduler timezone, `[storage]`, `[notify]`, the bind
+host/port) or want a fresh boot to re-fire `run_on_start` and catch-up.
 
 ## What `install` does
 

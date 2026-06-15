@@ -4,7 +4,9 @@
 
 # RunWisp
 
-**The open-source, self-hosted cron job manager and process supervisor. Built-in web dashboard, terminal UI, and REST API.**
+**See what ran, when, why it failed, and what it printed.**
+
+The open-source, self-hosted cron job manager and process supervisor — with a built-in web dashboard, terminal UI, and REST API. One static Go binary, zero runtime dependencies.
 
 [runwisp.com](https://runwisp.com) · [Documentation](https://docs.runwisp.com) · [Install](#install) · [Quick Start](#quick-start) · [Why RunWisp](#why-runwisp)
 
@@ -17,9 +19,9 @@
 
 ---
 
-**RunWisp** is a single-binary replacement for `crond` and `supervisord`. Define your scheduled jobs (database backups, health checks, log rotation, ETL scripts) and long-running services like queue workers and background daemons in one `runwisp.toml` file. Get a built-in web dashboard, terminal UI, REST API, real-time log streaming, and persistent run history out of the box. Zero runtime dependencies. Embedded SQLite. Embedded UI. Runs anywhere a static Go binary runs: Linux, macOS, WSL, Docker, a Raspberry Pi, or a $5 VPS.
+**RunWisp** is a single-binary replacement for `crond` and `supervisord`. If you've ever SSH'd into a server at 3 AM to figure out *why* a cron job silently failed, RunWisp is for you.
 
-If you've ever SSH'd into a server at 3 AM to figure out *why* a cron job silently failed, RunWisp is for you.
+Define your scheduled jobs — database backups, health checks, log rotation, ETL scripts — and long-running services like queue workers and background daemons in one `runwisp.toml` file. Every run is captured: exit code, duration, timestamps, and full stdout/stderr. You get a built-in web dashboard, terminal UI, REST API, real-time log streaming, and persistent run history out of the box — zero runtime dependencies, embedded SQLite, embedded UI. Runs anywhere a static Go binary runs: Linux, macOS, WSL, Docker, a Raspberry Pi, or a $5 VPS.
 
 <div align="center">
 <img alt="RunWisp web dashboard screenshot: cron job list, execution history, and live log streaming in a self-hosted UI" src="apps/docs/src/assets/screenshots/web-ui-overview.png" width="780">
@@ -94,7 +96,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 | **systemd timers**              | One `.timer` + one `.service` per job, OS-locked, painful in Docker   | One TOML file. Cross-platform. Same binary on your MacBook, in CI, and in production.                          |
 | **supervisord**                 | No scheduling, Python install, dated XML-RPC API, basic web UI        | Cron scheduling and process supervision in one binary. Modern REST API. Svelte dashboard. Built-in log rotation. |
 | **supercronic / Ofelia**        | Logs to stdout only; no history, no UI                                | Same Docker-friendly footprint, plus per-run logs, persistent history, live streaming, and one-click re-trigger. |
-| **Airflow / Cronicle / Dagu**   | Heavy, multi-process, requires an external DB and a team to operate   | Single binary. ~25 MB RAM idle. No external DB. Set it up in five minutes, forget it for a year.               |
+| **Airflow / Cronicle / Dagu**   | Heavy, multi-process, requires an external DB and a team to operate   | Single binary. ~25 MB RAM idle. No external DB. No ops team. Running in five minutes.               |
 
 ---
 
@@ -162,7 +164,7 @@ Full user and operator documentation lives at **[docs.runwisp.com](https://docs.
 - [Security Policy](SECURITY.md) - responsible disclosure
 - [Issue tracker](https://github.com/runwisp/runwisp/issues) - bug reports and feature requests
 
-> **Status: pre-1.0.** RunWisp is stable for single-machine workloads today. Any pre-1.0 bump may ship breaking changes and reset run history, so check [CHANGELOG.md](CHANGELOG.md) before upgrading. Some roadmap items (cloud control plane, log search, reload-without-restart) aren't here yet; see the [roadmap](https://docs.runwisp.com/roadmap/).
+> **Status: pre-1.0, moving fast.** The single-machine essentials are here — scheduling, supervision, live logs, and persistent run history. But RunWisp is young software, so treat it that way: pin a version, keep backups of anything you'd hate to lose, and skim [CHANGELOG.md](CHANGELOG.md) before upgrading, since pre-1.0 bumps can ship breaking changes and reset run history. A few things (like the cloud control plane) aren't here yet. Kick the tyres and tell us what breaks.
 
 ---
 
