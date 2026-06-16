@@ -28,13 +28,11 @@
     import Button from "../Button.svelte";
     import Badge from "../Badge.svelte";
     import EmptyState from "../EmptyState.svelte";
-    import Tooltip from "../Tooltip.svelte";
     import type { Run } from "./types.js";
     import type { RunSelector } from "@runwisp/common";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
-    import { runDuration } from "./run-helpers.js";
-    import { formatRelativeTime } from "../../utils/format.js";
-    import { formatShortId } from "../../utils/id.js";
+    import { runDuration, formatTriggeredByLabel, runRetryLabel } from "./run-helpers.js";
+    import { formatRelativeTime, formatDateTime, formatFullDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
 
@@ -365,6 +363,8 @@
                         {@const config = getRunStatusConfig(runDisplayStatus(run))}
                         {@const Icon = config.icon}
                         {@const duration = runDuration(run)}
+                        {@const retry = runRetryLabel(run)}
+                        {@const startedAt = run.start_at ?? run.created_at}
                         <div
                             class="flex items-stretch gap-1"
                             style:position="absolute"
@@ -377,7 +377,7 @@
                             {#if bulkActions}
                                 <label
                                     class="flex shrink-0 cursor-pointer items-center px-1.5"
-                                    aria-label={`Select run ${formatShortId(run.id)}`}
+                                    aria-label={`Select run from ${formatDateTime(run.start_at ?? run.created_at)}`}
                                 >
                                     <input
                                         type="checkbox"
@@ -421,16 +421,27 @@
                                             class="shrink-0 text-2xs {isActive
                                                 ? 'font-medium text-primary'
                                                 : 'text-on-surface-faint'}"
+                                            title={formatFullDateTime(startedAt)}
                                         >
-                                            {formatRelativeTime(run.start_at || run.created_at)}
+                                            {formatRelativeTime(startedAt)}
                                         </span>
                                     </div>
 
                                     <div class="flex items-center justify-between pl-6 text-xs">
                                         <div
-                                            class="flex items-center gap-1 font-mono text-2xs text-on-surface-muted"
+                                            class="flex min-w-0 items-center gap-1.5 text-2xs text-on-surface-muted"
                                         >
-                                            #{formatShortId(run.id)}
+                                            <span class="truncate">{formatDateTime(startedAt)}</span
+                                            >
+                                            <span class="text-on-surface-faint"
+                                                >· {formatTriggeredByLabel(run.triggered_by)}</span
+                                            >
+                                            {#if retry}
+                                                <span
+                                                    class="shrink-0 rounded bg-surface-sunken px-1 font-mono text-2xs text-on-surface-faint"
+                                                    >{retry}</span
+                                                >
+                                            {/if}
                                         </div>
                                         {#if duration}
                                             <div
@@ -444,10 +455,10 @@
                                         {/if}
                                     </div>
                                 {:else}
-                                    <!-- Task variant: shortId as primary, status secondary -->
+                                    <!-- Task variant: when it ran as primary, outcome secondary -->
                                     <div class="mb-1.5 flex items-center justify-between">
-                                        <div class="flex items-center gap-2">
-                                            <div class={config.color}>
+                                        <div class="flex min-w-0 items-center gap-2">
+                                            <div class="{config.color} shrink-0">
                                                 <Icon
                                                     size={16}
                                                     class={run.status === "running"
@@ -456,31 +467,35 @@
                                                 />
                                             </div>
                                             <span
-                                                class="font-mono text-xs font-medium text-on-surface"
+                                                class="truncate text-sm font-semibold text-on-surface"
                                             >
-                                                #{formatShortId(run.id)}
+                                                {formatDateTime(startedAt)}
                                             </span>
                                         </div>
                                         <span
-                                            class="text-2xs {isActive
+                                            class="shrink-0 text-2xs {isActive
                                                 ? 'font-medium text-primary'
                                                 : 'text-on-surface-faint'}"
+                                            title={formatFullDateTime(startedAt)}
                                         >
-                                            {formatRelativeTime(run.start_at || run.created_at)}
+                                            {formatRelativeTime(startedAt)}
                                         </span>
                                     </div>
 
-                                    <div class="flex items-center justify-between text-xs">
-                                        <div class="flex items-center gap-2 text-on-surface-muted">
-                                            <Tooltip
-                                                content={config.description}
-                                                position="right"
-                                                wide
+                                    <div class="flex items-center justify-between pl-6 text-xs">
+                                        <div
+                                            class="flex min-w-0 items-center gap-2 text-on-surface-muted"
+                                        >
+                                            <span class="capitalize">{runDisplayStatus(run)}</span>
+                                            <span class="text-on-surface-faint"
+                                                >· {formatTriggeredByLabel(run.triggered_by)}</span
                                             >
-                                                <span class="capitalize"
-                                                    >{runDisplayStatus(run)}</span
+                                            {#if retry}
+                                                <span
+                                                    class="shrink-0 rounded bg-surface-sunken px-1 font-mono text-2xs text-on-surface-faint"
+                                                    >{retry}</span
                                                 >
-                                            </Tooltip>
+                                            {/if}
                                             {#if run.instance_index > 0}
                                                 <span
                                                     class="font-mono text-2xs text-on-surface-faint"

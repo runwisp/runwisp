@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Runs are identified by when they ran.** The Web UI's run lists and detail header now lead with the run's start time, outcome, trigger, and a retry badge instead of an opaque ULID suffix (`Run #52TNPQK0`); the full run ID stays visible and copyable in the detail panel.
 - **Daemon-owned compose containers.** Services-mode containers are labelled, reclaimed before launch, and removed on exit, so a daemon restart or `kill -9` no longer collides with its own leftover container and drives the service FATAL. See [Compose profiles](https://docs.runwisp.com/configuration/compose/#profiles).
 - **Clearer startup/shutdown logs.** A fatal server error logs its real cause instead of a phantom `signal=terminated`, the stale-socket message says a daemon may already be running, and a slow listener bind no longer emits a spurious health-check warning.
 - **Section-aware config errors.** A misplaced `on_overlap`/`timezone`/`host`/`port` now hints at the correct section in the unknown-key error.

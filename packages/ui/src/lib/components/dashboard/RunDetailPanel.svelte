@@ -10,6 +10,7 @@
         Download,
         Trash2,
         MousePointerClick,
+        RotateCw,
     } from "@lucide/svelte";
     import Badge from "../Badge.svelte";
     import Button from "../Button.svelte";
@@ -18,10 +19,15 @@
     import Tooltip from "../Tooltip.svelte";
     import type { Run } from "./types.js";
     import type { LogEvent, LogSlice } from "../../log-console/types.js";
-    import { formatDateTime } from "../../utils/format.js";
+    import { formatDateTime, formatFullDateTime } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
-    import { runDuration, runStartDelay } from "./run-helpers.js";
+    import {
+        runDuration,
+        runStartDelay,
+        formatTriggeredByLabel,
+        runRetryLabel,
+    } from "./run-helpers.js";
 
     let {
         run,
@@ -95,6 +101,8 @@
     {@const DetailIcon = config.icon}
     {@const duration = runDuration(run)}
     {@const startDelay = runStartDelay(run)}
+    {@const startedAt = run.start_at ?? run.created_at}
+    {@const retry = runRetryLabel(run)}
     <!-- Detailed Header -->
     <div class="@container shrink-0 border-b border-outline-faint bg-surface-raised p-6">
         <div class="flex flex-col justify-between gap-6 @4xl:flex-row @4xl:items-start">
@@ -114,7 +122,9 @@
                                         class="text-on-surface-muted">#{run.instance_index}</span
                                     >{/if}
                             {:else}
-                                Run #{formatShortId(run.id)}{#if run.instance_index > 0}
+                                <span title={formatFullDateTime(startedAt)}
+                                    >Run · {formatDateTime(startedAt)}</span
+                                >{#if run.instance_index > 0}
                                     <span class="text-on-surface-muted"
                                         >· instance #{run.instance_index}</span
                                     >
@@ -162,7 +172,7 @@
                                 <Server size={14} />
                                 <span
                                     >Triggered by <span class="font-medium text-on-surface"
-                                        >{run.triggered_by}</span
+                                        >{formatTriggeredByLabel(run.triggered_by)}</span
                                     ></span
                                 >
                             </div>
@@ -171,7 +181,7 @@
                                 <Server size={14} />
                                 <span
                                     >Triggered by <span class="font-medium text-on-surface"
-                                        >{run.triggered_by}</span
+                                        >{formatTriggeredByLabel(run.triggered_by)}</span
                                     ></span
                                 >
                             </div>
@@ -183,6 +193,20 @@
                             >
                                 <Hash size={12} />
                                 {run.id}
+                            </div>
+                        {/if}
+                        {#if retry}
+                            <div
+                                class="hidden h-1 w-1 rounded-full bg-outline-faint sm:block"
+                            ></div>
+                            <div class="flex items-center gap-1.5">
+                                <RotateCw size={14} />
+                                <span
+                                    >Retry #{run.retry_attempt}{#if run.retry_of_run_id}
+                                        <span class="text-on-surface-faint"
+                                            >of run {formatShortId(run.retry_of_run_id)}</span
+                                        >{/if}</span
+                                >
                             </div>
                         {/if}
                     </div>
