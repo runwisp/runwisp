@@ -161,6 +161,36 @@ func TestSpringForwardFiresOnce(t *testing.T) {
 	assert.True(t, want.Equal(next), "want %s, got %s", want, next.In(loc))
 }
 
+// TestScheduleParser_RejectsInvalidSpec confirms the DST-recovering parser
+// surfaces grammar errors from the underlying parser unchanged.
+func TestScheduleParser_RejectsInvalidSpec(t *testing.T) {
+	_, err := NewScheduleParser().Parse("every day at noon")
+	assert.Error(t, err)
+}
+
+// TestScheduleParser_EveryPassesThrough confirms an @every schedule
+// (ConstantDelaySchedule, not a wall-clock SpecSchedule) bypasses the DST-gap
+// wrapper and still advances by its fixed duration.
+func TestScheduleParser_EveryPassesThrough(t *testing.T) {
+	sched, err := NewScheduleParser().Parse("@every 1h")
+	require.NoError(t, err)
+
+	from := time.Date(2024, 6, 15, 0, 30, 0, 0, time.UTC)
+	got := sched.Next(from)
+	assert.True(t, from.Add(time.Hour).Equal(got), "want %s, got %s", from.Add(time.Hour), got)
+}
+
+// TestScheduleParser_NeverMatchingSpecReturnsZero covers the IsZero short-circuit:
+// "Feb 30" never occurs, so the underlying Next returns the zero time and the
+// wrapper hands it straight back without DST math.
+func TestScheduleParser_NeverMatchingSpecReturnsZero(t *testing.T) {
+	sched, err := NewScheduleParser().Parse("0 0 30 2 *")
+	require.NoError(t, err)
+
+	got := sched.Next(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	assert.True(t, got.IsZero(), "a spec that can never fire must yield the zero time")
+}
+
 // TestNonDSTDayUnaffected guards that the wrapper is a no-op on an ordinary day
 // with no transition between the evaluation point and the next firing.
 func TestNonDSTDayUnaffected(t *testing.T) {

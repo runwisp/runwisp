@@ -79,6 +79,62 @@ func TestTokenCache_CorruptFile(t *testing.T) {
 	assert.Equal(t, token, loadCachedToken("https://x"))
 }
 
+func TestTokenCache_MissingURLInPopulatedCache(t *testing.T) {
+	useTempCacheDir(t)
+	storeCachedToken("https://a.example.com", fakeJWT(time.Now().Add(time.Hour).Unix()))
+
+	// A different daemon URL has no entry in the otherwise-valid cache.
+	assert.Empty(t, loadCachedToken("https://b.example.com"))
+}
+
+// TestTokenCache_NoCacheDir forces os.UserCacheDir to fail (no XDG_CACHE_HOME
+// and no HOME) so both load and store fall through their error paths without a
+// panic — caching is best-effort and a missing cache dir must never break exec.
+func TestTokenCache_NoCacheDir(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("HOME", "")
+
+	_, err := tokenCachePath()
+	require.Error(t, err, "no cache dir is resolvable")
+
+	assert.Empty(t, loadCachedToken("https://x"))
+	assert.NotPanics(t, func() { storeCachedToken("https://x", "tok") })
+}
+
+// TestTokenCache_UnwritablePath points the cache at a path whose parent is a
+// regular file, so EnsureDir / WriteSecretFile fail. The store is swallowed and
+// the (unwritten) token reads back as absent.
+func TestTokenCache_UnwritablePath(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	require.NoError(t, os.WriteFile(blocker, []byte("not a dir"), 0600))
+	// os.UserCacheDir resolves to <blocker>, so tokenCachePath is
+	// <blocker>/runwisp/tokens.json — and <blocker> is a file, not a dir.
+	t.Setenv("XDG_CACHE_HOME", blocker)
+	t.Setenv("HOME", blocker)
+
+	assert.NotPanics(t, func() {
+		storeCachedToken("https://x", fakeJWT(time.Now().Add(time.Hour).Unix()))
+	})
+	assert.Empty(t, loadCachedToken("https://x"), "nothing was persisted")
+}
+
+func TestJWTExpiry(t *testing.T) {
+	t.Run("reads the exp claim", func(t *testing.T) {
+		assert.Equal(t, int64(1700000000), jwtExpiry(fakeJWT(1700000000)))
+	})
+	t.Run("wrong segment count is unknown", func(t *testing.T) {
+		assert.Equal(t, int64(0), jwtExpiry("only.two"))
+	})
+	t.Run("non-base64 payload is unknown", func(t *testing.T) {
+		assert.Equal(t, int64(0), jwtExpiry("header.!!!not-base64!!!.sig"))
+	})
+	t.Run("non-JSON payload is unknown", func(t *testing.T) {
+		seg := base64.RawURLEncoding.EncodeToString([]byte("not json"))
+		assert.Equal(t, int64(0), jwtExpiry("header."+seg+".sig"))
+	})
+}
+
 func TestTokenCache_SeparateURLs(t *testing.T) {
 	useTempCacheDir(t)
 	a := fakeJWT(time.Now().Add(time.Hour).Unix())

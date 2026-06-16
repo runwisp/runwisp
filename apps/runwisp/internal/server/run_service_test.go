@@ -255,6 +255,24 @@ func TestTriggerRunAndWait_PropagatesTriggerError(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
+func TestTriggerRunAndWait_TimeoutWithGetRunErrorReturnsTriggeredRun(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	bus := events.NewEventBus()
+	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, APITrigger: true}}
+	svc := makeRunServiceWithBus(tasks, repo, runner, bus)
+
+	// No terminal event, and the deadline re-read of storage fails — the wait
+	// must still hand back the run it triggered rather than nil.
+	triggered := &model.Run{ID: "run-1", TaskName: "t", Status: model.PhasePending}
+	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(triggered, nil)
+	repo.On("GetRun", mock.Anything, "run-1").Return(nil, errors.New("db down"))
+
+	run, err := svc.TriggerRunAndWait(context.Background(), "t", 30*time.Millisecond)
+	require.NoError(t, err)
+	assert.Equal(t, triggered, run)
+}
+
 func TestTriggerRun_RunnerError(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
@@ -269,6 +287,54 @@ func TestTriggerRun_RunnerError(t *testing.T) {
 	_, err := svc.TriggerRun(context.Background(), "t")
 	assert.ErrorIs(t, err, runnerErr)
 	runner.AssertExpectations(t)
+}
+
+// ---- humaTriggerRun ----
+
+func TestHumaTriggerRun_WaitReturnsTerminalRun(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	bus := events.NewEventBus()
+	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, APITrigger: true}}
+	svc := makeRunServiceWithBus(tasks, repo, runner, bus)
+	srv := &Server{runService: svc}
+
+	reason := model.ReasonSuccess
+	ended := &model.Run{ID: "run-1", TaskName: "t", Status: model.PhaseEnded, EndReason: &reason}
+	runner.On("TriggerRun", "t", model.TriggeredByAPI).
+		Return(&model.Run{ID: "run-1", TaskName: "t", Status: model.PhasePending}, nil).
+		Run(func(mock.Arguments) { bus.Publish(events.EventRunCompleted, events.RunEvent{Run: ended}) })
+	repo.On("GetRun", mock.Anything, "run-1").Return(ended, nil).Maybe()
+
+	out, err := srv.humaTriggerRun(context.Background(), &TriggerRunInput{TaskName: "t", Wait: true, WaitTimeout: 5})
+	require.NoError(t, err)
+	assert.Equal(t, model.PhaseEnded, out.Body.Status)
+}
+
+func TestHumaTriggerRun_WaitTaskNotFound(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	bus := events.NewEventBus()
+	svc := makeRunServiceWithBus(map[string]*model.Task{}, repo, runner, bus)
+	srv := &Server{runService: svc}
+
+	_, err := srv.humaTriggerRun(context.Background(), &TriggerRunInput{TaskName: "missing", Wait: true, WaitTimeout: 5})
+	assert.Error(t, err)
+}
+
+func TestHumaTriggerRun_NoWaitReturnsPendingRun(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, APITrigger: true}}
+	svc := makeRunService(tasks, repo, runner)
+	srv := &Server{runService: svc}
+
+	pending := &model.Run{ID: "run-1", TaskName: "t", Status: model.PhasePending}
+	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(pending, nil)
+
+	out, err := srv.humaTriggerRun(context.Background(), &TriggerRunInput{TaskName: "t"})
+	require.NoError(t, err)
+	assert.Equal(t, model.PhasePending, out.Body.Status)
 }
 
 // ---- RestartService ----
