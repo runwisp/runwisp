@@ -72,9 +72,14 @@ tasks:
         options:
             cache: false
 
+    # The coverage run also instruments the shared packages/* sources our tests
+    # import (run-helpers.ts, format.ts, …). v8 writes those as `../../packages/...`
+    # paths relative to this project, which SonarCloud — anchored at the repo root —
+    # can't resolve, so it scored every shared file 0%. Strip the `../` prefix so
+    # the SF paths are repo-root-relative and Sonar attributes their real coverage.
     test:
         description: "vitest with coverage."
-        script: "svelte-kit sync && vitest run --coverage"
+        script: "svelte-kit sync && vitest run --coverage && perl -i -pe 's{^SF:(?:\\.\\./)+}{SF:}' coverage/lcov.info"
         deps:
             - "common:generate-api"
             - "asyncapi:generate"
