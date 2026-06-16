@@ -32,16 +32,18 @@ notify = ["slack-ops", "tg-oncall", "inapp"]
 
 Valid `kind` values:
 
-| Kind                     | Fires when                                                                  |
-| ------------------------ | --------------------------------------------------------------------------- |
-| `run.started`            | A run starts. Opt-in only — not on by default.                              |
-| `run.succeeded`          | A run ends with success.                                                    |
-| `run.failed`             | A run ends with a non-zero exit code.                                       |
-| `run.timeout`            | A run is killed for exceeding its `timeout`.                                |
-| `run.stopped`            | A run is cancelled (manual stop, or `on_overlap = "terminate"`).            |
-| `run.crashed`            | A run is reconciled as crashed after the daemon was killed mid-flight.      |
-| `run.missed`             | A scheduled run was missed while the daemon was down (detected on restart). |
-| `notify.delivery_failed` | A notifier exhausted its retries. Delivered only to the bell.               |
+| Kind                     | Fires when                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------------- |
+| `run.started`            | A run starts. Opt-in only — not on by default.                                                  |
+| `run.succeeded`          | A run ends with success.                                                                        |
+| `run.failed`             | A run ends with a non-zero exit code.                                                           |
+| `run.timeout`            | A run is killed for exceeding its `timeout`.                                                    |
+| `run.stopped`            | A run is cancelled (manual stop, or `on_overlap = "terminate"`).                                |
+| `run.crashed`            | A run is reconciled as crashed after the daemon was killed mid-flight.                          |
+| `run.missed`             | A scheduled run was missed while the daemon was down (detected on restart).                     |
+| `service.fatal`          | A service slot gave up after exhausting `start_retries` fast failures.                          |
+| `log.disk_pressure`      | Free disk space dipped below `min_free_space` mid-run.                                          |
+| `notify.delivery_failed` | A notifier exhausted its retries. Delivered only to the bell; cannot be used as a `match.kind`. |
 
 The `task` glob uses standard shell-style patterns: `*` matches any
 sequence except `/`, `?` matches any single character except `/`, and
@@ -86,18 +88,12 @@ duplicate channels.
 When an outbound notifier burns through its retry budget, the daemon
 raises a `notify.delivery_failed` event. To keep a dead channel from
 generating yet more delivery attempts on itself, this one goes **only to
-the bell** — never back through the outbound router. You can still send
-delivery failures somewhere _else_, though, because the router accepts
-`notify.delivery_failed` as a valid `match.kind`:
-
-```toml
-[[notification_route]]
-match  = { kind = ["notify.delivery_failed"] }
-notify = ["tg-oncall"]
-```
-
-The bell-only delivery happens regardless of this rule — it's the
-always-safe fallback.
+the bell** — it bypasses the route engine entirely and is delivered
+directly to the in-app channel. A `[[notification_route]]` rule targeting
+`notify.delivery_failed` will never fire, no matter what channel you point
+it at. If you need a backup path, add a second notifier ID to the original
+list instead — both channels get the same original event, and if one
+delivery fails the other is unaffected.
 
 ## Worked example
 
@@ -122,7 +118,7 @@ to `slack-ops` and adds one row to the bell.
 
 The loader rejects routes that reference a notifier `id` not declared
 in `[[notifier]]` (and not `"inapp"`); empty `notify` lists;
-`match.kind` values that aren't one of the eight listed above;
+`match.kind` values that aren't one of the valid kinds listed above;
 `match.task` globs that can't be parsed (e.g. unmatched `[`); inline
 overrides whose parent isn't declared, whose target is empty, or —
 for Slack — doesn't start with `#` or `@`; `"inapp:something"` (the

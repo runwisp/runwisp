@@ -64,10 +64,11 @@ and it's checked in two places:
   below the threshold, the run never starts — it's recorded with exit
   code `-1` and the message `insufficient disk space: X free, minimum Y
 required`. The daemon itself keeps running; only that run fails.
-- **During every run, as the logs grow.** If free space dips below the
-  threshold mid-run, the log writer stops accepting new lines and the
-  daemon raises a `log.disk_pressure` notification (severity `warn`) so
-  you find out about the output you're no longer seeing. What happens to
+- **Periodically during every run.** After roughly every 10 MB of output, the log writer
+  re-checks free space. If it has dipped below the threshold, the
+  log writer stops accepting new lines and the daemon raises a
+  `log.disk_pressure` notification (severity `warn`) so you find out
+  about the output you're no longer seeing. What happens to
   the process itself comes down to the task's `log_on_full`: - `drop_new` / `drop_old`: a system line `"Log output stopped:
 disk space critically low"` goes into the log and the process
   keeps running. - `kill_task`: the run is cancelled (`end_reason = "stopped"`)

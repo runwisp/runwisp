@@ -177,8 +177,9 @@ JSON. You get a header with the task name and verb, a section with the
 event sentence and what triggered it, a code-block tail (for
 `run.failed` and `run.timeout`), an action button that jumps to the run (when
 [`[daemon] external_url`](/configuration/daemon/#external_url) is set),
-and a footer carrying the daemon's fingerprint. Every event kind uses
-that same shape — only the emoji, verb, and sentence change. Rendered
+and a footer reading "from runwisp" (with the daemon's fingerprint
+appended when set). Every event kind uses that same shape — only the
+emoji, verb, and sentence change. Rendered
 in a channel, a failure looks like:
 
 ```

@@ -61,10 +61,11 @@ The landing page after login.
 
 ![web-ui-overview.png — Overview page: daemon hero with sparklines, stats card, task overview tabs (All · Attention · Running · Scheduled · Manual), recent activity feed.](../../../assets/screenshots/placeholder.svg)
 
-- **Daemon header** — name, version, uptime, host, OS, CPU/RAM use.
-  CPU and memory sparklines update live.
-- **Stats** — active task count, recent success rate, CPU and memory
-  percentages.
+- **Daemon header** — a fact bar showing RunWisp name and version,
+  host and CPU count, uptime, and the instance fingerprint.
+- **Stats** — four summary cards: Healthy tasks, Needs attention,
+  Running now, and Recent success rate. CPU and memory show up in
+  a separate System resources panel with live sparklines.
 - **Task overview** — filter tabs (All · Attention · Running ·
   Scheduled · Manual) with a sort selector, so you see the part you
   care about without scrolling.
@@ -83,11 +84,11 @@ which task to dig into.
 ## Task detail (`/tasks/{id}`)
 
 Click a task in the sidebar (or any run in the activity feed) to open
-its detail page. The header names the task and shows its schedule;
+its detail page. The header names the task and shows its description;
 next to it sits the page's one action button — **Run Task** for a
-task, **Stop Now** while a run is active, or **Restart Service** for
-a service (which cancels every running instance and lets RunWisp
-spawn fresh ones). Underneath the header you'll find the run history
+task, **Stop** while a run is active, or for a service
+**Stop Service** (or **Restart Service** if the service is currently
+stopped). Underneath the header you'll find the run history
 for this task and, taking up most of the pane, the log for whichever
 run you have selected. New lines stream in live while the run is
 going.
@@ -122,15 +123,14 @@ Top-right of the top bar. The badge shows your unread count.
 
 ![web-ui-notifications-popover.png — Bell clicked: popover open with recent notifications, severity dots, relative times, and a coalesced row showing a sparkline.](../../../assets/screenshots/placeholder.svg)
 
-Click the bell to open a panel with recent notifications, read
-toggles, a "View all" link, and a "Mark all read" button. Each row
-carries a severity dot, the event headline, when it happened, and
-the task name; grouped rows get a small sparkline showing the
-rhythm.
+Click the bell to open a panel with recent notifications, a "View
+all" link, and a "Mark all read" button. Each row carries a severity
+dot, the event headline, when it happened, and the task name; grouped
+rows get a small sparkline showing the rhythm.
 
 The [notifications model][notif] groups duplicate events so a task
 that fails over and over doesn't flood your bell — repeats collapse
-into one row with a short summary ("failed 12 times, latest 30s
+into one row with a short summary ("12× in the last hour, latest 30s
 ago"). Click a notification to open the run it's about.
 
 [notif]: /notifications/model/

@@ -234,15 +234,13 @@ router. Retrying the same dead channel just to announce that the channel
 is dead would only dig the hole deeper. What you see is a yellow warning
 in the bell naming the original task and kind.
 
-You _can_ still route `notify.delivery_failed` somewhere else — the
-classic "if one channel goes down, ping the on-call channel on a
-different one":
-
-```toml
-[[notification_route]]
-match  = { kind = ["notify.delivery_failed"] }
-notify = ["tg-oncall"]
-```
+`notify.delivery_failed` events bypass the notification route engine
+entirely — they are delivered directly to the in-app channel. A
+`[[notification_route]]` rule with `match.kind = ["notify.delivery_failed"]`
+will never fire, no matter what `notify` channel you point it at. If you
+need a backup path, add a second notifier ID to the original
+`notify_on_failure` list instead — that way both channels get the same
+event and if one goes down the other still sees it.
 
 ## Trust model
 

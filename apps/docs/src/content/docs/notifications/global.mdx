@@ -33,7 +33,7 @@ coalesce_outbound = true        # default
 | ------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `global_notifiers`  | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell. |
 | `default_timeout`   | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = 5 minutes.                                                       |
-| `history_keep`      | `1024`      | Cap on bell rows kept in SQLite. Older rows are trimmed in batches.                                                             |
+| `history_keep`      | `1024`      | Cap on bell rows kept in SQLite. Older rows are pruned in one pass.                                                             |
 | `history_keep_for`  | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                            |
 | `coalesce_window`   | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one.                   |
 | `occurrence_ring`   | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
@@ -79,8 +79,8 @@ asked for one try and no retries.
 Bell rows live in SQLite, kept separate from run rows. Two knobs prune
 them:
 
-- `history_keep` — keep at most N rows; older ones are trimmed in
-  batches.
+- `history_keep` — keep at most N rows; older ones are pruned in one
+  pass.
 - `history_keep_for` — delete rows older than this duration.
 
 Both run at once, and the stricter one wins. A background sweeper takes

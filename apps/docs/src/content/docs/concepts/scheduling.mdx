@@ -89,9 +89,9 @@ Across DST transitions, RunWisp makes sure a schedule fires once and
 only once:
 
 - **Fall-back** (clocks go back). The wall-clock instant that happens
-  twice — say 02:30 — only fires once. The scheduler dedupes on
-  `(local-date, hour, minute, second)`, and the suppressed firing still
-  gets a row in history.
+  twice — say 02:30 — only fires once. The scheduler dedupes on the
+  full wall-clock second (year, month, day, hour, minute, second), and
+  the suppressed firing still gets a row in history.
 - **Spring-forward** (clocks jump ahead). If a cron like `0 2 * * *`
   lands on a minute that simply doesn't exist that day — the clock jumps
   straight from 01:59 to 03:00 — it fires once at the gap end (here,

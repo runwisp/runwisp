@@ -51,7 +51,7 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 | `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset. |
 | `jitter`            | inherited  | Cap how far this cron task's start may slip (up to this window) so tasks sharing a fire time take turns instead of stampeding. Needs a `cron` (no-op without one). [Details below](#jitter).                    |
 | `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                                                           |
-| `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero and negatives are rejected at config load.                                                                                                 |
+| `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero means "use the default" (100); negatives are rejected at config load.                                                                      |
 | `run_on_start`      | `false`    | Fire the task once every time the daemon starts, on top of any `cron`. The `@reboot` equivalent.                                                                                                                |
 
 Leave `cron` off and the task becomes **manual-only** — it runs only
@@ -248,9 +248,11 @@ it'll SIGKILL the straggler before the per-task window is even up.
 | `keep_runs`    | inherited from `[defaults]` | Keep the N most recent runs for this task. Positive integer; hard internal cap of 1 000 000. Omit to inherit; zero means "inherit from `[defaults]`"; negatives are rejected. |
 | `keep_for`     | inherited from `[defaults]` | Delete runs older than this. Omit to inherit; zero and negatives rejected, and absurdly large values (over ~100 years) are rejected as typos.                                 |
 
-Duration fields throughout `runwisp.toml` accept `s` (seconds), `m`
-(minutes), `h` (hours), `d` (days), and `w` (weeks) — e.g. `"30s"`,
-`"5m"`, `"36h"`, `"30d"`, `"2w"`. Mixed forms like `"1h30m"` work too.
+Most duration fields (`timeout`, `retry_delay`, `graceful_stop`,
+`jitter`, etc.) use Go's standard `h`/`m`/`s`/`ms` syntax. The only
+exception is `keep_for`, which adds `d` (days) and `w` (weeks) on top —
+so `"30d"` and `"2w"` work for `keep_for` but nowhere else. Mixed forms
+like `"1h30m"` work everywhere.
 
 Set both `keep_runs` and `keep_for` and they both apply — whichever one
 trims more aggressively is the one you'll feel. See

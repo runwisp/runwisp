@@ -104,8 +104,11 @@ task, using that task's settings (or whatever it inherits from
 `[defaults]`; set both for a hard floor _and_ a hard ceiling.
 
 Cleanup runs in the background on a timer, so you might briefly see a
-few extra rows over the `keep_runs` mark between sweeps. Runs that
-are still going are never touched. When retention does kick in, the
+few extra rows over the `keep_runs` mark between sweeps. The
+daemon-wide storage cap protects in-progress runs, but the per-task
+`keep_runs` and `keep_for` limits apply to all runs regardless of
+status — a long-running task that hasn't finished can still age off
+when the limit says it's time. When retention does kick in, the
 SQLite row and the log file (plus its sidecar files) all go together.
 
 ## Live streaming
@@ -186,7 +189,7 @@ If your query is malformed — unclosed regex group, empty `q`, that
 kind of thing — you'll get a `400` straight away, before any
 scanning starts.
 
-## Sidecars (`.idx`, `.tidx`, `.meta`, `.prev`)
+## Sidecars (`.idx`, `.idx.prev`, `.tidx`, `.tidx.prev`, `.meta`, `.prev`)
 
 Next to every `.log` you'll see a couple of small helper files. They
 make seeking and downloading fast. RunWisp creates them

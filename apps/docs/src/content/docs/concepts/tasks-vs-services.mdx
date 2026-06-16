@@ -76,7 +76,7 @@ instances = 3
 run       = "/usr/local/bin/worker"
 ```
 
-Each replica shows up as its own run, tagged `replica_index` 0, 1, 2.
+Each replica shows up as its own run, tagged `instance_index` 0, 1, 2.
 They all share the same config, their logs are pooled per service, and
 when one replica's process exits the supervisor restarts just that one.
 

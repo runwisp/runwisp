@@ -138,8 +138,11 @@ difference is in the surrounding knobs: tasks have `retry_attempts`
 | `restart_delay`   | ❌ rejected                                                  | ✅ default `1s`                                                 |
 | `restart_backoff` | ❌ rejected                                                  | ✅ `constant` / `linear` / `exponential`, default `exponential` |
 
-A service supervisor will restart a replica forever — with bounded
-exponential backoff — until you explicitly stop it.
+A service supervisor restarts a replica with bounded exponential
+backoff as long as it looks like the replica can come back — but if
+it exits before `healthy_after` too many times in a row, the supervisor
+marks that slot [FATAL](/configuration/services/#when-a-service-cant-start-fatal)
+and stops trying until you manually restart the service.
 
 ### Healthy threshold: `healthy_after`
 

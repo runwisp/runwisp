@@ -294,10 +294,10 @@ notify_on_failure = ["slack-prod"]
 
 ## Notifications
 
-| Key                 | Default  | What it does                                                            |
-| ------------------- | -------- | ----------------------------------------------------------------------- |
-| `notify_on_failure` | _(none)_ | Notifier IDs to alert when an instance exits with `failed` / `crashed`. |
-| `notify_on_success` | _(none)_ | Notifier IDs to alert on `run.succeeded` (a clean instance shutdown).   |
+| Key                 | Default  | What it does                                                                                                          |
+| ------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| `notify_on_failure` | _(none)_ | Notifier IDs to alert when an instance ends `failed`, `crashed`, `timeout`, or `missed`, or when a slot goes `fatal`. |
+| `notify_on_success` | _(none)_ | Notifier IDs to alert on `run.succeeded` (a clean instance shutdown).                                                 |
 
 **Same shape and same behaviour as on `[tasks.*]`** — right down to the
 implicit `[notify] global_notifiers` (default `["inapp"]`) getting added
