@@ -15,6 +15,7 @@ created_at            DATETIME NOT NULL,
 retry_attempt         INTEGER NOT NULL DEFAULT 0,
 retry_of_run_id       TEXT,
 instance_index        INTEGER NOT NULL DEFAULT 0,
+params_json           TEXT,
 deleted_at            DATETIME
 );
 CREATE INDEX IF NOT EXISTS idx_runs_external_execution_id ON runs(external_execution_id);

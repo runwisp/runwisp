@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -75,6 +76,143 @@ type taskServiceWireCore struct {
 	NotifyOnMissed *bool `toml:"notify_on_missed,omitempty"`
 
 	ExitCodes []int `toml:"exit_codes,omitempty"`
+
+	// Params declares per-execution inputs. Carried on the shared core so the
+	// key decodes on [services.*] into a friendly rejection (services are never
+	// manually triggered) rather than an undecoded-key error.
+	Params []paramWire `toml:"params,omitempty"`
+}
+
+// paramWire is one inline table in [tasks.*.params]. Exactly one identity
+// keyword (env/arg/option/flag) names the kind and canonical key. Default is
+// `any` so a TOML scalar (string / integer / float / bool) decodes; it is
+// canonicalised to a string when mapped to model.TaskParam.
+type paramWire struct {
+	Env    string `toml:"env,omitempty"`
+	Arg    string `toml:"arg,omitempty"`
+	Option string `toml:"option,omitempty"`
+	Flag   string `toml:"flag,omitempty"`
+
+	// expand:"-" — the variable expander can't write back through an `any`
+	// (a string held in an interface isn't settable via reflect). Param
+	// defaults are literals; ${VAR} substitution does not apply to them.
+	Default     any      `toml:"default,omitempty" expand:"-"`
+	Required    bool     `toml:"required,omitempty"`
+	Type        string   `toml:"type,omitempty"`
+	Choices     []string `toml:"choices,omitempty"`
+	AllowCustom bool     `toml:"allow_custom,omitempty"`
+	Desc        string   `toml:"desc,omitempty"`
+	Description string   `toml:"description,omitempty"`
+}
+
+// toTaskParams maps the wire param list to model.TaskParam, deriving Kind/Key
+// from the single identity keyword and canonicalising the default scalar. It
+// rejects entries that do not set exactly one identity keyword; the remaining
+// semantic rules live in validateTaskParams.
+func toTaskParams(params []paramWire, taskName string) ([]model.TaskParam, error) {
+	if len(params) == 0 {
+		return nil, nil
+	}
+	out := make([]model.TaskParam, 0, len(params))
+	for i, w := range params {
+		kind, key, err := w.identity()
+		if err != nil {
+			return nil, fmt.Errorf("invalid params[%d] for task %q: %w", i, taskName, err)
+		}
+		def, err := canonicalizeParamDefault(w.Default)
+		if err != nil {
+			return nil, fmt.Errorf("invalid params[%d] (%s) for task %q: %w", i, key, taskName, err)
+		}
+		// A flag default canonicalises to exactly "true"/"false" so the single
+		// equality check every consumer makes (resolveFlagValue, the TUI form,
+		// the web form) agrees. Without this a default of "1"/"TRUE"/1 would
+		// read as "off" and persist a non-boolean string.
+		if kind == model.ParamFlag && def != nil {
+			b, perr := strconv.ParseBool(*def)
+			if perr != nil {
+				return nil, fmt.Errorf("invalid params[%d] (%s) for task %q: flag default %q must be a boolean", i, key, taskName, *def)
+			}
+			canon := strconv.FormatBool(b)
+			def = &canon
+		}
+		desc := w.Description
+		if desc == "" {
+			desc = w.Desc
+		}
+		out = append(out, model.TaskParam{
+			Kind:        kind,
+			Key:         key,
+			Type:        w.Type,
+			Default:     def,
+			Required:    w.Required,
+			Choices:     w.Choices,
+			AllowCustom: w.AllowCustom,
+			Description: desc,
+		})
+	}
+	return out, nil
+}
+
+// identity returns the param's kind and canonical key, requiring exactly one of
+// env/arg/option/flag to be set.
+func (w *paramWire) identity() (model.ParamKind, string, error) {
+	set := make([]struct {
+		kind model.ParamKind
+		key  string
+	}, 0, 1)
+	if w.Env != "" {
+		set = append(set, struct {
+			kind model.ParamKind
+			key  string
+		}{model.ParamEnv, w.Env})
+	}
+	if w.Arg != "" {
+		set = append(set, struct {
+			kind model.ParamKind
+			key  string
+		}{model.ParamArg, w.Arg})
+	}
+	if w.Option != "" {
+		set = append(set, struct {
+			kind model.ParamKind
+			key  string
+		}{model.ParamOption, w.Option})
+	}
+	if w.Flag != "" {
+		set = append(set, struct {
+			kind model.ParamKind
+			key  string
+		}{model.ParamFlag, w.Flag})
+	}
+	if len(set) != 1 {
+		return "", "", fmt.Errorf("each param must set exactly one of env/arg/option/flag")
+	}
+	return set[0].kind, set[0].key, nil
+}
+
+// canonicalizeParamDefault renders a TOML default scalar as the canonical
+// string stored on model.TaskParam. nil means "no default declared".
+func canonicalizeParamDefault(v any) (*string, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var s string
+	switch t := v.(type) {
+	case string:
+		s = t
+	case bool:
+		s = strconv.FormatBool(t)
+	case int64:
+		s = strconv.FormatInt(t, 10)
+	case float64:
+		// 'f' (not 'g') so integer-valued and large floats render without
+		// exponent notation — a number default reaches the program as the plain
+		// digits the operator wrote (1e21 → 1000…000, 1.0 → "1"), not "1e+21".
+		s = strconv.FormatFloat(t, 'f', -1, 64)
+	default:
+		return nil, fmt.Errorf("default must be a string, number, or bool")
+	}
+	return &s, nil
 }
 
 // toTaskCore parses the shared wire fields into a model.Task skeleton with
@@ -136,6 +274,11 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		SecretsFile:    w.SecretsFile,
 		NotifyOnMissed: w.NotifyOnMissed,
 	}
+	params, err := toTaskParams(w.Params, name)
+	if err != nil {
+		return model.Task{}, err
+	}
+	task.Parameters = params
 	if err := w.applyComposeBackend(&task, name, label); err != nil {
 		return model.Task{}, err
 	}
@@ -265,6 +408,9 @@ type serviceWire struct {
 }
 
 func (w *serviceWire) toTask(name string) (model.Task, error) {
+	if len(w.Params) > 0 {
+		return model.Task{}, fmt.Errorf("service %q sets params; params is only valid on [tasks.*] (services are not manually triggered)", name)
+	}
 	task, err := w.toTaskCore(name, "service", model.KindService)
 	if err != nil {
 		return model.Task{}, err

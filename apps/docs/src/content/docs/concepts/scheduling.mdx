@@ -121,6 +121,11 @@ as a skipped run and the schedule moves on. Either way the tick
 **always** lands in history — that's the rule around here: nothing
 fires, and nothing fails, without leaving a trace.
 
+Scheduled runs use the declared [default](/configuration/tasks/#parameters)
+for any per-execution parameter — there's no one to fill in a form on a
+cron tick, so you set `default` on each `param` to tell the scheduler
+what to use.
+
 ## Missed ticks: catchup
 
 While the daemon was down — a reboot, a deploy, a hard crash — some

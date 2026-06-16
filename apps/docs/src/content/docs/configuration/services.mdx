@@ -325,6 +325,7 @@ An instance that catches `SIGTERM` and exits cleanly is recorded with
 ## What's rejected on services
 
 - `cron`, `catch_up` — services aren't cron-driven.
+- [`params`](/configuration/tasks/#parameters) — services don't take per-execution parameters; they aren't manually triggered.
 - `retry_attempts`, `retry_delay`, `retry_backoff` — services restart instead of retry. Use `restart_delay` / `restart_backoff`.
 - `max_concurrent`, `queue_max` — instance count is `instances`; services don't queue.
 - A name shared with a `[tasks.*]` entry.

@@ -33,6 +33,10 @@ func (m *defaultTaskManager) scheduleRetry(task *model.Task, failedRun *model.Ru
 		TriggeredBy:  failedRun.TriggeredBy,
 		RetryAttempt: failedRun.RetryAttempt + 1,
 		RetryOfRunID: &failedRun.ID,
+		// Carry the originating run's resolved parameters forward — otherwise a
+		// retried manual run would silently revert to the declared defaults. The
+		// authoritative conversion also keeps params the operator omitted omitted.
+		Params: model.SuppliedFromResolved(task.Parameters, failedRun.Params),
 	})
 	if err != nil && !errors.Is(err, errShuttingDown) {
 		slog.Error("Retry failed", "task", task.Name, "attempt", failedRun.RetryAttempt+1, "err", err)
@@ -61,6 +65,9 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 
 	options := TriggerRunOptions{
 		TriggeredBy: previousRun.TriggeredBy,
+		// Preserve the operator's inputs across a restart (no-op for services,
+		// which never carry parameters).
+		Params: model.SuppliedFromResolved(task.Parameters, previousRun.Params),
 	}
 	if task.Kind.IsService() {
 		options.TriggeredBy = model.TriggeredByService

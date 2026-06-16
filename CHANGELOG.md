@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`params` on `[tasks.*]`.** Let a task take inputs — env vars, arguments, options, and flags — that you fill in when you trigger it by hand from the UI, TUI, or REST; scheduled runs fall back to the defaults you declare. Clearing a value omits the parameter entirely (the default is not re-applied), and you can pass an explicit empty string when you mean one. Values are passed safely as arguments and env (never pasted into the shell) and saved with the run so you can see what it ran with. See [Parameters](https://docs.runwisp.com/configuration/tasks/#parameters).
 - **Configurable control socket (`--socket` / `RUNWISP_SOCKET`).** Set the daemon's socket path explicitly so a bind-mounted `--data` can't break it and CLI commands can reach a daemon without restating `--data`. See [Daemon](https://docs.runwisp.com/configuration/daemon/#control-socket).
 - **Bundled tzdata.** IANA time zones now resolve on slim images (Alpine/distroless) without installing `tzdata`.
 - **`runwisp exec --url`.** Trigger a task on a remote daemon over the network: it logs in (CHAP), follows the live log stream, and exits with the task's exit code, caching the session token so repeated calls don't re-authenticate. Add `--detach` to fire-and-forget. See [Triggering a task remotely](https://docs.runwisp.com/recipes/remote-trigger/).

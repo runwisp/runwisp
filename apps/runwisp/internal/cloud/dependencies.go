@@ -26,9 +26,11 @@ type TaskRunner interface {
 	// dispatcher when resolving ad-hoc inline executions.
 	UpsertTask(task *model.Task)
 	// TriggerCloudRun starts a fresh cloud-triggered run for the named task,
-	// tagged with the supplied external execution id. Implementations must set
+	// tagged with the supplied external execution id. params carries the
+	// dispatch's inputValues — resolved against the task's declared parameters
+	// like any manual trigger. Implementations must set
 	// TriggeredBy = model.TriggeredByCloud.
-	TriggerCloudRun(taskName, externalExecutionID string) (*model.Run, error)
+	TriggerCloudRun(taskName, externalExecutionID string, params map[string]string) (*model.Run, error)
 	// TerminateRunByExternalExecutionID cancels a running run identified by
 	// the cloud-side execution id, if any.
 	TerminateRunByExternalExecutionID(externalExecutionID string) error

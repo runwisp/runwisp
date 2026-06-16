@@ -71,7 +71,10 @@ The default view. Two modes:
   described above, plus a recent-activity feed across all tasks.
 - **Task detail** (a task or service selected from the sidebar) —
   schedule line, a **Run Now** / **Restart** button, and the run
-  history for that one task.
+  history for that one task. If the task declares
+  [parameters](/configuration/tasks/#parameters), **Run Now** opens a
+  form instead — fill in the values, then submit to trigger with those
+  inputs.
 
 ![TUI task detail for healthcheck-api: header with task name, cron schedule, next-fire countdown, and Run Now button; run history table below showing status, start time, duration, and trigger columns.](../../../assets/screenshots/tui-task-detail.png)
 

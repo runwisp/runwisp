@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +70,18 @@ exit 1
 [tasks.deploy-thing]
 api_trigger = true
 run = "echo deployed"
+
+[tasks.export-thing]
+api_trigger = true
+params = [
+  { env = "ORG_ID", required = true },
+  { arg = "format", choices = ["json", "csv"], default = "json" },
+  { flag = "--force" },
+]
+run = '''
+set -eu
+echo "tenant=${ORG_ID}"
+printf 'arg=%s\n' '''
 
 [services.worker]
 instances = 2
@@ -142,6 +155,34 @@ func TestSeed(t *testing.T) {
 				t.Errorf("manual run %s triggered_by = %q, want api", r.ID, r.TriggeredBy)
 			}
 			assertFinalizedLog(t, logDir, r, 1)
+		}
+	})
+
+	t.Run("parameterised runs carry a resolved param set the command echoes", func(t *testing.T) {
+		runs := queryAll(t, db, "export-thing")
+		if len(runs) == 0 {
+			t.Fatal("no export-thing runs")
+		}
+		for _, r := range runs {
+			// ORG_ID (required env) and format (has a default) are always
+			// resolved; both must be persisted on every run.
+			org := r.Params["ORG_ID"]
+			if org == "" {
+				t.Fatalf("run %s missing resolved ORG_ID param: %#v", r.ID, r.Params)
+			}
+			if r.Params["format"] == "" {
+				t.Errorf("run %s missing resolved format param (has default): %#v", r.ID, r.Params)
+			}
+			// The executor injected the env var, so the real log echoes it —
+			// proving the resolve → persist → inject path end to end.
+			assertFinalizedLog(t, logDir, r, 1)
+			data, err := os.ReadFile(logutil.ResolveRunLogPath(logDir, r.TaskName, r.ID, r.CreatedAt))
+			if err != nil {
+				t.Fatalf("read log for run %s: %v", r.ID, err)
+			}
+			if want := "tenant=" + org; !strings.Contains(string(data), want) {
+				t.Errorf("run %s log missing %q; got:\n%s", r.ID, want, data)
+			}
 		}
 	})
 

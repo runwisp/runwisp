@@ -137,6 +137,7 @@ func finishQueryRuns(rows []sqlcdb.QueryRunsCreatedAtAscRow, err error) ([]model
 			RetryAttempt:        r.RetryAttempt,
 			RetryOfRunID:        r.RetryOfRunID,
 			InstanceIndex:       r.InstanceIndex,
+			Params:              decodeParams(r.ParamsJson, r.ID),
 		}
 	}
 	return out, nil

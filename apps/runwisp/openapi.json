@@ -882,6 +882,12 @@
             "format": "int64",
             "type": "integer"
           },
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "retry_attempt": {
             "format": "int64",
             "type": "integer"
@@ -1315,6 +1321,15 @@
           "on_overlap": {
             "type": "string"
           },
+          "parameters": {
+            "items": {
+              "$ref": "#/components/schemas/TaskParam"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "restart": {
             "type": "string"
           }
@@ -1341,6 +1356,64 @@
         "required": [
           "file",
           "project_name"
+        ],
+        "type": "object"
+      },
+      "TaskParam": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_custom": {
+            "description": "When choices is set, allow values outside the list",
+            "type": "boolean"
+          },
+          "choices": {
+            "description": "Allowed values; renders as a dropdown",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "default": {
+            "description": "Default value used by scheduled runs and pre-filled in manual forms",
+            "type": "string"
+          },
+          "description": {
+            "description": "Help text shown under the field",
+            "type": "string"
+          },
+          "key": {
+            "description": "Canonical parameter key (env name, positional label, or option/flag token)",
+            "type": "string"
+          },
+          "kind": {
+            "description": "How the parameter renders into the run",
+            "enum": [
+              "env",
+              "arg",
+              "option",
+              "flag"
+            ],
+            "type": "string"
+          },
+          "required": {
+            "description": "Whether a manual trigger must supply a value",
+            "type": "boolean"
+          },
+          "type": {
+            "description": "Value type; defaults to string",
+            "enum": [
+              "string",
+              "number"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "key"
         ],
         "type": "object"
       },
@@ -1485,6 +1558,16 @@
             ],
             "type": "string"
           },
+          "parameters": {
+            "description": "Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults",
+            "items": {
+              "$ref": "#/components/schemas/TaskParam"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "priority": {
             "description": "For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.",
             "format": "int64",
@@ -1593,6 +1676,31 @@
           "api_trigger",
           "autostart"
         ],
+        "type": "object"
+      },
+      "TriggerRunInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/TriggerRunInputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": "Values for the task's declared parameters, keyed by parameter identity. A null value omits that parameter (overriding its default); an empty string passes an empty value; an absent key uses the declared default.",
+            "type": "object"
+          }
+        },
         "type": "object"
       },
       "TriggeredRunRef": {
@@ -2957,6 +3065,15 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerRunInputBody"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "content": {

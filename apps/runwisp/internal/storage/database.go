@@ -280,11 +280,7 @@ func (db *SQLiteDatabase) RestoreRuns(ctx context.Context, sel model.RunSelector
 		if err != nil {
 			return nil, err
 		}
-		out := make([]model.Run, 0, len(rows))
-		for _, r := range rows {
-			out = append(out, runFromRow(r))
-		}
-		return out, nil
+		return runsFromRows(rows), nil
 	}
 	if err := db.q.RestoreRunsByIDs(ctx, sel.IDs); err != nil {
 		return nil, err
@@ -293,11 +289,7 @@ func (db *SQLiteDatabase) RestoreRuns(ctx context.Context, sel model.RunSelector
 	if err != nil {
 		return nil, err
 	}
-	out := make([]model.Run, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, runFromRow(r))
-	}
-	return out, nil
+	return runsFromRows(rows), nil
 }
 
 // ResolveSelectorIDs returns the IDs of non-deleted runs matched by sel,
@@ -367,9 +359,7 @@ func (db *SQLiteDatabase) DeleteOldRuns(ctx context.Context, task *model.Task) (
 		if err != nil {
 			return nil, fmt.Errorf("query retention days for %s: %w", task.Name, err)
 		}
-		for _, r := range rows {
-			uniqueRuns[r.ID] = runFromRow(r)
-		}
+		collectRunsByID(uniqueRuns, rows)
 	}
 
 	if len(uniqueRuns) < RetentionBatchSize && task.KeepRuns > 0 {
@@ -382,9 +372,7 @@ func (db *SQLiteDatabase) DeleteOldRuns(ctx context.Context, task *model.Task) (
 		if err != nil {
 			return nil, fmt.Errorf("query retention runs for %s: %w", task.Name, err)
 		}
-		for _, r := range rows {
-			uniqueRuns[r.ID] = runFromRow(r)
-		}
+		collectRunsByID(uniqueRuns, rows)
 	}
 
 	if len(uniqueRuns) == 0 {
@@ -416,11 +404,7 @@ func (db *SQLiteDatabase) GetPendingRuns(ctx context.Context) ([]model.Run, erro
 	if err != nil {
 		return nil, err
 	}
-	out := make([]model.Run, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, runFromRow(r))
-	}
-	return out, nil
+	return runsFromRows(rows), nil
 }
 
 func (db *SQLiteDatabase) GetLastRunByTask(ctx context.Context, taskName string) (*model.Run, error) {

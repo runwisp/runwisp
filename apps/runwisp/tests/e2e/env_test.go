@@ -65,7 +65,7 @@ INLINE_SECRET = "%s"
 
 	client := socketClient(t, daemon.dataDir)
 
-	triggered, err := client.TriggerRun(taskName)
+	triggered, err := client.TriggerRun(taskName, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, triggered.ID)
 

@@ -57,6 +57,36 @@ func TestTriggerRunBasic(t *testing.T) {
 	exec.AssertExpectations(t)
 }
 
+func TestTriggerRunResolvesAndPersistsParams(t *testing.T) {
+	jm, exec, eb := newTestManager(t)
+
+	dest := "/backups"
+	task := testTask("task1", model.PolicySkip, 1)
+	task.Parameters = []model.TaskParam{
+		{Kind: model.ParamArg, Key: "source", Required: true},
+		{Kind: model.ParamArg, Key: "dest", Default: &dest},
+		{Kind: model.ParamFlag, Key: "--force"},
+	}
+	jm.UpsertTask(task)
+
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
+
+	source := "/data"
+	done := watchCompletions(eb)
+	run, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{
+		TriggeredBy: model.TriggeredByAPI,
+		Params:      map[string]*string{"source": &source},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"source":  "/data",
+		"dest":    "/backups",
+		"--force": "false",
+	}, run.Params)
+
+	done.waitFor(t, 1)
+}
+
 func TestPolicySkip(t *testing.T) {
 	jm, exec, _ := newGatedManager(t)
 

@@ -5,6 +5,7 @@ package execlist
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -139,13 +140,26 @@ func (v *ExecView) View() string {
 	durationX0 := currentX
 	durationX1 := durationX0 + lipgloss.Width(durField)
 	v.headerLayout.add(HeaderFocusDuration, durationX0, durationX1, 2)
+	currentX = durationX1 + lipgloss.Width(metaSep)
 
 	metaLine := metaPrefix +
 		startedField +
 		metaSep +
 		durField +
-		metaSep +
-		bgLight.Foreground(uikit.ColorTextMuted).Render(string(v.Run.TriggeredBy))
+		metaSep
+
+	// Resolved run params surface as a bounded "Params N" chip (full key=value
+	// list lives in the on-demand modal). Shown only when the run carries params,
+	// so the header stays a fixed height and never overflows the line width.
+	if v.hasParams() {
+		paramsField := v.renderMetaField("Params", strconv.Itoa(len(v.Run.Params)), HeaderFocusParams)
+		paramsX0 := currentX
+		paramsX1 := paramsX0 + lipgloss.Width(paramsField)
+		v.headerLayout.add(HeaderFocusParams, paramsX0, paramsX1, 2)
+		metaLine = metaLine + paramsField + metaSep
+	}
+
+	metaLine += bgLight.Foreground(uikit.ColorTextMuted).Render(string(v.Run.TriggeredBy))
 	followIndicator := ""
 	if v.Pane.Follow && (v.Run.Status == model.PhaseRunning || v.Run.Status == model.PhasePending) {
 		followIndicator = lipgloss.NewStyle().Background(uikit.ColorBgLight).Foreground(uikit.ColorSecondary).Bold(true).Render("  ● FOLLOW")

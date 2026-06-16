@@ -32,6 +32,26 @@ func newSizedExecView(w, h int) ExecView {
 	return ev
 }
 
+func newSizedExecViewWithParams(w, h int, params map[string]string) ExecView {
+	run := newTestRun()
+	run.Params = params
+	ev := NewExecView(run)
+	ev.SetSize(w, h)
+	ev.SetFocused(true)
+	return ev
+}
+
+// paramsHitX scans the meta row (y=2) for the Params chip hitbox and returns
+// its left edge, or -1 when no chip is registered.
+func paramsHitX(ev *ExecView) int {
+	for x := 0; x < uikit.SidebarWidth+ev.Pane.Width; x++ {
+		if ev.HitAt(x, 2) == HeaderFocusParams {
+			return x
+		}
+	}
+	return -1
+}
+
 func appendLines(ev *ExecView, count int) {
 	for i := 0; i < count; i++ {
 		ev.Pane.AppendLine(int64(i), "stdout", "line")
@@ -894,6 +914,98 @@ func TestExecView_SetSize_Fullscreen(t *testing.T) {
 	ev.SetSize(100, 30)
 	if ev.Pane.HeaderH != 0 {
 		t.Fatalf("expected HeaderH=0 in fullscreen after SetSize, got %d", ev.Pane.HeaderH)
+	}
+}
+
+func TestExecView_View_NoParamsChip(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	appendLines(&ev, 5)
+
+	out := ev.View()
+	if strings.Contains(out, "Params") {
+		t.Fatalf("expected no Params chip when run has no params, got %q", out)
+	}
+	if x := paramsHitX(&ev); x != -1 {
+		t.Fatalf("expected no Params hitbox, found at x=%d", x)
+	}
+}
+
+func TestExecView_View_ParamsChip(t *testing.T) {
+	ev := newSizedExecViewWithParams(80, 24, map[string]string{
+		"target":   "s3://bucket/db",
+		"compress": "true",
+	})
+	appendLines(&ev, 5)
+
+	out := ev.View()
+	if !strings.Contains(out, "Params") {
+		t.Fatalf("expected Params chip in header, got %q", out)
+	}
+	if x := paramsHitX(&ev); x == -1 {
+		t.Fatal("expected a Params hitbox on the meta row")
+	}
+}
+
+// TestExecView_View_HeaderHeightFixed guards the original bug: the params line
+// was drawn but not counted in execHeaderHeight, so the rendered view overflowed
+// its viewport by one row. RenderLines pads to exactly Height total rows, so a
+// correctly accounted header makes the emitted row count equal Height whether or
+// not params are present.
+func TestExecView_View_HeaderHeightFixed(t *testing.T) {
+	const h = 24
+	withParams := newSizedExecViewWithParams(80, h, map[string]string{
+		"target":   "s3://bucket/db",
+		"compress": "true",
+		"retries":  "5",
+	})
+	appendLines(&withParams, 5)
+	withoutParams := newSizedExecView(80, h)
+	appendLines(&withoutParams, 5)
+
+	gotWith := strings.Count(withParams.View(), "\n")
+	gotWithout := strings.Count(withoutParams.View(), "\n")
+	if gotWith != h {
+		t.Fatalf("view with params emitted %d rows, want %d (header height miscounted)", gotWith, h)
+	}
+	if gotWithout != h {
+		t.Fatalf("view without params emitted %d rows, want %d", gotWithout, h)
+	}
+}
+
+func TestExecView_Nav_ParamsChip(t *testing.T) {
+	ev := newSizedExecViewWithParams(80, 24, map[string]string{"k": "v"})
+
+	// right from Duration → Params (chip present)
+	ev.HeaderFocus = HeaderFocusDuration
+	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if ev.HeaderFocus != HeaderFocusParams {
+		t.Fatalf("expected right from Duration → Params, got %d", ev.HeaderFocus)
+	}
+	// left from Params → Duration
+	ev.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if ev.HeaderFocus != HeaderFocusDuration {
+		t.Fatalf("expected left from Params → Duration, got %d", ev.HeaderFocus)
+	}
+	// up from Params → ID; down from Params → None
+	ev.HeaderFocus = HeaderFocusParams
+	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if ev.HeaderFocus != HeaderFocusID {
+		t.Fatalf("expected up from Params → ID, got %d", ev.HeaderFocus)
+	}
+	ev.HeaderFocus = HeaderFocusParams
+	ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if ev.HeaderFocus != HeaderFocusNone {
+		t.Fatalf("expected down from Params → None, got %d", ev.HeaderFocus)
+	}
+}
+
+func TestExecView_Nav_DurationRight_NoParams(t *testing.T) {
+	// Without params, right from Duration must not jump to the (absent) chip.
+	ev := newSizedExecView(80, 24)
+	ev.HeaderFocus = HeaderFocusDuration
+	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if ev.HeaderFocus != HeaderFocusDuration {
+		t.Fatalf("expected Duration to stay put with no params, got %d", ev.HeaderFocus)
 	}
 }
 

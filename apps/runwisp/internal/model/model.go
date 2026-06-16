@@ -137,6 +137,12 @@ type Task struct {
 	Secrets     map[string]string `toml:"-" json:"-"`
 	SecretsFile string            `toml:"secrets_file,omitempty" json:"secrets_file,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon."`
 
+	// Parameters declares per-execution inputs an operator may supply at manual
+	// trigger time (env vars, positional args, options, flags). Scheduled
+	// firings use the declared defaults. Declarations come from TOML only — the
+	// API/UI supply values, never definitions. Mapped from [tasks.*.params].
+	Parameters []TaskParam `toml:"-" json:"parameters,omitempty" doc:"Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults"`
+
 	Run          string          `toml:"run,omitempty" json:"-"`
 	ExecutionDef ExecutionDef    `toml:"-"             json:"-"`
 	Compose      *TaskComposeRef `toml:"-"             json:"compose,omitempty" doc:"Provenance metadata for tasks imported from a docker compose file"`
@@ -287,6 +293,7 @@ type TaskBrief struct {
 	Instances     int               `json:"instances,omitempty"`
 	DependsOn     []string          `json:"depends_on,omitempty"`
 	Compose       *TaskComposeRef   `json:"compose,omitempty"`
+	Parameters    []TaskParam       `json:"parameters,omitempty"`
 }
 
 // TaskComposeRef identifies the compose file and service backing a task.

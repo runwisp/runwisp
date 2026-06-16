@@ -143,11 +143,20 @@ func (m *Model) confirmTrigger() tea.Cmd {
 		return m.confirmAction(confirmActionRestartService)
 	}
 	client := m.client
+	if task := m.taskDisplayByName(taskName); task != nil && len(task.Parameters) > 0 {
+		m.dialogs.ShowParamForm(NewParamFormDialog(taskName, task.Parameters, func(params map[string]*string) tea.Cmd {
+			return func() tea.Msg {
+				run, err := client.TriggerRun(taskName, params)
+				return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
+			}
+		}))
+		return nil
+	}
 	return m.showConfirmDialog(
 		"Run Now",
 		fmt.Sprintf("Trigger a new run of\n'%s'?", taskName),
 		func() tea.Msg {
-			run, err := client.TriggerRun(taskName)
+			run, err := client.TriggerRun(taskName, nil)
 			return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
 		},
 	)
@@ -235,11 +244,17 @@ func (m *Model) confirmRetry() tea.Cmd {
 	}
 	client := m.client
 	taskName := run.TaskName
+	// Reproduce the original run exactly: present params carry forward, omitted
+	// ones stay omitted (rather than picking their default back up on re-resolve).
+	var params map[string]*string
+	if task := m.taskDisplayByName(taskName); task != nil {
+		params = model.SuppliedFromResolved(task.Parameters, run.Params)
+	}
 	return m.showConfirmDialog(
 		"Retry Run",
 		fmt.Sprintf("Retry '%s'?", taskName),
 		func() tea.Msg {
-			newRun, err := client.TriggerRun(taskName)
+			newRun, err := client.TriggerRun(taskName, params)
 			return uikit.TriggerRunMsg{TaskName: taskName, Run: newRun, Err: err, Retry: true}
 		},
 	)

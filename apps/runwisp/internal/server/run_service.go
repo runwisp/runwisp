@@ -25,6 +25,7 @@ var (
 	ErrNotAService           = errors.New("task is not a service")
 	ErrCannotDeleteActiveRun = errors.New("cannot delete a run that is still pending or running; stop it first")
 	ErrInvalidSelector       = errors.New("invalid run selector")
+	ErrInvalidParams         = errors.New("invalid parameters")
 )
 
 func wrapSelectorErr(err error) error {
@@ -105,7 +106,7 @@ func (s *runService) GetRun(ctx context.Context, runID string) (*model.Run, erro
 	return run, nil
 }
 
-func (s *runService) TriggerRun(ctx context.Context, taskName string) (*model.Run, error) {
+func (s *runService) TriggerRun(ctx context.Context, taskName string, params map[string]*string) (*model.Run, error) {
 	task, exists := s.tasks.Get(taskName)
 	if !exists {
 		return nil, ErrTaskNotFound
@@ -116,7 +117,15 @@ func (s *runService) TriggerRun(ctx context.Context, taskName string) (*model.Ru
 	if !task.APITrigger {
 		return nil, ErrAPIDisabled
 	}
-	return s.taskManager.TriggerRun(taskName, model.TriggeredByAPI)
+	// Validate supplied values at the boundary so a bad value surfaces as a 400
+	// (the manager re-resolves the same pure transform before persisting).
+	if _, err := model.ResolveParamValues(task.Parameters, params); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidParams, err.Error())
+	}
+	return s.taskManager.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
+		TriggeredBy: model.TriggeredByAPI,
+		Params:      params,
+	})
 }
 
 // terminalWaitBackstop is how often TriggerRunAndWait re-reads storage while
@@ -132,7 +141,7 @@ const terminalWaitBackstop = 2 * time.Second
 // state; callers tell the two apart via the run's status. It exists so a remote
 // caller can fire a task and read its result in a single request instead of
 // trigger-then-poll.
-func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, timeout time.Duration) (*model.Run, error) {
+func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, params map[string]*string, timeout time.Duration) (*model.Run, error) {
 	// Subscribe before triggering: a fast task can finish and publish its
 	// terminal event before TriggerRun even returns, so we must already be
 	// listening. The handler forwards every terminal run; we filter by ID once
@@ -151,7 +160,7 @@ func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, tim
 	unsubFailed := s.eventBus.Subscribe(events.EventRunFailed, forward)
 	defer unsubFailed()
 
-	run, err := s.TriggerRun(ctx, taskName)
+	run, err := s.TriggerRun(ctx, taskName, params)
 	if err != nil {
 		return nil, err
 	}
@@ -287,13 +296,18 @@ func (s *runService) bulkRerun(ctx context.Context, sel model.RunSelector) ([]Tr
 	if err != nil {
 		return nil, err
 	}
-	seen := map[string]struct{}{}
+	// Dedupe to one rerun per task, remembering a representative run so we can
+	// carry its resolved params forward (mirroring retry/restart). Without this
+	// a parameterised task can't be rerun at all — a required param has no
+	// default to fall back on — and even when it could, replaying the operator's
+	// original inputs is what "rerun" means.
+	repByTask := map[string]string{}
 	taskNames := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		if _, ok := seen[ref.TaskName]; ok {
+		if _, ok := repByTask[ref.TaskName]; ok {
 			continue
 		}
-		seen[ref.TaskName] = struct{}{}
+		repByTask[ref.TaskName] = ref.ID
 		taskNames = append(taskNames, ref.TaskName)
 	}
 	sort.Strings(taskNames)
@@ -303,7 +317,14 @@ func (s *runService) bulkRerun(ctx context.Context, sel model.RunSelector) ([]Tr
 		if !ok || task.Kind.IsService() || !task.APITrigger {
 			continue
 		}
-		run, err := s.taskManager.TriggerRun(name, model.TriggeredByAPI)
+		var params map[string]*string
+		if prev, err := s.db.GetRun(ctx, repByTask[name]); err == nil && prev != nil {
+			params = model.SuppliedFromResolved(task.Parameters, prev.Params)
+		}
+		run, err := s.taskManager.TriggerRunWithOptions(name, runtime.TriggerRunOptions{
+			TriggeredBy: model.TriggeredByAPI,
+			Params:      params,
+		})
 		if err != nil || run == nil {
 			continue
 		}

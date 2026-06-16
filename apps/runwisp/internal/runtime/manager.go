@@ -49,6 +49,12 @@ type TriggerRunOptions struct {
 	// InstanceIndex pins the run to a specific instance slot. Required for
 	// supervisor-driven restarts of services; nil for cron/API/retry runs.
 	InstanceIndex *int
+	// Params carries operator-supplied per-execution parameter values from a
+	// manual trigger surface (REST/UI/TUI/cloud). Nil on scheduled/automatic
+	// firings, which resolve to the task's declared defaults. A per-key nil
+	// pointer explicitly omits that parameter even when it declares a default;
+	// an absent key falls back to the default. See model.ResolveParamValues.
+	Params map[string]*string
 	// ScheduledAt backdates a jittered run's CreatedAt to the cron tick it
 	// belongs to, while the run still starts at m.clock() (tick + offset). The
 	// StartAt − CreatedAt delta then honestly shows the jitter, the way
@@ -340,6 +346,18 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		externalExecutionID = &externalIDCopy
 	}
 
+	// Resolve declared parameters against supplied values before any run row is
+	// persisted, so a bad/unknown value rejects the trigger without leaving a
+	// phantom run. Scheduled paths pass nil and get a defaults-only map. An empty
+	// result collapses to nil so zero-param runs stay byte-identical.
+	resolvedParams, err := model.ResolveParamValues(ts.task.Parameters, options.Params)
+	if err != nil {
+		return nil, err
+	}
+	if len(resolvedParams) == 0 {
+		resolvedParams = nil
+	}
+
 	if ts.task.Kind.IsService() {
 		idx, err := ts.supervisor.Reserve(options.InstanceIndex)
 		if err != nil {
@@ -355,6 +373,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 			RetryAttempt:        options.RetryAttempt,
 			RetryOfRunID:        options.RetryOfRunID,
 			InstanceIndex:       idx,
+			Params:              resolvedParams,
 		}
 		m.persistence.PersistNew(run)
 		m.publishRun(events.EventRunCreated, run)
@@ -383,6 +402,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		CreatedAt:           createdAt,
 		RetryAttempt:        options.RetryAttempt,
 		RetryOfRunID:        options.RetryOfRunID,
+		Params:              resolvedParams,
 	}
 
 	m.persistence.PersistNew(run)

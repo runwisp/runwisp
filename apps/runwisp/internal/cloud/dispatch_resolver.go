@@ -12,10 +12,14 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (string, error) {
+// resolveDispatchTask resolves a dispatch to a runnable task name. configBacked
+// reports whether the task is one of this daemon's TOML-defined tasks (which may
+// declare params): only those resolve InputValues. Inline ad-hoc executions
+// declare no params, so their InputValues are ignored, not rejected.
+func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (taskName string, configBacked bool, err error) {
 	execDef, err := model.ParseExecutionDef(dispatch.Script)
 	if err != nil {
-		return "", &CloudError{
+		return "", false, &CloudError{
 			Kind:    CloudErrorKindValidation,
 			Message: fmt.Sprintf("failed to parse execution def: %v", err),
 		}
@@ -24,7 +28,7 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (stri
 	// Reject execution types the daemon doesn't allow for cloud dispatch.
 	status := h.availability.ForType(execDef.ExecType())
 	if !status.Available {
-		return "", &CloudError{
+		return "", false, &CloudError{
 			Kind:    CloudErrorKindConflict,
 			Message: fmt.Sprintf("execution type %q not available: %s", execDef.ExecType(), status.Reason),
 		}
@@ -33,14 +37,14 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (stri
 	if cfg, ok := execDef.(*model.ConfigExecution); ok {
 		// Config type means "resolve from this daemon's local tasks".
 		if _, exists := h.taskManager.GetTask(cfg.TaskName); !exists {
-			return "", &CloudError{Kind: CloudErrorKindConflict, Message: fmt.Sprintf("config task '%s' not found", cfg.TaskName)}
+			return "", false, &CloudError{Kind: CloudErrorKindConflict, Message: fmt.Sprintf("config task '%s' not found", cfg.TaskName)}
 		}
-		return cfg.TaskName, nil
+		return cfg.TaskName, true, nil
 	}
 
 	task := buildDynamicCloudTask(dispatch, execDef)
 	h.taskManager.UpsertTask(task)
-	return task.Name, nil
+	return task.Name, false, nil
 }
 
 func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.ExecutionDef) *model.Task {

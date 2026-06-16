@@ -385,6 +385,30 @@ func TestConfirmDelete_OpensDialogForDeletableRun(t *testing.T) {
 	}
 }
 
+func TestShowRunParams_OpensDialogWhenRunHasParams(t *testing.T) {
+	m := newTestModel(nil)
+	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, Params: map[string]string{"k": "v"}}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	m.showRunParams()
+	if !m.dialogs.HasRunParams() {
+		t.Fatal("expected run-params dialog to open for run with params")
+	}
+}
+
+func TestShowRunParams_NoopWhenNoParams(t *testing.T) {
+	m := newTestModel(nil)
+	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	m.showRunParams()
+	if m.dialogs.HasRunParams() {
+		t.Fatal("expected no run-params dialog when run has no params")
+	}
+}
+
 // TestConfirmDelete_GuardsAgainstRunning verifies that running execs (which
 // CanDelete() rejects) skip the dialog.
 func TestConfirmDelete_GuardsAgainstRunning(t *testing.T) {

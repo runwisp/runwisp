@@ -109,6 +109,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - Retries with configurable backoff (`constant` · `linear` · `exponential`)
 - Per-task timeouts with automatic kill on deadline
 - Catchup policies for missed runs (`latest` · `all` · `skip`)
+- Per-execution parameters: declare env vars, args, options, and flags a task accepts, then supply values at trigger time from the UI, TUI, or API — passed as inert argv, never spliced into the shell
 
 **Observability**
 

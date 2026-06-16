@@ -1119,10 +1119,11 @@ func (a *testTaskRunnerAdapter) UpsertTask(task *model.Task) {
 	a.inner.UpsertTask(task)
 }
 
-func (a *testTaskRunnerAdapter) TriggerCloudRun(taskName, externalExecutionID string) (*model.Run, error) {
+func (a *testTaskRunnerAdapter) TriggerCloudRun(taskName, externalExecutionID string, params map[string]string) (*model.Run, error) {
 	return a.inner.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
 		TriggeredBy:         model.TriggeredByCloud,
 		ExternalExecutionID: externalExecutionID,
+		Params:              model.PointerValues(params),
 	})
 }
 

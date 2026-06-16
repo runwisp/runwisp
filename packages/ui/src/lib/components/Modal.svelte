@@ -14,7 +14,9 @@
         onClose?: () => void;
         header?: Snippet;
         footer?: Snippet;
-        children?: Snippet;
+        // Explicitly nullable so callers can pass `children={cond ? snip : undefined}`
+        // to suppress the padded body band entirely when there's nothing to show.
+        children?: Snippet | undefined;
         class?: string;
     }
 

@@ -83,9 +83,17 @@ func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run
 	return resp.Runs, resp.Total, nil
 }
 
-func (c *Client) TriggerRun(taskName string) (*model.Run, error) {
+// TriggerRun starts a new run of a task, optionally supplying values for the
+// task's declared parameters. Pass nil params for a bare trigger. A per-key nil
+// pointer omits that parameter (overriding its default); an empty string passes
+// an empty value.
+func (c *Client) TriggerRun(taskName string, params map[string]*string) (*model.Run, error) {
+	var body any
+	if len(params) > 0 {
+		body = map[string]any{"params": params}
+	}
 	var run model.Run
-	if err := c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/run", taskName), nil, &run); err != nil {
+	if err := c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/run", taskName), body, &run); err != nil {
 		return nil, err
 	}
 	return &run, nil

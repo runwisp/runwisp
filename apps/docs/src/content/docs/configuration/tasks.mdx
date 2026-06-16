@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: "[tasks.*]"
-description: Every key accepted by a [tasks.<name>] table — cron, run, on_overlap, retries, timeout, retention, notifications.
+description: Every key accepted by a [tasks.<name>] table — cron, run, on_overlap, retries, timeout, retention, params, notifications.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -319,6 +319,115 @@ It's all validated at config load, so a bad entry fails loudly up front:
 keys have to match `^[A-Za-z_][A-Za-z0-9_]*$`, values can't contain NUL
 bytes, no single value can top 32 KiB, and the env + secrets entries for
 a task can't add up to more than 256.
+
+`env` and `secrets` are great for values that stay constant across runs.
+When what changes every run is the _value_ — a project ID you fill in at
+trigger time — that's a [parameter](#parameters).
+
+## Parameters
+
+Sometimes a task is _almost_ the same every time, except for one or two
+things you only know when you press "run" — a project id, a date range, a
+`--dry-run` flag. That's what `params` is for. You declare the inputs a
+task accepts in `runwisp.toml`, and the dashboard, TUI, and REST API
+all grow a little form for them. Scheduled runs (cron,
+`run_on_start`, catch-up, retries) just use the declared defaults.
+
+The config is still the only place parameters are _defined_. The UI and
+API only ever _supply values_ for what you've already declared — they
+can't invent a new flag or change a command. And every value is passed to
+your program as a real argv entry or an env var, never spliced into the
+shell string, so an operator typing `; rm -rf /` into a field gets an
+inert string, not a catastrophe.
+
+`params` is an array of inline tables, one per input. Each table names
+**exactly one** of four keywords, which decides both how the value is fed
+to your command and the key you use everywhere else:
+
+| Keyword  | How it reaches the command                                 | Example declaration       |
+| -------- | ---------------------------------------------------------- | ------------------------- |
+| `env`    | Exported as an environment variable                        | `{ env = "PROJECT_ID" }`  |
+| `arg`    | Appended as a positional argument, in declaration order    | `{ arg = "source" }`      |
+| `option` | Appended as `--name value` (or `--name=value`, see below)  | `{ option = "--region" }` |
+| `flag`   | A boolean; the token is appended when on, omitted when off | `{ flag = "--force" }`    |
+
+```toml
+[tasks.backup]
+run = "/usr/local/bin/backup.sh"
+params = [
+  { env = "PROJECT_ID", required = true },
+  { arg = "source", required = true },
+  { arg = "dest", default = "/backups" },
+  { option = "--region", choices = ["us", "eu"] },
+  { option = "--limit", type = "number", default = 100 },
+  { flag = "--force" },
+]
+```
+
+Trigger that with `source = "/data"`, `--region = "eu"`, and `--force`
+on, and RunWisp runs the equivalent of:
+
+```sh
+PROJECT_ID=… /usr/local/bin/backup.sh '/data' '/backups' '--region' 'eu' '--limit' '100' '--force'
+```
+
+Tokens render in the order you declare them — the example above lays out args,
+options, then a flag because that's how it's written, but if you declared the
+`option` before the `arg` it would land before that arg on the command line.
+You control the ordering. An `option` whose name ends in `=` renders glued
+together — `{ option = "--date=" }` with value `2026-01-01` becomes
+`--date=2026-01-01` rather than two tokens.
+
+If your `run` is a multi-line script, the tokens attach to its **final
+command**, so end the script with the program that should receive them (e.g.
+the `backup.sh` call on the last line, not a trailing comment).
+
+Each input takes a few optional modifiers:
+
+| Modifier       | Applies to                | What it does                                                                                                                                          |
+| -------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default`      | env / arg / option / flag | Value used by scheduled runs and pre-filled in manual forms. For a `flag`, `true`/`false`.                                                            |
+| `required`     | env / arg / option        | The manual form won't submit without a value. Can't be combined with a scheduled task unless it also has a `default` (a cron tick has no one to ask). |
+| `choices`      | env / arg / option        | Renders as a dropdown; values outside the list are rejected.                                                                                          |
+| `allow_custom` | env / arg / option        | With `choices`, also lets the operator type a value not in the list.                                                                                  |
+| `type`         | env / arg / option        | `"string"` (default) or `"number"`; a `number` that doesn't parse is rejected.                                                                        |
+| `description`  | any                       | Help text shown under the field.                                                                                                                      |
+
+A few rules the loader enforces up front: each table has exactly one of
+`env`/`arg`/`option`/`flag`; `env`/`arg` keys match the usual env-name
+shape and `option`/`flag` names start with `-`; an `env` parameter can't
+collide with a static `env`/`secrets` key on the same task; `flag` takes
+neither `choices` nor `type`; and `allow_custom` only makes sense with
+`choices`. `params` belongs on `[tasks.*]` — services don't take it.
+
+Whatever values actually took effect (defaults filled in, flags
+canonicalised, optional blanks dropped) are recorded on the run and shown
+in its detail view, so run history always tells you what a given execution
+was handed.
+
+### Omitting a value vs. passing an empty one
+
+When you trigger a task by hand, a value field with a `default` starts
+pre-filled with it. Three things can happen with that field, and they're
+genuinely different:
+
+- **Leave it as-is** and the value (the default, or whatever you typed) is
+  passed.
+- **Clear it** and the parameter is _omitted_ — the option, arg, or env var
+  isn't passed at all. Clearing does **not** fall back to the default; an
+  empty field means "don't send this." A `required` field can't be omitted,
+  so it keeps nagging until you fill it.
+- **Pass an empty string** when your program distinguishes `--note ''` from
+  no `--note` at all. The form defaults a blank field to "omitted", so use
+  the small toggle under the field (in the TUI, <kbd>ctrl+t</kbd>) to flip it
+  to "passing empty string". The field then shows it'll send `""`.
+
+Flags don't have this ambiguity — the checkbox is the whole story, off means
+the token isn't appended. Dropdowns (`choices`) omit when left unset.
+
+Scheduled runs (cron, `run_on_start`, catch-up) and retries don't go through
+a form: they use the declared defaults, and a retry replays exactly what the
+original run was given — including anything the operator deliberately omitted.
 
 ## Working directory & shell
 

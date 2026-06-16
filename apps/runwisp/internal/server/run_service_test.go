@@ -128,7 +128,7 @@ func TestTriggerRun_TaskNotFound(t *testing.T) {
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	_, err := svc.TriggerRun(context.Background(), "missing")
+	_, err := svc.TriggerRun(context.Background(), "missing", nil)
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
@@ -140,8 +140,39 @@ func TestTriggerRun_ServiceTask_ReturnsServiceNotRunnable(t *testing.T) {
 	}
 	svc := makeRunService(tasks, repo, runner)
 
-	_, err := svc.TriggerRun(context.Background(), "svc")
+	_, err := svc.TriggerRun(context.Background(), "svc", nil)
 	assert.ErrorIs(t, err, ErrServiceNotRunnable)
+}
+
+func TestTriggerRun_InvalidParamsRejected(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"t": {
+			Name: "t", Kind: model.KindTask, APITrigger: true,
+			Parameters: []model.TaskParam{{Kind: model.ParamArg, Key: "source", Required: true}},
+		},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	// Missing required param surfaces as ErrInvalidParams (→ 400) without
+	// ever reaching the task manager.
+	_, err := svc.TriggerRun(context.Background(), "t", nil)
+	assert.ErrorIs(t, err, ErrInvalidParams)
+	runner.AssertNotCalled(t, "TriggerRunWithOptions")
+}
+
+func TestTriggerRun_UnknownParamKeyRejected(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"t": {Name: "t", Kind: model.KindTask, APITrigger: true},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	ghost := "1"
+	_, err := svc.TriggerRun(context.Background(), "t", map[string]*string{"ghost": &ghost})
+	assert.ErrorIs(t, err, ErrInvalidParams)
 }
 
 func TestTriggerRun_APITriggerDisabled(t *testing.T) {
@@ -152,7 +183,7 @@ func TestTriggerRun_APITriggerDisabled(t *testing.T) {
 	}
 	svc := makeRunService(tasks, repo, runner)
 
-	_, err := svc.TriggerRun(context.Background(), "t")
+	_, err := svc.TriggerRun(context.Background(), "t", nil)
 	assert.ErrorIs(t, err, ErrAPIDisabled)
 }
 
@@ -165,9 +196,9 @@ func TestTriggerRun_Success(t *testing.T) {
 	svc := makeRunService(tasks, repo, runner)
 
 	expected := &model.Run{ID: "run-1", TaskName: "t"}
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(expected, nil)
+	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).Return(expected, nil)
 
-	run, err := svc.TriggerRun(context.Background(), "t")
+	run, err := svc.TriggerRun(context.Background(), "t", nil)
 	require.NoError(t, err)
 	assert.Equal(t, expected, run)
 	runner.AssertExpectations(t)
@@ -186,7 +217,7 @@ func TestTriggerRunAndWait_ReturnsTerminalRunFromEvent(t *testing.T) {
 	ended := &model.Run{ID: "run-1", TaskName: "t", Status: model.PhaseEnded, ExitCode: 7, EndReason: &reason}
 	// The subscription is active before TriggerRun runs, so publishing the
 	// terminal event as a side effect of the trigger mimics a fast task.
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).
+	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).
 		Return(&model.Run{ID: "run-1", TaskName: "t", Status: model.PhasePending}, nil).
 		Run(func(mock.Arguments) {
 			bus.Publish(events.EventRunCompleted, events.RunEvent{Run: ended})
@@ -194,7 +225,7 @@ func TestTriggerRunAndWait_ReturnsTerminalRunFromEvent(t *testing.T) {
 	// Backstop poll shouldn't fire within the test window, but allow it.
 	repo.On("GetRun", mock.Anything, "run-1").Return(ended, nil).Maybe()
 
-	run, err := svc.TriggerRunAndWait(context.Background(), "t", 5*time.Second)
+	run, err := svc.TriggerRunAndWait(context.Background(), "t", nil, 5*time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, model.PhaseEnded, run.Status)
 	assert.Equal(t, 7, run.ExitCode)
@@ -211,7 +242,7 @@ func TestTriggerRunAndWait_IgnoresOtherRunsEvents(t *testing.T) {
 
 	reason := model.ReasonSuccess
 	ours := &model.Run{ID: "run-1", TaskName: "t", Status: model.PhaseEnded, EndReason: &reason}
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).
+	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).
 		Return(&model.Run{ID: "run-1", TaskName: "t", Status: model.PhasePending}, nil).
 		Run(func(mock.Arguments) {
 			// A different run's terminal event must not satisfy our wait.
@@ -220,7 +251,7 @@ func TestTriggerRunAndWait_IgnoresOtherRunsEvents(t *testing.T) {
 		})
 	repo.On("GetRun", mock.Anything, "run-1").Return(ours, nil).Maybe()
 
-	run, err := svc.TriggerRunAndWait(context.Background(), "t", 5*time.Second)
+	run, err := svc.TriggerRunAndWait(context.Background(), "t", nil, 5*time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, "run-1", run.ID)
 	assert.Equal(t, model.PhaseEnded, run.Status)
@@ -235,12 +266,12 @@ func TestTriggerRunAndWait_TimeoutReturnsCurrentState(t *testing.T) {
 
 	// No terminal event is published, so the wait times out and falls back to
 	// the latest persisted state — still running.
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).
+	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).
 		Return(&model.Run{ID: "run-1", TaskName: "t", Status: model.PhasePending}, nil)
 	running := &model.Run{ID: "run-1", TaskName: "t", Status: model.PhaseRunning}
 	repo.On("GetRun", mock.Anything, "run-1").Return(running, nil)
 
-	run, err := svc.TriggerRunAndWait(context.Background(), "t", 30*time.Millisecond)
+	run, err := svc.TriggerRunAndWait(context.Background(), "t", nil, 30*time.Millisecond)
 	require.NoError(t, err)
 	assert.Equal(t, model.PhaseRunning, run.Status, "timeout must surface the still-running run")
 }
@@ -251,7 +282,7 @@ func TestTriggerRunAndWait_PropagatesTriggerError(t *testing.T) {
 	bus := events.NewEventBus()
 	svc := makeRunServiceWithBus(map[string]*model.Task{}, repo, runner, bus)
 
-	_, err := svc.TriggerRunAndWait(context.Background(), "missing", time.Second)
+	_, err := svc.TriggerRunAndWait(context.Background(), "missing", nil, time.Second)
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
@@ -265,10 +296,10 @@ func TestTriggerRunAndWait_TimeoutWithGetRunErrorReturnsTriggeredRun(t *testing.
 	// No terminal event, and the deadline re-read of storage fails — the wait
 	// must still hand back the run it triggered rather than nil.
 	triggered := &model.Run{ID: "run-1", TaskName: "t", Status: model.PhasePending}
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(triggered, nil)
+	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).Return(triggered, nil)
 	repo.On("GetRun", mock.Anything, "run-1").Return(nil, errors.New("db down"))
 
-	run, err := svc.TriggerRunAndWait(context.Background(), "t", 30*time.Millisecond)
+	run, err := svc.TriggerRunAndWait(context.Background(), "t", nil, 30*time.Millisecond)
 	require.NoError(t, err)
 	assert.Equal(t, triggered, run)
 }
@@ -282,9 +313,9 @@ func TestTriggerRun_RunnerError(t *testing.T) {
 	svc := makeRunService(tasks, repo, runner)
 
 	runnerErr := errors.New("runner failed")
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(nil, runnerErr)
+	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).Return(nil, runnerErr)
 
-	_, err := svc.TriggerRun(context.Background(), "t")
+	_, err := svc.TriggerRun(context.Background(), "t", nil)
 	assert.ErrorIs(t, err, runnerErr)
 	runner.AssertExpectations(t)
 }
@@ -301,7 +332,7 @@ func TestHumaTriggerRun_WaitReturnsTerminalRun(t *testing.T) {
 
 	reason := model.ReasonSuccess
 	ended := &model.Run{ID: "run-1", TaskName: "t", Status: model.PhaseEnded, EndReason: &reason}
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).
+	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).
 		Return(&model.Run{ID: "run-1", TaskName: "t", Status: model.PhasePending}, nil).
 		Run(func(mock.Arguments) { bus.Publish(events.EventRunCompleted, events.RunEvent{Run: ended}) })
 	repo.On("GetRun", mock.Anything, "run-1").Return(ended, nil).Maybe()
@@ -330,7 +361,7 @@ func TestHumaTriggerRun_NoWaitReturnsPendingRun(t *testing.T) {
 	srv := &Server{runService: svc}
 
 	pending := &model.Run{ID: "run-1", TaskName: "t", Status: model.PhasePending}
-	runner.On("TriggerRun", "t", model.TriggeredByAPI).Return(pending, nil)
+	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).Return(pending, nil)
 
 	out, err := srv.humaTriggerRun(context.Background(), &TriggerRunInput{TaskName: "t"})
 	require.NoError(t, err)
@@ -640,7 +671,9 @@ func TestBulkRerun_TriggersOnePerTaskAndDedupes(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"alpha": {Name: "alpha", APITrigger: true, Kind: model.KindTask},
+		"alpha": {Name: "alpha", APITrigger: true, Kind: model.KindTask, Parameters: []model.TaskParam{
+			{Kind: model.ParamArg, Key: "source"},
+		}},
 		"beta":  {Name: "beta", APITrigger: true, Kind: model.KindTask},
 		"svc":   {Name: "svc", APITrigger: true, Kind: model.KindService},
 		"noapi": {Name: "noapi", APITrigger: false, Kind: model.KindTask},
@@ -655,8 +688,18 @@ func TestBulkRerun_TriggersOnePerTaskAndDedupes(t *testing.T) {
 		{ID: "r4", TaskName: "svc"},   // service task — should be skipped
 		{ID: "r5", TaskName: "noapi"}, // APITrigger=false — skipped
 	}, nil)
-	runner.On("TriggerRun", "alpha", model.TriggeredByAPI).Return(&model.Run{ID: "newA"}, nil)
-	runner.On("TriggerRun", "beta", model.TriggeredByAPI).Return(&model.Run{ID: "newB"}, nil)
+	// The representative run per task (first seen) is loaded so its params carry
+	// forward. r1 represents alpha, r3 represents beta.
+	repo.On("GetRun", mock.Anything, "r1").Return(&model.Run{ID: "r1", Params: map[string]string{"source": "/data"}}, nil)
+	repo.On("GetRun", mock.Anything, "r3").Return(&model.Run{ID: "r3"}, nil)
+	carriedSource := "/data"
+	runner.On("TriggerRunWithOptions", "alpha", runtime.TriggerRunOptions{
+		TriggeredBy: model.TriggeredByAPI,
+		Params:      map[string]*string{"source": &carriedSource},
+	}).Return(&model.Run{ID: "newA"}, nil)
+	runner.On("TriggerRunWithOptions", "beta", runtime.TriggerRunOptions{
+		TriggeredBy: model.TriggeredByAPI,
+	}).Return(&model.Run{ID: "newB"}, nil)
 
 	out, err := svc.bulkRerun(t.Context(), sel)
 	require.NoError(t, err)
@@ -681,7 +724,10 @@ func TestBulkRerun_TriggerErrorIsSkipped(t *testing.T) {
 	repo.On("ResolveSelectorIDs", mock.Anything, sel, "").Return([]storage.RunRef{
 		{ID: "r1", TaskName: "alpha"},
 	}, nil)
-	runner.On("TriggerRun", "alpha", model.TriggeredByAPI).Return(nil, errors.New("trigger boom"))
+	repo.On("GetRun", mock.Anything, "r1").Return(&model.Run{ID: "r1"}, nil)
+	runner.On("TriggerRunWithOptions", "alpha", runtime.TriggerRunOptions{
+		TriggeredBy: model.TriggeredByAPI,
+	}).Return(nil, errors.New("trigger boom"))
 
 	out, err := svc.bulkRerun(t.Context(), sel)
 	require.NoError(t, err)
@@ -728,7 +774,10 @@ func TestHumaBulkRerunRuns_ReturnsTriggeredList(t *testing.T) {
 	sel := model.RunSelector{IDs: []string{"r1"}}
 	repo.On("ResolveSelectorIDs", mock.Anything, sel, "").Return(
 		[]storage.RunRef{{ID: "r1", TaskName: "alpha"}}, nil)
-	runner.On("TriggerRun", "alpha", model.TriggeredByAPI).Return(&model.Run{ID: "newA"}, nil)
+	repo.On("GetRun", mock.Anything, "r1").Return(&model.Run{ID: "r1"}, nil)
+	runner.On("TriggerRunWithOptions", "alpha", runtime.TriggerRunOptions{
+		TriggeredBy: model.TriggeredByAPI,
+	}).Return(&model.Run{ID: "newA"}, nil)
 
 	srv := &Server{runService: svc}
 	out, err := srv.humaBulkRerunRuns(context.Background(), &BulkRunSelectorInput{Body: sel})

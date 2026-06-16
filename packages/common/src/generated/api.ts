@@ -939,6 +939,9 @@ export interface components {
             id: string;
             /** Format: int64 */
             instance_index: number;
+            params?: {
+                [key: string]: string;
+            };
             /** Format: int64 */
             retry_attempt: number;
             retry_of_run_id?: string;
@@ -1124,12 +1127,37 @@ export interface components {
             max_concurrent?: number;
             name: string;
             on_overlap?: string;
+            parameters?: components["schemas"]["TaskParam"][] | null;
             restart?: string;
         };
         TaskComposeRef: {
             file: string;
             project_name: string;
             service?: string;
+        };
+        TaskParam: {
+            /** @description When choices is set, allow values outside the list */
+            allow_custom?: boolean;
+            /** @description Allowed values; renders as a dropdown */
+            choices?: string[] | null;
+            /** @description Default value used by scheduled runs and pre-filled in manual forms */
+            default?: string;
+            /** @description Help text shown under the field */
+            description?: string;
+            /** @description Canonical parameter key (env name, positional label, or option/flag token) */
+            key: string;
+            /**
+             * @description How the parameter renders into the run
+             * @enum {string}
+             */
+            kind: "env" | "arg" | "option" | "flag";
+            /** @description Whether a manual trigger must supply a value */
+            required?: boolean;
+            /**
+             * @description Value type; defaults to string
+             * @enum {string}
+             */
+            type?: "string" | "number";
         };
         TaskResponse: {
             api_trigger: boolean;
@@ -1217,6 +1245,8 @@ export interface components {
              * @enum {string}
              */
             on_overlap?: "queue" | "skip" | "terminate";
+            /** @description Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults */
+            parameters?: components["schemas"]["TaskParam"][] | null;
             /**
              * Format: int64
              * @description For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.
@@ -1283,6 +1313,18 @@ export interface components {
             user?: string;
             /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory */
             working_dir?: string;
+        };
+        TriggerRunInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/TriggerRunInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Values for the task's declared parameters, keyed by parameter identity. A null value omits that parameter (overriding its default); an empty string passes an empty value; an absent key uses the declared default. */
+            params?: {
+                [key: string]: string | null;
+            };
         };
         TriggeredRunRef: {
             run_id: string;
@@ -2138,7 +2180,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TriggerRunInputBody"];
+            };
+        };
         responses: {
             /** @description Created */
             201: {

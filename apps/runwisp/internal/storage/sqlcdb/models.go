@@ -52,6 +52,7 @@ type Run struct {
 	RetryAttempt        int               `json:"retry_attempt"`
 	RetryOfRunID        *string           `json:"retry_of_run_id"`
 	InstanceIndex       int               `json:"instance_index"`
+	ParamsJson          *string           `json:"params_json"`
 	DeletedAt           *time.Time        `json:"deleted_at"`
 }
 

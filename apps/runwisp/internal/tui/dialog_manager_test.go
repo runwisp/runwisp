@@ -52,6 +52,26 @@ func TestDialogManager_CopyLifecycle(t *testing.T) {
 	}
 }
 
+func TestDialogManager_RunParamsLifecycle(t *testing.T) {
+	var dm DialogManager
+
+	if dm.HasRunParams() {
+		t.Fatal("expected no run-params dialog initially")
+	}
+
+	dm.ShowRunParams(NewRunParamsDialog("task", map[string]string{"k": "v"}))
+	if !dm.HasRunParams() {
+		t.Fatal("expected run-params dialog after ShowRunParams")
+	}
+
+	if closed := dm.UpdateRunParams(tea.KeyMsg{Type: tea.KeyEscape}); !closed {
+		t.Fatal("expected run-params dialog to close on Esc")
+	}
+	if dm.HasRunParams() {
+		t.Fatal("expected run-params dialog to be nil after close")
+	}
+}
+
 func TestDialogManager_UpdateConfirm_Closes(t *testing.T) {
 	var dm DialogManager
 	dialog := NewConfirmDialog("Test", "Confirm?", func() tea.Msg { return nil })

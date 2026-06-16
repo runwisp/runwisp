@@ -192,6 +192,8 @@ func (m Model) handleExecViewClick(x, y int) (tea.Model, tea.Cmd) {
 		return m, m.closeExecView()
 	case execlist.HeaderFocusID, execlist.HeaderFocusStarted, execlist.HeaderFocusDuration:
 		return m, m.dialogs.CopyToClipboard(m.execView.CopyValueFor(m.execView.HitAt(x, y)))
+	case execlist.HeaderFocusParams:
+		return m, m.showRunParams()
 	case execlist.HeaderFocusAction:
 		switch m.execView.Action() {
 		case execlist.ActionStop:

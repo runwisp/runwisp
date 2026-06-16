@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/rand"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 
@@ -215,9 +216,68 @@ func (s *seeder) planManual(task *model.Task, rng *rand.Rand) []*runSpec {
 		} else {
 			off = time.Duration(rng.Int63n(int64(s.opts.lookback)))
 		}
-		specs = append(specs, newSpec(task, s.now.Add(-off)))
+		spec := newSpec(task, s.now.Add(-off))
+		// A task that declares parameters gets a different resolved set per run,
+		// so the history shows a realistic spread (and the real command, run
+		// under the seeder's executor, echoes exactly those values).
+		spec.run.Params = seedParams(task, rng)
+		specs = append(specs, spec)
 	}
 	return specs
+}
+
+// demoOrgSlugs seeds believable tenant ids for parameterised demo runs.
+var demoOrgSlugs = []string{"acme", "globex", "initech", "umbrella", "hooli", "wonka"}
+
+// seedParams resolves a per-execution parameter set for a task that declares
+// params, varying the supplied values run-to-run. Tasks without params get nil
+// — the executor then spawns exactly as before, so zero-param tasks are
+// untouched.
+func seedParams(task *model.Task, rng *rand.Rand) map[string]string {
+	if len(task.Parameters) == 0 {
+		return nil
+	}
+	supplied := make(map[string]string)
+	for _, p := range task.Parameters {
+		if v, ok := sampleParamValue(p, rng); ok {
+			supplied[p.Key] = v
+		}
+	}
+	resolved, err := model.ResolveParamValues(task.Parameters, model.PointerValues(supplied))
+	if err != nil {
+		return nil
+	}
+	return resolved
+}
+
+// sampleParamValue picks a plausible supplied value for one parameter, or
+// reports ok=false to leave it unset so the resolver falls back to the declared
+// default. Required value params are always supplied.
+func sampleParamValue(p model.TaskParam, rng *rand.Rand) (string, bool) {
+	switch p.Kind {
+	case model.ParamFlag:
+		// Toggle on ~40% of the time; otherwise omit and inherit the default.
+		return "true", rng.Intn(5) < 2
+	case model.ParamEnv:
+		return demoOrgSlugs[rng.Intn(len(demoOrgSlugs))], true
+	}
+	if len(p.Choices) > 0 {
+		// Supply a listed choice most of the time (valid for strict and
+		// allow_custom); otherwise inherit the default when one exists.
+		if p.Required || p.Default == nil || rng.Intn(10) < 7 {
+			return p.Choices[rng.Intn(len(p.Choices))], true
+		}
+		return "", false
+	}
+	if p.Type == model.ParamTypeNumber {
+		return strconv.Itoa((rng.Intn(20) + 1) * 500), true
+	}
+	// Free-text value param: supply something when required, else inherit the
+	// declared default.
+	if p.Required {
+		return p.Key + "-" + demoOrgSlugs[rng.Intn(len(demoOrgSlugs))], true
+	}
+	return "", false
 }
 
 // planService emits past restart runs for each instance. Services are infinite

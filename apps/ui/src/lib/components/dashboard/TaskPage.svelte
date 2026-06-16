@@ -14,6 +14,7 @@
     import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
     import { runsApi } from "$lib/api";
     import LogSearchPanel from "./LogSearchPanel.svelte";
+    import ParamForm from "./ParamForm.svelte";
     import type { LogSearchHit } from "$lib/logs";
 
     let {
@@ -57,7 +58,7 @@
         restarting?: boolean;
         serviceStopped?: boolean;
         stoppingService?: boolean;
-        onRun: () => void;
+        onRun: (params?: Record<string, string | null>) => void;
         onStop?: (runId: string) => void;
         onRestart?: () => void;
         onStopService?: () => void;
@@ -81,6 +82,14 @@
     const hideHistory = $derived(taskIsService && instanceCount == 1);
     let historyExpanded = $state(false);
     let confirmOpen = $state(false);
+    let runParamValues = $state<Record<string, string | null>>({});
+    let runParamsValid = $state(true);
+    const taskParams = $derived(task.parameters ?? []);
+    const hasParams = $derived(taskParams.length > 0);
+    // The Run modal only needs a body when there's something to show — the
+    // concurrency warning or the parameter form. Passing `children`
+    // conditionally keeps Modal from rendering an empty padded band otherwise.
+    const showRunBody = $derived(concurrencyReached || (hasParams && confirmOpen));
     let stopConfirmOpen = $state(false);
     let restartConfirmOpen = $state(false);
     let stopServiceConfirmOpen = $state(false);
@@ -414,22 +423,27 @@
         bind:open={confirmOpen}
         title={runModalTitle}
         description={runModalDescription}
-        size="sm"
+        size={hasParams ? "md" : "sm"}
+        children={showRunBody ? runModalBody : undefined}
     >
-        {#if concurrencyReached}
-            {@render concurrencyWarning()}
-        {/if}
         {#snippet footer()}
-            {@render confirmFooter(
-                () => (confirmOpen = false),
-                () => {
-                    confirmOpen = false;
-                    onRun();
-                },
-                runConfirmLabel,
-                "primary",
-                Play,
-            )}
+            <div class="flex justify-end gap-2">
+                <Button variant="secondary" size="sm" onclick={() => (confirmOpen = false)}>
+                    Cancel
+                </Button>
+                <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={hasParams && !runParamsValid}
+                    onclick={() => {
+                        confirmOpen = false;
+                        onRun(hasParams ? runParamValues : undefined);
+                    }}
+                >
+                    {#snippet icon()}<Play size={16} />{/snippet}
+                    {runConfirmLabel}
+                </Button>
+            </div>
         {/snippet}
     </Modal>
 
@@ -495,6 +509,21 @@
         {/snippet}
     </Modal>
 </PageContainer>
+
+{#snippet runModalBody()}
+    {#if concurrencyReached}
+        {@render concurrencyWarning()}
+    {/if}
+    {#if hasParams && confirmOpen}
+        {#key confirmOpen}
+            <ParamForm
+                params={taskParams}
+                bind:value={runParamValues}
+                bind:valid={runParamsValid}
+            />
+        {/key}
+    {/if}
+{/snippet}
 
 {#snippet concurrencyWarning()}
     <Alert variant="warning">

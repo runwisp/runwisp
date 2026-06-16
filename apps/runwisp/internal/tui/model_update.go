@@ -25,20 +25,8 @@ const keyCtrlC = "ctrl+c"
 // a new message means picking the right group rather than extending one
 // monolithic switch.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.dialogs.HasConfirm() {
-		if newModel, cmd, intercepted := m.interceptConfirmDialog(msg); intercepted {
-			return newModel, cmd
-		}
-	}
-	if m.dialogs.HasCopy() {
-		if newModel, cmd, intercepted := m.interceptCopyDialog(msg); intercepted {
-			return newModel, cmd
-		}
-	}
-	if m.dialogs.HasHelp() {
-		if newModel, cmd, intercepted := m.interceptHelpDialog(msg); intercepted {
-			return newModel, cmd
-		}
+	if newModel, cmd, intercepted := m.interceptActiveDialog(msg); intercepted {
+		return newModel, cmd
 	}
 
 	dispatchers := []func(tea.Msg) (tea.Model, tea.Cmd, bool){
@@ -55,6 +43,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// interceptActiveDialog gives the active modal first claim on the message.
+// Dialogs are checked in precedence order; only the active one runs, and it
+// reports whether it consumed the message (false lets the dispatchers see it,
+// e.g. WindowSizeMsg keeps layout responsive while a dialog is open).
+func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	interceptors := []struct {
+		active bool
+		fn     func(tea.Msg) (tea.Model, tea.Cmd, bool)
+	}{
+		{m.dialogs.HasConfirm(), m.interceptConfirmDialog},
+		{m.dialogs.HasParamForm(), m.interceptParamFormDialog},
+		{m.dialogs.HasRunParams(), m.interceptRunParamsDialog},
+		{m.dialogs.HasCopy(), m.interceptCopyDialog},
+		{m.dialogs.HasHelp(), m.interceptHelpDialog},
+	}
+	for _, ic := range interceptors {
+		if !ic.active {
+			continue
+		}
+		if newModel, cmd, intercepted := ic.fn(msg); intercepted {
+			return newModel, cmd, true
+		}
+	}
+	return m, nil, false
 }
 
 func (m Model) dispatchInputMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
@@ -345,6 +359,50 @@ func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, boo
 	case uikit.ShutdownDoneMsg:
 		return m, tea.Quit, true
 	case tea.MouseMsg:
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// interceptParamFormDialog handles input while the parameter form is visible.
+// The form captures all keys (it's a modal); a confirmed submit returns the
+// trigger command, esc cancels, and ctrl+c escalates to the quit confirm.
+func (m Model) interceptParamFormDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == keyCtrlC {
+			m.dialogs.DismissParamForm()
+			m.showQuitConfirm()
+			return m, nil, true
+		}
+		cmd, _ := m.dialogs.UpdateParamForm(msg)
+		return m, cmd, true
+	case tea.MouseMsg:
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// interceptRunParamsDialog handles input while the read-only run-params modal
+// is visible. Any close key dismisses it; ctrl+c escalates to the quit confirm.
+// Mouse state is re-synced on close so terminal selection is re-enabled.
+func (m Model) interceptRunParamsDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == keyCtrlC {
+			m.dialogs.DismissRunParams()
+			cmd := m.dialogs.SyncMouseState()
+			m.showQuitConfirm()
+			return m, cmd, true
+		}
+		if m.dialogs.UpdateRunParams(msg) {
+			return m, m.dialogs.SyncMouseState(), true
+		}
+		return m, nil, true
+	case tea.MouseMsg:
+		if m.dialogs.UpdateRunParams(msg) {
+			return m, m.dialogs.SyncMouseState(), true
+		}
 		return m, nil, true
 	}
 	return m, nil, false

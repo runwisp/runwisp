@@ -147,7 +147,7 @@ func (b *ContainerBackend) Available(ctx context.Context) bool {
 	return err == nil
 }
 
-func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, _ *model.Run, def model.ExecutionDef) (*Process, error) {
+func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {
 	ctr, ok := def.(*model.ContainerExecution)
 	if !ok {
 		return nil, fmt.Errorf("ContainerBackend received non-container execution: %s", def.ExecType())
@@ -164,7 +164,7 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, _ *model
 		}
 	}
 
-	containerID, attachResp, err := b.createAndStartContainer(ctx, imageTag, ctr, task)
+	containerID, attachResp, err := b.createAndStartContainer(ctx, imageTag, ctr, task, run)
 	if err != nil {
 		return nil, err
 	}
@@ -187,8 +187,8 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, _ *model
 // container. On any failure it tears down whatever was created (container,
 // image) so callers see a clean error and no leaked resources. It returns the
 // container ID and the live attach response on success.
-func (b *ContainerBackend) createAndStartContainer(ctx context.Context, imageTag string, ctr *model.ContainerExecution, task *model.Task) (string, client.ContainerAttachResult, error) {
-	containerConfig, hostConfig := b.buildContainerConfig(imageTag, ctr, task)
+func (b *ContainerBackend) createAndStartContainer(ctx context.Context, imageTag string, ctr *model.ContainerExecution, task *model.Task, run *model.Run) (string, client.ContainerAttachResult, error) {
+	containerConfig, hostConfig := b.buildContainerConfig(imageTag, ctr, task, run)
 
 	created, err := b.docker.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     containerConfig,
@@ -263,17 +263,25 @@ func (b *ContainerBackend) removeContainer(ctx context.Context, containerID stri
 	}
 }
 
-func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.ContainerExecution, task *model.Task) (*container.Config, *container.HostConfig) {
+func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.ContainerExecution, task *model.Task, run *model.Run) (*container.Config, *container.HostConfig) {
 	baseEnv := make([]string, 0, len(ctr.Env))
 	for _, kv := range ctr.Env {
 		baseEnv = append(baseEnv, kv.Key+"="+kv.Value)
 	}
-	// Overlay Task.Env then Task.Secrets on top of the container-execution
-	// env so task-level entries (defined alongside cron/run) win over
-	// container-specific defaults, matching the shell backend's precedence.
+	// Overlay Task.Env then Task.Secrets then any env-kind per-run params on top
+	// of the container-execution env so task-level entries (defined alongside
+	// cron/run) win over container-specific defaults, matching the shell
+	// backend's precedence. arg/option/flag params have no seam here (the image
+	// entrypoint is a fixed script, not an argv we control), so only env params
+	// reach a container run — container/HTTP backends aren't built from
+	// [tasks.*] TOML today, so this is forward-safety, not a reachable path.
+	var paramEnv map[string]string
+	if task != nil && run != nil {
+		paramEnv = model.ParamEnvLayer(task.Parameters, run.Params)
+	}
 	var env []string
-	if task != nil && (len(task.Env) > 0 || len(task.Secrets) > 0) {
-		env = buildProcessEnv(baseEnv, task.Env, task.Secrets)
+	if task != nil && (len(task.Env) > 0 || len(task.Secrets) > 0 || len(paramEnv) > 0) {
+		env = buildProcessEnv(baseEnv, task.Env, task.Secrets, paramEnv)
 	} else {
 		env = baseEnv
 	}

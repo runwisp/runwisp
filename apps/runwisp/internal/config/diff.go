@@ -123,7 +123,8 @@ func commandChanged(oldTask, newTask *model.Task) bool {
 		oldTask.WorkingDir != newTask.WorkingDir ||
 		oldTask.Umask != newTask.Umask ||
 		oldTask.RunUser != newTask.RunUser ||
-		!reflect.DeepEqual(oldTask.ExecutionDef, newTask.ExecutionDef)
+		!reflect.DeepEqual(oldTask.ExecutionDef, newTask.ExecutionDef) ||
+		!reflect.DeepEqual(oldTask.Parameters, newTask.Parameters)
 }
 
 func envChanged(oldTask, newTask *model.Task) bool {

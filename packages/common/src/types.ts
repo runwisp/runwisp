@@ -14,6 +14,9 @@ import type { components } from "./generated/api.js";
 
 export type RunSelector = components["schemas"]["RunSelector"];
 
+/** A per-execution parameter an operator may supply at manual trigger time. */
+export type TaskParam = components["schemas"]["TaskParam"];
+
 /**
  * EndReason is the union of all reasons a run can end. The single source of
  * truth is the Go `model.EndReason` enum, surfaced via the OpenAPI spec

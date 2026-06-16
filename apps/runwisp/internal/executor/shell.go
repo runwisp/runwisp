@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -20,7 +21,7 @@ type ShellBackend struct{}
 
 func (b *ShellBackend) Available(_ context.Context) bool { return true }
 
-func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run, def model.ExecutionDef) (*Process, error) {
+func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {
 	shell, ok := def.(*model.ShellExecution)
 	if !ok {
 		return nil, fmt.Errorf("ShellBackend received non-shell execution: %s", def.ExecType())
@@ -30,11 +31,21 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 		return nil, fmt.Errorf("shell execution has an empty script")
 	}
 
+	// Per-execution parameters resolve to an env overlay and argv tokens. The
+	// tokens are shell-quoted and appended to the script so a supplied value can
+	// never break out of its quotes into the shell.
+	var runParams map[string]string
+	if run != nil {
+		runParams = run.Params
+	}
+	paramEnv := model.ParamEnvLayer(task.Parameters, runParams)
+	script := appendArgTokens(wrapScriptUmask(shell.Umask, shell.Script), model.ParamArgTokens(task.Parameters, runParams))
+
 	shellPath := shell.Shell
 	if shellPath == "" {
 		shellPath = "/bin/sh"
 	}
-	cmd := exec.CommandContext(ctx, shellPath, "-c", wrapScriptUmask(shell.Umask, shell.Script))
+	cmd := exec.CommandContext(ctx, shellPath, "-c", script)
 
 	// Resolve run-as (user[:group]) at run time. RunUser is read from the task,
 	// never from the execution def, so a cloud-dispatched ad-hoc run can't pick
@@ -54,8 +65,8 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, _ *model.Run
 	// preserves Go's default of inheriting the daemon's env verbatim. The
 	// run-as identity (HOME/USER/LOGNAME) seeds beneath the task's own env so
 	// task.Env can still override it.
-	if len(task.Env) > 0 || len(task.Secrets) > 0 || len(identity) > 0 {
-		cmd.Env = buildProcessEnv(append(os.Environ(), identity...), task.Env, task.Secrets)
+	if len(task.Env) > 0 || len(task.Secrets) > 0 || len(identity) > 0 || len(paramEnv) > 0 {
+		cmd.Env = buildProcessEnv(append(os.Environ(), identity...), task.Env, task.Secrets, paramEnv)
 	}
 
 	if shell.WorkingDir != "" {
@@ -176,6 +187,36 @@ func wrapScriptUmask(umask, script string) string {
 		return script
 	}
 	return "umask " + umask + "\n" + script
+}
+
+// appendArgTokens appends shell-quoted parameter tokens to a run script,
+// separated by spaces. Each token is wrapped so it reaches the program as one
+// argv entry with no shell interpretation — the inertness the trust model
+// requires for operator-supplied values.
+//
+// Trailing whitespace is trimmed first: a multiline `run` block ends in a
+// newline, and appending tokens after that newline would make them a separate
+// command (so a supplied value like `id` would execute the `id` binary). The
+// tokens therefore attach to the script's final command, matching the
+// documented "RunWisp runs `backup.sh '/data' …`" model.
+func appendArgTokens(script string, tokens []string) string {
+	if len(tokens) == 0 {
+		return script
+	}
+	var b strings.Builder
+	b.WriteString(strings.TrimRight(script, " \t\r\n"))
+	for _, t := range tokens {
+		b.WriteByte(' ')
+		b.WriteString(shellQuote(t))
+	}
+	return b.String()
+}
+
+// shellQuote single-quote-wraps a token for /bin/sh, rendering an embedded
+// single quote as the classic '\” sequence. Single quotes suppress every
+// shell metacharacter, so a value like `'; rm -rf /` becomes an inert literal.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func exitCodeFromError(err error) int {
