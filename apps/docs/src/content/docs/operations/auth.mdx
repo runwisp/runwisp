@@ -72,10 +72,11 @@ disk, ever. You've got two ways to set it:
 
 The JWT signing key isn't stored anywhere — it's **derived** from
 your password using HKDF-SHA-256, salted with a per-install
-fingerprint (machine ID, cwd, executable path, hostname). The salt
-isn't stored either; it's recomputed each boot from that
-machine-stable identity, so the key survives restarts because both
-inputs do — not because anything sensitive was written to disk. Same
+fingerprint (machine ID, cwd, executable path, hostname). The
+fingerprint is generated once on first boot and persisted to the
+database, so the key survives restarts because the same fingerprint
+plus the same password yields the same key — not because anything
+sensitive was written to disk. Same
 password on the same install gives you the same key, so sessions
 persist across restarts. A different password — or the same
 password on a different machine — gives you a different key, so
@@ -226,9 +227,11 @@ runwisp daemon --host 127.0.0.1 --port 9477
 whose `X-Forwarded-Proto` and `X-Forwarded-For` headers the daemon
 will trust. When a request comes in from one of those ranges with
 `X-Forwarded-Proto: https`, the daemon treats the connection as
-secure and marks the session cookie accordingly. Rate limiting
-always counts the real TCP peer — never the forwarded header — so a
-misconfigured proxy can't accidentally open a hole.
+secure and marks the session cookie accordingly. Rate limiting is
+applied after the real-IP middleware, so proxied requests count against
+the originating IP, not the proxy's address — limit your trust proxy
+ranges carefully or an attacker could consume the rate budget from
+behind a trusted proxy.
 
 The daemon refuses `0.0.0.0/0` and `::/0`. Trusting the whole
 internet would let any random client lie about where it's coming

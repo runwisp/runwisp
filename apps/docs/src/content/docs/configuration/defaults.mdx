@@ -31,15 +31,15 @@ healthy_after       = "60s"
 
 | Key                | Default      | What it does                                                                                                                                                                                                                                     |
 | ------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `timeout`          | _(unset)_    | Default per-attempt wall-clock cap. Unset means no timeout. **Tasks only** — services don't have a per-attempt timeout.                                                                                                                          |
+| `timeout`          | _(unset)_    | Default per-attempt wall-clock cap. Unset means no timeout. Applies to both tasks and services.                                                                                                                                                  |
 | `jitter`           | _(unset)_    | Default jitter window for cron tasks; off when unset. Every cron task inherits it and joins the daemon-wide one-at-a-time gate — one line to smooth your whole schedule. **Tasks only.** See [`[tasks.*]` jitter](/configuration/tasks/#jitter). |
 | `shell`            | `/bin/sh`    | Default interpreter for `run` scripts. Absolute path. Per-task `shell` overrides. See [`[tasks.*]` Working directory & shell](/configuration/tasks/#working-directory--shell).                                                                   |
 | `stop_signal`      | `"SIGTERM"`  | Default signal that opens the stop ladder before SIGKILL. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2`. Per-task / per-service `stop_signal` overrides.                                                      |
 | `exit_codes`       | `[0]`        | Default set of exit codes treated as success. Per-task / per-service `exit_codes` overrides. Codes are `0`–`255`.                                                                                                                                |
 | `log_max_size`     | `100MB`      | Default per-run log cap. Units `b`/`kb`/`mb`/`gb`/`tb`. Bare `0` and negatives are rejected.                                                                                                                                                     |
 | `log_on_full`      | `"drop_old"` | Default overflow policy: `drop_new`, `drop_old`, `kill_task`.                                                                                                                                                                                    |
-| `keep_runs`        | _(unset)_    | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Bare `0` and negatives are rejected.                                                                                                                              |
-| `keep_for`         | _(unset)_    | Default age-based retention. Accepts `d`/`w`/`h`/`m` units. Zero / negative durations are rejected, as are absurdly large values (over ~100 years) — a typo guard.                                                                               |
+| `keep_runs`        | _(unset)_    | Default row-count retention. Positive integer; hard internal cap of 1 000 000. Zero means "inherit from task-level setting" — only negatives are rejected.                                                                                       |
+| `keep_for`         | _(unset)_    | Default age-based retention. Accepts days (`d`) and weeks (`w`) on top of the usual `h`/`m`/`s`/`ms`. Zero / negative durations are rejected, as are absurdly large values (over ~100 years) — a typo guard.                                     |
 | `healthy_after`    | `"60s"`      | Uptime a service instance must reach to count as healthy — resets its restart counter **and** clears the failed-start streak; faster failures count toward `start_retries`. **Services only.** Per-service override.                             |
 | `start_retries`    | `3`          | Consecutive failed starts a service instance tolerates before going [FATAL](/configuration/services/#when-a-service-cant-start-fatal) and stopping. **Services only.** Per-service override.                                                     |
 | `env`              | _(none)_     | Inline KEY/VALUE map merged into every task and service. Task-level entries override on key collision. See [`[tasks.*]` Environment & secrets](/configuration/tasks/#environment--secrets).                                                      |
@@ -77,10 +77,11 @@ For each task or service:
 3. Else fall back to the built-in default (e.g. `100MB` for `log_max_size`).
 
 Leave a numeric retention field off at _every_ level and you get **no
-cap** — runs just pile up until you set a value somewhere. Bare `0`,
-negatives, and out-of-range strings all get rejected at config load, so
-"I forgot to set a cap" can never quietly turn into "everything got
-deleted."
+cap** — runs just pile up until you set a value somewhere. Zero means
+"inherit from the layer above" for `keep_runs` (only negatives are
+rejected); `keep_for` rejects both zero and negatives. Out-of-range
+values are rejected at config load, so "I forgot to set a cap" can never
+quietly turn into "everything got deleted."
 
 ## Worked example
 

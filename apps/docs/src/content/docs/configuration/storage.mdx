@@ -25,10 +25,10 @@ max_size       = "5gb"
 min_free_space = "500mb"
 ```
 
-| Key              | Type      | Default        | What it does                                                                                                              |
-| ---------------- | --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `max_size`       | byte size | `0` (no cap)   | Hard cap on total bytes used by RunWisp's log files (across all tasks).                                                   |
-| `min_free_space` | byte size | `0` (no check) | Refuse to start the daemon — and stop accepting log lines mid-run — when the data partition has less than this much free. |
+| Key              | Type      | Default        | What it does                                                                                                                                                 |
+| ---------------- | --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `max_size`       | byte size | `0` (no cap)   | Hard cap on total bytes used by RunWisp's log files (across all tasks).                                                                                      |
+| `min_free_space` | byte size | `0` (no check) | Refuse to start a run — and stop accepting log lines mid-run — when the data partition has less than this much free. Daemon startup itself is never blocked. |
 
 Both accept the same units as `log_max_size`: `b`, `kb`, `mb`, `gb`,
 `tb`, case-insensitive, with optional fractions (`"1.5gb"`).
@@ -64,10 +64,11 @@ and it's checked in two places:
   below the threshold, the run never starts — it's recorded with exit
   code `-1` and the message `insufficient disk space: X free, minimum Y
 required`. The daemon itself keeps running; only that run fails.
-- **During every run, as the logs grow.** If free space dips below the
-  threshold mid-run, the log writer stops accepting new lines and the
-  daemon raises a `log.disk_pressure` notification (severity `warn`) so
-  you find out about the output you're no longer seeing. What happens to
+- **Periodically during every run.** After roughly every 10 MB of output, the log writer
+  re-checks free space. If it has dipped below the threshold, the
+  log writer stops accepting new lines and the daemon raises a
+  `log.disk_pressure` notification (severity `warn`) so you find out
+  about the output you're no longer seeing. What happens to
   the process itself comes down to the task's `log_on_full`: - `drop_new` / `drop_old`: a system line `"Log output stopped:
 disk space critically low"` goes into the log and the process
   keeps running. - `kill_task`: the run is cancelled (`end_reason = "stopped"`)
@@ -100,8 +101,8 @@ to get us out of this gracefully."
 
 ## Sensible values
 
-The starter file ships with `5gb` / `500mb`, which is a safe baseline
-for a typical VPS. Tune it to your setup:
+A `5gb` / `500mb` split is a safe baseline for a typical VPS. Tune it
+to your setup:
 
 | Environment                  | Suggested `max_size`           | Suggested `min_free_space` |
 | ---------------------------- | ------------------------------ | -------------------------- |

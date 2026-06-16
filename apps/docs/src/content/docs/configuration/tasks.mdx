@@ -51,7 +51,7 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 | `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset. |
 | `jitter`            | inherited  | Cap how far this cron task's start may slip (up to this window) so tasks sharing a fire time take turns instead of stampeding. Needs a `cron` (no-op without one). [Details below](#jitter).                    |
 | `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                                                           |
-| `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero and negatives are rejected at config load.                                                                                                 |
+| `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero means "use the default" (100); negatives are rejected at config load.                                                                      |
 | `run_on_start`      | `false`    | Fire the task once every time the daemon starts, on top of any `cron`. The `@reboot` equivalent.                                                                                                                |
 
 Leave `cron` off and the task becomes **manual-only** — it runs only
@@ -188,11 +188,11 @@ today, but it's almost always a mistake.
 
 ## Concurrency
 
-| Key              | Default   | What it does                                                                                                                                                                  |
-| ---------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `max_concurrent` | `1`       | Maximum overlapping runs of this task. Positive integer; hard internal cap of 1024.                                                                                           |
-| `on_overlap`     | `"queue"` | What happens when a new firing arrives at the `max_concurrent` limit: `queue` / `skip` / `terminate`.                                                                         |
-| `queue_max`      | `100`     | When `on_overlap = "queue"`, cap on pending firings. New firings past the cap record `end_reason = "queue_full"`. Positive integer; hard internal cap of 10000. `0` rejected. |
+| Key              | Default   | What it does                                                                                                                                                                                                          |
+| ---------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `max_concurrent` | `1`       | Maximum overlapping runs of this task. Positive integer; hard internal cap of 1024.                                                                                                                                   |
+| `on_overlap`     | `"queue"` | What happens when a new firing arrives at the `max_concurrent` limit: `queue` / `skip` / `terminate`.                                                                                                                 |
+| `queue_max`      | `100`     | When `on_overlap = "queue"`, cap on pending firings. New firings past the cap record `end_reason = "queue_full"`. Positive integer; hard internal cap of 10000. Zero means "use the default"; negatives are rejected. |
 
 Most cron-style work is happiest with `max_concurrent = 1`.
 [Concurrency policies](/concepts/concurrency/) walks through when each
@@ -221,7 +221,8 @@ run        = "rsync --quiet ... ; exit $?"
 exit_codes = [0, 24]   # 24 = "some files vanished during transfer", harmless here
 ```
 
-Retries only fire on `failed` / `timeout` / `crashed`. A manual stop or
+Retries fire on `failed`, `timeout`, `crashed`, `log_overflow`, and
+`start_failed`. A manual stop or
 an `on_overlap = "terminate"` ends the chain — see the
 [terminate ⇄ retries callout](/concepts/concurrency/#terminate). The
 full table of backoff formulas lives on the
@@ -240,16 +241,18 @@ it'll SIGKILL the straggler before the per-task window is even up.
 
 ## Logs & retention
 
-| Key            | Default                     | What it does                                                                                                                                  |
-| -------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `log_max_size` | `100MB`                     | Per-run log cap. Units: `b`, `kb`, `mb`, `gb`, `tb`. Bare `0`, negative sizes, and malformed strings are rejected.                            |
-| `log_on_full`  | `"drop_old"`                | What to do at the cap: `drop_new`, `drop_old`, `kill_task`.                                                                                   |
-| `keep_runs`    | inherited from `[defaults]` | Keep the N most recent runs for this task. Positive integer; hard internal cap of 1 000 000. Omit to inherit; `0` and negatives rejected.     |
-| `keep_for`     | inherited from `[defaults]` | Delete runs older than this. Omit to inherit; zero and negatives rejected, and absurdly large values (over ~100 years) are rejected as typos. |
+| Key            | Default                     | What it does                                                                                                                                                                  |
+| -------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `log_max_size` | `100MB`                     | Per-run log cap. Units: `b`, `kb`, `mb`, `gb`, `tb`. Bare `0`, negative sizes, and malformed strings are rejected.                                                            |
+| `log_on_full`  | `"drop_old"`                | What to do at the cap: `drop_new`, `drop_old`, `kill_task`.                                                                                                                   |
+| `keep_runs`    | inherited from `[defaults]` | Keep the N most recent runs for this task. Positive integer; hard internal cap of 1 000 000. Omit to inherit; zero means "inherit from `[defaults]`"; negatives are rejected. |
+| `keep_for`     | inherited from `[defaults]` | Delete runs older than this. Omit to inherit; zero and negatives rejected, and absurdly large values (over ~100 years) are rejected as typos.                                 |
 
-Duration fields throughout `runwisp.toml` accept `s` (seconds), `m`
-(minutes), `h` (hours), `d` (days), and `w` (weeks) — e.g. `"30s"`,
-`"5m"`, `"36h"`, `"30d"`, `"2w"`. Mixed forms like `"1h30m"` work too.
+Most duration fields (`timeout`, `retry_delay`, `graceful_stop`,
+`jitter`, etc.) use Go's standard `h`/`m`/`s`/`ms` syntax. The only
+exception is `keep_for`, which adds `d` (days) and `w` (weeks) on top —
+so `"30d"` and `"2w"` work for `keep_for` but nowhere else. Mixed forms
+like `"1h30m"` work everywhere.
 
 Set both `keep_runs` and `keep_for` and they both apply — whichever one
 trims more aggressively is the one you'll feel. See
@@ -319,18 +322,18 @@ a task can't add up to more than 256.
 
 ## Working directory & shell
 
-| Key           | Default    | What it does                                                                                                                                      |
-| ------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `working_dir` | _(daemon)_ | Directory the process runs in. Relative paths resolve against the `runwisp.toml` directory; `~` expands. Must exist and be a folder.              |
-| `shell`       | `/bin/sh`  | Interpreter for `run`. Must be an **absolute** path (e.g. `/bin/bash`). The invocation is always `<shell> -c <script>`.                           |
-| `umask`       | _(daemon)_ | Octal file-creation mask applied to the run, e.g. `"027"`. 3–4 octal digits, up to `0777`. Empty inherits the daemon's umask.                     |
-| `user`        | _(daemon)_ | Run as another OS user, in `user` or `user:group` form (name or numeric id). Empty keeps the daemon's identity. Needs the daemon running as root. |
+| Key           | Default    | What it does                                                                                                                                                |
+| ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `working_dir` | _(daemon)_ | Directory the process runs in. Relative paths resolve against the `runwisp.toml` directory; `~` expands. Existence is checked at run time, not config load. |
+| `shell`       | `/bin/sh`  | Interpreter for `run`. Must be an **absolute** path (e.g. `/bin/bash`). The invocation is always `<shell> -c <script>`.                                     |
+| `umask`       | _(daemon)_ | Octal file-creation mask applied to the run, e.g. `"027"`. 3–4 octal digits, up to `0777`. Empty inherits the daemon's umask.                               |
+| `user`        | _(daemon)_ | Run as another OS user, in `user` or `user:group` form (name or numeric id). Empty keeps the daemon's identity. Needs the daemon running as root.           |
 
 By default a `run` script executes under `/bin/sh` in whatever directory
 the daemon was started from. Set `working_dir` when a script expects to be
 somewhere specific, and `shell` when you want bash-isms (arrays, `[[ ]]`,
-brace expansion). Both are validated at config load — a missing directory
-or a relative shell path fails loudly up front. `shell` can also be set
+brace expansion). A relative shell path fails at config load; a missing
+`working_dir` fails at run time. `shell` can also be set
 once in [`[defaults]`](/configuration/defaults/) for every task.
 
 `umask` controls the permission bits stripped from files the run creates —

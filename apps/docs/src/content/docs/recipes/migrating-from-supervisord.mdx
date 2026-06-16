@@ -102,8 +102,10 @@ RunWisp **service**. Most keys carry straight over:
 
 ## What needs a human
 
-The importer flags everything it can't map cleanly with a `# TODO` and a note —
-nothing is dropped silently. The ones to know about:
+The importer flags everything it can't map cleanly with a `# TODO` and a note
+for well-known keys it recognises but can't convert. Anything it doesn't
+recognise at all is skipped quietly — you won't lose it, but you won't
+get a warning either. The ones to know about:
 
 - **`autorestart`.** RunWisp services are _always-on_ — they restart whenever
   they exit. `autorestart=true` (and supervisord's default, `unexpected`) map to

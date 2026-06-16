@@ -60,7 +60,8 @@ with:
 - A captured stdout/stderr stream, written to a per-task log file and
   tailed live in the Web UI.
 - An end reason — `success`, `failed`, `stopped`, `timeout`,
-  `crashed`, `skipped`, or `log_overflow`.
+  `crashed`, `skipped`, `log_overflow`, `missed`, `queue_full`,
+  `dst_skipped`, `daemon_stopped`, or `start_failed`.
 - The same notification surface (per-task [`notify_on_failure` /
   `notify_on_success`](/notifications/per-task/), plus full [`[[notification_route]]`](/notifications/routes/) matching).
 
@@ -75,7 +76,7 @@ instances = 3
 run       = "/usr/local/bin/worker"
 ```
 
-Each replica shows up as its own run, tagged `replica_index` 0, 1, 2.
+Each replica shows up as its own run, tagged `instance_index` 0, 1, 2.
 They all share the same config, their logs are pooled per service, and
 when one replica's process exits the supervisor restarts just that one.
 

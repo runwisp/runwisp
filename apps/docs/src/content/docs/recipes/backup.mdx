@@ -126,11 +126,11 @@ the Web UI.
 ### `set -euo pipefail` inside `run`
 
 Bash's `-e` exits on the first failed command, `-u` errors on
-unset variables, `-o pipefail` propagates the exit code from any
-stage of a pipeline. Without these, a `pg_dump` that fails
-mid-stream will still produce a "successful" gzipped file (gzip
-exits 0 on truncated input) and your backup task will quietly
-return success.
+unset variables, `-o pipefail` makes a pipeline fail if any command
+in it fails (instead of only the last one). Without these, a
+`pg_dump` that fails mid-stream can produce a partial gzipped file
+while the script still exits 0 — because without `pipefail`, the
+pipeline's exit code comes from `gzip` alone, not `pg_dump`.
 
 This is the pattern for **every** non-trivial `run` block.
 RunWisp itself has no opinion on shell flags — the burden is on

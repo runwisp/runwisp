@@ -13,7 +13,9 @@ belongs to, so a glance at the file tells you which task pages which
 channel.
 
 Every `[tasks.*]` and `[services.*]` block takes two fields:
-`notify_on_failure` (run ended as `failed`, `timeout`, or `crashed`) and
+`notify_on_failure` (run ended as `failed`, `timeout`, `crashed`,
+`log_overflow`, or `start_failed`; also `run.missed` and
+`service.fatal`) and
 `notify_on_success` (run ended as `succeeded`). They work the same on
 tasks and services. The field tables in
 [`[tasks.*]`](/configuration/tasks/#notifications) and
@@ -134,7 +136,8 @@ A per-task field is for one task; a [`[[notification_route]]`
 block](/notifications/routes/) is for one rule covering many tasks.
 Reach for a rule when you need a pattern across many tasks
 (`match.task = "backup-*"`), a custom set of event kinds (the
-per-task failure list is always `failed + timeout + crashed`), or
+per-task failure list covers `failed`, `timeout`, `crashed`,
+`log_overflow`, `start_failed`, `run.missed`, and `service.fatal`), or
 routing for kinds that have no task — for example
 `notify.delivery_failed`. Per-task fields and rules mix freely: the
 router collects every channel that matches and sends one message per

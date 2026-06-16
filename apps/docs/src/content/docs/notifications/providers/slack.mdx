@@ -165,8 +165,8 @@ runwisp exec smoke-test       # whatever you have that exits non-zero
 ```
 
 Within a few seconds you should see a message in `#ops` with the task
-name, end reason, and a preview of the captured stderr, plus a new
-row in the Web UI's bell. If only the bell shows a row, Slack
+name, end reason, and a preview of the captured output. If only the bell
+shows a row, Slack
 delivery failed — open the bell and look for a
 `notify.delivery_failed` event with the underlying reason.
 
@@ -174,11 +174,12 @@ delivery failed — open the bell and look for a
 
 The default Slack template builds one message per event as Block Kit
 JSON. You get a header with the task name and verb, a section with the
-event sentence and what triggered it, a code-block tail (failures and
-timeouts only), an action button that jumps to the run (when
+event sentence and what triggered it, a code-block tail (for
+`run.failed` and `run.timeout`), an action button that jumps to the run (when
 [`[daemon] external_url`](/configuration/daemon/#external_url) is set),
-and a footer carrying the daemon's fingerprint. Every event kind uses
-that same shape — only the emoji, verb, and sentence change. Rendered
+and a footer reading "from runwisp" (with the daemon's fingerprint
+appended when set). Every event kind uses that same shape — only the
+emoji, verb, and sentence change. Rendered
 in a channel, a failure looks like:
 
 ```

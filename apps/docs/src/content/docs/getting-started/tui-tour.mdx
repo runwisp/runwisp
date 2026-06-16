@@ -8,8 +8,8 @@ description: A guided walkthrough of the RunWisp terminal UI — the Open Web UI
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 The TUI is the keyboard-first half of RunWisp. It runs in a terminal,
-binds to whatever daemon is on the address you point it at (default
-`localhost:9477`), and lets you do almost everything the Web UI can —
+connects to the local daemon over the Unix socket, and lets you do
+almost everything the Web UI can —
 trigger tasks, follow logs, restart services, browse notifications —
 without leaving the shell.
 
@@ -21,20 +21,20 @@ runwisp tui       # attach a fresh TUI to an already-running daemon
 ```
 
 The first form is the everyday one. The second is for SSHing in to
-inspect a daemon you started elsewhere — `runwisp tui --host …` lets
-you point at a remote instance.
+inspect a daemon you started elsewhere.
 
 ## The Home page (and "Open Web UI")
 
-The TUI lands on **Home**, with the focus already on
-`▸ ⮕ Open Web UI`:
+The TUI lands on **Home**, with focus on the sidebar. Press
+whatever key takes you to `▸ ⮕ Open Web UI`:
 
 ![TUI Home page: sidebar listing task groups, right pane showing Open Web UI row, Web UI URL, masked password, and a recent-activity table with status, duration, and trigger columns.](../../../assets/screenshots/tui-home.png)
 
 Press `Enter` and the TUI opens your default browser straight into the
 dashboard, already logged in — no copy-pasting the password, no
-lockouts from typos. On a server with no browser available, it prints
-the URL instead so you can paste it from another machine.
+lockouts from typos. On a server with no browser available, it copies
+the URL to your clipboard instead so you can paste it from another
+machine.
 
 The other rows on Home:
 
@@ -48,7 +48,7 @@ Home page shows only the Open Web UI action and the Web UI URL.
 
 Press `n` while on Home to expand the **notifications panel** at the
 top — a scrollable list of in-app notifications with severity dots,
-timestamps, and read-state toggling.
+relative timestamps (like "5m ago"), and read-state toggling.
 
 ## The shell
 
@@ -95,7 +95,7 @@ itself.
 `Enter` on a row in the recent-activity list (or in a task's run
 history) opens the **run detail view** — log streamed live from the
 daemon, line-numbered, with a header showing run ID, start time,
-duration, and either a "Run Again" button (for ended runs) or a
+duration, and either a "Retry" button (for ended runs) or a
 "Stop" button (for runs that are still going).
 
 The keybindings live in the help bar at the bottom of the screen — the
@@ -107,15 +107,15 @@ currently available.
 A few keys worth flagging since they aren't obvious:
 
 - `f` — **Fullscreen** the log. Header and line numbers go away;
-  native terminal selection works. Right move for copy-paste.
+  only the raw log fills the terminal. Right move for copy-paste.
 - `d` — **Download** the run's full log. On a graphical session this
   opens your browser to the download URL; on SSH it copies the URL to
   your clipboard or shows it in a modal you can paste from.
 - `r` / `s` — Retry / Stop the run, depending on its current state.
 
 The log starts in **follow mode** — it auto-scrolls to the tail as
-new lines arrive. Any manual scroll (`↑`, `PgUp`, `g`, `G`)
-**pauses the follow**; press `G` to jump back to the tail and resume.
+new lines arrive. Manual scrolling up (`↑`, `PgUp`, `g`) **pauses the
+follow**; press `G` to jump to the tail and re-engage follow mode.
 
 ![TUI fullscreen log view: no sidebar, no header, pure log lines filling the terminal.](../../../assets/screenshots/tui-fullscreen-mode.png)
 
@@ -129,8 +129,9 @@ Open the run detail view for a failed run and three things tell you
 what went wrong before you even scroll:
 
 - **The header status badge** carries the end reason — `failed`,
-  `timeout`, `crashed`, `stopped`, `skipped`, or `log_overflow`. Each
-  is a distinct status with a distinct colour, not a generic "error."
+  `timeout`, `crashed`, `stopped`, `skipped`,
+  `log_overflow`, and the rest. Each is a distinct status with its
+  own colour, not a generic "error."
 - **The exit code** sits in the header next to duration. Sentinel
   codes are real: `-1` is a skipped run that never ran (`on_overlap =
 "skip"` rejected it), `-2` is a `crashed` run the daemon was killed
@@ -171,10 +172,11 @@ error and exits — see [Auth][auth] for the details.
 ## Connection-lost handling
 
 When the daemon goes away (network blip, restart, hard crash), the
-TUI auto-retries in the background. The Debug page shows the
-reconnect log; everything else freezes until the stream resumes. No
-manual "retry" key needed — when the daemon is back, the TUI catches
-up on its own.
+TUI retries the connection in the background. The Debug page logs
+the reconnect attempt; the rest of the UI keeps showing whatever state
+it last had until the daemon comes back and fresh data streams in.
+No manual "retry" key needed — when the daemon is back, the TUI
+catches up on its own.
 
 ## Quitting
 
@@ -194,7 +196,7 @@ The TUI is a control surface, not a config editor. It'll trigger, stop,
 restart, and observe — but it won't:
 
 - **Edit config.** `runwisp.toml` is the source of truth. Open it in
-  your editor and restart the daemon to pick up changes.
+  your editor and run `runwisp reload` (or restart) to pick up changes.
 - **Set up notifications.** Routes and notifiers are configured in
   TOML.
 - **Create or delete tasks.** Same reason — they live in TOML.

@@ -9,7 +9,8 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 If a task exits non-zero, RunWisp can take another crack at it. If a run
 drags on too long, RunWisp can pull the plug. You set both per task, and
-anything you leave off falls back to a sensible default from
+anything you leave off falls back to its built-in default — retry
+settings don't inherit from
 [`[defaults]`](/configuration/defaults/).
 
 Retries are a **task** thing only. Services don't retry — they
@@ -113,9 +114,10 @@ A few places where retries bump into other features:
   a brand-new execution, not a retry.
 - **Manual stop.** Same deal — stop a run from the API or UI and it ends
   as `stopped`, which ends the retry chain.
-- **`max_concurrent > 1`.** Retries don't count toward `max_concurrent`.
-  A retry only starts once its predecessor has finished, so there's no
-  overlap left to evaluate.
+- **`max_concurrent > 1`.** Retries go through
+  the same concurrency check — but since a retry
+  only starts once its predecessor has finished,
+  there's no overlap left to evaluate.
 
 ## Services don't retry
 
@@ -136,8 +138,11 @@ difference is in the surrounding knobs: tasks have `retry_attempts`
 | `restart_delay`   | ❌ rejected                                                  | ✅ default `1s`                                                 |
 | `restart_backoff` | ❌ rejected                                                  | ✅ `constant` / `linear` / `exponential`, default `exponential` |
 
-A service supervisor will restart a replica forever — with bounded
-exponential backoff — until you explicitly stop it.
+A service supervisor restarts a replica with bounded exponential
+backoff as long as it looks like the replica can come back — but if
+it exits before `healthy_after` too many times in a row, the supervisor
+marks that slot [FATAL](/configuration/services/#when-a-service-cant-start-fatal)
+and stops trying until you manually restart the service.
 
 ### Healthy threshold: `healthy_after`
 

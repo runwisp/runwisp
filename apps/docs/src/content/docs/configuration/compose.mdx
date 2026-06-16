@@ -68,7 +68,7 @@ restart           = "always"
 notify_on_failure = ["slack-prod"]
 graceful_stop     = "30s"
 keep_runs         = 100
-env               = { LOG_LEVEL = "info" }  # merged on top of compose env
+env               = { LOG_LEVEL = "info" }  # layered on top of compose env at runtime
 
 [compose.myapp.worker]
 restart   = "on_failure"
