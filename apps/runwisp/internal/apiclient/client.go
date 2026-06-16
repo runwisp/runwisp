@@ -34,11 +34,19 @@ type Client struct {
 	local        bool
 }
 
+// NormalizeBaseURL trims a trailing slash so a base URL maps to a single
+// canonical form. New applies it to every Client; callers that key state by
+// daemon URL (e.g. the CLI's session-token cache) use it to line their key up
+// with the URL the client actually talks to.
+func NormalizeBaseURL(baseURL string) string {
+	return strings.TrimRight(baseURL, "/")
+}
+
 // New constructs a Client for a remote daemon. baseURL must be an http(s)
 // URL; the client will run CHAP via Authenticate to obtain a JWT.
 func New(baseURL, password string) *Client {
 	return &Client{
-		baseURL:  strings.TrimRight(baseURL, "/"),
+		baseURL:  NormalizeBaseURL(baseURL),
 		password: password,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,

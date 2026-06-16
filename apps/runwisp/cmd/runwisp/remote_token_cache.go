@@ -13,6 +13,7 @@ import (
 
 	"log/slog"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/datadir"
 )
 
@@ -61,7 +62,7 @@ func loadCachedToken(baseURL string) string {
 	if err := json.Unmarshal(data, &cache); err != nil {
 		return ""
 	}
-	entry, ok := cache[normalizeBaseURL(baseURL)]
+	entry, ok := cache[apiclient.NormalizeBaseURL(baseURL)]
 	if !ok || entry.Token == "" {
 		return ""
 	}
@@ -84,7 +85,7 @@ func storeCachedToken(baseURL, token string) {
 	if data, readErr := os.ReadFile(path); readErr == nil {
 		_ = json.Unmarshal(data, &cache) // a corrupt file is simply overwritten
 	}
-	cache[normalizeBaseURL(baseURL)] = cachedToken{Token: token, ExpiresAt: jwtExpiry(token)}
+	cache[apiclient.NormalizeBaseURL(baseURL)] = cachedToken{Token: token, ExpiresAt: jwtExpiry(token)}
 
 	data, err := json.Marshal(cache)
 	if err != nil {
@@ -98,12 +99,6 @@ func storeCachedToken(baseURL, token string) {
 	if err := datadir.WriteSecretFile(path, data); err != nil {
 		slog.Debug("Skipping token cache: write failed", "err", err)
 	}
-}
-
-// normalizeBaseURL matches apiclient.New's trimming so the cache key lines up
-// with the URL the client actually talks to.
-func normalizeBaseURL(baseURL string) string {
-	return strings.TrimRight(baseURL, "/")
 }
 
 // jwtExpiry pulls the `exp` claim (unix seconds) out of a JWT without
