@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,6 +58,39 @@ func TestCLIValidateCmd(t *testing.T) {
 	require.NoError(t, os.WriteFile(badPath, []byte("[tasks.bad\n"), 0o600))
 	_, err = runCLI(t, projectDir, binaryPath, "validate", "--config", badPath)
 	require.Error(t, err, "validate should fail on malformed TOML")
+}
+
+// TestCloudCmdBootErrorVisible guards against silent boot crashes in TUI mode.
+// `runwisp cloud` (without --no-tui) reroutes slog into the TUI debug buffer
+// before opening the config; that buffer only drains once the TUI attaches, so
+// a boot failure used to exit 1 with no output at all. The fatal error must
+// reach stderr. The cloud URL points at a closed port — boot fails at config
+// parse, before any connection attempt, so the test stays offline.
+func TestCloudCmdBootErrorVisible(t *testing.T) {
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	configDir := t.TempDir()
+	badPath := filepath.Join(configDir, "bad.toml")
+	require.NoError(t, os.WriteFile(badPath, []byte("[tasks.bad\n"), 0o600))
+
+	cmd := exec.Command(
+		binaryPath,
+		"--config", badPath,
+		"--data", testutil.ShortTempDir(t),
+		"cloud",
+	)
+	// configDir as cwd keeps the command away from any developer .env file
+	// (the cloud subcommand loads ./.env by default).
+	cmd.Dir = configDir
+	cmd.Env = subprocEnv(
+		"RUNWISP_CLOUD_TOKEN=rt_e2e_dummy_token",
+		"RUNWISP_CLOUD_URL=https://127.0.0.1:1",
+	)
+	out, err := cmd.CombinedOutput()
+	require.Error(t, err, "cloud mode with a malformed config must exit non-zero: %s", out)
+	require.Contains(t, string(out), "failed to parse config file",
+		"fatal boot error must be visible on stderr, got: %q", string(out))
 }
 
 func TestCLIListCmd(t *testing.T) {

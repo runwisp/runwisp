@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Cloud-managed services.** When connected to a control plane, the daemon can apply, start, stop, and restart supervised services on command, and reports each service's live state — including a distinct `fatal` once it has exhausted its restart budget.
+- **Remote log search.** The control plane can full-text search a single execution's on-disk log over the protocol, not just replay it.
+- **Remote agent restart.** A service-managed daemon can restart its own process on a control-plane command.
+
 ### Changed
 
 - **Service instances are labelled 1-based.** A multi-instance service now shows every run as `name#1`, `name#2`, `name#3` in the Web UI and TUI instead of `name`, `name#1`, `name#2`; a single-instance service stays just `name`. See [Services](https://docs.runwisp.com/configuration/services/).
@@ -16,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **TUI run-detail Delete button.** Clicking 🗑 Delete with the mouse now opens the confirm dialog, and keyboard focus reaches the action button from both header rows.
+
+### Fixed
+
+- **Fatal boot errors are no longer silent in TUI mode.** `runwisp` / `runwisp cloud` died with exit 1 and no output when startup failed before the TUI attached (e.g. a config parse error); the error now reaches stderr.
 
 ## [0.10.0] - 2026-06-18
 

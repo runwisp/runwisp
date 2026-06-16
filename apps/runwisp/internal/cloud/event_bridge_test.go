@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func newTestBridge(h *InboundHandler) *EventBridge {
@@ -259,124 +259,162 @@ func TestEventBridge_HandleLogLineEvent_IgnoresNonListenerExec(t *testing.T) {
 	assert.Equal(t, 0, sent)
 }
 
-// --- finalizeRun: uploader success branch ---
+// --- finalizeRun (terminal-before-archive ordering) ---
 
-// inboundHandlerWithUploader builds an InboundHandler whose Uploader() returns
-// a real LogUploader. finalizeRun's success path resolves the run's on-disk log
-// path via the handler's LogDir(), archives it, and overlays LogPath/LogSize
-// onto the outbound update. Covering this branch requires both an HTTP fixture
-// for the gzip+PUT and a pre-registered dispatch entry.
-func inboundHandlerWithUploader(t *testing.T, uploader *LogUploader, logDir string) *InboundHandler {
-	t.Helper()
-	return NewInboundHandler(
-		nil, nil, logDir,
-		executor.Availability{},
-		func(protocol.ExecutionUpdateMessage) {},
-		uploader,
-	)
-}
-
-func TestEventBridge_FinalizeRun_UploaderSuccess_OverlaysLogPathAndSize(t *testing.T) {
+// TestEventBridge_FinalizeRun_TerminalBeforeArchiveThenAttach pins the
+// fast-finish contract: the terminal update leaves before the archive PUT
+// starts, a second identical update carrying logPath/logSize follows a
+// successful upload, and the log listener is removed only after both.
+func TestEventBridge_FinalizeRun_TerminalBeforeArchiveThenAttach(t *testing.T) {
 	logDir := t.TempDir()
-	run := newTerminalRun("greet", "01HX-RUN-FIN", "exec-fin-ok")
-	writeRunLog(t, logDir, run, "log contents for archive\n")
+	execID := "exec-finalize"
+	reason := model.ReasonSuccess
+	run := newTerminalRun("task-a", "run-1", execID)
+	run.EndReason = &reason
+	writeRunLog(t, logDir, run, "line 1\n")
+
+	var mu sync.Mutex
+	var journal []string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		journal = append(journal, "upload")
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
-	repo := newFakePendingRepo()
-	runs := &fakeRunRepo{byExt: map[string]*model.Run{"exec-fin-ok": run}}
-	uploader := NewLogUploader(repo, runs, logDir, fixedClock())
-	uploader.httpClient = srv.Client()
+	uploader := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, logDir, fixedClock())
+	if err := uploader.RegisterDispatch(context.Background(), execID, srv.URL, "logs/org/key.gz"); err != nil {
+		t.Fatalf("RegisterDispatch: %v", err)
+	}
 
-	require.NoError(t, uploader.RegisterDispatch(context.Background(), "exec-fin-ok", srv.URL, "archive/exec-fin-ok.log.gz"))
+	h := NewInboundHandler(nil, nil, logDir, executor.Availability{},
+		func(protocol.ExecutionUpdateMessage) {}, uploader, nil, nil)
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: execID})
 
-	h := inboundHandlerWithUploader(t, uploader, logDir)
-	// Register a log listener so finalizeRun's cleanup path is exercised.
-	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: "exec-fin-ok"})
-
-	var captured protocol.ExecutionUpdateMessage
-	var sent int
-	tracker := NewExecutionTracker()
-	b := NewEventBridge(
-		events.NewEventBus(),
-		h,
-		tracker,
-		func(message any) error {
-			if upd, ok := message.(protocol.ExecutionUpdateMessage); ok {
-				captured = upd
-				sent++
-			}
+	var sent []protocol.ExecutionUpdateMessage
+	sendReady := func(msg any) error {
+		update, ok := msg.(protocol.ExecutionUpdateMessage)
+		if !ok {
 			return nil
-		},
-		func() {},
-	)
+		}
+		mu.Lock()
+		sent = append(sent, update)
+		if update.LogPath == "" {
+			journal = append(journal, "terminal-update")
+		} else {
+			journal = append(journal, "attach-update")
+		}
+		mu.Unlock()
+		// The listener must survive both updates: live streaming keeps
+		// working while the archive uploads; removal is strictly last.
+		assert.True(t, h.IsLogListener(execID),
+			"log listener removed before updates finished")
+		return nil
+	}
 
-	reason := model.ReasonSuccess
-	extID := "exec-fin-ok"
-	run.EndReason = &reason
-	update := protocol.ExecutionUpdateMessage{ExecutionID: extID}
+	b := NewEventBridge(events.NewEventBus(), h, NewExecutionTracker(), sendReady, func() {})
 
-	b.finalizeRun(context.Background(), run, update, extID)
+	update := mapRunToExecutionUpdate(run)
+	if update == nil {
+		t.Fatal("mapRunToExecutionUpdate returned nil for terminal run")
+	}
+	b.finalizeRun(context.Background(), run, *update, execID)
 
-	assert.Equal(t, 1, sent, "finalizeRun must queue exactly one terminal update")
-	assert.Equal(t, "archive/exec-fin-ok.log.gz", captured.LogPath, "LogPath must be overlaid from uploader result")
-	assert.Greater(t, captured.LogSize, int64(0), "LogSize must be overlaid from uploader result")
-	assert.False(t, h.IsLogListener(extID), "log listener must be removed after finalize")
-	assert.Equal(t, 0, repo.count(), "successful upload must drop the pending row")
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{"terminal-update", "upload", "attach-update"}, journal,
+		"terminal update must be sent before the archive PUT, attach after")
+	if assert.Len(t, sent, 2) {
+		assert.Empty(t, sent[0].LogPath, "first update must not carry archive coordinates")
+		assert.Zero(t, sent[0].LogSize)
+		assert.Equal(t, "logs/org/key.gz", sent[1].LogPath)
+		assert.Positive(t, sent[1].LogSize)
+		assert.Equal(t, sent[0].ExecutionID, sent[1].ExecutionID)
+		assert.Equal(t, sent[0].Status, sent[1].Status,
+			"attach update must repeat the same terminal status")
+	}
+	assert.False(t, h.IsLogListener(execID), "log listener must be removed at the end")
 }
 
-// finalizeRun's archive-error branch logs and falls through, sending the
-// update untouched. We cover it by pointing the uploader at a server that
-// returns 500 — Archive bubbles that up, finalizeRun swallows it.
-func TestEventBridge_FinalizeRun_UploaderError_SendsUpdateWithoutLogPath(t *testing.T) {
+// TestEventBridge_FinalizeRun_ArchiveFailureSendsSingleUpdate pins the
+// degraded path: the terminal update has already gone out by the time the
+// upload fails permanently, no attach update follows, and the listener is
+// still cleaned up.
+func TestEventBridge_FinalizeRun_ArchiveFailureSendsSingleUpdate(t *testing.T) {
 	logDir := t.TempDir()
-	run := newTerminalRun("greet", "01HX-RUN-ERR", "exec-fin-err")
-	writeRunLog(t, logDir, run, "log\n")
+	execID := "exec-upload-fails"
+	reason := model.ReasonSuccess
+	run := newTerminalRun("task-a", "run-1", execID)
+	run.EndReason = &reason
+	writeRunLog(t, logDir, run, "line 1\n")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// 4xx returns a PermanentError — no retries, keeping the test fast.
-		w.WriteHeader(http.StatusForbidden)
+		w.WriteHeader(http.StatusForbidden) // 4xx = permanent, no retry loop
 	}))
 	defer srv.Close()
 
-	repo := newFakePendingRepo()
-	runs := &fakeRunRepo{byExt: map[string]*model.Run{"exec-fin-err": run}}
-	uploader := NewLogUploader(repo, runs, logDir, fixedClock())
-	uploader.httpClient = srv.Client()
+	uploader := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, logDir, fixedClock())
+	if err := uploader.RegisterDispatch(context.Background(), execID, srv.URL, "logs/org/key.gz"); err != nil {
+		t.Fatalf("RegisterDispatch: %v", err)
+	}
 
-	require.NoError(t, uploader.RegisterDispatch(context.Background(), "exec-fin-err", srv.URL, "archive/exec-fin-err.log.gz"))
+	h := NewInboundHandler(nil, nil, logDir, executor.Availability{},
+		func(protocol.ExecutionUpdateMessage) {}, uploader, nil, nil)
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: execID})
 
-	h := inboundHandlerWithUploader(t, uploader, logDir)
+	var sent []protocol.ExecutionUpdateMessage
+	b := NewEventBridge(events.NewEventBus(), h, NewExecutionTracker(), func(msg any) error {
+		if update, ok := msg.(protocol.ExecutionUpdateMessage); ok {
+			sent = append(sent, update)
+		}
+		return nil
+	}, func() {})
 
-	var captured protocol.ExecutionUpdateMessage
-	var sent int
-	b := NewEventBridge(
-		events.NewEventBus(),
-		h,
-		NewExecutionTracker(),
-		func(message any) error {
-			if upd, ok := message.(protocol.ExecutionUpdateMessage); ok {
-				captured = upd
-				sent++
-			}
-			return nil
-		},
-		func() {},
-	)
+	update := mapRunToExecutionUpdate(run)
+	if update == nil {
+		t.Fatal("mapRunToExecutionUpdate returned nil for terminal run")
+	}
+	b.finalizeRun(context.Background(), run, *update, execID)
 
-	reason := model.ReasonFailed
-	extID := "exec-fin-err"
+	if assert.Len(t, sent, 1, "no attach update after a failed upload") {
+		assert.Empty(t, sent[0].LogPath)
+		assert.Zero(t, sent[0].LogSize)
+	}
+	assert.False(t, h.IsLogListener(execID))
+}
+
+// TestEventBridge_FinalizeRun_NoUploaderSendsSingleUpdate covers daemons
+// dispatched without a logUploadURL (uploader nil on the handler): a single
+// terminal update, no archive coordinates, listener cleaned up.
+func TestEventBridge_FinalizeRun_NoUploaderSendsSingleUpdate(t *testing.T) {
+	execID := "exec-no-uploader"
+	reason := model.ReasonSuccess
+	run := newTerminalRun("task-a", "run-1", execID)
 	run.EndReason = &reason
-	update := protocol.ExecutionUpdateMessage{ExecutionID: extID}
 
-	b.finalizeRun(context.Background(), run, update, extID)
+	h := newTestInboundHandler()
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: execID})
 
-	assert.Equal(t, 1, sent, "update is queued even on archive failure")
-	assert.Equal(t, "", captured.LogPath, "LogPath stays empty when archive fails")
-	assert.Equal(t, int64(0), captured.LogSize, "LogSize stays zero when archive fails")
+	var sent []protocol.ExecutionUpdateMessage
+	b := NewEventBridge(events.NewEventBus(), h, NewExecutionTracker(), func(msg any) error {
+		if update, ok := msg.(protocol.ExecutionUpdateMessage); ok {
+			sent = append(sent, update)
+		}
+		return nil
+	}, func() {})
+
+	update := mapRunToExecutionUpdate(run)
+	if update == nil {
+		t.Fatal("mapRunToExecutionUpdate returned nil for terminal run")
+	}
+	b.finalizeRun(context.Background(), run, *update, execID)
+
+	if assert.Len(t, sent, 1) {
+		assert.Empty(t, sent[0].LogPath)
+	}
+	assert.False(t, h.IsLogListener(execID))
 }
 
 // --- handleLogLineEvent ---

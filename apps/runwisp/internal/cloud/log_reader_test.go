@@ -38,7 +38,7 @@ func writeRunLogRecords(t *testing.T, logDir string, run *model.Run, entries []l
 func TestReadExecutionLogReplay_NilRun(t *testing.T) {
 	items, final, err := readExecutionLogReplay(nil, "/tmp", 0, 0)
 	require.NoError(t, err)
-	assert.True(t, final)
+	assert.False(t, final, "unknown run must not be final — the dispatch may not have arrived yet")
 	assert.Nil(t, items)
 }
 

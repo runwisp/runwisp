@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -19,16 +20,26 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-const (
-	authReadTimeout            = 20 * time.Second
-	heartbeatInterval          = 30 * time.Second
-	heartbeatSilenceTimeout    = 45 * time.Second
-	watchdogInterval           = 5 * time.Second
-	writeTimeout               = 10 * time.Second
+func envDuration(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return fallback
+}
+
+var (
+	authReadTimeout            = envDuration("RUNWISP_CLOUD_AUTH_TIMEOUT", 20*time.Second)
+	heartbeatInterval          = envDuration("RUNWISP_CLOUD_HEARTBEAT_INTERVAL", 5*time.Second)
+	heartbeatSilenceTimeout    = envDuration("RUNWISP_CLOUD_HEARTBEAT_SILENCE_TIMEOUT", 15*time.Second)
+	watchdogInterval           = envDuration("RUNWISP_CLOUD_WATCHDOG_INTERVAL", 2*time.Second)
+	writeTimeout               = envDuration("RUNWISP_CLOUD_WRITE_TIMEOUT", 5*time.Second)
 	outboundMessageBufferSize  = 256
 	maxPendingExecutionUpdates = 2048
-	maxInboundMessageSize      = 4 * 1024 * 1024 // 4 MiB
 )
+
+const maxInboundMessageSize int64 = 4 * 1024 * 1024 // 4 MiB
 
 type Dependencies struct {
 	TaskManager       TaskRunner
@@ -39,6 +50,13 @@ type Dependencies struct {
 	LogDir            string
 	Availability      executor.Availability
 	OnConnected       func()
+	// RequestRestart asks the daemon to restart its own process when cloud
+	// sends agent:restart. nil rejects the command (e.g. not service-managed).
+	RequestRestart func() error
+	// SystemStats, when set, returns a live host snapshot the heartbeat
+	// piggybacks for the control plane's per-runner metrics view. nil sends a
+	// plain ping (the cloud falls back to identity-only runner info).
+	SystemStats func() model.SystemStats
 	// Now is the wall-clock source used by sub-components that persist
 	// timestamps (currently only the log uploader). Production wires
 	// time.Now; tests inject a fixed clock for deterministic fixtures. nil
@@ -52,6 +70,7 @@ type Client struct {
 	logDir  string
 
 	syncClient   *TaskSyncClient
+	taskManager  TaskRunner
 	localTasks   map[string]*model.Task
 	availability executor.Availability
 	onConnected  func()
@@ -103,6 +122,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		runRepo:      deps.RunRepo,
 		logDir:       deps.LogDir,
 		syncClient:   NewTaskSyncClient(cfg.TaskSyncURL(), cfg.TaskSyncTimeout),
+		taskManager:  deps.TaskManager,
 		localTasks:   localTasks,
 		availability: deps.Availability,
 		onConnected:  deps.OnConnected,
@@ -120,9 +140,14 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 			client.tracker.QueueUpdate(update, connMgr.sendIfReady)
 		},
 		uploader,
+		tracker,
+		deps.RequestRestart,
 	)
 
-	client.sessions = &sessionRunner{handler: client.handler}
+	client.sessions = &sessionRunner{
+		handler:     client.handler,
+		systemStats: makeSystemStatsProvider(deps.SystemStats),
+	}
 
 	client.bridge = NewEventBridge(
 		deps.EventBus,
@@ -179,10 +204,10 @@ func (client *Client) Run(ctx context.Context) error {
 		resetBackoff, err := client.runConnectionAttempt(ctx)
 		if err != nil {
 			if isHardAuthError(err) {
-				slog.Info("cloud integration stopped due to hard auth error", "error", err.Error())
+				slog.Error("cloud integration stopped due to hard auth error", "error", err.Error())
 				return err
 			}
-			slog.Info("cloud connection attempt ended", "error", err.Error())
+			slog.Warn("cloud connection attempt ended", "error", err.Error())
 		}
 
 		if resetBackoff {
@@ -237,6 +262,14 @@ func (client *Client) dialWebSocket(ctx context.Context) (*websocket.Conn, error
 	if capJSON, err := json.Marshal(client.availability); err == nil {
 		headers.Set("X-Runner-Capabilities", string(capJSON))
 	}
+	// Advertise the cloud→daemon message types this daemon understands so the
+	// cloud can gate features that depend on the daemon acting (and fall back
+	// for older daemons that lack the type). Derived from inboundDecoders so it
+	// can never drift from what we actually handle. See the forward-compat
+	// contract atop packages/asyncapi/asyncapi.yaml.
+	if featJSON, err := json.Marshal(supportedInboundTypes()); err == nil {
+		headers.Set("X-Runner-Protocol-Features", string(featJSON))
+	}
 
 	dialCtx, cancelDial := context.WithTimeout(ctx, client.config.RequestTimeout)
 	defer cancelDial()
@@ -268,7 +301,7 @@ func (client *Client) authenticate(ctx context.Context, connection *websocket.Co
 func (client *Client) syncTasks(ctx context.Context, connection *websocket.Conn) error {
 	client.conn.setState(StateSyncing)
 	syncCtx, cancelSync := context.WithTimeout(ctx, client.config.TaskSyncTimeout)
-	syncResult, syncErr := client.syncClient.SyncTasks(syncCtx, client.config.CloudToken, client.localTasks)
+	syncResult, syncErr := client.syncClient.SyncTasks(syncCtx, client.config.CloudToken, client.snapshotForSync())
 	cancelSync()
 	if syncErr != nil {
 		return syncErr
@@ -282,6 +315,33 @@ func (client *Client) syncTasks(ctx context.Context, connection *websocket.Conn)
 		"total", syncResult.Summary.Total,
 	)
 	return nil
+}
+
+// snapshotForSync builds the task set reported in tasks.sync: the TOML-loaded
+// local tasks plus every daemon-supervised service the task manager currently
+// holds that the TOML doesn't already cover. The extras are cloud-declared
+// services (registered at runtime via service:apply, named "cloud-<id>"); folding
+// them in tells the cloud they are live on this runner, which gates their
+// deletion. A cold-start's first sync runs before any service:apply has landed,
+// so a freshly declared service is confirmed on the next sync (reconnect or
+// TOML reload), not this one — the task manager retains it across reconnects.
+func (client *Client) snapshotForSync() map[string]*model.Task {
+	snapshot := make(map[string]*model.Task, len(client.localTasks))
+	for name, task := range client.localTasks {
+		snapshot[name] = task
+	}
+	if client.taskManager != nil {
+		for _, svc := range client.taskManager.ListServiceTasks() {
+			if svc == nil {
+				continue
+			}
+			if _, ok := snapshot[svc.Name]; ok {
+				continue // TOML already covers it with its richer definition.
+			}
+			snapshot[svc.Name] = svc
+		}
+	}
+	return snapshot
 }
 
 func (client *Client) startSession(ctx context.Context, connection *websocket.Conn) error {

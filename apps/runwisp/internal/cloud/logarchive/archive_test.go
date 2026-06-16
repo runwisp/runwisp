@@ -31,10 +31,13 @@ func TestArchiveSuccess(t *testing.T) {
 	logPath := writeLog(t, "hello world\nline two\n")
 
 	var receivedBody bytes.Buffer
+	var gotEncoding, gotType string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			t.Errorf("got method=%q want PUT", r.Method)
 		}
+		gotEncoding = r.Header.Get("Content-Encoding")
+		gotType = r.Header.Get("Content-Type")
 		if _, err := io.Copy(&receivedBody, r.Body); err != nil {
 			t.Fatalf("copy body: %v", err)
 		}
@@ -48,6 +51,15 @@ func TestArchiveSuccess(t *testing.T) {
 	}
 	if size <= 0 {
 		t.Errorf("size=%d want >0", size)
+	}
+
+	// The body is gzip-compressed but advertised as gzip-encoded text so a
+	// browser fetching the signed GET URL auto-decompresses it to plain text.
+	if gotEncoding != "gzip" {
+		t.Errorf("Content-Encoding=%q want gzip", gotEncoding)
+	}
+	if gotType != "text/plain; charset=utf-8" {
+		t.Errorf("Content-Type=%q want text/plain; charset=utf-8", gotType)
 	}
 
 	gz, err := gzip.NewReader(&receivedBody)

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/runlog"
@@ -29,7 +31,7 @@ func startCloudClient(
 	ctx context.Context,
 	cfg *daemonConfig,
 	svc *daemonServices,
-	f Flags,
+	srv *server.Server,
 ) (context.CancelFunc, *sync.WaitGroup) {
 	cloudCtx, cancelCloud := context.WithCancel(ctx)
 	var cloudWG sync.WaitGroup
@@ -44,12 +46,14 @@ func startCloudClient(
 		PendingUploadRepo: svc.DB,
 		EventBus:          svc.EventBus,
 		LocalTasks:        svc.Tasks.Snapshot(),
-		LogDir:            f.LogDir(),
+		LogDir:            flags.LogDir(),
 		Availability:      svc.Executor.Availability(),
 		Now:               time.Now,
 		OnConnected: func() {
 			slog.Info("Cloud connected")
 		},
+		RequestRestart: requestSelfRestart,
+		SystemStats:    srv.SystemStats,
 	})
 	if clientErr != nil {
 		slog.Error("Failed to create cloud client", "err", clientErr)
@@ -68,6 +72,26 @@ func startCloudClient(
 	}
 
 	return cancelCloud, &cloudWG
+}
+
+// requestSelfRestart honours a cloud agent:restart by delivering SIGTERM to
+// this process, which the signal handler turns into the same graceful shutdown
+// a `runwisp stop` would — and the service manager then brings the daemon back.
+// It is refused when the daemon is not service-managed, since exiting would
+// then stop the agent for good rather than restart it.
+func requestSelfRestart() error {
+	if !autostart.RunningUnderServiceManager() {
+		return fmt.Errorf("daemon is not managed by a service manager; restart it manually")
+	}
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		return fmt.Errorf("locate own process: %w", err)
+	}
+	slog.Info("restarting agent on cloud request; service manager will bring it back")
+	if err := p.Signal(syscall.SIGTERM); err != nil {
+		return fmt.Errorf("signal self for restart: %w", err)
+	}
+	return nil
 }
 
 // gracefulShutdown tears down all daemon subsystems in two layers. The input

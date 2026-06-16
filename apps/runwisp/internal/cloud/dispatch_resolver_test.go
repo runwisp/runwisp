@@ -24,11 +24,29 @@ type fakeTaskRunner struct {
 	trigErr    error
 	trigRun    *model.Run
 	trigParams map[string]string
+	triggered  []string
+
+	startedServices   []string
+	stoppedServices   []string
+	restartedServices []string
+	serviceErr        error
+	snapshot          model.ServiceSnapshot
+	snapshotOK        bool
 }
 
 func (f *fakeTaskRunner) GetTask(name string) (*model.Task, bool) {
 	t, ok := f.tasks[name]
 	return t, ok
+}
+
+func (f *fakeTaskRunner) ListServiceTasks() []*model.Task {
+	out := make([]*model.Task, 0, len(f.tasks))
+	for _, t := range f.tasks {
+		if t != nil && t.Kind.IsService() {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func (f *fakeTaskRunner) UpsertTask(task *model.Task) {
@@ -41,11 +59,31 @@ func (f *fakeTaskRunner) UpsertTask(task *model.Task) {
 
 func (f *fakeTaskRunner) TriggerCloudRun(taskName, externalID string, params map[string]string) (*model.Run, error) {
 	f.trigParams = params
+	f.triggered = append(f.triggered, externalID)
 	return f.trigRun, f.trigErr
 }
 
 func (f *fakeTaskRunner) TerminateRunByExternalExecutionID(externalID string) error {
 	return errors.New("not found")
+}
+
+func (f *fakeTaskRunner) StartServiceInstances(taskName string, _ model.TriggeredBy) error {
+	f.startedServices = append(f.startedServices, taskName)
+	return f.serviceErr
+}
+
+func (f *fakeTaskRunner) StopService(taskName string) error {
+	f.stoppedServices = append(f.stoppedServices, taskName)
+	return f.serviceErr
+}
+
+func (f *fakeTaskRunner) RestartServiceInstances(taskName string) error {
+	f.restartedServices = append(f.restartedServices, taskName)
+	return f.serviceErr
+}
+
+func (f *fakeTaskRunner) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
+	return f.snapshot, f.snapshotOK
 }
 
 func newDispatchHandler(avail executor.Availability, tasks map[string]*model.Task) *InboundHandler {
@@ -68,7 +106,7 @@ func shellScript(t *testing.T, script string) json.RawMessage {
 
 func configScript(t *testing.T, taskName string) json.RawMessage {
 	t.Helper()
-	raw, err := json.Marshal(map[string]string{"type": "config", "task_name": taskName})
+	raw, err := json.Marshal(map[string]string{"type": "config", "taskName": taskName})
 	require.NoError(t, err)
 	return raw
 }

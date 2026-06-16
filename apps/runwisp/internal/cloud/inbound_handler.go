@@ -25,8 +25,14 @@ type InboundHandler struct {
 	availability    executor.Availability
 	queueExecUpdate func(protocol.ExecutionUpdateMessage)
 	uploader        *LogUploader
+	tracker         *ExecutionTracker
+	// requestRestart asks the daemon to restart its own process. nil (or a
+	// daemon that isn't service-managed) means agent:restart is rejected.
+	requestRestart func() error
 
-	mu           sync.Mutex
+	// mu guards logListeners. RWMutex because IsLogListener is on the per-log-
+	// line read path (frequent), while listen/stop mutations are rare.
+	mu           sync.RWMutex
 	logListeners map[string]struct{}
 }
 
@@ -37,6 +43,8 @@ func NewInboundHandler(
 	availability executor.Availability,
 	queueExecUpdate func(protocol.ExecutionUpdateMessage),
 	uploader *LogUploader,
+	tracker *ExecutionTracker,
+	requestRestart func() error,
 ) *InboundHandler {
 	return &InboundHandler{
 		taskManager:     taskManager,
@@ -45,8 +53,25 @@ func NewInboundHandler(
 		availability:    availability,
 		queueExecUpdate: queueExecUpdate,
 		uploader:        uploader,
+		tracker:         tracker,
+		requestRestart:  requestRestart,
 		logListeners:    make(map[string]struct{}),
 	}
+}
+
+// HandleAgentRestart asks the daemon to restart its own process. It is only
+// honoured when the daemon runs under a service manager (systemd/launchd) that
+// will bring it back — otherwise restarting would just stop the agent for
+// good, so we reject it with a clear conflict the dashboard can surface.
+func (h *InboundHandler) HandleAgentRestart() error {
+	if h.requestRestart == nil {
+		return &CloudError{Kind: CloudErrorKindConflict, Message: "agent is not service-managed; cannot restart remotely"}
+	}
+	if err := h.requestRestart(); err != nil {
+		return &CloudError{Kind: CloudErrorKindConflict, Message: err.Error()}
+	}
+	slog.Info("agent restart requested by cloud")
+	return nil
 }
 
 // LogDir returns the daemon's log directory; used by EventBridge to resolve
@@ -56,10 +81,31 @@ func (h *InboundHandler) LogDir() string { return h.logDir }
 // Uploader returns the configured archival coordinator (may be nil).
 func (h *InboundHandler) Uploader() *LogUploader { return h.uploader }
 
-func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message protocol.ExecutionDispatchMessage) error {
+// HandleExecutionDispatch validates and triggers a dispatched execution.
+// ack is invoked exactly once as soon as the dispatch is accepted (valid and
+// either fresh or a recognized duplicate), before the run is triggered —
+// the control plane uses it to stop re-dispatching.
+func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message protocol.ExecutionDispatchMessage, ack func()) error {
 	executionID := strings.TrimSpace(message.Execution.ExecutionID)
 	if executionID == "" {
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
+	}
+
+	// Idempotent re-dispatch guard: the control plane re-publishes a dispatch
+	// when its ack deadline lapses (e.g. the ack was lost in a hub restart).
+	// If we already know this execution, re-ack without starting a second run;
+	// if it already finished, re-queue its terminal update so the cloud can
+	// reconcile a lost terminal report.
+	if h.isDuplicateDispatch(ctx, executionID) {
+		slog.Info("duplicate execution dispatch re-acked", "executionId", executionID)
+		if ack != nil {
+			ack()
+		}
+		return nil
+	}
+
+	if ack != nil {
+		ack()
 	}
 
 	// Persist the signed PUT URL + key BEFORE we trigger the run. A crash
@@ -97,6 +143,30 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 	return nil
 }
 
+// isDuplicateDispatch reports whether the daemon already knows the execution:
+// actively running (tracker) or persisted as a run (repo). For terminal runs
+// the stored terminal update is re-queued so a control plane that missed the
+// original report converges instead of re-running the task.
+func (h *InboundHandler) isDuplicateDispatch(ctx context.Context, executionID string) bool {
+	if h.tracker != nil && h.tracker.IsActive(executionID) {
+		return true
+	}
+	if h.runRepo == nil {
+		return false
+	}
+
+	run, err := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
+	if err != nil || run == nil {
+		return false
+	}
+	if run.Status.IsTerminal() {
+		if update := mapRunToExecutionUpdate(run); update != nil {
+			h.queueExecUpdate(*update)
+		}
+	}
+	return true
+}
+
 func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID string, run *model.Run, triggerErr error) error {
 	if run != nil {
 		finishedAt := run.EndAt
@@ -126,7 +196,7 @@ func (h *InboundHandler) HandleExecutionStop(ctx context.Context, message protoc
 	run, runErr := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
 	if runErr != nil {
 		if errors.Is(runErr, ErrNotFound) {
-			return &CloudError{Kind: CloudErrorKindConflict, Message: "execution not found"}
+			return &CloudError{Kind: CloudErrorKindUnknownExecution, Message: "execution not found"}
 		}
 		return &CloudError{Kind: CloudErrorKindTransient, Message: "failed to inspect execution for stop", Err: runErr}
 	}
@@ -151,7 +221,13 @@ func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message pro
 	run, err := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return NewLogReplayChunkMessage(message.ID, executionID, nil, true), nil
+			// Unknown execution ≠ end of log: a viewer can attach before the
+			// dispatch reaches this daemon (row just inserted cloud-side).
+			// Claiming final here made the cloud SSE handler end the stream
+			// as "terminal, fully read" on a run that hadn't even started.
+			// Genuinely finished runs never get here — the cloud's
+			// already-terminal guard answers those from the archive.
+			return NewLogReplayChunkMessage(message.ID, executionID, nil, false), nil
 		}
 		return NewLogReplayChunkMessage(message.ID, executionID, nil, true),
 			&CloudError{Kind: CloudErrorKindTransient, Message: "failed to query execution logs", Err: err}
@@ -164,6 +240,41 @@ func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message pro
 	}
 
 	return NewLogReplayChunkMessage(message.ID, executionID, lines, final), nil
+}
+
+// HandleLogSearchRequest greps one execution's on-disk log and returns the
+// matching lines as a single LogSearchChunkMessage. Like replay, an unknown
+// execution is not an error — it yields no hits with exhausted=true (nothing on
+// disk to scan). Mirrors HandleLogReplayRequest's resolution and error mapping.
+func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message protocol.LogSearchRequestMessage) (protocol.LogSearchChunkMessage, error) {
+	executionID := strings.TrimSpace(message.ExecutionID)
+	if executionID == "" {
+		return NewLogSearchChunkMessage(message.ID, message.ExecutionID, nil, 0, true),
+			&CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
+	}
+
+	run, err := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return NewLogSearchChunkMessage(message.ID, executionID, nil, 0, true), nil
+		}
+		return NewLogSearchChunkMessage(message.ID, executionID, nil, 0, true),
+			&CloudError{Kind: CloudErrorKindTransient, Message: "failed to query execution logs", Err: err}
+	}
+
+	hits, nextLine, exhausted, searchErr := searchExecutionLog(
+		ctx, run, h.logDir, message.Query, message.Regex, message.CaseSensitive, message.Limit, message.FromLine)
+	if searchErr != nil {
+		// A malformed regex is a validation error; anything else is transient.
+		kind := CloudErrorKindTransient
+		if ce, ok := searchErr.(*CloudError); ok {
+			kind = ce.Kind
+		}
+		return NewLogSearchChunkMessage(message.ID, executionID, nil, 0, true),
+			&CloudError{Kind: kind, Message: searchErr.Error()}
+	}
+
+	return NewLogSearchChunkMessage(message.ID, executionID, hits, nextLine, exhausted), nil
 }
 
 // HandleLogListen marks an execution for live log:line push events. Idempotent
@@ -194,8 +305,8 @@ func (h *InboundHandler) HandleLogStop(message protocol.LogStopMessage) {
 
 // IsLogListener reports whether the given execution has an active subscription.
 func (h *InboundHandler) IsLogListener(executionID string) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	_, ok := h.logListeners[executionID]
 	return ok
 }

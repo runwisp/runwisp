@@ -64,11 +64,21 @@ func (b *EventBridge) Shutdown() {
 
 func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 	runEvent, ok := event.Data.(events.RunEvent)
-	if !ok || runEvent.Run == nil || runEvent.Run.ExternalExecutionID == nil {
+	if !ok || runEvent.Run == nil {
 		return
 	}
 
 	run := runEvent.Run
+
+	// Service-instance lifecycle changes (start / exit / supervisor restart)
+	// carry no cloud execution id: they refresh the service's status snapshot
+	// rather than flip an execution row. Cloud keeps only the latest snapshot
+	// (no per-instance rows), mirroring the system-stats heartbeat pattern.
+	// Non-service local runs return ok=false from ServiceSnapshot and no-op.
+	if run.ExternalExecutionID == nil {
+		b.emitServiceStatus(run.TaskName)
+		return
+	}
 	executionID := *run.ExternalExecutionID
 	update := mapRunToExecutionUpdate(run)
 	if update == nil {
@@ -90,28 +100,51 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 		return
 	}
 
-	// Terminal path: archive the log first (off the publishing goroutine so
-	// the runtime's `execute` returns promptly and frees the concurrency
-	// slot), then emit the terminal update with logPath/logSize set.
+	// Terminal path (off the publishing goroutine so the runtime's `execute`
+	// returns promptly and frees the concurrency slot): report the terminal
+	// state immediately, then archive and late-attach the coordinates.
 	go b.finalizeRun(ctx, run, *update, executionID)
 }
 
+// finalizeRun sends the terminal update immediately (no logPath) so the
+// cloud flips the row the moment the process exits, then runs the archive
+// upload (gzip + signed PUT, up to 90s) and queues a second identical
+// terminal update carrying logPath/logSize. The second update loses the
+// cloud's guarded terminal race by design; the statewriter late-attaches
+// its archive coordinates to the already-terminal row.
 func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update protocol.ExecutionUpdateMessage, executionID string) {
+	b.tracker.QueueUpdate(update, b.sendReady)
+
 	uploader := b.handler.Uploader()
 	if uploader != nil {
 		logFilePath := logutil.ResolveRunLogPath(b.handler.LogDir(), run.TaskName, run.ID, run.CreatedAt)
 		result, err := uploader.Archive(ctx, executionID, logFilePath)
 		switch {
 		case err != nil:
-			slog.Warn("log archival failed; sending terminal update without logPath", "executionId", executionID, "err", err)
+			slog.Warn("log archival failed; archive coordinates not reported", "executionId", executionID, "err", err)
 		case result != nil:
 			update.LogPath = result.LogPath
 			update.LogSize = result.LogSize
+			b.tracker.QueueUpdate(update, b.sendReady)
 		}
 	}
 
-	b.tracker.QueueUpdate(update, b.sendReady)
 	b.handler.RemoveLogListener(executionID)
+}
+
+// emitServiceStatus pushes the current supervisor snapshot for a service task
+// to the cloud. A no-op for unknown / non-service tasks. Best-effort: a full
+// outbound queue drops the snapshot rather than blocking the supervisor — the
+// next lifecycle change (or a reconnect-driven resend) corrects the view.
+func (b *EventBridge) emitServiceStatus(taskName string) {
+	if b.handler.taskManager == nil {
+		return
+	}
+	snapshot, ok := b.handler.taskManager.ServiceSnapshot(taskName)
+	if !ok {
+		return
+	}
+	_ = b.sendReady(NewServiceStatusMessage(snapshot))
 }
 
 func (b *EventBridge) handleLogLineEvent(event events.Event) {

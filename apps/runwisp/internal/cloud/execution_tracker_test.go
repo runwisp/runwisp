@@ -167,6 +167,65 @@ func TestMapRunToExecutionUpdateEndedNilReason(t *testing.T) {
 	assert.Nil(t, mapRunToExecutionUpdate(run))
 }
 
+// TestMapRunToExecutionUpdateTerminalReasonsExhaustive guards the prime
+// directive: every terminal EndReason must yield a terminal update, or the
+// cloud tracks the execution as running forever. The never-executed and
+// interrupted reasons (skipped, queue_full, dst_skipped, missed, daemon_stopped)
+// were previously dropped to nil.
+func TestMapRunToExecutionUpdateTerminalReasonsExhaustive(t *testing.T) {
+	cases := map[model.EndReason]protocol.ExecutionStatus{
+		model.ReasonSuccess:       protocol.ExecutionStatusOk,
+		model.ReasonStopped:       protocol.ExecutionStatusStopped,
+		model.ReasonTimeout:       protocol.ExecutionStatusTimeout,
+		model.ReasonFailed:        protocol.ExecutionStatusErr,
+		model.ReasonCrashed:       protocol.ExecutionStatusErr,
+		model.ReasonLogOverflow:   protocol.ExecutionStatusErr,
+		model.ReasonStartFailed:   protocol.ExecutionStatusErr,
+		model.ReasonDaemonStopped: protocol.ExecutionStatusStopped,
+		model.ReasonSkipped:       protocol.ExecutionStatusErr,
+		model.ReasonQueueFull:     protocol.ExecutionStatusErr,
+		model.ReasonDSTSkipped:    protocol.ExecutionStatusErr,
+		model.ReasonMissed:        protocol.ExecutionStatusErr,
+	}
+	execID := "ext-terminal"
+	now := time.Now()
+	for reason, want := range cases {
+		t.Run(string(reason), func(t *testing.T) {
+			r := reason
+			run := &model.Run{
+				Status:              model.PhaseEnded,
+				ExternalExecutionID: &execID,
+				EndReason:           &r,
+				StartAt:             &now,
+				EndAt:               &now,
+			}
+			result := mapRunToExecutionUpdate(run)
+			require.NotNil(t, result, "terminal reason %q must produce an update", reason)
+			require.NotNil(t, result.Status)
+			assert.Equal(t, want, *result.Status)
+		})
+	}
+}
+
+// An EndReason not yet in terminalReasonMap must still report terminally
+// (fail-safe to err) rather than stranding the execution as running.
+func TestMapRunToExecutionUpdateUnknownReasonFailsSafe(t *testing.T) {
+	execID := "ext-unknown"
+	reason := model.EndReason("some_future_reason")
+	now := time.Now()
+	run := &model.Run{
+		Status:              model.PhaseEnded,
+		ExternalExecutionID: &execID,
+		EndReason:           &reason,
+		StartAt:             &now,
+		EndAt:               &now,
+	}
+	result := mapRunToExecutionUpdate(run)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Status)
+	assert.Equal(t, protocol.ExecutionStatusErr, *result.Status)
+}
+
 // FlushPending must include synthetic "running" snapshots for every currently
 // tracked execution alongside the buffered updates.
 func TestFlushPendingEmitsRunningSnapshotsForActiveExecutions(t *testing.T) {

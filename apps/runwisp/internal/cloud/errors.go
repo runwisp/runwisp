@@ -15,6 +15,10 @@ const (
 	CloudErrorKindValidation CloudErrorKind = "VALIDATION_ERROR"
 	CloudErrorKindConflict   CloudErrorKind = "CONFLICT_ERROR"
 	CloudErrorKindTransient  CloudErrorKind = "TRANSIENT_ERROR"
+	// CloudErrorKindUnknownExecution signals that the daemon has no record of
+	// the referenced execution (e.g. a stop for an execution it never ran).
+	// The cloud reconciles such executions as abandoned.
+	CloudErrorKindUnknownExecution CloudErrorKind = "UNKNOWN_EXECUTION"
 )
 
 type CloudError struct {

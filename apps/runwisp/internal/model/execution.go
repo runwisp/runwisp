@@ -46,10 +46,10 @@ type DockerfileBlock struct {
 	Reason          string                 `json:"reason"`
 	Dockerfile      string                 `json:"dockerfile"`
 	Enabled         bool                   `json:"enabled"`
-	AutoDetected    bool                   `json:"auto_detected"`
+	AutoDetected    bool                   `json:"autoDetected"`
 	Modified        bool                   `json:"modified"`
 	Pinned          bool                   `json:"pinned"`
-	ManagedPackages *DockerManagedPackages `json:"managed_packages,omitempty"`
+	ManagedPackages *DockerManagedPackages `json:"managedPackages,omitempty"`
 }
 
 // DockerManagedPackages holds package names for managed install blocks.
@@ -75,7 +75,7 @@ type PortMapping struct {
 // ContainerExecution runs a script inside a Docker container.
 type ContainerExecution struct {
 	Script     string            `json:"script"`
-	BaseImage  string            `json:"base_image"`
+	BaseImage  string            `json:"baseImage"`
 	Blocks     []DockerfileBlock `json:"blocks,omitempty"`
 	Env        []KeyValue        `json:"env,omitempty"`
 	Volumes    []VolumeMount     `json:"volumes,omitempty"`
@@ -139,7 +139,7 @@ func (e *HTTPExecution) ExecType() string { return "http" }
 
 // ConfigExecution references a daemon-local task by name.
 type ConfigExecution struct {
-	TaskName string `json:"task_name"`
+	TaskName string `json:"taskName"`
 }
 
 func (e *ConfigExecution) ExecType() string { return "config" }

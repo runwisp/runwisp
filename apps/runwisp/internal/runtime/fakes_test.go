@@ -93,10 +93,15 @@ func (r *fakeTaskRunner) triggerCount() int {
 
 func (r *fakeTaskRunner) RecordMissedRun(string, time.Time, string) error { return nil }
 
-func (r *fakeTaskRunner) GetTask(string) (*model.Task, bool)             { return nil, false }
-func (r *fakeTaskRunner) UpsertTask(*model.Task)                         {}
-func (r *fakeTaskRunner) TerminateRun(string) error                      { return nil }
-func (r *fakeTaskRunner) TerminateRunByExternalExecutionID(string) error { return nil }
-func (r *fakeTaskRunner) RestartServiceInstances(string) error           { return nil }
-func (r *fakeTaskRunner) StopService(string) error                       { return nil }
-func (r *fakeTaskRunner) GetActiveRunCount(string) int                   { return 0 }
+func (r *fakeTaskRunner) GetTask(string) (*model.Task, bool)                    { return nil, false }
+func (r *fakeTaskRunner) ListServiceTasks() []*model.Task                       { return nil }
+func (r *fakeTaskRunner) UpsertTask(*model.Task)                                {}
+func (r *fakeTaskRunner) TerminateRun(string) error                             { return nil }
+func (r *fakeTaskRunner) TerminateRunByExternalExecutionID(string) error        { return nil }
+func (r *fakeTaskRunner) RestartServiceInstances(string) error                  { return nil }
+func (r *fakeTaskRunner) StopService(string) error                              { return nil }
+func (r *fakeTaskRunner) StartServiceInstances(string, model.TriggeredBy) error { return nil }
+func (r *fakeTaskRunner) ServiceSnapshot(string) (model.ServiceSnapshot, bool) {
+	return model.ServiceSnapshot{}, false
+}
+func (r *fakeTaskRunner) GetActiveRunCount(string) int { return 0 }

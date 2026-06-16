@@ -17,6 +17,7 @@ import (
 
 	"log/slog"
 
+	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/config"
@@ -66,7 +67,9 @@ echo "Create a runwisp.toml to define your own tasks — see https://docs.runwis
 	OnOverlap:     model.PolicySkip,
 }
 
-func runDaemon(mode daemonMode, f Flags, headless bool) error {
+func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
+	headless, tuiAutoDisabled := resolveHeadless(headless)
+
 	// Arm SIGINT/SIGTERM before any goroutine could self-signal (superviseServerStart
 	// raises SIGTERM on its own PID when srv.Start fails). Registered first so the
 	// stop func runs last, after every other defer has unwound.
@@ -83,6 +86,19 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 	// Ring buffer for streaming daemon logs to remote TUI clients.
 	logBuffer := server.NewDaemonLogBuffer(1000)
 	debugWriter := configureBootLogRouting(logBuffer, f, headless)
+	if tuiAutoDisabled {
+		slog.Info("no interactive terminal detected — running headless (pass --no-tui to silence this)")
+	}
+	// If boot fails before the bubbletea program attaches, slog points at the
+	// TUI debug buffer which nobody will ever read. Reroute it back to stderr
+	// so the operator always sees why the daemon died.
+	if !headless {
+		defer func() {
+			if err != nil {
+				clilog.SetOutput(os.Stderr)
+			}
+		}()
+	}
 
 	// Open database first — config values (fingerprint, jwt_secret) live there.
 	db, err := storage.New(f.DBPath())
@@ -204,7 +220,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 	}
 
 	// Cloud client is only started in cloud mode; standalone gets no-ops.
-	cancelCloud, cloudWG := startCloudIfEnabled(mode, cfg, svc, f)
+	cancelCloud, cloudWG := startCloudIfEnabled(mode, cfg, svc, srv)
 	defer cancelCloud()
 
 	// fatalCh carries a fatal server-start error from the supervisor goroutine
@@ -243,6 +259,28 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 	}
 
 	return runWithTUI(rt, startupInfo, f)
+}
+
+// isInteractiveTerminal reports whether both stdin (TUI key input) and stdout
+// (TUI rendering) are attached to a real terminal. bubbletea needs both; when
+// either is redirected, attaching the TUI would block forever on input that
+// never arrives.
+func isInteractiveTerminal() bool {
+	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
+}
+
+// resolveHeadless flips a TUI request (headless=false) to headless when stdin
+// and stdout are not a real terminal. The interactive TUI needs both (bubbletea
+// reads keys from stdin and renders to stdout); without them — a toolbox with no
+// PTY, systemd, Docker, a process manager — attaching it blocks forever on input
+// that never arrives, indistinguishable from a hang. `--no-tui` (and `runwisp
+// daemon`) already pass headless=true. Returns the effective headless flag and
+// whether the fallback fired, so the caller can log it once routing is set up.
+func resolveHeadless(headless bool) (effective, autoDisabled bool) {
+	if !headless && !isInteractiveTerminal() {
+		return true, true
+	}
+	return headless, false
 }
 
 // installSignalHandler arms SIGINT/SIGTERM/SIGHUP on a buffered channel before
@@ -297,9 +335,9 @@ func configureBootLogRouting(logBuffer *server.DaemonLogBuffer, f Flags, headles
 // startCloudIfEnabled spins up the cloud client when running in cloud mode and
 // returns the cancel/wait pair the shutdown path needs. Standalone gets a
 // no-op cancel and empty WaitGroup so callers can defer/wait unconditionally.
-func startCloudIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Flags) (context.CancelFunc, *sync.WaitGroup) {
+func startCloudIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices, srv *server.Server) (context.CancelFunc, *sync.WaitGroup) {
 	if mode == modeCloud {
-		return startCloudClient(context.Background(), cfg, svc, f)
+		return startCloudClient(context.Background(), cfg, svc, srv)
 	}
 	return func() {}, &sync.WaitGroup{}
 }

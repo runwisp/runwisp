@@ -223,6 +223,25 @@ func (m *defaultTaskManager) RemoveTask(taskName string) {
 	}
 }
 
+// ListServiceTasks returns copies of every registered service task. Used by the
+// cloud integration to fold daemon-supervised services (notably cloud-declared
+// ones, registered at runtime via service:apply and absent from the TOML
+// snapshot) into the tasks.sync payload, so the cloud knows they are live here.
+func (m *defaultTaskManager) ListServiceTasks() []*model.Task {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]*model.Task, 0, len(m.tasks))
+	for _, ts := range m.tasks {
+		if ts.task == nil || !ts.task.Kind.IsService() {
+			continue
+		}
+		taskCopy := *ts.task
+		out = append(out, &taskCopy)
+	}
+	return out
+}
+
 // GetTask returns a copy of a registered task.
 func (m *defaultTaskManager) GetTask(taskName string) (*model.Task, bool) {
 	m.mu.RLock()
@@ -681,6 +700,80 @@ func (m *defaultTaskManager) serviceUnrecoverable(taskName string) (bool, error)
 		return true, fmt.Errorf("service %s has no live instances and a slot is FATAL", taskName)
 	}
 	return false, nil
+}
+
+// ServiceSnapshot returns the supervisor + live-run view of a service task for
+// reporting to cloud. ok is false when the task is unknown or not a service.
+// Built under the manager lock so it is a consistent point-in-time.
+func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	ts, exists := m.tasks[taskName]
+	if !exists || ts.supervisor == nil || !ts.task.Kind.IsService() {
+		return model.ServiceSnapshot{}, false
+	}
+
+	// Index live runs by instance slot to enrich slots with their start time.
+	liveByIdx := make(map[int]*ActiveRun, len(ts.active))
+	for _, ar := range ts.active {
+		if ar.Run != nil {
+			liveByIdx[ar.Run.InstanceIndex] = ar
+		}
+	}
+
+	stopped := ts.supervisor.IsStopped()
+	desired := ts.supervisor.Instances()
+	instances := make([]model.ServiceInstanceStatus, 0, desired)
+	running := 0
+	fatal := 0
+	for i := 0; i < desired; i++ {
+		st := model.ServiceInstanceStatus{Index: i, RestartCount: ts.supervisor.Attempts(i)}
+		switch {
+		case ts.supervisor.IsLive(i):
+			st.State = model.ServiceInstanceRunning
+			running++
+			if ar := liveByIdx[i]; ar != nil {
+				started := ar.StartedAt
+				st.StartedAt = &started
+			}
+		case stopped:
+			st.State = model.ServiceInstanceStopped
+		case ts.supervisor.IsFatal(i):
+			// Slot exhausted its start-retry budget; the supervisor has given
+			// up on it and won't respawn without operator intervention.
+			st.State = model.ServiceInstanceFatal
+			fatal++
+		default:
+			// Not live, not operator-stopped, not fatal: between exit and the
+			// next backoff-delayed respawn.
+			st.State = model.ServiceInstanceRestarting
+		}
+		instances = append(instances, st)
+	}
+
+	return model.ServiceSnapshot{
+		TaskName:         taskName,
+		State:            serviceRollupState(stopped, running, fatal, desired),
+		DesiredInstances: desired,
+		RunningInstances: running,
+		Instances:        instances,
+	}, true
+}
+
+func serviceRollupState(stopped bool, running, fatal, desired int) string {
+	switch {
+	case stopped:
+		return model.ServiceStopped
+	case running >= desired:
+		return model.ServiceRunning
+	case fatal >= desired:
+		// Every slot has given up — the service is down and won't recover on
+		// its own. Distinct from degraded, which is still trying to respawn.
+		return model.ServiceFatal
+	default:
+		return model.ServiceDegraded
+	}
 }
 
 // startRun registers the run and spawns the execution goroutine. Assumes

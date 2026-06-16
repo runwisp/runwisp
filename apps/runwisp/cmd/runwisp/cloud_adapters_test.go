@@ -24,6 +24,7 @@ type stubTaskRunner struct {
 	getTaskName        string
 	getTaskOut         *model.Task
 	getTaskOK          bool
+	serviceTasks       []*model.Task
 	upsertedTask       *model.Task
 	terminatedExternal string
 	terminatedErr      error
@@ -44,6 +45,10 @@ func (s *stubTaskRunner) GetTask(name string) (*model.Task, bool) {
 	return s.getTaskOut, s.getTaskOK
 }
 
+func (s *stubTaskRunner) ListServiceTasks() []*model.Task {
+	return s.serviceTasks
+}
+
 func (s *stubTaskRunner) UpsertTask(t *model.Task) {
 	s.upsertedTask = t
 }
@@ -55,8 +60,12 @@ func (s *stubTaskRunner) TerminateRunByExternalExecutionID(id string) error {
 	return s.terminatedErr
 }
 
-func (s *stubTaskRunner) RestartServiceInstances(string) error { panic("not used") }
-func (s *stubTaskRunner) StopService(string) error             { panic("not used") }
+func (s *stubTaskRunner) RestartServiceInstances(string) error                  { panic("not used") }
+func (s *stubTaskRunner) StopService(string) error                              { panic("not used") }
+func (s *stubTaskRunner) StartServiceInstances(string, model.TriggeredBy) error { panic("not used") }
+func (s *stubTaskRunner) ServiceSnapshot(string) (model.ServiceSnapshot, bool) {
+	panic("not used")
+}
 func (s *stubTaskRunner) RecordSkippedFiring(string, model.EndReason, model.TriggeredBy) error {
 	panic("not used")
 }

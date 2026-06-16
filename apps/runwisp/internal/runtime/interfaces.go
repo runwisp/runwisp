@@ -26,11 +26,6 @@ type TaskRunner interface {
 	UpsertTask(task *model.Task)
 	TerminateRun(runID string) error
 	TerminateRunByExternalExecutionID(externalExecutionID string) error
-	RestartServiceInstances(taskName string) error
-	// StopService marks a service as operator-stopped (in-memory only, cleared
-	// on daemon restart) and cancels every live instance. The supervisor will
-	// not refill slots until StartServiceInstances is called.
-	StopService(taskName string) error
 	// RecordSkippedFiring persists a run that was suppressed before the
 	// executor started — currently used by the scheduler to log DST wall-clock
 	// duplicates with end_reason = "dst_skipped".
@@ -44,6 +39,24 @@ type TaskRunner interface {
 	// GetActiveRunCount reports how many runs for the given task are currently
 	// in flight. Unknown tasks return 0.
 	GetActiveRunCount(taskName string) int
+
+	// --- service supervision (driven at daemon boot and by cloud) ---
+
+	// ListServiceTasks returns copies of every registered service task, so the
+	// cloud integration can fold daemon-supervised services into tasks.sync.
+	ListServiceTasks() []*model.Task
+	// StartServiceInstances brings a service up to its desired instance count.
+	// Driven both at daemon boot and by a cloud service:apply/control message.
+	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
+	// StopService marks a service as operator-stopped (in-memory only, cleared
+	// on daemon restart) and cancels every live instance. The supervisor will
+	// not refill slots until StartServiceInstances is called.
+	StopService(taskName string) error
+	RestartServiceInstances(taskName string) error
+	// ServiceSnapshot returns the current supervisor view of a service task
+	// (rollup state, desired/running counts, per-instance slots). The bool is
+	// false for an unknown task or one that isn't a service.
+	ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool)
 }
 
 // TaskManager is the full lifecycle interface for task management.
@@ -57,7 +70,6 @@ type TaskManager interface {
 	RemoveTask(taskName string)
 	GetActiveRuns(taskName string) []*ActiveRun
 	LoadPendingRuns(runs []model.Run) PendingRunsResult
-	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
 	// ServiceHealthy reports whether a service has at least one instance that
 	// has been running for at least its healthy_after — the live readiness
 	// signal depends_on boot gating waits on. Non-services report false.

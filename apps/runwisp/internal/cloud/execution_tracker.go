@@ -47,6 +47,16 @@ func (t *ExecutionTracker) HasActive() bool {
 	return len(t.activeExecutions) > 0
 }
 
+// IsActive reports whether the given execution is currently tracked as
+// running. Used by the dispatch idempotency guard to re-ack duplicate
+// dispatches without starting a second run.
+func (t *ExecutionTracker) IsActive(executionID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, ok := t.activeExecutions[executionID]
+	return ok
+}
+
 func (t *ExecutionTracker) QueueUpdate(update protocol.ExecutionUpdateMessage, trySend func(any) error) {
 	if trySend != nil {
 		if err := trySend(update); err == nil {
@@ -86,14 +96,27 @@ func (t *ExecutionTracker) FlushPending(send func(any) error) {
 	}
 }
 
+// terminalReasonMap maps every terminal EndReason to the wire status the cloud
+// understands. It must stay exhaustive over model's EndReason set: a run only
+// carries an EndReason once it has ended, so any reason reaching here is
+// terminal and must yield a terminal update — otherwise the cloud tracks the
+// execution as running forever. The protocol's status vocabulary is narrower
+// than the daemon's reasons, so the never-executed/interrupted reasons collapse
+// onto the closest fit (stopped for interruptions, err for everything that did
+// not complete successfully).
 var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
-	model.ReasonSuccess:     protocol.ExecutionStatusOk,
-	model.ReasonStopped:     protocol.ExecutionStatusStopped,
-	model.ReasonTimeout:     protocol.ExecutionStatusTimeout,
-	model.ReasonFailed:      protocol.ExecutionStatusErr,
-	model.ReasonCrashed:     protocol.ExecutionStatusErr,
-	model.ReasonLogOverflow: protocol.ExecutionStatusErr,
-	model.ReasonStartFailed: protocol.ExecutionStatusErr,
+	model.ReasonSuccess:       protocol.ExecutionStatusOk,
+	model.ReasonStopped:       protocol.ExecutionStatusStopped,
+	model.ReasonTimeout:       protocol.ExecutionStatusTimeout,
+	model.ReasonFailed:        protocol.ExecutionStatusErr,
+	model.ReasonCrashed:       protocol.ExecutionStatusErr,
+	model.ReasonLogOverflow:   protocol.ExecutionStatusErr,
+	model.ReasonStartFailed:   protocol.ExecutionStatusErr,
+	model.ReasonDaemonStopped: protocol.ExecutionStatusStopped,
+	model.ReasonSkipped:       protocol.ExecutionStatusErr,
+	model.ReasonQueueFull:     protocol.ExecutionStatusErr,
+	model.ReasonDSTSkipped:    protocol.ExecutionStatusErr,
+	model.ReasonMissed:        protocol.ExecutionStatusErr,
 }
 
 func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
@@ -111,7 +134,10 @@ func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
 	}
 	status, ok := terminalReasonMap[*run.EndReason]
 	if !ok {
-		return nil
+		// Fail safe: a terminal reason not yet in the map (e.g. one added later)
+		// must still report terminally rather than silently dropping the update
+		// and stranding the execution as "running" on the cloud.
+		status = protocol.ExecutionStatusErr
 	}
 	return ptr(NewExecutionUpdateMessage(executionID, status, ptr(run.ExitCode), run.StartAt, run.EndAt))
 }
