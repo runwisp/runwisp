@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runDuration, runStartDelay } from "./run-helpers.js";
+import {
+    runDuration,
+    runStartDelay,
+    formatTriggeredByLabel,
+    runRetryLabel,
+} from "./run-helpers.js";
 
 describe("runDuration", () => {
     it("returns undefined when start_at is not set", () => {
@@ -57,5 +62,29 @@ describe("runStartDelay", () => {
                 start_at: "2024-06-15T03:07:12.000Z",
             }),
         ).toBe("7m 12s");
+    });
+});
+
+describe("formatTriggeredByLabel", () => {
+    it("humanizes each trigger source", () => {
+        expect(formatTriggeredByLabel("api")).toBe("API");
+        expect(formatTriggeredByLabel("cron")).toBe("Cron");
+        expect(formatTriggeredByLabel("service")).toBe("Service");
+        expect(formatTriggeredByLabel("startup")).toBe("Startup");
+        expect(formatTriggeredByLabel("cloud")).toBe("Cloud");
+    });
+});
+
+describe("runRetryLabel", () => {
+    it("returns undefined for a first attempt that is not a retry", () => {
+        expect(runRetryLabel({ retry_attempt: 0 })).toBeUndefined();
+    });
+
+    it("labels a run with a positive attempt number", () => {
+        expect(runRetryLabel({ retry_attempt: 2 })).toBe("retry #2");
+    });
+
+    it("labels a run that points back at the run it re-attempts", () => {
+        expect(runRetryLabel({ retry_attempt: 1, retry_of_run_id: "01JABC" })).toBe("retry #1");
     });
 });

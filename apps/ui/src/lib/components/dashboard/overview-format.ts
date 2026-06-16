@@ -4,12 +4,18 @@
 import {
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
+    formatTriggeredByLabel,
     getRunStatusConfig,
     humanizeCron,
     runDuration,
 } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
 import type { Run, Task } from "@runwisp/common";
+
+// formatTriggeredByLabel now lives in the shared @runwisp/ui lib (used by the
+// run list/detail components there too). Re-export so existing apps/ui imports
+// and tests keep resolving it from this module.
+export { formatTriggeredByLabel };
 
 export function pluralize(count: number): string {
     return count === 1 ? "" : "s";
@@ -90,21 +96,4 @@ export function formatStatusLabel(status: string): string {
         .split("-")
         .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
         .join(" ");
-}
-
-export function formatTriggeredByLabel(triggeredBy: Run["triggered_by"]): string {
-    if (triggeredBy === "api") {
-        return "API";
-    }
-    if (triggeredBy === "cron") {
-        return "Cron";
-    }
-    if (triggeredBy === "service") {
-        return "Service";
-    }
-    if (triggeredBy === "startup") {
-        return "Startup";
-    }
-
-    return "Cloud";
 }

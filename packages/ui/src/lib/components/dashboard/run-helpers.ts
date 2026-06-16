@@ -26,6 +26,29 @@ export function runStartDelay(run: Pick<Run, "created_at" | "start_at">): string
     return formatDuration(delay);
 }
 
+/** Human label for why a run fired (the `triggered_by` source). */
+export function formatTriggeredByLabel(triggeredBy: Run["triggered_by"]): string {
+    if (triggeredBy === "api") return "API";
+    if (triggeredBy === "cron") return "Cron";
+    if (triggeredBy === "service") return "Service";
+    if (triggeredBy === "startup") return "Startup";
+    return "Cloud";
+}
+
+/**
+ * "retry #N" label when a run is a retry of an earlier one, else undefined.
+ * A run is a retry if it carries a positive attempt number or points back at
+ * the run it re-attempts.
+ */
+export function runRetryLabel(
+    run: Pick<Run, "retry_attempt" | "retry_of_run_id">,
+): string | undefined {
+    if (run.retry_attempt > 0 || run.retry_of_run_id) {
+        return `retry #${String(run.retry_attempt)}`;
+    }
+    return undefined;
+}
+
 /**
  * Monotonic position of a run's status in its lifecycle. Used to reject stale
  * updates (e.g. a `pending` HTTP response arriving after an SSE already

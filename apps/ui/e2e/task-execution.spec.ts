@@ -45,8 +45,9 @@ test.describe("task execution", () => {
 
         await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
 
-        // Run list should show at least one entry with a short ID
-        await expect(page.getByText(/^#[A-Z0-9]/).first()).toBeVisible();
+        // Run list entries are identified by when they ran + how/why, not an
+        // opaque ULID suffix: a manually triggered run shows its "API" trigger.
+        await expect(page.getByText("API").first()).toBeVisible();
     });
 
     test("dashboard activity feed updates after task run", async ({ authenticatedPage: page }) => {
