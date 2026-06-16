@@ -12,8 +12,9 @@ Edited the file? Run `runwisp reload` (or send `SIGHUP`) to pick it up;
 a few daemon-wide settings need a full restart.
 
 The file breaks into a handful of sections, and most of them are
-optional. The one thing RunWisp genuinely can't do without is at least
-one `[tasks.*]` or `[services.*]` table with a `run` key.
+optional. You'll usually want at least one `[tasks.*]` or `[services.*]`
+table with a `run` key — otherwise there's nothing for the daemon to
+run.
 
 ## A complete example
 

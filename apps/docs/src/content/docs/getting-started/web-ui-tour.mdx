@@ -110,10 +110,9 @@ as a successful one, marked with a coloured status pill — `failed`,
 `timeout`, `crashed`, `stopped`, `skipped`, or [`log_overflow`](/concepts/logs/#rotation-log_max_size-and-log_on_full) —
 alongside its exit code and duration. Click the row to open the run,
 and the captured stdout/stderr appears in the same log pane you'd
-use for any other run. The sidebar flags tasks whose last run
-failed, and the Overview page's **Attention** tab gathers everything
-that isn't currently healthy so you can spot trouble without
-checking each task by hand.
+use for any other run. The Overview page's **Attention** tab gathers
+everything that isn't currently healthy so you can spot trouble
+without checking each task by hand.
 
 ![web-ui-task-failed.png — Task detail for a failed run: red status pill in the header, exit code next to duration, captured stderr filling the log pane.](../../../assets/screenshots/placeholder.svg)
 
@@ -150,7 +149,9 @@ The Web UI is for watching and controlling, not configuring. You can
 trigger, stop, and restart, and you can see everything that's going
 on — but `runwisp.toml` is still the source of truth. To change _what_
 the daemon does (add a task, tweak a schedule, rename a group, set up a
-notifier, scale a service), edit the file and restart the daemon.
+notifier, scale a service), edit the file and run
+[`runwisp reload`](/operations/reload/) (or restart for daemon-wide
+settings like `[storage]` or the scheduler timezone).
 
 ---
 

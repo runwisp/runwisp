@@ -102,8 +102,9 @@ Outbound channels coalesce on the same key by default too
 [Coalescing section of the model page](/notifications/model/#coalescing)
 has the full timeline and the check-in/summary cadence.
 
-Set `coalesce_window = "0s"` to turn coalescing off entirely (every
-event spawns its own row). Rarely what you want.
+There is currently no way to turn coalescing off — setting
+`coalesce_window = "0s"` falls back to the default of `1h`.
+To minimise grouping, set a very short window like `"1s"`.
 
 ## Worked examples
 

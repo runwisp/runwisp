@@ -13,7 +13,9 @@ belongs to, so a glance at the file tells you which task pages which
 channel.
 
 Every `[tasks.*]` and `[services.*]` block takes two fields:
-`notify_on_failure` (run ended as `failed`, `timeout`, or `crashed`) and
+`notify_on_failure` (run ended as `failed`, `timeout`, `crashed`,
+`log_overflow`, or `start_failed`; also `run.missed` and
+`service.fatal`) and
 `notify_on_success` (run ended as `succeeded`). They work the same on
 tasks and services. The field tables in
 [`[tasks.*]`](/configuration/tasks/#notifications) and

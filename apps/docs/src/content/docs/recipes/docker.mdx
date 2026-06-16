@@ -191,10 +191,11 @@ exec docker run --rm \\
 """
 ```
 
-The `exec` is important — without it, the shell stays alive after
-`docker run` and the SIGTERM that RunWisp sends on shutdown lands
-on the shell, not the container. With `exec`, the shell process
-is replaced and signals propagate cleanly.
+The `exec` is important — without it, the shell process stays alive
+as a parent of `docker run`. RunWisp sends signals to the process
+group, so they reach the container either way, but with `exec` the
+process tree is cleaner and the container's exit code flows straight
+to RunWisp.
 
 ---
 

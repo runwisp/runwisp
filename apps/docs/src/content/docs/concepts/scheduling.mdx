@@ -110,7 +110,8 @@ gives you:
 - A captured stdout/stderr stream on disk.
 - A status that walks `pending → running → ended`, landing on one of
   `success`, `failed`, `stopped`, `timeout`, `crashed`, `skipped`,
-  `missed`, or `log_overflow`.
+  `missed`, `log_overflow`, `queue_full`, `dst_skipped`,
+  `daemon_stopped`, or `start_failed`.
 
 Whether the run _starts_ right away is up to the task's
 [concurrency policy](/concepts/concurrency/). Under the default
@@ -161,8 +162,8 @@ max_catch_up_runs = 200    # at most 200 missed ticks fire on startup
 | _omitted_ | Inherit the built-in default of **100**. Tune up explicitly if each missed tick is real work. |
 | `N > 0`   | Cap the backfill at `N` runs; older missed ticks are dropped.                                 |
 
-Zero and negative values are rejected; leave the key off to inherit the
-default. The cap only matters for `catch_up = "all"` — `latest` fires
+Negative values are rejected. Zero means "use the default" — leave the
+key off for the same effect. The cap only matters for `catch_up = "all"` — `latest` fires
 exactly one run no matter what, and `skip` fires none.
 
 And when the cap does kick in, the daemon logs a warning naming the

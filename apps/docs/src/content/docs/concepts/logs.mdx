@@ -90,8 +90,8 @@ keep_for  = "7d"
 
 `keep_runs` is the count: the N newest runs survive, anything older
 gets pruned. It has to be a positive integer, and there's a hard
-ceiling of one million per task — set anything bigger (or zero, or
-negative) and the daemon refuses to start.
+ceiling of one million per task. Zero means "inherit from
+`[defaults]`" — set a negative value and the daemon refuses to start.
 
 `keep_for` is the age: anything whose `created_at` is older than that
 duration gets pruned. You can use days and weeks here too —
@@ -189,9 +189,9 @@ scanning starts.
 ## Sidecars (`.idx`, `.tidx`, `.meta`, `.prev`)
 
 Next to every `.log` you'll see a couple of small helper files. They
-make seeking and downloading fast — RunWisp rebuilds them whenever
-it needs to, and deleting them won't free up any meaningful disk
-space. **Don't delete them while a run is still going.** When
+make seeking and downloading fast. RunWisp creates them
+automatically — you never need to touch them, and deleting them
+won't free up any meaningful disk space. **Don't delete them while a run is still going.** When
 retention removes a run, the sidecars go with the parent log
 automatically.
 

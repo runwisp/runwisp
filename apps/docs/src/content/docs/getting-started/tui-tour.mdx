@@ -8,8 +8,8 @@ description: A guided walkthrough of the RunWisp terminal UI — the Open Web UI
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 The TUI is the keyboard-first half of RunWisp. It runs in a terminal,
-binds to whatever daemon is on the address you point it at (default
-`localhost:9477`), and lets you do almost everything the Web UI can —
+connects to the local daemon over the Unix socket, and lets you do
+almost everything the Web UI can —
 trigger tasks, follow logs, restart services, browse notifications —
 without leaving the shell.
 
@@ -21,13 +21,12 @@ runwisp tui       # attach a fresh TUI to an already-running daemon
 ```
 
 The first form is the everyday one. The second is for SSHing in to
-inspect a daemon you started elsewhere — `runwisp tui --host …` lets
-you point at a remote instance.
+inspect a daemon you started elsewhere.
 
 ## The Home page (and "Open Web UI")
 
-The TUI lands on **Home**, with the focus already on
-`▸ ⮕ Open Web UI`:
+The TUI lands on **Home**, with focus on the sidebar. Press
+whatever key takes you to `▸ ⮕ Open Web UI`:
 
 ![TUI Home page: sidebar listing task groups, right pane showing Open Web UI row, Web UI URL, masked password, and a recent-activity table with status, duration, and trigger columns.](../../../assets/screenshots/tui-home.png)
 
@@ -194,7 +193,7 @@ The TUI is a control surface, not a config editor. It'll trigger, stop,
 restart, and observe — but it won't:
 
 - **Edit config.** `runwisp.toml` is the source of truth. Open it in
-  your editor and restart the daemon to pick up changes.
+  your editor and run `runwisp reload` (or restart) to pick up changes.
 - **Set up notifications.** Routes and notifiers are configured in
   TOML.
 - **Create or delete tasks.** Same reason — they live in TOML.

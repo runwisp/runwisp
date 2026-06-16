@@ -25,10 +25,10 @@ max_size       = "5gb"
 min_free_space = "500mb"
 ```
 
-| Key              | Type      | Default        | What it does                                                                                                              |
-| ---------------- | --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `max_size`       | byte size | `0` (no cap)   | Hard cap on total bytes used by RunWisp's log files (across all tasks).                                                   |
-| `min_free_space` | byte size | `0` (no check) | Refuse to start the daemon — and stop accepting log lines mid-run — when the data partition has less than this much free. |
+| Key              | Type      | Default        | What it does                                                                                                                                                 |
+| ---------------- | --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `max_size`       | byte size | `0` (no cap)   | Hard cap on total bytes used by RunWisp's log files (across all tasks).                                                                                      |
+| `min_free_space` | byte size | `0` (no check) | Refuse to start a run — and stop accepting log lines mid-run — when the data partition has less than this much free. Daemon startup itself is never blocked. |
 
 Both accept the same units as `log_max_size`: `b`, `kb`, `mb`, `gb`,
 `tb`, case-insensitive, with optional fractions (`"1.5gb"`).
@@ -100,8 +100,8 @@ to get us out of this gracefully."
 
 ## Sensible values
 
-The starter file ships with `5gb` / `500mb`, which is a safe baseline
-for a typical VPS. Tune it to your setup:
+A `5gb` / `500mb` split is a safe baseline for a typical VPS. Tune it
+to your setup:
 
 | Environment                  | Suggested `max_size`           | Suggested `min_free_space` |
 | ---------------------------- | ------------------------------ | -------------------------- |

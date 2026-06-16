@@ -26,7 +26,7 @@ notify = ["slack-ops", "tg-oncall", "inapp"]
 
 | Field            | Required | What it does                                                                 |
 | ---------------- | -------- | ---------------------------------------------------------------------------- |
-| `match.kind`     | yes      | Event kinds this rule applies to. Empty list matches nothing.                |
+| `match.kind`     | no       | Event kinds this rule applies to. Omit (or leave empty) to match all kinds.  |
 | `match.task`     | no       | Shell-style glob on the task name. Omit to match every task.                 |
 | `match.severity` | no       | Threshold: `"info"`, `"warn"`, `"error"`. `warn` matches `warn` and `error`. |
 
