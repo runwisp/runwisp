@@ -20,6 +20,7 @@ export default defineConfig(
             "build/**",
             "e2e/**",
             "node_modules/**",
+            "scripts/**",
             "test-results/**",
         ],
     }),
