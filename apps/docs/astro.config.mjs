@@ -127,6 +127,10 @@ export default defineConfig({
                         { label: "Nightly backup", slug: "recipes/backup" },
                         { label: "Health checks", slug: "recipes/healthcheck" },
                         { label: "Deploy hooks", slug: "recipes/deploy-hooks" },
+                        {
+                            label: "Trigger via API",
+                            slug: "recipes/remote-trigger",
+                        },
                         { label: "Docker patterns", slug: "recipes/docker" },
                         {
                             label: "Migrating from docker-compose",

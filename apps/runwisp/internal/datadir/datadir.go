@@ -23,12 +23,14 @@ func EnsureDir(dir string) error {
 	return os.MkdirAll(dir, 0700)
 }
 
-// writeFileNoFollow writes data to path with mode 0600, refusing to follow
+// WriteSecretFile writes data to path with mode 0600, refusing to follow
 // symlinks. If path already exists, it must be a regular file owned by the
 // caller; otherwise the write is rejected. This prevents a TOCTOU symlink
-// attack where another local user replaces a data-dir file with a symlink to
-// a sensitive target the daemon can write (e.g. ~/.ssh/authorized_keys).
-func writeFileNoFollow(path string, data []byte) error {
+// attack where another local user replaces a file with a symlink to a
+// sensitive target the caller can write (e.g. ~/.ssh/authorized_keys). It is
+// the shared primitive for any secret-bearing file (PID file, daemon secrets,
+// the CLI's cached JWT); callers must EnsureDir the parent first.
+func WriteSecretFile(path string, data []byte) error {
 	if info, err := os.Lstat(path); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("refusing to write %s: path is a symlink", path)
@@ -79,7 +81,7 @@ func PidFilePath(dataDir string) string {
 }
 
 func WritePidFile(dataDir string) error {
-	return writeFileNoFollow(PidFilePath(dataDir), []byte(strconv.Itoa(os.Getpid())+"\n"))
+	return WriteSecretFile(PidFilePath(dataDir), []byte(strconv.Itoa(os.Getpid())+"\n"))
 }
 
 func ReadPidFile(dataDir string) (int, error) {

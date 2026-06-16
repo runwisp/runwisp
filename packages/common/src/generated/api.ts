@@ -403,7 +403,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Trigger a new run */
+        /**
+         * Trigger a new run
+         * @description Triggers the task and returns the pending run immediately. Pass `wait=true` to instead hold the request open until the run finishes and return it with its exit code and end reason — a one-call alternative to triggering then polling.
+         */
         post: operations["triggerRun"];
         delete?: never;
         options?: never;
@@ -2122,7 +2125,12 @@ export interface operations {
     };
     triggerRun: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead. */
+                wait?: boolean;
+                /** @description With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state. */
+                wait_timeout?: number;
+            };
             header?: never;
             path: {
                 /** @description Task name */

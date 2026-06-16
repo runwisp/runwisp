@@ -34,11 +34,19 @@ type Client struct {
 	local        bool
 }
 
+// NormalizeBaseURL trims a trailing slash so a base URL maps to a single
+// canonical form. New applies it to every Client; callers that key state by
+// daemon URL (e.g. the CLI's session-token cache) use it to line their key up
+// with the URL the client actually talks to.
+func NormalizeBaseURL(baseURL string) string {
+	return strings.TrimRight(baseURL, "/")
+}
+
 // New constructs a Client for a remote daemon. baseURL must be an http(s)
 // URL; the client will run CHAP via Authenticate to obtain a JWT.
 func New(baseURL, password string) *Client {
 	return &Client{
-		baseURL:  strings.TrimRight(baseURL, "/"),
+		baseURL:  NormalizeBaseURL(baseURL),
 		password: password,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -115,6 +123,18 @@ func (c *Client) Authenticate() error {
 // API calls. Unix-socket clients are always authenticated.
 func (c *Client) IsAuthenticated() bool {
 	return c.local || c.token != ""
+}
+
+// SetToken seeds the client with a previously obtained JWT, letting callers
+// reuse a cached session instead of re-running CHAP on every invocation.
+func (c *Client) SetToken(token string) {
+	c.token = token
+}
+
+// Token returns the JWT the client is currently using (empty on Unix-socket
+// clients, which never hold one). Callers persist it to reuse the session.
+func (c *Client) Token() string {
+	return c.token
 }
 
 // IsLocal reports whether this client talks over a Unix socket. Callers can

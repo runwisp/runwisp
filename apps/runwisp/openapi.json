@@ -2916,6 +2916,7 @@
     },
     "/api/tasks/{taskName}/run": {
       "post": {
+        "description": "Triggers the task and returns the pending run immediately. Pass `wait=true` to instead hold the request open until the run finishes and return it with its exit code and end reason — a one-call alternative to triggering then polling.",
         "operationId": "triggerRun",
         "parameters": [
           {
@@ -2929,6 +2930,30 @@
               "minLength": 1,
               "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
+            }
+          },
+          {
+            "description": "Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead.",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
+            "explode": false,
+            "in": "query",
+            "name": "wait_timeout",
+            "schema": {
+              "default": 300,
+              "description": "With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
+              "format": "int64",
+              "maximum": 3600,
+              "minimum": 1,
+              "type": "integer"
             }
           }
         ],

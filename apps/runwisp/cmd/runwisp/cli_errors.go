@@ -132,6 +132,60 @@ func tuiPasswordMismatchError(port int, explicit bool) error {
 	}
 }
 
+// remoteAuthRequiredError is returned when `runwisp exec --url` needs to run
+// the CHAP handshake (no cached session) but no password was supplied.
+func remoteAuthRequiredError(baseURL string) error {
+	return &userFacingError{
+		title: fmt.Sprintf("a password is required to authenticate with %s", baseURL),
+		details: "Provide the daemon's password so RunWisp can log in:\n" +
+			"  - Pass --password <PASSWORD>\n" +
+			"  - Or set RUNWISP_PASSWORD in the environment",
+	}
+}
+
+// remoteAuthFailedError is returned when the remote daemon rejects our login
+// (a 401), i.e. the password is wrong.
+func remoteAuthFailedError(baseURL string) error {
+	return &userFacingError{
+		title: fmt.Sprintf("authentication with %s failed", baseURL),
+		details: "The daemon rejected the password.\n" +
+			"  - Check --password / RUNWISP_PASSWORD matches the daemon's password",
+	}
+}
+
+// remoteRateLimitedError is returned when the remote daemon's auth rate
+// limiter rejects our login (a 429).
+func remoteRateLimitedError(baseURL string) error {
+	return &userFacingError{
+		title: fmt.Sprintf("too many authentication attempts against %s", baseURL),
+		details: "The daemon temporarily blocks further logins from your IP after repeated attempts.\n" +
+			"RunWisp caches the session token between calls, so this usually means the password is wrong.\n" +
+			"  - Wait a few minutes and try again\n" +
+			"  - Confirm --password / RUNWISP_PASSWORD is correct",
+	}
+}
+
+// remoteUnreachableError is returned when the remote daemon can't be dialed.
+func remoteUnreachableError(baseURL string, cause error) error {
+	return &userFacingError{
+		title: fmt.Sprintf("daemon at %s is not reachable (%v)", baseURL, cause),
+		details: "Check that:\n" +
+			"  - The URL is correct (scheme, host, and port)\n" +
+			"  - The daemon is bound beyond loopback (runwisp daemon --host 0.0.0.0) or reachable through your reverse proxy\n" +
+			"  - No firewall is blocking the connection",
+	}
+}
+
+// remoteAPITriggerDisabledError is returned when the task exists but has
+// api_trigger = false, so it can't be triggered over the API.
+func remoteAPITriggerDisabledError(taskName string) error {
+	return &userFacingError{
+		title: fmt.Sprintf("task %q cannot be triggered over the API", taskName),
+		details: "This task has api_trigger = false in runwisp.toml.\n" +
+			"  - Remove that line (api_trigger defaults to true) to allow remote triggering",
+	}
+}
+
 // authRateLimitedError is returned when the daemon's auth rate limiter
 // rejects our login attempt. The window and limit are exported constants in
 // the server package, but we avoid importing them here to keep this file

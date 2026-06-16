@@ -103,6 +103,48 @@ func TestIsUserFacing_Nil(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestRemoteAuthRequiredError(t *testing.T) {
+	err := remoteAuthRequiredError("https://example.com")
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, "https://example.com")
+	assert.Contains(t, ufe.details, "RUNWISP_PASSWORD")
+}
+
+func TestRemoteAuthFailedError(t *testing.T) {
+	err := remoteAuthFailedError("https://example.com")
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, "authentication")
+	assert.Contains(t, ufe.title, "https://example.com")
+	assert.Contains(t, ufe.details, "rejected the password")
+}
+
+func TestRemoteRateLimitedError(t *testing.T) {
+	err := remoteRateLimitedError("https://example.com")
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, "too many authentication attempts")
+	assert.Contains(t, ufe.details, "Wait a few minutes")
+}
+
+func TestRemoteUnreachableError(t *testing.T) {
+	err := remoteUnreachableError("https://example.com", errors.New("dial tcp: connection refused"))
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, "not reachable")
+	assert.Contains(t, ufe.title, "connection refused")
+	assert.Contains(t, ufe.details, "URL is correct")
+}
+
+func TestRemoteAPITriggerDisabledError(t *testing.T) {
+	err := remoteAPITriggerDisabledError("backup")
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, `"backup"`)
+	assert.Contains(t, ufe.details, "api_trigger = false")
+}
+
 func TestUnknownTaskError(t *testing.T) {
 	t.Run("suggests closest match and lists tasks", func(t *testing.T) {
 		err := unknownTaskError("backap", []string{"cleanup", "backup"})
