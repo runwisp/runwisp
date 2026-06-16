@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Configurable control socket (`--socket` / `RUNWISP_SOCKET`).** Set the daemon's socket path explicitly so a bind-mounted `--data` can't break it and CLI commands can reach a daemon without restating `--data`. See [Daemon](https://docs.runwisp.com/configuration/daemon/#control-socket).
 - **Bundled tzdata.** IANA time zones now resolve on slim images (Alpine/distroless) without installing `tzdata`.
+- **`runwisp exec --url`.** Trigger a task on a remote daemon over the network: it logs in (CHAP), follows the live log stream, and exits with the task's exit code, caching the session token so repeated calls don't re-authenticate. Add `--detach` to fire-and-forget. See [Triggering a task remotely](https://docs.runwisp.com/recipes/remote-trigger/).
+- **`POST /api/tasks/{name}/run?wait=true`.** Block the trigger request until the run finishes and get the completed run (with `exit_code`) back in one call — no trigger-then-poll loop. Bound the hold with `wait_timeout` (seconds). See [Triggering a task remotely](https://docs.runwisp.com/recipes/remote-trigger/).
 
 ### Changed
 

@@ -28,25 +28,36 @@ import (
 var execFlags struct {
 	Daemon     bool
 	Standalone bool
+	URL        string
+	Password   string
+	Detach     bool
 }
 
 // execCmd runs a task and streams its output to stdout/stderr. It auto-detects
 // whether a daemon owns this data dir: if one is running, the request is
 // dispatched over the REST API; otherwise the task runs in-process. The user
-// can pin the choice with --daemon or --standalone.
+// can pin the choice with --daemon or --standalone, or target a remote daemon
+// over the network with --url.
 var execCmd = &cobra.Command{
 	Use:   "exec <task-name>",
 	Short: "Run a task and stream its output",
 	Long: `Runs the named task and streams its log lines to stdout/stderr. Exits with
 the task's exit code.
 
-If a daemon is running against the same data dir, ` + "`runwisp exec`" + ` dispatches
-the run through its REST API and follows the live log stream. With no daemon
-running, the task is executed in this CLI process from runwisp.toml.
+With --url (or RUNWISP_URL) set, the run is dispatched to a remote daemon over
+the network: RunWisp logs in (CHAP), triggers the task, follows its live log
+stream, and exits with the task's exit code — ideal for automation scripts and
+CI. The password comes from --password or RUNWISP_PASSWORD, and the resulting
+session token is cached so repeated calls don't re-authenticate.
+
+Without --url, the run is local. If a daemon is running against the same data
+dir, ` + "`runwisp exec`" + ` dispatches the run through its REST API and follows the
+live log stream. With no daemon running, the task is executed in this CLI
+process from runwisp.toml.
 
 Use --daemon to require a running daemon (and fail fast if none is up), or
 --standalone to require in-process execution (and refuse if a daemon owns the
-data dir). Without either flag, the mode is auto-detected.`,
+data dir). Without either flag, the local mode is auto-detected.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if execFlags.Daemon && execFlags.Standalone {
@@ -66,9 +77,20 @@ data dir). Without either flag, the mode is auto-detected.`,
 func init() {
 	execCmd.Flags().BoolVar(&execFlags.Daemon, "daemon", false, "require a running daemon and dispatch through its API")
 	execCmd.Flags().BoolVar(&execFlags.Standalone, "standalone", false, "require no daemon and run the task in-process")
+	execCmd.Flags().StringVar(&execFlags.URL, "url", "", "trigger the task on a remote daemon at this base URL (env: RUNWISP_URL)")
+	execCmd.Flags().StringVar(&execFlags.Password, "password", "", "remote daemon password for --url (env: RUNWISP_PASSWORD)")
+	execCmd.Flags().BoolVar(&execFlags.Detach, "detach", false, "with --url, trigger and print the run ID without following the log stream")
 }
 
 func runExec(taskName string, f Flags) (int, error) {
+	if remoteURL := firstNonEmpty(execFlags.URL, os.Getenv("RUNWISP_URL")); remoteURL != "" {
+		if execFlags.Daemon || execFlags.Standalone {
+			return 0, errors.New("--url cannot be combined with --daemon or --standalone")
+		}
+		password := firstNonEmpty(execFlags.Password, os.Getenv("RUNWISP_PASSWORD"))
+		return runExecViaRemote(taskName, remoteURL, password, execFlags.Detach)
+	}
+
 	daemonUp := isDaemonRunning(f)
 
 	if execFlags.Daemon && !daemonUp {
@@ -114,24 +136,114 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 	}
 
 	slog.Info("Task triggered", "name", taskName, "run", run.ID)
+	return followRun(client, taskName, run.ID)
+}
 
+// runExecViaRemote dispatches the run to a remote daemon over the network. It
+// reuses a cached JWT when one is valid, falling back to a CHAP handshake, and
+// (unless detached) follows the SSE log stream to propagate the exit code.
+func runExecViaRemote(taskName, baseURL, password string, detach bool) (int, error) {
+	client := apiclient.New(baseURL, password)
+
+	// Health is a public endpoint — probe it before auth so an unreachable
+	// daemon reports as such rather than as a login failure.
+	if err := client.HealthCheck(); err != nil {
+		return 0, remoteUnreachableError(baseURL, err)
+	}
+
+	// Optimistically reuse a cached session; an expired token surfaces as a
+	// 401 on the trigger, which triggerRemote re-authenticates and retries.
+	if cached := loadCachedToken(baseURL); cached != "" {
+		client.SetToken(cached)
+	}
+	if !client.IsAuthenticated() {
+		if err := authenticateRemote(client, baseURL, password); err != nil {
+			return 0, err
+		}
+	}
+
+	run, err := triggerRemote(client, taskName, baseURL, password)
+	if err != nil {
+		return 0, err
+	}
+
+	slog.Info("Task triggered", "name", taskName, "run", run.ID, "url", baseURL)
+
+	if detach {
+		fmt.Println(run.ID)
+		return 0, nil
+	}
+	return followRun(client, taskName, run.ID)
+}
+
+// authenticateRemote runs the CHAP handshake and caches the resulting session
+// token. It maps auth failures to user-facing errors.
+func authenticateRemote(client *apiclient.Client, baseURL, password string) error {
+	if password == "" {
+		return remoteAuthRequiredError(baseURL)
+	}
+	if err := client.Authenticate(); err != nil {
+		switch {
+		case errors.Is(err, apiclient.ErrUnauthorized):
+			return remoteAuthFailedError(baseURL)
+		case errors.Is(err, apiclient.ErrRateLimited):
+			return remoteRateLimitedError(baseURL)
+		default:
+			return fmt.Errorf("authenticate with %s: %w", baseURL, err)
+		}
+	}
+	storeCachedToken(baseURL, client.Token())
+	return nil
+}
+
+// triggerRemote triggers the run, re-authenticating once if a cached token has
+// expired (401), and maps the daemon's error codes to user-facing messages.
+func triggerRemote(client *apiclient.Client, taskName, baseURL, password string) (*model.Run, error) {
+	run, err := client.TriggerRun(taskName)
+	if errors.Is(err, apiclient.ErrUnauthorized) {
+		if authErr := authenticateRemote(client, baseURL, password); authErr != nil {
+			return nil, authErr
+		}
+		run, err = client.TriggerRun(taskName)
+	}
+	if err != nil {
+		switch {
+		case apiclient.IsHTTPStatus(err, http.StatusNotFound):
+			return nil, unknownTaskError(taskName, daemonTaskNames(client))
+		case apiclient.IsHTTPStatus(err, http.StatusForbidden):
+			return nil, remoteAPITriggerDisabledError(taskName)
+		case errors.Is(err, apiclient.ErrUnauthorized):
+			return nil, remoteAuthFailedError(baseURL)
+		case errors.Is(err, apiclient.ErrRateLimited):
+			return nil, remoteRateLimitedError(baseURL)
+		default:
+			return nil, fmt.Errorf("trigger %q: %w", taskName, err)
+		}
+	}
+	return run, nil
+}
+
+// followRun follows a triggered run's SSE log stream, printing lines to
+// stdout/stderr and returning the run's exit code once it reaches a terminal
+// state. It is shared by the local-daemon and remote exec paths.
+func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
 	ctx, cancel := newSignalCancelContext()
 	defer cancel()
 
 	// Line numbers are zero-indexed; the server reads from=0 as the default
 	// tail window and clamps to anchor 0 on a fresh run, so we see every line.
-	ch, err := client.StreamLogLines(ctx, taskName, run.ID, apiclient.StreamLogOpts{FromLine: 0})
+	ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: 0})
 	if err != nil {
 		return 0, fmt.Errorf("open log stream: %w", err)
 	}
 
-	if exitCode, done, err := streamRunLogs(ch, client, taskName, run.ID); done {
+	if exitCode, done, err := streamRunLogs(ch, client, taskName, runID); done {
 		return exitCode, err
 	}
 
 	// Stream closed without a Done event (ctx cancelled or transport ended);
 	// poll for the terminal state so we can propagate the exit code anyway.
-	final, err := client.GetRun(taskName, run.ID)
+	final, err := client.GetRun(taskName, runID)
 	if err != nil {
 		return 0, fmt.Errorf("fetch final run state: %w", err)
 	}

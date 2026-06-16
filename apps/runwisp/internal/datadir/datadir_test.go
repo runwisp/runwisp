@@ -157,13 +157,47 @@ func TestWritePidFile_OverwritesExistingRegularFile(t *testing.T) {
 
 func TestWritePidFile_RefusesNonRegularPath(t *testing.T) {
 	dataDir := t.TempDir()
-	// Replace the future PID file path with a directory; writeFileNoFollow must
+	// Replace the future PID file path with a directory; WriteSecretFile must
 	// reject "not a regular file" before any OpenFile attempt.
 	if err := os.MkdirAll(PidFilePath(dataDir), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := WritePidFile(dataDir); err == nil {
 		t.Fatal("expected WritePidFile to refuse non-regular path")
+	}
+}
+
+func TestWriteSecretFile_Perms(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret")
+	if err := WriteSecretFile(path, []byte("shh")); err != nil {
+		t.Fatalf("WriteSecretFile: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Fatalf("perm = %o, want 0600", got)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "shh" {
+		t.Fatalf("content = %q, want %q", data, "shh")
+	}
+}
+
+func TestWriteSecretFile_RefusesSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSecretFile(link, []byte("x")); err == nil {
+		t.Fatal("expected WriteSecretFile to refuse a symlink path")
 	}
 }
 

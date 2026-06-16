@@ -119,6 +119,76 @@ func (s *runService) TriggerRun(ctx context.Context, taskName string) (*model.Ru
 	return s.taskManager.TriggerRun(taskName, model.TriggeredByAPI)
 }
 
+// terminalWaitBackstop is how often TriggerRunAndWait re-reads storage while
+// waiting. The in-memory event bus is best-effort (a slow consumer's event can
+// be dropped) and persistence is async, so neither is authoritative alone —
+// the poll is a cheap safety net that bounds worst-case latency if the live
+// event is missed.
+const terminalWaitBackstop = 2 * time.Second
+
+// TriggerRunAndWait triggers a run and blocks until it reaches a terminal state
+// or timeout elapses, returning the finished run (with exit_code / end_reason).
+// On timeout it returns the run in its latest known — possibly still running —
+// state; callers tell the two apart via the run's status. It exists so a remote
+// caller can fire a task and read its result in a single request instead of
+// trigger-then-poll.
+func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, timeout time.Duration) (*model.Run, error) {
+	// Subscribe before triggering: a fast task can finish and publish its
+	// terminal event before TriggerRun even returns, so we must already be
+	// listening. The handler forwards every terminal run; we filter by ID once
+	// we know it.
+	terminal := make(chan *model.Run, 64)
+	forward := func(e events.Event) {
+		if re, ok := e.Data.(events.RunEvent); ok && re.Run != nil {
+			select {
+			case terminal <- re.Run:
+			default: // full — the backstop poll will catch our run
+			}
+		}
+	}
+	unsubDone := s.eventBus.Subscribe(events.EventRunCompleted, forward)
+	defer unsubDone()
+	unsubFailed := s.eventBus.Subscribe(events.EventRunFailed, forward)
+	defer unsubFailed()
+
+	run, err := s.TriggerRun(ctx, taskName)
+	if err != nil {
+		return nil, err
+	}
+	return s.awaitTerminal(ctx, run, terminal, timeout), nil
+}
+
+// awaitTerminal blocks until run reaches a terminal state, timeout elapses, or
+// ctx is cancelled, returning the most authoritative run state it can find. It
+// races three signals: the live terminal event (filtered to our run), a
+// periodic storage re-read (backstop for a missed event), and the deadline.
+func (s *runService) awaitTerminal(ctx context.Context, run *model.Run, terminal <-chan *model.Run, timeout time.Duration) *model.Run {
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(terminalWaitBackstop)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case r := <-terminal:
+			if r.ID == run.ID {
+				return r
+			}
+		case <-ticker.C:
+			if fresh, err := s.db.GetRun(ctx, run.ID); err == nil && fresh.Status == model.PhaseEnded {
+				return fresh
+			}
+		case <-waitCtx.Done():
+			// Deadline reached or client disconnected. Hand back the latest
+			// persisted state so the caller can see status != "ended".
+			if fresh, err := s.db.GetRun(ctx, run.ID); err == nil {
+				return fresh
+			}
+			return run
+		}
+	}
+}
+
 func (s *runService) RestartService(taskName string) error {
 	task, exists := s.tasks.Get(taskName)
 	if !exists {

@@ -1,0 +1,183 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Triggering a task remotely
+description: Fire a single RunWisp task on a daemon you're not sitting at — from a deploy script, a cron job on another box, or CI — and get its live output and exit code back. One CLI command, or a dependency-free REST call.
+---
+
+import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Sometimes the task lives on one machine and the thing that wants to
+run it lives on another — a deploy script on your laptop, a cron job
+on a jump host, a CI runner. You don't want to SSH in, remember the
+exact command, and lose the output to a scrollback buffer. You want
+to poke the daemon, watch what happens, and have your script stop if
+it fails.
+
+That's one command:
+
+```bash
+runwisp exec backup --url https://runwisp.example.com
+```
+
+It logs in, triggers the `backup` task, streams its stdout/stderr to
+your terminal live, and exits with the **task's** exit code — so
+`runwisp exec backup --url … && deploy.sh` does the right thing. Every
+trigger still lands as a browsable run in the daemon's history, with
+timestamps, exit code, and captured output, exactly like a scheduled
+run.
+
+## The two ways to do it
+
+<Tabs syncKey="surface">
+    <TabItem label="Remote CLI" icon="seti:shell">
+        Install the `runwisp` binary wherever your script runs (it's
+        a single static binary — no daemon, no data dir needed for
+        this), then point `exec` at the remote daemon:
+
+        ```bash
+        export RUNWISP_URL=https://runwisp.example.com
+        export RUNWISP_PASSWORD=…            # the daemon's password
+
+        runwisp exec backup                  # --url falls back to RUNWISP_URL
+        ```
+
+        RunWisp does the [CHAP handshake](/operations/auth/#network-clients-web-ui-remote-rest)
+        for you, **caches the resulting session token** under your
+        user cache dir (`$XDG_CACHE_HOME/runwisp/` on Linux,
+        `~/Library/Caches/runwisp/` on macOS), and reuses it on the
+        next call. That matters: the daemon rate-limits logins, so a
+        script that triggers a task every minute would get throttled
+        if it re-authenticated each time. With the cached token, only
+        the first call logs in; the rest just trigger.
+
+        The password can come from `--password` instead of the
+        environment, but `RUNWISP_PASSWORD` keeps it out of your shell
+        history and process list.
+
+        **Fire-and-forget.** If you only want to kick the task off and
+        not wait around, add `--detach` — it prints the run ID and
+        exits `0` immediately:
+
+        ```bash
+        runwisp exec backup --detach
+        # 01ARZ3NDEKTSV4RRFFQ69G5FAV
+        ```
+
+        You can quote that ULID back when you go looking for the run
+        in the Web UI or [`runwisp` history](/concepts/logs/).
+    </TabItem>
+    <TabItem label="REST API" icon="cloud-download">
+        Can't install the binary on the box that triggers the task?
+        It's all plain HTTP — the CLI is just a wrapper around these
+        calls. [Logging in](/operations/auth/#network-clients-web-ui-remote-rest)
+        is a two-step dance: GET a nonce, POST back
+        `sha256(password:nonce)`, and the daemon hands you a JWT.
+
+        ```bash
+        set -euo pipefail
+        BASE=https://runwisp.example.com
+
+        # 1. Log in (CHAP) → JWT.
+        NONCE=$(curl -sSf "$BASE/api/auth/challenge" | jq -r .nonce)
+        RESP=$(printf '%s:%s' "$RUNWISP_PASSWORD" "$NONCE" | sha256sum | cut -d' ' -f1)
+        TOKEN=$(curl -sSf -X POST "$BASE/api/auth" \
+          -H 'Content-Type: application/json' \
+          -d "$(jq -nc --arg n "$NONCE" --arg r "$RESP" '{nonce:$n, response:$r}')" \
+          | jq -r .token)
+
+        # 2. Trigger AND wait — one call returns the finished run.
+        curl -sSf -X POST "$BASE/api/tasks/backup/run?wait=true" \
+          -H "Authorization: Bearer $TOKEN" | jq .exit_code
+        ```
+
+        `wait=true` holds the request open until the run reaches a
+        terminal state and returns the completed run — same shape as
+        any other run object, so `.exit_code`, `.end_reason`, and
+        `.status` are all there. That's the whole result in a single
+        call: no trigger-then-poll loop to write.
+
+        Reuse that `$TOKEN` across calls — it's good for 24 hours.
+        Logging in on every trigger will eventually trip the daemon's
+        auth [rate limit](/operations/auth/#rate-limiting).
+
+        #### Long-running tasks: trigger, then poll
+
+        `wait=true` blocks for up to `wait_timeout` seconds (default
+        `300`); if the run hasn't finished by then the call returns it
+        still `running` rather than hanging forever. For tasks that
+        outlast a sensible HTTP timeout — yours or your reverse
+        proxy's — skip `wait`, take the run `id` the trigger returns,
+        and poll it on your own schedule:
+
+        ```bash
+        # 1. Trigger without waiting → returns the new run, including its id.
+        RUN_ID=$(curl -sSf -X POST "$BASE/api/tasks/backup/run" \
+          -H "Authorization: Bearer $TOKEN" | jq -r .id)
+
+        # 2. Poll until it ends, then read the exit code.
+        while :; do
+          RUN=$(curl -sSf "$BASE/api/tasks/backup/runs/$RUN_ID" \
+            -H "Authorization: Bearer $TOKEN")
+          [ "$(jq -r .status <<<"$RUN")" = "ended" ] && break
+          sleep 5
+        done
+        echo "exit code: $(jq -r .exit_code <<<"$RUN")"
+        ```
+
+        Want live output instead of polling? That same `id` feeds the
+        SSE stream at
+        `GET /api/tasks/backup/runs/$RUN_ID/log/stream`, which emits
+        `line` events and a final `done` event when the run ends —
+        that's exactly what the CLI follows under the hood.
+    </TabItem>
+
+</Tabs>
+
+## What the daemon needs
+
+Two things, and they're both about the daemon you're triggering — not
+the machine you're triggering from:
+
+1. **It has to be reachable over the network.** By default the daemon
+   binds to loopback only. Bind it wider with
+   `runwisp daemon --host 0.0.0.0` and — please — put it behind a
+   [TLS-terminating reverse proxy](/operations/auth/#reverse-proxies)
+   rather than exposing plain HTTP. CHAP keeps your password safe, but
+   not everything else: the session token and all the output ride over
+   plain HTTP in the clear, and anyone who can watch the traffic can
+   grab that token and reuse it. TLS is what closes that gap.
+2. **The task allows API triggering.** Tasks are triggerable over the
+   API by default (`api_trigger = true`). If you've set
+   `api_trigger = false` on a task to wall it off, the trigger comes
+   back `403` and so does `runwisp exec --url`. Drop the line to
+   re-enable it.
+
+That's the whole setup. The TOML on the daemon stays the single
+source of truth for _what_ runs; the remote trigger only ever says
+_when_.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Operations: auth"
+        href="/operations/auth/"
+        description="The CHAP login and JWT session the remote trigger relies on."
+    />
+    <LinkCard
+        title="Deploy hooks"
+        href="/recipes/deploy-hooks/"
+        description="The sibling recipe — manual-only tasks triggered from CI."
+    />
+    <LinkCard
+        title="[tasks.*] ref"
+        href="/configuration/tasks/"
+        description="api_trigger and every other task key."
+    />
+    <LinkCard
+        title="Quick start"
+        href="/getting-started/quick-start/"
+        description="Get a daemon and a task running in the first place."
+    />
+</CardGrid>

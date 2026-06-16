@@ -20,6 +20,15 @@ type TaskRunInput struct {
 	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 }
 
+// TriggerRunInput drives POST /api/tasks/{taskName}/run. With wait=false
+// (default) it returns immediately with the pending run; with wait=true the
+// request blocks until the run finishes so a single call yields its exit code.
+type TriggerRunInput struct {
+	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
+	Wait        bool   `query:"wait" doc:"Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead."`
+	WaitTimeout int    `query:"wait_timeout" minimum:"1" maximum:"3600" default:"300" doc:"With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state."`
+}
+
 type RunsQueryInput struct {
 	Limit         int    `query:"limit" minimum:"1" maximum:"1000" default:"50" doc:"Max results per page"`
 	Offset        int    `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`

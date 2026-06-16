@@ -117,6 +117,18 @@ func (c *Client) IsAuthenticated() bool {
 	return c.local || c.token != ""
 }
 
+// SetToken seeds the client with a previously obtained JWT, letting callers
+// reuse a cached session instead of re-running CHAP on every invocation.
+func (c *Client) SetToken(token string) {
+	c.token = token
+}
+
+// Token returns the JWT the client is currently using (empty on Unix-socket
+// clients, which never hold one). Callers persist it to reuse the session.
+func (c *Client) Token() string {
+	return c.token
+}
+
 // IsLocal reports whether this client talks over a Unix socket. Callers can
 // use this to skip work (login prompts, password validation) that doesn't
 // apply on the local path.

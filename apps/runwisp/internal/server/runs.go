@@ -108,6 +108,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		Method:        http.MethodPost,
 		Path:          "/api/tasks/{taskName}/run",
 		Summary:       "Trigger a new run",
+		Description:   "Triggers the task and returns the pending run immediately. Pass `wait=true` to instead hold the request open until the run finishes and return it with its exit code and end reason — a one-call alternative to triggering then polling.",
 		Tags:          []string{"Runs"},
 		DefaultStatus: http.StatusCreated,
 	}, srv.humaTriggerRun)
@@ -243,7 +244,14 @@ func (srv *Server) humaGetTaskRuns(ctx context.Context, input *TaskRunsQueryInpu
 	return &RunsOutput{Body: RunsResponseBody{Runs: result.Runs, Total: result.Total}}, nil
 }
 
-func (srv *Server) humaTriggerRun(ctx context.Context, input *TaskNameInput) (*TriggerRunOutput, error) {
+func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (*TriggerRunOutput, error) {
+	if input.Wait {
+		run, err := srv.runService.TriggerRunAndWait(ctx, input.TaskName, time.Duration(input.WaitTimeout)*time.Second)
+		if err != nil {
+			return nil, mapDomainError(err, "Failed to trigger run")
+		}
+		return &TriggerRunOutput{Body: *run}, nil
+	}
 	run, err := srv.runService.TriggerRun(ctx, input.TaskName)
 	if err != nil {
 		return nil, mapDomainError(err, "Failed to trigger run")

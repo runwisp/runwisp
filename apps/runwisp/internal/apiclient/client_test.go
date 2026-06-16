@@ -99,6 +99,49 @@ func TestAuthenticate(t *testing.T) {
 	assert.True(t, c.IsAuthenticated())
 }
 
+func TestSetTokenSkipsHandshake(t *testing.T) {
+	var sawAuth bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/challenge", "/api/auth":
+			sawAuth = true
+			http.Error(w, "should not authenticate", http.StatusInternalServerError)
+		case "/api/tasks/my-task/run":
+			assert.Equal(t, "Bearer cached-jwt", r.Header.Get("Authorization"))
+			json.NewEncoder(w).Encode(model.Run{ID: "new-run"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	c.SetToken("cached-jwt")
+	assert.True(t, c.IsAuthenticated())
+	assert.Equal(t, "cached-jwt", c.Token())
+
+	run, err := c.TriggerRun("my-task")
+	require.NoError(t, err)
+	assert.Equal(t, "new-run", run.ID)
+	assert.False(t, sawAuth, "a seeded token must not trigger a CHAP handshake")
+}
+
+func TestTokenReturnsMintedValue(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/challenge":
+			json.NewEncoder(w).Encode(map[string]string{"nonce": "n"})
+		case "/api/auth":
+			json.NewEncoder(w).Encode(map[string]string{"token": "fresh-jwt"})
+		}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "pw")
+	require.NoError(t, c.Authenticate())
+	assert.Equal(t, "fresh-jwt", c.Token())
+}
+
 func TestAuthenticate_ChallengeError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
