@@ -71,7 +71,7 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 		}
 	}
 
-	taskName, resolveErr := h.resolveDispatchTask(message.Execution)
+	taskName, configBacked, resolveErr := h.resolveDispatchTask(message.Execution)
 	if resolveErr != nil {
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(-1), nil, nowPtr()))
 		if h.uploader != nil {
@@ -80,7 +80,15 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 		return resolveErr
 	}
 
-	run, triggerErr := h.taskManager.TriggerCloudRun(taskName, executionID)
+	// Only TOML-defined tasks declare params, so only they resolve InputValues.
+	// An inline ad-hoc execution has no parameter declarations — forwarding its
+	// InputValues would fail resolution as "unknown parameter", so ignore them.
+	var inputValues map[string]string
+	if configBacked {
+		inputValues = message.Execution.InputValues
+	}
+
+	run, triggerErr := h.taskManager.TriggerCloudRun(taskName, executionID, inputValues)
 	if triggerErr != nil {
 		return h.handleTriggerError(ctx, executionID, run, triggerErr)
 	}

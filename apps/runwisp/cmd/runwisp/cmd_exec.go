@@ -127,7 +127,7 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 		return 0, fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
-	run, err := client.TriggerRun(taskName)
+	run, err := client.TriggerRun(taskName, nil)
 	if err != nil {
 		if apiclient.IsHTTPStatus(err, http.StatusNotFound) {
 			return 0, unknownTaskError(taskName, daemonTaskNames(client))
@@ -199,12 +199,12 @@ func authenticateRemote(client *apiclient.Client, baseURL, password string) erro
 // triggerRemote triggers the run, re-authenticating once if a cached token has
 // expired (401), and maps the daemon's error codes to user-facing messages.
 func triggerRemote(client *apiclient.Client, taskName, baseURL, password string) (*model.Run, error) {
-	run, err := client.TriggerRun(taskName)
+	run, err := client.TriggerRun(taskName, nil)
 	if errors.Is(err, apiclient.ErrUnauthorized) {
 		if authErr := authenticateRemote(client, baseURL, password); authErr != nil {
 			return nil, authErr
 		}
-		run, err = client.TriggerRun(taskName)
+		run, err = client.TriggerRun(taskName, nil)
 	}
 	if err != nil {
 		switch {

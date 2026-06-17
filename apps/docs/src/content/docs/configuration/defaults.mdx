@@ -49,7 +49,8 @@ healthy_after       = "60s"
 | `notify_on_missed` | `true`       | Whether [missed scheduled runs](/concepts/scheduling/#alerting-on-missed-runs) alert. Set `false` here to silence the alert daemon-wide; a per-task `notify_on_missed` still wins.                                                               |
 
 Some things you _can't_ default: `cron`, `on_overlap`, the `retry_*`
-keys, `max_concurrent`, `queue_max`, `graceful_stop`. Those are too tied
+keys, `max_concurrent`, `queue_max`, `graceful_stop`, and
+[`params`](/configuration/tasks/#parameters). Those are too tied
 to a task's intent — defaulting them would quietly change behaviour you
 meant to be explicit. Per-task `graceful_stop` just falls back to its
 built-in value when you leave it off, so set it only on the tables that

@@ -86,11 +86,11 @@
         })();
     });
 
-    async function handleRun() {
+    async function handleRun(params?: Record<string, string | null>) {
         if (!taskName) return;
         triggering = true;
         try {
-            const newRun = await tasksApi.triggerRun(taskName);
+            const newRun = await tasksApi.triggerRun(taskName, params);
             source.upsert(newRun);
             selectRunId = newRun.id;
             toast.success(`Triggered "${taskName}"`);

@@ -17,6 +17,8 @@ type DialogManager struct {
 	confirmDialog *ConfirmDialog
 	copyDialog    *CopyDialog
 	helpDialog    *HelpDialog
+	paramForm     *ParamFormDialog
+	runParams     *RunParamsDialog
 
 	flashMessage string
 	flashExpiry  time.Time
@@ -75,6 +77,54 @@ func (dm *DialogManager) UpdateSpinner(innerMsg tea.Msg) tea.Cmd {
 		return nil
 	}
 	return dm.confirmDialog.UpdateSpinner(innerMsg)
+}
+
+// HasParamForm reports whether a parameter form dialog is active.
+func (dm *DialogManager) HasParamForm() bool {
+	return dm.paramForm != nil
+}
+
+// ShowParamForm activates a parameter form dialog.
+func (dm *DialogManager) ShowParamForm(d ParamFormDialog) {
+	dm.paramForm = &d
+}
+
+func (dm *DialogManager) DismissParamForm() {
+	dm.paramForm = nil
+}
+
+// UpdateParamForm dispatches input to the active param form. Returns the submit
+// command (when confirmed) and whether the dialog closed.
+func (dm *DialogManager) UpdateParamForm(msg tea.Msg) (tea.Cmd, bool) {
+	cmd, closed := dm.paramForm.Update(msg)
+	if closed {
+		dm.paramForm = nil
+	}
+	return cmd, closed
+}
+
+// HasRunParams reports whether the read-only run-params dialog is active.
+func (dm *DialogManager) HasRunParams() bool {
+	return dm.runParams != nil
+}
+
+// ShowRunParams activates the read-only run-params dialog.
+func (dm *DialogManager) ShowRunParams(d RunParamsDialog) {
+	dm.runParams = &d
+}
+
+func (dm *DialogManager) DismissRunParams() {
+	dm.runParams = nil
+}
+
+// UpdateRunParams dispatches input to the active run-params dialog.
+// Returns true when the dialog closed.
+func (dm *DialogManager) UpdateRunParams(msg tea.Msg) bool {
+	if dm.runParams.Update(msg) {
+		dm.runParams = nil
+		return true
+	}
+	return false
 }
 
 // ShowCopy activates a copy dialog.
@@ -185,7 +235,7 @@ func (dm *DialogManager) FlashActive() (string, bool) {
 // SyncMouseState disables terminal mouse tracking when the copy dialog is
 // visible (or any mouse-hold is active) and re-enables it otherwise.
 func (dm *DialogManager) SyncMouseState() tea.Cmd {
-	wantDisabled := dm.copyDialog != nil || dm.mouseHold
+	wantDisabled := dm.copyDialog != nil || dm.runParams != nil || dm.mouseHold
 
 	if wantDisabled && !dm.mouseDisabled {
 		dm.mouseDisabled = true
@@ -203,6 +253,12 @@ func (dm *DialogManager) SyncMouseState() tea.Cmd {
 func (dm *DialogManager) RenderOverlays(base string, width, height int) string {
 	if dm.confirmDialog != nil {
 		return dm.confirmDialog.View(width, height)
+	}
+	if dm.paramForm != nil {
+		return dm.paramForm.View(width, height)
+	}
+	if dm.runParams != nil {
+		return dm.runParams.View(width, height)
 	}
 	if dm.copyDialog != nil {
 		return dm.copyDialog.View(width, height)

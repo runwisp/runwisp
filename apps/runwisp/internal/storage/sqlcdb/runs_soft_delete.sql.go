@@ -235,7 +235,7 @@ func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) error {
 const selectRestoredRunsByFilter = `-- name: SelectRestoredRunsByFilter :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, deleted_at
+  instance_index, params_json, deleted_at
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL OR end_reason = ?1)
   AND (?2 IS NULL OR status = ?2)
@@ -291,6 +291,7 @@ func (q *Queries) SelectRestoredRunsByFilter(ctx context.Context, arg SelectRest
 			&i.RetryAttempt,
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
+			&i.ParamsJson,
 			&i.DeletedAt,
 		); err != nil {
 			return nil, err
@@ -309,7 +310,7 @@ func (q *Queries) SelectRestoredRunsByFilter(ctx context.Context, arg SelectRest
 const selectRestoredRunsByIDs = `-- name: SelectRestoredRunsByIDs :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, deleted_at
+  instance_index, params_json, deleted_at
 FROM runs WHERE deleted_at IS NULL
   AND id IN (/*SLICE:ids*/?)
 `
@@ -347,6 +348,7 @@ func (q *Queries) SelectRestoredRunsByIDs(ctx context.Context, ids []string) ([]
 			&i.RetryAttempt,
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
+			&i.ParamsJson,
 			&i.DeletedAt,
 		); err != nil {
 			return nil, err

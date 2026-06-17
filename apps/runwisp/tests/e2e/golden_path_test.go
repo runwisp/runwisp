@@ -53,7 +53,7 @@ func TestGoldenPathFireAppearsInAPILogAndSSE(t *testing.T) {
 	// headers so any subsequent event is a real lifecycle event.
 	waitForRunStreamPing(t, stream, 5*time.Second)
 
-	triggered, err := client.TriggerRun(taskName)
+	triggered, err := client.TriggerRun(taskName, nil)
 	require.NoError(t, err, "TriggerRun should succeed")
 	require.NotEmpty(t, triggered.ID)
 

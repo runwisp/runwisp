@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -520,6 +522,9 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if err := validateTaskEnv(task); err != nil {
 		return err
 	}
+	if err := validateTaskParams(task); err != nil {
+		return err
+	}
 	if task.Kind.IsService() {
 		if err := validateServiceTask(task); err != nil {
 			return err
@@ -588,6 +593,180 @@ func validateEnvMap(scope string, env map[string]string) error {
 		if len(value) > EnvMaxValueLen {
 			return fmt.Errorf("invalid %s: value for %q is %d bytes; cap is %d", scope, key, len(value), EnvMaxValueLen)
 		}
+	}
+	return nil
+}
+
+// validateTaskParams enforces the [tasks.*.params] rules: identity shape,
+// modifier compatibility, default coercion, intra-task uniqueness, env/secret
+// collisions, positional ordering, and the auto-scheduled required-without-
+// default rule. It runs after validateTaskEnv so task.Env/task.Secrets are
+// fully merged (inline + env_file + defaults) when the collision check reads
+// them. Kind/key derivation and the single-identity rule are already enforced
+// at wire-mapping time (toTaskParams).
+func validateTaskParams(task *model.Task) error {
+	if len(task.Parameters) == 0 {
+		return nil
+	}
+	autoScheduled := task.Cron != "" || task.RunOnStart
+	seen := make(map[string]struct{}, len(task.Parameters))
+	optionalPositionalSeen := false
+	for i := range task.Parameters {
+		p := &task.Parameters[i]
+		scope := fmt.Sprintf("params[%d] (%s) for task %s", i, p.Key, task.Name)
+		if _, dup := seen[p.Key]; dup {
+			return fmt.Errorf("invalid %s: duplicate parameter key %q", scope, p.Key)
+		}
+		seen[p.Key] = struct{}{}
+
+		if err := validateParamEntry(scope, p, task, autoScheduled, optionalPositionalSeen); err != nil {
+			return err
+		}
+		if p.Kind == model.ParamArg && !p.Required {
+			optionalPositionalSeen = true
+		}
+	}
+	return nil
+}
+
+// validateParamEntry runs every per-parameter check for one declaration.
+// optionalPositionalSeen reports whether an earlier optional positional arg has
+// already appeared, which would make a later required positional ambiguous.
+func validateParamEntry(scope string, p *model.TaskParam, task *model.Task, autoScheduled, optionalPositionalSeen bool) error {
+	if err := validateParamIdentity(scope, p); err != nil {
+		return err
+	}
+	if err := validateParamModifiers(scope, p); err != nil {
+		return err
+	}
+	if err := validateParamDefault(scope, p); err != nil {
+		return err
+	}
+	if err := validateParamEnvCollision(scope, p, task); err != nil {
+		return err
+	}
+	if p.Kind == model.ParamArg && p.Required && optionalPositionalSeen {
+		return fmt.Errorf("invalid %s: a required positional arg cannot follow an optional one (omitting the optional one would shift this value)", scope)
+	}
+	if p.Required && p.Default == nil && autoScheduled {
+		return fmt.Errorf("invalid %s: required parameters need a default on cron / run_on_start tasks — a scheduled firing has no operator to supply a value", scope)
+	}
+	return nil
+}
+
+// validateParamIdentity checks the canonical key shape per kind: env/arg names
+// must be valid identifiers; option/flag tokens must start with a dash.
+func validateParamIdentity(scope string, p *model.TaskParam) error {
+	switch p.Kind {
+	case model.ParamEnv, model.ParamArg:
+		if !envKeyPattern.MatchString(p.Key) {
+			return fmt.Errorf("invalid %s: %s name %q must match %s", scope, p.Kind, p.Key, envKeyPattern.String())
+		}
+	case model.ParamOption, model.ParamFlag:
+		if !strings.HasPrefix(p.Key, "-") {
+			return fmt.Errorf("invalid %s: %s %q must start with '-' (e.g. --name)", scope, p.Kind, p.Key)
+		}
+		if strings.ContainsAny(p.Key, " \t\n\x00") {
+			return fmt.Errorf("invalid %s: %s %q must not contain whitespace or NUL", scope, p.Kind, p.Key)
+		}
+	}
+	return nil
+}
+
+// validateParamModifiers checks type / choices / allow_custom compatibility with
+// the kind.
+func validateParamModifiers(scope string, p *model.TaskParam) error {
+	if p.Type != "" && p.Type != model.ParamTypeString && p.Type != model.ParamTypeNumber {
+		return fmt.Errorf("invalid %s: type %q must be %q or %q", scope, p.Type, model.ParamTypeString, model.ParamTypeNumber)
+	}
+	if p.Kind == model.ParamFlag {
+		return validateFlagModifiers(scope, p)
+	}
+	if len(p.Choices) == 0 && p.AllowCustom {
+		return fmt.Errorf("invalid %s: allow_custom is only meaningful with choices", scope)
+	}
+	return validateChoiceValues(scope, p)
+}
+
+// validateFlagModifiers rejects modifiers that have no meaning on a flag — its
+// value is always boolean, so type/choices/allow_custom/required don't apply.
+func validateFlagModifiers(scope string, p *model.TaskParam) error {
+	if p.Type != "" {
+		return fmt.Errorf("invalid %s: type is not valid on a flag (boolean is implied)", scope)
+	}
+	if len(p.Choices) > 0 {
+		return fmt.Errorf("invalid %s: choices is not valid on a flag", scope)
+	}
+	if p.AllowCustom {
+		return fmt.Errorf("invalid %s: allow_custom is not valid on a flag", scope)
+	}
+	if p.Required {
+		return fmt.Errorf("invalid %s: required is not valid on a flag (it always resolves true/false; set a default to start it on)", scope)
+	}
+	return nil
+}
+
+// validateChoiceValues checks each declared choice is well-formed: never a NUL
+// byte, and parseable as a number when the param's type is number (so
+// resolve-time enum membership implies the value is numeric).
+func validateChoiceValues(scope string, p *model.TaskParam) error {
+	for _, c := range p.Choices {
+		if strings.ContainsRune(c, 0) {
+			return fmt.Errorf("invalid %s: choice %q contains a NUL byte", scope, c)
+		}
+		if p.Type == model.ParamTypeNumber {
+			if _, err := strconv.ParseFloat(c, 64); err != nil {
+				return fmt.Errorf("invalid %s: choice %q is not a number but type is %q", scope, c, model.ParamTypeNumber)
+			}
+		}
+	}
+	return nil
+}
+
+// validateParamDefault checks that a declared default satisfies the kind/type:
+// flag → boolean, enum → member (unless allow_custom), number → parses; and the
+// NUL/length guards shared with env values.
+func validateParamDefault(scope string, p *model.TaskParam) error {
+	if p.Default == nil {
+		return nil
+	}
+	def := *p.Default
+	if strings.ContainsRune(def, 0) {
+		return fmt.Errorf("invalid %s: default contains a NUL byte", scope)
+	}
+	if len(def) > EnvMaxValueLen {
+		return fmt.Errorf("invalid %s: default is %d bytes; cap is %d", scope, len(def), EnvMaxValueLen)
+	}
+	switch {
+	case p.Kind == model.ParamFlag:
+		if _, err := strconv.ParseBool(def); err != nil {
+			return fmt.Errorf("invalid %s: flag default %q must be a boolean", scope, def)
+		}
+	case len(p.Choices) > 0 && !p.AllowCustom:
+		if slices.Contains(p.Choices, def) {
+			return nil
+		}
+		return fmt.Errorf("invalid %s: default %q is not one of %s", scope, def, strings.Join(p.Choices, ", "))
+	case p.Type == model.ParamTypeNumber:
+		if _, err := strconv.ParseFloat(def, 64); err != nil {
+			return fmt.Errorf("invalid %s: number default %q must parse as a number", scope, def)
+		}
+	}
+	return nil
+}
+
+// validateParamEnvCollision rejects an env-kind parameter whose name also
+// appears in the task's env or secrets — two mechanisms writing one variable is
+// exactly the silent behaviour the product forbids.
+func validateParamEnvCollision(scope string, p *model.TaskParam, task *model.Task) error {
+	if p.Kind != model.ParamEnv {
+		return nil
+	}
+	if _, ok := task.Env[p.Key]; ok {
+		return fmt.Errorf("invalid %s: env parameter %q is also defined in env", scope, p.Key)
+	}
+	if _, ok := task.Secrets[p.Key]; ok {
+		return fmt.Errorf("invalid %s: env parameter %q is also defined in secrets", scope, p.Key)
 	}
 	return nil
 }
@@ -888,10 +1067,10 @@ const (
 	// env_file-derived secret env. Generous enough for any realistic dotenv
 	// while keeping a malformed config from blowing up the daemon's memory.
 	EnvMaxEntries = 256
-	// EnvMaxValueLen caps a single env value at 32 KiB. Linux's argv+env
-	// limit is 128 KiB by default; capping per-value leaves room for many
-	// entries without bumping into ARG_MAX surprises.
-	EnvMaxValueLen = 32 * 1024
+	// EnvMaxValueLen re-exports the shared per-value cap that lives on the model
+	// package (env values and supplied param values share one limit so they
+	// never drift). See model.EnvMaxValueLen for the rationale.
+	EnvMaxValueLen = model.EnvMaxValueLen
 )
 
 // Built-in defaults applied by ApplyDefaults when a field is omitted entirely.

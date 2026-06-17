@@ -236,7 +236,7 @@ func TestBuildContainerConfig(t *testing.T) {
 		},
 	}
 
-	containerCfg, hostCfg := b.buildContainerConfig("test-image:latest", ctr, nil)
+	containerCfg, hostCfg := b.buildContainerConfig("test-image:latest", ctr, nil, nil)
 
 	assert.Equal(t, "test-image:latest", containerCfg.Image)
 	assert.Equal(t, []string{"FOO=bar", "BAZ=qux"}, containerCfg.Env)
@@ -260,7 +260,7 @@ func TestBuildContainerConfigEmpty(t *testing.T) {
 		BaseImage: "alpine",
 	}
 
-	containerCfg, hostCfg := b.buildContainerConfig("img", ctr, nil)
+	containerCfg, hostCfg := b.buildContainerConfig("img", ctr, nil, nil)
 
 	assert.Equal(t, "img", containerCfg.Image)
 	assert.Empty(t, containerCfg.Env)
@@ -600,7 +600,7 @@ func TestBuildContainerConfigPortDefaultProtocol(t *testing.T) {
 		},
 	}
 
-	containerCfg, hostCfg := b.buildContainerConfig("img", ctr, nil)
+	containerCfg, hostCfg := b.buildContainerConfig("img", ctr, nil, nil)
 	_, has3000 := containerCfg.ExposedPorts[network.MustParsePort("3000/udp")]
 	assert.True(t, has3000)
 	_, hasBinding := hostCfg.PortBindings[network.MustParsePort("3000/udp")]

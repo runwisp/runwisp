@@ -94,12 +94,16 @@ func TestCloudTaskRunner_TriggerCloudRun_TagsTriggeredByCloud(t *testing.T) {
 	inner := &stubTaskRunner{triggerRun: want}
 	a := &cloudTaskRunner{inner: inner}
 
-	got, err := a.TriggerCloudRun("alpha", "exec-123")
+	got, err := a.TriggerCloudRun("alpha", "exec-123", map[string]string{"REGION": "eu"})
 	require.NoError(t, err)
 	assert.Same(t, want, got)
 	assert.Equal(t, "alpha", inner.gotTriggerTask)
 	assert.Equal(t, model.TriggeredByCloud, inner.gotTrigger.TriggeredBy)
 	assert.Equal(t, "exec-123", inner.gotTrigger.ExternalExecutionID)
+	// The cloud protocol carries a plain map; the adapter lifts it into the
+	// daemon's tri-state supplied shape (every value present, never an omit).
+	region := "eu"
+	assert.Equal(t, map[string]*string{"REGION": &region}, inner.gotTrigger.Params)
 }
 
 func TestCloudTaskRunner_TriggerCloudRun_PropagatesError(t *testing.T) {
@@ -107,7 +111,7 @@ func TestCloudTaskRunner_TriggerCloudRun_PropagatesError(t *testing.T) {
 	inner := &stubTaskRunner{triggerErr: boom}
 	a := &cloudTaskRunner{inner: inner}
 
-	_, err := a.TriggerCloudRun("x", "e")
+	_, err := a.TriggerCloudRun("x", "e", nil)
 	assert.ErrorIs(t, err, boom)
 }
 

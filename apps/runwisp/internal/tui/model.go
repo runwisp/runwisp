@@ -422,6 +422,17 @@ func (m *Model) copyExecField() tea.Cmd {
 	return m.dialogs.CopyToClipboard(value)
 }
 
+// showRunParams opens the read-only run-params modal for the focused run.
+// No-op when the run has no resolved parameters.
+func (m *Model) showRunParams() tea.Cmd {
+	if m.execView == nil || m.execView.Run == nil || len(m.execView.Run.Params) == 0 {
+		return nil
+	}
+	run := m.execView.Run
+	m.dialogs.ShowRunParams(NewRunParamsDialog(run.TaskName, run.Params))
+	return m.dialogs.SyncMouseState()
+}
+
 // hasLaunchTicket reports whether the one-click browser-open action is available.
 func (m *Model) hasLaunchTicket() bool {
 	return m.launchTicketFunc != nil

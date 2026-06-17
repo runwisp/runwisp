@@ -196,27 +196,43 @@ func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.R
 	case model.ComposeModeStack:
 		args = append(args, "up", "--abort-on-container-exit", "--no-log-prefix")
 	default:
-		args = append(args, "run", "--rm", "--service-ports", "--use-aliases")
-		if !ce.WithDeps {
-			args = append(args, "--no-deps")
-		}
-		if ce.Pull != "" && ce.Pull != model.ComposePullMissing {
-			args = append(args, "--pull", ce.Pull)
-		}
-		instanceIndex := 0
-		if run != nil {
-			instanceIndex = run.InstanceIndex
-		}
-		args = append(args, "--name", composeContainerName(ce.ProjectName, ce.Service, instanceIndex))
-		for _, l := range composeManagedLabels(task.Name, instanceIndex, fingerprint) {
-			args = append(args, "--label", l)
-		}
-		for _, kv := range composeEnvFlags(task, instanceIndex) {
-			args = append(args, "-e", kv)
-		}
-		args = append(args, ce.Service)
+		args = appendComposeRunArgs(args, ce, task, run, fingerprint)
 	}
 	return args
+}
+
+// appendComposeRunArgs appends the `compose run`-specific flags (one-off
+// container): teardown, deps/pull policy, the daemon-owned container name and
+// ownership labels, per-execution env, the service, and the per-execution
+// arg/option/flag tokens. Split from buildComposeArgs to keep each readable.
+func appendComposeRunArgs(args []string, ce *model.ComposeExecution, task *model.Task, run *model.Run, fingerprint string) []string {
+	args = append(args, "run", "--rm", "--service-ports", "--use-aliases")
+	if !ce.WithDeps {
+		args = append(args, "--no-deps")
+	}
+	if ce.Pull != "" && ce.Pull != model.ComposePullMissing {
+		args = append(args, "--pull", ce.Pull)
+	}
+	instanceIndex := 0
+	if run != nil {
+		instanceIndex = run.InstanceIndex
+	}
+	args = append(args, "--name", composeContainerName(ce.ProjectName, ce.Service, instanceIndex))
+	for _, l := range composeManagedLabels(task.Name, instanceIndex, fingerprint) {
+		args = append(args, "--label", l)
+	}
+	for _, kv := range composeEnvFlags(task, run, instanceIndex) {
+		args = append(args, "-e", kv)
+	}
+	args = append(args, ce.Service)
+	// Per-execution arg/option/flag tokens pass as real argv after the
+	// service — no quoting needed (this is exec, not a shell), giving
+	// byte-identical param semantics to the shell backend.
+	var runParams map[string]string
+	if run != nil {
+		runParams = run.Params
+	}
+	return append(args, model.ParamArgTokens(task.Parameters, runParams)...)
 }
 
 // composeManagedLabels returns the ordered ownership labels stamped on every
@@ -252,8 +268,10 @@ func composeContainerName(project, service string, idx int) string {
 // composeEnvFlags returns deterministically ordered KEY=VALUE strings suitable
 // for passing as -e arguments to `docker compose run`. RUNWISP_INSTANCE_INDEX
 // is always injected; task.Env wins over the daemon's environment because we
-// only forward the user's declared variables, not os.Environ().
-func composeEnvFlags(task *model.Task, instanceIndex int) []string {
+// only forward the user's declared variables, not os.Environ(). The per-run
+// param env layer is applied last so manual intent wins (collisions are
+// rejected at config load, so order is immaterial in valid configs).
+func composeEnvFlags(task *model.Task, run *model.Run, instanceIndex int) []string {
 	merged := map[string]string{
 		"RUNWISP_INSTANCE_INDEX": strconv.Itoa(instanceIndex),
 	}
@@ -261,6 +279,13 @@ func composeEnvFlags(task *model.Task, instanceIndex int) []string {
 		merged[k] = v
 	}
 	for k, v := range task.Secrets {
+		merged[k] = v
+	}
+	var runParams map[string]string
+	if run != nil {
+		runParams = run.Params
+	}
+	for k, v := range model.ParamEnvLayer(task.Parameters, runParams) {
 		merged[k] = v
 	}
 	keys := make([]string, 0, len(merged))

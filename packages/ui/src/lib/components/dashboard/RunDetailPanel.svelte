@@ -11,11 +11,13 @@
         Trash2,
         MousePointerClick,
         RotateCw,
+        SlidersHorizontal,
     } from "@lucide/svelte";
     import Badge from "../Badge.svelte";
     import Button from "../Button.svelte";
     import EmptyState from "../EmptyState.svelte";
     import LogConsole from "../LogConsole.svelte";
+    import Popover from "../Popover.svelte";
     import Tooltip from "../Tooltip.svelte";
     import type { Run } from "./types.js";
     import type { LogEvent, LogSlice } from "../../log-console/types.js";
@@ -103,6 +105,7 @@
     {@const startDelay = runStartDelay(run)}
     {@const startedAt = run.start_at ?? run.created_at}
     {@const retry = runRetryLabel(run)}
+    {@const paramEntries = run.params ? Object.entries(run.params) : []}
     <!-- Detailed Header -->
     <div class="@container shrink-0 border-b border-outline-faint bg-surface-raised p-6">
         <div class="flex flex-col justify-between gap-6 @4xl:flex-row @4xl:items-start">
@@ -208,6 +211,43 @@
                                         >{/if}</span
                                 >
                             </div>
+                        {/if}
+                        {#if paramEntries.length > 0}
+                            <div
+                                class="hidden h-1 w-1 rounded-full bg-outline-faint sm:block"
+                            ></div>
+                            <Popover placement="bottom-start">
+                                {#snippet trigger()}
+                                    <span
+                                        class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-outline-faint bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-on-surface-muted transition-colors hover:border-outline hover:text-on-surface"
+                                        title="View run parameters"
+                                    >
+                                        <SlidersHorizontal size={12} />
+                                        {paramEntries.length}
+                                        {paramEntries.length === 1 ? "parameter" : "parameters"}
+                                    </span>
+                                {/snippet}
+                                <div class="max-w-md min-w-48">
+                                    <span
+                                        class="text-xs font-semibold tracking-wide text-on-surface-faint uppercase"
+                                        >Parameters</span
+                                    >
+                                    <dl
+                                        class="mt-2 grid max-h-72 grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 overflow-y-auto"
+                                    >
+                                        {#each paramEntries as [key, value] (key)}
+                                            <dt class="font-mono text-xs text-on-surface-muted">
+                                                {key}
+                                            </dt>
+                                            <dd
+                                                class="font-mono text-xs font-medium break-all text-on-surface"
+                                            >
+                                                {value}
+                                            </dd>
+                                        {/each}
+                                    </dl>
+                                </div>
+                            </Popover>
                         {/if}
                     </div>
                 </div>

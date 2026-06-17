@@ -147,7 +147,7 @@ func TestContainerBuildContainerConfigOverlay(t *testing.T) {
 			"SECRET": "from-file",
 		},
 	}
-	cfg, _ := b.buildContainerConfig("image:tag", ctr, task)
+	cfg, _ := b.buildContainerConfig("image:tag", ctr, task, nil)
 	assert.Contains(t, cfg.Env, "CTR_ONLY=ctr")
 	assert.Contains(t, cfg.Env, "TASK_ONLY=task")
 	assert.Contains(t, cfg.Env, "SECRET=from-file")
@@ -160,6 +160,6 @@ func TestContainerBuildContainerConfigNoTaskEnv(t *testing.T) {
 	ctr := &model.ContainerExecution{
 		Env: []model.KeyValue{{Key: "A", Value: "1"}},
 	}
-	cfg, _ := b.buildContainerConfig("image:tag", ctr, &model.Task{Name: "t"})
+	cfg, _ := b.buildContainerConfig("image:tag", ctr, &model.Task{Name: "t"}, nil)
 	assert.Equal(t, []string{"A=1"}, cfg.Env)
 }

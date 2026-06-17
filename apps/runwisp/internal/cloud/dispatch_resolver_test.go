@@ -19,10 +19,11 @@ import (
 // --- fakeTaskRunner for dispatch resolver tests ---
 
 type fakeTaskRunner struct {
-	tasks    map[string]*model.Task
-	upserted []*model.Task
-	trigErr  error
-	trigRun  *model.Run
+	tasks      map[string]*model.Task
+	upserted   []*model.Task
+	trigErr    error
+	trigRun    *model.Run
+	trigParams map[string]string
 }
 
 func (f *fakeTaskRunner) GetTask(name string) (*model.Task, bool) {
@@ -38,7 +39,8 @@ func (f *fakeTaskRunner) UpsertTask(task *model.Task) {
 	f.upserted = append(f.upserted, task)
 }
 
-func (f *fakeTaskRunner) TriggerCloudRun(taskName, externalID string) (*model.Run, error) {
+func (f *fakeTaskRunner) TriggerCloudRun(taskName, externalID string, params map[string]string) (*model.Run, error) {
+	f.trigParams = params
 	return f.trigRun, f.trigErr
 }
 
@@ -75,7 +77,7 @@ func configScript(t *testing.T, taskName string) json.RawMessage {
 
 func TestResolveDispatchTask_InvalidJSON(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{}, nil)
-	_, err := h.resolveDispatchTask(&protocol.Execution{Script: json.RawMessage(`not-json`)})
+	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: json.RawMessage(`not-json`)})
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -87,7 +89,7 @@ func TestResolveDispatchTask_UnavailableBackend(t *testing.T) {
 		Shell: executor.BackendStatus{Available: false, Reason: "no shell"},
 	}
 	h := newDispatchHandler(avail, nil)
-	_, err := h.resolveDispatchTask(&protocol.Execution{Script: shellScript(t, "echo hi")})
+	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: shellScript(t, "echo hi")})
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -101,9 +103,10 @@ func TestResolveDispatchTask_ConfigTaskFound(t *testing.T) {
 	tasks := map[string]*model.Task{"mytask": {Name: "mytask"}}
 	h := newDispatchHandler(avail, tasks)
 
-	name, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
+	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
 	require.NoError(t, err)
 	assert.Equal(t, "mytask", name)
+	assert.True(t, configBacked)
 }
 
 func TestResolveDispatchTask_ConfigTaskNotFound(t *testing.T) {
@@ -112,7 +115,7 @@ func TestResolveDispatchTask_ConfigTaskNotFound(t *testing.T) {
 	}
 	h := newDispatchHandler(avail, nil)
 
-	_, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "missing")})
+	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "missing")})
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -132,12 +135,13 @@ func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, err := h.resolveDispatchTask(&protocol.Execution{
+	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{
 		TaskID: "my-task",
 		Script: shellScript(t, "echo hello"),
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
+	assert.False(t, configBacked)
 	assert.Len(t, runner.upserted, 1)
 	assert.Equal(t, name, runner.upserted[0].Name)
 }

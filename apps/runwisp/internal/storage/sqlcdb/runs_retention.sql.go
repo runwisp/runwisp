@@ -12,7 +12,7 @@ import (
 
 const selectOldRunsByAge = `-- name: SelectOldRunsByAge :many
 
-SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, deleted_at FROM runs
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs
 WHERE task_name = ? AND created_at < ? AND deleted_at IS NULL
 LIMIT ?
 `
@@ -48,6 +48,7 @@ func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAge
 			&i.RetryAttempt,
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
+			&i.ParamsJson,
 			&i.DeletedAt,
 		); err != nil {
 			return nil, err
@@ -64,7 +65,7 @@ func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAge
 }
 
 const selectOldRunsByCount = `-- name: SelectOldRunsByCount :many
-SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, deleted_at FROM runs
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs
 WHERE task_name = ? AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT ? OFFSET ?
@@ -99,6 +100,7 @@ func (q *Queries) SelectOldRunsByCount(ctx context.Context, arg SelectOldRunsByC
 			&i.RetryAttempt,
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
+			&i.ParamsJson,
 			&i.DeletedAt,
 		); err != nil {
 			return nil, err

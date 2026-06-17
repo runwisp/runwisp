@@ -25,6 +25,7 @@ const (
 	HeaderFocusAction
 	HeaderFocusStarted
 	HeaderFocusDuration
+	HeaderFocusParams
 	HeaderFocusID
 )
 
@@ -178,7 +179,7 @@ func (v *ExecView) handleKeyUp() tea.Cmd {
 	switch v.HeaderFocus {
 	case HeaderFocusBack, HeaderFocusID, HeaderFocusAction:
 		return nil
-	case HeaderFocusStarted, HeaderFocusDuration:
+	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams:
 		v.HeaderFocus = HeaderFocusID
 		return nil
 	default:
@@ -197,7 +198,7 @@ func (v *ExecView) handleKeyDown(key string) tea.Cmd {
 	case HeaderFocusBack, HeaderFocusID, HeaderFocusAction:
 		v.HeaderFocus = HeaderFocusStarted
 		return nil
-	case HeaderFocusStarted, HeaderFocusDuration:
+	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams:
 		v.HeaderFocus = HeaderFocusNone
 		return nil
 	default:
@@ -213,6 +214,9 @@ func (v *ExecView) handleKeyLeft(key string) tea.Cmd {
 		return nil
 	case HeaderFocusID:
 		v.HeaderFocus = HeaderFocusBack
+		return nil
+	case HeaderFocusParams:
+		v.HeaderFocus = HeaderFocusDuration
 		return nil
 	case HeaderFocusDuration:
 		v.HeaderFocus = HeaderFocusStarted
@@ -238,7 +242,12 @@ func (v *ExecView) handleKeyRight(key string) tea.Cmd {
 	case HeaderFocusStarted:
 		v.HeaderFocus = HeaderFocusDuration
 		return nil
-	case HeaderFocusAction, HeaderFocusDuration:
+	case HeaderFocusDuration:
+		if v.hasParams() {
+			v.HeaderFocus = HeaderFocusParams
+		}
+		return nil
+	case HeaderFocusAction, HeaderFocusParams:
 		return nil
 	default:
 		v.Pane.HandleKeyScroll(key)
@@ -291,6 +300,12 @@ func (v *ExecView) ServiceStopped() bool { return v.serviceStopped }
 
 func (v *ExecView) hasActionButton() bool {
 	return v.Action() != ActionNone
+}
+
+// hasParams reports whether the run carries any resolved parameters worth
+// surfacing as the focusable header chip.
+func (v *ExecView) hasParams() bool {
+	return v.Run != nil && len(v.Run.Params) > 0
 }
 
 func (v *ExecView) CopyableValue() string {

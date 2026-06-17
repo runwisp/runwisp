@@ -36,7 +36,8 @@ func mapDomainError(err error, fallback500 string) huma.StatusError {
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, ErrNotAService),
 		errors.Is(err, ErrNotRunning),
-		errors.Is(err, ErrInvalidSelector):
+		errors.Is(err, ErrInvalidSelector),
+		errors.Is(err, ErrInvalidParams):
 		return huma.Error400BadRequest(err.Error())
 	default:
 		if fallback500 == "" {

@@ -274,6 +274,41 @@ echo "[import] rebuilding foreign keys"
 echo "[import] complete"
 '''
 
+# ── Parameterised manual job ─────────────────────────────────────────────────
+# A showcase for per-execution parameters. Support kicks this off by hand for a
+# specific tenant and dials in the format / region / limit / flags at trigger
+# time. The `params` below are *declared* here — TOML is the only place they're
+# defined — and the Web UI, TUI, and REST API grow a little form to *supply*
+# values. Every value reaches the command as an env var ($ORG_ID) or an inert
+# argv token appended after the script (never spliced into the shell), so a
+# value like `; rm -rf /` typed into a field stays a harmless literal. It covers
+# all four kinds (env / arg / option / flag) and every modifier (required,
+# default, choices, allow_custom, number, description) so the form exercises
+# each control.
+
+[tasks.export-org-data]
+group       = "Manual"
+description = "On-demand data export for a single tenant (GDPR / data-portability request). Run by hand with per-execution parameters — pick the tenant, format, region, and options when you trigger it."
+api_trigger = true
+timeout     = "20m"
+keep_runs   = 40
+params = [
+  { env    = "ORG_ID", required = true, description = "Tenant whose data to export (e.g. acme)." },
+  { arg    = "format", choices = ["json", "csv", "ndjson"], default = "json", description = "Output file format." },
+  { option = "--since", default = "2024-01-01", description = "Only export records created on or after this date (YYYY-MM-DD)." },
+  { option = "--region", choices = ["us", "eu", "ap"], default = "eu", description = "Storage region to read the tenant from." },
+  { option = "--shard", choices = ["shard-a", "shard-b", "shard-c"], allow_custom = true, description = "Primary shard; type a custom name for a migrated tenant." },
+  { option = "--limit", type = "number", default = 5000, description = "Maximum number of records to export." },
+  { flag   = "--include-attachments", description = "Bundle uploaded files alongside the exported records." },
+]
+# The trailing printf's %s format cycles over every appended argv token, so the
+# log echoes exactly what RunWisp handed the command. The closing ''' sits on
+# the same line as that printf so the tokens append to it, not a new statement.
+run = '''
+set -eu
+echo "[export] tenant=${ORG_ID} — preparing export"
+printf '[export] arg → %s\n' '''
+
 # ── Reports ──────────────────────────────────────────────────────────────────
 
 [tasks.weekly-billing-rollup]

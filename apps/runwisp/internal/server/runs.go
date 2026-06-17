@@ -245,14 +245,18 @@ func (srv *Server) humaGetTaskRuns(ctx context.Context, input *TaskRunsQueryInpu
 }
 
 func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (*TriggerRunOutput, error) {
+	var params map[string]*string
+	if input.Body != nil {
+		params = input.Body.Params
+	}
 	if input.Wait {
-		run, err := srv.runService.TriggerRunAndWait(ctx, input.TaskName, time.Duration(input.WaitTimeout)*time.Second)
+		run, err := srv.runService.TriggerRunAndWait(ctx, input.TaskName, params, time.Duration(input.WaitTimeout)*time.Second)
 		if err != nil {
 			return nil, mapDomainError(err, "Failed to trigger run")
 		}
 		return &TriggerRunOutput{Body: *run}, nil
 	}
-	run, err := srv.runService.TriggerRun(ctx, input.TaskName)
+	run, err := srv.runService.TriggerRun(ctx, input.TaskName, params)
 	if err != nil {
 		return nil, mapDomainError(err, "Failed to trigger run")
 	}

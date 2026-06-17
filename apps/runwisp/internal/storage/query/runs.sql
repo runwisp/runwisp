@@ -4,13 +4,14 @@
 -- name: CreateRun :exec
 INSERT INTO runs (id, external_execution_id, task_name, status, end_reason,
   exit_code, start_at, end_at, triggered_by, created_at, retry_attempt,
-  retry_of_run_id, instance_index)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+  retry_of_run_id, instance_index, params_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateRun :exec
 UPDATE runs SET external_execution_id = ?, task_name = ?, status = ?,
   end_reason = ?, exit_code = ?, start_at = ?, end_at = ?, triggered_by = ?,
-  created_at = ?, retry_attempt = ?, retry_of_run_id = ?, instance_index = ?
+  created_at = ?, retry_attempt = ?, retry_of_run_id = ?, instance_index = ?,
+  params_json = ?
 WHERE id = ?;
 
 -- name: GetRun :one
@@ -31,7 +32,7 @@ SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
 
 -- name: QueryRunsCreatedAtDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -41,7 +42,7 @@ ORDER BY created_at DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset)
 
 -- name: QueryRunsCreatedAtAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -51,7 +52,7 @@ ORDER BY created_at ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStartAtDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -61,7 +62,7 @@ ORDER BY COALESCE(start_at, created_at) DESC, created_at DESC LIMIT sqlc.arg(row
 
 -- name: QueryRunsStartAtAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -71,7 +72,7 @@ ORDER BY COALESCE(start_at, created_at) ASC, created_at ASC LIMIT sqlc.arg(rows_
 
 -- name: QueryRunsTaskNameDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -81,7 +82,7 @@ ORDER BY task_name DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsTaskNameAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -91,7 +92,7 @@ ORDER BY task_name ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStatusDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -101,7 +102,7 @@ ORDER BY status DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStatusAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -111,7 +112,7 @@ ORDER BY status ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsExitCodeDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -121,7 +122,7 @@ ORDER BY exit_code DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsExitCodeAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -131,7 +132,7 @@ ORDER BY exit_code ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsDurationDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -141,7 +142,7 @@ ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) DESC LIMIT sqlc.
 
 -- name: QueryRunsDurationAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
@@ -172,7 +173,7 @@ WHERE status = 'running' AND end_at IS NULL AND deleted_at IS NULL;
 -- name: GetPendingRuns :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, deleted_at
+  instance_index, params_json, deleted_at
 FROM runs WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC;
 

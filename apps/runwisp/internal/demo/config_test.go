@@ -16,7 +16,7 @@ import (
 func TestDemoConfig(t *testing.T) {
 	cfg := loadDemoConfig(t)
 
-	var services, cronTasks int
+	var services, cronTasks, paramTasks int
 	for i := range cfg.Tasks {
 		if cfg.Tasks[i].Kind == model.KindService {
 			services++
@@ -24,11 +24,15 @@ func TestDemoConfig(t *testing.T) {
 		if cfg.Tasks[i].Cron != "" {
 			cronTasks++
 		}
+		if len(cfg.Tasks[i].Parameters) > 0 {
+			paramTasks++
+		}
 	}
 
 	assert.GreaterOrEqual(t, len(cfg.Tasks), 8, "demo should exercise a meaningful number of tasks+services")
 	assert.GreaterOrEqual(t, services, 1, "demo should include at least one [services.*] entry")
 	assert.GreaterOrEqual(t, cronTasks, 1, "demo should include at least one cron-scheduled task")
+	assert.GreaterOrEqual(t, paramTasks, 1, "demo should include at least one task that declares per-execution params")
 	assert.GreaterOrEqual(t, len(cfg.Notify.Notifiers), 3, "demo should declare at least three notifiers")
 	assert.GreaterOrEqual(t, len(cfg.Notify.Routes), 3, "demo should expose at least three notification routes")
 	assert.NotEmpty(t, cfg.Daemon.ExternalURL, "demo should set [daemon] external_url so notifications carry deep-links")

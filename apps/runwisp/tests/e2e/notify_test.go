@@ -75,7 +75,7 @@ notify = ["ops", "inapp"]
 	require.NoError(t, err)
 	waitForFirstPing(t, events)
 
-	_, err = client.TriggerRun("fail-task")
+	_, err = client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 
 	body := waitForWebhook(t, received, 10*time.Second)
@@ -96,7 +96,7 @@ notify = ["ops", "inapp"]
 	//   - the in-app row must coalesce (notification.updated, count >= 2);
 	//   - the outbound webhook must NOT fire — that's the whole point of
 	//     outbound coalescing.
-	_, err = client.TriggerRun("fail-task")
+	_, err = client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 
 	updated := waitForNotificationEvent(t, events, "notification.updated", 10*time.Second)
@@ -161,7 +161,7 @@ notify = ["hook"]
 
 	client := socketClient(t, daemon.dataDir)
 
-	_, err := client.TriggerRun("fail-task")
+	_, err := client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 
 	var req capturedRequest
@@ -234,11 +234,11 @@ notify = ["ops"]
 
 	client := socketClient(t, daemon.dataDir)
 
-	_, err := client.TriggerRun("fail-task")
+	_, err := client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 	waitForWebhook(t, received, 10*time.Second)
 
-	_, err = client.TriggerRun("fail-task")
+	_, err = client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 	waitForWebhook(t, received, 10*time.Second)
 }
@@ -279,7 +279,7 @@ notify = ["broken", "inapp"]
 
 	client := socketClient(t, daemon.dataDir)
 
-	_, err := client.TriggerRun("fail-task")
+	_, err := client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 
 	deadline := time.Now().Add(20 * time.Second)
@@ -322,7 +322,7 @@ run = "exit 1"
 	require.NoError(t, err)
 	waitForFirstPing(t, events)
 
-	_, err = client.TriggerRun("fail-task")
+	_, err = client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 
 	created := waitForNotificationEvent(t, events, "notification.created", 10*time.Second)
@@ -373,7 +373,7 @@ notify = ["email-ops"]
 
 	client := socketClient(t, daemon.dataDir)
 
-	_, err = client.TriggerRun("fail-task")
+	_, err = client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 
 	body := srv.WaitForMessage(t, 15*time.Second)
@@ -383,7 +383,7 @@ notify = ["email-ops"]
 	require.Contains(t, body, "multipart/alternative", "must be multipart/alternative")
 
 	// Second failure within the coalesce window: no further SMTP transaction.
-	_, err = client.TriggerRun("fail-task")
+	_, err = client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 
 	srv.ExpectNoMessage(t, 2*time.Second)
@@ -656,7 +656,7 @@ run = "exit 1"
 	require.NoError(t, err)
 	waitForFirstPing(t, events)
 
-	_, err = client.TriggerRun("fail-task")
+	_, err = client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 
 	createdEnv := waitForNotificationEnvelope(t, events, "notification.created", 10*time.Second)

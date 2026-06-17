@@ -23,10 +23,13 @@ func (a *cloudTaskRunner) UpsertTask(task *model.Task) {
 	a.inner.UpsertTask(task)
 }
 
-func (a *cloudTaskRunner) TriggerCloudRun(taskName, externalExecutionID string) (*model.Run, error) {
+func (a *cloudTaskRunner) TriggerCloudRun(taskName, externalExecutionID string, params map[string]string) (*model.Run, error) {
 	return a.inner.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
 		TriggeredBy:         model.TriggeredByCloud,
 		ExternalExecutionID: externalExecutionID,
+		// The cloud protocol carries plain string values (no explicit-omit state),
+		// so every supplied key is a present value; absent keys use the default.
+		Params: model.PointerValues(params),
 	})
 }
 

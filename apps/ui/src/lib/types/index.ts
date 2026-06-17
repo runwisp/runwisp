@@ -48,6 +48,7 @@ const runSchema = z
         created_at: z.string(),
         retry_attempt: z.number(),
         retry_of_run_id: z.string().optional(),
+        params: z.record(z.string(), z.string()).optional(),
     })
     .pipe(z.custom<Run>());
 

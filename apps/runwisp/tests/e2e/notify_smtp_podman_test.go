@@ -90,7 +90,7 @@ notify = ["email-ops"]
 			daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
 			client := socketClient(t, daemon.dataDir)
-			_, err := client.TriggerRun("fail-task")
+			_, err := client.TriggerRun("fail-task", nil)
 			require.NoError(t, err)
 
 			msgs := mp.WaitForMessages(t, 1, 15*time.Second)
@@ -146,7 +146,7 @@ notify = ["email-ops", "inapp"]
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
 	client := socketClient(t, daemon.dataDir)
-	_, err := client.TriggerRun("fail-task")
+	_, err := client.TriggerRun("fail-task", nil)
 	require.NoError(t, err)
 
 	deadline := time.Now().Add(30 * time.Second)

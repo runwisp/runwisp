@@ -252,6 +252,8 @@ func handleKeyEnterHeader(m Model) (Model, tea.Cmd, bool) {
 		return handleKeyEnterActionButton(m)
 	case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration, execlist.HeaderFocusID:
 		return m, m.copyExecField(), true
+	case execlist.HeaderFocusParams:
+		return m, m.showRunParams(), true
 	}
 	return m, nil, true
 }

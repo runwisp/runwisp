@@ -40,14 +40,14 @@ WHERE deleted_at IS NOT NULL
 -- name: SelectRestoredRunsByIDs :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, deleted_at
+  instance_index, params_json, deleted_at
 FROM runs WHERE deleted_at IS NULL
   AND id IN (sqlc.slice('ids'));
 
 -- name: SelectRestoredRunsByFilter :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, deleted_at
+  instance_index, params_json, deleted_at
 FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
   AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))

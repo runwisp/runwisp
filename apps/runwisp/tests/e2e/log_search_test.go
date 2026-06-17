@@ -41,7 +41,7 @@ func TestLogSearchEndpointFindsLine(t *testing.T) {
 	require.NoError(t, err)
 	waitForRunStreamPing(t, stream, 5*time.Second)
 
-	triggered, err := client.TriggerRun(taskName)
+	triggered, err := client.TriggerRun(taskName, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, triggered.ID)
 

@@ -147,6 +147,10 @@ type Run struct {
 	RetryAttempt        int         `json:"retry_attempt"`
 	RetryOfRunID        *string     `json:"retry_of_run_id,omitempty"`
 	InstanceIndex       int         `json:"instance_index"`
+	// Params holds the resolved per-execution parameter values used for this
+	// run (identity key → value). Nil for tasks without declared parameters, so
+	// it is omitted from JSON/storage and adds no behaviour for the common case.
+	Params map[string]string `json:"params,omitempty"`
 }
 
 // Copy creates a deep copy of the Run to prevent data races.
@@ -174,6 +178,13 @@ func (r *Run) Copy() *Run {
 	if r.RetryOfRunID != nil {
 		rid := *r.RetryOfRunID
 		cpy.RetryOfRunID = &rid
+	}
+	if r.Params != nil {
+		params := make(map[string]string, len(r.Params))
+		for k, v := range r.Params {
+			params[k] = v
+		}
+		cpy.Params = params
 	}
 	return &cpy
 }

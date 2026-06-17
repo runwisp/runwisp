@@ -123,9 +123,10 @@ export const tasksApi = {
         return { runs: data.runs ?? [], total: data.total };
     },
 
-    triggerRun: async (taskName: string) => {
+    triggerRun: async (taskName: string, params?: Record<string, string | null>) => {
         const { data, error } = await apiClient.POST("/api/tasks/{taskName}/run", {
             params: { path: { taskName } },
+            ...(params && Object.keys(params).length > 0 ? { body: { params } } : {}),
         });
         if (error) throw new Error("Failed to trigger run");
         return data;

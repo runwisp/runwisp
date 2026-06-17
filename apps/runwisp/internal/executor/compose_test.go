@@ -102,7 +102,7 @@ func TestComposeBackend_EnvFlags_DeterministicOrder(t *testing.T) {
 		Env:     map[string]string{"FOO": "1", "BAR": "2"},
 		Secrets: map[string]string{"ZED": "secret"},
 	}
-	flags := composeEnvFlags(task, 0)
+	flags := composeEnvFlags(task, nil, 0)
 	// alphabetical ordering keeps test assertions stable
 	assert.Equal(t, []string{
 		"BAR=2",
@@ -117,7 +117,7 @@ func TestComposeBackend_EnvFlags_SecretOverridesEnv(t *testing.T) {
 		Env:     map[string]string{"PASSWORD": "plain"},
 		Secrets: map[string]string{"PASSWORD": "from-secret"},
 	}
-	flags := composeEnvFlags(task, 0)
+	flags := composeEnvFlags(task, nil, 0)
 	assert.Contains(t, flags, "PASSWORD=from-secret")
 	assert.NotContains(t, flags, "PASSWORD=plain")
 }
