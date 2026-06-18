@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Skipped runs now show up live.** A run dropped by an `on_overlap = "skip"` policy emits a terminal event, so it reaches the Web UI as `skipped` over SSE instead of appearing stuck in `pending` until a page reload.
 - **Spring-forward cron ticks no longer vanish.** A cron like `0 2 * * *` whose time falls in the DST gap now fires once at the gap end (the next valid instant). See [DST behaviour](https://docs.runwisp.com/concepts/scheduling/#dst-behaviour).
+- **Horizontal scrolling in the log viewer** has the line-number gutter pinned.
 - **Control socket on bind mounts.** A socket whose filesystem rejects `chmod` (Docker Desktop bind mounts, some network FS) is tolerated with a warning now.
 - **Cloud dispatch opt-in covers container/compose.** Peer-dispatched ad-hoc `container` and `compose` runs now require `allow_cloud_dispatch` like `shell`. See [Daemon](https://docs.runwisp.com/configuration/daemon/).
 

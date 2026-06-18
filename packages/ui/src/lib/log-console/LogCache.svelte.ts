@@ -3,6 +3,7 @@
 
 import type { LogSlice, LogEvent } from "./types.js";
 import { SvelteMap } from "svelte/reactivity";
+import { visibleColumns } from "./ansi.js";
 
 /**
  * LogCache provides high-performance storage and pruning for log data.
@@ -17,6 +18,9 @@ export class LogCache {
     totalBytes = $state(0);
     finished = $state(false);
     firstAvailableLine = $state(0);
+    // Widest visible line seen so far, in monospace columns. Monotonic so the
+    // horizontal scroll surface never shrinks as windowed lines are pruned.
+    maxLineColumns = $state(0);
 
     get size() {
         return this.lines.size;
@@ -38,6 +42,7 @@ export class LogCache {
             const prev = this.lines.get(line);
             if (prev !== v) {
                 this.lines.set(line, v);
+                this.maxLineColumns = Math.max(this.maxLineColumns, visibleColumns(v));
                 touched = true;
             }
         }
@@ -77,6 +82,7 @@ export class LogCache {
         this.totalBytes = 0;
         this.finished = false;
         this.firstAvailableLine = 0;
+        this.maxLineColumns = 0;
     }
 
     isRangeComplete(start: number, end: number) {

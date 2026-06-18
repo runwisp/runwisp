@@ -35,14 +35,23 @@
     const cache = new LogCache();
     let fetcher: LogFetcher | null = $state(null);
     let containerEl: HTMLDivElement | null = $state(null);
+    let rulerEl: HTMLSpanElement | null = $state(null);
     let scrollTop = $state(0);
     let containerHeight = $state(0);
+    let containerWidth = $state(0);
+    // Monospace character width in px, measured from a hidden ruler so the
+    // horizontal scroll surface is sized without per-line DOM reflow.
+    let charWidth = $state(8);
     let isAutoScroll = $state(true);
     let userScrolledUp = $state(false);
     let isStreaming = $derived(!cache.finished && cache.totalLines > 0);
 
     const OVERSCAN = 50;
     const BLANK_LINES_AT_END = 3;
+    const RULER_SAMPLE = "0".repeat(50);
+    // Trailing slack past the last column so the widest line never sits flush
+    // against the scroll edge.
+    const SURFACE_PADDING = 16;
 
     let truncationBannerHeight = $derived(cache.firstAvailableLine > 0 ? lineHeight : 0);
 
@@ -84,6 +93,13 @@
     });
 
     let gutterWidth = $derived(Math.max(4, String(cache.totalLines || 1).length) * 10 + 16);
+
+    // Width of the virtual scroll surface: wide enough for the longest line
+    // seen so far, never narrower than the viewport (so short logs show no
+    // horizontal scrollbar).
+    let surfaceWidth = $derived(
+        Math.max(containerWidth, gutterWidth + cache.maxLineColumns * charWidth + SURFACE_PADDING),
+    );
 
     let renderedLines = $derived.by(() => {
         const lines: Array<{ num: number; text: string | undefined }> = [];
@@ -186,6 +202,17 @@
     function onResize() {
         if (containerEl) {
             containerHeight = containerEl.clientHeight;
+            containerWidth = containerEl.clientWidth;
+        }
+        measureCharWidth();
+    }
+
+    // Measure one monospace column from the hidden ruler. Font, zoom, and
+    // DPI changes all surface through the ResizeObserver, so this stays
+    // accurate without polling.
+    function measureCharWidth() {
+        if (rulerEl && rulerEl.offsetWidth > 0) {
+            charWidth = rulerEl.offsetWidth / RULER_SAMPLE.length;
         }
     }
 
@@ -236,6 +263,8 @@
     $effect(() => {
         if (!containerEl) return;
         containerHeight = containerEl.clientHeight;
+        containerWidth = containerEl.clientWidth;
+        measureCharWidth();
 
         const resizeObserver = new ResizeObserver(() => {
             onResize();
@@ -251,18 +280,30 @@
 <div
     class="log-console relative flex h-full w-full flex-col overflow-hidden bg-mist-950 font-mono text-sm {className}"
 >
+    <!-- Hidden ruler: one monospace column is measured from this off-screen
+         sample to size the horizontal scroll surface without per-line reflow. -->
+    <span
+        bind:this={rulerEl}
+        aria-hidden="true"
+        class="pointer-events-none absolute -top-[9999px] left-0 whitespace-pre select-none"
+        >{RULER_SAMPLE}</span
+    >
+
     <div bind:this={containerEl} class="flex-1 overflow-auto" onscroll={onScroll}>
-        <div class="relative" style="height: {totalHeight}px; min-height: 100%;">
+        <div
+            class="relative"
+            style="height: {totalHeight}px; min-height: 100%; width: {surfaceWidth}px; min-width: 100%;"
+        >
             {#if cache.firstAvailableLine > 0}
                 <div
                     class="absolute right-0 left-0 flex items-center bg-warning-700/20 text-warning-400"
                     style="top: 0px; height: {lineHeight}px;"
                 >
                     <div
-                        class="flex-shrink-0 pr-3 text-right select-none"
+                        class="sticky left-0 z-10 flex-shrink-0 pr-3 text-right select-none"
                         style="width: {gutterWidth}px;"
                     ></div>
-                    <div class="flex-1 truncate pr-4 text-xs">
+                    <div class="sticky flex-shrink-0 pr-4 text-xs" style="left: {gutterWidth}px;">
                         Log truncated: {cache.firstAvailableLine.toLocaleString()} earlier line{cache.firstAvailableLine ===
                         1
                             ? ""
@@ -280,12 +321,12 @@
                     style="top: {lineTop(line.num)}px; height: {lineHeight}px;"
                 >
                     <div
-                        class="flex-shrink-0 pr-3 text-right text-mist-500 select-none"
+                        class="sticky left-0 z-10 flex-shrink-0 bg-mist-950 pr-3 text-right text-mist-500 select-none"
                         style="width: {gutterWidth}px;"
                     >
                         {line.num + 1}
                     </div>
-                    <div class="flex-1 truncate pr-4 text-mist-200">
+                    <div class="flex-1 pr-4 text-mist-200">
                         {#if line.text !== undefined}
                             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                             <span class="whitespace-pre">{@html ansiLineToHtml(line.text)}</span>
@@ -302,10 +343,13 @@
                     style="top: {lineTop(cache.totalLines)}px; height: {lineHeight}px;"
                 >
                     <div
-                        class="flex-shrink-0 pr-3 text-right select-none"
+                        class="sticky left-0 z-10 flex-shrink-0 bg-mist-950 pr-3 text-right select-none"
                         style="width: {gutterWidth}px;"
                     ></div>
-                    <div class="flex items-center gap-1 text-mist-400">
+                    <div
+                        class="sticky flex items-center gap-1 text-mist-400"
+                        style="left: {gutterWidth}px;"
+                    >
                         <span class="dot" style="animation-delay: 0ms;"></span>
                         <span class="dot" style="animation-delay: 150ms;"></span>
                         <span class="dot" style="animation-delay: 300ms;"></span>
@@ -322,7 +366,7 @@
                         )}px; height: {lineHeight}px;"
                     >
                         <div
-                            class="flex-shrink-0 pr-3 text-right text-mist-700 opacity-0 select-none"
+                            class="sticky left-0 z-10 flex-shrink-0 bg-mist-950 pr-3 text-right text-mist-700 opacity-0 select-none"
                             style="width: {gutterWidth}px;"
                         >
                             ~
@@ -408,6 +452,7 @@
 <style>
     .log-console {
         --log-line-height: 20px;
+        tab-size: 8;
     }
 
     .log-line--flash {

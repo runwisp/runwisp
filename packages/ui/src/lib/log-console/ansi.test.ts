@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { ansiLineToHtml } from "./ansi.js";
+import { ansiLineToHtml, visibleColumns } from "./ansi.js";
 
 describe("ansiLineToHtml", () => {
     it("passes plain text through unchanged", () => {
@@ -46,5 +46,22 @@ describe("ansiLineToHtml", () => {
         // An unterminated colour in one line must not affect the next.
         ansiLineToHtml("\x1b[31munclosed red");
         expect(ansiLineToHtml("plain")).toBe("plain");
+    });
+});
+
+describe("visibleColumns", () => {
+    it("counts plain characters", () => {
+        expect(visibleColumns("hello")).toBe(5);
+        expect(visibleColumns("")).toBe(0);
+    });
+
+    it("ignores ANSI escape sequences", () => {
+        expect(visibleColumns("\x1b[31merror\x1b[0m")).toBe(5);
+        expect(visibleColumns("\x1b[1;36minfo\x1b[0m done")).toBe(9);
+    });
+
+    it("charges tabs the full tab width", () => {
+        expect(visibleColumns("\t")).toBe(8);
+        expect(visibleColumns("ab\tcd")).toBe(12);
     });
 });
