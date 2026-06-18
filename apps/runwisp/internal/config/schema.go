@@ -205,8 +205,9 @@ type Storage struct {
 	MinFreeSpace int64
 }
 
-// IsCloudShellEnabled reports whether the daemon accepts peer-dispatched shell tasks.
-func (cfg *Config) IsCloudShellEnabled() bool {
+// IsCloudDispatchEnabled reports whether the daemon accepts peer-dispatched
+// ad-hoc shell, container, or compose runs.
+func (cfg *Config) IsCloudDispatchEnabled() bool {
 	return cfg.Daemon.AllowCloudDispatch
 }
 

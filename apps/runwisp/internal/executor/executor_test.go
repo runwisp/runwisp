@@ -48,7 +48,7 @@ func TestExecuteSuccess(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
@@ -76,7 +76,7 @@ func TestExecuteFailure(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{
 		Name: "fail-task",
@@ -97,7 +97,7 @@ func TestExecuteTimeout(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{
 		Name: "sleep-task",
@@ -121,7 +121,7 @@ func TestExecuteStderr(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
@@ -148,7 +148,7 @@ func TestExecuteEvents(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 
 	var receivedLogs strings.Builder
 	var mu sync.Mutex
@@ -192,10 +192,10 @@ func TestRunUpdateCallback(t *testing.T) {
 	eb := events.NewEventBus()
 	called := false
 	exec := New(Options{
-		LogDir:            tmpDir,
-		EventBus:          eb,
-		CloudShellEnabled: true,
-		HasLocalTasks:     true,
+		LogDir:               tmpDir,
+		EventBus:             eb,
+		CloudDispatchEnabled: true,
+		HasLocalTasks:        true,
 		OnRunUpdate: func(r *model.Run) {
 			called = true
 		},
@@ -224,7 +224,7 @@ func TestLogDirCreationFailure(t *testing.T) {
 	tmpFile.Close()
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpFile.Name(), EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpFile.Name(), EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{Name: "fail", Run: "echo hi"}
 	run := &model.Run{ID: ulid.Make().String()}
@@ -244,7 +244,7 @@ func TestLogFileCreationFailure(t *testing.T) {
 	os.Chmod(tmpDir, 0500)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{Name: "fail", Run: "echo hi"}
 	run := &model.Run{ID: ulid.Make().String()}
@@ -266,7 +266,7 @@ func TestExecuteCommandStartFailure(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudShellEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{
 		Name: "fail-start",
@@ -334,13 +334,14 @@ func TestAvailabilityReflectsComposeOption(t *testing.T) {
 	tmpDir := t.TempDir()
 	eb := events.NewEventBus()
 
-	withCompose := New(Options{LogDir: tmpDir, EventBus: eb, Compose: &recordingBackend{}, HasLocalTasks: true})
+	// Backend presence only governs compose availability once dispatch is enabled.
+	withCompose := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, Compose: &recordingBackend{}, HasLocalTasks: true})
 	assert.True(t, withCompose.Availability().Compose.Available)
 
-	withoutCompose := New(Options{LogDir: tmpDir, EventBus: eb, HasLocalTasks: true})
+	withoutCompose := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 	status := withoutCompose.Availability().Compose
 	assert.False(t, status.Available)
-	assert.NotEmpty(t, status.Reason)
+	assert.Contains(t, status.Reason, "docker compose CLI unavailable")
 }
 
 // TestExecuteComposeWithoutBackendIsUnsupported covers the negative routing
@@ -376,16 +377,30 @@ func TestRoutingExecutor_Availability_DefaultsHTTPOnly(t *testing.T) {
 	e := newTestExecutor(t, Options{})
 	avail := e.Availability()
 
-	assert.True(t, avail.HTTP.Available)
-	assert.False(t, avail.Shell.Available, "shell defaults to unavailable when CloudShellEnabled is false")
+	assert.True(t, avail.HTTP.Available, "HTTP dispatch is allowed without the opt-in")
+	assert.False(t, avail.Shell.Available, "shell defaults to unavailable when cloud dispatch is disabled")
 	assert.NotEmpty(t, avail.Shell.Reason)
-	assert.False(t, avail.Container.Available, "no container backend supplied")
+	assert.False(t, avail.Container.Available, "container defaults to unavailable when cloud dispatch is disabled")
+	assert.False(t, avail.Compose.Available, "compose defaults to unavailable when cloud dispatch is disabled")
 	assert.False(t, avail.Config.Available, "no local tasks declared")
 }
 
-func TestRoutingExecutor_Availability_CloudShellEnabled(t *testing.T) {
-	e := newTestExecutor(t, Options{CloudShellEnabled: true})
+func TestRoutingExecutor_Availability_CloudDispatchEnabled(t *testing.T) {
+	e := newTestExecutor(t, Options{CloudDispatchEnabled: true})
 	assert.True(t, e.Availability().Shell.Available)
+}
+
+// TestRoutingExecutor_Availability_ContainerGatedOnDispatch proves the opt-in,
+// not merely backend presence, governs container dispatch: a backend is present
+// in both cases, yet container is unavailable until cloud dispatch is enabled.
+func TestRoutingExecutor_Availability_ContainerGatedOnDispatch(t *testing.T) {
+	disabled := newTestExecutor(t, Options{Docker: &recordingBackend{}})
+	status := disabled.Availability().Container
+	assert.False(t, status.Available, "container must require the dispatch opt-in even with a backend present")
+	assert.Contains(t, status.Reason, "allow_cloud_dispatch")
+
+	enabled := newTestExecutor(t, Options{CloudDispatchEnabled: true, Docker: &recordingBackend{}})
+	assert.True(t, enabled.Availability().Container.Available)
 }
 
 func TestRoutingExecutor_Availability_HasLocalTasks(t *testing.T) {
@@ -423,7 +438,7 @@ func TestRoutingExecutor_SetOnProcessStarted_ReceivesCall(t *testing.T) {
 }
 
 func TestRoutingExecutor_Execute_MissingExecutionDefinition(t *testing.T) {
-	e := newTestExecutor(t, Options{CloudShellEnabled: true})
+	e := newTestExecutor(t, Options{CloudDispatchEnabled: true})
 	// Task with no run and no resolved execution definition → resolveBackend
 	// returns the "missing execution definition" error.
 	task := &model.Task{Name: "nodef"}

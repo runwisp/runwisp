@@ -87,14 +87,14 @@ type RoutingExecutor struct {
 }
 
 type Options struct {
-	LogDir            string
-	EventBus          events.EventBus
-	CloudShellEnabled bool
-	HasLocalTasks     bool
-	Docker            Backend          // container backend; nil when Docker is unavailable
-	Compose           Backend          // compose backend; nil when docker compose is unavailable
-	MinFreeDisk       int64            // minimum free disk space in bytes; 0 = disabled
-	OnRunUpdate       func(*model.Run) // called when run state changes (e.g. LogPath set)
+	LogDir               string
+	EventBus             events.EventBus
+	CloudDispatchEnabled bool
+	HasLocalTasks        bool
+	Docker               Backend          // container backend; nil when Docker is unavailable
+	Compose              Backend          // compose backend; nil when docker compose is unavailable
+	MinFreeDisk          int64            // minimum free disk space in bytes; 0 = disabled
+	OnRunUpdate          func(*model.Run) // called when run state changes (e.g. LogPath set)
 	// Clock is the wall-clock source for captured-output timestamps (system
 	// lines and the per-line timestamp index). nil defaults to time.Now;
 	// the demo seeder injects a backdated clock so historical runs carry
@@ -103,42 +103,58 @@ type Options struct {
 }
 
 // New creates a routing executor with available backends.
-// CloudShellEnabled only controls what is reported to the cloud control plane;
-// the cloud dispatch path uses Availability to reject disallowed types.
-// Local tasks from runwisp.toml always have shell access.
+//
+// Availability is the authorization surface for the cloud control plane: the
+// dispatch path rejects any type whose BackendStatus is unavailable. It does
+// not gate local runwisp.toml tasks, which resolve backends directly and always
+// have full access.
+//
+// CloudDispatchEnabled is the operator opt-in (daemon.allow_cloud_dispatch). The
+// policy is a whitelist: only HTTP and config-backed dispatch (triggering an
+// existing TOML task) are permitted without it, since they don't run
+// peer-supplied local code. Shell, container, compose — and any future
+// code-executing type — require the opt-in.
 func New(opts Options) Executor {
 	backends := make(map[string]Backend)
-	avail := Availability{
-		HTTP: BackendStatus{Available: true},
-	}
+	avail := Availability{}
 
+	// Backends are registered unconditionally so local TOML tasks can use them;
+	// Availability separately governs what the cloud peer may dispatch.
 	backends["http"] = &HTTPBackend{}
 	backends["shell"] = &ShellBackend{}
-
-	if opts.CloudShellEnabled {
-		avail.Shell = BackendStatus{Available: true}
-	} else {
-		avail.Shell = BackendStatus{Available: false, Reason: "cloud shell dispatch disabled (set cloudShellTasks: true to enable)"}
-	}
-
 	if opts.Docker != nil {
 		backends["container"] = opts.Docker
-		avail.Container = BackendStatus{Available: true}
-	} else {
-		avail.Container = BackendStatus{Available: false, Reason: "docker daemon unreachable"}
 	}
-
 	if opts.Compose != nil {
 		backends["compose"] = opts.Compose
-		avail.Compose = BackendStatus{Available: true}
-	} else {
-		avail.Compose = BackendStatus{Available: false, Reason: "docker compose CLI unavailable"}
 	}
 
+	// Always dispatchable: HTTP, and config-backed dispatch when local tasks exist.
+	avail.HTTP = BackendStatus{Available: true}
 	if opts.HasLocalTasks {
 		avail.Config = BackendStatus{Available: true}
 	} else {
 		avail.Config = BackendStatus{Available: false, Reason: "no local tasks configured"}
+	}
+
+	// Code-executing types require the dispatch opt-in.
+	if !opts.CloudDispatchEnabled {
+		const reason = "cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)"
+		avail.Shell = BackendStatus{Available: false, Reason: reason}
+		avail.Container = BackendStatus{Available: false, Reason: reason}
+		avail.Compose = BackendStatus{Available: false, Reason: reason}
+	} else {
+		avail.Shell = BackendStatus{Available: true}
+		if opts.Docker != nil {
+			avail.Container = BackendStatus{Available: true}
+		} else {
+			avail.Container = BackendStatus{Available: false, Reason: "docker daemon unreachable"}
+		}
+		if opts.Compose != nil {
+			avail.Compose = BackendStatus{Available: true}
+		} else {
+			avail.Compose = BackendStatus{Available: false, Reason: "docker compose CLI unavailable"}
+		}
 	}
 
 	clock := opts.Clock
