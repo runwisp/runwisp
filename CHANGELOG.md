@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-18
+
 ### Added
 
 - **`params` on `[tasks.*]`.** Let a task take inputs — env vars, arguments, options, and flags — that you fill in when you trigger it by hand from the UI, TUI, or REST; scheduled runs fall back to the defaults you declare. Clearing a value omits the parameter entirely (the default is not re-applied), and you can pass an explicit empty string when you mean one. Values are passed safely as arguments and env (never pasted into the shell) and saved with the run so you can see what it ran with. See [Parameters](https://docs.runwisp.com/configuration/tasks/#parameters).
@@ -267,7 +269,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.9.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.10.0...main
+[0.10.0]: https://github.com/runwisp/runwisp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/runwisp/runwisp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/runwisp/runwisp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/runwisp/runwisp/compare/v0.6.0...v0.7.0
