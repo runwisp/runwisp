@@ -220,13 +220,13 @@ func initExecutor(cfg *config.Config, eventBus events.EventBus, logDir, fingerpr
 	minFreeDisk := cfg.Storage.MinFreeSpace
 
 	return executor.New(executor.Options{
-		LogDir:            logDir,
-		EventBus:          eventBus,
-		CloudShellEnabled: cfg.IsCloudShellEnabled(),
-		HasLocalTasks:     len(cfg.Tasks) > 0,
-		Docker:            dockerBackend,
-		Compose:           composeBackend,
-		MinFreeDisk:       minFreeDisk,
+		LogDir:               logDir,
+		EventBus:             eventBus,
+		CloudDispatchEnabled: cfg.IsCloudDispatchEnabled(),
+		HasLocalTasks:        len(cfg.Tasks) > 0,
+		Docker:               dockerBackend,
+		Compose:              composeBackend,
+		MinFreeDisk:          minFreeDisk,
 	})
 }
 

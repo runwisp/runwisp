@@ -73,6 +73,20 @@ func configScript(t *testing.T, taskName string) json.RawMessage {
 	return raw
 }
 
+func containerScript(t *testing.T, script string) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(map[string]string{"type": "container", "base_image": "alpine", "script": script})
+	require.NoError(t, err)
+	return raw
+}
+
+func httpScript(t *testing.T, url string) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(map[string]string{"type": "http", "method": "GET", "url": url})
+	require.NoError(t, err)
+	return raw
+}
+
 // --- resolveDispatchTask ---
 
 func TestResolveDispatchTask_InvalidJSON(t *testing.T) {
@@ -144,6 +158,73 @@ func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
 	assert.False(t, configBacked)
 	assert.Len(t, runner.upserted, 1)
 	assert.Equal(t, name, runner.upserted[0].Name)
+}
+
+// TestResolveDispatchTask_ContainerRejectedWhenDispatchDisabled covers the opt-in
+// bypass fix: with cloud dispatch disabled, a container backend reports
+// unavailable, so an ad-hoc container dispatch is rejected before any task is
+// upserted.
+func TestResolveDispatchTask_ContainerRejectedWhenDispatchDisabled(t *testing.T) {
+	avail := executor.Availability{
+		Container: executor.BackendStatus{Available: false, Reason: "cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)"},
+	}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := &InboundHandler{
+		taskManager:     runner,
+		logDir:          "/tmp",
+		availability:    avail,
+		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+		logListeners:    make(map[string]struct{}),
+	}
+
+	_, _, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "evil", Script: containerScript(t, "rm -rf /")})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+	assert.Empty(t, runner.upserted, "rejected dispatch must not upsert a task")
+}
+
+func TestResolveDispatchTask_ContainerInlineUpsertedWhenEnabled(t *testing.T) {
+	avail := executor.Availability{
+		Container: executor.BackendStatus{Available: true},
+	}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := &InboundHandler{
+		taskManager:     runner,
+		logDir:          "/tmp",
+		availability:    avail,
+		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+		logListeners:    make(map[string]struct{}),
+	}
+
+	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "build", Script: containerScript(t, "echo hi")})
+	require.NoError(t, err)
+	assert.NotEmpty(t, name)
+	assert.False(t, configBacked)
+	assert.Len(t, runner.upserted, 1)
+}
+
+// TestResolveDispatchTask_HTTPAllowedWithoutDispatch confirms the whitelist:
+// HTTP dispatch is permitted even with the dispatch opt-in off, since it runs no
+// peer-supplied local code.
+func TestResolveDispatchTask_HTTPAllowedWithoutDispatch(t *testing.T) {
+	avail := executor.Availability{
+		HTTP: executor.BackendStatus{Available: true},
+	}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := &InboundHandler{
+		taskManager:     runner,
+		logDir:          "/tmp",
+		availability:    avail,
+		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+		logListeners:    make(map[string]struct{}),
+	}
+
+	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	require.NoError(t, err)
+	assert.NotEmpty(t, name)
+	assert.False(t, configBacked)
 }
 
 // --- buildDynamicCloudTask ---

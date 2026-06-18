@@ -448,7 +448,7 @@ func emitReadiness(rt *daemonRuntime, listenURL string, f Flags) {
 // logSecurityWarnings emits log warnings for security-sensitive configurations.
 func logSecurityWarnings(cfg *daemonConfig, f Flags) {
 	if cfg.Config.Daemon.AllowCloudDispatch {
-		slog.Warn("Cloud shell dispatch enabled — the cloud control plane can execute arbitrary shell commands on this host")
+		slog.Warn("Cloud dispatch enabled — the cloud control plane can execute arbitrary commands (shell, container, compose) on this host")
 	}
 	nonLoopback := f.Host != "127.0.0.1" && f.Host != "::1" && f.Host != "localhost"
 	// Exactly one banner: when auth is disabled it subsumes the non-loopback

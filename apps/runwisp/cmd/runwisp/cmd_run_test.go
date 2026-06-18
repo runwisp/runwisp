@@ -77,7 +77,7 @@ func TestLogSecurityWarnings_EmitsCloudDispatchWarning(t *testing.T) {
 		cfg.Config.Daemon.AllowCloudDispatch = true
 		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"})
 	})
-	assert.Contains(t, out, "Cloud shell dispatch enabled")
+	assert.Contains(t, out, "Cloud dispatch enabled")
 }
 
 func TestLogSecurityWarnings_PrintsBannerForNonLoopbackHost(t *testing.T) {
