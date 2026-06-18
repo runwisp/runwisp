@@ -50,6 +50,15 @@
         `${ESC}4;36munderlined cyan link${ESC}0m and ${ESC}4;33munderlined yellow${ESC}0m`,
     ];
 
+    const LONG_LINES = [
+        `${ESC}36m[info]${ESC}0m starting request trace`,
+        `${ESC}90m2026-06-05T03:00:00Z${ESC}0m GET /api/v1/tasks?include=runs,logs,schedule&limit=100&offset=0 → ${ESC}32m200${ESC}0m ${ESC}90m{"trace":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","upstream":"https://internal.example.com/very/long/path/segment/that/keeps/going/and/going","latency_ms":1287,"bytes":204812}${ESC}0m`,
+        `${ESC}31m[error]${ESC}0m panic: runtime error: index out of range [12] with length 8 — goroutine 42 [running]: main.process(0xc0000b4000, 0x1f4) /home/runner/work/app/app/internal/pipeline/process.go:317 +0x4a5`,
+        "  short line in between",
+        `tab-separated\tcolumns\there\tshould\tstay\taligned\tand\textend\tfar\tpast\tthe\tviewport\tedge\tto\tprove\thorizontal\tscroll`,
+        `${ESC}32m[done]${ESC}0m ${"=".repeat(400)}|END`,
+    ];
+
     const STREAM_TICKS = [
         `${ESC}36m[info]${ESC}0m processed batch ${ESC}1m#42${ESC}0m ${ESC}90m(1,024 records)${ESC}0m`,
         `${ESC}32m✓${ESC}0m health check passed`,
@@ -72,4 +81,8 @@
 
 <Story name="Truncated" asChild>
     <LogConsoleDemo lines={SAMPLE_LOG.slice(6)} firstAvailableLine={1500} />
+</Story>
+
+<Story name="Long Lines" asChild>
+    <LogConsoleDemo lines={LONG_LINES} />
 </Story>

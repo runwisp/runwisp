@@ -35,6 +35,7 @@ export default defineConfig({
                 "packages/ui/src/lib/utils/error.ts",
                 "packages/ui/src/lib/utils/id.ts",
                 "packages/ui/src/lib/components/dashboard/run-helpers.ts",
+                "packages/ui/src/lib/log-console/ansi.ts",
                 "packages/common/src/utils/ulid.ts",
             ],
             exclude: [

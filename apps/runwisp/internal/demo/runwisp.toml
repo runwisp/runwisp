@@ -253,7 +253,7 @@ echo "[reindex] done: 8000 docs in 4.7s"
 
 [tasks.import-legacy-data]
 group       = "Manual"
-description = "One-off importer for the legacy MySQL export. Verbose by design: every row that needs a fix-up is logged so the migration is auditable."
+description = "One-off importer for the legacy MySQL export. Verbose by design: every row that needs a fix-up is logged as the full rewrite statement, so the lines run wide and the migration is auditable."
 api_trigger = true
 timeout     = "2h"
 keep_runs   = 20
@@ -261,12 +261,13 @@ log_max_size = "200mb"
 run = '''
 set -eu
 echo "[import] opening legacy_dump.sql (3.2 GB)"
+now=$(date -u +%FT%TZ)
 for table in users orgs notes attachments audit_log; do
   echo "[import] === table ${table} ==="
   r=0
   while [ "$r" -lt 500 ]; do
     r=$((r + 1))
-    printf "[import] %s row %06d migrated (rewrote %s columns)\n" "$table" "$r" "$((r % 4))"
+    printf "[import] %s row %06d migrated -> UPDATE %s SET migrated_at='%s', source_ref='legacy:%s:%06d', payload='{\"region\":\"eu-central-1\",\"notes\":\"re-encoded latin1->utf8, normalized timestamps to UTC, rewrote %s legacy column aliases, verified referential integrity against parent rows\"}' WHERE id=%06d AND tenant_shard IN ('shard-a','shard-b','shard-c');\n" "$table" "$r" "$table" "$now" "$table" "$r" "$((r % 4))" "$r"
   done
   echo "[import] ${table}: 500 rows in 1.1s"
 done

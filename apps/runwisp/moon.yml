@@ -7,6 +7,15 @@ layer: 'application'
 fileGroups:
   # ensure-ui-dist.sh is sourced by every Go entry-point script.
   go: ['cmd/**/*.go', 'internal/**/*.go', 'go.mod', 'go.sum', 'scripts/ensure-ui-dist.sh']
+  # Non-Go assets compiled into the binary via //go:embed. They are build
+  # inputs even though they aren't .go files, so the build cache must key on
+  # them — otherwise editing e.g. the demo config leaves a stale binary.
+  # internal/ui/dist and internal/storage/schema.sql are omitted: they reach
+  # the build transitively via the sync-ui-dist and sqlc-generate deps.
+  embeds:
+    - 'internal/demo/runwisp.toml'
+    - 'internal/autostart/templates/*.tmpl'
+    - 'internal/notify/render/defaults/**/*'
 
 tasks:
   sqlc-generate:
@@ -55,6 +64,7 @@ tasks:
       - 'asyncapi:generate'
     inputs:
       - '@globs(go)'
+      - '@globs(embeds)'
       - 'scripts/build.sh'
       - 'scripts/metadata.sh'
       - '/CHANGELOG.md'

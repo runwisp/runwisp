@@ -37,3 +37,20 @@ export function ansiLineToHtml(text: string): string {
         colors: ANSI_PALETTE,
     }).toHtml(text);
 }
+
+// Matches CSI escape sequences (colour codes, cursor moves, etc.), which
+// render to zero visible width. The ESC control char is intentional here.
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE = /\x1b\[[0-9;?]*[A-Za-z]/g;
+const TAB_WIDTH = 8;
+
+// Count the visible columns a log line occupies once ANSI escape sequences
+// are stripped. Tabs are charged the full tab width — an over-estimate that
+// only adds trailing slack to the horizontal scroll surface, never clips.
+export function visibleColumns(text: string): number {
+    let columns = 0;
+    for (const ch of text.replace(ANSI_ESCAPE, "")) {
+        columns += ch === "\t" ? TAB_WIDTH : 1;
+    }
+    return columns;
+}
