@@ -54,6 +54,12 @@ var helpSections = []helpSection{
 		{"g / G", "jump to top / end"},
 		{"pgup/pgdn", "page through logs"},
 	}},
+	{title: "Run dialog", entries: []helpEntry{
+		{"space / ←→", "toggle a flag on/off"},
+		{"←→ / hl", "choose an option"},
+		{"ctrl+t", "include empty / omit value"},
+		{"enter", "run · esc cancel"},
+	}},
 	{title: "Notifications", entries: []helpEntry{
 		{"enter", "open the run"},
 		{"r", "mark read"},

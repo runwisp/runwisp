@@ -348,9 +348,13 @@ func (f *paramField) handleMainKey(keyMsg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// toggleFlag flips a flag field on space/x.
+// toggleFlag flips a flag field. A flag is binary, so every key an operator
+// instinctively reaches for on a checkbox flips it: space/x, and the same
+// left/right (vim h/l) that cycle the neighbouring selectors — so the footer's
+// arrow hint is honest for flags too.
 func (f *paramField) toggleFlag(key string) {
-	if key == " " || key == "x" {
+	switch key {
+	case " ", "x", "left", "right", "h", "l":
 		f.flagOn = !f.flagOn
 	}
 }
@@ -470,12 +474,36 @@ func (d *ParamFormDialog) View(screenWidth, screenHeight int) string {
 	}
 	lines = append(lines,
 		modalEmptyLine(innerWidth),
-		modalSurfaceLine("enter run · ↑/↓ move · ←/→ choose · ctrl+t omit/empty · esc cancel", innerWidth, uikit.ColorTextMuted, false),
+		modalSurfaceLine(d.footerHint(), innerWidth, uikit.ColorTextMuted, false),
 		modalEmptyLine(innerWidth),
 	)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
 	return box.view
+}
+
+// footerHint builds the dialog's key legend, leading with the action that
+// applies to the focused field's active stop so the bar never advertises a key
+// that does nothing here (the static "←/→ choose" used to mislead on flags). The
+// always-present keys — move, run, cancel — trail every variant.
+func (d *ParamFormDialog) footerHint() string {
+	const tail = "↑/↓ move · enter run · esc cancel"
+	lead := ""
+	if len(d.fields) > 0 {
+		f := d.fields[d.focus]
+		switch {
+		case f.param.Kind == model.ParamFlag:
+			lead = "space toggle"
+		case d.part == focusCustom, !f.strict && !f.combo:
+			lead = "type to edit · ctrl+t omit/empty"
+		default: // strict or combo selector on its main stop
+			lead = "←/→ choose"
+		}
+	}
+	if lead == "" {
+		return tail
+	}
+	return lead + " · " + tail
 }
 
 func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
@@ -518,7 +546,17 @@ func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
 	default:
 		value = f.input.View() + f.includeMarker()
 	}
-	out = append(out, modalLeftLine("    "+value, innerWidth, uikit.ColorText))
+	if focused && f.param.Kind == model.ParamFlag {
+		// A focused flag carries its toggle keys inline, right at the control, so
+		// the operator never has to discover them by trial — the muted cue sits
+		// beside the [x]/[ ] state and disappears once focus moves on.
+		out = append(out, modalLeftLineRich(innerWidth,
+			styledSeg("    "+value, uikit.ColorText),
+			styledSeg("      space / ←→ toggle", uikit.ColorTextMuted),
+		))
+	} else {
+		out = append(out, modalLeftLine("    "+value, innerWidth, uikit.ColorText))
+	}
 
 	if f.onCustom() {
 		// The custom slot reveals a fillable text input directly beneath the
@@ -544,5 +582,26 @@ func modalLeftLine(text string, innerWidth int, fg lipgloss.Color) string {
 		Foreground(fg).
 		Width(innerWidth).
 		Align(lipgloss.Left).
+		Render(text)
+}
+
+// modalLeftLineRich renders a left-aligned full-width modal line built from
+// independently coloured segments (see styledSeg), padding the remainder to
+// innerWidth on the modal surface. The two-tone counterpart to modalLeftLine,
+// for rows where a value and a muted hint share one line.
+func modalLeftLineRich(innerWidth int, segments ...string) string {
+	return lipgloss.NewStyle().
+		Background(uikit.ColorBgLight).
+		Width(innerWidth).
+		Align(lipgloss.Left).
+		Render(strings.Join(segments, ""))
+}
+
+// styledSeg renders one coloured segment on the modal surface for composing into
+// modalLeftLineRich.
+func styledSeg(text string, fg lipgloss.Color) string {
+	return lipgloss.NewStyle().
+		Background(uikit.ColorBgLight).
+		Foreground(fg).
 		Render(text)
 }
