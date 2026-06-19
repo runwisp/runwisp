@@ -86,7 +86,14 @@ func putOnce(ctx context.Context, client *http.Client, url string, body []byte) 
 	if err != nil {
 		return fmt.Errorf("build PUT request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/gzip")
+	// The body is gzip-compressed, but advertise it as gzip-encoded text rather
+	// than an application/gzip blob: S3/MinIO stores and replays these headers,
+	// so a browser fetching the signed GET URL transparently decompresses the
+	// archive and renders the log as plain text. (The presigned PUT signs only
+	// host — Content-Type/Content-Encoding are unsigned, so setting them here
+	// does not break the signature.)
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
 	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
 	req.ContentLength = int64(len(body))
 

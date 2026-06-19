@@ -218,6 +218,43 @@ const (
 // IsService reports whether the task is an always-on service.
 func (k TaskKind) IsService() bool { return k == KindService }
 
+// Service instance/roll-up state strings reported to cloud. They mirror the
+// asyncapi ServiceInstanceState / ServiceState enums so the cloud bridge maps
+// them without translation.
+const (
+	ServiceInstanceRunning    = "running"
+	ServiceInstanceRestarting = "restarting"
+	ServiceInstanceStopped    = "stopped"
+	ServiceInstanceFatal      = "fatal"
+
+	ServiceRunning  = "running"
+	ServiceDegraded = "degraded"
+	ServiceStopped  = "stopped"
+	ServiceFatal    = "fatal"
+)
+
+// ServiceInstanceStatus is one instance slot's reported state. Pid/StartedAt/
+// LastExitCode are best-effort: populated when the daemon has a live or just-
+// exited run for the slot, zero/nil otherwise.
+type ServiceInstanceStatus struct {
+	Index        int
+	State        string
+	Pid          int
+	StartedAt    *time.Time
+	RestartCount int
+	LastExitCode *int
+}
+
+// ServiceSnapshot is the supervisor + live-run view of one service, built by
+// the runtime manager and forwarded to cloud as a service:status message.
+type ServiceSnapshot struct {
+	TaskName         string
+	State            string
+	DesiredInstances int
+	RunningInstances int
+	Instances        []ServiceInstanceStatus
+}
+
 // Backoff curves shared by retry_backoff (tasks) and restart_backoff (services).
 const (
 	BackoffConstant    = "constant"

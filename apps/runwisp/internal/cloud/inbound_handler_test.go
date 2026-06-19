@@ -21,6 +21,8 @@ func newTestInboundHandler() *InboundHandler {
 		executor.Availability{},
 		func(protocol.ExecutionUpdateMessage) {},
 		nil,
+		nil,
+		nil,
 	)
 }
 
@@ -55,13 +57,15 @@ func newDispatchInboundHandler(runner TaskRunner, repo ExternalRunGetter, avail 
 
 func TestHandleExecutionDispatch_EmptyExecutionID(t *testing.T) {
 	h := newTestInboundHandler()
+	acked := false
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
 		Execution: &protocol.Execution{ExecutionID: ""},
-	})
+	}, func() { acked = true })
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
 	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+	assert.False(t, acked, "invalid dispatch must not be acked")
 }
 
 func TestHandleExecutionDispatch_InvalidScript(t *testing.T) {
@@ -74,7 +78,7 @@ func TestHandleExecutionDispatch_InvalidScript(t *testing.T) {
 			ExecutionID: "exec-1",
 			Script:      []byte(`{bad json`),
 		},
-	})
+	}, nil)
 	require.Error(t, err)
 }
 
@@ -84,14 +88,16 @@ func TestHandleExecutionDispatch_Success(t *testing.T) {
 	h := newDispatchInboundHandler(runner, nil, avail)
 
 	script := shellScript(t, "echo hello")
+	acked := 0
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
 		Execution: &protocol.Execution{
 			ExecutionID: "exec-abc",
 			TaskID:      "my-task",
 			Script:      script,
 		},
-	})
+	}, func() { acked++ })
 	require.NoError(t, err)
+	assert.Equal(t, 1, acked, "valid dispatch must be acked exactly once")
 }
 
 func TestHandleExecutionDispatch_TriggerError_NilRun(t *testing.T) {
@@ -110,7 +116,7 @@ func TestHandleExecutionDispatch_TriggerError_NilRun(t *testing.T) {
 			TaskID:      "some-task",
 			Script:      script,
 		},
-	})
+	}, nil)
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -134,8 +140,62 @@ func TestHandleExecutionDispatch_TriggerError_WithRun(t *testing.T) {
 			TaskID:      "task",
 			Script:      script,
 		},
-	})
+	}, nil)
 	require.Error(t, err)
+}
+
+func TestHandleExecutionDispatch_DuplicateActive_ReAcksWithoutTrigger(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	tracker := NewExecutionTracker()
+	tracker.TrackRunning("exec-dup", nil)
+	h := newDispatchInboundHandler(runner, nil, avail)
+	h.tracker = tracker
+
+	script := shellScript(t, "echo hi")
+	acked := 0
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: "exec-dup",
+			TaskID:      "task",
+			Script:      script,
+		},
+	}, func() { acked++ })
+	require.NoError(t, err)
+	assert.Equal(t, 1, acked, "duplicate dispatch must be re-acked")
+	assert.Empty(t, runner.triggered, "duplicate dispatch must not trigger a second run")
+}
+
+func TestHandleExecutionDispatch_DuplicateTerminal_ReQueuesTerminalUpdate(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	reason := model.ReasonSuccess
+	execID := "exec-done"
+	repo := &stubRunRepo{run: &model.Run{
+		ID:                  "r1",
+		Status:              model.PhaseEnded,
+		EndReason:           &reason,
+		ExternalExecutionID: &execID,
+	}}
+	h := newDispatchInboundHandler(runner, repo, avail)
+
+	var updates []protocol.ExecutionUpdateMessage
+	h.queueExecUpdate = func(u protocol.ExecutionUpdateMessage) { updates = append(updates, u) }
+
+	script := shellScript(t, "echo hi")
+	acked := 0
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: execID,
+			TaskID:      "task",
+			Script:      script,
+		},
+	}, func() { acked++ })
+	require.NoError(t, err)
+	assert.Equal(t, 1, acked)
+	assert.Empty(t, runner.triggered, "terminal duplicate must not re-run")
+	require.Len(t, updates, 1, "terminal duplicate must re-queue the stored terminal update")
+	assert.Equal(t, execID, updates[0].ExecutionID)
 }
 
 // --- HandleExecutionStop ---
@@ -158,7 +218,7 @@ func TestHandleExecutionStop_NotFound(t *testing.T) {
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+	assert.Equal(t, CloudErrorKindUnknownExecution, ce.Kind)
 }
 
 func TestHandleExecutionStop_RunAlreadyTerminal(t *testing.T) {
@@ -217,7 +277,7 @@ func TestHandleLogReplayRequest_NotFound(t *testing.T) {
 		ExecutionID: "exec-1",
 	})
 	require.NoError(t, err)
-	assert.True(t, chunk.Final)
+	assert.False(t, chunk.Final, "unknown execution must not claim end-of-log — the dispatch may not have arrived yet")
 }
 
 func TestHandleLogReplayRequest_TransientError(t *testing.T) {
@@ -304,4 +364,34 @@ func TestDecodeInboundMessage_AuthResult(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, message.Success)
 	assert.Equal(t, "conn-1", message.ConnectionID)
+}
+
+func TestInboundHandler_HandleAgentRestart(t *testing.T) {
+	t.Run("nil requester is rejected as conflict", func(t *testing.T) {
+		h := newTestInboundHandler() // constructed with a nil restart callback
+		err := h.HandleAgentRestart()
+		var cloudErr *CloudError
+		require.ErrorAs(t, err, &cloudErr)
+		assert.Equal(t, CloudErrorKindConflict, cloudErr.Kind)
+	})
+
+	t.Run("requester error surfaces as conflict", func(t *testing.T) {
+		h := NewInboundHandler(nil, nil, "/tmp/logs", executor.Availability{},
+			func(protocol.ExecutionUpdateMessage) {}, nil, nil,
+			func() error { return errors.New("not service-managed") })
+		err := h.HandleAgentRestart()
+		var cloudErr *CloudError
+		require.ErrorAs(t, err, &cloudErr)
+		assert.Equal(t, CloudErrorKindConflict, cloudErr.Kind)
+		assert.Contains(t, cloudErr.Message, "not service-managed")
+	})
+
+	t.Run("success invokes the requester once", func(t *testing.T) {
+		calls := 0
+		h := NewInboundHandler(nil, nil, "/tmp/logs", executor.Availability{},
+			func(protocol.ExecutionUpdateMessage) {}, nil, nil,
+			func() error { calls++; return nil })
+		require.NoError(t, h.HandleAgentRestart())
+		assert.Equal(t, 1, calls)
+	})
 }

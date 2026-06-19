@@ -24,11 +24,29 @@ type fakeTaskRunner struct {
 	trigErr    error
 	trigRun    *model.Run
 	trigParams map[string]string
+	triggered  []string
+
+	startedServices   []string
+	stoppedServices   []string
+	restartedServices []string
+	serviceErr        error
+	snapshot          model.ServiceSnapshot
+	snapshotOK        bool
 }
 
 func (f *fakeTaskRunner) GetTask(name string) (*model.Task, bool) {
 	t, ok := f.tasks[name]
 	return t, ok
+}
+
+func (f *fakeTaskRunner) ListServiceTasks() []*model.Task {
+	out := make([]*model.Task, 0, len(f.tasks))
+	for _, t := range f.tasks {
+		if t != nil && t.Kind.IsService() {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func (f *fakeTaskRunner) UpsertTask(task *model.Task) {
@@ -41,11 +59,31 @@ func (f *fakeTaskRunner) UpsertTask(task *model.Task) {
 
 func (f *fakeTaskRunner) TriggerCloudRun(taskName, externalID string, params map[string]string) (*model.Run, error) {
 	f.trigParams = params
+	f.triggered = append(f.triggered, externalID)
 	return f.trigRun, f.trigErr
 }
 
 func (f *fakeTaskRunner) TerminateRunByExternalExecutionID(externalID string) error {
 	return errors.New("not found")
+}
+
+func (f *fakeTaskRunner) StartServiceInstances(taskName string, _ model.TriggeredBy) error {
+	f.startedServices = append(f.startedServices, taskName)
+	return f.serviceErr
+}
+
+func (f *fakeTaskRunner) StopService(taskName string) error {
+	f.stoppedServices = append(f.stoppedServices, taskName)
+	return f.serviceErr
+}
+
+func (f *fakeTaskRunner) RestartServiceInstances(taskName string) error {
+	f.restartedServices = append(f.restartedServices, taskName)
+	return f.serviceErr
+}
+
+func (f *fakeTaskRunner) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
+	return f.snapshot, f.snapshotOK
 }
 
 func newDispatchHandler(avail executor.Availability, tasks map[string]*model.Task) *InboundHandler {
@@ -68,7 +106,7 @@ func shellScript(t *testing.T, script string) json.RawMessage {
 
 func configScript(t *testing.T, taskName string) json.RawMessage {
 	t.Helper()
-	raw, err := json.Marshal(map[string]string{"type": "config", "task_name": taskName})
+	raw, err := json.Marshal(map[string]string{"type": "config", "taskName": taskName})
 	require.NoError(t, err)
 	return raw
 }
@@ -257,6 +295,34 @@ func TestBuildDynamicCloudTask_ZeroTimeoutIgnored(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
 	task := buildDynamicCloudTask(&protocol.Execution{TaskID: "t", Timeout: 0}, def)
 	assert.Equal(t, time.Duration(0), task.Timeout)
+}
+
+func TestBuildDynamicCloudTask_AppliesTaskConfig(t *testing.T) {
+	logOnFull := protocol.ExecutionTaskConfigLogOnFullDropOld
+	def := &model.ShellExecution{Script: "echo hi"}
+	task := buildDynamicCloudTask(&protocol.Execution{
+		TaskID: "t",
+		TaskConfig: &protocol.ExecutionTaskConfig{
+			Env:          map[string]string{"KEY": "val"},
+			GracefulStop: 3000,
+			LogMaxSize:   2048,
+			LogOnFull:    &logOnFull,
+		},
+	}, def)
+
+	assert.Equal(t, "val", task.Env["KEY"])
+	assert.Equal(t, 3*time.Second, task.GracefulStop)
+	assert.Equal(t, int64(2048), task.LogMaxSize)
+	assert.Equal(t, "drop_old", task.LogOnFull)
+}
+
+func TestBuildDynamicCloudTask_NilTaskConfigLeavesDefaults(t *testing.T) {
+	def := &model.ShellExecution{Script: "echo hi"}
+	task := buildDynamicCloudTask(&protocol.Execution{TaskID: "t", TaskConfig: nil}, def)
+	assert.Empty(t, task.Env)
+	assert.Zero(t, task.GracefulStop)
+	assert.Zero(t, task.LogMaxSize)
+	assert.Empty(t, task.LogOnFull)
 }
 
 func TestSanitizeCloudTaskName(t *testing.T) {

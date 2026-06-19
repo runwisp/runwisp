@@ -92,7 +92,7 @@ func (cfg Config) WebSocketURL() string {
 	} else {
 		wsURL.Scheme = "ws"
 	}
-	wsURL.Path = "/api/daemon/ws"
+	wsURL.Path = "/api/v1/runner/ws"
 	wsURL.RawQuery = ""
 	wsURL.Fragment = ""
 	return wsURL.String()
@@ -100,7 +100,7 @@ func (cfg Config) WebSocketURL() string {
 
 func (cfg Config) TaskSyncURL() string {
 	syncURL := *cfg.BaseURL
-	syncURL.Path = "/trpc/tasks.sync"
+	syncURL.Path = "/api/v1/runner/tasks/sync"
 	syncURL.RawQuery = ""
 	syncURL.Fragment = ""
 	return syncURL.String()

@@ -72,28 +72,6 @@ func TestClassifySyncHTTPError(t *testing.T) {
 	}
 }
 
-func TestClassifySyncErrorMessage(t *testing.T) {
-	tests := []struct {
-		message string
-		want    CloudErrorKind
-	}{
-		{"token expired", CloudErrorKindAuth},
-		{"token revoked", CloudErrorKindAuth},
-		{"TOKEN EXPIRED", CloudErrorKindAuth}, // case-insensitive
-		{"conflict detected", CloudErrorKindConflict},
-		{"out of sync", CloudErrorKindConflict},
-		{"invalid request", CloudErrorKindValidation},
-		{"malformed JSON", CloudErrorKindValidation},
-		{"network timeout", CloudErrorKindTransient},
-		{"some other error", CloudErrorKindTransient},
-		{"", CloudErrorKindTransient},
-	}
-	for _, tc := range tests {
-		got := classifySyncErrorMessage(tc.message)
-		assert.Equal(t, tc.want, got, "message=%q", tc.message)
-	}
-}
-
 func TestBuildOneSyncTask(t *testing.T) {
 	t.Run("basic shell task with cron", func(t *testing.T) {
 		task := &model.Task{
@@ -240,7 +218,7 @@ func TestSyncTasksSendsDirectPayload(t *testing.T) {
 		assert.True(t, hasTasks)
 
 		resp.Header().Set("Content-Type", "application/json")
-		_, _ = resp.Write([]byte(`{"result":{"data":{"success":true,"summary":{"added":0,"updated":0,"markedOutOfSync":0,"total":0}}}}`))
+		_, _ = resp.Write([]byte(`{"success":true,"summary":{"added":0,"updated":0,"markedOutOfSync":0,"total":0}}`))
 	}))
 	defer server.Close()
 
@@ -294,7 +272,7 @@ func TestSyncTasksInvalidJSONBodyIsValidationError(t *testing.T) {
 func TestSyncTasksParsesCurrentResponseShape(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 		resp.Header().Set("Content-Type", "application/json")
-		_, _ = resp.Write([]byte(`{"result":{"data":{"success":true,"summary":{"added":1,"updated":2,"markedOutOfSync":3,"total":4}}}}`))
+		_, _ = resp.Write([]byte(`{"success":true,"summary":{"added":1,"updated":2,"markedOutOfSync":3,"total":4}}`))
 	}))
 	defer server.Close()
 

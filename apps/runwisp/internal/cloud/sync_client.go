@@ -45,6 +45,7 @@ type taskSyncPayload struct {
 
 type syncTask struct {
 	Name                string             `json:"name"`
+	Group               string             `json:"group,omitempty"`
 	Description         string             `json:"description,omitempty"`
 	ConcurrencyLimit    *int               `json:"concurrencyLimit,omitempty"`
 	ConcurrencyBehavior string             `json:"concurrencyBehavior,omitempty"`
@@ -53,6 +54,10 @@ type syncTask struct {
 	RetryDelay          *int               `json:"retryDelay,omitempty"`
 	RetryBackoff        string             `json:"retryBackoff,omitempty"`
 	Timeout             *int               `json:"timeout,omitempty"`
+	Env                 map[string]string  `json:"env,omitempty"`
+	GracefulStop        *int               `json:"gracefulStop,omitempty"`
+	LogMaxSize          *int64             `json:"logMaxSize,omitempty"`
+	LogOnFull           string             `json:"logOnFull,omitempty"`
 	Enabled             *bool              `json:"enabled,omitempty"`
 	Script              json.RawMessage    `json:"script,omitempty"`
 	Schedules           []syncTaskSchedule `json:"schedules,omitempty"`
@@ -64,16 +69,11 @@ type syncTaskSchedule struct {
 	Enabled  bool   `json:"enabled"`
 }
 
-type taskSyncResponseEnvelope struct {
-	Result *struct {
-		Data *taskSyncResponseData `json:"data"`
-	} `json:"result,omitempty"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
-}
-
-type taskSyncResponseData struct {
+// taskSyncResponse is the bare response shape returned by the new cloud
+// /api/v1/runner/tasks/sync endpoint — no tRPC `result.data` wrapper.
+// Errors come back as non-2xx HTTP plus a JSON body the handler logs from
+// the status line; we don't try to decode them.
+type taskSyncResponse struct {
 	Success bool            `json:"success"`
 	Summary TaskSyncSummary `json:"summary"`
 }
@@ -139,8 +139,8 @@ func (client *TaskSyncClient) SyncTasks(ctx context.Context, token string, tasks
 		}
 	}
 
-	var envelope taskSyncResponseEnvelope
-	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+	var data taskSyncResponse
+	if err := json.Unmarshal(responseBody, &data); err != nil {
 		return nil, &CloudError{
 			Kind:    CloudErrorKindValidation,
 			Message: "failed to decode task sync response",
@@ -148,22 +148,6 @@ func (client *TaskSyncClient) SyncTasks(ctx context.Context, token string, tasks
 		}
 	}
 
-	if envelope.Error != nil {
-		kind := classifySyncErrorMessage(envelope.Error.Message)
-		return nil, &CloudError{
-			Kind:    kind,
-			Message: envelope.Error.Message,
-		}
-	}
-
-	if envelope.Result == nil || envelope.Result.Data == nil {
-		return nil, &CloudError{
-			Kind:    CloudErrorKindValidation,
-			Message: "task sync response missing result payload",
-		}
-	}
-
-	data := envelope.Result.Data
 	result := &TaskSyncResult{
 		Success: data.Success,
 		Summary: data.Summary,
@@ -205,6 +189,7 @@ func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
 func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 	task := syncTask{
 		Name:          t.Name,
+		Group:         t.Group,
 		Description:   t.Description,
 		RestartPolicy: string(model.RestartNever),
 	}
@@ -239,6 +224,19 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 	}
 	if timeoutMs := durationToMillis(t.Timeout); timeoutMs > 0 {
 		task.Timeout = &timeoutMs
+	}
+	if len(t.Env) > 0 {
+		task.Env = t.Env
+	}
+	if gsMs := durationToMillis(t.GracefulStop); gsMs > 0 {
+		task.GracefulStop = &gsMs
+	}
+	if t.LogMaxSize > 0 {
+		sz := t.LogMaxSize
+		task.LogMaxSize = &sz
+	}
+	if t.LogOnFull != "" {
+		task.LogOnFull = t.LogOnFull
 	}
 	enabled := true
 	task.Enabled = &enabled
@@ -286,29 +284,6 @@ func classifySyncHTTPError(statusCode int) CloudErrorKind {
 	}
 	if statusCode >= 400 && statusCode < 500 {
 		return CloudErrorKindValidation
-	}
-	return CloudErrorKindTransient
-}
-
-// errorClassification maps substring patterns to error kinds.
-// Checked against the lowercased error message from the cloud API.
-var errorClassification = []struct {
-	patterns []string
-	kind     CloudErrorKind
-}{
-	{[]string{"token", "revoked", "expired"}, CloudErrorKindAuth},
-	{[]string{"conflict", "out of sync"}, CloudErrorKindConflict},
-	{[]string{"invalid", "malformed"}, CloudErrorKindValidation},
-}
-
-func classifySyncErrorMessage(message string) CloudErrorKind {
-	lower := strings.ToLower(message)
-	for _, rule := range errorClassification {
-		for _, pattern := range rule.patterns {
-			if strings.Contains(lower, pattern) {
-				return rule.kind
-			}
-		}
 	}
 	return CloudErrorKindTransient
 }

@@ -80,6 +80,12 @@ func runDefault(f Flags) error {
 // The client is expected to already be wired (socket transport for local
 // access; no Authenticate call is needed in that mode).
 func runTUIConnect(client *apiclient.Client, f Flags) error {
+	// The TUI needs a real terminal; without one it would hang on stdin. Decline
+	// clearly instead. Any spawned background daemon keeps running headless.
+	if !isInteractiveTerminal() {
+		return errors.New("no interactive terminal; the daemon runs headless here — use 'runwisp cloud' / 'runwisp daemon', or run 'runwisp tui' from a real terminal")
+	}
+
 	info, err := client.GetDaemonInfo()
 	if err != nil {
 		slog.Warn("Could not fetch daemon info", "err", err)

@@ -67,7 +67,45 @@ func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.Execution
 		task.Timeout = time.Duration(dispatch.Timeout) * time.Millisecond
 	}
 
+	applyCloudTaskConfig(task, dispatch.TaskConfig)
+
 	return task
+}
+
+// applyCloudTaskConfig overlays the optional per-run execution knobs the cloud
+// control plane carries in ExecutionPayload.taskConfig onto the dynamically
+// built task.
+func applyCloudTaskConfig(task *model.Task, cfg *protocol.ExecutionTaskConfig) {
+	if cfg == nil {
+		return
+	}
+	logOnFull := ""
+	if cfg.LogOnFull != nil {
+		logOnFull, _ = cfg.LogOnFull.Value().(string)
+	}
+	applyTaskConfigKnobs(task, cfg.Env, cfg.GracefulStop, cfg.LogMaxSize, logOnFull)
+}
+
+// applyTaskConfigKnobs overlays the optional per-run/per-process execution knobs
+// (env, graceful-stop, log limits) onto task. Shared by the execution- and
+// service-dispatch paths, whose generated taskConfig messages are structurally
+// identical but distinctly typed (ExecutionTaskConfig / ServiceTaskConfig). Each
+// field is honored only when set; an omitted/zero value leaves the daemon
+// default in place. gracefulStop arrives in milliseconds and is stored as a
+// Duration.
+func applyTaskConfigKnobs(task *model.Task, env map[string]string, gracefulStop, logMaxSize int, logOnFull string) {
+	if len(env) > 0 {
+		task.Env = env
+	}
+	if gracefulStop > 0 {
+		task.GracefulStop = time.Duration(gracefulStop) * time.Millisecond
+	}
+	if logMaxSize > 0 {
+		task.LogMaxSize = int64(logMaxSize)
+	}
+	if logOnFull != "" {
+		task.LogOnFull = logOnFull
+	}
 }
 
 func sanitizeCloudTaskName(raw string) string {

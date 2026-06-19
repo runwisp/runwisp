@@ -1,8 +1,60 @@
+# =============================================================================
+# FORWARD-COMPATIBILITY CONTRACT — read before changing this file.
+#
+# Daemons ship from a separate repo and upgrade independently of the cloud.
+# Old daemons and new daemons are in the field at the same time, and new cloud
+# features must keep working against old daemons. These rules keep the wire
+# evolvable. Breaking one strands executions or kills sessions in the field.
+#
+#   1. ADDING FIELDS to an existing message is safe — both sides decode
+#      leniently (Go encoding/json ignores unknown fields; the daemon's
+#      decodeStrict only rejects trailing JSON, never unknown fields). NEVER
+#      remove, rename, retype, or repurpose an existing field.
+#
+#   2. ADDING daemon→cloud message TYPES is safe: cloud's Hub forwards an
+#      unknown inbound type to a metric + drop, never tearing down the session.
+#
+#   3. ADDING cloud→daemon message TYPES is safe to *send* (old daemons ignore
+#      an unknown type cleanly — no error frame, session survives). But if the
+#      cloud DEPENDS on the daemon acting on the new type, it MUST treat the
+#      type as "gated": only send it to daemons that advertise support, and
+#      fall back otherwise. Daemons advertise the set of cloud→daemon types
+#      they handle in the `X-Runner-Protocol-Features` auth header (a JSON
+#      array, derived from the daemon's inbound decoder map). An absent header
+#      means "baseline only" (an old daemon).
+#
+#   4. ENUMS: receivers must tolerate unknown values and treat them
+#      conservatively — NEVER map an unrecognized value onto a semantically
+#      loaded zero value. A future ExecutionStatus sent to old cloud must not
+#      silently decode as "running" (iota 0) and strand the row.
+#
+#   5. The `v` envelope integer is a RESERVED protocol major-version hook. It
+#      is present on every message and currently always 2 (ProtocolVersion).
+#      Receivers IGNORE values they don't recognize — do not repurpose `v` as a
+#      feature flag; feature negotiation is the `X-Runner-Protocol-Features`
+#      header (rule 3).
+#
+#   6. Regenerate Go/TS types from this file; never hand-edit generated output.
+#
+# The cloud-side companion to this contract is docs/PROTOCOL-COMPAT.md in the
+# runwisp-cloud repo.
+# =============================================================================
 asyncapi: 2.6.0
 info:
   title: RunWisp Protocol
   version: 2.0.0
-  description: WebSocket protocol between RunWisp daemons and the control plane
+  description: |
+    WebSocket protocol between RunWisp daemons and the control plane.
+
+    Forward-compatibility is a hard requirement: old and new daemons run in the
+    field simultaneously and upgrade independently of the cloud. See the
+    FORWARD-COMPATIBILITY CONTRACT comment block at the top of this file (and
+    docs/PROTOCOL-COMPAT.md in runwisp-cloud) before evolving any message.
+
+    Negotiation: at WS auth a daemon advertises the cloud→daemon message types
+    it understands via the `X-Runner-Protocol-Features` header (JSON array). The
+    cloud gates any feature it depends the daemon acting on, falling back when a
+    type is absent. An absent header means an old daemon (baseline types only).
 
 defaultContentType: application/json
 
@@ -17,8 +69,12 @@ channels:
           - $ref: "#/components/messages/executionDispatch"
           - $ref: "#/components/messages/executionStop"
           - $ref: "#/components/messages/logReplayRequest"
+          - $ref: "#/components/messages/logSearchRequest"
           - $ref: "#/components/messages/logListen"
           - $ref: "#/components/messages/logStop"
+          - $ref: "#/components/messages/agentRestart"
+          - $ref: "#/components/messages/serviceApply"
+          - $ref: "#/components/messages/serviceControl"
           - $ref: "#/components/messages/errorCloudToDaemon"
 
   daemonToCloud:
@@ -27,9 +83,12 @@ channels:
       message:
         oneOf:
           - $ref: "#/components/messages/ping"
+          - $ref: "#/components/messages/executionAck"
           - $ref: "#/components/messages/executionUpdate"
           - $ref: "#/components/messages/logLine"
           - $ref: "#/components/messages/logReplayChunk"
+          - $ref: "#/components/messages/logSearchChunk"
+          - $ref: "#/components/messages/serviceStatus"
           - $ref: "#/components/messages/errorDaemonToCloud"
 
 components:
@@ -59,6 +118,11 @@ components:
       payload:
         $ref: "#/components/schemas/LogReplayRequestMessage"
 
+    logSearchRequest:
+      name: log:searchRequest
+      payload:
+        $ref: "#/components/schemas/LogSearchRequestMessage"
+
     logListen:
       name: log:listen
       payload:
@@ -69,6 +133,21 @@ components:
       payload:
         $ref: "#/components/schemas/LogStopMessage"
 
+    agentRestart:
+      name: agent:restart
+      payload:
+        $ref: "#/components/schemas/AgentRestartMessage"
+
+    serviceApply:
+      name: service:apply
+      payload:
+        $ref: "#/components/schemas/ServiceApplyMessage"
+
+    serviceControl:
+      name: service:control
+      payload:
+        $ref: "#/components/schemas/ServiceControlMessage"
+
     errorCloudToDaemon:
       name: error
       payload:
@@ -78,6 +157,11 @@ components:
       name: ping
       payload:
         $ref: "#/components/schemas/PingMessage"
+
+    executionAck:
+      name: execution:ack
+      payload:
+        $ref: "#/components/schemas/ExecutionAckMessage"
 
     executionUpdate:
       name: execution:update
@@ -93,6 +177,16 @@ components:
       name: log:replayChunk
       payload:
         $ref: "#/components/schemas/LogReplayChunkMessage"
+
+    logSearchChunk:
+      name: log:searchChunk
+      payload:
+        $ref: "#/components/schemas/LogSearchChunkMessage"
+
+    serviceStatus:
+      name: service:status
+      payload:
+        $ref: "#/components/schemas/ServiceStatusMessage"
 
     errorDaemonToCloud:
       name: error
@@ -198,6 +292,8 @@ components:
           type: object
         timeout:
           type: integer
+        taskConfig:
+          $ref: "#/components/schemas/ExecutionTaskConfig"
         logUploadUrl:
           type: string
           description: |
@@ -225,6 +321,41 @@ components:
         - logUploadUrl
         - logPath
 
+    ExecutionTaskConfig:
+      type: object
+      description: |
+        Optional per-run execution knobs the cloud control plane carries through
+        dispatch and the daemon overlays onto the dynamically-built cloud task
+        (`buildDynamicCloudTask`). Every field is optional; an omitted field
+        means "use the daemon default". Knobs not modelled here (stop signal,
+        success exit codes, run-as user) are not honored by the daemon and so
+        are intentionally absent — adding them would be dead surface.
+      properties:
+        env:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            Environment variables overlaid on the run's process env, beneath
+            the daemon's own env_file/secrets layers. This is the only way a
+            cloud-dispatched shell run can set process env.
+        gracefulStop:
+          type: integer
+          description: |
+            Window between SIGTERM and SIGKILL when a run is stopped, in
+            milliseconds (mirrors `timeout`'s unit). 0/omitted uses the daemon
+            default.
+        logMaxSize:
+          type: integer
+          description: Per-run log size cap in bytes. 0/omitted uses the daemon default.
+        logOnFull:
+          type: string
+          enum:
+            - drop_new
+            - drop_old
+            - kill_task
+          description: What the daemon does when log output exceeds logMaxSize.
+
     ExecutionStopMessage:
       type: object
       properties:
@@ -244,6 +375,197 @@ components:
         - type
         - executionId
         - reason
+
+    ServiceInstanceState:
+      $id: ServiceInstanceState
+      type: string
+      description: |
+        State of a single service instance slot as reported by the daemon
+        supervisor. `running` = live; `restarting` = exited and awaiting the
+        next backoff respawn; `stopped` = operator-stopped, not being refilled;
+        `fatal` = the supervisor gave up on the slot. Consumers must tolerate
+        unknown values (forward-compat).
+      enum:
+        - running
+        - restarting
+        - stopped
+        - fatal
+
+    ServiceState:
+      $id: ServiceState
+      type: string
+      description: |
+        Roll-up state of a whole service. `running` = all desired instances
+        live; `degraded` = some but not all live; `stopped` = operator-stopped;
+        `fatal` = at least one slot is fatal. Consumers must tolerate unknown
+        values (forward-compat).
+      enum:
+        - running
+        - degraded
+        - stopped
+        - fatal
+
+    ServiceApplyMessage:
+      type: object
+      description: |
+        Cloud → daemon. Declares (or re-declares) a service's desired state on
+        the runner. Idempotent: the daemon upserts a kind=service task and, when
+        `autostart` is true, brings instances up to `instances`. Re-sent when a
+        runner reconnects so desired state converges after downtime. Gated by
+        the `service:apply` protocol-feature token — old daemons never receive
+        it. Duration knobs are milliseconds (mirrors execution timeout), which
+        the daemon converts to its native nanosecond Duration fields.
+      properties:
+        type:
+          type: string
+          const: service:apply
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        service:
+          $ref: "#/components/schemas/ServiceApplyPayload"
+      required:
+        - type
+        - service
+
+    ServiceApplyPayload:
+      type: object
+      properties:
+        taskId:
+          type: string
+        taskName:
+          type: string
+        script:
+          type: object
+          description: ExecutionDef JSON, same shape as ExecutionPayload.script.
+        instances:
+          type: integer
+          minimum: 1
+          description: Desired number of always-running instances.
+        autostart:
+          type: boolean
+          description: |
+            When true, the daemon starts instances on apply (and on reconnect).
+            When false, the service is declared but left stopped until an
+            operator start.
+        restartDelay:
+          type: integer
+          description: Base delay before each restart, in milliseconds. 0/omitted uses the daemon default.
+        restartBackoff:
+          type: string
+          enum:
+            - constant
+            - linear
+            - exponential
+          description: Backoff curve between consecutive restarts. Omitted uses the daemon default.
+        backoffResetAfter:
+          type: integer
+          description: |
+            An instance that runs at least this long (milliseconds) resets its
+            consecutive-restart counter. 0/omitted uses the daemon default.
+        taskConfig:
+          $ref: "#/components/schemas/ExecutionTaskConfig"
+      required:
+        - taskId
+        - taskName
+        - script
+        - instances
+
+    ServiceControlMessage:
+      type: object
+      description: |
+        Cloud → daemon. An operator action against a declared service. Maps to
+        the daemon's StartServiceInstances / StopService /
+        RestartServiceInstances. Gated by the `service:control` feature token.
+      properties:
+        type:
+          type: string
+          const: service:control
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        taskId:
+          type: string
+        action:
+          type: string
+          enum:
+            - start
+            - stop
+            - restart
+      required:
+        - type
+        - taskId
+        - action
+
+    ServiceInstanceSnapshot:
+      type: object
+      description: State of one instance slot, reported in ServiceStatusMessage.
+      properties:
+        index:
+          type: integer
+          description: Instance slot index in [0, desiredInstances).
+        state:
+          $ref: "#/components/schemas/ServiceInstanceState"
+        pid:
+          type: integer
+          nullable: true
+          description: OS process id of the live instance, when known.
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the current run of this slot started, when live.
+        restartCount:
+          type: integer
+          description: Consecutive-restart counter for this slot since its last healthy run.
+        lastExitCode:
+          type: integer
+          nullable: true
+          description: Exit code of this slot's most recent terminated run, when known.
+      required:
+        - index
+        - state
+        - restartCount
+
+    ServiceStatusMessage:
+      type: object
+      description: |
+        Daemon → cloud. A full per-service snapshot of the supervisor's state.
+        Sent on change and on a slow heartbeat — never per log line. Cloud keeps
+        only the latest snapshot (Valkey), never per-instance rows. Additive:
+        old cloud ignores it; new cloud tolerates its absence.
+      properties:
+        type:
+          type: string
+          const: service:status
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        taskId:
+          type: string
+        state:
+          $ref: "#/components/schemas/ServiceState"
+        desiredInstances:
+          type: integer
+        runningInstances:
+          type: integer
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceInstanceSnapshot"
+      required:
+        - type
+        - taskId
+        - state
+        - desiredInstances
+        - runningInstances
+        - instances
 
     LogReplayRequestMessage:
       type: object
@@ -277,6 +599,54 @@ components:
         - executionId
         - fromLine
         - limit
+
+    LogSearchRequestMessage:
+      type: object
+      description: |
+        Cloud → daemon. Greps one execution's on-disk log for lines matching a
+        query and replies with a single log:searchChunk. A gated cloud→daemon
+        type (X-Runner-Protocol-Features "log:searchRequest"): cloud only sends
+        it to daemons that advertise support, since an old daemon would drop it
+        and the search would time out. Scope is one execution's live/recent log
+        on disk — archived (rotated/uploaded) lines are not searchable here.
+      properties:
+        type:
+          type: string
+          const: log:searchRequest
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+        executionId:
+          type: string
+        query:
+          type: string
+          description: Substring (or RE2 regex when regex=true) to match.
+        regex:
+          type: boolean
+          description: Treat query as an RE2 regular expression.
+        caseSensitive:
+          type: boolean
+          description: Match case-sensitively (default is case-insensitive).
+        limit:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Max hits to return in the reply chunk.
+        fromLine:
+          type: integer
+          format: int64
+          description: |
+            Resume cursor: skip lines with absolute number <= fromLine so a
+            paginated scan continues mid-run without re-emitting prior hits.
+      required:
+        - type
+        - id
+        - executionId
+        - query
 
     LogListenMessage:
       type: object
@@ -312,6 +682,24 @@ components:
         - type
         - executionId
 
+    AgentRestartMessage:
+      type: object
+      description: >
+        Cloud → daemon. Asks the daemon to gracefully restart its own process
+        (re-exec the agent binary), e.g. after a config change or to recover a
+        wedged agent. Carries no execution scope; it acts on the agent itself.
+      properties:
+        type:
+          type: string
+          const: agent:restart
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+      required:
+        - type
+
     ProtocolErrorMessage:
       type: object
       properties:
@@ -325,10 +713,20 @@ components:
           format: date-time
         code:
           type: string
+          description: |
+            Canonical values: AUTH_ERROR, VALIDATION_ERROR, CONFLICT_ERROR,
+            TRANSIENT_ERROR, UNKNOWN_EXECUTION. Kept as a free-form string on
+            the wire so old peers emitting other codes still decode; receivers
+            treat unrecognized codes as connection-scoped diagnostics.
         message:
           type: string
         requestId:
           type: string
+        executionId:
+          type: string
+          description: |
+            Execution this error pertains to, when applicable. Empty for
+            connection-scoped errors.
       required:
         - type
         - code
@@ -347,8 +745,80 @@ components:
           format: date-time
         id:
           type: string
+        systemStats:
+          $ref: "#/components/schemas/SystemStatsInfo"
+          description: |
+            Optional live system snapshot piggybacked on the heartbeat so the
+            control plane can show a runner's CPU/memory/identity without a
+            dedicated message or any DB write (cloud stores only the latest
+            snapshot in Valkey). Add-only field; old daemons omit it and old
+            cloud ignores it.
       required:
         - type
+
+    SystemStatsInfo:
+      type: object
+      description: |
+        A single live system-resource + identity snapshot for the runner host.
+        Mirrors the daemon's local /api/system payload. Volatile fields
+        (cpuUsage/memUsage/mem*) reflect the instant the heartbeat was built.
+      properties:
+        cpuUsage:
+          type: number
+          description: CPU usage percentage (0-100).
+        memUsage:
+          type: number
+          description: Memory usage percentage (0-100).
+        memTotal:
+          type: integer
+          format: int64
+          description: Total memory in bytes.
+        memUsed:
+          type: integer
+          format: int64
+          description: Used memory in bytes.
+        cpuCores:
+          type: integer
+          description: Number of CPU cores.
+        uptime:
+          type: string
+          description: Human-readable daemon uptime.
+        version:
+          type: string
+          description: RunWisp daemon version.
+        host:
+          type: string
+          description: Hostname of the runner machine.
+        os:
+          type: string
+          description: Operating system (e.g. linux, darwin, windows).
+        arch:
+          type: string
+          description: CPU architecture (e.g. amd64, arm64).
+
+    ExecutionAckMessage:
+      type: object
+      description: |
+        Daemon → cloud. Sent immediately after an execution:dispatch passes
+        validation (before the run is registered or triggered). Confirms
+        receipt so the control plane can stop re-dispatching. A duplicate
+        dispatch for an execution the daemon already knows is re-acked
+        without starting a second run. Old daemons never send this; the
+        cloud treats execution:update(running) as an implicit ack.
+      properties:
+        type:
+          type: string
+          const: execution:ack
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        executionId:
+          type: string
+      required:
+        - type
+        - executionId
 
     ExecutionUpdateMessage:
       type: object
@@ -489,6 +959,45 @@ components:
         - lines
         - final
 
+    LogSearchChunkMessage:
+      type: object
+      description: |
+        Daemon → cloud. The single reply to a log:searchRequest. hits are
+        ordered by ascending line number within the execution. exhausted=true
+        means the daemon scanned the whole on-disk log; when false, nextLine
+        carries the resume cursor (pass it back as fromLine to page on).
+      properties:
+        type:
+          type: string
+          const: log:searchChunk
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+        executionId:
+          type: string
+        hits:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogLineEntry"
+        nextLine:
+          type: integer
+          format: int64
+          description: |
+            Absolute line to resume after when exhausted=false; 0 and
+            exhausted=true means the scan is complete.
+        exhausted:
+          type: boolean
+      required:
+        - type
+        - id
+        - executionId
+        - hits
+        - exhausted
+
     DaemonProtocolErrorMessage:
       type: object
       properties:
@@ -502,10 +1011,22 @@ components:
           format: date-time
         code:
           type: string
+          description: |
+            Canonical values: AUTH_ERROR, VALIDATION_ERROR, CONFLICT_ERROR,
+            TRANSIENT_ERROR, UNKNOWN_EXECUTION. Kept as a free-form string on
+            the wire so old daemons emitting other codes still decode; the
+            cloud treats unrecognized codes as connection-scoped diagnostics
+            (log + metric, never a state flip).
         message:
           type: string
         requestId:
           type: string
+        executionId:
+          type: string
+          description: |
+            Execution this error pertains to, when applicable. Empty (old
+            daemons always omit it) means the error is connection-scoped and
+            must not flip any execution's state.
       required:
         - type
         - code

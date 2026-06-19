@@ -19,6 +19,10 @@ func (a *cloudTaskRunner) GetTask(name string) (*model.Task, bool) {
 	return a.inner.GetTask(name)
 }
 
+func (a *cloudTaskRunner) ListServiceTasks() []*model.Task {
+	return a.inner.ListServiceTasks()
+}
+
 func (a *cloudTaskRunner) UpsertTask(task *model.Task) {
 	a.inner.UpsertTask(task)
 }
@@ -35,4 +39,20 @@ func (a *cloudTaskRunner) TriggerCloudRun(taskName, externalExecutionID string, 
 
 func (a *cloudTaskRunner) TerminateRunByExternalExecutionID(externalExecutionID string) error {
 	return a.inner.TerminateRunByExternalExecutionID(externalExecutionID)
+}
+
+func (a *cloudTaskRunner) StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error {
+	return a.inner.StartServiceInstances(taskName, triggeredBy)
+}
+
+func (a *cloudTaskRunner) StopService(taskName string) error {
+	return a.inner.StopService(taskName)
+}
+
+func (a *cloudTaskRunner) RestartServiceInstances(taskName string) error {
+	return a.inner.RestartServiceInstances(taskName)
+}
+
+func (a *cloudTaskRunner) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
+	return a.inner.ServiceSnapshot(taskName)
 }

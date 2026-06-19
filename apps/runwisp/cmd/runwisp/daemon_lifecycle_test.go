@@ -80,7 +80,7 @@ func TestStartCloudClient_DisabledReturnsZeroWG(t *testing.T) {
 	cfg := &daemonConfig{}
 	cfg.CloudConfig.Enabled = false
 
-	cancelCloud, wg := startCloudClient(context.Background(), cfg, &daemonServices{}, Flags{})
+	cancelCloud, wg := startCloudClient(context.Background(), cfg, &daemonServices{}, nil)
 	if cancelCloud == nil {
 		t.Fatal("expected non-nil cancel func")
 	}

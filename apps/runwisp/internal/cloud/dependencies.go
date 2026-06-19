@@ -22,6 +22,11 @@ import (
 type TaskRunner interface {
 	// GetTask returns a copy of a registered task, if any.
 	GetTask(taskName string) (*model.Task, bool)
+	// ListServiceTasks returns copies of every registered service task. The
+	// cloud client folds these into the tasks.sync snapshot so cloud-declared
+	// services (registered at runtime via service:apply, never in the TOML) are
+	// reported as live on this runner.
+	ListServiceTasks() []*model.Task
 	// UpsertTask installs (or replaces) a task definition. Used by the cloud
 	// dispatcher when resolving ad-hoc inline executions.
 	UpsertTask(task *model.Task)
@@ -34,6 +39,14 @@ type TaskRunner interface {
 	// TerminateRunByExternalExecutionID cancels a running run identified by
 	// the cloud-side execution id, if any.
 	TerminateRunByExternalExecutionID(externalExecutionID string) error
+	// StartServiceInstances brings a service up to its desired instance count.
+	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
+	// StopService marks a service operator-stopped and cancels its instances.
+	StopService(taskName string) error
+	// RestartServiceInstances restarts a service's instances.
+	RestartServiceInstances(taskName string) error
+	// ServiceSnapshot returns the current supervisor view of a service task.
+	ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool)
 }
 
 // ExternalRunGetter is the subset of run persistence the cloud package needs.

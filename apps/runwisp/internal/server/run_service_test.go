@@ -52,6 +52,8 @@ func (m *mockTaskRunner) GetTask(taskName string) (*model.Task, bool) {
 	return args.Get(0).(*model.Task), args.Bool(1)
 }
 
+func (m *mockTaskRunner) ListServiceTasks() []*model.Task { return nil }
+
 func (m *mockTaskRunner) UpsertTask(task *model.Task) {
 	m.Called(task)
 }
@@ -89,6 +91,16 @@ func (m *mockTaskRunner) RecordMissedRun(taskName string, scheduledAt time.Time,
 func (m *mockTaskRunner) GetActiveRunCount(taskName string) int {
 	args := m.Called(taskName)
 	return args.Int(0)
+}
+
+func (m *mockTaskRunner) StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error {
+	args := m.MethodCalled("StartServiceInstances", taskName, triggeredBy)
+	return args.Error(0)
+}
+
+func (m *mockTaskRunner) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
+	args := m.MethodCalled("ServiceSnapshot", taskName)
+	return args.Get(0).(model.ServiceSnapshot), args.Bool(1)
 }
 
 // helpers

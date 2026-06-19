@@ -11,11 +11,13 @@ import (
 
 // readExecutionLogReplay reads a bounded historical page of log lines for an
 // execution. Returns the lines (already encoded as protocol items) plus a
-// `final` flag — true when no more lines exist beyond this page or the run
-// has reached a terminal status.
+// `final` flag — true only when the page reaches the end of the log AND the
+// run is terminal. A nil run is NOT final: the daemon may simply not have
+// received the dispatch yet, and claiming final would end the viewer's
+// stream on an execution that hasn't started.
 func readExecutionLogReplay(run *model.Run, logDir string, fromLine, limit int64) ([]protocol.LinesItem, bool, error) {
 	if run == nil {
-		return nil, true, nil
+		return nil, false, nil
 	}
 	if limit <= 0 {
 		limit = maxProtocolLogLines

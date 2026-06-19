@@ -64,6 +64,7 @@ func TestLoadConfigHTTPWithAllowInsecure(t *testing.T) {
 }
 
 func TestLoadConfigDefaultAgentVersion(t *testing.T) {
+	t.Setenv("RUNWISP_CLOUD_URL", "")
 	t.Setenv("RUNWISP_CLOUD_ALLOW_INSECURE", "")
 
 	cfg, err := LoadConfig("", "tok", "", "fp")
@@ -140,5 +141,11 @@ func TestConfig_WebSocketURL_HTTP(t *testing.T) {
 func TestConfig_TaskSyncURL(t *testing.T) {
 	cfg, err := LoadConfig("1.0.0", "tok", "https://app.runwisp.com", "fp")
 	require.NoError(t, err)
-	assert.Contains(t, cfg.TaskSyncURL(), "/trpc/tasks.sync")
+	assert.Contains(t, cfg.TaskSyncURL(), "/api/v1/runner/tasks/sync")
+}
+
+func TestConfig_WebSocketURL_Path(t *testing.T) {
+	cfg, err := LoadConfig("1.0.0", "tok", "https://app.runwisp.com", "fp")
+	require.NoError(t, err)
+	assert.Contains(t, cfg.WebSocketURL(), "/api/v1/runner/ws")
 }

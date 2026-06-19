@@ -58,7 +58,7 @@ func newTestEnv(t *testing.T, wsHandler wsHandlerFunc) *testEnv {
 
 	syncServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"result":{"data":{"success":true,"summary":{"added":0,"updated":0,"markedOutOfSync":0,"total":0}}}}`))
+		_, _ = w.Write([]byte(`{"success":true,"summary":{"added":0,"updated":0,"markedOutOfSync":0,"total":0}}`))
 	}))
 
 	baseURL, _ := url.Parse(wsServer.URL)
@@ -444,7 +444,7 @@ func TestSendMessageQueueFull(t *testing.T) {
 	// Fill the buffer
 	session.outbound <- []byte("filler")
 
-	err := sendMessage(session, NewPingMessage())
+	err := sendMessage(session, NewPingMessage(nil))
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
@@ -460,9 +460,9 @@ func TestWebSocketURLDerivation(t *testing.T) {
 		baseURL  string
 		expected string
 	}{
-		{"https to wss", "https://app.runwisp.com", "wss://app.runwisp.com/api/daemon/ws"},
-		{"http to ws", "http://localhost:3000", "ws://localhost:3000/api/daemon/ws"},
-		{"strips path", "https://app.runwisp.com/foo", "wss://app.runwisp.com/api/daemon/ws"},
+		{"https to wss", "https://app.runwisp.com", "wss://app.runwisp.com/api/v1/runner/ws"},
+		{"http to ws", "http://localhost:3000", "ws://localhost:3000/api/v1/runner/ws"},
+		{"strips path", "https://app.runwisp.com/foo", "wss://app.runwisp.com/api/v1/runner/ws"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -836,7 +836,7 @@ func TestSendProtocolError_DropsOnFullBuffer(t *testing.T) {
 	session.outbound <- []byte("filler")
 
 	// Must not panic — the function logs and returns on send failure.
-	env.client.sessions.sendProtocolError(session, CloudErrorKindValidation, "boom", "req-1")
+	env.client.sessions.sendProtocolError(session, CloudErrorKindValidation, "boom", "req-1", "")
 }
 
 func TestHeartbeatLoop_ContextCancelExitsCleanly(t *testing.T) {
@@ -893,6 +893,11 @@ func TestHandleInboundPayloadPong(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// An unsupported (future) cloud→daemon message type must be ignored cleanly:
+// the session survives (no error bubbled up to tear it down) and NO protocol
+// error frame is sent back. This is the forward-compat contract — a message a
+// newer cloud sends that this daemon doesn't implement is not a validation
+// failure. See sessionRunner.handleInboundPayload.
 func TestHandleInboundPayloadUnsupportedType(t *testing.T) {
 	env := newTestEnv(t, func(conn *websocket.Conn) {
 		conn.Close(websocket.StatusNormalClosure, "")
@@ -900,9 +905,15 @@ func TestHandleInboundPayloadUnsupportedType(t *testing.T) {
 	defer env.close()
 
 	session := &wsSession{outbound: make(chan []byte, 16)}
-	payload := []byte(`{"type":"unknown:message"}`)
+	payload := []byte(`{"type":"future:feature","someNewField":42}`)
 	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
-	assert.Error(t, err)
+	assert.NoError(t, err, "unsupported type must not tear down the session")
+
+	select {
+	case out := <-session.outbound:
+		t.Fatalf("unsupported type must not produce an error frame, got: %s", string(out))
+	default:
+	}
 }
 
 func TestHandleInboundPayloadInvalidJSON(t *testing.T) {
@@ -1048,7 +1059,8 @@ func TestHandleInboundPayloadLogReplayRequestMissingExecID(t *testing.T) {
 	payload := []byte(`{"type":"log:replayRequest","id":"req-1","executionId":""}`)
 	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
 	assert.NoError(t, err)
-	// Two messages: the protocol error, plus the empty replay chunk reply.
+	// One frame per request: the protocol error only — no empty replay chunk
+	// trails it.
 	gotError := false
 	gotReply := false
 	for i := 0; i < 2; i++ {
@@ -1065,7 +1077,7 @@ func TestHandleInboundPayloadLogReplayRequestMissingExecID(t *testing.T) {
 		}
 	}
 	assert.True(t, gotError, "validation error should be queued")
-	assert.True(t, gotReply, "empty replay chunk should still be sent")
+	assert.False(t, gotReply, "no replay chunk should follow the error frame")
 }
 
 // ---------- Error classification ----------
@@ -1099,8 +1111,49 @@ func TestWebSocketURLPathInjectionSafety(t *testing.T) {
 	u, _ := url.Parse("https://app.runwisp.com/malicious/../admin")
 	cfg := Config{BaseURL: u}
 	wsURL := cfg.WebSocketURL()
-	assert.True(t, strings.HasSuffix(wsURL, "/api/daemon/ws"))
+	assert.True(t, strings.HasSuffix(wsURL, "/api/v1/runner/ws"))
 	assert.False(t, strings.Contains(wsURL, "malicious"))
+}
+
+// TestSnapshotForSyncFoldsInCloudServices verifies the tasks.sync snapshot
+// includes daemon-supervised services the task manager holds (notably
+// cloud-declared "cloud-<id>" services registered at runtime via service:apply),
+// which the TOML localTasks set does not carry. Run-to-completion tasks the
+// manager holds (e.g. ad-hoc inline cloud runs) are not folded in.
+func TestSnapshotForSyncFoldsInCloudServices(t *testing.T) {
+	env := newTestEnv(t, func(*websocket.Conn) {})
+	defer env.close()
+
+	env.taskManager.UpsertTask(&model.Task{
+		Name:           "cloud-01HZX",
+		Kind:           model.KindService,
+		Run:            "echo hi",
+		Restart:        model.RestartAlways,
+		MaxConcurrent:  1,
+		OnOverlap:      model.PolicySkip,
+		Instances:      1,
+		RestartDelay:   time.Millisecond,
+		RestartBackoff: model.BackoffConstant,
+	})
+	// A non-service task the manager also holds must not be folded in.
+	env.taskManager.UpsertTask(&model.Task{Name: "adhoc-run", Run: "echo x", MaxConcurrent: 1})
+
+	snapshot := env.client.snapshotForSync()
+
+	if _, ok := snapshot["cloud-01HZX"]; !ok {
+		t.Fatalf("snapshot missing cloud service: %v", snapshotNames(snapshot))
+	}
+	if _, ok := snapshot["adhoc-run"]; ok {
+		t.Fatalf("snapshot must not include non-service tasks: %v", snapshotNames(snapshot))
+	}
+}
+
+func snapshotNames(m map[string]*model.Task) []string {
+	names := make([]string, 0, len(m))
+	for name := range m {
+		names = append(names, name)
+	}
+	return names
 }
 
 // testTaskRunnerAdapter mirrors the cmd/runwisp cloudTaskRunner adapter for
@@ -1113,6 +1166,10 @@ type testTaskRunnerAdapter struct {
 
 func (a *testTaskRunnerAdapter) GetTask(name string) (*model.Task, bool) {
 	return a.inner.GetTask(name)
+}
+
+func (a *testTaskRunnerAdapter) ListServiceTasks() []*model.Task {
+	return a.inner.ListServiceTasks()
 }
 
 func (a *testTaskRunnerAdapter) UpsertTask(task *model.Task) {
@@ -1129,4 +1186,20 @@ func (a *testTaskRunnerAdapter) TriggerCloudRun(taskName, externalExecutionID st
 
 func (a *testTaskRunnerAdapter) TerminateRunByExternalExecutionID(externalExecutionID string) error {
 	return a.inner.TerminateRunByExternalExecutionID(externalExecutionID)
+}
+
+func (a *testTaskRunnerAdapter) StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error {
+	return a.inner.StartServiceInstances(taskName, triggeredBy)
+}
+
+func (a *testTaskRunnerAdapter) StopService(taskName string) error {
+	return a.inner.StopService(taskName)
+}
+
+func (a *testTaskRunnerAdapter) RestartServiceInstances(taskName string) error {
+	return a.inner.RestartServiceInstances(taskName)
+}
+
+func (a *testTaskRunnerAdapter) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
+	return a.inner.ServiceSnapshot(taskName)
 }

@@ -178,6 +178,58 @@ func TestRunDaemon_BootsAndShutsDownOnSIGTERM(t *testing.T) {
 	assert.Error(t, err, "port should be free after shutdown")
 }
 
+// TestRunDaemon_AutoHeadlessWithoutTerminal verifies the no-TTY fallback: when
+// runDaemon is asked for the TUI (headless=false) but stdin/stdout are not a
+// terminal (as under the test harness, systemd, or Docker), it must auto-disable
+// the TUI and boot headless instead of blocking forever on the TUI's stdin.
+func TestRunDaemon_AutoHeadlessWithoutTerminal(t *testing.T) {
+	if testing.Short() {
+		// Boots a full daemon and sends a real SIGTERM — too heavy for the
+		// local fast loop. CI never passes -short, so this still runs there.
+		t.Skip("skipping full daemon boot/SIGTERM test in -short mode")
+	}
+	require.False(t, isInteractiveTerminal(), "test harness must be non-interactive for this to be meaningful")
+
+	dir := testutil.ShortTempDir(t)
+	f := Flags{
+		DataDir: dir,
+		CfgFile: writeMinimalTOML(t),
+		Host:    "127.0.0.1",
+		Port:    testutil.PickFreePort(t),
+	}
+
+	t.Setenv("RUNWISP_PASSWORD", "test-password")
+
+	done := make(chan error, 1)
+	go func() {
+		// headless=false asks for the TUI, but with no interactive terminal
+		// runDaemon must flip to headless rather than block attaching it.
+		done <- runDaemon(modeStandalone, f, false)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	ready := false
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(f.Host, strconv.Itoa(f.Port)), 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			ready = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.True(t, ready, "daemon never bound %d — likely blocked attaching the TUI", f.Port)
+
+	require.NoError(t, sendSelfSIGTERM())
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("runDaemon did not return after SIGTERM")
+	}
+}
+
 func TestInstallSignalHandler_DeliversAndStops(t *testing.T) {
 	sigCh, stop := installSignalHandler()
 	defer stop()
@@ -207,7 +259,7 @@ func TestConfigureBootLogRouting_TUIReturnsNonNilWriter(t *testing.T) {
 
 func TestStartCloudIfEnabled_StandaloneReturnsNoOps(t *testing.T) {
 	t.Parallel()
-	cancel, wg := startCloudIfEnabled(modeStandalone, nil, nil, Flags{})
+	cancel, wg := startCloudIfEnabled(modeStandalone, nil, nil, nil)
 	require.NotNil(t, cancel)
 	require.NotNil(t, wg)
 	cancel() // must not panic
@@ -216,7 +268,7 @@ func TestStartCloudIfEnabled_StandaloneReturnsNoOps(t *testing.T) {
 func TestStartCloudIfEnabled_CloudWithDisabledConfigShortCircuits(t *testing.T) {
 	t.Parallel()
 	cfg := &daemonConfig{CloudConfig: cloud.Config{Enabled: false}}
-	cancel, wg := startCloudIfEnabled(modeCloud, cfg, nil, Flags{})
+	cancel, wg := startCloudIfEnabled(modeCloud, cfg, nil, nil)
 	require.NotNil(t, cancel)
 	require.NotNil(t, wg)
 	cancel()

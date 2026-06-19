@@ -102,6 +102,13 @@ func (srv *Server) humaReload(ctx context.Context, input *struct{}) (*ReloadOutp
 	return &ReloadOutput{Body: result}, nil
 }
 
+// SystemStats returns a live host snapshot, identical to what the local
+// /api/system endpoint serves. Exposed so the cloud client can piggyback the
+// snapshot on its heartbeat without standing up the HTTP surface separately.
+func (srv *Server) SystemStats() model.SystemStats {
+	return srv.stats.GetSystemStats()
+}
+
 func (srv *Server) humaGetMetricsHistory(ctx context.Context, input *struct{}) (*MetricsHistoryOutput, error) {
 	return &MetricsHistoryOutput{Body: srv.metrics.History()}, nil
 }

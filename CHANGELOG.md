@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **TUI run-detail Delete button.** Clicking 🗑 Delete with the mouse now opens the confirm dialog, and keyboard focus reaches the action button from both header rows.
 
+### Fixed
+
+- **Fatal boot errors are no longer silent in TUI mode.** `runwisp` died with exit 1 and no output when startup failed before the TUI attached (e.g. a config parse error); the error now reaches stderr.
+
 ## [0.10.0] - 2026-06-18
 
 ### Added
@@ -41,7 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Spring-forward cron ticks no longer vanish.** A cron like `0 2 * * *` whose time falls in the DST gap now fires once at the gap end (the next valid instant). See [DST behaviour](https://docs.runwisp.com/concepts/scheduling/#dst-behaviour).
 - **Horizontal scrolling in the log viewer** has the line-number gutter pinned.
 - **Control socket on bind mounts.** A socket whose filesystem rejects `chmod` (Docker Desktop bind mounts, some network FS) is tolerated with a warning now.
-- **Cloud dispatch opt-in covers container/compose.** Peer-dispatched ad-hoc `container` and `compose` runs now require `allow_cloud_dispatch` like `shell`. See [Daemon](https://docs.runwisp.com/configuration/daemon/).
 
 ## [0.9.0] - 2026-06-12
 
@@ -86,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Config errors that explain themselves.** Bad cron expressions fail at load with the expected grammar, unknown TOML keys suggest the closest valid one, and bad durations show the accepted syntax — same checks in `runwisp validate`, which now also prints advisory warnings. See [Tasks / Scheduling](https://docs.runwisp.com/configuration/tasks/#scheduling).
 - **Plain-English schedules and status tooltips in the Web UI.** Cron renders humanized ("Every 5 minutes") with the raw expression in a tooltip, every run-status badge explains itself on hover, and empty states and the login modal say where to go next.
 - **`?` help overlay in the TUI.** Every keyboard shortcut, grouped by context.
-- **`runwisp demo`.** Boots a throwaway instance with a realistic config and hundreds of pre-seeded historical runs (with real on-disk logs) so you can explore the TUI and Web UI without writing a `runwisp.toml`. Everything lives in a temp directory that's deleted when the daemon stops; `--cloud` connects to the control plane instead. See [Quick start](https://docs.runwisp.com/getting-started/quick-start/).
+- **`runwisp demo`.** Boots a throwaway instance with a realistic config and hundreds of pre-seeded historical runs (with real on-disk logs) so you can explore the TUI and Web UI without writing a `runwisp.toml`. Everything lives in a temp directory that's deleted when the daemon stops. See [Quick start](https://docs.runwisp.com/getting-started/quick-start/).
 - **Structured daemon logging.** `runwisp daemon` logs every run start, success, and failure with exit code, end reason, and duration. New `--log-level` / `--log-format` flags and `RUNWISP_LOG_LEVEL` / `RUNWISP_LOG_FORMAT` env vars; JSON output for log pipelines. See [Operations / Logging](https://docs.runwisp.com/operations/logging/).
 
 ### Changed
@@ -274,7 +277,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial public release of RunWisp — open-source cron replacement and process supervisor.
 - Single binary daemon with embedded SQLite, REST API, and SSE log streaming.
 - Embedded Svelte 5 web dashboard served directly by the daemon.
-- CLI commands: `run`, `trigger`, `status`, `list`, `add`, `edit`, `validate`, `tui`, `daemon`, `cloud`, `openapi`.
+- CLI commands: `run`, `trigger`, `status`, `list`, `add`, `edit`, `validate`, `tui`, `daemon`, `openapi`.
 - Bubbletea terminal UI (`tui` command) with home view, exec list, log pane, and dialogs.
 - Task scheduler with concurrency, restart, missed-run, and retention policies.
 - CHAP authentication for the HTTP API.

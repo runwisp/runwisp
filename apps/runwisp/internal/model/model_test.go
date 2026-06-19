@@ -136,7 +136,7 @@ func TestParseExecutionDef_Shell(t *testing.T) {
 }
 
 func TestParseExecutionDef_Container(t *testing.T) {
-	def, err := ParseExecutionDef(json.RawMessage(`{"type":"container","base_image":"alpine"}`))
+	def, err := ParseExecutionDef(json.RawMessage(`{"type":"container","baseImage":"alpine"}`))
 	require.NoError(t, err)
 	c, ok := def.(*ContainerExecution)
 	require.True(t, ok, "expected *ContainerExecution")
@@ -152,7 +152,7 @@ func TestParseExecutionDef_HTTP(t *testing.T) {
 }
 
 func TestParseExecutionDef_Config(t *testing.T) {
-	def, err := ParseExecutionDef(json.RawMessage(`{"type":"config","task_name":"mytask"}`))
+	def, err := ParseExecutionDef(json.RawMessage(`{"type":"config","taskName":"mytask"}`))
 	require.NoError(t, err)
 	c, ok := def.(*ConfigExecution)
 	require.True(t, ok, "expected *ConfigExecution")
@@ -182,7 +182,7 @@ func TestMarshalExecutionDef_Config(t *testing.T) {
 	require.NoError(t, err)
 	s := string(raw)
 	assert.Contains(t, s, `"type":"config"`)
-	assert.Contains(t, s, `"task_name":`)
+	assert.Contains(t, s, `"taskName":`)
 }
 
 func TestMarshalExecutionDef_Container(t *testing.T) {
@@ -190,7 +190,7 @@ func TestMarshalExecutionDef_Container(t *testing.T) {
 	require.NoError(t, err)
 	s := string(raw)
 	assert.Contains(t, s, `"type":"container"`)
-	assert.Contains(t, s, `"base_image":"alpine"`)
+	assert.Contains(t, s, `"baseImage":"alpine"`)
 }
 
 func TestExecType_AllVariants(t *testing.T) {

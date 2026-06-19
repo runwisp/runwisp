@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,18 @@ import (
 // to isolate session-level concerns from connection lifecycle.
 type sessionRunner struct {
 	handler *InboundHandler
+	// systemStats, when set, returns the live host snapshot piggybacked on each
+	// heartbeat. nil (no provider wired) sends a plain ping.
+	systemStats func() *protocol.SystemStats
+}
+
+// currentSystemStats reads the snapshot provider, tolerating a nil provider so
+// the heartbeat degrades to a plain ping rather than panicking.
+func (sr *sessionRunner) currentSystemStats() *protocol.SystemStats {
+	if sr.systemStats == nil {
+		return nil
+	}
+	return sr.systemStats()
 }
 
 func (sr *sessionRunner) run(ctx context.Context, session *wsSession) error {
@@ -67,6 +80,10 @@ func (sr *sessionRunner) run(ctx context.Context, session *wsSession) error {
 
 	status := websocket.CloseStatus(firstErr)
 	if status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway {
+		// Server-initiated close. Treated as clean (reconnect with a fresh
+		// backoff), but it must never be silent: an idle-kill loop on the
+		// cloud side looks exactly like this.
+		slog.Warn("cloud closed the session", "status", status.String(), "detail", firstErr.Error())
 		return nil
 	}
 
@@ -114,7 +131,7 @@ func (sr *sessionRunner) heartbeatLoop(ctx context.Context, session *wsSession) 
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := sendMessage(session, NewPingMessage()); err != nil {
+			if err := sendMessage(session, NewPingMessage(sr.currentSystemStats())); err != nil {
 				return fmt.Errorf("heartbeat: %w", err)
 			}
 		}
@@ -141,7 +158,19 @@ func (sr *sessionRunner) watchdogLoop(ctx context.Context, session *wsSession) e
 func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSession, payload []byte) error {
 	decoded, err := DecodeInboundMessage(payload)
 	if err != nil {
-		sr.sendProtocolError(session, CloudErrorKindValidation, "Failed to parse message", "")
+		if errors.Is(err, ErrUnsupportedMessageType) {
+			// Forward-compat: cloud sent a message type this daemon version
+			// doesn't implement yet. Ignore it cleanly — the session survives
+			// and we send NO error frame. A future feature is not a validation
+			// failure, and replying VALIDATION_ERROR would only generate a
+			// cloud-side WARN + diagnostic event for every such frame. See the
+			// forward-compat contract atop packages/asyncapi/asyncapi.yaml.
+			slog.Debug("ignoring unsupported inbound message type", "error", err.Error())
+			return nil
+		}
+		// A known type that failed to decode is a genuine protocol violation
+		// (malformed JSON for a message we do understand) — surface it.
+		sr.sendProtocolError(session, CloudErrorKindValidation, "Failed to parse message", "", "")
 		return err
 	}
 
@@ -149,49 +178,79 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 	case protocol.PongMessage:
 		return nil
 	case protocol.ProtocolErrorMessage:
-		slog.Info("cloud protocol error", "code", message.Code, "message", message.Message, "requestId", message.RequestID)
+		slog.Info("cloud protocol error", "code", message.Code, "message", message.Message, "requestId", message.RequestID, "executionId", message.ExecutionID)
 		return nil
 	case protocol.ExecutionDispatchMessage:
-		if dispatchErr := sr.handler.HandleExecutionDispatch(ctx, message); dispatchErr != nil {
-			sr.sendProtocolError(session, classifyErrorKind(dispatchErr), dispatchErr.Error(), "")
+		executionID := strings.TrimSpace(message.Execution.ExecutionID)
+		ack := func() {
+			if ackErr := sendMessage(session, NewExecutionAckMessage(executionID)); ackErr != nil {
+				slog.Info("failed to send execution ack", "executionId", executionID, "error", ackErr.Error())
+			}
+		}
+		if dispatchErr := sr.handler.HandleExecutionDispatch(ctx, message, ack); dispatchErr != nil {
+			sr.sendProtocolError(session, classifyErrorKind(dispatchErr), dispatchErr.Error(), "", executionID)
 		}
 		return nil
 	case protocol.ExecutionStopMessage:
-		if stopErr := sr.handler.HandleExecutionStop(ctx, message); stopErr != nil {
-			sr.sendProtocolError(session, classifyErrorKind(stopErr), stopErr.Error(), "")
-		}
-		return nil
+		return sr.reportIfErr(session, sr.handler.HandleExecutionStop(ctx, message), strings.TrimSpace(message.ExecutionID))
 	case protocol.LogReplayRequestMessage:
 		response, responseErr := sr.handler.HandleLogReplayRequest(ctx, message)
 		if responseErr != nil {
-			sr.sendProtocolError(session, classifyErrorKind(responseErr), responseErr.Error(), message.ID)
+			// One frame per request: report the error and stop — don't also
+			// send the (empty) response chunk.
+			sr.sendProtocolError(session, classifyErrorKind(responseErr), responseErr.Error(), message.ID, strings.TrimSpace(message.ExecutionID))
+			return nil
 		}
-		if sendErr := sendMessage(session, response); sendErr != nil {
-			return sendErr
+		return sendMessage(session, response)
+	case protocol.LogSearchRequestMessage:
+		response, responseErr := sr.handler.HandleLogSearchRequest(ctx, message)
+		if responseErr != nil {
+			sr.sendProtocolError(session, classifyErrorKind(responseErr), responseErr.Error(), message.ID, strings.TrimSpace(message.ExecutionID))
+			return nil
 		}
-		return nil
+		return sendMessage(session, response)
 	case protocol.LogListenMessage:
-		if listenErr := sr.handler.HandleLogListen(message); listenErr != nil {
-			sr.sendProtocolError(session, classifyErrorKind(listenErr), listenErr.Error(), "")
-		}
-		return nil
+		return sr.reportIfErr(session, sr.handler.HandleLogListen(message), strings.TrimSpace(message.ExecutionID))
 	case protocol.LogStopMessage:
 		sr.handler.HandleLogStop(message)
 		return nil
+	case protocol.AgentRestartMessage:
+		return sr.reportIfErr(session, sr.handler.HandleAgentRestart(), "")
+	case protocol.ServiceApplyMessage:
+		return sr.reportIfErr(session, sr.handler.HandleServiceApply(message), "")
+	case protocol.ServiceControlMessage:
+		return sr.reportIfErr(session, sr.handler.HandleServiceControl(message), "")
 	case protocol.AuthResultMessage:
 		if !message.Success {
 			return &CloudError{Kind: CloudErrorKindAuth, Message: message.Error}
 		}
 		return nil
 	default:
-		sr.sendProtocolError(session, CloudErrorKindValidation, "Unsupported message type", "")
-		return fmt.Errorf("unsupported message payload")
+		// Defensive: unknown *types* are filtered upstream by
+		// DecodeInboundMessage (ErrUnsupportedMessageType, handled above), so
+		// this arm is only reachable if a decoder was added to inboundDecoders
+		// without a matching case here — a coding error, not a wire event. Log
+		// it; do NOT send an error frame (it isn't the daemon's fault).
+		slog.Warn("decoded message type has no dispatch case", "type", fmt.Sprintf("%T", decoded))
+		return nil
 	}
 }
 
-func (sr *sessionRunner) sendProtocolError(session *wsSession, kind CloudErrorKind, message, requestID string) {
-	errorMessage := NewProtocolErrorMessage(string(kind), message, requestID)
+func (sr *sessionRunner) sendProtocolError(session *wsSession, kind CloudErrorKind, message, requestID, executionID string) {
+	errorMessage := NewProtocolErrorMessage(string(kind), message, requestID, executionID)
 	if err := sendMessage(session, errorMessage); err != nil {
 		slog.Info("failed to send protocol error", "error", err.Error())
 	}
+}
+
+// reportIfErr forwards a non-nil inbound-handler error to the cloud peer as a
+// protocol-error frame and always returns nil: a handler failure is reported,
+// not fatal — the session survives. Shared by the fire-and-forget inbound arms
+// (those with no response of their own to send). executionID scopes the error
+// to a specific execution when the message carried one; "" otherwise.
+func (sr *sessionRunner) reportIfErr(session *wsSession, err error, executionID string) error {
+	if err != nil {
+		sr.sendProtocolError(session, classifyErrorKind(err), err.Error(), "", executionID)
+	}
+	return nil
 }

@@ -993,6 +993,39 @@ func TestStartServiceInstances_NotAServiceTask(t *testing.T) {
 }
 
 // TestStartServiceInstances_StoppedServiceIsNoop verifies the early-return
+// TestListServiceTasks verifies only service tasks are returned (as copies),
+// so the cloud integration folds services — not run-to-completion tasks — into
+// tasks.sync.
+func TestListServiceTasks(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	defer jm.Shutdown()
+
+	jm.UpsertTask(&model.Task{
+		Name:           "svc",
+		Kind:           model.KindService,
+		Run:            "echo hi",
+		Restart:        model.RestartAlways,
+		MaxConcurrent:  1,
+		OnOverlap:      model.PolicySkip,
+		Instances:      1,
+		RestartDelay:   time.Millisecond,
+		RestartBackoff: model.BackoffConstant,
+	})
+	jm.UpsertTask(&model.Task{Name: "plain", Run: "echo x", MaxConcurrent: 1})
+
+	got := jm.ListServiceTasks()
+	require.Len(t, got, 1)
+	require.Equal(t, "svc", got[0].Name)
+
+	// Returned tasks are copies — mutating one must not affect the manager.
+	got[0].Name = "mutated"
+	again, ok := jm.GetTask("svc")
+	require.True(t, ok)
+	require.Equal(t, "svc", again.Name)
+}
+
 // branch when the supervisor's stop flag is set: no instances start and no
 // error is returned.
 func TestStartServiceInstances_StoppedServiceIsNoop(t *testing.T) {

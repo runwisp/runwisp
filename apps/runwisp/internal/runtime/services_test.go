@@ -308,6 +308,15 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 	djm.mu.RUnlock()
 	assert.Equal(t, 0, active, "a FATAL service holds no live instances")
 
+	// The FATAL state must surface in the cloud snapshot, not masquerade as
+	// "degraded" (which would tell the cloud the daemon is still retrying).
+	snap, ok := djm.ServiceSnapshot("flapper")
+	require.True(t, ok)
+	assert.Equal(t, model.ServiceFatal, snap.State)
+	assert.Equal(t, 0, snap.RunningInstances)
+	require.Len(t, snap.Instances, 1)
+	assert.Equal(t, model.ServiceInstanceFatal, snap.Instances[0].State)
+
 	callsAtFatal := len(exec.Calls)
 	assert.Equal(t, 3, callsAtFatal, "start_retries=2 → 3 fast failures, then give up")
 	time.Sleep(150 * time.Millisecond)

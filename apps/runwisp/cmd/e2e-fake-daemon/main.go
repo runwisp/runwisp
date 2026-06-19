@@ -31,7 +31,7 @@ func main() {
 }
 
 func run() error {
-	wsURL := flag.String("ws", "ws://127.0.0.1:18788/v1/runner/ws", "Hub WebSocket URL")
+	wsURL := flag.String("ws", "ws://127.0.0.1:18788/api/v1/runner/ws", "Hub WebSocket URL")
 	token := flag.String("token", "", "Runner token (rt_...)")
 	fingerprint := flag.String("fingerprint", "e2e-fp-001", "Runner fingerprint")
 	logBody := flag.String("log", "hello-from-e2e\n", "Log body to archive")
