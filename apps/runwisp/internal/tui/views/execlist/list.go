@@ -13,12 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
-// Column widths for the execution table (excluding the variable-width task column).
 const (
-	colStatusW   = 12
-	colStartedW  = 20
-	colDurationW = 12
-	colTriggerW  = 15
 	// Lines above data rows: column header only.
 	dataRowOffset = 1
 	// Footer line showing the viewing range.
@@ -208,7 +203,7 @@ func (e *ExecList) computeScrollbar(vpH, n int) scrollbarState {
 	return scrollbarState{show: true, thumbStart: thumbStart, thumbEnd: thumbEnd}
 }
 
-func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx, contentW, taskW int) string {
+func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths) string {
 	bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
 	isCursor := e.focused && rowIdx == e.cursor
 	isHovered := rowIdx == e.hoveredRow && !isCursor
@@ -221,12 +216,12 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx, contentW, task
 	}
 	rowStyle := lipgloss.NewStyle().Background(bg).Foreground(fg).Bold(bold)
 	if item == nil {
-		return rowStyle.Render("  " + padCell("loading…", taskW+1+colStatusW+1+colStartedW+1+colDurationW+1+colTriggerW))
+		// task + four single-space separators + the four fixed columns.
+		return rowStyle.Render("  " + padCell("loading…", cw.task+4+cw.fixedSum()))
 	}
-	statusStr := item.Run.DisplayStatus()
+	statusStr := truncCell(item.Run.DisplayStatus(), cw.status)
 	statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
-	badgeW := lipgloss.Width(statusBadge)
-	statPad := colStatusW - badgeW
+	statPad := cw.status - lipgloss.Width(statusBadge)
 	if statPad < 0 {
 		statPad = 0
 	}
@@ -236,22 +231,22 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx, contentW, task
 		count = e.instanceCount(item.Run.TaskName)
 	}
 	taskLabel := instanceLabel(item.Run.TaskName, item.Run.InstanceIndex, count)
-	return rowStyle.Render("  "+padCell(taskLabel, taskW)+" ") +
+	return rowStyle.Render("  "+padCell(taskLabel, cw.task)+" ") +
 		statusCell +
 		rowStyle.Render(" "+
-			padCell(item.TimeAgo, colStartedW)+" "+
-			padCell(item.Duration, colDurationW)+" "+
-			padCell(string(item.Run.TriggeredBy), colTriggerW))
+			padCell(item.TimeAgo, cw.started)+" "+
+			padCell(item.Duration, cw.duration)+" "+
+			padCell(string(item.Run.TriggeredBy), cw.trigger))
 }
 
-func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW, taskW int, sb scrollbarRender) {
+func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW int, cw colWidths, sb scrollbarRender) {
 	end := e.Scroll + vpH
 	if end > n {
 		end = n
 	}
 	visIdx := 0
 	for i := e.Scroll; i < end; i++ {
-		text := e.buildRowText(e.window.Item(i), i, contentW, taskW)
+		text := e.buildRowText(e.window.Item(i), i, cw)
 		row := uikit.PadLine(text, contentW, uikit.ColorBg)
 		if sb.state.show {
 			if visIdx >= sb.state.thumbStart && visIdx < sb.state.thumbEnd {
@@ -286,7 +281,7 @@ func (e *ExecList) View() string {
 	if sbState.show {
 		contentW = w - 1
 	}
-	taskW := e.taskColWidthFor(contentW)
+	cw := computeColWidths(contentW)
 
 	sb := scrollbarRender{
 		state: sbState,
@@ -295,11 +290,11 @@ func (e *ExecList) View() string {
 	}
 
 	headerText := "  " +
-		padCell("TASK", taskW) + " " +
-		padCell("STATUS", colStatusW) + " " +
-		padCell("STARTED", colStartedW) + " " +
-		padCell("DURATION", colDurationW) + " " +
-		padCell("TRIGGER", colTriggerW)
+		padCell("TASK", cw.task) + " " +
+		padCell("STATUS", cw.status) + " " +
+		padCell("STARTED", cw.started) + " " +
+		padCell("DURATION", cw.duration) + " " +
+		padCell("TRIGGER", cw.trigger)
 	b.WriteString(uikit.PadLine(uikit.TableHeaderStyle.Render(headerText), w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
@@ -312,7 +307,7 @@ func (e *ExecList) View() string {
 		b.WriteString(uikit.PadLine(emptyMsg, w, uikit.ColorBg))
 		b.WriteString("\n")
 	} else {
-		e.renderDataSection(&b, vpH, n, w, contentW, taskW, sb)
+		e.renderDataSection(&b, vpH, n, w, contentW, cw, sb)
 	}
 
 	if n > 0 {
@@ -351,12 +346,7 @@ func (e *ExecList) taskColWidth() int {
 }
 
 func (e *ExecList) taskColWidthFor(w int) int {
-	fixed := 2 + 4 + colStatusW + colStartedW + colDurationW + colTriggerW
-	tw := w - fixed
-	if tw < 10 {
-		return 10
-	}
-	return tw
+	return computeColWidths(w).task
 }
 
 func (e *ExecList) ViewportHeight() int {
@@ -428,16 +418,27 @@ func (e *ExecList) NeedsFetch() bool {
 
 // padCell truncates or pads a string to exactly the given visible width.
 func padCell(s string, w int) string {
-	vis := lipgloss.Width(s)
-	if vis > w {
-		runes := []rune(s)
-		if len(runes) > w-1 {
-			return string(runes[:w-1]) + "…"
-		}
+	s = truncCell(s, w)
+	if vis := lipgloss.Width(s); vis < w {
+		return s + strings.Repeat(" ", w-vis)
+	}
+	return s
+}
+
+// truncCell shortens a string to at most w visible cells, appending an ellipsis
+// when it has to cut. It never pads, so the caller controls trailing fill (used
+// for the status badge, whose padding must take the row background, not the
+// badge color).
+func truncCell(s string, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= w {
 		return s
 	}
-	if vis < w {
-		return s + strings.Repeat(" ", w-vis)
+	runes := []rune(s)
+	if len(runes) > w-1 {
+		return string(runes[:w-1]) + "…"
 	}
 	return s
 }

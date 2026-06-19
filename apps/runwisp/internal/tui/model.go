@@ -263,6 +263,13 @@ func (m *Model) mainSize() (int, int) {
 	return w, h
 }
 
+// contentWidth is the main panel width bounded by MaxContentWidth so the home
+// header and exec table stay left-aligned and don't stretch on wide terminals.
+func (m *Model) contentWidth() int {
+	mainW, _ := m.mainSize()
+	return min(mainW, uikit.MaxContentWidth)
+}
+
 // recalcExecListHeight adjusts the exec list height based on the active view header.
 func (m *Model) recalcExecListHeight() {
 	mainW, mainH := m.mainSize()
@@ -280,14 +287,15 @@ func (m *Model) recalcExecListHeight() {
 			listH -= m.layout.homeH
 		}
 	}
-	m.notifications.SetWidth(mainW)
+	panelW := m.contentWidth()
+	m.notifications.SetWidth(panelW)
 	if m.sidebar.ActivePage() == uikit.PageHome {
 		listH -= m.notifications.PanelHeight()
 	}
 	if listH < 5 {
 		listH = 5
 	}
-	m.execList.SetSize(mainW, listH)
+	m.execList.SetSize(panelW, listH)
 }
 
 // taskDisplayByName looks up a task definition by name.

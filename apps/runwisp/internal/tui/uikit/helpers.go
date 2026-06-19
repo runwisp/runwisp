@@ -15,6 +15,11 @@ import (
 // SidebarWidth is the fixed width of the left sidebar panel in cells.
 const SidebarWidth = 28
 
+// MaxContentWidth bounds the main content panel on wide terminals so the table
+// and header don't stretch edge-to-edge. The panel is left-aligned against the
+// sidebar; any extra width is filled with the app background.
+const MaxContentWidth = 110
+
 // PadLine right-pads content with a styled-background space run so the row
 // fills `width` cells without losing the background colour when terminals
 // trim trailing whitespace.
