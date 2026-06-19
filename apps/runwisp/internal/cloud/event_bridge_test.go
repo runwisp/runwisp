@@ -167,10 +167,14 @@ func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 	}
 	bus.Publish(events.EventRunFailed, events.RunEvent{Run: runFail})
 
-	// Register listener so LogLine events get forwarded.
-	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: extID})
+	// Register listener so LogLine events get forwarded. Use a distinct
+	// execution ID: the terminal runs above each spawn a finalizeRun
+	// goroutine that calls RemoveLogListener(extID), which would otherwise
+	// race this registration and drop the log line.
+	logExtID := "exec-log"
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: logExtID})
 	bus.Publish(events.EventLogLine, events.LogLineEvent{
-		ExternalExecutionID: extID,
+		ExternalExecutionID: logExtID,
 		LineNum:             1,
 		Text:                "hi",
 	})
