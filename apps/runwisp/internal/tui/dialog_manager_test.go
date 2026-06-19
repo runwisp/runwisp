@@ -64,7 +64,7 @@ func TestDialogManager_RunParamsLifecycle(t *testing.T) {
 		t.Fatal("expected run-params dialog after ShowRunParams")
 	}
 
-	if closed := dm.UpdateRunParams(tea.KeyMsg{Type: tea.KeyEscape}); !closed {
+	if !dm.UpdateRunParams(tea.KeyMsg{Type: tea.KeyEscape}) {
 		t.Fatal("expected run-params dialog to close on Esc")
 	}
 	if dm.HasRunParams() {

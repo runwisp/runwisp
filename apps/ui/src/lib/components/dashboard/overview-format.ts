@@ -4,7 +4,6 @@
 import {
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
-    formatTriggeredByLabel,
     getRunStatusConfig,
     humanizeCron,
     runDuration,
@@ -15,7 +14,7 @@ import type { Run, Task } from "@runwisp/common";
 // formatTriggeredByLabel now lives in the shared @runwisp/ui lib (used by the
 // run list/detail components there too). Re-export so existing apps/ui imports
 // and tests keep resolving it from this module.
-export { formatTriggeredByLabel };
+export { formatTriggeredByLabel } from "@runwisp/ui";
 
 export function pluralize(count: number): string {
     return count === 1 ? "" : "s";

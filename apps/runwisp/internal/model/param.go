@@ -259,14 +259,8 @@ func ParamArgTokens(params []TaskParam, resolved map[string]string) []string {
 				tokens = append(tokens, v)
 			}
 		case ParamOption:
-			v, ok := resolved[p.Key]
-			if !ok {
-				continue
-			}
-			if strings.HasSuffix(p.Key, "=") {
-				tokens = append(tokens, p.Key+v)
-			} else {
-				tokens = append(tokens, p.Key, v)
+			if v, ok := resolved[p.Key]; ok {
+				tokens = append(tokens, optionTokens(p.Key, v)...)
 			}
 		case ParamFlag:
 			if resolved[p.Key] == "true" {
@@ -275,4 +269,14 @@ func ParamArgTokens(params []TaskParam, resolved map[string]string) []string {
 		}
 	}
 	return tokens
+}
+
+// optionTokens renders a resolved option parameter as argv tokens. A key ending
+// in "=" glues the value on (`--opt=val`); otherwise the value is a separate
+// token (`--opt val`).
+func optionTokens(key, v string) []string {
+	if strings.HasSuffix(key, "=") {
+		return []string{key + v}
+	}
+	return []string{key, v}
 }

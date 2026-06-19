@@ -129,7 +129,16 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 	var reconciler *runtime.Reconciler
 	var reloadFn func() (model.ReloadResult, error)
 	if mode == modeStandalone {
-		reconciler = runtime.NewReconciler(f.CfgFile, cfg.Config, svc.Tasks, svc.Scheduler, svc.TaskManager, svc.DB, configSnap, time.Now)
+		reconciler = runtime.NewReconciler(runtime.ReconcilerDeps{
+			ConfigPath: f.CfgFile,
+			Baseline:   cfg.Config,
+			Registry:   svc.Tasks,
+			Scheduler:  svc.Scheduler,
+			Manager:    svc.TaskManager,
+			DB:         svc.DB,
+			Snapshot:   configSnap,
+			Now:        time.Now,
+		})
 		reloadFn = reconciler.Reconcile
 	}
 

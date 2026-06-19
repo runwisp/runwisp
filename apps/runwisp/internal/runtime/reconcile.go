@@ -39,32 +39,36 @@ type Reconciler struct {
 	baseline *config.Config
 }
 
-// NewReconciler wires a reconciler. baseline is the config the daemon booted
+// ReconcilerDeps wires a Reconciler. Baseline is the config the daemon booted
 // with (the current live set); the reconciler replaces it after each successful
-// reload. snapshot is re-pinned on success so config_stale reflects the applied
-// config. now must not be nil in production (time.Now).
-func NewReconciler(
-	configPath string,
-	baseline *config.Config,
-	registry *TaskRegistry,
-	scheduler *Scheduler,
-	manager TaskManager,
-	db storage.RunRepository,
-	snapshot *config.Snapshot,
-	now func() time.Time,
-) *Reconciler {
+// reload. Snapshot is re-pinned on success so config_stale reflects the applied
+// config. Now may be nil — NewReconciler defaults it to time.Now.
+type ReconcilerDeps struct {
+	ConfigPath string
+	Baseline   *config.Config
+	Registry   *TaskRegistry
+	Scheduler  *Scheduler
+	Manager    TaskManager
+	DB         storage.RunRepository
+	Snapshot   *config.Snapshot
+	Now        func() time.Time
+}
+
+// NewReconciler wires a reconciler from its dependencies.
+func NewReconciler(deps ReconcilerDeps) *Reconciler {
+	now := deps.Now
 	if now == nil {
 		now = time.Now
 	}
 	return &Reconciler{
-		configPath: configPath,
-		registry:   registry,
-		scheduler:  scheduler,
-		manager:    manager,
-		db:         db,
-		snapshot:   snapshot,
+		configPath: deps.ConfigPath,
+		registry:   deps.Registry,
+		scheduler:  deps.Scheduler,
+		manager:    deps.Manager,
+		db:         deps.DB,
+		snapshot:   deps.Snapshot,
 		now:        now,
-		baseline:   baseline,
+		baseline:   deps.Baseline,
 	}
 }
 
