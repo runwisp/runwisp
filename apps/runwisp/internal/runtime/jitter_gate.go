@@ -9,16 +9,16 @@ import (
 	"time"
 )
 
-// timerHandle is the slice of *time.Timer the gate relies on: the ability to
+// stopper is the slice of *time.Timer the gate relies on: the ability to
 // cancel a not-yet-fired breach. Tests inject a fake to fire breaches
 // deterministically instead of waiting on the wall clock.
-type timerHandle interface {
+type stopper interface {
 	Stop() bool
 }
 
 // afterFunc schedules fn after d and returns a handle to cancel it. Production
 // wires time.AfterFunc; gate tests substitute a controllable fake.
-type afterFunc func(d time.Duration, fn func()) timerHandle
+type afterFunc func(d time.Duration, fn func()) stopper
 
 // heldRun is one submitted-but-not-yet-triggered jittered fire. slot is the
 // deadline — the latest the start may slip — and doubles as the release order
@@ -29,7 +29,7 @@ type heldRun struct {
 	tick     time.Time     // cron tick, backdated onto the run's CreatedAt
 	slot     time.Time     // deadline = tick + spread offset
 	horizon  time.Duration // window length for the "free for this task" check
-	timer    timerHandle   // breach timer; nil once triggered
+	timer    stopper       // breach timer; nil once triggered
 }
 
 // jitterGate is a daemon-wide, work-conserving gate that targets one in-flight
@@ -57,7 +57,7 @@ type jitterGate struct {
 func newJitterGate(now func() time.Time, trigger func(string, time.Time) (string, bool)) *jitterGate {
 	return &jitterGate{
 		now:      now,
-		after:    func(d time.Duration, fn func()) timerHandle { return time.AfterFunc(d, fn) },
+		after:    func(d time.Duration, fn func()) stopper { return time.AfterFunc(d, fn) },
 		trigger:  trigger,
 		inflight: make(map[string]time.Time),
 	}

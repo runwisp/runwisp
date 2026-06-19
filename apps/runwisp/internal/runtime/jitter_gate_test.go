@@ -44,7 +44,7 @@ func (t *manualTimer) Stop() bool {
 	return !was
 }
 
-func (m *manualTimers) after(_ time.Duration, fn func()) timerHandle {
+func (m *manualTimers) after(_ time.Duration, fn func()) stopper {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	t := &manualTimer{owner: m, fn: fn}

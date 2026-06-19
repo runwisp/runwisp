@@ -941,7 +941,7 @@ func TestExecView_View_ParamsChip(t *testing.T) {
 	if !strings.Contains(out, "Params") {
 		t.Fatalf("expected Params chip in header, got %q", out)
 	}
-	if x := paramsHitX(&ev); x == -1 {
+	if paramsHitX(&ev) == -1 {
 		t.Fatal("expected a Params hitbox on the meta row")
 	}
 }
