@@ -20,6 +20,7 @@
         onOptimisticRestore,
         fetchLogs,
         streamLogs,
+        getInstanceCount = () => 1,
     } = $props<{
         items: Run[];
         total: number;
@@ -28,6 +29,7 @@
         onLoadMore: () => void;
         onOptimisticRemove: (ids: string[]) => void;
         onOptimisticRestore: (runs: Run[]) => void;
+        getInstanceCount?: (taskName: string) => number;
         fetchLogs: (
             runId: string,
             from: number,
@@ -167,6 +169,7 @@
             onBulkCancel={handleBulkCancel}
             onBulkDelete={handleBulkDelete}
             onBulkRerun={handleBulkRerun}
+            {getInstanceCount}
         />
 
         <!-- Right Panel: Run Details -->
@@ -181,6 +184,7 @@
                 {streamLogs}
                 showTaskName
                 onDelete={deleteSingle}
+                {getInstanceCount}
             />
         </Card>
     </div>

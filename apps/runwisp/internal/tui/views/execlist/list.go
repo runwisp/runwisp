@@ -35,10 +35,19 @@ type ExecList struct {
 	height     int
 	focused    bool
 	hoveredRow int // -1 = no hover
+	// instanceCount resolves a task's currently configured instance count so
+	// multi-instance services render a 1-based #N suffix. nil ⇒ no suffix.
+	instanceCount func(taskName string) int
 }
 
 func NewExecList(w *ExecWindow) ExecList {
 	return ExecList{window: w, hoveredRow: -1}
+}
+
+// SetInstanceCountLookup wires the task-instance-count resolver used to decide
+// whether a row's task name gets a #N instance suffix.
+func (e *ExecList) SetInstanceCountLookup(fn func(taskName string) int) {
+	e.instanceCount = fn
 }
 
 // SetSize updates the available dimensions.
@@ -222,10 +231,11 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx, contentW, task
 		statPad = 0
 	}
 	statusCell := statusBadge + rowStyle.Render(strings.Repeat(" ", statPad))
-	taskLabel := item.Run.TaskName
-	if item.Run.InstanceIndex > 0 {
-		taskLabel = fmt.Sprintf("%s#%d", taskLabel, item.Run.InstanceIndex)
+	count := 1
+	if e.instanceCount != nil {
+		count = e.instanceCount(item.Run.TaskName)
 	}
+	taskLabel := instanceLabel(item.Run.TaskName, item.Run.InstanceIndex, count)
 	return rowStyle.Render("  "+padCell(taskLabel, taskW)+" ") +
 		statusCell +
 		rowStyle.Render(" "+

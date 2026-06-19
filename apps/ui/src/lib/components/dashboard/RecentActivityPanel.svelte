@@ -5,7 +5,7 @@
     import { ArrowRight, History } from "@lucide/svelte";
     import Card from "@runwisp/ui/components/Card.svelte";
     import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
-    import { getRunStatusConfig, runDisplayStatus } from "@runwisp/ui";
+    import { getRunStatusConfig, runDisplayStatus, instanceSuffix } from "@runwisp/ui";
     import { isFailureEndReason, type Run } from "@runwisp/common";
     import {
         formatRunDurationLabel,
@@ -18,11 +18,13 @@
         now = new Date(),
         onRunClick,
         onViewAllRuns,
+        getInstanceCount = () => 1,
     } = $props<{
         recentActivity?: Run[];
         now?: Date;
         onRunClick?: (taskName: string, runId: string) => void;
         onViewAllRuns?: () => void;
+        getInstanceCount?: (taskName: string) => number;
     }>();
 
     function viewRun(run: Run): void {
@@ -56,6 +58,10 @@
                 {@const status = runDisplayStatus(run)}
                 {@const statusConfig = getRunStatusConfig(status)}
                 {@const StatusIcon = statusConfig.icon}
+                {@const suffix = instanceSuffix(
+                    run.instance_index,
+                    getInstanceCount(run.task_name),
+                )}
 
                 <button
                     class="group flex w-full items-start gap-3 rounded-lg p-2.5 text-left transition-colors hover:bg-surface-sunken"
@@ -71,9 +77,8 @@
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex min-w-0 items-center gap-1.5">
                                 <span class="truncate text-sm font-medium text-on-surface">
-                                    {run.task_name}{#if run.instance_index > 0}<span
-                                            class="text-on-surface-muted"
-                                            >#{run.instance_index}</span
+                                    {run.task_name}{#if suffix}<span class="text-on-surface-muted"
+                                            >{suffix}</span
                                         >{/if}
                                 </span>
                                 <span

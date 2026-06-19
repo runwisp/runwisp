@@ -7,6 +7,7 @@ import {
     runStartDelay,
     formatTriggeredByLabel,
     runRetryLabel,
+    instanceSuffix,
 } from "./run-helpers.js";
 
 describe("runDuration", () => {
@@ -86,5 +87,24 @@ describe("runRetryLabel", () => {
 
     it("labels a run that points back at the run it re-attempts", () => {
         expect(runRetryLabel({ retry_attempt: 1, retry_of_run_id: "01JABC" })).toBe("retry #1");
+    });
+});
+
+describe("instanceSuffix", () => {
+    it("returns no suffix for a single-instance task", () => {
+        expect(instanceSuffix(0, 1)).toBe("");
+    });
+
+    it("returns no suffix for a non-service (count 0)", () => {
+        expect(instanceSuffix(0, 0)).toBe("");
+    });
+
+    it("suffixes slot 0 of a multi-instance service as #1 (1-based)", () => {
+        expect(instanceSuffix(0, 3)).toBe("#1");
+    });
+
+    it("maps the stored 0-based slot to a 1-based suffix", () => {
+        expect(instanceSuffix(1, 3)).toBe("#2");
+        expect(instanceSuffix(2, 3)).toBe("#3");
     });
 });

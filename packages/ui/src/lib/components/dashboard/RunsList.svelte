@@ -31,7 +31,12 @@
     import type { Run } from "./types.js";
     import type { RunSelector } from "@runwisp/common";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
-    import { runDuration, formatTriggeredByLabel, runRetryLabel } from "./run-helpers.js";
+    import {
+        runDuration,
+        formatTriggeredByLabel,
+        runRetryLabel,
+        instanceSuffix,
+    } from "./run-helpers.js";
     import { formatRelativeTime, formatDateTime, formatFullDateTime } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -54,6 +59,7 @@
         onBulkCancel,
         onBulkDelete,
         onBulkRerun,
+        getInstanceCount = () => 1,
     }: {
         items: Run[];
         total: number;
@@ -72,6 +78,9 @@
         onBulkCancel?: BulkHandler;
         onBulkDelete?: BulkHandler;
         onBulkRerun?: BulkHandler;
+        // Resolves a task's currently configured instance count so multi-instance
+        // services render a 1-based #N suffix. Defaults to single-instance.
+        getInstanceCount?: (taskName: string) => number;
     } = $props();
 
     const ROW_HEIGHT = 76;
@@ -365,6 +374,10 @@
                         {@const duration = runDuration(run)}
                         {@const retry = runRetryLabel(run)}
                         {@const startedAt = run.start_at ?? run.created_at}
+                        {@const suffix = instanceSuffix(
+                            run.instance_index,
+                            getInstanceCount(run.task_name),
+                        )}
                         <div
                             class="flex items-stretch gap-1"
                             style:position="absolute"
@@ -411,9 +424,8 @@
                                             <span
                                                 class="truncate text-sm font-semibold text-on-surface"
                                             >
-                                                {run.task_name}{#if run.instance_index > 0}<span
-                                                        class="text-on-surface-muted"
-                                                        >#{run.instance_index}</span
+                                                {run.task_name}{#if suffix}<span
+                                                        class="text-on-surface-muted">{suffix}</span
                                                     >{/if}
                                             </span>
                                         </div>
@@ -496,10 +508,10 @@
                                                     >{retry}</span
                                                 >
                                             {/if}
-                                            {#if run.instance_index > 0}
+                                            {#if suffix}
                                                 <span
                                                     class="font-mono text-2xs text-on-surface-faint"
-                                                    >instance #{run.instance_index}</span
+                                                    >instance {suffix}</span
                                                 >
                                             {/if}
                                         </div>

@@ -609,16 +609,47 @@ func TestBuildRowText_Branches(t *testing.T) {
 		}
 	})
 
-	t.Run("instance-index-formatted-with-hash", func(t *testing.T) {
+	t.Run("multi-instance-formatted-1-based", func(t *testing.T) {
 		w := NewExecWindow(nil)
 		w.ApplyFetch([]uikit.ExecListItem{
 			{Run: model.Run{ID: "r1", TaskName: "task", InstanceIndex: 2}},
 		}, 0, 1)
 		l := NewExecList(w)
+		l.SetInstanceCountLookup(func(string) int { return 3 })
 		l.SetSize(80, 24)
 		text := l.buildRowText(l.window.Item(0), 0, 60, 20)
-		if !strings.Contains(text, "task#2") {
-			t.Fatalf("expected task#2 in instance-indexed row, got %q", text)
+		// 0-based slot 2 → 1-based display #3.
+		if !strings.Contains(text, "task#3") {
+			t.Fatalf("expected task#3 in multi-instance row, got %q", text)
+		}
+	})
+
+	t.Run("multi-instance-slot-zero-gets-suffix", func(t *testing.T) {
+		w := NewExecWindow(nil)
+		w.ApplyFetch([]uikit.ExecListItem{
+			{Run: model.Run{ID: "r1", TaskName: "task", InstanceIndex: 0}},
+		}, 0, 1)
+		l := NewExecList(w)
+		l.SetInstanceCountLookup(func(string) int { return 3 })
+		l.SetSize(80, 24)
+		text := l.buildRowText(l.window.Item(0), 0, 60, 20)
+		// Slot 0 of a multi-instance service must still be suffixed (#1).
+		if !strings.Contains(text, "task#1") {
+			t.Fatalf("expected task#1 for slot 0 of multi-instance service, got %q", text)
+		}
+	})
+
+	t.Run("single-instance-no-suffix", func(t *testing.T) {
+		w := NewExecWindow(nil)
+		w.ApplyFetch([]uikit.ExecListItem{
+			{Run: model.Run{ID: "r1", TaskName: "task", InstanceIndex: 0}},
+		}, 0, 1)
+		l := NewExecList(w)
+		l.SetInstanceCountLookup(func(string) int { return 1 })
+		l.SetSize(80, 24)
+		text := l.buildRowText(l.window.Item(0), 0, 60, 20)
+		if strings.Contains(text, "task#") {
+			t.Fatalf("expected no instance suffix for single-instance task, got %q", text)
 		}
 	})
 }
