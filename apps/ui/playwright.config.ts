@@ -29,6 +29,8 @@ export default defineConfig({
             testMatch: [
                 "dashboard.spec.ts",
                 "task-execution.spec.ts",
+                "run-lifecycle.spec.ts",
+                "runs-page.spec.ts",
                 "notifications.spec.ts",
                 "theme.spec.ts",
             ],

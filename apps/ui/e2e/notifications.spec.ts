@@ -3,30 +3,11 @@
 
 import { type Locator, type Page } from "@playwright/test";
 import { test, expect } from "./fixtures/test-base";
+import { markAllReadViaAPI, triggerRunViaAPI } from "./fixtures/api";
 
-/**
- * Trigger a run via the REST API. We use the daemon directly instead of the
- * UI so the test isolates "did a notification surface" from "did the trigger
- * UI flow work" — that's covered by task-execution.spec.ts.
- */
-async function triggerRunViaAPI(page: Page, taskName: string, token: string): Promise<void> {
-    const response = await page.request.post(`/api/tasks/${taskName}/run`, {
-        headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(response.status(), `trigger ${taskName}`).toBeLessThan(400);
-}
-
-/**
- * Mark all notifications as read by hitting the API directly. Used to clear
- * the unread badge before each test, since the shared daemon may carry over
- * state from earlier specs in the same Playwright run.
- */
-async function markAllReadViaAPI(page: Page, token: string): Promise<void> {
-    const response = await page.request.post("/api/notifications/read", {
-        headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(response.status(), "mark all read").toBeLessThan(400);
-}
+// triggerRunViaAPI / markAllReadViaAPI are shared in fixtures/api.ts — we use
+// the daemon directly so these specs isolate "did a notification surface" from
+// "did the trigger UI flow work" (the latter is task-execution.spec.ts).
 
 const bell = (page: Page): Locator => page.getByRole("button", { name: "Notifications" });
 const popover = (page: Page): Locator => page.getByRole("dialog", { name: "Notifications" });
