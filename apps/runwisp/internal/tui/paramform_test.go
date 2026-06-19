@@ -321,6 +321,76 @@ func TestParamForm_CtrlTIgnoredForFlag(t *testing.T) {
 	assert.Equal(t, "false", *got["--force"], "flag still resolves to its off state")
 }
 
+// TestParamForm_FlagTogglesWithArrows verifies a flag flips on left/right and
+// the vim h/l aliases, not just space — every key an operator tries on the
+// checkbox works, so the toggle is never a dead end.
+func TestParamForm_FlagTogglesWithArrows(t *testing.T) {
+	submit := func(map[string]*string) tea.Cmd { return nil }
+	for _, tc := range []struct {
+		name string
+		key  tea.KeyMsg
+	}{
+		{"left", keyMsgSpecial(tea.KeyLeft)},
+		{"right", keyMsgSpecial(tea.KeyRight)},
+		{"h", keyMsg("h")},
+		{"l", keyMsg("l")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params := []model.TaskParam{{Kind: model.ParamFlag, Key: "--force", Default: strptr("false")}}
+			d := NewParamFormDialog("backup", params, submit)
+			require.False(t, d.fields[0].flagOn)
+
+			_, closed := d.Update(tc.key)
+			assert.False(t, closed)
+			assert.True(t, d.fields[0].flagOn, "%s should toggle the focused flag on", tc.name)
+		})
+	}
+}
+
+// TestParamForm_FooterHintIsContextual verifies the footer legend names the
+// action for the focused field's stop, so it never advertises a key that does
+// nothing (the old static "←/→ choose" misled on flags).
+func TestParamForm_FooterHintIsContextual(t *testing.T) {
+	submit := func(map[string]*string) tea.Cmd { return nil }
+	params := []model.TaskParam{
+		{Kind: model.ParamFlag, Key: "--force"},
+		{Kind: model.ParamOption, Key: "--region", Required: true, Choices: []string{"us", "eu"}},
+		{Kind: model.ParamEnv, Key: "TOKEN"},
+	}
+	d := NewParamFormDialog("deploy", params, submit)
+
+	// Focused on the flag: footer leads with the toggle, and the focused row
+	// carries the inline cue.
+	view := d.View(80, 40)
+	assert.Contains(t, view, "space toggle", "flag footer should name the toggle key")
+	assert.Contains(t, view, "space / ←→ toggle", "focused flag row should carry an inline cue")
+
+	// Move to the strict selector.
+	d.focusNext()
+	assert.Contains(t, d.footerHint(), "←/→ choose", "selector footer should name choose")
+
+	// Move to the free-text field.
+	d.focusNext()
+	assert.Contains(t, d.footerHint(), "ctrl+t omit/empty", "free-text footer should name include/omit")
+}
+
+// TestParamForm_InlineCueOnlyWhenFocused verifies the flag's inline toggle cue
+// is absent once focus moves to another field, keeping unfocused rows clean.
+func TestParamForm_InlineCueOnlyWhenFocused(t *testing.T) {
+	submit := func(map[string]*string) tea.Cmd { return nil }
+	params := []model.TaskParam{
+		{Kind: model.ParamEnv, Key: "TOKEN"},
+		{Kind: model.ParamFlag, Key: "--force"},
+	}
+	d := NewParamFormDialog("deploy", params, submit)
+
+	// Flag is the second field, not focused on open.
+	lines := d.renderField(1, 48)
+	for _, l := range lines {
+		assert.NotContains(t, l, "toggle", "an unfocused flag row must not show the inline cue")
+	}
+}
+
 // TestParamForm_EscCancels verifies esc closes the form without submitting.
 func TestParamForm_EscCancels(t *testing.T) {
 	called := false

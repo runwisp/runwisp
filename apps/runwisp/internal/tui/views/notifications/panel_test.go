@@ -173,7 +173,7 @@ func TestNotificationsPanel_ToggleAndExpandedHeight(t *testing.T) {
 	if !strings.Contains(view, "boom") {
 		t.Errorf("expanded view should include item title; got %q", view)
 	}
-	if !strings.Contains(view, "n collapse") {
+	if !strings.Contains(view, "collapse") {
 		t.Errorf("expanded view should show collapse hint; got %q", view)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/internal/tui/keys"
 	"github.com/runwisp/runwisp/internal/tui/rhythm"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -362,7 +363,12 @@ func (p *Panel) renderCollapsed() string {
 
 func (p *Panel) renderExpanded() string {
 	headerL := panelPrefixStyle.Render("  " + p.countLabel())
-	headerR := panelHintStyle.Render("n collapse · ↑/↓ navigate · r toggle read · enter open  ")
+	// Same notification keybindings as the help bar and overlay (keys package),
+	// joined with the panel's own separator so the three never drift.
+	hint := strings.Join([]string{
+		keys.NotifCollapse.Bar, keys.Move.Bar, keys.NotifRead.Bar, keys.NotifOpen.Bar,
+	}, " · ") + "  "
+	headerR := panelHintStyle.Render(hint)
 	header := joinHeaderLine(headerL, headerR, p.width)
 
 	// renderRow already pads each row to viewport.Width with uikit.ColorBg, and the
