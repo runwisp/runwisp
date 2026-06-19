@@ -17,12 +17,25 @@ exit 1
 """
 
 [tasks.slow-task]
-description = "Sleeps for a while so the UI can observe a running state"
+description = "Blocks until stopped, so the UI can observe a running run + the Stop control"
 run = """
 set -eu
 echo "slow-start"
-sleep 3
-echo "slow-end"
+# Block until the test stops the run — no arbitrary sleep, no wall-clock cost.
+tail -f /dev/null
+"""
+
+[tasks.timed-task]
+description = "Emits staggered output over ~6s then exits 0, so the UI can observe status transitions, log streaming, and a natural finish without a refresh"
+run = """
+set -eu
+echo "timed-phase-1"
+sleep 2
+echo "timed-phase-2"
+sleep 2
+echo "timed-phase-3"
+sleep 2
+echo "timed-done"
 """
 
 # Surface failed runs as in-app notifications so the bell + popover have
