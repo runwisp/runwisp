@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Service instances are labelled 1-based.** A multi-instance service now shows every run as `name#1`, `name#2`, `name#3` in the Web UI and TUI instead of `name`, `name#1`, `name#2`; a single-instance service stays just `name`. See [Services](https://docs.runwisp.com/configuration/services/).
+
 ## [0.10.0] - 2026-06-18
 
 ### Added

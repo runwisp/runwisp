@@ -53,9 +53,12 @@ run       = "/usr/local/bin/worker"
 | `instances` | `1`     | Number of concurrent instances. Bounded **`1 ≤ instances ≤ 64`**. |
 
 Each instance shows up as its own run, tagged with its own
-`instance_index` (`0`, `1`, `2`, and so on). They all share the same
-config, their logs pool together per service, and when one instance's
-process exits the supervisor restarts just that one.
+`instance_index` (`0`, `1`, `2`, and so on). When you run more than one,
+the Web UI and TUI label them `name#1`, `name#2`, `name#3` — a 1-based
+count off the stored index, so a single-instance service stays just
+`name`. They all share the same config, their logs pool together per
+service, and when one instance's process exits the supervisor restarts
+just that one.
 
 ## Restart behaviour
 

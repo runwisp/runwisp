@@ -4,7 +4,6 @@
 package execlist
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -102,10 +101,7 @@ func (v *ExecView) View() string {
 	}
 	idTag := idStyle.Render("#" + v.Run.ID[len(v.Run.ID)-8:])
 
-	taskLabel := v.Run.TaskName
-	if v.Run.InstanceIndex > 0 {
-		taskLabel = fmt.Sprintf("%s#%d", taskLabel, v.Run.InstanceIndex)
-	}
+	taskLabel := instanceLabel(v.Run.TaskName, v.Run.InstanceIndex, v.InstanceCount)
 	headerLeft := bgLight.Render("  ") +
 		backBtn +
 		bgLight.Render("  ") +

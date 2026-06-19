@@ -398,6 +398,7 @@
                 onBulkCancel={handleBulkCancel}
                 onBulkDelete={handleBulkDelete}
                 onBulkRerun={handleBulkRerun}
+                getInstanceCount={() => instanceCount}
             />
         {/if}
 
@@ -415,6 +416,7 @@
                 {streamLogs}
                 onDelete={deleteSingle}
                 {highlightLine}
+                getInstanceCount={() => instanceCount}
             />
         </Card>
     </div>

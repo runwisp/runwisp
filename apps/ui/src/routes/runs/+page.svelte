@@ -3,13 +3,16 @@
 
 <script lang="ts">
     import { RunsPage } from "$lib/components/dashboard";
+    import { instanceCountResolver } from "$lib/components/dashboard/instance-count";
     import { Skeleton } from "@runwisp/ui";
-    import { runUpdatesStore } from "$lib/stores";
+    import { runUpdatesStore, taskStore } from "$lib/stores";
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import type { RunsListFilters } from "@runwisp/ui";
 
     const source = createRunsSource();
+
+    let getInstanceCount = $derived(instanceCountResolver(taskStore.items));
 
     let filters = $state<RunsListFilters>({
         search: "",
@@ -50,5 +53,6 @@
         onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
         fetchLogs={logSession.fetchLogs}
         streamLogs={logSession.streamLogs}
+        {getInstanceCount}
     />
 {/if}

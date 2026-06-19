@@ -96,6 +96,7 @@ export {
     runPhaseOrder,
     formatTriggeredByLabel,
     runRetryLabel,
+    instanceSuffix,
 } from "./components/dashboard/run-helpers.js";
 export { humanizeCron, type HumanizedCron } from "./components/dashboard/cron-format.js";
 export type { DaemonState, DaemonStats } from "./components/dashboard/types.js";

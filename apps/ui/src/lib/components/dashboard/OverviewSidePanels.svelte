@@ -6,7 +6,7 @@
     import Badge from "@runwisp/ui/components/Badge.svelte";
     import Card from "@runwisp/ui/components/Card.svelte";
     import ComposeBadge from "../ComposeBadge.svelte";
-    import { getRunStatusConfig, TaskCard } from "@runwisp/ui";
+    import { getRunStatusConfig, TaskCard, instanceSuffix } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import { isFailureEndReason, type Run } from "@runwisp/common";
     import {
@@ -25,6 +25,7 @@
         now = new Date(),
         onTaskClick,
         onRunClick,
+        getInstanceCount = () => 1,
     } = $props<{
         attentionTasks?: TaskOverview[];
         runningNow?: Run[];
@@ -33,6 +34,7 @@
         now?: Date;
         onTaskClick?: (taskName: string) => void;
         onRunClick?: (taskName: string, runId: string) => void;
+        getInstanceCount?: (taskName: string) => number;
     }>();
 
     function viewTask(taskName: string): void {
@@ -121,6 +123,10 @@
         {:else}
             <div class="mt-4 space-y-2">
                 {#each runningNow as run (run.id)}
+                    {@const suffix = instanceSuffix(
+                        run.instance_index,
+                        getInstanceCount(run.task_name),
+                    )}
                     <TaskCard accent="wisp" onclick={() => viewRun(run)}>
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
@@ -134,9 +140,8 @@
                                         ></span>
                                     </span>
                                     <span class="truncate text-sm font-medium text-on-surface">
-                                        {run.task_name}{#if run.instance_index > 0}<span
-                                                class="text-on-surface-muted"
-                                                >#{run.instance_index}</span
+                                        {run.task_name}{#if suffix}<span
+                                                class="text-on-surface-muted">{suffix}</span
                                             >{/if}
                                     </span>
                                 </div>

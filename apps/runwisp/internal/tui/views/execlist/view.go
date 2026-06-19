@@ -90,6 +90,9 @@ type ExecView struct {
 	TaskIsService  bool
 	serviceStopped bool
 	LoadingOlder   bool
+	// InstanceCount is the task's currently configured instance count. When it
+	// exceeds 1 the header shows a 1-based #N instance suffix.
+	InstanceCount int
 }
 
 // execHeaderHeight is the number of header lines drawn above the log in normal mode.

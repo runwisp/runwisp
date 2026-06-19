@@ -108,7 +108,7 @@ func NewModel(cfg TUIConfig) Model {
 	infoView := info.NewInfoView(cfg.Info)
 	debugView := NewDebugView()
 
-	return Model{
+	m := Model{
 		sidebar:          sidebar,
 		execList:         execList,
 		execWindow:       execWindow,
@@ -126,6 +126,10 @@ func NewModel(cfg TUIConfig) Model {
 		shutdownFunc:     cfg.ShutdownFunc,
 		launchTicketFunc: cfg.LaunchTicketFunc,
 	}
+	// serviceInstances reads only the immutable info.Tasks snapshot, so this
+	// closure stays correct across the value-copied model.
+	m.execList.SetInstanceCountLookup(m.serviceInstances)
+	return m
 }
 
 // Init loads initial data and starts subscriptions.
@@ -162,6 +166,7 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	}
 	ev := execlist.NewExecView(run)
 	ev.TaskIsService = m.isService(run.TaskName)
+	ev.InstanceCount = m.serviceInstances(run.TaskName)
 	mainW, mainH := m.mainSize()
 	ev.SetSize(mainW, mainH)
 	ev.SetFocused(true)

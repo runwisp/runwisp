@@ -1012,10 +1012,25 @@ func TestExecView_Nav_DurationRight_NoParams(t *testing.T) {
 func TestExecView_View_InstanceIndex(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	ev.Run.InstanceIndex = 3
+	ev.InstanceCount = 5
 	appendLines(&ev, 5)
 
 	out := ev.View()
-	if !strings.Contains(out, "#3") {
-		t.Fatalf("expected instance index in view output")
+	// 0-based slot 3 of a 5-instance service → 1-based display #4.
+	if !strings.Contains(out, "test-task#4") {
+		t.Fatalf("expected 1-based instance suffix test-task#4 in view output, got %q", out)
+	}
+}
+
+func TestExecView_View_SingleInstanceNoSuffix(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.Run.TaskName = "solo"
+	ev.Run.InstanceIndex = 0
+	ev.InstanceCount = 1
+	appendLines(&ev, 5)
+
+	out := ev.View()
+	if strings.Contains(out, "solo#") {
+		t.Fatalf("expected no instance suffix for single-instance task, got %q", out)
 	}
 }

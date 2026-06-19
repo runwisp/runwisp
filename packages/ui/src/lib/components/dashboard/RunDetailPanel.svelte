@@ -29,6 +29,7 @@
         runStartDelay,
         formatTriggeredByLabel,
         runRetryLabel,
+        instanceSuffix,
     } from "./run-helpers.js";
 
     let {
@@ -38,6 +39,7 @@
         showTaskName = false,
         onDelete,
         highlightLine = null,
+        getInstanceCount = () => 1,
     }: {
         run: Run | undefined;
         fetchLogs: (
@@ -53,6 +55,9 @@
         showTaskName?: boolean;
         onDelete?: (runId: string) => void;
         highlightLine?: number | null;
+        // Resolves a task's currently configured instance count so multi-instance
+        // services render a 1-based #N suffix. Defaults to single-instance.
+        getInstanceCount?: (taskName: string) => number;
     } = $props();
 
     let canDelete = $derived.by(() => {
@@ -106,6 +111,7 @@
     {@const startedAt = run.start_at ?? run.created_at}
     {@const retry = runRetryLabel(run)}
     {@const paramEntries = run.params ? Object.entries(run.params) : []}
+    {@const suffix = instanceSuffix(run.instance_index, getInstanceCount(run.task_name))}
     <!-- Detailed Header -->
     <div class="@container shrink-0 border-b border-outline-faint bg-surface-raised p-6">
         <div class="flex flex-col justify-between gap-6 @4xl:flex-row @4xl:items-start">
@@ -121,16 +127,14 @@
                     <div class="mb-1 flex items-center gap-3">
                         <h2 class="text-xl font-bold text-on-surface">
                             {#if showTaskName}
-                                {run.task_name}{#if run.instance_index > 0}<span
-                                        class="text-on-surface-muted">#{run.instance_index}</span
+                                {run.task_name}{#if suffix}<span class="text-on-surface-muted"
+                                        >{suffix}</span
                                     >{/if}
                             {:else}
                                 <span title={formatFullDateTime(startedAt)}
                                     >Run · {formatDateTime(startedAt)}</span
-                                >{#if run.instance_index > 0}
-                                    <span class="text-on-surface-muted"
-                                        >· instance #{run.instance_index}</span
-                                    >
+                                >{#if suffix}
+                                    <span class="text-on-surface-muted">· instance {suffix}</span>
                                 {/if}
                             {/if}
                         </h2>

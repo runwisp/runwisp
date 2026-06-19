@@ -20,6 +20,7 @@
         type TaskOverview,
     } from "./overview.js";
     import { pluralize } from "./overview-format.js";
+    import { instanceCountResolver } from "./instance-count.js";
     import { TickingNow } from "$lib/utils/ticking-now.svelte";
     import type { DaemonState, DaemonStats } from "@runwisp/ui";
     import type { Run, Task } from "@runwisp/common";
@@ -110,6 +111,7 @@
     const ticker = new TickingNow();
     $effect(() => ticker.start());
 
+    let getInstanceCount = $derived(instanceCountResolver(tasks));
     let taskOverviews = $derived(buildTaskOverviews(tasks, recentRuns, runningRuns));
     let summary = $derived(buildOverviewSummary(taskOverviews, runningRuns));
     let taskCounts = $derived(countTaskOverviews(taskOverviews));
@@ -195,9 +197,16 @@
             now={ticker.now}
             {onTaskClick}
             {onRunClick}
+            {getInstanceCount}
         />
 
-        <RecentActivityPanel {recentActivity} now={ticker.now} {onRunClick} {onViewAllRuns} />
+        <RecentActivityPanel
+            {recentActivity}
+            now={ticker.now}
+            {onRunClick}
+            {onViewAllRuns}
+            {getInstanceCount}
+        />
     </section>
 
     <Card padding="lg">

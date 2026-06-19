@@ -26,6 +26,21 @@ export function runStartDelay(run: Pick<Run, "created_at" | "start_at">): string
     return formatDuration(delay);
 }
 
+/**
+ * Display suffix for a run's instance slot. A service configured with more than
+ * one instance gets a 1-based suffix (`#1`, `#2`, …) on every one of its runs;
+ * a single-instance task (or any non-service, where `instanceCount` is 1)
+ * returns an empty string so the bare task name is shown. `instanceIndex` is
+ * the stored 0-based slot; `instanceCount` is the task's currently configured
+ * instance count.
+ */
+export function instanceSuffix(instanceIndex: number, instanceCount: number): string {
+    if (instanceCount > 1) {
+        return `#${String(instanceIndex + 1)}`;
+    }
+    return "";
+}
+
 /** Human label for why a run fired (the `triggered_by` source). */
 export function formatTriggeredByLabel(triggeredBy: Run["triggered_by"]): string {
     if (triggeredBy === "api") return "API";
