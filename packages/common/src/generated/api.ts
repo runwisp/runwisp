@@ -36,6 +36,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/instance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get local daemon identity (loopback/socket only)
+         * @description Returns the running daemon's datadir, config path, socket path, pid, version and fingerprint. Used by a second `runwisp` that hit a port conflict to discover and offer to connect to or stop this daemon. Always 403 over non-loopback TCP — the paths are local-only.
+         */
+        get: operations["getInstance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local/credentials": {
         parameters: {
             query?: never;
@@ -656,6 +676,23 @@ export interface components {
              * @example https://example.com/errors/example
              */
             type: string;
+        };
+        InstanceInfo: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/InstanceInfo.json
+             */
+            readonly $schema?: string;
+            /** @description Always "runwisp"; lets a caller confirm the port-holder is a RunWisp daemon. */
+            app: string;
+            config_path: string;
+            data_dir: string;
+            fingerprint: string;
+            /** Format: int64 */
+            pid: number;
+            socket_path: string;
+            version: string;
         };
         LocalCredentialsBody: {
             /**
@@ -1395,6 +1432,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DaemonInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getInstance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceInfo"];
                 };
             };
             /** @description Error */

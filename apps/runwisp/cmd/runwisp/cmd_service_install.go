@@ -238,7 +238,7 @@ func fileExists(path string) bool {
 // would race the live process and end up double-binding the port.
 func preflightDaemon(opts autostart.InstallOptions, f Flags) error {
 	if bindErr := probePortAvailable(f.Host, opts.Port); bindErr != nil {
-		return portConflictError(f.Host, opts.Port, bindErr)
+		return nonInteractivePortConflict(f.Host, opts.Port, bindErr)
 	}
 	return nil
 }

@@ -87,7 +87,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	// Fail fast on a port conflict before spawning a daemon that can't bind.
 	if bindErr := probePortAvailable(f.Host, f.Port); bindErr != nil {
 		os.RemoveAll(tmp)
-		return portConflictError(f.Host, f.Port, bindErr)
+		return nonInteractivePortConflict(f.Host, f.Port, bindErr)
 	}
 
 	// Hand the temp dir to the spawned daemon; from here it owns cleanup.

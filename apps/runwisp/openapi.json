@@ -267,6 +267,53 @@
         },
         "type": "object"
       },
+      "InstanceInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/InstanceInfo.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "app": {
+            "description": "Always \"runwisp\"; lets a caller confirm the port-holder is a RunWisp daemon.",
+            "type": "string"
+          },
+          "config_path": {
+            "type": "string"
+          },
+          "data_dir": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "pid": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "socket_path": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "version",
+          "fingerprint",
+          "pid",
+          "data_dir",
+          "config_path",
+          "socket_path"
+        ],
+        "type": "object"
+      },
       "LocalCredentialsBody": {
         "additionalProperties": false,
         "properties": {
@@ -1817,6 +1864,38 @@
           }
         },
         "summary": "Get daemon info",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/instance": {
+      "get": {
+        "description": "Returns the running daemon's datadir, config path, socket path, pid, version and fingerprint. Used by a second `runwisp` that hit a port conflict to discover and offer to connect to or stop this daemon. Always 403 over non-loopback TCP — the paths are local-only.",
+        "operationId": "getInstance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get local daemon identity (loopback/socket only)",
         "tags": [
           "System"
         ]

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/textutil"
 )
 
@@ -112,6 +113,40 @@ func passwordMismatchError(port int) error {
 			"  - Stop the other daemon first\n" +
 			"  - Use a different port:  runwisp --port <PORT>\n" +
 			"  - Set RUNWISP_PASSWORD to the other daemon's password to connect to it",
+	}
+}
+
+// runwispPortConflictError is shown (non-interactively) when the port is held
+// by *another RunWisp daemon* started from a different data directory. Unlike
+// portConflictError, we know exactly what is there — so we name its datadir and
+// config and point at the commands to connect to or stop it.
+func runwispPortConflictError(host string, port int, info *model.InstanceInfo) error {
+	displayHost := host
+	if displayHost == "" {
+		displayHost = "127.0.0.1"
+	}
+	var b strings.Builder
+	b.WriteString("It was started from a different data directory, so it has its own socket and config:\n")
+	for _, line := range instanceSummaryLines(info) {
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("\nYou can:\n")
+	fmt.Fprintf(&b, "  - Connect to it:        runwisp tui --socket %s\n", info.SocketPath)
+	fmt.Fprintf(&b, "  - Stop it:              runwisp stop --data %s\n", info.DataDir)
+	b.WriteString("  - Or run on a different port:  runwisp --port <PORT>")
+	return &userFacingError{
+		title:   fmt.Sprintf("another RunWisp daemon (v%s, pid %d) is already running on %s:%d", info.Version, info.Pid, displayHost, port),
+		details: b.String(),
+	}
+}
+
+// instanceSummaryLines renders a discovered daemon's identity as aligned
+// bullet lines, shared by the non-interactive error and the interactive prompt
+// so both describe the running instance the same way.
+func instanceSummaryLines(info *model.InstanceInfo) []string {
+	return []string{
+		"  - data dir:  " + info.DataDir,
+		"  - config:    " + info.ConfigPath,
 	}
 }
 

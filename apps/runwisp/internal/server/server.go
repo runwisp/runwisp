@@ -37,6 +37,8 @@ type Server struct {
 	scheduler         runtime.NextRunGetter
 	host              string
 	port              int
+	dataDir           string
+	configPath        string
 	logDir            string
 	eventBus          events.EventBus
 	auth              *auth.Service
@@ -76,6 +78,8 @@ type Options struct {
 	Scheduler         runtime.NextRunGetter
 	Host              string // Bind address (default: 127.0.0.1)
 	Port              int
+	DataDir           string // Resolved data directory; disclosed via GET /api/instance (local only)
+	ConfigPath        string // Resolved runwisp.toml path; disclosed via GET /api/instance (local only)
 	SocketPath        string // Unix socket path for local CLI/TUI; empty disables socket listener
 	LogDir            string
 	EventBus          events.EventBus
@@ -120,6 +124,8 @@ func New(opts Options) (*Server, error) {
 		scheduler:         opts.Scheduler,
 		host:              opts.Host,
 		port:              opts.Port,
+		dataDir:           opts.DataDir,
+		configPath:        opts.ConfigPath,
 		socketPath:        opts.SocketPath,
 		logDir:            opts.LogDir,
 		eventBus:          opts.EventBus,

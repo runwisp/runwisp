@@ -5,11 +5,13 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"time"
 
 	"log/slog"
 
+	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/tui"
 )
@@ -37,12 +39,28 @@ func runDefault(f Flags) error {
 		return err
 	}
 
-	// Before paying the cost of spawning a background daemon (which would
-	// then silently fail to bind), probe the port ourselves. If something
-	// is holding it but it is not a RunWisp daemon we can surface a clear,
-	// actionable error immediately.
+	// Before paying the cost of spawning a background daemon (which would then
+	// silently fail to bind), probe the port ourselves. If a RunWisp daemon
+	// from a different datadir holds it, offer to connect to or stop it;
+	// otherwise surface a clear, actionable port-conflict error.
 	if bindErr := probePortAvailable(f.Host, f.Port); bindErr != nil {
-		return portConflictError(f.Host, f.Port, bindErr)
+		info := probeRunwispInstance(f.Host, f.Port)
+		interactive := isatty.IsTerminal(os.Stdin.Fd())
+		choice, resErr := resolvePortConflict(f, bindErr, info, interactive, os.Stdin, os.Stderr)
+		if resErr != nil {
+			return resErr
+		}
+		switch choice {
+		case conflictConnect:
+			return runTUIConnect(apiclient.NewUnix(info.SocketPath), f)
+		case conflictStopAndLaunch:
+			if stopErr := stopConflictingDaemon(f, info); stopErr != nil {
+				return stopErr
+			}
+			// Other daemon stopped; fall through to spawn our own here.
+		case conflictAbort:
+			return nil
+		}
 	}
 
 	if err := spawnDaemon(f); err != nil {

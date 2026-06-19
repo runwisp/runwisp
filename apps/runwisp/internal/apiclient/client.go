@@ -55,6 +55,20 @@ func New(baseURL, password string) *Client {
 	}
 }
 
+// NewProbe constructs a short-timeout, password-less Client for one-shot local
+// identity probes (GET /api/instance). The brief timeout keeps a launcher that
+// hit a port conflict from stalling when the port-holder is slow or not even an
+// HTTP server. It carries no password — /api/instance is public but local-gated.
+func NewProbe(baseURL string) *Client {
+	return &Client{
+		baseURL: NormalizeBaseURL(baseURL),
+		httpClient: &http.Client{
+			Timeout: 2 * time.Second,
+		},
+		streamClient: &http.Client{},
+	}
+}
+
 // NewUnix constructs a Client that talks to the daemon over a Unix socket.
 // The local CLI/TUI use this path: the socket already gates access via 0700
 // datadir + 0600 socket-file perms + PEERCRED, so no password is required

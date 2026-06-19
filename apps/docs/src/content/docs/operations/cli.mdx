@@ -47,6 +47,13 @@ data dir, it opens the [TUI](/getting-started/tui-tour/) against it.
 Otherwise — and if there's no `runwisp.toml` yet — it offers to scaffold a
 starter config, spawns the daemon in the background, and attaches.
 
+If the port is already taken by _another_ RunWisp daemon — one started from
+a different data directory — `runwisp` tells you which datadir and config
+that daemon is using and offers to connect to it, or to stop it and launch
+here instead. (Pick a different port any time with `--port`.) When the port
+belongs to something that isn't RunWisp, you get the plain "port in use"
+error with hints for finding the culprit.
+
 `runwisp daemon` is the headless variant for boxes with no terminal: it
 starts the scheduler, REST API, and Web UI without the TUI, and exits
 non-zero if there's no config rather than hanging on a prompt nobody can
