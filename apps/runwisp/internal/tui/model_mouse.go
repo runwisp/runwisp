@@ -195,15 +195,8 @@ func (m Model) handleExecViewClick(x, y int) (tea.Model, tea.Cmd) {
 	case execlist.HeaderFocusParams:
 		return m, m.showRunParams()
 	case execlist.HeaderFocusAction:
-		switch m.execView.Action() {
-		case execlist.ActionStop:
-			return m, m.confirmAction(confirmActionStop)
-		case execlist.ActionStopService:
-			return m, m.confirmAction(confirmActionStopService)
-		case execlist.ActionRetry:
-			return m, m.confirmAction(confirmActionRetry)
-		case execlist.ActionRestartService:
-			return m, m.confirmAction(confirmActionRestartService)
+		if ca, ok := actionConfirm(m.execView.Action()); ok {
+			return m, m.confirmAction(ca)
 		}
 	}
 

@@ -178,11 +178,22 @@ func (v *ExecView) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
+// Header focus moves on a two-row grid:
+//
+//	Row 1:  Back .................... ID
+//	Row 2:  Started Duration [Params] ........ Action
+//
+// Params and Action are optional; navigation skips whichever is absent.
+// Up/Down cross between rows (and into the log pane); Left/Right walk within
+// a row. The Action button is the right end of row 2 — reachable from row 1
+// by pressing Down on ID, and from row 2 by walking Right through the meta
+// fields.
+
 func (v *ExecView) handleKeyUp() tea.Cmd {
 	switch v.HeaderFocus {
-	case HeaderFocusBack, HeaderFocusID, HeaderFocusAction:
+	case HeaderFocusBack, HeaderFocusID:
 		return nil
-	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams:
+	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams, HeaderFocusAction:
 		v.HeaderFocus = HeaderFocusID
 		return nil
 	default:
@@ -198,10 +209,13 @@ func (v *ExecView) handleKeyUp() tea.Cmd {
 
 func (v *ExecView) handleKeyDown(key string) tea.Cmd {
 	switch v.HeaderFocus {
-	case HeaderFocusBack, HeaderFocusID, HeaderFocusAction:
+	case HeaderFocusBack:
 		v.HeaderFocus = HeaderFocusStarted
 		return nil
-	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams:
+	case HeaderFocusID:
+		v.HeaderFocus = v.rightmostRow2()
+		return nil
+	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams, HeaderFocusAction:
 		v.HeaderFocus = HeaderFocusNone
 		return nil
 	default:
@@ -212,11 +226,15 @@ func (v *ExecView) handleKeyDown(key string) tea.Cmd {
 
 func (v *ExecView) handleKeyLeft(key string) tea.Cmd {
 	switch v.HeaderFocus {
-	case HeaderFocusAction:
-		v.HeaderFocus = HeaderFocusID
-		return nil
 	case HeaderFocusID:
 		v.HeaderFocus = HeaderFocusBack
+		return nil
+	case HeaderFocusAction:
+		if v.hasParams() {
+			v.HeaderFocus = HeaderFocusParams
+		} else {
+			v.HeaderFocus = HeaderFocusDuration
+		}
 		return nil
 	case HeaderFocusParams:
 		v.HeaderFocus = HeaderFocusDuration
@@ -237,25 +255,40 @@ func (v *ExecView) handleKeyRight(key string) tea.Cmd {
 	case HeaderFocusBack:
 		v.HeaderFocus = HeaderFocusID
 		return nil
-	case HeaderFocusID:
-		if v.hasActionButton() {
-			v.HeaderFocus = HeaderFocusAction
-		}
-		return nil
 	case HeaderFocusStarted:
 		v.HeaderFocus = HeaderFocusDuration
 		return nil
 	case HeaderFocusDuration:
 		if v.hasParams() {
 			v.HeaderFocus = HeaderFocusParams
+		} else if v.hasActionButton() {
+			v.HeaderFocus = HeaderFocusAction
 		}
 		return nil
-	case HeaderFocusAction, HeaderFocusParams:
+	case HeaderFocusParams:
+		if v.hasActionButton() {
+			v.HeaderFocus = HeaderFocusAction
+		}
+		return nil
+	case HeaderFocusID, HeaderFocusAction:
 		return nil
 	default:
 		v.Pane.HandleKeyScroll(key)
 		return nil
 	}
+}
+
+// rightmostRow2 returns the right-most focusable item on header row 2, used
+// when dropping down from the row-1 ID field. Action sits at the far right
+// when present, otherwise the last meta field.
+func (v *ExecView) rightmostRow2() HeaderFocusItem {
+	if v.hasActionButton() {
+		return HeaderFocusAction
+	}
+	if v.hasParams() {
+		return HeaderFocusParams
+	}
+	return HeaderFocusDuration
 }
 
 func (v *ExecView) Action() Action {

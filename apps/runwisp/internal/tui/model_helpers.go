@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
 
 const doubleClickThreshold = 400 * time.Millisecond
@@ -24,6 +25,26 @@ const (
 	confirmActionStopService
 	confirmActionDelete
 )
+
+// actionConfirm maps the exec view's header action button to its confirm
+// constant. Single source of truth shared by mouse-click and Enter handling
+// so the two paths can never drift (a missing ActionDelete case here
+// previously made the Delete button unclickable with the mouse).
+func actionConfirm(a execlist.Action) (confirmAction, bool) {
+	switch a {
+	case execlist.ActionStop:
+		return confirmActionStop, true
+	case execlist.ActionStopService:
+		return confirmActionStopService, true
+	case execlist.ActionRetry:
+		return confirmActionRetry, true
+	case execlist.ActionRestartService:
+		return confirmActionRestartService, true
+	case execlist.ActionDelete:
+		return confirmActionDelete, true
+	}
+	return 0, false
+}
 
 func (m *Model) focusSidebar() tea.Cmd {
 	m.panelFocus = uikit.PanelSidebar

@@ -182,7 +182,7 @@ func TestExecView_Update_HeaderFocusNavigation(t *testing.T) {
 		t.Fatalf("expected HeaderFocusID, got %d", ev.HeaderFocus)
 	}
 
-	// Right from ID should go to Back, then to Action.
+	// Left from ID goes to Back, Right returns to ID.
 	ev.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	if ev.HeaderFocus != HeaderFocusBack {
 		t.Fatalf("expected HeaderFocusBack, got %d", ev.HeaderFocus)
@@ -193,9 +193,10 @@ func TestExecView_Update_HeaderFocusNavigation(t *testing.T) {
 		t.Fatalf("expected HeaderFocusID after right from back, got %d", ev.HeaderFocus)
 	}
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	// Down from ID drops onto the row-2 Action button (running run).
+	ev.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if ev.HeaderFocus != HeaderFocusAction {
-		t.Fatalf("expected HeaderFocusAction, got %d", ev.HeaderFocus)
+		t.Fatalf("expected HeaderFocusAction after down from ID, got %d", ev.HeaderFocus)
 	}
 }
 
@@ -446,7 +447,7 @@ func TestExecView_HandleKeyLeft_AllTransitions(t *testing.T) {
 		initial HeaderFocusItem
 		want    HeaderFocusItem
 	}{
-		{"Action→ID", HeaderFocusAction, HeaderFocusID},
+		{"Action→Duration (no params)", HeaderFocusAction, HeaderFocusDuration},
 		{"ID→Back", HeaderFocusID, HeaderFocusBack},
 		{"Duration→Started", HeaderFocusDuration, HeaderFocusStarted},
 		{"Back→Back (no change)", HeaderFocusBack, HeaderFocusBack},
@@ -475,10 +476,10 @@ func TestExecView_HandleKeyRight_AllTransitions(t *testing.T) {
 		running bool
 	}{
 		{"Back→ID", HeaderFocusBack, HeaderFocusID, false},
-		{"ID→Action (running)", HeaderFocusID, HeaderFocusAction, true},
+		{"ID→ID (no-op, rightmost row 1)", HeaderFocusID, HeaderFocusID, true},
 		{"Started→Duration", HeaderFocusStarted, HeaderFocusDuration, false},
 		{"Action→Action (no change)", HeaderFocusAction, HeaderFocusAction, true},
-		{"Duration→Duration (no change)", HeaderFocusDuration, HeaderFocusDuration, false},
+		{"Duration→Action (no params)", HeaderFocusDuration, HeaderFocusAction, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -517,8 +518,8 @@ func TestExecView_HandleKeyDown_AllTransitions(t *testing.T) {
 		want    HeaderFocusItem
 	}{
 		{"Back→Started", HeaderFocusBack, HeaderFocusStarted},
-		{"ID→Started", HeaderFocusID, HeaderFocusStarted},
-		{"Action→Started", HeaderFocusAction, HeaderFocusStarted},
+		{"ID→Action (running, rightmost row 2)", HeaderFocusID, HeaderFocusAction},
+		{"Action→None (into log)", HeaderFocusAction, HeaderFocusNone},
 		{"Started→None", HeaderFocusStarted, HeaderFocusNone},
 		{"Duration→None", HeaderFocusDuration, HeaderFocusNone},
 	}
@@ -546,15 +547,62 @@ func TestExecView_HandleKeyUp_StartedAndDuration(t *testing.T) {
 }
 
 func TestExecView_HandleKeyUp_AtTopFocusedItems(t *testing.T) {
-	for _, initial := range []HeaderFocusItem{HeaderFocusBack, HeaderFocusID, HeaderFocusAction} {
+	// Row-1 items are already at the top; up does nothing.
+	for _, initial := range []HeaderFocusItem{HeaderFocusBack, HeaderFocusID} {
 		ev := newSizedExecView(80, 24)
 		ev.HeaderFocus = initial
 		ev.Update(tea.KeyMsg{Type: tea.KeyUp})
-		// These don't change on up
 		if ev.HeaderFocus != initial {
 			t.Fatalf("up from %d: expected no change, got %d", initial, ev.HeaderFocus)
 		}
 	}
+}
+
+// Up from the row-2 Action button returns to the row-1 ID field, so the
+// button is never a dead-end for keyboard users.
+func TestExecView_HandleKeyUp_ActionReturnsToID(t *testing.T) {
+	ev := newSizedExecView(80, 24)
+	ev.HeaderFocus = HeaderFocusAction
+	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if ev.HeaderFocus != HeaderFocusID {
+		t.Fatalf("up from Action: expected HeaderFocusID, got %d", ev.HeaderFocus)
+	}
+}
+
+// The Action button is reachable from both header rows: from row 1 by pressing
+// Down on ID, and from row 2 by walking Right through the meta fields. With
+// params present, Right passes through the Params chip first.
+func TestExecView_ActionReachableFromBothRows(t *testing.T) {
+	t.Run("from row 1 via ID down", func(t *testing.T) {
+		ev := newSizedExecView(80, 24)
+		ev.HeaderFocus = HeaderFocusID
+		ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+		if ev.HeaderFocus != HeaderFocusAction {
+			t.Fatalf("down from ID: expected HeaderFocusAction, got %d", ev.HeaderFocus)
+		}
+	})
+
+	t.Run("from row 2 via right walk (with params)", func(t *testing.T) {
+		ev := newSizedExecViewWithParams(80, 24, map[string]string{"k": "v"})
+		ev.HeaderFocus = HeaderFocusStarted
+		ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+		if ev.HeaderFocus != HeaderFocusDuration {
+			t.Fatalf("right from Started: expected Duration, got %d", ev.HeaderFocus)
+		}
+		ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+		if ev.HeaderFocus != HeaderFocusParams {
+			t.Fatalf("right from Duration: expected Params, got %d", ev.HeaderFocus)
+		}
+		ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+		if ev.HeaderFocus != HeaderFocusAction {
+			t.Fatalf("right from Params: expected Action, got %d", ev.HeaderFocus)
+		}
+		// Left from Action steps back onto the Params chip.
+		ev.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		if ev.HeaderFocus != HeaderFocusParams {
+			t.Fatalf("left from Action: expected Params, got %d", ev.HeaderFocus)
+		}
+	})
 }
 
 func TestExecView_HandleKeyUp_ScrollAtZero_EntersHeader(t *testing.T) {
@@ -1000,13 +1048,53 @@ func TestExecView_Nav_ParamsChip(t *testing.T) {
 }
 
 func TestExecView_Nav_DurationRight_NoParams(t *testing.T) {
-	// Without params, right from Duration must not jump to the (absent) chip.
+	// Without the Params chip, right from Duration skips straight to the Action
+	// button (the next row-2 item) when one exists.
+	ev := newSizedExecView(80, 24) // running run → Stop action present
+	ev.HeaderFocus = HeaderFocusDuration
+	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if ev.HeaderFocus != HeaderFocusAction {
+		t.Fatalf("expected right from Duration → Action with no params, got %d", ev.HeaderFocus)
+	}
+}
+
+func TestExecView_Nav_DurationRight_NoParamsNoAction(t *testing.T) {
+	// With neither a Params chip nor an action button, Duration is the last
+	// focusable item on row 2, so right stays put.
 	ev := newSizedExecView(80, 24)
+	ev.Run.Status = model.PhasePending // no action button
+	ev.Run.EndReason = nil
 	ev.HeaderFocus = HeaderFocusDuration
 	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
 	if ev.HeaderFocus != HeaderFocusDuration {
-		t.Fatalf("expected Duration to stay put with no params, got %d", ev.HeaderFocus)
+		t.Fatalf("expected Duration to stay put with no params and no action, got %d", ev.HeaderFocus)
 	}
+}
+
+// When ID drops down to row 2 but there is no action button, it lands on the
+// right-most meta field instead — the Params chip when present, else Duration.
+func TestExecView_Nav_IDDown_NoAction(t *testing.T) {
+	t.Run("with params → Params", func(t *testing.T) {
+		ev := newSizedExecViewWithParams(80, 24, map[string]string{"k": "v"})
+		ev.Run.Status = model.PhasePending // no action button
+		ev.Run.EndReason = nil
+		ev.HeaderFocus = HeaderFocusID
+		ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+		if ev.HeaderFocus != HeaderFocusParams {
+			t.Fatalf("down from ID (no action, params): expected Params, got %d", ev.HeaderFocus)
+		}
+	})
+
+	t.Run("no params → Duration", func(t *testing.T) {
+		ev := newSizedExecView(80, 24)
+		ev.Run.Status = model.PhasePending // no action button
+		ev.Run.EndReason = nil
+		ev.HeaderFocus = HeaderFocusID
+		ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+		if ev.HeaderFocus != HeaderFocusDuration {
+			t.Fatalf("down from ID (no action, no params): expected Duration, got %d", ev.HeaderFocus)
+		}
+	})
 }
 
 func TestExecView_View_InstanceIndex(t *testing.T) {

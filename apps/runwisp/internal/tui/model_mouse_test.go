@@ -269,8 +269,11 @@ func TestHandleMouse_ReleaseIsNoOp(t *testing.T) {
 func findHitCoord(ev *execlist.ExecView, target execlist.HeaderFocusItem, w int) (int, int, bool) {
 	// Force a render so headerLayout.hitBoxes is populated.
 	_ = ev.View()
+	// Hit boxes are placed in screen coordinates, offset by the sidebar; the
+	// Action button in particular sits at the far right (~SidebarWidth+paneW),
+	// so the search must span the whole rendered width, not just the pane.
 	for y := 0; y < 4; y++ {
-		for x := 0; x < w; x++ {
+		for x := 0; x < uikit.SidebarWidth+w; x++ {
 			if ev.HitAt(x, y) == target {
 				return x, y, true
 			}
@@ -362,6 +365,42 @@ func TestHandleExecViewClick_ActionStop(t *testing.T) {
 	}
 	if !got.dialogs.HasConfirm() {
 		t.Fatal("expected stop confirm dialog after action click")
+	}
+}
+
+// TestHandleExecViewClick_ActionDelete covers the action-button branch with a
+// terminal, non-retryable, non-service run → ActionDelete. Regression guard:
+// the mouse handler previously omitted the Delete case, so clicking 🗑 Delete
+// did nothing even though the hover highlight worked.
+func TestHandleExecViewClick_ActionDelete(t *testing.T) {
+	m := newTestModel(nil)
+	m, _ = m.applyWindowSize(120, 30)
+	m.client = newDummyClient() // confirmAction needs a non-nil client
+	run := &model.Run{
+		ID:        "r-1234567890",
+		TaskName:  "t1",
+		Status:    model.PhaseEnded,
+		EndReason: model.EndReasonPtr(model.ReasonSuccess),
+	}
+	ev := execlist.NewExecView(run)
+	ev.SetSize(80, 20)
+	m.execView = &ev
+
+	if ev.Action() != execlist.ActionDelete {
+		t.Fatalf("test setup: expected ActionDelete, got %d", ev.Action())
+	}
+
+	x, y, ok := findHitCoord(m.execView, execlist.HeaderFocusAction, 80)
+	if !ok {
+		t.Skip("no HeaderFocusAction hit-coordinate found")
+	}
+	updated, _ := m.handleExecViewClick(x, y)
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updated)
+	}
+	if !got.dialogs.HasConfirm() {
+		t.Fatal("expected delete confirm dialog after action click")
 	}
 }
 
