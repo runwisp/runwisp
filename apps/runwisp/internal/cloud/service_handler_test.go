@@ -4,6 +4,8 @@
 package cloud
 
 import (
+	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/executor"
@@ -119,4 +121,101 @@ func TestHandleServiceControl_MissingActionRejected(t *testing.T) {
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
 	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+}
+
+func TestHandleServiceControl_MissingTaskIDRejected(t *testing.T) {
+	start := protocol.ActionStart
+	h := newDispatchHandler(shellAvailable(), nil)
+	err := h.HandleServiceControl(protocol.ServiceControlMessage{Action: &start})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+}
+
+func TestHandleServiceControl_UnknownActionRejected(t *testing.T) {
+	// An Action value outside the generated enum range decodes to a nil Value(),
+	// which the handler treats as an unknown action (validation error) rather
+	// than silently doing nothing.
+	unknown := protocol.Action(99)
+	h := newDispatchHandler(shellAvailable(), nil)
+	err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "svc-1", Action: &unknown})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+}
+
+func TestHandleServiceControl_RunnerErrorIsConflict(t *testing.T) {
+	start := protocol.ActionStart
+	h := newDispatchHandler(shellAvailable(), nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+	runner.serviceErr = errors.New("already running")
+
+	err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "svc-1", Action: &start})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+}
+
+func TestHandleServiceApply_AutostartStartErrorIsConflict(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+	runner.serviceErr = errors.New("port in use")
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{TaskID: "svc", TaskName: "svc", Script: shellScript(t, "x"), Instances: 1, Autostart: true},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+}
+
+func TestHandleServiceApply_InvalidScriptRejected(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), nil)
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{TaskID: "svc", Script: json.RawMessage(`not-json`), Instances: 1},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+}
+
+// Covers buildServiceTask's name fallbacks and defaults: an empty taskId falls
+// back to taskName, a sub-one instance count is clamped to 1, and the optional
+// logOnFull knob is overlaid onto the task.
+func TestHandleServiceApply_NameFallbackAndDefaults(t *testing.T) {
+	logOnFull := protocol.ServiceTaskConfigLogOnFullKillTask
+	h := newDispatchHandler(shellAvailable(), nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskName:   "Fallback Svc",
+			Script:     shellScript(t, "sleep 1"),
+			Instances:  0, // clamped to 1
+			TaskConfig: &protocol.ServiceTaskConfig{LogOnFull: &logOnFull},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, runner.upserted, 1)
+	task := runner.upserted[0]
+	assert.Equal(t, "cloud-Fallback_Svc", task.Name)
+	assert.Equal(t, 1, task.Instances)
+	assert.Equal(t, "kill_task", task.LogOnFull)
+}
+
+func TestHandleServiceApply_DefaultsToCloudServiceName(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{Script: shellScript(t, "sleep 1"), Instances: 1},
+	})
+	require.NoError(t, err)
+	require.Len(t, runner.upserted, 1)
+	assert.Equal(t, "cloud-service", runner.upserted[0].Name)
 }

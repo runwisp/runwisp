@@ -160,3 +160,77 @@ func TestNewPingMessage_CarriesSystemStats(t *testing.T) {
 func TestMakeSystemStatsProvider_NilSource(t *testing.T) {
 	assert.Nil(t, makeSystemStatsProvider(nil))
 }
+
+func TestNewExecutionAckMessage(t *testing.T) {
+	ack := NewExecutionAckMessage("exec-123")
+	assert.Equal(t, "execution:ack", ack.Type)
+	assert.Equal(t, "exec-123", ack.ExecutionID)
+	// Envelope fields are populated (version + timestamp), not left zero.
+	assert.NotZero(t, ack.V)
+	assert.NotEmpty(t, ack.SentAt)
+}
+
+func TestNewServiceStatusMessage(t *testing.T) {
+	exit := 137
+	snapshot := model.ServiceSnapshot{
+		TaskName:         "cloud-svc",
+		State:            model.ServiceRunning,
+		DesiredInstances: 3,
+		RunningInstances: 2,
+		Instances: []model.ServiceInstanceStatus{
+			{Index: 0, State: model.ServiceInstanceRunning, Pid: 42, RestartCount: 1},
+			// Second instance carries an exit code so the *LastExitCode branch is taken.
+			{Index: 1, State: "fatal", RestartCount: 4, LastExitCode: &exit},
+		},
+	}
+
+	msg := NewServiceStatusMessage(snapshot)
+	assert.Equal(t, "service:status", msg.Type)
+	assert.Equal(t, "cloud-svc", msg.TaskID)
+	require.NotNil(t, msg.State)
+	assert.Equal(t, protocol.ServiceStateRunning, *msg.State)
+	assert.Equal(t, 3, msg.DesiredInstances)
+	assert.Equal(t, 2, msg.RunningInstances)
+
+	require.Len(t, msg.Instances, 2)
+	assert.Equal(t, 0, msg.Instances[0].Index)
+	require.NotNil(t, msg.Instances[0].State)
+	assert.Equal(t, protocol.ServiceInstanceStateRunning, *msg.Instances[0].State)
+	assert.Equal(t, 42, msg.Instances[0].Pid)
+	// LastExitCode unset on the wire when the daemon reports no exit code.
+	assert.Equal(t, 0, msg.Instances[0].LastExitCode)
+	// Second instance's exit code is carried through.
+	assert.Equal(t, 137, msg.Instances[1].LastExitCode)
+	assert.Equal(t, 4, msg.Instances[1].RestartCount)
+}
+
+func TestServiceStateEnum(t *testing.T) {
+	assert.Equal(t, protocol.ServiceStateDegraded, serviceStateEnum(model.ServiceDegraded))
+	assert.Equal(t, protocol.ServiceStateStopped, serviceStateEnum("stopped"))
+	// Unrecognized state defaults to running rather than zero-valued by luck.
+	assert.Equal(t, protocol.ServiceStateRunning, serviceStateEnum("nonsense"))
+}
+
+func TestServiceInstanceStateEnum(t *testing.T) {
+	assert.Equal(t, protocol.ServiceInstanceStateStopped, serviceInstanceStateEnum("stopped"))
+	assert.Equal(t, protocol.ServiceInstanceStateRestarting, serviceInstanceStateEnum("restarting"))
+	assert.Equal(t, protocol.ServiceInstanceStateRunning, serviceInstanceStateEnum("nonsense"))
+}
+
+func TestHitsItemStreamFromString(t *testing.T) {
+	tests := []struct {
+		in   string
+		want protocol.HitsItemStream
+	}{
+		{"stdout", protocol.HitsItemStreamStdout},
+		{"stderr", protocol.HitsItemStreamStderr},
+		{"system", protocol.HitsItemStreamSystem},
+		{"", protocol.HitsItemStreamStdout}, // default fallback
+		{"unknown", protocol.HitsItemStreamStdout},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			assert.Equal(t, tt.want, hitsItemStreamFromString(tt.in))
+		})
+	}
+}
