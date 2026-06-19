@@ -13,13 +13,14 @@ The open-source, self-hosted cron job manager and process supervisor — with a 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/runwisp/runwisp?include_prereleases&sort=semver&color=00ADD8)](https://github.com/runwisp/runwisp/releases)
 [![CI](https://github.com/runwisp/runwisp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/runwisp/runwisp/actions/workflows/ci.yml)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=runwisp_runwisp&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=runwisp_runwisp)
 [![GitHub Stars](https://img.shields.io/github/stars/runwisp/runwisp?style=social)](https://github.com/runwisp/runwisp)
 
 </div>
 
 ---
 
-**RunWisp** is a single-binary replacement for `crond` and `supervisord`. If you've ever SSH'd into a server at 3 AM to figure out *why* a cron job silently failed, RunWisp is for you.
+**RunWisp** is a single-binary replacement for `crond` and `supervisord`. If you've ever SSH'd into a server at 3 AM to figure out _why_ a cron job silently failed, RunWisp is for you.
 
 Define your scheduled jobs — database backups, health checks, log rotation, ETL scripts — and long-running services like queue workers and background daemons in one `runwisp.toml` file. Every run is captured: exit code, duration, timestamps, and full stdout/stderr. You get a built-in web dashboard, terminal UI, REST API, real-time log streaming, and persistent run history out of the box — zero runtime dependencies, embedded SQLite, embedded UI. Runs anywhere a static Go binary runs: Linux, macOS, WSL, Docker, a Raspberry Pi, or a $5 VPS.
 
@@ -76,6 +77,8 @@ run          = "node /app/worker.js"
 
 Already running things under `docker compose`? Add `[compose.myapp]` next to your `docker-compose.yml` and every service in it becomes an observable RunWisp service — logs, restart policies, notifications, trigger/stop — without rewriting your compose file. See [`[compose.*]`](https://docs.runwisp.com/configuration/compose/).
 
+Already on crond or supervisord? `runwisp import cron /etc/crontab` (or `runwisp import supervisord`) converts an existing config into an annotated `runwisp.toml` to start from, with inline `# TODO`s for anything that needs a human. See [Migrating from cron](https://docs.runwisp.com/recipes/migrating-from-cron/).
+
 **2. Run it:**
 
 ```bash
@@ -90,13 +93,13 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 
 ## Why RunWisp
 
-| If you currently use…           | The pain                                                              | RunWisp fixes it by…                                                                                          |
-| ------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **crond / crontab**             | Silent failures, no history, no output capture, no overlap handling   | Persisting every run (exit code, duration, stdout/stderr) to embedded SQLite: browsable, streamable, and searchable. |
-| **systemd timers**              | One `.timer` + one `.service` per job, OS-locked, painful in Docker   | One TOML file. Cross-platform. Same binary on your MacBook, in CI, and in production.                          |
-| **supervisord**                 | No scheduling, Python install, dated XML-RPC API, basic web UI        | Cron scheduling and process supervision in one binary. Modern REST API. Svelte dashboard. Built-in log rotation. |
-| **supercronic / Ofelia**        | Logs to stdout only; no history, no UI                                | Same Docker-friendly footprint, plus per-run logs, persistent history, live streaming, and one-click re-trigger. |
-| **Airflow / Cronicle / Dagu**   | Heavy, multi-process, requires an external DB and a team to operate   | Single binary. ~25 MB RAM idle. No external DB. No ops team. Running in five minutes.               |
+| If you currently use…         | The pain                                                            | RunWisp fixes it by…                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **crond / crontab**           | Silent failures, no history, no output capture, no overlap handling | Persisting every run (exit code, duration, stdout/stderr) to embedded SQLite: browsable, streamable, and searchable. |
+| **systemd timers**            | One `.timer` + one `.service` per job, OS-locked, painful in Docker | One TOML file. Cross-platform. Same binary on your MacBook, in CI, and in production.                                |
+| **supervisord**               | No scheduling, Python install, dated XML-RPC API, basic web UI      | Cron scheduling and process supervision in one binary. Modern REST API. Svelte dashboard. Built-in log rotation.     |
+| **supercronic / Ofelia**      | Logs to stdout only; no history, no UI                              | Same Docker-friendly footprint, plus per-run logs, persistent history, live streaming, and one-click re-trigger.     |
+| **Airflow / Cronicle / Dagu** | Heavy, multi-process, requires an external DB and a team to operate | Single binary. ~25 MB RAM idle. No external DB. No ops team. Running in five minutes.                                |
 
 ---
 
@@ -116,6 +119,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - Real-time stdout/stderr streaming over SSE, viewable in the web UI and TUI
 - Every run recorded in SQLite with exit code, duration, and timestamps
 - Built-in per-task log rotation with overflow policies (`drop_new` · `drop_old` · `kill_task`)
+- Failure alerts to Slack, Discord, Telegram, email (SMTP), generic webhooks, or the in-app inbox — routed per task with `notify_on_failure` · `notify_on_success` · `notify_on_missed`
 
 **Interfaces**
 
@@ -130,6 +134,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - Crash-safe: `kill -9` and power loss are recoverable; in-flight runs are marked **interrupted** on restart, never silently lost
 - Local-first, offline-complete. No signup, no telemetry, no account required.
 - TOML configuration: one file, version-controllable, reviewable in pull requests
+- Live config reload via `runwisp reload` or `SIGHUP` — pick up `runwisp.toml` edits without a restart; validate-first, so a bad edit leaves the running task set untouched
 
 <div align="center">
 <img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="apps/docs/src/assets/screenshots/tui-home.png" width="780">
@@ -140,19 +145,20 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 
 ## How RunWisp compares
 
-|                          | crond              | systemd timers     | supervisord    | **RunWisp**                  |
-| ------------------------ | ------------------ | ------------------ | -------------- | ---------------------------- |
-| Cron scheduling          | Yes                | Yes                | No             | **Yes**                      |
-| Process supervision      | No                 | Yes                | Yes            | **Yes**                      |
-| Web dashboard            | No                 | No                 | Basic HTML     | **Yes (Svelte SPA)**         |
-| Terminal UI              | No                 | No                 | No             | **Yes (Bubbletea)**          |
-| REST API                 | No                 | D-Bus              | XML-RPC        | **REST + JWT**               |
-| Live log streaming       | No                 | `journalctl -f`    | Tail only      | **SSE**                      |
-| Concurrency policies     | No                 | Overlap prevention | No             | **Queue · skip · terminate** |
-| Log rotation             | External (logrotate) | journald         | Built-in       | **Built-in, per-task**       |
-| Execution history        | No                 | `journalctl`       | No             | **SQLite, browsable in UI**  |
-| Runtime dependencies     | libc               | systemd            | Python         | **None**                     |
-| Config                   | crontab syntax     | INI unit files     | INI files      | **One TOML file**            |
+|                      | crond                | systemd timers     | supervisord    | **RunWisp**                           |
+| -------------------- | -------------------- | ------------------ | -------------- | ------------------------------------- |
+| Cron scheduling      | Yes                  | Yes                | No             | **Yes**                               |
+| Process supervision  | No                   | Yes                | Yes            | **Yes**                               |
+| Web dashboard        | No                   | No                 | Basic HTML     | **Yes (Svelte SPA)**                  |
+| Terminal UI          | No                   | No                 | No             | **Yes (Bubbletea)**                   |
+| REST API             | No                   | D-Bus              | XML-RPC        | **REST + JWT**                        |
+| Live log streaming   | No                   | `journalctl -f`    | Tail only      | **SSE**                               |
+| Concurrency policies | No                   | Overlap prevention | No             | **Queue · skip · terminate**          |
+| Failure alerts       | No                   | `OnFailure=` unit  | Event listener | **Slack · Discord · email · webhook** |
+| Log rotation         | External (logrotate) | journald           | Built-in       | **Built-in, per-task**                |
+| Execution history    | No                   | `journalctl`       | No             | **SQLite, browsable in UI**           |
+| Runtime dependencies | libc                 | systemd            | Python         | **None**                              |
+| Config               | crontab syntax       | INI unit files     | INI files      | **One TOML file**                     |
 
 ---
 
