@@ -52,14 +52,17 @@ func (m Model) renderMainContent() string {
 		return m.execView.View()
 	}
 	mainW, _ := m.mainSize()
-	m.notifications.SetWidth(mainW)
+	panelW := m.contentWidth()
+	m.notifications.SetWidth(panelW)
 	panelView := ""
 	if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
 		panelView = m.notifications.View() + "\n"
 	}
 	switch m.sidebar.ActivePage() {
 	case uikit.PageHome:
-		return m.renderHomeContent(mainW, panelView)
+		// Render the panel at the bounded width, then fill the right margin with
+		// the app background so a wide terminal shows a left-aligned panel.
+		return padPanelRight(m.renderHomeContent(panelW, panelView), mainW)
 	case uikit.PageInfo:
 		return m.infoView.View()
 	case uikit.PageDebug:
@@ -68,14 +71,25 @@ func (m Model) renderMainContent() string {
 	return ""
 }
 
-func (m Model) renderHomeContent(mainW int, panelView string) string {
+func (m Model) renderHomeContent(panelW int, panelView string) string {
 	if m.sidebar.ActiveTask() != "" {
 		runNowHovered := m.mouse.hoverY == m.layout.taskBtnY && m.mouse.hoverX >= uikit.SidebarWidth
-		header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, runNowHovered)
+		header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), panelW, runNowHovered)
 		return header + panelView + m.execList.View()
 	}
-	header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), mainW, m.homeCursor, m.mouse.homeHover)
+	header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), panelW, m.homeCursor, m.mouse.homeHover)
 	return header + panelView + m.execList.View()
+}
+
+// padPanelRight right-pads every line of a bounded panel block to width with the
+// app background, leaving the panel left-aligned and the margin filled. PadLine
+// is a no-op for lines already at width, so narrow terminals are unaffected.
+func padPanelRight(block string, width int) string {
+	lines := strings.Split(strings.TrimRight(block, "\n"), "\n")
+	for i, ln := range lines {
+		lines[i] = uikit.PadLine(ln, width, uikit.ColorBg)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) buildHelpText() string {

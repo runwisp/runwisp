@@ -164,31 +164,59 @@ func TestTotalCount_EmptyList(t *testing.T) {
 	}
 }
 
-func TestTaskColWidthFor_Normal(t *testing.T) {
+func TestTaskColWidthFor_WideAbsorbsSurplus(t *testing.T) {
 	l := buildList(1)
-	// fixed = 2 + 4 + colStatusW(12) + colStartedW(20) + colDurationW(12) + colTriggerW(15) = 65
-	// taskW = 100 - 65 = 35
+	// At width 100 the fixed columns sit at their caps and TASK takes the
+	// rest, so it should be far wider than any single fixed column.
 	got := l.taskColWidthFor(100)
-	if got != 35 {
-		t.Fatalf("expected taskColWidthFor(100)=35, got %d", got)
+	if got <= statusColCap {
+		t.Fatalf("expected TASK to absorb the surplus at width 100, got %d", got)
+	}
+	// The row must fill the content width exactly — never overflow.
+	cw := computeColWidths(100)
+	if total := cw.task + cw.fixedSum() + colGutter; total != 100 {
+		t.Fatalf("expected columns to sum to 100, got %d", total)
 	}
 }
 
-func TestTaskColWidthFor_Clamp(t *testing.T) {
-	l := buildList(1)
-	// fixed = 65; w = 60 → tw = -5 → clamped to 10
-	got := l.taskColWidthFor(60)
-	if got != 10 {
-		t.Fatalf("expected taskColWidthFor(60)=10 (clamped), got %d", got)
+func TestComputeColWidths_FixedColumnsCapped(t *testing.T) {
+	// On a very wide pane the fixed columns must plateau at their caps
+	// (longest value + 2) while TASK absorbs all remaining surplus.
+	cw := computeColWidths(200)
+	if cw.status != statusColCap || cw.started != startedColCap ||
+		cw.duration != durationColCap || cw.trigger != triggerColCap {
+		t.Fatalf("expected fixed columns at their caps, got %+v", cw)
+	}
+	if cw.task <= taskColIdeal {
+		t.Fatalf("expected TASK to absorb the surplus past its ideal, got %d", cw.task)
 	}
 }
 
-func TestTaskColWidthFor_ExactMinimum(t *testing.T) {
-	l := buildList(1)
-	// fixed = 65; w = 75 → tw = 10 → exactly the minimum, no clamp
-	got := l.taskColWidthFor(75)
-	if got != 10 {
-		t.Fatalf("expected taskColWidthFor(75)=10, got %d", got)
+func TestComputeColWidths_NeverOverflows(t *testing.T) {
+	// Across a wide range of pane widths the columns must fit exactly (or, when
+	// impossibly narrow, never exceed the available width).
+	for w := 20; w <= 200; w++ {
+		cw := computeColWidths(w)
+		total := cw.task + cw.fixedSum() + colGutter
+		if total > w {
+			t.Fatalf("width %d: columns sum to %d, overflow", w, total)
+		}
+		if cw.task < 1 || cw.status < 1 || cw.started < 1 || cw.duration < 1 || cw.trigger < 1 {
+			t.Fatalf("width %d: a column collapsed to <1: %+v", w, cw)
+		}
+	}
+}
+
+func TestComputeColWidths_NarrowKeepsAllColumnsReadable(t *testing.T) {
+	// On an 80-column terminal (≈52 content cells after the sidebar) every
+	// fixed column should still meet its floor and TASK should stay usable.
+	cw := computeColWidths(52)
+	if cw.status < statusColMin || cw.started < startedColMin ||
+		cw.duration < durationColMin || cw.trigger < triggerColMin {
+		t.Fatalf("a fixed column dropped below its floor: %+v", cw)
+	}
+	if cw.task < taskColMin {
+		t.Fatalf("expected TASK >= %d, got %d", taskColMin, cw.task)
 	}
 }
 
@@ -423,10 +451,9 @@ func TestUpdate_EmptyList_NoChange(t *testing.T) {
 func TestTaskColWidth_UsesSelfWidth(t *testing.T) {
 	l := buildList(1)
 	l.width = 100
-	// fixed = 65; taskColWidthFor(100) = 35
 	got := l.taskColWidth()
-	if got != 35 {
-		t.Fatalf("expected taskColWidth()=35 for width=100, got %d", got)
+	if want := computeColWidths(100).task; got != want {
+		t.Fatalf("expected taskColWidth()=%d for width=100, got %d", want, got)
 	}
 }
 
@@ -565,7 +592,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 	t.Run("nil-item-renders-loading-placeholder", func(t *testing.T) {
 		l := buildList(5)
 		l.SetSize(80, 24)
-		text := l.buildRowText(nil, 0, 60, 20)
+		text := l.buildRowText(nil, 0, computeColWidths(60))
 		if !strings.Contains(text, "loading") {
 			t.Fatalf("expected loading placeholder, got %q", text)
 		}
@@ -578,7 +605,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		if item == nil {
 			t.Fatal("pre-condition: expected item at index 0")
 		}
-		text := l.buildRowText(item, 0, 60, 20)
+		text := l.buildRowText(item, 0, computeColWidths(60))
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in row, got %q", text)
 		}
@@ -593,7 +620,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l.SetSize(80, 24)
 		l.SetFocused(true)
 		l.cursor = 2
-		text := l.buildRowText(l.window.Item(2), 2, 60, 20)
+		text := l.buildRowText(l.window.Item(2), 2, computeColWidths(60))
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in cursor row, got %q", text)
 		}
@@ -603,7 +630,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := buildList(5)
 		l.SetSize(80, 24)
 		l.SetHovered(1)
-		text := l.buildRowText(l.window.Item(1), 1, 60, 20)
+		text := l.buildRowText(l.window.Item(1), 1, computeColWidths(60))
 		if !strings.Contains(text, "task") {
 			t.Fatalf("expected task name in hovered row, got %q", text)
 		}
@@ -617,7 +644,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 3 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, 60, 20)
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60))
 		// 0-based slot 2 → 1-based display #3.
 		if !strings.Contains(text, "task#3") {
 			t.Fatalf("expected task#3 in multi-instance row, got %q", text)
@@ -632,7 +659,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 3 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, 60, 20)
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60))
 		// Slot 0 of a multi-instance service must still be suffixed (#1).
 		if !strings.Contains(text, "task#1") {
 			t.Fatalf("expected task#1 for slot 0 of multi-instance service, got %q", text)
@@ -647,7 +674,7 @@ func TestBuildRowText_Branches(t *testing.T) {
 		l := NewExecList(w)
 		l.SetInstanceCountLookup(func(string) int { return 1 })
 		l.SetSize(80, 24)
-		text := l.buildRowText(l.window.Item(0), 0, 60, 20)
+		text := l.buildRowText(l.window.Item(0), 0, computeColWidths(60))
 		if strings.Contains(text, "task#") {
 			t.Fatalf("expected no instance suffix for single-instance task, got %q", text)
 		}
