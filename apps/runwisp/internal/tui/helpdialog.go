@@ -6,6 +6,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/tui/keys"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -15,56 +16,6 @@ type HelpDialog struct{}
 
 func NewHelpDialog() HelpDialog {
 	return HelpDialog{}
-}
-
-type helpEntry struct {
-	keys string
-	desc string
-}
-
-type helpSection struct {
-	title   string
-	entries []helpEntry
-}
-
-// helpSections mirrors the contextual help-bar strings (model_view.go) so the
-// overlay and the bar never disagree about what a key does.
-var helpSections = []helpSection{
-	{title: "Global", entries: []helpEntry{
-		{"?", "toggle this help"},
-		{"q / ctrl+c", "quit"},
-		{"n", "notifications panel (Home)"},
-		{"/", "search logs of the focused task"},
-	}},
-	{title: "Navigate", entries: []helpEntry{
-		{"↑↓ / kj", "move selection"},
-		{"←→ / hl", "switch sidebar ↔ main panel"},
-		{"enter", "open / activate / copy field"},
-		{"esc / ⌫", "back"},
-	}},
-	{title: "Task", entries: []helpEntry{
-		{"r", "run now (task) · restart (service)"},
-		{"enter", "open the selected run"},
-	}},
-	{title: "Exec view", entries: []helpEntry{
-		{"s", "stop run / service"},
-		{"r", "retry · restart"},
-		{"d / D", "download log / delete run"},
-		{"f", "fullscreen logs"},
-		{"g / G", "jump to top / end"},
-		{"pgup/pgdn", "page through logs"},
-	}},
-	{title: "Run dialog", entries: []helpEntry{
-		{"space / ←→", "toggle a flag on/off"},
-		{"←→ / hl", "choose an option"},
-		{"ctrl+t", "include empty / omit value"},
-		{"enter", "run · esc cancel"},
-	}},
-	{title: "Notifications", entries: []helpEntry{
-		{"enter", "open the run"},
-		{"r", "mark read"},
-		{"n / esc", "collapse"},
-	}},
 }
 
 // Update reports true when the dialog should close.
@@ -91,13 +42,13 @@ func (d *HelpDialog) View(screenWidth, screenHeight int) string {
 		modalEmptyLine(innerWidth),
 		modalSurfaceLine("Keyboard Shortcuts", innerWidth, uikit.ColorTextBright, true),
 	}
-	for _, section := range helpSections {
+	for _, section := range keys.OverlaySections {
 		lines = append(lines,
 			modalEmptyLine(innerWidth),
-			helpSectionLine(section.title, innerWidth),
+			helpSectionLine(section.Title, innerWidth),
 		)
-		for _, e := range section.entries {
-			lines = append(lines, helpEntryLine(e, keyColWidth, innerWidth))
+		for _, b := range section.Bindings {
+			lines = append(lines, helpEntryLine(b, keyColWidth, innerWidth))
 		}
 	}
 	lines = append(lines,
@@ -121,17 +72,17 @@ func helpSectionLine(title string, innerWidth int) string {
 }
 
 // helpEntryLine renders one "keys → description" row with a fixed key column.
-func helpEntryLine(e helpEntry, keyColWidth, innerWidth int) string {
-	keys := lipgloss.NewStyle().
+func helpEntryLine(b keys.Binding, keyColWidth, innerWidth int) string {
+	keyCol := lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(uikit.ColorTextBright).
 		Width(keyColWidth).
-		Render("  " + e.keys)
+		Render("  " + b.Keys)
 	descWidth := max(innerWidth-keyColWidth, 1)
 	desc := lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(uikit.ColorTextMuted).
 		Width(descWidth).
-		Render(e.desc)
-	return keys + desc
+		Render(b.Desc)
+	return keyCol + desc
 }

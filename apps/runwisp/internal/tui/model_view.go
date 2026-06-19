@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/tui/keys"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
@@ -78,12 +79,12 @@ func (m Model) renderHomeContent(mainW int, panelView string) string {
 }
 
 func (m Model) buildHelpText() string {
-	return m.buildContextHelpText() + "  ? help"
+	return m.buildContextHelpText() + "  " + keys.Help.Bar
 }
 
 func (m Model) buildContextHelpText() string {
 	if m.notifications.IsExpanded() {
-		return "↑/↓ navigate  enter open  r mark read  n/esc collapse  q/^C quit"
+		return keys.JoinBar(keys.Move, keys.NotifOpen, keys.NotifRead, keys.NotifCollapse, keys.Quit)
 	}
 	if m.execView != nil {
 		return m.buildExecViewHelpText()
@@ -97,12 +98,12 @@ func (m Model) buildContextHelpText() string {
 func (m Model) buildExecViewHelpText() string {
 	var parts []string
 	if m.execView.Fullscreen() {
-		scrollParts := "esc/f exit fullscreen  ↑↓ scroll"
+		scroll := []keys.Binding{keys.ExitFull, keys.Scroll}
 		if m.execView.MaxHScroll() > 0 {
-			scrollParts += "  ←→ pan"
+			scroll = append(scroll, keys.Pan)
 		}
-		scrollParts += "  G end  g top  pgup/pgdn page"
-		return strings.Join([]string{scrollParts, "select text with mouse", "q/^C quit"}, "  ")
+		scroll = append(scroll, keys.LogJump)
+		return strings.Join([]string{keys.JoinBar(scroll...), "select text with mouse", keys.Quit.Bar}, "  ")
 	}
 	switch m.execView.HeaderFocus {
 	case execlist.HeaderFocusBack, execlist.HeaderFocusAction:
@@ -112,15 +113,15 @@ func (m Model) buildExecViewHelpText() string {
 	case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration:
 		parts = append(parts, "enter copy  ←→ switch  ↑ buttons  ↓ log")
 	default:
-		scrollParts := "esc/⌫ back  ↑↓ scroll"
+		scroll := []keys.Binding{keys.BackToList, keys.Scroll}
 		if m.execView.MaxHScroll() > 0 {
-			scrollParts += "  ←→ pan"
+			scroll = append(scroll, keys.Pan)
 		}
-		scrollParts += "  G end  g top  pgup/pgdn page  f fullscreen"
-		parts = append(parts, scrollParts)
+		scroll = append(scroll, keys.LogJump, keys.Fullscreen)
+		parts = append(parts, keys.JoinBar(scroll...))
 	}
 	parts = m.appendExecViewActionHints(parts)
-	parts = append(parts, "q/^C quit")
+	parts = append(parts, keys.Quit.Bar)
 	return strings.Join(parts, "  ")
 }
 
@@ -136,7 +137,7 @@ func (m Model) appendExecViewActionHints(parts []string) []string {
 	case execlist.ActionRetry:
 		parts = append(parts, "r retry")
 	case execlist.ActionRestartService:
-		parts = append(parts, "r restart")
+		parts = append(parts, keys.Restart.Bar)
 	}
 	if m.hasLaunchTicket() {
 		parts = append(parts, "d download")
@@ -149,43 +150,43 @@ func (m Model) appendExecViewActionHints(parts []string) []string {
 
 func (m Model) buildSidebarHelpText() string {
 	if name := m.sidebar.CursorTaskName(); name != "" {
-		actionHint := "r run now"
+		actionHint := keys.RunNow.Bar
 		if m.isService(name) {
-			actionHint = "r restart"
+			actionHint = keys.Restart.Bar
 		}
-		return "↑↓ navigate  enter select  " + actionHint + "  → main panel  q/^C quit"
+		return keys.Move.Bar + "  enter select  " + actionHint + "  → main panel  " + keys.Quit.Bar
 	}
-	return "↑↓ navigate  enter select  → main panel  q/^C quit"
+	return keys.Move.Bar + "  enter select  → main panel  " + keys.Quit.Bar
 }
 
 func (m Model) buildMainHelpText() string {
 	if m.homeCursor >= 0 {
 		fields := home.Fields(m.info, m.hasLaunchTicket())
 		if m.homeCursor < len(fields) && fields[m.homeCursor] == home.FieldOpenWebUI {
-			return "↑↓ navigate  enter open  esc/← sidebar  q/^C quit"
+			return keys.JoinBar(keys.Move, keys.Open, keys.ToSidebar, keys.Quit)
 		}
-		return "↑↓ navigate  enter copy  esc/← sidebar  q/^C quit"
+		return keys.Move.Bar + "  enter copy  " + keys.ToSidebar.Bar + "  " + keys.Quit.Bar
 	}
 	if m.sidebar.ActivePage() == uikit.PageInfo {
-		return "↑↓ scroll  ← sidebar  q/^C quit"
+		return keys.JoinBar(keys.Scroll, keys.BackSidebar, keys.Quit)
 	}
 	if m.sidebar.ActivePage() == uikit.PageDebug {
-		return "↑↓ scroll  G end  g top  pgup/pgdn page  ← sidebar  q/^C quit"
+		return keys.JoinBar(keys.Scroll, keys.LogJump, keys.BackSidebar, keys.Quit)
 	}
 	if name := m.sidebar.ActiveTask(); name != "" {
-		actionHint := "r run now"
+		actionHint := keys.RunNow.Bar
 		if m.isService(name) {
-			actionHint = "r restart"
+			actionHint = keys.Restart.Bar
 		}
-		base := "↑↓ navigate  enter open  " + actionHint + "  esc/← sidebar"
+		base := keys.JoinBar(keys.Move, keys.Open) + "  " + actionHint + "  " + keys.ToSidebar.Bar
 		if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
-			base += "  n notifications"
+			base += "  " + keys.NotifPanel.Bar
 		}
-		return base + "  q/^C quit"
+		return base + "  " + keys.Quit.Bar
 	}
-	base := "↑↓ navigate  enter open  esc/← sidebar"
+	base := keys.JoinBar(keys.Move, keys.Open, keys.ToSidebar)
 	if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
-		base += "  n notifications"
+		base += "  " + keys.NotifPanel.Bar
 	}
-	return base + "  q/^C quit"
+	return base + "  " + keys.Quit.Bar
 }
