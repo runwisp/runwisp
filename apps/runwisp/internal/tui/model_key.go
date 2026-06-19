@@ -259,17 +259,8 @@ func handleKeyEnterHeader(m Model) (Model, tea.Cmd, bool) {
 }
 
 func handleKeyEnterActionButton(m Model) (Model, tea.Cmd, bool) {
-	switch m.execView.Action() {
-	case execlist.ActionStop:
-		return m, m.confirmAction(confirmActionStop), true
-	case execlist.ActionStopService:
-		return m, m.confirmAction(confirmActionStopService), true
-	case execlist.ActionRetry:
-		return m, m.confirmAction(confirmActionRetry), true
-	case execlist.ActionRestartService:
-		return m, m.confirmAction(confirmActionRestartService), true
-	case execlist.ActionDelete:
-		return m, m.confirmAction(confirmActionDelete), true
+	if ca, ok := actionConfirm(m.execView.Action()); ok {
+		return m, m.confirmAction(ca), true
 	}
 	return m, nil, true
 }

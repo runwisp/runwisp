@@ -516,6 +516,36 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 	})
 }
 
+// TestActionConfirm covers the shared mapping from a header action button to
+// its confirm constant, including the no-action fall-through. This is the
+// single source of truth for both mouse-click and Enter handling.
+func TestActionConfirm(t *testing.T) {
+	tests := []struct {
+		name   string
+		action execlist.Action
+		want   confirmAction
+		ok     bool
+	}{
+		{"Stop", execlist.ActionStop, confirmActionStop, true},
+		{"StopService", execlist.ActionStopService, confirmActionStopService, true},
+		{"Retry", execlist.ActionRetry, confirmActionRetry, true},
+		{"RestartService", execlist.ActionRestartService, confirmActionRestartService, true},
+		{"Delete", execlist.ActionDelete, confirmActionDelete, true},
+		{"None falls through", execlist.ActionNone, 0, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := actionConfirm(tc.action)
+			if ok != tc.ok {
+				t.Fatalf("actionConfirm(%d) ok=%v, want %v", tc.action, ok, tc.ok)
+			}
+			if ok && got != tc.want {
+				t.Fatalf("actionConfirm(%d)=%d, want %d", tc.action, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestConfirmStop_HappyPath exercises the running-run branch of confirmStop so
 // the showConfirmDialog call site is covered.
 func TestConfirmStop_HappyPath(t *testing.T) {
