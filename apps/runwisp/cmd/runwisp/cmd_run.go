@@ -151,6 +151,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) error {
 		Scheduler:         svc.Scheduler,
 		Host:              f.Host,
 		Port:              f.Port,
+		DataDir:           absPathOrFallback(f.DataDir),
+		ConfigPath:        absPathOrFallback(f.CfgFile),
 		SocketPath:        localAPISocketPath(f),
 		LogDir:            f.LogDir(),
 		EventBus:          svc.EventBus,

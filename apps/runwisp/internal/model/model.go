@@ -279,6 +279,22 @@ type DaemonInfo struct {
 	Capabilities     []CapInfo   `json:"capabilities"`
 }
 
+// InstanceInfo is the local-only identity of a running daemon, returned by
+// GET /api/instance. It lets a second `runwisp` launching against an
+// already-occupied port discover which daemon holds it — and where that
+// daemon's datadir/config/socket live — so it can offer to connect or stop it.
+// The endpoint is reachable only over the Unix socket or a loopback TCP peer,
+// so these filesystem paths never reach the network.
+type InstanceInfo struct {
+	App         string `json:"app" doc:"Always \"runwisp\"; lets a caller confirm the port-holder is a RunWisp daemon."`
+	Version     string `json:"version"`
+	Fingerprint string `json:"fingerprint"`
+	Pid         int    `json:"pid"`
+	DataDir     string `json:"data_dir"`
+	ConfigPath  string `json:"config_path"`
+	SocketPath  string `json:"socket_path"`
+}
+
 // TaskBrief is a trimmed task descriptor exposed via the API.
 type TaskBrief struct {
 	Name          string            `json:"name"`

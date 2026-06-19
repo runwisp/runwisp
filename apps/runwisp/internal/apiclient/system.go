@@ -45,6 +45,20 @@ func (c *Client) GetDaemonInfo() (*model.DaemonInfo, error) {
 	return &info, nil
 }
 
+// GetInstanceInfo fetches the daemon's local identity (datadir, config, socket,
+// pid, version) from GET /api/instance. It is used by a launcher that hit a
+// port conflict to discover whether a RunWisp daemon holds the port and where
+// it lives. The endpoint is public but local-gated, so a no-password TCP client
+// reaches it over loopback; a non-RunWisp port-holder yields a transport or
+// decode error, which the caller treats as "not a discoverable daemon".
+func (c *Client) GetInstanceInfo() (*model.InstanceInfo, error) {
+	var info model.InstanceInfo
+	if err := c.doJSON("GET", "/api/instance", nil, &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
 // Reload asks the daemon to re-read runwisp.toml and reconcile its live task
 // set, returning the applied diff. A rejected reload (bad config or a
 // restart-only change) comes back as an error from the daemon.

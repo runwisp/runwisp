@@ -144,6 +144,11 @@ func (srv *Server) setupRoutes() error {
 	// Public auth endpoints (huma — only authStatus; challenge is raw chi below)
 	srv.registerAuthRoutes()
 
+	// Public identity endpoint. Outside the authOrLocalTrusted group so a
+	// password-less launcher can query it on a port conflict; the handler's own
+	// loopback gate keeps its datadir/config/socket paths local-only.
+	srv.registerInstanceRoute()
+
 	// Rate-limited auth endpoints: both challenge and login share the same limit
 	// to prevent nonce-store flooding (DoS on the auth flow).
 	authLimiter := httprate.LimitByIP(auth.MaxAuthAttempts, auth.AuthRateWindow)
