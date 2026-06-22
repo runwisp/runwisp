@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Fatal boot errors are no longer silent in TUI mode.** `runwisp` died with exit 1 and no output when startup failed before the TUI attached (e.g. a config parse error); the error now reaches stderr.
 
+### Fixed
+
+- **`runwisp exec` no longer drops output if its log stream blips.** When the live stream ended without a completion event (a transport hiccup under load), the command could exit having printed none of the run's captured output; it now reconnects from the last line it saw and prints the persisted tail.
+
 ## [0.10.0] - 2026-06-18
 
 ### Added

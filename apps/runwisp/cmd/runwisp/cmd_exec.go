@@ -223,6 +223,12 @@ func triggerRemote(client *apiclient.Client, taskName, baseURL, password string)
 	return run, nil
 }
 
+// maxFollowReconnects bounds how many times followRun re-opens a log stream
+// that ended without a Done event. The run is terminal by the time we reconnect,
+// so a single re-open normally replays the rest off disk and delivers Done; the
+// bound only guards against a stream that keeps breaking with no progress.
+const maxFollowReconnects = 5
+
 // followRun follows a triggered run's SSE log stream, printing lines to
 // stdout/stderr and returning the run's exit code once it reaches a terminal
 // state. It is shared by the local-daemon and remote exec paths.
@@ -232,17 +238,35 @@ func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
 
 	// Line numbers are zero-indexed; the server reads from=0 as the default
 	// tail window and clamps to anchor 0 on a fresh run, so we see every line.
-	ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: 0})
-	if err != nil {
-		return 0, fmt.Errorf("open log stream: %w", err)
+	from := int64(0)
+
+	// The SSE transport can end without a Done event if it blips mid-run (seen
+	// under heavy load): the channel just closes. Re-open from the next unseen
+	// line so the persisted tail is never silently dropped — by now the run is
+	// terminal, so the server replays the remaining lines straight off disk and
+	// sends Done. Honors "nothing silently fails": exec must not exit having
+	// swallowed captured output that is sitting on disk.
+	for range maxFollowReconnects {
+		ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: from})
+		if err != nil {
+			return 0, fmt.Errorf("open log stream: %w", err)
+		}
+
+		exitCode, highest, done, err := streamRunLogs(ch, client, taskName, runID, from)
+		if done {
+			return exitCode, err
+		}
+		if ctx.Err() != nil {
+			break // interrupted (Ctrl+C) — stop reconnecting
+		}
+		if highest < from {
+			break // the re-opened stream delivered nothing new; reconnecting won't help
+		}
+		from = highest + 1
 	}
 
-	if exitCode, done, err := streamRunLogs(ch, client, taskName, runID); done {
-		return exitCode, err
-	}
-
-	// Stream closed without a Done event (ctx cancelled or transport ended);
-	// poll for the terminal state so we can propagate the exit code anyway.
+	// Stream never delivered a Done event (persistent transport trouble or ctx
+	// cancelled); fall back to the persisted terminal state for the exit code.
 	final, err := client.GetRun(taskName, runID)
 	if err != nil {
 		return 0, fmt.Errorf("fetch final run state: %w", err)
@@ -272,29 +296,39 @@ func newSignalCancelContext() (context.Context, context.CancelFunc) {
 }
 
 // streamRunLogs prints each streamed log line to stdout/stderr until the stream
-// reports the run is done or errors. The done bool reports whether a terminal
-// outcome was reached (so the caller can return exitCode/err); when the channel
-// drains without a Done event it returns done=false for the caller to poll.
-func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string) (exitCode int, done bool, err error) {
+// reports the run is done or errors. Lines below `from` are skipped as already
+// seen, so a reconnect that re-replays earlier history prints no duplicates.
+// The done bool reports whether a terminal outcome was reached (so the caller
+// can return exitCode/err); when the channel drains without a Done event it
+// returns done=false and `highest` — the largest line number printed (or
+// from-1 if none) — so the caller can resume after the last delivered line.
+func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64) (exitCode int, highest int64, done bool, err error) {
+	highest = from - 1
 	for msg := range ch {
 		switch msg.Kind {
 		case apiclient.LogStreamMsgKindLine:
+			if msg.Line.N < from {
+				continue // already printed on an earlier connection
+			}
 			if msg.Line.Stream == logutil.StreamStderr {
 				fmt.Fprintln(os.Stderr, msg.Line.Text)
 			} else {
 				fmt.Fprintln(os.Stdout, msg.Line.Text)
 			}
+			if msg.Line.N > highest {
+				highest = msg.Line.N
+			}
 		case apiclient.LogStreamMsgKindDone:
 			final, getErr := client.GetRun(taskName, runID)
 			if getErr != nil {
-				return 0, true, fmt.Errorf("fetch final run state: %w", getErr)
+				return 0, highest, true, fmt.Errorf("fetch final run state: %w", getErr)
 			}
-			return exitCodeFromRun(final), true, nil
+			return exitCodeFromRun(final), highest, true, nil
 		case apiclient.LogStreamMsgKindErr:
-			return 0, true, fmt.Errorf("log stream error: %w", msg.ErrValue)
+			return 0, highest, true, fmt.Errorf("log stream error: %w", msg.ErrValue)
 		}
 	}
-	return 0, false, nil
+	return 0, highest, false, nil
 }
 
 // daemonTaskNames fetches the daemon's task list for the unknown-task

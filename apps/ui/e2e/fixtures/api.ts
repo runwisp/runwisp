@@ -102,6 +102,66 @@ export async function markAllReadViaAPI(page: Page, token: string): Promise<void
 }
 
 /**
+ * Poll `GET /api/notifications/unread-count` until at least one notification is
+ * unread (backend truth that the in-app notification has been persisted).
+ *
+ * The bell badge only updates via a forward-only SSE stream with no replay, so
+ * a notification raised in the window around the page's stream subscription can
+ * be lost to that client forever. Specs that assert the badge should confirm
+ * the backend state here and then `page.reload()` so the badge renders from the
+ * deterministic initial fetch instead of racing the live push.
+ */
+export async function waitForUnreadNotification(
+    page: Page,
+    token: string,
+    timeout = 20_000,
+): Promise<void> {
+    await expect
+        .poll(
+            async () => {
+                const response = await page.request.get("/api/notifications/unread-count", {
+                    headers: authHeaders(token),
+                });
+                if (!response.ok()) return 0;
+                const body = (await response.json()) as { count: number };
+                return body.count;
+            },
+            { timeout, message: "an unread notification should be persisted" },
+        )
+        .toBeGreaterThan(0);
+}
+
+/**
+ * Poll `GET /api/notifications` until `taskName`'s coalesced row reaches
+ * `minCount` occurrences — the deterministic signal that repeated failures have
+ * merged, used before asserting the coalesced "N×" row in the UI.
+ */
+export async function waitForCoalescedCount(
+    page: Page,
+    taskName: string,
+    minCount: number,
+    token: string,
+    timeout = 20_000,
+): Promise<void> {
+    await expect
+        .poll(
+            async () => {
+                const response = await page.request.get("/api/notifications?limit=50", {
+                    headers: authHeaders(token),
+                });
+                if (!response.ok()) return 0;
+                const body = (await response.json()) as {
+                    items: { task_name: string; count: number }[];
+                };
+                const row = body.items.find((item) => item.task_name === taskName);
+                return row ? row.count : 0;
+            },
+            { timeout, message: `${taskName} should coalesce to >= ${minCount} occurrences` },
+        )
+        .toBeGreaterThanOrEqual(minCount);
+}
+
+/**
  * Assert the open run-detail panel shows the same outcome the API recorded.
  * This catches the UI silently rendering a wrong/stale status, exit code, or
  * missing timing — the "nothing silently fails" guarantee, verified end-to-end.

@@ -6,8 +6,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -181,6 +183,64 @@ func TestFollowRun_PollsWhenStreamEndsWithoutDone(t *testing.T) {
 	code, err := followRun(client, "backup", "run-1")
 	require.NoError(t, err)
 	assert.Equal(t, 4, code, "exit code must come from the polled terminal run")
+}
+
+// TestFollowRun_ReconnectsAndPrintsTailWhenStreamDropsWithoutDone is the
+// regression guard for the silent-output flake: under load the SSE transport
+// can close mid-run without a Done event. followRun must re-open from the next
+// unseen line and print the persisted tail rather than exiting having swallowed
+// captured output ("nothing silently fails"). The first connection delivers the
+// head and drops; only the reconnect (from>0) carries the tail and Done.
+func TestFollowRun_ReconnectsAndPrintsTailWhenStreamDropsWithoutDone(t *testing.T) {
+	// Capture stdout so we can assert the tail line was actually printed.
+	oldOut := os.Stdout
+	rOut, wOut, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = wOut
+	t.Cleanup(func() { os.Stdout = oldOut })
+
+	reason := model.ReasonSuccess
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/log/stream"):
+			w.Header().Set("Content-Type", "text/event-stream")
+			if r.URL.Query().Get("from") == "0" {
+				// First connect: deliver the head, then drop with NO done event.
+				fmt.Fprintln(w, "event: line")
+				fmt.Fprintln(w, `data: {"n":0,"stream":"stdout","text":"alpha-line-1"}`)
+				fmt.Fprintln(w, "")
+				return
+			}
+			// Reconnect from the tail: deliver the rest and the done event.
+			fmt.Fprintln(w, "event: line")
+			fmt.Fprintln(w, `data: {"n":1,"stream":"stdout","text":"alpha-line-2"}`)
+			fmt.Fprintln(w, "")
+			fmt.Fprintln(w, "event: done")
+			fmt.Fprintln(w, "data: {}")
+			fmt.Fprintln(w, "")
+		case strings.Contains(r.URL.Path, "/runs/"):
+			_ = json.NewEncoder(w).Encode(model.Run{
+				ID: "run-1", TaskName: "backup", Status: model.PhaseEnded,
+				EndReason: &reason, ExitCode: 0,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := apiclient.New(srv.URL, "pw")
+	client.SetToken("tok")
+	code, err := followRun(client, "backup", "run-1")
+	require.NoError(t, wOut.Close())
+	require.NoError(t, err)
+	assert.Equal(t, 0, code)
+
+	out, readErr := io.ReadAll(rOut)
+	require.NoError(t, readErr)
+	assert.Contains(t, string(out), "alpha-line-1")
+	assert.Contains(t, string(out), "alpha-line-2",
+		"the tail after a mid-stream drop must be re-fetched and printed, not silently swallowed")
 }
 
 func TestRunExec_URLWithDaemonFlagRejected(t *testing.T) {
