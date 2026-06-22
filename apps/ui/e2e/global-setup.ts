@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DaemonState } from "./fixtures/daemon-state.js";
+import { generatePassword, obtainToken, waitForHealth } from "./fixtures/daemon-boot.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_PATH = resolve(__dirname, ".state.json");
@@ -72,58 +73,6 @@ async function globalSetup(_config: FullConfig): Promise<void> {
         token,
     };
     await writeFile(STATE_PATH, JSON.stringify(state));
-}
-
-async function obtainToken(baseURL: string, password: string): Promise<string> {
-    const challengeRes = await fetch(`${baseURL}/api/auth/challenge`);
-    if (!challengeRes.ok) throw new Error(`Challenge request failed: ${challengeRes.status}`);
-    const { nonce } = (await challengeRes.json()) as { nonce: string };
-
-    const enc = new TextEncoder();
-    const hashBuf = await globalThis.crypto.subtle.digest(
-        "SHA-256",
-        enc.encode(`${password}:${nonce}`),
-    );
-    const response = Array.from(new Uint8Array(hashBuf))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
-
-    const authRes = await fetch(`${baseURL}/api/auth`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nonce, response }),
-    });
-    if (!authRes.ok) throw new Error(`Auth request failed: ${authRes.status}`);
-    const data = (await authRes.json()) as { token: string };
-    return data.token;
-}
-
-async function waitForHealth(baseURL: string, timeout: number): Promise<void> {
-    const deadline = Date.now() + timeout;
-
-    while (Date.now() < deadline) {
-        try {
-            const res = await fetch(`${baseURL}/health`);
-            if (res.ok) return;
-        } catch {
-            // daemon not ready yet
-        }
-        await sleep(100);
-    }
-
-    throw new Error(`Daemon did not become healthy within ${timeout}ms at ${baseURL}`);
-}
-
-function generatePassword(): string {
-    const bytes = new Uint8Array(24);
-    globalThis.crypto.getRandomValues(bytes);
-    return Array.from(bytes)
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
-}
-
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export default globalSetup;

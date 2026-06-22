@@ -6,6 +6,7 @@ description: Install RunWisp, scaffold a starter runwisp.toml, watch your first 
 ---
 
 import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
+import Screenshot from "../../../components/Screenshot.astro";
 
 RunWisp is one small Go binary. You list the shell commands you want
 to run in a `runwisp.toml`, and RunWisp takes care of the rest —
@@ -225,7 +226,10 @@ your password never travels through the URL. On a host without a
 browser, the TUI just prints the URL — open it from another
 machine and sign in with the password you copied in step 2.
 
-![Web UI dashboard: sidebar with tasks and services, daemon header with sparklines, recent activity feed below.](../../../assets/screenshots/web-ui-overview.png)
+<Screenshot
+    name="web-ui-overview"
+    alt="Web UI dashboard: sidebar with tasks and services, daemon header with sparklines, recent activity feed below."
+/>
 
 A few knobs worth knowing while you're here:
 

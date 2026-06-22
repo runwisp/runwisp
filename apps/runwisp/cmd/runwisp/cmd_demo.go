@@ -27,11 +27,12 @@ import (
 const envDemoTempDir = "RUNWISP_DEMO_TEMP"
 
 var demoFlags struct {
-	Cloud   bool
-	NoTUI   bool
-	Token   string
-	URL     string
-	EnvFile string
+	Cloud    bool
+	NoTUI    bool
+	Token    string
+	URL      string
+	EnvFile  string
+	SeedOnly bool
 }
 
 var demoCmd = &cobra.Command{
@@ -68,12 +69,25 @@ func init() {
 	demoCmd.Flags().StringVar(&demoFlags.Token, "token", "", "cloud token, with --cloud (overrides RUNWISP_CLOUD_TOKEN)")
 	demoCmd.Flags().StringVar(&demoFlags.URL, "url", "", "cloud API URL, with --cloud (overrides RUNWISP_CLOUD_URL)")
 	demoCmd.Flags().StringVar(&demoFlags.EnvFile, "env-file", ".env", "path to .env file, with --cloud")
+	demoCmd.Flags().BoolVar(&demoFlags.SeedOnly, "seed-only", false, "write the demo config to --config and seed --data, then exit without spawning a daemon or TUI (for tooling that boots its own daemon)")
 }
 
 // runDemo sets up a throwaway temp dir, writes the embedded demo config, seeds
 // history (standalone only), spawns the background daemon against the temp dir,
 // and attaches the TUI — mirroring the plain `runwisp` flow.
 func runDemo(cmd *cobra.Command, f Flags) error {
+	// --seed-only writes the demo config and seeds history into the
+	// caller-supplied --config/--data, then exits. No temp dir, no daemon, no
+	// TUI: the caller (e.g. the docs screenshot harness) boots its own daemon
+	// against those paths. Cloud mode owns its history, so the two are mutually
+	// exclusive.
+	if demoFlags.SeedOnly {
+		if demoFlags.Cloud {
+			return fmt.Errorf("demo: --seed-only cannot be combined with --cloud")
+		}
+		return setupDemoDir(cmd, f)
+	}
+
 	tmp, err := os.MkdirTemp("", "runwisp-demo-")
 	if err != nil {
 		return fmt.Errorf("create demo temp dir: %w", err)

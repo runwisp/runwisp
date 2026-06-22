@@ -6,6 +6,7 @@ description: A tour of the embedded RunWisp Web dashboard — opening it from th
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import Screenshot from "../../../components/Screenshot.astro";
 
 The Web UI is the same dashboard as the [TUI][tui], in your browser
 and updated live as runs happen. It lives **inside the daemon
@@ -42,7 +43,10 @@ can paste it on another machine.
 When you don't have the local TUI — a remote browser, a coworker's
 laptop, a cold bookmark — you'll see the login modal.
 
-![web-ui-login.png — Login modal centred on the dashboard: single password field, Submit button, no username.](../../../assets/screenshots/webui-login.png)
+<Screenshot
+    name="web-ui-login"
+    alt="Login modal centred on the dashboard: single password field, Login button, no username."
+/>
 
 There's no username — RunWisp is single-operator. Type the password
 and submit. The password never goes over the network: login uses a
@@ -59,7 +63,10 @@ limits.
 
 The landing page after login.
 
-![web-ui-overview.png — Overview page: daemon hero with sparklines, stats card, task overview tabs (All · Attention · Running · Scheduled · Manual), recent activity feed.](../../../assets/screenshots/placeholder.svg)
+<Screenshot
+    name="web-ui-overview"
+    alt="Overview page: daemon hero with sparklines, stats cards, task overview tabs (All · Attention · Running · Scheduled · Manual), and the recent activity feed."
+/>
 
 - **Daemon header** — a fact bar showing RunWisp name and version,
   host and CPU count, uptime, and the instance fingerprint.
@@ -79,7 +86,10 @@ A flat, newest-first list of recent runs across every task. This is
 the page for "what's been going on lately" when you don't yet know
 which task to dig into.
 
-![web-ui-runs.png — All Runs page: flat newest-first table of recent runs across every task with status icons, durations, and timestamps.](../../../assets/screenshots/placeholder.svg)
+<Screenshot
+    name="web-ui-runs"
+    alt="All Runs page: flat newest-first table of recent runs across every task with status icons, durations, and timestamps."
+/>
 
 ## Task detail (`/tasks/{id}`)
 
@@ -101,7 +111,10 @@ for this task and, taking up most of the pane, the log for whichever
 run you have selected. New lines stream in live while the run is
 going.
 
-![web-ui-task-detail.png — Task detail for a finished run: header with Run Task button, run history list on the side, log viewer occupying most of the pane.](../../../assets/screenshots/placeholder.svg)
+<Screenshot
+    name="web-ui-task-detail"
+    alt="Task detail for a finished run: header with Run Task button, run history list on the side, log viewer occupying most of the pane."
+/>
 
 ### The log viewer
 
@@ -123,13 +136,19 @@ use for any other run. The Overview page's **Attention** tab gathers
 everything that isn't currently healthy so you can spot trouble
 without checking each task by hand.
 
-![web-ui-task-failed.png — Task detail for a failed run: red status pill in the header, exit code next to duration, captured stderr filling the log pane.](../../../assets/screenshots/placeholder.svg)
+<Screenshot
+    name="web-ui-task-failed"
+    alt="Task detail for a failed run: red FAILED status pill in the header, exit code next to duration, captured stderr filling the log pane."
+/>
 
 ## Notifications bell
 
 Top-right of the top bar. The badge shows your unread count.
 
-![web-ui-notifications-popover.png — Bell clicked: popover open with recent notifications, severity dots, relative times, and a coalesced row showing a sparkline.](../../../assets/screenshots/placeholder.svg)
+<Screenshot
+    name="web-ui-notifications-popover"
+    alt="Bell clicked: popover open with recent notifications, severity dots, relative times, and a coalesced row showing the repeat count."
+/>
 
 Click the bell to open a panel with recent notifications, a "View
 all" link, and a "Mark all read" button. Each row carries a severity
@@ -149,7 +168,10 @@ The bell shows a preview. This page shows everything — paginated,
 with a "Load more" button. Same row layout, with the unread count at
 the top.
 
-![web-ui-notifications-page.png — /notifications full page: paginated history with unread count at the top and a Load more button at the bottom.](../../../assets/screenshots/placeholder.svg)
+<Screenshot
+    name="web-ui-notifications-page"
+    alt="The full /notifications page: history across all tasks with the unread count at the top."
+/>
 
 ## What it doesn't do
 
