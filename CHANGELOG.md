@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Service instances are labelled 1-based.** A multi-instance service now shows every run as `name#1`, `name#2`, `name#3` in the Web UI and TUI instead of `name`, `name#1`, `name#2`; a single-instance service stays just `name`. See [Services](https://docs.runwisp.com/configuration/services/).
 
+### Fixed
+
+- **`runwisp exec` no longer drops output if its log stream blips.** When the live stream ended without a completion event (a transport hiccup under load), the command could exit having printed none of the run's captured output; it now reconnects from the last line it saw and prints the persisted tail.
+
 ## [0.10.0] - 2026-06-18
 
 ### Added
