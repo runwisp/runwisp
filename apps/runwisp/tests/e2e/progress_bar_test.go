@@ -54,10 +54,13 @@ func TestProgressBarCommitsFinalFrameAndStreamsRegion(t *testing.T) {
 	require.True(t, sawRegion, "expected at least one live region snapshot of the progress bar")
 
 	// On disk: the final frame is committed once, with no carriage returns and
-	// no intermediate frames left as their own lines.
+	// no intermediate frames left as their own lines. Wait for "done" (the last
+	// line the task prints, after the bar settles) so the whole output has
+	// landed — waiting only for "progress: 100%" can snapshot the body in the
+	// gap before the trailing line commits.
 	logDir := filepath.Join(daemon.dataDir, "logs")
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
-	body := waitForLogContains(t, client, taskName, run.ID, "progress: 100%", 10*time.Second)
+	body := waitForLogContains(t, client, taskName, run.ID, "done", 10*time.Second)
 
 	require.NotContains(t, body, "\r", "committed log must not contain raw carriage returns")
 	require.Contains(t, body, "done", "the line after the bar should be committed")
