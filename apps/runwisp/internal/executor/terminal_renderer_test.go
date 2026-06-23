@@ -421,10 +421,10 @@ func TestRendererCursorHorizontalMoves(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"forward", "ab\x1b[2Cc\n", "ab  c"},     // CSI C: cursor forward (pads)
-		{"back", "abcd\x1b[2DX\n", "abXd"},        // CSI D: cursor back
-		{"absolute", "abc\x1b[1GX\n", "Xbc"},      // CSI G: column absolute (1-based)
-		{"back-clamps", "ab\x1b[9DX\n", "Xb"},     // CSI D past col 0 clamps to 0
+		{"forward", "ab\x1b[2Cc\n", "ab  c"},  // CSI C: cursor forward (pads)
+		{"back", "abcd\x1b[2DX\n", "abXd"},    // CSI D: cursor back
+		{"absolute", "abc\x1b[1GX\n", "Xbc"},  // CSI G: column absolute (1-based)
+		{"back-clamps", "ab\x1b[9DX\n", "Xb"}, // CSI D past col 0 clamps to 0
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
