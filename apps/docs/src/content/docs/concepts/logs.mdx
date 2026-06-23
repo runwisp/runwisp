@@ -187,7 +187,7 @@ This is deliberately a _supplementary_ convenience, with honest bounds:
   caught coarsely. The captured span is also capped per redraw, thinned
   evenly when it would overflow, so a long-running bar keeps its whole
   arc rather than just the tail.
-- History lives in a best-effort `.fhist` sidecar (see below), never in
+- History lives in a best-effort sidecar container (see below), never in
   the `.log`. Losing it — rotation, `kill -9`, retention — never costs
   you any committed output; the durable log is untouched.
 
@@ -254,20 +254,28 @@ If your query is malformed — unclosed regex group, empty `q`, that
 kind of thing — you'll get a `400` straight away, before any
 scanning starts.
 
-## Sidecars (`.idx`, `.idx.prev`, `.tidx`, `.tidx.prev`, `.meta`, `.prev`, `.fhist`)
+## The sidecar container (`.log.meta`)
 
-Next to every `.log` you'll see a couple of small helper files. They
-make seeking and downloading fast. RunWisp creates them
-automatically — you never need to touch them, and deleting them
-won't free up any meaningful disk space. **Don't delete them while a run is still going.** When
-retention removes a run, the sidecars go with the parent log
-automatically.
+Each `.log` has one companion file: a hidden `.<name>.log.meta`
+container. It's tucked behind a leading dot on purpose — a plain `ls`
+of a log directory shows only the `.log` files, never a pile of helper
+files. The container bundles everything that isn't log output itself:
+the line and timestamp indexes that make seeking fast, the rotation
+bookkeeping that keeps line numbers continuous, and the sampled
+[frame history](#rewinding-the-frames) for any in-place redraws.
 
-The `.fhist` file is the odd one out: it only shows up for runs that
-actually drew a progress bar or other in-place redraw, and it holds the
-sampled [frame history](#rewinding-the-frames) for those lines. It's
-append-only and best-effort — safe to lose, and absent entirely for
-plain logs.
+RunWisp creates and maintains it automatically — you never need to
+touch it, and deleting it won't free up any meaningful disk space.
+**Don't delete it while a run is still going.** When retention removes
+a run, the container goes with the parent log automatically.
+
+It's all best-effort: the indexes are rebuildable and the frame
+history is safe to lose, so a `kill -9`, a rotation, or a torn write
+never costs you any committed output — the durable `.log` is untouched.
+A short run that never drew a progress bar just gets a tiny container
+holding its final metadata. (While a log is mid-rotation you may also
+briefly see a hidden `.<name>.log.prev` — the rotated-away chunk —
+which is cleaned up when the run ends.)
 
 ## Crash safety
 

@@ -577,7 +577,6 @@ func TestGetLogPage_NegativeFrom_Tail(t *testing.T) {
 		fmt.Fprintf(&content, "line %d\n", i)
 	}
 	require.NoError(t, os.WriteFile(logPath, []byte(content.String()), 0644))
-	require.NoError(t, os.WriteFile(logPath+".idx", nil, 0644))
 
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
@@ -620,7 +619,6 @@ func TestGetLogPage_FromZero_FirstLine(t *testing.T) {
 		fmt.Fprintf(&content, "line %d\n", i)
 	}
 	require.NoError(t, os.WriteFile(logPath, []byte(content.String()), 0644))
-	require.NoError(t, os.WriteFile(logPath+".idx", nil, 0644))
 
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 

@@ -338,9 +338,6 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
 		return nil, "", nil, nil, fmt.Errorf("create task log dir: %w", err)
 	}
-	idxPath := logPath + ".idx"
-	tidxPath := logPath + ".tidx"
-
 	cancelCtx, cancelFunc := context.WithCancel(ctx)
 
 	bus := r.eventBus
@@ -348,8 +345,6 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 	runID := run.ID
 	writer, err := NewLogWriter(LogWriterOpts{
 		LogPath:     logPath,
-		IdxPath:     idxPath,
-		TidxPath:    tidxPath,
 		MaxSize:     task.LogMaxSize,
 		Overflow:    task.LogOnFull,
 		CancelFunc:  cancelFunc,

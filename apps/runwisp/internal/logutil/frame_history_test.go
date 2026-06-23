@@ -12,21 +12,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func writeFhist(t *testing.T, logPath string, groups map[int64][][]string, order []int64) {
+func writeFrames(t *testing.T, logPath string, groups map[int64][][]string, order []int64) {
 	t.Helper()
-	f, err := os.Create(FhistPath(logPath))
+	f, err := os.Create(MetaPath(logPath))
 	require.NoError(t, err)
 	defer f.Close()
 	for _, anchor := range order {
-		rec, err := EncodeFrameHistoryEntry(anchor, groups[anchor])
+		rec, err := FrameRecord(anchor, groups[anchor])
 		require.NoError(t, err)
 		_, err = f.Write(rec)
 		require.NoError(t, err)
 	}
-}
-
-func TestFhistPath(t *testing.T) {
-	assert.Equal(t, "/var/log/task/run.log.fhist", FhistPath("/var/log/task/run.log"))
 }
 
 func TestFrameHistoryRoundTrip(t *testing.T) {
@@ -36,7 +32,7 @@ func TestFrameHistoryRoundTrip(t *testing.T) {
 		7:  {{"a 0%", "b 0%", "c 0%"}, {"a 50%", "b 0%", "c 0%"}},
 		12: {{"only one"}},
 	}
-	writeFhist(t, logPath, groups, []int64{3, 7, 12})
+	writeFrames(t, logPath, groups, []int64{3, 7, 12})
 
 	// Single-row frames.
 	frames, ok := ReadFrameHistory(logPath, 3)
@@ -64,23 +60,21 @@ func TestFrameHistoryMissingFile(t *testing.T) {
 	assert.Empty(t, ReadFrameHistoryCounts(logPath))
 }
 
-func TestFrameHistorySkipsTornTrailingLine(t *testing.T) {
+func TestFrameHistorySkipsTornTrailingRecord(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "run.log")
-	writeFhist(t, logPath, map[int64][][]string{5: {{"good"}}}, []int64{5})
+	writeFrames(t, logPath, map[int64][][]string{5: {{"good"}}}, []int64{5})
 
-	// Append a torn/garbage trailing line, as a kill -9 mid-write might leave.
-	f, err := os.OpenFile(FhistPath(logPath), os.O_APPEND|os.O_WRONLY, 0644)
+	// Append a torn trailing record, as a kill -9 mid-write might leave: a
+	// header claiming more payload than is actually present.
+	f, err := os.OpenFile(MetaPath(logPath), os.O_APPEND|os.O_WRONLY, 0644)
 	require.NoError(t, err)
-	_, err = f.WriteString(`{"n":9,"frames":[["partial`)
+	_, err = f.Write([]byte{recFrame, 0xFF, 0x00, 0x00, 0x00, 'x', 'y'})
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
 	frames, ok := ReadFrameHistory(logPath, 5)
 	require.True(t, ok)
 	assert.Equal(t, [][]string{{"good"}}, frames)
-
-	_, ok = ReadFrameHistory(logPath, 9)
-	assert.False(t, ok)
 
 	assert.Equal(t, map[int64]int{5: 1}, ReadFrameHistoryCounts(logPath))
 }

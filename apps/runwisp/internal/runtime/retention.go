@@ -171,7 +171,7 @@ func (cleaner *RetentionCleaner) deleteRunBatch(ctx context.Context, runs []mode
 		if info, statErr := os.Stat(logPath); statErr == nil {
 			*totalSize -= info.Size()
 		}
-		if info, statErr := os.Stat(logPath + ".idx"); statErr == nil {
+		if info, statErr := os.Stat(logutil.MetaPath(logPath)); statErr == nil {
 			*totalSize -= info.Size()
 		}
 		logutil.RemoveLogFiles(logPath)

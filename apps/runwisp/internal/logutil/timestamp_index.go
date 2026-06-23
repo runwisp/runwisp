@@ -5,44 +5,20 @@ package logutil
 
 import (
 	"encoding/binary"
-	"io"
-	"os"
+	"sort"
 )
 
 const (
-	// TimestampIndexEntrySize is the byte size of one .tidx record:
+	// TimestampIndexEntrySize is the byte size of one timestamp record:
 	// 4 bytes uint32 line number + 8 bytes int64 unix milliseconds.
 	TimestampIndexEntrySize = 12
 )
 
-// TimestampEntry is one record in the .tidx timestamp index file.
+// TimestampEntry is one record in the timestamp index. Entries are stored in the
+// consolidated sidecar container as `t` records.
 type TimestampEntry struct {
 	Line      uint32 // local line number within current log segment
 	Timestamp int64  // unix milliseconds
-}
-
-// TidxPath returns the timestamp index path for a log file.
-func TidxPath(logPath string) string {
-	return logPath + ".tidx"
-}
-
-// TimestampEntryCount returns the number of complete entries from the file size.
-// Partial trailing records (from crashes) are silently ignored.
-func TimestampEntryCount(size int64) int {
-	return int(size / TimestampIndexEntrySize)
-}
-
-// ReadTimestampAt reads a single entry at the given record index (0-based).
-func ReadTimestampAt(r io.ReaderAt, index int) (TimestampEntry, error) {
-	var buf [TimestampIndexEntrySize]byte
-	_, err := r.ReadAt(buf[:], int64(index)*TimestampIndexEntrySize)
-	if err != nil {
-		return TimestampEntry{}, err
-	}
-	return TimestampEntry{
-		Line:      binary.LittleEndian.Uint32(buf[0:4]),
-		Timestamp: int64(binary.LittleEndian.Uint64(buf[4:12])),
-	}, nil
 }
 
 // WriteTimestampEntry encodes a single entry into buf (must be >= 12 bytes).
@@ -51,126 +27,35 @@ func WriteTimestampEntry(buf []byte, e TimestampEntry) {
 	binary.LittleEndian.PutUint64(buf[4:12], uint64(e.Timestamp))
 }
 
-// LookupTimestampByLine finds the approximate timestamp for a local line number
-// using binary search. Returns the timestamp of the last entry with Line <= localLine.
-// Returns 0 if the index is empty.
-func LookupTimestampByLine(r io.ReaderAt, size int64, localLine uint32) (int64, error) {
-	count := TimestampEntryCount(size)
-	if count == 0 {
-		return 0, nil
+// LookupTimestampByLine returns the timestamp of the last entry with
+// Line <= localLine, or 0 when the index is empty. Entries are ordered by line.
+func LookupTimestampByLine(entries []TimestampEntry, localLine uint32) int64 {
+	// First index i where entries[i].Line > localLine; the answer is i-1.
+	i := sort.Search(len(entries), func(i int) bool {
+		return entries[i].Line > localLine
+	})
+	if i == 0 {
+		return 0
 	}
-
-	lo, hi := 0, count-1
-	var result int64
-	for lo <= hi {
-		mid := lo + (hi-lo)/2
-		e, err := ReadTimestampAt(r, mid)
-		if err != nil {
-			return 0, err
-		}
-		if e.Line <= localLine {
-			result = e.Timestamp
-			lo = mid + 1
-		} else {
-			hi = mid - 1
-		}
-	}
-	return result, nil
+	return entries[i-1].Timestamp
 }
 
-// LookupLineRangeByTime finds the approximate local line range for a time window
-// using binary search. Returns the line of the first entry with Timestamp >= fromMs
-// as startLine and the line of the last entry with Timestamp <= toMs as endLine.
-// If no entries fall in range, returns (0, 0, nil).
-func LookupLineRangeByTime(r io.ReaderAt, size, fromMs, toMs int64) (startLine, endLine uint32, err error) {
-	count := TimestampEntryCount(size)
-	if count == 0 {
-		return 0, 0, nil
+// LookupLineRangeByTime returns the approximate local line range whose entries
+// fall within [fromMs, toMs]. startLine is the line of the first entry with
+// Timestamp >= fromMs; endLine is the line of the last entry with
+// Timestamp <= toMs. Returns (0, 0) when no entry falls in range. Entries are
+// ordered by timestamp.
+func LookupLineRangeByTime(entries []TimestampEntry, fromMs, toMs int64) (startLine, endLine uint32) {
+	lo := sort.Search(len(entries), func(i int) bool {
+		return entries[i].Timestamp >= fromMs
+	})
+	if lo >= len(entries) || entries[lo].Timestamp > toMs {
+		return 0, 0
 	}
-
-	lo, err := tidxLowerBound(r, count, fromMs)
-	if err != nil {
-		return 0, 0, err
+	startLine = entries[lo].Line
+	endLine = startLine
+	for i := lo; i < len(entries) && entries[i].Timestamp <= toMs; i++ {
+		endLine = entries[i].Line
 	}
-	if lo >= count {
-		return 0, 0, nil
-	}
-	startEntry, err := ReadTimestampAt(r, lo)
-	if err != nil {
-		return 0, 0, err
-	}
-	if startEntry.Timestamp > toMs {
-		return 0, 0, nil
-	}
-
-	endLine, err = tidxUpperBound(r, lo, count, toMs, startEntry.Line)
-	if err != nil {
-		return 0, 0, err
-	}
-	return startEntry.Line, endLine, nil
-}
-
-// tidxLowerBound returns the index of the first entry with Timestamp >= fromMs.
-func tidxLowerBound(r io.ReaderAt, count int, fromMs int64) (int, error) {
-	lo, hi := 0, count
-	for lo < hi {
-		mid := lo + (hi-lo)/2
-		e, err := ReadTimestampAt(r, mid)
-		if err != nil {
-			return 0, err
-		}
-		if e.Timestamp < fromMs {
-			lo = mid + 1
-		} else {
-			hi = mid
-		}
-	}
-	return lo, nil
-}
-
-// tidxUpperBound returns the line of the last entry with Timestamp <= toMs,
-// searching from fromIdx. Returns startLine when no qualifying entry is found.
-func tidxUpperBound(r io.ReaderAt, fromIdx, count int, toMs int64, startLine uint32) (uint32, error) {
-	lo, hi := fromIdx, count-1
-	endLine := startLine
-	for lo <= hi {
-		mid := lo + (hi-lo)/2
-		e, err := ReadTimestampAt(r, mid)
-		if err != nil {
-			return 0, err
-		}
-		if e.Timestamp <= toMs {
-			endLine = e.Line
-			lo = mid + 1
-		} else {
-			hi = mid - 1
-		}
-	}
-	return endLine, nil
-}
-
-// ReadTimestampIndex loads the entire .tidx file into memory.
-// For large files, prefer ReadTimestampAt with binary search.
-func ReadTimestampIndex(tidxPath string) ([]TimestampEntry, error) {
-	f, err := os.Open(tidxPath)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	count := TimestampEntryCount(info.Size())
-	entries := make([]TimestampEntry, count)
-	for i := range count {
-		e, err := ReadTimestampAt(f, i)
-		if err != nil {
-			return nil, err
-		}
-		entries[i] = e
-	}
-	return entries, nil
+	return startLine, endLine
 }

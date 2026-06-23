@@ -3,12 +3,7 @@
 
 package logutil
 
-import (
-	"encoding/json"
-	"os"
-
-	"log/slog"
-)
+import "path/filepath"
 
 // LogMeta tracks cumulative rotation state so readers can present
 // continuous, globally-correct line numbers and byte offsets even after
@@ -20,31 +15,18 @@ type LogMeta struct {
 	Finalized    bool  `json:"fin,omitempty"`
 }
 
+// MetaPath returns the consolidated sidecar container path for a log file. The
+// container is hidden (leading dot) so a plain `ls` of the log directory shows
+// only the `.log` files. It holds the metadata, line index, timestamp index and
+// frame history that used to live in separate `.meta`, `.idx`, `.tidx` and
+// `.fhist` sidecars.
 func MetaPath(logPath string) string {
-	return logPath + ".meta"
+	return filepath.Join(filepath.Dir(logPath), "."+filepath.Base(logPath)+".meta")
 }
 
-// ReadLogMeta loads rotation metadata. Returns zero-value if the file is
-// missing or corrupt (no rotation has occurred).
+// ReadLogMeta loads rotation metadata. Returns zero-value when no metadata
+// record has been written yet (no rotation, run still in flight) or the
+// container is absent/corrupt.
 func ReadLogMeta(logPath string) LogMeta {
-	data, err := os.ReadFile(MetaPath(logPath))
-	if err != nil {
-		return LogMeta{}
-	}
-	var meta LogMeta
-	if json.Unmarshal(data, &meta) != nil {
-		return LogMeta{}
-	}
-	return meta
-}
-
-// WriteLogMeta persists metadata next to the log file.
-func WriteLogMeta(logPath string, meta LogMeta) {
-	data, err := json.Marshal(meta)
-	if err != nil {
-		return
-	}
-	if err := os.WriteFile(MetaPath(logPath), data, 0644); err != nil {
-		slog.Warn("Failed to write log metadata", "path", MetaPath(logPath), "err", err)
-	}
+	return ReadSidecar(logPath).Meta
 }

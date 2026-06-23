@@ -18,11 +18,8 @@ import (
 )
 
 func newTestOpts(dir string) LogWriterOpts {
-	logPath := filepath.Join(dir, "test.log")
 	return LogWriterOpts{
-		LogPath:  logPath,
-		IdxPath:  logPath + ".idx",
-		TidxPath: logPath + ".tidx",
+		LogPath: filepath.Join(dir, "test.log"),
 	}
 }
 
@@ -197,10 +194,10 @@ func TestLogWriter_DropOldRotation(t *testing.T) {
 	data, err := os.ReadFile(opts.LogPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "latest output")
-	// .prev file should be cleaned up by Close
-	_, err = os.Stat(opts.LogPath + ".prev")
+	// The rotated-away segment should be cleaned up by Close.
+	_, err = os.Stat(logutil.PrevPath(opts.LogPath))
 	assert.True(t, os.IsNotExist(err))
-	// Metadata file should exist with rotation info
+	// The container should record rotation info.
 	meta := logutil.ReadLogMeta(opts.LogPath)
 	assert.True(t, meta.Finalized)
 	assert.Greater(t, meta.RotatedLines, int64(0))
@@ -253,7 +250,7 @@ func TestLogWriter_MultipleRotationsMeta(t *testing.T) {
 	totalLines := meta.RotatedLines + meta.FinalLines
 	assert.Greater(t, totalLines, int64(0))
 
-	// .meta file should exist on disk
+	// The container should exist on disk (hidden).
 	_, err = os.Stat(logutil.MetaPath(opts.LogPath))
 	assert.NoError(t, err)
 }
@@ -281,6 +278,63 @@ func TestReadLogMeta_MissingFile(t *testing.T) {
 	assert.False(t, meta.Finalized)
 }
 
+// TestLogWriter_OnlyLogVisibleInListing is the regression guard for the whole
+// sidecar-consolidation change: a run that produces an index AND frame history
+// must leave exactly one visible file (the `.log`) plus one hidden container in
+// the log directory — never the old `.idx`/`.tidx`/`.fhist`/`.meta` clutter.
+func TestLogWriter_OnlyLogVisibleInListing(t *testing.T) {
+	dir := t.TempDir()
+	opts := newTestOpts(dir)
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	require.NoError(t, w.WriteFrameHistory(0, [][]string{{"0%"}, {"100%"}}))
+	for i := 0; i < 1100; i++ { // cross the index threshold
+		w.Write([]byte("line\n"))
+	}
+	require.NoError(t, w.Close())
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	var visible, hidden int
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			hidden++
+			continue
+		}
+		visible++
+		assert.True(t, strings.HasSuffix(e.Name(), ".log"), "only .log files should be visible, got %s", e.Name())
+	}
+	assert.Equal(t, 1, visible, "exactly one visible file (the .log)")
+	assert.Equal(t, 1, hidden, "exactly one hidden file (the consolidated container)")
+}
+
+// TestLogWriter_FramesSurviveRotation pins the run-scoped nature of frame
+// history: a frame group recorded before a rotation must still be readable
+// after, even though the segment-scoped index resets.
+func TestLogWriter_FramesSurviveRotation(t *testing.T) {
+	opts := newTestOpts(t.TempDir())
+	opts.MaxSize = 200
+	opts.Overflow = "drop_old"
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	require.NoError(t, w.WriteFrameHistory(0, [][]string{{"0%"}, {"50%"}}))
+
+	line := strings.Repeat("x", 100) + "\n"
+	for i := 0; i < 6; i++ { // force at least one rotation
+		w.Write([]byte(line))
+	}
+	require.NoError(t, w.Close())
+
+	meta := logutil.ReadLogMeta(opts.LogPath)
+	require.Greater(t, meta.RotatedLines, int64(0), "test must trigger rotation")
+
+	frames, ok := logutil.ReadFrameHistory(opts.LogPath, 0)
+	require.True(t, ok, "frame history must survive rotation")
+	assert.Equal(t, [][]string{{"0%"}, {"50%"}}, frames)
+}
+
 // --- Timestamp Index Tests ---
 
 func TestLogWriter_TimestampIndex_BasicEntries(t *testing.T) {
@@ -288,33 +342,31 @@ func TestLogWriter_TimestampIndex_BasicEntries(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	// Write 2050 lines to lazy-open the sidecars and accumulate at least
-	// three line-based tidx entries (line 0 backfill, line 1024, line 2048).
+	// Write 2050 lines to start the index and accumulate at least three
+	// line-based tidx entries (line 0 backfill, line 1024, line 2048).
 	for i := 0; i < 2050; i++ {
 		w.Write([]byte("line\n"))
 	}
 	require.NoError(t, w.Close())
 
-	entries, err := logutil.ReadTimestampIndex(opts.TidxPath)
-	require.NoError(t, err)
+	entries := logutil.ReadSidecar(opts.LogPath).Timestamps
 
-	// At minimum: entry at line 0, line 1024, line 2048, plus final entry on Close
+	// At minimum: entry at line 0, line 1024, line 2048, plus final on Close.
 	assert.GreaterOrEqual(t, len(entries), 3)
 	assert.Equal(t, uint32(0), entries[0].Line)
 	assert.Greater(t, entries[0].Timestamp, int64(0))
 
-	// Entries should have monotonically non-decreasing line numbers
+	// Entries should have monotonically non-decreasing line numbers/timestamps.
 	for i := 1; i < len(entries); i++ {
 		assert.GreaterOrEqual(t, entries[i].Line, entries[i-1].Line)
 		assert.GreaterOrEqual(t, entries[i].Timestamp, entries[i-1].Timestamp)
 	}
 }
 
-// TestLogWriter_NoSidecarsForShortRun pins down the new lazy policy: a run
-// that produces fewer than LogIndexInterval lines must not leave any .idx
-// or .tidx file on disk. This keeps the on-disk footprint of the average
-// short cron run minimal.
-func TestLogWriter_NoSidecarsForShortRun(t *testing.T) {
+// TestLogWriter_ShortRunRecordsNoIndex pins the lazy policy: a run that produces
+// fewer than LogIndexInterval lines records no line/timestamp index in the
+// container (it holds only the final metadata record).
+func TestLogWriter_ShortRunRecordsNoIndex(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
@@ -324,35 +376,30 @@ func TestLogWriter_NoSidecarsForShortRun(t *testing.T) {
 	}
 	require.NoError(t, w.Close())
 
-	_, err = os.Stat(opts.IdxPath)
-	assert.True(t, os.IsNotExist(err), "short run must leave no .idx sidecar")
-	_, err = os.Stat(opts.TidxPath)
-	assert.True(t, os.IsNotExist(err), "short run must leave no .tidx sidecar")
+	sc := logutil.ReadSidecar(opts.LogPath)
+	assert.Empty(t, sc.Index, "short run must record no line index")
+	assert.Empty(t, sc.Timestamps, "short run must record no timestamp index")
+	assert.True(t, sc.Meta.Finalized, "container still holds the final metadata record")
 }
 
-// TestLogWriter_SidecarsAppearAtThreshold pins down the inverse: once the
-// segment crosses LogIndexInterval lines the sidecars must exist with their
-// chunk-0 backfill entries, even though the writer didn't open them upfront.
-func TestLogWriter_SidecarsAppearAtThreshold(t *testing.T) {
+// TestLogWriter_IndexAppearsAtThreshold pins the inverse: once the segment
+// crosses LogIndexInterval lines the index and timestamp records appear with
+// their chunk-0 backfill entries.
+func TestLogWriter_IndexAppearsAtThreshold(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	// 1100 lines exceeds the 1024-line threshold by a small margin, enough
-	// to lazy-open the sidecars and accumulate the first proper entry.
 	for i := 0; i < 1100; i++ {
 		w.Write([]byte("line\n"))
 	}
 	require.NoError(t, w.Close())
 
-	_, err = os.Stat(opts.IdxPath)
-	require.NoError(t, err, ".idx must exist once the segment crosses the threshold")
-
-	tidxEntries, err := logutil.ReadTimestampIndex(opts.TidxPath)
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(tidxEntries), 2, "expect chunk-0 backfill plus chunk-1 entry")
-	assert.Equal(t, uint32(0), tidxEntries[0].Line, "chunk-0 backfill must be at Line 0")
-	assert.Equal(t, uint32(1024), tidxEntries[1].Line, "second entry must be at Line 1024")
+	sc := logutil.ReadSidecar(opts.LogPath)
+	require.NotEmpty(t, sc.Index, "index must exist once the segment crosses the threshold")
+	require.GreaterOrEqual(t, len(sc.Timestamps), 2, "expect chunk-0 backfill plus chunk-1 entry")
+	assert.Equal(t, uint32(0), sc.Timestamps[0].Line, "chunk-0 backfill must be at Line 0")
+	assert.Equal(t, uint32(1024), sc.Timestamps[1].Line, "second entry must be at Line 1024")
 }
 
 func TestLogWriter_TimestampIndex_TimeBasedEntriesAfterThreshold(t *testing.T) {
@@ -373,11 +420,10 @@ func TestLogWriter_TimestampIndex_TimeBasedEntriesAfterThreshold(t *testing.T) {
 	}
 	require.NoError(t, w.Close())
 
-	entries, err := logutil.ReadTimestampIndex(opts.TidxPath)
-	require.NoError(t, err)
+	entries := logutil.ReadSidecar(opts.LogPath).Timestamps
 	// Backfill at line 0 + line 1024 + every post-threshold line + final on
-	// close. We don't pin an exact count — just verify the time trigger
-	// fired at least a few times after the threshold opened the sidecar.
+	// close. We don't pin an exact count — just verify the time trigger fired
+	// at least a few times after the threshold started the index.
 	assert.GreaterOrEqual(t, len(entries), 5)
 }
 
@@ -386,16 +432,14 @@ func TestLogWriter_TimestampIndex_FinalEntryOnClose(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	// Write past the lazy-open threshold so the close-time entry actually
-	// lands in a real .tidx file.
+	// Write past the lazy threshold so the close-time entry actually lands.
 	const total = 1100
 	for i := 0; i < total; i++ {
 		w.Write([]byte("line\n"))
 	}
 	require.NoError(t, w.Close())
 
-	entries, err := logutil.ReadTimestampIndex(opts.TidxPath)
-	require.NoError(t, err)
+	entries := logutil.ReadSidecar(opts.LogPath).Timestamps
 	require.Greater(t, len(entries), 0)
 
 	// The last entry on Close records the total line count for the segment.
@@ -415,7 +459,7 @@ func TestLogWriter_TimestampIndex_LookupUseCases(t *testing.T) {
 		return fakeTime.Add(2000)
 	}
 
-	// Run past the 1024-line threshold so .tidx materialises with multiple
+	// Run past the threshold so the timestamp index materialises with multiple
 	// entries that LookupLineRangeByTime can search through.
 	const total = 1500
 	for i := 0; i < total; i++ {
@@ -423,49 +467,35 @@ func TestLogWriter_TimestampIndex_LookupUseCases(t *testing.T) {
 	}
 	require.NoError(t, w.Close())
 
-	f, err := os.Open(opts.TidxPath)
-	require.NoError(t, err)
-	defer f.Close()
-	info, err := f.Stat()
-	require.NoError(t, err)
-	size := info.Size()
-
-	// Discover the actual timestamp range from the entries on disk so the
-	// lookup queries land inside the run's window regardless of how many
-	// nowMs() calls writeOneLine ends up making per write.
-	entries, err := logutil.ReadTimestampIndex(opts.TidxPath)
-	require.NoError(t, err)
+	entries := logutil.ReadSidecar(opts.LogPath).Timestamps
 	require.GreaterOrEqual(t, len(entries), 3, "expect chunk-0 backfill plus post-threshold entries")
 
-	// Use case 1: "what time is line 1100?" — pick a line we know exists in
-	// the segment. The timestamp must fall inside the run's window.
-	ts, err := logutil.LookupTimestampByLine(f, size, 1100)
-	require.NoError(t, err)
+	// Use case 1: "what time is line 1100?" — the timestamp must fall inside
+	// the run's window.
+	ts := logutil.LookupTimestampByLine(entries, 1100)
 	firstTs := entries[0].Timestamp
 	lastTs := entries[len(entries)-1].Timestamp
 	assert.GreaterOrEqual(t, ts, firstTs)
 	assert.LessOrEqual(t, ts, lastTs)
 
-	// Use case 2: "show me a window inside the run". Anchor the window in
-	// the actual entry timestamps so we know it overlaps real lines.
+	// Use case 2: "show me a window inside the run". Anchor the window in the
+	// actual entry timestamps so we know it overlaps real lines.
 	fromMs := entries[1].Timestamp
 	toMs := entries[len(entries)-1].Timestamp
-	startLine, endLine, err := logutil.LookupLineRangeByTime(f, size, fromMs, toMs)
-	require.NoError(t, err)
+	startLine, endLine := logutil.LookupLineRangeByTime(entries, fromMs, toMs)
 	assert.GreaterOrEqual(t, endLine, startLine)
 	assert.Less(t, startLine, uint32(total))
 }
 
-// TestLogWriter_WriteLineEvent_MonotonicAcrossRotations is the Phase 1
-// invariant for the new line-coordinate world: the absolute line number
-// returned by WriteLineEvent is strictly monotonic across rotations.
+// TestLogWriter_WriteLineEvent_MonotonicAcrossRotations is the invariant for
+// the line-coordinate world: the absolute line number returned by
+// WriteLineEvent is strictly monotonic across rotations.
 //
 // Note: rotations themselves write a "[SYSTEM] Log rotated:…" line that
-// occupies a real line number on disk, so consecutive WriteLineEvent calls
-// can have a gap of one across a rotation boundary. The invariant is
-// strict-monotonicity, not consecutive numbering, and lineNum always equals
-// rotatedLines+lineCount-1 for the line just written. A regression here
-// corrupts every downstream cursor (TUI, web UI, cloud replay).
+// occupies a real line number on disk, so consecutive WriteLineEvent calls can
+// have a gap of one across a rotation boundary. The invariant is
+// strict-monotonicity, not consecutive numbering. A regression here corrupts
+// every downstream cursor (TUI, web UI, cloud replay).
 func TestLogWriter_WriteLineEvent_MonotonicAcrossRotations(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 200
@@ -497,14 +527,8 @@ func TestLogWriter_WriteLineEvent_MonotonicAcrossRotations(t *testing.T) {
 	meta := logutil.ReadLogMeta(opts.LogPath)
 	require.Greater(t, meta.RotatedLines, int64(0), "test must trigger rotation")
 
-	// The last assigned number must equal rotatedLines+(finalLineCount-1)
-	// where finalLineCount is the total lines on disk in the current segment
-	// at the moment of the last WriteLineEvent call. After Close adds nothing
-	// for non-truncated runs, but since drop_old marks truncated=true Close
-	// writes a "Total process output:" SYSTEM line, so FinalLines reflects
-	// state AFTER Close. The key invariant we can assert without that
-	// noise: max assigned + 1 (the next line number that would be issued)
-	// must not exceed the total recorded lines.
+	// The next line number that would be issued must not exceed the total
+	// recorded lines.
 	assert.LessOrEqual(t, assigned[len(assigned)-1]+1, meta.RotatedLines+meta.FinalLines)
 }
 
@@ -531,11 +555,11 @@ func TestLogWriter_WriteLineEvent_DropReturnsNegative(t *testing.T) {
 	require.NoError(t, w.Close())
 }
 
-// TestLogWriter_InjectedClockStampsSystemLine pins the determinism guarantee
-// added with the LogWriter clock injection: the SYSTEM line written on
-// truncation must format its timestamp from the injected Now, not an inline
-// time.Now(). A regression here would re-introduce a hidden wall-clock read
-// inside the log path.
+// TestLogWriter_InjectedClockStampsSystemLine pins the determinism guarantee of
+// the LogWriter clock injection: the SYSTEM line written on truncation must
+// format its timestamp from the injected Now, not an inline time.Now(). A
+// regression here would re-introduce a hidden wall-clock read inside the log
+// path.
 func TestLogWriter_InjectedClockStampsSystemLine(t *testing.T) {
 	fixed := time.Date(2026, 5, 14, 9, 30, 0, 0, time.UTC)
 	opts := newTestOpts(t.TempDir())
@@ -554,22 +578,4 @@ func TestLogWriter_InjectedClockStampsSystemLine(t *testing.T) {
 	want := fixed.Format("2006-01-02 15:04:05")
 	assert.Contains(t, string(data), want,
 		"SYSTEM line must use the injected clock's formatted timestamp")
-}
-
-func TestLogWriter_TimestampIndex_NoTidxPath(t *testing.T) {
-	dir := t.TempDir()
-	logPath := filepath.Join(dir, "test.log")
-	w, err := NewLogWriter(LogWriterOpts{
-		LogPath: logPath,
-		IdxPath: logPath + ".idx",
-		// TidxPath intentionally empty
-	})
-	require.NoError(t, err)
-
-	w.Write([]byte("line\n"))
-	require.NoError(t, w.Close())
-
-	// No .tidx file should exist
-	_, err = os.Stat(logPath + ".tidx")
-	assert.True(t, os.IsNotExist(err))
 }

@@ -201,7 +201,7 @@ func (srv *Server) humaGetLogRaw(ctx context.Context, input *LogRawInput) (*LogR
 // segment so a single download contains the operator-visible byte stream.
 func readRawLog(logPath string) ([]byte, error) {
 	var body []byte
-	if prev, err := os.ReadFile(logPath + ".prev"); err == nil {
+	if prev, err := os.ReadFile(logutil.PrevPath(logPath)); err == nil {
 		body = append(body, prev...)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err

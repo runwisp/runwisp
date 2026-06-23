@@ -36,7 +36,7 @@ Both accept the same units as `log_max_size`: `b`, `kb`, `mb`, `gb`,
 ## What `max_size` actually does
 
 `max_size` counts **log files and nothing else** — the `.log` files
-plus their `.idx`, `.tidx`, and `.meta` sidecars across every task's log
+plus their hidden `.log.meta` sidecar containers across every task's log
 directory. SQLite, the JWT secret, the PID file, and the other bits
 under the data dir don't count toward it.
 

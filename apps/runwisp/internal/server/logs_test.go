@@ -185,7 +185,7 @@ func TestHumaGetLogRaw_PrependsPrevSegment(t *testing.T) {
 	srv, db, _ := logsTestServer(t)
 	run := seedTerminalRun(t, db, "task")
 	logPath := writeLogLines(t, srv, run, "current-line")
-	require.NoError(t, os.WriteFile(logPath+".prev", []byte("rotated-line\n"), 0o600))
+	require.NoError(t, os.WriteFile(logutil.PrevPath(logPath), []byte("rotated-line\n"), 0o600))
 
 	out, err := srv.humaGetLogRaw(context.Background(), &LogRawInput{
 		TaskName: "task",
@@ -231,7 +231,7 @@ func TestReadRawLog_OnlyCurrent(t *testing.T) {
 func TestReadRawLog_OnlyPrev(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "x.log")
-	require.NoError(t, os.WriteFile(p+".prev", []byte("rotated"), 0o600))
+	require.NoError(t, os.WriteFile(logutil.PrevPath(p), []byte("rotated"), 0o600))
 	body, err := readRawLog(p)
 	require.NoError(t, err)
 	assert.Equal(t, "rotated", string(body))
@@ -245,11 +245,11 @@ func TestReadRawLog_NeitherFileReturnsEmpty(t *testing.T) {
 }
 
 func TestReadRawLog_PrevReadErrorIsPropagated(t *testing.T) {
-	// Create a directory at logPath+".prev" so os.ReadFile returns an error
-	// that is not os.ErrNotExist.
+	// Create a directory at the rotated-segment path so os.ReadFile returns an
+	// error that is not os.ErrNotExist.
 	dir := t.TempDir()
 	p := filepath.Join(dir, "x.log")
-	require.NoError(t, os.Mkdir(p+".prev", 0o755))
+	require.NoError(t, os.Mkdir(logutil.PrevPath(p), 0o755))
 	_, err := readRawLog(p)
 	require.Error(t, err)
 }

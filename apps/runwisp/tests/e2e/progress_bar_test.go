@@ -70,8 +70,9 @@ func TestProgressBarCommitsFinalFrameAndStreamsRegion(t *testing.T) {
 // TestProgressBarExposesFrameHistory proves PHASE 2: after a CR progress bar
 // settles into its single committed line, the operator can rewind through the
 // prior frames it animated through. The anchor line carries frame_count>0, the
-// history endpoint returns those prior frames whole (no raw `\r`), a `.fhist`
-// sidecar exists on disk, and deleting the run removes it.
+// history endpoint returns those prior frames whole (no raw `\r`), the sidecar
+// container (holding the frame history) exists on disk, and deleting the run
+// removes it.
 func TestProgressBarExposesFrameHistory(t *testing.T) {
 	const taskName = "progress-hist-task"
 
@@ -109,21 +110,22 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 	}
 	require.True(t, earlier, "history should include an earlier (non-final) frame of the bar")
 
-	// The sidecar exists on disk while the run is retained.
+	// The sidecar container (holding the frame history) exists on disk while the
+	// run is retained.
 	logDir := filepath.Join(daemon.dataDir, "logs")
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
-	fhistPath := logutil.FhistPath(logPath)
-	_, statErr := os.Stat(fhistPath)
-	require.NoError(t, statErr, "expected a .fhist sidecar at %s", fhistPath)
+	containerPath := logutil.MetaPath(logPath)
+	_, statErr := os.Stat(containerPath)
+	require.NoError(t, statErr, "expected a sidecar container at %s", containerPath)
 
-	// Deleting the run removes the sidecar along with the rest of the log files.
-	// Deletion is soft: the purger reclaims on-disk files after its TTL + sweep
-	// (≈9s), so allow generous slack here.
+	// Deleting the run removes the container along with the rest of the log
+	// files. Deletion is soft: the purger reclaims on-disk files after its
+	// TTL + sweep (≈9s), so allow generous slack here.
 	require.NoError(t, client.DeleteRun(taskName, run.ID))
 	require.Eventually(t, func() bool {
-		_, err := os.Stat(fhistPath)
+		_, err := os.Stat(containerPath)
 		return os.IsNotExist(err)
-	}, 20*time.Second, 200*time.Millisecond, ".fhist should be removed when the run is deleted")
+	}, 20*time.Second, 200*time.Millisecond, "the sidecar container should be removed when the run is deleted")
 }
 
 // waitForAnchorLine polls the log page until a committed line whose text
