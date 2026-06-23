@@ -17,6 +17,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/stretchr/testify/require"
 )
@@ -118,6 +119,12 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 	_, statErr := os.Stat(containerPath)
 	require.NoError(t, statErr, "expected a sidecar container at %s", containerPath)
 
+	// The bar settling on disk does not guarantee the run has reached a
+	// terminal status yet (the trailing `echo done` and exit reaping lag the
+	// final frame, especially on slower runners). Wait for it to end before
+	// deleting, since the API rejects deleting a still-running run.
+	waitForRunEnded(t, client, taskName, run.ID, 10*time.Second)
+
 	// Deleting the run removes the container along with the rest of the log
 	// files. Deletion is soft: the purger reclaims on-disk files after its
 	// TTL + sweep (≈9s), so allow generous slack here.
@@ -146,6 +153,21 @@ func waitForAnchorLine(t *testing.T, client *apiclient.Client, taskName, runID, 
 	}
 	t.Fatalf("no anchor line containing %q with frame history within %s", substr, timeout)
 	return server.LogLineEntry{}
+}
+
+// waitForRunEnded polls a single run until it reaches a terminal status, so
+// callers can safely delete it (the API rejects deleting a running run).
+func waitForRunEnded(t *testing.T, client *apiclient.Client, taskName, runID string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		run, err := client.GetRun(taskName, runID)
+		if err == nil && run.Status == model.PhaseEnded {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("run %s never reached a terminal status within %s", runID, timeout)
 }
 
 // writeProgressConfig writes a one-task TOML whose command paints a CR progress
