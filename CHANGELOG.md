@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Progress bars and live redraws render cleanly.** Carriage-return progress bars and multi-line ANSI redraws are now interpreted as a terminal would: the log keeps the finished frame instead of raw `\r`/escape soup, and live viewers (Web UI and TUI) watch the active region update in place. See [Logs](https://docs.runwisp.com/concepts/logs/#progress-bars--live-redraws).
+- **Rewind a settled redraw's frames.** A finished progress bar or redraw keeps a sampled, best-effort history you can scrub back to — click the line in the Web UI, use `[`/`]` then `enter` in the TUI, or `GET …/log/line/{n}/history`. See [Logs](https://docs.runwisp.com/concepts/logs/#rewinding-the-frames).
+
 ### Changed
 
 - **Service instances are labelled 1-based.** A multi-instance service now shows every run as `name#1`, `name#2`, `name#3` in the Web UI and TUI instead of `name`, `name#1`, `name#2`; a single-instance service stays just `name`. See [Services](https://docs.runwisp.com/configuration/services/).

@@ -99,13 +99,41 @@ on_overlap        = "skip"
 keep_runs         = 60
 keep_for          = "60d"
 notify_on_failure = ["slack-ops:#backups"]
+# A single-line `\r` progress bar: the daemon collapses every percentage frame
+# into one clean final line on disk, while live viewers watch the bar fill.
 run = '''
-set -euo pipefail
-echo "[backup] starting snapshot at $(date -u +%FT%TZ)"
+set -eu
+ESC=$(printf '\033')
+BOLD="${ESC}[1m"; GREEN="${ESC}[32m"; RST="${ESC}[0m"
+echo "${BOLD}[backup]${RST} starting snapshot at $(date -u +%FT%TZ)"
 echo "[backup] dumping schema (142 tables, 318 indexes)"
-sleep 2
+total=30
+i=0
+while [ "$i" -le "$total" ]; do
+  pct=$(( i * 100 / total ))
+  filled=$(( i * 28 / total ))
+  bar=""; j=0
+  while [ "$j" -lt "$filled" ]; do bar="${bar}#"; j=$(( j + 1 )); done
+  while [ "$j" -lt 28 ]; do bar="${bar}."; j=$(( j + 1 )); done
+  printf '\r[backup] pg_dump  [%s] %3d%%  %3dMB' "$bar" "$pct" "$(( i * 482 / total ))"
+  i=$(( i + 1 ))
+  sleep 0.04
+done
+printf '\n'
 echo "[backup] snapshot complete: 482M compressed in 12.3s"
-echo "[backup] uploaded to s3://acme-notes-backups/$(date -u +%F)/"
+i=0
+while [ "$i" -le "$total" ]; do
+  pct=$(( i * 100 / total ))
+  filled=$(( i * 28 / total ))
+  bar=""; j=0
+  while [ "$j" -lt "$filled" ]; do bar="${bar}#"; j=$(( j + 1 )); done
+  while [ "$j" -lt 28 ]; do bar="${bar}."; j=$(( j + 1 )); done
+  printf '\r[backup] upload s3 [%s] %3d%%' "$bar" "$pct"
+  i=$(( i + 1 ))
+  sleep 0.03
+done
+printf '\n'
+echo "${GREEN}[backup]${RST} uploaded to s3://acme-notes-backups/$(date -u +%F)/"
 '''
 
 [tasks.backup-restore-test]
@@ -188,11 +216,43 @@ description = "Compresses last week's app logs and prunes anything older than 30
 cron        = "0 4 * * 0"
 keep_runs   = 12
 keep_for    = "180d"
+# A multi-line ANSI redraw (cursor-up + erase-line, like `docker pull`): four
+# per-file bars animate in place, and only the settled final frame is committed.
 run = '''
 set -eu
+ESC=$(printf '\033')
+GREEN="${ESC}[32m"; DIM="${ESC}[2m"; RST="${ESC}[0m"
 echo "[rotate] scanning /var/log/acme-notes"
-sleep 1
-echo "[rotate] compressed 14 files, freed 312 MB"
+files="app.log worker.log access.log audit.log"
+printf '%s[?25l' "$ESC"
+for f in $files; do printf '  %-11s %squeued%s\n' "$f" "$DIM" "$RST"; done
+step=0
+remaining=4
+while [ "$remaining" -gt 0 ]; do
+  printf '%s[4A' "$ESC"
+  remaining=0
+  k=0
+  for f in $files; do
+    pct=$(( step * 13 - k * 17 ))
+    if [ "$pct" -lt 0 ]; then pct=0; fi
+    if [ "$pct" -gt 100 ]; then pct=100; fi
+    if [ "$pct" -lt 100 ]; then remaining=$(( remaining + 1 )); fi
+    filled=$(( pct * 20 / 100 ))
+    bar=""; i=0
+    while [ "$i" -lt "$filled" ]; do bar="${bar}#"; i=$(( i + 1 )); done
+    while [ "$i" -lt 20 ]; do bar="${bar} "; i=$(( i + 1 )); done
+    if [ "$pct" -ge 100 ]; then
+      printf '\r  %-11s [%s] %sgz done%s%s[K\n' "$f" "$bar" "$GREEN" "$RST" "$ESC"
+    else
+      printf '\r  %-11s [%s] %3d%%%s[K\n' "$f" "$bar" "$pct" "$ESC"
+    fi
+    k=$(( k + 1 ))
+  done
+  step=$(( step + 1 ))
+  sleep 0.13
+done
+printf '%s[?25h' "$ESC"
+echo "${GREEN}[rotate]${RST} compressed 4 files, freed 312 MB"
 echo "[rotate] removed 8 archives older than 30 days"
 '''
 
@@ -215,15 +275,21 @@ timeout           = "10m"
 on_overlap        = "skip"
 notify_on_success = ["slack-deploys"]
 notify_on_failure = ["slack-ops", "telegram-oncall"]
+# Partial-line output: each "applying … " is written without a trailing newline,
+# so live viewers see the in-flight step before its "ok" lands and the line is
+# committed whole.
 run = '''
-set -euo pipefail
+set -eu
+ESC=$(printf '\033')
+GREEN="${ESC}[32m"; DIM="${ESC}[2m"; RST="${ESC}[0m"
 echo "[migrate] HEAD = a1b2c3d"
 echo "[migrate] applying 3 pending migrations"
-echo "[migrate] 0042_add_user_locale.sql ok"
-sleep 1
-echo "[migrate] 0043_widen_org_slug.sql ok"
-echo "[migrate] 0044_index_run_created_at.sql ok"
-echo "[migrate] done in 1.2s"
+for m in 0042_add_user_locale 0043_widen_org_slug 0044_index_run_created_at; do
+  printf '  %s%s.sql%s ... ' "$DIM" "$m" "$RST"
+  sleep 0.25
+  printf '%sok%s\n' "$GREEN" "$RST"
+done
+echo "${GREEN}[migrate]${RST} done in 0.8s"
 '''
 
 # ── Manual / heavy jobs ──────────────────────────────────────────────────────

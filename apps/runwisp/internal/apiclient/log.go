@@ -47,6 +47,24 @@ func (c *Client) GetLogRaw(taskName, runID string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+// GetLogLineHistory fetches the prior whole-region frames a settled progress
+// bar or multi-line redraw passed through before committing line n. Returns an
+// empty slice when the line has no recorded history.
+func (c *Client) GetLogLineHistory(taskName, runID string, n int64) ([][]string, error) {
+	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log/line/%d/history", taskName, runID, n)
+	resp, err := c.doRaw("GET", path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var body server.LogLineHistoryBody
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode log line history: %w", err)
+	}
+	return body.Frames, nil
+}
+
 // SearchLogsOptions parameterises a SearchLogs call. Zero values pick the
 // server defaults: substring match, case-insensitive, 200-hit page.
 type SearchLogsOptions struct {

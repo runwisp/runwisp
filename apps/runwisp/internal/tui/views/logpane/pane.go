@@ -8,6 +8,7 @@ package logpane
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -21,6 +22,18 @@ const (
 type Line struct {
 	Stream string
 	Text   string
+	// FrameCount is non-zero on a settled progress-bar / multi-line-redraw
+	// anchor line: the number of prior whole-region frames recorded for it. The
+	// gutter marks such lines and the operator can open their history.
+	FrameCount int
+}
+
+// regionFrame is the current live snapshot of one stream's animating region
+// (a `\r` progress bar or multi-line ANSI redraw). It is transient — rendered
+// in place at the tail, never part of the committed Lines buffer.
+type regionFrame struct {
+	epoch int
+	rows  []string
 }
 
 type Config struct {
@@ -50,12 +63,20 @@ type Pane struct {
 	// HighlightLine is the absolute line number to render in the highlight
 	// style after a search-result jump. 0 disables highlighting.
 	HighlightLine int64
+	// Cursor is the buffer index of the anchor-navigation cursor, or -1 when no
+	// anchor line is selected. Moved between frame-history anchor lines with the
+	// bracket keys; the selected anchor's history opens on enter.
+	Cursor int
+	// regions holds the live overlay frame per stream (stdout/stderr). Rendered
+	// after the committed lines as an in-place animating tail.
+	regions map[string]regionFrame
 }
 
 func NewPane(cfg Config) Pane {
 	return Pane{
 		Cfg:    cfg,
 		Follow: true,
+		Cursor: -1,
 	}
 }
 
@@ -111,11 +132,90 @@ func (p *Pane) effectiveEndPadding() int {
 }
 
 func (p *Pane) maxScroll() int {
-	ms := len(p.Lines) - p.VisibleLines() + p.effectiveEndPadding()
+	ms := p.renderableLen() - p.VisibleLines() + p.effectiveEndPadding()
 	if ms < 0 {
 		return 0
 	}
 	return ms
+}
+
+// SetRegion replaces the live overlay frame for one stream. Empty rows clears
+// the overlay for that stream. Frames are full-state snapshots; the epoch lets
+// callers reason about region resets even though we always take the latest.
+func (p *Pane) SetRegion(stream string, epoch int, rows []string) {
+	if len(rows) == 0 {
+		if p.regions != nil {
+			delete(p.regions, stream)
+		}
+	} else {
+		if p.regions == nil {
+			p.regions = make(map[string]regionFrame)
+		}
+		p.regions[stream] = regionFrame{epoch: epoch, rows: append([]string(nil), rows...)}
+	}
+	if p.Follow {
+		p.Scroll = p.maxScroll()
+	}
+}
+
+// ClearRegions drops every live overlay frame. Called when the run ends so a
+// dropped clear-frame can't leave a stale animating tail behind.
+func (p *Pane) ClearRegions() {
+	if len(p.regions) == 0 {
+		return
+	}
+	p.regions = nil
+	if p.Follow {
+		p.Scroll = p.maxScroll()
+	}
+}
+
+// overlayLines flattens the live overlay frames into render rows, stdout before
+// stderr (then any other streams, sorted) for stable ordering.
+func (p *Pane) overlayLines() []Line {
+	if len(p.regions) == 0 {
+		return nil
+	}
+	var out []Line
+	for _, s := range orderedStreams(p.regions) {
+		for _, row := range p.regions[s].rows {
+			out = append(out, Line{Stream: s, Text: row})
+		}
+	}
+	return out
+}
+
+// orderedStreams returns the region stream keys with stdout first, then stderr,
+// then any remaining streams sorted alphabetically.
+func orderedStreams(regions map[string]regionFrame) []string {
+	out := make([]string, 0, len(regions))
+	for _, preferred := range []string{"stdout", "stderr"} {
+		if _, ok := regions[preferred]; ok {
+			out = append(out, preferred)
+		}
+	}
+	rest := make([]string, 0, len(regions))
+	for s := range regions {
+		if s != "stdout" && s != "stderr" {
+			rest = append(rest, s)
+		}
+	}
+	sort.Strings(rest)
+	return append(out, rest...)
+}
+
+// renderableLen is the total number of rows the pane can scroll through:
+// committed lines plus the live overlay tail.
+func (p *Pane) renderableLen() int {
+	return len(p.Lines) + p.overlayCount()
+}
+
+func (p *Pane) overlayCount() int {
+	n := 0
+	for _, r := range p.regions {
+		n += len(r.rows)
+	}
+	return n
 }
 
 // MaxScroll exposes maxScroll for tests and external follow-edge checks.
@@ -130,6 +230,7 @@ func (p *Pane) evictAndFollow() {
 		if p.Scroll < 0 {
 			p.Scroll = 0
 		}
+		p.shiftCursor(-excess)
 	}
 	if p.Follow {
 		p.Scroll = p.maxScroll()
@@ -140,10 +241,17 @@ func (p *Pane) evictAndFollow() {
 // track totalLines (the highest n+1 seen) so the gutter can size itself for
 // the largest expected number even before all lines have arrived.
 func (p *Pane) AppendLine(n int64, stream, text string) {
+	p.AppendLogLine(n, stream, text, 0)
+}
+
+// AppendLogLine is AppendLine plus the frame-history count for the line, used
+// by the run-log path where a settled progress bar / redraw anchor carries
+// rewindable prior frames. frameCount 0 behaves exactly like AppendLine.
+func (p *Pane) AppendLogLine(n int64, stream, text string, frameCount int) {
 	if len(p.Lines) == 0 && p.FirstLoadedLine == 0 && n > 0 {
 		p.FirstLoadedLine = int(n)
 	}
-	p.Lines = append(p.Lines, Line{Stream: stream, Text: text})
+	p.Lines = append(p.Lines, Line{Stream: stream, Text: text, FrameCount: frameCount})
 	if int(n)+1 > p.TotalLines {
 		p.TotalLines = int(n) + 1
 	}
@@ -167,6 +275,7 @@ func (p *Pane) EvictBelow(firstAvailable int) {
 	if p.Scroll < 0 {
 		p.Scroll = 0
 	}
+	p.shiftCursor(-skip)
 }
 
 func (p *Pane) ScrollUp(n int) {
@@ -206,6 +315,95 @@ func (p *Pane) JumpToLine(absLine int64) {
 // scroll so the highlight pulse doesn't linger.
 func (p *Pane) ClearHighlight() {
 	p.HighlightLine = 0
+}
+
+// shiftCursor adjusts the anchor cursor's buffer index after lines are added or
+// removed at the front, dropping it to -1 if it falls out of the buffer.
+func (p *Pane) shiftCursor(delta int) {
+	if p.Cursor < 0 {
+		return
+	}
+	p.Cursor += delta
+	if p.Cursor < 0 || p.Cursor >= len(p.Lines) {
+		p.Cursor = -1
+	}
+}
+
+// HasAnchors reports whether any loaded line carries frame history.
+func (p *Pane) HasAnchors() bool {
+	for i := range p.Lines {
+		if p.Lines[i].FrameCount > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// MoveCursorToAnchor moves the anchor cursor to the next (dir>0) or previous
+// (dir<0) frame-history anchor line, scrolls it into view, and returns true if
+// one was found. With no current cursor it starts from the visible edge in the
+// direction of travel.
+func (p *Pane) MoveCursorToAnchor(dir int) bool {
+	if len(p.Lines) == 0 || dir == 0 {
+		return false
+	}
+	start := p.Cursor
+	if start < 0 {
+		// Seed just outside the visible window so the first hit is on-screen.
+		if dir > 0 {
+			start = p.Scroll - 1
+		} else {
+			start = p.Scroll + p.VisibleLines()
+		}
+	}
+	for i := start + dir; i >= 0 && i < len(p.Lines); i += dir {
+		if p.Lines[i].FrameCount > 0 {
+			p.Cursor = i
+			p.scrollCursorIntoView()
+			return true
+		}
+	}
+	return false
+}
+
+// scrollCursorIntoView nudges the vertical scroll so the cursor line is within
+// the visible window, leaving follow mode (the operator is browsing history).
+func (p *Pane) scrollCursorIntoView() {
+	if p.Cursor < 0 {
+		return
+	}
+	vis := p.VisibleLines()
+	if p.Cursor < p.Scroll {
+		p.Scroll = p.Cursor
+		p.Follow = false
+	} else if p.Cursor >= p.Scroll+vis {
+		p.Scroll = p.Cursor - vis + 1
+		p.Follow = false
+	}
+	if ms := p.maxScroll(); p.Scroll > ms {
+		p.Scroll = ms
+	}
+	if p.Scroll < 0 {
+		p.Scroll = 0
+	}
+}
+
+// CursorAnchor returns the absolute (0-based) line number and frame count of the
+// line under the anchor cursor, and whether the cursor is on a real anchor.
+func (p *Pane) CursorAnchor() (absLine int64, frameCount int, ok bool) {
+	if p.Cursor < 0 || p.Cursor >= len(p.Lines) {
+		return 0, 0, false
+	}
+	line := p.Lines[p.Cursor]
+	if line.FrameCount == 0 {
+		return 0, 0, false
+	}
+	return int64(p.FirstLoadedLine + p.Cursor), line.FrameCount, true
+}
+
+// ClearCursor drops the anchor cursor.
+func (p *Pane) ClearCursor() {
+	p.Cursor = -1
 }
 
 func (p *Pane) ScrollDown(n int) {
@@ -363,6 +561,7 @@ func (p *Pane) PrependLines(lines []Line, firstLine int) {
 		p.FirstLoadedLine = 0
 	}
 	p.Scroll += len(lines)
+	p.shiftCursor(len(lines))
 }
 
 // NeedsOlder reports whether the user has scrolled to the top of the loaded

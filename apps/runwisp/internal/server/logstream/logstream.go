@@ -25,15 +25,32 @@ import (
 // live tail stays correct while old in-flight bursts are sacrificed first.
 const PendingBufferLimit = 4096
 
+// RegionBufferLimit bounds buffered live-region snapshots. Each snapshot is a
+// full frame that supersedes the previous one, so on overflow we silently drop
+// the oldest without a `dropped` notice — a missed intermediate frame self-heals
+// on the next one and must never evict a committed line.
+const RegionBufferLimit = 256
+
 // LineEvent is the per-line payload emitted on the SSE wire as the `line`
 // event. It matches LogLineEntry's shape; the parent server package owns
 // the named-type alias that huma/sse uses for event-name dispatch.
 type LineEvent struct {
-	N         int64  `json:"n" doc:"Absolute line number"`
-	Ts        int64  `json:"ts" doc:"Unix milliseconds timestamp; 0 if unavailable"`
-	Stream    string `json:"stream" doc:"Stream identifier (stdout/stderr/system)"`
-	Text      string `json:"text" doc:"Line content without trailing newline"`
-	Continued bool   `json:"continued,omitempty" doc:"True if this segment continues an oversized split line"`
+	N          int64  `json:"n" doc:"Absolute line number"`
+	Ts         int64  `json:"ts" doc:"Unix milliseconds timestamp; 0 if unavailable"`
+	Stream     string `json:"stream" doc:"Stream identifier (stdout/stderr/system)"`
+	Text       string `json:"text" doc:"Line content without trailing newline"`
+	Continued  bool   `json:"continued,omitempty" doc:"True if this segment continues an oversized split line"`
+	FrameCount int    `json:"frame_count,omitempty" doc:"Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise"`
+}
+
+// RegionEvent is a live snapshot of a still-animating output region (a `\r`
+// progress bar or multi-line ANSI redraw). It carries no line number: clients
+// hold it in a transient overlay keyed by (Stream, Epoch), replacing the whole
+// frame on each event, and never persist it. Empty Rows clears the overlay.
+type RegionEvent struct {
+	Stream string   `json:"stream" doc:"Stream identifier (stdout/stderr)"`
+	Epoch  int      `json:"epoch" doc:"Region generation; bumps on screen reset so stale frames can be discarded"`
+	Rows   []string `json:"rows" doc:"Current frame of the region, one entry per row; empty clears the overlay"`
 }
 
 // RotatedEvent fires when rotation has dropped lines below FirstAvailable.
@@ -63,6 +80,7 @@ type DoneEvent struct {
 // goroutine.
 type Sender interface {
 	SendLine(LineEvent) error
+	SendRegion(RegionEvent) error
 	SendRotated(RotatedEvent) error
 	SendDropped(DroppedEvent) error
 	SendDone(DoneEvent) error
@@ -107,6 +125,7 @@ type HumaSender struct {
 	// generated OpenAPI keeps stable event names while logstream keeps
 	// its own payload types.
 	Line    func(LineEvent) any
+	Region  func(RegionEvent) any
 	Rotated func(RotatedEvent) any
 	Dropped func(DroppedEvent) any
 	Done    func(DoneEvent) any
@@ -114,6 +133,13 @@ type HumaSender struct {
 
 func (h HumaSender) SendLine(e LineEvent) error {
 	return h.Inner(sse.Message{ID: int(e.N), Data: h.Line(e)})
+}
+
+// SendRegion emits a region snapshot WITHOUT an SSE id, so it never becomes a
+// Last-Event-ID resume cursor — reconnect resumes from the last committed line
+// and the next live frame repaints the overlay.
+func (h HumaSender) SendRegion(e RegionEvent) error {
+	return h.Inner(sse.Message{Data: h.Region(e)})
 }
 
 func (h HumaSender) SendRotated(e RotatedEvent) error {
@@ -158,11 +184,20 @@ func (s *streamer) emitLine(line LineEvent) error {
 
 func lineFromBus(le events.LogLineEvent) LineEvent {
 	return LineEvent{
-		N:         le.LineNum,
-		Ts:        le.Timestamp,
-		Stream:    le.Stream,
-		Text:      le.Text,
-		Continued: le.Continued,
+		N:          le.LineNum,
+		Ts:         le.Timestamp,
+		Stream:     le.Stream,
+		Text:       le.Text,
+		Continued:  le.Continued,
+		FrameCount: le.FrameCount,
+	}
+}
+
+func regionFromBus(re events.LogRegionEvent) RegionEvent {
+	return RegionEvent{
+		Stream: re.Stream,
+		Epoch:  re.Epoch,
+		Rows:   re.Rows,
 	}
 }
 
@@ -209,12 +244,15 @@ type streamDropTracker struct {
 
 func (s *streamer) streamLoop(ctx context.Context, runID string, bus events.EventBus, db RunGetter, anchorFrom, replayLimit int64, runEnded bool) {
 	pendingCh := make(chan events.LogLineEvent, PendingBufferLimit)
+	regionCh := make(chan events.LogRegionEvent, RegionBufferLimit)
 	terminalCh := make(chan struct{}, 1)
 	dt := &streamDropTracker{after: -1}
 
 	// Subscribe before reading disk so no live events are missed.
 	unsubLine := bus.Subscribe(events.EventLogLine, makeLineHandler(runID, pendingCh, dt))
 	defer unsubLine()
+	unsubRegion := bus.Subscribe(events.EventLogRegion, makeRegionHandler(runID, regionCh))
+	defer unsubRegion()
 	termHandler := makeTerminalHandler(runID, terminalCh)
 	unsubCompleted := bus.Subscribe(events.EventRunCompleted, termHandler)
 	defer unsubCompleted()
@@ -246,7 +284,7 @@ func (s *streamer) streamLoop(ctx context.Context, runID string, bus events.Even
 		s.sendTerminalEvents(pendingCh, dt)
 		return
 	}
-	s.runLiveLoop(ctx, pendingCh, terminalCh, dt)
+	s.runLiveLoop(ctx, pendingCh, regionCh, terminalCh, dt)
 }
 
 // makeLineHandler returns the EventLogLine subscription handler for runID.
@@ -257,6 +295,34 @@ func makeLineHandler(runID string, pendingCh chan events.LogLineEvent, dt *strea
 			return
 		}
 		bufferLogLine(le, pendingCh, dt)
+	}
+}
+
+// makeRegionHandler returns the EventLogRegion subscription handler for runID.
+func makeRegionHandler(runID string, regionCh chan events.LogRegionEvent) func(events.Event) {
+	return func(e events.Event) {
+		re, ok := e.Data.(events.LogRegionEvent)
+		if !ok || re.RunID != runID {
+			return
+		}
+		bufferRegion(re, regionCh)
+	}
+}
+
+// bufferRegion enqueues re, evicting the oldest snapshot on overflow. Frames are
+// full-state and self-superseding, so a dropped frame needs no accounting.
+func bufferRegion(re events.LogRegionEvent, regionCh chan events.LogRegionEvent) {
+	select {
+	case regionCh <- re:
+	default:
+		select {
+		case <-regionCh:
+		default:
+		}
+		select {
+		case regionCh <- re:
+		default:
+		}
 	}
 }
 
@@ -370,7 +436,7 @@ func (s *streamer) handleLiveLine(le events.LogLineEvent, dt *streamDropTracker)
 
 // runLiveLoop drives the SSE connection until ctx is cancelled, the run ends
 // (terminalCh fires), or a send error occurs.
-func (s *streamer) runLiveLoop(ctx context.Context, pendingCh <-chan events.LogLineEvent, terminalCh <-chan struct{}, dt *streamDropTracker) {
+func (s *streamer) runLiveLoop(ctx context.Context, pendingCh <-chan events.LogLineEvent, regionCh <-chan events.LogRegionEvent, terminalCh <-chan struct{}, dt *streamDropTracker) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -380,6 +446,10 @@ func (s *streamer) runLiveLoop(ctx context.Context, pendingCh <-chan events.LogL
 			return
 		case le := <-pendingCh:
 			if !s.handleLiveLine(le, dt) {
+				return
+			}
+		case re := <-regionCh:
+			if err := s.send.SendRegion(regionFromBus(re)); err != nil {
 				return
 			}
 		}

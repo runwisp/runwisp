@@ -170,6 +170,7 @@
                 onStopService={handleStopService}
                 fetchLogs={logSession.fetchLogs}
                 streamLogs={logSession.streamLogs}
+                fetchLineHistory={logSession.fetchLineHistory}
                 initialRunId={$page.url.searchParams.get("runId")}
                 initialHighlightLine={(() => {
                     const v = $page.url.searchParams.get("line");

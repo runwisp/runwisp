@@ -30,7 +30,9 @@ shift.
 
 Stdout and stderr are interleaved in capture order — what you see in
 the file is exactly what the script wrote, in exactly the order it
-wrote it.
+wrote it. The one twist is progress bars and other in-place redraws,
+which RunWisp interprets so they land as clean lines rather than raw
+`\r`/escape bytes — see [Progress bars & live redraws](#progress-bars--live-redraws).
 
 When retention deletes a run, the daemon takes the log file with it,
 plus the little helper files next to it, plus the parent directory if
@@ -126,6 +128,69 @@ the top, so even a multi-megabyte log opens instantly.
 The on-disk file is always the canonical copy. The live stream is
 just a fast preview of those same bytes.
 
+## Progress bars & live redraws
+
+Lots of tools paint progress in place — a download bar that rewrites
+itself with `\r`, or something like `docker pull` redrawing a stack of
+per-layer bars with ANSI cursor moves. RunWisp understands those
+sequences instead of storing the raw control bytes, so you get the
+finished picture rather than a smear of `\r` and escape codes.
+
+Here's how it shakes out:
+
+- **On disk**, a `\r` progress bar collapses to its **final frame** —
+  one line, `build: 100%`, not every percentage it passed through.
+  A multi-line redraw settles to the last frame it drew. The log stays
+  clean and greppable.
+- **Live**, the Web UI and TUI show the active region updating **in
+  place** — the bar animates as the process writes it, then freezes as
+  the committed line once it's done. A partial line (an `echo -n`
+  without its newline yet) shows up right away instead of hiding until
+  the newline lands.
+
+A few honest limitations, none of which lose you any output:
+
+- RunWisp captures stdout and stderr as plain pipes, **not a PTY**.
+  Many tools deliberately turn _off_ their fancy progress rendering
+  when they detect they're not attached to a real terminal — those
+  just print plain lines, which is fine. We faithfully render the ones
+  that emit ANSI regardless.
+- Because the two streams are separate, a cursor move on one **can't**
+  reach across to reposition the other. Each stream redraws within its
+  own region.
+- If the daemon is hard-killed (`kill -9`) mid-redraw, the still-
+  animating frame that hadn't been finalized yet is lost — bounded to
+  that one live region. Everything already committed is on disk as
+  always.
+
+### Rewinding the frames
+
+Collapsing a bar to its final frame keeps the log clean, but sometimes
+the frames _are_ the story — what the bar looked like just before it
+stalled, or which layer was still downloading when a `docker pull`
+wedged. So RunWisp keeps a short, sampled history of the frames a
+redraw passed through and lets you scrub back to them after it settles.
+
+A settled redraw line is marked as clickable. In the **Web UI**, click
+it and the prior frames unfold right underneath; click again to fold
+them away. In the **TUI**, step between marked lines with <kbd>[</kbd>
+and <kbd>]</kbd> and press <kbd>enter</kbd> to open a viewer. Over REST,
+`GET /api/tasks/{name}/runs/{id}/log/line/{n}/history` returns the
+frames for line `n` (multi-line redraws come back as whole frames, not
+per-row). Lines without history return an empty list.
+
+This is deliberately a _supplementary_ convenience, with honest bounds:
+
+- Frames are **sampled over time** (roughly a few per second), not
+  captured on every byte — an instant burst that never actually
+  animated collapses to nothing, and very fast sub-sample animation is
+  caught coarsely. The captured span is also capped per redraw, thinned
+  evenly when it would overflow, so a long-running bar keeps its whole
+  arc rather than just the tail.
+- History lives in a best-effort `.fhist` sidecar (see below), never in
+  the `.log`. Losing it — rotation, `kill -9`, retention — never costs
+  you any committed output; the durable log is untouched.
+
 ## Downloading
 
 When you want the whole log as one file, you can grab it.
@@ -189,7 +254,7 @@ If your query is malformed — unclosed regex group, empty `q`, that
 kind of thing — you'll get a `400` straight away, before any
 scanning starts.
 
-## Sidecars (`.idx`, `.idx.prev`, `.tidx`, `.tidx.prev`, `.meta`, `.prev`)
+## Sidecars (`.idx`, `.idx.prev`, `.tidx`, `.tidx.prev`, `.meta`, `.prev`, `.fhist`)
 
 Next to every `.log` you'll see a couple of small helper files. They
 make seeking and downloading fast. RunWisp creates them
@@ -197,6 +262,12 @@ automatically — you never need to touch them, and deleting them
 won't free up any meaningful disk space. **Don't delete them while a run is still going.** When
 retention removes a run, the sidecars go with the parent log
 automatically.
+
+The `.fhist` file is the odd one out: it only shows up for runs that
+actually drew a progress bar or other in-place redraw, and it holds the
+sampled [frame history](#rewinding-the-frames) for those lines. It's
+append-only and best-effort — safe to lose, and absent entirely for
+plain logs.
 
 ## Crash safety
 

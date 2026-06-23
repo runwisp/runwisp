@@ -34,7 +34,7 @@ func RemoveLogFiles(logPath string) {
 	if logPath == "" {
 		return
 	}
-	for _, suffix := range []string{"", ".idx", ".prev", ".idx.prev", ".tidx", ".tidx.prev", ".meta"} {
+	for _, suffix := range []string{"", ".idx", ".prev", ".idx.prev", ".tidx", ".tidx.prev", ".meta", ".fhist"} {
 		p := logPath + suffix
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			slog.Warn("Failed to delete log file", "path", p, "err", err)

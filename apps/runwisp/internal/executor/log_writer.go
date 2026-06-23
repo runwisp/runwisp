@@ -38,9 +38,10 @@ type LogWriter struct {
 	idxPath  string
 	tidxPath string
 
-	file     *os.File
-	idxFile  *os.File // nil until segment crosses LogIndexInterval lines
-	tidxFile *os.File // nil until segment crosses LogIndexInterval lines
+	file      *os.File
+	idxFile   *os.File // nil until segment crosses LogIndexInterval lines
+	tidxFile  *os.File // nil until segment crosses LogIndexInterval lines
+	fhistFile *os.File // nil until the first frame-history group is written
 
 	// Size limiting
 	maxSize    int64  // 0 = unlimited
@@ -125,6 +126,9 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 	if opts.TidxPath != "" {
 		_ = os.Remove(opts.TidxPath)
 	}
+	// Frame history is also lazy and sparse; drop any stale sidecar so this run
+	// never inherits a prior run's frames at the same path.
+	_ = os.Remove(logutil.FhistPath(opts.LogPath))
 
 	return &LogWriter{
 		mainPath:          opts.LogPath,
@@ -161,6 +165,39 @@ func (w *LogWriter) WriteLineEvent(text, stream string) (int64, error) {
 	formatted := []byte(logutil.FormatLine(text, stream))
 	lineNum, _, err := w.writeOneLine(formatted)
 	return lineNum, err
+}
+
+// WriteFrameHistory appends the whole-region frame history for a settled commit
+// group, keyed to the group's first committed line number (anchor). The `.fhist`
+// sidecar is opened lazily on the first call, so logs without any in-place
+// output never create one. Best-effort and supplementary: a write failure is
+// returned but never affects the durable log.
+func (w *LogWriter) WriteFrameHistory(anchor int64, frames [][]string) error {
+	if len(frames) == 0 {
+		return nil
+	}
+	rec, err := logutil.EncodeFrameHistoryEntry(anchor, frames)
+	if err != nil {
+		return fmt.Errorf("encode frame history: %w", err)
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.stopped {
+		return nil
+	}
+	if w.fhistFile == nil {
+		f, err := os.Create(logutil.FhistPath(w.mainPath))
+		if err != nil {
+			return fmt.Errorf("create frame history sidecar: %w", err)
+		}
+		w.fhistFile = f
+	}
+	if _, err := w.fhistFile.Write(rec); err != nil {
+		return fmt.Errorf("write frame history: %w", err)
+	}
+	return nil
 }
 
 // writeOneLine is the single mutex-guarded write path. Returns the absolute
@@ -526,6 +563,12 @@ func (w *LogWriter) Close() error {
 		w.writeFinalTidxEntry()
 		w.tidxFile.Sync()
 		if err := w.tidxFile.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if w.fhistFile != nil {
+		w.fhistFile.Sync()
+		if err := w.fhistFile.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

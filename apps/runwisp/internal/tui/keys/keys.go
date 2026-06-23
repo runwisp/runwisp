@@ -66,6 +66,7 @@ var (
 	Fullscreen  = Binding{Keys: "f", Desc: "fullscreen logs", Bar: "f fullscreen"}
 	TopEnd      = Binding{Keys: "g / G", Desc: "jump to top / end"}
 	Page        = Binding{Keys: "pgup/pgdn", Desc: "page through logs", Bar: "pgup/pgdn page"}
+	FrameHist   = Binding{Keys: "[ / ] · enter", Desc: "prev/next redraw · view frame history"}
 	Scroll      = Binding{Bar: "↑↓ scroll"}
 	Pan         = Binding{Bar: "←→ pan"}
 	BackToList  = Binding{Bar: "esc/⌫ back"}
@@ -98,7 +99,7 @@ var OverlaySections = []Section{
 	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, SearchLogs}},
 	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back}},
 	{Title: "Task", Bindings: []Binding{Run, OpenRun}},
-	{Title: "Exec view", Bindings: []Binding{Stop, Retry, DownloadDel, Fullscreen, TopEnd, Page}},
+	{Title: "Exec view", Bindings: []Binding{Stop, Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
 	{Title: "Run dialog", Bindings: []Binding{FlagToggle, ChooseOpt, IncludeOmit, RunCancel}},
 	{Title: "Notifications", Bindings: []Binding{NotifOpen, NotifRead, NotifCollapse}},
 }

@@ -39,6 +39,7 @@
         onStopService,
         fetchLogs,
         streamLogs,
+        fetchLineHistory,
         initialRunId = null,
         initialHighlightLine = null,
         selectRunId = null,
@@ -72,6 +73,7 @@
             onEvent: (event: LogEvent) => void,
             initialState?: { fromLine: number },
         ) => () => void;
+        fetchLineHistory?: (runId: string, lineNum: number) => Promise<string[][]>;
         initialRunId?: string | null;
         initialHighlightLine?: number | null;
         selectRunId?: string | null;
@@ -414,6 +416,7 @@
                 run={selectedRun}
                 {fetchLogs}
                 {streamLogs}
+                {fetchLineHistory}
                 onDelete={deleteSingle}
                 {highlightLine}
                 getInstanceCount={() => instanceCount}

@@ -58,6 +58,7 @@ func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		{m.dialogs.HasParamForm(), m.interceptParamFormDialog},
 		{m.dialogs.HasRunParams(), m.interceptRunParamsDialog},
 		{m.dialogs.HasCopy(), m.interceptCopyDialog},
+		{m.dialogs.HasLogHistory(), m.interceptLogHistoryDialog},
 		{m.dialogs.HasHelp(), m.interceptHelpDialog},
 	}
 	for _, ic := range interceptors {
@@ -115,6 +116,9 @@ func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case uikit.LogLineMsg:
 		model, cmd := m.handleLogLine(msg)
 		return model, cmd, true
+	case uikit.LogRegionMsg:
+		model, cmd := m.handleLogRegion(msg)
+		return model, cmd, true
 	case uikit.LogRotatedMsg:
 		model, cmd := m.handleLogRotated(msg)
 		return model, cmd, true
@@ -129,6 +133,9 @@ func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return model, cmd, true
 	case uikit.ReconnectLogMsg:
 		model, cmd := m.handleReconnectLog(msg)
+		return model, cmd, true
+	case uikit.LogLineHistoryMsg:
+		model, cmd := m.handleLogLineHistory(msg)
 		return model, cmd, true
 	case uikit.DaemonLogConnectedMsg:
 		model, cmd := m.handleDaemonLogConnected(msg)
@@ -431,6 +438,26 @@ func (m Model) interceptCopyDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+// interceptLogHistoryDialog handles input while the frame-history viewer is
+// visible. Scroll keys are consumed by the dialog; any close key dismisses it;
+// ctrl+c escalates to the quit confirm.
+func (m Model) interceptLogHistoryDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == keyCtrlC {
+			m.dialogs.DismissLogHistory()
+			m.showQuitConfirm()
+			return m, nil, true
+		}
+		m.dialogs.UpdateLogHistory(msg)
+		return m, nil, true
+	case tea.MouseMsg:
+		m.dialogs.UpdateLogHistory(msg)
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
 // interceptHelpDialog handles input while the help overlay is visible. Any
 // close key dismisses it; ctrl+c escalates to the quit confirm.
 func (m Model) interceptHelpDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
@@ -492,7 +519,7 @@ func (m Model) handleLogLine(msg uikit.LogLineMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, m.streams.ContinueListeningLog(msg.RunID)
 	}
-	m.execView.Pane.AppendLine(msg.Line.N, msg.Line.Stream, msg.Line.Text)
+	m.execView.Pane.AppendLogLine(msg.Line.N, msg.Line.Stream, msg.Line.Text, msg.Line.FrameCount)
 	// If a search hit selected this run, jump as soon as the target line
 	// lands in the buffer. The pending marker is cleared so subsequent
 	// scroll input isn't yanked back to the hit.
@@ -500,6 +527,14 @@ func (m Model) handleLogLine(msg uikit.LogLineMsg) (tea.Model, tea.Cmd) {
 		m.execView.Pane.JumpToLine(m.pendingHighlight)
 		m.pendingHighlight = 0
 	}
+	return m, m.streams.ContinueListeningLog(msg.RunID)
+}
+
+func (m Model) handleLogRegion(msg uikit.LogRegionMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) {
+		return m, m.streams.ContinueListeningLog(msg.RunID)
+	}
+	m.execView.Pane.SetRegion(msg.Stream, msg.Epoch, msg.Rows)
 	return m, m.streams.ContinueListeningLog(msg.RunID)
 }
 
@@ -526,6 +561,9 @@ func (m Model) handleLogDone(msg uikit.LogDoneMsg) (tea.Model, tea.Cmd) {
 	if m.execView.Run.Status == model.PhaseRunning {
 		return m, m.scheduleLogReconnect(msg.RunID)
 	}
+	// The run has ended: no live region remains, so drop any overlay that a
+	// dropped clear-frame might have left painted.
+	m.execView.Pane.ClearRegions()
 	return m, nil
 }
 
@@ -639,6 +677,23 @@ func (m Model) handleReconnectLog(msg uikit.ReconnectLogMsg) (tea.Model, tea.Cmd
 	}
 	resumeFrom := int64(m.execView.Pane.FirstLoadedLine + len(m.execView.Pane.Lines))
 	return m, m.streams.StartLogStream(m.execView.Run, resumeFrom)
+}
+
+// handleLogLineHistory opens the frame-history viewer once the prior frames for
+// an anchor line have been fetched. An error or empty result surfaces as a
+// flash rather than an empty modal.
+func (m Model) handleLogLineHistory(msg uikit.LogLineHistoryMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) {
+		return m, nil
+	}
+	if msg.Err != nil {
+		return m, m.dialogs.Flash("Failed to load frame history", 3*time.Second)
+	}
+	if len(msg.Frames) == 0 {
+		return m, m.dialogs.Flash("No frame history for this line", 3*time.Second)
+	}
+	m.dialogs.ShowLogHistory(NewLogHistoryDialog(msg.Line, msg.Frames, msg.Committed))
+	return m, nil
 }
 
 func (m Model) handleTick() (tea.Model, tea.Cmd) {

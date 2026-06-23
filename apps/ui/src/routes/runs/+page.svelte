@@ -53,6 +53,7 @@
         onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
         fetchLogs={logSession.fetchLogs}
         streamLogs={logSession.streamLogs}
+        fetchLineHistory={logSession.fetchLineHistory}
         {getInstanceCount}
     />
 {/if}

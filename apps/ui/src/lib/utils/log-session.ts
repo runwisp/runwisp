@@ -21,6 +21,7 @@ export interface LogSession {
         onEvent: (event: LogEvent) => void,
         initialState?: LogStreamInitialState,
     ) => () => void;
+    fetchLineHistory: (runId: string, lineNum: number) => Promise<string[][]>;
 }
 
 /**
@@ -70,5 +71,16 @@ export function createLogSession(options: LogSessionOptions): LogSession {
         return getStreamer(options.getTaskName(run))(runId, onEvent, initialState);
     }
 
-    return { fetchLogs, streamLogs };
+    async function fetchLineHistory(runId: string, lineNum: number): Promise<string[][]> {
+        const run = options.findRun(runId);
+        if (!run) return [];
+        try {
+            return await tasksApi.getLogLineHistory(options.getTaskName(run), runId, lineNum);
+        } catch (err) {
+            logger.error("Failed to fetch log line history", err);
+            return [];
+        }
+    }
+
+    return { fetchLogs, streamLogs, fetchLineHistory };
 }

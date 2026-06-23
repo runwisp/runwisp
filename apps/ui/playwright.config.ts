@@ -33,6 +33,7 @@ export default defineConfig({
                 "runs-page.spec.ts",
                 "notifications.spec.ts",
                 "theme.spec.ts",
+                "frame-history.spec.ts",
             ],
             use: { ...devices["Desktop Chrome"] },
         },

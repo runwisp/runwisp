@@ -23,6 +23,49 @@ func newTestPane(maxLines int) Pane {
 	return p
 }
 
+func TestLogPane_RegionOverlay_RendersBelowCommitted(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", "committed line")
+	p.SetRegion("stdout", 1, []string{"progress 42%"})
+
+	var b strings.Builder
+	p.RenderLines(&b, false, false)
+	out := b.String()
+	assert.Contains(t, out, "committed line")
+	assert.Contains(t, out, "progress 42%")
+
+	// A newer frame replaces the previous one wholesale.
+	p.SetRegion("stdout", 1, []string{"progress 99%"})
+	b.Reset()
+	p.RenderLines(&b, false, false)
+	out = b.String()
+	assert.Contains(t, out, "progress 99%")
+	assert.NotContains(t, out, "progress 42%")
+}
+
+func TestLogPane_RegionOverlay_EmptyRowsClears(t *testing.T) {
+	p := newTestPane(100_000)
+	p.AppendLine(0, "stdout", "committed line")
+	p.SetRegion("stdout", 1, []string{"live row"})
+	assert.Equal(t, 2, p.renderableLen())
+
+	p.SetRegion("stdout", 1, nil)
+	assert.Equal(t, 1, p.renderableLen())
+
+	p.SetRegion("stdout", 1, []string{"again"})
+	p.ClearRegions()
+	assert.Equal(t, 1, p.renderableLen())
+}
+
+func TestLogPane_RegionOverlay_StdoutBeforeStderr(t *testing.T) {
+	p := newTestPane(100_000)
+	p.SetRegion("stderr", 1, []string{"err frame"})
+	p.SetRegion("stdout", 1, []string{"out frame"})
+
+	lines := p.overlayLines()
+	assert.Equal(t, []Line{{Stream: "stdout", Text: "out frame"}, {Stream: "stderr", Text: "err frame"}}, lines)
+}
+
 func TestLogPane_PrependLines_Basic(t *testing.T) {
 	p := newTestPane(100_000)
 	p.SetFirstLoadedLine(50)

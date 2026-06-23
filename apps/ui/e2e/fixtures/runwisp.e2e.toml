@@ -38,6 +38,18 @@ sleep 2
 echo "timed-done"
 """
 
+[tasks.progress-task]
+description = "Paints a carriage-return progress bar so the UI can render a settled redraw with rewindable frame history"
+run = """
+set -eu
+for p in 10 40 70 100; do
+  printf 'progress: %d%%\r' "$p"
+  sleep 0.2
+done
+printf '\n'
+echo progress-done
+"""
+
 # Surface failed runs as in-app notifications so the bell + popover have
 # something real to render. No outbound notifiers configured.
 [[notification_route]]

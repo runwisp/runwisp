@@ -22,6 +22,7 @@ const (
 	EventRunUpdated      EventType = "run.updated"
 	EventRunDeleted      EventType = "run.deleted"
 	EventLogLine         EventType = "log.line"
+	EventLogRegion       EventType = "log.region"
 	EventLogDiskPressure EventType = "log.disk_pressure"
 	EventServiceFatal    EventType = "service.fatal"
 )
@@ -36,6 +37,7 @@ var AllEventTypes = []EventType{
 	EventRunUpdated,
 	EventRunDeleted,
 	EventLogLine,
+	EventLogRegion,
 	EventLogDiskPressure,
 	EventServiceFatal,
 }
@@ -57,6 +59,7 @@ type Event struct {
 func (RunEvent) eventData()             { /* sealed-type marker */ }
 func (RunDeletedEvent) eventData()      { /* sealed-type marker */ }
 func (LogLineEvent) eventData()         { /* sealed-type marker */ }
+func (LogRegionEvent) eventData()       { /* sealed-type marker */ }
 func (LogDiskPressureEvent) eventData() { /* sealed-type marker */ }
 func (ServiceFatalEvent) eventData()    { /* sealed-type marker */ }
 
@@ -117,6 +120,11 @@ type LogDiskPressureEvent struct {
 //
 // Continued marks segments 2..N of a logical line that LineBuffer split when
 // it exceeded MaxLineBufferSize. Each segment still gets its own LineNum.
+//
+// FrameCount is non-zero only on the anchor line of a settled progress bar or
+// multi-line redraw: it reports how many prior whole-region frames were recorded
+// for that line in the `.fhist` sidecar, so a viewer knows the line is clickable
+// to rewind. Plain output carries 0.
 type LogLineEvent struct {
 	TaskName            string `json:"task_name"`
 	RunID               string `json:"run_id"`
@@ -126,6 +134,31 @@ type LogLineEvent struct {
 	Stream              string `json:"stream"`
 	Text                string `json:"text"`
 	Continued           bool   `json:"continued,omitempty"`
+	FrameCount          int    `json:"frame_count,omitempty"`
+}
+
+// LogRegionEvent carries a snapshot of a still-animating output region (a `\r`
+// progress bar or a multi-line ANSI redraw) for live viewers only. It is never
+// persisted: the durable log receives the finalized frame as ordinary
+// LogLineEvents when the region settles.
+//
+// Rows is the full current frame of the region in row order; subscribers
+// REPLACE their overlay for (Stream, Epoch) wholesale on each event rather than
+// merging — the next frame always supersedes the previous one, so a dropped
+// snapshot self-heals. Epoch bumps whenever the region resets (clear screen,
+// alt-screen, scroll-off), so a late snapshot from an old epoch can be
+// discarded instead of painting over the current region.
+//
+// These events bypass line-number dedupe entirely (they carry no LineNum) and
+// are droppable under SSE backpressure without counting as a gap.
+type LogRegionEvent struct {
+	TaskName            string   `json:"task_name"`
+	RunID               string   `json:"run_id"`
+	ExternalExecutionID string   `json:"external_execution_id,omitempty"`
+	Timestamp           int64    `json:"timestamp"`
+	Stream              string   `json:"stream"`
+	Epoch               int      `json:"epoch"`
+	Rows                []string `json:"rows"`
 }
 
 // EventHandler processes events.

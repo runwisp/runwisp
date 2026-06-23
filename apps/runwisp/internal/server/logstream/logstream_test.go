@@ -17,6 +17,7 @@ import (
 // mockSender records all calls for assertions.
 type mockSender struct {
 	lines   []LineEvent
+	regions []RegionEvent
 	rotated []RotatedEvent
 	dropped []DroppedEvent
 	done    []DoneEvent
@@ -28,6 +29,14 @@ func (m *mockSender) SendLine(e LineEvent) error {
 		return m.sendErr
 	}
 	m.lines = append(m.lines, e)
+	return nil
+}
+
+func (m *mockSender) SendRegion(e RegionEvent) error {
+	if m.sendErr != nil {
+		return m.sendErr
+	}
+	m.regions = append(m.regions, e)
 	return nil
 }
 
@@ -325,6 +334,7 @@ type conditionalErrSender struct {
 }
 
 func (c *conditionalErrSender) SendLine(e LineEvent) error       { return c.onLine(e) }
+func (c *conditionalErrSender) SendRegion(RegionEvent) error     { return c.onOther() }
 func (c *conditionalErrSender) SendRotated(RotatedEvent) error   { return c.onOther() }
 func (c *conditionalErrSender) SendDropped(e DroppedEvent) error { return c.onDrop(e) }
 func (c *conditionalErrSender) SendDone(DoneEvent) error         { return c.onOther() }
