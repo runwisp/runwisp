@@ -62,7 +62,9 @@ export class LogCache {
     // map so it recomputes on update.
     get overlayRows(): string[] {
         const preferred = ["stdout", "stderr"];
-        const rest = [...this.regions.keys()].filter((s) => !preferred.includes(s)).sort();
+        const rest = [...this.regions.keys()]
+            .filter((s) => !preferred.includes(s))
+            .sort((a, b) => a.localeCompare(b));
         const out: string[] = [];
         for (const stream of [...preferred, ...rest]) {
             const region = this.regions.get(stream);

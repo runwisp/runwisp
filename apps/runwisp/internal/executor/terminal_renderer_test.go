@@ -399,3 +399,136 @@ func TestRendererIgnoresUnhandledSequences(t *testing.T) {
 		t.Fatalf("unhandled-sequence render = %q", h.committed)
 	}
 }
+
+func TestRendererBackspaceAndTab(t *testing.T) {
+	h := newHarness()
+	// Backspace moves the cursor left so the next write overwrites in place.
+	h.feed("abc\b\bX\n", 0)
+	if !eq(h.committed, []string{"aXc"}) {
+		t.Fatalf("backspace render = %q", h.committed)
+	}
+	// Tab advances to the next 8-column stop, padding with spaces.
+	h2 := newHarness()
+	h2.feed("a\tb\n", 0)
+	if !eq(h2.committed, []string{"a       b"}) {
+		t.Fatalf("tab render = %q", h2.committed)
+	}
+}
+
+func TestRendererCursorHorizontalMoves(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"forward", "ab\x1b[2Cc\n", "ab  c"},     // CSI C: cursor forward (pads)
+		{"back", "abcd\x1b[2DX\n", "abXd"},        // CSI D: cursor back
+		{"absolute", "abc\x1b[1GX\n", "Xbc"},      // CSI G: column absolute (1-based)
+		{"back-clamps", "ab\x1b[9DX\n", "Xb"},     // CSI D past col 0 clamps to 0
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness()
+			h.feed(tc.in, 0)
+			if !eq(h.committed, []string{tc.want}) {
+				t.Fatalf("%s render = %q, want %q", tc.name, h.committed, tc.want)
+			}
+		})
+	}
+}
+
+func TestRendererSaveRestoreCursor(t *testing.T) {
+	// DECSC/DECRC (ESC 7 / ESC 8): save the cursor, write ahead, then restore and
+	// overwrite at the saved position. Restoring locks the region (it is a redraw),
+	// so the result settles on Close.
+	h := newHarness()
+	h.feed("abc\x1b7def\x1b8X", 0)
+	h.tr.Close()
+	if !eq(h.committed, []string{"abcXef"}) {
+		t.Fatalf("DECSC/DECRC render = %q", h.committed)
+	}
+	// ANSI.SYS CSI s / CSI u behave identically.
+	h2 := newHarness()
+	h2.feed("abc\x1b[sdef\x1b[uX", 0)
+	h2.tr.Close()
+	if !eq(h2.committed, []string{"abcXef"}) {
+		t.Fatalf("CSI s/u render = %q", h2.committed)
+	}
+}
+
+func TestRendererCursorPositionRedraw(t *testing.T) {
+	// Hide cursor, draw three rows, jump to an absolute position with CSI H, and
+	// rewrite the top row; showing the cursor finalizes the region.
+	h := newHarness()
+	h.feed("\x1b[?25la\nb\nc\x1b[1;1HX\x1b[?25h", 0)
+	if !eq(h.committed, []string{"X", "b", "c"}) {
+		t.Fatalf("CSI H redraw render = %q", h.committed)
+	}
+}
+
+func TestRendererEraseLineModes(t *testing.T) {
+	// CSI 2K clears the whole line; the cursor keeps its column, so a following
+	// write lands padded at that column.
+	h := newHarness()
+	h.feed("abc\x1b[2Kdef\n", 0)
+	if !eq(h.committed, []string{"   def"}) {
+		t.Fatalf("erase-whole-line render = %q", h.committed)
+	}
+	// CSI 1K clears from start of line to the cursor (exclusive).
+	h2 := newHarness()
+	h2.feed("abcdef\x1b[3D\x1b[1K\n", 0)
+	if !eq(h2.committed, []string{"   def"}) {
+		t.Fatalf("erase-to-cursor render = %q", h2.committed)
+	}
+}
+
+func TestRendererEraseDisplayModes(t *testing.T) {
+	// CSI 0J erases from the cursor to the end of the screen, dropping later rows.
+	h := newHarness()
+	h.feed("\x1b[?25la\nb\nc\x1b[1;1H\x1b[0JX\x1b[?25h", 0)
+	if !eq(h.committed, []string{"X"}) {
+		t.Fatalf("erase-to-end-of-screen render = %q", h.committed)
+	}
+	// CSI 1J erases the rows above the cursor.
+	h2 := newHarness()
+	h2.feed("\x1b[?25la\nb\nc\x1b[3;1H\x1b[1JX\x1b[?25h", 0)
+	if !eq(h2.committed, []string{"", "", "X"}) {
+		t.Fatalf("erase-above-cursor render = %q", h2.committed)
+	}
+}
+
+func TestRendererAltScreenEntryResets(t *testing.T) {
+	// Entering the alternate screen (CSI ?1049h) finalizes prior output and starts
+	// a fresh region under a new epoch.
+	h := newHarness()
+	h.feed("before\n\x1b[?1049hinside", 0)
+	startEpoch := h.tr.epoch
+	h.tr.Close()
+	if !eq(h.committed, []string{"before", "inside"}) {
+		t.Fatalf("alt-screen render = %q", h.committed)
+	}
+	if startEpoch == 0 {
+		t.Fatalf("alt-screen entry should advance the epoch")
+	}
+}
+
+func TestRendererSGRAccumulatesAndCaps(t *testing.T) {
+	// A leading "0;" reset followed by a colour starts a fresh pen at that colour.
+	h := newHarness()
+	h.feed("\x1b[0;31mred\x1b[0m\n", 0)
+	if !eq(h.committed, []string{"\x1b[0;31mred\x1b[0m"}) {
+		t.Fatalf("SGR reset+colour render = %q", h.committed)
+	}
+	// A stream that never resets its pen must not grow the accumulated SGR string
+	// without bound: past the cap it collapses to the latest sequence.
+	h2 := newHarness()
+	var b strings.Builder
+	for i := 0; i < 80; i++ {
+		b.WriteString("\x1b[1m")
+	}
+	b.WriteString("x\n")
+	h2.feed(b.String(), 0)
+	if len(h2.tr.penText) > maxPenLen {
+		t.Fatalf("pen text exceeded cap: %d > %d", len(h2.tr.penText), maxPenLen)
+	}
+}
