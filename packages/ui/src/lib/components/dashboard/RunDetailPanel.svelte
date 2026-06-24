@@ -36,6 +36,7 @@
         run,
         fetchLogs,
         streamLogs,
+        fetchLineHistory,
         showTaskName = false,
         onDelete,
         highlightLine = null,
@@ -52,6 +53,9 @@
             onEvent: (event: LogEvent) => void,
             initialState?: { fromLine: number },
         ) => () => void;
+        // Resolves the prior whole-region frames of a settled progress bar /
+        // redraw line so the log console can offer inline rewind. Optional.
+        fetchLineHistory?: (runId: string, lineNum: number) => Promise<string[][]>;
         showTaskName?: boolean;
         onDelete?: (runId: string) => void;
         highlightLine?: number | null;
@@ -350,6 +354,9 @@
             <LogConsole
                 bind:this={logConsole}
                 fetchLogs={(f: number, t: number) => fetchLogs(run.id, f, t)}
+                fetchLineHistory={fetchLineHistory
+                    ? (n: number) => fetchLineHistory(run.id, n)
+                    : undefined}
                 class="min-h-0 flex-1"
                 {highlightLine}
             />

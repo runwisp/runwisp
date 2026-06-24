@@ -19,6 +19,11 @@
         // The pulse is one-shot: changing the prop to a new line restarts the
         // animation; setting it to null clears immediately.
         highlightLine?: number | null;
+        // fetchLineHistory resolves the prior whole-region frames a settled
+        // progress bar / multi-line redraw passed through, for the given absolute
+        // line number. When omitted, anchor lines render without the rewind
+        // affordance.
+        fetchLineHistory?: ((lineNum: number) => Promise<string[][]>) | undefined;
     }
 
     let {
@@ -27,7 +32,57 @@
         lineHeight = 20,
         class: className = "",
         highlightLine = null,
+        fetchLineHistory,
     }: Props = $props();
+
+    // --- Frame-history inline expansion (single expansion at a time) ---
+    // expandedLine is the absolute line number whose history block is open;
+    // expandedFrames holds the fetched whole-region frames (null while loading).
+    let expandedLine = $state<number | null>(null);
+    let expandedFrames = $state<string[][] | null>(null);
+    let expandedError = $state(false);
+
+    const FRAME_BLOCK_PAD = 8; // px padding above+below the block content
+    const FRAME_GAP = 6; // px between consecutive frames
+    const FRAME_BLOCK_MAX = 400; // px cap; the block scrolls internally beyond this
+
+    // Height the open history block occupies in the virtual surface. Subsequent
+    // lines are shifted down by exactly this, so the math stays a single offset.
+    let frameBlockHeight = $derived.by(() => {
+        if (expandedLine === null) return 0;
+        if (!expandedFrames) return lineHeight * 2; // loading / error placeholder
+        let h = FRAME_BLOCK_PAD * 2;
+        for (const frame of expandedFrames) {
+            h += lineHeight; // per-frame label
+            h += frame.length * lineHeight; // the frame's rows
+        }
+        if (expandedFrames.length > 1) h += FRAME_GAP * (expandedFrames.length - 1);
+        return Math.min(h, FRAME_BLOCK_MAX);
+    });
+
+    function collapseHistory() {
+        expandedLine = null;
+        expandedFrames = null;
+        expandedError = false;
+    }
+
+    async function toggleHistory(lineNum: number) {
+        if (expandedLine === lineNum) {
+            collapseHistory();
+            return;
+        }
+        expandedLine = lineNum;
+        expandedFrames = null;
+        expandedError = false;
+        const fn = fetchLineHistory;
+        if (!fn) return;
+        try {
+            const frames = await fn(lineNum);
+            if (expandedLine === lineNum) expandedFrames = frames;
+        } catch {
+            if (expandedLine === lineNum) expandedError = true;
+        }
+    }
 
     let flashLine = $state<number | null>(null);
     let flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -55,9 +110,13 @@
 
     let truncationBannerHeight = $derived(cache.firstAvailableLine > 0 ? lineHeight : 0);
 
-    // Convert a global line number to a pixel Y position.
+    // Convert a global line number to a pixel Y position. Lines below an open
+    // history block are pushed down by the block's height (single expansion, so
+    // it's one conditional rather than a prefix-sum).
     function lineTop(lineNum: number): number {
-        return (lineNum - cache.firstAvailableLine) * lineHeight + truncationBannerHeight;
+        const base = (lineNum - cache.firstAvailableLine) * lineHeight + truncationBannerHeight;
+        if (expandedLine !== null && lineNum > expandedLine) return base + frameBlockHeight;
+        return base;
     }
 
     let visibleStart = $derived(
@@ -83,13 +142,20 @@
         ),
     );
 
+    // Live-region overlay rows, rendered in place below the committed lines.
+    let overlayRows = $derived(cache.overlayRows);
+
     let totalHeight = $derived.by(() => {
         const availableLines = cache.totalLines - cache.firstAvailableLine;
         const truncationBannerHeight = cache.firstAvailableLine > 0 ? lineHeight : 0;
         const linesHeight = availableLines * lineHeight + truncationBannerHeight;
+        const overlayHeight = overlayRows.length * lineHeight;
         const streamingHeight = !cache.finished && cache.totalLines > 0 ? lineHeight : 0;
         const blankHeight = cache.totalLines > 0 ? BLANK_LINES_AT_END * lineHeight : 0;
-        return Math.max(linesHeight + streamingHeight + blankHeight, containerHeight);
+        return Math.max(
+            linesHeight + overlayHeight + streamingHeight + blankHeight + frameBlockHeight,
+            containerHeight,
+        );
     });
 
     let gutterWidth = $derived(Math.max(4, String(cache.totalLines || 1).length) * 10 + 16);
@@ -102,7 +168,7 @@
     );
 
     let renderedLines = $derived.by(() => {
-        const lines: Array<{ num: number; text: string | undefined }> = [];
+        const lines: Array<{ num: number; text: string | undefined; frameCount: number }> = [];
         const start = Math.max(cache.firstAvailableLine, visibleStart);
         const end = Math.min(cache.totalLines - 1, visibleEnd);
 
@@ -110,10 +176,14 @@
             lines.push({
                 num: i,
                 text: cache.lines.get(i),
+                frameCount: cache.frameCounts.get(i) ?? 0,
             });
         }
         return lines;
     });
+
+    // Anchors are clickable only when the parent supplied a history fetcher.
+    let canExpand = $derived(fetchLineHistory !== undefined);
 
     // The fetcher serves on-demand scroll-up loads only; the parent seeds
     // the initial cache via onStream (typically a tail fetch) so the
@@ -150,14 +220,16 @@
         untrack(() => cache.prune(vs, ve));
     });
 
-    let prevTotalLines = 0; // plain variable — intentionally non-reactive
+    let prevTailRows = 0; // plain variable — intentionally non-reactive
 
     $effect(() => {
-        const currentTotal = cache.totalLines;
-        if (currentTotal > prevTotalLines && isAutoScroll && !userScrolledUp) {
+        // Track committed lines AND live overlay rows so an animating region at
+        // the tail keeps a bottom-anchored viewport pinned to the bottom.
+        const currentTail = cache.totalLines + overlayRows.length;
+        if (currentTail > prevTailRows && isAutoScroll && !userScrolledUp) {
             requestAnimationFrame(() => scrollToBottom());
         }
-        prevTotalLines = currentTotal;
+        prevTailRows = currentTail;
     });
 
     function onScroll(e: Event & { currentTarget: EventTarget & HTMLDivElement }) {
@@ -231,6 +303,7 @@
 
     export function reset() {
         cache.reset();
+        collapseHistory();
         isAutoScroll = true;
         userScrolledUp = false;
         scrollTop = 0;
@@ -277,6 +350,14 @@
     });
 </script>
 
+<!-- One place that renders ANSI-converted markup, so the necessary @html escape
+     hatch (the input is sanitised by ansiLineToHtml) lives behind a single
+     audited disable rather than being repeated per call site. -->
+{#snippet ansiLine(text: string)}
+    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+    <span class="whitespace-pre">{@html ansiLineToHtml(text)}</span>
+{/snippet}
+
 <div
     class="log-console relative flex h-full w-full flex-col overflow-hidden bg-mist-950 font-mono text-sm {className}"
 >
@@ -313,6 +394,7 @@
             {/if}
 
             {#each renderedLines as line (line.num)}
+                {@const isAnchor = canExpand && line.frameCount > 0}
                 <div
                     class="log-line absolute right-0 left-0 flex items-center hover:bg-mist-900/50 {flashLine ===
                     line.num
@@ -321,15 +403,32 @@
                     style="top: {lineTop(line.num)}px; height: {lineHeight}px;"
                 >
                     <div
-                        class="sticky left-0 z-10 flex-shrink-0 bg-mist-950 pr-3 text-right text-mist-500 select-none"
+                        class="sticky left-0 z-10 flex flex-shrink-0 items-center justify-end gap-1 bg-mist-950 pr-3 text-right text-mist-500 select-none"
                         style="width: {gutterWidth}px;"
                     >
+                        {#if isAnchor}
+                            <button
+                                type="button"
+                                class="frame-toggle {expandedLine === line.num
+                                    ? 'text-aurora-400'
+                                    : 'text-mist-500 hover:text-aurora-400'}"
+                                title="{line.frameCount} earlier frame{line.frameCount === 1
+                                    ? ''
+                                    : 's'} — click to {expandedLine === line.num
+                                    ? 'hide'
+                                    : 'rewind'}"
+                                aria-label="Toggle frame history for line {line.num + 1}"
+                                aria-expanded={expandedLine === line.num}
+                                onclick={() => toggleHistory(line.num)}
+                            >
+                                ↻
+                            </button>
+                        {/if}
                         {line.num + 1}
                     </div>
                     <div class="flex-1 pr-4 text-mist-200">
                         {#if line.text !== undefined}
-                            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                            <span class="whitespace-pre">{@html ansiLineToHtml(line.text)}</span>
+                            {@render ansiLine(line.text)}
                         {:else}
                             <span class="text-mist-600 italic">Loading...</span>
                         {/if}
@@ -337,10 +436,73 @@
                 </div>
             {/each}
 
+            {#if expandedLine !== null}
+                <div
+                    class="frame-history absolute right-0 left-0 overflow-y-auto border-y border-mist-800 bg-mist-900/40"
+                    style="top: {lineTop(expandedLine) +
+                        lineHeight}px; height: {frameBlockHeight}px;"
+                >
+                    <div style="padding: {FRAME_BLOCK_PAD}px 0;">
+                        {#if expandedFrames}
+                            {#each expandedFrames as frame, fi (fi)}
+                                <div style="margin-top: {fi > 0 ? FRAME_GAP : 0}px;">
+                                    <div
+                                        class="px-3 text-xs text-mist-500 select-none"
+                                        style="height: {lineHeight}px; line-height: {lineHeight}px;"
+                                    >
+                                        Frame {fi + 1} of {expandedFrames.length}
+                                    </div>
+                                    {#each frame as row, ri (ri)}
+                                        <div
+                                            class="flex items-center"
+                                            style="height: {lineHeight}px;"
+                                        >
+                                            <div
+                                                class="flex-shrink-0 pr-3 text-right text-mist-700 select-none"
+                                                style="width: {gutterWidth}px;"
+                                            ></div>
+                                            <div class="flex-1 pr-4 text-mist-300">
+                                                {@render ansiLine(row)}
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            {/each}
+                        {:else}
+                            <div
+                                class="px-3 text-xs text-mist-500 italic"
+                                style="line-height: {lineHeight}px; padding-left: {gutterWidth}px;"
+                            >
+                                {expandedError ? "Failed to load frame history" : "Loading frames…"}
+                            </div>
+                        {/if}
+                    </div>
+                </div>
+            {/if}
+
+            {#each overlayRows as row, i (i)}
+                <div
+                    class="log-line log-line--live absolute right-0 left-0 flex items-center"
+                    style="top: {lineTop(cache.totalLines + i)}px; height: {lineHeight}px;"
+                >
+                    <div
+                        class="sticky left-0 z-10 flex-shrink-0 bg-mist-950 pr-3 text-right text-mist-600 select-none"
+                        style="width: {gutterWidth}px;"
+                    >
+                        ⋯
+                    </div>
+                    <div class="flex-1 pr-4 text-mist-200">
+                        {@render ansiLine(row)}
+                    </div>
+                </div>
+            {/each}
+
             {#if isStreaming && cache.totalLines > 0}
                 <div
                     class="streaming-indicator absolute right-0 left-0 flex items-center"
-                    style="top: {lineTop(cache.totalLines)}px; height: {lineHeight}px;"
+                    style="top: {lineTop(
+                        cache.totalLines + overlayRows.length,
+                    )}px; height: {lineHeight}px;"
                 >
                     <div
                         class="sticky left-0 z-10 flex-shrink-0 bg-mist-950 pr-3 text-right select-none"
@@ -362,7 +524,7 @@
                     <div
                         class="absolute right-0 left-0 flex items-center"
                         style="top: {lineTop(
-                            cache.totalLines + (isStreaming ? 1 : 0) + i,
+                            cache.totalLines + overlayRows.length + (isStreaming ? 1 : 0) + i,
                         )}px; height: {lineHeight}px;"
                     >
                         <div
@@ -375,7 +537,7 @@
                 {/each}
             {/if}
 
-            {#if cache.totalLines === 0 && !fetcher?.isFetching}
+            {#if cache.totalLines === 0 && overlayRows.length === 0 && !fetcher?.isFetching}
                 <div class="absolute inset-0 flex items-center justify-center text-mist-500">
                     <div class="text-center">
                         <div class="mb-1 text-lg">No output yet</div>
@@ -457,6 +619,16 @@
 
     .log-line--flash {
         animation: log-line-flash 1.5s ease-out;
+    }
+
+    .frame-toggle {
+        cursor: pointer;
+        font-size: 0.85em;
+        line-height: 1;
+        background: transparent;
+        border: none;
+        padding: 0;
+        transition: color 120ms ease;
     }
 
     @keyframes log-line-flash {

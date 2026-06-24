@@ -6,7 +6,6 @@ package logutil
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"errors"
 	"io"
 	"os"
@@ -99,9 +98,8 @@ func CountTailLines(logPath string) int64 {
 	if err != nil {
 		return 0
 	}
-	indices, _ := ReadLogIndex(logPath + ".idx")
-	meta := ReadLogMeta(logPath)
-	return int64(CalculateTotalLines(f, indices, info.Size(), meta))
+	sc := ReadSidecar(logPath)
+	return int64(CalculateTotalLines(f, sc.Index, info.Size(), sc.Meta))
 }
 
 // LogLineRecord is one line read back from disk by ReadLineRange. LineNum is
@@ -127,7 +125,8 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 	if limit <= 0 {
 		limit = 1000
 	}
-	meta := ReadLogMeta(logPath)
+	sc := ReadSidecar(logPath)
+	meta := sc.Meta
 	firstAvailable = meta.RotatedLines
 
 	file, openErr := os.Open(logPath)
@@ -143,7 +142,7 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 	if statErr != nil {
 		return nil, firstAvailable, firstAvailable, statErr
 	}
-	indices, _ := ReadLogIndex(logPath + ".idx")
+	indices := sc.Index
 	totalLines = int64(CalculateTotalLines(file, indices, stat.Size(), meta))
 
 	if totalLines <= firstAvailable {
@@ -195,7 +194,7 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 func ScanLines(ctx context.Context, logPath string, visit func(LogLineRecord) bool) error {
 	meta := ReadLogMeta(logPath)
 
-	done, err := scanSegment(ctx, logPath+".prev", 0, visit)
+	done, err := scanSegment(ctx, PrevPath(logPath), 0, visit)
 	if err != nil || done {
 		return err
 	}
@@ -234,32 +233,6 @@ func scanSegment(ctx context.Context, path string, startLine int64, visit func(L
 		return false, err
 	}
 	return false, nil
-}
-
-func ReadLogIndex(idxPath string) ([]int64, error) {
-	f, err := os.Open(idxPath)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	count := info.Size() / 8
-	indices := make([]int64, count)
-
-	for i := 0; i < int(count); i++ {
-		var offset uint64
-		if err := binary.Read(f, binary.LittleEndian, &offset); err != nil {
-			return nil, err
-		}
-		indices[i] = int64(offset)
-	}
-
-	return indices, nil
 }
 
 // ScanOffset scans a reader from startPos, counting newlines.

@@ -14,6 +14,7 @@ import {
     type LogPage,
     logSearchResponseSchema,
     type LogSearchResponse,
+    logLineHistorySchema,
 } from "./logs";
 import {
     authChallengeResponseSchema,
@@ -226,6 +227,30 @@ export const tasksApi = {
         const response = await fetch(url, { headers });
         if (!response.ok) throw new Error("Log search failed: " + String(response.status));
         return logSearchResponseSchema.parse(await response.json());
+    },
+
+    getLogLineHistory: async (
+        taskName: string,
+        runId: string,
+        lineNum: number,
+    ): Promise<string[][]> => {
+        const url =
+            API_BASE_URL +
+            "/api/tasks/" +
+            encodeURIComponent(taskName) +
+            "/runs/" +
+            encodeURIComponent(runId) +
+            "/log/line/" +
+            String(lineNum) +
+            "/history";
+        const headers: HeadersInit = { Accept: "application/json" };
+        const auth = authHeader();
+        if (auth) headers["Authorization"] = auth;
+
+        const response = await fetch(url, { headers });
+        if (!response.ok)
+            throw new Error("Log line history fetch failed: " + String(response.status));
+        return logLineHistorySchema.parse(await response.json()).frames;
     },
 
     getLogRaw: async (taskName: string, runId: string): Promise<string> => {

@@ -4,7 +4,6 @@
 package logutil
 
 import (
-	"encoding/binary"
 	"io"
 	"os"
 	"path/filepath"
@@ -157,26 +156,23 @@ func TestReadWithLineBoundaries_FullContent(t *testing.T) {
 	assert.Equal(t, content, string(data))
 }
 
-func TestReadLogIndex(t *testing.T) {
+func TestSidecarIndex_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	idxPath := filepath.Join(dir, "test.log.idx")
+	logPath := filepath.Join(dir, "test.log")
 
-	// Write 3 index entries as little-endian uint64
-	f, err := os.Create(idxPath)
+	f, err := os.Create(MetaPath(logPath))
 	require.NoError(t, err)
-	for _, offset := range []uint64{0, 2048, 4096} {
-		require.NoError(t, binary.Write(f, binary.LittleEndian, offset))
+	for _, offset := range []int64{0, 2048, 4096} {
+		_, err := f.Write(IndexRecord(offset))
+		require.NoError(t, err)
 	}
 	require.NoError(t, f.Close())
 
-	indices, err := ReadLogIndex(idxPath)
-	require.NoError(t, err)
-	assert.Equal(t, []int64{0, 2048, 4096}, indices)
+	assert.Equal(t, []int64{0, 2048, 4096}, ReadSidecar(logPath).Index)
 }
 
-func TestReadLogIndex_MissingFile(t *testing.T) {
-	_, err := ReadLogIndex("/nonexistent/path.idx")
-	assert.Error(t, err)
+func TestSidecarIndex_MissingContainer(t *testing.T) {
+	assert.Empty(t, ReadSidecar(filepath.Join(t.TempDir(), "absent.log")).Index)
 }
 
 // --- FormatLine ---

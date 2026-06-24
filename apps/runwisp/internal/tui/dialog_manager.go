@@ -19,6 +19,7 @@ type DialogManager struct {
 	helpDialog    *HelpDialog
 	paramForm     *ParamFormDialog
 	runParams     *RunParamsDialog
+	logHistory    *LogHistoryDialog
 
 	flashMessage string
 	flashExpiry  time.Time
@@ -162,6 +163,30 @@ func (dm *DialogManager) UpdateHelp(msg tea.Msg) bool {
 	return false
 }
 
+// HasLogHistory reports whether the frame-history viewer is active.
+func (dm *DialogManager) HasLogHistory() bool {
+	return dm.logHistory != nil
+}
+
+// ShowLogHistory activates the frame-history viewer.
+func (dm *DialogManager) ShowLogHistory(d LogHistoryDialog) {
+	dm.logHistory = &d
+}
+
+func (dm *DialogManager) DismissLogHistory() {
+	dm.logHistory = nil
+}
+
+// UpdateLogHistory dispatches input to the active frame-history viewer.
+// Returns true when the dialog closed.
+func (dm *DialogManager) UpdateLogHistory(msg tea.Msg) bool {
+	if dm.logHistory.Update(msg) {
+		dm.logHistory = nil
+		return true
+	}
+	return false
+}
+
 // UpdateConfirm dispatches input to the active confirm dialog.
 // Returns a command and whether the dialog closed.
 func (dm *DialogManager) UpdateConfirm(msg tea.Msg) (tea.Cmd, bool) {
@@ -262,6 +287,9 @@ func (dm *DialogManager) RenderOverlays(base string, width, height int) string {
 	}
 	if dm.copyDialog != nil {
 		return dm.copyDialog.View(width, height)
+	}
+	if dm.logHistory != nil {
+		return dm.logHistory.View(width, height)
 	}
 	if dm.helpDialog != nil {
 		return dm.helpDialog.View(width, height)

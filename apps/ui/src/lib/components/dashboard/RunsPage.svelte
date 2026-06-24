@@ -20,6 +20,7 @@
         onOptimisticRestore,
         fetchLogs,
         streamLogs,
+        fetchLineHistory,
         getInstanceCount = () => 1,
     } = $props<{
         items: Run[];
@@ -40,6 +41,7 @@
             onEvent: (event: LogEvent) => void,
             initialState?: { fromLine: number },
         ) => () => void;
+        fetchLineHistory?: (runId: string, lineNum: number) => Promise<string[][]>;
     }>();
 
     let userSelectedRunId = $state<string | null>(null);
@@ -182,6 +184,7 @@
                 run={selectedRun}
                 {fetchLogs}
                 {streamLogs}
+                {fetchLineHistory}
                 showTaskName
                 onDelete={deleteSingle}
                 {getInstanceCount}

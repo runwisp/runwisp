@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"log/slog"
-	"strings"
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
@@ -23,9 +22,8 @@ import (
 )
 
 const (
-	StreamReadBufferSize  = 16 * 1024 // 16KB buffer for reading from stdout/stderr
-	InitialLineBufferSize = 4 * 1024  // 4KB initial line buffer
-	MaxLineBufferSize     = 64 * 1024 // 64KB max before flushing partial line
+	StreamReadBufferSize = 16 * 1024 // 16KB buffer for reading from stdout/stderr
+	MaxLineBufferSize    = 64 * 1024 // 64KB max cells per row before an oversized-line split
 )
 
 type Executor interface {
@@ -340,9 +338,6 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
 		return nil, "", nil, nil, fmt.Errorf("create task log dir: %w", err)
 	}
-	idxPath := logPath + ".idx"
-	tidxPath := logPath + ".tidx"
-
 	cancelCtx, cancelFunc := context.WithCancel(ctx)
 
 	bus := r.eventBus
@@ -350,8 +345,6 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 	runID := run.ID
 	writer, err := NewLogWriter(LogWriterOpts{
 		LogPath:     logPath,
-		IdxPath:     idxPath,
-		TidxPath:    tidxPath,
 		MaxSize:     task.LogMaxSize,
 		Overflow:    task.LogOnFull,
 		CancelFunc:  cancelFunc,
@@ -392,6 +385,53 @@ func (r *RoutingExecutor) checkDisk() error {
 	return nil
 }
 
+// commitGroup persists one finalized commit group (one line for a forward
+// commit, K lines for a multi-line redraw) and publishes a LogLineEvent per
+// line. Frame history is keyed to the group's first committed line — the
+// clickable anchor — and only that line's published event carries FrameCount.
+func commitGroup(
+	writer *LogWriter,
+	stream string,
+	lines []committedLine,
+	frames [][]string,
+	publish func(text string, lineNum int64, continued bool, frameCount int),
+) {
+	ns := make([]int64, len(lines))
+	anchor := int64(-1)
+	for i, line := range lines {
+		n, err := writer.WriteLineEvent(line.text, stream)
+		if err != nil {
+			slog.Warn("Failed to write log line to file", "stream", stream, "err", err)
+			ns[i] = -1
+			continue
+		}
+		ns[i] = n
+		if anchor < 0 {
+			anchor = n
+		}
+	}
+
+	frameCount := 0
+	if len(frames) > 0 && anchor >= 0 {
+		if err := writer.WriteFrameHistory(anchor, frames); err != nil {
+			slog.Warn("Failed to write frame history", "stream", stream, "err", err)
+		} else {
+			frameCount = len(frames)
+		}
+	}
+
+	for i, line := range lines {
+		if ns[i] < 0 {
+			continue
+		}
+		fc := 0
+		if ns[i] == anchor {
+			fc = frameCount
+		}
+		publish(line.text, ns[i], line.continued, fc)
+	}
+}
+
 func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
 	externalExecutionID := ""
 	if run.ExternalExecutionID != nil {
@@ -400,9 +440,7 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 
 	nowMs := func() int64 { return r.now().UnixMilli() }
 
-	incomplete := false
-
-	publish := func(text string, lineNum int64, continued bool) {
+	publishCommitted := func(text string, lineNum int64, continued bool, frameCount int) {
 		if r.eventBus == nil {
 			return
 		}
@@ -415,35 +453,43 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 			Stream:              stream,
 			Text:                text,
 			Continued:           continued,
+			FrameCount:          frameCount,
 		})
 	}
 
-	lineBuf := NewLineBuffer(func(line string) {
-		isContinuation := incomplete
-		incomplete = !strings.HasSuffix(line, "\n")
-		text := strings.TrimSuffix(line, "\n")
+	publishRegion := func(epoch int, rows []string) {
+		if r.eventBus == nil {
+			return
+		}
+		r.eventBus.Publish(events.EventLogRegion, events.LogRegionEvent{
+			TaskName:            task.Name,
+			RunID:               run.ID,
+			ExternalExecutionID: externalExecutionID,
+			Timestamp:           nowMs(),
+			Stream:              stream,
+			Epoch:               epoch,
+			Rows:                rows,
+		})
+	}
 
-		n, err := writer.WriteLineEvent(text, stream)
-		if err != nil {
-			slog.Warn("Failed to write log line to file", "stream", stream, "err", err)
-			return
-		}
-		if n < 0 {
-			return
-		}
-		publish(text, n, isContinuation)
-	})
+	renderer := NewTerminalRenderer(
+		func(lines []committedLine, frames [][]string) {
+			commitGroup(writer, stream, lines, frames, publishCommitted)
+		},
+		publishRegion,
+		nowMs,
+	)
 
 	buf := make([]byte, StreamReadBufferSize)
 	for {
 		n, err := reader.Read(buf)
 		if n > 0 {
-			lineBuf.Write(buf[:n])
+			renderer.Write(buf[:n])
 		}
 		if err != nil {
 			break
 		}
 	}
 
-	lineBuf.Flush()
+	renderer.Close()
 }

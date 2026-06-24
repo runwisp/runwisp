@@ -40,6 +40,7 @@ type LogStreamMsgKind int
 
 const (
 	LogStreamMsgKindLine LogStreamMsgKind = iota
+	LogStreamMsgKindRegion
 	LogStreamMsgKindRotated
 	LogStreamMsgKindDropped
 	LogStreamMsgKindDone
@@ -52,6 +53,7 @@ const (
 type LogStreamMsg struct {
 	Kind     LogStreamMsgKind
 	Line     server.LogLineEntry
+	Region   logstream.RegionEvent
 	Rotated  logstream.RotatedEvent
 	Dropped  logstream.DroppedEvent
 	Done     logstream.DoneEvent
@@ -166,6 +168,12 @@ func parseLogStreamFrame(event, data string) (LogStreamMsg, bool) {
 			return LogStreamMsg{}, false
 		}
 		return LogStreamMsg{Kind: LogStreamMsgKindLine, Line: line}, true
+	case "region":
+		var rg logstream.RegionEvent
+		if err := json.Unmarshal([]byte(data), &rg); err != nil {
+			return LogStreamMsg{}, false
+		}
+		return LogStreamMsg{Kind: LogStreamMsgKindRegion, Region: rg}, true
 	case "rotated":
 		var r logstream.RotatedEvent
 		if err := json.Unmarshal([]byte(data), &r); err != nil {

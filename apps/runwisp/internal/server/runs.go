@@ -199,6 +199,15 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaGetLogRaw)
 
 	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "getLogLineHistory",
+		Method:      http.MethodGet,
+		Path:        "/api/tasks/{taskName}/runs/{runId}/log/line/{lineNum}/history",
+		Summary:     "Get the frame history of a settled progress bar / redraw line",
+		Description: "Returns the prior whole-region frames a progress bar or multi-line redraw passed through before settling into the committed line. Empty unless the line's `frame_count` is non-zero.",
+		Tags:        []string{"Logs"},
+	}, srv.humaGetLogLineHistory)
+
+	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "searchLogs",
 		Method:      http.MethodGet,
 		Path:        "/api/tasks/{taskName}/log/search",

@@ -41,6 +41,8 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	"k":         handleKeyUp,
 	"down":      handleKeyDown,
 	"j":         handleKeyDown,
+	"[":         handleKeyPrevAnchor,
+	"]":         handleKeyNextAnchor,
 	"?":         handleKeyHelp,
 }
 
@@ -227,6 +229,10 @@ func handleKeyEnter(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	if m.panelFocus == uikit.PanelMain && m.execView == nil {
 		return handleKeyEnterMainPanel(m)
 	}
+	// Pane focused on a frame-history anchor: open the viewer.
+	if newM, cmd, handled := m.openCursorFrameHistory(); handled {
+		return newM, cmd, true
+	}
 	// Sidebar: close any open exec view, then delegate so the sidebar can react.
 	if m.panelFocus == uikit.PanelSidebar && m.execView != nil {
 		return m, m.closeExecView(), false
@@ -263,6 +269,54 @@ func handleKeyEnterActionButton(m Model) (Model, tea.Cmd, bool) {
 		return m, m.confirmAction(ca), true
 	}
 	return m, nil, true
+}
+
+// paneAnchorNavActive reports whether the log pane is focused for frame-history
+// navigation: an exec view is open (not fullscreen, so line-number gutter and
+// markers are visible) with the main panel focused and no header item selected.
+func (m Model) paneAnchorNavActive() bool {
+	return m.execView != nil &&
+		!m.execView.Fullscreen() &&
+		m.panelFocus == uikit.PanelMain &&
+		m.execView.HeaderFocus == execlist.HeaderFocusNone
+}
+
+// handleKeyPrevAnchor / handleKeyNextAnchor move the pane's anchor cursor to the
+// previous/next line that carries frame history. They yield to delegation when
+// the pane isn't focused or has no anchors, so `[`/`]` stay free elsewhere.
+func handleKeyPrevAnchor(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	return handleAnchorNav(m, -1)
+}
+
+func handleKeyNextAnchor(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	return handleAnchorNav(m, 1)
+}
+
+func handleAnchorNav(m Model, dir int) (Model, tea.Cmd, bool) {
+	if !m.paneAnchorNavActive() || !m.execView.Pane.HasAnchors() {
+		return m, nil, false
+	}
+	m.execView.Pane.MoveCursorToAnchor(dir)
+	return m, nil, true
+}
+
+// openCursorFrameHistory fetches the frames for the anchor under the pane cursor
+// and (on success) opens the viewer. Returns false when the cursor isn't on an
+// anchor so Enter falls through to its other meanings.
+func (m Model) openCursorFrameHistory() (Model, tea.Cmd, bool) {
+	if !m.paneAnchorNavActive() {
+		return m, nil, false
+	}
+	lineNum, _, ok := m.execView.Pane.CursorAnchor()
+	if !ok {
+		return m, nil, false
+	}
+	committed := ""
+	if idx := m.execView.Pane.Cursor; idx >= 0 && idx < len(m.execView.Pane.Lines) {
+		committed = m.execView.Pane.Lines[idx].Text
+	}
+	cmd := m.streams.FetchLineHistory(m.execView.Run.TaskName, m.execView.Run.ID, lineNum, committed)
+	return m, cmd, true
 }
 
 func handleKeyEnterMainPanel(m Model) (Model, tea.Cmd, bool) {

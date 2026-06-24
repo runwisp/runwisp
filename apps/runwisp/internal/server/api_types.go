@@ -192,6 +192,15 @@ type PingEvent struct{}
 // to the `line` event name.
 type LogLineSSEEvent LogLineEntry
 
+// LogRegionSSEEvent is the live-region snapshot payload for the run-log stream.
+// Identical shape to logstream.RegionEvent; aliased so huma/sse's reverse-type
+// lookup can map it to the `region` event name.
+type LogRegionSSEEvent struct {
+	Stream string   `json:"stream" doc:"Stream identifier (stdout/stderr)"`
+	Epoch  int      `json:"epoch" doc:"Region generation; bumps on screen reset so stale frames can be discarded"`
+	Rows   []string `json:"rows" doc:"Current frame of the region, one entry per row; empty clears the overlay"`
+}
+
 type LogRotatedEvent struct {
 	FirstAvailable int64 `json:"first_available" doc:"Lowest line number still on disk after rotation"`
 }

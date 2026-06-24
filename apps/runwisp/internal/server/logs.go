@@ -52,11 +52,12 @@ type LogPageInput struct {
 
 // LogLineEntry mirrors the line-event payload used on the SSE wire.
 type LogLineEntry struct {
-	N         int64  `json:"n" doc:"Absolute line number"`
-	Ts        int64  `json:"ts" doc:"Unix milliseconds timestamp; 0 if unavailable"`
-	Stream    string `json:"stream" doc:"Stream identifier (stdout/stderr/system)"`
-	Text      string `json:"text" doc:"Line content without trailing newline"`
-	Continued bool   `json:"continued,omitempty" doc:"True if this segment continues an oversized split line"`
+	N          int64  `json:"n" doc:"Absolute line number"`
+	Ts         int64  `json:"ts" doc:"Unix milliseconds timestamp; 0 if unavailable"`
+	Stream     string `json:"stream" doc:"Stream identifier (stdout/stderr/system)"`
+	Text       string `json:"text" doc:"Line content without trailing newline"`
+	Continued  bool   `json:"continued,omitempty" doc:"True if this segment continues an oversized split line"`
+	FrameCount int    `json:"frame_count,omitempty" doc:"Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise"`
 }
 
 // LogPageBody is the response shape for the line-page endpoint.
@@ -122,12 +123,16 @@ func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*Lo
 		return nil, huma.Error500InternalServerError("Failed to read log")
 	}
 
+	// Annotate anchor lines so a viewer paging a finished run from disk (not just
+	// the live SSE path) can tell which lines have rewindable frame history.
+	frameCounts := logutil.ReadFrameHistoryCounts(logPath)
 	entries := make([]LogLineEntry, len(lines))
 	for i, l := range lines {
 		entries[i] = LogLineEntry{
-			N:      l.LineNum,
-			Stream: l.Stream,
-			Text:   l.Text,
+			N:          l.LineNum,
+			Stream:     l.Stream,
+			Text:       l.Text,
+			FrameCount: frameCounts[l.LineNum],
 		}
 	}
 
@@ -138,6 +143,40 @@ func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*Lo
 		Truncated:      firstAvailable > 0,
 		Finalized:      run.Status.IsTerminal(),
 	}}, nil
+}
+
+// LogLineHistoryInput drives
+// GET /api/tasks/{taskName}/runs/{runId}/log/line/{lineNum}/history.
+type LogLineHistoryInput struct {
+	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
+	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
+	LineNum  int64  `path:"lineNum" minimum:"0" doc:"Anchor line number to fetch frame history for"`
+}
+
+// LogLineHistoryBody returns the prior whole-region frames a progress bar or
+// multi-line redraw passed through before it settled into the committed line.
+// Frames are ordered oldest-first; each frame is the whole region (one or more
+// rows) at that instant. The committed final state is not included. Empty when
+// the line has no recorded history.
+type LogLineHistoryBody struct {
+	Frames [][]string `json:"frames" doc:"Prior whole-region frames, oldest first; each frame is one or more rows"`
+}
+
+type LogLineHistoryOutput struct {
+	Body LogLineHistoryBody
+}
+
+func (srv *Server) humaGetLogLineHistory(ctx context.Context, input *LogLineHistoryInput) (*LogLineHistoryOutput, error) {
+	logPath, _, err := srv.resolveLogPathFor(ctx, input.TaskName, input.RunID)
+	if err != nil {
+		return nil, err
+	}
+
+	frames, _ := logutil.ReadFrameHistory(logPath, input.LineNum)
+	if frames == nil {
+		frames = [][]string{}
+	}
+	return &LogLineHistoryOutput{Body: LogLineHistoryBody{Frames: frames}}, nil
 }
 
 func (srv *Server) humaGetLogRaw(ctx context.Context, input *LogRawInput) (*LogRawOutput, error) {
@@ -162,7 +201,7 @@ func (srv *Server) humaGetLogRaw(ctx context.Context, input *LogRawInput) (*LogR
 // segment so a single download contains the operator-visible byte stream.
 func readRawLog(logPath string) ([]byte, error) {
 	var body []byte
-	if prev, err := os.ReadFile(logPath + ".prev"); err == nil {
+	if prev, err := os.ReadFile(logutil.PrevPath(logPath)); err == nil {
 		body = append(body, prev...)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -195,6 +234,7 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		Tags:        []string{"Logs"},
 	}, map[string]any{
 		"line":    LogLineSSEEvent{},
+		"region":  LogRegionSSEEvent{},
 		"rotated": LogRotatedEvent{},
 		"dropped": LogDroppedEvent{},
 		"done":    LogDoneEvent{},
@@ -235,6 +275,7 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		sender := logstream.HumaSender{
 			Inner:   send,
 			Line:    func(e logstream.LineEvent) any { return LogLineSSEEvent(e) },
+			Region:  func(e logstream.RegionEvent) any { return LogRegionSSEEvent(e) },
 			Rotated: func(e logstream.RotatedEvent) any { return LogRotatedEvent(e) },
 			Dropped: func(e logstream.DroppedEvent) any { return LogDroppedEvent(e) },
 			Done:    func(e logstream.DoneEvent) any { return LogDoneEvent(e) },

@@ -140,6 +140,26 @@ func (sm *StreamManager) FetchOlderLogs(taskName, runID string, beforeLine, coun
 	}
 }
 
+// FetchLineHistory loads the prior whole-region frames an anchor line animated
+// through. committed is the line's final on-disk text, passed through so the
+// viewer can label where the animation settled.
+func (sm *StreamManager) FetchLineHistory(taskName, runID string, lineNum int64, committed string) tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		frames, err := client.GetLogLineHistory(taskName, runID, lineNum)
+		return uikit.LogLineHistoryMsg{
+			RunID:     runID,
+			Line:      lineNum,
+			Frames:    frames,
+			Committed: committed,
+			Err:       err,
+		}
+	}
+}
+
 // OnLogConnected stores the log channel and returns a command to start listening.
 func (sm *StreamManager) OnLogConnected(runID string, ch <-chan apiclient.LogStreamMsg) tea.Cmd {
 	sm.logCh = ch
@@ -242,6 +262,8 @@ func listenLogStream(runID string, ch <-chan apiclient.LogStreamMsg) tea.Cmd {
 		switch msg.Kind {
 		case apiclient.LogStreamMsgKindLine:
 			return uikit.LogLineMsg{RunID: runID, Line: msg.Line}
+		case apiclient.LogStreamMsgKindRegion:
+			return uikit.LogRegionMsg{RunID: runID, Stream: msg.Region.Stream, Epoch: msg.Region.Epoch, Rows: msg.Region.Rows}
 		case apiclient.LogStreamMsgKindRotated:
 			return uikit.LogRotatedMsg{RunID: runID, FirstAvailable: msg.Rotated.FirstAvailable}
 		case apiclient.LogStreamMsgKindDropped:

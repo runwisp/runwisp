@@ -51,9 +51,7 @@ func TestStreamManager_OneEventPerLine(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "test.log")
 	w, err := NewLogWriter(LogWriterOpts{
-		LogPath:  logPath,
-		IdxPath:  logPath + ".idx",
-		TidxPath: logPath + ".tidx",
+		LogPath: logPath,
 	})
 	require.NoError(t, err)
 
@@ -89,9 +87,7 @@ func TestStreamManager_StderrTaggedNoPrefixInText(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "test.log")
 	w, err := NewLogWriter(LogWriterOpts{
-		LogPath:  logPath,
-		IdxPath:  logPath + ".idx",
-		TidxPath: logPath + ".tidx",
+		LogPath: logPath,
 	})
 	require.NoError(t, err)
 
@@ -124,9 +120,7 @@ func TestStreamManager_OversizedLineSplit(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "test.log")
 	w, err := NewLogWriter(LogWriterOpts{
-		LogPath:  logPath,
-		IdxPath:  logPath + ".idx",
-		TidxPath: logPath + ".tidx",
+		LogPath: logPath,
 	})
 	require.NoError(t, err)
 

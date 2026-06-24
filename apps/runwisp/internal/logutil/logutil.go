@@ -29,13 +29,21 @@ func ResolveRunLogPath(logDir, taskName, runID string, createdAt time.Time) stri
 	return filepath.Join(logDir, sanitized, fmt.Sprintf("%s_%s.log", ts, suffix))
 }
 
-// RemoveLogFiles removes a log file and its associated index/rotation artifacts.
+// PrevPath returns the rotated-away segment path for a log file. Like the
+// sidecar container it is hidden (leading dot) so it never clutters an `ls`
+// while a tail-mode rotation keeps the previous segment around.
+func PrevPath(logPath string) string {
+	return filepath.Join(filepath.Dir(logPath), "."+filepath.Base(logPath)+".prev")
+}
+
+// RemoveLogFiles removes a log file and its associated sidecar/rotation
+// artifacts: the log itself, the consolidated container, and any rotated-away
+// segment.
 func RemoveLogFiles(logPath string) {
 	if logPath == "" {
 		return
 	}
-	for _, suffix := range []string{"", ".idx", ".prev", ".idx.prev", ".tidx", ".tidx.prev", ".meta"} {
-		p := logPath + suffix
+	for _, p := range []string{logPath, MetaPath(logPath), PrevPath(logPath)} {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			slog.Warn("Failed to delete log file", "path", p, "err", err)
 		}

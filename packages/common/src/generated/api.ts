@@ -489,6 +489,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskName}/runs/{runId}/log/line/{lineNum}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the frame history of a settled progress bar / redraw line
+         * @description Returns the prior whole-region frames a progress bar or multi-line redraw passed through before settling into the committed line. Empty unless the line's `frame_count` is non-zero.
+         */
+        get: operations["getLogLineHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskName}/runs/{runId}/log/raw": {
         parameters: {
             query?: never;
@@ -732,6 +752,11 @@ export interface components {
             continued?: boolean;
             /**
              * Format: int64
+             * @description Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise
+             */
+            frame_count?: number;
+            /**
+             * Format: int64
              * @description Absolute line number
              */
             n: number;
@@ -745,9 +770,24 @@ export interface components {
              */
             ts: number;
         };
+        LogLineHistoryBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/LogLineHistoryBody.json
+             */
+            readonly $schema?: string;
+            /** @description Prior whole-region frames, oldest first; each frame is one or more rows */
+            frames: (string[] | null)[] | null;
+        };
         LogLineSSEEvent: {
             /** @description True if this segment continues an oversized split line */
             continued?: boolean;
+            /**
+             * Format: int64
+             * @description Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise
+             */
+            frame_count?: number;
             /**
              * Format: int64
              * @description Absolute line number
@@ -786,6 +826,17 @@ export interface components {
             total_lines: number;
             /** @description True if rotation has dropped lines below first_available */
             truncated: boolean;
+        };
+        LogRegionSSEEvent: {
+            /**
+             * Format: int64
+             * @description Region generation; bumps on screen reset so stale frames can be discarded
+             */
+            epoch: number;
+            /** @description Current frame of the region, one entry per row; empty clears the overlay */
+            rows: string[] | null;
+            /** @description Stream identifier (stdout/stderr) */
+            stream: string;
         };
         LogRotatedEvent: {
             /**
@@ -2424,6 +2475,42 @@ export interface operations {
             };
         };
     };
+    getLogLineHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+                /** @description Run ULID */
+                runId: string;
+                /** @description Anchor line number to fetch frame history for */
+                lineNum: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogLineHistoryBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     getLogRaw: {
         parameters: {
             query?: never;
@@ -2516,6 +2603,17 @@ export interface operations {
                          * @constant
                          */
                         event: "line";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["LogRegionSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "region";
                         /** @description The event ID. */
                         id?: number;
                         /** @description The retry time in milliseconds. */

@@ -387,6 +387,11 @@
             "description": "True if this segment continues an oversized split line",
             "type": "boolean"
           },
+          "frame_count": {
+            "description": "Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise",
+            "format": "int64",
+            "type": "integer"
+          },
           "n": {
             "description": "Absolute line number",
             "format": "int64",
@@ -414,12 +419,51 @@
         ],
         "type": "object"
       },
+      "LogLineHistoryBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/LogLineHistoryBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "frames": {
+            "description": "Prior whole-region frames, oldest first; each frame is one or more rows",
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "frames"
+        ],
+        "type": "object"
+      },
       "LogLineSSEEvent": {
         "additionalProperties": false,
         "properties": {
           "continued": {
             "description": "True if this segment continues an oversized split line",
             "type": "boolean"
+          },
+          "frame_count": {
+            "description": "Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise",
+            "format": "int64",
+            "type": "integer"
           },
           "n": {
             "description": "Absolute line number",
@@ -495,6 +539,36 @@
           "total_lines",
           "truncated",
           "finalized"
+        ],
+        "type": "object"
+      },
+      "LogRegionSSEEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "epoch": {
+            "description": "Region generation; bumps on screen reset so stale frames can be discarded",
+            "format": "int64",
+            "type": "integer"
+          },
+          "rows": {
+            "description": "Current frame of the region, one entry per row; empty clears the overlay",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "stream": {
+            "description": "Stream identifier (stdout/stderr)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stream",
+          "epoch",
+          "rows"
         ],
         "type": "object"
       },
@@ -3512,6 +3586,78 @@
         ]
       }
     },
+    "/api/tasks/{taskName}/runs/{runId}/log/line/{lineNum}/history": {
+      "get": {
+        "description": "Returns the prior whole-region frames a progress bar or multi-line redraw passed through before settling into the committed line. Empty unless the line's `frame_count` is non-zero.",
+        "operationId": "getLogLineHistory",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Anchor line number to fetch frame history for",
+            "in": "path",
+            "name": "lineNum",
+            "required": true,
+            "schema": {
+              "description": "Anchor line number to fetch frame history for",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogLineHistoryBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get the frame history of a settled progress bar / redraw line",
+        "tags": [
+          "Logs"
+        ]
+      }
+    },
     "/api/tasks/{taskName}/runs/{runId}/log/raw": {
       "get": {
         "description": "Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.",
@@ -3730,6 +3876,32 @@
                           "event"
                         ],
                         "title": "Event line",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/LogRegionSSEEvent"
+                          },
+                          "event": {
+                            "const": "region",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event region",
                         "type": "object"
                       },
                       {

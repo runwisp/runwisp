@@ -17,7 +17,14 @@ const logPageLineSchema = z.object({
     stream: z.string(),
     text: z.string(),
     continued: z.boolean().optional(),
+    frame_count: z.number().int().nonnegative().optional(),
 });
+
+export const logLineHistorySchema = z.object({
+    frames: z.array(z.array(z.string())),
+});
+
+export type LogLineHistory = z.infer<typeof logLineHistorySchema>;
 
 export const logPageSchema = z.object({
     lines: z.array(logPageLineSchema),
@@ -25,6 +32,12 @@ export const logPageSchema = z.object({
     total_lines: z.number().int().nonnegative(),
     truncated: z.boolean(),
     finalized: z.boolean(),
+});
+
+const regionSchema = z.object({
+    stream: z.string(),
+    epoch: z.number().int(),
+    rows: z.array(z.string()),
 });
 
 const rotatedSchema = z.object({ first_available: z.number().int().nonnegative() });
@@ -61,8 +74,10 @@ export type LogSearchResponse = z.infer<typeof logSearchResponseSchema>;
 /** Convert a daemon LogPage into the LogEvent shape consumed by LogConsole. */
 export function parseLogPage(page: LogPage): LogEvent {
     const slice: Record<number, string> = {};
+    const frameCounts: Record<number, number> = {};
     for (const l of page.lines) {
         slice[l.n] = l.text;
+        if (l.frame_count !== undefined && l.frame_count > 0) frameCounts[l.n] = l.frame_count;
     }
     const out: LogEvent = {
         lines: slice,
@@ -72,6 +87,7 @@ export function parseLogPage(page: LogPage): LogEvent {
     if (page.first_available > 0) {
         out.firstAvailableLine = page.first_available;
     }
+    if (Object.keys(frameCounts).length > 0) out.frameCounts = frameCounts;
     return out;
 }
 
@@ -93,6 +109,9 @@ function buildLineEvent(state: StreamerState, line: LogPageLine): LogEvent {
         finished: false,
     };
     if (state.firstAvailable > 0) evt.firstAvailableLine = state.firstAvailable;
+    if (line.frame_count !== undefined && line.frame_count > 0) {
+        evt.frameCounts = { [line.n]: line.frame_count };
+    }
     return evt;
 }
 
@@ -103,6 +122,20 @@ function handleLineEvent(state: StreamerState, data: string, onEvent: (event: Lo
     state.lastReceivedId = line.n;
     if (line.n + 1 > state.totalLines) state.totalLines = line.n + 1;
     onEvent(buildLineEvent(state, line));
+}
+
+function handleRegionEvent(state: StreamerState, data: string, onEvent: (event: LogEvent) => void) {
+    const result = regionSchema.safeParse(JSON.parse(data));
+    if (!result.success) return;
+    const region = result.data;
+    // Region snapshots carry no line number and are never persisted; they only
+    // update the transient in-place overlay. Don't advance lastReceivedId.
+    onEvent({
+        lines: {},
+        sizeLines: state.totalLines,
+        finished: false,
+        region: { stream: region.stream, epoch: region.epoch, rows: region.rows },
+    });
 }
 
 function handleRotatedEvent(
@@ -171,7 +204,7 @@ export function createLogStreamer(taskName: string) {
                 const from = state.lastReceivedId >= 0 ? state.lastReceivedId + 1 : startFrom;
                 return base + "?from=" + String(from);
             },
-            eventTypes: ["line", "rotated", "dropped", "done"],
+            eventTypes: ["line", "region", "rotated", "dropped", "done"],
             onOpen: () => {
                 logger.info(`Log stream connection opened: ${taskName}/${runId}`);
             },
@@ -187,6 +220,8 @@ export function createLogStreamer(taskName: string) {
                 try {
                     if (eventType === "line") {
                         handleLineEvent(state, data, onEvent);
+                    } else if (eventType === "region") {
+                        handleRegionEvent(state, data, onEvent);
                     } else if (eventType === "rotated") {
                         handleRotatedEvent(state, data, onEvent);
                     } else if (eventType === "dropped") {

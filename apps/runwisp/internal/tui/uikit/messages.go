@@ -146,6 +146,17 @@ type LogLineMsg struct {
 	Line  server.LogLineEntry
 }
 
+// LogRegionMsg delivers a live snapshot of a still-animating output region
+// (a `\r` progress bar or multi-line ANSI redraw). It is never persisted; the
+// pane holds it in a transient overlay keyed by stream, replacing the whole
+// frame on each message. Empty Rows clears the overlay for that stream.
+type LogRegionMsg struct {
+	RunID  string
+	Stream string
+	Epoch  int
+	Rows   []string
+}
+
 // LogRotatedMsg signals server-side rotation; lines below FirstAvailable
 // have been dropped on disk.
 type LogRotatedMsg struct {
@@ -278,3 +289,15 @@ type NotificationReadStateMsg struct {
 // boundary-flash duration elapses so the cursor row returns to its normal
 // background.
 type NotificationBoundaryFlashClearedMsg struct{}
+
+// LogLineHistoryMsg delivers the prior whole-region frames an anchor line
+// animated through, fetched on demand when the operator opens the frame-history
+// viewer. Frames is nil/empty when none are available; Committed is the line's
+// final on-disk text.
+type LogLineHistoryMsg struct {
+	RunID     string
+	Line      int64
+	Frames    [][]string
+	Committed string
+	Err       error
+}
