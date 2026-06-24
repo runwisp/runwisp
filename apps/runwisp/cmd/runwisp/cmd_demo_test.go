@@ -5,10 +5,12 @@ package main
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReportDemoNoTUI_PasswordToStdoutGuidanceToStderr(t *testing.T) {
@@ -51,4 +53,47 @@ func TestReportDemoNoTUI_NoPasswordExitsNonZeroWithoutLeaking(t *testing.T) {
 
 	assert.Equal(t, passwordExitNoAuth, code)
 	assert.Empty(t, stdout.String(), "stdout must stay empty when there is no password to print")
+}
+
+// setSeedOnly flips the package-global demoFlags into --seed-only mode for the
+// duration of a test and restores them afterwards. demoFlags is a global, so
+// these tests must not run in parallel with each other.
+func setSeedOnly(t *testing.T, cloud bool) {
+	t.Helper()
+	prev := demoFlags
+	demoFlags.SeedOnly = true
+	demoFlags.Cloud = cloud
+	t.Cleanup(func() { demoFlags = prev })
+}
+
+func TestRunDemoSeedOnlyWritesConfigAndSeeds(t *testing.T) {
+	setSeedOnly(t, false)
+
+	dir := t.TempDir()
+	f := Flags{
+		CfgFile: filepath.Join(dir, "runwisp.toml"),
+		DataDir: filepath.Join(dir, "data"),
+	}
+
+	require.NoError(t, runDemo(demoCmd, f))
+
+	// --seed-only writes the embedded demo config and seeds a real database +
+	// log dir into the caller-supplied paths, then returns without spawning a
+	// daemon or TUI.
+	assert.FileExists(t, f.CfgFile)
+	assert.FileExists(t, f.DBPath())
+	assert.DirExists(t, f.LogDir())
+}
+
+func TestRunDemoSeedOnlyRejectsCloud(t *testing.T) {
+	setSeedOnly(t, true)
+
+	f := Flags{
+		CfgFile: filepath.Join(t.TempDir(), "runwisp.toml"),
+		DataDir: filepath.Join(t.TempDir(), "data"),
+	}
+
+	err := runDemo(demoCmd, f)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--seed-only cannot be combined with --cloud")
 }

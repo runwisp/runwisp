@@ -133,6 +133,18 @@ tasks:
       - '/apps/ui/e2e/**/*'
       - '/apps/ui/playwright.config.ts'
 
+  screenshots:
+    # Regenerates the docs Web UI screenshots (apps/docs) from a demo-seeded
+    # daemon. On-demand only — never wired into check/test/ci. On runwisp (not
+    # web-ui) for the same project-graph reason as test-e2e.
+    description: 'Generate the docs Web UI screenshots (light + dark).'
+    script: 'cd ../ui && playwright test --config playwright.screenshots.config.ts'
+    deps:
+      - '~:build'
+    options:
+      # Writes binary PNGs into apps/docs and drives live runs — not cacheable.
+      cache: false
+
   dev:
     description: 'Build, then run the binary (pass args after --).'
     command: './runwisp'
