@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -244,7 +245,7 @@ func TestEmitBackfill_WithRotatedNotice(t *testing.T) {
 	s := newStreamer(m, "/tmp/test.log")
 
 	// firstAvailable > 0 triggers a rotated notice.
-	require.NoError(t, s.emitBackfill(nil, 5, 10))
+	require.NoError(t, s.emitBackfill(nil, 5, 10, nil))
 	require.Len(t, m.rotated, 1)
 	assert.Equal(t, int64(10), m.rotated[0].FirstAvailable)
 }
@@ -252,7 +253,23 @@ func TestEmitBackfill_WithRotatedNotice(t *testing.T) {
 func TestEmitBackfill_SendRotatedError(t *testing.T) {
 	m := &mockSender{sendErr: errors.New("write error")}
 	s := newStreamer(m, "/tmp/test.log")
-	require.Error(t, s.emitBackfill(nil, 5, 10))
+	require.Error(t, s.emitBackfill(nil, 5, 10, nil))
+}
+
+func TestEmitBackfill_StampsFrameCount(t *testing.T) {
+	m := &mockSender{}
+	s := newStreamer(m, "/tmp/test.log")
+
+	records := []logutil.LogLineRecord{
+		{LineNum: 0, Stream: "stdout", Text: "plain"},
+		{LineNum: 1, Stream: "stdout", Text: "progress: 100%"},
+	}
+	// Line 1 is a settled progress-bar anchor with 3 recorded frames; line 0 is not.
+	require.NoError(t, s.emitBackfill(records, 0, 0, map[int64]int{1: 3}))
+
+	require.Len(t, m.lines, 2)
+	assert.Equal(t, 0, m.lines[0].FrameCount, "non-anchor line carries no frame count")
+	assert.Equal(t, 3, m.lines[1].FrameCount, "anchor line is stamped with its frame count")
 }
 
 // --- sendTerminalEvents ---

@@ -15,6 +15,11 @@ test.describe("frame history", () => {
 
         await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
 
+        // Reload so the run is loaded fresh from disk (backfill only, no live
+        // events) — the path where frame history used to be lost on a finished run.
+        await page.reload();
+        await expect(page.getByRole("heading", { name: "progress-task", level: 1 })).toBeVisible();
+
         const main = page.getByRole("main");
 
         // The bar collapsed to a single committed final frame in the console.

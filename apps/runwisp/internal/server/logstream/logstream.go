@@ -201,11 +201,12 @@ func regionFromBus(re events.LogRegionEvent) RegionEvent {
 	}
 }
 
-func lineFromRecord(rec logutil.LogLineRecord) LineEvent {
+func lineFromRecord(rec logutil.LogLineRecord, frameCount int) LineEvent {
 	return LineEvent{
-		N:      rec.LineNum,
-		Stream: rec.Stream,
-		Text:   rec.Text,
+		N:          rec.LineNum,
+		Stream:     rec.Stream,
+		Text:       rec.Text,
+		FrameCount: frameCount,
 	}
 }
 
@@ -266,7 +267,11 @@ func (s *streamer) streamLoop(ctx context.Context, runID string, bus events.Even
 		slog.Warn("SSE: backfill read failed", "runID", runID, "err", err)
 	}
 	resolvedAnchor := resolveBackfillAnchor(anchorFrom, replayLimit, totalLines, firstAvailable)
-	if err := s.emitBackfill(backfill, resolvedAnchor, firstAvailable); err != nil {
+	// Stamp frame-history availability onto backfilled anchor lines so a
+	// finished run loaded fresh (not just the live path) keeps its rewind
+	// affordance. Read once per connection, mirroring humaGetLogPage.
+	frameCounts := logutil.ReadFrameHistoryCounts(s.logPath)
+	if err := s.emitBackfill(backfill, resolvedAnchor, firstAvailable, frameCounts); err != nil {
 		return
 	}
 
@@ -374,7 +379,7 @@ func bufferLogLine(le events.LogLineEvent, pendingCh chan events.LogLineEvent, d
 
 // emitBackfill sends the rotated notice (if any) and replays backfill lines
 // starting at resolvedAnchor. Returns the first send error encountered.
-func (s *streamer) emitBackfill(backfill []logutil.LogLineRecord, resolvedAnchor, firstAvailable int64) error {
+func (s *streamer) emitBackfill(backfill []logutil.LogLineRecord, resolvedAnchor, firstAvailable int64, frameCounts map[int64]int) error {
 	if firstAvailable > 0 {
 		if err := s.send.SendRotated(RotatedEvent{FirstAvailable: firstAvailable}); err != nil {
 			return err
@@ -384,7 +389,7 @@ func (s *streamer) emitBackfill(backfill []logutil.LogLineRecord, resolvedAnchor
 		if rec.LineNum < resolvedAnchor {
 			continue
 		}
-		if err := s.emitLine(lineFromRecord(rec)); err != nil {
+		if err := s.emitLine(lineFromRecord(rec, frameCounts[rec.LineNum])); err != nil {
 			return err
 		}
 	}
