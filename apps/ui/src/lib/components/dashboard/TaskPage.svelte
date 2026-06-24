@@ -7,10 +7,12 @@
     import Modal from "@runwisp/ui/components/Modal.svelte";
     import Alert from "@runwisp/ui/components/Alert.svelte";
     import { SvelteMap } from "svelte/reactivity";
-    import { isService, type Task, type Run, type RunSelector } from "@runwisp/common";
+    import { isService, type Task, type Run } from "@runwisp/common";
     import type { LogEvent, LogSlice, RunsListFilters, RunOutputMatch } from "@runwisp/ui";
-    import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
-    import { runsApi, tasksApi } from "$lib/api";
+    import { RunsList, RunDetailPanel } from "@runwisp/ui";
+    import { tasksApi } from "$lib/api";
+    import { headerSearchStore } from "$lib/stores";
+    import { createRunActions } from "$lib/utils/run-actions";
     import ParamForm from "./ParamForm.svelte";
 
     let {
@@ -114,15 +116,21 @@
     let restartConfirmOpen = $state(false);
     let stopServiceConfirmOpen = $state(false);
 
-    // Output search lives in the history rail (the artifact's ".history__search"):
-    // it filters runs by what they printed. The rail owns the box + debounce; this
-    // page owns the async query (it has the API client) and the matched-run map.
-    let outputSearchOpen = $state(false);
+    // Output search filters the rail by what each run printed. The search box
+    // lives in the app header now; this page owns the async query (it has the
+    // API client) and the matched-run map, and feeds the header via the store.
     let outputMatches = $state<Map<string, RunOutputMatch> | null>(null);
     let outputSearchLoading = $state(false);
     let outputSearchSeq = 0;
+    // The query most recently handed to the search. While the live header query
+    // is ahead of it (mid-type, inside the header's debounce) the search counts
+    // as pending even though no request has fired — keeps the rail in its
+    // searching state instead of flashing stale results.
+    let lastDispatched = $state("");
 
-    async function handleOutputSearch(query: string) {
+    async function handleOutputSearch(rawQuery: string) {
+        const query = rawQuery.trim();
+        lastDispatched = query;
         if (!query) {
             outputSearchSeq++;
             outputMatches = null;
@@ -154,110 +162,44 @@
         }
     }
 
-    // ⌘K / Ctrl+K opens the rail's output-search box (focus follows via autofocus).
-    function onWindowKeydown(e: KeyboardEvent) {
-        if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) {
-            return;
-        }
-        const target = e.target;
-        if (
-            target instanceof HTMLInputElement ||
-            target instanceof HTMLTextAreaElement ||
-            (target instanceof HTMLElement && target.isContentEditable)
-        ) {
-            return;
-        }
-        e.preventDefault();
-        outputSearchOpen = true;
-    }
+    // The live header query, and the rail's derived search state from it.
+    const outputQuery = $derived(headerSearchStore.query);
+    const outputSearchActive = $derived(outputQuery.trim().length > 0);
+    const outputSearchPending = $derived(
+        outputSearchActive &&
+            (outputSearchLoading ||
+                outputMatches === null ||
+                outputQuery.trim() !== lastDispatched),
+    );
 
-    const UNDO_MS = 5000;
+    // Register the header search whenever the history rail is on screen, and
+    // re-register on task change so a query never leaks from one task to the
+    // next. The header owns the box + debounce and calls back here.
+    $effect(() => {
+        if (hideHistory && !historyExpanded) return;
+        void task.name;
+        headerSearchStore.register({
+            placeholder: "Search output across runs…",
+            onSearch: (q) => void handleOutputSearch(q),
+        });
+        return () => headerSearchStore.unregister();
+    });
 
-    async function handleBulkDelete(selector: RunSelector, affected: Run[]) {
-        if (affected.length === 0) return;
-        const removedIds = new Set(affected.map((r) => r.id));
-        const snapshot = items.filter((r: Run) => removedIds.has(r.id));
-        onOptimisticRemove([...removedIds]);
-        if (userSelectedRunId && removedIds.has(userSelectedRunId)) userSelectedRunId = null;
+    // Surface the async log-search progress as the header field's spinner.
+    $effect(() => {
+        headerSearchStore.setLoading(outputSearchLoading);
+    });
 
-        try {
-            const count = await runsApi.bulkDelete(selector);
-            const restoreSelector: RunSelector = {
-                match_all: false,
-                ids: [...removedIds],
-            };
-            toast.success(count === 1 ? "Run deleted" : `${count} runs deleted`, {
-                duration: UNDO_MS,
-                action: {
-                    label: "Undo",
-                    onClick: () => void undoDelete(restoreSelector, snapshot),
-                },
-            });
-        } catch (err) {
-            onOptimisticRestore(snapshot);
-            toast.error(extractErrorMessage(err, "Failed to delete runs"));
-        }
-    }
+    let userSelectedRunId = $state<string | null>(null);
 
-    async function undoDelete(selector: RunSelector, snapshot: Run[]) {
-        try {
-            await runsApi.bulkRestore(selector);
-            onOptimisticRestore(snapshot);
-        } catch (err) {
-            toast.error(extractErrorMessage(err, "Failed to restore runs"));
-        }
-    }
-
-    async function handleBulkCancel(selector: RunSelector, affected: Run[]) {
-        if (affected.length === 0) return;
-        try {
-            const count = await runsApi.bulkCancel(selector);
-            toast.success(count === 1 ? "Cancelled 1 run" : `Cancelled ${count} runs`);
-        } catch (err) {
-            toast.error(extractErrorMessage(err, "Failed to cancel runs"));
-        }
-    }
-
-    async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
-        try {
-            const { triggered } = await runsApi.bulkRerun(selector);
-            if (triggered.length === 0) {
-                toast.error("Could not re-run any of the selected tasks");
-                return;
-            }
-            const label = triggered.length === 1 ? "task" : "tasks";
-            toast.success(`Triggered ${triggered.length} ${label}`, {
-                duration: UNDO_MS,
-                action: {
-                    label: "Undo",
-                    onClick: () => void undoRerun(triggered),
-                },
-            });
-        } catch (err) {
-            toast.error(extractErrorMessage(err, "Failed to re-run tasks"));
-        }
-    }
-
-    async function undoRerun(triggered: { task_name: string; run_id: string }[]) {
-        const ids = triggered.map((t) => t.run_id);
-        try {
-            await runsApi.bulkCancel({ match_all: false, ids });
-        } catch {
-            // best-effort: runs may already have finished
-        }
-        try {
-            await runsApi.bulkDelete({ match_all: false, ids });
-            toast.info("Re-run undone");
-        } catch (err) {
-            toast.error(extractErrorMessage(err, "Failed to undo re-run"));
-        }
-    }
-
-    function deleteSingle(runId: string) {
-        const target = items.find((r: Run) => r.id === runId);
-        if (!target) return;
-        void handleBulkDelete({ match_all: false, ids: [runId] }, [target]);
-    }
+    const { handleBulkDelete, handleBulkCancel, handleBulkRerun, deleteSingle } = createRunActions({
+        getItems: () => items,
+        onOptimisticRemove: (ids) => onOptimisticRemove(ids),
+        onOptimisticRestore: (runs) => onOptimisticRestore(runs),
+        onRemoved: (ids) => {
+            if (userSelectedRunId && ids.has(userSelectedRunId)) userSelectedRunId = null;
+        },
+    });
 
     // A run can always be *triggered* — at max concurrency it queues (the modal
     // says so), so concurrency must not gate the button, only its warning.
@@ -275,7 +217,6 @@
             : `Trigger a new run of ${task.name}?`,
     );
 
-    let userSelectedRunId = $state<string | null>(null);
     let highlightLine = $state<number | null>(null);
 
     $effect(() => {
@@ -308,8 +249,6 @@
     );
     const showEnvPanel = $derived(envEntries.length > 0 || !!task.env_file || !!task.secrets_file);
 </script>
-
-<svelte:window onkeydown={onWindowKeydown} />
 
 <!-- Card-less, full-bleed: the rail and detail panel fill the content area
      edge-to-edge (cancelling AppLayout's p-6), divided only by the rail's
@@ -363,10 +302,9 @@
                 onBulkRerun={handleBulkRerun}
                 getInstanceCount={() => instanceCount}
                 outputSearch
-                bind:outputSearchOpen
-                onOutputSearch={handleOutputSearch}
+                {outputQuery}
                 {outputMatches}
-                {outputSearchLoading}
+                {outputSearchPending}
             />
         {/if}
 

@@ -11,6 +11,7 @@
     import CloudModeBadge from "$lib/components/CloudModeBadge.svelte";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import ConnectionPip from "$lib/components/ConnectionPip.svelte";
+    import HeaderSearch from "$lib/components/HeaderSearch.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
@@ -256,6 +257,13 @@
                     >
                 {/if}
             </div>
+
+            <!-- Center: page search (filters the run list / searches log output).
+                 Empty space when the active page registers no search. -->
+            <div class="hidden min-w-0 flex-1 justify-center px-4 md:flex lg:px-8">
+                <HeaderSearch />
+            </div>
+
             <div class="flex items-center gap-3">
                 {#if systemStore.timezone}
                     <span

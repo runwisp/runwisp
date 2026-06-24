@@ -20,6 +20,8 @@ export interface RunsSource {
     readonly items: Run[];
     readonly total: number;
     readonly loading: boolean;
+    /** True once the first fetch has settled. Latches on; never resets. */
+    readonly loaded: boolean;
     readonly error: Error | null;
     readonly filters: RunsFilters | null;
     readonly done: boolean;
@@ -67,6 +69,7 @@ export function createRunsSource(): RunsSource {
     let items = $state<Run[]>([]);
     let total = $state(0);
     let loading = $state(false);
+    let loaded = $state(false);
     let error = $state<Error | null>(null);
     let currentFilters = $state<RunsFilters | null>(null);
     let fetchToken = 0;
@@ -91,7 +94,10 @@ export function createRunsSource(): RunsSource {
             if (token !== fetchToken) return;
             error = err instanceof Error ? err : new Error(String(err));
         } finally {
-            if (token === fetchToken) loading = false;
+            if (token === fetchToken) {
+                loading = false;
+                loaded = true;
+            }
         }
     }
 
@@ -167,6 +173,9 @@ export function createRunsSource(): RunsSource {
         },
         get loading() {
             return loading;
+        },
+        get loaded() {
+            return loaded;
         },
         get error() {
             return error;

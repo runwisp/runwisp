@@ -4,7 +4,6 @@
 <script lang="ts">
     import { untrack } from "svelte";
     import {
-        Server,
         Hash,
         Check,
         Terminal as TerminalIcon,
@@ -21,6 +20,7 @@
         SlidersHorizontal,
         Maximize2,
         Minimize2,
+        TextWrap,
     } from "@lucide/svelte";
     import Button from "../Button.svelte";
     import EmptyState from "../EmptyState.svelte";
@@ -35,6 +35,7 @@
         formatFullDateTime,
         formatClockTime,
         formatCalendarDate,
+        formatTimeHM,
     } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
@@ -160,6 +161,9 @@
     // position:fixed child) and moves it back on restore, so the SSE stream,
     // scroll position, and the {#key run.id} mount all survive the toggle.
     let consoleMaximized = $state(false);
+    // Wrap long console lines instead of horizontally scrolling them. Owned
+    // here so the toolbar toggle and the <LogConsole> share one source of truth.
+    let consoleWrap = $state(false);
 
     // A run going away (deselect) tears down the console; drop the overlay too.
     $effect(() => {
@@ -375,6 +379,15 @@
                         <div
                             class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-on-surface-muted"
                         >
+                            {#if showTaskName}
+                                <!-- When the title carries the task name, the run's
+                                 date/time lives here in the sub-line (otherwise it's
+                                 already the title, so don't repeat it). -->
+                                <span title={formatFullDateTime(startedAt)}>
+                                    Run · {formatCalendarDate(startedAt)}
+                                    {formatTimeHM(startedAt)}
+                                </span>
+                            {/if}
                             <!-- Run-id chip: click to copy the full ULID -->
                             <button
                                 type="button"
@@ -388,15 +401,6 @@
                                     <Hash size={11} />{run.id}
                                 {/if}
                             </button>
-                            <span class="hidden h-1 w-1 rounded-full bg-outline-faint sm:block"
-                            ></span>
-                            <span class="inline-flex items-center gap-1.5">
-                                <Server size={14} />
-                                Triggered by
-                                <span class="font-medium text-on-surface"
-                                    >{formatTriggeredByLabel(run.triggered_by)}</span
-                                >
-                            </span>
                             {#if retry}
                                 <span class="hidden h-1 w-1 rounded-full bg-outline-faint sm:block"
                                 ></span>
@@ -684,7 +688,7 @@
                                   ? 'text-danger-surface'
                                   : 'text-on-surface'}"
                         >
-                            <span>{showCode ? `Code ${run.exit_code}` : "—"}</span>
+                            <span>{showCode ? run.exit_code : "—"}</span>
                             {#if exitFail}
                                 <span
                                     class="rounded bg-danger-soft px-1 py-px text-[9px] font-bold tracking-wide text-danger-surface uppercase"
@@ -727,7 +731,7 @@
             use:maximizePortal={consoleMaximized}
             class={consoleMaximized
                 ? "console-zoom fixed inset-3 z-50 flex flex-col overflow-hidden rounded-xl bg-[var(--rw-con-bg)] shadow-2xl ring-1 ring-[rgb(255_255_255_/_0.08)] sm:inset-6"
-                : "m-4 mt-1 flex min-h-[300px] flex-1 flex-col overflow-hidden rounded-xl bg-[var(--rw-con-bg)] shadow-[0_1px_2px_rgb(0_0_0_/_0.3)] ring-1 ring-[rgb(255_255_255_/_0.04)] ring-inset"}
+                : "ml-1 flex min-h-[300px] flex-1 flex-col overflow-hidden border-t border-[rgb(255_255_255_/_0.06)] bg-[var(--rw-con-bg)]"}
         >
             <div
                 class="flex shrink-0 items-center justify-between gap-3 border-b border-[rgb(255_255_255_/_0.06)] bg-[var(--rw-con-panel)] px-3.5 py-[9px] font-mono text-[11.5px] text-[var(--rw-con-dim)]"
@@ -756,6 +760,19 @@
                 <div class="flex shrink-0 items-center gap-3">
                     <button
                         type="button"
+                        onclick={() => (consoleWrap = !consoleWrap)}
+                        class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-[rgb(255_255_255_/_0.05)] hover:text-[#b8c5d1] {consoleWrap
+                            ? 'text-[#b8c5d1]'
+                            : 'text-[var(--rw-con-dim)]'}"
+                        title={consoleWrap ? "Unwrap lines" : "Wrap long lines"}
+                        aria-pressed={consoleWrap}
+                        aria-label="Toggle line wrapping"
+                    >
+                        <TextWrap size={13} />
+                        <span class="hidden sm:inline">Wrap</span>
+                    </button>
+                    <button
+                        type="button"
                         onclick={() => (consoleMaximized = !consoleMaximized)}
                         class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-[var(--rw-con-dim)] transition-colors hover:bg-[rgb(255_255_255_/_0.05)] hover:text-[#b8c5d1]"
                         title={consoleMaximized ? "Restore console (Esc)" : "Maximize console · F"}
@@ -781,6 +798,7 @@
                     fetchLineHistory={fetchLineHistory
                         ? (n: number) => fetchLineHistory(run.id, n)
                         : undefined}
+                    bind:wrap={consoleWrap}
                     class="min-h-0 flex-1"
                     {highlightLine}
                     {endLabel}

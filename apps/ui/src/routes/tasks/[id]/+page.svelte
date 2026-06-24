@@ -141,7 +141,7 @@
 
 <AsyncDataView data={taskData}>
     {#if task}
-        {#if source.items.length === 0 && source.loading}
+        {#if !source.loaded}
             <Skeleton rows={5} />
         {:else}
             <TaskPage

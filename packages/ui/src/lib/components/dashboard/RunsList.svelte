@@ -18,21 +18,11 @@
 </script>
 
 <script lang="ts">
-    import {
-        Clock,
-        ArrowUpDown,
-        Search,
-        Funnel,
-        Square,
-        Trash2,
-        RotateCw,
-        X,
-    } from "@lucide/svelte";
+    import { Clock, ArrowUpDown, Funnel, Square, Trash2, RotateCw } from "@lucide/svelte";
     import { untrack } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import Button from "../Button.svelte";
-    import Badge from "../Badge.svelte";
     import EmptyState from "../EmptyState.svelte";
     import type { Run } from "./types.js";
     import type { RunSelector, RunStatus } from "@runwisp/common";
@@ -73,10 +63,9 @@
         getInstanceCount = () => 1,
         flush = false,
         outputSearch = false,
-        outputSearchOpen = $bindable(false),
-        onOutputSearch,
+        outputQuery = "",
         outputMatches = null,
-        outputSearchLoading = false,
+        outputSearchPending = false,
     }: {
         items: Run[];
         total: number;
@@ -103,16 +92,19 @@
         // border — no card chrome of its own. Default renders the standalone card
         // the cross-task /runs grid expects.
         flush?: boolean;
-        // Output search (history rail): a toggleable box that filters runs by
-        // what they printed. The parent owns the async query (it has the API);
-        // RunsList owns the box, the debounce, and the matched-row rendering.
+        // Output search (history rail): filters runs by what they printed. The
+        // search box lives in the app header now; the parent owns the box, the
+        // query, and the async log search. This component just renders the
+        // matched rows. `outputSearch` enables the mode; `outputQuery` is the
+        // live query (drives the active state and snippet highlighting).
         outputSearch?: boolean;
-        outputSearchOpen?: boolean;
-        onOutputSearch?: (query: string) => void;
+        outputQuery?: string;
         // run id → first matching line, supplied by the parent after a search.
         // null = no active search; the full list shows.
         outputMatches?: Map<string, RunOutputMatch> | null;
-        outputSearchLoading?: boolean;
+        // True while a query is typed but its results aren't in yet (debounce
+        // window or request in flight) — the rail shows its searching shimmer.
+        outputSearchPending?: boolean;
     } = $props();
 
     // Task-rail rows are a single dense line (artifact ".run", 46px); the
@@ -120,7 +112,6 @@
     const rowHeight = $derived(showTaskName ? 64 : 44);
     const OVERSCAN = 8;
     const LOAD_AHEAD = 10;
-    const SEARCH_DEBOUNCE_MS = 250;
 
     // Selection model: two modes —
     //   1. explicit:  user picked specific rows. explicitIds holds them.
@@ -130,50 +121,10 @@
     const exceptIds = new SvelteSet<string>();
 
     let scrollElement: HTMLDivElement | undefined = $state();
-    let searchInput = $state(filters.search);
 
-    // Debounce typing in the search box before pushing into shared filters,
-    // so we don't fire a network request on every keystroke.
-    $effect(() => {
-        const next = searchInput;
-        const id = setTimeout(() => {
-            if (filters.search !== next) filters.search = next;
-        }, SEARCH_DEBOUNCE_MS);
-        return () => clearTimeout(id);
-    });
-
-    // Output-search box (history rail): toggled open by the search icon (or
-    // bound open by the parent via ⌘K), its query debounced out to the parent
-    // which runs the actual log search.
-    let outputQuery = $state("");
+    // Output search filters the rail by what each run printed. The query lives
+    // in the app header now; this component only renders against it.
     const outputSearchActive = $derived(outputSearch && outputQuery.trim().length > 0);
-
-    // The last query actually handed to the parent. While the live query is
-    // ahead of it (the operator is mid-type, inside the debounce window) the
-    // search counts as pending even though no request has fired yet.
-    let lastDispatched = $state("");
-
-    // The search is "pending" from the moment a query is typed until the parent
-    // resolves a result map. `null` matches = not resolved yet (covers the
-    // debounce window before the request even fires); an empty map = resolved
-    // with zero hits. Keeping these distinct stops the "no matches" copy from
-    // flashing while the search is still in flight.
-    const outputSearchPending = $derived(
-        outputSearchActive &&
-            (outputSearchLoading ||
-                outputMatches === null ||
-                outputQuery.trim() !== lastDispatched),
-    );
-
-    $effect(() => {
-        if (!outputSearch) return;
-        const next = outputQuery.trim();
-        const id = setTimeout(() => {
-            lastDispatched = next;
-            onOutputSearch?.(next);
-        }, SEARCH_DEBOUNCE_MS);
-        return () => clearTimeout(id);
-    });
 
     // Loaded runs that matched the output search, in list order. A match in a
     // not-yet-loaded run can't be shown until the rail scrolls far enough to
@@ -181,15 +132,6 @@
     const matchedRuns = $derived(
         outputMatches ? items.filter((r: Run) => outputMatches.has(r.id)) : [],
     );
-
-    function toggleOutputSearch() {
-        outputSearchOpen = !outputSearchOpen;
-        if (!outputSearchOpen) outputQuery = "";
-    }
-
-    function clearOutputSearch() {
-        outputQuery = "";
-    }
 
     // Split the matching line into [before, match, after] around the first
     // occurrence of the query, windowed to keep the match in view — mirrors the
@@ -355,9 +297,11 @@
 >
     <!-- Inline heading: master checkbox, label, selection count or controls -->
     <div
-        class="flex shrink-0 items-center gap-2 border-b border-outline-faint px-3 py-2 {hasSelection
-            ? 'bg-primary-soft/40'
-            : 'bg-surface-sunken'}"
+        class="flex shrink-0 items-center gap-2 border-b px-3 py-2 {hasSelection
+            ? 'border-outline-faint bg-primary-soft/40'
+            : flush
+              ? 'border-transparent bg-surface'
+              : 'border-outline-faint bg-surface-sunken'}"
     >
         {#if bulkActions}
             <label
@@ -422,29 +366,15 @@
             <span class="text-xs font-semibold tracking-wider text-on-surface-muted uppercase">
                 {headerLabel}
             </span>
-            <Badge variant="default" size="sm">
+            <span class="text-xs text-on-surface-faint">
                 {#if outputSearchActive}
                     {matchedRuns.length} of {items.length}
                 {:else}
                     {total}
                     {total === 1 ? "run" : "runs"}
                 {/if}
-            </Badge>
+            </span>
             <div class="ml-auto flex items-center gap-1">
-                {#if outputSearch}
-                    <Button
-                        variant="ghost"
-                        size="xs"
-                        class="h-7 w-7 px-0 {outputSearchOpen
-                            ? 'bg-surface-raised text-primary shadow-sm'
-                            : ''}"
-                        onclick={toggleOutputSearch}
-                        title="Search output across runs"
-                        aria-pressed={outputSearchOpen}
-                    >
-                        {#snippet icon()}<Search size={14} />{/snippet}
-                    </Button>
-                {/if}
                 <Button
                     variant="ghost"
                     size="xs"
@@ -465,63 +395,10 @@
         {/if}
     </div>
 
-    {#if outputSearch && outputSearchOpen}
-        <!-- Output search box (artifact ".history__search"): filters the rail by
-             what each run printed. -->
-        <div class="shrink-0 border-b border-outline-faint bg-surface-sunken px-3 py-2">
-            <div
-                class="flex items-center gap-2 rounded-lg border border-outline bg-surface-raised px-2.5 py-1.5 focus-within:border-ring"
-            >
-                <Search size={14} class="shrink-0 text-on-surface-faint" />
-                <!-- svelte-ignore a11y_autofocus -->
-                <input
-                    type="text"
-                    bind:value={outputQuery}
-                    placeholder="Search output across runs…"
-                    autocomplete="off"
-                    spellcheck="false"
-                    autofocus
-                    class="min-w-0 flex-1 border-0 bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-faint"
-                    onkeydown={(e) => {
-                        if (e.key !== "Escape") return;
-                        e.stopPropagation();
-                        if (outputQuery) clearOutputSearch();
-                        else toggleOutputSearch();
-                    }}
-                />
-                {#if outputSearchLoading}
-                    <Clock size={13} class="shrink-0 animate-spin text-on-surface-faint" />
-                {/if}
-                {#if outputQuery}
-                    <button
-                        type="button"
-                        onclick={clearOutputSearch}
-                        title="Clear"
-                        aria-label="Clear search"
-                        class="shrink-0 cursor-pointer text-on-surface-faint hover:text-on-surface"
-                    >
-                        <X size={13} />
-                    </button>
-                {/if}
-            </div>
-        </div>
-    {/if}
-
     {#if showFilters}
-        <!-- Filter controls (search + status) -->
-        <div class="shrink-0 space-y-2 border-b border-outline-faint bg-surface-sunken px-3 py-2">
-            <div class="relative">
-                <Search
-                    class="absolute top-1/2 left-2.5 -translate-y-1/2 text-on-surface-faint"
-                    size={14}
-                />
-                <input
-                    type="text"
-                    bind:value={searchInput}
-                    placeholder="Search task or ID..."
-                    class="h-8 w-full rounded-md border border-outline bg-surface-raised pr-3 pl-8 text-sm transition-all placeholder:text-on-surface-faint focus:border-ring focus:ring-2 focus:ring-ring/20 focus:outline-none"
-                />
-            </div>
+        <!-- Status filter. The text search that used to sit here moved to the
+             app header (it filters this same list by task name or run ID). -->
+        <div class="shrink-0 border-b border-outline-faint bg-surface-sunken px-3 py-2">
             <div class="relative">
                 <select
                     bind:value={filters.status}
@@ -573,9 +450,7 @@
                 <div class="flex flex-col gap-0.5">
                     {#each matchedRuns as run (run.id)}
                         <div class="group/row relative flex items-stretch gap-1">
-                            {#if bulkActions && showTaskName}
-                                {@render rowCheckbox(run)}
-                            {:else if bulkActions}
+                            {#if bulkActions}
                                 {@render rowCheckboxOverlay(run)}
                             {/if}
                             {@render runRowButton(
@@ -605,7 +480,7 @@
                     {@const run = items[row.index]}
                     {#if run}
                         <div
-                            class="group/row flex items-stretch gap-1 pb-0.5"
+                            class="group/row flex items-center gap-1"
                             style:position="absolute"
                             style:top="0"
                             style:left="0"
@@ -613,9 +488,7 @@
                             style:height="{row.size}px"
                             style:transform="translateY({row.start}px)"
                         >
-                            {#if bulkActions && showTaskName}
-                                {@render rowCheckbox(run)}
-                            {:else if bulkActions}
+                            {#if bulkActions}
                                 {@render rowCheckboxOverlay(run)}
                             {/if}
                             {@render runRowButton(run, selectedRunId === run.id, undefined)}
@@ -627,35 +500,42 @@
     </div>
 </div>
 
-{#snippet rowCheckbox(run: Run)}
+<!-- Status dot. With bulk actions on it fades out — on row hover, or whenever a
+     selection exists — so the row checkbox can take its place over it. -->
+{#snippet statusDot(colorClass: string, running: boolean)}
+    <span
+        class="{colorClass} size-[9px] shrink-0 rounded-full bg-current ring-[3px] ring-current/20 {running
+            ? 'animate-pulse'
+            : ''} {bulkActions
+            ? selectionActive
+                ? 'opacity-0'
+                : 'transition-opacity group-hover/row:opacity-0'
+            : ''}"
+        aria-hidden="true"
+    ></span>
+{/snippet}
+
+<!-- Row checkbox: sits over the status dot (which fades out beneath it) so the
+     row keeps the artifact's geometry. Lives in the row wrapper (not the button)
+     to keep the markup valid, positioned to land on the dot. The 14px box is
+     wrapped in a 28px label so the hover/click hitbox is comfortable without
+     enlarging the visible checkbox. Used by both the task rail and the
+     cross-task /runs grid so selection behaves identically in each. -->
+{#snippet rowCheckboxOverlay(run: Run)}
     <label
-        class="flex shrink-0 cursor-pointer items-center px-1.5"
-        aria-label={`Select run from ${formatDateTime(run.start_at ?? run.created_at)}`}
+        class="absolute top-1/2 left-[2px] z-10 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center"
     >
         <input
             type="checkbox"
             checked={isRowSelected(run.id)}
             onchange={() => toggleRow(run.id)}
             onclick={(e) => e.stopPropagation()}
-            class="h-3.5 w-3.5 cursor-pointer rounded border-outline accent-primary"
+            aria-label={`Select run from ${formatDateTime(run.start_at ?? run.created_at)}`}
+            class="size-3.5 cursor-pointer rounded border-outline accent-primary opacity-0 transition-opacity {selectionActive
+                ? 'opacity-100'
+                : 'group-hover/row:opacity-100'}"
         />
     </label>
-{/snippet}
-
-<!-- Task-rail checkbox: sits over the status dot (which fades out beneath it) so
-     the row keeps the artifact's geometry. Lives in the row wrapper (not the
-     button) to keep the markup valid, positioned to land on the dot. -->
-{#snippet rowCheckboxOverlay(run: Run)}
-    <input
-        type="checkbox"
-        checked={isRowSelected(run.id)}
-        onchange={() => toggleRow(run.id)}
-        onclick={(e) => e.stopPropagation()}
-        aria-label={`Select run from ${formatDateTime(run.start_at ?? run.created_at)}`}
-        class="absolute top-1/2 left-[9px] z-10 size-3.5 -translate-y-1/2 cursor-pointer rounded border-outline accent-primary opacity-0 transition-opacity {selectionActive
-            ? 'opacity-100'
-            : 'group-hover/row:opacity-100'}"
-    />
 {/snippet}
 
 {#snippet runRowButton(run: Run, isActive: boolean, match: RunOutputMatch | undefined)}
@@ -680,12 +560,7 @@
                  rail — status dot, status-colored outcome, mono right readout —
                  with the task name carried as the primary. -->
             <div class="flex items-center gap-2.5">
-                <span
-                    class="{config.color} size-[9px] shrink-0 rounded-full bg-current ring-[3px] ring-current/20 {running
-                        ? 'animate-pulse'
-                        : ''}"
-                    aria-hidden="true"
-                ></span>
+                {@render statusDot(config.color, running)}
                 <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span class="flex items-center gap-1.5">
                         <span class="truncate text-[13px] font-semibold text-on-surface">
@@ -720,18 +595,12 @@
             </div>
         {:else}
             <!-- Task-rail variant (artifact ".run"): a single dense line —
-                 time · date · outcome, with a mono exit/duration readout. -->
-            <div class="flex items-center gap-[11px]">
-                <span
-                    class="{config.color} size-[9px] shrink-0 rounded-full bg-current ring-[3px] ring-current/20 {running
-                        ? 'animate-pulse'
-                        : ''} {bulkActions
-                        ? selectionActive
-                            ? 'opacity-0'
-                            : 'transition-opacity group-hover/row:opacity-0'
-                        : ''}"
-                    aria-hidden="true"
-                ></span>
+                 time · date · outcome, with a mono exit/duration readout.
+                 leading-tight matches the artifact's ~1.2 line-height so the
+                 (descender-less) text optically centers instead of riding high
+                 inside Tailwind's default 1.5 line box. -->
+            <div class="flex items-center gap-[11px] leading-tight">
+                {@render statusDot(config.color, running)}
                 <span class="flex min-w-0 flex-1 items-center gap-1.5 truncate">
                     <span
                         class="text-[12.5px] font-semibold tracking-tight text-on-surface"
@@ -768,7 +637,7 @@
         {/if}
 
         <div
-            class="duration-normal absolute inset-y-2 left-0 w-[3px] rounded-full transition-all {spine} {isActive
+            class="duration-normal absolute inset-y-2 left-[-6px] w-[3px] rounded-[3px] transition-all {spine} {isActive
                 ? 'opacity-100'
                 : 'opacity-0'}"
             aria-hidden="true"

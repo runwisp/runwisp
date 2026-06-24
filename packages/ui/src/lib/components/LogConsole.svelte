@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { untrack } from "svelte";
-    import { ansiLineToHtml } from "../log-console/ansi.js";
+    import { ansiLineToHtml, visibleColumns } from "../log-console/ansi.js";
     import { LogCache } from "../log-console/LogCache.svelte.js";
     import { LogFetcher } from "../log-console/LogFetcher.svelte.js";
     import type { FetchLogsFn, LogEvent } from "../log-console/types.js";
@@ -31,6 +31,12 @@
         // "muted" (default) renders the terminus in the gutter grey; "warn"
         // tints it amber for runs that ended by intervention rather than naturally.
         endTone?: "muted" | "warn";
+        // Wrap long lines instead of horizontally scrolling them. When on, each
+        // rendered row's height becomes a multiple of `lineHeight` (one per
+        // wrapped visual row), so the virtualizer switches from the fixed-height
+        // linear layout to a prefix-sum-of-row-counts layout. Off by default to
+        // preserve the original horizontal-scroll behaviour for wide output.
+        wrap?: boolean;
     }
 
     let {
@@ -42,6 +48,7 @@
         fetchLineHistory,
         endLabel = "end of output",
         endTone = "muted",
+        wrap = $bindable(false),
     }: Props = $props();
 
     // --- Frame-history inline expansion (single expansion at a time) ---
@@ -119,65 +126,225 @@
 
     let truncationBannerHeight = $derived(cache.firstAvailableLine > 0 ? lineHeight : 0);
 
-    // Convert a global line number to a pixel Y position. Lines below an open
-    // history block are pushed down by the block's height (single expansion, so
-    // it's one conditional rather than a prefix-sum).
-    function lineTop(lineNum: number): number {
-        const base = (lineNum - cache.firstAvailableLine) * lineHeight + truncationBannerHeight;
-        if (expandedLine !== null && lineNum > expandedLine) return base + frameBlockHeight;
-        return base;
+    let gutterWidth = $derived(Math.max(4, String(cache.totalLines || 1).length) * 10 + 16);
+
+    // ---- wrap-mode row accounting ---------------------------------------
+    // When wrapping, each line occupies as many `lineHeight` rows as its text
+    // wraps into at the current column width. rowCounts remembers the wrapped
+    // row count for every line whose text has been observed; lines never loaded
+    // (pruned or out-of-window) default to 1 row. prefixSums[i] is the total
+    // rows consumed by lines [firstAvailableLine, firstAvailableLine + i), so
+    // lineTop / totalHeight / the scroll-position→line lookup stay O(1) or
+    // O(log n) even though rows are no longer uniform. A plain Map is
+    // deliberate: reactivity is driven by the `rowCountVersion` counter (bumped
+    // on any change), not by per-key subscriptions — iterating a SvelteMap of
+    // tens of thousands of lines on every streamed line would be wasteful.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const rowCounts = new Map<number, number>();
+    let rowCountVersion = $state(0);
+    let prefixSums = $state<number[]>([]);
+
+    // Right padding on the text cell (pr-4); reserved when computing how many
+    // columns a wrapped line can use.
+    const TEXT_PADDING = 16;
+
+    let availableColumns = $derived(
+        wrap && charWidth > 0
+            ? Math.max(1, Math.floor((containerWidth - gutterWidth - TEXT_PADDING) / charWidth))
+            : 1,
+    );
+
+    function wrappedRowsFor(text: string | undefined): number {
+        if (!text || !wrap) return 1;
+        const cols = availableColumns;
+        if (cols <= 1) return 1;
+        return Math.max(1, Math.ceil(visibleColumns(text) / cols));
     }
 
-    let visibleStart = $derived(
-        Math.max(
-            cache.firstAvailableLine,
-            cache.firstAvailableLine +
-                Math.floor(Math.max(0, scrollTop - truncationBannerHeight) / lineHeight) -
-                OVERSCAN,
-        ),
-    );
-    let visibleEnd = $derived(
-        Math.max(
-            cache.firstAvailableLine,
-            Math.min(
-                Math.max(0, cache.totalLines - 1),
-                cache.firstAvailableLine +
-                    Math.ceil(
-                        Math.max(0, scrollTop - truncationBannerHeight + containerHeight) /
-                            lineHeight,
-                    ) +
+    // Line-text white-space model: wrapped lines break anywhere (so a long
+    // token wraps mid-word the way a terminal would), unwrapped lines stay on
+    // one horizontal-scrolling row.
+    let lineTextClass = $derived(wrap ? "break-anywhere whitespace-pre-wrap" : "whitespace-pre");
+
+    // Recompute row counts for every loaded line whenever wrapping is on and
+    // either the cache or the available column width moves. Pruned lines keep
+    // their last-computed count so scroll geometry stays stable.
+    $effect(() => {
+        if (!wrap) return;
+        const lines = cache.lines;
+        void availableColumns;
+        let changed = false;
+        for (const [num, text] of lines) {
+            const r = wrappedRowsFor(text);
+            const prev = rowCounts.get(num);
+            if (prev !== r) {
+                rowCounts.set(num, r);
+                changed = true;
+            }
+        }
+        if (changed) rowCountVersion++;
+    });
+
+    // Rebuild the prefix-sum table when wrap is on and any geometry input
+    // moves. Off ⇒ empty (the fixed-height path ignores it).
+    $effect(() => {
+        const first = cache.firstAvailableLine;
+        const total = cache.totalLines;
+        void rowCountVersion;
+        void availableColumns;
+        if (!wrap) {
+            prefixSums = [];
+            return;
+        }
+        const count = Math.max(0, total - first);
+        const arr = new Array(count + 1);
+        arr[0] = 0;
+        let acc = 0;
+        for (let i = 0; i < count; i++) {
+            acc += rowCounts.get(first + i) ?? 1;
+            arr[i + 1] = acc;
+        }
+        prefixSums = arr;
+    });
+
+    // Drop wrap geometry when wrapping turns off so memory doesn't linger.
+    $effect(() => {
+        if (!wrap) {
+            rowCounts.clear();
+        }
+    });
+
+    function lineRowCount(lineNum: number): number {
+        return wrap ? (rowCounts.get(lineNum) ?? 1) : 1;
+    }
+
+    // Convert a global line number to a pixel Y position. Lines below an open
+    // history block are pushed down by the block's height (single expansion, so
+    // it's one conditional offset on top of the wrap/non-wrap row math).
+    function lineTop(lineNum: number): number {
+        const base =
+            truncationBannerHeight +
+            (expandedLine !== null && lineNum > expandedLine ? frameBlockHeight : 0);
+        if (!wrap) {
+            return (lineNum - cache.firstAvailableLine) * lineHeight + base;
+        }
+        const i = lineNum - cache.firstAvailableLine;
+        if (i <= 0) return base;
+        if (i >= prefixSums.length) {
+            const last = prefixSums.length > 0 ? (prefixSums[prefixSums.length - 1] ?? 0) : 0;
+            return last * lineHeight + base;
+        }
+        return (prefixSums[i] ?? 0) * lineHeight + base;
+    }
+
+    function lineHeightPx(lineNum: number): number {
+        return lineRowCount(lineNum) * lineHeight;
+    }
+
+    // Largest i with prefixSums[i] <= yRows (i.e. the line index whose row span
+    // covers the given scroll offset, in rows). Used to map a scroll position
+    // back to a line number when wrapping makes the layout non-linear.
+    function lineIndexAtY(yRows: number): number {
+        const arr = prefixSums;
+        if (arr.length === 0) return 0;
+        if (yRows <= (arr[0] ?? 0)) return 0;
+        const last = arr.length - 1;
+        if (yRows >= (arr[last] ?? Number.POSITIVE_INFINITY)) return last;
+        let lo = 0;
+        let hi = last;
+        while (lo < hi) {
+            const mid = (lo + hi + 1) >> 1;
+            if ((arr[mid] ?? Number.POSITIVE_INFINITY) <= yRows) lo = mid;
+            else hi = mid - 1;
+        }
+        return lo;
+    }
+
+    let visibleStart = $derived.by(() => {
+        const first = cache.firstAvailableLine;
+        if (!wrap) {
+            return Math.max(
+                first,
+                first +
+                    Math.floor(Math.max(0, scrollTop - truncationBannerHeight) / lineHeight) -
                     OVERSCAN,
-            ),
-        ),
-    );
+            );
+        }
+        const yRows = Math.max(0, scrollTop - truncationBannerHeight) / lineHeight;
+        const idx = lineIndexAtY(yRows) - OVERSCAN;
+        return Math.max(first, first + Math.max(0, idx));
+    });
+
+    let visibleEnd = $derived.by(() => {
+        const first = cache.firstAvailableLine;
+        const maxLine = Math.max(0, cache.totalLines - 1);
+        if (!wrap) {
+            return Math.max(
+                first,
+                Math.min(
+                    maxLine,
+                    first +
+                        Math.ceil(
+                            Math.max(0, scrollTop - truncationBannerHeight + containerHeight) /
+                                lineHeight,
+                        ) +
+                        OVERSCAN,
+                ),
+            );
+        }
+        const yRows = Math.max(0, scrollTop - truncationBannerHeight) / lineHeight;
+        const viewportRows = containerHeight / lineHeight;
+        const limit = yRows + viewportRows + OVERSCAN;
+        const count = prefixSums.length - 1;
+        let end = lineIndexAtY(yRows);
+        while (end < count && (prefixSums[end] ?? Number.POSITIVE_INFINITY) < limit) end++;
+        return Math.min(maxLine, first + Math.max(0, end));
+    });
 
     // Live-region overlay rows, rendered in place below the committed lines.
     let overlayRows = $derived(cache.overlayRows);
 
     let totalHeight = $derived.by(() => {
-        const availableLines = cache.totalLines - cache.firstAvailableLine;
         const truncationBannerHeight = cache.firstAvailableLine > 0 ? lineHeight : 0;
-        const linesHeight = availableLines * lineHeight + truncationBannerHeight;
+        const linesHeight = wrap
+            ? (prefixSums.length > 0
+                  ? (prefixSums[prefixSums.length - 1] ?? 0)
+                  : Math.max(0, cache.totalLines - cache.firstAvailableLine)) *
+                  lineHeight +
+              truncationBannerHeight
+            : (cache.totalLines - cache.firstAvailableLine) * lineHeight + truncationBannerHeight;
         const overlayHeight = overlayRows.length * lineHeight;
-        const streamingHeight = !cache.finished && cache.totalLines > 0 ? lineHeight : 0;
+        // Reserve a row for the streaming cursor only when it stands on its own
+        // fresh line. With a live tail it rides the last overlay row (counted in
+        // overlayHeight), so no extra row is needed.
+        const streamingHeight = isStreaming && overlayRows.length === 0 ? lineHeight : 0;
         // A finished log gets an "end of output" sentinel where the streaming
         // indicator sits while live (mutually exclusive). It's drawn two rows
         // tall so the dashed rule has breathing room above the centred label.
         const sentinelHeight = cache.finished && cache.totalLines > 0 ? lineHeight * 2 : 0;
         const blankHeight = cache.totalLines > 0 ? BLANK_LINES_AT_END * lineHeight : 0;
         return Math.max(
-            linesHeight + overlayHeight + streamingHeight + sentinelHeight + blankHeight + frameBlockHeight,
+            linesHeight +
+                overlayHeight +
+                streamingHeight +
+                sentinelHeight +
+                blankHeight +
+                frameBlockHeight,
             containerHeight,
         );
     });
 
-    let gutterWidth = $derived(Math.max(4, String(cache.totalLines || 1).length) * 10 + 16);
-
     // Width of the virtual scroll surface: wide enough for the longest line
     // seen so far, never narrower than the viewport (so short logs show no
-    // horizontal scrollbar).
+    // horizontal scrollbar). Wrapping pins the surface to the viewport — there
+    // is no horizontal axis to scroll.
     let surfaceWidth = $derived(
-        Math.max(containerWidth, gutterWidth + cache.maxLineColumns * charWidth + SURFACE_PADDING),
+        wrap
+            ? containerWidth
+            : Math.max(
+                  containerWidth,
+                  gutterWidth + cache.maxLineColumns * charWidth + SURFACE_PADDING,
+              ),
     );
 
     let renderedLines = $derived.by(() => {
@@ -416,11 +583,13 @@
             {#each renderedLines as line (line.num)}
                 {@const isAnchor = canExpand && line.frameCount > 0}
                 <div
-                    class="log-line absolute right-0 left-0 flex items-center hover:bg-[rgb(255_255_255_/_0.025)] {flashLine ===
+                    class="log-line absolute right-0 left-0 flex {wrap
+                        ? 'items-start'
+                        : 'items-center'} hover:bg-[rgb(255_255_255_/_0.025)] {flashLine ===
                     line.num
                         ? 'log-line--flash'
                         : ''}"
-                    style="top: {lineTop(line.num)}px; height: {lineHeight}px;"
+                    style="top: {lineTop(line.num)}px; height: {lineHeightPx(line.num)}px;"
                 >
                     <div
                         class="sticky left-0 z-10 flex flex-shrink-0 items-center justify-end gap-1 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
@@ -446,9 +615,10 @@
                         {/if}
                         {line.num + 1}
                     </div>
-                    <div class="flex-1 pr-4 text-[var(--rw-con-text)]">
+                    <div class="min-w-0 flex-1 pr-4 text-[var(--rw-con-text)]">
                         {#if line.text !== undefined}
-                            {@render ansiLine(line.text)}
+                            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                            <span class={lineTextClass}>{@html ansiLineToHtml(line.text)}</span>
                         {:else}
                             <span class="text-[var(--rw-con-dim)] italic">Loading...</span>
                         {/if}
@@ -460,7 +630,7 @@
                 <div
                     class="frame-history absolute right-0 left-0 overflow-y-auto border-y border-[var(--rw-con-gutter)] bg-[var(--rw-con-panel)]"
                     style="top: {lineTop(expandedLine) +
-                        lineHeight}px; height: {frameBlockHeight}px;"
+                        lineHeightPx(expandedLine)}px; height: {frameBlockHeight}px;"
                 >
                     <div style="padding: {FRAME_BLOCK_PAD}px 0;">
                         {#if expandedFrames}
@@ -511,30 +681,37 @@
                     >
                         ⋯
                     </div>
+                    <!-- The cursor rides the end of the last live overlay row so a
+                         still-being-appended line shows the caret inline, the way a
+                         terminal parks it before the next byte arrives. -->
                     <div class="flex-1 pr-4 text-[var(--rw-con-text)]">
-                        {@render ansiLine(row)}
+                        {@render ansiLine(
+                            row,
+                        )}{#if !cache.finished && i === overlayRows.length - 1}<span
+                                class="stream-cursor"
+                                aria-hidden="true"
+                            ></span>{/if}
                     </div>
                 </div>
             {/each}
 
-            {#if isStreaming && cache.totalLines > 0}
+            <!-- Streaming cursor on a fresh line: shown only when the last
+                 committed line ended with a newline (no live tail). When output
+                 is still being appended mid-line, the cursor rides the end of the
+                 last overlay row instead (see the overlay loop above). -->
+            {#if isStreaming && overlayRows.length === 0}
                 <div
                     class="streaming-indicator absolute right-0 left-0 flex items-center"
-                    style="top: {lineTop(
-                        cache.totalLines + overlayRows.length,
-                    )}px; height: {lineHeight}px;"
+                    style="top: {lineTop(cache.totalLines)}px; height: {lineHeight}px;"
                 >
                     <div
-                        class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right select-none"
+                        class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
                         style="width: {gutterWidth}px;"
-                    ></div>
-                    <div
-                        class="sticky flex items-center gap-1 text-[var(--rw-con-dim)]"
-                        style="left: {gutterWidth}px;"
                     >
-                        <span class="dot" style="animation-delay: 0ms;"></span>
-                        <span class="dot" style="animation-delay: 150ms;"></span>
-                        <span class="dot" style="animation-delay: 300ms;"></span>
+                        {cache.totalLines + 1}
+                    </div>
+                    <div class="flex-1 pr-4">
+                        <span class="stream-cursor" aria-hidden="true"></span>
                     </div>
                 </div>
             {/if}
@@ -562,7 +739,10 @@
                         style="top: {lineTop(
                             cache.finished
                                 ? cache.totalLines + 2 + i
-                                : cache.totalLines + overlayRows.length + (isStreaming ? 1 : 0) + i,
+                                : cache.totalLines +
+                                      overlayRows.length +
+                                      (isStreaming && overlayRows.length === 0 ? 1 : 0) +
+                                      i,
                         )}px; height: {lineHeight}px;"
                     >
                         <div
@@ -704,6 +884,37 @@
         }
         100% {
             background-color: transparent;
+        }
+    }
+
+    /* Blinking teal block caret shown while a run is actively streaming. One
+       monospace cell wide so it reads as a terminal cursor parked at the write
+       position — inline after a still-appending line, or alone on the next. */
+    .stream-cursor {
+        display: inline-block;
+        width: 1ch;
+        height: 1.1em;
+        vertical-align: text-bottom;
+        background-color: var(--color-aurora-400);
+        animation: stream-cursor-blink 1.05s steps(2, start) infinite;
+    }
+
+    @keyframes stream-cursor-blink {
+        0%,
+        50% {
+            opacity: 1;
+        }
+        50.01%,
+        100% {
+            opacity: 0;
+        }
+    }
+
+    /* Reduced motion: keep the caret solid (still a clear "live" marker) rather
+       than blinking. */
+    @media (prefers-reduced-motion: reduce) {
+        .stream-cursor {
+            animation: none;
         }
     }
 

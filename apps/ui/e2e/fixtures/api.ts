@@ -177,10 +177,14 @@ export async function expectRunDetailMatchesApi(page: Page, apiRun: Run): Promis
     // exit code; stopped/timed-out/crashed runs end on a synthetic sentinel, so
     // the panel shows "—" plus a reason instead of a misleading "Code -1".
     if (apiRun.end_reason === "success" || apiRun.end_reason === "failed") {
-        await expect(
-            page.getByText(`Code ${apiRun.exit_code}`, { exact: true }),
-            `exit code should be ${apiRun.exit_code}`,
-        ).toBeVisible();
+        // The Exit metadata cell shows the bare process exit code (with a
+        // "fail" badge on non-zero); the value span follows the "Exit" label.
+        const exitValue = page
+            .getByText("Exit", { exact: true })
+            .locator("xpath=following-sibling::span[1]");
+        await expect(exitValue, `exit code should be ${apiRun.exit_code}`).toContainText(
+            String(apiRun.exit_code),
+        );
     }
 
     // The metadata value span sits immediately after its label span.
