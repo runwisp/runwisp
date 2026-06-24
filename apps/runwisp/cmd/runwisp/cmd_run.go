@@ -439,12 +439,19 @@ func daemonListenURL(cfg *config.Config, f Flags) string {
 	if u := cfg.Daemon.ExternalURL; u != "" {
 		return u
 	}
-	host := f.Host
+	return localBindURL(f.Host, f.Port)
+}
+
+// localBindURL builds the operator-reachable http://host:port for a bind,
+// mapping wildcard binds to localhost (0.0.0.0/:: are not connectable
+// addresses). It is the external_url-free fallback shared by daemonListenURL
+// and the demo's --no-tui summary.
+func localBindURL(host string, port int) string {
 	switch host {
 	case "", "0.0.0.0", "::", "[::]":
 		host = "localhost"
 	}
-	return fmt.Sprintf("http://%s:%d", host, f.Port)
+	return fmt.Sprintf("http://%s:%d", host, port)
 }
 
 // serverReadyTimeout bounds how long readiness probes wait for the listeners
