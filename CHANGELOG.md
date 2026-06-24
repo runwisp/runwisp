@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Progress bars and live redraws render cleanly.** Carriage-return progress bars and multi-line ANSI redraws are now interpreted as a terminal would: the log keeps the finished frame instead of raw `\r`/escape soup, and live viewers (Web UI and TUI) watch the active region update in place. See [Logs](https://docs.runwisp.com/concepts/logs/#progress-bars--live-redraws).
 - **Rewind a settled redraw's frames.** A finished progress bar or redraw keeps a sampled, best-effort history you can scrub back to — click the line in the Web UI, use `[`/`]` then `enter` in the TUI, or `GET …/log/line/{n}/history`. See [Logs](https://docs.runwisp.com/concepts/logs/#rewinding-the-frames).
+- **`runwisp demo --no-tui`.** Leaves the demo daemon running in the background and prints its Web UI password to stdout instead of opening the TUI — usable over SSH or in scripts. See [CLI](https://docs.runwisp.com/operations/cli/#cloud-and-demo).
 
 ### Changed
 

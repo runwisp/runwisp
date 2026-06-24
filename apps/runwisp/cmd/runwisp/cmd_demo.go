@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,6 +28,7 @@ const envDemoTempDir = "RUNWISP_DEMO_TEMP"
 
 var demoFlags struct {
 	Cloud   bool
+	NoTUI   bool
 	Token   string
 	URL     string
 	EnvFile string
@@ -49,7 +51,12 @@ dir, not the demo's throwaway one. Everything lives under a temp directory that
 is deleted when the daemon shuts down.
 
 With --cloud the daemon connects to the control plane instead and no history is
-seeded (the cloud owns it); RUNWISP_CLOUD_TOKEN is required, as for ` + "`runwisp cloud`" + `.`,
+seeded (the cloud owns it); RUNWISP_CLOUD_TOKEN is required, as for ` + "`runwisp cloud`" + `.
+
+With --no-tui the daemon is left running in the background and its Web UI
+password is printed to stdout (instead of attaching the TUI) — handy over SSH or
+in a script where you want to open the Web UI in a browser. Stop it later with
+` + "`runwisp stop --data <demo-data-dir>`" + ` (the data dir is printed alongside).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDemo(cmd, flags)
 	},
@@ -57,6 +64,7 @@ seeded (the cloud owns it); RUNWISP_CLOUD_TOKEN is required, as for ` + "`runwis
 
 func init() {
 	demoCmd.Flags().BoolVar(&demoFlags.Cloud, "cloud", false, "connect to the cloud control plane instead of seeding local history")
+	demoCmd.Flags().BoolVar(&demoFlags.NoTUI, "no-tui", false, "leave the daemon running and print the Web UI password to stdout instead of attaching the TUI")
 	demoCmd.Flags().StringVar(&demoFlags.Token, "token", "", "cloud token, with --cloud (overrides RUNWISP_CLOUD_TOKEN)")
 	demoCmd.Flags().StringVar(&demoFlags.URL, "url", "", "cloud API URL, with --cloud (overrides RUNWISP_CLOUD_URL)")
 	demoCmd.Flags().StringVar(&demoFlags.EnvFile, "env-file", ".env", "path to .env file, with --cloud")
@@ -108,7 +116,27 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 		return err
 	}
 
+	if demoFlags.NoTUI {
+		if code := reportDemoNoTUI(os.Stdout, os.Stderr, client, f); code != passwordExitOK {
+			os.Exit(code)
+		}
+		return nil
+	}
 	return runTUIConnect(client, f)
+}
+
+// reportDemoNoTUI leaves the background daemon running and prints its Web UI
+// password to stdout, with connection and shutdown guidance on stderr. This is
+// the --no-tui path: it mirrors the TUI's "Keep Running" quit (the daemon owns
+// its temp-dir cleanup via envDemoTempDir, so returning here doesn't strand it)
+// while staying scriptable — stdout carries only the password. Returns a
+// passwordExit* code so the caller can exit non-zero when no password is
+// disclosable, matching `runwisp password`.
+func reportDemoNoTUI(stdout, stderr io.Writer, client credentialsFetcher, f Flags) int {
+	fmt.Fprintf(stderr, "RunWisp demo is running at %s\n", localBindURL(f.Host, f.Port))
+	fmt.Fprintf(stderr, "Stop it with: runwisp stop --data %s\n", f.DataDir)
+	fmt.Fprintln(stderr, "Web UI password:")
+	return runPassword(stdout, stderr, client, localAPISocketPath(f))
 }
 
 // setupDemoDir writes the embedded config, creates the data/log dirs, and either

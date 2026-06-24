@@ -198,7 +198,11 @@ pre-seeded with hundreds of historical runs, so you can poke around the
 TUI and Web UI without writing a config — everything lives in a temp
 directory that's deleted when the daemon stops. It takes `--cloud` (and
 the same `--token` / `--url` / `--env-file`) to point at the control plane
-instead of seeding local history.
+instead of seeding local history. Pass `--no-tui` to leave the daemon
+running in the background and print its Web UI password to stdout instead
+of opening the TUI — handy over SSH or in a script where you just want to
+open the Web UI in a browser; stop it later with `runwisp stop --data <dir>`
+(the demo prints the exact data dir alongside the password).
 
 ## Environment variables
 
