@@ -19,17 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TUI Run Now dialog tells you how to toggle a flag.** A focused flag shows an inline cue, the key legend names the action for whatever field is focused, and `←/→` toggle a flag alongside `space`/`x`. See [Parameters](https://docs.runwisp.com/configuration/tasks/#parameters).
 - **Port already taken by another RunWisp daemon.** Launching `runwisp` when a daemon from a *different* data directory holds the port now names that daemon's datadir and config and offers to connect to it or stop it and launch here, instead of the generic "another process" error. A new local-only `GET /api/instance` (loopback/socket; 403 over the network) backs the discovery.
 - **Responsive TUI execution table.** Column widths now flex with the terminal — columns grow proportionally up to a per-column maximum and shrink toward sensible floors, and the main panel is capped to a readable max width so it stays left-aligned instead of stretching edge-to-edge on wide terminals.
+- **Web UI visual identity: teal brand, slate neutrals.** The dashboard now reads in a deep-teal brand accent over cool slate neutrals, with an instrument-style execution detail and a black-box console. Light and dark both retuned.
+- **Task view rebuilt around the run history.** The history rail and run detail now fill the page edge-to-edge as one card-less surface, divided by a single spine. Run controls live in the detail header: a split Run button triggers with defaults (and queues at max concurrency) with a dropdown to re-run a selected run pre-filled with its inputs; services show Stop/Restart in the same spot. The rail searches across run output in place (⌘K focuses it), and the All Runs list adopts the same dense, status-led rows.
 
 ### Fixed
 
+- **Maximized log console showed nothing until you scrolled.** Expanding the console on a long run rendered a blank viewport until the first scroll event; it now re-syncs its scroll position on resize so lines appear immediately.
+- **Run-list sort toggle had no effect.** `GET /api/runs?sort_direction=…` (and the per-task runs list) ignored the direction unless a `sort_field` was also given, so the Web UI's sort button never reordered anything; the default column now honors an explicit direction.
 - **TUI run-detail Delete button.** Clicking 🗑 Delete with the mouse now opens the confirm dialog, and keyboard focus reaches the action button from both header rows.
-
-### Fixed
-
 - **Fatal boot errors are no longer silent in TUI mode.** `runwisp` died with exit 1 and no output when startup failed before the TUI attached (e.g. a config parse error); the error now reaches stderr.
-
-### Fixed
-
 - **`runwisp exec` no longer drops output if its log stream blips.** When the live stream ended without a completion event (a transport hiccup under load), the command could exit having printed none of the run's captured output; it now reconnects from the last line it saw and prints the persisted tail.
 
 ## [0.10.0] - 2026-06-18

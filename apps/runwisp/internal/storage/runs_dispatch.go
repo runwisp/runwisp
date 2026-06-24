@@ -13,16 +13,19 @@ import (
 
 // queryRunsSortKey collapses a (column, direction) tuple into the discrete
 // dispatch key used by dispatchQueryRuns. The default column (empty input)
-// always maps to created_at_desc so the most recent rows surface first.
+// falls back to created_at — so the most recent rows surface first by default,
+// while an explicit direction (e.g. the runs-list sort toggle, which sets only
+// the direction) still flips the order against that same column.
 func queryRunsSortKey(col SortColumn, dir SortDirection) string {
-	if col == SortColumnDefault {
-		return "created_at_desc"
+	column := col
+	if column == SortColumnDefault {
+		column = SortColumnCreatedAt
 	}
 	direction := "desc"
 	if dir == SortAsc {
 		direction = "asc"
 	}
-	return string(col) + "_" + direction
+	return string(column) + "_" + direction
 }
 
 // dispatchQueryRuns picks one of the 12 sqlc-generated QueryRuns variants

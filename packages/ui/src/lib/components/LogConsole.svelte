@@ -24,6 +24,13 @@
         // line number. When omitted, anchor lines render without the rewind
         // affordance.
         fetchLineHistory?: ((lineNum: number) => Promise<string[][]>) | undefined;
+        // Text of the terminus marker drawn once a finished log's last line is
+        // reached (default "end of output"). A stopped/timed-out run passes its
+        // own wording so a short capture ends on an explicit reason, not a void.
+        endLabel?: string;
+        // "muted" (default) renders the terminus in the gutter grey; "warn"
+        // tints it amber for runs that ended by intervention rather than naturally.
+        endTone?: "muted" | "warn";
     }
 
     let {
@@ -33,6 +40,8 @@
         class: className = "",
         highlightLine = null,
         fetchLineHistory,
+        endLabel = "end of output",
+        endTone = "muted",
     }: Props = $props();
 
     // --- Frame-history inline expansion (single expansion at a time) ---
@@ -151,9 +160,13 @@
         const linesHeight = availableLines * lineHeight + truncationBannerHeight;
         const overlayHeight = overlayRows.length * lineHeight;
         const streamingHeight = !cache.finished && cache.totalLines > 0 ? lineHeight : 0;
+        // A finished log gets an "end of output" sentinel where the streaming
+        // indicator sits while live (mutually exclusive). It's drawn two rows
+        // tall so the dashed rule has breathing room above the centred label.
+        const sentinelHeight = cache.finished && cache.totalLines > 0 ? lineHeight * 2 : 0;
         const blankHeight = cache.totalLines > 0 ? BLANK_LINES_AT_END * lineHeight : 0;
         return Math.max(
-            linesHeight + overlayHeight + streamingHeight + blankHeight + frameBlockHeight,
+            linesHeight + overlayHeight + streamingHeight + sentinelHeight + blankHeight + frameBlockHeight,
             containerHeight,
         );
     });
@@ -275,6 +288,13 @@
         if (containerEl) {
             containerHeight = containerEl.clientHeight;
             containerWidth = containerEl.clientWidth;
+            // Resync the reactive scroll position with the DOM. The browser
+            // clamps scrollTop when the viewport grows (e.g. maximizing the
+            // console), but no scroll event fires for that clamp — so without
+            // this the virtualizer keeps a stale, too-large scrollTop and
+            // renders an empty window until the first manual scroll.
+            scrollTop = containerEl.scrollTop;
+            if (isAutoScroll && !userScrolledUp) scrollToBottom();
         }
         measureCharWidth();
     }
@@ -359,7 +379,7 @@
 {/snippet}
 
 <div
-    class="log-console relative flex h-full w-full flex-col overflow-hidden bg-mist-950 font-mono text-sm {className}"
+    class="log-console relative flex h-full w-full flex-col overflow-hidden bg-[var(--rw-con-bg)] font-mono text-[12.5px] {className}"
 >
     <!-- Hidden ruler: one monospace column is measured from this off-screen
          sample to size the horizontal scroll surface without per-line reflow. -->
@@ -396,14 +416,14 @@
             {#each renderedLines as line (line.num)}
                 {@const isAnchor = canExpand && line.frameCount > 0}
                 <div
-                    class="log-line absolute right-0 left-0 flex items-center hover:bg-mist-900/50 {flashLine ===
+                    class="log-line absolute right-0 left-0 flex items-center hover:bg-[rgb(255_255_255_/_0.025)] {flashLine ===
                     line.num
                         ? 'log-line--flash'
                         : ''}"
                     style="top: {lineTop(line.num)}px; height: {lineHeight}px;"
                 >
                     <div
-                        class="sticky left-0 z-10 flex flex-shrink-0 items-center justify-end gap-1 bg-mist-950 pr-3 text-right text-mist-500 select-none"
+                        class="sticky left-0 z-10 flex flex-shrink-0 items-center justify-end gap-1 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
                         style="width: {gutterWidth}px;"
                     >
                         {#if isAnchor}
@@ -411,7 +431,7 @@
                                 type="button"
                                 class="frame-toggle {expandedLine === line.num
                                     ? 'text-aurora-400'
-                                    : 'text-mist-500 hover:text-aurora-400'}"
+                                    : 'text-[var(--rw-con-dim)] hover:text-aurora-400'}"
                                 title="{line.frameCount} earlier frame{line.frameCount === 1
                                     ? ''
                                     : 's'} — click to {expandedLine === line.num
@@ -426,11 +446,11 @@
                         {/if}
                         {line.num + 1}
                     </div>
-                    <div class="flex-1 pr-4 text-mist-200">
+                    <div class="flex-1 pr-4 text-[var(--rw-con-text)]">
                         {#if line.text !== undefined}
                             {@render ansiLine(line.text)}
                         {:else}
-                            <span class="text-mist-600 italic">Loading...</span>
+                            <span class="text-[var(--rw-con-dim)] italic">Loading...</span>
                         {/if}
                     </div>
                 </div>
@@ -438,7 +458,7 @@
 
             {#if expandedLine !== null}
                 <div
-                    class="frame-history absolute right-0 left-0 overflow-y-auto border-y border-mist-800 bg-mist-900/40"
+                    class="frame-history absolute right-0 left-0 overflow-y-auto border-y border-[var(--rw-con-gutter)] bg-[var(--rw-con-panel)]"
                     style="top: {lineTop(expandedLine) +
                         lineHeight}px; height: {frameBlockHeight}px;"
                 >
@@ -447,7 +467,7 @@
                             {#each expandedFrames as frame, fi (fi)}
                                 <div style="margin-top: {fi > 0 ? FRAME_GAP : 0}px;">
                                     <div
-                                        class="px-3 text-xs text-mist-500 select-none"
+                                        class="px-3 text-xs text-[var(--rw-con-dim)] select-none"
                                         style="height: {lineHeight}px; line-height: {lineHeight}px;"
                                     >
                                         Frame {fi + 1} of {expandedFrames.length}
@@ -458,10 +478,10 @@
                                             style="height: {lineHeight}px;"
                                         >
                                             <div
-                                                class="flex-shrink-0 pr-3 text-right text-mist-700 select-none"
+                                                class="flex-shrink-0 pr-3 text-right text-[var(--rw-con-gutter)] select-none"
                                                 style="width: {gutterWidth}px;"
                                             ></div>
-                                            <div class="flex-1 pr-4 text-mist-300">
+                                            <div class="flex-1 pr-4 text-[var(--rw-con-text)]">
                                                 {@render ansiLine(row)}
                                             </div>
                                         </div>
@@ -470,7 +490,7 @@
                             {/each}
                         {:else}
                             <div
-                                class="px-3 text-xs text-mist-500 italic"
+                                class="px-3 text-xs text-[var(--rw-con-dim)] italic"
                                 style="line-height: {lineHeight}px; padding-left: {gutterWidth}px;"
                             >
                                 {expandedError ? "Failed to load frame history" : "Loading frames…"}
@@ -486,12 +506,12 @@
                     style="top: {lineTop(cache.totalLines + i)}px; height: {lineHeight}px;"
                 >
                     <div
-                        class="sticky left-0 z-10 flex-shrink-0 bg-mist-950 pr-3 text-right text-mist-600 select-none"
+                        class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right text-[var(--rw-con-gutter)] select-none"
                         style="width: {gutterWidth}px;"
                     >
                         ⋯
                     </div>
-                    <div class="flex-1 pr-4 text-mist-200">
+                    <div class="flex-1 pr-4 text-[var(--rw-con-text)]">
                         {@render ansiLine(row)}
                     </div>
                 </div>
@@ -505,11 +525,11 @@
                     )}px; height: {lineHeight}px;"
                 >
                     <div
-                        class="sticky left-0 z-10 flex-shrink-0 bg-mist-950 pr-3 text-right select-none"
+                        class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right select-none"
                         style="width: {gutterWidth}px;"
                     ></div>
                     <div
-                        class="sticky flex items-center gap-1 text-mist-400"
+                        class="sticky flex items-center gap-1 text-[var(--rw-con-dim)]"
                         style="left: {gutterWidth}px;"
                     >
                         <span class="dot" style="animation-delay: 0ms;"></span>
@@ -519,16 +539,34 @@
                 </div>
             {/if}
 
+            {#if cache.finished && cache.totalLines > 0}
+                <div
+                    class="sentinel absolute right-4 left-4 flex justify-center select-none"
+                    style="top: {lineTop(cache.totalLines)}px; height: {lineHeight * 2}px;"
+                >
+                    <span
+                        class="mt-[14px] border-t border-dashed pt-3 text-center text-[11px] tracking-wide {endTone ===
+                        'warn'
+                            ? 'sentinel--warn'
+                            : 'sentinel--muted'}"
+                    >
+                        ── {endLabel} ──
+                    </span>
+                </div>
+            {/if}
+
             {#if cache.totalLines > 0}
                 {#each Array.from({ length: BLANK_LINES_AT_END }, (_, i) => i) as i (i)}
                     <div
                         class="absolute right-0 left-0 flex items-center"
                         style="top: {lineTop(
-                            cache.totalLines + overlayRows.length + (isStreaming ? 1 : 0) + i,
+                            cache.finished
+                                ? cache.totalLines + 2 + i
+                                : cache.totalLines + overlayRows.length + (isStreaming ? 1 : 0) + i,
                         )}px; height: {lineHeight}px;"
                     >
                         <div
-                            class="sticky left-0 z-10 flex-shrink-0 bg-mist-950 pr-3 text-right text-mist-700 opacity-0 select-none"
+                            class="sticky left-0 z-10 flex-shrink-0 bg-[var(--rw-con-bg)] pr-3 text-right opacity-0 select-none"
                             style="width: {gutterWidth}px;"
                         >
                             ~
@@ -538,16 +576,20 @@
             {/if}
 
             {#if cache.totalLines === 0 && overlayRows.length === 0 && !fetcher?.isFetching}
-                <div class="absolute inset-0 flex items-center justify-center text-mist-500">
+                <div
+                    class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
+                >
                     <div class="text-center">
                         <div class="mb-1 text-lg">No output yet</div>
-                        <div class="text-sm text-mist-600">Waiting for logs...</div>
+                        <div class="text-sm text-[var(--rw-con-gutter)]">Waiting for logs...</div>
                     </div>
                 </div>
             {/if}
 
             {#if cache.totalLines === 0 && fetcher?.isFetching}
-                <div class="absolute inset-0 flex items-center justify-center text-mist-500">
+                <div
+                    class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
+                >
                     <div class="flex items-center gap-2">
                         <span class="dot" style="animation-delay: 0ms;"></span>
                         <span class="dot" style="animation-delay: 150ms;"></span>
@@ -562,11 +604,11 @@
     {#if userScrolledUp && cache.totalLines > 0}
         <button
             class="absolute right-4 bottom-12 z-10 flex items-center gap-2 rounded-full border
-                   border-mist-700 bg-mist-800
+                   border-[rgb(255_255_255_/_0.1)] bg-[var(--rw-con-panel)]
                    px-3 py-1.5 text-xs
-                   font-medium text-mist-200 shadow-lg
+                   font-medium text-[var(--rw-con-text)] shadow-lg
                    transition-all duration-200 hover:scale-105
-                   hover:bg-mist-700 active:scale-95"
+                   hover:bg-[rgb(255_255_255_/_0.06)] active:scale-95"
             onclick={enableAutoScroll}
         >
             <svg
@@ -583,20 +625,20 @@
     {/if}
 
     <div
-        class="flex flex-shrink-0 items-center justify-between border-t border-mist-800
-               bg-mist-900/80 px-3 py-1.5 text-xs text-mist-400"
+        class="flex flex-shrink-0 items-center justify-between border-t border-[rgb(255_255_255_/_0.06)]
+               bg-[var(--rw-con-panel)] px-3.5 py-2 text-[11px] text-[var(--rw-con-dim)]"
     >
         <div class="flex items-center gap-3">
             {#if isStreaming}
-                <div class="flex items-center gap-1.5 text-info">
+                <div class="flex items-center gap-1.5 text-aurora-400">
                     <div class="h-1.5 w-1.5 animate-pulse rounded-full bg-aurora-400"></div>
                     Streaming
                 </div>
             {:else if cache.finished}
-                <span class="text-mist-500">Stream ended</span>
+                <span>Stream ended</span>
             {/if}
             {#if fetcher?.isFetching}
-                <span class="text-mist-500">Fetching...</span>
+                <span>Fetching...</span>
             {/if}
         </div>
         <div class="flex items-center gap-4">
@@ -605,7 +647,21 @@
                 <span>{formatBytes(cache.totalBytes)}</span>
             {/if}
             {#if isAutoScroll}
-                <span class="text-info">Auto-scroll</span>
+                <span class="inline-flex items-center gap-1.5 text-[#7fe0b0]">
+                    <svg
+                        class="h-3 w-3"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <polyline points="6 13 12 19 18 13" />
+                    </svg>
+                    Auto-scroll
+                </span>
             {/if}
         </div>
     </div>
@@ -615,6 +671,17 @@
     .log-console {
         --log-line-height: 20px;
         tab-size: 8;
+    }
+
+    /* End-of-output marker: a centred label sitting under a dashed rule, the
+       way the approved design closes a finished capture. */
+    .sentinel--muted {
+        color: var(--rw-con-gutter);
+        border-top-color: rgb(255 255 255 / 0.08);
+    }
+    .sentinel--warn {
+        color: #e5a552;
+        border-top-color: rgb(229 165 82 / 0.3);
     }
 
     .log-line--flash {

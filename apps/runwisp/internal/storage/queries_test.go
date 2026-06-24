@@ -76,7 +76,8 @@ func TestQueryRunsSortKey(t *testing.T) {
 		dir  SortDirection
 		want string
 	}{
-		{"default column always DESC", SortColumnDefault, SortAsc, "created_at_desc"},
+		{"default column defaults to created_at desc", SortColumnDefault, SortDirectionDefault, "created_at_desc"},
+		{"default column honors explicit asc", SortColumnDefault, SortAsc, "created_at_asc"},
 		{"created_at asc", SortColumnCreatedAt, SortAsc, "created_at_asc"},
 		{"task_name desc", SortColumnTaskName, SortDesc, "task_name_desc"},
 		{"duration asc", SortColumnDuration, SortAsc, "duration_asc"},

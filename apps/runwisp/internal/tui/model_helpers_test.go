@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,17 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
+
+// TestMain neutralizes the clipboard seam package-wide before any test runs.
+// atotto/clipboard.WriteAll shells out to wl-copy/xclip, which blocks
+// indefinitely on a live Wayland/X11 session — so any copy path a test reaches
+// (CopyToClipboard, copyExecField, the Web-UI/password home fields) would hang
+// the whole package. The default no-op reports success; a test that needs the
+// failure/fallback path overrides clipboardWriteAll itself and restores it.
+func TestMain(m *testing.M) {
+	clipboardWriteAll = func(string) error { return nil }
+	os.Exit(m.Run())
+}
 
 // newDummyClient returns a non-nil apiclient.Client suitable for confirm-dialog
 // tests. The client never reaches its baseURL in these tests — we only need a

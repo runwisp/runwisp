@@ -19,15 +19,16 @@ test.describe("run lifecycle", () => {
         await page.goto("/tasks/slow-task");
         await expect(page.getByRole("heading", { name: "slow-task", level: 1 })).toBeVisible();
 
-        await page.getByRole("button", { name: "Run Task" }).click();
+        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
         await page.getByRole("button", { name: "Run Now" }).click();
 
         // The run-detail panel must show the live-running state: RUNNING badge,
-        // the "Live" console indicator, and streamed output — all gated on the
-        // run actually being in the running phase.
+        // streamed output, and the console's "Streaming" indicator — all gated on
+        // the run actually being in the running phase. (Streaming lights up once
+        // output arrives, so assert the first line before the indicator.)
         await expect(page.getByText("RUNNING", { exact: true })).toBeVisible({ timeout: 30_000 });
-        await expect(page.getByText("Live", { exact: true })).toBeVisible();
         await expect(page.getByText("slow-start")).toBeVisible({ timeout: 10_000 });
+        await expect(page.getByText("Streaming", { exact: true })).toBeVisible();
 
         const running = await getLatestRun(page, "slow-task", daemonState.token);
         expect(running, "slow-task should have a run").toBeDefined();
@@ -44,7 +45,7 @@ test.describe("run lifecycle", () => {
 
         // The UI leaves the live state and the panel agrees with the record.
         await expect(page.getByText("STOPPED", { exact: true })).toBeVisible({ timeout: 10_000 });
-        await expect(page.getByText("Live", { exact: true })).toBeHidden();
+        await expect(page.getByText("Streaming", { exact: true })).toBeHidden();
         await expectRunDetailMatchesApi(page, ended);
     });
 
@@ -55,10 +56,10 @@ test.describe("run lifecycle", () => {
         await page.goto("/tasks/timed-task");
         await expect(page.getByRole("heading", { name: "timed-task", level: 1 })).toBeVisible();
 
-        // Trigger via the UI (Run Task → confirm Run Now). The page opens the
-        // detail panel on the new run AND lists its row, both fed by the same
-        // live runs source — so both update via SSE without a page refresh.
-        await page.getByRole("button", { name: "Run Task" }).click();
+        // Trigger via the UI (Run → confirm Run Now). The page opens the detail
+        // panel on the new run AND lists its row, both fed by the same live runs
+        // source — so both update via SSE without a page refresh.
+        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
         await page.getByRole("button", { name: "Run Now" }).click();
 
         // The run-list row is a <button> in <main> whose text carries the
@@ -72,8 +73,8 @@ test.describe("run lifecycle", () => {
 
         // --- Detail panel: the run is live and streaming ---
         await expect(page.getByText("RUNNING", { exact: true })).toBeVisible({ timeout: 15_000 });
-        await expect(page.getByText("Live", { exact: true })).toBeVisible();
         await expect(page.getByText("timed-phase-1")).toBeVisible({ timeout: 10_000 });
+        await expect(page.getByText("Streaming", { exact: true })).toBeVisible();
 
         // Logs stream incrementally, not in one dump at the end: the final line
         // cannot be on screen yet while the run is in its first phase (it is not
@@ -95,7 +96,7 @@ test.describe("run lifecycle", () => {
 
         // --- Natural finish, observed live (no reload/goto since the trigger) ---
         await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 15_000 });
-        await expect(page.getByText("Live", { exact: true })).toBeHidden();
+        await expect(page.getByText("Streaming", { exact: true })).toBeHidden();
         await expect(page.getByText("timed-done")).toBeVisible();
 
         // The same row flips from running to success without a refresh: no row is

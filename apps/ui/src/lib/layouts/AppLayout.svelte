@@ -49,6 +49,12 @@
 
     let showGroupHeaders = $derived(taskGroups.length > 1);
 
+    // On a task detail page `activePage` is the task's page id; resolve it back to
+    // the real task name so the breadcrumb shows the literal name (its only home).
+    let activeTaskName = $derived(
+        tasks.find((t: { id: string; name: string }) => t.id === activePage)?.name,
+    );
+
     let sidebarOpen = $state(false);
     let firstLink = $state<HTMLElement | null>(null);
 
@@ -238,9 +244,17 @@
                 </button>
                 <span class="hidden text-on-surface-faint sm:inline">RunWisp</span>
                 <span class="hidden text-on-surface-faint sm:inline">/</span>
-                <span class="font-semibold text-on-surface capitalize"
-                    >{activePage.replace("task_", "").replace(/_/g, " ")}</span
-                >
+                {#if activeTaskName}
+                    <!-- On a task page the breadcrumb is the page's primary heading:
+                         the task name appears here and nowhere else. -->
+                    <h1 class="truncate text-base font-semibold text-on-surface">
+                        {activeTaskName}
+                    </h1>
+                {:else}
+                    <span class="font-semibold text-on-surface capitalize"
+                        >{activePage.replace("task_", "").replace(/_/g, " ")}</span
+                    >
+                {/if}
             </div>
             <div class="flex items-center gap-3">
                 {#if systemStore.timezone}

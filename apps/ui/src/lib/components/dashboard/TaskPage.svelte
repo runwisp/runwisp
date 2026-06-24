@@ -2,20 +2,16 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Play, PanelLeftClose, History, Square, RefreshCcw, Search } from "@lucide/svelte";
+    import { Play, Square, RefreshCcw } from "@lucide/svelte";
     import Button from "@runwisp/ui/components/Button.svelte";
     import Modal from "@runwisp/ui/components/Modal.svelte";
     import Alert from "@runwisp/ui/components/Alert.svelte";
-    import Card from "@runwisp/ui/components/Card.svelte";
+    import { SvelteMap } from "svelte/reactivity";
     import { isService, type Task, type Run, type RunSelector } from "@runwisp/common";
-    import type { LogEvent, LogSlice, RunsListFilters } from "@runwisp/ui";
-    import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
-    import PageHeader from "@runwisp/ui/components/PageHeader.svelte";
+    import type { LogEvent, LogSlice, RunsListFilters, RunOutputMatch } from "@runwisp/ui";
     import { RunsList, RunDetailPanel, toast, extractErrorMessage } from "@runwisp/ui";
-    import { runsApi } from "$lib/api";
-    import LogSearchPanel from "./LogSearchPanel.svelte";
+    import { runsApi, tasksApi } from "$lib/api";
     import ParamForm from "./ParamForm.svelte";
-    import type { LogSearchHit } from "$lib/logs";
 
     let {
         task,
@@ -29,7 +25,6 @@
         onOptimisticRestore,
         concurrencyReached = false,
         triggering = false,
-        stopping = false,
         restarting = false,
         serviceStopped = false,
         stoppingService = false,
@@ -55,7 +50,6 @@
         onOptimisticRestore: (runs: Run[]) => void;
         concurrencyReached?: boolean;
         triggering?: boolean;
-        stopping?: boolean;
         restarting?: boolean;
         serviceStopped?: boolean;
         stoppingService?: boolean;
@@ -92,11 +86,75 @@
     // concurrency warning or the parameter form. Passing `children`
     // conditionally keeps Modal from rendering an empty padded band otherwise.
     const showRunBody = $derived(concurrencyReached || (hasParams && confirmOpen));
+
+    // Seed values for the Run modal's parameter form: null = start from the
+    // task defaults ("Run"); a prior run's params = pre-fill from it ("Run
+    // again"). `runFormSeq` keys the form so each open (or a reset) re-mounts
+    // it and re-seeds — ParamForm captures its values once at construction.
+    let runSeed = $state<Record<string, string | null> | null>(null);
+    let runFormSeq = $state(0);
+
+    function openRun() {
+        runSeed = null;
+        runFormSeq++;
+        confirmOpen = true;
+    }
+
+    function openRunAgain() {
+        runSeed = selectedRun?.params ?? null;
+        runFormSeq++;
+        confirmOpen = true;
+    }
+
+    function resetRunToDefaults() {
+        runSeed = null;
+        runFormSeq++;
+    }
     let stopConfirmOpen = $state(false);
     let restartConfirmOpen = $state(false);
     let stopServiceConfirmOpen = $state(false);
-    let searchOpen = $state(false);
 
+    // Output search lives in the history rail (the artifact's ".history__search"):
+    // it filters runs by what they printed. The rail owns the box + debounce; this
+    // page owns the async query (it has the API client) and the matched-run map.
+    let outputSearchOpen = $state(false);
+    let outputMatches = $state<Map<string, RunOutputMatch> | null>(null);
+    let outputSearchLoading = $state(false);
+    let outputSearchSeq = 0;
+
+    async function handleOutputSearch(query: string) {
+        if (!query) {
+            outputSearchSeq++;
+            outputMatches = null;
+            outputSearchLoading = false;
+            return;
+        }
+        const seq = ++outputSearchSeq;
+        outputSearchLoading = true;
+        // Drop stale hits so the rail shows its searching state, not the
+        // previous query's results, while this one is in flight.
+        outputMatches = null;
+        try {
+            const res = await tasksApi.searchLogs(task.name, {
+                q: query,
+                regex: false,
+                case: false,
+                limit: 200,
+            });
+            if (seq !== outputSearchSeq) return; // a newer query superseded this one
+            const map = new SvelteMap<string, RunOutputMatch>();
+            for (const hit of res.hits) {
+                if (!map.has(hit.run_id)) map.set(hit.run_id, { line: hit.n, text: hit.text });
+            }
+            outputMatches = map;
+        } catch {
+            if (seq === outputSearchSeq) outputMatches = new SvelteMap();
+        } finally {
+            if (seq === outputSearchSeq) outputSearchLoading = false;
+        }
+    }
+
+    // ⌘K / Ctrl+K opens the rail's output-search box (focus follows via autofocus).
     function onWindowKeydown(e: KeyboardEvent) {
         if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) {
             return;
@@ -110,7 +168,7 @@
             return;
         }
         e.preventDefault();
-        searchOpen = true;
+        outputSearchOpen = true;
     }
 
     const UNDO_MS = 5000;
@@ -201,24 +259,15 @@
         void handleBulkDelete({ match_all: false, ids: [runId] }, [target]);
     }
 
-    const runLaunchable = $derived(
-        !taskIsService && (task.api_trigger ?? true) && !triggering && !concurrencyReached,
-    );
-    const runDisabledReason = $derived.by(() => {
-        if (taskIsService) return "Services are managed by the supervisor";
-        if (!(task.api_trigger ?? true)) return "API triggering is disabled for this task";
-        if (concurrencyReached) return "Max concurrency reached";
-        return "";
-    });
+    // A run can always be *triggered* — at max concurrency it queues (the modal
+    // says so), so concurrency must not gate the button, only its warning.
+    // Disabled only when the task forbids API triggering or a trigger is mid-flight.
+    const runTriggerable = $derived(!taskIsService && (task.api_trigger ?? true) && !triggering);
 
-    // In cloud mode the cloud owns scheduling/dispatch; this button is the
+    // In cloud mode the cloud owns scheduling/dispatch; triggering here is the
     // operator's "run it here, now" escape hatch against the local runner.
-    // Frame it honestly rather than implying it's the canonical trigger.
-    const runButtonLabel = $derived(cloudMode ? "Run Here" : "Run Task");
+    // Frame the confirm honestly rather than implying it's the canonical trigger.
     const runConfirmLabel = $derived(cloudMode ? "Run Here" : "Run Now");
-    const runActionTitle = $derived(
-        runDisabledReason || (cloudMode ? "Run on this runner now" : ""),
-    );
     const runModalTitle = $derived(cloudMode ? "Run on this runner" : "Run Task");
     const runModalDescription = $derived(
         cloudMode
@@ -243,13 +292,6 @@
         if (selectRunId) userSelectedRunId = selectRunId;
     });
 
-    function handleSearchHit(hit: LogSearchHit) {
-        userSelectedRunId = hit.run_id;
-        // Re-trigger by setting a new array+number — LogConsole's effect runs
-        // on every prop assignment, so the same line number twice is fine.
-        highlightLine = hit.n;
-    }
-
     let selectedRunId = $derived.by(() => {
         if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
             return userSelectedRunId;
@@ -269,124 +311,43 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
-<LogSearchPanel bind:open={searchOpen} taskName={task.name} onSelectHit={handleSearchHit} />
-
-<PageContainer variant="flush" class="gap-4">
-    <PageHeader title={task.name} subtitle={task.description || "No description provided."}>
-        {#snippet actions()}
-            <Button
-                variant="ghost"
-                size="sm"
-                onclick={() => (searchOpen = true)}
-                title="Search logs (⌘K)"
-            >
-                {#snippet icon()}<Search size={16} />{/snippet}
-                Search
-            </Button>
-            {#if hideHistory}
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onclick={() => (historyExpanded = !historyExpanded)}
-                    title={historyExpanded ? "Hide history" : "Show history"}
-                >
-                    {#snippet icon()}
-                        {#if historyExpanded}
-                            <PanelLeftClose size={16} />
-                        {:else}
-                            <History size={16} />
-                        {/if}
-                    {/snippet}
-                    {historyExpanded ? "Hide History" : "History"}
-                </Button>
-            {/if}
-            {#if !taskIsService && selectedRun?.status === "running" && onStop}
-                <Button
-                    variant="danger"
-                    onclick={() => (stopConfirmOpen = true)}
-                    loading={stopping}
-                >
-                    {#snippet icon()}<Square size={16} />{/snippet}
-                    Stop
-                </Button>
-            {/if}
-            {#if taskIsService}
-                {#if serviceStopped}
-                    <Button
-                        variant="primary"
-                        onclick={() => (restartConfirmOpen = true)}
-                        loading={restarting}
-                        disabled={!onRestart}
-                    >
-                        {#snippet icon()}<RefreshCcw size={16} />{/snippet}
-                        Restart Service
-                    </Button>
-                {:else}
-                    <Button
-                        variant="danger"
-                        onclick={() => (stopServiceConfirmOpen = true)}
-                        loading={stoppingService}
-                        disabled={!onStopService}
-                        title="Stops the service for the rest of the daemon's lifetime"
-                    >
-                        {#snippet icon()}<Square size={16} />{/snippet}
-                        Stop Service
-                    </Button>
-                {/if}
-            {:else}
-                <Button
-                    variant="primary"
-                    onclick={() => (confirmOpen = true)}
-                    loading={triggering}
-                    disabled={!runLaunchable}
-                    title={runActionTitle}
-                >
-                    {#snippet icon()}<Play size={16} />{/snippet}
-                    {runButtonLabel}
-                </Button>
-            {/if}
-        {/snippet}
-    </PageHeader>
-
+<!-- Card-less, full-bleed: the rail and detail panel fill the content area
+     edge-to-edge (cancelling AppLayout's p-6), divided only by the rail's
+     right border. The topbar/sidebar are the outer frame; no nested card. -->
+<div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col">
     {#if showEnvPanel}
-        <Card padding="none" class="shrink-0">
-            <section aria-label="Task environment" class="px-4 py-3">
-                <h2 class="text-xs font-semibold tracking-wide text-on-surface-muted uppercase">
-                    Environment
-                </h2>
-                {#if envEntries.length > 0}
-                    <dl
-                        class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-xs"
-                    >
-                        {#each envEntries as [key, value] (key)}
-                            <dt class="text-on-surface">{key}</dt>
-                            <dd class="break-all text-on-surface-muted">{value}</dd>
-                        {/each}
-                    </dl>
-                {/if}
-                {#if task.env_file}
-                    <p class="mt-2 font-mono text-xs text-on-surface-faint">
-                        Includes values from {task.env_file}
-                    </p>
-                {/if}
-                {#if task.secrets_file}
-                    <p class="mt-2 font-mono text-xs text-on-surface-faint">
-                        Secrets from {task.secrets_file} (values not exposed)
-                    </p>
-                {/if}
-            </section>
-        </Card>
+        <section
+            aria-label="Task environment"
+            class="shrink-0 border-b border-outline bg-surface-raised px-6 py-3"
+        >
+            <h2 class="text-xs font-semibold tracking-wide text-on-surface-muted uppercase">
+                Environment
+            </h2>
+            {#if envEntries.length > 0}
+                <dl class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-xs">
+                    {#each envEntries as [key, value] (key)}
+                        <dt class="text-on-surface">{key}</dt>
+                        <dd class="break-all text-on-surface-muted">{value}</dd>
+                    {/each}
+                </dl>
+            {/if}
+            {#if task.env_file}
+                <p class="mt-2 font-mono text-xs text-on-surface-faint">
+                    Includes values from {task.env_file}
+                </p>
+            {/if}
+            {#if task.secrets_file}
+                <p class="mt-2 font-mono text-xs text-on-surface-faint">
+                    Secrets from {task.secrets_file} (values not exposed)
+                </p>
+            {/if}
+        </section>
     {/if}
 
-    <!-- Main Content Area -->
-    <div
-        class={[
-            "grid min-h-0 flex-1 gap-6",
-            hideHistory && !historyExpanded ? "grid-cols-1" : "grid-cols-1 md:grid-cols-12",
-        ]}
-    >
+    <div class="flex min-h-0 flex-1 flex-col md:flex-row">
         {#if !hideHistory || historyExpanded}
             <RunsList
+                flush
                 {items}
                 {total}
                 {loading}
@@ -401,128 +362,151 @@
                 onBulkDelete={handleBulkDelete}
                 onBulkRerun={handleBulkRerun}
                 getInstanceCount={() => instanceCount}
+                outputSearch
+                bind:outputSearchOpen
+                onOutputSearch={handleOutputSearch}
+                {outputMatches}
+                {outputSearchLoading}
             />
         {/if}
 
-        <!-- Right Panel: Run Details -->
-        <Card
-            padding="none"
-            class="flex flex-col {hideHistory && !historyExpanded
-                ? ''
-                : 'md:col-span-8 lg:col-span-9'}"
-            bodyClass="flex min-h-0 flex-1 flex-col"
-        >
-            <RunDetailPanel
-                run={selectedRun}
-                {fetchLogs}
-                {streamLogs}
-                {fetchLineHistory}
-                onDelete={deleteSingle}
-                {highlightLine}
-                getInstanceCount={() => instanceCount}
-            />
-        </Card>
+        <RunDetailPanel
+            run={selectedRun}
+            {fetchLogs}
+            {streamLogs}
+            {fetchLineHistory}
+            onDelete={deleteSingle}
+            onRun={runTriggerable ? openRun : undefined}
+            onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
+            onRunTask={runTriggerable ? openRun : undefined}
+            onStop={!taskIsService && onStop ? () => (stopConfirmOpen = true) : undefined}
+            onStopService={taskIsService && onStopService
+                ? () => (stopServiceConfirmOpen = true)
+                : undefined}
+            onRestartService={taskIsService && onRestart
+                ? () => (restartConfirmOpen = true)
+                : undefined}
+            {serviceStopped}
+            serviceBusy={stoppingService || restarting}
+            onToggleHistory={hideHistory ? () => (historyExpanded = !historyExpanded) : undefined}
+            historyVisible={historyExpanded}
+            {highlightLine}
+            getInstanceCount={() => instanceCount}
+        />
     </div>
+</div>
 
-    <Modal
-        bind:open={confirmOpen}
-        title={runModalTitle}
-        description={runModalDescription}
-        size={hasParams ? "md" : "sm"}
-        children={showRunBody ? runModalBody : undefined}
-    >
-        {#snippet footer()}
-            <div class="flex justify-end gap-2">
-                <Button variant="secondary" size="sm" onclick={() => (confirmOpen = false)}>
-                    Cancel
-                </Button>
-                <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={hasParams && !runParamsValid}
-                    onclick={() => {
-                        confirmOpen = false;
-                        onRun(hasParams ? runParamValues : undefined);
-                    }}
-                >
-                    {#snippet icon()}<Play size={16} />{/snippet}
-                    {runConfirmLabel}
-                </Button>
-            </div>
-        {/snippet}
-    </Modal>
+<Modal
+    bind:open={confirmOpen}
+    title={runModalTitle}
+    description={runModalDescription}
+    size={hasParams ? "md" : "sm"}
+    children={showRunBody ? runModalBody : undefined}
+>
+    {#snippet footer()}
+        <div class="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onclick={() => (confirmOpen = false)}>
+                Cancel
+            </Button>
+            <Button
+                variant="primary"
+                size="sm"
+                disabled={hasParams && !runParamsValid}
+                onclick={() => {
+                    confirmOpen = false;
+                    onRun(hasParams ? runParamValues : undefined);
+                }}
+            >
+                {#snippet icon()}<Play size={16} />{/snippet}
+                {runConfirmLabel}
+            </Button>
+        </div>
+    {/snippet}
+</Modal>
 
-    <Modal
-        bind:open={stopConfirmOpen}
-        title="Stop Run"
-        description="Stop the current run of {task.name}?"
-        size="sm"
-    >
-        {#snippet footer()}
-            {@render confirmFooter(
-                () => (stopConfirmOpen = false),
-                () => {
-                    stopConfirmOpen = false;
-                    if (onStop && selectedRun) onStop(selectedRun.id);
-                },
-                "Stop Now",
-                "danger",
-                Square,
-            )}
-        {/snippet}
-    </Modal>
+<Modal
+    bind:open={stopConfirmOpen}
+    title="Stop Run"
+    description="Stop the current run of {task.name}?"
+    size="sm"
+>
+    {#snippet footer()}
+        {@render confirmFooter(
+            () => (stopConfirmOpen = false),
+            () => {
+                stopConfirmOpen = false;
+                if (onStop && selectedRun) onStop(selectedRun.id);
+            },
+            "Stop Now",
+            "danger",
+            Square,
+        )}
+    {/snippet}
+</Modal>
 
-    <Modal
-        bind:open={restartConfirmOpen}
-        title="Restart Service"
-        description={instanceCount > 1
-            ? `Cancel and restart all ${instanceCount} instances of ${task.name}?`
-            : `Cancel and restart ${task.name}?`}
-        size="sm"
-    >
-        {#snippet footer()}
-            {@render confirmFooter(
-                () => (restartConfirmOpen = false),
-                () => {
-                    restartConfirmOpen = false;
-                    onRestart?.();
-                },
-                "Restart Now",
-                "primary",
-                RefreshCcw,
-            )}
-        {/snippet}
-    </Modal>
+<Modal
+    bind:open={restartConfirmOpen}
+    title="Restart Service"
+    description={instanceCount > 1
+        ? `Cancel and restart all ${instanceCount} instances of ${task.name}?`
+        : `Cancel and restart ${task.name}?`}
+    size="sm"
+>
+    {#snippet footer()}
+        {@render confirmFooter(
+            () => (restartConfirmOpen = false),
+            () => {
+                restartConfirmOpen = false;
+                onRestart?.();
+            },
+            "Restart Now",
+            "primary",
+            RefreshCcw,
+        )}
+    {/snippet}
+</Modal>
 
-    <Modal
-        bind:open={stopServiceConfirmOpen}
-        title="Stop Service"
-        description={`Stop ${task.name}? The daemon will not restart it until you click Restart or the daemon itself restarts.`}
-        size="sm"
-    >
-        {#snippet footer()}
-            {@render confirmFooter(
-                () => (stopServiceConfirmOpen = false),
-                () => {
-                    stopServiceConfirmOpen = false;
-                    onStopService?.();
-                },
-                "Stop Now",
-                "danger",
-                Square,
-            )}
-        {/snippet}
-    </Modal>
-</PageContainer>
+<Modal
+    bind:open={stopServiceConfirmOpen}
+    title="Stop Service"
+    description={`Stop ${task.name}? The daemon will not restart it until you click Restart or the daemon itself restarts.`}
+    size="sm"
+>
+    {#snippet footer()}
+        {@render confirmFooter(
+            () => (stopServiceConfirmOpen = false),
+            () => {
+                stopServiceConfirmOpen = false;
+                onStopService?.();
+            },
+            "Stop Now",
+            "danger",
+            Square,
+        )}
+    {/snippet}
+</Modal>
 
 {#snippet runModalBody()}
     {#if concurrencyReached}
         {@render concurrencyWarning()}
     {/if}
     {#if hasParams && confirmOpen}
-        {#key confirmOpen}
+        {#if runSeed}
+            <div class="mb-3 flex items-center justify-between gap-2">
+                <span class="text-xs text-on-surface-muted">Pre-filled from the selected run.</span>
+                <button
+                    type="button"
+                    class="text-xs font-medium text-primary hover:underline"
+                    onclick={resetRunToDefaults}
+                >
+                    Reset to defaults
+                </button>
+            </div>
+        {/if}
+        {#key runFormSeq}
             <ParamForm
                 params={taskParams}
+                initial={runSeed}
                 bind:value={runParamValues}
                 bind:valid={runParamsValid}
             />

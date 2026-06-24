@@ -53,6 +53,42 @@ export function formatDateTime(dateStr: string): string {
     });
 }
 
+/** Wall-clock time of day, seconds included, 24-hour — e.g. "17:15:02". */
+export function formatClockTime(dateStr: string): string {
+    return new Date(dateStr).toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    });
+}
+
+/** Calendar date without the time — e.g. "22 Jun 2026". */
+export function formatCalendarDate(dateStr: string): string {
+    return new Date(dateStr).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+    });
+}
+
+/** Time of day, no seconds, 24-hour — e.g. "17:15". */
+export function formatTimeHM(dateStr: string): string {
+    return new Date(dateStr).toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    });
+}
+
+/** Day and month, no year — e.g. "22 Jun". */
+export function formatDayMonth(dateStr: string): string {
+    return new Date(dateStr).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+    });
+}
+
 export function formatDuration(ms: number): string {
     if (ms < 1000) return String(ms) + "ms";
     const s = Math.floor(ms / 1000);

@@ -20,73 +20,76 @@
  */
 
 :root {
-    /* Primary — Wisp Violet */
-    --rw-color-wisp-50: oklch(0.97 0.02 280);
-    --rw-color-wisp-100: oklch(0.94 0.04 280);
-    --rw-color-wisp-200: oklch(0.88 0.08 280);
-    --rw-color-wisp-300: oklch(0.78 0.12 280);
-    --rw-color-wisp-400: oklch(0.68 0.16 275);
-    --rw-color-wisp-500: oklch(0.58 0.18 270);
-    --rw-color-wisp-600: oklch(0.5 0.18 268);
-    --rw-color-wisp-700: oklch(0.42 0.16 268);
-    --rw-color-wisp-800: oklch(0.35 0.12 268);
-    --rw-color-wisp-900: oklch(0.28 0.08 268);
-    --rw-color-wisp-950: oklch(0.18 0.06 268);
+    /* Primary — Wisp Teal (brand = #0E7C86, the artifact's deep teal). Deeper
+     * and less cyan than Aurora (running/info) so the two stay distinct. */
+    --rw-color-wisp-50: oklch(0.97 0.02 205);
+    --rw-color-wisp-100: oklch(0.95 0.035 205);
+    --rw-color-wisp-200: oklch(0.89 0.055 204);
+    --rw-color-wisp-300: oklch(0.8 0.075 204);
+    --rw-color-wisp-400: oklch(0.68 0.088 203);
+    --rw-color-wisp-500: oklch(0.6 0.09 204);
+    --rw-color-wisp-600: oklch(0.536 0.089 205); /* ≈ #0E7C86 */
+    --rw-color-wisp-700: oklch(0.46 0.08 206);
+    --rw-color-wisp-800: oklch(0.38 0.066 207);
+    --rw-color-wisp-900: oklch(0.3 0.048 208);
+    --rw-color-wisp-950: oklch(0.2 0.034 210);
 
-    /* Accent — Aurora Teal */
-    --rw-color-aurora-50: oklch(0.97 0.02 180);
-    --rw-color-aurora-100: oklch(0.94 0.05 180);
-    --rw-color-aurora-200: oklch(0.88 0.1 178);
-    --rw-color-aurora-300: oklch(0.78 0.14 176);
-    --rw-color-aurora-400: oklch(0.68 0.16 174);
-    --rw-color-aurora-500: oklch(0.58 0.14 172);
-    --rw-color-aurora-600: oklch(0.5 0.12 172);
-    --rw-color-aurora-700: oklch(0.42 0.1 172);
-    --rw-color-aurora-800: oklch(0.35 0.08 172);
-    --rw-color-aurora-900: oklch(0.28 0.06 172);
+    /* Accent — Aurora Teal (running status = #13A0A8, a cyan-leaning teal) */
+    --rw-color-aurora-50: oklch(0.97 0.02 192);
+    --rw-color-aurora-100: oklch(0.94 0.045 192);
+    --rw-color-aurora-200: oklch(0.88 0.075 190);
+    --rw-color-aurora-300: oklch(0.78 0.105 189);
+    --rw-color-aurora-400: oklch(0.68 0.115 190);
+    --rw-color-aurora-500: oklch(0.58 0.115 191);
+    --rw-color-aurora-600: oklch(0.5 0.105 192);
+    --rw-color-aurora-700: oklch(0.42 0.09 192);
+    --rw-color-aurora-800: oklch(0.35 0.07 192);
+    --rw-color-aurora-900: oklch(0.28 0.055 192);
 
-    /* Mist — neutral grays with a purple tint */
-    --rw-color-mist-50: oklch(0.98 0.005 280);
-    --rw-color-mist-100: oklch(0.96 0.008 280);
-    --rw-color-mist-200: oklch(0.92 0.01 280);
-    --rw-color-mist-300: oklch(0.86 0.012 280);
-    --rw-color-mist-400: oklch(0.7 0.012 280);
-    --rw-color-mist-500: oklch(0.55 0.012 280);
-    --rw-color-mist-600: oklch(0.45 0.012 280);
-    --rw-color-mist-700: oklch(0.35 0.012 280);
-    --rw-color-mist-800: oklch(0.25 0.012 280);
-    --rw-color-mist-900: oklch(0.18 0.012 280);
-    --rw-color-mist-950: oklch(0.12 0.012 280);
+    /* Mist — cool slate-blue neutrals (the artifact's #EDF1F4 / #E0E6EC /
+     * #18212E family). No purple tint; hue ~248, low chroma rising into the
+     * mids the way the design's slate does. */
+    --rw-color-mist-50: oklch(0.985 0.004 240);
+    --rw-color-mist-100: oklch(0.956 0.006 240); /* ≈ ground #EDF1F4 */
+    --rw-color-mist-200: oklch(0.922 0.01 248); /* ≈ line #E0E6EC */
+    --rw-color-mist-300: oklch(0.83 0.016 248);
+    --rw-color-mist-400: oklch(0.676 0.026 248); /* ≈ faint #8B99A7 */
+    --rw-color-mist-500: oklch(0.6 0.03 248);
+    --rw-color-mist-600: oklch(0.531 0.032 248); /* ≈ muted #5E6E7E */
+    --rw-color-mist-700: oklch(0.4 0.031 252);
+    --rw-color-mist-800: oklch(0.31 0.029 255);
+    --rw-color-mist-900: oklch(0.245 0.028 258); /* ≈ ink #18212E */
+    --rw-color-mist-950: oklch(0.17 0.022 258);
 
-    /* Success — Aurora Mint */
-    --rw-color-success-50: oklch(0.97 0.018 165);
-    --rw-color-success-100: oklch(0.94 0.035 165);
-    --rw-color-success-200: oklch(0.88 0.06 165);
-    --rw-color-success-300: oklch(0.78 0.09 165);
-    --rw-color-success-400: oklch(0.68 0.11 165);
-    --rw-color-success-500: oklch(0.58 0.115 165);
-    --rw-color-success-600: oklch(0.5 0.105 165);
-    --rw-color-success-700: oklch(0.42 0.095 165);
+    /* Success — Field Green (success status = #1F9D57, a true grass green) */
+    --rw-color-success-50: oklch(0.97 0.02 150);
+    --rw-color-success-100: oklch(0.94 0.04 150);
+    --rw-color-success-200: oklch(0.88 0.07 150);
+    --rw-color-success-300: oklch(0.78 0.11 150);
+    --rw-color-success-400: oklch(0.68 0.14 150);
+    --rw-color-success-500: oklch(0.58 0.145 150);
+    --rw-color-success-600: oklch(0.5 0.13 150);
+    --rw-color-success-700: oklch(0.42 0.11 150);
 
-    /* Danger — Rose Crimson */
-    --rw-color-danger-50: oklch(0.97 0.014 355);
-    --rw-color-danger-100: oklch(0.94 0.028 355);
-    --rw-color-danger-200: oklch(0.88 0.052 355);
-    --rw-color-danger-300: oklch(0.78 0.085 355);
-    --rw-color-danger-400: oklch(0.68 0.115 355);
-    --rw-color-danger-500: oklch(0.58 0.145 355);
-    --rw-color-danger-600: oklch(0.5 0.135 355);
-    --rw-color-danger-700: oklch(0.42 0.12 355);
+    /* Danger — Signal Red (failed status = #D6453D, a warm tomato red) */
+    --rw-color-danger-50: oklch(0.97 0.016 27);
+    --rw-color-danger-100: oklch(0.94 0.03 27);
+    --rw-color-danger-200: oklch(0.88 0.06 27);
+    --rw-color-danger-300: oklch(0.78 0.1 27);
+    --rw-color-danger-400: oklch(0.68 0.14 27);
+    --rw-color-danger-500: oklch(0.58 0.175 27);
+    --rw-color-danger-600: oklch(0.5 0.17 27);
+    --rw-color-danger-700: oklch(0.42 0.145 27);
 
-    /* Warning */
-    --rw-color-warning-50: oklch(0.98 0.03 85);
-    --rw-color-warning-100: oklch(0.95 0.08 85);
-    --rw-color-warning-200: oklch(0.9 0.12 80);
-    --rw-color-warning-300: oklch(0.85 0.16 75);
-    --rw-color-warning-400: oklch(0.8 0.18 70);
-    --rw-color-warning-500: oklch(0.75 0.16 65);
-    --rw-color-warning-600: oklch(0.65 0.14 60);
-    --rw-color-warning-700: oklch(0.55 0.12 55);
+    /* Warning — Ember Amber (stopped status = #D98324, a warm orange-amber) */
+    --rw-color-warning-50: oklch(0.97 0.03 78);
+    --rw-color-warning-100: oklch(0.94 0.07 74);
+    --rw-color-warning-200: oklch(0.9 0.11 72);
+    --rw-color-warning-300: oklch(0.84 0.14 70);
+    --rw-color-warning-400: oklch(0.77 0.155 67);
+    --rw-color-warning-500: oklch(0.69 0.155 64);
+    --rw-color-warning-600: oklch(0.6 0.14 62);
+    --rw-color-warning-700: oklch(0.52 0.12 60);
 
     /* ANSI console palette — 16-color map for the log console, tuned for
      * its always-dark surface (no .dark override needed). Hues follow the
@@ -108,6 +111,15 @@
     --rw-ansi-bright-magenta: oklch(0.78 0.1 320);
     --rw-ansi-bright-cyan: var(--rw-color-aurora-300);
     --rw-ansi-bright-white: var(--rw-color-mist-50);
+
+    /* Console device surface — the log console is a "black box" instrument
+     * with its own fixed palette that never follows the light/dark UI theme.
+     * Exact values from the approved execution-detail design. */
+    --rw-con-bg: #0e141b; /* body / gutter backing */
+    --rw-con-panel: #11181f; /* toolbar + footer chrome */
+    --rw-con-text: #c3cfda; /* default log text */
+    --rw-con-dim: #6c7d8c; /* footer + muted readouts */
+    --rw-con-gutter: #3c4a58; /* line numbers + sentinel rule */
 
     /* Light-mode semantic tokens (default) */
     /* Surfaces */

@@ -173,24 +173,29 @@ export async function expectRunDetailMatchesApi(page: Page, apiRun: Run): Promis
         `badge should show ${status.toUpperCase()}`,
     ).toBeVisible();
 
-    await expect(
-        page.getByText(`Code ${apiRun.exit_code}`, { exact: true }),
-        `exit code should be ${apiRun.exit_code}`,
-    ).toBeVisible();
+    // Only a naturally-finished run (success/failed) carries a real process
+    // exit code; stopped/timed-out/crashed runs end on a synthetic sentinel, so
+    // the panel shows "—" plus a reason instead of a misleading "Code -1".
+    if (apiRun.end_reason === "success" || apiRun.end_reason === "failed") {
+        await expect(
+            page.getByText(`Code ${apiRun.exit_code}`, { exact: true }),
+            `exit code should be ${apiRun.exit_code}`,
+        ).toBeVisible();
+    }
 
     // The metadata value span sits immediately after its label span.
     const startedValue = page
         .getByText("Started", { exact: true })
         .locator("xpath=following-sibling::span[1]");
     const durationValue = page
-        .getByText("Duration", { exact: true })
+        .getByText("Ran for", { exact: true })
         .locator("xpath=following-sibling::span[1]");
 
     if (apiRun.start_at) {
-        await expect(startedValue, "started timestamp populated").not.toHaveText("--:--");
-        await expect(startedValue).toContainText(/\d{4}/); // year from formatDateTime
+        await expect(startedValue, "started timestamp populated").not.toHaveText("—");
+        await expect(startedValue).toContainText(":"); // wall-clock time (HH:MM:SS)
     }
     if (apiRun.start_at && apiRun.end_at) {
-        await expect(durationValue, "duration populated").not.toHaveText("--");
+        await expect(durationValue, "duration populated").not.toHaveText("—");
     }
 }
