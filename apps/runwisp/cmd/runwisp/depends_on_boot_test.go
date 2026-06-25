@@ -41,6 +41,35 @@ func activeCount(tm runtime.TaskManager, name string) int {
 	return len(tm.GetActiveRuns(name))
 }
 
+// TestStartServiceInstances_HonorsAutostart proves the boot launcher starts an
+// autostart service but leaves a non-autostart one stopped. This is the
+// invariant that lets initDaemonServices run the launcher unconditionally (in
+// cloud mode too): a non-autostart service boots stopped because its supervisor
+// is created stopped and StartServiceInstances no-ops on a stopped supervisor.
+func TestStartServiceInstances_HonorsAutostart(t *testing.T) {
+	exec := testutil.NewGateExecutor()
+	bus := events.NewEventBus()
+	tm := runtime.NewTaskManager(exec, bus, time.Now)
+	t.Cleanup(tm.Shutdown)
+
+	on := bootTestService("on", time.Nanosecond)
+	off := bootTestService("off", time.Nanosecond)
+	off.Autostart = false
+	tm.UpsertTask(on)
+	tm.UpsertTask(off)
+	tasksMap := map[string]*model.Task{"on": on, "off": off}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startServiceInstances(ctx, tm, tasksMap)
+
+	require.Eventually(t, func() bool { return activeCount(tm, "on") == 1 },
+		2*time.Second, 10*time.Millisecond, "autostart service must come up at boot")
+	// Let the non-autostart launcher goroutine run; it must never spawn an instance.
+	time.Sleep(150 * time.Millisecond)
+	assert.Equal(t, 0, activeCount(tm, "off"), "a non-autostart service must boot stopped")
+}
+
 // TestStartServiceInstances_GatesDependentOnDependencyHealth proves the launcher
 // holds a dependent until its dependency is healthy: web must not start while db
 // is still short of its healthy_after, then comes up once db crosses it.

@@ -219,3 +219,129 @@ func TestHandleServiceApply_DefaultsToCloudServiceName(t *testing.T) {
 	require.Len(t, runner.upserted, 1)
 	assert.Equal(t, "cloud-service", runner.upserted[0].Name)
 }
+
+// A service:apply addressed by the bare name of a synced TOML service merges the
+// present fields onto the live definition: TOML-only fields (working_dir,
+// depends_on) survive, the absent script leaves the real exec def intact, and
+// the override path never starts the service (control owns running/stopped).
+func TestHandleServiceApply_MergesOntoExistingTOMLService(t *testing.T) {
+	origExec := &model.ShellExecution{Script: "heartbeat.sh"}
+	existing := &model.Task{
+		Name:          "heartbeat",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		WorkingDir:    "/srv/app",
+		DependsOn:     []string{"pg"},
+		ExecutionDef:  origExec,
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:    "heartbeat",
+			TaskName:  "heartbeat",
+			Instances: 3,
+			Autostart: true, // ignored on the merge path
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, runner.upserted, 1)
+	task := runner.upserted[0]
+	assert.Equal(t, "heartbeat", task.Name)
+	assert.Equal(t, 3, task.Instances)
+	assert.Equal(t, 3, task.MaxConcurrent)
+	assert.Equal(t, "/srv/app", task.WorkingDir, "TOML-only field must be preserved")
+	assert.Equal(t, []string{"pg"}, task.DependsOn, "TOML-only field must be preserved")
+	assert.Same(t, origExec, task.ExecutionDef, "absent script must leave the exec def untouched")
+	assert.Empty(t, runner.startedServices, "merge path must not start the service")
+}
+
+// The cloud's Script field is non-omitempty on the wire, so a synced service
+// with no command override arrives as the JSON literal `null`, not an absent
+// field. The merge must treat that exactly like an absent script — keep the live
+// TOML command — rather than feed `null` to ParseExecutionDef (which rejects it
+// and would fail every reconnect re-apply).
+func TestHandleServiceApply_MergeKeepsCommandOnNullScript(t *testing.T) {
+	origExec := &model.ShellExecution{Script: "heartbeat.sh"}
+	existing := &model.Task{
+		Name:          "heartbeat",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		ExecutionDef:  origExec,
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:    "heartbeat",
+			TaskName:  "heartbeat",
+			Script:    json.RawMessage("null"),
+			Instances: 2,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, runner.upserted, 1)
+	task := runner.upserted[0]
+	assert.Same(t, origExec, task.ExecutionDef, "null script must leave the live command untouched")
+	assert.Equal(t, 2, task.Instances, "other overlaid fields must still apply")
+}
+
+// When the payload carries a script (the operator overrode the command), the
+// merge replaces the exec def while still preserving the rest of the definition.
+func TestHandleServiceApply_MergeAppliesOverriddenScript(t *testing.T) {
+	existing := &model.Task{
+		Name:          "heartbeat",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		WorkingDir:    "/srv/app",
+		ExecutionDef:  &model.ShellExecution{Script: "old.sh"},
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID: "heartbeat",
+			Script: shellScript(t, "new.sh"),
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, runner.upserted, 1)
+	task := runner.upserted[0]
+	shell, ok := task.ExecutionDef.(*model.ShellExecution)
+	require.True(t, ok)
+	assert.Equal(t, "new.sh", shell.Script)
+	assert.Equal(t, "/srv/app", task.WorkingDir, "TOML-only field must survive a script override")
+}
+
+// HandleServiceControl resolves a synced TOML service by its bare name and a
+// cloud-declared service by its ULID (→ cloud-<id>), so both addressing schemes
+// reach the supervisor.
+func TestHandleServiceControl_ResolvesBareNameAndCloudID(t *testing.T) {
+	start := protocol.ActionStart
+
+	t.Run("bare name of a synced service", func(t *testing.T) {
+		existing := &model.Task{Name: "heartbeat", Kind: model.KindService}
+		h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
+		runner := h.taskManager.(*fakeTaskRunner)
+		err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "heartbeat", Action: &start})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"heartbeat"}, runner.startedServices)
+	})
+
+	t.Run("ULID of a cloud-declared service", func(t *testing.T) {
+		h := newDispatchHandler(shellAvailable(), nil)
+		runner := h.taskManager.(*fakeTaskRunner)
+		err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "svc-1", Action: &start})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"cloud-svc-1"}, runner.startedServices)
+	})
+}

@@ -61,6 +61,16 @@ type syncTask struct {
 	Enabled             *bool              `json:"enabled,omitempty"`
 	Script              json.RawMessage    `json:"script,omitempty"`
 	Schedules           []syncTaskSchedule `json:"schedules,omitempty"`
+
+	// Service-only fields. All omitempty so a cloud that predates service sync
+	// ignores them and treats the row as a plain task.
+	Kind              string                `json:"kind,omitempty"`
+	Instances         *int                  `json:"instances,omitempty"`
+	Autostart         *bool                 `json:"autostart,omitempty"`
+	RestartDelay      *int                  `json:"restartDelay,omitempty"`      // milliseconds
+	RestartBackoff    string                `json:"restartBackoff,omitempty"`    // distinct from a task's RetryBackoff
+	BackoffResetAfter *int                  `json:"backoffResetAfter,omitempty"` // milliseconds, from HealthyAfter
+	Compose           *model.TaskComposeRef `json:"compose,omitempty"`
 }
 
 type syncTaskSchedule struct {
@@ -240,16 +250,43 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 	}
 	enabled := true
 	task.Enabled = &enabled
-	if strings.TrimSpace(t.Cron) != "" {
+
+	if t.Kind.IsService() {
+		// Services carry no cron, so they never emit a schedule.
+		applyServiceSyncFields(&task, t)
+	} else if cron := strings.TrimSpace(t.Cron); cron != "" {
 		task.Schedules = []syncTaskSchedule{
 			{
-				Cron:     strings.TrimSpace(t.Cron),
+				Cron:     cron,
 				Timezone: "UTC",
 				Enabled:  true,
 			},
 		}
 	}
 	return task, true
+}
+
+// applyServiceSyncFields populates the service-only fields of a sync row from a
+// service task. Kept separate from buildOneSyncTask so the task path stays
+// simple and neither grows the other's cognitive complexity.
+func applyServiceSyncFields(task *syncTask, t *model.Task) {
+	task.Kind = string(model.KindService)
+	if t.Instances > 0 {
+		instances := t.Instances
+		task.Instances = &instances
+	}
+	autostart := t.Autostart
+	task.Autostart = &autostart
+	if delayMs := durationToMillis(t.RestartDelay); delayMs > 0 {
+		task.RestartDelay = &delayMs
+	}
+	if t.RestartBackoff != "" {
+		task.RestartBackoff = t.RestartBackoff
+	}
+	if resetMs := durationToMillis(t.HealthyAfter); resetMs > 0 {
+		task.BackoffResetAfter = &resetMs
+	}
+	task.Compose = t.Compose
 }
 
 func buildTaskSyncID(tasks []syncTask) string {
