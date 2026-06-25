@@ -83,6 +83,7 @@ export { default as RunsList } from "./components/dashboard/RunsList.svelte";
 export type {
     RunsListFilters,
     RunsListSortDirection,
+    RunOutputMatch,
 } from "./components/dashboard/RunsList.svelte";
 export {
     getRunStatusConfig,

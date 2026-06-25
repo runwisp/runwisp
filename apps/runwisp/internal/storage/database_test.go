@@ -357,6 +357,11 @@ func TestQueryRunsAllSortVariants(t *testing.T) {
 	}{
 		{"created_at asc", SortColumnCreatedAt, SortAsc, []string{"alpha", "bravo", "charlie"}},
 		{"created_at desc", SortColumnCreatedAt, SortDesc, []string{"charlie", "bravo", "alpha"}},
+		// The runs-list sort toggle sends a direction with no explicit column.
+		// The default column must still honor that direction (regression: it
+		// used to collapse to created_at DESC and silently ignore the toggle).
+		{"default column + asc", SortColumnDefault, SortAsc, []string{"alpha", "bravo", "charlie"}},
+		{"default column + desc", SortColumnDefault, SortDesc, []string{"charlie", "bravo", "alpha"}},
 		{"start_at asc", SortColumnStartAt, SortAsc, []string{"alpha", "bravo", "charlie"}},
 		{"start_at desc", SortColumnStartAt, SortDesc, []string{"charlie", "bravo", "alpha"}},
 		{"task_name asc", SortColumnTaskName, SortAsc, []string{"alpha", "bravo", "charlie"}},

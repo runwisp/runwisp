@@ -17,7 +17,6 @@
     let taskName = $derived($page.params.id ?? "");
 
     let triggering = $state(false);
-    let stopping = $state(false);
     let restarting = $state(false);
     let stoppingService = $state(false);
     let serviceStopped = $state(false);
@@ -103,14 +102,11 @@
 
     async function handleStop(runId: string) {
         if (!taskName) return;
-        stopping = true;
         try {
             await tasksApi.stopRun(taskName, runId);
             toast.success(`Stopped run`);
         } catch {
             toast.error(`Failed to stop run`);
-        } finally {
-            stopping = false;
         }
     }
 
@@ -145,7 +141,7 @@
 
 <AsyncDataView data={taskData}>
     {#if task}
-        {#if source.items.length === 0 && source.loading}
+        {#if !source.loaded}
             <Skeleton rows={5} />
         {:else}
             <TaskPage
@@ -160,7 +156,6 @@
                 onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
                 {concurrencyReached}
                 {triggering}
-                {stopping}
                 {restarting}
                 {stoppingService}
                 {serviceStopped}

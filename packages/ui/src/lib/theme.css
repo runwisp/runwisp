@@ -197,6 +197,7 @@
     --color-warning-soft-text: var(--rw-warning-soft-text);
     /* Info */
     --color-info: var(--rw-info);
+    --color-info-surface: var(--rw-info);
     --color-info-hover: var(--rw-info-hover);
     --color-on-info: var(--rw-on-info);
     --color-info-soft: var(--rw-info-soft);

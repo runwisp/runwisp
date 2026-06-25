@@ -11,6 +11,7 @@
     import CloudModeBadge from "$lib/components/CloudModeBadge.svelte";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import ConnectionPip from "$lib/components/ConnectionPip.svelte";
+    import HeaderSearch from "$lib/components/HeaderSearch.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
@@ -48,6 +49,12 @@
     });
 
     let showGroupHeaders = $derived(taskGroups.length > 1);
+
+    // On a task detail page `activePage` is the task's page id; resolve it back to
+    // the real task name so the breadcrumb shows the literal name (its only home).
+    let activeTaskName = $derived(
+        tasks.find((t: { id: string; name: string }) => t.id === activePage)?.name,
+    );
 
     let sidebarOpen = $state(false);
     let firstLink = $state<HTMLElement | null>(null);
@@ -238,10 +245,25 @@
                 </button>
                 <span class="hidden text-on-surface-faint sm:inline">RunWisp</span>
                 <span class="hidden text-on-surface-faint sm:inline">/</span>
-                <span class="font-semibold text-on-surface capitalize"
-                    >{activePage.replace("task_", "").replace(/_/g, " ")}</span
-                >
+                {#if activeTaskName}
+                    <!-- On a task page the breadcrumb is the page's primary heading:
+                         the task name appears here and nowhere else. -->
+                    <h1 class="truncate text-base font-semibold text-on-surface">
+                        {activeTaskName}
+                    </h1>
+                {:else}
+                    <span class="font-semibold text-on-surface capitalize"
+                        >{activePage.replace("task_", "").replace(/_/g, " ")}</span
+                    >
+                {/if}
             </div>
+
+            <!-- Center: page search (filters the run list / searches log output).
+                 Empty space when the active page registers no search. -->
+            <div class="hidden min-w-0 flex-1 justify-center px-4 md:flex lg:px-8">
+                <HeaderSearch />
+            </div>
+
             <div class="flex items-center gap-3">
                 {#if systemStore.timezone}
                     <span

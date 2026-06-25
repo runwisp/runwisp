@@ -4,10 +4,20 @@
 import { describe, expect, it } from "vitest";
 import {
     formatBytes,
+    formatCalendarDate,
+    formatClockTime,
+    formatDayMonth,
     formatDuration,
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
+    formatTimeHM,
 } from "./format.js";
+
+// The clock/date helpers below delegate to toLocaleTimeString / toLocaleDateString,
+// whose exact rendering is locale- and timezone-dependent. We assert the
+// locale-invariant *shape* of each format (how many numeric groups, year present
+// or not) rather than a literal string, mirroring formatRelativeTimeWithAbsolute.
+const numericGroups = (s: string): number => (s.match(/\d+/g) ?? []).length;
 
 describe("formatBytes", () => {
     it("formats 0 bytes", () => {
@@ -120,5 +130,33 @@ describe("formatRelativeTime", () => {
         expect(formatRelativeTime(date, new Date("2024-01-01T15:00:00Z"))).toBe(
             "about 3 hours ago",
         );
+    });
+});
+
+describe("formatClockTime", () => {
+    it("renders three numeric groups (hours, minutes, seconds)", () => {
+        // 24-hour h:m:s — the seconds component is what sets it apart from formatTimeHM.
+        expect(numericGroups(formatClockTime("2026-06-22T17:15:02Z"))).toBe(3);
+    });
+});
+
+describe("formatTimeHM", () => {
+    it("renders two numeric groups (hours, minutes) — no seconds", () => {
+        expect(numericGroups(formatTimeHM("2026-06-22T17:15:02Z"))).toBe(2);
+    });
+});
+
+describe("formatCalendarDate", () => {
+    it("includes the four-digit year", () => {
+        // Midday UTC keeps the calendar year stable across every timezone.
+        expect(formatCalendarDate("2026-06-22T12:00:00Z")).toContain("2026");
+    });
+});
+
+describe("formatDayMonth", () => {
+    it("includes a day digit but omits the year", () => {
+        const r = formatDayMonth("2026-06-22T12:00:00Z");
+        expect(r).toMatch(/\d/);
+        expect(r).not.toContain("2026");
     });
 });

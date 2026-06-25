@@ -14,17 +14,17 @@
 
     const THEMES: Record<ConnectionStatus, Theme> = {
         connected: {
-            label: "Online",
+            label: "Connected",
             title: "Connected to the runner API",
-            container: "bg-success-soft text-success-soft-text border-success-soft-border",
-            dot: "bg-success-surface",
+            container: "bg-surface-sunken text-on-surface-muted border-outline",
+            dot: "bg-success-surface ring-[3px] ring-success-surface/20",
             ping: null,
         },
         connecting: {
             label: "Connecting",
             title: "Attempting to reach the runner API",
             container: "bg-warning-soft text-warning-soft-text border-warning-soft-border",
-            dot: "bg-warning-surface",
+            dot: "bg-warning-surface ring-[3px] ring-warning-surface/25",
             ping: "bg-warning-surface",
         },
         disconnected: {
@@ -32,8 +32,8 @@
             title: "Click to retry connecting to the runner API",
             container:
                 "bg-danger-soft text-danger-soft-text border-danger-soft-border hover:bg-danger-soft/80",
-            dot: "bg-danger-surface",
-            ping: null,
+            dot: "bg-danger-surface ring-[3px] ring-danger-surface/25",
+            ping: "bg-danger-surface",
         },
     };
 
@@ -42,22 +42,20 @@
 </script>
 
 {#snippet body()}
-    <span class="relative flex h-1.5 w-1.5 shrink-0">
+    <span class="relative flex h-[7px] w-[7px] shrink-0">
         {#if theme.ping}
             <span
                 class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 {theme.ping}"
             ></span>
         {/if}
-        <span class="relative inline-flex h-1.5 w-1.5 rounded-full {theme.dot}"></span>
+        <span class="relative inline-flex h-[7px] w-[7px] rounded-full {theme.dot}"></span>
     </span>
-    {#if status !== "connected"}
-        <span class="hidden sm:inline">{theme.label}</span>
-    {/if}
+    <span class="hidden sm:inline">{theme.label}</span>
 {/snippet}
 
 {#if status === "connected"}
     <span
-        class="duration-normal inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium transition-colors {theme.container}"
+        class="duration-normal inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {theme.container}"
         title={theme.title}
         aria-label={theme.label}
     >
@@ -70,7 +68,7 @@
         disabled={status === "connecting"}
         title={theme.title}
         aria-label={theme.label}
-        class="duration-normal inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-progress {theme.container}"
+        class="duration-normal inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-progress {theme.container}"
     >
         {@render body()}
     </button>

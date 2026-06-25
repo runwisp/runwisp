@@ -24,7 +24,7 @@
         <TriangleAlert size={16} class="shrink-0" />
         <span class="flex-1">
             <code class="font-semibold">runwisp.toml</code> has changed since the daemon started —
-            run <code class="font-semibold">runwisp restart</code> to apply. The UI never edits config;
+            run <code class="font-semibold">runwisp reload</code> to apply. The UI never edits config;
             your file is the source of truth.
         </span>
         <button

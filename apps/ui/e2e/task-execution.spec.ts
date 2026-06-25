@@ -13,7 +13,8 @@ test.describe("task execution", () => {
 
         await expect(page.getByRole("heading", { name: "echo-task", level: 1 })).toBeVisible();
 
-        await page.getByRole("button", { name: "Run Task" }).click();
+        // Trigger from the empty-state Run button (no runs yet).
+        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
         await page.getByRole("button", { name: "Run Now" }).click();
 
         // Wait for the run detail panel to settle on SUCCESS (exact match avoids
@@ -44,7 +45,8 @@ test.describe("task execution", () => {
 
         await expect(page.getByRole("heading", { name: "fail-task", level: 1 })).toBeVisible();
 
-        await page.getByRole("button", { name: "Run Task" }).click();
+        // Trigger from the empty-state Run button (no runs yet).
+        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
         await page.getByRole("button", { name: "Run Now" }).click();
 
         await expect(page.getByText("FAILED", { exact: true })).toBeVisible({ timeout: 30_000 });
@@ -66,13 +68,14 @@ test.describe("task execution", () => {
 
         await expect(page.getByRole("heading", { name: "echo-task", level: 1 })).toBeVisible();
 
-        await page.getByRole("button", { name: "Run Task" }).click();
+        // Trigger from the empty-state Run button (no runs yet).
+        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
         await page.getByRole("button", { name: "Run Now" }).click();
 
         await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
 
-        // Run list entries are identified by when they ran + how/why, not an
-        // opaque ULID suffix: a manually triggered run shows its "API" trigger.
+        // The run detail panel surfaces how the run was triggered: a manually
+        // triggered run reads as an "API" trigger.
         await expect(page.getByText("API").first()).toBeVisible();
     });
 
@@ -80,7 +83,8 @@ test.describe("task execution", () => {
         await page.goto("/tasks/echo-task");
         await expect(page.getByRole("heading", { name: "echo-task", level: 1 })).toBeVisible();
 
-        await page.getByRole("button", { name: "Run Task" }).click();
+        // Trigger from the empty-state Run button (no runs yet).
+        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
         await page.getByRole("button", { name: "Run Now" }).click();
         await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
 

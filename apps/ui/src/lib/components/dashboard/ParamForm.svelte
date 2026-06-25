@@ -33,10 +33,16 @@
     // so a cleared field omits rather than silently falling back to the default.
     let {
         params,
+        initial,
         value = $bindable<Record<string, string | null>>({}),
         valid = $bindable(true),
     }: {
         params: TaskParam[];
+        // Seed values to pre-fill the form with (e.g. "Run again" reuses a prior
+        // run's params). A present string wins over the declared default; a
+        // missing key (or `null`, or no seed at all) falls back to the default.
+        // Remount the form to re-seed — vals are captured once at construction.
+        initial?: Record<string, string | null> | null;
         value?: Record<string, string | null>;
         valid?: boolean;
     } = $props();
@@ -46,10 +52,21 @@
         return p.default ?? "";
     }
 
+    // The starting value for a field: a seeded value if one was supplied for
+    // this key, otherwise the parameter's declared default.
+    function seedValue(p: TaskParam): string {
+        const seeded = initial?.[p.key];
+        if (typeof seeded === "string") {
+            if (p.kind === "flag") return seeded === "true" ? "true" : "false";
+            return seeded;
+        }
+        return initialValue(p);
+    }
+
     // Raw field state keyed by parameter identity. Flags hold "true"/"false";
     // everything else holds the entered string ("" means "not supplied").
     let vals = $state<Record<string, string>>(
-        Object.fromEntries(params.map((p) => [p.key, initialValue(p)])),
+        Object.fromEntries(params.map((p) => [p.key, seedValue(p)])),
     );
     let touched = $state<Record<string, boolean>>({});
 
