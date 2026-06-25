@@ -288,6 +288,17 @@ export const runsApi = {
         return { runs: data.runs ?? [], total: data.total };
     },
 
+    // Fetch one run by its (globally unique) ULID — no task name needed. Lets
+    // the cross-task /runs view restore a deep-linked run that isn't on the
+    // currently loaded page.
+    getById: async (runId: string) => {
+        const { data, error } = await apiClient.GET("/api/runs/{runId}", {
+            params: { path: { runId } },
+        });
+        if (error) throw new Error("Failed to fetch run");
+        return data;
+    },
+
     bulkDelete: async (selector: RunSelector): Promise<number> => {
         const { data, error } = await apiClient.POST("/api/runs/bulk/delete", {
             body: selector,

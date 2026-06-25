@@ -20,6 +20,8 @@
         streamLogs,
         fetchLineHistory,
         getInstanceCount = () => 1,
+        initialRunId = null,
+        onSelectRun,
     } = $props<{
         items: Run[];
         total: number;
@@ -29,6 +31,10 @@
         onOptimisticRemove: (ids: string[]) => void;
         onOptimisticRestore: (runs: Run[]) => void;
         getInstanceCount?: (taskName: string) => number;
+        initialRunId?: string | null;
+        // Notified when the user picks a run, so the route can mirror it into
+        // the address bar. The auto-fallback to newest is not reported.
+        onSelectRun?: (runId: string | null) => void;
         fetchLogs: (
             runId: string,
             from: number,
@@ -43,6 +49,18 @@
     }>();
 
     let userSelectedRunId = $state<string | null>(null);
+
+    // Seed the selection from a deep link (the run-id path segment), on load and
+    // on later URL changes. Declared before the emit effect below so the first
+    // flush seeds before it reports — otherwise the initial null would clobber it.
+    $effect(() => {
+        if (initialRunId) userSelectedRunId = initialRunId;
+    });
+
+    // Report explicit selections upward so the URL can mirror the run on screen.
+    $effect(() => {
+        onSelectRun?.(userSelectedRunId);
+    });
 
     // The header search filters this list by task name or run ID.
     $effect(() => {

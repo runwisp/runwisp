@@ -100,7 +100,7 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 		"\n" +
 		"<blockquote>Error: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused</blockquote>\n" +
 		"\n" +
-		"🔗 <a href=\"https://runwisp.example.com/tasks/telegram-test-fail?runId=01KRK9SS7MKEWN4F49R30ZM74N\">View full run</a>\n" +
+		"🔗 <a href=\"https://runwisp.example.com/tasks/telegram-test-fail/01KRK9SS7MKEWN4F49R30ZM74N\">View full run</a>\n" +
 		"\n" +
 		"<i>from runwisp · bright-falcon</i>\n"
 	assert.Equal(t, expected, got)
@@ -300,7 +300,7 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 		elems, _ := obj["elements"].([]any)
 		for _, e := range elems {
 			el, _ := e.(map[string]any)
-			if el["url"] == "https://r.example.com/tasks/tg-fail?runId=01KRK9" {
+			if el["url"] == "https://r.example.com/tasks/tg-fail/01KRK9" {
 				foundButton = true
 			}
 		}
@@ -382,7 +382,7 @@ func TestDiscord_RunFailed_WithURLAndTail(t *testing.T) {
 	require.Len(t, parsed.Embeds, 1)
 	embed := parsed.Embeds[0]
 	assert.Equal(t, "❌ dc-fail failed", embed.Title)
-	assert.Equal(t, "https://r.example.com/tasks/dc-fail?runId=01KRK9", embed.URL)
+	assert.Equal(t, "https://r.example.com/tasks/dc-fail/01KRK9", embed.URL)
 	assert.Contains(t, embed.Description, "Exited with code 1 after 0.3s.\nManually triggered via API · 14 May, 17:11.")
 	assert.Contains(t, embed.Description, "```\nError: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused\n```")
 	assert.Equal(t, 15548997, embed.Color, "error must render red")

@@ -92,7 +92,7 @@
     <a
         href={notification.run_id
             ? resolve(
-                  `/tasks/${encodeURIComponent(notification.task_name)}?runId=${encodeURIComponent(notification.run_id)}`,
+                  `/tasks/${encodeURIComponent(notification.task_name)}/${encodeURIComponent(notification.run_id)}`,
               )
             : resolve(`/tasks/${encodeURIComponent(notification.task_name)}`)}
         {onclick}

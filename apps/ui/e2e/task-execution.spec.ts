@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { test, expect } from "./fixtures/test-base";
-import { expectRunDetailMatchesApi, getLatestRun } from "./fixtures/api";
+import {
+    expectRunDetailMatchesApi,
+    getLatestRun,
+    triggerRunViaAPI,
+    waitForRunEnded,
+} from "./fixtures/api";
 
 test.describe("task execution", () => {
     test("trigger successful task and verify completion", async ({
@@ -94,5 +99,40 @@ test.describe("task execution", () => {
 
         await expect(page.getByRole("heading", { name: "Recent activity" })).toBeVisible();
         await expect(page.getByText("echo-task").first()).toBeVisible();
+    });
+
+    test("an execution is linkable: selecting a run syncs the URL and reloads restore it", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        // Two ended runs so there's an older run distinct from the default
+        // (newest) selection. The run-id chip in the detail panel renders the
+        // full ULID, so getByText(id) keys assertions to the selected run.
+        const older = await triggerRunViaAPI(page, "echo-task", daemonState.token);
+        await waitForRunEnded(page, "echo-task", older.id, daemonState.token);
+        const newer = await triggerRunViaAPI(page, "echo-task", daemonState.token);
+        await waitForRunEnded(page, "echo-task", newer.id, daemonState.token);
+
+        // Deep link straight to the OLDER run via its path segment — it must
+        // override the default newest-run selection (the read path).
+        await page.goto(`/tasks/echo-task/${older.id}`);
+        await expect(page.getByText(older.id)).toBeVisible({ timeout: 10_000 });
+
+        // Selecting the newest run from its rail row must push it into the URL
+        // path (the write path). Run rows are <button>s in <main> carrying the
+        // lowercase status; .first() is the newest under the default sort.
+        await page
+            .getByRole("main")
+            .getByRole("button")
+            .filter({ hasText: "success" })
+            .first()
+            .click();
+        await expect(page).toHaveURL(new RegExp(`/tasks/echo-task/${newer.id}`));
+        await expect(page.getByText(newer.id)).toBeVisible();
+
+        // Reloading the synced URL restores that run, not the default.
+        await page.reload();
+        await expect(page).toHaveURL(new RegExp(`/tasks/echo-task/${newer.id}`));
+        await expect(page.getByText(newer.id)).toBeVisible({ timeout: 10_000 });
     });
 });

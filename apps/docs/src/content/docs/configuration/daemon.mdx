@@ -61,7 +61,7 @@ the scheme has to be `http` or `https`.
 The daemon never calls out to this URL itself — it's purely for
 rendering. When a Slack or Telegram notification fires, the template
 tacks on a "View run" link like
-`<external_url>/tasks/<task>?runId=<id>`, which drops you straight into
+`<external_url>/tasks/<task>/<id>`, which drops you straight into
 that run's detail panel in the dashboard.
 
 Leaving `external_url` unset is perfectly fine and fully supported.

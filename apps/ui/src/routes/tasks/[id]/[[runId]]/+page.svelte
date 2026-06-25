@@ -3,6 +3,7 @@
 
 <script lang="ts">
     import { page } from "$app/stores";
+    import { resolve } from "$app/paths";
     import { TaskPage } from "$lib/components/dashboard";
     import { toast, ErrorState, Skeleton } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
@@ -11,10 +12,22 @@
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
+    import { navigateToRun } from "$lib/utils/run-url";
     import { type Task } from "$lib/types";
     import type { RunsListFilters } from "@runwisp/ui";
 
     let taskName = $derived($page.params.id ?? "");
+    // The selected run lives in the path as an optional segment: /tasks/{name}/{runId}.
+    let runIdParam = $derived($page.params.runId ?? null);
+
+    // Mirror the user-selected run into the address bar so the URL is a shareable
+    // permalink; null (e.g. the selected run was deleted) drops back to /tasks/{name}.
+    function selectRun(runId: string | null) {
+        navigateToRun(
+            $page.url,
+            runId ? resolve(`/tasks/${taskName}/${runId}`) : resolve(`/tasks/${taskName}`),
+        );
+    }
 
     let triggering = $state(false);
     let restarting = $state(false);
@@ -71,7 +84,7 @@
     });
 
     $effect(() => {
-        const initialRunId = $page.url.searchParams.get("runId");
+        const initialRunId = runIdParam;
         if (!initialRunId || !taskName || source.items.length === 0) return;
         if (source.items.some((r) => r.id === initialRunId)) return;
         void (async () => {
@@ -166,7 +179,7 @@
                 fetchLogs={logSession.fetchLogs}
                 streamLogs={logSession.streamLogs}
                 fetchLineHistory={logSession.fetchLineHistory}
-                initialRunId={$page.url.searchParams.get("runId")}
+                initialRunId={runIdParam}
                 initialHighlightLine={(() => {
                     const v = $page.url.searchParams.get("line");
                     if (!v) return null;
@@ -174,6 +187,7 @@
                     return Number.isFinite(n) ? n : null;
                 })()}
                 {selectRunId}
+                onSelectRun={selectRun}
             />
         {/if}
     {:else}

@@ -184,7 +184,7 @@
     }
 
     async function handleRunClick(taskName: string, runId: string) {
-        await goto(resolve(`/tasks/${taskName}?runId=${runId}`));
+        await goto(resolve(`/tasks/${taskName}/${runId}`));
     }
 </script>
 

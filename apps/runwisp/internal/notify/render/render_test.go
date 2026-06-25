@@ -67,11 +67,11 @@ func TestRunURL(t *testing.T) {
 	assert.Equal(t, "", runURL("https://x", nil))
 	assert.Equal(t, "", runURL("https://x", &model.Run{ID: "01KRK"}))
 	assert.Equal(t, "", runURL("https://x", &model.Run{TaskName: "n"}))
-	assert.Equal(t, "https://x/tasks/nightly-backup?runId=01KRK", runURL("https://x", r))
+	assert.Equal(t, "https://x/tasks/nightly-backup/01KRK", runURL("https://x", r))
 
 	// Path-escape the task name (spec disallows spaces but be defensive).
 	tricky := &model.Run{ID: "01", TaskName: "name with space"}
-	assert.Equal(t, "https://x/tasks/name%20with%20space?runId=01", runURL("https://x", tricky))
+	assert.Equal(t, "https://x/tasks/name%20with%20space/01", runURL("https://x", tricky))
 }
 
 func TestTaskURL(t *testing.T) {

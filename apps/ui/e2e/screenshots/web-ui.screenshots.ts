@@ -123,8 +123,8 @@ test("overview, runs, task detail", async ({ authenticatedPage: page, daemonStat
         await settle(page);
         await shoot(page, `web-ui-task-detail-${theme}`);
 
-        // Task detail — a failed run (selected via ?runId)
-        await page.goto(`/tasks/${failed.task_name}?runId=${failed.id}`);
+        // Task detail — a failed run (selected via the run-id path segment)
+        await page.goto(`/tasks/${failed.task_name}/${failed.id}`);
         await expect(page.getByRole("heading", { name: failed.task_name, level: 1 })).toBeVisible();
         await expect(page.getByText(`Code ${failed.exit_code}`, { exact: true })).toBeVisible();
         await settle(page);

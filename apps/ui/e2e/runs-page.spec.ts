@@ -96,4 +96,42 @@ test.describe("runs page", () => {
             })
             .toBe(true);
     });
+
+    test("an execution is linkable on the cross-task view", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        // Older run on a different task, then a newer one so the default
+        // (newest) selection differs from the deep-linked target.
+        const target = await seedEndedRun(page, "fail-task", daemonState.token);
+        const newer = await seedEndedRun(page, "echo-task", daemonState.token);
+
+        // The task-name-agnostic endpoint that lets the runs view restore a
+        // deep-linked run that isn't on the loaded page.
+        const byId = await page.request.get(`/api/runs/${target.id}`, {
+            headers: { Authorization: `Bearer ${daemonState.token}` },
+        });
+        expect(byId.status(), "GET /api/runs/{runId}").toBe(200);
+        expect(((await byId.json()) as { id: string }).id).toBe(target.id);
+
+        // Deep link to the OLDER run via its path segment; the runs view restores
+        // it (the run-id chip shows its full ULID) instead of defaulting to newest.
+        await page.goto(`/runs/${target.id}`);
+        await expect(page.getByText(target.id)).toBeVisible({ timeout: 10_000 });
+
+        // Selecting the newest run from its row pushes it into the URL path.
+        await page
+            .getByRole("main")
+            .getByRole("button")
+            .filter({ hasText: "echo-task" })
+            .first()
+            .click();
+        await expect(page).toHaveURL(new RegExp(`/runs/${newer.id}`));
+        await expect(page.getByText(newer.id)).toBeVisible();
+
+        // Reloading the synced URL restores that run.
+        await page.reload();
+        await expect(page).toHaveURL(new RegExp(`/runs/${newer.id}`));
+        await expect(page.getByText(newer.id)).toBeVisible({ timeout: 10_000 });
+    });
 });
