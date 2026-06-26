@@ -92,23 +92,29 @@ func TestCountRunsFiltered(t *testing.T) {
 	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "task2", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), TriggeredBy: model.TriggeredByAPI}))
 	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "task3", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonLogOverflow), TriggeredBy: model.TriggeredByAPI}))
 
-	count, err := db.CountRunsFiltered(ctx, "", "", "")
+	count, err := db.CountRunsFiltered(ctx, model.RunFilter{})
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), count)
 
-	count, err = db.CountRunsFiltered(ctx, string(model.ReasonSuccess), "", "")
+	count, err = db.CountRunsFiltered(ctx, model.RunFilter{Status: string(model.ReasonSuccess)})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 
-	count, err = db.CountRunsFiltered(ctx, string(model.ReasonLogOverflow), "", "")
+	count, err = db.CountRunsFiltered(ctx, model.RunFilter{Status: string(model.ReasonLogOverflow)})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 
-	count, err = db.CountRunsFiltered(ctx, "", "task1", "")
+	// A status set matches a run whose phase OR end reason is in the set, so
+	// "pending" (a phase) and "failed" (an end reason) together select both.
+	count, err = db.CountRunsFiltered(ctx, model.RunFilter{Status: string(model.PhasePending) + "," + string(model.ReasonFailed)})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 
-	count, err = db.CountRunsFiltered(ctx, "", "", "task2")
+	count, err = db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "task1"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	count, err = db.CountRunsFiltered(ctx, model.RunFilter{Search: "task2"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 }
@@ -470,6 +476,86 @@ func TestQueryRunsFiltersAndPagination(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestQueryRunsNewGates exercises the time-range, triggered-by, exit-code, and
+// retries-only gates added for the Web UI filter popover — every dimension that
+// flows through buildRunFilterArgs into both QueryRuns and CountRunsFiltered.
+func TestQueryRunsNewGates(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	base := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
+	mk := func(name string, trig model.TriggeredBy, exit, retry, minOffset int) *model.Run {
+		created := base.Add(time.Duration(minOffset) * time.Minute)
+		return &model.Run{
+			ID:           ulid.Make().String(),
+			TaskName:     name,
+			Status:       model.PhaseEnded,
+			EndReason:    model.EndReasonPtr(model.ReasonSuccess),
+			ExitCode:     exit,
+			TriggeredBy:  trig,
+			RetryAttempt: retry,
+			CreatedAt:    created,
+		}
+	}
+	runs := []*model.Run{
+		mk("cron-zero", model.TriggeredByCron, 0, 0, 0),    // t+0
+		mk("api-137", model.TriggeredByAPI, 137, 0, 10),    // t+10
+		mk("api-retry", model.TriggeredByAPI, 1, 2, 20),    // t+20, retried
+		mk("cloud-neg", model.TriggeredByCloud, -2, 0, 30), // t+30
+	}
+	for _, r := range runs {
+		require.NoError(t, db.CreateRun(ctx, r))
+		require.NoError(t, db.UpdateRun(ctx, r))
+	}
+
+	count := func(f model.RunFilter) int64 {
+		t.Helper()
+		// QueryRuns and CountRunsFiltered share buildRunFilterArgs, so they must
+		// always agree on which rows the filter selects.
+		n, err := db.CountRunsFiltered(ctx, f)
+		require.NoError(t, err)
+		rs, err := db.QueryRuns(ctx, RunQuery{Filter: f, Limit: 50})
+		require.NoError(t, err)
+		assert.Equal(t, int(n), len(rs), "count and query must agree")
+		return n
+	}
+
+	mid := base.Add(15 * time.Minute)   // between t+10 and t+20
+	upper := base.Add(25 * time.Minute) // between t+20 and t+30
+
+	assert.Equal(t, int64(2), count(model.RunFilter{CreatedAfter: &mid}), "t+20 and t+30")
+	assert.Equal(t, int64(2), count(model.RunFilter{CreatedBefore: &mid}), "t+0 and t+10")
+	assert.Equal(t, int64(1), count(model.RunFilter{CreatedAfter: &mid, CreatedBefore: &upper}), "t+20 only")
+
+	assert.Equal(t, int64(2), count(model.RunFilter{TriggeredBy: string(model.TriggeredByAPI)}))
+	assert.Equal(t, int64(1), count(model.RunFilter{TriggeredBy: string(model.TriggeredByCloud)}))
+
+	// Exit codes present: 0 (cron-zero), 137 (api-137), 1 (api-retry), -2 (cloud-neg).
+	// Exact code = an inclusive [n, n] range.
+	assert.Equal(t, int64(1), count(model.RunFilter{ExitCodeMin: intPtr(137), ExitCodeMax: intPtr(137)}))
+	assert.Equal(t, int64(1), count(model.RunFilter{ExitCodeMin: intPtr(-2), ExitCodeMax: intPtr(-2)}), "negative exit codes round-trip")
+	assert.Equal(t, int64(1), count(model.RunFilter{ExitCodeMin: intPtr(0), ExitCodeMax: intPtr(0)}), "exact 0 is distinct from a range")
+	assert.Equal(t, int64(2), count(model.RunFilter{ExitCodeMin: intPtr(1)}), ">=1 keeps 137 and 1")
+	assert.Equal(t, int64(2), count(model.RunFilter{ExitCodeMin: intPtr(1), ExitCodeMax: intPtr(200)}), "1..200 keeps 137 and 1")
+	assert.Equal(t, int64(3), count(model.RunFilter{ExitCodeMax: intPtr(1)}), "<=1 keeps 0, 1, -2")
+
+	assert.Equal(t, int64(1), count(model.RunFilter{RetriesOnly: true}), "only api-retry")
+
+	// Composite AND across dimensions: an API-triggered, retried run.
+	assert.Equal(t, int64(1), count(model.RunFilter{
+		TriggeredBy: string(model.TriggeredByAPI),
+		RetriesOnly: true,
+	}))
+	// A composite that no single row satisfies.
+	assert.Equal(t, int64(0), count(model.RunFilter{
+		TriggeredBy: string(model.TriggeredByCloud),
+		RetriesOnly: true,
+	}))
+}
+
+func intPtr(n int) *int { return &n }
+
 // setupFullTestDB returns the full Database interface (includes PendingLogUploadRepository).
 func setupFullTestDB(t *testing.T) Database {
 	t.Helper()
@@ -766,7 +852,7 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 	_, err = db.CountRuns(ctx, "t")
 	assert.Error(t, err)
 
-	_, err = db.CountRunsFiltered(ctx, "", "t", "")
+	_, err = db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "t"})
 	assert.Error(t, err)
 
 	_, err = db.QueryRuns(ctx, RunQuery{

@@ -38,15 +38,46 @@ test.describe("runs page", () => {
         const rows = page.getByRole("main");
         await expect(rows.getByText("echo-task").first()).toBeVisible();
 
+        // Status now lives behind the Filter popover as outcome buckets.
+        // Open it once; native controls keep it open as we toggle buckets.
+        await page.getByTitle("Filter runs").click();
+
         // Failed only: fail-task remains, the (always-successful) echo-task drops.
-        await page.locator("select").selectOption("failed");
+        // The Failed bucket maps to the failure end-reasons; the individual
+        // statuses live (collapsed) behind "Advanced", so this is unambiguous.
+        await page.getByRole("checkbox", { name: "Failed", exact: true }).check();
         await expect(rows.getByText("fail-task").first()).toBeVisible();
         await expect(rows.getByText("echo-task")).toHaveCount(0, { timeout: 10_000 });
 
-        // Success only: the inverse.
-        await page.locator("select").selectOption("success");
+        // Succeeded only: clear Failed, select Succeeded — the inverse.
+        await page.getByRole("checkbox", { name: "Failed", exact: true }).uncheck();
+        await page.getByRole("checkbox", { name: "Succeeded", exact: true }).check();
         await expect(rows.getByText("echo-task").first()).toBeVisible();
         await expect(rows.getByText("fail-task")).toHaveCount(0, { timeout: 10_000 });
+    });
+
+    test("date range filter narrows the list to the chosen bound", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        await seedEndedRun(page, "echo-task", daemonState.token);
+
+        await page.goto("/runs");
+        const rows = page.getByRole("main");
+        await expect(rows.getByText("echo-task").first()).toBeVisible();
+
+        await page.getByTitle("Filter runs").click();
+
+        // A "To" bound in the distant past (everything up to end of that day)
+        // excludes every run created today. The "From" end stays open.
+        // exact:true: getByLabel does substring matching, and "Stopped" /
+        // "Daemon stopped" / "Toggle line wrapping" all contain "to".
+        await page.getByLabel("To", { exact: true }).fill("2016-07-10");
+        await expect(rows.getByText("echo-task")).toHaveCount(0, { timeout: 10_000 });
+
+        // Clearing the time chip brings the run back.
+        await page.getByRole("button", { name: /Remove .* filter/ }).click();
+        await expect(rows.getByText("echo-task").first()).toBeVisible();
     });
 
     test("search narrows the list to the typed task", async ({

@@ -1120,16 +1120,44 @@
       "RunFilter": {
         "additionalProperties": false,
         "properties": {
+          "created_after": {
+            "description": "Only runs created at or after this time",
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_before": {
+            "description": "Only runs created at or before this time",
+            "format": "date-time",
+            "type": "string"
+          },
+          "exit_code_max": {
+            "description": "Only runs whose exit code is \u003c= this (inclusive)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "exit_code_min": {
+            "description": "Only runs whose exit code is \u003e= this (inclusive)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "retries_only": {
+            "description": "Only runs that are a retry (retry_attempt \u003e 0)",
+            "type": "boolean"
+          },
           "search": {
             "description": "Search query against task_name / id",
             "type": "string"
           },
           "status": {
-            "description": "Filter by run status (phase or end reason)",
+            "description": "Comma-separated run statuses (phase or end reason); a run matches any listed value",
             "type": "string"
           },
           "task_name": {
             "description": "Filter by task name",
+            "type": "string"
+          },
+          "triggered_by": {
+            "description": "Filter by what triggered the run (cron/api/cloud/service/startup)",
             "type": "string"
           }
         },
@@ -2404,12 +2432,12 @@
             }
           },
           {
-            "description": "Filter by run status",
+            "description": "Comma-separated run statuses (phase or end reason); a run matches any listed value",
             "explode": false,
             "in": "query",
             "name": "status",
             "schema": {
-              "description": "Filter by run status",
+              "description": "Comma-separated run statuses (phase or end reason); a run matches any listed value",
               "type": "string"
             }
           },
@@ -2421,6 +2449,78 @@
             "schema": {
               "description": "Filter by task name",
               "type": "string"
+            }
+          },
+          {
+            "description": "Filter by what triggered the run",
+            "explode": false,
+            "in": "query",
+            "name": "triggered_by",
+            "schema": {
+              "description": "Filter by what triggered the run",
+              "enum": [
+                "cron",
+                "api",
+                "cloud",
+                "service",
+                "startup",
+                ""
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs created at or after this RFC3339 time",
+            "explode": false,
+            "in": "query",
+            "name": "created_after",
+            "schema": {
+              "description": "Only runs created at or after this RFC3339 time",
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs created at or before this RFC3339 time",
+            "explode": false,
+            "in": "query",
+            "name": "created_before",
+            "schema": {
+              "description": "Only runs created at or before this RFC3339 time",
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs whose exit code is \u003e= this (inclusive)",
+            "explode": false,
+            "in": "query",
+            "name": "exit_code_min",
+            "schema": {
+              "description": "Only runs whose exit code is \u003e= this (inclusive)",
+              "pattern": "^-?[0-9]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs whose exit code is \u003c= this (inclusive)",
+            "explode": false,
+            "in": "query",
+            "name": "exit_code_max",
+            "schema": {
+              "description": "Only runs whose exit code is \u003c= this (inclusive)",
+              "pattern": "^-?[0-9]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs that are a retry (retry_attempt \u003e 0)",
+            "explode": false,
+            "in": "query",
+            "name": "retries_only",
+            "schema": {
+              "description": "Only runs that are a retry (retry_attempt \u003e 0)",
+              "type": "boolean"
             }
           },
           {
@@ -3346,12 +3446,12 @@
             }
           },
           {
-            "description": "Filter by run status",
+            "description": "Comma-separated run statuses (phase or end reason); a run matches any listed value",
             "explode": false,
             "in": "query",
             "name": "status",
             "schema": {
-              "description": "Filter by run status",
+              "description": "Comma-separated run statuses (phase or end reason); a run matches any listed value",
               "type": "string"
             }
           },
@@ -3363,6 +3463,78 @@
             "schema": {
               "description": "Filter by task name",
               "type": "string"
+            }
+          },
+          {
+            "description": "Filter by what triggered the run",
+            "explode": false,
+            "in": "query",
+            "name": "triggered_by",
+            "schema": {
+              "description": "Filter by what triggered the run",
+              "enum": [
+                "cron",
+                "api",
+                "cloud",
+                "service",
+                "startup",
+                ""
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs created at or after this RFC3339 time",
+            "explode": false,
+            "in": "query",
+            "name": "created_after",
+            "schema": {
+              "description": "Only runs created at or after this RFC3339 time",
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs created at or before this RFC3339 time",
+            "explode": false,
+            "in": "query",
+            "name": "created_before",
+            "schema": {
+              "description": "Only runs created at or before this RFC3339 time",
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs whose exit code is \u003e= this (inclusive)",
+            "explode": false,
+            "in": "query",
+            "name": "exit_code_min",
+            "schema": {
+              "description": "Only runs whose exit code is \u003e= this (inclusive)",
+              "pattern": "^-?[0-9]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs whose exit code is \u003c= this (inclusive)",
+            "explode": false,
+            "in": "query",
+            "name": "exit_code_max",
+            "schema": {
+              "description": "Only runs whose exit code is \u003c= this (inclusive)",
+              "pattern": "^-?[0-9]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only runs that are a retry (retry_attempt \u003e 0)",
+            "explode": false,
+            "in": "query",
+            "name": "retries_only",
+            "schema": {
+              "description": "Only runs that are a retry (retry_attempt \u003e 0)",
+              "type": "boolean"
             }
           },
           {

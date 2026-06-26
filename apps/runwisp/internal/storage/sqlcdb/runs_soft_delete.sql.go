@@ -53,17 +53,29 @@ func (q *Queries) PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.T
 const resolveSelectorIDsByFilter = `-- name: ResolveSelectorIDsByFilter :many
 SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-  AND (?6 IS NULL OR status = ?6)
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+  AND (?11 IS NULL OR status = ?11)
   AND id NOT IN (/*SLICE:except_ids*/?)
 `
 
 type ResolveSelectorIDsByFilterParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -80,8 +92,13 @@ type ResolveSelectorIDsByFilterRow struct {
 func (q *Queries) ResolveSelectorIDsByFilter(ctx context.Context, arg ResolveSelectorIDsByFilterParams) ([]ResolveSelectorIDsByFilterRow, error) {
 	query := resolveSelectorIDsByFilter
 	var queryParams []interface{}
-	queryParams = append(queryParams, arg.EndReasonFilter)
-	queryParams = append(queryParams, arg.StatusPhaseFilter)
+	queryParams = append(queryParams, arg.StatusSet)
+	queryParams = append(queryParams, arg.CreatedAfter)
+	queryParams = append(queryParams, arg.CreatedBefore)
+	queryParams = append(queryParams, arg.TriggeredByFilter)
+	queryParams = append(queryParams, arg.ExitCodeMin)
+	queryParams = append(queryParams, arg.ExitCodeMax)
+	queryParams = append(queryParams, arg.RetriesOnly)
 	queryParams = append(queryParams, arg.TaskNameFilter)
 	queryParams = append(queryParams, arg.SearchFilter)
 	queryParams = append(queryParams, arg.SearchPattern)
@@ -175,16 +192,28 @@ func (q *Queries) ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelect
 const restoreRunsByFilter = `-- name: RestoreRunsByFilter :exec
 UPDATE runs SET deleted_at = NULL
 WHERE deleted_at IS NOT NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
   AND id NOT IN (/*SLICE:except_ids*/?)
 `
 
 type RestoreRunsByFilterParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -194,8 +223,13 @@ type RestoreRunsByFilterParams struct {
 func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilterParams) error {
 	query := restoreRunsByFilter
 	var queryParams []interface{}
-	queryParams = append(queryParams, arg.EndReasonFilter)
-	queryParams = append(queryParams, arg.StatusPhaseFilter)
+	queryParams = append(queryParams, arg.StatusSet)
+	queryParams = append(queryParams, arg.CreatedAfter)
+	queryParams = append(queryParams, arg.CreatedBefore)
+	queryParams = append(queryParams, arg.TriggeredByFilter)
+	queryParams = append(queryParams, arg.ExitCodeMin)
+	queryParams = append(queryParams, arg.ExitCodeMax)
+	queryParams = append(queryParams, arg.RetriesOnly)
 	queryParams = append(queryParams, arg.TaskNameFilter)
 	queryParams = append(queryParams, arg.SearchFilter)
 	queryParams = append(queryParams, arg.SearchPattern)
@@ -237,16 +271,28 @@ SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
   AND id NOT IN (/*SLICE:except_ids*/?)
 `
 
 type SelectRestoredRunsByFilterParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -256,8 +302,13 @@ type SelectRestoredRunsByFilterParams struct {
 func (q *Queries) SelectRestoredRunsByFilter(ctx context.Context, arg SelectRestoredRunsByFilterParams) ([]Run, error) {
 	query := selectRestoredRunsByFilter
 	var queryParams []interface{}
-	queryParams = append(queryParams, arg.EndReasonFilter)
-	queryParams = append(queryParams, arg.StatusPhaseFilter)
+	queryParams = append(queryParams, arg.StatusSet)
+	queryParams = append(queryParams, arg.CreatedAfter)
+	queryParams = append(queryParams, arg.CreatedBefore)
+	queryParams = append(queryParams, arg.TriggeredByFilter)
+	queryParams = append(queryParams, arg.ExitCodeMin)
+	queryParams = append(queryParams, arg.ExitCodeMax)
+	queryParams = append(queryParams, arg.RetriesOnly)
 	queryParams = append(queryParams, arg.TaskNameFilter)
 	queryParams = append(queryParams, arg.SearchFilter)
 	queryParams = append(queryParams, arg.SearchPattern)
@@ -368,10 +419,17 @@ const softDeleteRunsByFilter = `-- name: SoftDeleteRunsByFilter :many
 UPDATE runs SET deleted_at = ?1
 WHERE deleted_at IS NULL
   AND status = ?2
-  AND (?3 IS NULL OR end_reason = ?3)
-  AND (?4 IS NULL OR status = ?4)
-  AND (?5 IS NULL OR task_name = ?5)
-  AND (?6 IS NULL OR (task_name LIKE ?7 OR id LIKE ?7))
+  AND (?3 IS NULL
+       OR instr(?3, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?3, '|' || end_reason || '|') > 0))
+  AND (?4 IS NULL OR created_at >= ?4)
+  AND (?5 IS NULL OR created_at <= ?5)
+  AND (?6 IS NULL OR triggered_by = ?6)
+  AND (?7 IS NULL OR exit_code >= ?7)
+  AND (?8 IS NULL OR exit_code <= ?8)
+  AND (?9 IS NULL OR retry_attempt > 0)
+  AND (?10 IS NULL OR task_name = ?10)
+  AND (?11 IS NULL OR (task_name LIKE ?12 OR id LIKE ?12))
   AND id NOT IN (/*SLICE:except_ids*/?)
 RETURNING id, task_name, created_at
 `
@@ -379,8 +437,13 @@ RETURNING id, task_name, created_at
 type SoftDeleteRunsByFilterParams struct {
 	DeletedAt         *time.Time     `json:"deleted_at"`
 	StatusPhase       model.RunPhase `json:"status_phase"`
-	EndReasonFilter   interface{}    `json:"end_reason_filter"`
-	StatusPhaseFilter interface{}    `json:"status_phase_filter"`
+	StatusSet         interface{}    `json:"status_set"`
+	CreatedAfter      interface{}    `json:"created_after"`
+	CreatedBefore     interface{}    `json:"created_before"`
+	TriggeredByFilter interface{}    `json:"triggered_by_filter"`
+	ExitCodeMin       interface{}    `json:"exit_code_min"`
+	ExitCodeMax       interface{}    `json:"exit_code_max"`
+	RetriesOnly       interface{}    `json:"retries_only"`
 	TaskNameFilter    interface{}    `json:"task_name_filter"`
 	SearchFilter      interface{}    `json:"search_filter"`
 	SearchPattern     string         `json:"search_pattern"`
@@ -398,8 +461,13 @@ func (q *Queries) SoftDeleteRunsByFilter(ctx context.Context, arg SoftDeleteRuns
 	var queryParams []interface{}
 	queryParams = append(queryParams, arg.DeletedAt)
 	queryParams = append(queryParams, arg.StatusPhase)
-	queryParams = append(queryParams, arg.EndReasonFilter)
-	queryParams = append(queryParams, arg.StatusPhaseFilter)
+	queryParams = append(queryParams, arg.StatusSet)
+	queryParams = append(queryParams, arg.CreatedAfter)
+	queryParams = append(queryParams, arg.CreatedBefore)
+	queryParams = append(queryParams, arg.TriggeredByFilter)
+	queryParams = append(queryParams, arg.ExitCodeMin)
+	queryParams = append(queryParams, arg.ExitCodeMax)
+	queryParams = append(queryParams, arg.RetriesOnly)
 	queryParams = append(queryParams, arg.TaskNameFilter)
 	queryParams = append(queryParams, arg.SearchFilter)
 	queryParams = append(queryParams, arg.SearchPattern)

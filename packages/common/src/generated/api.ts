@@ -1081,12 +1081,36 @@ export interface components {
             run: components["schemas"]["Run"];
         };
         RunFilter: {
+            /**
+             * Format: date-time
+             * @description Only runs created at or after this time
+             */
+            created_after?: string;
+            /**
+             * Format: date-time
+             * @description Only runs created at or before this time
+             */
+            created_before?: string;
+            /**
+             * Format: int64
+             * @description Only runs whose exit code is <= this (inclusive)
+             */
+            exit_code_max?: number;
+            /**
+             * Format: int64
+             * @description Only runs whose exit code is >= this (inclusive)
+             */
+            exit_code_min?: number;
+            /** @description Only runs that are a retry (retry_attempt > 0) */
+            retries_only?: boolean;
             /** @description Search query against task_name / id */
             search?: string;
-            /** @description Filter by run status (phase or end reason) */
+            /** @description Comma-separated run statuses (phase or end reason); a run matches any listed value */
             status?: string;
             /** @description Filter by task name */
             task_name?: string;
+            /** @description Filter by what triggered the run (cron/api/cloud/service/startup) */
+            triggered_by?: string;
         };
         RunSelector: {
             /**
@@ -1831,10 +1855,22 @@ export interface operations {
                 limit?: number;
                 /** @description Pagination offset */
                 offset?: number;
-                /** @description Filter by run status */
+                /** @description Comma-separated run statuses (phase or end reason); a run matches any listed value */
                 status?: string;
                 /** @description Filter by task name */
                 task_name?: string;
+                /** @description Filter by what triggered the run */
+                triggered_by?: "cron" | "api" | "cloud" | "service" | "startup" | "";
+                /** @description Only runs created at or after this RFC3339 time */
+                created_after?: string;
+                /** @description Only runs created at or before this RFC3339 time */
+                created_before?: string;
+                /** @description Only runs whose exit code is >= this (inclusive) */
+                exit_code_min?: string;
+                /** @description Only runs whose exit code is <= this (inclusive) */
+                exit_code_max?: string;
+                /** @description Only runs that are a retry (retry_attempt > 0) */
+                retries_only?: boolean;
                 /** @description Field to sort by */
                 sort_field?: "task_name" | "status" | "start_at" | "exit_code" | "duration" | "created_at" | "";
                 /** @description Sort direction */
@@ -2379,10 +2415,22 @@ export interface operations {
                 limit?: number;
                 /** @description Pagination offset */
                 offset?: number;
-                /** @description Filter by run status */
+                /** @description Comma-separated run statuses (phase or end reason); a run matches any listed value */
                 status?: string;
                 /** @description Filter by task name */
                 task_name?: string;
+                /** @description Filter by what triggered the run */
+                triggered_by?: "cron" | "api" | "cloud" | "service" | "startup" | "";
+                /** @description Only runs created at or after this RFC3339 time */
+                created_after?: string;
+                /** @description Only runs created at or before this RFC3339 time */
+                created_before?: string;
+                /** @description Only runs whose exit code is >= this (inclusive) */
+                exit_code_min?: string;
+                /** @description Only runs whose exit code is <= this (inclusive) */
+                exit_code_max?: string;
+                /** @description Only runs that are a retry (retry_attempt > 0) */
+                retries_only?: boolean;
                 /** @description Field to sort by */
                 sort_field?: "task_name" | "status" | "start_at" | "exit_code" | "duration" | "created_at" | "";
                 /** @description Sort direction */

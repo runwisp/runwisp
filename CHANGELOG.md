@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rewind a settled redraw's frames.** A finished progress bar or redraw keeps a sampled, best-effort history you can scrub back to — click the line in the Web UI, use `[`/`]` then `enter` in the TUI, or `GET …/log/line/{n}/history`. See [Logs](https://docs.runwisp.com/concepts/logs/#rewinding-the-frames).
 - **`runwisp demo --no-tui`.** Leaves the demo daemon running in the background and prints its Web UI password to stdout instead of opening the TUI — usable over SSH or in scripts. See [CLI](https://docs.runwisp.com/operations/cli/#cloud-and-demo).
 - **Linkable executions.** Picking a run in the Web UI now puts its ID in the URL path (`/tasks/<name>/<id>` and `/runs/<id>`) — on a task's page and the All Runs page — so an individual execution can be bookmarked or shared; a new task-agnostic `GET /api/runs/{runId}` restores a shared link to any run.
+- **Filter runs in the Web UI.** A filter popover on the run list narrows by status (five outcome buckets — Running, Succeeded, Failed, Skipped, Stopped — with an Advanced expander for exact statuses), a From/To date range, task, trigger, an exit-code expression (`137`, `>100`, `>100 <150`), and retries — all applied server-side and mirrored as `GET /api/runs` query parameters. It opens over the run detail (a bottom sheet on phones), leaving the list visible. See [Web UI tour](https://docs.runwisp.com/getting-started/web-ui-tour/#filtering).
 
 ### Changed
 

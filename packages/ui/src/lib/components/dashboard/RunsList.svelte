@@ -2,14 +2,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts" module>
-    export type RunsListSortDirection = "asc" | "desc" | "";
-
-    export interface RunsListFilters {
-        search: string;
-        status: string;
-        sort_direction: RunsListSortDirection;
-    }
-
     /** A single output-search hit surfaced under its run in the history rail. */
     export interface RunOutputMatch {
         line: number;
@@ -18,15 +10,27 @@
 </script>
 
 <script lang="ts">
-    import { Clock, ArrowUpDown, Funnel, Square, Trash2, RotateCw } from "@lucide/svelte";
+    import { Clock, ArrowUpDown, X, Square, Trash2, RotateCw } from "@lucide/svelte";
     import { untrack } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import Button from "../Button.svelte";
     import EmptyState from "../EmptyState.svelte";
+    import RunFilterPopover from "./RunFilterPopover.svelte";
     import type { Run } from "./types.js";
     import type { RunSelector, RunStatus } from "@runwisp/common";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
+    import {
+        activeDimensions,
+        clearDimension,
+        statusChipLabel,
+        triggerDescription,
+        exitCodeRange,
+        exitCodeChipLabel,
+        isWholeDay,
+        type RunsListFilters,
+        type FilterDimension,
+    } from "./run-filters.js";
     import {
         runDuration,
         formatTriggeredByLabel,
@@ -38,6 +42,7 @@
         formatFullDateTime,
         formatTimeHM,
         formatDayMonth,
+        formatCalendarDate,
     } from "../../utils/format.js";
 
     type BulkHandler = (selector: RunSelector, affected: Run[]) => void;
@@ -51,6 +56,8 @@
         selectedRunId = $bindable(null),
         onselect,
         showFilters = false,
+        showTask = false,
+        tasks = [],
         showTaskName = false,
         taskNameFilter,
         headerLabel = "Run History",
@@ -75,6 +82,11 @@
         selectedRunId?: string | null;
         onselect?: (runId: string) => void;
         showFilters?: boolean;
+        // Cross-task /runs view: lets the filter popover offer a Task select.
+        // On a single task's page this stays false (the task is the page scope).
+        showTask?: boolean;
+        // Task list backing the popover's Task select (cross-task view only).
+        tasks?: { name: string }[];
         showTaskName?: boolean;
         taskNameFilter?: string;
         headerLabel?: string;
@@ -236,22 +248,76 @@
         selectedRuns.some((r: Run) => r.status !== "running" && r.status !== "pending"),
     );
 
+    // The selector's filter is the same RunFilter the list query uses, so a
+    // "select all matching" bulk op targets exactly the rows on screen. The
+    // popover dimensions only apply where the popover is shown; the task scope
+    // (page-injected or popover-set) always applies.
+    function buildSelectorFilter(): NonNullable<RunSelector["filter"]> {
+        const filter: NonNullable<RunSelector["filter"]> = {};
+        if (taskNameFilter) filter.task_name = taskNameFilter;
+        else if (filters.task_name) filter.task_name = filters.task_name;
+        if (!showFilters) return filter;
+        if (filters.statuses.length > 0) filter.status = filters.statuses.join(",");
+        const query = filters.search.trim();
+        if (query) filter.search = query;
+        if (filters.created_after) filter.created_after = filters.created_after;
+        if (filters.created_before) filter.created_before = filters.created_before;
+        if (filters.triggered_by) filter.triggered_by = filters.triggered_by;
+        const exit = exitCodeRange(filters.exit_code);
+        if (exit.min !== undefined) filter.exit_code_min = exit.min;
+        if (exit.max !== undefined) filter.exit_code_max = exit.max;
+        if (filters.retries_only) filter.retries_only = true;
+        return filter;
+    }
+
     function buildSelector(): RunSelector {
         if (!selectAllMode) {
             return { match_all: false, ids: [...explicitIds] };
         }
-        const filter: { status?: string; task_name?: string; search?: string } = {};
-        if (taskNameFilter) filter.task_name = taskNameFilter;
-        if (showFilters) {
-            if (filters.status && filters.status !== "all") filter.status = filters.status;
-            const query = filters.search.trim();
-            if (query) filter.search = query;
-        }
         return {
             match_all: true,
-            filter,
+            filter: buildSelectorFilter(),
             except_ids: [...exceptIds],
         };
+    }
+
+    // Active-filter chips for the header row. `task` only chips on the
+    // cross-task view; everywhere else the task name is the page scope.
+    const filterChips = $derived(
+        activeDimensions(filters)
+            .filter((dim) => dim !== "task" || showTask)
+            .map((dim) => ({ dimension: dim, label: chipLabel(dim) })),
+    );
+
+    function chipLabel(dim: FilterDimension): string {
+        switch (dim) {
+            case "status":
+                return statusChipLabel(filters.statuses);
+            case "time":
+                return timeChipLabel();
+            case "task":
+                return filters.task_name ?? "";
+            case "triggered_by":
+                return "Trigger: " + triggerDescription(filters.triggered_by ?? "");
+            case "exit_code":
+                return exitCodeChipLabel(filters.exit_code);
+            case "retries":
+                return "Retries only";
+        }
+    }
+
+    function timeChipLabel(): string {
+        const after = filters.created_after;
+        const before = filters.created_before;
+        if (isWholeDay(after, before) && after) return `On ${formatCalendarDate(after)}`;
+        if (after && before) return `${formatDateTime(after)} – ${formatDateTime(before)}`;
+        if (after) return `Since ${formatDateTime(after)}`;
+        if (before) return `Before ${formatDateTime(before)}`;
+        return "";
+    }
+
+    function removeChip(dim: FilterDimension) {
+        filters = clearDimension(filters, dim);
     }
 
     function emitBulk(handler: BulkHandler | undefined, predicate: (r: Run) => boolean) {
@@ -375,6 +441,9 @@
                 {/if}
             </span>
             <div class="ml-auto flex items-center gap-1">
+                {#if showFilters}
+                    <RunFilterPopover bind:filters {showTask} {tasks} />
+                {/if}
                 <Button
                     variant="ghost"
                     size="xs"
@@ -395,27 +464,28 @@
         {/if}
     </div>
 
-    {#if showFilters}
-        <!-- Status filter. The text search that used to sit here moved to the
-             app header (it filters this same list by task name or run ID). -->
-        <div class="shrink-0 border-b border-outline-faint bg-surface-sunken px-3 py-2">
-            <div class="relative">
-                <select
-                    bind:value={filters.status}
-                    class="h-7 w-full appearance-none rounded-md border border-outline bg-surface-raised pr-6 pl-2 text-xs text-on-surface-muted focus:border-ring focus:outline-none"
+    {#if showFilters && filterChips.length > 0}
+        <!-- Active-filter chips. Rendered only when filters are set, so the
+             header stays clean when empty; each chip's X clears its dimension.
+             The filter controls themselves live in the popover above. -->
+        <div
+            class="flex shrink-0 flex-wrap gap-1 border-b border-outline-faint bg-surface-sunken px-3 py-2"
+        >
+            {#each filterChips as chip (chip.dimension)}
+                <span
+                    class="inline-flex items-center gap-1 rounded-full bg-surface-raised py-0.5 pr-1 pl-2 text-2xs font-medium text-on-surface-muted ring-1 ring-outline-faint ring-inset"
                 >
-                    <option value="all">All Statuses</option>
-                    <option value="running">Running</option>
-                    <option value="success">Success</option>
-                    <option value="failed">Failed</option>
-                    <option value="crashed">Crashed</option>
-                    <option value="skipped">Skipped</option>
-                </select>
-                <Funnel
-                    class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-on-surface-faint"
-                    size={12}
-                />
-            </div>
+                    {chip.label}
+                    <button
+                        type="button"
+                        onclick={() => removeChip(chip.dimension)}
+                        class="flex size-3.5 items-center justify-center rounded-full text-on-surface-faint transition-colors hover:bg-surface-sunken hover:text-on-surface"
+                        aria-label="Remove {chip.label} filter"
+                    >
+                        <X size={11} />
+                    </button>
+                </span>
+            {/each}
         </div>
     {/if}
 

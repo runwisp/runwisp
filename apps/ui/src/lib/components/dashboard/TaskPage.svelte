@@ -307,6 +307,7 @@
                 {onLoadMore}
                 {selectedRunId}
                 onselect={(id) => (userSelectedRunId = id)}
+                showFilters
                 emptyText="No runs yet"
                 bulkActions
                 taskNameFilter={task.name}

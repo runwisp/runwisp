@@ -12,7 +12,7 @@
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { navigateToRun } from "$lib/utils/run-url";
-    import type { RunsListFilters } from "@runwisp/ui";
+    import { emptyRunFilters, type RunsListFilters } from "@runwisp/ui";
 
     const source = createRunsSource();
 
@@ -27,11 +27,7 @@
 
     let getInstanceCount = $derived(instanceCountResolver(taskStore.items));
 
-    let filters = $state<RunsListFilters>({
-        search: "",
-        status: "all",
-        sort_direction: "desc",
-    });
+    let filters = $state<RunsListFilters>(emptyRunFilters());
 
     $effect(() => {
         source.setFilters({ ...filters });

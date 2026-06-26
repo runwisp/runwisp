@@ -142,7 +142,7 @@ func TestGetAllRuns(t *testing.T) {
 		{ID: ulid.Make().String(), TaskName: "task1"},
 	}
 	repo.On("QueryRuns", mock.Anything, storage.RunQuery{Limit: 50}).Return(runs, nil)
-	repo.On("CountRunsFiltered", mock.Anything, "", "", "").Return(int64(len(runs)), nil)
+	repo.On("CountRunsFiltered", mock.Anything, model.RunFilter{}).Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/runs", nil)
 	w := httptest.NewRecorder()
@@ -168,7 +168,7 @@ func TestGetTaskRuns(t *testing.T) {
 		Filter: model.RunFilter{TaskName: "task1"},
 		Limit:  50,
 	}).Return(runs, nil)
-	repo.On("CountRunsFiltered", mock.Anything, "", "task1", "").Return(int64(len(runs)), nil)
+	repo.On("CountRunsFiltered", mock.Anything, model.RunFilter{TaskName: "task1"}).Return(int64(len(runs)), nil)
 
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs", nil)
 	w := httptest.NewRecorder()

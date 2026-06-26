@@ -16,8 +16,15 @@ RETURNING id, task_name, created_at;
 UPDATE runs SET deleted_at = sqlc.arg(deleted_at)
 WHERE deleted_at IS NULL
   AND status = sqlc.arg(status_phase)
-  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
-  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(status_set) IS NULL
+       OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+  AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
+  AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
+  AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
+  AND (sqlc.arg(exit_code_min) IS NULL OR exit_code >= sqlc.arg(exit_code_min))
+  AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
+  AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
   AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
   AND id NOT IN (sqlc.slice('except_ids'))
@@ -31,8 +38,15 @@ WHERE deleted_at IS NOT NULL
 -- name: RestoreRunsByFilter :exec
 UPDATE runs SET deleted_at = NULL
 WHERE deleted_at IS NOT NULL
-  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
-  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(status_set) IS NULL
+       OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+  AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
+  AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
+  AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
+  AND (sqlc.arg(exit_code_min) IS NULL OR exit_code >= sqlc.arg(exit_code_min))
+  AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
+  AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
   AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
   AND id NOT IN (sqlc.slice('except_ids'));
@@ -49,8 +63,15 @@ SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
-  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(status_set) IS NULL
+       OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+  AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
+  AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
+  AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
+  AND (sqlc.arg(exit_code_min) IS NULL OR exit_code >= sqlc.arg(exit_code_min))
+  AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
+  AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
   AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
   AND id NOT IN (sqlc.slice('except_ids'));
@@ -68,8 +89,15 @@ WHERE deleted_at IS NULL
 -- name: ResolveSelectorIDsByFilter :many
 SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL
-  AND (sqlc.arg(end_reason_filter) IS NULL OR end_reason = sqlc.arg(end_reason_filter))
-  AND (sqlc.arg(status_phase_filter) IS NULL OR status = sqlc.arg(status_phase_filter))
+  AND (sqlc.arg(status_set) IS NULL
+       OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+  AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
+  AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
+  AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
+  AND (sqlc.arg(exit_code_min) IS NULL OR exit_code >= sqlc.arg(exit_code_min))
+  AND (sqlc.arg(exit_code_max) IS NULL OR exit_code <= sqlc.arg(exit_code_max))
+  AND (sqlc.arg(retries_only) IS NULL OR retry_attempt > 0)
   AND (sqlc.arg(task_name_filter) IS NULL OR task_name = sqlc.arg(task_name_filter))
   AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
   AND (sqlc.arg(bulk_status_filter) IS NULL OR status = sqlc.arg(bulk_status_filter))

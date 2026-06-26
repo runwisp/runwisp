@@ -10,7 +10,7 @@ vi.mock("$lib/api", () => ({
 }));
 
 import { runsApi, tasksApi } from "$lib/api";
-import { createRunsSource, type RunsFilters } from "./runs-source.svelte";
+import { createRunsSource, type RunsFilters, type RunsSource } from "./runs-source.svelte";
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     return {
@@ -29,7 +29,7 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
 
 const baseFilters = (overrides: Partial<RunsFilters> = {}): RunsFilters => ({
     search: "",
-    status: "all",
+    statuses: [],
     sort_direction: "desc",
     ...overrides,
 });
@@ -82,5 +82,80 @@ describe("createRunsSource", () => {
         expect(src.error).toBeInstanceOf(Error);
         expect(src.error?.message).toBe("offline");
         expect(src.loading).toBe(false);
+    });
+});
+
+// A live SSE row is merged through `upsert`, which re-evaluates the active
+// filter so a row that doesn't match is never inserted. This guards the
+// server↔client filter parity that paginated + virtualized + SSE-merged lists
+// depend on. We drive `upsert` after an empty initial load and check whether
+// the row lands.
+describe("createRunsSource SSE filter parity (matchesFilters)", () => {
+    async function loadedWith(overrides: Partial<RunsFilters>): Promise<RunsSource> {
+        const src = createRunsSource();
+        vi.mocked(runsApi.getAll).mockResolvedValue({ runs: [], total: 0 });
+        src.setFilters(baseFilters(overrides));
+        await vi.waitFor(() => {
+            expect(src.loaded).toBe(true);
+        });
+        return src;
+    }
+
+    it("matches an ended run by its end reason, not its phase", async () => {
+        // Regression: the filter set holds display statuses ("failed"), but the
+        // run's phase is "ended" — matching must consult displayStatus.
+        const src = await loadedWith({ statuses: ["failed"] });
+        src.upsert(makeRun("a", { status: "ended", end_reason: "failed" }));
+        src.upsert(makeRun("b", { status: "ended", end_reason: "success" }));
+        expect(src.items.map((r) => r.id)).toEqual(["a"]);
+    });
+
+    it("matches an active run by its phase", async () => {
+        // displayStatus returns the phase for any non-ended run (ignoring the
+        // end reason), so the "running" filter matches on phase alone.
+        const src = await loadedWith({ statuses: ["running"] });
+        src.upsert(makeRun("a", { status: "running" }));
+        src.upsert(makeRun("b", { status: "ended", end_reason: "success" }));
+        expect(src.items.map((r) => r.id)).toEqual(["a"]);
+    });
+
+    it("gates on the created_at time range, inclusive of the bounds", async () => {
+        const src = await loadedWith({
+            created_after: "2026-06-22T11:00:00.000Z",
+            created_before: "2026-06-22T13:00:00.000Z",
+        });
+        src.upsert(makeRun("in", { created_at: "2026-06-22T12:00:00.000Z" }));
+        src.upsert(makeRun("early", { created_at: "2026-06-22T10:00:00.000Z" }));
+        src.upsert(makeRun("late", { created_at: "2026-06-22T14:00:00.000Z" }));
+        expect(src.items.map((r) => r.id)).toEqual(["in"]);
+    });
+
+    it("gates on triggered_by", async () => {
+        const src = await loadedWith({ triggered_by: "cron" });
+        src.upsert(makeRun("cron", { triggered_by: "cron" }));
+        src.upsert(makeRun("api", { triggered_by: "api" }));
+        expect(src.items.map((r) => r.id)).toEqual(["cron"]);
+    });
+
+    it("gates on an exact exit code", async () => {
+        const src = await loadedWith({ exit_code: "137" });
+        src.upsert(makeRun("oom", { status: "ended", end_reason: "failed", exit_code: 137 }));
+        src.upsert(makeRun("ok", { status: "ended", end_reason: "success", exit_code: 0 }));
+        expect(src.items.map((r) => r.id)).toEqual(["oom"]);
+    });
+
+    it("gates on an exit-code range expression", async () => {
+        const src = await loadedWith({ exit_code: ">100 <150" });
+        src.upsert(makeRun("oom", { status: "ended", end_reason: "failed", exit_code: 137 }));
+        src.upsert(makeRun("high", { status: "ended", end_reason: "failed", exit_code: 200 }));
+        src.upsert(makeRun("ok", { status: "ended", end_reason: "success", exit_code: 0 }));
+        expect(src.items.map((r) => r.id)).toEqual(["oom"]);
+    });
+
+    it("gates on retries-only", async () => {
+        const src = await loadedWith({ retries_only: true });
+        src.upsert(makeRun("retried", { retry_attempt: 2 }));
+        src.upsert(makeRun("first", { retry_attempt: 0 }));
+        expect(src.items.map((r) => r.id)).toEqual(["retried"]);
     });
 });

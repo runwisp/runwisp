@@ -49,7 +49,7 @@ type RunRepository interface {
 	GetRun(ctx context.Context, id string) (*model.Run, error)
 	GetRunByExternalExecutionID(ctx context.Context, externalExecutionID string) (*model.Run, error)
 	CountRuns(ctx context.Context, taskName string) (int64, error)
-	CountRunsFiltered(ctx context.Context, status, taskName, searchQuery string) (int64, error)
+	CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error)
 	QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error)
 	DeleteRun(ctx context.Context, id string) error
 	DeleteOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error)
@@ -181,18 +181,19 @@ func (db *SQLiteDatabase) CountRuns(ctx context.Context, taskName string) (int64
 	return db.q.CountRuns(ctx, taskName)
 }
 
-func (db *SQLiteDatabase) CountRunsFiltered(ctx context.Context, status, taskName, searchQuery string) (int64, error) {
-	args := buildRunFilterArgs(model.RunFilter{
-		Status:   status,
-		TaskName: taskName,
-		Search:   searchQuery,
-	})
+func (db *SQLiteDatabase) CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error) {
+	args := buildRunFilterArgs(filter)
 	return db.q.CountRunsFiltered(ctx, sqlcdb.CountRunsFilteredParams{
-		EndReasonFilter:   args.EndReasonFilter,
-		StatusPhaseFilter: args.StatusPhaseFilter,
+		StatusSet:         args.StatusSet,
 		TaskNameFilter:    args.TaskNameFilter,
 		SearchFilter:      args.SearchFilter,
 		SearchPattern:     args.SearchPattern,
+		CreatedAfter:      args.CreatedAfter,
+		CreatedBefore:     args.CreatedBefore,
+		TriggeredByFilter: args.TriggeredByFilter,
+		ExitCodeMin:       args.ExitCodeMin,
+		ExitCodeMax:       args.ExitCodeMax,
+		RetriesOnly:       args.RetriesOnly,
 	})
 }
 
@@ -205,11 +206,16 @@ func (db *SQLiteDatabase) CountRunsFiltered(ctx context.Context, status, taskNam
 func (db *SQLiteDatabase) QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error) {
 	filter := buildRunFilterArgs(q.Filter)
 	params := sqlcdb.QueryRunsCreatedAtAscParams{
-		EndReasonFilter:   filter.EndReasonFilter,
-		StatusPhaseFilter: filter.StatusPhaseFilter,
+		StatusSet:         filter.StatusSet,
 		TaskNameFilter:    filter.TaskNameFilter,
 		SearchFilter:      filter.SearchFilter,
 		SearchPattern:     filter.SearchPattern,
+		CreatedAfter:      filter.CreatedAfter,
+		CreatedBefore:     filter.CreatedBefore,
+		TriggeredByFilter: filter.TriggeredByFilter,
+		ExitCodeMin:       filter.ExitCodeMin,
+		ExitCodeMax:       filter.ExitCodeMax,
+		RetriesOnly:       filter.RetriesOnly,
 		RowsLimit:         int64(q.Limit),
 		RowsOffset:        int64(q.Offset),
 	}
@@ -242,11 +248,16 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 		rows, err := db.q.SoftDeleteRunsByFilter(ctx, sqlcdb.SoftDeleteRunsByFilterParams{
 			DeletedAt:         &deletedAt,
 			StatusPhase:       model.PhaseEnded,
-			EndReasonFilter:   args.EndReasonFilter,
-			StatusPhaseFilter: args.StatusPhaseFilter,
+			StatusSet:         args.StatusSet,
 			TaskNameFilter:    args.TaskNameFilter,
 			SearchFilter:      args.SearchFilter,
 			SearchPattern:     args.SearchPattern,
+			CreatedAfter:      args.CreatedAfter,
+			CreatedBefore:     args.CreatedBefore,
+			TriggeredByFilter: args.TriggeredByFilter,
+			ExitCodeMin:       args.ExitCodeMin,
+			ExitCodeMax:       args.ExitCodeMax,
+			RetriesOnly:       args.RetriesOnly,
 			ExceptIds:         exceptIDsForSlice(sel.ExceptIDs),
 		})
 		if err != nil {
@@ -281,21 +292,31 @@ func (db *SQLiteDatabase) RestoreRuns(ctx context.Context, sel model.RunSelector
 		args := buildRunFilterArgs(sel.Filter)
 		exceptIDs := exceptIDsForSlice(sel.ExceptIDs)
 		if err := db.q.RestoreRunsByFilter(ctx, sqlcdb.RestoreRunsByFilterParams{
-			EndReasonFilter:   args.EndReasonFilter,
-			StatusPhaseFilter: args.StatusPhaseFilter,
+			StatusSet:         args.StatusSet,
 			TaskNameFilter:    args.TaskNameFilter,
 			SearchFilter:      args.SearchFilter,
 			SearchPattern:     args.SearchPattern,
+			CreatedAfter:      args.CreatedAfter,
+			CreatedBefore:     args.CreatedBefore,
+			TriggeredByFilter: args.TriggeredByFilter,
+			ExitCodeMin:       args.ExitCodeMin,
+			ExitCodeMax:       args.ExitCodeMax,
+			RetriesOnly:       args.RetriesOnly,
 			ExceptIds:         exceptIDs,
 		}); err != nil {
 			return nil, err
 		}
 		rows, err := db.q.SelectRestoredRunsByFilter(ctx, sqlcdb.SelectRestoredRunsByFilterParams{
-			EndReasonFilter:   args.EndReasonFilter,
-			StatusPhaseFilter: args.StatusPhaseFilter,
+			StatusSet:         args.StatusSet,
 			TaskNameFilter:    args.TaskNameFilter,
 			SearchFilter:      args.SearchFilter,
 			SearchPattern:     args.SearchPattern,
+			CreatedAfter:      args.CreatedAfter,
+			CreatedBefore:     args.CreatedBefore,
+			TriggeredByFilter: args.TriggeredByFilter,
+			ExitCodeMin:       args.ExitCodeMin,
+			ExitCodeMax:       args.ExitCodeMax,
+			RetriesOnly:       args.RetriesOnly,
 			ExceptIds:         exceptIDs,
 		})
 		if err != nil {
@@ -320,11 +341,16 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 	if sel.MatchAll {
 		args := buildRunFilterArgs(sel.Filter)
 		rows, err := db.q.ResolveSelectorIDsByFilter(ctx, sqlcdb.ResolveSelectorIDsByFilterParams{
-			EndReasonFilter:   args.EndReasonFilter,
-			StatusPhaseFilter: args.StatusPhaseFilter,
+			StatusSet:         args.StatusSet,
 			TaskNameFilter:    args.TaskNameFilter,
 			SearchFilter:      args.SearchFilter,
 			SearchPattern:     args.SearchPattern,
+			CreatedAfter:      args.CreatedAfter,
+			CreatedBefore:     args.CreatedBefore,
+			TriggeredByFilter: args.TriggeredByFilter,
+			ExitCodeMin:       args.ExitCodeMin,
+			ExitCodeMax:       args.ExitCodeMax,
+			RetriesOnly:       args.RetriesOnly,
 			BulkStatusFilter:  nullable(statusFilter),
 			ExceptIds:         exceptIDsForSlice(sel.ExceptIDs),
 		})

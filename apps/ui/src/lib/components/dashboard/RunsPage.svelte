@@ -5,7 +5,7 @@
     import type { Run } from "@runwisp/common";
     import type { LogEvent, LogSlice, RunsListFilters } from "@runwisp/ui";
     import { RunsList, RunDetailPanel } from "@runwisp/ui";
-    import { headerSearchStore } from "$lib/stores";
+    import { headerSearchStore, taskStore } from "$lib/stores";
     import { createRunActions } from "$lib/utils/run-actions";
 
     let {
@@ -104,6 +104,8 @@
         {selectedRunId}
         onselect={(id) => (userSelectedRunId = id)}
         showFilters
+        showTask
+        tasks={taskStore.items}
         showTaskName
         headerLabel="Runs"
         emptyText="No runs found"
