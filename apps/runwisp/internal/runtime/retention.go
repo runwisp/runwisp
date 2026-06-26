@@ -109,23 +109,27 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 		slog.Info("Retention cleanup complete", "deleted", totalDeleted)
 	}
 
-	cleaner.enforceMaxTotalSize(ctx)
+	sizeDeleted := cleaner.enforceMaxTotalSize(ctx)
 
-	// Return freed pages to the OS so RSS doesn't stay at the high-water mark
-	// after a large cleanup batch.
-	rdebug.FreeOSMemory()
+	// Return freed pages to the OS only after an actual cleanup, so RSS drops
+	// from the high-water mark a large batch left behind. Routine idle reclaim
+	// lives in runtime.MemoryReclaimer — no point forcing a full GC on every
+	// empty pass.
+	if totalDeleted > 0 || sizeDeleted > 0 {
+		rdebug.FreeOSMemory()
+	}
 }
 
 // enforceMaxTotalSize deletes the oldest completed runs when the log directory
-// exceeds the configured storage cap.
-func (cleaner *RetentionCleaner) enforceMaxTotalSize(ctx context.Context) {
+// exceeds the configured storage cap. Returns the number of runs deleted.
+func (cleaner *RetentionCleaner) enforceMaxTotalSize(ctx context.Context) int {
 	if cleaner.maxTotalSize <= 0 || cleaner.logDir == "" {
-		return
+		return 0
 	}
 
 	totalSize := dirSize(cleaner.logDir)
 	if totalSize <= cleaner.maxTotalSize {
-		return
+		return 0
 	}
 
 	slog.Warn("Log storage exceeds storage.max_size, purging oldest runs",
@@ -157,6 +161,7 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize(ctx context.Context) {
 	if deleted > 0 {
 		slog.Info("Purged runs to enforce storage.max_size", "deleted", deleted)
 	}
+	return deleted
 }
 
 // deleteRunBatch deletes terminal runs from runs until totalSize drops to or

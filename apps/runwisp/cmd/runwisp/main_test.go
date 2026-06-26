@@ -5,6 +5,7 @@ package main
 
 import (
 	"os"
+	"runtime"
 	rdebug "runtime/debug"
 	"testing"
 )
@@ -45,5 +46,57 @@ func TestApplyDefaultMemoryLimit_SetsDefaultWhenUnset(t *testing.T) {
 
 	if got := rdebug.SetMemoryLimit(-1); got != defaultMemoryLimitBytes {
 		t.Fatalf("expected limit %d, got %d", defaultMemoryLimitBytes, got)
+	}
+}
+
+// restoreMaxProcs saves GOMAXPROCS (env + runtime value) and restores both on
+// cleanup so these tests can't perturb the rest of the suite.
+func restoreMaxProcs(t *testing.T) {
+	t.Helper()
+	origEnv, hadEnv := os.LookupEnv("GOMAXPROCS")
+	origVal := runtime.GOMAXPROCS(0)
+	t.Cleanup(func() {
+		runtime.GOMAXPROCS(origVal)
+		if hadEnv {
+			os.Setenv("GOMAXPROCS", origEnv)
+		} else {
+			os.Unsetenv("GOMAXPROCS")
+		}
+	})
+}
+
+func TestApplyDefaultMaxProcs_RespectsExplicitGOMAXPROCS(t *testing.T) {
+	restoreMaxProcs(t)
+	t.Setenv("GOMAXPROCS", "8")
+	runtime.GOMAXPROCS(8)
+
+	applyDefaultMaxProcs()
+
+	if got := runtime.GOMAXPROCS(0); got != 8 {
+		t.Fatalf("GOMAXPROCS changed despite being set explicitly: want 8, got %d", got)
+	}
+}
+
+func TestApplyDefaultMaxProcs_CapsWhenAboveDefault(t *testing.T) {
+	restoreMaxProcs(t)
+	os.Unsetenv("GOMAXPROCS")
+	runtime.GOMAXPROCS(defaultMaxProcs + 4)
+
+	applyDefaultMaxProcs()
+
+	if got := runtime.GOMAXPROCS(0); got != defaultMaxProcs {
+		t.Fatalf("expected cap to %d, got %d", defaultMaxProcs, got)
+	}
+}
+
+func TestApplyDefaultMaxProcs_LeavesSmallerValue(t *testing.T) {
+	restoreMaxProcs(t)
+	os.Unsetenv("GOMAXPROCS")
+	runtime.GOMAXPROCS(2)
+
+	applyDefaultMaxProcs()
+
+	if got := runtime.GOMAXPROCS(0); got != 2 {
+		t.Fatalf("expected unchanged 2 (≤ cap), got %d", got)
 	}
 }

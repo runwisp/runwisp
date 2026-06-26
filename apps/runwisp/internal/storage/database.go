@@ -31,6 +31,15 @@ const (
 	RetentionBatchSize   = 1000
 	SQLiteBusyTimeout    = 5000
 	SQLiteMaxOpenConns   = 1
+	// SQLiteCacheSizeKiB pins the page cache. A negative cache_size is read by
+	// SQLite as KiB rather than pages, so this caps the cache at ~2 MiB instead
+	// of letting modernc's allocator drift up to (and hold) its high-water mark.
+	// Plenty for a metadata-only store; log bodies live on disk, not in SQLite.
+	SQLiteCacheSizeKiB = -2000
+	// SQLiteSoftHeapLimitBytes caps the SQLite allocator's heap (16 MiB), forcing
+	// it to spill caches rather than grow unbounded during big list/retention
+	// scans. Bounds worst-case SQLite RSS at steady state.
+	SQLiteSoftHeapLimitBytes = 16 << 20
 )
 
 // RunRepository defines the interface for run persistence.
@@ -103,6 +112,18 @@ func New(dbPath string) (Database, error) {
 	}
 	if _, err := db.Exec("PRAGMA busy_timeout=" + strconv.Itoa(SQLiteBusyTimeout) + ";"); err != nil {
 		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
+	}
+	// Bound SQLite's memory: pin the page cache, cap the allocator's heap, and
+	// keep that bounded cache the only buffer (no growing mmap region). Lowers
+	// idle RSS — see SQLiteCacheSizeKiB / SQLiteSoftHeapLimitBytes.
+	if _, err := db.Exec("PRAGMA cache_size=" + strconv.Itoa(SQLiteCacheSizeKiB) + ";"); err != nil {
+		return nil, fmt.Errorf("failed to set cache_size: %w", err)
+	}
+	if _, err := db.Exec("PRAGMA soft_heap_limit=" + strconv.Itoa(SQLiteSoftHeapLimitBytes) + ";"); err != nil {
+		return nil, fmt.Errorf("failed to set soft_heap_limit: %w", err)
+	}
+	if _, err := db.Exec("PRAGMA mmap_size=0;"); err != nil {
+		return nil, fmt.Errorf("failed to disable mmap: %w", err)
 	}
 
 	if _, err := db.Exec(schemaSQL); err != nil {
@@ -453,6 +474,15 @@ func (db *SQLiteDatabase) SetConfigValue(ctx context.Context, key, value string)
 
 func (db *SQLiteDatabase) Close() error {
 	return db.db.Close()
+}
+
+// ShrinkMemory releases heap held by SQLite's page cache back to the allocator
+// (PRAGMA shrink_memory). The runtime MemoryReclaimer calls this periodically
+// so idle RSS tracks the working set instead of the high-water mark. Cheap and
+// safe: it only drops clean cached pages, which are re-read on demand.
+func (db *SQLiteDatabase) ShrinkMemory(ctx context.Context) error {
+	_, err := db.db.ExecContext(ctx, "PRAGMA shrink_memory;")
+	return err
 }
 
 func (db *SQLiteDatabase) UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error {
