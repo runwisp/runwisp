@@ -261,6 +261,30 @@ func (p *Panel) MarkReadLocal(id string, at time.Time) bool {
 	return true
 }
 
+// MarkAllReadLocal stamps every still-unread notification's ReadAt and zeroes
+// the badge optimistically. Returns true when anything changed. The
+// authoritative count is corrected by the next SSE unread-count event.
+func (p *Panel) MarkAllReadLocal(at time.Time) bool {
+	changed := false
+	for id, n := range p.items {
+		if n.ReadAt != nil {
+			continue
+		}
+		stamp := at
+		n.ReadAt = &stamp
+		p.items[id] = n
+		changed = true
+	}
+	if p.unread != 0 {
+		p.unread = 0
+		changed = true
+	}
+	if changed {
+		p.rebuildContent()
+	}
+	return changed
+}
+
 // MarkUnreadLocal clears a single notification's ReadAt. No-op if the id is
 // unknown or the row was already unread. The badge does not change here —
 // the authoritative count arrives on the next SSE event.
@@ -366,7 +390,7 @@ func (p *Panel) renderExpanded() string {
 	// Same notification keybindings as the help bar and overlay (keys package),
 	// joined with the panel's own separator so the three never drift.
 	hint := strings.Join([]string{
-		keys.NotifCollapse.Bar, keys.Move.Bar, keys.NotifRead.Bar, keys.NotifOpen.Bar,
+		keys.NotifCollapse.Bar, keys.Move.Bar, keys.NotifRead.Bar, keys.NotifReadAll.Bar, keys.NotifOpen.Bar,
 	}, " · ") + "  "
 	headerR := panelHintStyle.Render(hint)
 	header := joinHeaderLine(headerL, headerR, p.width)

@@ -200,6 +200,16 @@ func (m *Model) markRunNotificationsRead(runID string) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// markAllNotificationsRead optimistically clears every unread notification and
+// the badge, then persists the change. No-op when nothing is unread.
+func (m *Model) markAllNotificationsRead() tea.Cmd {
+	if !m.notifications.MarkAllReadLocal(time.Now()) {
+		return nil
+	}
+	m.updateLayout()
+	return m.streams.MarkAllNotificationsRead()
+}
+
 // toggleSelectedNotificationRead flips the read state of the cursor row in
 // the expanded notifications panel. Optimistically updates the local store
 // and returns a command that persists the change to the daemon.

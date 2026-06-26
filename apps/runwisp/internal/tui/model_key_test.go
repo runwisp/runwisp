@@ -724,11 +724,12 @@ func TestHandleKeyR_NotificationsExpanded(t *testing.T) {
 	}
 }
 
-func TestHandleKeyR_CapitalR(t *testing.T) {
+func TestHandleKeyR_CapitalRReloadsConfig(t *testing.T) {
 	m := newTestModel(nil)
+	m.client = newDummyClient()
 	_, _, handled := handleKeyR(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
-	if handled {
-		t.Fatal("expected handled=false for capital R (delegates)")
+	if !handled {
+		t.Fatal("expected capital R to be handled (triggers config reload)")
 	}
 }
 
@@ -826,13 +827,13 @@ func TestHandleKeyHelp_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	}
 }
 
-func TestInterceptHelpDialog_NonCloseKeyPassesThrough(t *testing.T) {
+func TestInterceptHelpDialog_ScrollKeyConsumedAndStaysOpen(t *testing.T) {
 	m := newTestModel(nil)
 	m.dialogs.ShowHelp()
 
 	got, _, intercepted := m.interceptHelpDialog(keyMsgSpecial(tea.KeyDown))
-	if intercepted {
-		t.Fatal("expected arrow-down to pass through (intercepted=false)")
+	if !intercepted {
+		t.Fatal("expected arrow-down to be consumed by the modal help overlay")
 	}
 	gotModel := got.(Model)
 	if !gotModel.dialogs.HasHelp() {

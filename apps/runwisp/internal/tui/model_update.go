@@ -6,6 +6,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -59,6 +60,8 @@ func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		{m.dialogs.HasRunParams(), m.interceptRunParamsDialog},
 		{m.dialogs.HasCopy(), m.interceptCopyDialog},
 		{m.dialogs.HasLogHistory(), m.interceptLogHistoryDialog},
+		{m.dialogs.HasTaskDetail(), m.interceptTaskDetailDialog},
+		{m.dialogs.HasRunDetail(), m.interceptRunDetailDialog},
 		{m.dialogs.HasHelp(), m.interceptHelpDialog},
 	}
 	for _, ic := range interceptors {
@@ -194,6 +197,12 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case uikit.DeleteRunMsg:
 		model, cmd := m.handleDeleteRun(msg)
 		return model, cmd, true
+	case uikit.BulkActionMsg:
+		model, cmd := m.handleBulkAction(msg)
+		return model, cmd, true
+	case uikit.BulkDeleteResultMsg:
+		model, cmd := m.handleBulkDeleteResult(msg)
+		return model, cmd, true
 	}
 	return m, nil, false
 }
@@ -224,12 +233,18 @@ func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case uikit.DaemonInfoMsg:
 		model, cmd := m.handleDaemonInfo(msg)
 		return model, cmd, true
+	case uikit.ReloadResultMsg:
+		model, cmd := m.handleReloadResult(msg)
+		return model, cmd, true
 	case uikit.MetricsHistoryMsg:
 		model, cmd := m.handleMetricsHistory(msg)
 		return model, cmd, true
 	case uikit.RunSummaryMsg:
 		model, cmd := m.handleRunSummary(msg)
 		return model, cmd, true
+	case uikit.TaskSummaryMsg:
+		m.dialogs.ApplyTaskSummary(msg)
+		return m, nil, true
 	}
 	return m, nil, false
 }
@@ -458,8 +473,58 @@ func (m Model) interceptLogHistoryDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool)
 	return m, nil, false
 }
 
-// interceptHelpDialog handles input while the help overlay is visible. Any
-// close key dismisses it; ctrl+c escalates to the quit confirm.
+// interceptTaskDetailDialog handles input while the task inspector is visible.
+// Only key/mouse messages are consumed (so async TaskSummaryMsg fetches still
+// reach the dispatchers and fill in the health line); ctrl+c escalates to quit.
+func (m Model) interceptTaskDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == keyCtrlC {
+			m.dialogs.DismissTaskDetail()
+			m.showQuitConfirm()
+			return m, nil, true
+		}
+		m.dialogs.UpdateTaskDetail(msg)
+		return m, nil, true
+	case tea.MouseMsg:
+		m.dialogs.UpdateTaskDetail(msg)
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// interceptRunDetailDialog handles input while the run inspector is visible.
+// Enter opens the parent run when the displayed run is a retry; ctrl+c escalates
+// to quit; any other close key dismisses it.
+func (m Model) interceptRunDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		if mouse, isMouse := msg.(tea.MouseMsg); isMouse {
+			m.dialogs.UpdateRunDetail(mouse)
+			return m, nil, true
+		}
+		return m, nil, false
+	}
+	switch keyMsg.String() {
+	case keyCtrlC:
+		m.dialogs.DismissRunDetail()
+		m.showQuitConfirm()
+		return m, nil, true
+	case "enter":
+		if taskName, runID, hasParent := m.dialogs.RunDetailParent(); hasParent {
+			m.dialogs.DismissRunDetail()
+			return m, m.openRunByID(taskName, runID), true
+		}
+		return m, nil, true
+	}
+	m.dialogs.UpdateRunDetail(keyMsg)
+	return m, nil, true
+}
+
+// interceptHelpDialog handles input while the help overlay is visible. The
+// overlay is modal: close keys dismiss it, scroll keys move its viewport, and
+// every other key/mouse event is swallowed so it never leaks to the background.
+// ctrl+c escalates to the quit confirm.
 func (m Model) interceptHelpDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -468,15 +533,11 @@ func (m Model) interceptHelpDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.showQuitConfirm()
 			return m, nil, true
 		}
-		if m.dialogs.UpdateHelp(msg) {
-			return m, nil, true
-		}
-		return m, nil, false
+		m.dialogs.UpdateHelp(msg)
+		return m, nil, true
 	case tea.MouseMsg:
-		if m.dialogs.UpdateHelp(msg) {
-			return m, nil, true
-		}
-		return m, nil, false
+		m.dialogs.UpdateHelp(msg)
+		return m, nil, true
 	}
 	return m, nil, false
 }
@@ -625,12 +686,17 @@ func (m Model) handleTriggerRun(msg uikit.TriggerRunMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		// Concurrency limit or other error — close exec view to show the task list.
 		if m.execView != nil {
-			return m, m.closeExecView()
+			return m, tea.Batch(m.closeExecView(), m.dialogs.Flash("Run failed: "+msg.Err.Error(), 6*time.Second))
 		}
-		return m, nil
+		return m, m.dialogs.Flash("Run failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	if msg.Run != nil {
-		return m, m.openExecView(msg.Run)
+		// Run/retry is confirmed up front (no undo toast); just flash the result.
+		verb := "Started run for " + msg.TaskName
+		if msg.Retry {
+			verb = "Retried run for " + msg.TaskName
+		}
+		return m, tea.Batch(m.openExecView(msg.Run), m.dialogs.Flash(verb, 4*time.Second))
 	}
 	return m, nil
 }
@@ -643,7 +709,7 @@ func (m Model) handleStopRun(msg uikit.StopRunMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Deleted run for", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, nil
+		return m, m.dialogs.Flash("Delete failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	var cmds []tea.Cmd
 	if m.execView != nil && m.execView.Run != nil && m.execView.Run.ID == msg.RunID {
@@ -652,7 +718,48 @@ func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	cmds = append(cmds, m.fetchExecWindow())
+	// Soft delete is reversible — offer an undo that restores the run.
+	undo := m.streams.RestoreRuns(model.RunSelector{IDs: []string{msg.RunID}})
+	cmds = append(cmds, m.dialogs.FlashUndo("Deleted run — press u to undo", undo, 6*time.Second))
 	return m, tea.Batch(cmds...)
+}
+
+// handleBulkAction applies the result of a bulk run operation (or its undo):
+// refreshes the list and flashes a count. Bulk delete is itself undoable.
+func (m Model) handleBulkAction(msg uikit.BulkActionMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		return m, m.dialogs.Flash(msg.Action+" failed: "+msg.Err.Error(), 6*time.Second)
+	}
+	cmds := []tea.Cmd{m.fetchExecWindow()}
+	summary := fmt.Sprintf("%s %d run%s", msg.Action, msg.Affected, plural(msg.Affected))
+	cmds = append(cmds, m.dialogs.Flash(summary, 4*time.Second))
+	return m, tea.Batch(cmds...)
+}
+
+// handleBulkDeleteResult refreshes the list after a bulk delete and offers an
+// undo when the delete targeted explicit IDs (a precise restore). A MatchAll
+// delete only flashes a count — restoring its filter could revive runs that were
+// already soft-deleted before this action.
+func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		return m, m.dialogs.Flash("Delete failed: "+msg.Err.Error(), 6*time.Second)
+	}
+	cmds := []tea.Cmd{m.fetchExecWindow()}
+	label := fmt.Sprintf("Deleted %d run%s", msg.Affected, plural(msg.Affected))
+	if !msg.Restore.MatchAll && msg.Affected > 0 {
+		undo := m.streams.RestoreRuns(msg.Restore)
+		cmds = append(cmds, m.dialogs.FlashUndo(label+" — press u to undo", undo, 6*time.Second))
+	} else {
+		cmds = append(cmds, m.dialogs.Flash(label, 4*time.Second))
+	}
+	return m, tea.Batch(cmds...)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {
@@ -746,6 +853,56 @@ func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
 		m.info.ServiceManaged = msg.Info.ServiceManaged
 	}
 	return m, nil
+}
+
+// reloadConfig triggers an explicit config reload from inside the TUI. The
+// result arrives as a ReloadResultMsg.
+func (m *Model) reloadConfig() tea.Cmd {
+	if m.client == nil {
+		return nil
+	}
+	return tea.Batch(m.dialogs.Flash("Reloading config…", 3*time.Second), m.streams.Reload())
+}
+
+// handleReloadResult applies an operator-triggered reload: on success it adopts
+// the fresh task set, rebuilds the sidebar (preserving the active task), clears
+// the config-stale notice, and flashes a summary; on failure it surfaces the
+// daemon's reason and leaves the running set untouched.
+func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		return m, m.dialogs.Flash("Reload failed: "+msg.Err.Error(), 6*time.Second)
+	}
+
+	var cmds []tea.Cmd
+	if msg.Info != nil {
+		m.info.Tasks = msg.Info.Tasks
+		m.info.ConfigStale = msg.Info.ConfigStale
+		m.sidebar.Rebuild(msg.Info.Tasks)
+		m.execList.SetFilter(m.sidebar.ActiveTask())
+		m.recalcExecListHeight()
+		m.updateLayout()
+		cmds = append(cmds, m.fetchExecWindow())
+	}
+	cmds = append(cmds, m.dialogs.Flash(reloadSummary(msg.Result), 5*time.Second))
+	return m, tea.Batch(cmds...)
+}
+
+// reloadSummary renders a one-line summary of what a reload changed.
+func reloadSummary(r *model.ReloadResult) string {
+	if r == nil || r.IsEmpty() {
+		return "✓ Config reloaded — no changes"
+	}
+	var parts []string
+	if n := len(r.Added); n > 0 {
+		parts = append(parts, fmt.Sprintf("+%d added", n))
+	}
+	if n := len(r.Removed); n > 0 {
+		parts = append(parts, fmt.Sprintf("-%d removed", n))
+	}
+	if n := len(r.Changed); n > 0 {
+		parts = append(parts, fmt.Sprintf("~%d changed", n))
+	}
+	return "✓ Config reloaded: " + strings.Join(parts, ", ")
 }
 
 func (m Model) handleMetricsHistory(msg uikit.MetricsHistoryMsg) (tea.Model, tea.Cmd) {

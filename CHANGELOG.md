@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **TUI task & run inspector (`i`).** An on-demand panel showing a task's definition and recent health (success rate, last failure), or a run's full facts (exit code, trigger, retry lineage) in a log view — surfaced on a keypress instead of crowding the header. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/).
+- **Bulk run cleanup in the TUI.** Multi-select runs with `space` (or `a` to select every run matching the current filter), then delete, cancel, or re-run them at once; the delete is undoable.
+- **Reload `runwisp.toml` from the TUI (`R`).** The same validate-first reload as `runwisp reload`, without leaving the TUI. See [Reload](https://docs.runwisp.com/operations/reload/).
 - **Progress bars and live redraws render cleanly.** Carriage-return progress bars and multi-line ANSI redraws are now interpreted as a terminal would: the log keeps the finished frame instead of raw `\r`/escape soup, and live viewers (Web UI and TUI) watch the active region update in place. See [Logs](https://docs.runwisp.com/concepts/logs/#progress-bars--live-redraws).
 - **Rewind a settled redraw's frames.** A finished progress bar or redraw keeps a sampled, best-effort history you can scrub back to — click the line in the Web UI, use `[`/`]` then `enter` in the TUI, or `GET …/log/line/{n}/history`. See [Logs](https://docs.runwisp.com/concepts/logs/#rewinding-the-frames).
 - **`runwisp demo --no-tui`.** Leaves the demo daemon running in the background and prints its Web UI password to stdout instead of opening the TUI — usable over SSH or in scripts. See [CLI](https://docs.runwisp.com/operations/cli/#cloud-and-demo).
@@ -17,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Lower idle memory.** RSS now settles toward the daemon's working set instead of camping at its high-water mark after a spike.
+- **TUI run list filters; the sidebar filters as you type.** `f` filters runs by outcome, with a banner under the column header naming the active filter so the narrowed view is obvious; `/` on the sidebar filters tasks by name (it's an explicit mode, so `q` types into the filter instead of quitting). The run list is always newest-first — page it with `Home`/`End`/`PgUp`/`PgDn`. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/).
+- **Destructive TUI actions confirm; deletes are undoable.** Trigger, re-run, stop, and restart ask before they act; deleting runs (single or bulk) acts immediately and offers a `u` undo toast instead. Mark every notification read with `a` in the notifications panel.
 - **Tidier log directories.** Each run's index, timestamp, rotation, and frame-history sidecars are now consolidated into a single hidden `.log.meta` container, so an `ls` of a log directory shows only the `.log` files. See [Logs](https://docs.runwisp.com/concepts/logs/#the-sidecar-container-logmeta).
 - **Service instances are labelled 1-based.** A multi-instance service now shows every run as `name#1`, `name#2`, `name#3` in the Web UI and TUI instead of `name`, `name#1`, `name#2`; a single-instance service stays just `name`. See [Services](https://docs.runwisp.com/configuration/services/).
 - **TUI Run Now dialog tells you how to toggle a flag.** A focused flag shows an inline cue, the key legend names the action for whatever field is focused, and `←/→` toggle a flag alongside `space`/`x`. See [Parameters](https://docs.runwisp.com/configuration/tasks/#parameters).
@@ -27,9 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **TUI help overlay (`?`) scrolls.** The keyboard-shortcut reference is taller than most terminals and was cut off at the bottom; it now scrolls with `↑/↓`, `PgUp`/`PgDn`, `g`/`G`, and the mouse wheel. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/).
 - **Maximized log console showed nothing until you scrolled.** Expanding the console on a long run rendered a blank viewport until the first scroll event; it now re-syncs its scroll position on resize so lines appear immediately.
 - **Run-list sort toggle had no effect.** `GET /api/runs?sort_direction=…` (and the per-task runs list) ignored the direction unless a `sort_field` was also given, so the Web UI's sort button never reordered anything; the default column now honors an explicit direction.
 - **TUI run-detail Delete button.** Clicking 🗑 Delete with the mouse now opens the confirm dialog, and keyboard focus reaches the action button from both header rows.
+- **Empty TUI run list no longer collapses.** A list with no runs (or a filter that matched nothing) now fills the panel with its footer pinned to the bottom, instead of bunching up under the header.
 - **Fatal boot errors are no longer silent in TUI mode.** `runwisp` died with exit 1 and no output when startup failed before the TUI attached (e.g. a config parse error); the error now reaches stderr.
 - **`runwisp exec` no longer drops output if its log stream blips.** When the live stream ended without a completion event (a transport hiccup under load), the command could exit having printed none of the run's captured output; it now reconnects from the last line it saw and prints the persisted tail.
 

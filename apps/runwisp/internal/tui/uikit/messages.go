@@ -4,6 +4,8 @@
 package uikit
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
@@ -73,6 +75,26 @@ type StopRunMsg struct {
 type DeleteRunMsg struct {
 	RunID    string
 	TaskName string
+	Err      error
+}
+
+// BulkActionMsg is the result of a bulk run operation — delete, restore, cancel,
+// or rerun — including the undo of one. Action is the past-tense verb used in the
+// confirmation toast; Affected is the row count the daemon reported.
+type BulkActionMsg struct {
+	Action   string
+	Affected int
+	Err      error
+}
+
+// BulkDeleteResultMsg is the result of a bulk run delete. It is distinct from
+// BulkActionMsg so the handler can arm an undo toast — which handleBulkAction's
+// plain flash would otherwise clobber. Restore is the selector that reverses the
+// delete; the toast offers an undo only when it targets explicit IDs, since
+// restoring a MatchAll filter could revive runs deleted earlier.
+type BulkDeleteResultMsg struct {
+	Affected int
+	Restore  model.RunSelector
 	Err      error
 }
 
@@ -196,6 +218,16 @@ type DaemonInfoMsg struct {
 	Err  error
 }
 
+// ReloadResultMsg delivers the outcome of an operator-triggered config reload.
+// Info carries a fresh /api/info read taken right after a successful reload so
+// the sidebar and config-stale notice can be rebuilt; it is nil when the reload
+// failed or the follow-up info read errored.
+type ReloadResultMsg struct {
+	Result *model.ReloadResult
+	Info   *model.DaemonInfo
+	Err    error
+}
+
 // MetricsHistoryMsg delivers historical metrics for sparkline pre-fill.
 type MetricsHistoryMsg struct {
 	Samples []model.MetricsSample
@@ -206,6 +238,22 @@ type MetricsHistoryMsg struct {
 type RunSummaryMsg struct {
 	Summary *model.RunSummary
 	Err     error
+}
+
+// TaskSummaryMsg delivers the per-task health figures the on-demand task-detail
+// panel shows. Total is the task's all-time run count; Success/Failed/Other are
+// classified over the most recent Window runs (the panel labels the window so
+// the numbers aren't mistaken for all-time tallies). LastFailure is the end
+// time of the most recent failing run within that window, if any.
+type TaskSummaryMsg struct {
+	TaskName    string
+	Total       int64
+	Success     int
+	Failed      int
+	Other       int
+	Window      int
+	LastFailure *time.Time
+	Err         error
 }
 
 // DaemonLogConnectedMsg signals that the daemon log SSE stream is established.

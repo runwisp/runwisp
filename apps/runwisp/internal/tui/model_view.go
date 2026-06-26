@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -19,22 +20,31 @@ func (m Model) View() string {
 	}
 
 	body := m.renderBody()
-	helpBar := uikit.HelpBarStyle.Width(m.width).Render(m.helpTextWithFlash())
-	output := body + "\n" + helpBar
+	output := body + "\n" + m.renderHelpBar()
 	if m.logSearch != nil {
 		output = m.logSearch.View(m.width, m.height)
 	}
 	return m.dialogs.RenderOverlays(output, m.width, m.height)
 }
 
-func (m Model) helpTextWithFlash() string {
-	helpText := m.buildHelpText()
-	flash, ok := m.dialogs.FlashActive()
-	if !ok {
-		return helpText
+// renderHelpBar builds the bottom help bar from fully-styled segments that each
+// carry the bar background, then fills the line width with PadLine. Styling each
+// segment (rather than wrapping a pre-rendered, foreground-only flash in one
+// width-bounded Render) keeps the background continuous: an embedded reset is
+// always immediately followed by the next segment's full SGR, so no part of the
+// line falls back to the terminal's default background.
+func (m Model) renderHelpBar() string {
+	bar := uikit.HelpBarStyle.Render(m.buildHelpText())
+	if flash, ok := m.dialogs.FlashActive(); ok {
+		flashStr := lipgloss.NewStyle().
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorSuccess).
+			Bold(true).
+			PaddingLeft(1).
+			Render(flash)
+		bar = flashStr + bar
 	}
-	flashStr := lipgloss.NewStyle().Foreground(uikit.ColorSuccess).Bold(true).Render(flash)
-	return flashStr + "  " + helpText
+	return uikit.PadLine(bar, m.width, uikit.ColorBgLight)
 }
 
 func (m Model) renderBody() string {
@@ -97,8 +107,14 @@ func (m Model) buildHelpText() string {
 }
 
 func (m Model) buildContextHelpText() string {
+	if m.sidebar.Filtering() {
+		return "type to filter  ↑↓ move  enter select  esc cancel"
+	}
 	if m.notifications.IsExpanded() {
-		return keys.JoinBar(keys.Move, keys.NotifOpen, keys.NotifRead, keys.NotifCollapse, keys.Quit)
+		return keys.JoinBar(keys.Move, keys.NotifOpen, keys.NotifRead, keys.NotifReadAll, keys.NotifCollapse, keys.Quit)
+	}
+	if m.runListFocused() && m.execList.SelectionActive() {
+		return m.buildSelectionHelpText()
 	}
 	if m.execView != nil {
 		return m.buildExecViewHelpText()
@@ -143,6 +159,7 @@ func (m Model) appendExecViewActionHints(parts []string) []string {
 	if m.execView.Run == nil {
 		return parts
 	}
+	parts = append(parts, keys.TaskInfo.Bar)
 	switch m.execView.Action() {
 	case execlist.ActionStop:
 		parts = append(parts, "s stop")
@@ -168,9 +185,9 @@ func (m Model) buildSidebarHelpText() string {
 		if m.isService(name) {
 			actionHint = keys.Restart.Bar
 		}
-		return keys.Move.Bar + "  enter select  " + actionHint + "  → main panel  " + keys.Quit.Bar
+		return keys.Move.Bar + "  enter select  " + actionHint + "  " + keys.TaskInfo.Bar + "  " + keys.FilterTasks.Bar + "  → main panel  " + keys.Quit.Bar
 	}
-	return keys.Move.Bar + "  enter select  → main panel  " + keys.Quit.Bar
+	return keys.Move.Bar + "  enter select  " + keys.FilterTasks.Bar + "  → main panel  " + keys.Quit.Bar
 }
 
 func (m Model) buildMainHelpText() string {
@@ -192,15 +209,23 @@ func (m Model) buildMainHelpText() string {
 		if m.isService(name) {
 			actionHint = keys.Restart.Bar
 		}
-		base := keys.JoinBar(keys.Move, keys.Open) + "  " + actionHint + "  " + keys.ToSidebar.Bar
+		base := keys.JoinBar(keys.Move, keys.Open) + "  " + actionHint + "  " +
+			keys.JoinBar(keys.Filter, keys.TaskInfo) + "  " + keys.ToSidebar.Bar
 		if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
 			base += "  " + keys.NotifPanel.Bar
 		}
 		return base + "  " + keys.Quit.Bar
 	}
-	base := keys.JoinBar(keys.Move, keys.Open, keys.ToSidebar)
+	base := keys.JoinBar(keys.Move, keys.Open, keys.Filter, keys.Select, keys.ToSidebar)
 	if m.sidebar.ActivePage() == uikit.PageHome && m.notifications.PanelHeight() > 0 {
 		base += "  " + keys.NotifPanel.Bar
 	}
 	return base + "  " + keys.Quit.Bar
+}
+
+// buildSelectionHelpText renders the bottom-bar action set shown while one or
+// more runs are multi-selected in the executions list.
+func (m Model) buildSelectionHelpText() string {
+	count := fmt.Sprintf("%d selected", m.execList.SelectionCount())
+	return count + "  " + keys.JoinBar(keys.BulkDelete, keys.BulkCancel, keys.BulkRerun, keys.SelectAll, keys.ClearSelect)
 }

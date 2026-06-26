@@ -11,8 +11,17 @@ import (
 )
 
 // HelpDialog renders a centered modal listing all keyboard shortcuts, grouped
-// by context. Opened with `?` from anywhere outside text-input overlays.
-type HelpDialog struct{}
+// by context. Opened with `?` from anywhere outside text-input overlays. The
+// reference table is taller than most terminals, so the content area scrolls.
+type HelpDialog struct {
+	scroll int
+
+	// viewport and total are cached during View so Update can clamp scrolling
+	// without re-deriving the layout. viewport is the number of content rows the
+	// modal can show given the current screen height.
+	viewport int
+	total    int
+}
 
 func NewHelpDialog() HelpDialog {
 	return HelpDialog{}
@@ -22,11 +31,42 @@ func NewHelpDialog() HelpDialog {
 func (d *HelpDialog) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "?", "esc", "enter", "q":
-			return true
-		}
+		return d.handleKey(msg.String())
 	case tea.MouseMsg:
+		return d.handleMouse(msg)
+	}
+	return false
+}
+
+// handleKey applies a keypress, returning true on a close key.
+func (d *HelpDialog) handleKey(key string) bool {
+	switch key {
+	case "?", "esc", "enter", "q":
+		return true
+	case "up", "k":
+		d.scrollBy(-1)
+	case "down", "j":
+		d.scrollBy(1)
+	case "pgup":
+		d.scrollBy(-d.viewport)
+	case "pgdown":
+		d.scrollBy(d.viewport)
+	case "g", "home":
+		d.scroll = 0
+	case "G", "end":
+		d.scroll = d.maxScroll()
+	}
+	return false
+}
+
+// handleMouse scrolls on the wheel and closes on any other press.
+func (d *HelpDialog) handleMouse(msg tea.MouseMsg) bool {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		d.scrollBy(-1)
+	case tea.MouseButtonWheelDown:
+		d.scrollBy(1)
+	default:
 		if msg.Action == tea.MouseActionPress {
 			return true
 		}
@@ -34,14 +74,70 @@ func (d *HelpDialog) Update(msg tea.Msg) bool {
 	return false
 }
 
+// scrollBy moves the viewport by delta rows, clamped to the scrollable range.
+func (d *HelpDialog) scrollBy(delta int) {
+	d.scroll += delta
+	if d.scroll < 0 {
+		d.scroll = 0
+	}
+	if d.scroll > d.maxScroll() {
+		d.scroll = d.maxScroll()
+	}
+}
+
+func (d *HelpDialog) maxScroll() int {
+	ms := d.total - d.viewport
+	if ms < 0 {
+		return 0
+	}
+	return ms
+}
+
 func (d *HelpDialog) View(screenWidth, screenHeight int) string {
 	const keyColWidth = 13
 	dialogWidth, innerWidth := modalDimensions(screenWidth, 52, 44)
+
+	content := helpContentLines(innerWidth, keyColWidth)
+
+	// Reserve rows for the chrome that always frames the content: accent bar,
+	// blank+title above, blank+hint+blank below. The rest is the viewport.
+	const chromeRows = 6
+	viewport := screenHeight - chromeRows - 2
+	if viewport < 3 {
+		viewport = 3
+	}
+	if viewport > len(content) {
+		viewport = len(content)
+	}
+	d.viewport = viewport
+	d.total = len(content)
+	if d.scroll > d.maxScroll() {
+		d.scroll = d.maxScroll()
+	}
 
 	lines := []string{
 		modalEmptyLine(innerWidth),
 		modalSurfaceLine("Keyboard Shortcuts", innerWidth, uikit.ColorTextBright, true),
 	}
+	end := d.scroll + viewport
+	if end > len(content) {
+		end = len(content)
+	}
+	lines = append(lines, content[d.scroll:end]...)
+	lines = append(lines,
+		modalEmptyLine(innerWidth),
+		modalSurfaceLine(helpScrollHint(d.maxScroll()), innerWidth, uikit.ColorTextMuted, false),
+		modalEmptyLine(innerWidth),
+	)
+
+	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines)
+	return box.view
+}
+
+// helpContentLines flattens every section into the scrollable body: a blank
+// spacer and bold header per section, followed by its key→description rows.
+func helpContentLines(innerWidth, keyColWidth int) []string {
+	var lines []string
 	for _, section := range keys.OverlaySections {
 		lines = append(lines,
 			modalEmptyLine(innerWidth),
@@ -51,14 +147,14 @@ func (d *HelpDialog) View(screenWidth, screenHeight int) string {
 			lines = append(lines, helpEntryLine(b, keyColWidth, innerWidth))
 		}
 	}
-	lines = append(lines,
-		modalEmptyLine(innerWidth),
-		modalSurfaceLine("? / esc close", innerWidth, uikit.ColorTextMuted, false),
-		modalEmptyLine(innerWidth),
-	)
+	return lines
+}
 
-	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines)
-	return box.view
+func helpScrollHint(maxScroll int) string {
+	if maxScroll == 0 {
+		return "? / esc close"
+	}
+	return "↑/↓ scroll · ? / esc close"
 }
 
 // helpSectionLine renders a left-aligned bold section header.

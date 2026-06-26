@@ -86,7 +86,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 		warn := lipgloss.NewStyle().
 			Background(uikit.ColorBgLight).
 			Foreground(uikit.ColorWarning).
-			Render("\u26a0 runwisp.toml changed \u2014 run 'runwisp restart' to apply")
+			Render("\u26a0 runwisp.toml changed \u2014 press R to reload")
 		parts = append(parts, warn)
 	}
 	if len(parts) > 0 {
@@ -223,7 +223,7 @@ func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 	}
 	schedInfo := "  Schedule: " + schedule
 	if task != nil && !task.Kind.IsService() {
-		if nextRun := nextCronRun(schedule); nextRun != "" {
+		if nextRun := NextCronRun(schedule); nextRun != "" {
 			schedInfo += "  •  Next: " + nextRun
 		}
 	}
@@ -260,9 +260,9 @@ func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 	return b.String(), btnLineY
 }
 
-// nextCronRun parses a cron schedule expression and returns the next run time
+// NextCronRun parses a cron schedule expression and returns the next run time
 // formatted as "HH:MM:SS (in Xm)" or empty if the schedule is invalid/empty.
-func nextCronRun(schedule string) string {
+func NextCronRun(schedule string) string {
 	if schedule == "" {
 		return ""
 	}

@@ -5,30 +5,48 @@ title: Reload
 description: Pick up runwisp.toml task changes in a running daemon without a full restart. Covers runwisp reload and SIGHUP, the validate-first guarantee, what reloads live versus what needs a restart, and how in-flight runs behave.
 ---
 
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
 You edited `runwisp.toml` — added a task, tweaked a cron, dropped one you don't
-need anymore. You don't have to restart the whole daemon to pick that up.
-
-```sh
-runwisp reload
-```
-
-That re-reads `runwisp.toml` and reconciles the running task set against it:
+need anymore. You don't have to restart the whole daemon to pick that up. A
+reload re-reads `runwisp.toml` and reconciles the running task set against it:
 new tasks start being scheduled, removed tasks stop, and changed tasks swap to
-their new definition. RunWisp prints exactly what it did:
+their new definition.
 
-```
-Configuration reloaded.
-  + added   nightly-backup
-  ~ changed report (schedule)
-  - removed old-cleanup
-```
+You can trigger one from any surface:
 
-Sending the daemon a `SIGHUP` does the same thing — handy from a deploy script
-or a file-watcher you wired up yourself:
+<Tabs syncKey="surface">
+    <TabItem label="Web UI" icon="laptop">
+        The Web UI is read-only and never reloads config itself. When the
+        `runwisp.toml` on disk drifts from what the daemon is running, a banner
+        appears pointing you at `runwisp reload` — run that from a shell and the
+        banner clears on the next refresh.
+    </TabItem>
+    <TabItem label="TUI" icon="seti:shell">
+        Press <kbd>R</kbd> in the [TUI](/getting-started/tui-tour/). Same
+        reconcile, same validate-first guarantee, and you get the
+        added/changed/removed summary as a toast without leaving the terminal.
+    </TabItem>
+    <TabItem label="REST API" icon="cloud-download">
+        `runwisp reload` is a thin CLI wrapper around `POST /api/reload` over the
+        local socket. RunWisp prints exactly what it did:
 
-```sh
-kill -HUP "$(cat .runwisp/daemon.pid)"
-```
+        ```
+        Configuration reloaded.
+          + added   nightly-backup
+          ~ changed report (schedule)
+          - removed old-cleanup
+        ```
+
+        Sending the daemon a `SIGHUP` converges on the same reconcile path —
+        handy from a deploy script or a file-watcher you wired up yourself:
+
+        ```sh
+        kill -HUP "$(cat .runwisp/daemon.pid)"
+        ```
+    </TabItem>
+
+</Tabs>
 
 Reload is always explicit. RunWisp never watches the file and reloads on its
 own; it does exactly what you ask, when you ask.

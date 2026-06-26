@@ -251,6 +251,28 @@ func TestNotificationsPanel_MarkUnreadLocalClearsReadAt(t *testing.T) {
 	}
 }
 
+func TestNotificationsPanel_MarkAllReadLocal(t *testing.T) {
+	p := NewPanel()
+	now := time.Now()
+	p.Upsert(unreadNotification("a", "warn", now, "a"))
+	p.Upsert(unreadNotification("b", "error", now, "b"))
+	p.Upsert(readNotification("c", "info", now, "c"))
+	p.SetUnread(2)
+
+	if !p.MarkAllReadLocal(now) {
+		t.Fatal("MarkAllReadLocal must report a change when unread rows exist")
+	}
+	// Every row now carries a ReadAt and the badge is zeroed optimistically.
+	if p.Unread() != 0 {
+		t.Fatalf("MarkAllReadLocal must zero the badge; got %d", p.Unread())
+	}
+
+	// Idempotent: a second sweep with everything already read changes nothing.
+	if p.MarkAllReadLocal(now) {
+		t.Fatal("MarkAllReadLocal on an all-read panel must be a no-op")
+	}
+}
+
 func TestNotificationsPanel_SetUnread(t *testing.T) {
 	p := NewPanel()
 	p.SetUnread(7)

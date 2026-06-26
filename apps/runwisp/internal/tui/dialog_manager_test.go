@@ -9,6 +9,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 func TestDialogManager_ConfirmLifecycle(t *testing.T) {
@@ -122,6 +124,47 @@ func TestDialogManager_Flash(t *testing.T) {
 	msg, ok = dm.FlashActive()
 	if ok {
 		t.Fatalf("expected flash expired, got %q", msg)
+	}
+}
+
+func TestDialogManager_FlashUndo(t *testing.T) {
+	var dm DialogManager
+	fired := false
+	undo := func() tea.Msg { fired = true; return nil }
+
+	dm.FlashUndo("Deleted — press u to undo", undo, time.Hour)
+
+	if _, ok := dm.FlashActive(); !ok {
+		t.Fatal("expected the undo toast to be active")
+	}
+	cmd := dm.TakeUndo()
+	if cmd == nil {
+		t.Fatal("expected TakeUndo to return the armed command")
+	}
+	_ = cmd() // fire it
+	if !fired {
+		t.Fatal("expected the undo command to run")
+	}
+	if dm.TakeUndo() != nil {
+		t.Fatal("undo must fire at most once")
+	}
+}
+
+func TestDialogManager_FlashClearsPendingUndo(t *testing.T) {
+	var dm DialogManager
+	dm.FlashUndo("undoable", func() tea.Msg { return nil }, time.Hour)
+	dm.Flash("plain message", time.Hour)
+	if dm.TakeUndo() != nil {
+		t.Fatal("a plain Flash must clear any pending undo")
+	}
+}
+
+func TestDialogManager_TakeUndo_ExpiredReturnsNil(t *testing.T) {
+	var dm DialogManager
+	dm.FlashUndo("undoable", func() tea.Msg { return nil }, time.Hour)
+	dm.flashExpiry = time.Now().Add(-time.Second) // expire it
+	if dm.TakeUndo() != nil {
+		t.Fatal("an expired toast must not return an undo")
 	}
 }
 
@@ -320,6 +363,122 @@ func TestDialogManager_UpdateConfirmKeep_YesCmd(t *testing.T) {
 	}
 }
 
+func TestDialogManager_ParamFormLifecycle(t *testing.T) {
+	var dm DialogManager
+	if dm.HasParamForm() {
+		t.Fatal("expected no param form initially")
+	}
+
+	params := []model.TaskParam{{Kind: model.ParamArg, Key: "branch"}}
+	submit := func(map[string]*string) tea.Cmd { return nil }
+	dm.ShowParamForm(NewParamFormDialog("deploy", params, submit))
+	if !dm.HasParamForm() {
+		t.Fatal("expected param form after ShowParamForm")
+	}
+
+	// Esc closes the form; UpdateParamForm reports closed and clears it.
+	_, closed := dm.UpdateParamForm(tea.KeyMsg{Type: tea.KeyEscape})
+	if !closed {
+		t.Fatal("expected param form to close on Esc")
+	}
+	if dm.HasParamForm() {
+		t.Fatal("expected param form nil after close")
+	}
+
+	// DismissParamForm is also idempotent / safe to call directly.
+	dm.ShowParamForm(NewParamFormDialog("deploy", params, submit))
+	dm.DismissParamForm()
+	if dm.HasParamForm() {
+		t.Fatal("expected param form nil after DismissParamForm")
+	}
+}
+
+func TestDialogManager_DismissRunParams(t *testing.T) {
+	var dm DialogManager
+	dm.ShowRunParams(NewRunParamsDialog("task", map[string]string{"k": "v"}))
+	dm.DismissRunParams()
+	if dm.HasRunParams() {
+		t.Fatal("expected run-params nil after DismissRunParams")
+	}
+}
+
+func TestDialogManager_TaskDetailLifecycle(t *testing.T) {
+	var dm DialogManager
+	if dm.HasTaskDetail() {
+		t.Fatal("expected no task detail initially")
+	}
+
+	dm.ShowTaskDetail("alpha", &model.TaskBrief{Name: "alpha"})
+	if !dm.HasTaskDetail() {
+		t.Fatal("expected task detail after ShowTaskDetail")
+	}
+
+	// Async health figures flow in via ApplyTaskSummary while open (a no-op when
+	// the message is for another task).
+	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha", Total: 5, Success: 4, Failed: 1})
+
+	// Esc closes the inspector.
+	if !dm.UpdateTaskDetail(tea.KeyMsg{Type: tea.KeyEscape}) {
+		t.Fatal("expected task detail to close on Esc")
+	}
+	if dm.HasTaskDetail() {
+		t.Fatal("expected task detail nil after close")
+	}
+
+	// ApplyTaskSummary is a no-op once the inspector has closed.
+	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha"})
+
+	dm.ShowTaskDetail("beta", nil)
+	dm.DismissTaskDetail()
+	if dm.HasTaskDetail() {
+		t.Fatal("expected task detail nil after DismissTaskDetail")
+	}
+}
+
+func TestDialogManager_RunDetailLifecycle(t *testing.T) {
+	var dm DialogManager
+	if dm.HasRunDetail() {
+		t.Fatal("expected no run detail initially")
+	}
+
+	dm.ShowRunDetail(&model.Run{ID: "r1", TaskName: "t1"}, false, 1)
+	if !dm.HasRunDetail() {
+		t.Fatal("expected run detail after ShowRunDetail")
+	}
+
+	if !dm.UpdateRunDetail(tea.KeyMsg{Type: tea.KeyEscape}) {
+		t.Fatal("expected run detail to close on Esc")
+	}
+	if dm.HasRunDetail() {
+		t.Fatal("expected run detail nil after close")
+	}
+}
+
+func TestDialogManager_LogHistoryLifecycle(t *testing.T) {
+	var dm DialogManager
+	if dm.HasLogHistory() {
+		t.Fatal("expected no log history initially")
+	}
+
+	dm.ShowLogHistory(NewLogHistoryDialog(0, [][]string{{"frame"}}, "committed"))
+	if !dm.HasLogHistory() {
+		t.Fatal("expected log history after ShowLogHistory")
+	}
+
+	if !dm.UpdateLogHistory(tea.KeyMsg{Type: tea.KeyEscape}) {
+		t.Fatal("expected log history to close on Esc")
+	}
+	if dm.HasLogHistory() {
+		t.Fatal("expected log history nil after close")
+	}
+
+	dm.ShowLogHistory(NewLogHistoryDialog(0, [][]string{{"x"}}, "y"))
+	dm.DismissLogHistory()
+	if dm.HasLogHistory() {
+		t.Fatal("expected log history nil after DismissLogHistory")
+	}
+}
+
 func TestDialogManager_HelpLifecycle(t *testing.T) {
 	var dm DialogManager
 
@@ -392,10 +551,53 @@ func TestDialogManager_RenderOverlays_ConfirmTakesPrecedenceOverHelp(t *testing.
 
 func TestHelpDialog_ViewListsSections(t *testing.T) {
 	d := NewHelpDialog()
-	out := d.View(100, 50)
+	// A tall screen fits the whole reference table without scrolling.
+	out := d.View(100, 80)
 	for _, want := range []string{"Keyboard Shortcuts", "Global", "Navigate", "Exec view", "Notifications"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected help view to contain %q", want)
+		}
+	}
+}
+
+func TestHelpDialog_ScrollsWhenTallerThanScreen(t *testing.T) {
+	d := NewHelpDialog()
+
+	// A short screen can't fit every section; the last one is below the fold.
+	top := d.View(100, 24)
+	if !strings.Contains(top, "Global") {
+		t.Fatal("expected the first section visible at the top")
+	}
+	if strings.Contains(top, "Notifications") {
+		t.Fatal("expected the last section to be scrolled off on a short screen")
+	}
+	if !strings.Contains(top, "↑/↓ scroll") {
+		t.Fatal("expected a scroll hint when content overflows")
+	}
+
+	// Jump to the end and the last section comes into view.
+	if d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")}) {
+		t.Fatal("end key should scroll, not close")
+	}
+	bottom := d.View(100, 24)
+	if !strings.Contains(bottom, "Notifications") {
+		t.Fatal("expected the last section visible after scrolling to the end")
+	}
+}
+
+func TestHelpDialog_ScrollKeysKeepOpen(t *testing.T) {
+	d := NewHelpDialog()
+	d.View(100, 24) // prime the viewport/total cache
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyDown},
+		{Type: tea.KeyUp},
+		{Type: tea.KeyPgDown},
+		{Type: tea.KeyPgUp},
+		{Type: tea.KeyHome},
+		{Type: tea.KeyEnd},
+	} {
+		if d.Update(key) {
+			t.Fatalf("scroll key %v should not close the help dialog", key)
 		}
 	}
 }

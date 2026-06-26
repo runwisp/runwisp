@@ -125,3 +125,40 @@ func (c *Client) GetRun(taskName, runID string) (*model.Run, error) {
 func (c *Client) DeleteRun(taskName, runID string) error {
 	return c.doJSON("DELETE", fmt.Sprintf("/api/tasks/%s/runs/%s", taskName, runID), nil, nil)
 }
+
+// BulkDeleteRuns soft-deletes every run matched by sel and returns how many rows
+// were affected. The deletion is reversible with BulkRestoreRuns.
+func (c *Client) BulkDeleteRuns(sel model.RunSelector) (int, error) {
+	return c.bulkAffected("/api/runs/bulk/delete", sel)
+}
+
+// BulkRestoreRuns clears the soft-delete marker on every run matched by sel —
+// the inverse of BulkDeleteRuns. Returns how many rows were affected.
+func (c *Client) BulkRestoreRuns(sel model.RunSelector) (int, error) {
+	return c.bulkAffected("/api/runs/bulk/restore", sel)
+}
+
+// BulkCancelRuns signals a stop to every running execution matched by sel and
+// returns how many were signalled.
+func (c *Client) BulkCancelRuns(sel model.RunSelector) (int, error) {
+	return c.bulkAffected("/api/runs/bulk/cancel", sel)
+}
+
+// bulkAffected posts a selector to a bulk endpoint that reports an affected count.
+func (c *Client) bulkAffected(path string, sel model.RunSelector) (int, error) {
+	var resp server.BulkAffectedBody
+	if err := c.doJSON("POST", path, sel, &resp); err != nil {
+		return 0, err
+	}
+	return resp.Affected, nil
+}
+
+// BulkRerunRuns triggers a fresh run for each run matched by sel and returns
+// references to the runs it spawned.
+func (c *Client) BulkRerunRuns(sel model.RunSelector) ([]server.TriggeredRunRef, error) {
+	var resp server.BulkRerunBody
+	if err := c.doJSON("POST", "/api/runs/bulk/rerun", sel, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Triggered, nil
+}

@@ -17,8 +17,9 @@ func TestTUIShowsRetryForFailedRunsAndRetryStartsANewExecution(t *testing.T) {
 	client := suite.client(t)
 	suite.selectBravoTask(t)
 
+	// Run Now opens a confirm dialog; press y to confirm.
 	suite.tui.press(t, "r")
-	suite.tui.waitForAll(t, 5*time.Second, "Run Now", "Trigger a new run of")
+	suite.tui.waitForAll(t, 3*time.Second, "Run 'bravo-fail' now?")
 	suite.tui.press(t, "y")
 
 	failedScreen := suite.tui.waitForAll(t, 8*time.Second,
@@ -30,8 +31,9 @@ func TestTUIShowsRetryForFailedRunsAndRetryStartsANewExecution(t *testing.T) {
 	)
 	require.NotContains(t, failedScreen, "■ Stop (s)")
 
+	// Retry opens a confirm dialog; press y to confirm.
 	suite.tui.press(t, "r")
-	suite.tui.waitForAll(t, 5*time.Second, "Retry Run", "Retry 'bravo-fail'?")
+	suite.tui.waitForAll(t, 3*time.Second, "Retry 'bravo-fail'?")
 	suite.tui.press(t, "y")
 
 	retriedScreen := suite.tui.waitForAll(t, 5*time.Second,

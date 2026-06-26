@@ -140,7 +140,7 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 	}
 	switch action {
 	case confirmActionTrigger:
-		return m.confirmTrigger()
+		return m.triggerRun()
 	case confirmActionRestartService:
 		return m.confirmRestartService()
 	case confirmActionStopService:
@@ -148,14 +148,18 @@ func (m *Model) confirmAction(action confirmAction) tea.Cmd {
 	case confirmActionStop:
 		return m.confirmStop()
 	case confirmActionRetry:
-		return m.confirmRetry()
+		return m.retryRun()
 	case confirmActionDelete:
-		return m.confirmDelete()
+		return m.deleteCurrentRun()
 	}
 	return nil
 }
 
-func (m *Model) confirmTrigger() tea.Cmd {
+// triggerRun runs a task now, gated by a confirm dialog. Services confirm via
+// the restart path (a restart kills running instances), and parameterized tasks
+// open the param form — it gathers input and runs on submit, which is itself an
+// explicit confirmation.
+func (m *Model) triggerRun() tea.Cmd {
 	taskName := m.resolveTaskName()
 	if taskName == "" {
 		return nil
@@ -174,8 +178,8 @@ func (m *Model) confirmTrigger() tea.Cmd {
 		return nil
 	}
 	return m.showConfirmDialog(
-		"Run Now",
-		fmt.Sprintf("Trigger a new run of\n'%s'?", taskName),
+		"Run Task",
+		fmt.Sprintf("Run '%s' now?", taskName),
 		func() tea.Msg {
 			run, err := client.TriggerRun(taskName, nil)
 			return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
@@ -240,7 +244,10 @@ func (m *Model) confirmStop() tea.Cmd {
 	)
 }
 
-func (m *Model) confirmDelete() tea.Cmd {
+// deleteCurrentRun soft-deletes the run shown in the exec view immediately. The
+// delete is reversible (soft delete + restore), so the result toast offers undo
+// instead of a confirm dialog.
+func (m *Model) deleteCurrentRun() tea.Cmd {
 	run := m.currentRun()
 	if run == nil || m.execView == nil || !m.execView.CanDelete() {
 		return nil
@@ -248,17 +255,15 @@ func (m *Model) confirmDelete() tea.Cmd {
 	client := m.client
 	runID := run.ID
 	taskName := run.TaskName
-	return m.showConfirmDialog(
-		"Delete Run",
-		fmt.Sprintf("Delete this run of\n'%s'?\nThe captured log is also removed.", taskName),
-		func() tea.Msg {
-			err := client.DeleteRun(taskName, runID)
-			return uikit.DeleteRunMsg{RunID: runID, TaskName: taskName, Err: err}
-		},
-	)
+	return func() tea.Msg {
+		err := client.DeleteRun(taskName, runID)
+		return uikit.DeleteRunMsg{RunID: runID, TaskName: taskName, Err: err}
+	}
 }
 
-func (m *Model) confirmRetry() tea.Cmd {
+// retryRun re-runs the current execution, gated by a confirm dialog, reproducing
+// its original params.
+func (m *Model) retryRun() tea.Cmd {
 	run := m.currentRun()
 	if run == nil || !run.IsRetryable() {
 		return nil

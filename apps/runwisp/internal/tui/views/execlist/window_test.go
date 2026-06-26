@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -446,6 +447,66 @@ func TestFetchAroundCmd_RunsRequest_ReturnsItemsAndTotal(t *testing.T) {
 	}
 	if len(items) != 2 {
 		t.Fatalf("items = %d, want 2", len(items))
+	}
+}
+
+// TestFetchAroundCmd_AppliesFilterAndFixedSort verifies the status filter set
+// via CycleStatusFilter reaches the request query string, and that the list's
+// fixed newest-first order (created_at + desc) is always sent — sorting is no
+// longer user-configurable.
+func TestFetchAroundCmd_AppliesFilterAndFixedSort(t *testing.T) {
+	var gotQuery url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 0})
+	}))
+	defer srv.Close()
+
+	w := NewExecWindow(apiclient.New(srv.URL, ""))
+	w.CycleStatusFilter() // "" → running
+
+	fn := w.FetchAroundCmd(0, 20)
+	if fn == nil {
+		t.Fatal("expected non-nil closure")
+	}
+	if _, _, _, err := fn(); err != nil {
+		t.Fatalf("FetchAroundCmd closure: %v", err)
+	}
+
+	if got := gotQuery.Get("status"); got != "running" {
+		t.Fatalf("status = %q, want running", got)
+	}
+	if got := gotQuery.Get("sort_field"); got != "created_at" {
+		t.Fatalf("sort_field = %q, want created_at", got)
+	}
+	if got := gotQuery.Get("sort_direction"); got != "desc" {
+		t.Fatalf("sort_direction = %q, want desc", got)
+	}
+}
+
+// TestStatusFilterCycle pins the filter cycle order and the HasStatusFilter/
+// StatusFilter accessors the banner reads.
+func TestStatusFilterCycle(t *testing.T) {
+	w := NewExecWindow(nil)
+	if w.HasStatusFilter() {
+		t.Fatalf("HasStatusFilter = true by default, want false")
+	}
+	if got := w.StatusFilter(); got != "" {
+		t.Fatalf("default StatusFilter = %q, want empty", got)
+	}
+	w.CycleStatusFilter() // "" → running
+	if !w.HasStatusFilter() {
+		t.Fatalf("HasStatusFilter = false after one cycle, want true")
+	}
+	if got := w.StatusFilter(); got != "running" {
+		t.Fatalf("StatusFilter after one cycle = %q, want running", got)
+	}
+	// The cycle wraps back to "all" (no filter) after the four entries.
+	for i := 1; i < len(statusFilterCycle); i++ {
+		w.CycleStatusFilter()
+	}
+	if w.HasStatusFilter() {
+		t.Fatalf("HasStatusFilter = true after full cycle, want false")
 	}
 }
 

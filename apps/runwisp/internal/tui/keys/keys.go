@@ -35,10 +35,14 @@ type Section struct {
 
 // Global actions available almost everywhere.
 var (
-	Help       = Binding{Keys: "?", Desc: "toggle this help", Bar: "? help"}
-	Quit       = Binding{Keys: "q / ctrl+c", Desc: "quit", Bar: "q/^C quit"}
-	NotifPanel = Binding{Keys: "n", Desc: "notifications panel (Home)", Bar: "n notifications"}
-	SearchLogs = Binding{Keys: "/", Desc: "search logs of the focused task"}
+	Help         = Binding{Keys: "?", Desc: "toggle this help", Bar: "? help"}
+	Quit         = Binding{Keys: "q / ctrl+c", Desc: "quit", Bar: "q/^C quit"}
+	NotifPanel   = Binding{Keys: "n", Desc: "notifications panel (Home)", Bar: "n notifications"}
+	ReloadConfig = Binding{Keys: "R", Desc: "reload runwisp.toml", Bar: "R reload"}
+	SearchLogs   = Binding{Keys: "/", Desc: "search logs of the focused task"}
+	// FilterTasks shares `/` with SearchLogs; it applies when the sidebar is
+	// focused, SearchLogs applies in an exec view / on the main panel.
+	FilterTasks = Binding{Keys: "/", Desc: "filter tasks (sidebar)", Bar: "/ filter"}
 )
 
 // Navigation between and within panels.
@@ -52,10 +56,28 @@ var (
 // Task / run actions. RunNow and Restart are the two conditional forms the bar
 // picks between; the overlay shows the combined Run row.
 var (
-	Run     = Binding{Keys: "r", Desc: "run now (task) · restart (service)"}
-	RunNow  = Binding{Bar: "r run now"}
-	Restart = Binding{Bar: "r restart"}
-	OpenRun = Binding{Keys: "enter", Desc: "open the selected run"}
+	Run      = Binding{Keys: "r", Desc: "run now (task) · restart (service)"}
+	RunNow   = Binding{Bar: "r run now"}
+	Restart  = Binding{Bar: "r restart"}
+	OpenRun  = Binding{Keys: "enter", Desc: "open the selected run"}
+	TaskInfo = Binding{Keys: "i", Desc: "inspect — task health, or run details in a log view", Bar: "i details"}
+	Undo     = Binding{Keys: "u", Desc: "undo the last action (while the toast shows)", Bar: "u undo"}
+)
+
+// Run-list filter action, active when the executions list is focused.
+var (
+	Filter = Binding{Keys: "f", Desc: "filter by status", Bar: "f filter"}
+)
+
+// Run-list multi-select actions. Select/SelectAll start a selection; the rest
+// act on it and only appear in the bar once one or more runs are selected.
+var (
+	Select      = Binding{Keys: "space", Desc: "select / deselect the run under the cursor", Bar: "space select"}
+	SelectAll   = Binding{Keys: "a", Desc: "select all runs matching the filter", Bar: "a select all"}
+	BulkDelete  = Binding{Keys: "d", Desc: "delete selected runs (undoable)", Bar: "d delete"}
+	BulkCancel  = Binding{Keys: "c", Desc: "cancel selected runs", Bar: "c cancel"}
+	BulkRerun   = Binding{Keys: "e", Desc: "rerun selected runs", Bar: "e rerun"}
+	ClearSelect = Binding{Keys: "esc", Desc: "clear the selection", Bar: "esc clear"}
 )
 
 // Exec-view log actions.
@@ -89,6 +111,7 @@ var (
 var (
 	NotifOpen     = Binding{Keys: "enter", Desc: "open the run", Bar: "enter open"}
 	NotifRead     = Binding{Keys: "r", Desc: "mark read", Bar: "r mark read"}
+	NotifReadAll  = Binding{Keys: "a", Desc: "mark all read", Bar: "a all read"}
 	NotifCollapse = Binding{Keys: "n / esc", Desc: "collapse", Bar: "n/esc collapse"}
 )
 
@@ -96,12 +119,13 @@ var (
 // Each row's Keys/Desc come from the bindings above, so the overlay and the
 // contextual bars are guaranteed consistent.
 var OverlaySections = []Section{
-	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, SearchLogs}},
-	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back}},
-	{Title: "Task", Bindings: []Binding{Run, OpenRun}},
+	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, ReloadConfig, SearchLogs}},
+	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back, FilterTasks}},
+	{Title: "Task", Bindings: []Binding{Run, OpenRun, TaskInfo, Undo}},
+	{Title: "Run list", Bindings: []Binding{Filter, Select, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
 	{Title: "Exec view", Bindings: []Binding{Stop, Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
 	{Title: "Run dialog", Bindings: []Binding{FlagToggle, ChooseOpt, IncludeOmit, RunCancel}},
-	{Title: "Notifications", Bindings: []Binding{NotifOpen, NotifRead, NotifCollapse}},
+	{Title: "Notifications", Bindings: []Binding{NotifOpen, NotifRead, NotifReadAll, NotifCollapse}},
 }
 
 // JoinBar renders a help-bar line from the given bindings, skipping any without

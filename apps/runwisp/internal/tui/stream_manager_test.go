@@ -6,6 +6,7 @@ package tui
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -565,4 +566,196 @@ func TestStreamManager_FetchExecWindow_NilFnReturnsNilWhenLoading(t *testing.T) 
 
 	second := sm.FetchExecWindow(w, 0, 10)
 	assert.Nil(t, second, "concurrent call must short-circuit while loading")
+}
+
+// newBulkServer answers the bulk/reload/info/runs/history endpoints the
+// remaining StreamManager commands hit, with minimal valid JSON envelopes.
+func newBulkServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	bulkAffected := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"affected":3}`))
+	}
+	mux.HandleFunc("/api/runs/bulk/delete", bulkAffected)
+	mux.HandleFunc("/api/runs/bulk/restore", bulkAffected)
+	mux.HandleFunc("/api/runs/bulk/cancel", bulkAffected)
+	mux.HandleFunc("/api/runs/bulk/rerun", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"triggered":[{"task_name":"t","run_id":"r"}]}`))
+	})
+	mux.HandleFunc("/api/notifications/read", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("/api/info", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	})
+	mux.HandleFunc("/api/reload", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"added":["new-task"],"removed":[],"changed":[]}`))
+	})
+	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"runs":[],"total":0}`))
+	})
+	// Per-task runs (FetchTaskSummary) and log-line history share the /api/tasks/ prefix.
+	mux.HandleFunc("/api/tasks/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/log/line/") {
+			_, _ = w.Write([]byte(`{"frames":[["frame-1"],["frame-2"]]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"runs":[],"total":0}`))
+	})
+	return httptest.NewServer(mux)
+}
+
+func TestStreamManager_BulkActions_HappyPath(t *testing.T) {
+	srv := newBulkServer(t)
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	sel := model.RunSelector{IDs: []string{"r1", "r2"}}
+	cases := []struct {
+		name     string
+		cmd      tea.Cmd
+		verb     string
+		affected int
+	}{
+		{"delete", sm.DeleteRuns(sel), "Deleted", 3},
+		{"restore", sm.RestoreRuns(sel), "Restored", 3},
+		{"cancel", sm.CancelRuns(sel), "Cancelled", 3},
+		// Rerun reports the number of runs it spawned, not the affected count.
+		{"rerun", sm.RerunRuns(sel), "Reran", 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NotNil(t, tc.cmd)
+			msg, ok := tc.cmd().(uikit.BulkActionMsg)
+			require.True(t, ok)
+			assert.NoError(t, msg.Err)
+			assert.Equal(t, tc.verb, msg.Action)
+			assert.Equal(t, tc.affected, msg.Affected)
+		})
+	}
+}
+
+func TestStreamManager_DeleteRunsUndoable_HappyPath(t *testing.T) {
+	srv := newBulkServer(t)
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	sel := model.RunSelector{IDs: []string{"r1"}}
+	cmd := sm.DeleteRunsUndoable(sel)
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(uikit.BulkDeleteResultMsg)
+	require.True(t, ok)
+	assert.NoError(t, msg.Err)
+	assert.Equal(t, 3, msg.Affected)
+	assert.Equal(t, sel, msg.Restore, "the selector rides along so an undo can restore it")
+}
+
+func TestStreamManager_MarkAllNotificationsRead_HappyPath(t *testing.T) {
+	srv := newBulkServer(t)
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	cmd := sm.MarkAllNotificationsRead()
+	require.NotNil(t, cmd)
+	assert.Nil(t, cmd(), "a successful mark-all returns no message")
+}
+
+func TestStreamManager_FetchDaemonInfo_HappyPath(t *testing.T) {
+	srv := newBulkServer(t)
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	cmd := sm.FetchDaemonInfo()
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(uikit.DaemonInfoMsg)
+	require.True(t, ok)
+	assert.NoError(t, msg.Err)
+}
+
+func TestStreamManager_Reload_HappyPath(t *testing.T) {
+	srv := newBulkServer(t)
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	cmd := sm.Reload()
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(uikit.ReloadResultMsg)
+	require.True(t, ok)
+	assert.NoError(t, msg.Err)
+	require.NotNil(t, msg.Result)
+	assert.Equal(t, []string{"new-task"}, msg.Result.Added)
+	// The follow-up /api/info read succeeds, so fresh info rides along.
+	assert.NotNil(t, msg.Info)
+}
+
+func TestStreamManager_FetchTaskSummary_HappyPath(t *testing.T) {
+	srv := newBulkServer(t)
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	assert.Nil(t, sm.FetchTaskSummary(""), "empty task name short-circuits")
+
+	cmd := sm.FetchTaskSummary("alpha")
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(uikit.TaskSummaryMsg)
+	require.True(t, ok)
+	assert.NoError(t, msg.Err)
+	assert.Equal(t, "alpha", msg.TaskName)
+}
+
+func TestStreamManager_FetchLineHistory_HappyPath(t *testing.T) {
+	srv := newBulkServer(t)
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	cmd := sm.FetchLineHistory("alpha", "r1", 7, "committed text")
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(uikit.LogLineHistoryMsg)
+	require.True(t, ok)
+	assert.NoError(t, msg.Err)
+	assert.Equal(t, int64(7), msg.Line)
+	assert.Equal(t, "committed text", msg.Committed)
+	assert.Len(t, msg.Frames, 2)
+}
+
+func TestStreamManager_FetchExecWindow_HappyPath(t *testing.T) {
+	srv := newBulkServer(t)
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	w := execlist.NewExecWindow(apiclient.New(srv.URL, ""))
+	cmd := sm.FetchExecWindow(w, 0, 10)
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(uikit.ExecWindowFetchedMsg)
+	require.True(t, ok, "a successful fetch yields ExecWindowFetchedMsg")
+	assert.Equal(t, 0, msg.Total)
+}
+
+func TestStreamManager_FetchExecWindow_ServerErrorReturnsDebugMsg(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	w := execlist.NewExecWindow(apiclient.New(srv.URL, ""))
+	cmd := sm.FetchExecWindow(w, 0, 10)
+	require.NotNil(t, cmd)
+	_, ok := cmd().(uikit.DebugLogMsg)
+	assert.True(t, ok, "a fetch error surfaces as a DebugLogMsg")
 }

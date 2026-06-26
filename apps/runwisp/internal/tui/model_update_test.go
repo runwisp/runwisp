@@ -757,6 +757,96 @@ func TestHandleTriggerRun_RetrySuccessUsesRetryAction(t *testing.T) {
 	})
 }
 
+// TestHandleTriggerRun_FlashesNoUndo verifies a successful trigger flashes a
+// result and does NOT arm an undo — run/retry is confirmed up front, so undo is
+// reserved for delete.
+func TestHandleTriggerRun_FlashesNoUndo(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	newRun := &model.Run{ID: "r-new", TaskName: "task-x", Status: model.PhaseRunning}
+	updated, _ := m.handleTriggerRun(uikit.TriggerRunMsg{TaskName: "task-x", Run: newRun})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updated)
+	}
+	if got.dialogs.TakeUndo() != nil {
+		t.Fatal("trigger must not arm an undo")
+	}
+	flash, active := got.dialogs.FlashActive()
+	if !active || flash != "Started run for task-x" {
+		t.Fatalf("expected a 'Started run for task-x' flash, got %q (active=%v)", flash, active)
+	}
+}
+
+// TestHandleDeleteRun_ArmsUndo verifies a successful delete arms a restore undo.
+func TestHandleDeleteRun_ArmsUndo(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	updated, _ := m.handleDeleteRun(uikit.DeleteRunMsg{TaskName: "t1", RunID: "r-gone"})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updated)
+	}
+	if got.dialogs.TakeUndo() == nil {
+		t.Fatal("expected a successful delete to arm an undo")
+	}
+}
+
+// ─── reload ──────────────────────────────────────────────────────────────────
+
+func TestReloadSummary(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *model.ReloadResult
+		want string
+	}{
+		{"nil", nil, "✓ Config reloaded — no changes"},
+		{"empty", &model.ReloadResult{}, "✓ Config reloaded — no changes"},
+		{
+			"mixed",
+			&model.ReloadResult{
+				Added:   []string{"a"},
+				Removed: []string{"b", "c"},
+				Changed: []model.ReloadTaskChange{{Name: "d"}},
+			},
+			"✓ Config reloaded: +1 added, -2 removed, ~1 changed",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := reloadSummary(tc.in); got != tc.want {
+				t.Fatalf("reloadSummary = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHandleReloadResult_ErrorFlashes(t *testing.T) {
+	m := newTestModel(nil)
+	_, cmd := m.handleReloadResult(uikit.ReloadResultMsg{Err: errors.New("restart-only setting changed")})
+	if cmd == nil {
+		t.Fatal("expected an error flash cmd on reload failure")
+	}
+}
+
+func TestHandleReloadResult_SuccessRebuildsSidebar(t *testing.T) {
+	m := newTestModel([]model.TaskBrief{{Name: "old"}})
+	m.client = newDummyClient()
+	info := &model.DaemonInfo{Tasks: []model.TaskBrief{{Name: "fresh"}}, ConfigStale: false}
+	updated, _ := m.handleReloadResult(uikit.ReloadResultMsg{
+		Result: &model.ReloadResult{Added: []string{"fresh"}, Removed: []string{"old"}},
+		Info:   info,
+	})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updated)
+	}
+	if len(got.info.Tasks) != 1 || got.info.Tasks[0].Name != "fresh" {
+		t.Fatalf("expected info.Tasks rebuilt to [fresh], got %+v", got.info.Tasks)
+	}
+	if got.taskDisplayByName("fresh") == nil {
+		t.Fatal("expected the fresh task to be resolvable after reload")
+	}
+}
+
 // ─── handleStopRun / handleRestartService / handleStopService ────────────────
 
 func TestHandleStopRun_LogsActionResult(t *testing.T) {
@@ -786,15 +876,20 @@ func TestHandleStopService_SetsServiceStopped(t *testing.T) {
 
 // ─── handleDeleteRun ─────────────────────────────────────────────────────────
 
-func TestHandleDeleteRun_ErrorPathReturnsNil(t *testing.T) {
+func TestHandleDeleteRun_ErrorPathFlashesAndOffersNoUndo(t *testing.T) {
 	m := newTestModel(nil)
 	_, cmd := m.handleDeleteRun(uikit.DeleteRunMsg{
 		TaskName: "t1",
 		RunID:    "r-1",
 		Err:      errors.New("storage"),
 	})
-	if cmd != nil {
-		t.Fatal("expected nil cmd on delete error")
+	// A failed delete surfaces an error flash (non-nil cmd) but must not arm an
+	// undo — there is nothing to restore.
+	if cmd == nil {
+		t.Fatal("expected an error flash cmd on delete error")
+	}
+	if m.dialogs.TakeUndo() != nil {
+		t.Fatal("a failed delete must not arm an undo")
 	}
 }
 
