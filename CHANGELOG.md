@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-26
+
 ### Added
 
 - **TUI task & run inspector (`i`).** An on-demand panel showing a task's definition and recent health (success rate, last failure), or a run's full facts (exit code, trigger, retry lineage) in a log view — surfaced on a keypress instead of crowding the header. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/).
@@ -303,7 +305,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.10.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.11.0...main
+[0.11.0]: https://github.com/runwisp/runwisp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/runwisp/runwisp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/runwisp/runwisp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/runwisp/runwisp/compare/v0.7.0...v0.8.0
