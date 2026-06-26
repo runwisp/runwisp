@@ -49,7 +49,7 @@ func TestHTTPTUI_AuthenticatesAndStreamsLiveLogs(t *testing.T) {
 	tui.waitForAll(t, 5*time.Second, "alpha-stream", "Run Now (r)")
 
 	tui.press(t, "r")
-	tui.waitForAll(t, 5*time.Second, "Run Now", "Trigger a new run of")
+	tui.waitForAll(t, 5*time.Second, "Run Task", "Run 'alpha-stream' now?")
 	tui.press(t, "y")
 
 	tui.waitForAll(t, 8*time.Second, "running", "alpha-line-1")
