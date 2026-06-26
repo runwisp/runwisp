@@ -46,7 +46,7 @@ func applyDefaultMaxProcs() {
 	if _, set := os.LookupEnv("GOMAXPROCS"); set {
 		return
 	}
-	if n := runtime.GOMAXPROCS(0); n > defaultMaxProcs {
+	if runtime.GOMAXPROCS(0) > defaultMaxProcs {
 		runtime.GOMAXPROCS(defaultMaxProcs)
 	}
 }

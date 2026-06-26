@@ -131,18 +131,18 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		conn:         connMgr,
 	}
 
-	client.handler = NewInboundHandler(
-		deps.TaskManager,
-		deps.RunRepo,
-		deps.LogDir,
-		deps.Availability,
-		func(update protocol.ExecutionUpdateMessage) {
+	client.handler = NewInboundHandler(InboundHandlerDeps{
+		TaskManager:  deps.TaskManager,
+		RunRepo:      deps.RunRepo,
+		LogDir:       deps.LogDir,
+		Availability: deps.Availability,
+		QueueExecUpdate: func(update protocol.ExecutionUpdateMessage) {
 			client.tracker.QueueUpdate(update, connMgr.sendIfReady)
 		},
-		uploader,
-		tracker,
-		deps.RequestRestart,
-	)
+		Uploader:       uploader,
+		Tracker:        tracker,
+		RequestRestart: deps.RequestRestart,
+	})
 
 	client.sessions = &sessionRunner{
 		handler:     client.handler,

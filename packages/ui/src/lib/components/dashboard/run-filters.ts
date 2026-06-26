@@ -208,7 +208,7 @@ export function clearPopoverFilters(f: RunsListFilters): RunsListFilters {
 /** Human label for a status value, e.g. `log_overflow` → "Log overflow". */
 export function humanizeStatus(status: string): string {
     if (!status) return status;
-    const spaced = status.replace(/_/g, " ");
+    const spaced = status.replaceAll("_", " ");
     return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
@@ -266,7 +266,7 @@ export function statusChipLabel(statuses: string[]): string {
 function localDay(dateStr: string): Date | null {
     const parts = dateStr.split("-");
     if (parts.length !== 3) return null;
-    const [y, m, d] = parts.map((p) => Number(p));
+    const [y, m, d] = parts.map(Number);
     if (y === undefined || m === undefined || d === undefined) return null;
     if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
     const date = new Date(y, m - 1, d);

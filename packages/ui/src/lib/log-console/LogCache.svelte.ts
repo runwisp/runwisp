@@ -12,6 +12,12 @@ import { visibleColumns } from "./ansi.js";
  * the cache must aggressively prune data that is far from the current viewport.
  * It uses a SvelteMap for reactive, efficient line lookups and updates.
  */
+// Streams pinned to the front of the overlay, in render order. The companion
+// Set backs the membership test in `overlayRows`. Both are module-level,
+// immutable, and non-reactive — a fixed lookup table, not component state.
+const PREFERRED_STREAM_ORDER = ["stdout", "stderr"] as const;
+const PREFERRED_STREAMS: ReadonlySet<string> = new Set(PREFERRED_STREAM_ORDER);
+
 export class LogCache {
     lines = $state(new SvelteMap<number, string>());
     // Live-region overlay, keyed by stream (stdout/stderr). Each stream has at
@@ -61,12 +67,11 @@ export class LogCache {
     // other streams, sorted) for stable ordering. Reactive: reads the regions
     // map so it recomputes on update.
     get overlayRows(): string[] {
-        const preferred = ["stdout", "stderr"];
         const rest = [...this.regions.keys()]
-            .filter((s) => !preferred.includes(s))
+            .filter((s) => !PREFERRED_STREAMS.has(s))
             .sort((a, b) => a.localeCompare(b));
         const out: string[] = [];
-        for (const stream of [...preferred, ...rest]) {
+        for (const stream of [...PREFERRED_STREAM_ORDER, ...rest]) {
             const region = this.regions.get(stream);
             if (region) out.push(...region.rows);
         }

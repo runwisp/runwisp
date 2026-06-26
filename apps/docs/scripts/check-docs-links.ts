@@ -80,7 +80,10 @@ function getFrontmatterField(src: string, field: string): string | undefined {
 // Match inline markdown link destinations: [text](destination). Image links
 // `![alt](...)` are filtered out by the negative lookbehind. Reference-style
 // links are out of scope for this check — the corpus uses inline links.
-const linkRe = /(?<!!)\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+// The destination is matched atomically (lookahead-capture + backreference, the
+// `\2`) so a `(` without a closing `)` fails fast instead of backtracking
+// through every destination length (super-linear). Group 2 stays the dest.
+const linkRe = /(?<!!)\[([^\]\n]*)\]\((?=([^)\s]+))\2(?:\s+"[^"]*")?\)/g;
 
 function buildLineOffsets(src: string): number[] {
     const offsets: number[] = [];
@@ -104,7 +107,16 @@ function extractLinks(src: string): LinkMatch[] {
     return out;
 }
 
-const headingRe = /^(#{1,6})\s+(.+?)\s*#*\s*$/gm;
+// Capture the heading text greedily to end-of-line (no ambiguous trailing
+// `\s*#*\s*` quantifiers, which backtrack super-linearly); ATX-style closing
+// hashes are stripped afterwards in code.
+const headingRe = /^(#{1,6})\s+(.+)$/gm;
+
+// Strip an ATX-style closing hash run (`## Title ##`) and surrounding space.
+// Single quantifiers anchored to the end — no backtracking.
+function stripAtxClosing(text: string): string {
+    return text.trimEnd().replace(/#+$/, "").trimEnd();
+}
 
 function collectAnchors(stripped: string, frontmatter: string): Set<string> {
     const slugger = new GithubSlugger();
@@ -112,7 +124,7 @@ function collectAnchors(stripped: string, frontmatter: string): Set<string> {
     const title = getFrontmatterField(frontmatter, "title");
     if (title) out.add(slugger.slug(title));
     for (const m of stripped.matchAll(headingRe)) {
-        out.add(slugger.slug(m[2]));
+        out.add(slugger.slug(stripAtxClosing(m[2])));
     }
     return out;
 }

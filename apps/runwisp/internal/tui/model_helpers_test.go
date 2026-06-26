@@ -401,7 +401,7 @@ func TestDeleteCurrentRun_ActsImmediately(t *testing.T) {
 		t.Fatal("precondition: ended run with EndReason must be deletable")
 	}
 
-	if cmd := m.deleteCurrentRun(); cmd == nil {
+	if m.deleteCurrentRun() == nil {
 		t.Fatal("expected a delete command for a deletable run")
 	}
 	if m.dialogs.HasConfirm() {
@@ -525,7 +525,7 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 		run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &r}
 		ev := execlist.NewExecView(run)
 		m.execView = &ev
-		if cmd := m.confirmAction(confirmActionDelete); cmd == nil {
+		if m.confirmAction(confirmActionDelete) == nil {
 			t.Fatal("expected Delete to return a command for a deletable run")
 		}
 		if m.dialogs.HasConfirm() {
