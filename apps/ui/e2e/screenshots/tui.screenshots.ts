@@ -162,7 +162,10 @@ test.describe("tui", () => {
             await expect(frame).toBeVisible();
             // omitBackground keeps the area outside the rounded corners
             // transparent in the PNG (the body background is transparent too).
-            await frame.screenshot({ path: join(OUT_DIR, `tui-${name}.png`), omitBackground: true });
+            await frame.screenshot({
+                path: join(OUT_DIR, `tui-${name}.png`),
+                omitBackground: true,
+            });
         });
     }
 });
