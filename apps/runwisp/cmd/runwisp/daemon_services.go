@@ -33,6 +33,8 @@ type daemonServices struct {
 	Scheduler           *runtime.Scheduler
 	RetentionCleaner    *runtime.RetentionCleaner
 	SoftDeletePurger    *runtime.SoftDeletePurger
+	MemoryReclaimer     *runtime.MemoryReclaimer
+	DebugServer         *debugServer
 	Notify              notifyBundle
 	ScheduleResult      runtime.ScheduleResult
 	CrashedRuns         int64
@@ -97,6 +99,11 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	softDeletePurger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	softDeletePurger.Start()
 
+	memoryReclaimer := runtime.NewMemoryReclaimer(sqliteShrinkHook(db))
+	memoryReclaimer.Start()
+
+	debugSrv := startDebugServer()
+
 	notifyB := startNotify(ctx, cfg, db, eventBus, addWarning)
 
 	if mode == modeStandalone {
@@ -115,6 +122,8 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		Scheduler:           boot.scheduler,
 		RetentionCleaner:    retentionCleaner,
 		SoftDeletePurger:    softDeletePurger,
+		MemoryReclaimer:     memoryReclaimer,
+		DebugServer:         debugSrv,
 		Notify:              notifyB,
 		ScheduleResult:      boot.schedResult,
 		CrashedRuns:         crashed,
@@ -261,6 +270,19 @@ func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.
 	}
 
 	return taskManager, tasksMap
+}
+
+// sqliteShrinkHook returns the store's PRAGMA shrink_memory callback for the
+// MemoryReclaimer, or nil when the store can't shrink. Probed via an anonymous
+// interface so the storage.Database contract (and its test fakes) stay
+// untouched — only the concrete *storage.SQLiteDatabase implements it.
+func sqliteShrinkHook(db storage.Database) func(context.Context) error {
+	if s, ok := db.(interface {
+		ShrinkMemory(context.Context) error
+	}); ok {
+		return s.ShrinkMemory
+	}
+	return nil
 }
 
 func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasks *runtime.TaskRegistry, logDir string) *runtime.RetentionCleaner {
