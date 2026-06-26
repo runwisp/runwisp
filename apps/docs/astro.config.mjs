@@ -23,6 +23,25 @@ export default defineConfig({
             logo: {
                 src: "@runwisp/ui/assets/runwisp-logo.svg",
             },
+            favicon: "/favicon.svg",
+            head: [
+                {
+                    tag: "link",
+                    attrs: { rel: "icon", href: "/favicon.ico", sizes: "any" },
+                },
+                {
+                    tag: "link",
+                    attrs: { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+                },
+                {
+                    tag: "link",
+                    attrs: { rel: "manifest", href: "/site.webmanifest" },
+                },
+                {
+                    tag: "meta",
+                    attrs: { name: "theme-color", content: "#15a0a8" },
+                },
+            ],
             social: [
                 {
                     icon: "external",
