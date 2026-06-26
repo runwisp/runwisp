@@ -74,6 +74,30 @@ func TestGetDaemonInfo(t *testing.T) {
 	assert.Equal(t, "fp-test", got.Fingerprint)
 }
 
+func TestAuthStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/auth/status", r.URL.Path)
+		_ = json.NewEncoder(w).Encode(map[string]bool{"auth_required": true})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	got, err := c.AuthStatus()
+	require.NoError(t, err)
+	assert.True(t, got.AuthRequired)
+}
+
+func TestAuthStatus_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	_, err := c.AuthStatus()
+	assert.Error(t, err)
+}
+
 func TestStreamDaemonLogs_DeliversLines(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/daemon/log-stream", r.URL.Path)
