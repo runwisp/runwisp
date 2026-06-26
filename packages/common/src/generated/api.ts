@@ -647,6 +647,7 @@ export interface components {
             /** Format: date-time */
             config_loaded_at: string;
             config_stale: boolean;
+            external_url: string;
             fingerprint: string;
             /** Format: int64 */
             port: number;

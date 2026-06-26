@@ -304,6 +304,7 @@ type DaemonInfo struct {
 	Version          string      `json:"version"`
 	Fingerprint      string      `json:"fingerprint"`
 	Port             int         `json:"port"`
+	ExternalURL      string      `json:"external_url"`
 	CloudEnabled     bool        `json:"cloud_enabled"`
 	SchedulingActive bool        `json:"scheduling_active"`
 	ServiceManaged   bool        `json:"service_managed"`

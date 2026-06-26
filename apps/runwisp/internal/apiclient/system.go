@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 )
 
 func (c *Client) GetSystemStats() (*model.SystemStats, error) {
@@ -68,6 +69,17 @@ func (c *Client) Reload() (*model.ReloadResult, error) {
 		return nil, err
 	}
 	return &result, nil
+}
+
+// AuthStatus reports whether the daemon requires authentication, via the public
+// GET /api/auth/status endpoint. A remote client probes it before prompting for
+// a password so a RUNWISP_NO_AUTH daemon connects without one.
+func (c *Client) AuthStatus() (server.AuthStatusBody, error) {
+	var body server.AuthStatusBody
+	if err := c.doJSON("GET", "/api/auth/status", nil, &body); err != nil {
+		return server.AuthStatusBody{}, err
+	}
+	return body, nil
 }
 
 func (c *Client) HealthCheck() error {

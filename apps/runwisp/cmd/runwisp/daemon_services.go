@@ -466,6 +466,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 		Version:          version.Version,
 		Fingerprint:      cfg.Fingerprint,
 		Port:             port,
+		ExternalURL:      cfg.Config.Daemon.ExternalURL,
 		CloudEnabled:     cfg.CloudConfig.Enabled,
 		SchedulingActive: svc.Scheduler != nil,
 		ServiceManaged:   autostart.RunningUnderServiceManager(),

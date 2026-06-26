@@ -102,6 +102,9 @@
           "config_stale": {
             "type": "boolean"
           },
+          "external_url": {
+            "type": "string"
+          },
           "fingerprint": {
             "type": "string"
           },
@@ -142,6 +145,7 @@
           "version",
           "fingerprint",
           "port",
+          "external_url",
           "cloud_enabled",
           "scheduling_active",
           "service_managed",

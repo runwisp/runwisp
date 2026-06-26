@@ -47,14 +47,14 @@ func (srv *Server) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, AuthChallengeBody{Nonce: nonce})
 }
 
-// handleCreateLaunchTicket generates a launch ticket via the authenticated
-// API. Restricted to local origins (Unix socket peer or TCP loopback) so
-// only local TUI/CLI clients can mint tickets.
+// handleCreateLaunchTicket generates a launch ticket. The route sits in the
+// protected group (authOrLocalTrusted), so the caller is already either a
+// local-trusted peer (Unix socket / loopback) or the holder of a valid JWT —
+// i.e. an already-authenticated session. That is the mint gate: a launch
+// ticket only ever hands its bearer a session the minter could already obtain,
+// so a remote TUI that authenticated via CHAP may mint one for its browser.
+// The ticket itself stays single-use with a short TTL.
 func (srv *Server) handleCreateLaunchTicket(w http.ResponseWriter, r *http.Request) {
-	if !isLocalRequest(r) {
-		respondForbidden(w, "Launch tickets can only be created from localhost")
-		return
-	}
 	ticket, err := srv.auth.CreateLaunchTicket()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to create launch ticket", err)
@@ -64,8 +64,11 @@ func (srv *Server) handleCreateLaunchTicket(w http.ResponseWriter, r *http.Reque
 }
 
 // handleLaunchTicket redeems a single-use launch ticket and redirects to
-// the UI with a session cookie. Only accepts requests from local origins
-// (Unix socket peer or TCP loopback).
+// the UI with a session cookie. It accepts cross-origin requests so a remote
+// operator's browser can redeem a ticket minted by an authenticated remote
+// TUI; the protection is the ticket itself — single-use, short TTL, and only
+// mintable by an already-authenticated (or local-trusted) session via
+// handleCreateLaunchTicket. The route is rate-limited to bound guessing.
 //
 // An optional `redirect` query parameter targets a same-origin path (must
 // start with `/` and not `//`) — used by the TUI's "download log" action so
@@ -73,10 +76,6 @@ func (srv *Server) handleCreateLaunchTicket(w http.ResponseWriter, r *http.Reque
 // fresh session cookie. Cross-origin or scheme-relative redirects are
 // rejected to avoid an open-redirect surface.
 func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
-	if !isLocalRequest(r) {
-		respondForbidden(w, "Launch tickets are only valid from localhost")
-		return
-	}
 	ticket := r.URL.Query().Get("ticket")
 	if ticket == "" {
 		respondBadRequest(w, "Missing ticket parameter")

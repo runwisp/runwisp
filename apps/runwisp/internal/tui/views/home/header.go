@@ -113,7 +113,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 		case FieldOpenWebUI:
 			renderActionRow(&b, "Open Web UI", uikit.ColorSecondary, w, selected, hovered)
 		case FieldWebUI:
-			renderFieldRow(&b, "Web UI", fmt.Sprintf("http://localhost:%d", info.Port), uikit.ColorText, w, selected, hovered)
+			renderFieldRow(&b, "Web UI", info.WebURL(), uikit.ColorText, w, selected, hovered)
 		case FieldPassword:
 			masked := strings.Repeat("•", PasswordMaskWidth)
 			if selected {

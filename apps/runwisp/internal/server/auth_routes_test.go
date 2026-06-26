@@ -222,7 +222,11 @@ func TestHandleLaunchTicket_RedirectsToSafePath(t *testing.T) {
 	}
 }
 
-func TestHandleLaunchTicket_NonLoopbackRejected(t *testing.T) {
+// TestHandleLaunchTicket_NonLoopbackRedeems covers cross-origin redeem: a
+// remote operator's browser may redeem a valid ticket against a daemon over
+// the network. The ticket itself — single-use, short-TTL, mintable only by an
+// authenticated session — is the protection, not the origin.
+func TestHandleLaunchTicket_NonLoopbackRedeems(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
 	ticket, err := s.auth.CreateLaunchTicket()
@@ -233,7 +237,15 @@ func TestHandleLaunchTicket_NonLoopbackRejected(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	// A session cookie must be set so the redirected page is authenticated.
+	var authCookie *http.Cookie
+	for _, c := range w.Result().Cookies() {
+		if c.Name == auth.CookieName {
+			authCookie = c
+		}
+	}
+	assert.NotNil(t, authCookie, "redeem must set a session cookie")
 }
 
 // TestHandleCreateLaunchTicket_LoopbackSucceeds covers the happy path: a
@@ -257,10 +269,11 @@ func TestHandleCreateLaunchTicket_LoopbackSucceeds(t *testing.T) {
 	assert.NotEmpty(t, body["ticket"], "expected a non-empty ticket field in response")
 }
 
-// TestHandleCreateLaunchTicket_NonLoopbackRejected covers the rejection
-// branch — a request from a non-local origin must be forbidden even after
-// passing the JWT gate.
-func TestHandleCreateLaunchTicket_NonLoopbackRejected(t *testing.T) {
+// TestHandleCreateLaunchTicket_NonLoopbackAuthenticatedSucceeds covers remote
+// minting: a request from a non-local origin that carries a valid JWT (an
+// already-authenticated session, e.g. a remote TUI that logged in via CHAP)
+// may mint a launch ticket for its browser.
+func TestHandleCreateLaunchTicket_NonLoopbackAuthenticatedSucceeds(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
 	// Mint a valid JWT cookie via the launch path.
@@ -280,7 +293,8 @@ func TestHandleCreateLaunchTicket_NonLoopbackRejected(t *testing.T) {
 	}
 	require.NotNil(t, authCookie)
 
-	// Re-use the JWT cookie but from a non-loopback address.
+	// Re-use the JWT cookie from a non-loopback address — the authenticated
+	// session is the mint gate, not the origin.
 	req := httptest.NewRequest("POST", "/api/auth/launch-ticket", nil)
 	req.RemoteAddr = "192.168.1.100:54321"
 	req.AddCookie(authCookie)
@@ -288,8 +302,27 @@ func TestHandleCreateLaunchTicket_NonLoopbackRejected(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusForbidden, w.Code,
-		"non-loopback origin must be rejected even with a valid JWT cookie")
+	require.Equal(t, http.StatusOK, w.Code,
+		"a valid JWT from a remote origin must be allowed to mint")
+	var body map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	assert.NotEmpty(t, body["ticket"])
+}
+
+// TestHandleCreateLaunchTicket_NonLoopbackUnauthenticatedRejected confirms the
+// mint gate still holds: a non-local request with no session is rejected by the
+// protected-group middleware before reaching the handler.
+func TestHandleCreateLaunchTicket_NonLoopbackUnauthenticatedRejected(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest("POST", "/api/auth/launch-ticket", nil)
+	req.RemoteAddr = "192.168.1.100:54321"
+
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code,
+		"an unauthenticated remote request must not be able to mint a ticket")
 }
 
 func TestHandleLaunchTicket_MissingTicket(t *testing.T) {
