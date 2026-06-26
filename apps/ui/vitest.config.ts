@@ -52,6 +52,7 @@ export default defineConfig({
             $lib: path.resolve(__dirname, "./src/lib"),
             "$app/environment": path.resolve(__dirname, "./test/stubs/app-environment.ts"),
             "$app/paths": path.resolve(__dirname, "./test/stubs/app-paths.ts"),
+            "$app/navigation": path.resolve(__dirname, "./test/stubs/app-navigation.ts"),
         },
     },
 });
