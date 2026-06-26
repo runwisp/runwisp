@@ -9,6 +9,7 @@
     "devDependencies": {
         "@eslint/compat": "^1.4.0",
         "@eslint/js": "^9.39.1",
+        "@fontsource/jetbrains-mono": "^5.2.8",
         "@playwright/test": "^1.52.0",
         "@runwisp/eslint-config": "workspace:*",
         "@runwisp/typescript-config": "workspace:*",
@@ -20,6 +21,7 @@
         "@tailwindcss/vite": "^4.1.17",
         "@types/node": "^24",
         "@vitest/coverage-v8": "^4.1.6",
+        "@xterm/xterm": "5.5.0",
         "eslint": "^9.39.1",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-sonarjs": "^4.0.0",

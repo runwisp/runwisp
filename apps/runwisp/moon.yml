@@ -134,11 +134,23 @@ tasks:
       - '/apps/ui/playwright.config.ts'
 
   screenshots:
-    # Regenerates the docs Web UI screenshots (apps/docs) from a demo-seeded
-    # daemon. On-demand only — never wired into check/test/ci. On runwisp (not
-    # web-ui) for the same project-graph reason as test-e2e.
-    description: 'Generate the docs Web UI screenshots (light + dark).'
-    script: 'cd ../ui && playwright test --config playwright.screenshots.config.ts'
+    # Regenerates the docs Web UI *and* TUI screenshots (apps/docs) from a
+    # demo-seeded daemon. On-demand only — never wired into check/test/ci. On
+    # runwisp (not web-ui) for the same project-graph reason as test-e2e.
+    #
+    # Two stages, one command:
+    #   1. Go capture — drives the real `runwisp tui` in a pty and dumps the raw
+    #      terminal stream per screen to .tui-frames/tui-<name>.ansi.
+    #   2. Playwright — the screenshots config renders the web UI live AND
+    #      replays each .ansi frame through xterm.js (tui.screenshots.ts),
+    #      writing every PNG into apps/docs.
+    description: 'Generate the docs Web UI + TUI screenshots from a demo-seeded daemon.'
+    script: |
+      set -e
+      FRAMES="$(pwd)/.tui-frames"
+      rm -rf "$FRAMES" && mkdir -p "$FRAMES"
+      RUNWISP_TUI_SHOOT_DIR="$FRAMES" go test ./tests/e2e -run '^TestCaptureTUIScreenshots$' -count=1
+      cd ../ui && RUNWISP_TUI_FRAMES="$FRAMES" playwright test --config playwright.screenshots.config.ts
     deps:
       - '~:build'
     options:
