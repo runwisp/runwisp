@@ -125,6 +125,47 @@ func TestDialogManager_Flash(t *testing.T) {
 	}
 }
 
+func TestDialogManager_FlashUndo(t *testing.T) {
+	var dm DialogManager
+	fired := false
+	undo := func() tea.Msg { fired = true; return nil }
+
+	dm.FlashUndo("Deleted — press u to undo", undo, time.Hour)
+
+	if _, ok := dm.FlashActive(); !ok {
+		t.Fatal("expected the undo toast to be active")
+	}
+	cmd := dm.TakeUndo()
+	if cmd == nil {
+		t.Fatal("expected TakeUndo to return the armed command")
+	}
+	_ = cmd() // fire it
+	if !fired {
+		t.Fatal("expected the undo command to run")
+	}
+	if dm.TakeUndo() != nil {
+		t.Fatal("undo must fire at most once")
+	}
+}
+
+func TestDialogManager_FlashClearsPendingUndo(t *testing.T) {
+	var dm DialogManager
+	dm.FlashUndo("undoable", func() tea.Msg { return nil }, time.Hour)
+	dm.Flash("plain message", time.Hour)
+	if dm.TakeUndo() != nil {
+		t.Fatal("a plain Flash must clear any pending undo")
+	}
+}
+
+func TestDialogManager_TakeUndo_ExpiredReturnsNil(t *testing.T) {
+	var dm DialogManager
+	dm.FlashUndo("undoable", func() tea.Msg { return nil }, time.Hour)
+	dm.flashExpiry = time.Now().Add(-time.Second) // expire it
+	if dm.TakeUndo() != nil {
+		t.Fatal("an expired toast must not return an undo")
+	}
+}
+
 func TestDialogManager_ClearFlashIfExpired(t *testing.T) {
 	var dm DialogManager
 	dm.flashMessage = "test"
@@ -392,10 +433,53 @@ func TestDialogManager_RenderOverlays_ConfirmTakesPrecedenceOverHelp(t *testing.
 
 func TestHelpDialog_ViewListsSections(t *testing.T) {
 	d := NewHelpDialog()
-	out := d.View(100, 50)
+	// A tall screen fits the whole reference table without scrolling.
+	out := d.View(100, 80)
 	for _, want := range []string{"Keyboard Shortcuts", "Global", "Navigate", "Exec view", "Notifications"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected help view to contain %q", want)
+		}
+	}
+}
+
+func TestHelpDialog_ScrollsWhenTallerThanScreen(t *testing.T) {
+	d := NewHelpDialog()
+
+	// A short screen can't fit every section; the last one is below the fold.
+	top := d.View(100, 24)
+	if !strings.Contains(top, "Global") {
+		t.Fatal("expected the first section visible at the top")
+	}
+	if strings.Contains(top, "Notifications") {
+		t.Fatal("expected the last section to be scrolled off on a short screen")
+	}
+	if !strings.Contains(top, "↑/↓ scroll") {
+		t.Fatal("expected a scroll hint when content overflows")
+	}
+
+	// Jump to the end and the last section comes into view.
+	if d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")}) {
+		t.Fatal("end key should scroll, not close")
+	}
+	bottom := d.View(100, 24)
+	if !strings.Contains(bottom, "Notifications") {
+		t.Fatal("expected the last section visible after scrolling to the end")
+	}
+}
+
+func TestHelpDialog_ScrollKeysKeepOpen(t *testing.T) {
+	d := NewHelpDialog()
+	d.View(100, 24) // prime the viewport/total cache
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyDown},
+		{Type: tea.KeyUp},
+		{Type: tea.KeyPgDown},
+		{Type: tea.KeyPgUp},
+		{Type: tea.KeyHome},
+		{Type: tea.KeyEnd},
+	} {
+		if d.Update(key) {
+			t.Fatalf("scroll key %v should not close the help dialog", key)
 		}
 	}
 }

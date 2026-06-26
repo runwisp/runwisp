@@ -5,6 +5,7 @@ package execlist
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +19,10 @@ const (
 	dataRowOffset = 1
 	// Footer line showing the viewing range.
 	footerLines = 1
+	// Checkbox glyphs for the multi-select column. Each is one cell wide, so it
+	// fits the row's existing 2-cell indent without shifting any column.
+	checkboxChecked = "▣"
+	checkboxEmpty   = "▢"
 )
 
 // ExecList displays a scrollable list of recent executions backed by an
@@ -33,10 +38,16 @@ type ExecList struct {
 	// instanceCount resolves a task's currently configured instance count so
 	// multi-instance services render a 1-based #N suffix. nil ⇒ no suffix.
 	instanceCount func(taskName string) int
+	// selected holds the run IDs explicitly toggled with space. selectAll
+	// overrides it: when set, the selection is "every run matching the active
+	// filter", rendered all-checked and acted on with a MatchAll selector. The
+	// two are mutually exclusive — toggling a row drops selectAll.
+	selected  map[string]struct{}
+	selectAll bool
 }
 
 func NewExecList(w *ExecWindow) ExecList {
-	return ExecList{window: w, hoveredRow: -1}
+	return ExecList{window: w, hoveredRow: -1, selected: make(map[string]struct{})}
 }
 
 // SetInstanceCountLookup wires the task-instance-count resolver used to decide
@@ -60,11 +71,14 @@ func (e *ExecList) SetFocused(focused bool) {
 	}
 }
 
-// SetFilter constrains the list to a specific task name via the window.
+// SetFilter constrains the list to a specific task name via the window. The
+// multi-select is dropped: switching task context changes the row population, so
+// a carried-over selection would be meaningless (and confusingly invisible).
 func (e *ExecList) SetFilter(taskName string) {
 	e.window.SetFilter(taskName)
 	e.cursor = 0
 	e.Scroll = 0
+	e.ClearSelection()
 }
 
 func (e *ExecList) Cursor() int {
@@ -79,12 +93,91 @@ func (e *ExecList) SelectedRun() *model.Run {
 	return nil
 }
 
+// ToggleSelectCursor flips the multi-select state of the run under the cursor.
+// It drops select-all first, so the selection becomes an explicit set seeded
+// with this row. A no-op when the cursor row isn't loaded.
+func (e *ExecList) ToggleSelectCursor() {
+	run := e.SelectedRun()
+	if run == nil {
+		return
+	}
+	e.selectAll = false
+	if _, ok := e.selected[run.ID]; ok {
+		delete(e.selected, run.ID)
+	} else {
+		e.selected[run.ID] = struct{}{}
+	}
+}
+
+// SelectAllMatching marks every run matching the active filter as selected. The
+// explicit set is cleared since select-all subsumes it.
+func (e *ExecList) SelectAllMatching() {
+	e.selectAll = true
+	e.selected = make(map[string]struct{})
+}
+
+// ClearSelection drops the entire selection (both modes).
+func (e *ExecList) ClearSelection() {
+	e.selectAll = false
+	e.selected = make(map[string]struct{})
+}
+
+// SelectionActive reports whether anything is selected.
+func (e *ExecList) SelectionActive() bool {
+	return e.selectAll || len(e.selected) > 0
+}
+
+// SelectionCount returns how many runs are selected: the full matching total
+// under select-all, otherwise the size of the explicit set.
+func (e *ExecList) SelectionCount() int {
+	if e.selectAll {
+		return e.totalCount()
+	}
+	return len(e.selected)
+}
+
+// isRowSelected reports whether the given run ID renders as checked.
+func (e *ExecList) isRowSelected(runID string) bool {
+	if e.selectAll {
+		return true
+	}
+	_, ok := e.selected[runID]
+	return ok
+}
+
+// SelectionSelector builds the RunSelector for the current selection and reports
+// whether it targets anything. Select-all becomes a MatchAll selector carrying
+// the list's active filter (so it respects an outcome filter); an explicit
+// selection becomes a sorted IDs selector (sorted for deterministic requests).
+func (e *ExecList) SelectionSelector() (model.RunSelector, bool) {
+	if e.selectAll {
+		return model.RunSelector{MatchAll: true, Filter: e.window.CurrentFilter()}, true
+	}
+	if len(e.selected) == 0 {
+		return model.RunSelector{}, false
+	}
+	ids := make([]string, 0, len(e.selected))
+	for id := range e.selected {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return model.RunSelector{IDs: ids}, true
+}
+
 func (e *ExecList) Update(msg tea.Msg) tea.Cmd {
 	if !e.focused {
 		return nil
 	}
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
+		return nil
+	}
+	// The filter key works regardless of the current row count so the user can
+	// recover from a filter that matched nothing. Cycling it clears the window;
+	// the caller refetches via NeedsFetch.
+	if keyMsg.String() == "f" {
+		e.window.CycleStatusFilter()
+		e.cursor, e.Scroll = 0, 0
 		return nil
 	}
 	n := e.totalCount()
@@ -132,7 +225,7 @@ func (e *ExecList) SetHoveredFromLocalY(localY int) {
 		e.hoveredRow = -1
 		return
 	}
-	visIdx := localY - dataRowOffset
+	visIdx := localY - e.headerOffset()
 	vpH := e.ViewportHeight()
 	if visIdx < 0 || visIdx >= vpH {
 		e.hoveredRow = -1
@@ -153,7 +246,7 @@ func (e *ExecList) HandleClick(localY int) bool {
 	if n == 0 {
 		return false
 	}
-	visIdx := localY - dataRowOffset
+	visIdx := localY - e.headerOffset()
 	vpH := e.ViewportHeight()
 	if visIdx < 0 || visIdx >= vpH {
 		return false
@@ -203,6 +296,19 @@ func (e *ExecList) computeScrollbar(vpH, n int) scrollbarState {
 	return scrollbarState{show: true, thumbStart: thumbStart, thumbEnd: thumbEnd}
 }
 
+// rowPrefix returns the 2-cell leading indent for a data row. With no selection
+// it is the plain indent; while selecting it carries the checkbox glyph plus a
+// space — still exactly 2 cells, so no column shifts when selection turns on.
+func (e *ExecList) rowPrefix(runID string) string {
+	if !e.SelectionActive() {
+		return "  "
+	}
+	if e.isRowSelected(runID) {
+		return checkboxChecked + " "
+	}
+	return checkboxEmpty + " "
+}
+
 func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidths) string {
 	bg, fg, bold := uikit.ColorBg, uikit.ColorText, false
 	isCursor := e.focused && rowIdx == e.cursor
@@ -231,7 +337,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 		count = e.instanceCount(item.Run.TaskName)
 	}
 	taskLabel := instanceLabel(item.Run.TaskName, item.Run.InstanceIndex, count)
-	return rowStyle.Render("  "+padCell(taskLabel, cw.task)+" ") +
+	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(taskLabel, cw.task)+" ") +
 		statusCell +
 		rowStyle.Render(" "+
 			padCell(item.TimeAgo, cw.started)+" "+
@@ -270,6 +376,45 @@ func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW int
 	}
 }
 
+// renderFilterBanner draws the active-status-filter notice shown under the
+// column header. It is tinted with the filter's own status colour so it ties
+// visually to the row status badges and can't be missed.
+func (e *ExecList) renderFilterBanner(w int) string {
+	status := e.window.StatusFilter()
+	accent := uikit.StatusStyle(status).GetBackground()
+	label := lipgloss.NewStyle().
+		Background(uikit.ColorBgLight).
+		Foreground(accent).
+		Bold(true).
+		Render("▌ FILTER: " + strings.ToUpper(status))
+	hint := lipgloss.NewStyle().
+		Background(uikit.ColorBgLight).
+		Foreground(uikit.ColorTextMuted).
+		Render("  —  press f to change")
+	return uikit.PadLine(label+hint, w, uikit.ColorBgLight)
+}
+
+// renderEmptySection fills the whole viewport when no rows are present: the
+// message on the first line, blank background rows beneath. Filling to vpH keeps
+// the footer pinned to the bottom, matching a populated list.
+func (e *ExecList) renderEmptySection(b *strings.Builder, vpH, w int) {
+	msg := "No executions yet. Waiting for tasks to run..."
+	if e.window.HasStatusFilter() {
+		msg = "No runs match this filter."
+	}
+	emptyMsg := lipgloss.NewStyle().
+		Background(uikit.ColorBg).
+		Foreground(uikit.ColorTextMuted).
+		PaddingLeft(2).
+		Render(msg)
+	b.WriteString(uikit.PadLine(emptyMsg, w, uikit.ColorBg))
+	b.WriteString("\n")
+	for i := 1; i < vpH; i++ {
+		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
+		b.WriteString("\n")
+	}
+}
+
 func (e *ExecList) View() string {
 	var b strings.Builder
 	w := e.width
@@ -298,31 +443,31 @@ func (e *ExecList) View() string {
 	b.WriteString(uikit.PadLine(uikit.TableHeaderStyle.Render(headerText), w, uikit.ColorBgLight))
 	b.WriteString("\n")
 
-	if n == 0 {
-		emptyMsg := lipgloss.NewStyle().
-			Background(uikit.ColorBg).
-			Foreground(uikit.ColorTextMuted).
-			PaddingLeft(2).
-			Render("No executions yet. Waiting for tasks to run...")
-		b.WriteString(uikit.PadLine(emptyMsg, w, uikit.ColorBg))
+	if e.window.HasStatusFilter() {
+		b.WriteString(e.renderFilterBanner(w))
 		b.WriteString("\n")
+	}
+
+	if n == 0 {
+		e.renderEmptySection(&b, vpH, w)
 	} else {
 		e.renderDataSection(&b, vpH, n, w, contentW, cw, sb)
 	}
 
-	if n > 0 {
+	var footerText string
+	switch {
+	case e.SelectionActive():
+		footerText = fmt.Sprintf("  %d selected", e.SelectionCount())
+	case n > 0:
 		from := e.Scroll + 1
 		to := e.Scroll + vpH
 		if to > n {
 			to = n
 		}
-		footerText := fmt.Sprintf("  viewing %d–%d of %d executions", from, to, n)
-		b.WriteString(uikit.PadLine(uikit.TableFooterStyle.Render(footerText), w, uikit.ColorBgLight))
-		b.WriteString("\n")
-	} else {
-		b.WriteString(uikit.PadLine("", w, uikit.ColorBg))
-		b.WriteString("\n")
+		footerText = fmt.Sprintf("  viewing %d–%d of %d", from, to, n)
 	}
+	b.WriteString(uikit.PadLine(uikit.TableFooterStyle.Render(footerText), w, uikit.ColorBgLight))
+	b.WriteString("\n")
 
 	rendered := strings.Count(b.String(), "\n")
 	for rendered < e.height {
@@ -349,8 +494,23 @@ func (e *ExecList) taskColWidthFor(w int) int {
 	return computeColWidths(w).task
 }
 
+// bannerLines is the number of rows the active-filter banner occupies: one
+// while a status filter is active, zero otherwise.
+func (e *ExecList) bannerLines() int {
+	if e.window.HasStatusFilter() {
+		return 1
+	}
+	return 0
+}
+
+// headerOffset is the number of rows above the first data row: the column header
+// plus the filter banner when it is shown.
+func (e *ExecList) headerOffset() int {
+	return dataRowOffset + e.bannerLines()
+}
+
 func (e *ExecList) ViewportHeight() int {
-	h := e.height - dataRowOffset - footerLines
+	h := e.height - e.headerOffset() - footerLines
 	if h < 1 {
 		return 1
 	}

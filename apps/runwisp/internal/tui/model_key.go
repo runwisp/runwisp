@@ -24,6 +24,7 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	keyCtrlC:    handleKeyQuit,
 	"q":         handleKeyQuit,
 	"n":         handleKeyN,
+	"a":         handleKeyA,
 	"esc":       handleKeyEsc,
 	"backspace": handleKeyBackspace,
 	"f":         handleKeyF,
@@ -34,6 +35,8 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	"enter":     handleKeyEnter,
 	"r":         handleKeyR,
 	"R":         handleKeyR,
+	"i":         handleKeyI,
+	"u":         handleKeyU,
 	"s":         handleKeyS,
 	"d":         handleKeyD,
 	"D":         handleKeyD,
@@ -52,8 +55,24 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.logSearch != nil {
 		return m.handleLogSearchKey(msg)
 	}
-	if msg.String() == "/" && m.canOpenLogSearch() {
-		return m.openLogSearch()
+	if m.sidebar.Filtering() {
+		return m.handleSidebarFilterKey(msg)
+	}
+	if msg.String() == "/" {
+		// `/` filters tasks when the sidebar is focused, and searches logs of the
+		// focused task otherwise.
+		if m.panelFocus == uikit.PanelSidebar {
+			m.sidebar.StartFilter()
+			return m, nil
+		}
+		if m.canOpenLogSearch() {
+			return m.openLogSearch()
+		}
+	}
+	if m.runListFocused() {
+		if newM, cmd, handled := m.handleRunListSelectionKey(msg); handled {
+			return newM, cmd
+		}
 	}
 	if handler, ok := globalKeyHandlers[msg.String()]; ok {
 		newM, extraCmd, handled := handler(m, msg)
@@ -128,6 +147,15 @@ func handleKeyN(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 		m.notifications.Toggle()
 		m.updateLayout()
 		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// handleKeyA marks every notification read while the notifications panel is
+// expanded. Elsewhere it falls through so `a` stays free for sub-components.
+func handleKeyA(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.notifications.IsExpanded() {
+		return m, m.markAllNotificationsRead(), true
 	}
 	return m, nil, false
 }
@@ -334,7 +362,7 @@ func handleKeyR(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 		return m, m.toggleSelectedNotificationRead(), true
 	}
 	if msg.String() == "R" {
-		return m, nil, false
+		return m, m.reloadConfig(), true
 	}
 	if m.execView != nil {
 		return handleKeyRExecView(m)
@@ -350,6 +378,43 @@ func handleKeyRExecView(m Model) (Model, tea.Cmd, bool) {
 		return m, m.confirmAction(confirmActionRestartService), true
 	}
 	return m, nil, true
+}
+
+// handleKeyU fires the inverse of the most recent undoable action while its
+// toast is still showing. With no pending undo it falls through so `u` stays
+// free for sub-components.
+func handleKeyU(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if cmd := m.dialogs.TakeUndo(); cmd != nil {
+		return m, cmd, true
+	}
+	return m, nil, false
+}
+
+// handleKeyI opens an on-demand inspector for whatever is in focus: the open
+// run when an exec view is showing, otherwise the focused task (with an async
+// health fetch). With nothing inspectable it falls through.
+func handleKeyI(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if m.execView != nil && m.execView.Run != nil {
+		m.dialogs.ShowRunDetail(m.execView.Run, m.execView.TaskIsService, m.execView.InstanceCount)
+		return m, nil, true
+	}
+	taskName := m.inspectTaskName()
+	if taskName == "" {
+		return m, nil, false
+	}
+	m.dialogs.ShowTaskDetail(taskName, m.taskDisplayByName(taskName))
+	return m, m.streams.FetchTaskSummary(taskName), true
+}
+
+// inspectTaskName picks the task the inspector should describe. While the
+// sidebar is focused it follows the cursor (the task you're looking at, even
+// before selecting it); otherwise it falls back to the focused task — an open
+// exec view's task, else the sidebar selection.
+func (m Model) inspectTaskName() string {
+	if m.execView == nil && m.panelFocus == uikit.PanelSidebar {
+		return m.sidebar.CursorTaskName()
+	}
+	return m.focusedTaskName()
 }
 
 func handleKeyS(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
@@ -447,20 +512,145 @@ func (m Model) canOpenLogSearch() bool {
 	return m.sidebar.ActiveTask() != ""
 }
 
+// focusedTaskName returns the task the user is currently working with: an open
+// exec view's task takes precedence over the sidebar selection. Empty when no
+// task is in focus (e.g. the Home/Info/Debug pages).
+func (m Model) focusedTaskName() string {
+	if m.execView != nil && m.execView.Run != nil {
+		return m.execView.Run.TaskName
+	}
+	return m.sidebar.ActiveTask()
+}
+
 // openLogSearch creates and attaches the search overlay scoped to whichever
 // task the user is currently focused on.
 func (m Model) openLogSearch() (tea.Model, tea.Cmd) {
-	taskName := ""
-	if m.execView != nil && m.execView.Run != nil {
-		taskName = m.execView.Run.TaskName
-	} else {
-		taskName = m.sidebar.ActiveTask()
-	}
+	taskName := m.focusedTaskName()
 	if taskName == "" {
 		return m, nil
 	}
 	ls := logsearch.New(m.client, taskName)
 	m.logSearch = &ls
+	return m, nil
+}
+
+// runListFocused reports whether the executions list is the active, interactive
+// surface: the Home page main panel is focused with no exec view open, the
+// notifications panel collapsed, and the cursor off the home-overview fields.
+// Only then do the run-list multi-select keys (space/a/c/e/d/esc) apply.
+func (m Model) runListFocused() bool {
+	return m.execView == nil &&
+		m.panelFocus == uikit.PanelMain &&
+		m.sidebar.ActivePage() == uikit.PageHome &&
+		!m.notifications.IsExpanded() &&
+		m.homeCursor < 0
+}
+
+// handleRunListSelectionKey routes the run-list multi-select keys while the
+// executions list is focused: space toggles the cursor row, `a` selects every
+// run matching the active filter, and — once a selection exists — `d` deletes
+// (undoably), `c` cancels, `e` reruns, and esc clears it. Keys it doesn't own
+// return handled=false so normal handling continues.
+func (m Model) handleRunListSelectionKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+	if msg.Type == tea.KeySpace {
+		m.execList.ToggleSelectCursor()
+		return m, nil, true
+	}
+	if msg.String() == "a" {
+		if m.execList.TotalCount() == 0 {
+			return m, nil, false
+		}
+		m.execList.SelectAllMatching()
+		return m, nil, true
+	}
+	if !m.execList.SelectionActive() {
+		return m, nil, false
+	}
+	switch msg.String() {
+	case "esc":
+		m.execList.ClearSelection()
+		return m, nil, true
+	case "d", "D":
+		return m, m.bulkDeleteSelection(), true
+	case "c":
+		return m, m.bulkCancelSelection(), true
+	case "e":
+		return m, m.bulkRerunSelection(), true
+	}
+	return m, nil, false
+}
+
+// bulkDeleteSelection soft-deletes the selected runs and clears the selection.
+// The result returns as a BulkDeleteResultMsg so the handler can arm an undo.
+func (m *Model) bulkDeleteSelection() tea.Cmd {
+	sel, ok := m.execList.SelectionSelector()
+	if !ok {
+		return nil
+	}
+	m.execList.ClearSelection()
+	return m.streams.DeleteRunsUndoable(sel)
+}
+
+// bulkCancelSelection cancels the selected runs and clears the selection.
+func (m *Model) bulkCancelSelection() tea.Cmd {
+	sel, ok := m.execList.SelectionSelector()
+	if !ok {
+		return nil
+	}
+	m.execList.ClearSelection()
+	return m.streams.CancelRuns(sel)
+}
+
+// bulkRerunSelection triggers a fresh run for each selected run and clears the
+// selection.
+func (m *Model) bulkRerunSelection() tea.Cmd {
+	sel, ok := m.execList.SelectionSelector()
+	if !ok {
+		return nil
+	}
+	m.execList.ClearSelection()
+	return m.streams.RerunRuns(sel)
+}
+
+// handleSidebarFilterKey routes one key event through the sidebar's
+// type-to-filter sub-mode. Every printable character types into the query — so
+// `q` filters rather than quitting — while a small set of control keys navigate,
+// commit, or cancel. ctrl+c still quits.
+func (m Model) handleSidebarFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyCtrlC:
+		m.showQuitConfirm()
+		return m, nil
+	case "esc":
+		m.sidebar.StopFilter()
+		return m, nil
+	case "enter":
+		prevPage := m.sidebar.ActivePage()
+		prevTask := m.sidebar.ActiveTask()
+		m.sidebar.SelectFilterCursor()
+		return m, m.applySidebarSelectionChange(prevPage, prevTask)
+	case "backspace":
+		m.sidebar.FilterBackspace()
+		return m, nil
+	case "up":
+		m.sidebar.MoveCursor(-1)
+		return m, nil
+	case "down":
+		m.sidebar.MoveCursor(1)
+		return m, nil
+	case "pgup":
+		m.sidebar.PageCursor(-1)
+		return m, nil
+	case "pgdown":
+		m.sidebar.PageCursor(1)
+		return m, nil
+	}
+	switch msg.Type {
+	case tea.KeyRunes:
+		m.sidebar.FilterAppend(string(msg.Runes))
+	case tea.KeySpace:
+		m.sidebar.FilterAppend(" ")
+	}
 	return m, nil
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime/retry"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/notifications"
@@ -224,6 +225,87 @@ func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
 	}
 }
 
+// Reload triggers an explicit config reload (POST /api/reload). On success it
+// follows up with a fresh /api/info read so the caller can rebuild the sidebar
+// and clear the config-stale notice in one step. A reload error (e.g. a
+// restart-only setting changed) is reported as-is — the running task set is
+// untouched by the daemon.
+func (sm *StreamManager) Reload() tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		result, err := client.Reload()
+		if err != nil {
+			return uikit.ReloadResultMsg{Err: err}
+		}
+		// The reload applied; refresh the task list. If this read fails the
+		// reload still stands — report it without fresh tasks.
+		info, infoErr := client.GetDaemonInfo()
+		if infoErr != nil {
+			return uikit.ReloadResultMsg{Result: result}
+		}
+		return uikit.ReloadResultMsg{Result: result, Info: info}
+	}
+}
+
+// DeleteRuns soft-deletes every run matched by sel. Reversible with RestoreRuns.
+func (sm *StreamManager) DeleteRuns(sel model.RunSelector) tea.Cmd {
+	return sm.bulkAction("Deleted", func(c *apiclient.Client) (int, error) {
+		return c.BulkDeleteRuns(sel)
+	})
+}
+
+// RestoreRuns un-deletes every run matched by sel (the inverse of DeleteRuns).
+func (sm *StreamManager) RestoreRuns(sel model.RunSelector) tea.Cmd {
+	return sm.bulkAction("Restored", func(c *apiclient.Client) (int, error) {
+		return c.BulkRestoreRuns(sel)
+	})
+}
+
+// CancelRuns cancels every running/queued run matched by sel.
+func (sm *StreamManager) CancelRuns(sel model.RunSelector) tea.Cmd {
+	return sm.bulkAction("Cancelled", func(c *apiclient.Client) (int, error) {
+		return c.BulkCancelRuns(sel)
+	})
+}
+
+// RerunRuns triggers a fresh run for every run matched by sel.
+func (sm *StreamManager) RerunRuns(sel model.RunSelector) tea.Cmd {
+	return sm.bulkAction("Reran", func(c *apiclient.Client) (int, error) {
+		refs, err := c.BulkRerunRuns(sel)
+		return len(refs), err
+	})
+}
+
+// DeleteRunsUndoable soft-deletes every run matched by sel and reports the
+// selector back so the caller can offer an undo (restore). Distinct from
+// DeleteRuns, whose generic BulkActionMsg only flashes a count and would clobber
+// an undo toast.
+func (sm *StreamManager) DeleteRunsUndoable(sel model.RunSelector) tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		n, err := client.BulkDeleteRuns(sel)
+		return uikit.BulkDeleteResultMsg{Affected: n, Restore: sel, Err: err}
+	}
+}
+
+// bulkAction wraps a bulk client call as a tea.Cmd yielding a BulkActionMsg.
+func (sm *StreamManager) bulkAction(verb string, fn func(*apiclient.Client) (int, error)) tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		n, err := fn(client)
+		return uikit.BulkActionMsg{Action: verb, Affected: n, Err: err}
+	}
+}
+
 // FetchRunSummary returns a command that fetches aggregate run statistics.
 func (sm *StreamManager) FetchRunSummary() tea.Cmd {
 	if sm.client == nil {
@@ -234,6 +316,60 @@ func (sm *StreamManager) FetchRunSummary() tea.Cmd {
 		summary, err := client.GetRunSummary()
 		return uikit.RunSummaryMsg{Summary: summary, Err: err}
 	}
+}
+
+// taskSummaryWindow is how many recent runs FetchTaskSummary classifies for the
+// on-demand task-detail panel. The all-time total comes from the same response's
+// row count; the success/failed breakdown is over this recent window so the
+// panel reflects current health rather than an all-time tally skewed by ancient
+// failures.
+const taskSummaryWindow = 100
+
+// FetchTaskSummary returns a command that loads the per-task health figures for
+// the task-detail panel: the all-time run count plus a success/failed/other
+// breakdown over the most recent runs. It reuses the existing per-task runs
+// endpoint rather than a dedicated aggregate, so no new server surface is
+// needed.
+func (sm *StreamManager) FetchTaskSummary(taskName string) tea.Cmd {
+	if sm.client == nil || taskName == "" {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		runs, total, err := client.ListRunsByTask(taskName, apiclient.RunsParams{
+			Limit:         taskSummaryWindow,
+			SortField:     "created_at",
+			SortDirection: "desc",
+		})
+		if err != nil {
+			return uikit.TaskSummaryMsg{TaskName: taskName, Err: err}
+		}
+		return summarizeTaskRuns(taskName, runs, total)
+	}
+}
+
+// summarizeTaskRuns classifies a newest-first page of runs into the
+// success/failed/other breakdown the task-detail panel shows. It is pure so the
+// classification (which failure reasons count, where last-failure comes from)
+// is testable without a client. Runs must be ordered newest-first so the first
+// failure encountered is the most recent.
+func summarizeTaskRuns(taskName string, runs []model.Run, total int64) uikit.TaskSummaryMsg {
+	msg := uikit.TaskSummaryMsg{TaskName: taskName, Total: total, Window: len(runs)}
+	for i := range runs {
+		run := &runs[i]
+		switch {
+		case run.EndReason != nil && *run.EndReason == model.ReasonSuccess:
+			msg.Success++
+		case run.EndReason != nil && retry.IsFailureReason(*run.EndReason):
+			msg.Failed++
+			if msg.LastFailure == nil {
+				msg.LastFailure = run.EndAt
+			}
+		default:
+			msg.Other++
+		}
+	}
+	return msg
 }
 
 // FetchMetricsHistory returns a command that fetches historical system metrics.
@@ -375,6 +511,22 @@ func (sm *StreamManager) MarkNotificationRead(id string) tea.Cmd {
 	return func() tea.Msg {
 		err := client.MarkNotificationRead(id)
 		return uikit.NotificationReadStateMsg{ID: id, Read: true, Err: err}
+	}
+}
+
+// MarkAllNotificationsRead persists a "mark every unread row read" action. The
+// panel clears its badge optimistically; on failure the next SSE unread-count
+// event re-syncs, so this only surfaces an error to the debug log.
+func (sm *StreamManager) MarkAllNotificationsRead() tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		if err := client.MarkAllNotificationsRead(); err != nil {
+			return uikit.DebugLogMsg{Message: "Failed to mark all notifications read: " + err.Error()}
+		}
+		return nil
 	}
 }
 

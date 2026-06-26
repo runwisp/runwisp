@@ -91,7 +91,7 @@ func TestRenderHomeHeader_AuthDisabled(t *testing.T) {
 		"the disabled row must not be focusable/copyable")
 }
 
-// TestNextCronRun_ResultShapes covers every shape nextCronRun can produce:
+// TestNextCronRun_ResultShapes covers every shape NextCronRun can produce:
 // the seconds/minutes/hours buckets via different schedules, the empty-input
 // and invalid-input zero cases, and the documented `HH:MM:SS (in …)` format.
 func TestNextCronRun_ResultShapes(t *testing.T) {
@@ -113,7 +113,7 @@ func TestNextCronRun_ResultShapes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := nextCronRun(tt.expr)
+			result := NextCronRun(tt.expr)
 			if tt.empty {
 				assert.Empty(t, result)
 				return
@@ -126,7 +126,7 @@ func TestNextCronRun_ResultShapes(t *testing.T) {
 	}
 
 	t.Run("format-is-HH-MM-SS-followed-by-relative-suffix", func(t *testing.T) {
-		result := nextCronRun("* * * * *")
+		result := NextCronRun("* * * * *")
 		require.NotEmpty(t, result)
 		parts := strings.SplitN(result, " (in ", 2)
 		require.Len(t, parts, 2, "result must contain ' (in ' separator: %s", result)
@@ -135,7 +135,7 @@ func TestNextCronRun_ResultShapes(t *testing.T) {
 	})
 
 	t.Run("hourly-shows-seconds-or-minutes", func(t *testing.T) {
-		result := nextCronRun("0 * * * *")
+		result := NextCronRun("0 * * * *")
 		require.NotEmpty(t, result)
 		if !strings.Contains(result, "s") && !strings.Contains(result, "m") {
 			t.Fatalf("expected seconds or minutes in hourly cron result, got %q", result)
@@ -253,7 +253,7 @@ func TestRenderHeader_ConfigStale(t *testing.T) {
 	}
 	header, _ := RenderHeader(info, false, 80, -1, -1)
 	assert.Contains(t, header, "runwisp.toml changed")
-	assert.Contains(t, header, "runwisp restart")
+	assert.Contains(t, header, "press R to reload")
 }
 
 func TestRenderHeader_ConfigFresh_NoNotice(t *testing.T) {

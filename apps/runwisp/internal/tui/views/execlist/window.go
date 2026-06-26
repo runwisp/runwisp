@@ -27,15 +27,21 @@ const fetchAheadMargin = 30
 // Real-time SSE events are inserted at position 0 (newest-first), temporarily
 // expanding the window. The window is re-anchored on the next fetch.
 type ExecWindow struct {
-	mu          sync.Mutex
-	client      *apiclient.Client
-	filterTask  string
-	totalCount  int // server-reported total
-	windowStart int // offset of items[0] in the full virtual list
-	items       []uikit.ExecListItem
-	idSet       map[string]struct{} // dedup for SSE upserts
-	loading     bool
+	mu           sync.Mutex
+	client       *apiclient.Client
+	filterTask   string
+	statusFilter string // "" = all; one of statusFilterCycle
+	totalCount   int    // server-reported total
+	windowStart  int    // offset of items[0] in the full virtual list
+	items        []uikit.ExecListItem
+	idSet        map[string]struct{} // dedup for SSE upserts
+	loading      bool
 }
+
+// statusFilterCycle is the run-status filter the list cycles through with `f`.
+// It mirrors the web UI's run filter (All / Running / Success / Failed); the
+// empty string means "no filter".
+var statusFilterCycle = []string{"", "running", "success", "failed"}
 
 func NewExecWindow(client *apiclient.Client) *ExecWindow {
 	return &ExecWindow{
@@ -72,16 +78,67 @@ func (w *ExecWindow) SetFilter(taskName string) {
 		return
 	}
 	w.filterTask = taskName
-	w.items = nil
-	w.idSet = make(map[string]struct{})
-	w.windowStart = 0
-	w.totalCount = 0
+	w.clearLocked()
 }
 
 func (w *ExecWindow) FilterTask() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.filterTask
+}
+
+// CurrentFilter returns the read-side filter describing the rows the list is
+// currently showing. Bulk "select all matching" reuses it so a MatchAll
+// selector targets exactly the population on screen (same task + status filter).
+func (w *ExecWindow) CurrentFilter() model.RunFilter {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return model.RunFilter{Status: w.statusFilter, TaskName: w.filterTask}
+}
+
+// clearLocked resets the loaded window so the next NeedsFetch returns true. The
+// caller must hold w.mu.
+func (w *ExecWindow) clearLocked() {
+	w.items = nil
+	w.idSet = make(map[string]struct{})
+	w.windowStart = 0
+	w.totalCount = 0
+}
+
+// CycleStatusFilter advances to the next run-status filter and clears the window.
+// The caller must trigger a fetch afterward.
+func (w *ExecWindow) CycleStatusFilter() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.statusFilter = next(statusFilterCycle, w.statusFilter)
+	w.clearLocked()
+}
+
+// HasStatusFilter reports whether a run-status filter is active (i.e. the list
+// is showing a subset rather than all runs).
+func (w *ExecWindow) HasStatusFilter() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.statusFilter != ""
+}
+
+// StatusFilter returns the raw active status filter ("running"/"success"/
+// "failed"), or "" when no filter is active.
+func (w *ExecWindow) StatusFilter() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.statusFilter
+}
+
+// next returns the element after cur in cycle, wrapping around. If cur is not in
+// cycle, the first element is returned.
+func next(cycle []string, cur string) string {
+	for i, v := range cycle {
+		if v == cur {
+			return cycle[(i+1)%len(cycle)]
+		}
+	}
+	return cycle[0]
 }
 
 // Item returns the uikit.ExecListItem at virtual index i, or nil if outside the loaded window.
@@ -137,6 +194,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]uikit.ExecListIte
 	}
 	w.loading = true
 	filter := w.filterTask
+	statusFilter := w.statusFilter
 	w.mu.Unlock()
 
 	return func() ([]uikit.ExecListItem, int, int, error) {
@@ -146,9 +204,12 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]uikit.ExecListIte
 			offset = 0
 		}
 
+		// The list is always newest-first; sorting was removed as a user-facing
+		// feature, so the order is fixed here (keeps the API request unchanged).
 		params := apiclient.RunsParams{
 			Limit:         windowSize,
 			Offset:        offset,
+			Status:        statusFilter,
 			SortField:     "created_at",
 			SortDirection: "desc",
 			TaskName:      filter,
@@ -211,6 +272,13 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 
 	// Skip runs that don't match the active filter.
 	if w.filterTask != "" && run.TaskName != w.filterTask {
+		return
+	}
+
+	// A new run only belongs at position 0 in the newest-first view. Under a
+	// status filter its correct position is unknown, so leave it to the next
+	// fetch to place it.
+	if w.statusFilter != "" {
 		return
 	}
 

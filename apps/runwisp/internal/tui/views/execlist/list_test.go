@@ -798,3 +798,66 @@ func TestUpdate_KVim_DownUp(t *testing.T) {
 		t.Fatalf("expected cursor=3 after j, got %d", l.Cursor())
 	}
 }
+
+// TestFilterBanner_AppearsOnlyWhenFiltering pins the active-filter banner: it is
+// absent with no filter, present (and named) once one is active, and it costs
+// exactly one viewport row so the layout stays consistent.
+func TestFilterBanner_AppearsOnlyWhenFiltering(t *testing.T) {
+	l := buildList(20)
+	l.SetSize(80, 24) // vpH = 24 - header(1) - banner(0) - footer(1) = 22
+
+	if l.bannerLines() != 0 {
+		t.Fatalf("bannerLines without filter = %d, want 0", l.bannerLines())
+	}
+	if got := l.ViewportHeight(); got != 22 {
+		t.Fatalf("ViewportHeight without filter = %d, want 22", got)
+	}
+	if strings.Contains(l.View(), "FILTER:") {
+		t.Fatal("did not expect a filter banner without an active filter")
+	}
+
+	l.window.CycleStatusFilter() // "" → running
+
+	if l.bannerLines() != 1 {
+		t.Fatalf("bannerLines with filter = %d, want 1", l.bannerLines())
+	}
+	if got := l.ViewportHeight(); got != 21 {
+		t.Fatalf("ViewportHeight with filter = %d, want 21", got)
+	}
+	if view := l.View(); !strings.Contains(view, "FILTER: RUNNING") {
+		t.Fatalf("expected filter banner naming the status, got:\n%s", view)
+	}
+}
+
+// TestRenderEmptySection_FillsViewport verifies the empty state fills the whole
+// viewport (message on the first row, blank rows beneath) so the footer lands at
+// the bottom exactly as it does for a populated list.
+func TestRenderEmptySection_FillsViewport(t *testing.T) {
+	l := buildList(0)
+	l.SetSize(80, 10) // vpH = 10 - 1 - 0 - 1 = 8
+
+	var b strings.Builder
+	l.renderEmptySection(&b, l.ViewportHeight(), 80)
+
+	if lines := strings.Count(b.String(), "\n"); lines != 8 {
+		t.Fatalf("renderEmptySection wrote %d lines, want vpH=8", lines)
+	}
+	first := strings.SplitN(b.String(), "\n", 2)[0]
+	if !strings.Contains(first, "No executions") {
+		t.Fatalf("expected the empty message on the first line, got %q", first)
+	}
+}
+
+// TestRenderEmptySection_FilterMessage swaps in a filter-aware message when the
+// empty list is the result of a status filter rather than no runs at all.
+func TestRenderEmptySection_FilterMessage(t *testing.T) {
+	l := buildList(0)
+	l.SetSize(80, 10)
+	l.window.CycleStatusFilter() // "" → running
+
+	var b strings.Builder
+	l.renderEmptySection(&b, l.ViewportHeight(), 80)
+	if !strings.Contains(b.String(), "No runs match this filter") {
+		t.Fatalf("expected filter-specific empty message, got:\n%s", b.String())
+	}
+}

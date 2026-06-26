@@ -16,8 +16,9 @@ func TestTUIStreamsLiveLogsAndSettlesSuccessfulHeaderState(t *testing.T) {
 	suite := newTUISuite(t)
 	suite.selectAlphaTask(t)
 
+	// Run Now opens a confirm dialog; press y to confirm.
 	suite.tui.press(t, "r")
-	suite.tui.waitForAll(t, 5*time.Second, "Run Now", "Trigger a new run of")
+	suite.tui.waitForAll(t, 3*time.Second, "Run 'alpha-stream' now?")
 	suite.tui.press(t, "y")
 
 	runningScreen := suite.tui.waitForAll(t, 5*time.Second,

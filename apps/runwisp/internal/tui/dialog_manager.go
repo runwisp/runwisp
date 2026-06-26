@@ -8,6 +8,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -17,12 +18,18 @@ type DialogManager struct {
 	confirmDialog *ConfirmDialog
 	copyDialog    *CopyDialog
 	helpDialog    *HelpDialog
+	taskDetail    *TaskDetailDialog
+	runDetail     *RunDetailDialog
 	paramForm     *ParamFormDialog
 	runParams     *RunParamsDialog
 	logHistory    *LogHistoryDialog
 
 	flashMessage string
 	flashExpiry  time.Time
+	// undoCmd is the inverse action offered by the current toast, fired by `u`.
+	// It rides with the flash so it auto-expires on the same clock; a plain
+	// Flash clears it so a stale undo can never fire after an unrelated message.
+	undoCmd tea.Cmd
 
 	// mouseDisabled tracks whether terminal mouse tracking has been
 	// temporarily disabled (so users can natively select text).
@@ -163,6 +170,75 @@ func (dm *DialogManager) UpdateHelp(msg tea.Msg) bool {
 	return false
 }
 
+// HasTaskDetail reports whether the on-demand task inspector is active.
+func (dm *DialogManager) HasTaskDetail() bool {
+	return dm.taskDetail != nil
+}
+
+// ShowTaskDetail opens the task inspector for the named task. Health figures
+// arrive asynchronously and are applied via ApplyTaskSummary.
+func (dm *DialogManager) ShowTaskDetail(taskName string, task *model.TaskBrief) {
+	d := NewTaskDetailDialog(taskName, task)
+	dm.taskDetail = &d
+}
+
+func (dm *DialogManager) DismissTaskDetail() {
+	dm.taskDetail = nil
+}
+
+// UpdateTaskDetail dispatches input to the active task inspector.
+// Returns true when the dialog closed.
+func (dm *DialogManager) UpdateTaskDetail(msg tea.Msg) bool {
+	if dm.taskDetail.Update(msg) {
+		dm.taskDetail = nil
+		return true
+	}
+	return false
+}
+
+// ApplyTaskSummary feeds async health figures to the open inspector. A no-op
+// when the inspector has since closed or the message is for another task.
+func (dm *DialogManager) ApplyTaskSummary(msg uikit.TaskSummaryMsg) {
+	if dm.taskDetail == nil {
+		return
+	}
+	dm.taskDetail.ApplySummary(msg)
+}
+
+// HasRunDetail reports whether the on-demand run inspector is active.
+func (dm *DialogManager) HasRunDetail() bool {
+	return dm.runDetail != nil
+}
+
+// ShowRunDetail opens the run inspector for the given run.
+func (dm *DialogManager) ShowRunDetail(run *model.Run, isService bool, instanceCount int) {
+	d := NewRunDetailDialog(run, isService, instanceCount)
+	dm.runDetail = &d
+}
+
+func (dm *DialogManager) DismissRunDetail() {
+	dm.runDetail = nil
+}
+
+// RunDetailParent returns the parent-run reference of the open run inspector
+// (set only when the run is a retry), so the interceptor can open it on enter.
+func (dm *DialogManager) RunDetailParent() (taskName, runID string, ok bool) {
+	if dm.runDetail == nil {
+		return "", "", false
+	}
+	return dm.runDetail.ParentRef()
+}
+
+// UpdateRunDetail dispatches input to the active run inspector.
+// Returns true when the dialog closed.
+func (dm *DialogManager) UpdateRunDetail(msg tea.Msg) bool {
+	if dm.runDetail.Update(msg) {
+		dm.runDetail = nil
+		return true
+	}
+	return false
+}
+
 // HasLogHistory reports whether the frame-history viewer is active.
 func (dm *DialogManager) HasLogHistory() bool {
 	return dm.logHistory != nil
@@ -233,19 +309,45 @@ func (dm *DialogManager) CopyToClipboard(value string) tea.Cmd {
 	return dm.SyncMouseState()
 }
 
-// Flash sets a transient message shown in the help bar.
+// Flash sets a transient message shown in the help bar. It clears any pending
+// undo so a stale inverse can't fire after an unrelated message.
 func (dm *DialogManager) Flash(msg string, duration time.Duration) tea.Cmd {
 	dm.flashMessage = msg
 	dm.flashExpiry = time.Now().Add(duration)
+	dm.undoCmd = nil
 	return tea.Tick(duration, func(time.Time) tea.Msg {
 		return uikit.FlashExpiredMsg{}
 	})
 }
 
-// ClearFlashIfExpired clears the flash message if past its expiry.
+// FlashUndo shows a toast that offers an inverse action. The undo command is
+// fired by TakeUndo (the `u` key) and auto-expires with the toast.
+func (dm *DialogManager) FlashUndo(msg string, undo tea.Cmd, duration time.Duration) tea.Cmd {
+	dm.flashMessage = msg
+	dm.flashExpiry = time.Now().Add(duration)
+	dm.undoCmd = undo
+	return tea.Tick(duration, func(time.Time) tea.Msg {
+		return uikit.FlashExpiredMsg{}
+	})
+}
+
+// TakeUndo returns the pending undo command (if the toast is still live) and
+// clears it so it fires at most once. Returns nil when nothing is undoable.
+func (dm *DialogManager) TakeUndo() tea.Cmd {
+	if dm.undoCmd == nil || time.Now().After(dm.flashExpiry) {
+		return nil
+	}
+	cmd := dm.undoCmd
+	dm.undoCmd = nil
+	dm.flashMessage = ""
+	return cmd
+}
+
+// ClearFlashIfExpired clears the flash message (and any undo) if past expiry.
 func (dm *DialogManager) ClearFlashIfExpired() {
 	if time.Now().After(dm.flashExpiry) {
 		dm.flashMessage = ""
+		dm.undoCmd = nil
 	}
 }
 
@@ -290,6 +392,12 @@ func (dm *DialogManager) RenderOverlays(base string, width, height int) string {
 	}
 	if dm.logHistory != nil {
 		return dm.logHistory.View(width, height)
+	}
+	if dm.taskDetail != nil {
+		return dm.taskDetail.View(width, height)
+	}
+	if dm.runDetail != nil {
+		return dm.runDetail.View(width, height)
 	}
 	if dm.helpDialog != nil {
 		return dm.helpDialog.View(width, height)

@@ -394,13 +394,18 @@ func TestHandleExecViewClick_ActionDelete(t *testing.T) {
 	if !ok {
 		t.Skip("no HeaderFocusAction hit-coordinate found")
 	}
-	updated, _ := m.handleExecViewClick(x, y)
+	updated, cmd := m.handleExecViewClick(x, y)
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("expected Model, got %T", updated)
 	}
-	if !got.dialogs.HasConfirm() {
-		t.Fatal("expected delete confirm dialog after action click")
+	// Delete acts immediately (soft delete is undoable), so the click issues a
+	// command rather than opening a confirm dialog.
+	if cmd == nil {
+		t.Fatal("expected a delete command after action click")
+	}
+	if got.dialogs.HasConfirm() {
+		t.Fatal("delete must act immediately, not open a confirm dialog")
 	}
 }
 

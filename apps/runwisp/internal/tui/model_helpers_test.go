@@ -47,6 +47,20 @@ func newTestModel(tasks []model.TaskBrief) Model {
 	})
 }
 
+// newTestModelWithClient is newTestModel but wires a dummy client through the
+// constructor so the stream manager's client (used by bulk/undo commands) is
+// non-nil. The client points at a dead address; tests only check that commands
+// are produced, not that they succeed over the wire.
+func newTestModelWithClient(tasks []model.TaskBrief) Model {
+	return NewModel(TUIConfig{
+		Client: newDummyClient(),
+		Info: uikit.StartupInfo{
+			Version: "0.0.0-test",
+			Tasks:   tasks,
+		},
+	})
+}
+
 // stubCanOpenBrowser overrides canOpenBrowser for the duration of t to a
 // fixed return value. Use this instead of poking at DISPLAY/WAYLAND_DISPLAY:
 // macOS/Windows ignore those env vars and would still flow through openBrowser
@@ -336,50 +350,46 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 		}
 	})
 
-	t.Run("confirmRetry with nil execView returns nil", func(t *testing.T) {
+	t.Run("retryRun with nil execView returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if m.confirmRetry() != nil {
+		if m.retryRun() != nil {
 			t.Fatal("expected nil cmd when execView is nil")
 		}
 	})
 }
 
-// TestConfirmTrigger_OpensDialog confirms the cron-task happy path: with a
-// non-nil client and an active task, showConfirmDialog is queued and titled
-// "Run Now".
-func TestConfirmTrigger_OpensDialog(t *testing.T) {
+// TestTriggerRun_ShowsConfirmDialog confirms the cron-task happy path gates the
+// run behind a confirm dialog rather than firing immediately.
+func TestTriggerRun_ShowsConfirmDialog(t *testing.T) {
 	tasks := []model.TaskBrief{{Name: "backup"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
-	// Provide any non-nil client; the closure isn't invoked until confirmation.
 	m.client = newDummyClient()
 
-	if cmd := m.confirmTrigger(); cmd != nil {
-		t.Fatalf("showConfirmDialog returns nil itself, got %v", cmd)
-	}
+	m.triggerRun()
 	if !m.dialogs.HasConfirm() {
-		t.Fatal("expected confirm dialog to be queued for cron task")
+		t.Fatal("expected trigger to queue a confirm dialog for a cron task")
 	}
 }
 
-// TestConfirmTrigger_ServiceDelegatesToRestart verifies that triggering a
-// service routes through confirmRestartService rather than queueing a Run Now
-// dialog.
-func TestConfirmTrigger_ServiceDelegatesToRestart(t *testing.T) {
+// TestTriggerRun_ServiceDelegatesToRestart verifies that triggering a service
+// still routes through confirmRestartService (a restart is not undoable).
+func TestTriggerRun_ServiceDelegatesToRestart(t *testing.T) {
 	tasks := []model.TaskBrief{{Name: "svc", Kind: model.KindService}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 	m.client = newDummyClient()
 
-	m.confirmTrigger()
+	m.triggerRun()
 	if !m.dialogs.HasConfirm() {
 		t.Fatal("expected a restart-service dialog to be queued")
 	}
 }
 
-// TestConfirmDelete_OpensDialogForDeletableRun verifies that a terminal run
-// with CanDelete() true produces a Delete confirmation.
-func TestConfirmDelete_OpensDialogForDeletableRun(t *testing.T) {
+// TestDeleteCurrentRun_ActsImmediately verifies that a terminal run with
+// CanDelete() true produces a delete command without a confirm dialog (soft
+// delete is reversible via the undo toast).
+func TestDeleteCurrentRun_ActsImmediately(t *testing.T) {
 	m := newTestModel(nil)
 	m.client = newDummyClient()
 	r := model.ReasonSuccess
@@ -391,9 +401,11 @@ func TestConfirmDelete_OpensDialogForDeletableRun(t *testing.T) {
 		t.Fatal("precondition: ended run with EndReason must be deletable")
 	}
 
-	m.confirmDelete()
-	if !m.dialogs.HasConfirm() {
-		t.Fatal("expected delete confirm dialog")
+	if cmd := m.deleteCurrentRun(); cmd == nil {
+		t.Fatal("expected a delete command for a deletable run")
+	}
+	if m.dialogs.HasConfirm() {
+		t.Fatal("delete must act immediately, not queue a confirm dialog")
 	}
 }
 
@@ -421,16 +433,16 @@ func TestShowRunParams_NoopWhenNoParams(t *testing.T) {
 	}
 }
 
-// TestConfirmDelete_GuardsAgainstRunning verifies that running execs (which
-// CanDelete() rejects) skip the dialog.
-func TestConfirmDelete_GuardsAgainstRunning(t *testing.T) {
+// TestDeleteCurrentRun_GuardsAgainstRunning verifies that running execs (which
+// CanDelete() rejects) produce no command.
+func TestDeleteCurrentRun_GuardsAgainstRunning(t *testing.T) {
 	m := newTestModel(nil)
 	m.client = newDummyClient()
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 
-	if m.confirmDelete() != nil {
+	if m.deleteCurrentRun() != nil {
 		t.Fatal("expected nil cmd for running run")
 	}
 	if m.dialogs.HasConfirm() {
@@ -448,7 +460,7 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 		{Name: "svc", Kind: model.KindService},
 	}
 
-	t.Run("Trigger queues Run Now dialog", func(t *testing.T) {
+	t.Run("Trigger queues a confirm dialog", func(t *testing.T) {
 		m := newTestModel(tasks)
 		selectSidebarItem(&m, 1)
 		m.client = newDummyClient()
@@ -502,20 +514,22 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 		}
 		m.confirmAction(confirmActionRetry)
 		if !m.dialogs.HasConfirm() {
-			t.Fatal("expected Retry to queue a dialog")
+			t.Fatal("expected Retry to queue a confirm dialog")
 		}
 	})
 
-	t.Run("Delete with deletable run queues delete dialog", func(t *testing.T) {
+	t.Run("Delete with deletable run acts immediately", func(t *testing.T) {
 		m := newTestModel(nil)
 		m.client = newDummyClient()
 		r := model.ReasonSuccess
 		run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &r}
 		ev := execlist.NewExecView(run)
 		m.execView = &ev
-		m.confirmAction(confirmActionDelete)
-		if !m.dialogs.HasConfirm() {
-			t.Fatal("expected Delete to queue a dialog for a deletable run")
+		if cmd := m.confirmAction(confirmActionDelete); cmd == nil {
+			t.Fatal("expected Delete to return a command for a deletable run")
+		}
+		if m.dialogs.HasConfirm() {
+			t.Fatal("Delete must act immediately, not queue a confirm dialog")
 		}
 	})
 
@@ -572,17 +586,18 @@ func TestConfirmStop_HappyPath(t *testing.T) {
 	}
 }
 
-// TestConfirmRetry_HappyPath exercises the retryable-run branch.
-func TestConfirmRetry_HappyPath(t *testing.T) {
+// TestRetryRun_HappyPath exercises the retryable-run branch: it opens a confirm
+// dialog rather than firing immediately.
+func TestRetryRun_HappyPath(t *testing.T) {
 	m := newTestModel(nil)
 	m.client = newDummyClient()
 	r := model.ReasonFailed
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &r}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
-	m.confirmRetry()
+	m.retryRun()
 	if !m.dialogs.HasConfirm() {
-		t.Fatal("expected Retry dialog for retryable run")
+		t.Fatal("expected retry to queue a confirm dialog for a retryable run")
 	}
 }
 
@@ -739,12 +754,12 @@ func TestConfirmStopService_HappyPath(t *testing.T) {
 	}
 }
 
-// TestConfirmTrigger_EmptyTaskNameReturnsNil covers the empty-task guard.
-func TestConfirmTrigger_EmptyTaskNameReturnsNil(t *testing.T) {
+// TestTriggerRun_EmptyTaskNameReturnsNil covers the empty-task guard.
+func TestTriggerRun_EmptyTaskNameReturnsNil(t *testing.T) {
 	m := newTestModel(nil)
 	m.client = newDummyClient()
 	// No active task in sidebar → resolveTaskName returns ""
-	if cmd := m.confirmTrigger(); cmd != nil {
+	if cmd := m.triggerRun(); cmd != nil {
 		t.Fatalf("expected nil when no task is active, got %v", cmd)
 	}
 }

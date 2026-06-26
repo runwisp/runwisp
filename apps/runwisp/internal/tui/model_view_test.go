@@ -35,22 +35,29 @@ func TestView_ReadyRendersBodyAndHelpBar(t *testing.T) {
 	}
 }
 
-func TestHelpTextWithFlash_NoFlashReturnsHelp(t *testing.T) {
+func TestRenderHelpBar_NoFlashReturnsHelp(t *testing.T) {
 	m := newTestModel(nil)
-	got := m.helpTextWithFlash()
+	m, _ = m.applyWindowSize(120, 30)
+	got := m.renderHelpBar()
 	if !strings.Contains(got, "navigate") {
 		t.Fatalf("expected base help text, got: %q", got)
 	}
 }
 
-func TestHelpTextWithFlash_PrependsActiveFlash(t *testing.T) {
+func TestRenderHelpBar_PrependsActiveFlash(t *testing.T) {
 	m := newTestModel(nil)
+	m, _ = m.applyWindowSize(120, 30)
 	// Flash is applied through DialogManager — set one with a long TTL so it
-	// is still "active" when helpTextWithFlash queries.
+	// is still "active" when renderHelpBar queries.
 	m.dialogs.Flash("Saved", 5*time.Second)
-	got := m.helpTextWithFlash()
+	got := m.renderHelpBar()
+	// Both the flash and the help text must survive — the flash is prepended as
+	// its own styled segment, not by replacing the help bar.
 	if !strings.Contains(got, "Saved") {
 		t.Fatalf("expected flash text in output, got: %q", got)
+	}
+	if !strings.Contains(got, "navigate") {
+		t.Fatalf("expected help text alongside flash, got: %q", got)
 	}
 }
 
