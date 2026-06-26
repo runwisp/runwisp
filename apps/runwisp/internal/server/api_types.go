@@ -38,6 +38,13 @@ type TaskRunInput struct {
 	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 }
 
+// RunIDInput drives GET /api/runs/{runId} — a run ULID is globally unique, so
+// fetching one needs no task name. Lets the cross-task /runs view restore a
+// deep-linked run that isn't on the loaded page.
+type RunIDInput struct {
+	RunID string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
+}
+
 type RunsQueryInput struct {
 	Limit         int    `query:"limit" minimum:"1" maximum:"1000" default:"50" doc:"Max results per page"`
 	Offset        int    `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`

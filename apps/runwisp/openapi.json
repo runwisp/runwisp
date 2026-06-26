@@ -2912,6 +2912,52 @@
         ]
       }
     },
+    "/api/runs/{runId}": {
+      "get": {
+        "operationId": "getRunById",
+        "parameters": [
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get a single run by ID",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
     "/api/system": {
       "get": {
         "operationId": "getSystemStats",

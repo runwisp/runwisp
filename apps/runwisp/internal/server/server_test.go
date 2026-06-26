@@ -233,6 +233,27 @@ func TestGetRun(t *testing.T) {
 	assert.Equal(t, id, resp.ID)
 }
 
+func TestGetRunByID(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+
+	id := ulid.Make().String()
+	run := &model.Run{ID: id, TaskName: "task1"}
+	repo.On("GetRun", mock.Anything, id).Return(run, nil)
+
+	// The task-agnostic permalink — no task name in the path.
+	req := httptest.NewRequest("GET", "/api/runs/"+id, nil)
+	w := httptest.NewRecorder()
+
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp model.Run
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, id, resp.ID)
+}
+
 func TestDeleteRun(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 

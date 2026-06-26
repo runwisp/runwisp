@@ -88,6 +88,14 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaGetRunSummary)
 
 	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "getRunById",
+		Method:      http.MethodGet,
+		Path:        "/api/runs/{runId}",
+		Summary:     "Get a single run by ID",
+		Tags:        []string{"Runs"},
+	}, srv.humaGetRunByID)
+
+	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getTaskRuns",
 		Method:      http.MethodGet,
 		Path:        "/api/tasks/{taskName}/runs",
@@ -291,6 +299,14 @@ func (srv *Server) humaStopService(ctx context.Context, input *TaskNameInput) (*
 }
 
 func (srv *Server) humaGetRun(ctx context.Context, input *TaskRunInput) (*RunOutput, error) {
+	run, err := srv.runService.GetRun(ctx, input.RunID)
+	if err != nil {
+		return nil, mapDomainError(err, "Failed to fetch run")
+	}
+	return &RunOutput{Body: *run}, nil
+}
+
+func (srv *Server) humaGetRunByID(ctx context.Context, input *RunIDInput) (*RunOutput, error) {
 	run, err := srv.runService.GetRun(ctx, input.RunID)
 	if err != nil {
 		return nil, mapDomainError(err, "Failed to fetch run")

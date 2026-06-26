@@ -40,6 +40,7 @@
         initialRunId = null,
         initialHighlightLine = null,
         selectRunId = null,
+        onSelectRun,
     } = $props<{
         task: Task;
         cloudMode?: boolean;
@@ -73,6 +74,10 @@
         initialRunId?: string | null;
         initialHighlightLine?: number | null;
         selectRunId?: string | null;
+        // Notified whenever the user picks a run (click or freshly triggered),
+        // so the route can mirror it into the address bar. The auto-fallback
+        // selection (newest/running) is deliberately not reported.
+        onSelectRun?: (runId: string | null) => void;
     }>();
 
     const taskIsService = $derived(isService(task.kind));
@@ -231,6 +236,14 @@
 
     $effect(() => {
         if (selectRunId) userSelectedRunId = selectRunId;
+    });
+
+    // Report explicit selections upward so the URL can mirror the run on screen.
+    // Must stay after the seed effects above: on the first flush they run in
+    // declaration order, so userSelectedRunId is already seeded from the deep
+    // link when this reports — otherwise the initial null would clobber it.
+    $effect(() => {
+        onSelectRun?.(userSelectedRunId);
     });
 
     let selectedRunId = $derived.by(() => {

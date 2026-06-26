@@ -445,7 +445,7 @@ func runURL(externalURL string, r *model.Run) string {
 	if externalURL == "" || r == nil || r.TaskName == "" || r.ID == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/tasks/%s?runId=%s", externalURL, url.PathEscape(r.TaskName), url.QueryEscape(r.ID))
+	return fmt.Sprintf("%s/tasks/%s/%s", externalURL, url.PathEscape(r.TaskName), url.PathEscape(r.ID))
 }
 
 // taskURL is the link to a task's dashboard page, used by log.disk_pressure
