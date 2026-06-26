@@ -26,15 +26,27 @@ func (q *Queries) CountRuns(ctx context.Context, taskName string) (int64, error)
 
 const countRunsFiltered = `-- name: CountRunsFiltered :one
 SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
 `
 
 type CountRunsFilteredParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -42,8 +54,13 @@ type CountRunsFilteredParams struct {
 
 func (q *Queries) CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countRunsFiltered,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -312,16 +329,28 @@ const queryRunsCreatedAtAsc = `-- name: QueryRunsCreatedAtAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY created_at ASC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY created_at ASC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsCreatedAtAscParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -348,8 +377,13 @@ type QueryRunsCreatedAtAscRow struct {
 
 func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]QueryRunsCreatedAtAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsCreatedAtAsc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -396,16 +430,28 @@ const queryRunsCreatedAtDesc = `-- name: QueryRunsCreatedAtDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY created_at DESC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY created_at DESC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsCreatedAtDescParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -432,8 +478,13 @@ type QueryRunsCreatedAtDescRow struct {
 
 func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreatedAtDescParams) ([]QueryRunsCreatedAtDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsCreatedAtDesc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -480,16 +531,28 @@ const queryRunsDurationAsc = `-- name: QueryRunsDurationAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) ASC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) ASC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsDurationAscParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -516,8 +579,13 @@ type QueryRunsDurationAscRow struct {
 
 func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDurationAscParams) ([]QueryRunsDurationAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsDurationAsc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -564,16 +632,28 @@ const queryRunsDurationDesc = `-- name: QueryRunsDurationDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) DESC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY (COALESCE(julianday(end_at) - julianday(start_at), 0)) DESC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsDurationDescParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -600,8 +680,13 @@ type QueryRunsDurationDescRow struct {
 
 func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurationDescParams) ([]QueryRunsDurationDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsDurationDesc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -648,16 +733,28 @@ const queryRunsExitCodeAsc = `-- name: QueryRunsExitCodeAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY exit_code ASC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY exit_code ASC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsExitCodeAscParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -684,8 +781,13 @@ type QueryRunsExitCodeAscRow struct {
 
 func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCodeAscParams) ([]QueryRunsExitCodeAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsExitCodeAsc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -732,16 +834,28 @@ const queryRunsExitCodeDesc = `-- name: QueryRunsExitCodeDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY exit_code DESC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY exit_code DESC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsExitCodeDescParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -768,8 +882,13 @@ type QueryRunsExitCodeDescRow struct {
 
 func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCodeDescParams) ([]QueryRunsExitCodeDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsExitCodeDesc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -816,16 +935,28 @@ const queryRunsStartAtAsc = `-- name: QueryRunsStartAtAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY COALESCE(start_at, created_at) ASC, created_at ASC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY COALESCE(start_at, created_at) ASC, created_at ASC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsStartAtAscParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -852,8 +983,13 @@ type QueryRunsStartAtAscRow struct {
 
 func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtAscParams) ([]QueryRunsStartAtAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsStartAtAsc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -900,16 +1036,28 @@ const queryRunsStartAtDesc = `-- name: QueryRunsStartAtDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY COALESCE(start_at, created_at) DESC, created_at DESC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY COALESCE(start_at, created_at) DESC, created_at DESC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsStartAtDescParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -936,8 +1084,13 @@ type QueryRunsStartAtDescRow struct {
 
 func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAtDescParams) ([]QueryRunsStartAtDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsStartAtDesc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -984,16 +1137,28 @@ const queryRunsStatusAsc = `-- name: QueryRunsStatusAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY status ASC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY status ASC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsStatusAscParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -1020,8 +1185,13 @@ type QueryRunsStatusAscRow struct {
 
 func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAscParams) ([]QueryRunsStatusAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsStatusAsc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -1068,16 +1238,28 @@ const queryRunsStatusDesc = `-- name: QueryRunsStatusDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY status DESC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY status DESC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsStatusDescParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -1104,8 +1286,13 @@ type QueryRunsStatusDescRow struct {
 
 func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDescParams) ([]QueryRunsStatusDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsStatusDesc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -1152,16 +1339,28 @@ const queryRunsTaskNameAsc = `-- name: QueryRunsTaskNameAsc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY task_name ASC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY task_name ASC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsTaskNameAscParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -1188,8 +1387,13 @@ type QueryRunsTaskNameAscRow struct {
 
 func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNameAscParams) ([]QueryRunsTaskNameAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsTaskNameAsc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,
@@ -1236,16 +1440,28 @@ const queryRunsTaskNameDesc = `-- name: QueryRunsTaskNameDesc :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL OR end_reason = ?1)
-  AND (?2 IS NULL OR status = ?2)
-  AND (?3 IS NULL OR task_name = ?3)
-  AND (?4 IS NULL OR (task_name LIKE ?5 OR id LIKE ?5))
-ORDER BY task_name DESC LIMIT ?7 OFFSET ?6
+  AND (?1 IS NULL
+       OR instr(?1, '|' || status || '|') > 0
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
+  AND (?2 IS NULL OR created_at >= ?2)
+  AND (?3 IS NULL OR created_at <= ?3)
+  AND (?4 IS NULL OR triggered_by = ?4)
+  AND (?5 IS NULL OR exit_code >= ?5)
+  AND (?6 IS NULL OR exit_code <= ?6)
+  AND (?7 IS NULL OR retry_attempt > 0)
+  AND (?8 IS NULL OR task_name = ?8)
+  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+ORDER BY task_name DESC LIMIT ?12 OFFSET ?11
 `
 
 type QueryRunsTaskNameDescParams struct {
-	EndReasonFilter   interface{} `json:"end_reason_filter"`
-	StatusPhaseFilter interface{} `json:"status_phase_filter"`
+	StatusSet         interface{} `json:"status_set"`
+	CreatedAfter      interface{} `json:"created_after"`
+	CreatedBefore     interface{} `json:"created_before"`
+	TriggeredByFilter interface{} `json:"triggered_by_filter"`
+	ExitCodeMin       interface{} `json:"exit_code_min"`
+	ExitCodeMax       interface{} `json:"exit_code_max"`
+	RetriesOnly       interface{} `json:"retries_only"`
 	TaskNameFilter    interface{} `json:"task_name_filter"`
 	SearchFilter      interface{} `json:"search_filter"`
 	SearchPattern     string      `json:"search_pattern"`
@@ -1272,8 +1488,13 @@ type QueryRunsTaskNameDescRow struct {
 
 func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNameDescParams) ([]QueryRunsTaskNameDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsTaskNameDesc,
-		arg.EndReasonFilter,
-		arg.StatusPhaseFilter,
+		arg.StatusSet,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.TriggeredByFilter,
+		arg.ExitCodeMin,
+		arg.ExitCodeMax,
+		arg.RetriesOnly,
 		arg.TaskNameFilter,
 		arg.SearchFilter,
 		arg.SearchPattern,

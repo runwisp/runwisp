@@ -14,7 +14,7 @@
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
     import { navigateToRun } from "$lib/utils/run-url";
     import { type Task } from "$lib/types";
-    import type { RunsListFilters } from "@runwisp/ui";
+    import { emptyRunFilters, type RunsListFilters } from "@runwisp/ui";
 
     let taskName = $derived($page.params.id ?? "");
     // The selected run lives in the path as an optional segment: /tasks/{name}/{runId}.
@@ -37,11 +37,7 @@
 
     const source = createRunsSource();
 
-    let filters = $state<RunsListFilters>({
-        search: "",
-        status: "all",
-        sort_direction: "desc",
-    });
+    let filters = $state<RunsListFilters>(emptyRunFilters());
 
     $effect(() => {
         if (!taskName) return;

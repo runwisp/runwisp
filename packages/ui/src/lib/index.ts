@@ -80,11 +80,25 @@ export { LogFetcher } from "./log-console/LogFetcher.svelte.js";
 
 export { default as RunDetailPanel } from "./components/dashboard/RunDetailPanel.svelte";
 export { default as RunsList } from "./components/dashboard/RunsList.svelte";
-export type {
-    RunsListFilters,
-    RunsListSortDirection,
-    RunOutputMatch,
-} from "./components/dashboard/RunsList.svelte";
+export { default as RunFilterPopover } from "./components/dashboard/RunFilterPopover.svelte";
+export type { RunOutputMatch } from "./components/dashboard/RunsList.svelte";
+export {
+    emptyRunFilters,
+    NEEDS_ATTENTION_STATUSES,
+    isNeedsAttention,
+    activeFilterCount,
+    activeDimensions,
+    dimensionActive,
+    clearDimension,
+    clearPopoverFilters,
+    humanizeStatus,
+    statusChipLabel,
+    exitCodeRange,
+    type ExitCodeRange,
+    type RunsListFilters,
+    type RunsListSortDirection,
+    type FilterDimension,
+} from "./components/dashboard/run-filters.js";
 export {
     getRunStatusConfig,
     runDisplayStatus,

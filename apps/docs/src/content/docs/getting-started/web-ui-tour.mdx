@@ -91,6 +91,45 @@ which task to dig into.
     alt="All Runs page: flat newest-first table of recent runs across every task with status icons, durations, and timestamps."
 />
 
+### Filtering
+
+The list can get long, so there's a **Filter** button in the run-history
+header. It opens a roomy popover _over the run detail_ — so the list
+you're filtering stays put and updates live as you tweak it — and on a
+phone it slides up as a full-width sheet instead. A badge on the button
+counts how many filters are active, and whatever you pick shows up as
+removable chips under the header, so you can always see (and clear)
+what's narrowing the list.
+
+The filters, roughly in the order you'll reach for them:
+
+- **Status** — five plain-language buckets: **Running**, **Succeeded**,
+  **Failed**, **Skipped**, and **Stopped**. Tick **Failed** to catch
+  everything that broke or went missing — the one-click answer to "did
+  anything fail?". Need to be surgical (say, only `timeout`)? Open
+  **Advanced** to pick the exact statuses.
+- **Date range** — an independent **From** / **To** pair. Set just one
+  end and it stays open the other way — a **From** with no **To** means
+  "everything since", and picking the same day for both captures that whole
+  day. A bare date counts from its 00:00 (From) or through its end (To),
+  so a **To** of 10 July _includes_ everything that ran that day.
+- **Task** — narrow to a single task (only on `/runs`; a task's own page
+  is already scoped to it).
+- **Triggered by** — scheduled (cron), manual (UI or API), a service
+  auto-start, or a run on daemon start.
+- **Exit code** — a small expression: an exact code (`137`, handy for
+  hunting an OOM), a comparison (`>100`, `<=2`), or a window built from
+  both (`>100 <150`). It resolves to an inclusive range.
+- **Retries** — only runs that were a retry of an earlier attempt.
+
+Everything filters server-side, so the count and "load more" stay
+honest no matter how many runs you have. The same filters back the
+**bulk actions** (re-run / cancel / delete) — select-all-matching
+operates on exactly the rows your filter shows. Over the REST API the
+identical knobs are query parameters on
+[`GET /api/runs`](/api/) (`status`, `created_after`, `created_before`,
+`triggered_by`, `exit_code_min`, `exit_code_max`, `retries_only`).
+
 ## Task detail (`/tasks/{id}`)
 
 Click a task in the sidebar (or any run in the activity feed) to open

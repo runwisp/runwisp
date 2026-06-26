@@ -10,12 +10,32 @@ fileGroups:
   # Non-Go assets compiled into the binary via //go:embed. They are build
   # inputs even though they aren't .go files, so the build cache must key on
   # them — otherwise editing e.g. the demo config leaves a stale binary.
-  # internal/ui/dist and internal/storage/schema.sql are omitted: they reach
-  # the build transitively via the sync-ui-dist and sqlc-generate deps.
+  # internal/storage/schema.sql is omitted because the sqlc output it produces
+  # lands in internal/**/*.go (caught by `go` above); internal/ui/dist is
+  # handled by `ui_src` below.
   embeds:
     - 'internal/demo/runwisp.toml'
     - 'internal/autostart/templates/*.tmpl'
     - 'internal/notify/render/defaults/**/*'
+  # The web-UI sources whose built output is copied into internal/ui/dist and
+  # compiled in via go:embed. moon does NOT chain cache invalidation through a
+  # task's deps (every dep hash is recorded "ignored" in the hash manifest) —
+  # a consuming task only re-runs when its own declared INPUT files change.
+  # internal/ui/dist and apps/ui/build are gitignored, so moon's vcs hasher
+  # can't key on them; we key on the UI SOURCE instead, mirroring
+  # web-ui:build's inputs. A UI edit then busts sync-ui-dist and build the same
+  # way it busts web-ui:build, instead of leaving a binary with a stale
+  # embedded UI (the bug that previously forced MOON_CACHE=off rebuilds).
+  # Keep in sync with apps/ui/moon.yml's `sources` + `upstream` file groups.
+  ui_src:
+    - '/apps/ui/src/**/*'
+    - '/apps/ui/static/**/*'
+    - '/apps/ui/svelte.config.js'
+    - '/apps/ui/vite.config.ts'
+    - '/apps/ui/tsconfig.json'
+    - '/apps/ui/package.json'
+    - '/packages/ui/src/**/*'
+    - '/packages/common/src/**/*'
 
 tasks:
   sqlc-generate:
@@ -51,6 +71,7 @@ tasks:
       - 'web-ui:build'
     inputs:
       - 'scripts/sync-ui-dist.sh'
+      - '@globs(ui_src)'
     outputs:
       - 'internal/ui/dist'
 
@@ -65,6 +86,7 @@ tasks:
     inputs:
       - '@globs(go)'
       - '@globs(embeds)'
+      - '@globs(ui_src)'
       - 'scripts/build.sh'
       - 'scripts/metadata.sh'
       - '/CHANGELOG.md'

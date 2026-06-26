@@ -3,15 +3,32 @@
 
 package model
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // RunFilter mirrors the read-side filter shape used by the runs list endpoint.
 // Reused inside RunSelector so bulk operations target the same population the
-// user sees in the UI.
+// user sees in the UI. Every field is optional — the zero value selects every
+// (non-deleted) run.
 type RunFilter struct {
-	Status   string `json:"status,omitempty"    doc:"Filter by run status (phase or end reason)"`
-	TaskName string `json:"task_name,omitempty" doc:"Filter by task name"`
-	Search   string `json:"search,omitempty"    doc:"Search query against task_name / id"`
+	// Status is a comma-separated set of statuses (phases and/or end reasons);
+	// a run matches if its phase OR its end reason is in the set. A single
+	// value (the common case) is just a one-element set.
+	Status        string     `json:"status,omitempty"            doc:"Comma-separated run statuses (phase or end reason); a run matches any listed value"`
+	TaskName      string     `json:"task_name,omitempty"         doc:"Filter by task name"`
+	Search        string     `json:"search,omitempty"            doc:"Search query against task_name / id"`
+	CreatedAfter  *time.Time `json:"created_after,omitempty"     doc:"Only runs created at or after this time"`
+	CreatedBefore *time.Time `json:"created_before,omitempty"    doc:"Only runs created at or before this time"`
+	TriggeredBy   string     `json:"triggered_by,omitempty"   doc:"Filter by what triggered the run (cron/api/cloud/service/startup)"`
+	// ExitCodeMin / ExitCodeMax bound the exit code to an inclusive integer
+	// range; either end may be set alone (open on the other side). The UI's
+	// friendly expression (e.g. ">100 <150") is normalized to these bounds
+	// before the wire, so the daemon only ever sees a plain range.
+	ExitCodeMin *int `json:"exit_code_min,omitempty" doc:"Only runs whose exit code is >= this (inclusive)"`
+	ExitCodeMax *int `json:"exit_code_max,omitempty" doc:"Only runs whose exit code is <= this (inclusive)"`
+	RetriesOnly bool `json:"retries_only,omitempty"  doc:"Only runs that are a retry (retry_attempt > 0)"`
 }
 
 // RunSelector is the contract between UI and server for every bulk operation.

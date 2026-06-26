@@ -4,6 +4,9 @@ $schema: "https://moonrepo.dev/schemas/project.json"
 language: "typescript"
 layer: "application"
 
+# NOTE: `sources` + `upstream` define what invalidates the embedded UI build.
+# runwisp/moon.yml mirrors them in its `ui_src` file group so a UI edit also
+# busts the Go binary's embedded dist — keep the two in sync when adding paths.
 fileGroups:
     sources:
         - "src/**/*"

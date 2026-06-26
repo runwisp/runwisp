@@ -4,15 +4,19 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
     import type { Placement } from "@floating-ui/dom";
-    import { tick, onDestroy } from "svelte";
+    import { onDestroy } from "svelte";
     import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
-    import { scale } from "svelte/transition";
+    import { scale, fade } from "svelte/transition";
     import { quintOut } from "svelte/easing";
     import { portal } from "../actions/portal.js";
 
     interface Props {
         open?: boolean;
         placement?: Placement;
+        // Opt-in: below the `md` breakpoint, render the content as a bottom
+        // sheet (full-width, pinned to the viewport bottom, dimmed scrim behind)
+        // instead of a floating popover. Leaves desktop behavior untouched.
+        mobileSheet?: boolean;
         trigger?: Snippet;
         children?: Snippet;
         class?: string;
@@ -21,6 +25,7 @@
     let {
         open = $bindable(false),
         placement = "bottom",
+        mobileSheet = false,
         trigger,
         children,
         class: className = "",
@@ -30,20 +35,38 @@
     let contentEl = $state<HTMLElement | null>(null);
     let cleanupFloating = $state<(() => void) | null>(null);
 
-    async function setupFloating() {
-        if (!triggerEl || !contentEl) return;
+    // Track the `md` breakpoint only when sheet mode is requested, so the
+    // content can switch between floating (desktop) and bottom sheet (phone)
+    // live on resize. matchMedia is client-only; the effect never runs on SSR.
+    let isDesktop = $state(true);
+    $effect(() => {
+        if (!mobileSheet) return;
+        const mq = window.matchMedia("(min-width: 768px)");
+        isDesktop = mq.matches;
+        const onChange = (e: MediaQueryListEvent) => (isDesktop = e.matches);
+        mq.addEventListener("change", onChange);
+        return () => mq.removeEventListener("change", onChange);
+    });
 
+    const asSheet = $derived(mobileSheet && !isDesktop);
+
+    function teardown() {
+        cleanupFloating?.();
+        cleanupFloating = null;
+    }
+
+    function setupFloating() {
+        if (!triggerEl || !contentEl) return;
         cleanupFloating = autoUpdate(triggerEl, contentEl, () => {
             if (!triggerEl || !contentEl) return;
-
             void computePosition(triggerEl, contentEl, {
                 placement,
                 middleware: [offset(8), flip(), shift({ padding: 8 })],
             }).then(({ x, y }) => {
                 if (contentEl) {
                     Object.assign(contentEl.style, {
-                        left: `${x}px`,
-                        top: `${y}px`,
+                        left: `${String(x)}px`,
+                        top: `${String(y)}px`,
                         position: "absolute",
                     });
                 }
@@ -51,40 +74,40 @@
         });
     }
 
+    // Position the content while open: float it on desktop, or pin it as a
+    // sheet on phone (clearing any inline coords floating-ui left behind).
+    $effect(() => {
+        if (!open || !contentEl) {
+            teardown();
+            return;
+        }
+        if (asSheet) {
+            teardown();
+            contentEl.style.removeProperty("left");
+            contentEl.style.removeProperty("top");
+            contentEl.style.removeProperty("position");
+            return;
+        }
+        setupFloating();
+        return teardown;
+    });
+
     function toggle() {
         open = !open;
-        if (open) {
-            void tick().then(() => {
-                void setupFloating();
-            });
-        } else {
-            cleanupFloating?.();
-            cleanupFloating = null;
-        }
     }
 
     function handleOutsideClick(e: MouseEvent) {
         const path = e.composedPath();
         if (triggerEl && path.includes(triggerEl)) return;
         if (contentEl && path.includes(contentEl)) return;
-        if (open) {
-            open = false;
-            cleanupFloating?.();
-            cleanupFloating = null;
-        }
+        if (open) open = false;
     }
 
     function handleKeyDown(e: KeyboardEvent) {
-        if (e.key === "Escape" && open) {
-            open = false;
-            cleanupFloating?.();
-            cleanupFloating = null;
-        }
+        if (e.key === "Escape" && open) open = false;
     }
 
-    onDestroy(() => {
-        cleanupFloating?.();
-    });
+    onDestroy(teardown);
 </script>
 
 <svelte:window onclick={handleOutsideClick} onkeydown={handleKeyDown} />
@@ -112,14 +135,24 @@
     </div>
 
     {#if open}
+        {#if asSheet}
+            <div
+                use:portal
+                transition:fade={{ duration: 120 }}
+                class="fixed inset-0 z-[9998] bg-on-surface/40"
+                aria-hidden="true"
+            ></div>
+        {/if}
         <div
             use:portal
             bind:this={contentEl}
             transition:scale={{ duration: 150, start: 0.95, easing: quintOut }}
             class="
-                z-[9999]
-                rounded-xl
-                border border-outline bg-surface-overlay p-4 shadow-xl shadow-on-surface/5
+                z-[9999] max-h-[80vh] overflow-y-auto
+                border border-outline bg-surface-overlay shadow-xl shadow-on-surface/5
+                {asSheet
+                ? 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-x-0 border-b-0 p-5'
+                : 'rounded-xl p-4'}
             "
         >
             {#if children}

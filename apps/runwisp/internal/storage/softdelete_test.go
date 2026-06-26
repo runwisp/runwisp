@@ -60,7 +60,7 @@ func TestSoftDeleteHidesRunFromReads(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 
-	countF, err := db.CountRunsFiltered(ctx, "", "task1", "")
+	countF, err := db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "task1"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), countF)
 }
@@ -321,5 +321,43 @@ func TestSelectorMatchAllRespectsExceptIDs(t *testing.T) {
 
 	// skip is still visible.
 	_, err = db.GetRun(ctx, skip.ID)
+	require.NoError(t, err)
+}
+
+// TestSelectorMatchAllNewGateWithExceptIDs proves the new named filter gates
+// (here triggered_by) compose with the trailing `except_ids` slice: sqlc
+// appends the slice's bind params after every named scalar, so a new gate must
+// not disturb that ordering. A regression here surfaces as a SQL bind mismatch.
+func TestSelectorMatchAllNewGateWithExceptIDs(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	apiKeep := newTerminalRun("task1")
+	apiSkip := newTerminalRun("task1")
+	cronRun := newTerminalRun("task1")
+	cronRun.TriggeredBy = model.TriggeredByCron
+	for _, r := range []*model.Run{apiKeep, apiSkip, cronRun} {
+		require.NoError(t, db.CreateRun(ctx, r))
+	}
+
+	// MatchAll api-triggered runs, excepting apiSkip — cronRun is filtered out
+	// by the gate, apiSkip by the slice, leaving only apiKeep.
+	refs, err := db.SoftDeleteRuns(ctx,
+		model.RunSelector{
+			MatchAll:  true,
+			Filter:    model.RunFilter{TriggeredBy: string(model.TriggeredByAPI)},
+			ExceptIDs: []string{apiSkip.ID},
+		},
+		time.Now(),
+	)
+	require.NoError(t, err)
+	require.Len(t, refs, 1)
+	assert.Equal(t, apiKeep.ID, refs[0].ID)
+
+	// The excepted run and the gate-filtered run both survive.
+	_, err = db.GetRun(ctx, apiSkip.ID)
+	require.NoError(t, err)
+	_, err = db.GetRun(ctx, cronRun.ID)
 	require.NoError(t, err)
 }

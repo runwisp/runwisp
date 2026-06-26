@@ -71,16 +71,13 @@ func mapNotFound(err error) error {
 }
 
 func (s *runService) ListRuns(ctx context.Context, taskName string, p PaginationParams) (*RunsResponseBody, error) {
-	filterTaskName := taskName
-	if filterTaskName == "" {
-		filterTaskName = p.TaskName
+	// A path task name (single-task view) overrides any task_name query param.
+	filter := p.Filter
+	if taskName != "" {
+		filter.TaskName = taskName
 	}
 	runs, err := s.db.QueryRuns(ctx, storage.RunQuery{
-		Filter: model.RunFilter{
-			Status:   p.Status,
-			TaskName: filterTaskName,
-			Search:   p.SearchQuery,
-		},
+		Filter:        filter,
 		Limit:         p.Limit,
 		Offset:        p.Offset,
 		SortField:     p.SortField,
@@ -90,7 +87,7 @@ func (s *runService) ListRuns(ctx context.Context, taskName string, p Pagination
 		return nil, err
 	}
 
-	total, err := s.db.CountRunsFiltered(ctx, p.Status, filterTaskName, p.SearchQuery)
+	total, err := s.db.CountRunsFiltered(ctx, filter)
 	if err != nil {
 		return nil, err
 	}

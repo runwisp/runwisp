@@ -4,6 +4,9 @@
 package server
 
 import (
+	"strconv"
+	"time"
+
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
@@ -46,31 +49,66 @@ type RunIDInput struct {
 }
 
 type RunsQueryInput struct {
-	Limit         int    `query:"limit" minimum:"1" maximum:"1000" default:"50" doc:"Max results per page"`
-	Offset        int    `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`
-	Status        string `query:"status" doc:"Filter by run status"`
-	TaskName      string `query:"task_name" doc:"Filter by task name"`
-	SortField     string `query:"sort_field" enum:"task_name,status,start_at,exit_code,duration,created_at," doc:"Field to sort by"`
-	SortDirection string `query:"sort_direction" enum:"asc,desc," doc:"Sort direction"`
-	Search        string `query:"search" doc:"Search query"`
+	Limit         int       `query:"limit" minimum:"1" maximum:"1000" default:"50" doc:"Max results per page"`
+	Offset        int       `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`
+	Status        string    `query:"status" doc:"Comma-separated run statuses (phase or end reason); a run matches any listed value"`
+	TaskName      string    `query:"task_name" doc:"Filter by task name"`
+	TriggeredBy   string    `query:"triggered_by" enum:"cron,api,cloud,service,startup," doc:"Filter by what triggered the run"`
+	CreatedAfter  time.Time `query:"created_after" doc:"Only runs created at or after this RFC3339 time"`
+	CreatedBefore time.Time `query:"created_before" doc:"Only runs created at or before this RFC3339 time"`
+	ExitCodeMin   string    `query:"exit_code_min" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is >= this (inclusive)"`
+	ExitCodeMax   string    `query:"exit_code_max" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is <= this (inclusive)"`
+	RetriesOnly   bool      `query:"retries_only" doc:"Only runs that are a retry (retry_attempt > 0)"`
+	SortField     string    `query:"sort_field" enum:"task_name,status,start_at,exit_code,duration,created_at," doc:"Field to sort by"`
+	SortDirection string    `query:"sort_direction" enum:"asc,desc," doc:"Sort direction"`
+	Search        string    `query:"search" doc:"Search query"`
 }
 
-// toPaginationParams parses the raw query strings into the typed storage
-// sort handles. Unknown sort values are silently coerced to defaults — the
-// huma enum tag on RunsQueryInput already rejects values outside the allow
-// list at the HTTP boundary, so any error here means a programming bug
-// (e.g. enum drift) and we fall back to the safe default.
+// toPaginationParams parses the raw query strings into a typed RunFilter plus
+// the storage sort handles. Malformed values are silently coerced to the open
+// gate / safe default: the huma enum and pattern tags on RunsQueryInput
+// already reject out-of-range values at the HTTP boundary, so any error here
+// means a programming bug (e.g. enum drift) and the field is left unset.
 func (q *RunsQueryInput) toPaginationParams() PaginationParams {
 	sortCol, _ := storage.ParseSortColumn(q.SortField)
 	sortDir, _ := storage.ParseSortDirection(q.SortDirection)
+
+	filter := model.RunFilter{
+		Status:      q.Status,
+		TaskName:    q.TaskName,
+		Search:      q.Search,
+		TriggeredBy: q.TriggeredBy,
+		RetriesOnly: q.RetriesOnly,
+	}
+	// time.Time query params parse as RFC3339; an absent param stays zero.
+	if !q.CreatedAfter.IsZero() {
+		after := q.CreatedAfter
+		filter.CreatedAfter = &after
+	}
+	if !q.CreatedBefore.IsZero() {
+		before := q.CreatedBefore
+		filter.CreatedBefore = &before
+	}
+	// The exit-code bounds are strings (not ints) so an absent filter is
+	// distinguishable from an explicit bound of 0; the pattern tag guarantees
+	// each is a valid integer when present.
+	if q.ExitCodeMin != "" {
+		if code, err := strconv.Atoi(q.ExitCodeMin); err == nil {
+			filter.ExitCodeMin = &code
+		}
+	}
+	if q.ExitCodeMax != "" {
+		if code, err := strconv.Atoi(q.ExitCodeMax); err == nil {
+			filter.ExitCodeMax = &code
+		}
+	}
+
 	return PaginationParams{
 		Limit:         q.Limit,
 		Offset:        q.Offset,
-		Status:        q.Status,
-		TaskName:      q.TaskName,
+		Filter:        filter,
 		SortField:     sortCol,
 		SortDirection: sortDir,
-		SearchQuery:   q.Search,
 	}
 }
 

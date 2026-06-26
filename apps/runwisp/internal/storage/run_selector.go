@@ -5,6 +5,7 @@ package storage
 
 import (
 	"strings"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -12,14 +13,21 @@ import (
 // runFilterArgs is the shared set of filter-gate parameters threaded through
 // every selector-driven sqlc query. Each filter field is an interface{} so
 // it can hold either nil (gate open, predicate skipped via SQL IS NULL) or
-// a non-empty string (column must equal it). Search additionally drives the
+// a concrete value the gate compares against. Search additionally drives the
 // LIKE pattern via SearchPattern, which is pre-rendered here.
 type runFilterArgs struct {
-	EndReasonFilter   interface{}
-	StatusPhaseFilter interface{}
+	// StatusSet is the pipe-delimited status haystack (|a|b|) the SQL
+	// set-membership gate matches a run's phase OR end reason against.
+	StatusSet         interface{}
 	TaskNameFilter    interface{}
 	SearchFilter      interface{}
 	SearchPattern     string
+	CreatedAfter      interface{}
+	CreatedBefore     interface{}
+	TriggeredByFilter interface{}
+	ExitCodeMin       interface{}
+	ExitCodeMax       interface{}
+	RetriesOnly       interface{}
 }
 
 // nullable maps the empty-string "no filter" convention to a nil interface{}
@@ -32,23 +40,70 @@ func nullable(v string) interface{} {
 	return v
 }
 
+// nullableTime / nullableInt map the unset pointer to a nil gate; a present
+// value boxes through unchanged so the comparison predicate applies.
+func nullableTime(t *time.Time) interface{} {
+	if t == nil {
+		return nil
+	}
+	return *t
+}
+
+func nullableInt(n *int) interface{} {
+	if n == nil {
+		return nil
+	}
+	return *n
+}
+
+// nullableBool turns a boolean toggle into a gate: false leaves the gate open
+// (nil), true closes it with a non-nil sentinel so the predicate (which never
+// reads the value) takes effect.
+func nullableBool(b bool) interface{} {
+	if !b {
+		return nil
+	}
+	return 1
+}
+
+// statusSet renders a comma-separated status list into the pipe-delimited
+// haystack the SQL set-membership gate matches against (e.g. |failed|crashed|).
+// Blank tokens are dropped; an all-blank/empty input returns nil so the gate
+// stays fully open. A single status is just a one-element set.
+func statusSet(csv string) interface{} {
+	var b strings.Builder
+	for _, tok := range strings.Split(csv, ",") {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		if b.Len() == 0 {
+			b.WriteByte('|')
+		}
+		b.WriteString(tok)
+		b.WriteByte('|')
+	}
+	if b.Len() == 0 {
+		return nil
+	}
+	return b.String()
+}
+
 // buildRunFilterArgs decomposes a RunFilter into the values consumed by the
-// filter-gate predicates. The Status input is dispatched here (end_reason
-// column vs status column) so the SQL itself never branches. The search
-// input is truncated and stripped of LIKE wildcards before the pattern is
-// built.
+// filter-gate predicates. The status set is rendered here so the SQL itself
+// never branches per status. The search input is truncated and stripped of
+// LIKE wildcards before the pattern is built.
 func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
 	args := runFilterArgs{
-		TaskNameFilter: nullable(f.TaskName),
-		SearchFilter:   nullable(f.Search),
-	}
-	switch model.EndReason(f.Status) {
-	case model.ReasonSuccess, model.ReasonFailed, model.ReasonStopped,
-		model.ReasonTimeout, model.ReasonCrashed, model.ReasonSkipped,
-		model.ReasonLogOverflow, model.ReasonMissed:
-		args.EndReasonFilter = nullable(f.Status)
-	default:
-		args.StatusPhaseFilter = nullable(f.Status)
+		StatusSet:         statusSet(f.Status),
+		TaskNameFilter:    nullable(f.TaskName),
+		SearchFilter:      nullable(f.Search),
+		CreatedAfter:      nullableTime(f.CreatedAfter),
+		CreatedBefore:     nullableTime(f.CreatedBefore),
+		TriggeredByFilter: nullable(f.TriggeredBy),
+		ExitCodeMin:       nullableInt(f.ExitCodeMin),
+		ExitCodeMax:       nullableInt(f.ExitCodeMax),
+		RetriesOnly:       nullableBool(f.RetriesOnly),
 	}
 	if f.Search != "" {
 		s := f.Search

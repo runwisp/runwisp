@@ -30,7 +30,7 @@ func TestMockRunRepository(t *testing.T) {
 	m.On("GetRunByExternalExecutionID", ctx, "x").Return(run, nil)
 	m.On("GetRunByExternalExecutionID", ctx, "missing").Return((*model.Run)(nil), wantErr)
 	m.On("CountRuns", ctx, "t1").Return(int64(3), nil)
-	m.On("CountRunsFiltered", ctx, "", "t1", "q").Return(int64(2), nil)
+	m.On("CountRunsFiltered", ctx, model.RunFilter{TaskName: "t1", Search: "q"}).Return(int64(2), nil)
 	queryRunsArg := storage.RunQuery{
 		Filter: model.RunFilter{TaskName: "t1"},
 		Limit:  10,
@@ -78,7 +78,7 @@ func TestMockRunRepository(t *testing.T) {
 	if n, err := m.CountRuns(ctx, "t1"); err != nil || n != 3 {
 		t.Fatalf("CountRuns: %d %v", n, err)
 	}
-	if n, err := m.CountRunsFiltered(ctx, "", "t1", "q"); err != nil || n != 2 {
+	if n, err := m.CountRunsFiltered(ctx, model.RunFilter{TaskName: "t1", Search: "q"}); err != nil || n != 2 {
 		t.Fatalf("CountRunsFiltered: %d %v", n, err)
 	}
 	if got, err := m.QueryRuns(ctx, queryRunsArg); err != nil || len(got) != 1 {
