@@ -28,6 +28,9 @@ coverage.out
 # Embedded UI (generated)
 internal/ui/dist/
 
+# Transient TUI screenshot frames (captured by `bun screenshots`)
+.tui-frames/
+
 # IDE
 .vscode/
 .idea/

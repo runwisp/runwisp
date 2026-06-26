@@ -60,7 +60,7 @@ func (v *ExecView) renderActionButtons() string {
 		if v.HoveredHeader == HeaderFocusAction || v.HeaderFocus == HeaderFocusAction {
 			style = uikit.BtnStopHoverStyle
 		}
-		return style.Render("🗑 Delete (D)")
+		return style.Render("Delete (D)")
 	default:
 		return ""
 	}

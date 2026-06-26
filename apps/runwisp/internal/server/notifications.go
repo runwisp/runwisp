@@ -199,7 +199,7 @@ func (srv *Server) humaMarkAllNotificationsRead(ctx context.Context, _ *struct{}
 func (srv *Server) humaMarkNotificationRead(ctx context.Context, input *NotificationByIDInput) (*struct{}, error) {
 	updated, err := srv.notifyRepo.MarkNotificationRead(ctx, input.ID, time.Now())
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to mark notification read")
+		return nil, mapDomainError(ctx, err, "Failed to mark notification read")
 	}
 	srv.publishNotificationUpdate(ctx, updated)
 	return nil, nil
@@ -208,7 +208,7 @@ func (srv *Server) humaMarkNotificationRead(ctx context.Context, input *Notifica
 func (srv *Server) humaMarkNotificationUnread(ctx context.Context, input *NotificationByIDInput) (*struct{}, error) {
 	updated, err := srv.notifyRepo.MarkNotificationUnread(ctx, input.ID)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to mark notification unread")
+		return nil, mapDomainError(ctx, err, "Failed to mark notification unread")
 	}
 	srv.publishNotificationUpdate(ctx, updated)
 	return nil, nil

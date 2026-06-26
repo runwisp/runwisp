@@ -65,6 +65,7 @@ Iterating on the UI:
 - `bun run dev` — dev build + launches the daemon
 - `bun run web-ui` — Svelte dev server against an already-running daemon
 - `bun run theme` — the shared component library playground
+- `bun run screenshots` — regenerates the docs Web UI **and** TUI screenshots (`apps/docs/src/assets/screenshots/`) from a demo-seeded daemon. On-demand only, not part of `ci`; the TUI shots are captured by driving the real `runwisp tui` in a pty and replaying the stream through xterm.js.
 
 ## Making changes
 

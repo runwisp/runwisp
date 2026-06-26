@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -20,9 +21,18 @@ import (
 // lives in exactly one place. Errors that aren't recognised collapse to a
 // generic 500 with the supplied fallback message — callers should pass a
 // short, action-shaped phrase like "Failed to trigger run".
-func mapDomainError(err error, fallback500 string) huma.StatusError {
+//
+// ctx is the request context: when the client disconnects mid-query (a browser
+// aborting a superseded fetch, navigating away), the in-flight SQLite query is
+// interrupted and surfaces as a driver error — but that is a client
+// cancellation, not a server fault. We detect it via ctx and return 408 without
+// logging, rather than manufacturing a 500 whose cause we'd then have to spam.
+func mapDomainError(ctx context.Context, err error, fallback500 string) huma.StatusError {
 	if err == nil {
 		return nil
+	}
+	if ctx.Err() != nil {
+		return huma.Error408RequestTimeout("Request cancelled")
 	}
 	switch {
 	case errors.Is(err, ErrTaskNotFound),
@@ -43,6 +53,9 @@ func mapDomainError(err error, fallback500 string) huma.StatusError {
 		if fallback500 == "" {
 			fallback500 = "Internal server error"
 		}
+		// Never let a 500's cause vanish: the public message is intentionally
+		// generic, so the real error only survives if we log it here.
+		slog.Error(fallback500, "err", err)
 		return huma.Error500InternalServerError(fallback500)
 	}
 }

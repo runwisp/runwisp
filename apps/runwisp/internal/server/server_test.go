@@ -368,6 +368,97 @@ func TestStopRun(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestGetAllRuns_RepoError(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+	repo.On("QueryRuns", mock.Anything, mock.Anything).Return([]model.Run(nil), errors.New("db down"))
+
+	req := httptest.NewRequest("GET", "/api/runs", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestGetTaskRuns_RepoError(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+	repo.On("QueryRuns", mock.Anything, mock.Anything).Return([]model.Run(nil), errors.New("db down"))
+
+	req := httptest.NewRequest("GET", "/api/tasks/task1/runs", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestTriggerRun_UnknownTask(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest("POST", "/api/tasks/does-not-exist/run", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestGetRunByID_NotFound(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+	id := ulid.Make().String()
+	repo.On("GetRun", mock.Anything, id).Return(nil, storage.ErrNotFound)
+
+	// The task-agnostic permalink route (no task name in the path).
+	req := httptest.NewRequest("GET", "/api/runs/"+id, nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestDeleteRun_NotFound(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+	id := ulid.Make().String()
+	repo.On("GetRun", mock.Anything, id).Return(nil, storage.ErrNotFound)
+
+	req := httptest.NewRequest("DELETE", "/api/tasks/task1/runs/"+id, nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestStopRun_NotFound(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+	id := ulid.Make().String()
+	repo.On("GetRun", mock.Anything, id).Return(nil, storage.ErrNotFound)
+
+	req := httptest.NewRequest("POST", "/api/tasks/task1/runs/"+id+"/stop", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestBulkRestoreRuns_RepoError(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+	id := ulid.Make().String()
+	repo.On("RestoreRuns", mock.Anything, mock.Anything).Return([]model.Run(nil), errors.New("db down"))
+
+	body, err := json.Marshal(model.RunSelector{IDs: []string{id}})
+	require.NoError(t, err)
+	req := httptest.NewRequest("POST", "/api/runs/bulk/restore", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
 func TestGetLogRaw(t *testing.T) {
 	s, repo, _, logDir := setupServer(t)
 

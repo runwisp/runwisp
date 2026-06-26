@@ -28,7 +28,10 @@ import (
 )
 
 const (
-	screenCols         = 140
+	// 138 cols ⇒ main pane (cols − SidebarWidth 28) == uikit.MaxContentWidth 110,
+	// so the exec table fills the pane exactly. At a wider 140 the table caps at
+	// 110 and leaves a 2-col gap (the orphaned scrollbar in the docs screenshots).
+	screenCols         = 138
 	screenRows         = 40
 	screenPollInterval = 50 * time.Millisecond
 	processExitTimeout = 5 * time.Second
@@ -328,6 +331,15 @@ func (d *daemonProcess) waitForReady(t testing.TB, client *apiclient.Client, tim
 func startRemoteTUI(t *testing.T, projectDir, binaryPath, configPath string, daemon *daemonProcess) *tuiSession {
 	t.Helper()
 
+	return startRemoteTUIEnv(t, projectDir, binaryPath, configPath, daemon, "TERM=dumb")
+}
+
+// startRemoteTUIEnv is startRemoteTUI with caller-chosen extra env. The TUI
+// screenshot capture passes a colour-capable TERM so lipgloss emits real SGR
+// (the default "TERM=dumb" is enough for text assertions but strips colour).
+func startRemoteTUIEnv(t *testing.T, projectDir, binaryPath, configPath string, daemon *daemonProcess, extraEnv ...string) *tuiSession {
+	t.Helper()
+
 	cmd := exec.Command(
 		binaryPath,
 		"--config", configPath,
@@ -336,7 +348,7 @@ func startRemoteTUI(t *testing.T, projectDir, binaryPath, configPath string, dae
 		"tui",
 	)
 	cmd.Dir = projectDir
-	cmd.Env = subprocEnv("TERM=dumb")
+	cmd.Env = subprocEnv(extraEnv...)
 
 	ptyFile, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: screenCols,
@@ -571,6 +583,14 @@ func subprocEnv(extra ...string) []string {
 		if strings.HasPrefix(e, "GOCOVERDIR=") {
 			continue
 		}
+		// The test runner (moon/CI) sets NO_COLOR on its subprocesses; left in
+		// place it leaks through and makes termenv force the no-colour profile.
+		// Strip it so the screenshot capture gets real SGR from its TERM/
+		// COLORTERM. No-op for the default TERM=dumb sessions and non-TTY daemon
+		// stdio, which never emit colour anyway.
+		if strings.HasPrefix(e, "NO_COLOR=") || strings.HasPrefix(e, "CLICOLOR=") {
+			continue
+		}
 		env = append(env, e)
 	}
 	covdir := os.Getenv("RUNWISP_E2E_COVDIR")
@@ -617,7 +637,18 @@ func (b *lockedBuffer) Tail(limit int) string {
 	return output[len(output)-limit:]
 }
 
+// Bytes returns a copy of the raw buffer with escape sequences intact (unlike
+// Tail, which strips them). The screenshot capture replays these bytes into a
+// browser terminal emulator, so the colour/cursor codes must survive.
+func (b *lockedBuffer) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return append([]byte(nil), b.b.Bytes()...)
+}
+
 const (
 	keyEnter = "\r"
 	keyDown  = "\x1b[B"
+	keyRight = "\x1b[C"
 )
