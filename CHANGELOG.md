@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TUI run-detail Delete button.** Clicking 🗑 Delete with the mouse now opens the confirm dialog, and keyboard focus reaches the action button from both header rows.
 - **Fatal boot errors are no longer silent in TUI mode.** `runwisp` died with exit 1 and no output when startup failed before the TUI attached (e.g. a config parse error); the error now reaches stderr.
 - **`runwisp exec` no longer drops output if its log stream blips.** When the live stream ended without a completion event (a transport hiccup under load), the command could exit having printed none of the run's captured output; it now reconnects from the last line it saw and prints the persisted tail.
+- **A cancelled request no longer looks like a server error.** When a client disconnects mid-query (a browser aborting a superseded fetch), the interrupted read now returns `408` instead of a `500`, and genuine `500`s log their underlying cause instead of discarding it.
 
 ## [0.10.0] - 2026-06-18
 

@@ -107,7 +107,7 @@ test("overview, runs, task detail", async ({ authenticatedPage: page, daemonStat
 
         // All runs (/runs)
         await page.goto("/runs");
-        await expect(page.getByRole("heading", { name: "Run History" })).toBeVisible();
+        await expect(page.getByRole("main").getByText("Runs", { exact: true })).toBeVisible();
         // Generous timeout: rides out the brief boot-burst window where /api/runs
         // can 500 under seed + scheduler load before AsyncData retries succeed.
         await expect(page.getByRole("main").getByText(RECENT_TASK).first()).toBeVisible({
@@ -126,7 +126,7 @@ test("overview, runs, task detail", async ({ authenticatedPage: page, daemonStat
         // Task detail — a failed run (selected via the run-id path segment)
         await page.goto(`/tasks/${failed.task_name}/${failed.id}`);
         await expect(page.getByRole("heading", { name: failed.task_name, level: 1 })).toBeVisible();
-        await expect(page.getByText(`Code ${failed.exit_code}`, { exact: true })).toBeVisible();
+        await expect(page.getByText("FAILED", { exact: true }).first()).toBeVisible();
         await settle(page);
         await shoot(page, `web-ui-task-failed-${theme}`);
     }

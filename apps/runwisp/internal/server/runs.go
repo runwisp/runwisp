@@ -239,7 +239,7 @@ func (srv *Server) humaGetAllRuns(ctx context.Context, input *RunsQueryInput) (*
 	p := input.toPaginationParams()
 	result, err := srv.runService.ListRuns(ctx, "", p)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to get runs")
+		return nil, mapDomainError(ctx, err, "Failed to get runs")
 	}
 	return &RunsOutput{Body: RunsResponseBody{Runs: result.Runs, Total: result.Total}}, nil
 }
@@ -256,7 +256,7 @@ func (srv *Server) humaGetTaskRuns(ctx context.Context, input *TaskRunsQueryInpu
 	p := input.toPaginationParams()
 	result, err := srv.runService.ListRuns(ctx, input.TaskName, p)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to get runs")
+		return nil, mapDomainError(ctx, err, "Failed to get runs")
 	}
 	return &RunsOutput{Body: RunsResponseBody{Runs: result.Runs, Total: result.Total}}, nil
 }
@@ -269,20 +269,20 @@ func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (
 	if input.Wait {
 		run, err := srv.runService.TriggerRunAndWait(ctx, input.TaskName, params, time.Duration(input.WaitTimeout)*time.Second)
 		if err != nil {
-			return nil, mapDomainError(err, "Failed to trigger run")
+			return nil, mapDomainError(ctx, err, "Failed to trigger run")
 		}
 		return &TriggerRunOutput{Body: *run}, nil
 	}
 	run, err := srv.runService.TriggerRun(ctx, input.TaskName, params)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to trigger run")
+		return nil, mapDomainError(ctx, err, "Failed to trigger run")
 	}
 	return &TriggerRunOutput{Body: *run}, nil
 }
 
 func (srv *Server) humaRestartService(ctx context.Context, input *TaskNameInput) (*StopRunOutput, error) {
 	if err := srv.runService.RestartService(input.TaskName); err != nil {
-		return nil, mapDomainError(err, "Failed to restart service")
+		return nil, mapDomainError(ctx, err, "Failed to restart service")
 	}
 	out := &StopRunOutput{}
 	out.Body.Message = "Service instances restarting"
@@ -291,7 +291,7 @@ func (srv *Server) humaRestartService(ctx context.Context, input *TaskNameInput)
 
 func (srv *Server) humaStopService(ctx context.Context, input *TaskNameInput) (*StopRunOutput, error) {
 	if err := srv.runService.StopService(input.TaskName); err != nil {
-		return nil, mapDomainError(err, "Failed to stop service")
+		return nil, mapDomainError(ctx, err, "Failed to stop service")
 	}
 	out := &StopRunOutput{}
 	out.Body.Message = "Service stopped"
@@ -301,7 +301,7 @@ func (srv *Server) humaStopService(ctx context.Context, input *TaskNameInput) (*
 func (srv *Server) humaGetRun(ctx context.Context, input *TaskRunInput) (*RunOutput, error) {
 	run, err := srv.runService.GetRun(ctx, input.RunID)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to fetch run")
+		return nil, mapDomainError(ctx, err, "Failed to fetch run")
 	}
 	return &RunOutput{Body: *run}, nil
 }
@@ -309,21 +309,21 @@ func (srv *Server) humaGetRun(ctx context.Context, input *TaskRunInput) (*RunOut
 func (srv *Server) humaGetRunByID(ctx context.Context, input *RunIDInput) (*RunOutput, error) {
 	run, err := srv.runService.GetRun(ctx, input.RunID)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to fetch run")
+		return nil, mapDomainError(ctx, err, "Failed to fetch run")
 	}
 	return &RunOutput{Body: *run}, nil
 }
 
 func (srv *Server) humaDeleteRun(ctx context.Context, input *TaskRunInput) (*struct{}, error) {
 	if err := srv.runService.DeleteRun(ctx, input.RunID); err != nil {
-		return nil, mapDomainError(err, "Failed to delete run")
+		return nil, mapDomainError(ctx, err, "Failed to delete run")
 	}
 	return nil, nil
 }
 
 func (srv *Server) humaStopRun(ctx context.Context, input *TaskRunInput) (*StopRunOutput, error) {
 	if err := srv.runService.StopRun(ctx, input.RunID); err != nil {
-		return nil, mapDomainError(err, "Failed to stop run")
+		return nil, mapDomainError(ctx, err, "Failed to stop run")
 	}
 	out := &StopRunOutput{}
 	out.Body.Message = "Run stop signal sent"
@@ -333,7 +333,7 @@ func (srv *Server) humaStopRun(ctx context.Context, input *TaskRunInput) (*StopR
 func (srv *Server) humaBulkDeleteRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
 	n, err := srv.runService.bulkSoftDelete(ctx, input.Body)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to delete runs")
+		return nil, mapDomainError(ctx, err, "Failed to delete runs")
 	}
 	return &BulkAffectedOutput{Body: BulkAffectedBody{Affected: n}}, nil
 }
@@ -341,7 +341,7 @@ func (srv *Server) humaBulkDeleteRuns(ctx context.Context, input *BulkRunSelecto
 func (srv *Server) humaBulkRestoreRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
 	n, err := srv.runService.bulkRestore(ctx, input.Body)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to restore runs")
+		return nil, mapDomainError(ctx, err, "Failed to restore runs")
 	}
 	return &BulkAffectedOutput{Body: BulkAffectedBody{Affected: n}}, nil
 }
@@ -349,7 +349,7 @@ func (srv *Server) humaBulkRestoreRuns(ctx context.Context, input *BulkRunSelect
 func (srv *Server) humaBulkCancelRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
 	n, err := srv.runService.bulkCancel(ctx, input.Body)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to cancel runs")
+		return nil, mapDomainError(ctx, err, "Failed to cancel runs")
 	}
 	return &BulkAffectedOutput{Body: BulkAffectedBody{Affected: n}}, nil
 }
@@ -357,7 +357,7 @@ func (srv *Server) humaBulkCancelRuns(ctx context.Context, input *BulkRunSelecto
 func (srv *Server) humaBulkRerunRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkRerunOutput, error) {
 	triggered, err := srv.runService.bulkRerun(ctx, input.Body)
 	if err != nil {
-		return nil, mapDomainError(err, "Failed to rerun")
+		return nil, mapDomainError(ctx, err, "Failed to rerun")
 	}
 	return &BulkRerunOutput{Body: BulkRerunBody{Triggered: triggered}}, nil
 }
