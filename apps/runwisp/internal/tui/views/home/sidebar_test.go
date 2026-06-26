@@ -373,6 +373,90 @@ func TestSidebar_EnsureVisible_EmptyItemsResetsCursorAndScroll(t *testing.T) {
 	assert.Equal(t, 0, s.scroll)
 }
 
+func TestSidebar_FilterNarrowsToMatchingTasks(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("alpha", "beta", "alpaca"))
+	s.SetSize(20, 20)
+
+	require.False(t, s.Filtering(), "fresh sidebar is not filtering")
+	s.StartFilter()
+	assert.True(t, s.Filtering(), "StartFilter enters the sub-mode")
+	assert.Equal(t, "", s.FilterQuery())
+
+	s.FilterAppend("alp")
+	assert.Equal(t, "alp", s.FilterQuery())
+
+	// Only the two tasks containing "alp" survive; the cursor lands on a match.
+	var names []string
+	for _, it := range s.items {
+		if it.kind == entryTask {
+			names = append(names, it.taskName)
+		}
+	}
+	assert.ElementsMatch(t, []string{"alpha", "alpaca"}, names)
+	assert.Contains(t, []string{"alpha", "alpaca"}, s.CursorTaskName())
+
+	// Backspace widens the query back to "al" — still both tasks.
+	s.FilterBackspace()
+	assert.Equal(t, "al", s.FilterQuery())
+}
+
+func TestSidebar_ViewRendersFilterLine(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("alpha", "beta"))
+	s.SetSize(24, 20)
+	s.StartFilter()
+	s.FilterAppend("alp")
+
+	out := s.View()
+	assert.Contains(t, out, "alp", "the filter header echoes the active query")
+}
+
+func TestSidebar_FilterBackspaceEmptyIsNoOp(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("alpha"))
+	s.SetSize(20, 20)
+	s.StartFilter()
+	s.FilterBackspace() // empty query → nothing to remove
+	assert.Equal(t, "", s.FilterQuery())
+}
+
+func TestSidebar_StopFilterRestoresFullList(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("alpha", "beta"))
+	s.SetSize(20, 20)
+	s.StartFilter()
+	s.FilterAppend("alp")
+	require.Less(t, len(s.items), len(s.allItems), "filter narrows the list")
+
+	s.StopFilter()
+	assert.False(t, s.Filtering())
+	assert.Equal(t, "", s.FilterQuery())
+	assert.Equal(t, len(s.allItems), len(s.items), "StopFilter restores every item")
+}
+
+func TestSidebar_SelectFilterCursorActivatesAndExits(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("alpha", "beta"))
+	s.SetSize(20, 20)
+	s.StartFilter()
+	s.FilterAppend("beta")
+	require.Equal(t, "beta", s.CursorTaskName())
+
+	s.SelectFilterCursor()
+	assert.False(t, s.Filtering(), "selecting exits filter mode")
+	assert.Equal(t, "beta", s.ActiveTask(), "the cursor's task becomes the active selection")
+}
+
+func TestSidebar_RebuildPreservesSelectionAndExitsFilter(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("alpha", "beta", "gamma"))
+	s.SetSize(20, 20)
+	s.StartFilter()
+	s.FilterAppend("beta")
+	s.SelectFilterCursor()
+	require.Equal(t, "beta", s.ActiveTask())
+
+	// A reload that still contains "beta" keeps it selected and drops filter mode.
+	s.Rebuild(makeTasks("alpha", "beta", "delta"))
+	assert.False(t, s.Filtering())
+	assert.Equal(t, "beta", s.ActiveTask(), "Rebuild preserves the active task when it survives")
+}
+
 // TestSidebar_EnsureVisible_ScrollClampAndCursorBounds runs the cursor<0 /
 // cursor>=len(items) / scroll>maxScroll branches in ensureVisible.
 func TestSidebar_EnsureVisible_ScrollClampAndCursorBounds(t *testing.T) {

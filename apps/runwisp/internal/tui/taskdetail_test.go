@@ -106,6 +106,58 @@ func TestTaskDetailDialog_View_RendersDefinitionAndHealth(t *testing.T) {
 	}
 }
 
+func TestTaskDetailDialog_View_ServiceWithAllFields(t *testing.T) {
+	d := NewTaskDetailDialog("web", &model.TaskBrief{
+		Name:       "web",
+		Kind:       model.KindService,
+		Group:      "frontend",
+		Instances:  3,
+		Restart:    model.RestartOnFailure,
+		APITrigger: true,
+		DependsOn:  []string{"db", "cache"},
+		Compose:    &model.TaskComposeRef{File: "docker-compose.yml", Service: "web"},
+		Parameters: []model.TaskParam{{Kind: model.ParamEnv, Key: "PORT"}},
+	})
+
+	out := d.View(80, 40)
+	for _, want := range []string{"service", "Instances", "Restart", "frontend", "API trigger", "Depends on", "db, cache", "Compose", "docker-compose.yml", "PORT"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("service view should contain %q", want)
+		}
+	}
+}
+
+func TestTaskDetailDialog_View_HealthWithFailuresAndOther(t *testing.T) {
+	d := NewTaskDetailDialog("backup", &model.TaskBrief{Name: "backup", Kind: model.KindTask})
+	now := time.Now()
+	d.ApplySummary(uikit.TaskSummaryMsg{
+		TaskName:    "backup",
+		Total:       50,
+		Window:      10,
+		Success:     6,
+		Failed:      3,
+		Other:       1,
+		LastFailure: &now,
+	})
+
+	// A narrow width forces clipToWidth to truncate the wide breakdown row.
+	out := d.View(40, 40)
+	for _, want := range []string{"failed", "Success rate", "Last failure"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("loaded health view should contain %q", want)
+		}
+	}
+}
+
+func TestTaskDetailDialog_View_HealthError(t *testing.T) {
+	d := NewTaskDetailDialog("x", &model.TaskBrief{Name: "x", Kind: model.KindTask})
+	d.ApplySummary(uikit.TaskSummaryMsg{TaskName: "x", Err: errBoom()})
+	out := d.View(60, 30)
+	if !strings.Contains(out, "unavailable") {
+		t.Fatal("a summary error should render an 'unavailable' health hint")
+	}
+}
+
 func TestTaskDetailDialog_Update_ClosesOnKeys(t *testing.T) {
 	for _, key := range []string{"i", "q"} {
 		d := NewTaskDetailDialog("alpha", nil)

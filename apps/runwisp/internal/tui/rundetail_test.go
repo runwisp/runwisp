@@ -6,6 +6,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/model"
@@ -50,6 +51,32 @@ func TestRunDetailDialog_View_FirstAttemptHasNoLineage(t *testing.T) {
 	}
 	if !strings.Contains(out, "esc close") || strings.Contains(out, "open parent") {
 		t.Fatal("a run with no parent should offer only the plain close hint")
+	}
+}
+
+func TestRunDetailDialog_View_SuccessServiceInstance(t *testing.T) {
+	end := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	start := end.Add(-time.Minute)
+	run := &model.Run{
+		ID:            "01HZRUNOKAAAAAAAAAAAAAAAAAA",
+		TaskName:      "web",
+		Status:        model.PhaseEnded,
+		EndReason:     model.EndReasonPtr(model.ReasonSuccess),
+		ExitCode:      0,
+		TriggeredBy:   model.TriggeredByAPI,
+		InstanceIndex: 1,
+		StartAt:       &start,
+		EndAt:         &end,
+		CreatedAt:     start,
+		Params:        map[string]string{"PORT": "8080"},
+	}
+	d := NewRunDetailDialog(run, true, 3)
+	out := d.View(80, 30)
+
+	for _, want := range []string{"web #2", "success", "Exit code", "0", "Instance", "Started", "Ended", "Params"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("success service run view missing %q\n%s", want, out)
+		}
 	}
 }
 

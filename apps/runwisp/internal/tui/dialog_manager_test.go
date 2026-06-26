@@ -9,6 +9,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 func TestDialogManager_ConfirmLifecycle(t *testing.T) {
@@ -358,6 +360,122 @@ func TestDialogManager_UpdateConfirmKeep_YesCmd(t *testing.T) {
 	cmd() //nolint:errcheck
 	if !fired {
 		t.Fatal("expected confirm callback to fire")
+	}
+}
+
+func TestDialogManager_ParamFormLifecycle(t *testing.T) {
+	var dm DialogManager
+	if dm.HasParamForm() {
+		t.Fatal("expected no param form initially")
+	}
+
+	params := []model.TaskParam{{Kind: model.ParamArg, Key: "branch"}}
+	submit := func(map[string]*string) tea.Cmd { return nil }
+	dm.ShowParamForm(NewParamFormDialog("deploy", params, submit))
+	if !dm.HasParamForm() {
+		t.Fatal("expected param form after ShowParamForm")
+	}
+
+	// Esc closes the form; UpdateParamForm reports closed and clears it.
+	_, closed := dm.UpdateParamForm(tea.KeyMsg{Type: tea.KeyEscape})
+	if !closed {
+		t.Fatal("expected param form to close on Esc")
+	}
+	if dm.HasParamForm() {
+		t.Fatal("expected param form nil after close")
+	}
+
+	// DismissParamForm is also idempotent / safe to call directly.
+	dm.ShowParamForm(NewParamFormDialog("deploy", params, submit))
+	dm.DismissParamForm()
+	if dm.HasParamForm() {
+		t.Fatal("expected param form nil after DismissParamForm")
+	}
+}
+
+func TestDialogManager_DismissRunParams(t *testing.T) {
+	var dm DialogManager
+	dm.ShowRunParams(NewRunParamsDialog("task", map[string]string{"k": "v"}))
+	dm.DismissRunParams()
+	if dm.HasRunParams() {
+		t.Fatal("expected run-params nil after DismissRunParams")
+	}
+}
+
+func TestDialogManager_TaskDetailLifecycle(t *testing.T) {
+	var dm DialogManager
+	if dm.HasTaskDetail() {
+		t.Fatal("expected no task detail initially")
+	}
+
+	dm.ShowTaskDetail("alpha", &model.TaskBrief{Name: "alpha"})
+	if !dm.HasTaskDetail() {
+		t.Fatal("expected task detail after ShowTaskDetail")
+	}
+
+	// Async health figures flow in via ApplyTaskSummary while open (a no-op when
+	// the message is for another task).
+	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha", Total: 5, Success: 4, Failed: 1})
+
+	// Esc closes the inspector.
+	if !dm.UpdateTaskDetail(tea.KeyMsg{Type: tea.KeyEscape}) {
+		t.Fatal("expected task detail to close on Esc")
+	}
+	if dm.HasTaskDetail() {
+		t.Fatal("expected task detail nil after close")
+	}
+
+	// ApplyTaskSummary is a no-op once the inspector has closed.
+	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha"})
+
+	dm.ShowTaskDetail("beta", nil)
+	dm.DismissTaskDetail()
+	if dm.HasTaskDetail() {
+		t.Fatal("expected task detail nil after DismissTaskDetail")
+	}
+}
+
+func TestDialogManager_RunDetailLifecycle(t *testing.T) {
+	var dm DialogManager
+	if dm.HasRunDetail() {
+		t.Fatal("expected no run detail initially")
+	}
+
+	dm.ShowRunDetail(&model.Run{ID: "r1", TaskName: "t1"}, false, 1)
+	if !dm.HasRunDetail() {
+		t.Fatal("expected run detail after ShowRunDetail")
+	}
+
+	if !dm.UpdateRunDetail(tea.KeyMsg{Type: tea.KeyEscape}) {
+		t.Fatal("expected run detail to close on Esc")
+	}
+	if dm.HasRunDetail() {
+		t.Fatal("expected run detail nil after close")
+	}
+}
+
+func TestDialogManager_LogHistoryLifecycle(t *testing.T) {
+	var dm DialogManager
+	if dm.HasLogHistory() {
+		t.Fatal("expected no log history initially")
+	}
+
+	dm.ShowLogHistory(NewLogHistoryDialog(0, [][]string{{"frame"}}, "committed"))
+	if !dm.HasLogHistory() {
+		t.Fatal("expected log history after ShowLogHistory")
+	}
+
+	if !dm.UpdateLogHistory(tea.KeyMsg{Type: tea.KeyEscape}) {
+		t.Fatal("expected log history to close on Esc")
+	}
+	if dm.HasLogHistory() {
+		t.Fatal("expected log history nil after close")
+	}
+
+	dm.ShowLogHistory(NewLogHistoryDialog(0, [][]string{{"x"}}, "y"))
+	dm.DismissLogHistory()
+	if dm.HasLogHistory() {
+		t.Fatal("expected log history nil after DismissLogHistory")
 	}
 }
 
