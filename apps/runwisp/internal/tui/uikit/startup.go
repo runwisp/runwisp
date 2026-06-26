@@ -3,7 +3,11 @@
 
 package uikit
 
-import "github.com/runwisp/runwisp/internal/model"
+import (
+	"fmt"
+
+	"github.com/runwisp/runwisp/internal/model"
+)
 
 // PendingRunsSummary describes what happened when resuming pending runs.
 type PendingRunsSummary struct {
@@ -71,4 +75,19 @@ type StartupInfo struct {
 	CrashedRuns      int64
 	PendingRuns      PendingRunsSummary
 	CatchUpTriggered int
+}
+
+// WebURL returns the operator-reachable base URL of the Web UI for copy and
+// browser-launch actions. It prefers the resolved ListenURL ([daemon]
+// external_url, or the daemon's reachable host:port for a remote connection),
+// falling back to http://localhost:<port> for a local daemon. Returns "" when
+// neither is known (no Web UI / not yet populated).
+func (s StartupInfo) WebURL() string {
+	if s.ListenURL != "" {
+		return s.ListenURL
+	}
+	if s.Port > 0 {
+		return fmt.Sprintf("http://localhost:%d", s.Port)
+	}
+	return ""
 }

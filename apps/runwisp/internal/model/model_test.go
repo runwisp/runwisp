@@ -78,6 +78,7 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 		"cloud_enabled",
 		"config_loaded_at",
 		"config_stale",
+		"external_url",
 		"fingerprint",
 		"port",
 		"resolved_timezone",

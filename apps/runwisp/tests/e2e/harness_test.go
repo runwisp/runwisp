@@ -350,6 +350,44 @@ func startRemoteTUIEnv(t *testing.T, projectDir, binaryPath, configPath string, 
 	cmd.Dir = projectDir
 	cmd.Env = subprocEnv(extraEnv...)
 
+	session := launchTUISession(t, cmd)
+	session.waitForAll(t, 10*time.Second,
+		"Home",
+		"Web UI",
+		"Open Web UI",
+	)
+
+	return session
+}
+
+// startHTTPTUI launches a TUI that connects to the daemon purely over HTTP
+// (--url), against a FRESH empty data dir that holds no socket — so the only
+// way it can reach the daemon is the HTTP transport. extraEnv carries the auth
+// inputs (e.g. RUNWISP_PASSWORD). Unlike startRemoteTUI it does not wait for a
+// specific screen: auth and no-auth paths land on different first frames, so
+// callers assert what they expect.
+func startHTTPTUI(t *testing.T, projectDir, binaryPath, configPath string, daemon *daemonProcess, extraEnv ...string) *tuiSession {
+	t.Helper()
+
+	cmd := exec.Command(
+		binaryPath,
+		"--config", configPath,
+		"--data", testutil.ShortTempDir(t),
+		"--url", daemon.baseURL,
+		"tui",
+	)
+	cmd.Dir = projectDir
+	cmd.Env = subprocEnv(append([]string{"TERM=dumb"}, extraEnv...)...)
+
+	return launchTUISession(t, cmd)
+}
+
+// launchTUISession starts cmd under a PTY, wires a vt10x virtual terminal to
+// capture rendered output, answers terminal capability probes, and registers
+// cleanup. Shared by the socket and HTTP TUI launchers.
+func launchTUISession(t *testing.T, cmd *exec.Cmd) *tuiSession {
+	t.Helper()
+
 	ptyFile, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: screenCols,
 		Rows: screenRows,
@@ -374,12 +412,6 @@ func startRemoteTUIEnv(t *testing.T, projectDir, binaryPath, configPath string, 
 	t.Cleanup(func() {
 		session.forceStop()
 	})
-
-	session.waitForAll(t, 10*time.Second,
-		"Home",
-		"Web UI",
-		"Open Web UI",
-	)
 
 	return session
 }

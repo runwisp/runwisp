@@ -31,6 +31,10 @@ on the local socket as the right user _is_ the credential. Commands
 like `runwisp`, `runwisp tui`, `runwisp list`, and `runwisp exec`
 all connect through the socket automatically.
 
+Point `runwisp tui` or `runwisp exec` at a `--url` (or set
+`RUNWISP_URL`) and they switch to the network path below instead —
+the daemon then authenticates them like any other network client.
+
 If the socket isn't there, or the CLI can't reach it, you'll see
 `daemon not running at <datadir>` and that's it — no quiet fallback
 to some other transport. When a daemon is running but the CLI still
@@ -51,9 +55,17 @@ cookie. Set a new `RUNWISP_PASSWORD` and restart, and every
 existing session is gone.
 
 When you use the TUI's "Open in browser" action, the TUI mints a
-single-use launch ticket over the local socket. The browser
-redeems it on `127.0.0.1` and the daemon sets a session cookie. The
-password itself never leaves the host.
+single-use launch ticket (60-second TTL) and the browser redeems it
+into a session cookie — so you land in the dashboard already logged
+in. Locally, the TUI mints over the Unix socket and the browser
+redeems on `127.0.0.1`; the password never leaves the host. Over a
+`runwisp tui --url …` connection the ticket is minted from your
+already-authenticated session and redeemed against the remote daemon
+— minting always requires a valid session, and the ticket stays
+single-use and short-lived. If that connection is plain `http://` to
+a non-loopback host, the TUI warns you first, because the ticket
+would cross the network unencrypted; `https://` (a
+[TLS proxy](#reverse-proxies)) closes that gap.
 
 ## The password
 

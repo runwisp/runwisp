@@ -8,20 +8,24 @@ description: A guided walkthrough of the RunWisp terminal UI — the Open Web UI
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 The TUI is the keyboard-first half of RunWisp. It runs in a terminal,
-connects to the local daemon over the Unix socket, and lets you do
-almost everything the Web UI can —
+connects to a daemon — local over its Unix socket, or remote over
+HTTP — and lets you do almost everything the Web UI can —
 trigger tasks, follow logs, restart services, browse notifications —
 without leaving the shell.
 
-Two ways to start it:
+Three ways to start it:
 
 ```bash
-runwisp           # spawn or attach to the local daemon, then attach the TUI
-runwisp tui       # attach a fresh TUI to an already-running daemon
+runwisp                                       # spawn or attach to the local daemon, then attach the TUI
+runwisp tui                                   # attach a fresh TUI to a local daemon over its socket
+runwisp tui --url https://runwisp.example.com # attach to a remote daemon over HTTP
 ```
 
-The first form is the everyday one. The second is for SSHing in to
-inspect a daemon you started elsewhere.
+The first form is the everyday one. The second attaches to a daemon
+sharing this machine's data dir. The third reaches a daemon you _don't_
+share a filesystem with — on another host, in a container — over HTTP;
+it logs in with the daemon's password and is covered in
+[Authentication](#authentication-briefly) below.
 
 ## The Home page (and "Open Web UI")
 
@@ -35,6 +39,15 @@ dashboard, already logged in — no copy-pasting the password, no
 lockouts from typos. On a server with no browser available, it copies
 the URL to your clipboard instead so you can paste it from another
 machine.
+
+This works for a remote daemon too (`runwisp tui --url …`): the TUI
+mints a short-lived, single-use launch ticket from your authenticated
+session and hands it to the browser. One caveat — if you're connected
+over **plain `http://` to a non-loopback host**, that ticket would
+travel unencrypted, so the TUI asks you to confirm before opening.
+Over `https://` (or to loopback) it just opens. The fix for the
+warning is the same as for any remote access: put the daemon behind
+[TLS](/operations/auth/#reverse-proxies).
 
 The other rows on Home:
 
@@ -181,11 +194,29 @@ A skipped firing is not silence — it's a row.
 
 ## Authentication, briefly
 
-Run the TUI on the daemon's host and you're already in. Connecting
-from elsewhere with `runwisp tui --host …`? Pass `--password` (same
-password as the Web UI) or set `RUNWISP_PASSWORD` in your shell. If
-the password is wrong or you've been rate-limited, the TUI prints the
-error and exits — see [Auth][auth] for the details.
+Run the TUI against a local daemon (`runwisp` or `runwisp tui`) and
+you're already in — access is gated by the data dir's filesystem
+permissions, no password involved.
+
+Connecting over HTTP with `runwisp tui --url …` is different: the
+daemon doesn't know who you are, so the TUI logs in with the same
+password as the Web UI via the [CHAP handshake][auth]. There's
+deliberately **no `--password` flag** — a password on the command line
+leaks into your shell history and `ps`. Instead the TUI:
+
+- reads `RUNWISP_PASSWORD` from the environment if it's set (the path
+  for scripts and CI), otherwise
+- **prompts you without echo**, just once — it then **caches the
+  session token** under your user cache dir
+  (`$XDG_CACHE_HOME/runwisp/` on Linux, `~/Library/Caches/runwisp/` on
+  macOS) and reuses it on the next connect, so you're not retyping the
+  password or tripping the daemon's login rate limit.
+
+A daemon started with [`RUNWISP_NO_AUTH=1`](/operations/auth/#running-without-a-password)
+needs no password at all — the TUI checks first and connects straight
+through. If the password is wrong or you've been rate-limited, the TUI
+prints the error and exits rather than landing you on a half-working
+screen. See [Auth][auth] for the handshake details.
 
 [auth]: /operations/auth/
 

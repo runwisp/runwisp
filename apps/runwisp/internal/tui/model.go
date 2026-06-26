@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"runtime"
 	"strings"
@@ -492,7 +493,7 @@ func (m *Model) activateHomeField() tea.Cmd {
 	case home.FieldOpenWebUI:
 		return m.openWebUI()
 	case home.FieldWebUI:
-		return m.dialogs.CopyToClipboard(fmt.Sprintf("http://localhost:%d", m.info.Port))
+		return m.dialogs.CopyToClipboard(m.info.WebURL())
 	case home.FieldPassword:
 		return m.dialogs.CopyToClipboard(m.info.Password)
 	default:
@@ -526,6 +527,11 @@ func (m *Model) downloadExecLog() tea.Cmd {
 // openLaunchURL builds a one-shot launch URL pointing the daemon at `target`
 // (a same-origin absolute path) and routes it through the existing browser
 // → clipboard → modal fallback. `target` defaults to "/" when empty.
+//
+// A launch ticket redeems into a full session, so over a plain-HTTP remote
+// connection it would travel in clear text. When the resolved Web UI base is
+// insecure (http:// to a non-loopback host) we gate the action behind a
+// confirmation dialog; loopback and https bases open directly.
 func (m *Model) openLaunchURL(target string) tea.Cmd {
 	if m.launchTicketFunc == nil {
 		return nil
@@ -533,15 +539,29 @@ func (m *Model) openLaunchURL(target string) tea.Cmd {
 	if target == "" {
 		target = "/"
 	}
+	base := m.info.WebURL()
+	if isInsecureRemoteURL(base) {
+		return m.showConfirmDialog(
+			"Insecure connection",
+			fmt.Sprintf("The Web UI at\n%s\nuses unencrypted HTTP. Opening it sends a single-use\nsession ticket in clear text over the network.\n\nContinue anyway?", base),
+			m.launchBrowserCmd(base, target),
+		)
+	}
+	return m.launchBrowserCmd(base, target)
+}
+
+// launchBrowserCmd mints a launch ticket and opens (or offers) the resulting
+// URL built from base. Factored out of openLaunchURL so it can be deferred
+// behind the insecure-connection confirmation dialog.
+func (m *Model) launchBrowserCmd(base, target string) tea.Cmd {
 	ticketFunc := m.launchTicketFunc
-	port := m.info.Port
 	return func() tea.Msg {
 		ticket, err := ticketFunc()
 		if err != nil {
 			return uikit.OpenBrowserMsg{Err: err}
 		}
-		launchURL := fmt.Sprintf("http://localhost:%d/api/auth/launch?ticket=%s&redirect=%s",
-			port, ticket, url.QueryEscape(target))
+		launchURL := fmt.Sprintf("%s/api/auth/launch?ticket=%s&redirect=%s",
+			strings.TrimRight(base, "/"), ticket, url.QueryEscape(target))
 		if !canOpenBrowser() {
 			return uikit.OpenBrowserMsg{URL: launchURL}
 		}
@@ -550,6 +570,25 @@ func (m *Model) openLaunchURL(target string) tea.Cmd {
 		}
 		return uikit.OpenBrowserMsg{URL: launchURL, BrowserOpened: true}
 	}
+}
+
+// isInsecureRemoteURL reports whether base is an http:// URL pointing at a
+// non-loopback host — the case where redeeming a launch ticket would expose
+// it in clear text over the network. A loopback host (localhost / 127/8 /
+// ::1) or an https:// base is considered safe.
+func isInsecureRemoteURL(base string) bool {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "http" {
+		return false
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return false
+	}
+	return true
 }
 
 func (m *Model) logActionResult(action, taskName string, err error) {

@@ -37,9 +37,10 @@ logging flags get the full treatment in
 ## Start the daemon and attach
 
 ```sh
-runwisp           # attach a TUI to a running daemon, or scaffold + start one
-runwisp daemon    # start headless (no TUI) — for Docker, systemd, cron
-runwisp tui       # attach a TUI to an already-running daemon
+runwisp                 # attach a TUI to a running daemon, or scaffold + start one
+runwisp daemon          # start headless (no TUI) — for Docker, systemd, cron
+runwisp tui             # attach a TUI to a local daemon over its socket
+runwisp tui --url <URL> # attach a TUI to a remote daemon over HTTP
 ```
 
 Bare `runwisp` is the everyday entry point. If a daemon already owns this
@@ -58,7 +59,11 @@ error with hints for finding the culprit.
 starts the scheduler, REST API, and Web UI without the TUI, and exits
 non-zero if there's no config rather than hanging on a prompt nobody can
 answer. `runwisp tui` connects a fresh TUI to a daemon that's already up,
-over the local socket — no password needed.
+over the local socket — no password needed. Add `--url`
+(or set `RUNWISP_URL`) to attach to a daemon over HTTP — a remote host
+or a container — logging in with its password; the
+[TUI tour](/getting-started/tui-tour/#authentication-briefly) covers
+how that password is read and cached.
 
 ## Look before you leap
 
