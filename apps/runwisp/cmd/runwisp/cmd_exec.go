@@ -246,8 +246,8 @@ func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
 	// tail window and clamps to anchor 0 on a fresh run, so we see every line.
 	from := int64(0)
 
-		// Reconnect from the next unseen line to preserve the persisted tail (run is terminal).
-		for range maxFollowReconnects {
+	// Reconnect from the next unseen line to preserve the persisted tail (run is terminal).
+	for range maxFollowReconnects {
 		ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: from})
 		if err != nil {
 			return 0, fmt.Errorf("open log stream: %w", err)
@@ -266,12 +266,12 @@ func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
 		from = highest + 1
 	}
 
-		// No Done event (persistent transport trouble or cancelled); fall back to the persisted state.
-		final, err := client.GetRun(taskName, runID)
-		if err != nil {
-			return 0, fmt.Errorf("fetch final run state: %w", err)
-		}
-		return exitCodeFromRun(final), nil
+	// No Done event (persistent transport trouble or cancelled); fall back to the persisted state.
+	final, err := client.GetRun(taskName, runID)
+	if err != nil {
+		return 0, fmt.Errorf("fetch final run state: %w", err)
+	}
+	return exitCodeFromRun(final), nil
 }
 
 // newSignalCancelContext returns a context cancelled either by its own cancel
@@ -296,7 +296,7 @@ func newSignalCancelContext() (context.Context, context.CancelFunc) {
 }
 
 // streamRunLogs prints each streamed log line to stdout/stderr until the stream reports the run is done or errors.
-	// Lines below `from` are skipped as already seen. done=true means terminal outcome reached.
+// Lines below `from` are skipped as already seen. done=true means terminal outcome reached.
 func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64) (exitCode int, highest int64, done bool, err error) {
 	highest = from - 1
 	for msg := range ch {
