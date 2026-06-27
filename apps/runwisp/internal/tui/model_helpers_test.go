@@ -144,7 +144,7 @@ func TestMainHeaderHeight_ActiveTask(t *testing.T) {
 	tasks := []model.TaskBrief{{Name: "backup-db"}}
 	m := newTestModel(tasks)
 	// Sidebar items: [Home(0), backup-db(1), Info(2), Debug(3)]
-	selectSidebarItem(&m, 1) // select "backup-db"
+	selectSidebarItem(&m, 1)
 
 	if m.sidebar.ActiveTask() != "backup-db" {
 		t.Fatalf("expected active task backup-db, got %q", m.sidebar.ActiveTask())
@@ -170,7 +170,7 @@ func TestMainHeaderHeight_NonHomePage(t *testing.T) {
 	tasks := []model.TaskBrief{{Name: "backup-db"}}
 	m := newTestModel(tasks)
 	// Sidebar items: [Home(0), backup-db(1), Info(2), Debug(3)]
-	selectSidebarItem(&m, 2) // select "Info"
+	selectSidebarItem(&m, 2)
 
 	if m.sidebar.ActivePage() == uikit.PageHome {
 		t.Fatalf("expected non-home page after selecting Info, got PageHome")
@@ -673,7 +673,7 @@ func TestApplySidebarSelectionChange_TaskChangedFiresFetchAndResetsCursor(t *tes
 	// Simulate moving from "no task" to "backup".
 	prevPage := m.sidebar.ActivePage()
 	prevTask := m.sidebar.ActiveTask()
-	selectSidebarItem(&m, 1) // select "backup"
+	selectSidebarItem(&m, 1)
 
 	cmd := m.applySidebarSelectionChange(prevPage, prevTask)
 	// fetchExecWindow returns nil here (no client), but the batched cmd from
@@ -872,7 +872,7 @@ func TestToggleSelectedNotificationRead_ReadToUnread(t *testing.T) {
 	now := time.Now()
 	n.ReadAt = &now
 	m.notifications.Upsert(n)
-	m.notifications.Toggle() // expand so Selected() returns the row
+	m.notifications.Toggle()
 
 	if m.notifications.Selected() == nil {
 		t.Fatal("precondition: expected a selection")

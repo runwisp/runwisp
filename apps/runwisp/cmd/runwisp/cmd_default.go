@@ -33,18 +33,10 @@ func runDefault(f Flags) error {
 		return err
 	}
 
-	// Health check failed — we're about to spawn a daemon. Before that, if
-	// there's no runwisp.toml and we're at a terminal, offer to create one.
-	// A spawned background daemon has no TTY, so the prompt must happen
-	// here in the foreground process.
+	// Spawn a background daemon or handle port conflicts.
 	if err := scaffoldIfMissing(f.CfgFile); err != nil {
 		return err
 	}
-
-	// Before paying the cost of spawning a background daemon (which would then
-	// silently fail to bind), probe the port ourselves. If a RunWisp daemon
-	// from a different datadir holds it, offer to connect to or stop it;
-	// otherwise surface a clear, actionable port-conflict error.
 	spawn, portErr := ensurePortFreeOrHandle(f)
 	if portErr != nil || !spawn {
 		return portErr
@@ -63,11 +55,8 @@ func runDefault(f Flags) error {
 	return runTUIConnect(client, f)
 }
 
-// ensurePortFreeOrHandle probes the bind port before a spawn. It returns
-// spawn=true when the caller should go on to launch its own daemon (port free,
-// or a conflicting daemon was stopped). When a conflicting RunWisp instance is
-// found it resolves the conflict interactively: connecting to it (running the
-// TUI inline and returning spawn=false) or aborting (spawn=false, nil error).
+// ensurePortFreeOrHandle probes the bind port before a spawn.
+// Returns spawn=true when the caller should launch its own daemon.
 func ensurePortFreeOrHandle(f Flags) (spawn bool, err error) {
 	bindErr := probePortAvailable(f.Host, f.Port)
 	if bindErr == nil {
@@ -93,11 +82,7 @@ func ensurePortFreeOrHandle(f Flags) (spawn bool, err error) {
 	}
 }
 
-// runTUIConnect launches the TUI against an already-healthy LOCAL daemon
-// reached over its Unix socket. Local access is gated by data-dir filesystem
-// permissions, so there is no Authenticate step; the daemon's ephemeral
-// password is fetched only so the Home screen can offer it for clipboard copy,
-// and the quit dialog can shut the daemon down via its local PID/socket.
+// runTUIConnect launches the TUI against a local daemon via Unix socket.
 func runTUIConnect(client *apiclient.Client, f Flags) error {
 	return launchConnectedTUI(client, tuiConnectMode{
 		shutdownFunc: func() error { return shutdownDaemon(f) },
@@ -119,9 +104,8 @@ type tuiConnectMode struct {
 	shutdownFunc func() error
 }
 
-// launchConnectedTUI is the shared tail for both the socket and the remote HTTP
-// paths: it pulls daemon info, resolves the Web UI base URL, fills in the
-// transport-specific bits, and runs the Bubble Tea program until the user quits.
+// launchConnectedTUI is the shared tail for local socket and remote HTTP paths.
+// Pulls daemon info, resolves Web UI base URL, fills in transport-specific bits, and runs TUI.
 func launchConnectedTUI(client *apiclient.Client, mode tuiConnectMode) error {
 	// The TUI needs a real terminal; without one it would hang on stdin. Decline
 	// clearly instead. Any spawned background daemon keeps running headless.
@@ -159,11 +143,8 @@ func launchConnectedTUI(client *apiclient.Client, mode tuiConnectMode) error {
 	return tuiErr
 }
 
-// resolveTUIListenURL determines the operator-reachable Web UI base URL the TUI
-// uses for its "Open Web UI" and copy-URL actions. The daemon's external_url
-// wins when set (it is the canonical public address, e.g. behind a proxy);
-// otherwise a remote TUI uses the URL it connected to, and a local TUI uses
-// http://localhost:<port>.
+// resolveTUIListenURL determines the operator-reachable Web UI base URL.
+// The daemon's external_url wins; otherwise uses connection URL or http://localhost:<port>.
 func resolveTUIListenURL(info *model.DaemonInfo, mode tuiConnectMode) string {
 	if info != nil && info.ExternalURL != "" {
 		return info.ExternalURL

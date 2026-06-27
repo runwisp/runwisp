@@ -59,7 +59,7 @@ func TestHandleKeyN_WithExecViewReturnsFalse(t *testing.T) {
 
 func TestHandleKeyEsc_NotificationsExpanded(t *testing.T) {
 	m := newTestModel(nil)
-	m.notifications.Toggle() // expand
+	m.notifications.Toggle()
 	if !m.notifications.IsExpanded() {
 		t.Fatal("expected expanded")
 	}
@@ -359,7 +359,7 @@ func TestHandleKeyEnterNotifications_SelectedWithRunID(t *testing.T) {
 	n.RunID = "run-1"
 	n.TaskName = "t1"
 	m.notifications.Upsert(n)
-	m.notifications.Toggle() // expand so Selected() returns the row
+	m.notifications.Toggle()
 
 	if m.notifications.Selected() == nil {
 		t.Fatal("precondition: expected a selection after Upsert+Toggle")
@@ -674,7 +674,7 @@ func TestHandleKeyBackspace_WithFullscreenExecView(t *testing.T) {
 	m := newTestModel(nil)
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
-	ev.ToggleFullscreen() // set fullscreen
+	ev.ToggleFullscreen()
 	m.execView = &ev
 
 	newM, _, handled := handleKeyBackspace(m, tea.KeyMsg{Type: tea.KeyBackspace})
@@ -717,7 +717,7 @@ func TestHandleKeyEnterHeader_FocusCopyField(t *testing.T) {
 func TestHandleKeyR_NotificationsExpanded(t *testing.T) {
 	m := newTestModel(nil)
 	m.notifications.Upsert(server.NotificationDTO{ID: "n1", Severity: "error", Count: 1, Title: "t"})
-	m.notifications.Toggle() // expand
+	m.notifications.Toggle()
 	_, _, handled := handleKeyR(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
 	if !handled {
 		t.Fatal("expected handled=true when notifications expanded")
@@ -757,7 +757,7 @@ func TestHandleKeyUp_NotificationsScrollable(t *testing.T) {
 			Title:    "x",
 		})
 	}
-	m.notifications.Toggle() // expand
+	m.notifications.Toggle()
 	_, _, handled := handleKeyUp(m, tea.KeyMsg{Type: tea.KeyUp})
 	if !handled {
 		t.Fatal("expected handled=true when notifications expanded and can scroll")
@@ -774,7 +774,7 @@ func TestHandleKeyDown_NotificationsScrollable(t *testing.T) {
 			Title:    "x",
 		})
 	}
-	m.notifications.Toggle() // expand
+	m.notifications.Toggle()
 	_, _, handled := handleKeyDown(m, tea.KeyMsg{Type: tea.KeyDown})
 	if !handled {
 		t.Fatal("expected handled=true when notifications expanded")
@@ -1060,7 +1060,7 @@ func TestHandleKeyLeftNoExecView_DebugWithHScroll(t *testing.T) {
 // branch.
 func TestHandleKeyEnter_NotificationsExpanded(t *testing.T) {
 	m := newTestModel(nil)
-	m.notifications.Toggle() // expand without items → Selected()==nil
+	m.notifications.Toggle()
 	_, _, handled := handleKeyEnter(m, keyMsgSpecial(tea.KeyEnter))
 	if !handled {
 		t.Fatal("expected handled=true on notifications branch")

@@ -418,7 +418,6 @@ func (p *Pane) ScrollDown(n int) {
 }
 
 // HandleKeyScroll handles vertical and horizontal scroll keyboard input.
-// Returns true if the key was consumed.
 func (p *Pane) HandleKeyScroll(key string) bool {
 	if handled, result := p.handleVScrollKey(key); handled {
 		return result
