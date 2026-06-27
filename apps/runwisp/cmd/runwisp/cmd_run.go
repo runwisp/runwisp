@@ -118,7 +118,13 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		slog.Warn("RUNWISP_CLOUD_TOKEN is set but ignored in standalone mode — use 'runwisp cloud' to start in cloud mode")
 	}
 
-	logSecurityWarnings(cfg, f)
+	tlsCfg, err := resolveTLS(f, cfg.Config.Daemon)
+	if err != nil {
+		_ = db.Close()
+		return err
+	}
+
+	logSecurityWarnings(cfg, f, tlsCfg)
 
 	// Pin the on-disk identity of runwisp.toml + env_files. Reload is
 	// restart-only; the snapshot lets /api/info report config_stale so every
@@ -182,6 +188,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		DaemonLogBuffer:   logBuffer,
 		MetricsEnabled:    cfg.Config.Daemon.MetricsEnabled,
 		MetricsListen:     cfg.Config.Daemon.MetricsListen,
+		TLSCert:           tlsCfg.CertPath,
+		TLSKey:            tlsCfg.KeyPath,
 		Reload:            reloadFn,
 	})
 	if err != nil {
@@ -196,6 +204,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		LogDir:     f.LogDir(),
 		Port:       f.Port,
 		ListenURL:  daemonListenURL(cfg.Config, f),
+
+		TLSFingerprint: tlsCfg.Fingerprint,
 
 		Fingerprint:    cfg.Fingerprint,
 		UsingDemo:      cfg.UsingDemo,
@@ -432,26 +442,26 @@ func absPathOrFallback(p string) string {
 }
 
 // daemonListenURL returns the operator-reachable base URL of the Web UI:
-// [daemon] external_url when configured, else http://<bind-host>:<port>.
-// Wildcard binds are mapped to localhost because 0.0.0.0/:: are not themselves
-// connectable addresses.
+// [daemon] external_url when configured, else <scheme>://<bind-host>:<port>
+// where scheme follows the resolved TLS mode. Wildcard binds are mapped to
+// localhost because 0.0.0.0/:: are not themselves connectable addresses.
 func daemonListenURL(cfg *config.Config, f Flags) string {
 	if u := cfg.Daemon.ExternalURL; u != "" {
 		return u
 	}
-	return localBindURL(f.Host, f.Port)
+	return localBindURL(tlsScheme(cfg.Daemon, f.Host), f.Host, f.Port)
 }
 
-// localBindURL builds the operator-reachable http://host:port for a bind,
+// localBindURL builds the operator-reachable <scheme>://host:port for a bind,
 // mapping wildcard binds to localhost (0.0.0.0/:: are not connectable
 // addresses). It is the external_url-free fallback shared by daemonListenURL
 // and the demo's --no-tui summary.
-func localBindURL(host string, port int) string {
+func localBindURL(scheme, host string, port int) string {
 	switch host {
 	case "", "0.0.0.0", "::", "[::]":
 		host = "localhost"
 	}
-	return fmt.Sprintf("http://%s:%d", host, port)
+	return fmt.Sprintf("%s://%s:%d", scheme, host, port)
 }
 
 // serverReadyTimeout bounds how long readiness probes wait for the listeners
@@ -502,18 +512,30 @@ func emitReadiness(rt *daemonRuntime, listenURL string, f Flags) {
 }
 
 // logSecurityWarnings emits log warnings for security-sensitive configurations.
-func logSecurityWarnings(cfg *daemonConfig, f Flags) {
+func logSecurityWarnings(cfg *daemonConfig, f Flags, tlsCfg tlsSetup) {
 	if cfg.Config.Daemon.AllowCloudDispatch {
 		slog.Warn("Cloud dispatch enabled — the cloud control plane can execute arbitrary commands (shell, container, compose) on this host")
 	}
-	nonLoopback := f.Host != "127.0.0.1" && f.Host != "::1" && f.Host != "localhost"
+	nonLoopback := isNonLoopbackBind(f.Host)
+	serving := tlsCfg.Scheme == "https"
 	// Exactly one banner: when auth is disabled it subsumes the non-loopback
-	// message, so the two warnings never stack.
-	if cfg.NoAuth {
+	// message, so the two warnings never stack. The cleartext-exposure banner
+	// only fires when a non-loopback bind is still plain HTTP (tls = "off");
+	// auto-HTTPS removes the eavesdrop risk, so it gets a calm fingerprint line
+	// instead — the same SHA-256 the startup banner shows for verification.
+	switch {
+	case cfg.NoAuth:
 		slog.Warn("Authentication is DISABLED (RUNWISP_NO_AUTH) — the API and Web UI accept unauthenticated requests")
 		printNoAuthBanner(f.Host, nonLoopback)
-	} else if nonLoopback {
+	case nonLoopback && !serving:
 		printNonLoopbackBanner(f.Host)
+	}
+	if serving {
+		origin := "self-signed"
+		if !tlsCfg.Generated {
+			origin = "operator-provided"
+		}
+		slog.Info("Serving HTTPS", "bind", f.Host, "cert", origin, "fingerprint", "sha256:"+tlsCfg.Fingerprint)
 	}
 	for _, w := range config.Warnings(cfg.Config) {
 		slog.Warn(w)

@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -55,6 +56,14 @@ type Server struct {
 	unixServer        *http.Server
 	metricsServer     *http.Server
 	socketPath        string
+	// tlsCert/tlsKey, when both set, switch the main TCP listener to HTTPS via
+	// ServeTLS. Empty keeps the listener on plain HTTP. The Unix socket and the
+	// metrics listener are never wrapped (local-only / loopback-scrape).
+	tlsCert string
+	tlsKey  string
+	// scheme is "https" when tlsCert/tlsKey are set, else "http". It is only
+	// used to advertise the right base URL in the OpenAPI document.
+	scheme string
 	// ready is closed once every listener (TCP + Unix [+ metrics]) is bound and
 	// about to serve, so readiness probes don't race the bind on a slow boot.
 	ready          chan struct{}
@@ -93,6 +102,8 @@ type Options struct {
 	DaemonLogBuffer   *DaemonLogBuffer                   // Ring buffer for daemon log streaming (optional)
 	MetricsEnabled    bool                               // When false, /metrics is not mounted anywhere
 	MetricsListen     string                             // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
+	TLSCert           string                             // PEM cert path; when set with TLSKey the main listener serves HTTPS
+	TLSKey            string                             // PEM key path; paired with TLSCert
 	Reload            func() (model.ReloadResult, error) // Reconciles the live task set against runwisp.toml; nil disables POST /api/reload
 }
 
@@ -127,6 +138,9 @@ func New(opts Options) (*Server, error) {
 		dataDir:           opts.DataDir,
 		configPath:        opts.ConfigPath,
 		socketPath:        opts.SocketPath,
+		tlsCert:           opts.TLSCert,
+		tlsKey:            opts.TLSKey,
+		scheme:            schemeFor(opts.TLSCert, opts.TLSKey),
 		logDir:            opts.LogDir,
 		eventBus:          opts.EventBus,
 		auth:              authSvc,
@@ -182,7 +196,7 @@ func (srv *Server) Start() error {
 	}
 	srv.signalReady()
 
-	if err := srv.httpServer.Serve(tcpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := srv.serveMain(tcpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	if err := <-unixErrCh; err != nil {
@@ -202,6 +216,27 @@ func (srv *Server) Ready() <-chan struct{} {
 // signalReady closes the readiness channel exactly once.
 func (srv *Server) signalReady() {
 	srv.readyOnce.Do(func() { close(srv.ready) })
+}
+
+// serveMain serves the primary listener, switching to TLS when a cert/key pair
+// is configured. ServeTLS sets up the *tls.Config from the files itself; we
+// only pin the minimum protocol version. The Unix and metrics listeners stay
+// on plain HTTP regardless — they are local-only / loopback-scrape surfaces.
+func (srv *Server) serveMain(ln net.Listener) error {
+	if srv.tlsCert == "" || srv.tlsKey == "" {
+		return srv.httpServer.Serve(ln)
+	}
+	srv.httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	return srv.httpServer.ServeTLS(ln, srv.tlsCert, srv.tlsKey)
+}
+
+// schemeFor reports the advertised URL scheme for a cert/key configuration:
+// "https" when both are set, "http" otherwise.
+func schemeFor(certPath, keyPath string) string {
+	if certPath != "" && keyPath != "" {
+		return "https"
+	}
+	return "http"
 }
 
 // newHTTPServer builds the primary HTTP server with the timeouts and header

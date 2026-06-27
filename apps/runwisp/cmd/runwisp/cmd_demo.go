@@ -147,7 +147,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 // passwordExit* code so the caller can exit non-zero when no password is
 // disclosable, matching `runwisp password`.
 func reportDemoNoTUI(stdout, stderr io.Writer, client credentialsFetcher, f Flags) int {
-	fmt.Fprintf(stderr, "RunWisp demo is running at %s\n", localBindURL(f.Host, f.Port))
+	fmt.Fprintf(stderr, "RunWisp demo is running at %s\n", localBindURL(tlsScheme(config.Daemon{}, f.Host), f.Host, f.Port))
 	fmt.Fprintf(stderr, "Stop it with: runwisp stop --data %s\n", f.DataDir)
 	fmt.Fprintln(stderr, "Web UI password:")
 	return runPassword(stdout, stderr, client, localAPISocketPath(f))

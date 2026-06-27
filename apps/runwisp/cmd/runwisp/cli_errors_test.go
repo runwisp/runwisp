@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -143,6 +145,61 @@ func TestRemoteAPITriggerDisabledError(t *testing.T) {
 	require.True(t, errors.As(err, &ufe))
 	assert.Contains(t, ufe.title, `"backup"`)
 	assert.Contains(t, ufe.details, "api_trigger = false")
+}
+
+func TestRunwispPortConflictError(t *testing.T) {
+	info := &model.InstanceInfo{
+		Version:    "1.2.3",
+		Pid:        4242,
+		DataDir:    "/var/lib/other",
+		ConfigPath: "/etc/other/runwisp.toml",
+		SocketPath: "/var/lib/other/runwisp.sock",
+	}
+
+	t.Run("names the running instance and how to reach it", func(t *testing.T) {
+		err := runwispPortConflictError("", 9477, info)
+		var ufe *userFacingError
+		require.True(t, errors.As(err, &ufe))
+		assert.Contains(t, ufe.title, "v1.2.3")
+		assert.Contains(t, ufe.title, "pid 4242")
+		assert.Contains(t, ufe.title, "127.0.0.1:9477")
+		assert.Contains(t, ufe.details, "/var/lib/other")
+		assert.Contains(t, ufe.details, "/etc/other/runwisp.toml")
+		assert.Contains(t, ufe.details, "--socket /var/lib/other/runwisp.sock")
+		assert.Contains(t, ufe.details, "stop --data /var/lib/other")
+	})
+
+	t.Run("honours an explicit host", func(t *testing.T) {
+		err := runwispPortConflictError("0.0.0.0", 9477, info)
+		var ufe *userFacingError
+		require.True(t, errors.As(err, &ufe))
+		assert.Contains(t, ufe.title, "0.0.0.0:9477")
+	})
+}
+
+func TestInstanceSummaryLines(t *testing.T) {
+	lines := instanceSummaryLines(&model.InstanceInfo{
+		DataDir:    "/data",
+		ConfigPath: "/cfg/runwisp.toml",
+	})
+	require.Len(t, lines, 2)
+	assert.Contains(t, lines[0], "/data")
+	assert.Contains(t, lines[1], "/cfg/runwisp.toml")
+}
+
+func TestCertPinMismatchError(t *testing.T) {
+	err := certPinMismatchError("https://daemon.example:9477", &apiclient.CertPinMismatchError{
+		Host:   "https://daemon.example:9477",
+		Pinned: "aaaa",
+		Got:    "bbbb",
+	})
+	var ufe *userFacingError
+	require.True(t, errors.As(err, &ufe))
+	assert.Contains(t, ufe.title, "TLS certificate")
+	assert.Contains(t, ufe.title, "https://daemon.example:9477")
+	assert.Contains(t, ufe.details, "sha256:aaaa")
+	assert.Contains(t, ufe.details, "sha256:bbbb")
+	assert.Contains(t, ufe.details, "may be intercepted")
 }
 
 func TestUnknownTaskError(t *testing.T) {

@@ -142,12 +142,23 @@ type NotificationRoute struct {
 // metrics endpoint to a separate address (e.g. "127.0.0.1:9478") instead of
 // sharing the main UI/REST listener — useful when --host exposes the UI
 // publicly but the scrape surface should stay on loopback.
+//
+// TLS controls transport encryption for the main UI/REST listener. "auto"
+// (the default) serves plain HTTP on loopback but self-signs and serves HTTPS
+// the moment the bind host is non-loopback, so a network-exposed daemon is
+// encrypted with zero operator effort; "off" forces plain HTTP everywhere
+// (the operator is terminating TLS at a reverse proxy, or knows the network is
+// trusted). TLSCert/TLSKey, when both set, supply an operator-provided
+// certificate and key that take precedence over auto self-signing on any bind.
 type Daemon struct {
 	AllowCloudDispatch bool          `toml:"-"`
 	ShutdownTimeout    time.Duration `toml:"-"`
 	ExternalURL        string        `toml:"-"`
 	MetricsEnabled     bool          `toml:"-"`
 	MetricsListen      string        `toml:"-"`
+	TLS                string        `toml:"-"`
+	TLSCert            string        `toml:"-"`
+	TLSKey             string        `toml:"-"`
 }
 
 // Defaults provides fallback values applied to every task.

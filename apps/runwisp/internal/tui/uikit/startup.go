@@ -37,7 +37,11 @@ type StartupInfo struct {
 	// wildcard binds mapped to localhost). Empty when the Web UI is disabled.
 	ListenURL string
 
-	Fingerprint    string
+	Fingerprint string
+	// TLSFingerprint is the SHA-256 (hex) of the served TLS certificate, shown
+	// so the operator can verify it out-of-band against what a remote client
+	// pins on first connect. Empty when serving plain HTTP.
+	TLSFingerprint string
 	UsingDemo      bool
 	Capabilities   []model.CapInfo
 	Tasks          []model.TaskBrief

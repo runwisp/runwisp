@@ -75,23 +75,43 @@ func TestLogSecurityWarnings_EmitsCloudDispatchWarning(t *testing.T) {
 	out := captureSlog(t, func() {
 		cfg := &daemonConfig{Config: &config.Config{}}
 		cfg.Config.Daemon.AllowCloudDispatch = true
-		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"})
+		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"}, tlsSetup{Scheme: "http"})
 	})
 	assert.Contains(t, out, "Cloud dispatch enabled")
 }
 
-func TestLogSecurityWarnings_PrintsBannerForNonLoopbackHost(t *testing.T) {
+func TestLogSecurityWarnings_PrintsBannerForNonLoopbackCleartext(t *testing.T) {
+	// Non-loopback bind with TLS off (scheme http) is the only case that still
+	// prints the loud cleartext-exposure banner.
 	out := captureStderr(t, func() {
 		cfg := &daemonConfig{Config: &config.Config{}}
-		logSecurityWarnings(cfg, Flags{Host: "0.0.0.0"})
+		logSecurityWarnings(cfg, Flags{Host: "0.0.0.0"}, tlsSetup{Scheme: "http"})
 	})
 	assert.True(t, strings.Contains(out, "0.0.0.0"), "banner must include the host")
+	assert.Contains(t, out, "SECURITY")
+}
+
+func TestLogSecurityWarnings_NonLoopbackHTTPSNoCleartextBanner(t *testing.T) {
+	// Auto-HTTPS removes the eavesdrop risk, so a non-loopback bind serving
+	// HTTPS gets a calm fingerprint line, not the cleartext banner.
+	stderr := captureStderr(t, func() {
+		cfg := &daemonConfig{Config: &config.Config{}}
+		logSecurityWarnings(cfg, Flags{Host: "0.0.0.0"}, tlsSetup{Scheme: "https", Generated: true, Fingerprint: "deadbeef"})
+	})
+	assert.NotContains(t, stderr, "cleartext", "HTTPS bind must not print the cleartext banner")
+
+	slogOut := captureSlog(t, func() {
+		cfg := &daemonConfig{Config: &config.Config{}}
+		logSecurityWarnings(cfg, Flags{Host: "0.0.0.0"}, tlsSetup{Scheme: "https", Generated: true, Fingerprint: "deadbeef"})
+	})
+	assert.Contains(t, slogOut, "Serving HTTPS")
+	assert.Contains(t, slogOut, "deadbeef")
 }
 
 func TestLogSecurityWarnings_LoopbackQuiet(t *testing.T) {
 	out := captureStderr(t, func() {
 		cfg := &daemonConfig{Config: &config.Config{}}
-		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"})
+		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"}, tlsSetup{Scheme: "http"})
 	})
 	assert.NotContains(t, out, "SECURITY", "loopback bind must not print the banner")
 }

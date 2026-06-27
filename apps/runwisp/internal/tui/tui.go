@@ -119,6 +119,9 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	if info.Fingerprint != "" {
 		printDotField(w, "Fingerprint", info.Fingerprint)
 	}
+	if info.TLSFingerprint != "" {
+		printDotField(w, "TLS cert", "sha256:"+info.TLSFingerprint)
+	}
 	if info.Timezone != "" {
 		tz := info.Timezone
 		if info.TimezoneSource != "" {

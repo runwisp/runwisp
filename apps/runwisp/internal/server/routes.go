@@ -100,6 +100,12 @@ func securityHeaders(next http.Handler) http.Handler {
 				"font-src 'self'; "+
 				"frame-ancestors 'none'",
 		)
+		// HSTS only over TLS: sending it on a plain-HTTP response would pin a
+		// scheme the daemon isn't serving (and a loopback dev daemon would brick
+		// http://localhost in the browser for a year).
+		if r.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -124,7 +130,11 @@ func (srv *Server) setupRoutes() error {
 
 	// Create huma API after all global middleware is registered (chi requirement)
 	config := huma.DefaultConfig("RunWisp API", version.Version)
-	config.Servers = []*huma.Server{{URL: fmt.Sprintf("http://localhost:%d", srv.port)}}
+	scheme := srv.scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	config.Servers = []*huma.Server{{URL: fmt.Sprintf("%s://localhost:%d", scheme, srv.port)}}
 	srv.api = humachi.New(srv.router, config)
 
 	// Health check (raw chi — trivial, no benefit from huma)

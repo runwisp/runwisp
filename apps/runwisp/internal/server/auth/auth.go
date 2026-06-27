@@ -11,7 +11,6 @@ package auth
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -25,6 +24,7 @@ import (
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/runwisp/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/internal/datadir"
 )
 
@@ -104,7 +104,8 @@ func (s *Service) JWTAuth() *jwtauth.JWTAuth { return s.jwtAuth }
 func (s *Service) Password() string { return s.password }
 
 // IssueChallenge mints a single-use nonce; the client signs it with the
-// shared password and returns the SHA-256 over (password + ":" + nonce).
+// shared password and returns chap.Response (PBKDF2-HMAC-SHA256 of the
+// password salted with the nonce).
 func (s *Service) IssueChallenge() (string, error) {
 	return s.nonces.create()
 }
@@ -207,8 +208,7 @@ func (s *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h := sha256.Sum256([]byte(s.password + ":" + reqBody.Nonce))
-	expected := hex.EncodeToString(h[:])
+	expected := chap.Response(s.password, reqBody.Nonce)
 	if subtle.ConstantTimeCompare([]byte(reqBody.Response), []byte(expected)) != 1 {
 		http.Error(w, "Invalid password", http.StatusUnauthorized)
 		return

@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -544,6 +545,9 @@ type daemonWire struct {
 	ExternalURL        string   `toml:"external_url,omitempty"`
 	MetricsEnabled     bool     `toml:"metrics_enabled,omitempty"`
 	MetricsListen      string   `toml:"metrics_listen,omitempty"`
+	TLS                string   `toml:"tls,omitempty"`
+	TLSCert            string   `toml:"tls_cert,omitempty"`
+	TLSKey             string   `toml:"tls_key,omitempty"`
 	Include            []string `toml:"include,omitempty"`
 }
 
@@ -563,12 +567,19 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	if metricsListen != "" && !w.MetricsEnabled {
 		return Daemon{}, fmt.Errorf("invalid daemon.metrics_listen: set without daemon.metrics_enabled = true")
 	}
+	tlsMode, err := parseTLSMode(w.TLS)
+	if err != nil {
+		return Daemon{}, err
+	}
 	return Daemon{
 		AllowCloudDispatch: w.AllowCloudDispatch,
 		ShutdownTimeout:    shutdown,
 		ExternalURL:        externalURL,
 		MetricsEnabled:     w.MetricsEnabled,
 		MetricsListen:      metricsListen,
+		TLS:                tlsMode,
+		TLSCert:            strings.TrimSpace(w.TLSCert),
+		TLSKey:             strings.TrimSpace(w.TLSKey),
 	}, nil
 }
 

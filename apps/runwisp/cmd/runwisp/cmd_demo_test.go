@@ -40,8 +40,8 @@ func TestReportDemoNoTUI_WildcardBindReportsLocalhost(t *testing.T) {
 
 	reportDemoNoTUI(&stdout, &stderr, client, f)
 
-	assert.Contains(t, stderr.String(), "http://localhost:8080",
-		"a 0.0.0.0 bind is not connectable; report localhost")
+	assert.Contains(t, stderr.String(), "https://localhost:8080",
+		"a 0.0.0.0 bind is not connectable (report localhost) and auto-TLS makes it https")
 }
 
 func TestReportDemoNoTUI_NoPasswordExitsNonZeroWithoutLeaking(t *testing.T) {

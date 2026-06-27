@@ -139,6 +139,20 @@ func parseExternalURL(raw string) (string, error) {
 	return trimmed, nil
 }
 
+// parseTLSMode validates [daemon] tls: empty (apply the "auto" default later),
+// "auto", or "off". The literal is normalised to lower case so "AUTO"/"Off"
+// don't trip validation. The actual auto-vs-off behaviour (loopback stays HTTP,
+// non-loopback self-signs) is resolved at boot against the bind host.
+func parseTLSMode(raw string) (string, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	switch trimmed {
+	case "", TLSModeAuto, TLSModeOff:
+		return trimmed, nil
+	default:
+		return "", fmt.Errorf("invalid daemon.tls: %q (must be \"auto\" or \"off\")", raw)
+	}
+}
+
 // parseMetricsListen validates [daemon] metrics_listen: empty means "share
 // the main UI/REST listener", otherwise it must be a host:port pair the OS
 // can bind. Hostname resolution and the actual bind happen at server start —

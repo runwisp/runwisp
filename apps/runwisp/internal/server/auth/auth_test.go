@@ -4,14 +4,14 @@
 package auth
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/chap"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,8 +60,7 @@ func TestNonceStore_MultipleConcurrentNonces(t *testing.T) {
 }
 
 func computeChallenge(password, nonce string) string {
-	h := sha256.Sum256([]byte(password + ":" + nonce))
-	return hex.EncodeToString(h[:])
+	return chap.Response(password, nonce)
 }
 
 func newServiceOrFail(t *testing.T, password string, trusted TrustedProxyChecker) *Service {
@@ -216,6 +215,20 @@ func TestSetAuthCookie_HTTP(t *testing.T) {
 	assert.True(t, c.HttpOnly)
 	assert.False(t, c.Secure, "Secure should be false for plain HTTP")
 	assert.Equal(t, http.SameSiteStrictMode, c.SameSite)
+}
+
+func TestSetAuthCookie_DirectTLSIsSecure(t *testing.T) {
+	// A request delivered over TLS (r.TLS != nil) sets Secure with no proxy
+	// involved — this is the free win once the daemon serves HTTPS directly.
+	svc := newServiceOrFail(t, "pass", nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r.TLS = &tls.ConnectionState{}
+	svc.SetAuthCookie(w, r, "test-token", JWTTokenDuration)
+
+	cookies := w.Result().Cookies()
+	require.Len(t, cookies, 1)
+	assert.True(t, cookies[0].Secure, "Secure should be set when the request itself used TLS")
 }
 
 func TestSetAuthCookie_XForwardedProtoFromUntrustedClientIgnored(t *testing.T) {
