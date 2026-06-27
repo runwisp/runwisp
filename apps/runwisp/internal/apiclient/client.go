@@ -6,8 +6,6 @@ package apiclient
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/runwisp/runwisp/internal/chap"
 )
 
 // Client communicates with the RunWisp daemon HTTP API.
@@ -43,7 +43,10 @@ func NormalizeBaseURL(baseURL string) string {
 }
 
 // New constructs a Client for a remote daemon. baseURL must be an http(s)
-// URL; the client will run CHAP via Authenticate to obtain a JWT.
+// URL; the client will run CHAP via Authenticate to obtain a JWT. It performs
+// no certificate pinning — over HTTPS it relies on the system trust store, so
+// it suits tests (plain-HTTP httptest servers) and callers behind a CA-signed
+// reverse proxy. The user-facing `exec --url` path uses NewPinned instead.
 func New(baseURL, password string) *Client {
 	return &Client{
 		baseURL:  NormalizeBaseURL(baseURL),
@@ -53,6 +56,19 @@ func New(baseURL, password string) *Client {
 		},
 		streamClient: &http.Client{},
 	}
+}
+
+// NewPinned is New plus trust-on-first-use certificate pinning: the daemon's
+// self-signed cert is recorded in pins on first connect and any later
+// fingerprint change fails the handshake (see pinningTransport). pins must be
+// non-nil; for plain HTTP the pinning transport is inert (no TLS handshake to
+// verify), so it's safe to use unconditionally for remote URLs.
+func NewPinned(baseURL, password string, pins CertPinStore) *Client {
+	c := New(baseURL, password)
+	tr := pinningTransport(c.baseURL, pins)
+	c.httpClient.Transport = tr
+	c.streamClient.Transport = tr
+	return c
 }
 
 // NewProbe constructs a short-timeout, password-less Client for one-shot local
@@ -112,12 +128,9 @@ func (c *Client) Authenticate() error {
 		return fmt.Errorf("auth challenge: %w", err)
 	}
 
-	hash := sha256.Sum256([]byte(c.password + ":" + challenge.Nonce))
-	response := hex.EncodeToString(hash[:])
-
 	body := map[string]string{
 		"nonce":    challenge.Nonce,
-		"response": response,
+		"response": chap.Response(c.password, challenge.Nonce),
 	}
 	var authResult struct {
 		Token string `json:"token"`

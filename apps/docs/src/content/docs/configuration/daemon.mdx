@@ -23,18 +23,24 @@ since in practice you tend to think about them together.
 [daemon]
 shutdown_timeout = "10s"
 external_url     = "https://runwisp.example.com"
+tls              = "auto"
+tls_cert         = ""
+tls_key          = ""
 metrics_enabled  = false
 metrics_listen   = ""
 include          = ["conf.d/*.toml"]
 ```
 
-| Key                | Default | What it does                                                                                                                                                                                                                    |
-| ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shutdown_timeout` | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                  |
-| `external_url`     | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                           |
-| `metrics_enabled`  | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.            |
-| `metrics_listen`   | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`. |
-| `include`          | _unset_ | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                     |
+| Key                | Default  | What it does                                                                                                                                                                                                                         |
+| ------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `shutdown_timeout` | `"10s"`  | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                       |
+| `external_url`     | _unset_  | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                                |
+| `tls`              | `"auto"` | `"auto"` serves HTTPS automatically whenever the bind address is non-loopback (self-signing a cert on first boot); `"off"` always serves plain HTTP. Loopback binds stay HTTP either way. Ignored when `tls_cert`/`tls_key` are set. |
+| `tls_cert`         | _unset_  | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                  |
+| `tls_key`          | _unset_  | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                           |
+| `metrics_enabled`  | `false`  | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                 |
+| `metrics_listen`   | _unset_  | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`.      |
+| `include`          | _unset_  | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                          |
 
 ### `shutdown_timeout`
 
@@ -68,6 +74,54 @@ Leaving `external_url` unset is perfectly fine and fully supported.
 Notifications still render in full — they just skip the link line rather
 than print a broken URL.
 
+### `tls`, `tls_cert`, `tls_key`
+
+RunWisp serves HTTPS by itself, with no certificate to obtain and nothing
+to wire up. The rule is simple: **the moment you bind somewhere other than
+loopback, the channel is encrypted.**
+
+- **Loopback (`--host 127.0.0.1`, the default):** plain HTTP. There's
+  nothing on the wire to eavesdrop, and `curl http://localhost:9477` just
+  works for local dev.
+- **Non-loopback (`--host 0.0.0.0`, a LAN IP, …) with `tls = "auto"`:**
+  the daemon generates a long-lived self-signed certificate on first boot,
+  stores it under `<data>/tls/`, and serves HTTPS. Auth cookies and CHAP
+  responses never cross a real network in cleartext.
+
+Because the cert is self-signed, the first browser visit shows the usual
+"not trusted" warning, and the CLI/TUI pin the cert on first connect
+(trust-on-first-use, like SSH). To let you verify you're talking to the
+right daemon, the startup log prints the certificate's SHA-256 fingerprint:
+
+```
+Serving HTTPS  bind=0.0.0.0  cert=self-signed  fingerprint=sha256:1a2b3c…
+```
+
+Compare that against the warning your browser shows, or the fingerprint
+the CLI pins, and you know the connection is genuine. If you ever
+regenerate the cert (delete `<data>/tls/` and restart), the CLI will
+refuse to connect until you clear the old pin — same loud "host identity
+changed" behaviour as `ssh`.
+
+**Bring your own certificate** by pointing `tls_cert` and `tls_key` at a
+PEM pair — a cert from your internal CA, say, or one a tool like `mkcert`
+made. Supplying a pair forces HTTPS on every bind address (loopback
+included) and skips the self-signed flow entirely.
+
+**Turn it off** with `tls = "off"` when something else already terminates
+TLS — most commonly a reverse proxy (nginx, Caddy, Traefik) doing TLS out
+front and forwarding plain HTTP to RunWisp on a private network. In that
+case set `RUNWISP_TRUST_PROXY` to the proxy's CIDR so the daemon honours
+`X-Forwarded-Proto` and still marks session cookies `Secure`. A
+non-loopback bind on `tls = "off"` prints a loud startup banner — plain
+HTTP on a real network exposes your auth tokens, and that should never be
+silent.
+
+What RunWisp deliberately does **not** do is ACME / Let's Encrypt: that
+needs outbound network and a public domain, which would break the
+local-first, offline-complete promise. For a publicly-trusted cert, use a
+reverse proxy or supply your own pair.
+
 ### `metrics_enabled`
 
 `metrics_enabled` is the gate on the OpenMetrics scrape endpoint at
@@ -88,6 +142,11 @@ instead. That's the knob you want when `--host 0.0.0.0` puts the
 dashboard out in public but you'd rather keep the scrape surface on
 loopback. The dedicated listener serves _only_ `/metrics` — the UI, REST
 API, and `/health` all stay on the main listener.
+
+The dedicated metrics listener is always plain HTTP — auto-HTTPS (see
+[`tls`](#tls-tls_cert-tls_key)) does not wrap it. Keep it on loopback (or a
+private interface like a Tailscale address) and let your scraper reach it
+locally or through a proxy; don't expose it on a public interface.
 
 And if you set `metrics_listen` but never turned `metrics_enabled` on,
 the daemon rejects it at boot instead of quietly ignoring it.

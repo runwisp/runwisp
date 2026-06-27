@@ -6,6 +6,8 @@
 // binary, wait for it to come up, and exchange the password for a JWT via the
 // challenge-response handshake — identical steps, one source of truth.
 
+import { chapResponse } from "../../src/lib/chap";
+
 export function generatePassword(): string {
     const bytes = new Uint8Array(24);
     globalThis.crypto.getRandomValues(bytes);
@@ -40,14 +42,7 @@ export async function obtainToken(baseURL: string, password: string): Promise<st
     if (!challengeRes.ok) throw new Error(`Challenge request failed: ${challengeRes.status}`);
     const { nonce } = (await challengeRes.json()) as { nonce: string };
 
-    const enc = new TextEncoder();
-    const hashBuf = await globalThis.crypto.subtle.digest(
-        "SHA-256",
-        enc.encode(`${password}:${nonce}`),
-    );
-    const response = Array.from(new Uint8Array(hashBuf))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
+    const response = await chapResponse(password, nonce);
 
     const authRes = await fetch(`${baseURL}/api/auth`, {
         method: "POST",

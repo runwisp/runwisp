@@ -143,11 +143,17 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 // reuses a cached JWT when one is valid, falling back to a CHAP handshake, and
 // (unless detached) follows the SSE log stream to propagate the exit code.
 func runExecViaRemote(taskName, baseURL, password string, detach bool) (int, error) {
-	client := apiclient.New(baseURL, password)
+	client := apiclient.NewPinned(baseURL, password, certPinStore{})
 
 	// Health is a public endpoint — probe it before auth so an unreachable
-	// daemon reports as such rather than as a login failure.
+	// daemon reports as such rather than as a login failure. A pinned-cert
+	// mismatch also surfaces here (it fails the TLS handshake), so translate it
+	// into known-hosts-style guidance instead of a generic "unreachable".
 	if err := client.HealthCheck(); err != nil {
+		var mismatch *apiclient.CertPinMismatchError
+		if errors.As(err, &mismatch) {
+			return 0, certPinMismatchError(baseURL, mismatch)
+		}
 		return 0, remoteUnreachableError(baseURL, err)
 	}
 

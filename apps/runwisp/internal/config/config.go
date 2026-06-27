@@ -5,6 +5,7 @@ package config
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -363,6 +364,31 @@ func validateDefaults(d *Defaults) error {
 	return validateStopSignal("defaults.stop_signal", d.StopSignal)
 }
 
+// validateTLS checks the [daemon] TLS keys: the mode must be a known literal,
+// and tls_cert/tls_key are all-or-nothing — supplying one without the other is
+// a config error, not a silent half-configuration. When both are set the files
+// must exist and load as a usable key pair, so a typo'd path fails at boot
+// rather than when the first HTTPS request arrives.
+func validateTLS(d *Daemon) error {
+	// "" is the not-yet-defaulted state (ApplyDefaults fills it with "auto");
+	// accept it so Validate is order-independent with respect to ApplyDefaults.
+	switch d.TLS {
+	case "", TLSModeAuto, TLSModeOff:
+	default:
+		return fmt.Errorf("invalid daemon.tls: %q (must be \"auto\" or \"off\")", d.TLS)
+	}
+	switch {
+	case d.TLSCert == "" && d.TLSKey == "":
+		return nil
+	case d.TLSCert == "" || d.TLSKey == "":
+		return fmt.Errorf("invalid [daemon]: tls_cert and tls_key must be set together")
+	}
+	if _, err := tls.LoadX509KeyPair(d.TLSCert, d.TLSKey); err != nil {
+		return fmt.Errorf("invalid [daemon] tls_cert/tls_key: %w", err)
+	}
+	return nil
+}
+
 // Validate checks for invalid configuration values. Durations and byte sizes
 // have already been parsed at this point — only enum membership, ranges, and
 // required fields remain.
@@ -372,6 +398,9 @@ func Validate(cfg *Config) error {
 	}
 	if cfg.Daemon.ShutdownTimeout < 0 {
 		return fmt.Errorf("invalid daemon.shutdown_timeout: must be a positive duration")
+	}
+	if err := validateTLS(&cfg.Daemon); err != nil {
+		return err
 	}
 	if _, err := ResolveTimezone("scheduler.timezone", cfg.Scheduler.Timezone); err != nil {
 		return err
@@ -1073,6 +1102,14 @@ const (
 	EnvMaxValueLen = model.EnvMaxValueLen
 )
 
+// TLS modes for [daemon] tls. TLSModeAuto serves HTTP on loopback and
+// self-signed HTTPS on a non-loopback bind; TLSModeOff is plain HTTP on every
+// bind (operator terminates TLS upstream or trusts the network).
+const (
+	TLSModeAuto = "auto"
+	TLSModeOff  = "off"
+)
+
 // Built-in defaults applied by ApplyDefaults when a field is omitted entirely.
 const (
 	DefaultMaxCatchUpRuns = 100
@@ -1110,6 +1147,9 @@ func ApplyDefaults(cfg *Config) {
 
 	if cfg.Daemon.ShutdownTimeout == 0 {
 		cfg.Daemon.ShutdownTimeout = DefaultDaemonShutdown
+	}
+	if cfg.Daemon.TLS == "" {
+		cfg.Daemon.TLS = TLSModeAuto
 	}
 	if cfg.Defaults.HealthyAfter == 0 {
 		cfg.Defaults.HealthyAfter = DefaultHealthyAfter

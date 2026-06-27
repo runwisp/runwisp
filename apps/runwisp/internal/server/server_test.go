@@ -5,8 +5,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +19,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/runwisp/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/logutil"
@@ -522,13 +521,12 @@ func chapChallenge(t *testing.T, s *Server) string {
 	return resp["nonce"]
 }
 
-// chapAttempt performs a full CHAP handshake (challenge → SHA-256(password:nonce)
-// → login) and returns the login response recorder for the caller to assert on.
+// chapAttempt performs a full CHAP handshake (challenge → chap.Response →
+// login) and returns the login response recorder for the caller to assert on.
 func chapAttempt(t *testing.T, s *Server, password string) *httptest.ResponseRecorder {
 	t.Helper()
 	nonce := chapChallenge(t, s)
-	h := sha256.Sum256([]byte(password + ":" + nonce))
-	body := fmt.Sprintf(`{"nonce":%q,"response":%q}`, nonce, hex.EncodeToString(h[:]))
+	body := fmt.Sprintf(`{"nonce":%q,"response":%q}`, nonce, chap.Response(password, nonce))
 	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { APIPaths, RunSelector } from "@runwisp/common";
 import { browser } from "$app/environment";
 import { getApiUrl } from "./utils/env";
+import { chapResponse } from "./chap";
 import { HTTP_STATUS } from "./config/constants";
 import { browserTokenStorage, browserAuthEventBus } from "$lib/adapters/browser";
 import { authStore } from "./stores/auth.svelte";
@@ -72,14 +73,7 @@ export const authApi = {
         if (!challengeRes.ok) throw new Error("Failed to get auth challenge");
         const { nonce } = authChallengeResponseSchema.parse(await challengeRes.json());
 
-        const enc = new TextEncoder();
-        const hashBuf = await globalThis.crypto.subtle.digest(
-            "SHA-256",
-            enc.encode(password + ":" + nonce),
-        );
-        const response = Array.from(new Uint8Array(hashBuf))
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
+        const response = await chapResponse(password, nonce);
 
         const res = await fetch(`${API_BASE_URL}/api/auth`, {
             method: "POST",

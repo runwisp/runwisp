@@ -4,14 +4,13 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,8 +52,7 @@ func (d fakeDaemon) start(t *testing.T) *httptest.Server {
 				Response string `json:"response"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
-			sum := sha256.Sum256([]byte(d.password + ":" + nonce))
-			if d.password == "" || body.Response != hex.EncodeToString(sum[:]) {
+			if d.password == "" || body.Response != chap.Response(d.password, nonce) {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}

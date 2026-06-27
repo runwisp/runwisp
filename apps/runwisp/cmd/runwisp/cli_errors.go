@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/textutil"
 )
@@ -208,6 +209,28 @@ func remoteUnreachableError(baseURL string, cause error) error {
 			"  - The URL is correct (scheme, host, and port)\n" +
 			"  - The daemon is bound beyond loopback (runwisp daemon --host 0.0.0.0) or reachable through your reverse proxy\n" +
 			"  - No firewall is blocking the connection",
+	}
+}
+
+// certPinMismatchError is returned when a remote daemon's TLS certificate no
+// longer matches the fingerprint pinned on first connect. Like ssh's
+// host-key-changed warning it refuses to proceed: the operator either
+// regenerated the cert (and should clear the stale pin) or the connection is
+// being intercepted.
+func certPinMismatchError(baseURL string, mismatch *apiclient.CertPinMismatchError) error {
+	path, err := pinStorePath()
+	if err != nil {
+		path = "~/.cache/runwisp/pinned_certs.json"
+	}
+	return &userFacingError{
+		title: fmt.Sprintf("TLS certificate for %s changed since first connect", baseURL),
+		details: fmt.Sprintf("Pinned:   sha256:%s\n", mismatch.Pinned) +
+			fmt.Sprintf("Presented: sha256:%s\n", mismatch.Got) +
+			"This means the daemon's certificate was replaced. If you regenerated it\n" +
+			"intentionally (or moved the daemon), verify the new fingerprint against the\n" +
+			"daemon's startup banner, then remove the stale pin:\n" +
+			fmt.Sprintf("  - Edit %s and delete the entry for %s\n", path, apiclient.NormalizeBaseURL(baseURL)) +
+			"Otherwise the connection may be intercepted — do not proceed.",
 	}
 }
 

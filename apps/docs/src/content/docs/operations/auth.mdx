@@ -46,9 +46,14 @@ mismatch, not a network problem.
 The Web UI shows a single password field. Your password never goes
 across the network in the clear. Login is a challenge-response
 handshake: the browser asks the daemon for a one-time challenge,
-mixes it with your password, and sends back a hash the daemon can
-verify. Even on plain HTTP behind a TLS-terminating proxy, the
-password itself never hits the wire.
+runs it together with your password through PBKDF2 (600,000 rounds of
+HMAC-SHA-256), and sends back the derived response the daemon can
+verify. The password itself never hits the wire, and the slow KDF
+makes a captured transcript expensive to brute-force offline. That's
+defense in depth _behind_ the encrypted channel, not a substitute for
+it — and whenever the daemon binds beyond loopback it serves HTTPS by
+default (see [TLS](/configuration/daemon/#tls-tls_cert-tls_key)), so
+the handshake rides an encrypted connection too.
 
 Once you're in, the daemon hands you a session inside a secure
 cookie. Set a new `RUNWISP_PASSWORD` and restart, and every
@@ -224,11 +229,15 @@ close some open log views and try again.
 
 ## Reverse proxies
 
-RunWisp binds to `127.0.0.1:9477` by default and serves plain HTTP.
-If you want to put it on the public internet with TLS, the right
-move is to drop a reverse proxy in front (nginx, Caddy, Traefik,
-Cloudflare Tunnel, your pick) and tell the daemon which IP ranges
-that proxy will be calling from:
+RunWisp binds to `127.0.0.1:9477` by default and serves plain HTTP
+there. Bind beyond loopback and it self-signs and serves HTTPS on its
+own — enough for a LAN or a tailnet, no proxy required. Where a
+reverse proxy still earns its keep is a **publicly-trusted**
+certificate: put it on the public internet behind nginx, Caddy,
+Traefik, or a Cloudflare Tunnel, let the proxy own TLS, set
+[`tls = "off"`](/configuration/daemon/#tls-tls_cert-tls_key) so
+RunWisp serves plain HTTP on its private side, and tell the daemon
+which IP ranges that proxy will be calling from:
 
 ```bash
 export RUNWISP_TRUST_PROXY='10.0.0.0/8,2001:db8::/32'

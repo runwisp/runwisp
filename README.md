@@ -133,6 +133,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 **Operations**
 
 - Single Go binary, zero runtime dependencies. No Python, no Node.js, no external database.
+- HTTPS by default off loopback — bind beyond `127.0.0.1` and RunWisp self-signs a cert and serves TLS with no setup; bring your own cert (`tls_cert`/`tls_key`) or front it with a reverse proxy ([`[daemon]`](https://docs.runwisp.com/configuration/daemon/#tls-tls_cert-tls_key))
 - ~25 MB RAM idle, happy on a $5 VPS, a Raspberry Pi, or alongside your real workload
 - Crash-safe: `kill -9` and power loss are recoverable; in-flight runs are marked **interrupted** on restart, never silently lost
 - Local-first, offline-complete. No signup, no telemetry, no account required.
