@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
@@ -289,8 +288,11 @@ func TestEventBridge_FinalizeRun_TerminalBeforeArchiveThenAttach(t *testing.T) {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
-	h := NewInboundHandler(nil, nil, logDir, executor.Availability{},
-		func(protocol.ExecutionUpdateMessage) {}, uploader, nil, nil)
+	h := NewInboundHandler(InboundHandlerDeps{
+		LogDir:          logDir,
+		QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+		Uploader:        uploader,
+	})
 	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: execID})
 
 	var sent []protocol.ExecutionUpdateMessage
@@ -360,8 +362,11 @@ func TestEventBridge_FinalizeRun_ArchiveFailureSendsSingleUpdate(t *testing.T) {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
-	h := NewInboundHandler(nil, nil, logDir, executor.Availability{},
-		func(protocol.ExecutionUpdateMessage) {}, uploader, nil, nil)
+	h := NewInboundHandler(InboundHandlerDeps{
+		LogDir:          logDir,
+		QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+		Uploader:        uploader,
+	})
 	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: execID})
 
 	var sent []protocol.ExecutionUpdateMessage

@@ -1,7 +1,7 @@
 /* Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0 */
 
-@source "../../../packages/ui";
 @import "../../../packages/ui/src/lib/theme.css";
+@source "../../../packages/ui";
 
 html,
 body {

@@ -13,6 +13,39 @@ interface TriggeredRun {
     run_id: string;
 }
 
+/**
+ * Cancel a batch of runs. Closure-free (touches only the API + toasts), so it
+ * lives at module scope rather than nested in `createRunActions`.
+ */
+async function handleBulkCancel(selector: RunSelector, affected: Run[]) {
+    if (affected.length === 0) return;
+    try {
+        const count = await runsApi.bulkCancel(selector);
+        toast.success(count === 1 ? "Cancelled 1 run" : `Cancelled ${String(count)} runs`);
+    } catch (err) {
+        toast.error(extractErrorMessage(err, "Failed to cancel runs"));
+    }
+}
+
+/**
+ * Undo a re-run: cancel any still-running triggered runs (best-effort), then
+ * delete them. Closure-free, so it lives at module scope.
+ */
+async function undoRerun(triggered: TriggeredRun[]) {
+    const ids = triggered.map((t) => t.run_id);
+    try {
+        await runsApi.bulkCancel({ match_all: false, ids });
+    } catch {
+        // best-effort: runs may already have finished
+    }
+    try {
+        await runsApi.bulkDelete({ match_all: false, ids });
+        toast.info("Re-run undone");
+    } catch (err) {
+        toast.error(extractErrorMessage(err, "Failed to undo re-run"));
+    }
+}
+
 export interface RunActionsOptions {
     /** The current run list, read fresh at call time (snapshots, lookups). */
     getItems: () => Run[];
@@ -65,16 +98,6 @@ export function createRunActions(opts: RunActionsOptions) {
         }
     }
 
-    async function handleBulkCancel(selector: RunSelector, affected: Run[]) {
-        if (affected.length === 0) return;
-        try {
-            const count = await runsApi.bulkCancel(selector);
-            toast.success(count === 1 ? "Cancelled 1 run" : `Cancelled ${String(count)} runs`);
-        } catch (err) {
-            toast.error(extractErrorMessage(err, "Failed to cancel runs"));
-        }
-    }
-
     async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
         try {
             const { triggered } = await runsApi.bulkRerun(selector);
@@ -92,21 +115,6 @@ export function createRunActions(opts: RunActionsOptions) {
             });
         } catch (err) {
             toast.error(extractErrorMessage(err, "Failed to re-run tasks"));
-        }
-    }
-
-    async function undoRerun(triggered: TriggeredRun[]) {
-        const ids = triggered.map((t) => t.run_id);
-        try {
-            await runsApi.bulkCancel({ match_all: false, ids });
-        } catch {
-            // best-effort: runs may already have finished
-        }
-        try {
-            await runsApi.bulkDelete({ match_all: false, ids });
-            toast.info("Re-run undone");
-        } catch (err) {
-            toast.error(extractErrorMessage(err, "Failed to undo re-run"));
         }
     }
 

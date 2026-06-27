@@ -16,14 +16,10 @@ import (
 )
 
 func newTestInboundHandler() *InboundHandler {
-	return NewInboundHandler(
-		nil, nil, "/tmp/logs",
-		executor.Availability{},
-		func(protocol.ExecutionUpdateMessage) {},
-		nil,
-		nil,
-		nil,
-	)
+	return NewInboundHandler(InboundHandlerDeps{
+		LogDir:          "/tmp/logs",
+		QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+	})
 }
 
 // stubRunRepo implements ExternalRunGetter for inbound handler tests.
@@ -376,9 +372,11 @@ func TestInboundHandler_HandleAgentRestart(t *testing.T) {
 	})
 
 	t.Run("requester error surfaces as conflict", func(t *testing.T) {
-		h := NewInboundHandler(nil, nil, "/tmp/logs", executor.Availability{},
-			func(protocol.ExecutionUpdateMessage) {}, nil, nil,
-			func() error { return errors.New("not service-managed") })
+		h := NewInboundHandler(InboundHandlerDeps{
+			LogDir:          "/tmp/logs",
+			QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+			RequestRestart:  func() error { return errors.New("not service-managed") },
+		})
 		err := h.HandleAgentRestart()
 		var cloudErr *CloudError
 		require.ErrorAs(t, err, &cloudErr)
@@ -388,9 +386,11 @@ func TestInboundHandler_HandleAgentRestart(t *testing.T) {
 
 	t.Run("success invokes the requester once", func(t *testing.T) {
 		calls := 0
-		h := NewInboundHandler(nil, nil, "/tmp/logs", executor.Availability{},
-			func(protocol.ExecutionUpdateMessage) {}, nil, nil,
-			func() error { calls++; return nil })
+		h := NewInboundHandler(InboundHandlerDeps{
+			LogDir:          "/tmp/logs",
+			QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+			RequestRestart:  func() error { calls++; return nil },
+		})
 		require.NoError(t, h.HandleAgentRestart())
 		assert.Equal(t, 1, calls)
 	})

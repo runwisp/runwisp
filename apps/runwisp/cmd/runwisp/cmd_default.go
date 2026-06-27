@@ -45,24 +45,9 @@ func runDefault(f Flags) error {
 	// silently fail to bind), probe the port ourselves. If a RunWisp daemon
 	// from a different datadir holds it, offer to connect to or stop it;
 	// otherwise surface a clear, actionable port-conflict error.
-	if bindErr := probePortAvailable(f.Host, f.Port); bindErr != nil {
-		info := probeRunwispInstance(f.Host, f.Port)
-		interactive := isatty.IsTerminal(os.Stdin.Fd())
-		choice, resErr := resolvePortConflict(f, bindErr, info, interactive, os.Stdin, os.Stderr)
-		if resErr != nil {
-			return resErr
-		}
-		switch choice {
-		case conflictConnect:
-			return runTUIConnect(apiclient.NewUnix(info.SocketPath), f)
-		case conflictStopAndLaunch:
-			if stopErr := stopConflictingDaemon(f, info); stopErr != nil {
-				return stopErr
-			}
-			// Other daemon stopped; fall through to spawn our own here.
-		case conflictAbort:
-			return nil
-		}
+	spawn, portErr := ensurePortFreeOrHandle(f)
+	if portErr != nil || !spawn {
+		return portErr
 	}
 
 	if err := spawnDaemon(f); err != nil {
@@ -76,6 +61,36 @@ func runDefault(f Flags) error {
 	}
 
 	return runTUIConnect(client, f)
+}
+
+// ensurePortFreeOrHandle probes the bind port before a spawn. It returns
+// spawn=true when the caller should go on to launch its own daemon (port free,
+// or a conflicting daemon was stopped). When a conflicting RunWisp instance is
+// found it resolves the conflict interactively: connecting to it (running the
+// TUI inline and returning spawn=false) or aborting (spawn=false, nil error).
+func ensurePortFreeOrHandle(f Flags) (spawn bool, err error) {
+	bindErr := probePortAvailable(f.Host, f.Port)
+	if bindErr == nil {
+		return true, nil
+	}
+
+	info := probeRunwispInstance(f.Host, f.Port)
+	interactive := isatty.IsTerminal(os.Stdin.Fd())
+	choice, resErr := resolvePortConflict(f, bindErr, info, interactive, os.Stdin, os.Stderr)
+	if resErr != nil {
+		return false, resErr
+	}
+	switch choice {
+	case conflictConnect:
+		return false, runTUIConnect(apiclient.NewUnix(info.SocketPath), f)
+	case conflictStopAndLaunch:
+		if stopErr := stopConflictingDaemon(f, info); stopErr != nil {
+			return false, stopErr
+		}
+		return true, nil // other daemon stopped; spawn our own
+	default: // conflictAbort
+		return false, nil
+	}
 }
 
 // runTUIConnect launches the TUI against an already-healthy LOCAL daemon

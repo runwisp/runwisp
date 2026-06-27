@@ -36,25 +36,30 @@ type InboundHandler struct {
 	logListeners map[string]struct{}
 }
 
-func NewInboundHandler(
-	taskManager TaskRunner,
-	runRepo ExternalRunGetter,
-	logDir string,
-	availability executor.Availability,
-	queueExecUpdate func(protocol.ExecutionUpdateMessage),
-	uploader *LogUploader,
-	tracker *ExecutionTracker,
-	requestRestart func() error,
-) *InboundHandler {
+// InboundHandlerDeps bundles the collaborators an InboundHandler needs.
+// RequestRestart may be nil (a daemon not under a service manager), in which
+// case agent:restart is rejected.
+type InboundHandlerDeps struct {
+	TaskManager     TaskRunner
+	RunRepo         ExternalRunGetter
+	LogDir          string
+	Availability    executor.Availability
+	QueueExecUpdate func(protocol.ExecutionUpdateMessage)
+	Uploader        *LogUploader
+	Tracker         *ExecutionTracker
+	RequestRestart  func() error
+}
+
+func NewInboundHandler(deps InboundHandlerDeps) *InboundHandler {
 	return &InboundHandler{
-		taskManager:     taskManager,
-		runRepo:         runRepo,
-		logDir:          logDir,
-		availability:    availability,
-		queueExecUpdate: queueExecUpdate,
-		uploader:        uploader,
-		tracker:         tracker,
-		requestRestart:  requestRestart,
+		taskManager:     deps.TaskManager,
+		runRepo:         deps.RunRepo,
+		logDir:          deps.LogDir,
+		availability:    deps.Availability,
+		queueExecUpdate: deps.QueueExecUpdate,
+		uploader:        deps.Uploader,
+		tracker:         deps.Tracker,
+		requestRestart:  deps.RequestRestart,
 		logListeners:    make(map[string]struct{}),
 	}
 }
@@ -262,8 +267,13 @@ func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message pro
 			&CloudError{Kind: CloudErrorKindTransient, Message: "failed to query execution logs", Err: err}
 	}
 
-	hits, nextLine, exhausted, searchErr := searchExecutionLog(
-		ctx, run, h.logDir, message.Query, message.Regex, message.CaseSensitive, message.Limit, message.FromLine)
+	hits, nextLine, exhausted, searchErr := searchExecutionLog(ctx, run, h.logDir, logSearchParams{
+		query:         message.Query,
+		regex:         message.Regex,
+		caseSensitive: message.CaseSensitive,
+		limit:         message.Limit,
+		fromLine:      message.FromLine,
+	})
 	if searchErr != nil {
 		// A malformed regex is a validation error; anything else is transient.
 		kind := CloudErrorKindTransient

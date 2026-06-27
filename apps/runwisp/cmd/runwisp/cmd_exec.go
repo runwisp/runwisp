@@ -307,17 +307,7 @@ func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, t
 	for msg := range ch {
 		switch msg.Kind {
 		case apiclient.LogStreamMsgKindLine:
-			if msg.Line.N < from {
-				continue // already printed on an earlier connection
-			}
-			if msg.Line.Stream == logutil.StreamStderr {
-				fmt.Fprintln(os.Stderr, msg.Line.Text)
-			} else {
-				fmt.Fprintln(os.Stdout, msg.Line.Text)
-			}
-			if msg.Line.N > highest {
-				highest = msg.Line.N
-			}
+			highest = printStreamedLogLine(msg, from, highest)
 		case apiclient.LogStreamMsgKindDone:
 			final, getErr := client.GetRun(taskName, runID)
 			if getErr != nil {
@@ -329,6 +319,23 @@ func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, t
 		}
 	}
 	return 0, highest, false, nil
+}
+
+// printStreamedLogLine prints one streamed line to stdout/stderr unless it was
+// already seen (N < from), returning the running highest line number printed.
+func printStreamedLogLine(msg apiclient.LogStreamMsg, from, highest int64) int64 {
+	if msg.Line.N < from {
+		return highest // already printed on an earlier connection
+	}
+	if msg.Line.Stream == logutil.StreamStderr {
+		fmt.Fprintln(os.Stderr, msg.Line.Text)
+	} else {
+		fmt.Fprintln(os.Stdout, msg.Line.Text)
+	}
+	if msg.Line.N > highest {
+		return msg.Line.N
+	}
+	return highest
 }
 
 // daemonTaskNames fetches the daemon's task list for the unknown-task

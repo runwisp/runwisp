@@ -22,7 +22,10 @@ const UNIT_NAMES: Record<string, [string, string]> = {
 // humanizeEvery turns robfig's `@every 1h30m` (Go duration syntax) into
 // "Every 1 hour 30 minutes". Returns null when the duration doesn't parse.
 function humanizeEvery(duration: string): string | null {
-    const parts = [...duration.matchAll(/(\d+(?:\.\d+)?)(h|m|s|ms|us|µs|ns)/g)];
+    // The number is matched atomically (lookahead-capture + backreference) so a
+    // long digit run with no trailing unit fails fast instead of backtracking
+    // through every length (super-linear). `\1` is the number; group 2 the unit.
+    const parts = [...duration.matchAll(/(?=(\d+(?:\.\d+)?))\1(h|m|s|ms|us|µs|ns)/g)];
     if (parts.length === 0 || parts.map((p) => p[0]).join("") !== duration) {
         return null;
     }
