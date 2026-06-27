@@ -33,6 +33,10 @@ class FakeEventSource implements SSEStream {
         this.onopen?.(new Event("open"));
     }
 
+    error(details: { message?: string; status?: number } = { message: "boom" }): void {
+        this.onerror?.(Object.assign(new Event("error"), details));
+    }
+
     fire(eventType: string, payload: unknown): void {
         this.#target.dispatchEvent(new MessageEvent(eventType, { data: JSON.stringify(payload) }));
     }
@@ -59,6 +63,12 @@ class BusHub {
                 this.#entries.delete(entry);
             },
         };
+    }
+
+    // Inject an arbitrary (possibly malformed) payload to every connected tab, as
+    // if a misbehaving peer broadcast it. Used to exercise message parsing.
+    postRaw(raw: unknown): void {
+        for (const entry of this.#entries) entry.handler(raw);
     }
 }
 
@@ -119,7 +129,7 @@ function makeWorld() {
         return tab;
     }
 
-    return { makeTab };
+    return { makeTab, bus };
 }
 
 interface Tab {
@@ -243,6 +253,234 @@ describe("SharedAppStream", () => {
         followerTab.stream.subscribe("system", () => {});
 
         expect(followerOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it("propagates an error lifecycle from leader to followers with details", () => {
+        const { makeTab } = makeWorld();
+        const leaderTab = makeTab();
+        const followerTab = makeTab();
+
+        const leaderError = vi.fn();
+        const followerError = vi.fn();
+        leaderTab.stream.onError(leaderError);
+        followerTab.stream.onError(followerError);
+
+        leaderTab.stream.subscribe("system", () => {});
+        followerTab.stream.subscribe("system", () => {});
+
+        leaderTab.leaderES()?.error({ message: "dropped", status: 503 });
+
+        expect(leaderError).toHaveBeenCalledTimes(1);
+        expect(followerError).toHaveBeenCalledTimes(1);
+        // The follower receives the full info, reconstructed from the bus payload.
+        expect(followerError.mock.calls[0][0]).toMatchObject({ message: "dropped", status: 503 });
+    });
+
+    it("syncs a late-joining follower to the current error state", () => {
+        const { makeTab } = makeWorld();
+        const leaderTab = makeTab();
+
+        leaderTab.stream.subscribe("system", () => {});
+        leaderTab.leaderES()?.error({ message: "boom", status: 500 });
+
+        const followerTab = makeTab();
+        const followerError = vi.fn();
+        followerTab.stream.onError(followerError);
+        followerTab.stream.subscribe("system", () => {});
+
+        expect(followerError).toHaveBeenCalledTimes(1);
+        expect(followerError.mock.calls[0][0]).toMatchObject({ message: "boom", status: 500 });
+    });
+
+    it("syncs a late-joining follower to the current stall state", () => {
+        vi.useFakeTimers();
+        try {
+            const { makeTab } = makeWorld();
+            const leaderTab = makeTab();
+
+            leaderTab.stream.subscribe("system", () => {});
+            vi.advanceTimersByTime(SSE_CONFIG.OPEN_TIMEOUT); // leader stalls
+
+            const followerTab = makeTab();
+            const followerStall = vi.fn();
+            followerTab.stream.onStall(followerStall);
+            followerTab.stream.subscribe("system", () => {});
+
+            expect(followerStall).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("a throwing event handler does not break the others", () => {
+        const { makeTab } = makeWorld();
+        const tab = makeTab();
+        const after = vi.fn();
+        tab.stream.subscribe("run.created", () => {
+            throw new Error("handler boom");
+        });
+        tab.stream.subscribe("run.created", after);
+
+        tab.leaderES()?.open();
+        tab.leaderES()?.fire("run.created", { id: "r1" });
+
+        expect(after).toHaveBeenCalledTimes(1);
+    });
+
+    it("a throwing lifecycle handler is caught", () => {
+        const { makeTab } = makeWorld();
+        const tab = makeTab();
+        const secondOpen = vi.fn();
+        tab.stream.onOpen(() => {
+            throw new Error("open boom");
+        });
+        tab.stream.onOpen(secondOpen);
+
+        tab.stream.subscribe("system", () => {});
+        tab.leaderES()?.open();
+
+        expect(secondOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it("a lifecycle handler can unsubscribe", () => {
+        const { makeTab } = makeWorld();
+        const tab = makeTab();
+        const onOpen = vi.fn();
+        const off = tab.stream.onOpen(onOpen);
+        tab.stream.onError(() => {})();
+        tab.stream.onStall(() => {})();
+
+        off();
+        tab.stream.subscribe("system", () => {});
+        tab.leaderES()?.open();
+
+        expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it("stops the connection when the last subscriber leaves and restarts on resubscribe", () => {
+        const { makeTab } = makeWorld();
+        const tab = makeTab();
+
+        const off1 = tab.stream.subscribe("a", () => {});
+        const off2 = tab.stream.subscribe("b", () => {});
+        const first = tab.leaderES();
+        expect(first).not.toBeNull();
+
+        off1();
+        expect(first?.readyState).not.toBe(2); // still other subscribers
+        off2();
+        expect(first?.readyState).toBe(2); // closed once empty
+
+        // Resubscribing spins up a fresh leader connection.
+        tab.stream.subscribe("a", () => {});
+        const second = tab.leaderES();
+        expect(second).not.toBeNull();
+        expect(second).not.toBe(first);
+    });
+
+    it("ignores malformed bus messages", () => {
+        const { makeTab, bus } = makeWorld();
+        const leaderTab = makeTab();
+        const followerTab = makeTab();
+        leaderTab.stream.subscribe("system", () => {});
+        const received: string[] = [];
+        followerTab.stream.subscribe("run.created", (d) => received.push(d));
+
+        // None of these should throw or deliver anything.
+        bus.postRaw("not an object");
+        bus.postRaw(null);
+        bus.postRaw({ t: "unknown-kind" });
+        bus.postRaw({ t: "event", type: 123, data: "x" }); // non-string type
+        bus.postRaw({ t: "hello" }); // leader-directed; follower ignores
+
+        expect(received).toHaveLength(0);
+    });
+
+    it("reports sharing as unavailable when Web Locks are missing", () => {
+        vi.stubGlobal("navigator", {}); // no `locks`
+        try {
+            const stream = new SharedAppStream({ path: "/api/stream" });
+            expect(stream.sharing).toBe(false);
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it("degrades to standalone (default bus, immediate election) without Web Locks", () => {
+        vi.stubGlobal("navigator", {}); // no `locks` → canShare() is false
+        try {
+            let leaderES: FakeEventSource | null = null;
+            const stream = new SharedAppStream({
+                path: "/api/stream",
+                // Bus uses the real default (BroadcastChannel); the elector uses the
+                // no-lock fallback that wins immediately. Only the leader's real
+                // connection is stubbed.
+                createLeaderManager: () => {
+                    const es = new FakeEventSource();
+                    leaderES = es;
+                    return new EventManager({
+                        path: "/api/stream",
+                        createEventSource: () => es,
+                        getApiUrl: () => "http://test",
+                    });
+                },
+            });
+
+            // Read through a getter so the type stays the declared union (a direct
+            // read narrows to its initial null, since the assignment is in a callback).
+            const getLeader = () => leaderES;
+            const received: string[] = [];
+            const off = stream.subscribe("run.created", (d) => received.push(d));
+            // The no-lock fallback elects this tab immediately, so it owns the stream.
+            const es = getLeader();
+            if (!es) throw new Error("expected the fallback to elect a leader");
+            es.open();
+            es.fire("run.created", { id: "solo" });
+            expect(received[0]).toContain("solo");
+
+            off(); // closes the real BroadcastChannel so the test doesn't leak it
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it("uses Web Locks for election when available", () => {
+        const requested: string[] = [];
+        const fakeLocks = {
+            request: (name: string, opts: unknown, cb: () => Promise<void>) => {
+                requested.push(name);
+                void opts;
+                return cb();
+            },
+        };
+        // Present both primitives so canShare() takes the real-lock branch.
+        vi.stubGlobal("navigator", { locks: fakeLocks });
+        try {
+            let leaderES: FakeEventSource | null = null;
+            const stream = new SharedAppStream({
+                path: "/api/stream",
+                createBus: () => ({ post: () => {}, onMessage: () => {}, close: () => {} }),
+                createLeaderManager: () => {
+                    const es = new FakeEventSource();
+                    leaderES = es;
+                    return new EventManager({
+                        path: "/api/stream",
+                        createEventSource: () => es,
+                        getApiUrl: () => "http://test",
+                    });
+                },
+            });
+
+            expect(stream.sharing).toBe(true);
+            const off = stream.subscribe("system", () => {});
+            // Holding the lock === being elected leader; the real stream opened.
+            expect(requested).toContain("runwisp-app-stream-leader");
+            expect(leaderES).not.toBeNull();
+
+            off(); // releases the held lock promise
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 });
 
