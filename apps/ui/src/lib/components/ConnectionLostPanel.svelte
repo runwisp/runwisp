@@ -2,15 +2,23 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { RefreshCw, WifiOff, LoaderCircle } from "@lucide/svelte";
+    import { RefreshCw, WifiOff, LoaderCircle, Layers } from "@lucide/svelte";
     import { Button, formatDuration } from "@runwisp/ui";
     import { connectionStore } from "$lib/stores";
+    import { appEventStream } from "$lib/stores/app-stream.svelte";
+    import { stalledCopy } from "$lib/utils/connection-copy";
     import { getApiUrl } from "$lib/utils/env";
 
     const apiUrl = getApiUrl();
     const endpoint = apiUrl.trim() === "" ? "this site's origin" : apiUrl;
 
     const c = connectionStore;
+    // A stall is not a lost connection: the live stream was opened but isn't
+    // responding. It clears itself when the connection recovers, so we explain
+    // rather than offer a retry. The copy only blames "too many tabs" in the
+    // degraded per-tab mode, where that's genuinely the cause.
+    let stalled = $derived(c.status === "stalled");
+    let copy = $derived(stalledCopy(appEventStream.sharing));
     let reconnecting = $derived(c.isRetrying || c.status === "connecting");
 
     function elapsedSince(epoch: number | null): string | null {
@@ -29,62 +37,81 @@
     });
 </script>
 
-<div
-    class="flex flex-col items-center justify-center gap-5 rounded-xl border border-danger-soft-border bg-danger-soft/40 px-6 py-12 text-center"
-    role="alert"
-    aria-live="polite"
->
-    <div class="rounded-full bg-danger-soft p-3">
-        {#if reconnecting}
-            <LoaderCircle class="h-8 w-8 animate-spin text-danger-surface" />
-        {:else}
-            <WifiOff class="h-8 w-8 text-danger-surface" />
-        {/if}
-    </div>
-
-    <div class="max-w-md space-y-2">
-        <h3 class="text-lg font-semibold text-on-surface">Connection Lost</h3>
-        <p class="text-sm text-on-surface-muted">
-            The UI can't reach the runner API at <span
-                class="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-on-surface"
-                >{endpoint}</span
-            >. The daemon may be restarting or your network is down.
-        </p>
-    </div>
-
-    <dl
-        class="grid w-full max-w-md grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-outline bg-surface-raised px-5 py-3 text-left text-xs"
+{#if stalled}
+    <div
+        class="flex flex-col items-center justify-center gap-5 rounded-xl border border-warning-soft-border bg-warning-soft/40 px-6 py-12 text-center"
+        role="alert"
+        aria-live="polite"
     >
-        {#if downFor}
-            <dt class="text-on-surface-muted">Down for</dt>
-            <dd class="text-right font-medium text-on-surface tabular-nums">{downFor}</dd>
-        {/if}
-        {#if lastSeen}
-            <dt class="text-on-surface-muted">Last reached</dt>
-            <dd class="text-right font-medium text-on-surface tabular-nums">{lastSeen} ago</dd>
-        {/if}
-        {#if c.retryAttempts > 0}
-            <dt class="text-on-surface-muted">Attempts</dt>
-            <dd class="text-right font-medium text-on-surface tabular-nums">{c.retryAttempts}</dd>
-        {/if}
-        {#if retryLine}
-            <dt class="text-on-surface-muted">Status</dt>
-            <dd class="text-right font-medium text-on-surface">{retryLine}</dd>
-        {/if}
-    </dl>
+        <div class="rounded-full bg-warning-soft p-3">
+            <Layers class="h-8 w-8 text-warning-surface" />
+        </div>
 
-    <Button variant="secondary" onclick={c.retryNow} loading={reconnecting}>
-        {#snippet icon()}<RefreshCw size={16} />{/snippet}
-        Retry now
-    </Button>
+        <div class="max-w-md space-y-2">
+            <h3 class="text-lg font-semibold text-on-surface">{copy.heading}</h3>
+            <p class="text-sm text-on-surface-muted">{copy.body}</p>
+        </div>
+    </div>
+{:else}
+    <div
+        class="flex flex-col items-center justify-center gap-5 rounded-xl border border-danger-soft-border bg-danger-soft/40 px-6 py-12 text-center"
+        role="alert"
+        aria-live="polite"
+    >
+        <div class="rounded-full bg-danger-soft p-3">
+            {#if reconnecting}
+                <LoaderCircle class="h-8 w-8 animate-spin text-danger-surface" />
+            {:else}
+                <WifiOff class="h-8 w-8 text-danger-surface" />
+            {/if}
+        </div>
 
-    {#if c.lastError}
-        <details class="w-full max-w-md text-left">
-            <summary class="cursor-pointer text-xs text-on-surface-muted hover:text-on-surface"
-                >Details</summary
-            >
-            <pre
-                class="mt-2 overflow-x-auto rounded-md bg-surface-sunken p-3 font-mono text-2xs text-on-surface-muted">{c.lastError}</pre>
-        </details>
-    {/if}
-</div>
+        <div class="max-w-md space-y-2">
+            <h3 class="text-lg font-semibold text-on-surface">Connection Lost</h3>
+            <p class="text-sm text-on-surface-muted">
+                The UI can't reach the runner API at <span
+                    class="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-on-surface"
+                    >{endpoint}</span
+                >. The daemon may be restarting or your network is down.
+            </p>
+        </div>
+
+        <dl
+            class="grid w-full max-w-md grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-outline bg-surface-raised px-5 py-3 text-left text-xs"
+        >
+            {#if downFor}
+                <dt class="text-on-surface-muted">Down for</dt>
+                <dd class="text-right font-medium text-on-surface tabular-nums">{downFor}</dd>
+            {/if}
+            {#if lastSeen}
+                <dt class="text-on-surface-muted">Last reached</dt>
+                <dd class="text-right font-medium text-on-surface tabular-nums">{lastSeen} ago</dd>
+            {/if}
+            {#if c.retryAttempts > 0}
+                <dt class="text-on-surface-muted">Attempts</dt>
+                <dd class="text-right font-medium text-on-surface tabular-nums">
+                    {c.retryAttempts}
+                </dd>
+            {/if}
+            {#if retryLine}
+                <dt class="text-on-surface-muted">Status</dt>
+                <dd class="text-right font-medium text-on-surface">{retryLine}</dd>
+            {/if}
+        </dl>
+
+        <Button variant="secondary" onclick={c.retryNow} loading={reconnecting}>
+            {#snippet icon()}<RefreshCw size={16} />{/snippet}
+            Retry now
+        </Button>
+
+        {#if c.lastError}
+            <details class="w-full max-w-md text-left">
+                <summary class="cursor-pointer text-xs text-on-surface-muted hover:text-on-surface"
+                    >Details</summary
+                >
+                <pre
+                    class="mt-2 overflow-x-auto rounded-md bg-surface-sunken p-3 font-mono text-2xs text-on-surface-muted">{c.lastError}</pre>
+            </details>
+        {/if}
+    </div>
+{/if}

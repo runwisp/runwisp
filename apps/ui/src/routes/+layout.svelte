@@ -34,12 +34,14 @@
             runUpdatesStore.connect();
             void taskStore.loadIfNeeded();
             void notificationStore.init();
+            void systemStore.init();
         });
 
         return () => {
             disposeAuthSuccess();
             runUpdatesStore.disconnect();
             notificationStore.disconnect();
+            systemStore.disconnect();
         };
     });
 
@@ -50,12 +52,9 @@
         runUpdatesStore.connect();
         void taskStore.loadIfNeeded();
         void notificationStore.init();
-        void systemStore.refresh();
-
-        // Keep the stale-config banner live on every page; the overview page
-        // polls faster (2s) for its stats, this is just the app-wide floor.
-        const infoInterval = setInterval(() => void systemStore.refresh(), 10000);
-        return () => clearInterval(infoInterval);
+        // Seed system identity + stats once, then ride the shared app-event
+        // stream for live cpu/mem/uptime and config-staleness — no polling.
+        void systemStore.init();
     });
 
     let activePage = $derived.by(() => {

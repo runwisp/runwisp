@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
@@ -226,7 +227,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaSearchLogs)
 
 	srv.registerLocalCredentialsRoute(protectedAPI)
-	srv.registerRunsSSE(protectedAPI)
+	srv.registerAppStreamSSE(protectedAPI)
 	srv.registerLogSSE(protectedAPI)
 	srv.registerDaemonLogSSE(protectedAPI)
 	srv.registerNotificationsRoutes(protectedAPI)
@@ -363,29 +364,37 @@ func (srv *Server) humaBulkRerunRuns(ctx context.Context, input *BulkRunSelector
 	return &BulkRerunOutput{Body: BulkRerunBody{Triggered: triggered}}, nil
 }
 
-func (srv *Server) registerRunsSSE(api huma.API) {
+func (srv *Server) registerAppStreamSSE(api huma.API) {
 	sse.Register(api, huma.Operation{
-		OperationID: "streamRuns",
+		OperationID: "streamAppEvents",
 		Method:      http.MethodGet,
-		Path:        "/api/runs/stream",
-		Summary:     "Stream run lifecycle events",
-		Description: "Server-Sent Events stream of run creation, start, completion, failure and update events.",
+		Path:        "/api/stream",
+		Summary:     "Stream live application events",
+		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. A client subscribes only to the event names it cares about.",
 		Tags:        []string{"Runs"},
 	}, map[string]any{
-		"run.created":   RunCreatedEvent{},
-		"run.started":   RunStartedEvent{},
-		"run.completed": RunCompletedEvent{},
-		"run.failed":    RunFailedEvent{},
-		"run.updated":   RunUpdatedEvent{},
-		"run.deleted":   RunDeletedSSEEvent{},
-		"ping":          PingEvent{},
-	}, srv.streamRunsHandler)
+		"run.created":                      RunCreatedEvent{},
+		"run.started":                      RunStartedEvent{},
+		"run.completed":                    RunCompletedEvent{},
+		"run.failed":                       RunFailedEvent{},
+		"run.updated":                      RunUpdatedEvent{},
+		"run.deleted":                      RunDeletedSSEEvent{},
+		"system":                           SystemSampleSSEEvent{},
+		"config.stale":                     ConfigStaleSSEEvent{},
+		inapp.UpdateTypeCreated:            NotificationCreatedEvent{},
+		inapp.UpdateTypeUpdated:            NotificationUpdatedEvent{},
+		inapp.UpdateTypeUnreadCountChanged: NotificationUnreadCountEvent{},
+		"ping":                             PingEvent{},
+	}, srv.appStreamHandler)
 }
 
-// streamRunsHandler is the SSE callback for the run lifecycle stream. It admits
-// the client (subject to the stream limit), flushes headers, then relays run
-// events and periodic pings until the client disconnects.
-func (srv *Server) streamRunsHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
+// appStreamHandler is the SSE callback for the unified app event stream. It
+// admits the client (subject to the stream limit), flushes headers, subscribes
+// to run/system/config events on the bus and — when notify is enabled — the
+// notification hub, then relays everything plus periodic pings over the one
+// connection until the client disconnects. Folding these onto a single stream
+// is what keeps a browser tab to one EventSource instead of three.
+func (srv *Server) appStreamHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
 	release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
 	if !ok {
 		// huma owns the response writer here, so we communicate refusal via
@@ -402,32 +411,50 @@ func (srv *Server) streamRunsHandler(ctx context.Context, _ *struct{}, send sse.
 		return
 	}
 
-	eventChan := make(chan events.Event, 10)
-	unsubscribe := srv.eventBus.SubscribeAll(newRunStreamForwarder(eventChan))
-	defer unsubscribe()
+	eventChan := make(chan events.Event, 32)
+	forward := newAppStreamForwarder(eventChan)
+	// SubscribeAll covers run lifecycle (log events fall through, unforwarded);
+	// system + config.stale are deliberately outside AllEventTypes, so attach
+	// them directly.
+	unsubscribeAll := srv.eventBus.SubscribeAll(forward)
+	defer unsubscribeAll()
+	unsubSystem := srv.eventBus.Subscribe(events.EventSystemSample, forward)
+	defer unsubSystem()
+	unsubStale := srv.eventBus.Subscribe(events.EventConfigStale, forward)
+	defer unsubStale()
 
-	srv.pumpRunStream(ctx, eventChan, send)
+	var notifyCh <-chan inapp.Update
+	if srv.notifyHub != nil {
+		sub, unsubscribe := srv.notifyHub.Subscribe()
+		defer unsubscribe()
+		notifyCh = sub.Channel()
+	}
+
+	srv.pumpAppStream(ctx, eventChan, notifyCh, send)
 }
 
-// newRunStreamForwarder returns an event-bus subscriber that forwards run
-// lifecycle events onto eventChan, dropping (with a warning) when the buffer is
-// full so a slow client never blocks the bus.
-func newRunStreamForwarder(eventChan chan<- events.Event) func(events.Event) {
+// newAppStreamForwarder returns an event-bus subscriber that forwards the
+// events the app stream carries onto eventChan, dropping (with a warning) when
+// the buffer is full so a slow client never blocks the bus.
+func newAppStreamForwarder(eventChan chan<- events.Event) func(events.Event) {
 	return func(event events.Event) {
 		switch event.Type {
-		case events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted, events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted:
+		case events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted, events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted,
+			events.EventSystemSample, events.EventConfigStale:
 			select {
 			case eventChan <- event:
 			default:
-				slog.Warn("Run stream channel full", "event", event.Type)
+				slog.Warn("App stream channel full", "event", event.Type)
 			}
 		}
 	}
 }
 
-// pumpRunStream relays buffered run events and periodic keepalive pings to the
-// SSE client, returning when the context is cancelled or a send fails.
-func (srv *Server) pumpRunStream(ctx context.Context, eventChan <-chan events.Event, send sse.Sender) {
+// pumpAppStream relays buffered bus events, in-app notifications, and periodic
+// keepalive pings to the SSE client, returning when the context is cancelled or
+// a send fails. notifyCh is nil when notify is disabled (a nil channel blocks
+// forever in select, so that arm simply never fires).
+func (srv *Server) pumpAppStream(ctx context.Context, eventChan <-chan events.Event, notifyCh <-chan inapp.Update, send sse.Sender) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -437,6 +464,14 @@ func (srv *Server) pumpRunStream(ctx context.Context, eventChan <-chan events.Ev
 			return
 		case event := <-eventChan:
 			if err := send(sse.Message{Data: toSSEEventData(event)}); err != nil {
+				return
+			}
+		case u, ok := <-notifyCh:
+			if !ok {
+				notifyCh = nil
+				continue
+			}
+			if err := send(sse.Message{Data: notifyUpdateToPayload(u)}); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -452,11 +487,22 @@ func (srv *Server) pumpRunStream(ctx context.Context, eventChan <-chan events.Ev
 // from model.Run onto model.Run so the SSE wire shape matches the REST
 // response (row-internal fields like deleted_at stay invisible).
 func toSSEEventData(event events.Event) any {
-	if event.Type == events.EventRunDeleted {
+	switch event.Type {
+	case events.EventRunDeleted:
 		if de, ok := event.Data.(events.RunDeletedEvent); ok {
 			return RunDeletedSSEEvent(de)
 		}
 		return RunDeletedSSEEvent{}
+	case events.EventSystemSample:
+		if s, ok := event.Data.(events.SystemSampleEvent); ok {
+			return SystemSampleSSEEvent{Sample: s.Sample, Uptime: s.Uptime}
+		}
+		return SystemSampleSSEEvent{}
+	case events.EventConfigStale:
+		if c, ok := event.Data.(events.ConfigStaleEvent); ok {
+			return ConfigStaleSSEEvent{Stale: c.Stale}
+		}
+		return ConfigStaleSSEEvent{}
 	}
 	re, ok := event.Data.(events.RunEvent)
 	if !ok {

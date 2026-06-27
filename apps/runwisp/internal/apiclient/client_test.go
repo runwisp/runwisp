@@ -361,7 +361,7 @@ func TestGetLogRaw(t *testing.T) {
 
 func TestStreamRunEvents(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/runs/stream", r.URL.Path)
+		assert.Equal(t, "/api/stream", r.URL.Path)
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "event: run.created")

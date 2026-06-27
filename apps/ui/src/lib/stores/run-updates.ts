@@ -3,7 +3,7 @@
 
 import { createLogger } from "$lib/utils/logger";
 import { runUpdateEventSchema } from "$lib/types";
-import { EventManager } from "./event-manager.svelte";
+import { appEventStream } from "./app-stream.svelte";
 import { connectionStore } from "./connection.svelte";
 import type { RunUpdateEventType, RunUpdateHandler } from "$lib/types";
 
@@ -21,7 +21,7 @@ const RUN_EVENT_TYPES: RunUpdateEventType[] = [
 const SOURCE_ID = "run-updates";
 
 class RunUpdateManager {
-    private readonly events = new EventManager({ path: "/api/runs/stream" });
+    private readonly events = appEventStream;
     private readonly handlers = new Set<RunUpdateHandler>();
     private readonly unsubscribes: (() => void)[] = [];
     private readonly logger = createLogger("RunUpdateManager");
@@ -48,6 +48,10 @@ class RunUpdateManager {
                         info.message ?? "SSE connection error",
                     );
                 }
+            }),
+            this.events.onStall(() => {
+                this.logger.warn("SSE connection stalled (browser connection cap likely full)");
+                connectionStore.reportSourceStalled(SOURCE_ID);
             }),
         );
 

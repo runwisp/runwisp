@@ -25,10 +25,15 @@ const (
 	EventLogRegion       EventType = "log.region"
 	EventLogDiskPressure EventType = "log.disk_pressure"
 	EventServiceFatal    EventType = "service.fatal"
+	EventSystemSample    EventType = "system"
+	EventConfigStale     EventType = "config.stale"
 )
 
-// AllEventTypes is the single source of truth for all known event types.
-// SubscribeAll uses this slice, so adding a new EventType here is sufficient.
+// AllEventTypes lists the run/log lifecycle events SubscribeAll fans out to.
+// EventSystemSample and EventConfigStale are deliberately excluded: they are
+// periodic UI-push events, not lifecycle events, so notify (a SubscribeAll
+// consumer) need not churn on them. Subscribers that want them attach directly
+// with Subscribe(EventSystemSample, …).
 var AllEventTypes = []EventType{
 	EventRunCreated,
 	EventRunStarted,
@@ -62,6 +67,24 @@ func (LogLineEvent) eventData()         { /* sealed-type marker */ }
 func (LogRegionEvent) eventData()       { /* sealed-type marker */ }
 func (LogDiskPressureEvent) eventData() { /* sealed-type marker */ }
 func (ServiceFatalEvent) eventData()    { /* sealed-type marker */ }
+func (SystemSampleEvent) eventData()    { /* sealed-type marker */ }
+func (ConfigStaleEvent) eventData()     { /* sealed-type marker */ }
+
+// SystemSampleEvent carries a periodic system resource snapshot pushed to live
+// dashboards so they don't poll /api/system. Uptime is formatted server-side
+// from the daemon start time; the sample is the same shape the metrics history
+// endpoint serves, so a viewer can append it straight onto the chart.
+type SystemSampleEvent struct {
+	Sample model.MetricsSample
+	Uptime string
+}
+
+// ConfigStaleEvent fires only when the daemon's config-staleness flips: a TOML
+// edit lands un-applied (true) or a reload clears it (false). Dashboards drive
+// the "restart to apply" banner off this instead of polling /api/info.
+type ConfigStaleEvent struct {
+	Stale bool
+}
 
 // RunEvent tracks lifecycle updates for a run.
 //

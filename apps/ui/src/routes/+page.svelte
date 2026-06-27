@@ -2,18 +2,20 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
+    import { untrack } from "svelte";
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
     import { OverviewPage, type DaemonState, type DaemonStats } from "$lib/components/dashboard";
     import { formatBytes } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
-    import { runsApi, tasksApi, systemApi, type MetricsSample } from "$lib/api";
+    import { runsApi, tasksApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
     import {
         runUpdatesStore,
         upsertRun,
         removeRun,
         connectionStore,
         systemStore,
+        appEventStream,
     } from "$lib/stores";
     import { getApiUrl } from "$lib/utils/env";
     import { toTaskPageId } from "$lib/utils/task-id";
@@ -23,6 +25,9 @@
     const RECENT_RUN_LIMIT = 16;
     const RUNNING_RUN_LIMIT = 8;
     const TASKS_REFRESH_DEBOUNCE_MS = 1000;
+    // Live window for the metrics chart: seeded from /api/system/history, then
+    // grown by pushed samples (one every ~5s). 120 ≈ 10 minutes.
+    const METRICS_HISTORY_LIMIT = 120;
 
     interface DashboardState {
         tasks: Task[];
@@ -117,14 +122,26 @@
             }
         });
 
-        const statsInterval = setInterval(() => void loadSystemStats(), 2000);
+        // Live cpu/mem samples arrive on the shared app-event stream; append
+        // each onto the chart. The gauges themselves read systemStore, which is
+        // push-fed by the same stream (seeded in the layout). No polling.
+        const unsubscribeSystem = appEventStream.subscribe("system", (data) => {
+            try {
+                const { sample } = systemEventSchema.parse(JSON.parse(data));
+                dashState.metricsHistory = [...dashState.metricsHistory, sample].slice(
+                    -METRICS_HISTORY_LIMIT,
+                );
+            } catch {
+                // silent — the chart is secondary
+            }
+        });
 
         void pageData.fetch();
-        void loadSystemStats();
+        void loadMetricsHistory();
 
         return () => {
             unsubscribe();
-            clearInterval(statsInterval);
+            unsubscribeSystem();
             if (tasksRefreshTimer) {
                 clearTimeout(tasksRefreshTimer);
                 tasksRefreshTimer = null;
@@ -160,9 +177,12 @@
         }
     }
 
-    async function loadSystemStats() {
-        await systemStore.refresh();
-        if (connectionStore.status === "disconnected") return;
+    async function loadMetricsHistory() {
+        // Read status untracked: this runs synchronously inside the setup
+        // $effect, and connectionStore.status oscillates (connecting↔connected↔
+        // disconnected). Tracking it here would re-run the whole setup effect on
+        // every flip — re-subscribing and re-fetching in a runaway loop.
+        if (untrack(() => connectionStore.status) === "disconnected") return;
         try {
             dashState.metricsHistory = await systemApi.getMetricsHistory();
         } catch {

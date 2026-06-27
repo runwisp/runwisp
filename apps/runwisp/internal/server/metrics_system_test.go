@@ -6,7 +6,9 @@ package server
 import (
 	"runtime"
 	"testing"
+	"time"
 
+	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 )
@@ -61,6 +63,66 @@ func TestMetricsCollector_CapsAtMaxSize(t *testing.T) {
 		mc.collect()
 	}
 	assert.Len(t, mc.History(), 2)
+}
+
+// TestMetricsCollector_OnSampleFires asserts each collect() invokes the
+// onSample hook with the freshly stored sample — the seam the server uses to
+// fan samples out over the event bus.
+func TestMetricsCollector_OnSampleFires(t *testing.T) {
+	mc := NewMetricsCollector(4)
+	var got int
+	mc.onSample = func(model.MetricsSample) { got++ }
+	mc.collect()
+	mc.collect()
+	assert.Equal(t, 2, got)
+}
+
+// TestBroadcastSample asserts the metrics callback publishes a system event for
+// every sample but only emits a config.stale event when staleness flips —
+// exactly the behaviour that lets the UI drop its /api/system + /api/info
+// polling.
+func TestBroadcastSample(t *testing.T) {
+	bus := events.NewEventBus()
+	stale := false
+	srv := &Server{
+		eventBus:    bus,
+		stats:       newStatsProvider(nil, time.Now()),
+		configStale: func() bool { return stale },
+	}
+	srv.configStaleLast = srv.currentConfigStale() // seed baseline like Start()
+
+	var systemCount, staleCount int
+	var lastStale bool
+	bus.Subscribe(events.EventSystemSample, func(e events.Event) {
+		systemCount++
+		s, ok := e.Data.(events.SystemSampleEvent)
+		assert.True(t, ok, "system event carries a SystemSampleEvent payload")
+		assert.NotEmpty(t, s.Uptime, "uptime is formatted server-side")
+	})
+	bus.Subscribe(events.EventConfigStale, func(e events.Event) {
+		staleCount++
+		if cs, ok := e.Data.(events.ConfigStaleEvent); ok {
+			lastStale = cs.Stale
+		}
+	})
+
+	srv.broadcastSample(model.MetricsSample{CPUUsage: 10})
+	srv.broadcastSample(model.MetricsSample{CPUUsage: 20})
+	assert.Equal(t, 2, systemCount, "every sample publishes a system event")
+	assert.Equal(t, 0, staleCount, "no config event while staleness is unchanged")
+
+	stale = true
+	srv.broadcastSample(model.MetricsSample{CPUUsage: 30})
+	assert.Equal(t, 1, staleCount, "a flip publishes exactly one config event")
+	assert.True(t, lastStale)
+
+	srv.broadcastSample(model.MetricsSample{CPUUsage: 40})
+	assert.Equal(t, 1, staleCount, "no further event while staleness stays true")
+
+	stale = false
+	srv.broadcastSample(model.MetricsSample{CPUUsage: 50})
+	assert.Equal(t, 2, staleCount, "flipping back publishes again")
+	assert.False(t, lastStale)
 }
 
 // TestPopulateFallbackStats asserts populateFallbackStatsFromMemStats overwrites

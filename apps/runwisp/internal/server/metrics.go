@@ -18,6 +18,12 @@ type MetricsCollector struct {
 	samples []model.MetricsSample
 	maxSize int
 	stop    chan struct{}
+
+	// onSample, when set, is invoked with each freshly collected sample after it
+	// lands in the ring. It runs on the collector goroutine, so it must not
+	// block; the server uses it to fan the sample out over the event bus. Set
+	// before Start (no synchronization with the collector goroutine otherwise).
+	onSample func(model.MetricsSample)
 }
 
 // NewMetricsCollector creates a collector that retains up to maxSize samples.
@@ -79,6 +85,12 @@ func (mc *MetricsCollector) collect() {
 		mc.samples = mc.samples[len(mc.samples)-mc.maxSize:]
 	}
 	mc.mu.Unlock()
+
+	// Fan out after releasing the lock so a slow subscriber never stalls
+	// collection or History readers.
+	if mc.onSample != nil {
+		mc.onSample(s)
+	}
 }
 
 func populateLinuxSample(s *model.MetricsSample) {

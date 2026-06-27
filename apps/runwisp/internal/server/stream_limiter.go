@@ -10,13 +10,13 @@ import (
 	"sync"
 )
 
-// Default caps for concurrent SSE / log-stream connections. A single browser
-// session opens at most a few streams (run feed + one or two log tails); these
-// limits are conservative for a normal user and tight enough to bound resource
-// use under abuse.
+// Default caps for concurrent SSE / log-stream connections. A browser tab now
+// holds a single unified app-event stream (/api/stream) plus an on-demand log
+// tail, so these caps leave generous headroom for a handful of tabs while still
+// bounding resource use under abuse.
 const (
-	maxConcurrentStreams = 64
-	maxStreamsPerIP      = 8
+	maxConcurrentStreams = 128
+	maxStreamsPerIP      = 16
 )
 
 // streamLimiter caps the number of concurrent long-lived streaming connections
