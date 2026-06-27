@@ -273,7 +273,10 @@ describe("SharedAppStream", () => {
         expect(leaderError).toHaveBeenCalledTimes(1);
         expect(followerError).toHaveBeenCalledTimes(1);
         // The follower receives the full info, reconstructed from the bus payload.
-        expect(followerError.mock.calls[0][0]).toMatchObject({ message: "dropped", status: 503 });
+        expect(followerError.mock.calls.at(0)?.[0]).toMatchObject({
+            message: "dropped",
+            status: 503,
+        });
     });
 
     it("syncs a late-joining follower to the current error state", () => {
@@ -289,7 +292,7 @@ describe("SharedAppStream", () => {
         followerTab.stream.subscribe("system", () => {});
 
         expect(followerError).toHaveBeenCalledTimes(1);
-        expect(followerError.mock.calls[0][0]).toMatchObject({ message: "boom", status: 500 });
+        expect(followerError.mock.calls.at(0)?.[0]).toMatchObject({ message: "boom", status: 500 });
     });
 
     it("syncs a late-joining follower to the current stall state", () => {

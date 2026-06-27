@@ -319,11 +319,13 @@ describe("EventManager errors and reconnect", () => {
         mgr.onError(onError);
 
         mgr.subscribe("system", () => {});
-        sources[0].open();
-        sources[0].error({ message: "dropped", status: 503 });
+        const first = sources[0];
+        if (!first) throw new Error("expected an initial connection");
+        first.open();
+        first.error({ message: "dropped", status: 503 });
 
         expect(onError).toHaveBeenCalledTimes(1);
-        expect(onError.mock.calls[0][0]).toMatchObject({ message: "dropped", status: 503 });
+        expect(onError.mock.calls.at(0)?.[0]).toMatchObject({ message: "dropped", status: 503 });
 
         // No second source until the backoff elapses, then a fresh connect.
         expect(sources).toHaveLength(1);
