@@ -3,13 +3,10 @@
 
 import { z } from "zod";
 import { browser } from "$app/environment";
-import {
-    browserAuthEventSourceFactory,
-    browserTokenStorage,
-    type EventSourceFactory,
-} from "$lib/adapters/browser";
+import { browserTokenStorage } from "$lib/adapters/browser";
 import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
-import { EventManager } from "./event-manager.svelte";
+import type { AppEventStream } from "./event-manager";
+import { appEventStream } from "./app-stream.svelte";
 import { createLogger } from "$lib/utils/logger";
 import { connectionStore } from "./connection.svelte";
 
@@ -50,7 +47,9 @@ const streamEnvelopeSchema = z.object({ notification: notificationSchema });
 
 export interface NotificationStoreDeps {
     fetch?: typeof fetch;
-    createEventSource?: EventSourceFactory;
+    /** The shared app-event stream to ride. Defaults to the singleton; tests
+     * pass an EventManager wired to a fake EventSource. */
+    events?: AppEventStream;
     getApiUrl?: () => string;
 }
 
@@ -67,7 +66,7 @@ class NotificationStore {
     // we observe locally (SSE events + per-row mark-read/unread). We never
     // recompute it from #items because items is paginated.
     #unread = $state(0);
-    readonly #events: EventManager;
+    readonly #events: AppEventStream;
     #subscribed = false;
     #unsubscribes: (() => void)[] = [];
     #connected = $state(false);
@@ -83,11 +82,7 @@ class NotificationStore {
     constructor(deps: Required<NotificationStoreDeps>) {
         this.#fetch = deps.fetch;
         this.#getApiUrl = deps.getApiUrl;
-        this.#events = new EventManager({
-            path: "/api/notifications/stream",
-            createEventSource: deps.createEventSource,
-            getApiUrl: deps.getApiUrl,
-        });
+        this.#events = deps.events;
     }
 
     get items(): Notification[] {
@@ -242,6 +237,10 @@ class NotificationStore {
                     );
                 }
             }),
+            this.#events.onStall(() => {
+                this.#connected = false;
+                connectionStore.reportSourceStalled(SOURCE_ID);
+            }),
         );
         const onNotification = (eventType: string) => (data: string) => {
             try {
@@ -307,7 +306,7 @@ class NotificationStore {
 export function createNotificationStore(deps: NotificationStoreDeps = {}): NotificationStore {
     return new NotificationStore({
         fetch: deps.fetch ?? ((...args) => globalThis.fetch(...args)),
-        createEventSource: deps.createEventSource ?? browserAuthEventSourceFactory,
+        events: deps.events ?? appEventStream,
         getApiUrl: deps.getApiUrl ?? defaultGetApiUrl,
     });
 }

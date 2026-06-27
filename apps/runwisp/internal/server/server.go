@@ -50,12 +50,16 @@ type Server struct {
 	runService        *runService
 	stats             *statsProvider
 	configStale       func() bool
-	metrics           *MetricsCollector
-	streams           *streamLimiter
-	httpServer        *http.Server
-	unixServer        *http.Server
-	metricsServer     *http.Server
-	socketPath        string
+	// configStaleLast tracks the last staleness value broadcast over the event
+	// bus so the collector goroutine only emits an EventConfigStale when it
+	// flips. Touched solely by the metrics onSample callback (single goroutine).
+	configStaleLast bool
+	metrics         *MetricsCollector
+	streams         *streamLimiter
+	httpServer      *http.Server
+	unixServer      *http.Server
+	metricsServer   *http.Server
+	socketPath      string
 	// tlsCert/tlsKey, when both set, switch the main TCP listener to HTTPS via
 	// ServeTLS. Empty keeps the listener on plain HTTP. The Unix socket and the
 	// metrics listener are never wrapped (local-only / loopback-scrape).
@@ -166,6 +170,12 @@ func New(opts Options) (*Server, error) {
 }
 
 func (srv *Server) Start() error {
+	// Seed the staleness baseline from the current value so the first sample
+	// tick doesn't emit a spurious flip; clients get the initial value from the
+	// one-shot GET /api/info.
+	srv.configStaleLast = srv.currentConfigStale()
+	srv.metrics.onSample = srv.broadcastSample
+
 	// Begin sampling here rather than in New so construction stays pure — a
 	// Server built for a unit test that never calls Start spawns no goroutine.
 	srv.metrics.Start(5 * time.Second)

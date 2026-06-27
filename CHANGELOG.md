@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`runwisp tui --url` connects to a remote daemon over HTTP.** Attach the TUI to a daemon on another host or in a container — it logs in with the daemon's password (no `--password` flag; prompted without echo or read from `RUNWISP_PASSWORD`, then cached) and "Open Web UI" works against it too. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/#authentication-briefly).
+- **HTTPS by default off loopback.** Binding beyond `127.0.0.1` now self-signs a certificate and serves TLS automatically — no setup, no proxy required; the CLI/TUI pin the cert on first use and the startup log prints its fingerprint. Bring your own cert with `tls_cert`/`tls_key`, or opt out with `tls = "off"`. See [`[daemon]`](https://docs.runwisp.com/configuration/daemon/#tls-tls_cert-tls_key).
+
+### Changed
+
+- **Login hardened with PBKDF2.** The password challenge-response now derives its answer with PBKDF2-HMAC-SHA256 (600,000 rounds) instead of a single hash, making a captured login transcript far costlier to brute-force offline. See [Auth](https://docs.runwisp.com/operations/auth/#network-clients-web-ui-remote-rest).
+- **Web UI is push-driven, over one SSE connection shared across all tabs.** A single `/api/stream` feed (run lifecycle, system samples, config-staleness, notifications) replaces timer polling and the stream-per-concern model; an elected leader tab holds the one connection and rebroadcasts to the rest, so any number of open tabs can't exhaust the browser's per-origin connection limit. If live updates ever do stall, the UI flags it ("Updates paused") and recovers on its own.
+
 ## [0.11.0] - 2026-06-26
 
 ### Added
@@ -14,8 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TUI task & run inspector (`i`).** An on-demand panel showing a task's definition and recent health (success rate, last failure), or a run's full facts (exit code, trigger, retry lineage) in a log view — surfaced on a keypress instead of crowding the header. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/).
 - **Bulk run cleanup in the TUI.** Multi-select runs with `space` (or `a` to select every run matching the current filter), then delete, cancel, or re-run them at once; the delete is undoable.
 - **Reload `runwisp.toml` from the TUI (`R`).** The same validate-first reload as `runwisp reload`, without leaving the TUI. See [Reload](https://docs.runwisp.com/operations/reload/).
-- **`runwisp tui --url` connects to a remote daemon over HTTP.** Attach the TUI to a daemon on another host or in a container — it logs in with the daemon's password (no `--password` flag; prompted without echo or read from `RUNWISP_PASSWORD`, then cached) and "Open Web UI" works against it too. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/#authentication-briefly).
-- **HTTPS by default off loopback.** Binding beyond `127.0.0.1` now self-signs a certificate and serves TLS automatically — no setup, no proxy required; the CLI/TUI pin the cert on first use and the startup log prints its fingerprint. Bring your own cert with `tls_cert`/`tls_key`, or opt out with `tls = "off"`. See [`[daemon]`](https://docs.runwisp.com/configuration/daemon/#tls-tls_cert-tls_key).
 - **Progress bars and live redraws render cleanly.** Carriage-return progress bars and multi-line ANSI redraws are now interpreted as a terminal would: the log keeps the finished frame instead of raw `\r`/escape soup, and live viewers (Web UI and TUI) watch the active region update in place. See [Logs](https://docs.runwisp.com/concepts/logs/#progress-bars--live-redraws).
 - **Rewind a settled redraw's frames.** A finished progress bar or redraw keeps a sampled, best-effort history you can scrub back to — click the line in the Web UI, use `[`/`]` then `enter` in the TUI, or `GET …/log/line/{n}/history`. See [Logs](https://docs.runwisp.com/concepts/logs/#rewinding-the-frames).
 - **`runwisp demo --no-tui`.** Leaves the demo daemon running in the background and prints its Web UI password to stdout instead of opening the TUI — usable over SSH or in scripts. See [CLI](https://docs.runwisp.com/operations/cli/#cloud-and-demo).
@@ -24,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Login hardened with PBKDF2.** The password challenge-response now derives its answer with PBKDF2-HMAC-SHA256 (600,000 rounds) instead of a single hash, making a captured login transcript far costlier to brute-force offline. See [Auth](https://docs.runwisp.com/operations/auth/#network-clients-web-ui-remote-rest).
 - **Lower idle memory.** RSS now settles toward the daemon's working set instead of camping at its high-water mark after a spike.
 - **TUI run list filters; the sidebar filters as you type.** `f` filters runs by outcome, with a banner under the column header naming the active filter so the narrowed view is obvious; `/` on the sidebar filters tasks by name (it's an explicit mode, so `q` types into the filter instead of quitting). The run list is always newest-first — page it with `Home`/`End`/`PgUp`/`PgDn`. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/).
 - **Destructive TUI actions confirm; deletes are undoable.** Trigger, re-run, stop, and restart ask before they act; deleting runs (single or bulk) acts immediately and offers a `u` undo toast instead. Mark every notification read with `a` in the notifications panel.

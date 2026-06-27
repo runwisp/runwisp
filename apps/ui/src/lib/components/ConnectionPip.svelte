@@ -3,6 +3,8 @@
 
 <script lang="ts">
     import { connectionStore, type ConnectionStatus } from "$lib/stores";
+    import { appEventStream } from "$lib/stores/app-stream.svelte";
+    import { stalledCopy } from "$lib/utils/connection-copy";
 
     interface Theme {
         label: string;
@@ -35,10 +37,23 @@
             dot: "bg-danger-surface ring-[3px] ring-danger-surface/25",
             ping: "bg-danger-surface",
         },
+        stalled: {
+            label: "Updates paused",
+            title: "",
+            container: "bg-warning-soft text-warning-soft-text border-warning-soft-border",
+            dot: "bg-warning-surface ring-[3px] ring-warning-surface/25",
+            ping: null,
+        },
     };
 
     let status = $derived(connectionStore.status);
-    let theme = $derived(THEMES[status]);
+    // Only the degraded per-tab mode can honestly blame "too many tabs".
+    let copy = $derived(stalledCopy(appEventStream.sharing));
+    let theme = $derived(
+        status === "stalled"
+            ? { ...THEMES.stalled, label: copy.label, title: copy.title }
+            : THEMES[status],
+    );
 </script>
 
 {#snippet body()}
@@ -53,7 +68,7 @@
     <span class="hidden sm:inline">{theme.label}</span>
 {/snippet}
 
-{#if status === "connected"}
+{#if status === "connected" || status === "stalled"}
     <span
         class="duration-normal inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {theme.container}"
         title={theme.title}

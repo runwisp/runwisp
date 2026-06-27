@@ -68,6 +68,19 @@
         ],
         "type": "object"
       },
+      "ConfigStaleSSEEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "stale": {
+            "description": "True when runwisp.toml changed on disk but isn't applied yet",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stale"
+        ],
+        "type": "object"
+      },
       "DaemonInfo": {
         "additionalProperties": false,
         "properties": {
@@ -1339,6 +1352,24 @@
         },
         "required": [
           "message"
+        ],
+        "type": "object"
+      },
+      "SystemSampleSSEEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "sample": {
+            "$ref": "#/components/schemas/MetricsSample",
+            "description": "Resource snapshot, same shape as a metrics-history entry"
+          },
+          "uptime": {
+            "description": "Human-readable daemon uptime",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sample",
+          "uptime"
         ],
         "type": "object"
       },
@@ -2765,10 +2796,87 @@
         ]
       }
     },
-    "/api/runs/stream": {
+    "/api/runs/summary": {
       "get": {
-        "description": "Server-Sent Events stream of run creation, start, completion, failure and update events.",
-        "operationId": "streamRuns",
+        "operationId": "getRunSummary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get aggregate run statistics",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/runs/{runId}": {
+      "get": {
+        "operationId": "getRunById",
+        "parameters": [
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get a single run by ID",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/stream": {
+      "get": {
+        "description": "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. A client subscribes only to the event names it cares about.",
+        "operationId": "streamAppEvents",
         "responses": {
           "200": {
             "content": {
@@ -2777,6 +2885,110 @@
                   "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
                   "items": {
                     "oneOf": [
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/ConfigStaleSSEEvent"
+                          },
+                          "event": {
+                            "const": "config.stale",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event config.stale",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationCreatedEvent"
+                          },
+                          "event": {
+                            "const": "notification.created",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notification.created",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationUpdatedEvent"
+                          },
+                          "event": {
+                            "const": "notification.updated",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notification.updated",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
+                          },
+                          "event": {
+                            "const": "notifications.unread_count_changed",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notifications.unread_count_changed",
+                        "type": "object"
+                      },
                       {
                         "properties": {
                           "data": {
@@ -2958,6 +3170,32 @@
                         ],
                         "title": "Event run.updated",
                         "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/SystemSampleSSEEvent"
+                          },
+                          "event": {
+                            "const": "system",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event system",
+                        "type": "object"
                       }
                     ]
                   },
@@ -2979,84 +3217,7 @@
             "description": "Error"
           }
         },
-        "summary": "Stream run lifecycle events",
-        "tags": [
-          "Runs"
-        ]
-      }
-    },
-    "/api/runs/summary": {
-      "get": {
-        "operationId": "getRunSummary",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunSummary"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Get aggregate run statistics",
-        "tags": [
-          "Runs"
-        ]
-      }
-    },
-    "/api/runs/{runId}": {
-      "get": {
-        "operationId": "getRunById",
-        "parameters": [
-          {
-            "description": "Run ULID",
-            "in": "path",
-            "name": "runId",
-            "required": true,
-            "schema": {
-              "description": "Run ULID",
-              "maxLength": 26,
-              "minLength": 26,
-              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Get a single run by ID",
+        "summary": "Stream live application events",
         "tags": [
           "Runs"
         ]

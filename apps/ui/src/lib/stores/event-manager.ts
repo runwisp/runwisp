@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { SSE_CONFIG } from "$lib/config/constants";
 import {
     browserAuthEventSourceFactory,
@@ -22,6 +21,26 @@ export type EventManagerErrorInfo = SSEErrorInfo;
 export type EventHandler = (data: string) => void;
 export type OpenHandler = () => void;
 export type ErrorHandler = (info: EventManagerErrorInfo) => void;
+export type StallHandler = () => void;
+
+/**
+ * The surface every app-event-stream source exposes to its consumers, whether
+ * the source is a direct {@link EventManager} (one EventSource for this tab) or
+ * the cross-tab {@link import("./shared-app-stream").SharedAppStream} (one
+ * EventSource shared by all tabs, the rest riding a BroadcastChannel). Stores
+ * code against this interface so they don't care which transport they got.
+ */
+export interface AppEventStream {
+    subscribe(eventType: string, handler: EventHandler): () => void;
+    onOpen(handler: OpenHandler): () => void;
+    onError(handler: ErrorHandler): () => void;
+    /**
+     * Fires when the connection was created but has neither opened nor errored
+     * within {@link SSE_CONFIG.OPEN_TIMEOUT} — i.e. it is stuck CONNECTING,
+     * almost always because the browser's per-origin connection cap is full.
+     */
+    onStall(handler: StallHandler): () => void;
+}
 
 export interface EventManagerOptions {
     /** SSE path relative to the API root, e.g. `/api/runs/stream`. */
@@ -41,18 +60,26 @@ export interface EventManagerOptions {
  * fanned out; the connection opens lazily on first subscription and closes
  * automatically when the last handler unsubscribes.
  */
-export class EventManager {
+export class EventManager implements AppEventStream {
     readonly #path: string;
     readonly #createEventSource: EventSourceFactory;
     readonly #getApiUrl: () => string;
     readonly #logger = createLogger("EventManager");
 
-    readonly #handlers = new SvelteMap<string, SvelteSet<EventHandler>>();
-    readonly #openHandlers = new SvelteSet<OpenHandler>();
-    readonly #errorHandlers = new SvelteSet<ErrorHandler>();
+    // Plain (non-reactive) collections: this is internal connection plumbing,
+    // never a reactive UI source. Using Svelte reactive collections here made
+    // subscribe()/unsubscribe() read+write a tracked source, so calling
+    // subscribe() inside an $effect self-invalidated the effect into an
+    // infinite subscribe/teardown loop that tore the EventSource down on every
+    // tick. Nothing reactively reads who is subscribed — keep these plain.
+    readonly #handlers = new Map<string, Set<EventHandler>>();
+    readonly #openHandlers = new Set<OpenHandler>();
+    readonly #errorHandlers = new Set<ErrorHandler>();
+    readonly #stallHandlers = new Set<StallHandler>();
 
     #eventSource: SSEStream | null = null;
     #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    #openTimer: ReturnType<typeof setTimeout> | null = null;
     #reconnectDelay: number = SSE_CONFIG.RECONNECT_DELAY;
     #closed = false;
 
@@ -66,7 +93,7 @@ export class EventManager {
     subscribe(eventType: string, handler: EventHandler): () => void {
         let set = this.#handlers.get(eventType);
         if (!set) {
-            set = new SvelteSet();
+            set = new Set();
             this.#handlers.set(eventType, set);
             // Bind the listener if the connection is already open; otherwise it
             // will be bound when connect() runs.
@@ -112,12 +139,21 @@ export class EventManager {
         };
     }
 
+    /** Subscribe to stall notifications (fires when a connect attempt hangs open). */
+    onStall(handler: StallHandler): () => void {
+        this.#stallHandlers.add(handler);
+        return () => {
+            this.#stallHandlers.delete(handler);
+        };
+    }
+
     /** Tear down the connection and clear all subscribers. */
     close(): void {
         this.#closed = true;
         this.#handlers.clear();
         this.#openHandlers.clear();
         this.#errorHandlers.clear();
+        this.#stallHandlers.clear();
         this.#disconnect();
     }
 
@@ -149,7 +185,9 @@ export class EventManager {
         }
 
         this.#eventSource = es;
+        this.#startOpenTimer();
         es.onopen = () => {
+            this.#clearOpenTimer();
             this.#reconnectDelay = SSE_CONFIG.RECONNECT_DELAY;
             for (const handler of this.#openHandlers) {
                 try {
@@ -160,6 +198,7 @@ export class EventManager {
             }
         };
         es.onerror = (event: Event) => {
+            this.#clearOpenTimer();
             const info = extractErrorInfo(event, es, url);
             this.#logger.warn(`SSE error on ${this.#path}: ${formatErrorInfo(info)}`);
             this.#notifyError(info);
@@ -169,6 +208,27 @@ export class EventManager {
 
         for (const eventType of this.#handlers.keys()) {
             this.#bindEventType(es, eventType);
+        }
+    }
+
+    // A connect attempt that fires neither `open` nor `error` within the window
+    // is stalled — the browser is holding the request queued behind other
+    // long-lived connections to this origin. We keep the EventSource pending
+    // (the browser opens it once a slot frees, firing `open` → recovery) and
+    // just surface the stall so the UI can explain it. No teardown, no
+    // reconnect churn: re-creating the request would only re-queue it.
+    #startOpenTimer(): void {
+        this.#clearOpenTimer();
+        this.#openTimer = setTimeout(() => {
+            this.#openTimer = null;
+            this.#notifyStall();
+        }, SSE_CONFIG.OPEN_TIMEOUT);
+    }
+
+    #clearOpenTimer(): void {
+        if (this.#openTimer) {
+            clearTimeout(this.#openTimer);
+            this.#openTimer = null;
         }
     }
 
@@ -208,6 +268,7 @@ export class EventManager {
     }
 
     #cleanup(): void {
+        this.#clearOpenTimer();
         if (this.#eventSource) {
             this.#eventSource.close();
             this.#eventSource = null;
@@ -220,6 +281,17 @@ export class EventManager {
                 handler(info);
             } catch (err) {
                 this.#logger.warn("onError handler threw", err);
+            }
+        }
+    }
+
+    #notifyStall(): void {
+        this.#logger.warn(`SSE connect to ${this.#path} stalled (no open within timeout)`);
+        for (const handler of this.#stallHandlers) {
+            try {
+                handler();
+            } catch (err) {
+                this.#logger.warn("onStall handler threw", err);
             }
         }
     }

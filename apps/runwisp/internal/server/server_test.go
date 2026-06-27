@@ -588,17 +588,17 @@ func TestProtectedRoute_AcceptedWithValidToken(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestRunsStream(t *testing.T) {
+func TestAppStream(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	req := httptest.NewRequest("GET", "/api/runs/stream", nil)
+	req := httptest.NewRequest("GET", "/api/stream", nil)
 	w := httptest.NewRecorder()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req = req.WithContext(ctx)
 
-	// This sequences a concurrent publish against the blocking SSE handler: the
+	// This sequences concurrent publishes against the blocking SSE handler: the
 	// handler subscribes synchronously near the top of ServeHTTP, so the first
 	// sleep is a generous margin for that (not an async-completion wait), then we
 	// publish and give the for-loop a beat to write before cancelling. There is
@@ -607,6 +607,10 @@ func TestRunsStream(t *testing.T) {
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		s.eventBus.Publish(events.EventRunCreated, events.RunEvent{Run: &model.Run{ID: ulid.Make().String()}})
+		// System samples and config-staleness flips ride the same unified
+		// stream, so a single tab connection carries them all.
+		s.eventBus.Publish(events.EventSystemSample, events.SystemSampleEvent{Sample: model.MetricsSample{CPUUsage: 12.5}, Uptime: "1m"})
+		s.eventBus.Publish(events.EventConfigStale, events.ConfigStaleEvent{Stale: true})
 		time.Sleep(100 * time.Millisecond)
 		cancel()
 	}()
@@ -615,8 +619,11 @@ func TestRunsStream(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "event: ping", "initial ping should flush headers immediately")
-	assert.Contains(t, w.Body.String(), "event: run.created")
+	body := w.Body.String()
+	assert.Contains(t, body, "event: ping", "initial ping should flush headers immediately")
+	assert.Contains(t, body, "event: run.created")
+	assert.Contains(t, body, "event: system")
+	assert.Contains(t, body, "event: config.stale")
 }
 
 func TestLogStream(t *testing.T) {

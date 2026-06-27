@@ -378,7 +378,7 @@ export const systemApi = {
     },
 };
 
-const metricsSampleSchema = z.object({
+export const metricsSampleSchema = z.object({
     ts: z.number(),
     cpu: z.number(),
     mem: z.number(),
@@ -388,3 +388,16 @@ const metricsSampleSchema = z.object({
 const metricsSamplesSchema = z.array(metricsSampleSchema);
 
 export type MetricsSample = z.infer<typeof metricsSampleSchema>;
+
+// Payloads pushed over the unified /api/stream feed (mirrors the server's
+// SystemSampleSSEEvent / ConfigStaleSSEEvent), so dashboards never poll
+// /api/system or /api/info on a timer.
+export const systemEventSchema = z.object({
+    sample: metricsSampleSchema,
+    uptime: z.string(),
+});
+export type SystemEvent = z.infer<typeof systemEventSchema>;
+
+export const configStaleEventSchema = z.object({
+    stale: z.boolean(),
+});

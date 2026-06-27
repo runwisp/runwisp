@@ -289,26 +289,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/runs/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Stream run lifecycle events
-         * @description Server-Sent Events stream of run creation, start, completion, failure and update events.
-         */
-        get: operations["streamRuns"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/runs/summary": {
         parameters: {
             query?: never;
@@ -335,6 +315,26 @@ export interface paths {
         };
         /** Get a single run by ID */
         get: operations["getRunById"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream live application events
+         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. A client subscribes only to the event names it cares about.
+         */
+        get: operations["streamAppEvents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -633,6 +633,10 @@ export interface components {
         CapInfo: {
             available: boolean;
             name: string;
+        };
+        ConfigStaleSSEEvent: {
+            /** @description True when runwisp.toml changed on disk but isn't applied yet */
+            stale: boolean;
         };
         DaemonInfo: {
             /**
@@ -1194,6 +1198,12 @@ export interface components {
             readonly $schema?: string;
             /** @description Result message */
             message: string;
+        };
+        SystemSampleSSEEvent: {
+            /** @description Resource snapshot, same shape as a metrics-history entry */
+            sample: components["schemas"]["MetricsSample"];
+            /** @description Human-readable daemon uptime */
+            uptime: string;
         };
         SystemStats: {
             /**
@@ -2037,7 +2047,68 @@ export interface operations {
             };
         };
     };
-    streamRuns: {
+    getRunSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunSummary"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getRunById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run ULID */
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    streamAppEvents: {
         parameters: {
             query?: never;
             header?: never;
@@ -2053,6 +2124,50 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": ({
+                        data: components["schemas"]["ConfigStaleSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "config.stale";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["NotificationCreatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notification.created";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["NotificationUpdatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notification.updated";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["NotificationUnreadCountEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notifications.unread_count_changed";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
                         data: components["schemas"]["PingEvent"];
                         /**
                          * @description The event name.
@@ -2129,68 +2244,18 @@ export interface operations {
                         id?: number;
                         /** @description The retry time in milliseconds. */
                         retry?: number;
+                    } | {
+                        data: components["schemas"]["SystemSampleSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "system";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
                     })[];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    getRunSummary: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RunSummary"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    getRunById: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Run ULID */
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Run"];
                 };
             };
             /** @description Error */

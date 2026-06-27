@@ -5,7 +5,7 @@ import { SvelteSet } from "svelte/reactivity";
 import { systemApi, AuthRequiredError } from "$lib/api";
 import { createLogger } from "$lib/utils/logger";
 
-export type ConnectionStatus = "connecting" | "connected" | "disconnected";
+export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "stalled";
 
 const INITIAL_RETRY_DELAY_MS = 2000;
 const MAX_RETRY_DELAY_MS = 30000;
@@ -29,6 +29,10 @@ function createConnectionStore() {
     let pingInFlight = false;
     const reconnectListeners = new SvelteSet<Listener>();
     const upSources = new SvelteSet<string>();
+    // Sources whose stream is stuck CONNECTING (browser connection cap full),
+    // distinct from sources that are truly down. Tracked separately so a stall
+    // doesn't masquerade as an offline daemon.
+    const stalledSources = new SvelteSet<string>();
 
     function startTick() {
         if (tickTimer) return;
@@ -72,6 +76,7 @@ function createConnectionStore() {
         retryAttempts = 0;
         lastError = null;
         retryDelay = INITIAL_RETRY_DELAY_MS;
+        stalledSources.clear();
         cancelRetry();
         stopTick();
         if (wasDown) {
@@ -96,6 +101,19 @@ function createConnectionStore() {
         if (!retryTimer && !pingInFlight) {
             scheduleRetry();
         }
+    }
+
+    function markStalled() {
+        status = "stalled";
+        lastError = null;
+        retryAttempts = 0;
+        // A stall recovers on its own: the browser opens the queued EventSource
+        // once a connection slot frees, firing `open` → reportSourceUp →
+        // markConnected. So no fetch-ping retry here — a ping could reach the
+        // daemon and wrongly flip us to "connected" while no live events flow —
+        // and no "down for" tick, because we are not down.
+        cancelRetry();
+        stopTick();
     }
 
     async function attemptReconnect(): Promise<boolean> {
@@ -134,12 +152,20 @@ function createConnectionStore() {
 
     function reportSourceUp(id: string) {
         upSources.add(id);
+        stalledSources.delete(id);
         markConnected();
+    }
+
+    function reportSourceStalled(id: string) {
+        upSources.delete(id);
+        stalledSources.add(id);
+        if (upSources.size === 0) markStalled();
     }
 
     function reportSourceDown(id: string, err?: unknown) {
         upSources.delete(id);
-        if (upSources.size === 0) markDisconnected(err);
+        stalledSources.delete(id);
+        if (upSources.size === 0 && stalledSources.size === 0) markDisconnected(err);
     }
 
     function reportFetchError(err: unknown): boolean {
@@ -179,6 +205,7 @@ function createConnectionStore() {
         markDisconnected,
         reportFetchError,
         reportSourceUp,
+        reportSourceStalled,
         reportSourceDown,
         retryNow: attemptReconnect,
         onReconnect,

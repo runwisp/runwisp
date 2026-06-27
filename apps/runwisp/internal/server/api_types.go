@@ -232,6 +232,20 @@ type RunUpdatedEvent RunEventBody
 type RunDeletedSSEEvent events.RunDeletedEvent
 type PingEvent struct{}
 
+// SystemSampleSSEEvent is the periodic resource snapshot for the app event
+// stream. Mirrors events.SystemSampleEvent; aliased so huma/sse's reverse-type
+// lookup maps it to the `system` event name.
+type SystemSampleSSEEvent struct {
+	Sample model.MetricsSample `json:"sample" doc:"Resource snapshot, same shape as a metrics-history entry"`
+	Uptime string              `json:"uptime" doc:"Human-readable daemon uptime"`
+}
+
+// ConfigStaleSSEEvent fires when config-staleness flips; maps to the
+// `config.stale` event name.
+type ConfigStaleSSEEvent struct {
+	Stale bool `json:"stale" doc:"True when runwisp.toml changed on disk but isn't applied yet"`
+}
+
 // LogLineSSEEvent is the per-line payload for the run-log stream. Identical
 // shape to LogLineEntry; aliased so huma/sse's reverse-type lookup can map it
 // to the `line` event name.

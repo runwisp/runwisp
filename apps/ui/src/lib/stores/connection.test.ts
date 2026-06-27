@@ -122,3 +122,47 @@ describe("connectionStore.reportSourceUp / reportSourceDown", () => {
         connectionStore.markConnected();
     });
 });
+
+// ─── reportSourceStalled (browser connection-cap awareness) ──────────────────
+
+describe("connectionStore.reportSourceStalled", () => {
+    // The store is a singleton; drain every source touched (reportSourceDown
+    // clears both up + stalled membership) then markConnected to cancel timers,
+    // so each case starts from a clean slate.
+    function drain(...ids: string[]) {
+        for (const id of ids) connectionStore.reportSourceDown(id);
+        connectionStore.markConnected();
+    }
+
+    it("enters 'stalled' — distinct from 'disconnected' — when a source stalls", () => {
+        connectionStore.reportSourceStalled("a");
+        expect(connectionStore.status).toBe("stalled");
+        // A stall is not a network outage: no error text, no retry scheduled.
+        expect(connectionStore.lastError).toBeNull();
+        expect(connectionStore.nextRetryAt).toBeNull();
+        drain("a");
+    });
+
+    it("stays connected while another source is still up", () => {
+        connectionStore.reportSourceUp("a");
+        connectionStore.reportSourceUp("b");
+        connectionStore.reportSourceStalled("a");
+        expect(connectionStore.status).toBe("connected");
+        drain("a", "b");
+    });
+
+    it("recovers to connected when the stalled source opens", () => {
+        connectionStore.reportSourceStalled("a");
+        expect(connectionStore.status).toBe("stalled");
+        connectionStore.reportSourceUp("a");
+        expect(connectionStore.status).toBe("connected");
+        drain("a");
+    });
+
+    it("a hard down on a stalled source still drops to disconnected", () => {
+        connectionStore.reportSourceStalled("a");
+        connectionStore.reportSourceDown("a", "boom");
+        expect(connectionStore.status).toBe("disconnected");
+        drain("a");
+    });
+});

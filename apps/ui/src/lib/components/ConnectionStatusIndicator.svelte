@@ -4,6 +4,8 @@
 <script lang="ts">
     import { formatDuration } from "@runwisp/ui";
     import { connectionStore, systemStore, type ConnectionStatus } from "$lib/stores";
+    import { appEventStream } from "$lib/stores/app-stream.svelte";
+    import { stalledCopy } from "$lib/utils/connection-copy";
 
     interface Theme {
         label: string;
@@ -43,14 +45,31 @@
             dot: "bg-danger-surface",
             ping: null,
         },
+        stalled: {
+            label: "Updates paused",
+            container: "bg-warning-soft/70 border-warning-soft-border",
+            title: "",
+            labelColor: "text-warning-soft-text",
+            subtitleColor: "text-warning-soft-text",
+            dot: "bg-warning-surface",
+            ping: null,
+        },
     };
 
     let status = $derived(connectionStore.status);
-    let theme = $derived(THEMES[status]);
+    // Stalled copy depends on whether this tab shares one connection across tabs:
+    // only the degraded per-tab mode can honestly blame "too many tabs".
+    let copy = $derived(stalledCopy(appEventStream.sharing));
+    let theme = $derived(
+        status === "stalled"
+            ? { ...THEMES.stalled, label: copy.label, title: copy.title }
+            : THEMES[status],
+    );
 
     let subtitle = $derived.by(() => {
         if (status === "connected") return `v${systemStore.version}`;
         if (status === "connecting") return "Reconnecting…";
+        if (status === "stalled") return copy.hint;
         const since = connectionStore.disconnectedSince;
         if (typeof since === "number")
             return "Down for " + formatDuration(connectionStore.now - since);
@@ -73,7 +92,7 @@
     </div>
 {/snippet}
 
-{#if status === "connected"}
+{#if status === "connected" || status === "stalled"}
     <div class="flex items-center gap-3 border-t p-4 {theme.container}" title={theme.title}>
         {@render body()}
     </div>

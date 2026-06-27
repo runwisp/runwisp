@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/version"
 )
@@ -85,6 +86,36 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 func (srv *Server) humaGetSystemStats(ctx context.Context, input *struct{}) (*SystemStatsOutput, error) {
 	stats := srv.stats.GetSystemStats()
 	return &SystemStatsOutput{Body: stats}, nil
+}
+
+// currentConfigStale probes on-disk staleness, treating a nil hook (modes that
+// can't reload) as never-stale.
+func (srv *Server) currentConfigStale() bool {
+	if srv.configStale == nil {
+		return false
+	}
+	return srv.configStale()
+}
+
+// broadcastSample fans a freshly collected metrics sample out over the event
+// bus as a system event, and — only when staleness has flipped since the last
+// tick — a config.stale event. It runs on the metrics collector goroutine, so
+// it owns configStaleLast exclusively (no lock needed). This is the single
+// server-side replacement for every dashboard polling /api/system + /api/info.
+func (srv *Server) broadcastSample(sample model.MetricsSample) {
+	if srv.eventBus == nil {
+		return
+	}
+	srv.eventBus.Publish(events.EventSystemSample, events.SystemSampleEvent{
+		Sample: sample,
+		Uptime: formatUptime(time.Since(srv.stats.startTime)),
+	})
+
+	stale := srv.currentConfigStale()
+	if stale != srv.configStaleLast {
+		srv.configStaleLast = stale
+		srv.eventBus.Publish(events.EventConfigStale, events.ConfigStaleEvent{Stale: stale})
+	}
 }
 
 // humaReload reconciles the live task set against runwisp.toml. A nil reload

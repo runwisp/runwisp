@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createNotificationStore, type Notification } from "./notifications.svelte";
+import { EventManager } from "./event-manager";
 import type { SSEStream } from "$lib/adapters/browser";
 
 function makeNotification(overrides: Partial<Notification> = {}): Notification {
@@ -109,9 +110,14 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
     };
 
     const fakeES = new FakeEventSource();
+    const events = new EventManager({
+        path: "/api/stream",
+        createEventSource: () => fakeES,
+        getApiUrl: () => "http://test",
+    });
     const store = createNotificationStore({
         fetch: fakeFetch,
-        createEventSource: () => fakeES,
+        events,
         getApiUrl: () => "http://test",
     });
     return { store, es: fakeES, requests };

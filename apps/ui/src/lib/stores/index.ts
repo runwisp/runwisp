@@ -7,6 +7,7 @@ export type { ThemePreference, ResolvedTheme } from "./theme.svelte.js";
 export { taskStore, upsertRun, removeRun } from "./data.svelte.js";
 export { runUpdatesStore } from "./run-updates.js";
 export type { RunUpdateHandler, RunUpdateEvent } from "./run-updates.js";
+export { appEventStream } from "./app-stream.svelte.js";
 export { connectionStore } from "./connection.svelte.js";
 export type { ConnectionStatus } from "./connection.svelte.js";
 export { systemStore } from "./system.svelte.js";
