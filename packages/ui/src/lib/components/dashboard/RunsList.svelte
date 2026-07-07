@@ -119,8 +119,8 @@
         outputSearchPending?: boolean;
     } = $props();
 
-    // Task-rail rows are a single dense line (artifact ".run", 46px); the
-    // cross-task /runs view adds the task name on a second line (64px).
+    // Task-rail rows are one dense line (44px); the cross-task /runs view adds
+    // the task name on a second line (64px).
     const rowHeight = $derived(showTaskName ? 64 : 44);
     const OVERSCAN = 8;
     const LOAD_AHEAD = 10;
@@ -201,6 +201,29 @@
         if (loading) return;
         if (items.length >= total) return;
         if (last.index >= items.length - LOAD_AHEAD) onLoadMore?.();
+    });
+
+    // Scroll a programmatically-selected run (deep link, detail-panel click) into
+    // view, since its row may be outside the virtual window. Tracked on
+    // selectedRunId/items only; the virtualizer access is untracked to avoid the
+    // setOptions-style notify loop (effect_update_depth_exceeded, see above).
+    let lastScrolled: string | null = null;
+    $effect(() => {
+        const id = selectedRunId;
+        const index = items.findIndex((r: Run) => r.id === id);
+        if (!id) {
+            lastScrolled = null;
+            return;
+        }
+        // -1: not loaded yet. The effect re-runs as items grows, so a deep link
+        // resolves once its page arrives; we don't chase it with onLoadMore.
+        if (index === -1) return;
+        if (id === lastScrolled) return; // already handled; don't re-yank on re-render
+        if (!scrollElement) return;
+        lastScrolled = id;
+        // "auto" only scrolls when the row is off-screen, so visible selections
+        // (and manual clicks) don't jump.
+        untrack(() => $virtualizer.scrollToIndex(index, { align: "auto" }));
     });
 
     function isRowSelected(id: string): boolean {
@@ -361,7 +384,6 @@
         ? "flex h-full w-full flex-col overflow-hidden border-b border-outline bg-surface md:w-[300px] md:shrink-0 md:border-r md:border-b-0"
         : "flex flex-col overflow-hidden rounded-xl border border-outline bg-surface-raised shadow-sm md:col-span-4 lg:col-span-3"}
 >
-    <!-- Inline heading: master checkbox, label, selection count or controls -->
     <div
         class="flex shrink-0 items-center gap-2 border-b px-3 py-2 {hasSelection
             ? 'border-outline-faint bg-primary-soft/40'

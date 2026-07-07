@@ -128,6 +128,55 @@ test.describe("runs page", () => {
             .toBe(true);
     });
 
+    test("a deep-linked run below the fold scrolls into view", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        // Trigger the target first, then a stack of newer runs so the target sits
+        // well below the fold on the newest-first list. The rail only renders its
+        // visible window (virtualized), so the target's row is absent from the DOM
+        // until the list scrolls to it — which is exactly the behaviour under test.
+        const target = await triggerRunViaAPI(page, "echo-task", daemonState.token);
+        for (let i = 0; i < 20; i++) {
+            await triggerRunViaAPI(page, "echo-task", daemonState.token);
+        }
+
+        // Deep link straight to the (old) target run.
+        await page.goto(`/runs/${target.id}`);
+
+        // The detail panel confirms the target is the selected run.
+        await expect(page.getByText(target.id)).toBeVisible({ timeout: 10_000 });
+
+        // The active row is the one run-row button carrying the selected styling
+        // (`bg-surface-raised`); `btn-scale` is unique to run rows, so this can't
+        // collide with buttons in the detail panel or with runs seeded by other
+        // specs. It must have been scrolled into the viewport.
+        const activeRow = page.getByRole("main").locator("button.btn-scale.bg-surface-raised");
+        await expect(activeRow).toBeInViewport({ timeout: 10_000 });
+    });
+
+    test("selecting an already-visible run does not scroll the list", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        // A handful of runs so several rows sit above the fold together.
+        for (let i = 0; i < 5; i++) {
+            await triggerRunViaAPI(page, "echo-task", daemonState.token);
+        }
+
+        await page.goto("/runs");
+        const rows = page.getByRole("main").locator("button.btn-scale");
+        await expect(rows.first()).toBeInViewport();
+
+        // The top row is visible; clicking a lower — but still visible — row uses
+        // "auto" alignment, which only scrolls when a row is off-screen. So the
+        // top row must stay in view: a calm, non-jerky selection.
+        const topRow = rows.first();
+        await expect(topRow).toBeInViewport();
+        await rows.nth(2).click();
+        await expect(topRow).toBeInViewport();
+    });
+
     test("an execution is linkable on the cross-task view", async ({
         authenticatedPage: page,
         daemonState,
