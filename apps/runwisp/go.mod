@@ -34,10 +34,10 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/wneessen/go-mail v0.7.3
 	github.com/xhit/go-str2duration/v2 v2.1.0
-	golang.org/x/crypto v0.49.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.43.0
-	golang.org/x/term v0.41.0
+	golang.org/x/sys v0.45.0
+	golang.org/x/term v0.43.0
 	modernc.org/sqlite v1.23.1
 )
 
