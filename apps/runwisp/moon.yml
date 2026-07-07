@@ -179,6 +179,25 @@ tasks:
       # Writes binary PNGs into apps/docs and drives live runs — not cacheable.
       cache: false
 
+  demo-video:
+    # Regenerates the Web UI showcase clip (apps/docs) from a demo-seeded
+    # daemon: drives one continuous scripted tour, capturing lossless PNG frames
+    # via a DevTools screencast, then encodes an animated WebP (README hero) +
+    # MP4 (docs/social) from them in a single generation. On-demand only — never
+    # wired into check/test/ci. On runwisp (not web-ui) for the same
+    # project-graph reason as screenshots/test-e2e. Encoding needs ffmpeg on
+    # PATH (or the host's, via flatpak-spawn on Silverblue).
+    description: 'Generate the Web UI showcase clip (WebP + MP4) from a demo-seeded daemon.'
+    script: |
+      set -e
+      cd ../ui && playwright test --config playwright.demo-video.config.ts
+      bash scripts/encode-demo-video.sh
+    deps:
+      - '~:build'
+    options:
+      # Writes binary media into apps/docs and drives live runs — not cacheable.
+      cache: false
+
   dev:
     description: 'Build, then run the binary (pass args after --).'
     command: './runwisp'
