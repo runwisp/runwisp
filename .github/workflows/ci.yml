@@ -165,8 +165,8 @@ jobs:
     name: SonarCloud Scan
     runs-on: ubuntu-latest
     needs: test
-    # Forks don't have access to SONAR_TOKEN; skip rather than fail noisily.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # Forks and Dependabot PRs don't have access to SONAR_TOKEN; skip rather than fail noisily.
+    if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v6
         with:
