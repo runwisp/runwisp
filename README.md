@@ -25,11 +25,8 @@ The open-source, self-hosted cron job manager and process supervisor — with a 
 Define your scheduled jobs — database backups, health checks, log rotation, ETL scripts — and long-running services like queue workers and background daemons in one `runwisp.toml` file. Every run is captured: exit code, duration, timestamps, and full stdout/stderr. You get a built-in web dashboard, terminal UI, REST API, real-time log streaming, and persistent run history out of the box — zero runtime dependencies, embedded SQLite, embedded UI. Runs anywhere a static Go binary runs: Linux, macOS, WSL, Docker, a Raspberry Pi, or a $5 VPS.
 
 <div align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="apps/docs/src/assets/screenshots/web-ui-overview-dark.png">
-  <img alt="RunWisp web dashboard screenshot: cron job list, execution history, and live log streaming in a self-hosted UI" src="apps/docs/src/assets/screenshots/web-ui-overview-light.png" width="780">
-</picture>
-<p><em>Web dashboard: task overview, execution history, and live log streaming, all served by the daemon itself.</em></p>
+<img alt="RunWisp web dashboard in action: opening a task, triggering a run and watching its log stream fill in real time, then inspecting exactly why a run failed — all in a self-hosted UI" src="apps/docs/src/assets/screenshots/runwisp-demo.webp" width="780">
+<p><em>The web dashboard, live: trigger a run, watch its output stream in real time, and see exactly when and why anything failed — all served by the daemon itself.</em></p>
 </div>
 
 ---
