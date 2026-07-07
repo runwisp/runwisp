@@ -16,7 +16,9 @@
 //   5. Why it failed — back to the dashboard, click a failed run in Recent
 //      activity; its task page opens with that run scrolled into view: red
 //      panel, exit code, captured error output.
-//   6. Loop back to the overview for a seamless repeat.
+//   6. Skim the history — click through neighbouring runs in the rail and
+//      scroll it, so it's obvious how fast you can audit run after run.
+//   7. Loop back to the overview for a seamless repeat.
 
 import { type Page } from "@playwright/test";
 import { request as apiRequest } from "@playwright/test";
@@ -151,9 +153,49 @@ test("web ui showcase tour", async ({ authenticatedPage: page }) => {
     await cursor.moveOver(exitCell).catch(() => {});
     await beat(page, 600);
     await cursor.moveTo(360, 560).catch(() => {});
+    await beat(page, 900);
+
+    // ── Beat 6: Skim the history ─────────────────────────────────────────────
+    // The run rail makes it trivial to audit run after run: step through a few
+    // neighbours (the detail panel swaps instantly), scroll to reach older runs,
+    // then full-text search everything the task ever printed.
+    const runRows = page.getByRole("main").locator("button.btn-scale");
+    const rendered = await runRows.count();
+    for (const i of [2, 4].filter((n) => n < rendered)) {
+        await cursor.click(runRows.nth(i));
+        await beat(page, 600);
+    }
+    // Scroll the rail to reveal older runs, then open one further down.
+    await cursor.moveTo(180, 430);
+    await page.mouse.wheel(0, 460);
+    await beat(page, 500);
+    if ((await runRows.count()) > 3) {
+        await cursor.click(runRows.nth(3));
+        await beat(page, 650);
+    }
+
+    // Full-text search across every run's captured output. Typing "502" narrows
+    // the rail to just the runs whose logs contain it — the failing probes —
+    // with the matching line highlighted in place.
+    const searchBox = page.getByRole("textbox", { name: /Search output across runs/ });
+    await cursor.click(searchBox);
+    await beat(page, 220);
+    await page.keyboard.type("502", { delay: 110 });
+    // Wait for the debounced search to resolve and the rail to filter to hits.
+    await expect(page.getByRole("main").getByText("502").first()).toBeVisible({
+        timeout: 10_000,
+    });
+    await beat(page, 1100);
+    // Open one of the matches — the detail panel jumps to that failing run, so
+    // you land on exactly the output you searched for. Leave the query in place.
+    await cursor.click(runRows.first());
+    await expect(page.getByText("FAILED", { exact: true }).first()).toBeVisible({
+        timeout: 10_000,
+    });
+    await cursor.settle();
     await beat(page, 1500);
 
-    // ── Beat 6: Loop back ────────────────────────────────────────────────────
+    // ── Beat 7: Loop back ────────────────────────────────────────────────────
     // Return to the overview and glide the cursor back to its exact opening
     // position, so the last frame matches the first and the WebP loops cleanly.
     await cursor.click(
