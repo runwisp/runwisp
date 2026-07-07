@@ -28,6 +28,31 @@ async function handleBulkCancel(selector: RunSelector, affected: Run[]) {
 }
 
 /**
+ * Re-run a batch of runs, with an Undo toast that cancels + deletes the
+ * triggered runs. Closure-free (touches only the API + toasts + undoRerun), so
+ * it lives at module scope rather than nested in `createRunActions`.
+ */
+async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
+    try {
+        const { triggered } = await runsApi.bulkRerun(selector);
+        if (triggered.length === 0) {
+            toast.error("Could not re-run any of the selected tasks");
+            return;
+        }
+        const label = triggered.length === 1 ? "task" : "tasks";
+        toast.success(`Triggered ${String(triggered.length)} ${label}`, {
+            duration: UNDO_MS,
+            action: {
+                label: "Undo",
+                onClick: () => void undoRerun(triggered),
+            },
+        });
+    } catch (err) {
+        toast.error(extractErrorMessage(err, "Failed to re-run tasks"));
+    }
+}
+
+/**
  * Undo a re-run: cancel any still-running triggered runs (best-effort), then
  * delete them. Closure-free, so it lives at module scope.
  */
@@ -95,26 +120,6 @@ export function createRunActions(opts: RunActionsOptions) {
             opts.onOptimisticRestore(snapshot);
         } catch (err) {
             toast.error(extractErrorMessage(err, "Failed to restore runs"));
-        }
-    }
-
-    async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
-        try {
-            const { triggered } = await runsApi.bulkRerun(selector);
-            if (triggered.length === 0) {
-                toast.error("Could not re-run any of the selected tasks");
-                return;
-            }
-            const label = triggered.length === 1 ? "task" : "tasks";
-            toast.success(`Triggered ${String(triggered.length)} ${label}`, {
-                duration: UNDO_MS,
-                action: {
-                    label: "Undo",
-                    onClick: () => void undoRerun(triggered),
-                },
-            });
-        } catch (err) {
-            toast.error(extractErrorMessage(err, "Failed to re-run tasks"));
         }
     }
 

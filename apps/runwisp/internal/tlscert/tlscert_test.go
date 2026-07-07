@@ -19,7 +19,7 @@ func TestEnsureSelfSigned_GeneratesUsablePair(t *testing.T) {
 	}
 
 	// Files land under <dataDir>/tls and load as a key pair.
-	if got := filepath.Dir(certPath); got != filepath.Join(dir, "tls") {
+	if filepath.Dir(certPath) != filepath.Join(dir, "tls") {
 		t.Fatalf("cert path %q not under tls dir", certPath)
 	}
 	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
