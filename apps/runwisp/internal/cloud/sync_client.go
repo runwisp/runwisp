@@ -251,6 +251,8 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 	enabled := true
 	task.Enabled = &enabled
 
+	task.Kind = string(t.Kind)
+
 	if t.Kind.IsService() {
 		// Services carry no cron, so they never emit a schedule.
 		applyServiceSyncFields(&task, t)
@@ -270,7 +272,6 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 // service task. Kept separate from buildOneSyncTask so the task path stays
 // simple and neither grows the other's cognitive complexity.
 func applyServiceSyncFields(task *syncTask, t *model.Task) {
-	task.Kind = string(model.KindService)
 	if t.Instances > 0 {
 		instances := t.Instances
 		task.Instances = &instances
