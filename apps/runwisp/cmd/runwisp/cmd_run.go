@@ -93,11 +93,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	// TUI debug buffer which nobody will ever read. Reroute it back to stderr
 	// so the operator always sees why the daemon died.
 	if !headless {
-		defer func() {
-			if err != nil {
-				clilog.SetOutput(os.Stderr)
-			}
-		}()
+		defer rerouteLogsToStderrOnError(&err)
 	}
 
 	// Open database first — config values (fingerprint, jwt_secret) live there.
@@ -145,24 +141,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 
 	daemonInfo := buildDaemonInfo(cfg, svc, configSnap.LoadedAt(), f.Port)
 
-	// Reconciler powers `runwisp reload` / SIGHUP. Standalone only: cloud mode
-	// has no local scheduler to reconcile. nil leaves POST /api/reload reporting
-	// "not available in this mode".
-	var reconciler *runtime.Reconciler
-	var reloadFn func() (model.ReloadResult, error)
-	if mode == modeStandalone {
-		reconciler = runtime.NewReconciler(runtime.ReconcilerDeps{
-			ConfigPath: f.CfgFile,
-			Baseline:   cfg.Config,
-			Registry:   svc.Tasks,
-			Scheduler:  svc.Scheduler,
-			Manager:    svc.TaskManager,
-			DB:         svc.DB,
-			Snapshot:   configSnap,
-			Now:        time.Now,
-		})
-		reloadFn = reconciler.Reconcile
-	}
+	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap)
 
 	srv, err := server.New(server.Options{
 		DB:                svc.DB,
@@ -269,6 +248,37 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	}
 
 	return runWithTUI(rt, startupInfo, f)
+}
+
+// rerouteLogsToStderrOnError sends CLI logging back to stderr when runDaemon is
+// returning an error. Deferred with a pointer to runDaemon's named return so it
+// observes the final error at unwind. Split out to keep runDaemon's cognitive
+// complexity in check.
+func rerouteLogsToStderrOnError(err *error) {
+	if *err != nil {
+		clilog.SetOutput(os.Stderr)
+	}
+}
+
+// newReconciler wires the reload reconciler that powers `runwisp reload` /
+// SIGHUP. Standalone only: cloud mode has no local scheduler to reconcile, so
+// it returns (nil, nil), leaving POST /api/reload reporting "not available in
+// this mode".
+func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
+	if mode != modeStandalone {
+		return nil, nil
+	}
+	r := runtime.NewReconciler(runtime.ReconcilerDeps{
+		ConfigPath: f.CfgFile,
+		Baseline:   cfg.Config,
+		Registry:   svc.Tasks,
+		Scheduler:  svc.Scheduler,
+		Manager:    svc.TaskManager,
+		DB:         svc.DB,
+		Snapshot:   snap,
+		Now:        time.Now,
+	})
+	return r, r.Reconcile
 }
 
 // isInteractiveTerminal reports whether both stdin (TUI key input) and stdout
