@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-08
+
 ### Added
 
 - **`runwisp tui --url` connects to a remote daemon over HTTP.** Attach the TUI to a daemon on another host or in a container — it logs in with the daemon's password (no `--password` flag; prompted without echo or read from `RUNWISP_PASSWORD`, then cached) and "Open Web UI" works against it too. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/#authentication-briefly).
@@ -322,7 +324,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.11.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.12.0...main
+[0.12.0]: https://github.com/runwisp/runwisp/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/runwisp/runwisp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/runwisp/runwisp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/runwisp/runwisp/compare/v0.8.0...v0.9.0
