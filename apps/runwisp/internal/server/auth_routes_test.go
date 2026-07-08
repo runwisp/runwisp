@@ -200,6 +200,12 @@ func TestHandleLaunchTicket_RedirectsToSafePath(t *testing.T) {
 		{name: "scheme-relative-rejected", redirect: "//evil.example.com/x", wantTarget: "/"},
 		{name: "non-absolute-rejected", redirect: "evil", wantTarget: "/"},
 		{name: "external-url-rejected", redirect: "https://evil.example.com/", wantTarget: "/"},
+		// Browsers normalize "\" to "/" in a Location header, so these would
+		// become "//evil.example.com" (an open redirect) if url.Parse's empty
+		// Host were trusted. They must be rejected.
+		{name: "backslash-scheme-relative-rejected", redirect: "/\\evil.example.com", wantTarget: "/"},
+		{name: "backslash-slash-rejected", redirect: "/\\/evil.example.com", wantTarget: "/"},
+		{name: "encoded-backslash-rejected", redirect: "/%5Cevil.example.com", wantTarget: "/"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

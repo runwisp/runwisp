@@ -5,11 +5,15 @@ package main
 
 import (
 	"context"
+	"crypto/pbkdf2"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -347,5 +351,29 @@ func TestDeriveJWTSecret_PerInstallFingerprintSalt(t *testing.T) {
 	}
 	if a == b {
 		t.Fatal("different fingerprint salts must yield different JWT secrets")
+	}
+}
+
+// TestDeriveJWTSecret_UsesExpensiveKDF pins the derivation to PBKDF2 at
+// chap.Iterations. The fingerprint salt is built from non-secret inputs, so the
+// signing key's resistance to recovery rests on the password entropy plus the
+// KDF cost. The JWT rides the same cleartext channel as the CHAP transcript on
+// TLS-less deployments; a captured JWT must not be a cheaper offline oracle for
+// the password than the CHAP transcript is. A regression to a fast single-pass
+// KDF (the previous HKDF) would silently reopen that shortcut, so we assert the
+// exact expected PBKDF2 output.
+func TestDeriveJWTSecret_UsesExpensiveKDF(t *testing.T) {
+	got, err := deriveJWTSecret("secret", "alpha-fingerprint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	salt := []byte(jwtKDFInfo + "\x00" + "alpha-fingerprint")
+	key, err := pbkdf2.Key(sha256.New, "secret", salt, chap.Iterations, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := base64.RawURLEncoding.EncodeToString(key)
+	if got != want {
+		t.Fatalf("deriveJWTSecret must use PBKDF2 at chap.Iterations; got %q want %q", got, want)
 	}
 }
