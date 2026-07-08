@@ -27,8 +27,8 @@ var blockedMetadataHosts = []string{"metadata.google.internal", "169.254.169.254
 // (To4-normalized) string form. Checked on every resolved IP, so a DNS name
 // that resolves to one of these is blocked just like a literal-IP URL.
 var blockedMetadataIPs = map[string]struct{}{
-	"100.100.100.200": {}, // Alibaba Cloud ECS metadata (RFC 6598 shared address space)
-	"192.0.0.192":     {}, // Oracle Cloud Infrastructure metadata (IETF protocol assignments)
+	"100.100.100.200": {}, //NOSONAR: intentional SSRF blocklist — Alibaba Cloud ECS metadata (RFC 6598 shared address space)
+	"192.0.0.192":     {}, //NOSONAR: intentional SSRF blocklist — Oracle Cloud Infrastructure metadata (IETF protocol assignments)
 }
 
 // validateHTTPURL blocks requests to private/internal network addresses (SSRF protection).
