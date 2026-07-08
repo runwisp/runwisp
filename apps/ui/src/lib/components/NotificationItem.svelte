@@ -4,9 +4,8 @@
 <script lang="ts">
     import { resolve } from "$app/paths";
     import { browser } from "$app/environment";
-    import { formatShortId } from "@runwisp/ui";
+    import { formatShortId, TickingNow } from "@runwisp/ui";
     import { phrase } from "$lib/utils/notification-rhythm";
-    import { TickingNow } from "$lib/utils/ticking-now.svelte";
     import NotificationSparkline from "./NotificationSparkline.svelte";
     import type { Notification } from "$lib/stores/notifications.svelte";
 

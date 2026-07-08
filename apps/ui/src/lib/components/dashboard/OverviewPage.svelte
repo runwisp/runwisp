@@ -21,7 +21,7 @@
     } from "./overview.js";
     import { pluralize } from "./overview-format.js";
     import { instanceCountResolver } from "./instance-count.js";
-    import { TickingNow } from "$lib/utils/ticking-now.svelte";
+    import { TickingNow } from "@runwisp/ui";
     import type { DaemonState, DaemonStats } from "@runwisp/ui";
     import type { Run, Task } from "@runwisp/common";
 

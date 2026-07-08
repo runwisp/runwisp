@@ -127,3 +127,4 @@ export {
     formatFullDateTime,
 } from "./utils/format.js";
 export { formatShortId } from "./utils/id.js";
+export { TickingNow } from "./utils/ticking-now.svelte.js";
