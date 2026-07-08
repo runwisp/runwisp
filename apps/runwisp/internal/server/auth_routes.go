@@ -101,7 +101,8 @@ func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
 //
 // The TCP path uses the original peer address stored by savePeerAddr
 // middleware to prevent bypass via spoofed X-Real-IP / X-Forwarded-For
-// headers (middleware.RealIP overwrites r.RemoteAddr with those values).
+// headers (the trusted-proxy XFF middleware may overwrite r.RemoteAddr from
+// those values, but only for a configured trusted proxy).
 func isLocalRequest(r *http.Request) bool {
 	if IsLocalTrusted(r) {
 		return true

@@ -21,10 +21,9 @@ import (
 // operator having to lower the log level.
 type slogAccessLogger struct{}
 
-// NewLogEntry snapshots the request fields we want to log before any
-// downstream middleware (notably RealIP) rewrites them. The returned entry's
-// Write method is deferred until the response is finished, by which time r may
-// have been mutated.
+// NewLogEntry snapshots the request fields we want to log at request-entry
+// time. The returned entry's Write method is deferred until the response is
+// finished, by which time r may have been mutated, so we capture them up front.
 func (slogAccessLogger) NewLogEntry(r *http.Request) middleware.LogEntry {
 	return &slogAccessEntry{
 		ctx:    r.Context(),

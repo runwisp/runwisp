@@ -83,8 +83,9 @@ func (l *streamLimiter) middleware(next http.Handler) http.Handler {
 }
 
 // streamClientIP returns the real TCP peer's IP, ignoring proxy headers.
-// We deliberately use peerAddr (captured before middleware.RealIP) so that an
-// attacker cannot bypass the cap by rotating X-Forwarded-For values.
+// We deliberately use peerAddr (captured before the trusted-proxy XFF
+// middleware) so that an attacker cannot bypass the cap by rotating
+// X-Forwarded-For values.
 func streamClientIP(r *http.Request) string {
 	return streamClientIPFromCtx(r.Context())
 }

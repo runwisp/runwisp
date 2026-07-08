@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	neturl "net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -345,6 +346,38 @@ func TestHandleLaunchTicket_InvalidTicket(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+// --- Auth rate-limit bypass regression ---
+
+// TestAuthRateLimit_NotBypassableViaForwardedHeader is a regression test for a
+// brute-force-protection bypass. chi's middleware.RealIP rewrites r.RemoteAddr
+// from client-controlled X-Forwarded-For / X-Real-IP / True-Client-IP headers,
+// and the auth limiter (httprate.LimitByIP) keys off r.RemoteAddr. If RealIP is
+// in the chain, a single attacker can rotate those headers to land every login
+// probe in its own per-IP bucket and never trip the limiter — defeating the
+// only online brute-force protection on the CHAP endpoint. With no trusted
+// proxy configured, the limiter must key off the true TCP peer and ignore the
+// headers, so a burst from one peer trips the limit regardless of header value.
+func TestAuthRateLimit_NotBypassableViaForwardedHeader(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	const peer = "203.0.113.9:44444" // one attacker, one TCP connection
+	var lastCode int
+	for i := 0; i < auth.MaxAuthAttempts+3; i++ {
+		req := httptest.NewRequest("GET", "/api/auth/challenge", nil)
+		req.RemoteAddr = peer
+		spoof := "10.0.0." + strconv.Itoa(i)
+		req.Header.Set("X-Forwarded-For", spoof)
+		req.Header.Set("X-Real-IP", spoof)
+		req.Header.Set("True-Client-IP", spoof)
+		w := httptest.NewRecorder()
+		s.router.ServeHTTP(w, req)
+		lastCode = w.Code
+	}
+
+	assert.Equal(t, http.StatusTooManyRequests, lastCode,
+		"rotating X-Forwarded-For/X-Real-IP must not mint fresh rate-limit buckets and bypass the auth limiter")
 }
 
 // --- Auth status endpoint tests ---

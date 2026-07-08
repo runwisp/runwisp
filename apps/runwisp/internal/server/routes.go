@@ -23,8 +23,8 @@ import (
 
 type contextKey string
 
-// peerAddrContextKey stores the original TCP peer address before
-// middleware.RealIP can overwrite r.RemoteAddr with spoofable headers.
+// peerAddrContextKey stores the original TCP peer address before the
+// trusted-proxy (XFF) middleware can overwrite r.RemoteAddr from headers.
 const peerAddrContextKey contextKey = "peerAddr"
 
 // maxProtectedBodySize bounds request bodies on authenticated routes.
@@ -72,9 +72,9 @@ func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 }
 
 // savePeerAddr captures the original TCP peer address into context.
-// Must be registered before middleware.RealIP so that security-critical
-// loopback checks (isLocalRequest) use the real connection address
-// instead of the potentially-spoofed X-Real-IP / X-Forwarded-For value.
+// Must be registered before the trusted-proxy (XFF) middleware so that
+// security-critical loopback checks (isLocalRequest) use the real connection
+// address instead of the potentially-spoofed X-Real-IP / X-Forwarded-For value.
 func savePeerAddr(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), peerAddrContextKey, r.RemoteAddr)
@@ -111,8 +111,8 @@ func securityHeaders(next http.Handler) http.Handler {
 }
 
 func (srv *Server) setupRoutes() error {
-	// savePeerAddr MUST be first: captures the raw TCP peer address before
-	// any proxy-aware middleware (XFF, RealIP) can overwrite r.RemoteAddr.
+	// savePeerAddr MUST be first: captures the raw TCP peer address before the
+	// trusted-proxy (XFF) middleware can overwrite r.RemoteAddr.
 	srv.router.Use(savePeerAddr)
 	if srv.trustedProxies != nil {
 		xffmw, err := xff.New(*srv.trustedProxies)
@@ -126,7 +126,15 @@ func (srv *Server) setupRoutes() error {
 	srv.router.Use(middleware.RequestLogger(slogAccessLogger{}))
 	srv.router.Use(middleware.Recoverer)
 	srv.router.Use(middleware.RequestID)
-	srv.router.Use(middleware.RealIP)
+	// NOTE: we deliberately do NOT use chi's middleware.RealIP. It trusts
+	// X-Forwarded-For / X-Real-IP / True-Client-IP from *any* client, which
+	// would let a remote attacker rotate those headers to mint a fresh
+	// per-IP bucket on every request and bypass the auth rate limiter
+	// (httprate.LimitByIP below keys off r.RemoteAddr). The sebest/xff
+	// middleware above already rewrites r.RemoteAddr from XFF, but only when
+	// the immediate peer is in the operator's configured trusted-proxy set,
+	// so r.RemoteAddr stays the real client IP behind a trusted proxy and the
+	// un-spoofable raw peer otherwise. Do not re-add middleware.RealIP.
 
 	// Create huma API after all global middleware is registered (chi requirement)
 	config := huma.DefaultConfig("RunWisp API", version.Version)
@@ -148,6 +156,10 @@ func (srv *Server) setupRoutes() error {
 	// A non-empty metrics_listen routes scrapes to a separate http.Server
 	// stood up in Start(), so we deliberately do NOT mount on the main mux.
 	if srv.metricsEnabled && srv.metricsListen == "" {
+		// Unauthenticated, per the Prometheus exposition convention (node_exporter,
+		// etcd, cAdvisor et al. all serve /metrics without auth). Operators who
+		// need isolation bind a dedicated [daemon] metrics_listen (etcd's
+		// --listen-metrics-urls model) or front it with a reverse proxy.
 		srv.router.Get("/metrics", srv.handleOpenMetrics)
 	}
 

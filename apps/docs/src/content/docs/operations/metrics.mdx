@@ -122,6 +122,11 @@ daemon is reachable:
    applies to the Web UI applies here — `RUNWISP_TRUST_PROXY` controls
    which proxies the daemon trusts for `X-Forwarded-*`.
 
+This is the same posture the rest of the ecosystem takes: Prometheus,
+node_exporter, etcd, and cAdvisor all serve `/metrics` unauthenticated and
+leave isolation to a dedicated listener or a reverse proxy. RunWisp's
+`metrics_listen` is the direct analogue of etcd's `--listen-metrics-urls`.
+
 ## Trigger a re-scrape during a run
 
 Active-run counts and the last-failure timestamp update on every

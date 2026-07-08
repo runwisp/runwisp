@@ -19,6 +19,18 @@ import (
 // blockedMetadataHosts are well-known cloud-metadata endpoints that must never be reachable from user-authored tasks.
 var blockedMetadataHosts = []string{"metadata.google.internal", "169.254.169.254"}
 
+// blockedMetadataIPs are cloud metadata service addresses that fall *outside*
+// the private/loopback/link-local ranges rejectPrivateIP already blocks, so
+// they need an explicit entry. The common 169.254.169.254 (AWS, Azure, GCP,
+// OpenStack, DigitalOcean, Hetzner) is link-local and thus already covered; the
+// entries below live in otherwise-routable ranges. Keyed by canonical
+// (To4-normalized) string form. Checked on every resolved IP, so a DNS name
+// that resolves to one of these is blocked just like a literal-IP URL.
+var blockedMetadataIPs = map[string]struct{}{
+	"100.100.100.200": {}, // Alibaba Cloud ECS metadata (RFC 6598 shared address space)
+	"192.0.0.192":     {}, // Oracle Cloud Infrastructure metadata (IETF protocol assignments)
+}
+
 // validateHTTPURL blocks requests to private/internal network addresses (SSRF protection).
 func validateHTTPURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
@@ -70,6 +82,9 @@ func rejectPrivateIP(hostname, ipStr string) error {
 
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
 		return fmt.Errorf("requests to private/internal address %s (%s) are blocked", hostname, ipStr)
+	}
+	if _, blocked := blockedMetadataIPs[ip.String()]; blocked {
+		return fmt.Errorf("requests to cloud metadata address %s (%s) are blocked", hostname, ipStr)
 	}
 	return nil
 }
