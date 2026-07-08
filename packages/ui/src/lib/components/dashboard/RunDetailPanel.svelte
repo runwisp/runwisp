@@ -473,20 +473,32 @@
                         {/if}
 
                         {#if onStopService || onRestartService}
-                            <!-- Service lifecycle replaces the run control. -->
-                            {#if serviceStopped}
-                                {#if onRestartService}
-                                    <button
-                                        type="button"
-                                        onclick={() => onRestartService()}
-                                        disabled={serviceBusy}
-                                        class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-primary-soft bg-surface-raised px-3 text-sm font-medium text-primary transition-colors hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
+                            <!-- Service lifecycle replaces the run control.
+                             Restart is always available (it cancels + respawns
+                             all instances in one call); Stop appears only while
+                             the service is running. Each still confirms, so
+                             neither fires accidentally. -->
+                            {#if onRestartService}
+                                <button
+                                    type="button"
+                                    onclick={() => onRestartService()}
+                                    disabled={serviceBusy}
+                                    title={serviceStopped
+                                        ? "Starts the service"
+                                        : "Cancels and respawns every instance"}
+                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-primary-soft bg-surface-raised px-3 text-sm font-medium text-primary transition-colors hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {#if serviceStopped}
+                                        <Play size={15} fill="currentColor" stroke="none" />
+                                    {:else}
                                         <RefreshCcw size={15} />
-                                        <span class="@max-md:hidden">Restart Service</span>
-                                    </button>
-                                {/if}
-                            {:else if onStopService}
+                                    {/if}
+                                    <span class="@max-md:hidden"
+                                        >{serviceStopped ? "Start" : "Restart"}</span
+                                    >
+                                </button>
+                            {/if}
+                            {#if !serviceStopped && onStopService}
                                 <button
                                     type="button"
                                     onclick={() => onStopService()}
