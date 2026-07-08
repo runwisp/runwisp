@@ -79,6 +79,9 @@ func TestRejectPrivateIP(t *testing.T) {
 		{"unspecified", "any", "0.0.0.0", "blocked"},
 		// ::ffff:127.0.0.1 normalizes to 127.0.0.1 via To4(); must be blocked.
 		{"IPv6-mapped loopback", "localhost", "::ffff:127.0.0.1", "blocked"},
+		// Cloud metadata endpoints outside the private/link-local ranges.
+		{"Alibaba metadata", "metadata", "100.100.100.200", "cloud metadata"},
+		{"Oracle Cloud metadata", "metadata", "192.0.0.192", "cloud metadata"},
 		{"public IPv4", "dns.google", "8.8.8.8", ""},
 	}
 	for _, tt := range tests {

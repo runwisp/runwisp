@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/runwisp/runwisp/internal/server/auth"
 )
@@ -101,7 +102,8 @@ func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
 //
 // The TCP path uses the original peer address stored by savePeerAddr
 // middleware to prevent bypass via spoofed X-Real-IP / X-Forwarded-For
-// headers (middleware.RealIP overwrites r.RemoteAddr with those values).
+// headers (the trusted-proxy XFF middleware may overwrite r.RemoteAddr from
+// those values, but only for a configured trusted proxy).
 func isLocalRequest(r *http.Request) bool {
 	if IsLocalTrusted(r) {
 		return true
@@ -122,13 +124,22 @@ func isLocalRequest(r *http.Request) bool {
 // safe same-origin absolute path; otherwise it falls back to "/". A safe
 // target must parse as a URL with no scheme or host, and its path must start
 // with a single "/" (not "//", which is scheme-relative).
-func sanitizeLaunchRedirect(target string) string { //NOSONAR: taint sanitized — url.Parse rejects scheme/host, only path is returned
+//
+// Backslashes are rejected: url.Parse leaves Host empty for a target like
+// "/\evil.com", "/\/evil.com", or the percent-encoded "/%5Cevil.com" (which
+// decodes into u.Path), but every major browser normalizes "\" to "/" in a
+// Location header, turning it into "//evil.com" → an open redirect to
+// https://evil.com. The check is on the decoded path so it catches the encoded
+// form too. A backslash has no legitimate place in the same-origin paths this
+// steers (dashboard routes, the raw-log endpoint), so dropping any that contain
+// one closes the bypass without affecting real callers.
+func sanitizeLaunchRedirect(target string) string { //NOSONAR: taint sanitized — url.Parse rejects scheme/host, backslashes rejected, only path is returned
 	u, err := url.Parse(target)
 	if err != nil || u.Scheme != "" || u.Host != "" {
 		return "/"
 	}
 	p := u.Path
-	if p == "" || p[0] != '/' || (len(p) >= 2 && p[1] == '/') {
+	if p == "" || p[0] != '/' || strings.ContainsRune(p, '\\') || (len(p) >= 2 && p[1] == '/') {
 		return "/"
 	}
 	return p

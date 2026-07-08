@@ -5,16 +5,15 @@ package main
 
 import (
 	"context"
+	"crypto/pbkdf2"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
-	"golang.org/x/crypto/hkdf"
-
+	"github.com/runwisp/runwisp/internal/chap"
 	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
@@ -23,9 +22,9 @@ import (
 	"github.com/runwisp/runwisp/internal/version"
 )
 
-// jwtKDFInfo is the HKDF info string that namespaces the JWT signing-key
-// derivation. Bumping it is the way to force every existing browser session
-// to be invalidated on the next restart without changing the operator's
+// jwtKDFInfo namespaces the JWT signing-key derivation (folded into the PBKDF2
+// salt). Bumping it is the way to force every existing browser session to be
+// invalidated on the next restart without changing the operator's
 // RUNWISP_PASSWORD.
 const jwtKDFInfo = "runwisp-jwt-v1"
 
@@ -142,8 +141,8 @@ func resolvePassword() (password string, ephemeral bool, err error) {
 	return pw, true, nil
 }
 
-// deriveJWTSecret produces the HS256 JWT signing key by HKDF-expanding the
-// daemon password, salted by the per-install fingerprint. Properties:
+// deriveJWTSecret produces the HS256 JWT signing key from the daemon password,
+// salted by the per-install fingerprint. Properties:
 //
 //   - Stable across restarts when both inputs are stable, so a browser
 //     session backed by RUNWISP_PASSWORD survives a daemon restart.
@@ -152,10 +151,23 @@ func resolvePassword() (password string, ephemeral bool, err error) {
 //     thus invalidates any prior session.
 //   - Different per machine/cwd thanks to the fingerprint salt; the same
 //     password on another host does not yield the same signing key.
+//
+// It uses the SAME deliberately-expensive KDF (PBKDF2-HMAC-SHA256 at
+// chap.Iterations) as the CHAP login. This matters because the JWT is
+// transmitted in the same channel as the CHAP transcript — cleartext on the
+// TLS-less / trusted-LAN deployments the CHAP design explicitly supports. The
+// fingerprint salt is built from non-secret inputs (machine-id, cwd, exe,
+// hostname), so the signing key's resistance to recovery rests entirely on the
+// password's entropy plus the KDF cost. A cheap single-pass KDF here would hand
+// an eavesdropper who captured any JWT a fast offline oracle (~one hash per
+// guess) for a weak RUNWISP_PASSWORD, silently bypassing the 600k-iteration
+// PBKDF2 the CHAP transcript relies on for exactly that threat. Keeping the cost
+// at parity closes that shortcut; the one-time ~sub-second derivation at boot is
+// negligible.
 func deriveJWTSecret(password, fp string) (string, error) {
-	kdf := hkdf.New(sha256.New, []byte(password), []byte(fp), []byte(jwtKDFInfo))
-	key := make([]byte, 32)
-	if _, err := io.ReadFull(kdf, key); err != nil {
+	salt := []byte(jwtKDFInfo + "\x00" + fp)
+	key, err := pbkdf2.Key(sha256.New, password, salt, chap.Iterations, 32)
+	if err != nil {
 		return "", fmt.Errorf("derive JWT secret: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(key), nil
