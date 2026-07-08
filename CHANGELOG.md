@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Restart a running service in one click.** A running service now shows a direct **Restart** button (alongside **Stop**) instead of only revealing it after a stop — restarting is one confirmed action, not stop-then-restart. See [Web UI tour](https://docs.runwisp.com/getting-started/web-ui-tour/).
 - **Selecting a run scrolls its row into view.** Opening a run from a deep link or the detail panel now brings its row on screen in the (virtualized) run list, so the highlight is always visible; an already-visible selection doesn't move. See [Web UI tour](https://docs.runwisp.com/getting-started/web-ui-tour/).
 - **Login hardened with PBKDF2.** The password challenge-response now derives its answer with PBKDF2-HMAC-SHA256 (600,000 rounds) instead of a single hash, making a captured login transcript far costlier to brute-force offline. See [Auth](https://docs.runwisp.com/operations/auth/#network-clients-web-ui-remote-rest).
 - **Web UI is push-driven, over one SSE connection shared across all tabs.** A single `/api/stream` feed (run lifecycle, system samples, config-staleness, notifications) replaces timer polling and the stream-per-concern model; an elected leader tab holds the one connection and rebroadcasts to the rest, so any number of open tabs can't exhaust the browser's per-origin connection limit. If live updates ever do stall, the UI flags it ("Updates paused") and recovers on its own.

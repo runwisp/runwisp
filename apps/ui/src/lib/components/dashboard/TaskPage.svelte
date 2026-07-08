@@ -398,10 +398,12 @@
 
 <Modal
     bind:open={restartConfirmOpen}
-    title="Restart Service"
-    description={instanceCount > 1
-        ? `Cancel and restart all ${instanceCount} instances of ${task.name}?`
-        : `Cancel and restart ${task.name}?`}
+    title={serviceStopped ? "Start Service" : "Restart Service"}
+    description={serviceStopped
+        ? `Start ${task.name}?`
+        : instanceCount > 1
+          ? `Cancel and restart all ${instanceCount} instances of ${task.name}?`
+          : `Cancel and restart ${task.name}?`}
     size="sm"
 >
     {#snippet footer()}
@@ -411,9 +413,9 @@
                 restartConfirmOpen = false;
                 onRestart?.();
             },
-            "Restart Now",
+            serviceStopped ? "Start Now" : "Restart Now",
             "primary",
-            RefreshCcw,
+            serviceStopped ? Play : RefreshCcw,
         )}
     {/snippet}
 </Modal>
