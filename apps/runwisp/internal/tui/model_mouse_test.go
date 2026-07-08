@@ -143,7 +143,7 @@ func TestScrollWheelDown_OnHomePageScrollsExecList(t *testing.T) {
 func TestHandleHomePageClick_ClickOnTaskButtonTriggers(t *testing.T) {
 	tasks := []model.TaskBrief{{Name: "backup"}}
 	m := newTestModel(tasks)
-	selectSidebarItem(&m, 1) // select backup
+	selectSidebarItem(&m, 1)
 	m.layout.taskBtnY = 7
 	// client is nil → confirmAction returns nil. We still exercise the branch.
 	_, _ = m.handleHomePageClick(uikit.SidebarWidth+5, 7)

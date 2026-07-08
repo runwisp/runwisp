@@ -240,7 +240,6 @@ func (e *ExecList) SetHoveredFromLocalY(localY int) {
 }
 
 // HandleClick selects a row based on localY (relative to the ExecList top).
-// Returns true if a valid row was selected.
 func (e *ExecList) HandleClick(localY int) bool {
 	n := e.totalCount()
 	if n == 0 {

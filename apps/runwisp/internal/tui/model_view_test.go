@@ -174,7 +174,7 @@ func TestRenderHomeContent_ActiveTaskRendersTaskHeader(t *testing.T) {
 	tasks := []model.TaskBrief{{Name: "backup"}}
 	m := newTestModel(tasks)
 	m, _ = m.applyWindowSize(120, 30)
-	selectSidebarItem(&m, 1) // pick "backup" as active task
+	selectSidebarItem(&m, 1)
 	got := m.renderHomeContent(80, "")
 	if got == "" {
 		t.Fatal("expected non-empty content for active task")

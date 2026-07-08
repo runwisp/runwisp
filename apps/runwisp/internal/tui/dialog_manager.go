@@ -126,7 +126,6 @@ func (dm *DialogManager) DismissRunParams() {
 }
 
 // UpdateRunParams dispatches input to the active run-params dialog.
-// Returns true when the dialog closed.
 func (dm *DialogManager) UpdateRunParams(msg tea.Msg) bool {
 	if dm.runParams.Update(msg) {
 		dm.runParams = nil
@@ -161,7 +160,6 @@ func (dm *DialogManager) DismissHelp() {
 }
 
 // UpdateHelp dispatches input to the active help dialog.
-// Returns true when the dialog closed.
 func (dm *DialogManager) UpdateHelp(msg tea.Msg) bool {
 	if dm.helpDialog.Update(msg) {
 		dm.helpDialog = nil
@@ -187,7 +185,6 @@ func (dm *DialogManager) DismissTaskDetail() {
 }
 
 // UpdateTaskDetail dispatches input to the active task inspector.
-// Returns true when the dialog closed.
 func (dm *DialogManager) UpdateTaskDetail(msg tea.Msg) bool {
 	if dm.taskDetail.Update(msg) {
 		dm.taskDetail = nil
@@ -230,7 +227,6 @@ func (dm *DialogManager) RunDetailParent() (taskName, runID string, ok bool) {
 }
 
 // UpdateRunDetail dispatches input to the active run inspector.
-// Returns true when the dialog closed.
 func (dm *DialogManager) UpdateRunDetail(msg tea.Msg) bool {
 	if dm.runDetail.Update(msg) {
 		dm.runDetail = nil
@@ -254,7 +250,6 @@ func (dm *DialogManager) DismissLogHistory() {
 }
 
 // UpdateLogHistory dispatches input to the active frame-history viewer.
-// Returns true when the dialog closed.
 func (dm *DialogManager) UpdateLogHistory(msg tea.Msg) bool {
 	if dm.logHistory.Update(msg) {
 		dm.logHistory = nil
@@ -264,7 +259,6 @@ func (dm *DialogManager) UpdateLogHistory(msg tea.Msg) bool {
 }
 
 // UpdateConfirm dispatches input to the active confirm dialog.
-// Returns a command and whether the dialog closed.
 func (dm *DialogManager) UpdateConfirm(msg tea.Msg) (tea.Cmd, bool) {
 	cmd, closed := dm.confirmDialog.Update(msg)
 	if closed {
@@ -281,7 +275,6 @@ func (dm *DialogManager) UpdateConfirmKeep(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 // UpdateCopy dispatches input to the active copy dialog.
-// Returns true when the dialog should close.
 func (dm *DialogManager) UpdateCopy(msg tea.Msg) bool {
 	if dm.copyDialog.Update(msg) {
 		dm.copyDialog = nil

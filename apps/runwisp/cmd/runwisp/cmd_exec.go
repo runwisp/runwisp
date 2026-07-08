@@ -246,12 +246,7 @@ func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
 	// tail window and clamps to anchor 0 on a fresh run, so we see every line.
 	from := int64(0)
 
-	// The SSE transport can end without a Done event if it blips mid-run (seen
-	// under heavy load): the channel just closes. Re-open from the next unseen
-	// line so the persisted tail is never silently dropped — by now the run is
-	// terminal, so the server replays the remaining lines straight off disk and
-	// sends Done. Honors "nothing silently fails": exec must not exit having
-	// swallowed captured output that is sitting on disk.
+	// Reconnect from the next unseen line to preserve the persisted tail (run is terminal).
 	for range maxFollowReconnects {
 		ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: from})
 		if err != nil {
@@ -266,13 +261,12 @@ func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
 			break // interrupted (Ctrl+C) — stop reconnecting
 		}
 		if highest < from {
-			break // the re-opened stream delivered nothing new; reconnecting won't help
+			break // no progress — reconnecting won't help
 		}
 		from = highest + 1
 	}
 
-	// Stream never delivered a Done event (persistent transport trouble or ctx
-	// cancelled); fall back to the persisted terminal state for the exit code.
+	// No Done event (persistent transport trouble or cancelled); fall back to the persisted state.
 	final, err := client.GetRun(taskName, runID)
 	if err != nil {
 		return 0, fmt.Errorf("fetch final run state: %w", err)
@@ -301,13 +295,8 @@ func newSignalCancelContext() (context.Context, context.CancelFunc) {
 	}
 }
 
-// streamRunLogs prints each streamed log line to stdout/stderr until the stream
-// reports the run is done or errors. Lines below `from` are skipped as already
-// seen, so a reconnect that re-replays earlier history prints no duplicates.
-// The done bool reports whether a terminal outcome was reached (so the caller
-// can return exitCode/err); when the channel drains without a Done event it
-// returns done=false and `highest` — the largest line number printed (or
-// from-1 if none) — so the caller can resume after the last delivered line.
+// streamRunLogs prints each streamed log line to stdout/stderr until the stream reports the run is done or errors.
+// Lines below `from` are skipped as already seen. done=true means terminal outcome reached.
 func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64) (exitCode int, highest int64, done bool, err error) {
 	highest = from - 1
 	for msg := range ch {

@@ -126,7 +126,7 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 	var err error
 	switch {
 	case len(sources) == 0:
-		// No path given: read piped stdin, or guide the operator.
+		// Read from stdin or guide the operator.
 		if isatty.IsTerminal(stdin.Fd()) {
 			return &userFacingError{
 				title:   "no supervisord config given",
@@ -150,10 +150,7 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 	return emitImport(stdout, stderr, stdin, res, "supervisord config", f, opts)
 }
 
-// resolveImportSource turns positional args into a source for the cron/single
-// import path: the given file, or "-" (stdin) when nothing is passed and a pipe
-// is connected. A bare terminal with no argument gets a friendly nudge instead
-// of hanging on stdin.
+// resolveImportSource returns the given file path or "-" (stdin) for piped input.
 func resolveImportSource(args []string, stdin *os.File, what string) (string, error) {
 	if len(args) == 1 {
 		return args[0], nil
@@ -167,10 +164,7 @@ func resolveImportSource(args []string, stdin *os.File, what string) (string, er
 	}
 }
 
-// resolveCronOptions decides whether to parse as a system crontab. An explicit
-// --system / --system=false (systemSet) always wins and disables detection; a
-// recognizable system path (/etc/crontab, */cron.d/*) forces system mode;
-// otherwise the parser auto-detects from the header and warns on ambiguity.
+// resolveCronOptions decides whether to parse as a system crontab.
 func resolveCronOptions(source string, systemFlag, systemSet bool) importer.CronOptions {
 	switch {
 	case systemSet:

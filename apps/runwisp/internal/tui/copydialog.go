@@ -21,7 +21,6 @@ func NewCopyDialog(title, value string) CopyDialog {
 	return CopyDialog{title: title, value: value}
 }
 
-// Returns true when the dialog should close.
 func (d *CopyDialog) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
