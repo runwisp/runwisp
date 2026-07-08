@@ -40,6 +40,19 @@ describe("runDuration", () => {
             expect(runDuration({ start_at: "2024-06-15T12:00:00.000Z" })).toBe("2s");
         });
     });
+
+    it("counts against an injected now for an in-progress run", () => {
+        const start = "2024-06-15T12:00:00.000Z";
+        const now = new Date("2024-06-15T12:00:07.000Z").getTime();
+        expect(runDuration({ start_at: start }, now)).toBe("7s");
+    });
+
+    it("ignores the injected now once the run has ended", () => {
+        const start = "2024-06-15T12:00:00.000Z";
+        const end = "2024-06-15T12:00:05.000Z";
+        const now = new Date("2024-06-15T12:01:00.000Z").getTime();
+        expect(runDuration({ start_at: start, end_at: end }, now)).toBe("5s");
+    });
 });
 
 describe("runStartDelay", () => {

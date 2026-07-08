@@ -38,6 +38,7 @@
         formatTimeHM,
     } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
+    import { TickingNow } from "../../utils/ticking-now.svelte.js";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
     import {
         runDuration,
@@ -117,6 +118,15 @@
         if (!run || !onDelete) return false;
         const status = runDisplayStatus(run);
         return status !== "running" && status !== "pending";
+    });
+
+    // Optimistic per-second clock so a live run's "Ran for" duration counts up
+    // between SSE events. The interval only runs while the run is in-flight; it
+    // is torn down as soon as the run ends (or the panel is destroyed).
+    const durationTicker = new TickingNow(1000);
+    $effect(() => {
+        if (run?.status !== "running") return;
+        return durationTicker.start();
     });
 
     const TAIL_LINES = 1000;
@@ -299,7 +309,10 @@
     {@const status = runDisplayStatus(run)}
     {@const config = getRunStatusConfig(status)}
     {@const DetailIcon = config.icon}
-    {@const duration = runDuration(run)}
+    {@const duration = runDuration(
+        run,
+        run.status === "running" ? durationTicker.now.getTime() : undefined,
+    )}
     {@const startDelay = runStartDelay(run)}
     {@const startedAt = run.start_at ?? run.created_at}
     {@const retry = runRetryLabel(run)}
