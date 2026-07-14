@@ -396,7 +396,7 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 		clilog.Configure(clilog.Options{
 			Level:      f.LogLevel,
 			Format:     f.LogFormat,
-			Output:     io.MultiWriter(os.Stderr, rt.logBuffer),
+			Output:     io.MultiWriter(os.Stderr, clilog.NewPlainWriter(rt.logBuffer)),
 			DaemonMode: true,
 		})
 		defer runlog.Subscribe(rt.svc.EventBus)()

@@ -63,8 +63,11 @@ func TestConfigure_DaemonModeIncludesTimestamp(t *testing.T) {
 	Configure(Options{Level: slog.LevelInfo, Format: FormatText, Output: buf, DaemonMode: true})
 
 	slog.Info("hello")
-	assert.Contains(t, buf.String(), "time=", "daemon mode must timestamp every line")
+	assert.Regexp(t, timestampRE, buf.String(), "daemon mode must timestamp every line")
 }
+
+// timestampRE matches the pretty handler's "2006-01-02 15:04:05" datetime prefix.
+const timestampRE = `\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`
 
 func TestConfigure_JournalStreamSuppressesTimestamp(t *testing.T) {
 	t.Setenv("JOURNAL_STREAM", "8:123456")
@@ -72,7 +75,7 @@ func TestConfigure_JournalStreamSuppressesTimestamp(t *testing.T) {
 	Configure(Options{Level: slog.LevelInfo, Format: FormatText, Output: buf, DaemonMode: true})
 
 	slog.Info("hello")
-	assert.NotContains(t, buf.String(), "time=", "systemd adds its own timestamps; ours would be redundant")
+	assert.NotRegexp(t, timestampRE, buf.String(), "systemd adds its own timestamps; ours would be redundant")
 }
 
 func TestConfigure_CLIAndTUIModeSuppressTimestamp(t *testing.T) {
@@ -84,7 +87,7 @@ func TestConfigure_CLIAndTUIModeSuppressTimestamp(t *testing.T) {
 		buf := captureSlog(t)
 		Configure(Options{Level: opts.Level, Format: opts.Format, Output: buf, TUIMode: opts.TUIMode})
 		slog.Info("hello")
-		assert.NotContains(t, buf.String(), "time=")
+		assert.NotRegexp(t, timestampRE, buf.String())
 	}
 }
 

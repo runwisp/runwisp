@@ -331,7 +331,7 @@ func configureBootLogRouting(logBuffer *server.DaemonLogBuffer, f Flags, headles
 		clilog.Configure(clilog.Options{
 			Level:      f.LogLevel,
 			Format:     f.LogFormat,
-			Output:     io.MultiWriter(os.Stderr, logBuffer),
+			Output:     io.MultiWriter(os.Stderr, clilog.NewPlainWriter(logBuffer)),
 			DaemonMode: true,
 		})
 		return nil
