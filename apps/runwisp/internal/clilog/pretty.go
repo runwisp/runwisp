@@ -116,12 +116,10 @@ func (h *prettyHandler) levelLabel(l slog.Level) string {
 	switch {
 	case l < slog.LevelInfo:
 		label, st = "[DEBUG]", prettyDebug
-	case l < slog.LevelWarn:
-		label, st = "[INFO]", prettyInfo
-	case l < slog.LevelError:
-		label, st = "[WARN]", prettyWarn
-	default:
+	case l >= slog.LevelError:
 		label, st = "[ERROR]", prettyError
+	case l >= slog.LevelWarn:
+		label, st = "[WARN]", prettyWarn
 	}
 	return h.paint(st, label)
 }
