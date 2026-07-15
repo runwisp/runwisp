@@ -30,13 +30,17 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 }
 
 var (
-	authReadTimeout            = envDuration("RUNWISP_CLOUD_AUTH_TIMEOUT", 20*time.Second)
-	heartbeatInterval          = envDuration("RUNWISP_CLOUD_HEARTBEAT_INTERVAL", 5*time.Second)
-	heartbeatSilenceTimeout    = envDuration("RUNWISP_CLOUD_HEARTBEAT_SILENCE_TIMEOUT", 15*time.Second)
-	watchdogInterval           = envDuration("RUNWISP_CLOUD_WATCHDOG_INTERVAL", 2*time.Second)
-	writeTimeout               = envDuration("RUNWISP_CLOUD_WRITE_TIMEOUT", 5*time.Second)
-	outboundMessageBufferSize  = 256
-	maxPendingExecutionUpdates = 2048
+	authReadTimeout         = envDuration("RUNWISP_CLOUD_AUTH_TIMEOUT", 20*time.Second)
+	heartbeatInterval       = envDuration("RUNWISP_CLOUD_HEARTBEAT_INTERVAL", 5*time.Second)
+	heartbeatSilenceTimeout = envDuration("RUNWISP_CLOUD_HEARTBEAT_SILENCE_TIMEOUT", 15*time.Second)
+	watchdogInterval        = envDuration("RUNWISP_CLOUD_WATCHDOG_INTERVAL", 2*time.Second)
+	writeTimeout            = envDuration("RUNWISP_CLOUD_WRITE_TIMEOUT", 5*time.Second)
+	// serviceStatusResendInterval re-pushes every service's supervisor snapshot on
+	// this cadence so the control plane's view survives its snapshot TTL (90s) for
+	// a stable service that produces no lifecycle events. Kept well under that TTL.
+	serviceStatusResendInterval = envDuration("RUNWISP_CLOUD_SERVICE_STATUS_RESEND_INTERVAL", 30*time.Second)
+	outboundMessageBufferSize   = 256
+	maxPendingExecutionUpdates  = 2048
 )
 
 const maxInboundMessageSize int64 = 4 * 1024 * 1024 // 4 MiB
@@ -362,6 +366,12 @@ func (client *Client) startSession(ctx context.Context, connection *websocket.Co
 		client.onConnected()
 	}
 	client.conn.flushPendingUpdates()
+	// Immediately re-seed the control plane's service view on (re)connect: a
+	// stable service emits no lifecycle event to trigger a fresh snapshot, so
+	// without this the view stays empty until the first resend-ticker tick.
+	if client.bridge != nil {
+		client.bridge.EmitAllServiceStatus()
+	}
 
 	sessionErr := client.sessions.run(ctx, session)
 	client.conn.detachSession()
