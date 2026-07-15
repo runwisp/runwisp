@@ -49,7 +49,7 @@ else
 fi
 
 # --- locate the captured frames ----------------------------------------------
-if [ ! -f "$frames_list" ]; then
+if [[ ! -f "$frames_list" ]]; then
     echo "[encode] ERROR: no frames at $frames_list — record first." >&2
     exit 1
 fi
