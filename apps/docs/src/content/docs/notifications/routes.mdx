@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Notification rules
-description: A [[notification_route]] block matches events by kind and task name, and sends them to one or more channels. Use it when one rule should cover many tasks.
+description: A notification route matches events by kind and task name, and sends them to one or more channels — Discord, Slack, Telegram, SMTP, or a webhook. Use it when one rule should cover many tasks.
+head:
+    - tag: title
+      content: "RunWisp notifications: route runs to Discord, Slack, Telegram, SMTP, webhooks"
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
