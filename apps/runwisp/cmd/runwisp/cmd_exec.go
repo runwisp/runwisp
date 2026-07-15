@@ -229,11 +229,17 @@ func triggerRemote(client *apiclient.Client, taskName, baseURL, password string)
 	return run, nil
 }
 
-// maxFollowReconnects bounds how many times followRun re-opens a log stream
-// that ended without a Done event. The run is terminal by the time we reconnect,
-// so a single re-open normally replays the rest off disk and delivers Done; the
-// bound only guards against a stream that keeps breaking with no progress.
-const maxFollowReconnects = 5
+// followMaxStalls bounds consecutive log-stream re-opens that deliver nothing —
+// no line and no Done event. A just-triggered run is handed back to the caller
+// before its row is durably persisted (persistence is async), so the first
+// stream(s) can find no run yet and the server closes them empty. We retry
+// until the run becomes streamable; the bound only guards against a run ID that
+// never materializes at all. followStallBackoff paces those retries so the
+// not-yet-persisted row has time to land without busy-looping.
+const (
+	followMaxStalls    = 50
+	followStallBackoff = 100 * time.Millisecond
+)
 
 // followRun follows a triggered run's SSE log stream, printing lines to
 // stdout/stderr and returning the run's exit code once it reaches a terminal
@@ -245,9 +251,9 @@ func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
 	// Line numbers are zero-indexed; the server reads from=0 as the default
 	// tail window and clamps to anchor 0 on a fresh run, so we see every line.
 	from := int64(0)
+	stalls := 0
 
-	// Reconnect from the next unseen line to preserve the persisted tail (run is terminal).
-	for range maxFollowReconnects {
+	for {
 		ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: from})
 		if err != nil {
 			return 0, fmt.Errorf("open log stream: %w", err)
@@ -260,13 +266,45 @@ func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
 		if ctx.Err() != nil {
 			break // interrupted (Ctrl+C) — stop reconnecting
 		}
-		if highest < from {
-			break // no progress — reconnecting won't help
+
+		if highest >= from {
+			// Progress: the SSE transport blipped mid-run (seen under heavy
+			// load) but delivered lines before closing. Re-open from the next
+			// unseen line so the persisted tail is never silently dropped — the
+			// run is terminal by now, so the server replays the rest off disk
+			// and sends Done. Making progress resets the stall budget.
+			from = highest + 1
+			stalls = 0
+			continue
 		}
-		from = highest + 1
+
+		// Stall: the stream closed without a line or a Done event. The run is
+		// not streamable yet — it was just triggered and its row lags the
+		// trigger response (persistence is async), so the server can't resolve
+		// it and closes the stream empty. Bailing here would exit 0 having
+		// silently swallowed the run's output, violating "nothing silently
+		// fails"; instead back off and retry until the row lands. (An accepted,
+		// pending, or running run keeps the stream open rather than closing it
+		// empty, so a stall only ever means "not persisted yet".)
+		stalls++
+		if stalls > followMaxStalls {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return exitCodeFromRunState(client, taskName, runID)
+		case <-time.After(followStallBackoff):
+		}
 	}
 
-	// No Done event (persistent transport trouble or cancelled); fall back to the persisted state.
+	// Stream never delivered a Done event (interrupted, or the run never became
+	// streamable); fall back to the persisted terminal state for the exit code.
+	return exitCodeFromRunState(client, taskName, runID)
+}
+
+// exitCodeFromRunState fetches the run's persisted state and derives its exit
+// code, used as followRun's fallback when the log stream ends without a Done.
+func exitCodeFromRunState(client *apiclient.Client, taskName, runID string) (int, error) {
 	final, err := client.GetRun(taskName, runID)
 	if err != nil {
 		return 0, fmt.Errorf("fetch final run state: %w", err)
