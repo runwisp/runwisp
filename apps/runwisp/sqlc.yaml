@@ -2,7 +2,7 @@ version: "2"
 sql:
   - engine: sqlite
     queries: internal/storage/query
-    schema: internal/storage/schema.sql
+    schema: internal/storage/migrations
     gen:
       go:
         package: sqlcdb
