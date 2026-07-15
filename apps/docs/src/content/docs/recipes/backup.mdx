@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: Apache-2.0
 title: Nightly backup
-description: A complete worked example for a nightly Postgres backup — pg_dump with skip-on-overlap, 90-day retention, no retries (failures should reach a human), and Slack alerting on failure.
+description: "A worked nightly Postgres backup recipe: pg_dump, 90-day retention, skip-on-overlap, no retries — and a Discord/Slack/SMTP alert if the run is missing or fails. Replaces the silent-crond version."
+head:
+    - tag: title
+      content: "Nightly Postgres backup with failure alerts (RunWisp recipe)"
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
