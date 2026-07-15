@@ -1,6 +1,11 @@
 -- SPDX-FileCopyrightText: PoppyCake, s.r.o.
 -- SPDX-License-Identifier: Apache-2.0
 
+-- Baseline schema. This migration keeps IF NOT EXISTS so databases created
+-- before the migration system existed adopt cleanly (their objects already
+-- exist; this no-ops, then user_version is stamped to 1). Later migrations run
+-- exactly once and must use plain DDL (no IF NOT EXISTS).
+
 CREATE TABLE IF NOT EXISTS runs (
 id                    TEXT PRIMARY KEY,
 external_execution_id TEXT,

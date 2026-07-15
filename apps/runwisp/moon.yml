@@ -10,13 +10,15 @@ fileGroups:
   # Non-Go assets compiled into the binary via //go:embed. They are build
   # inputs even though they aren't .go files, so the build cache must key on
   # them — otherwise editing e.g. the demo config leaves a stale binary.
-  # internal/storage/schema.sql is omitted because the sqlc output it produces
-  # lands in internal/**/*.go (caught by `go` above); internal/ui/dist is
-  # handled by `ui_src` below.
+  # internal/ui/dist is handled by `ui_src` below. The storage migrations are
+  # embedded at runtime (migrate.go) and applied on boot, so they are a build
+  # input in their own right — a migration can change the binary without
+  # changing the sqlc output caught by `go` above.
   embeds:
     - 'internal/demo/runwisp.toml'
     - 'internal/autostart/templates/*.tmpl'
     - 'internal/notify/render/defaults/**/*'
+    - 'internal/storage/migrations/*.sql'
   # The web-UI sources whose built output is copied into internal/ui/dist and
   # compiled in via go:embed. moon does NOT chain cache invalidation through a
   # task's deps (every dep hash is recorded "ignored" in the hash manifest) —
@@ -45,7 +47,7 @@ tasks:
     inputs:
       - 'scripts/sqlc-generate.sh'
       - 'sqlc.yaml'
-      - 'internal/storage/schema.sql'
+      - 'internal/storage/migrations/**/*.sql'
       - 'internal/storage/query/**/*.sql'
     outputs:
       - 'internal/storage/sqlcdb'

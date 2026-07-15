@@ -6,7 +6,6 @@ package storage
 import (
 	"context"
 	"database/sql"
-	_ "embed" // embeds schema.sql into schemaSQL via the //go:embed directive below
 	"errors"
 	"fmt"
 	"strconv"
@@ -17,9 +16,6 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
-
-//go:embed schema.sql
-var schemaSQL string
 
 // ErrNotFound is returned when a requested record does not exist.
 var ErrNotFound = errors.New("record not found")
@@ -97,7 +93,8 @@ type SQLiteDatabase struct {
 	q  *sqlcdb.Queries
 }
 
-// New opens (and migrates) the SQLite database.
+// New opens the SQLite database and applies any pending forward-only
+// migrations (see migrate.go).
 func New(dbPath string) (Database, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -126,7 +123,7 @@ func New(dbPath string) (Database, error) {
 		return nil, fmt.Errorf("failed to disable mmap: %w", err)
 	}
 
-	if _, err := db.Exec(schemaSQL); err != nil {
+	if err := runMigrations(db); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
