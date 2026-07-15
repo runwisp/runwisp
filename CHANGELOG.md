@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Readable daemon logs.** Log lines now render as `2026-05-27 14:03:01 [INFO] message key=value` — colored on an interactive terminal, plain otherwise — instead of Go's terse `level=INFO msg=…` logfmt. `--log-format=json` is unchanged for pipelines. See [Logging](https://docs.runwisp.com/operations/logging/).
+
 ## [0.12.0] - 2026-07-08
 
 ### Added

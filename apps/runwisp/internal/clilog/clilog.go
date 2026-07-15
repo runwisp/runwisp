@@ -8,6 +8,7 @@
 package clilog
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 )
@@ -137,19 +139,44 @@ func applyHandler(opts Options) {
 	if out == nil {
 		out = os.Stderr
 	}
-	hopts := &slog.HandlerOptions{Level: opts.Level}
-	if !includeTime(opts) {
-		hopts.ReplaceAttr = dropTimeAttr
-	}
 	var h slog.Handler
 	if opts.Format == FormatJSON {
-		h = slog.NewJSONHandler(out, hopts)
+		// JSON always keeps its own time field, so no ReplaceAttr is needed.
+		h = slog.NewJSONHandler(out, &slog.HandlerOptions{Level: opts.Level})
 	} else {
-		// The text handler already formats time as RFC3339 with millis, so no
-		// ReplaceAttr is needed when timestamps are kept.
-		h = slog.NewTextHandler(out, hopts)
+		// Both text formats use the human-readable pretty handler; color is the
+		// only difference (see useColor). JSON stays machine-shaped for pipelines.
+		h = newPrettyHandler(out, opts.Level, includeTime(opts), useColor(opts))
 	}
 	slog.SetDefault(slog.New(h))
+}
+
+// useColor reports whether the pretty handler should emit ANSI color. Color is
+// for an interactive terminal only: --log-format=text is the explicit plain
+// escape hatch, NO_COLOR / non-TTY force plain, and the TUI owns its own screen.
+func useColor(opts Options) bool {
+	return opts.Format == FormatAuto && stderrTTY && !noColor && !opts.TUIMode
+}
+
+// NewPlainWriter returns an io.Writer that strips ANSI escape sequences before
+// delegating to w. It lets the colored daemon stream be mirrored into a plain
+// destination — the daemon log ring buffer, which is replayed/streamed over SSE
+// to remote TUI clients — without leaking escape codes into it. Writes with no
+// escape byte pass straight through, so the no-color path costs nothing.
+func NewPlainWriter(w io.Writer) io.Writer {
+	return &plainWriter{w: w}
+}
+
+type plainWriter struct{ w io.Writer }
+
+func (p *plainWriter) Write(b []byte) (int, error) {
+	if !bytes.ContainsRune(b, 0x1b) {
+		return p.w.Write(b)
+	}
+	if _, err := io.WriteString(p.w, ansi.Strip(string(b))); err != nil {
+		return 0, err
+	}
+	return len(b), nil
 }
 
 func includeTime(opts Options) bool {
@@ -161,11 +188,4 @@ func includeTime(opts Options) bool {
 	}
 	// systemd journal prepends its own timestamps; ours would be redundant.
 	return os.Getenv("JOURNAL_STREAM") == ""
-}
-
-func dropTimeAttr(_ []string, a slog.Attr) slog.Attr {
-	if a.Key == slog.TimeKey {
-		return slog.Attr{}
-	}
-	return a
 }

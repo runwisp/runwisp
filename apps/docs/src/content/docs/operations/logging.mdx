@@ -21,9 +21,9 @@ truth; how the daemon logs about them is not.)
 In daemon mode every run transition produces one concise line:
 
 ```
-time=2026-05-27T14:03:01.412+02:00 level=INFO msg="run started" task=backup run=01J...
-time=2026-05-27T14:03:04.918+02:00 level=INFO msg="run succeeded" task=backup run=01J... exit=0 dur=3.5s
-time=2026-05-27T14:07:00.231+02:00 level=WARN msg="run failed" task=report run=01J... exit=2 reason=failed dur=412ms
+2026-05-27 14:03:01 [INFO] run started task=backup run=01J...
+2026-05-27 14:03:04 [INFO] run succeeded task=backup run=01J... exit=0 dur=3.5s
+2026-05-27 14:07:00 [WARN] run failed task=report run=01J... exit=2 reason=failed dur=412ms
 ```
 
 That's it — start, success, failure, and a warning if a task hits the disk-space
@@ -47,11 +47,11 @@ no silent fallback to `info`.
 
 `--log-format` (or `RUNWISP_LOG_FORMAT`) picks the shape:
 
-| Value            | Output                                                               |
-| ---------------- | -------------------------------------------------------------------- |
-| `auto` (default) | Colored text on an interactive terminal; plain text everywhere else. |
-| `text`           | Text handler (color still gated by TTY / `NO_COLOR`).                |
-| `json`           | One JSON object per line — for Docker/k8s log pipelines, Loki, etc.  |
+| Value            | Output                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| `auto` (default) | Readable `2026-… [INFO] message key=value` lines — colored on an interactive terminal, plain everywhere else. |
+| `text`           | The same readable lines, never colored (plain even on a terminal).                                            |
+| `json`           | One JSON object per line — for Docker/k8s log pipelines, Loki, etc.                                           |
 
 ```sh
 RUNWISP_LOG_FORMAT=json runwisp daemon
@@ -75,26 +75,26 @@ RunWisp detects whether stderr is a real terminal. When it isn't — piped into
 `docker logs`, journald, or a file — it automatically:
 
 - drops ANSI color (so you don't get escape-code garbage in your log files), and
-- replaces the multi-section startup banner with a handful of plain `msg=...`
-  lines carrying the same facts (version, paths, task count, warnings).
+- replaces the multi-section startup banner with a handful of plain `[INFO]`
+  summary lines carrying the same facts (version, paths, task count, warnings).
 
 The standard [`NO_COLOR`](https://no-color.org/) environment variable also
 disables color on a terminal, and `--log-format=json` is always colorless.
 
 ## Timestamps
 
-Text output is timestamped with RFC3339 (millisecond precision) in daemon mode —
+Text output is timestamped `2026-05-27 14:03:01` (local time) in daemon mode —
 a long-running process needs to record _when_ things happened. The one exception:
 under **systemd** (detected via `JOURNAL_STREAM`), RunWisp drops its own
-timestamps because journald already prepends them. JSON output always keeps the
-`time` field.
+timestamps because journald already prepends them. JSON output always keeps a
+full-precision RFC3339 `time` field.
 
 ## Readiness and shutdown
 
 Once the daemon's local API answers, it logs an accurate readiness line:
 
 ```
-msg="ready, listening" url=http://localhost:9477
+[INFO] ready, listening url=http://localhost:9477
 ```
 
 The URL respects [`[daemon] external_url`](/configuration/daemon/#external_url)
@@ -105,10 +105,10 @@ On `Ctrl+C` / `SIGTERM` the daemon names the signal, narrates the drain (HTTP
 requests, then scheduler and in-flight runs), and prints the total elapsed time:
 
 ```
-msg="received signal, shutting down" signal=interrupt
-msg="draining HTTP requests and closing cloud connection"
-msg="stopping scheduler and waiting for in-flight runs" in_flight=1 timeout=30s
-msg="shutdown complete" elapsed=842ms
+[INFO] received signal, shutting down signal=interrupt
+[INFO] draining HTTP requests and closing cloud connection
+[INFO] stopping scheduler and waiting for in-flight runs in_flight=1 timeout=30s
+[INFO] shutdown complete elapsed=842ms
 ```
 
 ---
