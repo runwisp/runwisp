@@ -6,6 +6,7 @@ package storage
 import (
 	"database/sql"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -89,6 +90,67 @@ func TestLoadMigrations_OrderedAndWellFormed(t *testing.T) {
 		prev = m.version
 	}
 	require.Equal(t, 1, migs[0].version, "the baseline migration must be version 1")
+}
+
+// TestApplyMigration_RollsBackOnError verifies a failing migration leaves the
+// database at its prior version — the transaction is rolled back, not partially
+// applied.
+func TestApplyMigration_RollsBackOnError(t *testing.T) {
+	db := openRaw(t)
+
+	err := applyMigration(db, migration{version: 99, name: "0099_broken.sql", sql: "THIS IS NOT SQL;"})
+	require.Error(t, err)
+	require.Equal(t, 0, readUserVersion(t, db), "version must be unchanged after a failed migration")
+}
+
+// TestRunMigrations_ErrorsOnClosedDB exercises the error-propagation path when
+// the initial user_version read fails.
+func TestRunMigrations_ErrorsOnClosedDB(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	require.Error(t, runMigrations(db))
+	require.Error(t, applyMigration(db, migration{version: 1, name: "0001_x.sql", sql: "SELECT 1;"}))
+
+	_, err = userVersion(db)
+	require.Error(t, err)
+}
+
+func TestParseMigrations_Errors(t *testing.T) {
+	t.Run("missing dir", func(t *testing.T) {
+		_, err := parseMigrations(fstest.MapFS{})
+		require.Error(t, err)
+	})
+
+	t.Run("duplicate version", func(t *testing.T) {
+		fsys := fstest.MapFS{
+			"migrations/0001_a.sql": {Data: []byte("SELECT 1;")},
+			"migrations/0001_b.sql": {Data: []byte("SELECT 2;")},
+		}
+		_, err := parseMigrations(fsys)
+		require.ErrorContains(t, err, "duplicate migration version")
+	})
+
+	t.Run("malformed filename", func(t *testing.T) {
+		fsys := fstest.MapFS{
+			"migrations/init.sql": {Data: []byte("SELECT 1;")},
+		}
+		_, err := parseMigrations(fsys)
+		require.Error(t, err)
+	})
+
+	t.Run("ignores non-sql and dirs", func(t *testing.T) {
+		fsys := fstest.MapFS{
+			"migrations/0001_a.sql":   {Data: []byte("SELECT 1;")},
+			"migrations/README.md":    {Data: []byte("notes")},
+			"migrations/sub/0002.sql": {Data: []byte("SELECT 2;")},
+		}
+		migs, err := parseMigrations(fsys)
+		require.NoError(t, err)
+		require.Len(t, migs, 1)
+		require.Equal(t, 1, migs[0].version)
+	})
 }
 
 func TestParseMigrationVersion(t *testing.T) {

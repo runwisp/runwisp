@@ -68,8 +68,8 @@ func applyMigration(db *sql.DB, m migration) error {
 	}
 	// PRAGMA user_version does not accept bound parameters, so the value is
 	// interpolated. m.version is an int parsed from an embedded filename, never
-	// user input.
-	if _, err := tx.Exec("PRAGMA user_version = " + strconv.Itoa(m.version)); err != nil {
+	// user input — no injection surface.
+	if _, err := tx.Exec("PRAGMA user_version = " + strconv.Itoa(m.version)); err != nil { //NOSONAR: go:S2077 — m.version is an int from an embedded filename; PRAGMA cannot be parameterized
 		_ = tx.Rollback()
 		return err
 	}
@@ -84,11 +84,18 @@ func userVersion(db *sql.DB) (int, error) {
 	return v, nil
 }
 
-// loadMigrations reads and parses every embedded migration, sorted ascending by
-// version. It errors on a malformed filename or duplicate version so a
-// mis-added file fails loudly at startup rather than silently reordering.
+// loadMigrations reads and parses every embedded migration.
 func loadMigrations() ([]migration, error) {
-	entries, err := fs.ReadDir(migrationsFS, "migrations")
+	return parseMigrations(migrationsFS)
+}
+
+// parseMigrations reads and parses every migration under the "migrations"
+// directory of fsys, sorted ascending by version. It errors on a malformed
+// filename or duplicate version so a mis-added file fails loudly at startup
+// rather than silently reordering. Split from loadMigrations so tests can feed
+// a synthetic filesystem.
+func parseMigrations(fsys fs.FS) ([]migration, error) {
+	entries, err := fs.ReadDir(fsys, "migrations")
 	if err != nil {
 		return nil, fmt.Errorf("read migrations dir: %w", err)
 	}
@@ -108,7 +115,7 @@ func loadMigrations() ([]migration, error) {
 		}
 		seen[version] = e.Name()
 
-		body, err := fs.ReadFile(migrationsFS, "migrations/"+e.Name())
+		body, err := fs.ReadFile(fsys, "migrations/"+e.Name())
 		if err != nil {
 			return nil, fmt.Errorf("read migration %s: %w", e.Name(), err)
 		}
