@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`--json` output for `runwisp status`, `list`, and `validate`.** A schema-versioned, machine-readable document on stdout for headless and agent-driven use; failures still exit non-zero and emit JSON. See [CLI](https://docs.runwisp.com/operations/cli/#machine-readable-output-json).
+
 ### Changed
 
 - **Readable daemon logs.** Log lines now render as `2026-05-27 14:03:01 [INFO] message key=value` — colored on an interactive terminal, plain otherwise — instead of Go's terse `level=INFO msg=…` logfmt. `--log-format=json` is unchanged for pipelines. See [Logging](https://docs.runwisp.com/operations/logging/).

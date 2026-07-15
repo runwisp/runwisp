@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "valid": true,
+  "config_path": "runwisp.toml",
+  "timezone": "UTC",
+  "timezone_source": "config",
+  "tasks": 1,
+  "services": 1,
+  "warnings": [],
+  "errors": []
+}

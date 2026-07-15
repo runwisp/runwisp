@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "name": "backup",
+      "kind": "task",
+      "schedule": "0 3 * * *",
+      "max_concurrent": 1,
+      "on_overlap": "queue",
+      "api_trigger": true,
+      "description": "nightly backup"
+    },
+    {
+      "name": "web",
+      "kind": "service",
+      "schedule": "",
+      "instances": 2,
+      "max_concurrent": 1,
+      "on_overlap": "skip",
+      "api_trigger": true
+    }
+  ]
+}

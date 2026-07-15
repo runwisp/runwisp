@@ -33,7 +33,7 @@ run = "echo hi"
 graceful_stop = "30s"
 `)
 	var out strings.Builder
-	require.NoError(t, runValidate(&out, f))
+	require.NoError(t, runValidate(&out, f, false))
 	assert.Contains(t, out.String(), "is valid")
 	assert.Contains(t, out.String(), "! ")
 	assert.Contains(t, out.String(), "graceful_stop")
@@ -43,7 +43,7 @@ func TestRunValidateNoWarnings(t *testing.T) {
 	t.Parallel()
 	f := writeValidateConfig(t, "[tasks.t]\nrun = \"echo hi\"\n")
 	var out strings.Builder
-	require.NoError(t, runValidate(&out, f))
+	require.NoError(t, runValidate(&out, f, false))
 	assert.Contains(t, out.String(), "is valid")
 	assert.NotContains(t, out.String(), "! ")
 }
@@ -52,7 +52,7 @@ func TestRunValidateRejectsBadCron(t *testing.T) {
 	t.Parallel()
 	f := writeValidateConfig(t, "[tasks.t]\nrun = \"echo hi\"\ncron = \"61 * * * *\"\n")
 	var out strings.Builder
-	err := runValidate(&out, f)
+	err := runValidate(&out, f, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid cron")
 	assert.Contains(t, err.Error(), "expected 5 fields")
@@ -62,7 +62,7 @@ func TestRunValidate_ValidEmpty(t *testing.T) {
 	t.Parallel()
 	f := writeValidateConfig(t, "# empty\n")
 	var buf bytes.Buffer
-	require.NoError(t, runValidate(&buf, f))
+	require.NoError(t, runValidate(&buf, f, false))
 	out := buf.String()
 	assert.Contains(t, out, "is valid")
 	assert.Contains(t, out, "tasks:    0")
@@ -85,7 +85,7 @@ run = "true"
 run = "exec /usr/bin/web"
 `)
 	var buf bytes.Buffer
-	require.NoError(t, runValidate(&buf, f))
+	require.NoError(t, runValidate(&buf, f, false))
 	out := buf.String()
 	assert.Contains(t, out, "tasks:    2")
 	assert.Contains(t, out, "services: 1")
@@ -96,7 +96,7 @@ func TestRunValidate_InvalidTOMLReturnsUserFacingError(t *testing.T) {
 	f := writeValidateConfig(t, "this is not = valid toml ===\n")
 	var buf bytes.Buffer
 
-	err := runValidate(&buf, f)
+	err := runValidate(&buf, f, false)
 	require.Error(t, err)
 
 	var ufe *userFacingError
@@ -111,7 +111,7 @@ func TestRunValidate_MissingFileReturnsUserFacingError(t *testing.T) {
 	f := Flags{CfgFile: filepath.Join(t.TempDir(), "absent.toml")}
 
 	var buf bytes.Buffer
-	err := runValidate(&buf, f)
+	err := runValidate(&buf, f, false)
 	require.Error(t, err)
 
 	var ufe *userFacingError

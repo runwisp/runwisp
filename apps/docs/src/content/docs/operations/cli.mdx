@@ -84,6 +84,95 @@ tasks as a table. `runwisp status` pings the daemon over its local socket
 and prints a short health summary; it also flags when `runwisp.toml` has
 changed on disk since the daemon started.
 
+### Machine-readable output (`--json`)
+
+Add `--json` to `validate`, `list`, or `status` and you get a single JSON
+document on stdout instead of the human text — handy when an agent or script
+drives RunWisp headless. Every document carries a `schema_version` so you can
+trust its shape across releases (the shape only ever grows — fields are added,
+never removed or repurposed). A failure still exits non-zero **and** prints
+JSON describing what went wrong, so your script never has to grep stderr to
+learn something broke.
+
+`runwisp validate --json` tells you whether the config is valid and hands back
+counts, the resolved timezone, and errors and warnings as arrays:
+
+```json
+{
+    "schema_version": 1,
+    "valid": true,
+    "config_path": "runwisp.toml",
+    "timezone": "UTC",
+    "timezone_source": "config",
+    "tasks": 1,
+    "services": 1,
+    "warnings": [],
+    "errors": []
+}
+```
+
+On a broken config it exits non-zero with `"valid": false` and a populated
+`errors` array.
+
+`runwisp list --json` mirrors the config table. Like the human view it's
+offline and reads only `runwisp.toml`, so there's no run history here:
+
+```json
+{
+    "schema_version": 1,
+    "tasks": [
+        {
+            "name": "backup",
+            "kind": "task",
+            "schedule": "0 3 * * *",
+            "max_concurrent": 1,
+            "on_overlap": "queue",
+            "api_trigger": true,
+            "description": "nightly backup"
+        }
+    ]
+}
+```
+
+`runwisp status --json` is the live snapshot: daemon health, a system summary,
+and every task with its last run — the exit code, timing, and `failed`/`missed`
+flags are precomputed so you don't have to decode RunWisp's status names
+yourself:
+
+```json
+{
+    "schema_version": 1,
+    "healthy": true,
+    "version": "0.12.0",
+    "scheduling_active": true,
+    "config_stale": false,
+    "system": { "version": "0.12.0", "uptime": "1h2m3s", "cpu_cores": 8, "host": "my-vps" },
+    "tasks": [
+        {
+            "name": "backup",
+            "kind": "task",
+            "cron": "0 3 * * *",
+            "api_trigger": false,
+            "next_run_at": "2026-07-16 03:00:00",
+            "last_run": {
+                "id": "01JZZBACKUP0000000000000000",
+                "status": "ended",
+                "end_reason": "failed",
+                "exit_code": 1,
+                "start_at": "2026-07-15T03:00:00Z",
+                "end_at": "2026-07-15T03:00:42Z",
+                "duration_ms": 42000,
+                "failed": true,
+                "missed": false
+            }
+        }
+    ]
+}
+```
+
+A task that has never run reports `"last_run": null`. If the daemon isn't
+running, `status --json` exits non-zero with `"healthy": false` and an `error`.
+
 ## Run a task now
 
 ```sh

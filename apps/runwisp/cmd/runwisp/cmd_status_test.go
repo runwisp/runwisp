@@ -66,7 +66,7 @@ func TestRunStatus_HealthyWithSystem(t *testing.T) {
 	f := serveStatusSocket(t, mux)
 
 	var buf bytes.Buffer
-	require.NoError(t, runStatus(&buf, f))
+	require.NoError(t, runStatus(&buf, f, false))
 	out := buf.String()
 	assert.Contains(t, out, "RunWisp is healthy at :9477")
 	assert.Contains(t, out, "vX")
@@ -85,7 +85,7 @@ func TestRunStatus_HealthOnlySystemMissing(t *testing.T) {
 	f := serveStatusSocket(t, mux)
 
 	var buf bytes.Buffer
-	require.NoError(t, runStatus(&buf, f))
+	require.NoError(t, runStatus(&buf, f, false))
 	out := buf.String()
 	assert.Contains(t, out, "RunWisp is healthy")
 	assert.NotContains(t, out, "Version")
@@ -105,7 +105,7 @@ func TestRunStatus_HealthOnlySystemBadJSON(t *testing.T) {
 	f := serveStatusSocket(t, mux)
 
 	var buf bytes.Buffer
-	require.NoError(t, runStatus(&buf, f))
+	require.NoError(t, runStatus(&buf, f, false))
 	assert.Contains(t, buf.String(), "RunWisp is healthy")
 }
 
@@ -120,7 +120,7 @@ func TestRunStatus_ConfigStaleWarns(t *testing.T) {
 	f := serveStatusSocket(t, mux)
 
 	var buf bytes.Buffer
-	require.NoError(t, runStatus(&buf, f))
+	require.NoError(t, runStatus(&buf, f, false))
 	assert.Contains(t, buf.String(), "runwisp.toml has changed")
 }
 
@@ -132,7 +132,7 @@ func TestRunStatus_HealthNon200Errors(t *testing.T) {
 	f := serveStatusSocket(t, mux)
 
 	var buf bytes.Buffer
-	err := runStatus(&buf, f)
+	err := runStatus(&buf, f, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not reachable")
 }
@@ -142,7 +142,7 @@ func TestRunStatus_UnreachableErrors(t *testing.T) {
 	// No socket created — HealthCheck fails to dial.
 	f := Flags{DataDir: testutil.ShortTempDir(t)}
 	var buf bytes.Buffer
-	err := runStatus(&buf, f)
+	err := runStatus(&buf, f, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not reachable")
 }
