@@ -15,6 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestBridge(h *InboundHandler) *EventBridge {
@@ -184,6 +185,65 @@ func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 }
 
 // --- handleRunEvent: guard branches ---
+
+// A service-instance lifecycle run carries no external execution id; the bridge
+// pushes the supervisor snapshot keyed by the bare task name. This is the path a
+// supervised TOML service (now running in cloud mode) takes — an old cloud drops
+// the bare-name frame, a new cloud resolves it.
+func TestEventBridge_HandleRunEvent_EmitsServiceStatusByBareName(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+	runner.snapshot = model.ServiceSnapshot{
+		TaskName:         "heartbeat",
+		State:            "running",
+		DesiredInstances: 2,
+		RunningInstances: 2,
+	}
+	runner.snapshotOK = true
+
+	var sent []any
+	b := NewEventBridge(
+		events.NewEventBus(),
+		h,
+		NewExecutionTracker(),
+		func(msg any) error { sent = append(sent, msg); return nil },
+		func() {},
+	)
+
+	run := &model.Run{TaskName: "heartbeat"} // no ExternalExecutionID
+	b.handleRunEvent(context.Background(), events.Event{Data: events.RunEvent{Run: run}})
+
+	require.Len(t, sent, 1)
+	msg, ok := sent[0].(protocol.ServiceStatusMessage)
+	require.True(t, ok)
+	assert.Equal(t, "heartbeat", msg.TaskID, "service:status is keyed by the bare TOML name")
+	assert.Equal(t, 2, msg.DesiredInstances)
+}
+
+// EmitAllServiceStatus pushes one service:status per registered service (the
+// reconnect / resend-ticker refresh); non-service tasks are skipped by
+// ListServiceTasks.
+func TestEventBridge_EmitAllServiceStatus_PushesEveryService(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{
+		"heartbeat": {Name: "heartbeat", Kind: model.KindService},
+		"worker":    {Name: "worker", Kind: model.KindService},
+	})
+	runner := h.taskManager.(*fakeTaskRunner)
+	runner.snapshot = model.ServiceSnapshot{State: "running", DesiredInstances: 1, RunningInstances: 1}
+	runner.snapshotOK = true
+
+	var sent []any
+	b := NewEventBridge(
+		events.NewEventBus(),
+		h,
+		NewExecutionTracker(),
+		func(msg any) error { sent = append(sent, msg); return nil },
+		func() {},
+	)
+
+	b.EmitAllServiceStatus()
+	assert.Len(t, sent, 2, "one service:status per registered service")
+}
 
 func TestEventBridge_HandleRunEvent_IgnoresWrongData(t *testing.T) {
 	b := newTestBridge(newTestInboundHandler())

@@ -92,6 +92,61 @@ func TestBuildOneSyncTask(t *testing.T) {
 		assert.True(t, st.Schedules[0].Enabled)
 		require.NotNil(t, st.Enabled)
 		assert.True(t, *st.Enabled)
+		// A plain task carries no service fields (omitempty regression guard).
+		assert.Empty(t, st.Kind)
+		assert.Nil(t, st.Instances)
+		assert.Nil(t, st.Autostart)
+		assert.Nil(t, st.RestartDelay)
+		assert.Nil(t, st.BackoffResetAfter)
+		assert.Nil(t, st.Compose)
+	})
+
+	t.Run("service emits service fields and no schedule", func(t *testing.T) {
+		compose := &model.TaskComposeRef{File: "compose.yml", Service: "hb", ProjectName: "proj"}
+		task := &model.Task{
+			Name:           "heartbeat",
+			Run:            "heartbeat.sh",
+			Kind:           model.KindService,
+			Restart:        model.RestartAlways,
+			Instances:      3,
+			Autostart:      true,
+			RestartDelay:   2 * time.Second,
+			RestartBackoff: model.BackoffExponential,
+			HealthyAfter:   60 * time.Second,
+			Compose:        compose,
+			// A cron on a service would be a config bug; assert it is never emitted.
+			Cron: "*/5 * * * *",
+		}
+
+		st, ok := buildOneSyncTask(task)
+		require.True(t, ok)
+		assert.Equal(t, string(model.KindService), st.Kind)
+		assert.Equal(t, string(model.RestartAlways), st.RestartPolicy)
+		require.NotNil(t, st.Instances)
+		assert.Equal(t, 3, *st.Instances)
+		require.NotNil(t, st.Autostart)
+		assert.True(t, *st.Autostart)
+		require.NotNil(t, st.RestartDelay)
+		assert.Equal(t, 2000, *st.RestartDelay)
+		assert.Equal(t, model.BackoffExponential, st.RestartBackoff)
+		require.NotNil(t, st.BackoffResetAfter)
+		assert.Equal(t, 60000, *st.BackoffResetAfter)
+		assert.Equal(t, compose, st.Compose)
+		assert.Empty(t, st.Schedules, "services never carry a schedule")
+	})
+
+	t.Run("non-autostart service still emits autostart=false", func(t *testing.T) {
+		task := &model.Task{
+			Name:      "stopped-svc",
+			Run:       "svc.sh",
+			Kind:      model.KindService,
+			Instances: 1,
+			Autostart: false,
+		}
+		st, ok := buildOneSyncTask(task)
+		require.True(t, ok)
+		require.NotNil(t, st.Autostart)
+		assert.False(t, *st.Autostart)
 	})
 
 	t.Run("task with all optional fields", func(t *testing.T) {

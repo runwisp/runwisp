@@ -207,11 +207,13 @@ const (
 	RestartOnFailure RestartPolicy = "on_failure"
 )
 
-// TaskKind distinguishes scheduled/manual tasks from always-on services.
+// TaskKind distinguishes scheduled/manual tasks from always-on services. The
+// value is always explicit ("task" or "service"): it is emitted verbatim on the
+// sync wire and stored verbatim by cloud, so neither side infers a missing kind.
 type TaskKind string
 
 const (
-	KindTask    TaskKind = ""
+	KindTask    TaskKind = "task"
 	KindService TaskKind = "service"
 )
 

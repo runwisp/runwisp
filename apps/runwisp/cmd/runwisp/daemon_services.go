@@ -44,8 +44,8 @@ type daemonServices struct {
 	TaskShutdownTimeout time.Duration
 	// ServiceLaunchCancel aborts the background depends_on launcher goroutines.
 	// Called at the start of graceful shutdown so a dependent still waiting on a
-	// dependency doesn't start mid-teardown. No-op in cloud mode (services don't
-	// auto-start there).
+	// dependency doesn't start mid-teardown. Services are supervised in both
+	// standalone and cloud mode, so this is always a real cancel.
 	ServiceLaunchCancel context.CancelFunc
 	// InitWarnings holds non-fatal warnings collected during service init
 	// (notify subsystem failures, scheduler start hiccups, etc.) so the
@@ -82,17 +82,21 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	// registry so a later `runwisp reload` mutation is race-free.
 	tasks := runtime.NewTaskRegistry(tasksMap)
 
-	// Default to a no-op cancel so cloud mode (no service auto-start) leaves a
-	// callable handle in daemonServices.
-	serviceLaunchCancel := context.CancelFunc(func() {})
-
 	var boot standaloneBoot
 	if mode == modeStandalone {
-		boot, serviceLaunchCancel, err = startStandaloneScheduling(ctx, cfg, db, taskManager, tasksMap, &initWarnings)
+		boot, err = startStandaloneScheduling(ctx, cfg, db, taskManager, tasksMap, &initWarnings)
 		if err != nil {
 			return nil, err
 		}
 	}
+
+	// Bring services up to their desired instance count in both modes (a
+	// timezone error above already aborted, so this never runs on a bad config).
+	// Autostart is honored by the supervisor (NewSupervisor's isStopped =
+	// !Autostart), so a non-autostart service boots stopped — StartServiceInstances
+	// no-ops on a stopped supervisor.
+	launchCtx, serviceLaunchCancel := context.WithCancel(ctx)
+	startServiceInstances(launchCtx, taskManager, tasksMap)
 
 	retentionCleaner := initRetentionCleaner(cfg, db, tasks, f.LogDir())
 
@@ -147,13 +151,13 @@ type standaloneBoot struct {
 	catchUpResult    runtime.CatchUpResult
 }
 
-// startStandaloneScheduling brings up the scheduler, resumes pending runs, fires
-// run_on_start tasks, and launches service instances — the standalone-only boot
-// steps that run before notify subscribes. It returns the collected results, the
-// cancel func that aborts the background service launchers, and a hard error
-// (timezone resolution) that must abort daemon startup. Non-fatal hiccups are
-// appended to warnings.
-func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storage.Database, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, warnings *[]string) (standaloneBoot, context.CancelFunc, error) {
+// startStandaloneScheduling brings up the scheduler, resumes pending runs, and
+// fires run_on_start tasks — the standalone-only boot steps that run before
+// notify subscribes. It returns the collected results and a hard error (timezone
+// resolution) that must abort daemon startup. Non-fatal hiccups are appended to
+// warnings. Service instances are launched separately by initDaemonServices in
+// both modes.
+func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storage.Database, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, warnings *[]string) (standaloneBoot, error) {
 	var boot standaloneBoot
 
 	// [scheduler] timezone is required at config-load time when any cron task
@@ -161,7 +165,7 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 	// explicitly or there are no cron expressions to interpret.
 	schedLoc, locErr := config.ResolveTimezone("scheduler.timezone", cfg.Config.Scheduler.Timezone)
 	if locErr != nil {
-		return boot, func() {}, locErr
+		return boot, locErr
 	}
 	scheduler := runtime.NewScheduler(taskManager, tasksMap, schedLoc)
 	boot.scheduler = scheduler
@@ -185,10 +189,7 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 	}
 	boot.runOnStartResult = runOnStartResult
 
-	launchCtx, serviceLaunchCancel := context.WithCancel(ctx)
-	startServiceInstances(launchCtx, taskManager, tasksMap)
-
-	return boot, serviceLaunchCancel, nil
+	return boot, nil
 }
 
 // startNotify initializes the notify subsystem and starts its service, routing

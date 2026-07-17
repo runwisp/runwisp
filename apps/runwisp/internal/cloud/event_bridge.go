@@ -5,6 +5,7 @@ package cloud
 
 import (
 	"context"
+	"time"
 
 	"log/slog"
 
@@ -50,6 +51,27 @@ func (b *EventBridge) Start(ctx context.Context) {
 		b.eventBus.Subscribe(events.EventRunFailed, func(e events.Event) { b.handleRunEvent(ctx, e) }),
 		b.eventBus.Subscribe(events.EventLogLine, b.handleLogLineEvent),
 	)
+	// A service emits a status snapshot only on an instance lifecycle change, so a
+	// stable always-on service falls silent for as long as it keeps running — long
+	// past the control plane's snapshot TTL, which then shows the service as having
+	// no live status. Re-push all snapshots on a ticker so the view stays fresh;
+	// sendReady is a no-op while no session is attached.
+	go b.resendServiceStatusLoop(ctx)
+}
+
+// resendServiceStatusLoop periodically re-pushes every service's supervisor
+// snapshot until ctx is cancelled (daemon shutdown).
+func (b *EventBridge) resendServiceStatusLoop(ctx context.Context) {
+	ticker := time.NewTicker(serviceStatusResendInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			b.EmitAllServiceStatus()
+		}
+	}
 }
 
 // Shutdown removes all event subscriptions.
@@ -132,10 +154,27 @@ func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update pr
 	b.handler.RemoveLogListener(executionID)
 }
 
+// EmitAllServiceStatus pushes the current supervisor snapshot for every
+// registered service. Called on each (re)connect (for an immediate refresh) and
+// on the resend ticker, so the control plane's view survives its snapshot TTL
+// for a service that produces no lifecycle events. Best-effort like
+// emitServiceStatus: sendReady drops while no session is attached.
+func (b *EventBridge) EmitAllServiceStatus() {
+	if b.handler.taskManager == nil {
+		return
+	}
+	for _, svc := range b.handler.taskManager.ListServiceTasks() {
+		if svc == nil {
+			continue
+		}
+		b.emitServiceStatus(svc.Name)
+	}
+}
+
 // emitServiceStatus pushes the current supervisor snapshot for a service task
 // to the cloud. A no-op for unknown / non-service tasks. Best-effort: a full
 // outbound queue drops the snapshot rather than blocking the supervisor — the
-// next lifecycle change (or a reconnect-driven resend) corrects the view.
+// next lifecycle change or resend-ticker tick corrects the view.
 func (b *EventBridge) emitServiceStatus(taskName string) {
 	if b.handler.taskManager == nil {
 		return
