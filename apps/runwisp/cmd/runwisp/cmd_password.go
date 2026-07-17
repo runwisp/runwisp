@@ -68,24 +68,30 @@ func runPassword(stdout, stderr io.Writer, client credentialsFetcher, socketPath
 	}
 
 	if errors.Is(err, apiclient.ErrLocalCredentialsUnavailable) {
-		fmt.Fprintln(stderr, "Error: this daemon is configured with RUNWISP_PASSWORD; RunWisp will not disclose it.")
-		fmt.Fprintln(stderr, "Retrieve it from wherever you set it (Docker secret, systemd credential, vault, password manager, …).")
+		renderError(stderr,
+			"this daemon is configured with RUNWISP_PASSWORD; RunWisp will not disclose it",
+			"Retrieve it from wherever you set it (Docker secret, systemd credential, vault, password manager, …).",
+			"")
 		return passwordExitRefused
 	}
 	if errors.Is(err, apiclient.ErrAuthDisabled) {
-		fmt.Fprintln(stderr, "Error: this daemon runs with RUNWISP_NO_AUTH — authentication is disabled, so there is no password.")
+		renderError(stderr,
+			"this daemon runs with RUNWISP_NO_AUTH — authentication is disabled, so there is no password",
+			"", "")
 		return passwordExitNoAuth
 	}
 	if apiclient.IsHTTPStatus(err, http.StatusForbidden) {
-		fmt.Fprintln(stderr, "internal error: socket request was not local-trusted")
+		renderError(stderr, "internal error: socket request was not local-trusted", "", "")
 		return passwordExitInternalGate
 	}
 	if isTransportError(err) {
-		fmt.Fprintf(stderr, "daemon not running at %s: %v\n", socketPath, err)
-		fmt.Fprintf(stderr, "The ephemeral password only exists while a daemon is up — %s.\n", daemonNotRunningHint)
+		renderError(stderr,
+			fmt.Sprintf("daemon not running at %s: %v", socketPath, err),
+			fmt.Sprintf("The ephemeral password only exists while a daemon is up — %s.", daemonNotRunningHint),
+			"")
 		return passwordExitUnreachable
 	}
-	fmt.Fprintf(stderr, "unexpected error: %v\n", err)
+	renderError(stderr, fmt.Sprintf("unexpected error: %v", err), "", "")
 	return passwordExitUnexpectedErr
 }
 

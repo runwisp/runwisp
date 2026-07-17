@@ -201,6 +201,9 @@ func resolveDataDirInteractive(cmd *cobra.Command, deps autostart.Deps, res auto
 	switch res.Action {
 	case autostart.ResolveActionAccept:
 		return res.Path, nil
+	case autostart.ResolveActionNotice:
+		fmt.Fprintln(cmd.ErrOrStderr(), res.Detail)
+		return res.Path, nil
 	case autostart.ResolveActionWarn:
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", res.Detail)
 		return res.Path, nil
@@ -211,15 +214,50 @@ func resolveDataDirInteractive(cmd *cobra.Command, deps autostart.Deps, res auto
 		if err != nil {
 			return "", err
 		}
-		if !ok {
-			return "", &userFacingError{
-				title:   "data dir choice declined",
-				details: "Re-run with --data <absolute-path> to pin a location.",
-			}
+		if ok {
+			return res.Path, nil
 		}
-		return res.Path, nil
+		// Declined the suggested location — rather than dead-ending, offer the
+		// current directory (the common "install right here" intent) before
+		// giving up.
+		return resolveDataDirCurrentDir(cmd, deps)
 	}
 	return res.Path, nil
+}
+
+// dataDirDeclinedError is the give-up message when the operator wants neither the
+// suggested location nor the current directory. It names both frictionless ways
+// to pin one.
+var dataDirDeclinedError = &userFacingError{
+	title: "data dir choice declined",
+	details: "Choose where the daemon should store its data:\n" +
+		"  - Use the current directory:  runwisp service install --data .\n" +
+		"  - Or pin an absolute path:    runwisp service install --data /abs/path",
+}
+
+// resolveDataDirCurrentDir offers the current working directory as the data dir
+// after the operator declined the suggested one. It re-uses ResolveDataDir (with
+// an explicit ".") so the current dir passes the same durability guards — a cwd
+// under /tmp is refused, and the offer is skipped rather than baking a doomed
+// path into the unit.
+func resolveDataDirCurrentDir(cmd *cobra.Command, deps autostart.Deps) (string, error) {
+	cwdRes, err := autostart.ResolveDataDir(autostart.ResolveDataDirOptions{
+		Explicit:    ".",
+		ExplicitSet: true,
+		HomeDir:     deps.Home,
+		XDGDataHome: deps.XDGDataHome,
+	})
+	if err != nil || cwdRes.Action == autostart.ResolveActionReject {
+		return "", dataDirDeclinedError
+	}
+	ok, err := deps.Prompter.Confirm(fmt.Sprintf("Use the current directory (%s) instead?", cwdRes.Path), true)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", dataDirDeclinedError
+	}
+	return cwdRes.Path, nil
 }
 
 func fileExists(path string) bool {

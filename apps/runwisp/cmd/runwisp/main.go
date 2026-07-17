@@ -4,11 +4,13 @@
 package main
 
 import (
+	"context"
 	"os"
 	"runtime"
 	rdebug "runtime/debug"
 
-	"log/slog"
+	"github.com/charmbracelet/fang"
+	"github.com/runwisp/runwisp/internal/version"
 
 	// Embed the IANA time zone database so [scheduler] timezone and per-task
 	// timezone resolve on slim images (Alpine/distroless) without an installed
@@ -54,12 +56,19 @@ func applyDefaultMaxProcs() {
 func main() {
 	applyDefaultMemoryLimit()
 	applyDefaultMaxProcs()
-	if err := rootCmd.Execute(); err != nil {
-		if ufe, ok := isUserFacing(err); ok {
-			renderUserFacingError(os.Stderr, ufe)
-		} else {
-			slog.Error("Fatal error", "err", err)
-		}
+	// fang styles all help/usage pages in the RunWisp brand palette
+	// (brandColorScheme). handleCLIError owns *all* error rendering — fang's
+	// default error handler is never used — so generic cobra errors and
+	// RunWisp's rich userFacingError guidance share one branded look. Signal
+	// handling is intentionally left off (no WithNotifySignal) — the daemon
+	// installs and owns its own SIGINT/SIGTERM/SIGHUP handlers.
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(version.Version),
+		fang.WithColorSchemeFunc(brandColorScheme),
+		fang.WithErrorHandler(handleCLIError),
+	); err != nil {
 		os.Exit(1)
 	}
 }

@@ -139,6 +139,10 @@ const (
 	ResolveActionReject
 	// ResolveActionWarn means the caller should print Detail and proceed.
 	ResolveActionWarn
+	// ResolveActionNotice means the caller should print Detail as a neutral,
+	// informational line (not a warning) and proceed. Used when a relative
+	// --data is silently resolved to an absolute path.
+	ResolveActionNotice
 )
 
 // defaultDataDirFlag matches cmd_root.go default value for --data.
@@ -168,26 +172,33 @@ func ResolveDataDir(opts ResolveDataDirOptions) (ResolveDataDirResult, error) {
 	xdg := xdgDataDir(opts.HomeDir, opts.XDGDataHome)
 
 	if opts.ExplicitSet && opts.Explicit != "" && opts.Explicit != defaultDataDirFlag {
-		if !filepath.IsAbs(opts.Explicit) {
-			abs, err := filepath.Abs(opts.Explicit)
+		// A relative --data (e.g. ".") is resolved to an absolute path — a
+		// boot-launched unit runs with cwd=/, so the absolute form is what we
+		// bake in. This mirrors ResolveConfigPath and makes "install into the
+		// current directory" (--data .) just work.
+		abs := opts.Explicit
+		relative := !filepath.IsAbs(abs)
+		if relative {
+			resolved, err := filepath.Abs(abs)
 			if err != nil {
 				return ResolveDataDirResult{}, fmt.Errorf("resolve data dir: %w", err)
 			}
-			return ResolveDataDirResult{
-				Action: ResolveActionReject,
-				Detail: fmt.Sprintf("--data %q is relative; a boot-launched unit has cwd=/ and would not find it. Re-run with --data %s.", opts.Explicit, abs),
-			}, nil
+			abs = resolved
 		}
-		if reason := transientDataDirReason(opts.Explicit); reason != "" {
+		if reason := transientDataDirReason(abs); reason != "" {
 			return ResolveDataDirResult{
 				Action: ResolveActionReject,
 				Detail: fmt.Sprintf("--data %q is not a durable location: %s.", opts.Explicit, reason),
 			}, nil
 		}
-		res := ResolveDataDirResult{Path: opts.Explicit, Action: ResolveActionAccept}
-		if strings.Contains(opts.Explicit, " ") {
+		res := ResolveDataDirResult{Path: abs, Action: ResolveActionAccept}
+		switch {
+		case strings.Contains(abs, " "):
 			res.Action = ResolveActionWarn
 			res.Detail = "data dir path contains spaces; this can confuse systemd Environment= parsing."
+		case relative:
+			res.Action = ResolveActionNotice
+			res.Detail = fmt.Sprintf("Using data dir %s (resolved from %q).", abs, opts.Explicit)
 		}
 		return res, nil
 	}

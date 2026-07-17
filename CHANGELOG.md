@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Readable daemon logs.** Log lines now render as `2026-05-27 14:03:01 [INFO] message key=value` — colored on an interactive terminal, plain otherwise — instead of Go's terse `level=INFO msg=…` logfmt. `--log-format=json` is unchanged for pipelines. See [Logging](https://docs.runwisp.com/operations/logging/).
+- **Colored, readable `--help` and errors.** Help pages are styled in the RunWisp brand palette, and every error — a typo like `runwisp install`, a bad config, a failed `runwisp password` — shares one branded `ERROR` block instead of a raw log line; plain text when piped or under `NO_COLOR`. See [CLI](https://docs.runwisp.com/operations/cli/).
+- **`runwisp service install --data .` installs into the current directory.** A relative `--data` is resolved to its absolute path and baked into the unit instead of being rejected, and declining the suggested data location now offers the current directory rather than erroring out. See [Autostart](https://docs.runwisp.com/operations/autostart/).
 
 ### Fixed
 

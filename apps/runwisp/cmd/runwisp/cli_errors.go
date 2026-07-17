@@ -9,11 +9,60 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/fang"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/textutil"
 )
+
+// handleCLIError is the fang error handler, and it owns *every* CLI error path
+// so the whole surface shares one branded look. RunWisp's hand-authored errors
+// carry multi-line, bulleted guidance (CHAP, port conflicts, cert pins, unknown
+// tasks, …); cobra contributes flat usage errors (unknown command / unknown
+// flag). Both route through renderError — fang's styled default is never called,
+// so its capitalize-first-word / force-trailing-period quirk never applies and
+// our lowercase title convention holds. The fang.Styles argument is ignored;
+// renderError draws from the shared brand hex constants instead.
+func handleCLIError(w io.Writer, _ fang.Styles, err error) {
+	if ufe, ok := isUserFacing(err); ok {
+		renderError(w, ufe.title, ufe.details, "")
+		return
+	}
+	// A --help hint only makes sense for cobra usage errors; appending it to
+	// e.g. a config parse failure would send the operator down the wrong path.
+	hint := ""
+	if isUsageError(err) {
+		hint = "Run 'runwisp --help' for usage."
+	}
+	renderError(w, err.Error(), "", hint)
+}
+
+// usageErrorMarkers are the stable substrings cobra uses to phrase the errors
+// that mean "you invoked the command wrong" — the class for which a --help hint
+// is genuinely useful. Matching on the message is the only seam cobra gives us:
+// these errors are plain *errors.errorString values with no distinguishing type.
+var usageErrorMarkers = []string{
+	"unknown command",
+	"unknown flag",
+	"unknown shorthand flag",
+	"flag needs an argument",
+	"invalid argument",
+	"required flag",
+	"accepts ",
+}
+
+// isUsageError reports whether err is a cobra usage error, so handleCLIError can
+// append the "run --help" hint only where it points somewhere useful.
+func isUsageError(err error) bool {
+	msg := err.Error()
+	for _, marker := range usageErrorMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
 
 // daemonNotRunningHint is appended to "daemon not reachable" errors so a
 // failed connection never dead-ends — the operator learns the next command
@@ -53,28 +102,38 @@ func isUserFacing(err error) (*userFacingError, bool) {
 	return nil, false
 }
 
-// renderUserFacingError writes a styled multi-line error block to w.
-// Falls back to plain ASCII when the destination is not a terminal or when
-// styling is disabled by the user's environment.
-func renderUserFacingError(w io.Writer, e *userFacingError) {
-	titleStyle := lipgloss.NewStyle().
+// renderError writes a branded error block to w: an "ERROR" badge (matching
+// fang's badge aesthetic — bold, dark text on the brand red) followed by the
+// title, then the optional bulleted details, then an optional dim hint line.
+// It is the single renderer behind every CLI error path (cobra/generic,
+// userFacingError, and cmd_password). Kept in lipgloss v1 so the badge colors
+// come from the same shared brand hex constants as the rest of the CLI;
+// lipgloss falls back to plain ASCII when the destination is not a terminal or
+// styling is disabled by the environment (NO_COLOR, non-TTY).
+func renderError(w io.Writer, title, details, hint string) {
+	badge := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.AdaptiveColor{Light: "1", Dark: "9"})
-	labelStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.AdaptiveColor{Light: "1", Dark: "9"})
+		Foreground(lipgloss.Color(brandErrorFgHex)).
+		Background(lipgloss.Color(brandErrorHex)).
+		Padding(0, 1).
+		Render("ERROR")
+	fmt.Fprintln(w, badge+" "+title)
 
-	title := titleStyle.Render("Error: ") + e.title
-	fmt.Fprintln(w, title)
-	if e.details != "" {
+	if details != "" {
 		fmt.Fprintln(w)
-		for _, line := range strings.Split(strings.TrimRight(e.details, "\n"), "\n") {
+		bullet := lipgloss.NewStyle().Foreground(lipgloss.Color(brandErrorHex)).Render("•")
+		for _, line := range strings.Split(strings.TrimRight(details, "\n"), "\n") {
 			if strings.HasPrefix(line, "  - ") {
-				fmt.Fprintln(w, "  "+labelStyle.Render("•")+" "+strings.TrimPrefix(line, "  - "))
+				fmt.Fprintln(w, "  "+bullet+" "+strings.TrimPrefix(line, "  - "))
 				continue
 			}
 			fmt.Fprintln(w, line)
 		}
+	}
+
+	if hint != "" {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, lipgloss.NewStyle().Faint(true).Render(hint))
 	}
 }
 

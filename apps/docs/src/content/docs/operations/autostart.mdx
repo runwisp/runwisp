@@ -99,13 +99,17 @@ the data dir. Here's how `runwisp service install` works them out:
   `~/.local/bin/runwisp`. Override with `--binary` for Ansible/Nix.
 - **Data dir**: an absolute
   [`--data`](/configuration/daemon/#cli-flags-config-data-directory--listen-address)
-  is accepted silently. A relative
-  `--data` is rejected with the resolved absolute path as a hint — a
-  boot-launched unit has `cwd=/` and would otherwise silently miss the
-  data. The default `./.runwisp` is upgraded interactively: if a DB already
-  exists there, the installer asks whether to keep using it (default
+  is accepted silently. A relative `--data` is resolved to its absolute
+  form and baked into the unit — a boot-launched unit has `cwd=/`, so the
+  absolute path is what makes it work. That means `runwisp service install
+--data .` installs the daemon **right here**, storing its data in the
+  current directory. The one hard limit is durability: a path under `/tmp`,
+  `/var/tmp`, or `/dev/shm` is still rejected because it won't survive a
+  reboot. The default `./.runwisp` is upgraded interactively: if a DB
+  already exists there, the installer asks whether to keep using it (default
   yes); otherwise it offers `$XDG_DATA_HOME/runwisp` (or
-  `~/.local/share/runwisp` if XDG is unset).
+  `~/.local/share/runwisp` if XDG is unset), and if you decline that it
+  offers the current directory before giving up.
 - **Config**: same resolution as the daemon. When both
   `~/.config/runwisp/runwisp.toml` and `./runwisp.toml` exist, the
   XDG location wins.

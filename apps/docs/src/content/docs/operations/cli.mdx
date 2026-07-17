@@ -14,7 +14,10 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 subcommand and it does the friendly thing — attaches to a running daemon,
 or scaffolds a config and starts one. Everything else is a verb:
 `validate`, `reload`, `exec`, `import`, and so on. This page is the full
-list; each command also prints its own `--help`.
+list; each command also prints its own `--help`. Help pages and error
+messages are colored when you're on a terminal and plain otherwise —
+piping to a file, or setting `NO_COLOR`, gets you clean text with no
+escape codes.
 
 ## Global flags
 
