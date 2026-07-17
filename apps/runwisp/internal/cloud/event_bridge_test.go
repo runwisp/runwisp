@@ -220,6 +220,31 @@ func TestEventBridge_HandleRunEvent_EmitsServiceStatusByBareName(t *testing.T) {
 	assert.Equal(t, 2, msg.DesiredInstances)
 }
 
+// EmitAllServiceStatus pushes one service:status per registered service (the
+// reconnect / resend-ticker refresh); non-service tasks are skipped by
+// ListServiceTasks.
+func TestEventBridge_EmitAllServiceStatus_PushesEveryService(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{
+		"heartbeat": {Name: "heartbeat", Kind: model.KindService},
+		"worker":    {Name: "worker", Kind: model.KindService},
+	})
+	runner := h.taskManager.(*fakeTaskRunner)
+	runner.snapshot = model.ServiceSnapshot{State: "running", DesiredInstances: 1, RunningInstances: 1}
+	runner.snapshotOK = true
+
+	var sent []any
+	b := NewEventBridge(
+		events.NewEventBus(),
+		h,
+		NewExecutionTracker(),
+		func(msg any) error { sent = append(sent, msg); return nil },
+		func() {},
+	)
+
+	b.EmitAllServiceStatus()
+	assert.Len(t, sent, 2, "one service:status per registered service")
+}
+
 func TestEventBridge_HandleRunEvent_IgnoresWrongData(t *testing.T) {
 	b := newTestBridge(newTestInboundHandler())
 	// Data is not events.RunEvent — must return without panicking.

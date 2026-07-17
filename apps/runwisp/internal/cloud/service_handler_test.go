@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
@@ -320,6 +321,84 @@ func TestHandleServiceApply_MergeAppliesOverriddenScript(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "new.sh", shell.Script)
 	assert.Equal(t, "/srv/app", task.WorkingDir, "TOML-only field must survive a script override")
+}
+
+// A merge overlays the present restart knobs (restartDelay, backoffResetAfter →
+// HealthyAfter, restartBackoff) onto the live definition; absent/zero fields are
+// left as they were.
+func TestHandleServiceApply_MergeOverlaysRestartFields(t *testing.T) {
+	backoff := protocol.ServiceRestartBackoffExponential
+	existing := &model.Task{
+		Name:          "heartbeat",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		ExecutionDef:  &model.ShellExecution{Script: "heartbeat.sh"},
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:            "heartbeat",
+			TaskName:          "heartbeat",
+			RestartDelay:      2000,
+			BackoffResetAfter: 60000,
+			RestartBackoff:    &backoff,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, runner.upserted, 1)
+	task := runner.upserted[0]
+	assert.Equal(t, 2*time.Second, task.RestartDelay)
+	assert.Equal(t, time.Minute, task.HealthyAfter)
+	assert.Equal(t, "exponential", task.RestartBackoff)
+}
+
+// An unparseable script override on the merge path surfaces as a validation
+// error (and propagates out of HandleServiceApply) rather than clobbering the
+// live definition.
+func TestHandleServiceApply_MergeInvalidScriptOverrideRejected(t *testing.T) {
+	existing := &model.Task{
+		Name:          "heartbeat",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		ExecutionDef:  &model.ShellExecution{Script: "heartbeat.sh"},
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{TaskID: "heartbeat", Script: json.RawMessage("not-json")},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+}
+
+// A script override whose execution type has no available backend is a conflict
+// on the merge path, mirroring the build path.
+func TestHandleServiceApply_MergeUnavailableBackendRejected(t *testing.T) {
+	existing := &model.Task{
+		Name:          "heartbeat",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		ExecutionDef:  &model.ShellExecution{Script: "heartbeat.sh"},
+	}
+	h := newDispatchHandler(executor.Availability{}, map[string]*model.Task{"heartbeat": existing})
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{TaskID: "heartbeat", Script: shellScript(t, "new.sh")},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
 }
 
 // HandleServiceControl resolves a synced TOML service by its bare name and a
