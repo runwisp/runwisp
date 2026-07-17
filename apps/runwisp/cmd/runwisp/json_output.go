@@ -1,0 +1,227 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"encoding/json"
+	"io"
+	"time"
+
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime/retry"
+)
+
+// jsonSchemaVersion identifies the shape of every --json document RunWisp's
+// read commands emit. Agents branch on it to trust the fields below. It is a
+// compatibility promise: once shipped, only additive changes are allowed —
+// bump it if a field is ever removed or its meaning changes.
+const jsonSchemaVersion = 1
+
+// writeJSON marshals v as an indented JSON document with a trailing newline.
+// It is the single stdout sink for every --json code path, so stdout stays a
+// single valid JSON document and nothing else.
+func writeJSON(w io.Writer, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(b); err != nil {
+		return err
+	}
+	_, err = io.WriteString(w, "\n")
+	return err
+}
+
+// taskKindString normalizes model.KindTask ("") to the explicit "task" so the
+// JSON always carries a concrete kind an agent can switch on.
+func taskKindString(k model.TaskKind) string {
+	if k.IsService() {
+		return string(model.KindService)
+	}
+	return "task"
+}
+
+// --- status ---------------------------------------------------------------
+
+// statusJSONDoc is the machine-readable form of `runwisp status`. It is the
+// live snapshot: daemon reachability, a system summary, and every task with
+// its last run. See statusTaskJSON / lastRunJSON.
+type statusJSONDoc struct {
+	SchemaVersion    int              `json:"schema_version"`
+	Healthy          bool             `json:"healthy"`
+	Error            string           `json:"error,omitempty"`
+	Version          string           `json:"version,omitempty"`
+	Port             int              `json:"port,omitempty"`
+	ExternalURL      string           `json:"external_url,omitempty"`
+	SchedulingActive bool             `json:"scheduling_active"`
+	ConfigStale      bool             `json:"config_stale"`
+	ResolvedTimezone string           `json:"resolved_timezone,omitempty"`
+	TimezoneSource   string           `json:"timezone_source,omitempty"`
+	System           *statusSystem    `json:"system,omitempty"`
+	Tasks            []statusTaskJSON `json:"tasks"`
+}
+
+// statusSystem is a curated subset of model.SystemStats — the identity and
+// resource fields an operator or agent branches on, without the churny
+// percentages that would make golden output non-deterministic.
+type statusSystem struct {
+	Version  string `json:"version"`
+	Uptime   string `json:"uptime"`
+	CPUCores int    `json:"cpu_cores"`
+	Host     string `json:"host"`
+	OS       string `json:"os"`
+	Arch     string `json:"arch"`
+	Name     string `json:"name"`
+	WorkDir  string `json:"work_dir"`
+}
+
+type statusTaskJSON struct {
+	Name       string       `json:"name"`
+	Kind       string       `json:"kind"`
+	Cron       string       `json:"cron,omitempty"`
+	APITrigger bool         `json:"api_trigger"`
+	NextRunAt  *string      `json:"next_run_at,omitempty"`
+	LastRun    *lastRunJSON `json:"last_run"`
+}
+
+// lastRunJSON is the most recent run of a task. failed/missed are precomputed
+// so an agent never has to know RunWisp's end-reason taxonomy: failed reuses
+// retry.IsFailureReason, missed is the single ReasonMissed value.
+type lastRunJSON struct {
+	ID          string     `json:"id"`
+	Status      string     `json:"status"`
+	EndReason   *string    `json:"end_reason,omitempty"`
+	ExitCode    int        `json:"exit_code"`
+	TriggeredBy string     `json:"triggered_by"`
+	StartAt     *time.Time `json:"start_at,omitempty"`
+	EndAt       *time.Time `json:"end_at,omitempty"`
+	DurationMS  *int64     `json:"duration_ms,omitempty"`
+	Failed      bool       `json:"failed"`
+	Missed      bool       `json:"missed"`
+}
+
+func newStatusSystem(s *model.SystemStats) *statusSystem {
+	if s == nil {
+		return nil
+	}
+	return &statusSystem{
+		Version:  s.Version,
+		Uptime:   s.Uptime,
+		CPUCores: s.CPUCores,
+		Host:     s.Host,
+		OS:       s.OS,
+		Arch:     s.Arch,
+		Name:     s.Name,
+		WorkDir:  s.WorkDir,
+	}
+}
+
+func newStatusTaskJSON(tr model.TaskResponse, last *model.Run) statusTaskJSON {
+	st := statusTaskJSON{
+		Name:       tr.Name,
+		Kind:       taskKindString(tr.Kind),
+		Cron:       tr.Cron,
+		APITrigger: tr.APITrigger,
+		NextRunAt:  tr.NextRunAt,
+	}
+	if last != nil {
+		lr := newLastRunJSON(last)
+		st.LastRun = &lr
+	}
+	return st
+}
+
+func newLastRunJSON(r *model.Run) lastRunJSON {
+	lr := lastRunJSON{
+		ID:          r.ID,
+		Status:      string(r.Status),
+		ExitCode:    r.ExitCode,
+		TriggeredBy: string(r.TriggeredBy),
+		StartAt:     r.StartAt,
+		EndAt:       r.EndAt,
+	}
+	if r.EndReason != nil {
+		reason := string(*r.EndReason)
+		lr.EndReason = &reason
+		lr.Failed = retry.IsFailureReason(*r.EndReason)
+		lr.Missed = *r.EndReason == model.ReasonMissed
+	}
+	if r.StartAt != nil && r.EndAt != nil {
+		ms := r.EndAt.Sub(*r.StartAt).Milliseconds()
+		lr.DurationMS = &ms
+	}
+	return lr
+}
+
+// --- list ------------------------------------------------------------------
+
+// listJSONDoc is the machine-readable form of `runwisp list`. Like the human
+// table it is offline and config-only — no last-run state (that lives in
+// `status --json`, which talks to the daemon).
+type listJSONDoc struct {
+	SchemaVersion int            `json:"schema_version"`
+	Error         string         `json:"error,omitempty"`
+	Tasks         []listTaskJSON `json:"tasks"`
+}
+
+type listTaskJSON struct {
+	Name          string `json:"name"`
+	Kind          string `json:"kind"`
+	Schedule      string `json:"schedule"`
+	Instances     int    `json:"instances,omitempty"`
+	MaxConcurrent int    `json:"max_concurrent"`
+	OnOverlap     string `json:"on_overlap"`
+	APITrigger    bool   `json:"api_trigger"`
+	Description   string `json:"description,omitempty"`
+}
+
+func newListTaskJSON(t model.Task) listTaskJSON {
+	lt := listTaskJSON{
+		Name:          t.Name,
+		Kind:          taskKindString(t.Kind),
+		Schedule:      t.Cron,
+		MaxConcurrent: t.MaxConcurrent,
+		OnOverlap:     string(t.OnOverlap),
+		APITrigger:    t.APITrigger,
+		Description:   t.Description,
+	}
+	if t.Kind.IsService() {
+		lt.Instances = t.Instances
+	}
+	return lt
+}
+
+// --- validate --------------------------------------------------------------
+
+// validateJSONDoc is the machine-readable form of `runwisp validate`. valid is
+// the single field an agent needs to branch on; errors/warnings carry the
+// human messages. On failure the document is still emitted and the command
+// still exits non-zero.
+type validateJSONDoc struct {
+	SchemaVersion  int           `json:"schema_version"`
+	Valid          bool          `json:"valid"`
+	ConfigPath     string        `json:"config_path"`
+	Timezone       string        `json:"timezone,omitempty"`
+	TimezoneSource string        `json:"timezone_source,omitempty"`
+	Tasks          int           `json:"tasks"`
+	Services       int           `json:"services"`
+	Warnings       []messageJSON `json:"warnings"`
+	Errors         []messageJSON `json:"errors"`
+}
+
+// messageJSON is a validation error or advisory warning. Location is reserved
+// (always empty today): the config layer bakes task/field/line into the
+// message string, so there is no structured location to surface yet.
+type messageJSON struct {
+	Message  string `json:"message"`
+	Location string `json:"location,omitempty"`
+}
+
+func messagesFromStrings(ss []string) []messageJSON {
+	out := make([]messageJSON, 0, len(ss))
+	for _, s := range ss {
+		out = append(out, messageJSON{Message: s})
+	}
+	return out
+}

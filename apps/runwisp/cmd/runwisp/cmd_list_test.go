@@ -5,40 +5,14 @@ package main
 
 import (
 	"bytes"
-	"io"
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// withCapturedStdout runs fn while stdout is redirected to a pipe; returns
-// what was written. Used for commands that print straight to os.Stdout.
-func withCapturedStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stdout = w
-
-	var wg sync.WaitGroup
-	var buf bytes.Buffer
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(&buf, r)
-	}()
-
-	fn()
-
-	require.NoError(t, w.Close())
-	wg.Wait()
-	os.Stdout = old
-	return buf.String()
-}
 
 const minimalCfgEmpty = `# minimal runwisp.toml with no tasks
 `
@@ -72,19 +46,21 @@ func writeConfig(t *testing.T, body string) string {
 	return path
 }
 
+func runListString(t *testing.T, f Flags) string {
+	t.Helper()
+	var buf bytes.Buffer
+	require.NoError(t, runList(&buf, f, false))
+	return buf.String()
+}
+
 func TestRunList_NoTasks(t *testing.T) {
 	f := Flags{CfgFile: writeConfig(t, minimalCfgEmpty)}
-	out := withCapturedStdout(t, func() {
-		require.NoError(t, runList(f))
-	})
-	assert.Contains(t, out, "No tasks configured")
+	assert.Contains(t, runListString(t, f), "No tasks configured")
 }
 
 func TestRunList_OneCronTask(t *testing.T) {
 	f := Flags{CfgFile: writeConfig(t, minimalCfgOneTask)}
-	out := withCapturedStdout(t, func() {
-		require.NoError(t, runList(f))
-	})
+	out := runListString(t, f)
 	assert.Contains(t, out, "hello")
 	assert.Contains(t, out, "* * * * *")
 	assert.Contains(t, out, "say hello")
@@ -92,9 +68,7 @@ func TestRunList_OneCronTask(t *testing.T) {
 
 func TestRunList_ServiceTaskShowsInstances(t *testing.T) {
 	f := Flags{CfgFile: writeConfig(t, minimalCfgServiceTask)}
-	out := withCapturedStdout(t, func() {
-		require.NoError(t, runList(f))
-	})
+	out := runListString(t, f)
 	assert.Contains(t, out, "worker")
 	assert.Contains(t, out, "(service x3)")
 	assert.Contains(t, out, "yes", "api_trigger=true renders 'yes'")
@@ -102,17 +76,51 @@ func TestRunList_ServiceTaskShowsInstances(t *testing.T) {
 
 func TestRunList_LongDescriptionTruncated(t *testing.T) {
 	f := Flags{CfgFile: writeConfig(t, minimalCfgLongDescription)}
-	out := withCapturedStdout(t, func() {
-		require.NoError(t, runList(f))
-	})
-	assert.Contains(t, out, "...")
+	assert.Contains(t, runListString(t, f), "...")
 }
 
 func TestRunList_MissingConfigFile(t *testing.T) {
 	t.Parallel()
 	f := Flags{CfgFile: filepath.Join(t.TempDir(), "absent.toml")}
 
-	err := runList(f)
+	var buf bytes.Buffer
+	err := runList(&buf, f, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load")
+}
+
+func TestRunList_JSONServiceAndCron(t *testing.T) {
+	body := minimalCfgOneTask + minimalCfgServiceTask
+	f := Flags{CfgFile: writeConfig(t, body)}
+
+	var buf bytes.Buffer
+	require.NoError(t, runList(&buf, f, true))
+
+	var doc listJSONDoc
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+	assert.Equal(t, jsonSchemaVersion, doc.SchemaVersion)
+	require.Len(t, doc.Tasks, 2)
+
+	byName := map[string]listTaskJSON{}
+	for _, tk := range doc.Tasks {
+		byName[tk.Name] = tk
+	}
+	assert.Equal(t, "task", byName["hello"].Kind)
+	assert.Equal(t, "* * * * *", byName["hello"].Schedule)
+	assert.Equal(t, "service", byName["worker"].Kind)
+	assert.Equal(t, 3, byName["worker"].Instances)
+	assert.True(t, byName["worker"].APITrigger)
+}
+
+func TestRunList_JSONMissingConfigEmitsErrorDoc(t *testing.T) {
+	f := Flags{CfgFile: filepath.Join(t.TempDir(), "absent.toml")}
+
+	var buf bytes.Buffer
+	err := runList(&buf, f, true)
+	require.Error(t, err)
+
+	var doc listJSONDoc
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc), "stdout must still be valid JSON on failure")
+	assert.Equal(t, jsonSchemaVersion, doc.SchemaVersion)
+	assert.NotEmpty(t, doc.Error)
 }

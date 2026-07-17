@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "healthy": true,
+  "version": "0.12.0",
+  "port": 9477,
+  "scheduling_active": true,
+  "config_stale": false,
+  "resolved_timezone": "UTC",
+  "timezone_source": "config",
+  "system": {
+    "version": "0.12.0",
+    "uptime": "1h2m3s",
+    "cpu_cores": 8,
+    "host": "test-host",
+    "os": "linux",
+    "arch": "amd64",
+    "name": "runwisp",
+    "work_dir": "/srv"
+  },
+  "tasks": [
+    {
+      "name": "backup",
+      "kind": "task",
+      "cron": "0 3 * * *",
+      "api_trigger": false,
+      "next_run_at": "2026-07-16T03:00:00Z",
+      "last_run": {
+        "id": "01JZZBACKUP0000000000000000",
+        "status": "ended",
+        "end_reason": "failed",
+        "exit_code": 1,
+        "triggered_by": "cron",
+        "start_at": "2026-07-15T03:00:00Z",
+        "end_at": "2026-07-15T03:00:42Z",
+        "duration_ms": 42000,
+        "failed": true,
+        "missed": false
+      }
+    },
+    {
+      "name": "web",
+      "kind": "service",
+      "api_trigger": true,
+      "last_run": {
+        "id": "01JZZWEB00000000000000000000",
+        "status": "running",
+        "exit_code": 0,
+        "triggered_by": "service",
+        "start_at": "2026-07-15T03:00:00Z",
+        "failed": false,
+        "missed": false
+      }
+    }
+  ]
+}

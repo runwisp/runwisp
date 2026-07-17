@@ -11,15 +11,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var validateJSON bool
+
 var validateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "Validate runwisp.toml without starting anything",
 	Long:  `Parses and validates the configuration file. Prints a summary on success or a structured error on failure. Useful for CI pipelines and pre-commit checks.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runValidate(cmd.OutOrStdout(), flags)
+		return runValidate(cmd.OutOrStdout(), flags, validateJSON)
 	},
 	SilenceErrors: true,
 	SilenceUsage:  true,
+}
+
+func init() {
+	validateCmd.Flags().BoolVar(&validateJSON, "json", false, "emit a machine-readable JSON document to stdout instead of the human summary")
 }
 
 // runValidate loads and validates f.CfgFile. On success it prints a
@@ -28,18 +34,30 @@ var validateCmd = &cobra.Command{
 // errors. The summary covers the values an operator most often wants to
 // double-check after editing the file: task / service counts and the
 // resolved scheduler timezone (config-pinned vs system-detected).
-func runValidate(w io.Writer, f Flags) error {
+//
+// With asJSON, w receives a single validateJSONDoc instead (valid=false on
+// failure, still returning the error so the exit code stays non-zero).
+func runValidate(w io.Writer, f Flags, asJSON bool) error {
 	cfg, err := config.Load(f.CfgFile)
 	if err != nil {
+		if asJSON {
+			// Emit the error document to stdout so an agent never has to parse
+			// text to know validation failed; the returned error still drives a
+			// non-zero exit (and its human copy to stderr via main.go).
+			if werr := writeJSON(w, validateJSONDoc{
+				SchemaVersion: jsonSchemaVersion,
+				Valid:         false,
+				ConfigPath:    f.CfgFile,
+				Warnings:      messagesFromStrings(nil),
+				Errors:        []messageJSON{{Message: err.Error()}},
+			}); werr != nil {
+				return werr
+			}
+		}
 		return &userFacingError{
 			title:   fmt.Sprintf("%s is not valid", f.CfgFile),
 			details: err.Error(),
 		}
-	}
-
-	tz := cfg.Scheduler.Timezone
-	if cfg.Scheduler.Source != "" {
-		tz = fmt.Sprintf("%s (%s)", tz, cfg.Scheduler.Source)
 	}
 
 	tasks, services := 0, 0
@@ -49,6 +67,25 @@ func runValidate(w io.Writer, f Flags) error {
 		} else {
 			tasks++
 		}
+	}
+
+	if asJSON {
+		return writeJSON(w, validateJSONDoc{
+			SchemaVersion:  jsonSchemaVersion,
+			Valid:          true,
+			ConfigPath:     f.CfgFile,
+			Timezone:       cfg.Scheduler.Timezone,
+			TimezoneSource: cfg.Scheduler.Source,
+			Tasks:          tasks,
+			Services:       services,
+			Warnings:       messagesFromStrings(config.Warnings(cfg)),
+			Errors:         []messageJSON{},
+		})
+	}
+
+	tz := cfg.Scheduler.Timezone
+	if cfg.Scheduler.Source != "" {
+		tz = fmt.Sprintf("%s (%s)", tz, cfg.Scheduler.Source)
 	}
 
 	fmt.Fprintf(w, "✓ %s is valid.\n", f.CfgFile)
