@@ -18,11 +18,12 @@ import (
 )
 
 // TestSpawnedDaemonNotServiceManaged guards the systemd-detection leak: a daemon
-// that runwisp spawns itself must never self-report as service-managed just
-// because the launching shell carried INVOCATION_ID (set by systemd for every
-// unit, including the terminal emulator). The marker is visible in the quit
-// dialog — a falsely-managed daemon drops the "Shut Down" option and only offers
-// "Quit TUI" with a `runwisp stop` hint.
+// must never self-report as service-managed just because the launching shell
+// carried INVOCATION_ID (set by systemd for every unit and inherited by the
+// terminal emulator and shell). Detection keys solely on RUNWISP_SERVICE_MANAGED,
+// which only our generated unit files set, so INVOCATION_ID is ignored outright.
+// The marker is visible in the quit dialog — a falsely-managed daemon drops the
+// "Shut Down" option and only offers "Quit TUI" with a `runwisp stop` hint.
 func TestSpawnedDaemonNotServiceManaged(t *testing.T) {
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
@@ -43,7 +44,7 @@ func TestSpawnedDaemonNotServiceManaged(t *testing.T) {
 
 	session := startLocalTUI(t, projectDir, binaryPath, configPath, dataDir, port,
 		// Simulate a systemd-scoped terminal leaking INVOCATION_ID into the
-		// environment runwisp spawns the daemon from.
+		// environment; detection must ignore it and report ServiceManaged=false.
 		"INVOCATION_ID=5d10ec423bcf449789f2dfd36760a4ab")
 
 	session.press(t, "q")

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`runwisp exec` no longer exits before a just-triggered run's output appears.** A freshly triggered run is handed back before its record is durably persisted, so the log stream could momentarily find no run and close empty; `exec` treated that as "the run produced nothing" and exited without printing its output. It now retries until the run becomes streamable.
+- **A plain `runwisp daemon` is no longer misreported as service-managed.** Detection dropped the unreliable systemd `INVOCATION_ID` heuristic (inherited by every process in a desktop terminal) and keys solely on the marker our generated units set, so the TUI quit dialog and cloud self-restart no longer treat a hand-launched daemon as init-managed. See [Autostart](https://docs.runwisp.com/operations/autostart/).
 
 ## [0.12.0] - 2026-07-08
 

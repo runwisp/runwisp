@@ -605,9 +605,8 @@ func killProcessGroup(pid int, signal syscall.Signal) error {
 // breaks tests which assert on clean stderr. Use a throwaway temp dir in
 // that case.
 func subprocEnv(extra ...string) []string {
-	// INVOCATION_ID / RUNWISP_SERVICE_MANAGED leak in when the CI runner itself
-	// is a systemd unit; spawned daemons would then self-detect as service-
-	// managed. Strip them so e2e behavior is host-independent. (Production
+	// A stray RUNWISP_SERVICE_MANAGED would make spawned daemons self-detect as
+	// service-managed. Strip it so e2e behavior is host-independent. (Production
 	// spawns do the same via autostart.WithoutServiceEnv.)
 	base := autostart.WithoutServiceEnv(os.Environ())
 	env := make([]string, 0, len(base)+len(extra)+1)
