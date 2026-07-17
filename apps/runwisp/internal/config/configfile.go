@@ -41,7 +41,7 @@ func renderComposeStarter(composeFilename, alias string) string {
 	return r.Replace(composeStarterConfig)
 }
 
-const starterConfig = `# runwisp.toml
+const starterConfig = SchemaDirective + `# runwisp.toml
 # Docs: https://docs.runwisp.com/configuration/overview/
 
 [tasks.hello]
@@ -59,7 +59,7 @@ run = "echo hello from runwisp"
 # run       = "node ./worker.js"
 `
 
-const composeStarterConfig = `# runwisp.toml
+const composeStarterConfig = SchemaDirective + `# runwisp.toml
 # Docs: https://docs.runwisp.com/configuration/compose/
 #
 # RunWisp detected {{compose}} next to this file and scaffolded a

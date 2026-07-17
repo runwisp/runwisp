@@ -180,7 +180,7 @@ func TestFollowRun_PollsWhenStreamEndsWithoutDone(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	code, err := followRun(client, "backup", "run-1")
+	code, err := followRun(client, "backup", "run-1", os.Stdout)
 	require.NoError(t, err)
 	assert.Equal(t, 4, code, "exit code must come from the polled terminal run")
 }
@@ -231,7 +231,7 @@ func TestFollowRun_ReconnectsAndPrintsTailWhenStreamDropsWithoutDone(t *testing.
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	code, err := followRun(client, "backup", "run-1")
+	code, err := followRun(client, "backup", "run-1", os.Stdout)
 	require.NoError(t, wOut.Close())
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)

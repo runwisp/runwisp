@@ -67,6 +67,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
     {
         label: "Operations",
         slugs: [
+            "operations/agents",
             "operations/auth",
             "operations/autostart",
             "operations/logging",
@@ -116,6 +117,7 @@ export const GET: APIRoute = async () => {
     lines.push(
         "## Optional",
         "",
+        `- [runwisp.toml JSON Schema](${SITE}/config.schema.json): Machine-readable schema (draft 2020-12) for the config file; also \`runwisp schema\`. Editors read it via a \`#:schema\` directive.`,
         `- [OpenAPI schema](${SITE}/openapi.json): Full REST API specification (OpenAPI 3.1, JSON).`,
         "",
     );

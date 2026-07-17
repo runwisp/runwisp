@@ -161,6 +161,7 @@ export default defineConfig({
                     label: "Operations",
                     items: [
                         { label: "CLI reference", slug: "operations/cli" },
+                        { label: "Driving with an AI agent", slug: "operations/agents" },
                         { label: "Auth", slug: "operations/auth" },
                         { label: "Autostart", slug: "operations/autostart" },
                         { label: "Reload", slug: "operations/reload" },

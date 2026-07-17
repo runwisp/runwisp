@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.runwisp.com/config.schema.json",
+  "title": "runwisp.toml",
+  "description": "Configuration for RunWisp, a cron daemon + process supervisor. runwisp.toml is the sole source of truth for task definitions; the REST API and Web UI are read-only + trigger. Full reference: https://docs.runwisp.com/agents/reference.md",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "scheduler": { "$ref": "#/$defs/scheduler" },
+    "storage": { "$ref": "#/$defs/storage" },
+    "daemon": { "$ref": "#/$defs/daemon" },
+    "defaults": { "$ref": "#/$defs/defaults" },
+    "tasks": {
+      "type": "object",
+      "description": "Run-to-exit units, keyed by task name. Cron-driven or manual.",
+      "additionalProperties": { "$ref": "#/$defs/task" }
+    },
+    "services": {
+      "type": "object",
+      "description": "Long-running units, keyed by service name. restart=always is forced.",
+      "additionalProperties": { "$ref": "#/$defs/service" }
+    },
+    "compose": {
+      "type": "object",
+      "description": "Import docker-compose services as observable tasks, keyed by alias.",
+      "additionalProperties": { "$ref": "#/$defs/composeAlias" }
+    },
+    "notify": { "$ref": "#/$defs/notify" },
+    "notifier": {
+      "type": "array",
+      "description": "Outbound notification channels ([[notifier]] blocks).",
+      "items": { "$ref": "#/$defs/notifier" }
+    },
+    "notification_route": {
+      "type": "array",
+      "description": "Rules routing events to notifiers ([[notification_route]] blocks).",
+      "items": { "$ref": "#/$defs/notificationRoute" }
+    }
+  },
+  "$defs": {
+    "duration": {
+      "type": "string",
+      "description": "Go duration string, e.g. 300ms, 5s, 10m, 1h30m. Retention durations also accept d/w.",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h|d|w)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h|d|w))*$"
+    },
+    "byteSize": {
+      "type": "string",
+      "description": "Byte size, e.g. 100mb, 2gb, 512kb. 0 means no cap.",
+      "pattern": "^[0-9]+(\\.[0-9]+)?\\s*([bBkKmMgGtT][iI]?[bB]?)?$"
+    },
+    "stopSignal": {
+      "type": "string",
+      "description": "Signal used to stop a process.",
+      "enum": ["SIGTERM", "SIGINT", "SIGQUIT", "SIGHUP", "SIGKILL", "SIGUSR1", "SIGUSR2"]
+    },
+    "logOnFull": {
+      "type": "string",
+      "description": "Behavior when a run's log hits log_max_size.",
+      "enum": ["drop_new", "drop_old", "kill_task"]
+    },
+    "onOverlap": {
+      "type": "string",
+      "description": "What to do when a run is triggered while one is already active.",
+      "enum": ["queue", "skip", "terminate"]
+    },
+    "backoff": {
+      "type": "string",
+      "description": "Backoff curve between attempts.",
+      "enum": ["constant", "linear", "exponential"]
+    },
+    "exitCodes": {
+      "type": "array",
+      "description": "Exit codes treated as success (0..255).",
+      "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+    },
+    "envMap": {
+      "type": "object",
+      "description": "Environment variables. Keys match ^[A-Za-z_][A-Za-z0-9_]*$.",
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "type": "string" }
+    },
+    "secretsMap": {
+      "type": "object",
+      "description": "Secret values merged into the task env; never shown in API/UI.",
+      "additionalProperties": { "type": "string" }
+    },
+    "scheduler": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timezone": {
+          "type": "string",
+          "description": "IANA timezone for cron evaluation when a task pins none. Default: host system zone."
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "description": "Daemon-wide log disk safeguards.",
+      "additionalProperties": false,
+      "properties": {
+        "max_size": { "$ref": "#/$defs/byteSize", "description": "Hard cap on total log bytes across all tasks. 0 = no cap." },
+        "min_free_space": { "$ref": "#/$defs/byteSize", "description": "Stop accepting log lines when partition free space drops below this. 0 = no check." }
+      }
+    },
+    "daemon": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow_cloud_dispatch": { "type": "boolean", "default": false, "description": "Accept peer-dispatched ad-hoc runs (opt-in; one-shot, never edits TOML)." },
+        "shutdown_timeout": { "$ref": "#/$defs/duration", "description": "SIGTERM→SIGKILL drain budget for in-flight runs on shutdown. Default 10s." },
+        "external_url": { "type": "string", "description": "Public Web UI base for notification deep-links; absolute http(s) with host." },
+        "metrics_enabled": { "type": "boolean", "default": false, "description": "Master switch for /metrics." },
+        "metrics_listen": { "type": "string", "description": "Dedicated metrics listener host:port; requires metrics_enabled=true." },
+        "tls": { "type": "string", "description": "TLS mode for the HTTP server." },
+        "tls_cert": { "type": "string", "description": "Path to the TLS certificate." },
+        "tls_key": { "type": "string", "description": "Path to the TLS private key." },
+        "include": {
+          "type": "array",
+          "description": "Glob(s) of extra TOML files merged at load. Root config only, no nesting.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Inherited by every task and service; overridable per unit.",
+      "additionalProperties": false,
+      "properties": {
+        "timeout": { "$ref": "#/$defs/duration", "description": "Per-attempt wall-clock cap (tasks only). Unset = no timeout." },
+        "jitter": { "$ref": "#/$defs/duration", "description": "Start-spread window inherited by cron tasks (tasks only)." },
+        "shell": { "type": "string", "default": "/bin/sh", "description": "Interpreter for run scripts (absolute path)." },
+        "stop_signal": { "$ref": "#/$defs/stopSignal", "default": "SIGTERM" },
+        "exit_codes": { "$ref": "#/$defs/exitCodes", "default": [0] },
+        "log_max_size": { "$ref": "#/$defs/byteSize", "description": "Per-run log cap. Default 100mb." },
+        "log_on_full": { "$ref": "#/$defs/logOnFull", "default": "drop_old" },
+        "keep_runs": { "type": "integer", "minimum": 1, "maximum": 1000000, "description": "Row-count retention." },
+        "keep_for": { "$ref": "#/$defs/duration", "description": "Age retention; positive." },
+        "healthy_after": { "$ref": "#/$defs/duration", "description": "Service uptime counted as healthy (services only). Default 60s." },
+        "start_retries": { "type": "integer", "minimum": 0, "description": "Consecutive fast failures before a service instance goes FATAL (services only). Default 3." },
+        "notify_on_missed": { "type": "boolean", "default": true, "description": "Alert on missed scheduled runs; false silences daemon-wide." },
+        "env": { "$ref": "#/$defs/envMap" },
+        "env_file": { "type": "string", "description": "Dotenv file merged into every task; relative to runwisp.toml dir." },
+        "secrets": { "$ref": "#/$defs/secretsMap" },
+        "secrets_file": { "type": "string", "description": "Dotenv file merged beneath secrets; only the path is visible." }
+      }
+    },
+    "task": {
+      "type": "object",
+      "description": "A run-to-exit task ([tasks.<name>]). Requires run (unless compose_file).",
+      "additionalProperties": false,
+      "properties": {
+        "group": { "type": "string", "default": "Tasks", "description": "UI grouping label." },
+        "description": { "type": "string" },
+        "cron": { "type": "string", "description": "5- or 6-field cron (optional leading seconds); also @hourly, @every 1h30m. Omit => manual-only." },
+        "timezone": { "type": "string", "description": "Per-task IANA timezone override." },
+        "jitter": { "$ref": "#/$defs/duration", "description": "Cap how far this cron task's start may slip; needs cron." },
+        "run_on_start": { "type": "boolean", "default": false, "description": "Fire once at daemon start, on top of any cron." },
+        "api_trigger": { "type": "boolean", "default": true, "description": "Allow CLI/API/UI trigger; false = cron-only." },
+        "catch_up": { "type": "string", "enum": ["latest", "all", "skip"], "default": "latest", "description": "Missed-firing policy." },
+        "max_catch_up_runs": { "type": "integer", "minimum": 1, "default": 100, "description": "Cap when catch_up=all." },
+        "timeout": { "$ref": "#/$defs/duration", "description": "Per-attempt cap (inherits [defaults])." },
+        "graceful_stop": { "$ref": "#/$defs/duration", "description": "Grace before SIGKILL on stop. Default 5s." },
+        "stop_signal": { "$ref": "#/$defs/stopSignal" },
+        "restart": { "type": "string", "enum": ["never", "on_failure"], "description": "Restart policy (always is rejected on tasks — use [services.*])." },
+        "max_concurrent": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 1, "description": "Concurrent run cap." },
+        "queue_max": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 100, "description": "Queued-run depth." },
+        "on_overlap": { "$ref": "#/$defs/onOverlap", "default": "queue" },
+        "retry_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0, "description": "Retries after a failed attempt." },
+        "retry_delay": { "$ref": "#/$defs/duration", "description": "Delay between retries. Default 5s." },
+        "retry_backoff": { "$ref": "#/$defs/backoff" },
+        "exit_codes": { "$ref": "#/$defs/exitCodes" },
+        "working_dir": { "type": "string", "description": "Process cwd; relative to runwisp.toml dir, ~ expands." },
+        "shell": { "type": "string", "description": "Interpreter for run (absolute path); invoked as <shell> -c <script>." },
+        "umask": { "type": "string", "description": "Octal file-creation mask, e.g. \"027\"." },
+        "user": { "type": "string", "description": "Run as user or user:group; needs daemon as root." },
+        "log_max_size": { "$ref": "#/$defs/byteSize" },
+        "log_on_full": { "$ref": "#/$defs/logOnFull" },
+        "keep_runs": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "keep_for": { "$ref": "#/$defs/duration" },
+        "run": { "type": "string", "description": "Shell command; mutually exclusive with compose_file." },
+        "compose_file": { "type": "string", "description": "Run a compose service instead of run=." },
+        "compose_service": { "type": "string", "description": "Which compose service; requires compose_file. Default = task name." },
+        "env": { "$ref": "#/$defs/envMap" },
+        "env_file": { "type": "string" },
+        "secrets": { "$ref": "#/$defs/secretsMap" },
+        "secrets_file": { "type": "string" },
+        "notify_on_failure": { "type": "array", "items": { "type": "string" }, "description": "Route on run.failed/timeout/crashed/missed; notifier ids, \"id:override\", or \"inapp\"." },
+        "notify_on_success": { "type": "array", "items": { "type": "string" }, "description": "Route on run.succeeded." },
+        "notify_on_missed": { "type": "boolean", "description": "Alert on missed scheduled runs (inherits [defaults])." },
+        "params": { "type": "array", "items": { "$ref": "#/$defs/param" }, "description": "Per-execution inputs ([tasks.*.params])." }
+      }
+    },
+    "service": {
+      "type": "object",
+      "description": "A long-running service ([services.<name>]). restart=always is forced.",
+      "additionalProperties": false,
+      "properties": {
+        "group": { "type": "string", "default": "Services", "description": "UI grouping label." },
+        "description": { "type": "string" },
+        "api_trigger": { "type": "boolean", "default": true },
+        "on_overlap": { "$ref": "#/$defs/onOverlap", "default": "skip" },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "graceful_stop": { "$ref": "#/$defs/duration" },
+        "stop_signal": { "$ref": "#/$defs/stopSignal" },
+        "working_dir": { "type": "string" },
+        "shell": { "type": "string" },
+        "umask": { "type": "string" },
+        "user": { "type": "string" },
+        "exit_codes": { "$ref": "#/$defs/exitCodes" },
+        "log_max_size": { "$ref": "#/$defs/byteSize" },
+        "log_on_full": { "$ref": "#/$defs/logOnFull" },
+        "keep_runs": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "keep_for": { "$ref": "#/$defs/duration" },
+        "run": { "type": "string", "description": "Shell command; mutually exclusive with compose_file." },
+        "compose_file": { "type": "string" },
+        "compose_service": { "type": "string" },
+        "env": { "$ref": "#/$defs/envMap" },
+        "env_file": { "type": "string" },
+        "secrets": { "$ref": "#/$defs/secretsMap" },
+        "secrets_file": { "type": "string" },
+        "notify_on_failure": { "type": "array", "items": { "type": "string" } },
+        "notify_on_success": { "type": "array", "items": { "type": "string" } },
+        "notify_on_missed": { "type": "boolean" },
+        "instances": { "type": "integer", "minimum": 1, "maximum": 64, "default": 1, "description": "Parallel instances." },
+        "restart_delay": { "$ref": "#/$defs/duration", "description": "Delay before a restart. Default 1s." },
+        "restart_backoff": { "$ref": "#/$defs/backoff", "default": "exponential" },
+        "healthy_after": { "$ref": "#/$defs/duration", "description": "Uptime counted as healthy. Default 60s." },
+        "start_retries": { "type": "integer", "minimum": 0, "default": 3, "description": "Consecutive fast failures before an instance goes FATAL." },
+        "priority": { "type": "integer", "default": 0, "description": "Boot start order; lower starts first." },
+        "autostart": { "type": "boolean", "default": true, "description": "Start at boot; false boots it stopped." },
+        "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Services that must be healthy before this one starts at boot (order only)." }
+      }
+    },
+    "param": {
+      "type": "object",
+      "description": "One [tasks.*.params] entry. Set exactly one of env/arg/option/flag.",
+      "additionalProperties": false,
+      "properties": {
+        "env": { "type": "string", "description": "Identity keyword: expose as an environment variable." },
+        "arg": { "type": "string", "description": "Identity keyword: positional argument." },
+        "option": { "type": "string", "description": "Identity keyword: --name value option." },
+        "flag": { "type": "string", "description": "Identity keyword: boolean --name flag." },
+        "default": { "type": ["string", "integer", "number", "boolean"], "description": "Default value literal." },
+        "required": { "type": "boolean", "default": false },
+        "type": { "type": "string", "description": "Value type hint." },
+        "choices": { "type": "array", "items": { "type": "string" } },
+        "allow_custom": { "type": "boolean", "default": false },
+        "desc": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "composeAlias": {
+      "type": "object",
+      "description": "One [compose.<alias>] block: reserved scalar keys plus per-service override sub-tables.",
+      "properties": {
+        "file": { "type": "string", "description": "Compose file path; auto-discovered when omitted." },
+        "include": { "type": "array", "items": { "type": "string" }, "description": "Services to import; mutually exclusive with exclude." },
+        "exclude": { "type": "array", "items": { "type": "string" }, "description": "Services to skip." },
+        "mode": { "type": "string", "enum": ["services", "stack"], "default": "services" },
+        "group": { "type": "string" },
+        "project_name": { "type": "string" },
+        "profiles": { "type": "array", "items": { "type": "string" } },
+        "env_file": { "type": "array", "items": { "type": "string" } },
+        "working_dir": { "type": "string" },
+        "with_deps": { "type": "boolean", "default": false },
+        "pull": { "type": "string", "enum": ["missing", "always", "never"], "default": "missing" },
+        "name_format": { "type": "string", "default": "{alias}.{service}", "description": "Generated task name; must contain {service} in services mode." }
+      },
+      "additionalProperties": { "$ref": "#/$defs/composeOverride" }
+    },
+    "composeOverride": {
+      "type": "object",
+      "description": "Per-service override sub-table [compose.<alias>.<svc>].",
+      "additionalProperties": false,
+      "properties": {
+        "group": { "type": "string" },
+        "description": { "type": "string" },
+        "api_trigger": { "type": "boolean" },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "graceful_stop": { "$ref": "#/$defs/duration" },
+        "stop_signal": { "$ref": "#/$defs/stopSignal" },
+        "on_overlap": { "$ref": "#/$defs/onOverlap" },
+        "restart": { "type": "string", "enum": ["never", "on_failure", "always"] },
+        "instances": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "restart_delay": { "$ref": "#/$defs/duration" },
+        "restart_backoff": { "$ref": "#/$defs/backoff" },
+        "healthy_after": { "$ref": "#/$defs/duration" },
+        "start_retries": { "type": "integer", "minimum": 0 },
+        "priority": { "type": "integer" },
+        "autostart": { "type": "boolean" },
+        "exit_codes": { "$ref": "#/$defs/exitCodes" },
+        "log_max_size": { "$ref": "#/$defs/byteSize" },
+        "log_on_full": { "$ref": "#/$defs/logOnFull" },
+        "keep_runs": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "keep_for": { "$ref": "#/$defs/duration" },
+        "env": { "$ref": "#/$defs/envMap" },
+        "env_file": { "type": "string" },
+        "secrets": { "$ref": "#/$defs/secretsMap" },
+        "secrets_file": { "type": "string" },
+        "notify_on_failure": { "type": "array", "items": { "type": "string" } },
+        "notify_on_success": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "notify": {
+      "type": "object",
+      "description": "Global notification settings ([notify]).",
+      "additionalProperties": false,
+      "properties": {
+        "global_notifiers": { "type": "array", "items": { "type": "string" }, "default": ["inapp"], "description": "Channels added to every notify list + catch-all on failures; [] opts out." },
+        "default_timeout": { "$ref": "#/$defs/duration", "description": "Total retry budget per delivery." },
+        "history_keep": { "type": "integer", "default": 1024, "description": "In-app bell row cap." },
+        "history_keep_for": { "$ref": "#/$defs/duration", "description": "Max bell row age. Default 90d." },
+        "coalesce_window": { "$ref": "#/$defs/duration", "description": "Collapse repeat (kind+task) into one bell row. Default 1h." },
+        "occurrence_ring": { "type": "integer", "default": 10, "description": "Recent timestamps kept per coalesced row." },
+        "coalesce_outbound": { "type": "boolean", "default": true, "description": "Coalesce outbound bursts too." }
+      }
+    },
+    "notifier": {
+      "type": "object",
+      "description": "One [[notifier]] block. id and type are required; other fields depend on type.",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "description": "Notifier id; non-empty, not \"inapp\", no \":\"." },
+        "type": { "type": "string", "enum": ["slack", "discord", "telegram", "smtp", "webhook"] },
+        "template_path": { "type": "string" },
+        "webhook_url": { "type": "string", "description": "slack/discord webhook URL." },
+        "channel": { "type": "string", "description": "slack channel; starts with # or @." },
+        "bot_token": { "type": "string", "description": "telegram bot token." },
+        "chat_id": { "type": "string", "description": "telegram chat id." },
+        "parse_mode": { "type": "string", "description": "telegram parse mode." },
+        "host": { "type": "string", "description": "smtp host." },
+        "port": { "type": "integer", "minimum": 0, "maximum": 65535, "description": "smtp port." },
+        "tls": { "type": "string", "enum": ["starttls", "implicit", "none"], "description": "smtp TLS mode." },
+        "tls_skip_verify": { "type": "boolean" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "from": { "type": "string", "description": "smtp from email." },
+        "reply_to": { "type": "string" },
+        "to": { "type": "array", "items": { "type": "string" } },
+        "cc": { "type": "array", "items": { "type": "string" } },
+        "bcc": { "type": "array", "items": { "type": "string" } },
+        "url": { "type": "string", "description": "webhook URL (http/https)." },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "notificationRoute": {
+      "type": "object",
+      "description": "One [[notification_route]] block.",
+      "additionalProperties": false,
+      "required": ["notify"],
+      "properties": {
+        "match": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["run.started", "run.succeeded", "run.failed", "run.timeout", "run.stopped", "run.crashed", "run.missed", "service.fatal", "notify.delivery_failed"]
+              }
+            },
+            "severity": { "type": "string", "enum": ["info", "warn", "error"] },
+            "task": { "type": "string", "description": "Glob over task name." }
+          }
+        },
+        "notify": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Notifier ids (or \"inapp\"); \"id:#override\" inline target." }
+      }
+    }
+  }
+}

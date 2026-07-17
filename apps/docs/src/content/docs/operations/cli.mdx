@@ -112,7 +112,22 @@ counts, the resolved timezone, and errors and warnings as arrays:
 ```
 
 On a broken config it exits non-zero with `"valid": false` and a populated
-`errors` array.
+`errors` array. Parse-time errors carry a structured location so tooling can
+jump straight to the spot instead of parsing the message:
+
+```json
+{
+    "valid": false,
+    "errors": [
+        {
+            "message": "unknown key \"schedule\" at line 4:1",
+            "key": "tasks.backup.schedule",
+            "line": 4,
+            "column": 1
+        }
+    ]
+}
+```
 
 `runwisp list --json` mirrors the config table. Like the human view it's
 offline and reads only `runwisp.toml`, so there's no run history here:
@@ -179,6 +194,7 @@ running, `status --json` exits non-zero with `"healthy": false` and an `error`.
 runwisp exec <task>              # run a task, stream its output, exit with its code
 runwisp exec <task> --daemon     # require a running daemon (fail fast if none)
 runwisp exec <task> --standalone # require in-process (refuse if a daemon owns the dir)
+runwisp exec <task> --json       # print the run outcome as JSON (log lines to stderr)
 ```
 
 `runwisp exec` runs one task and streams its stdout/stderr straight to
@@ -187,6 +203,23 @@ into a script. By default it auto-detects: if a daemon owns this data
 dir, the run is dispatched through its REST API and followed live;
 otherwise the task runs in this process from `runwisp.toml`. `--daemon`
 and `--standalone` pin the choice and are mutually exclusive.
+
+With `--json`, the run's outcome is printed to stdout as one document once it
+finishes, and the live log lines are diverted to stderr so stdout stays a single
+JSON value — ideal for an agent that needs the result, not the noise:
+
+```json
+{
+    "schema_version": 1,
+    "task": "backup",
+    "run_id": "01JZZBACKUP0000000000000000",
+    "status": "ended",
+    "end_reason": "success",
+    "exit_code": 0,
+    "duration_ms": 812,
+    "failed": false
+}
+```
 
 ## Apply config edits
 
@@ -263,8 +296,10 @@ reboot?") with `runwisp status` ("is it alive right now?").
 ## Auth and introspection
 
 ```sh
-runwisp password   # print the daemon's ephemeral password (local socket only)
-runwisp openapi    # print the OpenAPI 3.1 spec (JSON) to stdout
+runwisp password     # print the daemon's ephemeral password (local socket only)
+runwisp openapi      # print the OpenAPI 3.1 spec (JSON) to stdout
+runwisp schema       # print the runwisp.toml JSON Schema (JSON) to stdout
+runwisp agent-guide  # print a paste-ready AGENTS.md snippet for AI agents
 ```
 
 `runwisp password` fetches the in-memory ephemeral password over the
@@ -279,6 +314,14 @@ no password at all and the command exits with a distinct code.
 `runwisp openapi` dumps the OpenAPI 3.1 schema to stdout for feeding into
 code generators — the same schema a running daemon serves at
 `/openapi.json`.
+
+`runwisp schema` prints the JSON Schema for `runwisp.toml` (draft 2020-12) —
+point an editor at it, or check a config before validating. It's also published
+at `https://docs.runwisp.com/config.schema.json`, which is what the `#:schema`
+line on a scaffolded config points to. `runwisp agent-guide` prints a short
+Markdown block you can append to your project's `AGENTS.md` so an AI coding
+agent knows how to drive RunWisp. Both are covered on the
+[Driving with an AI agent](/operations/agents/) page.
 
 ## Cloud and demo
 
