@@ -20,6 +20,8 @@ var statusCmd = &cobra.Command{
 	Long: `Pings the daemon over its local Unix socket to verify it is running and
 responsive, prints a short system summary, and warns when runwisp.toml has
 changed on disk since the daemon started (config changes apply on restart).`,
+	Example: `  runwisp status
+  runwisp status --json   # daemon + per-task snapshot as JSON`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runStatus(cmd.OutOrStdout(), flags, statusJSON)
 	},

@@ -62,6 +62,22 @@ run = "exec /usr/bin/web"
 	checkGolden(t, "testdata/validate.golden.json", got)
 }
 
+// TestValidateJSONInvalidGolden pins the failure document, including the
+// structured source location (key/line/column) an agent uses to jump to the
+// offending site. runValidate returns a non-nil error here (drives the non-zero
+// exit); the JSON document is still written to the buffer.
+func TestValidateJSONInvalidGolden(t *testing.T) {
+	f := writeValidateConfig(t, `
+[tasks.backup]
+run = "true"
+schedule = "0 3 * * *"
+`)
+	var buf bytes.Buffer
+	require.Error(t, runValidate(&buf, f, true))
+	got := bytes.ReplaceAll(buf.Bytes(), []byte(f.CfgFile), []byte("runwisp.toml"))
+	checkGolden(t, "testdata/validate-invalid.golden.json", got)
+}
+
 func TestListJSONGolden(t *testing.T) {
 	f := Flags{CfgFile: writeConfig(t, `
 [tasks.backup]

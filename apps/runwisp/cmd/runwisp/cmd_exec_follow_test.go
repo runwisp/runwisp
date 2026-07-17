@@ -85,7 +85,7 @@ func TestFollowRun_RetriesEmptyStreamUntilRunIsStreamable(t *testing.T) {
 	var code int
 	var err error
 	out := captureStdout(t, func() {
-		code, err = followRun(client, "alpha", "run-1")
+		code, err = followRun(client, "alpha", "run-1", os.Stdout)
 	})
 
 	require.NoError(t, err)

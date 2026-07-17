@@ -5,9 +5,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime/retry"
 )
@@ -154,6 +156,50 @@ func newLastRunJSON(r *model.Run) lastRunJSON {
 	return lr
 }
 
+// --- exec ------------------------------------------------------------------
+
+// execJSONDoc is the machine-readable outcome of `runwisp exec --json`: the one
+// document written to stdout once the run reaches a terminal state (or is
+// triggered, under --detach). Live log lines are diverted to stderr so stdout
+// stays a single JSON document. failed is precomputed (retry.IsFailureReason)
+// so an agent branches on one boolean without knowing the end-reason taxonomy.
+type execJSONDoc struct {
+	SchemaVersion int        `json:"schema_version"`
+	Task          string     `json:"task"`
+	RunID         string     `json:"run_id"`
+	Status        string     `json:"status"`
+	EndReason     *string    `json:"end_reason,omitempty"`
+	ExitCode      int        `json:"exit_code"`
+	TriggeredBy   string     `json:"triggered_by"`
+	StartAt       *time.Time `json:"start_at,omitempty"`
+	EndAt         *time.Time `json:"end_at,omitempty"`
+	DurationMS    *int64     `json:"duration_ms,omitempty"`
+	Failed        bool       `json:"failed"`
+}
+
+func newExecJSONDoc(taskName string, r *model.Run) execJSONDoc {
+	doc := execJSONDoc{
+		SchemaVersion: jsonSchemaVersion,
+		Task:          taskName,
+		RunID:         r.ID,
+		Status:        string(r.Status),
+		ExitCode:      r.ExitCode,
+		TriggeredBy:   string(r.TriggeredBy),
+		StartAt:       r.StartAt,
+		EndAt:         r.EndAt,
+	}
+	if r.EndReason != nil {
+		reason := string(*r.EndReason)
+		doc.EndReason = &reason
+		doc.Failed = retry.IsFailureReason(*r.EndReason)
+	}
+	if r.StartAt != nil && r.EndAt != nil {
+		ms := r.EndAt.Sub(*r.StartAt).Milliseconds()
+		doc.DurationMS = &ms
+	}
+	return doc
+}
+
 // --- list ------------------------------------------------------------------
 
 // listJSONDoc is the machine-readable form of `runwisp list`. Like the human
@@ -210,12 +256,15 @@ type validateJSONDoc struct {
 	Errors         []messageJSON `json:"errors"`
 }
 
-// messageJSON is a validation error or advisory warning. Location is reserved
-// (always empty today): the config layer bakes task/field/line into the
-// message string, so there is no structured location to surface yet.
+// messageJSON is a validation error or advisory warning. For parse-time errors
+// the config layer knows the source position, so key/line/column are populated
+// (via config.LocatedError) to point an agent straight at the site; semantic
+// errors and warnings carry the message only.
 type messageJSON struct {
-	Message  string `json:"message"`
-	Location string `json:"location,omitempty"`
+	Message string `json:"message"`
+	Key     string `json:"key,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Column  int    `json:"column,omitempty"`
 }
 
 func messagesFromStrings(ss []string) []messageJSON {
@@ -224,4 +273,17 @@ func messagesFromStrings(ss []string) []messageJSON {
 		out = append(out, messageJSON{Message: s})
 	}
 	return out
+}
+
+// messageFromError builds a messageJSON from a config error, lifting the
+// structured source location when the error is a config.LocatedError.
+func messageFromError(err error) messageJSON {
+	m := messageJSON{Message: err.Error()}
+	var located *config.LocatedError
+	if errors.As(err, &located) {
+		m.Key = located.Key
+		m.Line = located.Line
+		m.Column = located.Column
+	}
+	return m
 }

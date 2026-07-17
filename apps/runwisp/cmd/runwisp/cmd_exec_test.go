@@ -67,7 +67,7 @@ func TestExecLogLineHandler_FiltersByTaskName(t *testing.T) {
 	// (it does not panic and produces no observable output for the wrong
 	// task). Cross-type assertion failure is unreachable because EventData
 	// is a sealed interface.
-	h := execLogLineHandler("target")
+	h := execLogLineHandler("target", os.Stdout)
 	h(events.Event{Data: events.LogLineEvent{TaskName: "other", Text: "x"}})
 	// RunEvent reaches the wrong-type branch (LogLineEvent type assertion fails).
 	h(events.Event{Data: events.RunEvent{}})
@@ -87,7 +87,7 @@ func TestExecLogLineHandler_WritesToStdoutAndStderr(t *testing.T) {
 		os.Stderr = oldErr
 	})
 
-	h := execLogLineHandler("target")
+	h := execLogLineHandler("target", os.Stdout)
 	h(events.Event{Data: events.LogLineEvent{TaskName: "target", Stream: logutil.StreamStdout, Text: "hello stdout"}})
 	h(events.Event{Data: events.LogLineEvent{TaskName: "target", Stream: logutil.StreamStderr, Text: "hello stderr"}})
 

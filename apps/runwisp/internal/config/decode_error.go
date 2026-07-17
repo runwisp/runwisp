@@ -12,18 +12,54 @@ import (
 	"github.com/runwisp/runwisp/internal/textutil"
 )
 
+// LocatedError is a config error that carries a structured source location
+// alongside its human message. `runwisp validate --json` surfaces these fields
+// so an agent can jump straight to the offending site instead of parsing the
+// prose. Line/Column are 1-based TOML source positions (0 = unknown); Key is
+// the dotted key path (e.g. "tasks.backup.cron") when the parser knows it.
+//
+// Only parse-time errors (malformed TOML, unknown keys, type mismatches) carry
+// a location today — that is the class an agent hits editing runwisp.toml by
+// hand. Semantic validation errors remain message-only.
+type LocatedError struct {
+	Msg    string
+	Key    string
+	Line   int
+	Column int
+}
+
+func (e *LocatedError) Error() string { return e.Msg }
+
+// keyPath renders a go-toml key as a dotted path, e.g. tasks.backup.cron.
+func keyPath(key toml.Key) string {
+	return strings.Join([]string(key), ".")
+}
+
 // formatDecodeError converts pelletier's strict-mode and type errors into
-// messages an operator can read. The strict-mode message in the upstream
+// messages an operator can read, wrapped in a LocatedError so the source
+// position travels with the message. The strict-mode message in the upstream
 // library doesn't surface the field name; we walk the wrapped DecodeError
 // list to pull it out.
 func formatDecodeError(err error) error {
 	var strict *toml.StrictMissingError
 	if errors.As(err, &strict) {
-		return fmt.Errorf("failed to parse config file:%s", formatStrictMissing(strict))
+		located := &LocatedError{Msg: fmt.Sprintf("failed to parse config file:%s", formatStrictMissing(strict))}
+		if len(strict.Errors) > 0 {
+			de := strict.Errors[0]
+			located.Line, located.Column = de.Position()
+			located.Key = keyPath(de.Key())
+		}
+		return located
 	}
 	var decode *toml.DecodeError
 	if errors.As(err, &decode) {
-		return fmt.Errorf("failed to parse config file: %s", decode.Error())
+		row, col := decode.Position()
+		return &LocatedError{
+			Msg:    fmt.Sprintf("failed to parse config file: %s", decode.Error()),
+			Key:    keyPath(decode.Key()),
+			Line:   row,
+			Column: col,
+		}
 	}
 	return fmt.Errorf("failed to parse config file: %w", err)
 }

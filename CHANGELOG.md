@@ -10,9 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`--json` output for `runwisp status`, `list`, and `validate`.** A schema-versioned, machine-readable document on stdout for headless and agent-driven use; failures still exit non-zero and emit JSON. See [CLI](https://docs.runwisp.com/operations/cli/#machine-readable-output-json).
+- **JSON Schema for `runwisp.toml`.** `runwisp schema` prints it (also published at `https://docs.runwisp.com/config.schema.json`); scaffolded and imported configs carry a `#:schema` line so editors validate and autocomplete them. See [Driving with an AI agent](https://docs.runwisp.com/operations/agents/).
+- **`runwisp exec --json`** prints a run's outcome (run id, status, exit code, duration, failed) as one JSON document on stdout, diverting log lines to stderr. See [CLI](https://docs.runwisp.com/operations/cli/).
+- **`runwisp agent-guide`** prints a paste-ready snippet for your project's `AGENTS.md`/`CLAUDE.md` so an AI coding agent knows how to drive RunWisp. See [Driving with an AI agent](https://docs.runwisp.com/operations/agents/).
 
 ### Changed
 
+- **`runwisp validate --json` errors now carry a structured location** (`key`, `line`, `column`) for parse-time failures, so tooling can point at the offending site without parsing the message. See [CLI](https://docs.runwisp.com/operations/cli/#machine-readable-output-json).
 - **Readable daemon logs.** Log lines now render as `2026-05-27 14:03:01 [INFO] message key=value` — colored on an interactive terminal, plain otherwise — instead of Go's terse `level=INFO msg=…` logfmt. `--log-format=json` is unchanged for pipelines. See [Logging](https://docs.runwisp.com/operations/logging/).
 
 ### Fixed

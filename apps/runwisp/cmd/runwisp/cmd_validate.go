@@ -17,6 +17,9 @@ var validateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "Validate runwisp.toml without starting anything",
 	Long:  `Parses and validates the configuration file. Prints a summary on success or a structured error on failure. Useful for CI pipelines and pre-commit checks.`,
+	Example: `  runwisp validate
+  runwisp validate -c ./deploy/runwisp.toml
+  runwisp validate --json   # machine-readable; errors carry key/line/column`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runValidate(cmd.OutOrStdout(), flags, validateJSON)
 	},
@@ -49,7 +52,7 @@ func runValidate(w io.Writer, f Flags, asJSON bool) error {
 				Valid:         false,
 				ConfigPath:    f.CfgFile,
 				Warnings:      messagesFromStrings(nil),
-				Errors:        []messageJSON{{Message: err.Error()}},
+				Errors:        []messageJSON{messageFromError(err)},
 			}); werr != nil {
 				return werr
 			}

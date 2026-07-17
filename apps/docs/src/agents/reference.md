@@ -18,6 +18,8 @@ Notation in schema blocks: `key: type =default — note`. `=default` omitted mea
 
 ## runwisp.toml
 
+Machine-readable JSON Schema (draft 2020-12): `runwisp schema` (offline) or https://docs.runwisp.com/config.schema.json. Scaffolded/imported configs carry a `#:schema` directive so editors validate them. After editing, `runwisp validate --json` reports errors with structured `key`/`line`/`column`.
+
 ### [scheduler]
 
 ```
@@ -201,6 +203,8 @@ runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output 
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --quiet
 runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_NO_AUTH, refuses if RUNWISP_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
+runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
+runwisp agent-guide          — print a paste-ready AGENTS.md/CLAUDE.md snippet for driving RunWisp from an agent
 runwisp cloud                — start in cloud mode; --token --url --env-file(=.env) --no-tui
 runwisp demo                 — boot a throwaway, fully-populated instance; --cloud --token --url --env-file
 runwisp service install      — install autostart (systemd/launchd); -y --print --dry-run --force --system --binary <path>

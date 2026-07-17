@@ -25,7 +25,19 @@ var openapiCmd = &cobra.Command{
 }
 
 func runOpenAPI() error {
-	// Construct a server with minimal dependencies — only route registration matters.
+	spec, err := openAPISpecJSON()
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(spec))
+	return nil
+}
+
+// openAPISpecJSON builds a server with minimal dependencies (only route
+// registration matters) and returns its OpenAPI 3.1 spec as indented JSON. It
+// is the single source of the spec bytes, shared by `runwisp openapi` and the
+// drift test that guards the committed openapi.json.
+func openAPISpecJSON() ([]byte, error) {
 	srv, err := server.New(server.Options{
 		Tasks:      runtime.NewTaskRegistry(nil),
 		Port:       9477,
@@ -36,13 +48,11 @@ func runOpenAPI() error {
 		DaemonInfo: &model.DaemonInfo{},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to construct server for OpenAPI generation: %w", err)
+		return nil, fmt.Errorf("failed to construct server for OpenAPI generation: %w", err)
 	}
-
 	spec, err := json.MarshalIndent(srv.API().OpenAPI(), "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal OpenAPI spec: %w", err)
+		return nil, fmt.Errorf("failed to marshal OpenAPI spec: %w", err)
 	}
-	fmt.Println(string(spec))
-	return nil
+	return spec, nil
 }

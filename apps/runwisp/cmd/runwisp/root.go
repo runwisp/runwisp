@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/clilog"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/version"
 	"github.com/spf13/cobra"
@@ -45,9 +46,18 @@ func (f Flags) LogDir() string {
 var flags Flags
 
 var rootCmd = &cobra.Command{
-	Use:     "runwisp",
-	Short:   "RunWisp — lightweight cron daemon with a web UI",
-	Long:    `RunWisp is a standalone cron daemon and process supervisor with a web UI and a terminal UI.`,
+	Use:   "runwisp",
+	Short: "RunWisp — lightweight cron daemon with a web UI",
+	Long: `RunWisp is a standalone cron daemon and process supervisor with a web UI and a terminal UI.
+
+Tasks are defined in runwisp.toml (the sole source of truth). Machine-readable
+surfaces for scripts and AI agents:
+  runwisp schema           JSON Schema for runwisp.toml (also at ` + config.SchemaURL + `)
+  runwisp validate --json  validate a config; errors carry key/line/column
+  runwisp exec <t> --json  run a task and print its outcome as JSON
+  runwisp status --json    daemon + task snapshot as JSON
+  runwisp openapi          the REST API's OpenAPI 3.1 spec
+Dense agent reference: https://docs.runwisp.com/agents/reference.md`,
 	Version: version.Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDefault(flags)
@@ -88,6 +98,8 @@ func init() {
 	rootCmd.AddCommand(reloadCmd)
 	rootCmd.AddCommand(passwordCmd)
 	rootCmd.AddCommand(openapiCmd)
+	rootCmd.AddCommand(schemaCmd)
+	rootCmd.AddCommand(agentGuideCmd)
 	rootCmd.AddCommand(serviceCmd)
 	rootCmd.AddCommand(demoCmd)
 }

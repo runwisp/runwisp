@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "valid": false,
+  "config_path": "runwisp.toml",
+  "tasks": 0,
+  "services": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "message": "failed to parse config file:\n  unknown key \"schedule\" at line 4:1",
+      "key": "tasks.backup.schedule",
+      "line": 4,
+      "column": 1
+    }
+  ]
+}

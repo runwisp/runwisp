@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,6 +32,17 @@ var execFlags struct {
 	URL        string
 	Password   string
 	Detach     bool
+	JSON       bool
+}
+
+// execLineOut is where a run's stdout-stream log lines are written. In --json
+// mode they go to stderr so stdout carries only the final execJSONDoc; stderr-
+// stream lines always go to os.Stderr regardless.
+func execLineOut() io.Writer {
+	if execFlags.JSON {
+		return os.Stderr
+	}
+	return os.Stdout
 }
 
 // execCmd runs a task and streams its output to stdout/stderr. It auto-detects
@@ -57,7 +69,15 @@ process from runwisp.toml.
 
 Use --daemon to require a running daemon (and fail fast if none is up), or
 --standalone to require in-process execution (and refuse if a daemon owns the
-data dir). Without either flag, the local mode is auto-detected.`,
+data dir). Without either flag, the local mode is auto-detected.
+
+With --json, the run's outcome is printed to stdout as a single JSON document
+(run id, status, exit code, duration, failed) once it finishes; live log lines
+are diverted to stderr so stdout stays machine-readable.`,
+	Example: `  runwisp exec backup
+  runwisp exec backup --json          # print the run outcome as JSON
+  runwisp exec deploy --standalone    # run in-process, no daemon needed
+  runwisp exec build --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if execFlags.Daemon && execFlags.Standalone {
@@ -80,6 +100,7 @@ func init() {
 	execCmd.Flags().StringVar(&execFlags.URL, "url", "", "trigger the task on a remote daemon at this base URL (env: RUNWISP_URL)")
 	execCmd.Flags().StringVar(&execFlags.Password, "password", "", "remote daemon password for --url (env: RUNWISP_PASSWORD)")
 	execCmd.Flags().BoolVar(&execFlags.Detach, "detach", false, "with --url, trigger and print the run ID without following the log stream")
+	execCmd.Flags().BoolVar(&execFlags.JSON, "json", false, "print the run outcome as a JSON document to stdout (log lines go to stderr)")
 }
 
 func runExec(taskName string, f Flags) (int, error) {
@@ -136,7 +157,24 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 	}
 
 	slog.Info("Task triggered", "name", taskName, "run", run.ID)
-	return followRun(client, taskName, run.ID)
+	exitCode, err := followRun(client, taskName, run.ID, execLineOut())
+	if err != nil {
+		return exitCode, err
+	}
+	if execFlags.JSON {
+		return exitCode, finishExecJSON(os.Stdout, client, taskName, run.ID)
+	}
+	return exitCode, nil
+}
+
+// finishExecJSON fetches the run's terminal state and writes the execJSONDoc to
+// w. It is the shared --json tail for the daemon and remote follow paths.
+func finishExecJSON(w io.Writer, client *apiclient.Client, taskName, runID string) error {
+	final, err := client.GetRun(taskName, runID)
+	if err != nil {
+		return fmt.Errorf("fetch final run state: %w", err)
+	}
+	return writeJSON(w, newExecJSONDoc(taskName, final))
 }
 
 // runExecViaRemote dispatches the run to a remote daemon over the network. It
@@ -176,10 +214,20 @@ func runExecViaRemote(taskName, baseURL, password string, detach bool) (int, err
 	slog.Info("Task triggered", "name", taskName, "run", run.ID, "url", baseURL)
 
 	if detach {
+		if execFlags.JSON {
+			return 0, writeJSON(os.Stdout, newExecJSONDoc(taskName, run))
+		}
 		fmt.Println(run.ID)
 		return 0, nil
 	}
-	return followRun(client, taskName, run.ID)
+	exitCode, err := followRun(client, taskName, run.ID, execLineOut())
+	if err != nil {
+		return exitCode, err
+	}
+	if execFlags.JSON {
+		return exitCode, finishExecJSON(os.Stdout, client, taskName, run.ID)
+	}
+	return exitCode, nil
 }
 
 // authenticateRemote runs the CHAP handshake and caches the resulting session
@@ -244,7 +292,7 @@ const (
 // followRun follows a triggered run's SSE log stream, printing lines to
 // stdout/stderr and returning the run's exit code once it reaches a terminal
 // state. It is shared by the local-daemon and remote exec paths.
-func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
+func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writer) (int, error) {
 	ctx, cancel := newSignalCancelContext()
 	defer cancel()
 
@@ -259,7 +307,7 @@ func followRun(client *apiclient.Client, taskName, runID string) (int, error) {
 			return 0, fmt.Errorf("open log stream: %w", err)
 		}
 
-		exitCode, highest, done, err := streamRunLogs(ch, client, taskName, runID, from)
+		exitCode, highest, done, err := streamRunLogs(ch, client, taskName, runID, from, lineOut)
 		if done {
 			return exitCode, err
 		}
@@ -335,12 +383,12 @@ func newSignalCancelContext() (context.Context, context.CancelFunc) {
 
 // streamRunLogs prints each streamed log line to stdout/stderr until the stream reports the run is done or errors.
 // Lines below `from` are skipped as already seen. done=true means terminal outcome reached.
-func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64) (exitCode int, highest int64, done bool, err error) {
+func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64, lineOut io.Writer) (exitCode int, highest int64, done bool, err error) {
 	highest = from - 1
 	for msg := range ch {
 		switch msg.Kind {
 		case apiclient.LogStreamMsgKindLine:
-			highest = printStreamedLogLine(msg, from, highest)
+			highest = printStreamedLogLine(msg, from, highest, lineOut)
 		case apiclient.LogStreamMsgKindDone:
 			final, getErr := client.GetRun(taskName, runID)
 			if getErr != nil {
@@ -354,16 +402,18 @@ func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, t
 	return 0, highest, false, nil
 }
 
-// printStreamedLogLine prints one streamed line to stdout/stderr unless it was
-// already seen (N < from), returning the running highest line number printed.
-func printStreamedLogLine(msg apiclient.LogStreamMsg, from, highest int64) int64 {
+// printStreamedLogLine prints one streamed line unless it was already seen
+// (N < from), returning the running highest line number printed. Stdout-stream
+// lines go to lineOut (stdout normally, stderr under --json so stdout stays a
+// single JSON document); stderr-stream lines always go to os.Stderr.
+func printStreamedLogLine(msg apiclient.LogStreamMsg, from, highest int64, lineOut io.Writer) int64 {
 	if msg.Line.N < from {
 		return highest // already printed on an earlier connection
 	}
 	if msg.Line.Stream == logutil.StreamStderr {
 		fmt.Fprintln(os.Stderr, msg.Line.Text)
 	} else {
-		fmt.Fprintln(os.Stdout, msg.Line.Text)
+		fmt.Fprintln(lineOut, msg.Line.Text)
 	}
 	if msg.Line.N > highest {
 		return msg.Line.N
@@ -431,7 +481,7 @@ func runExecStandalone(taskName string, f Flags) (int, error) {
 	taskManager.UpsertTask(target)
 
 	done := make(chan *events.RunEvent, 1)
-	unsubLog := eventBus.Subscribe(events.EventLogLine, execLogLineHandler(taskName))
+	unsubLog := eventBus.Subscribe(events.EventLogLine, execLogLineHandler(taskName, execLineOut()))
 	defer unsubLog()
 
 	termHandler := execRunTerminalHandler(taskName, done)
@@ -449,15 +499,23 @@ func runExecStandalone(taskName string, f Flags) (int, error) {
 
 	result := <-done
 
+	if execFlags.JSON {
+		if err := writeJSON(os.Stdout, newExecJSONDoc(taskName, result.Run)); err != nil {
+			return 0, err
+		}
+	}
+
 	if result.Run.EndReason != nil && *result.Run.EndReason != model.ReasonSuccess {
 		return result.Run.ExitCode, nil
 	}
 
-	slog.Info("Task completed", "name", taskName, "status", result.Run.Status)
+	if !execFlags.JSON {
+		slog.Info("Task completed", "name", taskName, "status", result.Run.Status)
+	}
 	return 0, nil
 }
 
-func execLogLineHandler(taskName string) func(events.Event) {
+func execLogLineHandler(taskName string, lineOut io.Writer) func(events.Event) {
 	return func(e events.Event) {
 		ll, ok := e.Data.(events.LogLineEvent)
 		if !ok || ll.TaskName != taskName {
@@ -467,7 +525,7 @@ func execLogLineHandler(taskName string) func(events.Event) {
 		case logutil.StreamStderr:
 			fmt.Fprintln(os.Stderr, ll.Text)
 		default:
-			fmt.Fprintln(os.Stdout, ll.Text)
+			fmt.Fprintln(lineOut, ll.Text)
 		}
 	}
 }

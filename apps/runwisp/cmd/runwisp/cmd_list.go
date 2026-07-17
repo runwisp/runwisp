@@ -19,6 +19,8 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Show configured tasks and their schedules",
 	Long:  `Reads the configuration file and displays all configured tasks as a formatted table.`,
+	Example: `  runwisp list
+  runwisp list --json   # tasks + schedules as JSON`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runList(cmd.OutOrStdout(), flags, listJSON)
 	},

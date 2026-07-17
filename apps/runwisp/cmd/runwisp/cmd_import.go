@@ -213,7 +213,9 @@ func openImportSource(source string, stdin *os.File) (io.Reader, func(), error) 
 // emitImport renders the result, validates it, and either prints it to stdout
 // or writes it to the target file, then prints the summary to stderr.
 func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, sourceLabel string, f Flags, opts importOpts) error {
-	toml := res.TOML()
+	// Prepend the schema directive so the imported file is editor-validated the
+	// moment it lands, just like a scaffolded one. It is a TOML comment.
+	toml := config.SchemaDirective + res.TOML()
 	validationErr := validateGeneratedTOML(toml)
 
 	target := opts.output
