@@ -80,19 +80,8 @@ are diverted to stderr so stdout stays machine-readable.`,
   runwisp exec build --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		exitCode, err := func() (int, error) {
-			if execFlags.Daemon && execFlags.Standalone {
-				return 0, errors.New("--daemon and --standalone are mutually exclusive")
-			}
-			return runExec(args[0], flags)
-		}()
+		exitCode, err := runExecCLI(os.Stdout, args[0], flags)
 		if err != nil {
-			if execFlags.JSON {
-				// The run never produced its own document (it failed before
-				// reaching a terminal state), so emit an error document — keeping
-				// stdout a single valid JSON document even on failure.
-				_ = writeJSON(os.Stdout, newExecErrorJSONDoc(args[0], err))
-			}
 			return err
 		}
 		if exitCode != 0 {
@@ -100,6 +89,27 @@ are diverted to stderr so stdout stays machine-readable.`,
 		}
 		return nil
 	},
+}
+
+// runExecCLI is the exec command's RunE body, factored out so it can be unit
+// tested without going through cobra: validates the flag combination, runs the
+// task, and on failure writes the --json error document to w (the run never
+// produced its own document, so stdout stays a single valid JSON document even
+// on failure) before propagating the error.
+func runExecCLI(w io.Writer, taskName string, f Flags) (int, error) {
+	exitCode, err := func() (int, error) {
+		if execFlags.Daemon && execFlags.Standalone {
+			return 0, errors.New("--daemon and --standalone are mutually exclusive")
+		}
+		return runExec(taskName, f)
+	}()
+	if err != nil {
+		if execFlags.JSON {
+			_ = writeJSON(w, newExecErrorJSONDoc(taskName, err))
+		}
+		return exitCode, err
+	}
+	return exitCode, nil
 }
 
 func init() {
