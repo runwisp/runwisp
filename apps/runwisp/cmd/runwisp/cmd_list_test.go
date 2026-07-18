@@ -129,4 +129,11 @@ func TestRunList_JSONMissingConfigEmitsErrorDoc(t *testing.T) {
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc), "stdout must still be valid JSON on failure")
 	assert.Equal(t, jsonSchemaVersion, doc.SchemaVersion)
 	assert.NotEmpty(t, doc.Error)
+
+	// Regression (Bug E): the error doc must emit tasks as an empty array, not
+	// null, so consumers can always `.tasks[]` without a null-guard — matching the
+	// status/validate error docs. json.Unmarshal decodes `[]` to a non-nil empty
+	// slice and `null` to nil, so NotNil distinguishes the two.
+	require.NotNil(t, doc.Tasks, "tasks must serialize as [] on the error path, never null")
+	assert.Empty(t, doc.Tasks)
 }

@@ -21,6 +21,7 @@ import (
 type fakeTaskRunner struct {
 	tasks      map[string]*model.Task
 	upserted   []*model.Task
+	removed    []string
 	trigErr    error
 	trigRun    *model.Run
 	trigParams map[string]string
@@ -55,6 +56,11 @@ func (f *fakeTaskRunner) UpsertTask(task *model.Task) {
 	}
 	f.tasks[task.Name] = task
 	f.upserted = append(f.upserted, task)
+}
+
+func (f *fakeTaskRunner) RemoveTask(taskName string) {
+	delete(f.tasks, taskName)
+	f.removed = append(f.removed, taskName)
 }
 
 func (f *fakeTaskRunner) TriggerCloudRun(taskName, externalID string, params map[string]string) (*model.Run, error) {

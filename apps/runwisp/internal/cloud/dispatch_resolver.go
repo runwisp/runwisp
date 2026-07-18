@@ -61,6 +61,10 @@ func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.Execution
 		ExecutionDef:  execDef,
 		MaxConcurrent: 1,
 		OnOverlap:     model.PolicyQueue,
+		// One-shot cloud dispatch: the run manager reaps this task (and its
+		// queue-drain goroutine) once the run retires, so a long-running daemon
+		// doesn't leak state per distinct dispatched name.
+		Ephemeral: true,
 	}
 
 	if dispatch.Timeout > 0 {

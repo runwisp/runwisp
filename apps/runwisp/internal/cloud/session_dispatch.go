@@ -220,6 +220,8 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 		return sr.reportIfErr(session, sr.handler.HandleServiceApply(message), "")
 	case protocol.ServiceControlMessage:
 		return sr.reportIfErr(session, sr.handler.HandleServiceControl(message), "")
+	case protocol.ServiceRemoveMessage:
+		return sr.reportIfErr(session, sr.handler.HandleServiceRemove(message), "")
 	case protocol.AuthResultMessage:
 		if !message.Success {
 			return &CloudError{Kind: CloudErrorKindAuth, Message: message.Error}

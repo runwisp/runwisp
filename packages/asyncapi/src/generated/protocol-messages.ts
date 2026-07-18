@@ -28,6 +28,7 @@ export const outboundDaemonMessageSchema = z.discriminatedUnion("type", [
   z.object({ "type": z.literal("agent:restart"), "v": z.literal(PROTOCOL_VERSION).optional(), "sentAt": z.string().optional() }),
   z.object({ "type": z.literal("service:apply"), "v": z.literal(PROTOCOL_VERSION).optional(), "sentAt": z.string().optional(), "service": z.object({ "taskId": z.string(), "taskName": z.string(), "script": z.unknown(), "instances": z.number().int().min(1), "autostart": z.boolean().optional(), "restartDelay": z.number().int().optional(), "restartBackoff": z.enum(["constant", "linear", "exponential"]).optional(), "backoffResetAfter": z.number().int().optional(), "taskConfig": z.object({ "env": z.record(z.string(), z.string()).optional(), "gracefulStop": z.number().int().optional(), "logMaxSize": z.number().int().optional(), "logOnFull": z.enum(["drop_new", "drop_old", "kill_task"]).optional() }).optional() }) }),
   z.object({ "type": z.literal("service:control"), "v": z.literal(PROTOCOL_VERSION).optional(), "sentAt": z.string().optional(), "taskId": z.string(), "action": z.enum(["start", "stop", "restart"]) }),
+  z.object({ "type": z.literal("service:remove"), "v": z.literal(PROTOCOL_VERSION).optional(), "sentAt": z.string().optional(), "taskId": z.string() }),
   z.object({ "type": z.literal("error"), "v": z.literal(PROTOCOL_VERSION).optional(), "sentAt": z.string().optional(), "code": z.string(), "message": z.string(), "requestId": z.string().optional(), "executionId": z.string().optional() })
 ]);
 

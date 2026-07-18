@@ -165,7 +165,16 @@ function createConnectionStore() {
     function reportSourceDown(id: string, err?: unknown) {
         upSources.delete(id);
         stalledSources.delete(id);
-        if (upSources.size === 0 && stalledSources.size === 0) markDisconnected(err);
+        if (upSources.size === 0 && stalledSources.size === 0) {
+            markDisconnected(err);
+        } else if (upSources.size === 0) {
+            // No live source left, but another is stalled (waiting for a
+            // connection slot): reflect "updates paused" rather than keeping the
+            // stale prior status. Latent today — the per-domain cap that
+            // populates stalledSources isn't reached with only two streams — but
+            // it strands the UI on "connected" once a third stream is added.
+            markStalled();
+        }
     }
 
     function reportFetchError(err: unknown): boolean {

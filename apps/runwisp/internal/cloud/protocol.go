@@ -263,6 +263,7 @@ var inboundDecoders = map[string]func([]byte) (any, error){
 	"agent:restart":      decodeAs[protocol.AgentRestartMessage],
 	"service:apply":      decodeAs[protocol.ServiceApplyMessage],
 	"service:control":    decodeAs[protocol.ServiceControlMessage],
+	"service:remove":     decodeAs[protocol.ServiceRemoveMessage],
 	"error":              decodeAs[protocol.ProtocolErrorMessage],
 }
 

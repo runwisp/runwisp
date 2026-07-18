@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Task run-parameter form labels are wired to their inputs**, so clicking a label focuses its field and screen readers associate the two. See [Parameters](https://docs.runwisp.com/configuration/tasks/#parameters).
 - **`runwisp exec` no longer exits before a just-triggered run's output appears.** A freshly triggered run is handed back before its record is durably persisted, so the log stream could momentarily find no run and close empty; `exec` treated that as "the run produced nothing" and exited without printing its output. It now retries until the run becomes streamable.
 - **A plain `runwisp daemon` is no longer misreported as service-managed.** Detection dropped the unreliable systemd `INVOCATION_ID` heuristic (inherited by every process in a desktop terminal) and keys solely on the marker our generated units set, so the TUI quit dialog and cloud self-restart no longer treat a hand-launched daemon as init-managed. See [Autostart](https://docs.runwisp.com/operations/autostart/).
+- **A cloud `service:apply` can no longer overwrite a non-service task's command**, and its instance count is capped like a TOML service — the control plane can't rewrite what a cron or one-shot task runs, nor start an unbounded fleet.
+- **Cloud-dispatched runs and services are cleaned up once they finish.** Ad-hoc executions are reaped after they retire, and a new `service:remove` tears down a cloud-declared service, instead of stranding a supervisor goroutine per dispatched name.
+- **Container tasks honor `graceful_stop` and `stop_signal` on stop.** A stopping container is sent its configured signal and given the grace window before being force-killed, matching shell and compose tasks. See [Tasks](https://docs.runwisp.com/configuration/tasks/).
+- **Reloading to drop then re-add a task while a run is still draining no longer deletes the revived task or stalls its queue.** See [Reload](https://docs.runwisp.com/operations/reload/).
+- **Untrusted values in the daemon log can't inject terminal escape sequences** — control bytes in a logged field (e.g. a task name from an HTTP body) render as visible escapes rather than raw bytes. See [Logging](https://docs.runwisp.com/operations/logging/).
+- **A coalesced notification that fails at its window-close flush now raises an in-app alert**, matching uncoalesced failures, instead of failing silently. See [Notifications](https://docs.runwisp.com/notifications/model/).
+- **The failed-run summary no longer omits `start_failed` runs**, so the metrics counter and the TUI "Failed" tally agree. See [Metrics](https://docs.runwisp.com/operations/metrics/).
+- **Opening a data directory written by a newer RunWisp fails with a clear error** instead of silently running an older binary against a schema it doesn't understand.
+- **`runwisp validate --json` reports every configuration problem in one pass**, each with its own location, instead of stopping at the first. See [CLI](https://docs.runwisp.com/operations/cli/#machine-readable-output-json).
+- **`runwisp list --json` emits `tasks: []` (never `null`) on a config-load error**, matching `status` and `validate`. See [CLI](https://docs.runwisp.com/operations/cli/#machine-readable-output-json).
+- **`runwisp exec --json` keeps a run's real exit code when the trailing status fetch fails** — the outcome captured during the follow is reused instead of being masked as a failure. See [CLI](https://docs.runwisp.com/operations/cli/).
 
 ## [0.12.0] - 2026-07-08
 

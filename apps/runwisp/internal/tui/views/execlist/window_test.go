@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -15,6 +16,40 @@ import (
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
+
+// TestStatusFilterBucketsMirrorWebUI is the regression test for Bug 2: cycling
+// the TUI's `f` filter to "failed" must send the same multi-status set the web
+// UI uses, not the literal token "failed". Before the fix the server saw only
+// Status="failed", silently dropping crashed/timeout/log_overflow/start_failed/
+// missed runs from the "Failed" view — disagreeing with the TUI's own tally.
+func TestStatusFilterBucketsMirrorWebUI(t *testing.T) {
+	cases := map[string][]string{
+		"running": {"pending", "running"},
+		"failed":  {"failed", "crashed", "timeout", "log_overflow", "start_failed", "missed"},
+		"skipped": {"skipped", "dst_skipped", "queue_full"},
+		"stopped": {"stopped", "daemon_stopped"},
+	}
+	for bucket, want := range cases {
+		w := NewExecWindow(nil)
+		for i := 0; w.StatusFilter() != bucket; i++ {
+			if i > len(statusFilterCycle) {
+				t.Fatalf("bucket %q never appeared in the filter cycle", bucket)
+			}
+			w.CycleStatusFilter()
+		}
+		got := strings.Split(w.CurrentFilter().Status, ",")
+		set := make(map[string]bool, len(got))
+		for _, s := range got {
+			set[s] = true
+		}
+		for _, status := range want {
+			if !set[status] {
+				t.Errorf("bucket %q must include status %q to match the web UI, got %q",
+					bucket, status, w.CurrentFilter().Status)
+			}
+		}
+	}
+}
 
 // makeItems returns a slice of ExecListItems with the given run IDs and task names.
 func makeItems(runs ...model.Run) []uikit.ExecListItem {
@@ -473,8 +508,9 @@ func TestFetchAroundCmd_AppliesFilterAndFixedSort(t *testing.T) {
 		t.Fatalf("FetchAroundCmd closure: %v", err)
 	}
 
-	if got := gotQuery.Get("status"); got != "running" {
-		t.Fatalf("status = %q, want running", got)
+	// The "running" bucket is sent to the server as its wire status set.
+	if got := gotQuery.Get("status"); got != statusFilterWire["running"] {
+		t.Fatalf("status = %q, want %q", got, statusFilterWire["running"])
 	}
 	if got := gotQuery.Get("sort_field"); got != "created_at" {
 		t.Fatalf("sort_field = %q, want created_at", got)

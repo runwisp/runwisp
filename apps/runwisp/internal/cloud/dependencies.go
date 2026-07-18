@@ -30,6 +30,11 @@ type TaskRunner interface {
 	// UpsertTask installs (or replaces) a task definition. Used by the cloud
 	// dispatcher when resolving ad-hoc inline executions.
 	UpsertTask(task *model.Task)
+	// RemoveTask drops a task from the runner (cancelling service instances and
+	// stopping the queue drain). Used by service:remove to tear down a
+	// cloud-declared service, which never enters the TOML registry and so has no
+	// reconcile-driven removal path.
+	RemoveTask(taskName string)
 	// TriggerCloudRun starts a fresh cloud-triggered run for the named task,
 	// tagged with the supplied external execution id. params carries the
 	// dispatch's inputValues — resolved against the task's declared parameters

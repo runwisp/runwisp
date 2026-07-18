@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestFinishExecJSON_ReusesFetchedRunWithoutRefetch is the regression test for
+// Bug G: exec --json must report the exit code already captured during the
+// follow, not do a second GetRun that could fail and mask a real success as a
+// spurious failure. The client points at a daemon whose every GetRun 500s; a
+// provided terminal run must be reused so the doc still reports exit 0 / success.
+func TestFinishExecJSON_ReusesFetchedRunWithoutRefetch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	client := apiclient.New(srv.URL, "")
+
+	reason := model.ReasonSuccess
+	final := &model.Run{ID: "run-1", TaskName: "alpha", Status: model.PhaseEnded, EndReason: &reason, ExitCode: 0}
+
+	var buf bytes.Buffer
+	err := finishExecJSON(&buf, client, "alpha", "run-1", final)
+	require.NoError(t, err, "a terminal run already in hand must be reused, never re-fetched")
+
+	var doc execJSONDoc
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+	require.NotNil(t, doc.ExitCode)
+	assert.Equal(t, 0, *doc.ExitCode, "the real exit code must survive a failing trailing fetch")
+	assert.False(t, doc.Failed, "a successful run must not be reported as failed")
+}
 
 // captureStdout redirects os.Stdout for the duration of fn and returns what was
 // written. followRun prints streamed log lines straight to os.Stdout, so this is
@@ -85,7 +112,7 @@ func TestFollowRun_RetriesEmptyStreamUntilRunIsStreamable(t *testing.T) {
 	var code int
 	var err error
 	out := captureStdout(t, func() {
-		code, err = followRun(client, "alpha", "run-1", os.Stdout)
+		code, _, err = followRun(client, "alpha", "run-1", os.Stdout)
 	})
 
 	require.NoError(t, err)

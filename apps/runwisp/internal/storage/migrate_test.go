@@ -5,6 +5,7 @@ package storage
 
 import (
 	"database/sql"
+	"strconv"
 	"testing"
 	"testing/fstest"
 
@@ -59,6 +60,24 @@ func TestRunMigrations_IsIdempotent(t *testing.T) {
 	// A second pass must apply nothing and leave the version untouched.
 	require.NoError(t, runMigrations(db))
 	require.Equal(t, first, readUserVersion(t, db))
+}
+
+// TestRunMigrations_RejectsNewerSchema is the regression test for Bug D: a
+// database stamped with a user_version above every migration this binary knows
+// was written by a newer runwisp. Migrations are forward-only, so the runner
+// must fail loudly (the operator has to upgrade the binary) rather than silently
+// no-op every migration and return nil against schema it may misread.
+func TestRunMigrations_RejectsNewerSchema(t *testing.T) {
+	db := openRaw(t)
+	require.NoError(t, runMigrations(db))
+
+	// Stamp the DB one past head, as a future binary's migration would.
+	_, err := db.Exec("PRAGMA user_version = " + strconv.Itoa(headVersion(t)+1))
+	require.NoError(t, err)
+
+	err = runMigrations(db)
+	require.Error(t, err, "a DB newer than the binary supports must be rejected, not silently opened")
+	require.Contains(t, err.Error(), "newer than this binary supports")
 }
 
 // TestRunMigrations_AdoptsPreexistingDB simulates a database created before the

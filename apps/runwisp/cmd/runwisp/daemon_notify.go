@@ -109,16 +109,20 @@ func initNotify(
 		EveryN: notifyCfg.OccurrenceRing,
 	}
 
-	outbound, err := buildOutboundChannels(resolved.Notifiers, outboundCoalesce, coalesceCfg, logger)
-	if err != nil {
-		return notifyBundle{}, err
-	}
-	channels = append(channels, outbound...)
-
+	// The in-app channel is the failure sink for permanently-failed outbound
+	// deliveries. Compute it before building the outbound channels so a
+	// coalesce-wrapped channel can surface its async window-close failures
+	// through it too (not just the dispatcher's synchronous path).
 	var failureSink notify.SyntheticIngester
 	if inappCh != nil {
 		failureSink = inappCh
 	}
+
+	outbound, err := buildOutboundChannels(resolved.Notifiers, outboundCoalesce, coalesceCfg, logger, failureSink)
+	if err != nil {
+		return notifyBundle{}, err
+	}
+	channels = append(channels, outbound...)
 
 	retentionFn := buildRetentionFn(db, notifyCfg, logger)
 
@@ -200,7 +204,7 @@ func buildInappRenderer() (render.Renderer, error) {
 	return render.NewTemplateRenderer("inapp", body, "text/plain", render.DefaultTitle)
 }
 
-func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, coalesceCfg coalesce.Config, logger *slog.Logger) ([]notify.Channel, error) {
+func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, coalesceCfg coalesce.Config, logger *slog.Logger, failureSink notify.SyntheticIngester) ([]notify.Channel, error) {
 	channels := make([]notify.Channel, 0, len(specs))
 	for _, spec := range specs {
 		ch, err := channel.Build(spec)
@@ -208,7 +212,7 @@ func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, 
 			return nil, fmt.Errorf("build notifier %q: %w", spec.ID, err)
 		}
 		if outboundCoalesce {
-			ch = coalesce.New(ch, coalesceCfg, notify.RealClock(), logger)
+			ch = coalesce.New(ch, coalesceCfg, notify.RealClock(), logger, failureSink)
 		}
 		channels = append(channels, ch)
 	}

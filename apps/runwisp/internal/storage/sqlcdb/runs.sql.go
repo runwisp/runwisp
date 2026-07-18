@@ -278,11 +278,11 @@ const getRunSummary = `-- name: GetRunSummary :one
 SELECT
   CAST(COUNT(*) AS INTEGER) AS total,
   CAST(COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
-  CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow')
+  CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow','start_failed')
                          THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed,
   CAST(COALESCE(SUM(CASE WHEN end_reason = 'missed' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missed,
   (SELECT end_at FROM runs
-   WHERE end_reason IN ('failed','crashed','timeout','log_overflow')
+   WHERE end_reason IN ('failed','crashed','timeout','log_overflow','start_failed')
      AND deleted_at IS NULL
    ORDER BY end_at DESC LIMIT 1) AS end_at
 FROM runs WHERE deleted_at IS NULL
@@ -299,6 +299,9 @@ type GetRunSummaryRow struct {
 // 'missed' is counted on its own and deliberately excluded from 'failed':
 // a missed run never executed, so folding it into the execution-failure
 // count (and last_failure timestamp) would skew failure metrics.
+// The failure set below must mirror runtime/retry.IsFailureReason (Go): keep
+// them in sync when a new failure end_reason is added, or this summary count and
+// the failed run metric (runwisp_runs_total status=failed) will undercount.
 func (q *Queries) GetRunSummary(ctx context.Context) (GetRunSummaryRow, error) {
 	row := q.db.QueryRowContext(ctx, getRunSummary)
 	var i GetRunSummaryRow

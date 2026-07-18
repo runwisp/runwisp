@@ -305,6 +305,72 @@ func TestShutdownDoesNotPromoteQueuedRun(t *testing.T) {
 	assert.Equal(t, 1, exec.Calls(), "the queued run must not be promoted during shutdown")
 }
 
+// TestReloadDropReAddRevivesQueueTask is the regression test for Bug B: a
+// reload that drops a task while a run is still draining, followed by a reload
+// that re-adds it, must revive the task rather than leave it latched removed. If
+// UpsertTask never cleared the removed flag (and the queue drain didn't restart),
+// retiring the old run would delete the now-live task and a newly enqueued run
+// would never drain. The test holds run1 in flight across the drop+re-add, then
+// enqueues run2 and releases: both must complete and the task must survive.
+func TestReloadDropReAddRevivesQueueTask(t *testing.T) {
+	jm, exec, eb := newGatedManager(t)
+
+	jm.UpsertTask(testTask("t", model.PolicyQueue, 1))
+
+	// run1 takes the only slot and stays in flight on the gate.
+	_, err := jm.TriggerRun("t", model.TriggeredByAPI)
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+
+	// Reload #1 drops the task (run1 still draining), reload #2 re-adds it.
+	jm.RemoveTask("t")
+	jm.UpsertTask(testTask("t", model.PolicyQueue, 1))
+
+	// A run enqueued against the revived task; the slot is still held by run1.
+	_, err = jm.TriggerRun("t", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	done := watchCompletions(eb)
+	exec.ReleaseAll() // run1 retires; the revived task must survive and drain run2
+
+	done.waitFor(t, 2)
+	assert.Equal(t, 2, exec.Calls(), "the revived queue task must promote the enqueued run")
+
+	jm.mu.Lock()
+	_, ok := jm.tasks["t"]
+	jm.mu.Unlock()
+	assert.True(t, ok, "retiring the old run must not delete the revived task")
+}
+
+// TestEphemeralTaskReapedAfterRun is the regression test for Bug 7: a
+// cloud-inline task is marked Ephemeral and never enters the TOML registry, so
+// reconcile can never RemoveTask it. Its taskState (and, for PolicyQueue, its
+// drain goroutine) must be reaped once its run retires, or every distinct
+// dispatched name leaks a goroutine + state for the daemon's lifetime.
+func TestEphemeralTaskReapedAfterRun(t *testing.T) {
+	jm, exec, eb := newTestManager(t)
+
+	task := testTask("cloud-adhoc", model.PolicyQueue, 1)
+	task.Ephemeral = true
+	jm.UpsertTask(task)
+
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
+
+	done := watchCompletions(eb)
+	_, err := jm.TriggerRun("cloud-adhoc", model.TriggeredByCloud)
+	require.NoError(t, err)
+	done.waitFor(t, 1)
+
+	// The reap runs in retireRun, which may land just after the completion event;
+	// poll until the taskState is gone rather than assume synchronous ordering.
+	require.Eventually(t, func() bool {
+		jm.mu.Lock()
+		defer jm.mu.Unlock()
+		_, ok := jm.tasks["cloud-adhoc"]
+		return !ok
+	}, 2*time.Second, 5*time.Millisecond, "an ephemeral task must be reaped after its run retires")
+}
+
 // TestTriggerRunReturnsIndependentSnapshot guards the contract that the run
 // returned by TriggerRun is a snapshot, not the live pointer the execution
 // goroutine mutates. A caller (e.g. the REST trigger handler) reads the

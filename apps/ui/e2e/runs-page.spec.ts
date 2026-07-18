@@ -177,6 +177,60 @@ test.describe("runs page", () => {
         await expect(topRow).toBeInViewport();
     });
 
+    // Regression (Bug 4): navigating from a dead deep-link to a valid one must
+    // not flash the "Run not found" panel for the incoming (valid) run. The stale
+    // not-found latched by the dead link has to be cleared before the restore
+    // fetch resolves. We force the restore path by hiding the target from the
+    // list response, and hold the getById fetch open so the post-navigation gap
+    // is a wide, deterministic window: with the bug, "Run not found" stays
+    // visible through it; with the fix it is gone immediately.
+    test("no 'Run not found' flash when switching from a dead deep-link to a valid one", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        // Two real runs so the list has a row and isn't empty (an empty list
+        // short-circuits the restore effect before it can flash).
+        await seedEndedRun(page, "echo-task", daemonState.token);
+        const target = await seedEndedRun(page, "echo-task", daemonState.token);
+
+        // Keep the target out of the cross-task list so restoring it takes the
+        // getById fetch path (the only path that can flash a stale not-found).
+        await page.route(/\/api\/runs(\?|$)/, async (route) => {
+            const resp = await route.fetch();
+            const body = (await resp.json()) as { runs: { id: string }[]; total?: number };
+            if (Array.isArray(body.runs)) {
+                const before = body.runs.length;
+                body.runs = body.runs.filter((r) => r.id !== target.id);
+                if (typeof body.total === "number") body.total -= before - body.runs.length;
+            }
+            await route.fulfill({ response: resp, json: body });
+        });
+
+        // Hold the target's restore fetch open until we release it.
+        let releaseGetById: () => void = () => {};
+        const getByIdGate = new Promise<void>((resolve) => (releaseGetById = resolve));
+        await page.route(`**/api/runs/${target.id}`, async (route) => {
+            await getByIdGate;
+            await route.continue();
+        });
+
+        // 1. Dead link latches the not-found panel.
+        const deadId = "01BX5ZZKBKACTAV9WEVGEMMVRZ"; // valid ULID shape, never created
+        await page.goto(`/runs/${deadId}`);
+        await expect(page.getByText("Run not found")).toBeVisible({ timeout: 10_000 });
+
+        // 2. Navigate to the valid (list-hidden) run; its restore fetch is gated.
+        await page.goto(`/runs/${target.id}`);
+
+        // 3. While the restore fetch is still in flight, the stale not-found must
+        //    already be cleared — no flash.
+        await expect(page.getByText("Run not found")).toBeHidden({ timeout: 4_000 });
+
+        // 4. Let the fetch complete; the valid run resolves.
+        releaseGetById();
+        await expect(page.getByText(target.id)).toBeVisible({ timeout: 10_000 });
+    });
+
     test("an execution is linkable on the cross-task view", async ({
         authenticatedPage: page,
         daemonState,

@@ -165,6 +165,12 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 	if !exists {
 		ts = &taskState{active: make([]*ActiveRun, 0)}
 		m.tasks[task.Name] = ts
+	} else {
+		// Reviving a task a prior reload had removed while a run was still
+		// draining: clear the stale removed latch so the old run's retireRun
+		// won't delete the now-live task, and so the queue re-arms below. The
+		// flag is reset nowhere else.
+		ts.removed = false
 	}
 	ts.task = &taskCopy
 
@@ -177,11 +183,22 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 		}
 	}
 
-	if task.OnOverlap == model.PolicyQueue && ts.cond == nil {
-		ts.queue = make([]*model.Run, 0)
-		ts.cond = sync.NewCond(&m.mu)
-		m.wg.Add(1)
-		go m.queueProcessLoop(task.Name)
+	if task.OnOverlap == model.PolicyQueue {
+		if ts.queue == nil {
+			ts.queue = make([]*model.Run, 0)
+		}
+		if ts.cond == nil {
+			ts.cond = sync.NewCond(&m.mu)
+		}
+		// Spawn the drain loop only if one isn't already running. A remove+re-add
+		// cycle leaves cond non-nil but the goroutine exited, so gate on the
+		// liveness flag rather than cond == nil (which would leave the revived
+		// queue task with no drain).
+		if !ts.queueDraining {
+			ts.queueDraining = true
+			m.wg.Add(1)
+			go m.queueProcessLoop(task.Name)
+		}
 	}
 }
 
@@ -919,6 +936,17 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 	// A reload removed this task while runs were draining; once the last one
 	// retires the taskState has no further owner, so delete it here.
 	if ts.removed && len(ts.active) == 0 {
+		delete(m.tasks, task.Name)
+	} else if ts.task != nil && ts.task.Ephemeral && len(ts.active) == 0 && len(ts.queue) == 0 {
+		// Ephemeral cloud-inline tasks are one-shot and never enter the TOML
+		// registry, so reconcile can't remove them. Reap here once the run
+		// retires with nothing queued: mark removed and wake the queue-drain
+		// goroutine so it exits, then drop the state. Holding m.mu makes the
+		// "no active, no queued" check atomic w.r.t. queueProcessLoop.
+		ts.removed = true
+		if ts.cond != nil {
+			ts.cond.Broadcast()
+		}
 		delete(m.tasks, task.Name)
 	}
 	return nextRestartAttempt, serviceFatal, fatalAttempts

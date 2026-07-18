@@ -16,6 +16,6 @@
         title="RUNWISP_NO_AUTH is set — the API and Web UI are reachable without a password. Local/dev use only."
     >
         <ShieldOff size={12} class="shrink-0" />
-        Auth disabled
+        <span class="hidden sm:inline">Auth disabled</span>
     </span>
 {/if}

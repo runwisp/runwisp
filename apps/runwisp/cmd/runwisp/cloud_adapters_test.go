@@ -26,6 +26,7 @@ type stubTaskRunner struct {
 	getTaskOK          bool
 	serviceTasks       []*model.Task
 	upsertedTask       *model.Task
+	removedTask        string
 	terminatedExternal string
 	terminatedErr      error
 }
@@ -51,6 +52,10 @@ func (s *stubTaskRunner) ListServiceTasks() []*model.Task {
 
 func (s *stubTaskRunner) UpsertTask(t *model.Task) {
 	s.upsertedTask = t
+}
+
+func (s *stubTaskRunner) RemoveTask(taskName string) {
+	s.removedTask = taskName
 }
 
 func (s *stubTaskRunner) TerminateRun(string) error { panic("not used") }

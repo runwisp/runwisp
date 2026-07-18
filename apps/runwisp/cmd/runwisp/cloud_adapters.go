@@ -8,11 +8,21 @@ import (
 	"github.com/runwisp/runwisp/internal/runtime"
 )
 
+// cloudRuntime is exactly the runtime surface the cloud adapter drives: the
+// observe/trigger TaskRunner plus RemoveTask (service:remove tears down a
+// cloud-declared service). A concrete runtime.TaskManager satisfies it; naming
+// the seam here keeps the adapter — and its tests — from depending on the full
+// TaskManager lifecycle interface.
+type cloudRuntime interface {
+	runtime.TaskRunner
+	RemoveTask(taskName string)
+}
+
 // cloudTaskRunner adapts the concrete runtime task manager to cloud.TaskRunner.
 // Specifically it translates the cloud's "trigger a cloud-tagged run for this
 // execution id" call into the runtime's richer TriggerRunWithOptions API.
 type cloudTaskRunner struct {
-	inner runtime.TaskRunner
+	inner cloudRuntime
 }
 
 func (a *cloudTaskRunner) GetTask(name string) (*model.Task, bool) {
@@ -25,6 +35,10 @@ func (a *cloudTaskRunner) ListServiceTasks() []*model.Task {
 
 func (a *cloudTaskRunner) UpsertTask(task *model.Task) {
 	a.inner.UpsertTask(task)
+}
+
+func (a *cloudTaskRunner) RemoveTask(taskName string) {
+	a.inner.RemoveTask(taskName)
 }
 
 func (a *cloudTaskRunner) TriggerCloudRun(taskName, externalExecutionID string, params map[string]string) (*model.Run, error) {

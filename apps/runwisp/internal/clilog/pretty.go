@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -68,7 +70,7 @@ func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
 
 	b.WriteString(h.levelLabel(r.Level))
 	b.WriteByte(' ')
-	b.WriteString(h.paint(prettyMsg, r.Message))
+	b.WriteString(h.paint(prettyMsg, escapeControl(r.Message)))
 
 	b.WriteString(h.preformatted)
 	r.Attrs(func(a slog.Attr) bool {
@@ -160,13 +162,58 @@ func (h *prettyHandler) paint(st lipgloss.Style, s string) string {
 }
 
 // quoteIfNeeded matches slog's TextHandler quoting: bare tokens stay bare, but
-// anything with whitespace, '=', quotes, or control bytes gets Go-quoted.
+// anything with whitespace, '=', quotes, or any control rune gets Go-quoted.
+// The control-rune check is a security boundary, not cosmetics: attribute
+// values reach this handler from untrusted input (e.g. a task name in an
+// HTTP/WS body), and a bare ESC (0x1b) or other control byte written raw to a
+// terminal is an escape-injection vector. strconv.Quote renders such bytes as
+// visible \x escapes; printable Unicode is preserved.
 func quoteIfNeeded(s string) string {
 	if s == "" {
 		return `""`
 	}
-	if strings.ContainsAny(s, " =\"\n\t\r") {
+	if strings.ContainsAny(s, " =\"\n\t\r") || hasControlRunes(s) {
 		return strconv.Quote(s)
 	}
 	return s
+}
+
+// hasControlRunes reports whether s contains any control rune (C0/C1, DEL) or
+// invalid UTF-8 — the bytes a terminal may interpret as escape sequences.
+func hasControlRunes(s string) bool {
+	for _, r := range s {
+		if r == utf8.RuneError || unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// escapeControl renders any control rune (or invalid UTF-8) in s as a visible
+// \xNN / \uNNNN escape, leaving printable text — including Unicode — untouched.
+// Used for the record message, which is painted inline (not quoted) but can
+// still carry untrusted data; a raw control byte there is the same terminal
+// escape-injection risk as in an attribute value.
+func escapeControl(s string) string {
+	if !hasControlRunes(s) {
+		return s
+	}
+	const hex = "0123456789abcdef"
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == utf8.RuneError:
+			b.WriteRune('�')
+		case unicode.IsControl(r):
+			// unicode.IsControl matches only the Cc category (<= 0x9f), so a
+			// two-digit \xNN escape always suffices.
+			b.WriteString(`\x`)
+			b.WriteByte(hex[r>>4])
+			b.WriteByte(hex[r&0xf])
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
