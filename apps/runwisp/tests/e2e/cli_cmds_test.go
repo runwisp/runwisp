@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,7 +91,10 @@ func TestCloudCmdBootErrorVisible(t *testing.T) {
 	)
 	out, err := cmd.CombinedOutput()
 	require.Error(t, err, "cloud mode with a malformed config must exit non-zero: %s", out)
-	require.Contains(t, string(out), "failed to parse config file",
+	// Case-insensitive: the fatal error is rendered by fang's styled handler,
+	// which capitalizes the first letter ("Failed to parse config file…"). What
+	// matters is that the boot failure is visible, not its exact casing.
+	require.Contains(t, strings.ToLower(string(out)), "failed to parse config file",
 		"fatal boot error must be visible on stderr, got: %q", string(out))
 }
 

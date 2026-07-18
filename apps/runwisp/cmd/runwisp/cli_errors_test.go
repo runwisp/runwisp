@@ -9,11 +9,62 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/charmbracelet/fang"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestHandleCLIError_UserFacingKeepsRichRendering(t *testing.T) {
+	var buf bytes.Buffer
+	handleCLIError(&buf, fang.Styles{}, &userFacingError{
+		title:   "task \"bkup\" not found",
+		details: "Did you mean \"backup\"?",
+	})
+	out := buf.String()
+	// The branded renderer emits the ERROR badge, the title, and the details
+	// verbatim. userFacing errors never get the --help hint.
+	assert.Contains(t, out, "ERROR")
+	assert.Contains(t, out, "task \"bkup\" not found")
+	assert.Contains(t, out, "Did you mean")
+	assert.NotContains(t, out, "runwisp --help")
+}
+
+func TestHandleCLIError_UsageErrorGetsHelpHint(t *testing.T) {
+	var buf bytes.Buffer
+	handleCLIError(&buf, fang.Styles{}, errors.New(`unknown command "install" for "runwisp"`))
+	out := buf.String()
+	// Generic cobra usage errors share the same ERROR badge and get a --help hint.
+	assert.Contains(t, out, "ERROR")
+	assert.Contains(t, out, "unknown command")
+	assert.Contains(t, out, "Run 'runwisp --help' for usage.")
+}
+
+func TestHandleCLIError_NonUsageErrorHasNoHelpHint(t *testing.T) {
+	var buf bytes.Buffer
+	handleCLIError(&buf, fang.Styles{}, errors.New("config parse failed: unexpected token"))
+	out := buf.String()
+	assert.Contains(t, out, "ERROR")
+	assert.Contains(t, out, "config parse failed")
+	// A --help hint would send the operator down the wrong path for a parse error.
+	assert.NotContains(t, out, "runwisp --help")
+}
+
+func TestIsUsageError(t *testing.T) {
+	for _, msg := range []string{
+		`unknown command "install" for "runwisp"`,
+		"unknown flag: --nope",
+		"unknown shorthand flag: 'x' in -x",
+		"flag needs an argument: --port",
+		"invalid argument \"abc\" for \"--port\"",
+		`required flag(s) "config" not set`,
+		"accepts 1 arg(s), received 0",
+	} {
+		assert.True(t, isUsageError(errors.New(msg)), msg)
+	}
+	assert.False(t, isUsageError(errors.New("config parse failed: unexpected token")))
+}
 
 func TestUserFacingError_ErrorTitleOnly(t *testing.T) {
 	e := &userFacingError{title: "boom"}
@@ -27,25 +78,31 @@ func TestUserFacingError_ErrorWithDetails(t *testing.T) {
 	assert.Contains(t, out, "more context")
 }
 
-func TestRenderUserFacingError_TitleOnly(t *testing.T) {
+func TestRenderError_TitleOnly(t *testing.T) {
 	var buf bytes.Buffer
-	renderUserFacingError(&buf, &userFacingError{title: "boom"})
+	renderError(&buf, "boom", "", "")
 	out := buf.String()
-	assert.Contains(t, out, "Error")
+	assert.Contains(t, out, "ERROR")
 	assert.Contains(t, out, "boom")
 }
 
-func TestRenderUserFacingError_WithDetailsAndBullets(t *testing.T) {
+func TestRenderError_WithDetailsAndBullets(t *testing.T) {
 	var buf bytes.Buffer
-	renderUserFacingError(&buf, &userFacingError{
-		title:   "boom",
-		details: "context line\n  - fix one\n  - fix two\n",
-	})
+	renderError(&buf, "boom", "context line\n  - fix one\n  - fix two\n", "")
 	out := buf.String()
+	assert.Contains(t, out, "ERROR")
 	assert.Contains(t, out, "boom")
 	assert.Contains(t, out, "context line")
 	assert.Contains(t, out, "fix one")
 	assert.Contains(t, out, "fix two")
+}
+
+func TestRenderError_WithHint(t *testing.T) {
+	var buf bytes.Buffer
+	renderError(&buf, "boom", "", "Run 'runwisp --help' for usage.")
+	out := buf.String()
+	assert.Contains(t, out, "boom")
+	assert.Contains(t, out, "Run 'runwisp --help' for usage.")
 }
 
 func TestPasswordMismatchError_PortInTitle(t *testing.T) {

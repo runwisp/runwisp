@@ -18,10 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`runwisp validate --json` errors now carry a structured location** (`key`, `line`, `column`) for parse-time failures, so tooling can point at the offending site without parsing the message. See [CLI](https://docs.runwisp.com/operations/cli/#machine-readable-output-json).
 - **Readable daemon logs.** Log lines now render as `2026-05-27 14:03:01 [INFO] message key=value` — colored on an interactive terminal, plain otherwise — instead of Go's terse `level=INFO msg=…` logfmt. `--log-format=json` is unchanged for pipelines. See [Logging](https://docs.runwisp.com/operations/logging/).
+- **Colored, readable `--help` and errors.** Help pages are styled in the RunWisp brand palette, and every error — a typo like `runwisp install`, a bad config, a failed `runwisp password` — shares one branded `ERROR` block instead of a raw log line; plain text when piped or under `NO_COLOR`. See [CLI](https://docs.runwisp.com/operations/cli/).
+- **`runwisp service install --data .` installs into the current directory.** A relative `--data` is resolved to its absolute path and baked into the unit instead of being rejected, and declining the suggested data location now offers the current directory rather than erroring out. See [Autostart](https://docs.runwisp.com/operations/autostart/).
 
 ### Fixed
 
 - **`runwisp exec` no longer exits before a just-triggered run's output appears.** A freshly triggered run is handed back before its record is durably persisted, so the log stream could momentarily find no run and close empty; `exec` treated that as "the run produced nothing" and exited without printing its output. It now retries until the run becomes streamable.
+- **A plain `runwisp daemon` is no longer misreported as service-managed.** Detection dropped the unreliable systemd `INVOCATION_ID` heuristic (inherited by every process in a desktop terminal) and keys solely on the marker our generated units set, so the TUI quit dialog and cloud self-restart no longer treat a hand-launched daemon as init-managed. See [Autostart](https://docs.runwisp.com/operations/autostart/).
 
 ## [0.12.0] - 2026-07-08
 

@@ -145,9 +145,46 @@ func TestResolveDataDirInteractive_PromptYes(t *testing.T) {
 	assert.Equal(t, "/home/x/.local/share/runwisp", path)
 }
 
-func TestResolveDataDirInteractive_PromptNoReturnsUserFacing(t *testing.T) {
+func TestResolveDataDirInteractive_NoticePrintsAndAccepts(t *testing.T) {
+	var stderr bytes.Buffer
+	cmd := newInstallTestCmd(&bytes.Buffer{}, &stderr)
+	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{}}
+
+	path, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
+		Action: autostart.ResolveActionNotice,
+		Detail: `Using data dir /home/x/runwisp (resolved from ".").`,
+		Path:   "/home/x/runwisp",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "/home/x/runwisp", path)
+	assert.Contains(t, stderr.String(), "resolved from")
+	// A notice is informational — it must not shout "Warning:".
+	assert.NotContains(t, stderr.String(), "Warning:")
+}
+
+// When the suggested location is declined, the operator is offered the current
+// directory; accepting it returns the absolute cwd.
+func TestResolveDataDirInteractive_PromptNoThenCurrentDirYes(t *testing.T) {
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
-	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{YesNo: []bool{false}}}
+	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{YesNo: []bool{false, true}}}
+
+	path, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
+		Action: autostart.ResolveActionPrompt,
+		Detail: "use default?",
+		Path:   "/x",
+	})
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(path), "current-dir choice must be absolute: %q", path)
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	assert.Equal(t, wd, path)
+}
+
+// Declining both the suggested location and the current directory dead-ends in a
+// user-facing error that points at both frictionless ways to pin a data dir.
+func TestResolveDataDirInteractive_PromptNoThenCurrentDirNo(t *testing.T) {
+	cmd := newInstallTestCmd(&bytes.Buffer{}, &bytes.Buffer{})
+	deps := autostart.Deps{Prompter: &autostart.ScriptedPrompter{YesNo: []bool{false, false}}}
 
 	_, err := resolveDataDirInteractive(cmd, deps, autostart.ResolveDataDirResult{
 		Action: autostart.ResolveActionPrompt,
@@ -158,7 +195,7 @@ func TestResolveDataDirInteractive_PromptNoReturnsUserFacing(t *testing.T) {
 	var ufe *userFacingError
 	require.ErrorAs(t, err, &ufe)
 	assert.Equal(t, "data dir choice declined", ufe.title)
-	assert.Contains(t, ufe.details, "--data")
+	assert.Contains(t, ufe.details, "--data .")
 }
 
 func TestResolveDataDirInteractive_PromptErrorPropagates(t *testing.T) {

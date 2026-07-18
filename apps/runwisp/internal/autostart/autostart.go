@@ -204,34 +204,28 @@ type Installer interface {
 // rather than by hand. Quitting such a daemon via SIGTERM would just get
 // it respawned (or leave the manager's view stale), so UIs use this to
 // steer the operator toward `runwisp stop` / `systemctl --user stop`.
+// A hand-written unit must set this itself to be recognized as service-managed.
 const ServiceManagedEnv = "RUNWISP_SERVICE_MANAGED"
-
-// invocationIDEnv is set by systemd for every unit it starts — our fallback
-// signal for hand-written units that don't carry ServiceManagedEnv.
-const invocationIDEnv = "INVOCATION_ID"
 
 // serviceEnvVars mark a process as init-system-managed. A daemon that runwisp
 // spawns itself must not inherit these, or it self-reports as service-managed
 // merely because the spawning shell happened to run under systemd.
-var serviceEnvVars = []string{ServiceManagedEnv, invocationIDEnv}
+var serviceEnvVars = []string{ServiceManagedEnv}
 
-// RunningUnderServiceManager reports whether the current process was
-// launched by an init system. Primary signal is ServiceManagedEnv from
-// our generated unit files; INVOCATION_ID is the systemd fallback for
-// hand-written units.
+// RunningUnderServiceManager reports whether the current process was launched
+// by an init system, via the ServiceManagedEnv marker our generated unit files
+// set. We deliberately do not sniff systemd's INVOCATION_ID: systemd sets it on
+// a unit's main process and it is inherited by every descendant — the login
+// session, the terminal emulator, the shell — so a plain `runwisp daemon` typed
+// into a desktop terminal would carry it and false-report as service-managed.
 func RunningUnderServiceManager() bool {
-	if os.Getenv(ServiceManagedEnv) == "1" {
-		return true
-	}
-	// systemd sets INVOCATION_ID for every unit it starts.
-	return os.Getenv(invocationIDEnv) != ""
+	return os.Getenv(ServiceManagedEnv) == "1"
 }
 
 // WithoutServiceEnv returns env (in "KEY=VALUE" form, as from os.Environ) with
 // the service-manager marker vars removed. Use it when spawning a daemon that
 // runwisp itself launches: such a daemon is not init-managed, so it must not
-// inherit a leaked INVOCATION_ID (or a stray RUNWISP_SERVICE_MANAGED) from the
-// spawning environment.
+// inherit a stray RUNWISP_SERVICE_MANAGED from the spawning environment.
 func WithoutServiceEnv(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, e := range env {

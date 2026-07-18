@@ -6,6 +6,7 @@ package autostart
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -125,12 +126,16 @@ func TestResolveDataDir(t *testing.T) {
 			want: want{path: "/srv/runwisp", action: ResolveActionAccept},
 		},
 		{
-			name: "explicit-relative-rejected",
+			// A relative --data is no longer rejected — it is resolved to an
+			// absolute path (the current dir) and accepted with a notice, so
+			// `--data .` installs into the current directory. Path is asserted
+			// separately below because it depends on the test's cwd.
+			name: "explicit-relative-absolutized",
 			in: ResolveDataDirOptions{
 				Explicit: "./mydata", ExplicitSet: true,
 				HomeDir: "/home/alice",
 			},
-			want: want{action: ResolveActionReject},
+			want: want{action: ResolveActionNotice},
 		},
 		{
 			name: "explicit-tmp-rejected",
@@ -193,6 +198,21 @@ func TestResolveDataDir(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveDataDir_RelativeAbsolutized(t *testing.T) {
+	r, err := ResolveDataDir(ResolveDataDirOptions{
+		Explicit:    "./mydata",
+		ExplicitSet: true,
+		HomeDir:     "/home/alice",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ResolveActionNotice, r.Action)
+	assert.True(t, filepath.IsAbs(r.Path),
+		"a relative --data must be resolved to an absolute path for the unit (cwd=/ at boot)")
+	assert.Truef(t, strings.HasSuffix(r.Path, filepath.FromSlash("/mydata")),
+		"resolved path should end in the relative segment, got %q", r.Path)
+	assert.Contains(t, r.Detail, "resolved from")
 }
 
 func TestResolveDataDir_BareDefaultDBUsesAbsolutePath(t *testing.T) {
