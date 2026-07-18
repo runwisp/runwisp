@@ -36,7 +36,10 @@ func runList(out io.Writer, f Flags, asJSON bool) error {
 		if asJSON {
 			// Emit an error document so an agent learns of the failure from the
 			// JSON, not from stderr text; the returned error still drives exit 1.
-			if werr := writeJSON(out, listJSONDoc{SchemaVersion: jsonSchemaVersion, Error: err.Error()}); werr != nil {
+			// Tasks is an explicit empty slice (not nil) so the error document
+			// still emits "tasks": [], matching the success path and the sibling
+			// status/validate commands rather than a lone "tasks": null.
+			if werr := writeJSON(out, listJSONDoc{SchemaVersion: jsonSchemaVersion, Tasks: []listTaskJSON{}, Error: err.Error()}); werr != nil {
 				return werr
 			}
 		}

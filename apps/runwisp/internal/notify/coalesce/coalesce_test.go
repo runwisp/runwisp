@@ -5,6 +5,7 @@ package coalesce
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 
 func TestCoalesce_ID_DelegatesToInner(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
-	c := New(inner, Config{Window: time.Hour, EveryN: 10}, testutil.NewFakeClock(time.Unix(0, 0)), nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 10}, testutil.NewFakeClock(time.Unix(0, 0)), nil, nil)
 	defer c.Close(context.Background())
 	if c.ID() != "slack-ops" {
 		t.Fatalf("expected ID=slack-ops, got %q", c.ID())
@@ -37,7 +38,7 @@ func failEvent(taskName string) *notify.Event {
 func TestCoalesce_FirstEventForwarded(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, EveryN: 10}, clock, nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 10}, clock, nil, nil)
 	defer c.Close(context.Background())
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -52,7 +53,7 @@ func TestCoalesce_FirstEventForwarded(t *testing.T) {
 func TestCoalesce_RepeatsSuppressedWithinWindow(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, EveryN: 100}, clock, nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 100}, clock, nil, nil)
 	defer c.Close(context.Background())
 
 	for i := 0; i < 5; i++ {
@@ -70,7 +71,7 @@ func TestCoalesce_RepeatsSuppressedWithinWindow(t *testing.T) {
 func TestCoalesce_EveryNTriggersSummary(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, EveryN: 3}, clock, nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 3}, clock, nil, nil)
 	defer c.Close(context.Background())
 
 	for i := 0; i < 4; i++ {
@@ -91,7 +92,7 @@ func TestCoalesce_EveryNTriggersSummary(t *testing.T) {
 func TestCoalesce_DifferentFingerprintsDoNotInterfere(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, EveryN: 10}, clock, nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 10}, clock, nil, nil)
 	defer c.Close(context.Background())
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -107,7 +108,7 @@ func TestCoalesce_DifferentFingerprintsDoNotInterfere(t *testing.T) {
 func TestCoalesce_NewWindowAfterExpiry(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, EveryN: 100}, clock, nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 100}, clock, nil, nil)
 	defer c.Close(context.Background())
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -134,7 +135,7 @@ func withManualTimers(c *Channel) *testutil.ManualTimers {
 func TestCoalesce_WindowCloseSummary(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
-	c := New(inner, Config{Window: time.Hour, EveryN: 1000}, clock, nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 1000}, clock, nil, nil)
 	defer c.Close(context.Background())
 	mt := withManualTimers(c)
 
@@ -161,7 +162,7 @@ func TestCoalesce_WindowCloseSummary(t *testing.T) {
 // leaking goroutines or causing further deliveries after shutdown.
 func TestCoalesce_CloseStopsTimers(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
-	c := New(inner, Config{Window: time.Hour, EveryN: 1000}, testutil.NewFakeClock(time.Unix(0, 0)), nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 1000}, testutil.NewFakeClock(time.Unix(0, 0)), nil, nil)
 	mt := withManualTimers(c)
 
 	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
@@ -179,6 +180,45 @@ func TestCoalesce_CloseStopsTimers(t *testing.T) {
 	assert.Len(t, inner.Received(), 1)
 }
 
+// recordingFailureSink captures synthetic delivery-failure events emitted by the
+// coalescer's window-close flush.
+type recordingFailureSink struct {
+	captured []*notify.Event
+}
+
+func (s *recordingFailureSink) IngestSynthetic(ev *notify.Event) {
+	s.captured = append(s.captured, ev)
+}
+
+// TestCoalesce_WindowCloseFailureReportsInApp is the regression test for Bug 6:
+// the window-close summary is delivered on an async goroutine the dispatcher
+// never observes, so a permanent failure there used to be logged and forgotten —
+// a coalesced burst that failed at window close produced no in-app alert. The
+// coalescer must surface the failure itself via the SyntheticIngester, matching
+// the uncoalesced path.
+func TestCoalesce_WindowCloseFailureReportsInApp(t *testing.T) {
+	inner := testutil.NewFakeChannel("slack-ops")
+	inner.Err = errors.New("webhook 500") // every delivery, including the summary, fails
+	sink := &recordingFailureSink{}
+	clock := testutil.NewFakeClock(time.Unix(0, 0))
+	c := New(inner, Config{Window: time.Hour, EveryN: 1000}, clock, nil, sink)
+	defer c.Close(context.Background())
+	mt := withManualTimers(c)
+
+	// First event forwarded (delivery fails on the sync path, not under test);
+	// the rest are suppressed and folded into the window-close summary.
+	for i := 0; i < 4; i++ {
+		_ = c.Execute(context.Background(), failEvent("health"))
+	}
+	require.Equal(t, 1, mt.Pending(), "a window-close timer must be armed")
+
+	mt.FireAll()
+	c.wg.Wait()
+
+	require.Len(t, sink.captured, 1, "a permanent window-close summary failure must surface in-app")
+	assert.Equal(t, notify.KindNotifyDeliveryFailed, sink.captured[0].Kind)
+}
+
 func TestSummarize_NonNilExtra(t *testing.T) {
 	ev := &notify.Event{
 		Kind:  notify.KindRunFailed,
@@ -193,7 +233,7 @@ func TestSummarize_NonNilExtra(t *testing.T) {
 
 func TestTimerFlush_EmptyState(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
-	c := New(inner, Config{Window: time.Hour, EveryN: 1}, nil, nil)
+	c := New(inner, Config{Window: time.Hour, EveryN: 1}, nil, nil, nil)
 	defer c.Close(context.Background())
 	// calling timerFlush with a key that has no state is a no-op
 	c.timerFlush("nonexistent-key")

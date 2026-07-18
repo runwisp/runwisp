@@ -392,33 +392,39 @@ func validateTLS(d *Daemon) error {
 // Validate checks for invalid configuration values. Durations and byte sizes
 // have already been parsed at this point — only enum membership, ranges, and
 // required fields remain.
+// Validate collects every configuration problem it can rather than returning at
+// the first, so `runwisp validate` reports them all in one pass (one entry per
+// offending task, plus each top-level check). Independent checks each contribute
+// at most one error; the result collapses to nil / a single error / a
+// *MultiError via joinConfigErrors.
 func Validate(cfg *Config) error {
+	var errs []error
 	if err := validateDefaults(&cfg.Defaults); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 	if cfg.Daemon.ShutdownTimeout < 0 {
-		return fmt.Errorf("invalid daemon.shutdown_timeout: must be a positive duration")
+		errs = append(errs, fmt.Errorf("invalid daemon.shutdown_timeout: must be a positive duration"))
 	}
 	if err := validateTLS(&cfg.Daemon); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 	if _, err := ResolveTimezone("scheduler.timezone", cfg.Scheduler.Timezone); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 
 	seen := make(map[string]struct{}, len(cfg.Tasks))
 	for i := range cfg.Tasks {
 		if err := validateTask(&cfg.Tasks[i], seen); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 	if err := validateServiceDependencies(cfg); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 	if err := validateNotify(&cfg.Notify); err != nil {
-		return err
+		errs = append(errs, err)
 	}
-	return nil
+	return joinConfigErrors(errs)
 }
 
 // validateServiceDependencies checks every service's depends_on graph: each ref

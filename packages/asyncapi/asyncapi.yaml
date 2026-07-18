@@ -75,6 +75,7 @@ channels:
           - $ref: "#/components/messages/agentRestart"
           - $ref: "#/components/messages/serviceApply"
           - $ref: "#/components/messages/serviceControl"
+          - $ref: "#/components/messages/serviceRemove"
           - $ref: "#/components/messages/errorCloudToDaemon"
 
   daemonToCloud:
@@ -147,6 +148,11 @@ components:
       name: service:control
       payload:
         $ref: "#/components/schemas/ServiceControlMessage"
+
+    serviceRemove:
+      name: service:remove
+      payload:
+        $ref: "#/components/schemas/ServiceRemoveMessage"
 
     errorCloudToDaemon:
       name: error
@@ -500,6 +506,30 @@ components:
         - type
         - taskId
         - action
+
+    ServiceRemoveMessage:
+      type: object
+      description: |
+        Cloud → daemon. Tears down a previously declared service on the runner:
+        the daemon cancels its instances and drops the kind=service task. Maps to
+        the daemon's RemoveTask. Without this, a cloud-declared service (and its
+        supervisor goroutines) would live until daemon restart, since reconcile
+        only ever removes TOML-registry tasks. Gated by the `service:remove`
+        protocol-feature token — old daemons never receive it.
+      properties:
+        type:
+          type: string
+          const: service:remove
+        v:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        taskId:
+          type: string
+      required:
+        - type
+        - taskId
 
     ServiceInstanceSnapshot:
       type: object

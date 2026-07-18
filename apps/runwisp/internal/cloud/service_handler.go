@@ -10,6 +10,7 @@ import (
 
 	"log/slog"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -35,7 +36,11 @@ func (h *InboundHandler) HandleServiceApply(message protocol.ServiceApplyMessage
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "service is required"}
 	}
 
-	if name, existing := h.resolveServiceTarget(svc.TaskID, svc.TaskName); existing {
+	name, existing, err := h.resolveServiceTarget(svc.TaskID, svc.TaskName)
+	if err != nil {
+		return err
+	}
+	if existing {
 		base, _ := h.taskManager.GetTask(name)
 		if err := h.mergeServiceApply(base, svc); err != nil {
 			return err
@@ -69,7 +74,10 @@ func (h *InboundHandler) HandleServiceApply(message protocol.ServiceApplyMessage
 // The action enum is gated by the protocol; an unknown value is treated as a
 // validation error rather than silently ignored.
 func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMessage) error {
-	taskName, _ := h.resolveServiceTarget(message.TaskID, "")
+	taskName, _, err := h.resolveServiceTarget(message.TaskID, "")
+	if err != nil {
+		return err
+	}
 	if taskName == "" {
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "taskId is required"}
 	}
@@ -78,7 +86,6 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 	}
 
 	action, _ := message.Action.Value().(string)
-	var err error
 	switch action {
 	case "start":
 		err = h.taskManager.StartServiceInstances(taskName, model.TriggeredByCloud)
@@ -94,6 +101,24 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 	}
 
 	slog.Info("service control applied", "task", taskName, "action", action)
+	return nil
+}
+
+// HandleServiceRemove tears down a previously declared service: it cancels the
+// service's instances and drops its task from the runner. Only an existing
+// service resolves here — resolveServiceTarget rejects a non-service name — so a
+// remove can never delete an ordinary TOML task. A taskId that matches nothing
+// is a no-op (the desired end state, service-gone, already holds).
+func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemoveMessage) error {
+	name, existing, err := h.resolveServiceTarget(message.TaskID, "")
+	if err != nil {
+		return err
+	}
+	if !existing {
+		return nil
+	}
+	h.taskManager.RemoveTask(name)
+	slog.Info("service removed", "task", name)
 	return nil
 }
 
@@ -126,6 +151,12 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, e
 		taskName = "cloud-service"
 	}
 
+	if svc.Instances > config.MaxServiceInstances {
+		return nil, &CloudError{
+			Kind:    CloudErrorKindValidation,
+			Message: fmt.Sprintf("invalid instances for service %s: must be <= %d", taskName, config.MaxServiceInstances),
+		}
+	}
 	instances := svc.Instances
 	if instances < 1 {
 		instances = 1
@@ -163,22 +194,36 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, e
 
 // resolveServiceTarget maps a cloud-supplied taskId/taskName onto a registered
 // task name. A synced TOML service is addressed by its bare name, so a literal
-// registry hit means "merge onto this existing definition" (existing=true). A
-// cloud-declared service carries a ULID with no literal match; it falls back to
-// the sanitized cloud-<id> form (existing=false) used by buildServiceTask, so
-// control/status/apply all resolve to the same name.
-func (h *InboundHandler) resolveServiceTarget(taskID, taskName string) (name string, existing bool) {
+// registry hit against a *service* means "merge onto this existing definition"
+// (existing=true). A cloud-declared service carries a ULID with no literal
+// match; it falls back to the sanitized cloud-<id> form (existing=false) used
+// by buildServiceTask, so control/status/apply all resolve to the same name.
+//
+// A bare-name hit on a *non-service* task (a cron/one-shot TOML task) is
+// rejected: cloud service handling must never merge onto — and so overwrite the
+// disk-defined run= of — a task that isn't a service. This upholds the "run=
+// comes from disk only" invariant against a control-plane peer aiming a
+// service:apply at an ordinary task's name.
+func (h *InboundHandler) resolveServiceTarget(taskID, taskName string) (name string, existing bool, err error) {
 	for _, raw := range []string{taskID, taskName} {
-		if n := strings.TrimSpace(raw); n != "" {
-			if _, ok := h.taskManager.GetTask(n); ok {
-				return n, true
+		n := strings.TrimSpace(raw)
+		if n == "" {
+			continue
+		}
+		if t, ok := h.taskManager.GetTask(n); ok {
+			if !t.Kind.IsService() {
+				return "", false, &CloudError{
+					Kind:    CloudErrorKindValidation,
+					Message: fmt.Sprintf("task %q is not a service; a cloud service message cannot target it", n),
+				}
 			}
+			return n, true, nil
 		}
 	}
 	if n := sanitizeCloudTaskName(taskID); n != "" {
-		return n, false
+		return n, false, nil
 	}
-	return sanitizeCloudTaskName(taskName), false
+	return sanitizeCloudTaskName(taskName), false, nil
 }
 
 // mergeServiceApply overlays the fields a service:apply payload carries onto an
@@ -212,6 +257,12 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 		task.ExecutionDef = execDef
 	}
 
+	if svc.Instances > config.MaxServiceInstances {
+		return &CloudError{
+			Kind:    CloudErrorKindValidation,
+			Message: fmt.Sprintf("invalid instances for service %s: must be <= %d", task.Name, config.MaxServiceInstances),
+		}
+	}
 	if svc.Instances >= 1 {
 		task.Instances = svc.Instances
 		task.MaxConcurrent = svc.Instances

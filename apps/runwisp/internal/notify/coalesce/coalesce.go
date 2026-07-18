@@ -65,6 +65,12 @@ type Channel struct {
 	clock  notify.Clocker
 	logger *slog.Logger
 	after  afterFunc
+	// failures surfaces a permanently-failed window-close summary as an in-app
+	// notify_delivery_failed event. Immediate (actionForward/Summary) deliveries
+	// already reach the dispatcher's failure path via the Execute return value;
+	// this covers the async timerFlush path, which the dispatcher never sees. Nil
+	// (e.g. no in-app channel) falls back to logging only.
+	failures notify.SyntheticIngester
 
 	mu    sync.Mutex
 	state map[string]*fpState
@@ -85,8 +91,10 @@ type fpState struct {
 }
 
 // New wraps inner. The returned Channel must be Closed; otherwise pending
-// timer goroutines will leak.
-func New(inner notify.Channel, cfg Config, clock notify.Clocker, logger *slog.Logger) *Channel {
+// timer goroutines will leak. failures (typically the in-app channel) receives
+// a synthetic delivery-failure event when a window-close summary permanently
+// fails; pass nil to log only.
+func New(inner notify.Channel, cfg Config, clock notify.Clocker, logger *slog.Logger, failures notify.SyntheticIngester) *Channel {
 	if cfg.Window <= 0 {
 		cfg.Window = DefaultWindow
 	}
@@ -109,6 +117,7 @@ func New(inner notify.Channel, cfg Config, clock notify.Clocker, logger *slog.Lo
 		state:       make(map[string]*fpState),
 		timerDone:   ctx.Done(),
 		timerCancel: cancel,
+		failures:    failures,
 	}
 }
 
@@ -259,6 +268,12 @@ func (c *Channel) timerFlush(fp string) {
 		if err := c.inner.Execute(context.Background(), summarize(ev, count, true)); err != nil {
 			c.logger.Error("notify outbound coalesce: window-close summary delivery failed",
 				"channel", c.inner.ID(), "fingerprint", fp, "err", err)
+			// Async path the dispatcher never observes: surface the permanent
+			// failure in-app ourselves, matching the uncoalesced path, so a
+			// coalesced burst that fails at window close is not silent.
+			if c.failures != nil {
+				notify.ReportDeliveryFailure(c.failures, c.clock, c.inner.ID(), ev, err)
+			}
 		}
 	}()
 }

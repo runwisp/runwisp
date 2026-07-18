@@ -45,6 +45,21 @@ func runMigrations(db *sql.DB) error {
 		return err
 	}
 
+	// A database stamped newer than any migration this binary knows was written
+	// by a newer runwisp. Migrations are forward-only, so we cannot bring it back
+	// down, and reading it could misinterpret schema this binary predates. Fail
+	// loudly instead of silently no-opping (the loop below would skip every
+	// migration and return nil) — the operator must upgrade the binary.
+	maxKnown := 0
+	for _, m := range migrations {
+		if m.version > maxKnown {
+			maxKnown = m.version
+		}
+	}
+	if current > maxKnown {
+		return fmt.Errorf("database schema version %d is newer than this binary supports (max %d); upgrade runwisp to open this data directory", current, maxKnown)
+	}
+
 	for _, m := range migrations {
 		if m.version <= current {
 			continue

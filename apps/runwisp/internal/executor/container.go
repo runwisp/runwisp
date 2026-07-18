@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"log/slog"
 
@@ -59,6 +61,8 @@ type dockerClient interface {
 	ContainerAttach(ctx context.Context, containerID string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error)
 	ContainerStart(ctx context.Context, containerID string, options client.ContainerStartOptions) (client.ContainerStartResult, error)
 	ContainerWait(ctx context.Context, containerID string, options client.ContainerWaitOptions) client.ContainerWaitResult
+	ContainerStop(ctx context.Context, containerID string, options client.ContainerStopOptions) (client.ContainerStopResult, error)
+	ContainerKill(ctx context.Context, containerID string, options client.ContainerKillOptions) (client.ContainerKillResult, error)
 	ContainerRemove(ctx context.Context, containerID string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
 	ImageRemove(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error)
 }
@@ -171,16 +175,74 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *mod
 
 	stdoutPR, stderrPR := demuxAttachStream(attachResp)
 
+	// The container's lifetime is decoupled from the run ctx so a stop/timeout
+	// runs the signal ladder instead of an instant force-remove: ContainerWait
+	// blocks on a background ctx (returns only when the container truly exits),
+	// while a watcher translates run-ctx cancellation into a graceful
+	// ContainerStop (stop_signal, then SIGKILL after graceful_stop). Mirrors the
+	// shell/compose cmd.Cancel ladder, using Docker's native stop semantics.
+	waitFn := b.waitFunc(context.Background(), containerID)
+	done := make(chan struct{})
+	var doneOnce sync.Once
+	closeDone := func() { doneOnce.Do(func() { close(done) }) }
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			b.gracefulStopContainer(containerID, task)
+		case <-done:
+		}
+	}()
+
 	return &Process{
 		Stdout: stdoutPR,
 		Stderr: stderrPR,
-		Wait:   b.waitFunc(ctx, containerID),
+		Wait: func() (int, error) {
+			code, waitErr := waitFn()
+			closeDone()
+			return code, waitErr
+		},
+		// ForceKill skips the graceful window (daemon shutdown fast path):
+		// SIGKILL the container now rather than sending stop_signal first.
+		ForceKill: func() {
+			if _, err := b.docker.ContainerKill(context.Background(), containerID, client.ContainerKillOptions{Signal: "SIGKILL"}); err != nil {
+				slog.Warn("Failed to kill container", "id", containerID, "err", err)
+			}
+		},
 		Cleanup: func() {
+			closeDone()
 			attachResp.Close()
 			b.removeContainer(context.Background(), containerID)
 			b.builder.Remove(context.Background(), imageTag)
 		},
 	}, nil
+}
+
+// gracefulStopContainer sends the task's stop_signal to the container and lets
+// Docker force-kill it after the graceful_stop window (its native ladder:
+// signal, wait Timeout seconds, then SIGKILL). A non-positive graceful_stop maps
+// to Timeout=0 — no grace, immediate kill — matching the shell ladder's
+// "grace <= 0 goes straight to SIGKILL".
+func (b *ContainerBackend) gracefulStopContainer(containerID string, task *model.Task) {
+	opts := client.ContainerStopOptions{}
+	if sig, ok := model.NormalizeSignalName(task.StopSignal); ok {
+		opts.Signal = sig
+	}
+	secs := gracefulStopSeconds(task.GracefulStop)
+	opts.Timeout = &secs
+	if _, err := b.docker.ContainerStop(context.Background(), containerID, opts); err != nil {
+		slog.Warn("Failed to stop container gracefully", "id", containerID, "err", err)
+	}
+}
+
+// gracefulStopSeconds converts a graceful_stop Duration to Docker's whole-second
+// stop timeout, rounding up so a sub-second window still grants one second of
+// grace rather than collapsing to an immediate kill.
+func gracefulStopSeconds(d time.Duration) int {
+	if d <= 0 {
+		return 0
+	}
+	return int((d + time.Second - 1) / time.Second)
 }
 
 // createAndStartContainer configures, creates, attaches to, and starts the

@@ -17,6 +17,6 @@
         title="This runner is managed by RunWisp Cloud — scheduling and dispatch happen in the cloud; this page shows what runs on this machine."
     >
         <Cloud size={12} class="shrink-0" />
-        RunWisp Cloud
+        <span class="hidden sm:inline">RunWisp Cloud</span>
     </span>
 {/if}

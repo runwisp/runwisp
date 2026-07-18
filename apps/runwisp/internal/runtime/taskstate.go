@@ -46,7 +46,16 @@ type taskState struct {
 	// removed latches when a reload drops this task. It stops the queue-drain
 	// goroutine and tells recordRunOutcome to delete the taskState once the last
 	// in-flight run retires. Guarded by m.mu like every other taskState field.
+	// Cleared when UpsertTask revives a task a prior reload had removed.
 	removed bool
+
+	// queueDraining reports whether a queueProcessLoop goroutine is currently
+	// alive for this state. Set true when the loop is spawned, cleared when it
+	// exits (both under m.mu). UpsertTask uses it to re-arm the drain after a
+	// remove+re-add cycle left cond non-nil but the goroutine gone — gating the
+	// spawn on cond==nil alone would silently leave a revived queue task with no
+	// drain. Guarded by m.mu.
+	queueDraining bool
 }
 
 // concurrencyAction describes what the caller should do after evaluating a
@@ -105,6 +114,9 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 		// to drain. Exit rather than dereference a nil state.
 		return
 	}
+	// Clear the alive flag on exit (under m.mu) so a later UpsertTask revive can
+	// tell the drain is gone and spawn a fresh loop.
+	defer func() { ts.queueDraining = false }()
 	for {
 		for len(ts.queue) == 0 || len(ts.active) >= m.getConcurrencyLimit(ts.task) {
 			if m.isShutdown.Load() || ts.removed {

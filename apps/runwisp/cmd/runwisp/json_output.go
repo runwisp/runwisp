@@ -170,11 +170,14 @@ type execJSONDoc struct {
 	// task, daemon unreachable, auth failure). The identity fields below are then
 	// empty and omitted; on a real run they are always populated, so omitempty
 	// never hides them for a genuine outcome.
-	Error       string     `json:"error,omitempty"`
-	RunID       string     `json:"run_id,omitempty"`
-	Status      string     `json:"status,omitempty"`
-	EndReason   *string    `json:"end_reason,omitempty"`
-	ExitCode    int        `json:"exit_code"`
+	Error     string  `json:"error,omitempty"`
+	RunID     string  `json:"run_id,omitempty"`
+	Status    string  `json:"status,omitempty"`
+	EndReason *string `json:"end_reason,omitempty"`
+	// ExitCode is a pointer so the error document (no run) omits it rather than
+	// emitting a misleading "exit_code": 0, while a genuine success still reports
+	// an explicit 0.
+	ExitCode    *int       `json:"exit_code,omitempty"`
 	TriggeredBy string     `json:"triggered_by,omitempty"`
 	StartAt     *time.Time `json:"start_at,omitempty"`
 	EndAt       *time.Time `json:"end_at,omitempty"`
@@ -196,12 +199,13 @@ func newExecErrorJSONDoc(taskName string, err error) execJSONDoc {
 }
 
 func newExecJSONDoc(taskName string, r *model.Run) execJSONDoc {
+	exitCode := r.ExitCode
 	doc := execJSONDoc{
 		SchemaVersion: jsonSchemaVersion,
 		Task:          taskName,
 		RunID:         r.ID,
 		Status:        string(r.Status),
-		ExitCode:      r.ExitCode,
+		ExitCode:      &exitCode,
 		TriggeredBy:   string(r.TriggeredBy),
 		StartAt:       r.StartAt,
 		EndAt:         r.EndAt,
@@ -309,4 +313,21 @@ func messageFromError(err error) messageJSON {
 		m.Column = located.Column
 	}
 	return m
+}
+
+// messagesFromError expands a config error into one messageJSON per underlying
+// problem: a config.MultiError (several unknown keys, or several invalid tasks)
+// yields one entry each with its own key/line/column; any other error yields a
+// single entry. This is why `validate --json` reports every location, not just
+// the first.
+func messagesFromError(err error) []messageJSON {
+	var multi *config.MultiError
+	if errors.As(err, &multi) && len(multi.Errors) > 0 {
+		out := make([]messageJSON, 0, len(multi.Errors))
+		for _, e := range multi.Errors {
+			out = append(out, messageFromError(e))
+		}
+		return out
+	}
+	return []messageJSON{messageFromError(err)}
 }

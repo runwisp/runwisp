@@ -169,6 +169,14 @@ type Task struct {
 	// true, or the [defaults] value). Config-internal like notify_on_failure —
 	// never serialized to API/UI/cloud. Read it via NotifiesOnMissed.
 	NotifyOnMissed *bool `toml:"-" json:"-"`
+
+	// Ephemeral marks a task the daemon registered at runtime for a single
+	// cloud-dispatched inline execution (never from TOML, never in the task
+	// registry). The run manager reaps such a task — and its queue-drain
+	// goroutine — once its last run retires with nothing queued, since reconcile
+	// (which only ever sees registry/TOML tasks) has no path to remove it.
+	// Runtime-only: never serialized to API/UI/cloud/TOML.
+	Ephemeral bool `toml:"-" json:"-"`
 }
 
 // NotifiesOnMissed reports whether missed-run alerts are enabled for this task.

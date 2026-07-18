@@ -33,6 +33,9 @@ type Querier interface {
 	// 'missed' is counted on its own and deliberately excluded from 'failed':
 	// a missed run never executed, so folding it into the execution-failure
 	// count (and last_failure timestamp) would skew failure metrics.
+	// The failure set below must mirror runtime/retry.IsFailureReason (Go): keep
+	// them in sync when a new failure end_reason is added, or this summary count and
+	// the failed run metric (runwisp_runs_total status=failed) will undercount.
 	GetRunSummary(ctx context.Context) (GetRunSummaryRow, error)
 	GetTaskRegistration(ctx context.Context, taskName string) (TaskRegistration, error)
 	InsertNotification(ctx context.Context, arg InsertNotificationParams) error

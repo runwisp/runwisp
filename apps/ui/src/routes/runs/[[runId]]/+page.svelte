@@ -69,6 +69,10 @@
             return;
         }
         if (checkedMissingId === initialRunId) return; // already resolved as missing
+        // A genuinely new id that isn't loaded yet: clear any stale not-found
+        // latched by a previous dead link so it doesn't flash "Run not found"
+        // for this (possibly valid) run while the fetch is in flight.
+        runNotFound = false;
         void (async () => {
             try {
                 const run = await runsApi.getById(initialRunId);

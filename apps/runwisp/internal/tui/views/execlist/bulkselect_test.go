@@ -88,7 +88,9 @@ func TestSelectAllMatching_UsesMatchAllSelectorWithActiveFilter(t *testing.T) {
 	if !ok || !sel.MatchAll {
 		t.Fatalf("expected a MatchAll selector, got ok=%v matchAll=%v", ok, sel.MatchAll)
 	}
-	if sel.Filter.Status != "failed" || sel.Filter.TaskName != "task" {
+	// The "failed" bucket expands to the full wire set (matching the web UI), so
+	// the MatchAll selector carries that comma-joined status set, not the label.
+	if sel.Filter.Status != statusFilterWire["failed"] || sel.Filter.TaskName != "task" {
 		t.Fatalf("MatchAll selector must carry the active filter, got %+v", sel.Filter)
 	}
 	if err := sel.Validate(); err != nil {
@@ -156,7 +158,9 @@ func TestCurrentFilter_MirrorsWindowState(t *testing.T) {
 	w.statusFilter = "running"
 	w.filterTask = "deploy"
 	f := w.CurrentFilter()
-	if f.Status != "running" || f.TaskName != "deploy" {
+	// CurrentFilter expands the bucket label to the wire status set sent to the
+	// server (the web UI's "Running" bucket = pending + running).
+	if f.Status != statusFilterWire["running"] || f.TaskName != "deploy" {
 		t.Fatalf("CurrentFilter must mirror the window's filter, got %+v", f)
 	}
 }

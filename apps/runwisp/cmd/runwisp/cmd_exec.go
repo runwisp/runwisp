@@ -175,22 +175,30 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 	}
 
 	slog.Info("Task triggered", "name", taskName, "run", run.ID)
-	exitCode, err := followRun(client, taskName, run.ID, execLineOut())
+	exitCode, final, err := followRun(client, taskName, run.ID, execLineOut())
 	if err != nil {
 		return exitCode, err
 	}
 	if execFlags.JSON {
-		return exitCode, finishExecJSON(os.Stdout, client, taskName, run.ID)
+		return exitCode, finishExecJSON(os.Stdout, client, taskName, run.ID, final)
 	}
 	return exitCode, nil
 }
 
-// finishExecJSON fetches the run's terminal state and writes the execJSONDoc to
-// w. It is the shared --json tail for the daemon and remote follow paths.
-func finishExecJSON(w io.Writer, client *apiclient.Client, taskName, runID string) error {
-	final, err := client.GetRun(taskName, runID)
-	if err != nil {
-		return fmt.Errorf("fetch final run state: %w", err)
+// finishExecJSON writes the execJSONDoc for the run to w. It is the shared
+// --json tail for the daemon and remote follow paths. When followRun already
+// fetched the terminal run (the normal case), it is reused directly — a fresh
+// GetRun here that failed would return an error and mask the exit code already
+// in hand (see runExecCLI), turning a known success into a spurious failure.
+// final is nil only on an interrupted follow that produced no terminal state,
+// where a fetch is the only way to report an outcome at all.
+func finishExecJSON(w io.Writer, client *apiclient.Client, taskName, runID string, final *model.Run) error {
+	if final == nil {
+		var err error
+		final, err = client.GetRun(taskName, runID)
+		if err != nil {
+			return fmt.Errorf("fetch final run state: %w", err)
+		}
 	}
 	return writeJSON(w, newExecJSONDoc(taskName, final))
 }
@@ -238,12 +246,12 @@ func runExecViaRemote(taskName, baseURL, password string, detach bool) (int, err
 		fmt.Println(run.ID)
 		return 0, nil
 	}
-	exitCode, err := followRun(client, taskName, run.ID, execLineOut())
+	exitCode, final, err := followRun(client, taskName, run.ID, execLineOut())
 	if err != nil {
 		return exitCode, err
 	}
 	if execFlags.JSON {
-		return exitCode, finishExecJSON(os.Stdout, client, taskName, run.ID)
+		return exitCode, finishExecJSON(os.Stdout, client, taskName, run.ID, final)
 	}
 	return exitCode, nil
 }
@@ -310,7 +318,11 @@ const (
 // followRun follows a triggered run's SSE log stream, printing lines to
 // stdout/stderr and returning the run's exit code once it reaches a terminal
 // state. It is shared by the local-daemon and remote exec paths.
-func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writer) (int, error) {
+// followRun streams the run's logs to lineOut until it reaches a terminal state,
+// returning the exit code and — when it fetched one — the terminal run so a
+// caller can render --json without re-fetching. final may be nil only alongside
+// a non-nil error (or an interrupt), never on a clean terminal outcome.
+func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writer) (int, *model.Run, error) {
 	ctx, cancel := newSignalCancelContext()
 	defer cancel()
 
@@ -322,12 +334,12 @@ func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writ
 	for {
 		ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: from})
 		if err != nil {
-			return 0, fmt.Errorf("open log stream: %w", err)
+			return 0, nil, fmt.Errorf("open log stream: %w", err)
 		}
 
-		exitCode, highest, done, err := streamRunLogs(ch, client, taskName, runID, from, lineOut)
+		exitCode, final, highest, done, err := streamRunLogs(ch, client, taskName, runID, from, lineOut)
 		if done {
-			return exitCode, err
+			return exitCode, final, err
 		}
 		if ctx.Err() != nil {
 			break // interrupted (Ctrl+C) — stop reconnecting
@@ -370,12 +382,13 @@ func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writ
 
 // exitCodeFromRunState fetches the run's persisted state and derives its exit
 // code, used as followRun's fallback when the log stream ends without a Done.
-func exitCodeFromRunState(client *apiclient.Client, taskName, runID string) (int, error) {
+// It returns the fetched run alongside the code so callers can reuse it.
+func exitCodeFromRunState(client *apiclient.Client, taskName, runID string) (int, *model.Run, error) {
 	final, err := client.GetRun(taskName, runID)
 	if err != nil {
-		return 0, fmt.Errorf("fetch final run state: %w", err)
+		return 0, nil, fmt.Errorf("fetch final run state: %w", err)
 	}
-	return exitCodeFromRun(final), nil
+	return exitCodeFromRun(final), final, nil
 }
 
 // newSignalCancelContext returns a context cancelled either by its own cancel
@@ -401,23 +414,26 @@ func newSignalCancelContext() (context.Context, context.CancelFunc) {
 
 // streamRunLogs prints each streamed log line to stdout/stderr until the stream reports the run is done or errors.
 // Lines below `from` are skipped as already seen. done=true means terminal outcome reached.
-func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64, lineOut io.Writer) (exitCode int, highest int64, done bool, err error) {
+// On Done it returns the fetched terminal run so callers can reuse it (e.g. for
+// the --json document) without a second GetRun that could fail and mask the
+// already-known exit code.
+func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64, lineOut io.Writer) (exitCode int, final *model.Run, highest int64, done bool, err error) {
 	highest = from - 1
 	for msg := range ch {
 		switch msg.Kind {
 		case apiclient.LogStreamMsgKindLine:
 			highest = printStreamedLogLine(msg, from, highest, lineOut)
 		case apiclient.LogStreamMsgKindDone:
-			final, getErr := client.GetRun(taskName, runID)
+			run, getErr := client.GetRun(taskName, runID)
 			if getErr != nil {
-				return 0, highest, true, fmt.Errorf("fetch final run state: %w", getErr)
+				return 0, nil, highest, true, fmt.Errorf("fetch final run state: %w", getErr)
 			}
-			return exitCodeFromRun(final), highest, true, nil
+			return exitCodeFromRun(run), run, highest, true, nil
 		case apiclient.LogStreamMsgKindErr:
-			return 0, highest, true, fmt.Errorf("log stream error: %w", msg.ErrValue)
+			return 0, nil, highest, true, fmt.Errorf("log stream error: %w", msg.ErrValue)
 		}
 	}
-	return 0, highest, false, nil
+	return 0, nil, highest, false, nil
 }
 
 // printStreamedLogLine prints one streamed line unless it was already seen

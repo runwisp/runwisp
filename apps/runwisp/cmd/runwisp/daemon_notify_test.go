@@ -113,13 +113,13 @@ func TestBuildOutboundChannels_UnknownTypeReturnsError(t *testing.T) {
 	specs := []channel.NotifierSpec{
 		{ID: "broken", Type: "garbage"},
 	}
-	_, err := buildOutboundChannels(specs, false, coalesce.Config{}, slog.Default())
+	_, err := buildOutboundChannels(specs, false, coalesce.Config{}, slog.Default(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "garbage")
 }
 
 func TestBuildOutboundChannels_EmptyReturnsNoChannels(t *testing.T) {
-	channels, err := buildOutboundChannels(nil, false, coalesce.Config{}, slog.Default())
+	channels, err := buildOutboundChannels(nil, false, coalesce.Config{}, slog.Default(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, channels)
 }
@@ -128,7 +128,7 @@ func TestBuildOutboundChannels_BuildsSlackChannel(t *testing.T) {
 	specs := []channel.NotifierSpec{
 		{ID: "ops", Type: "slack", WebhookURL: "https://hooks.example/abc"},
 	}
-	channels, err := buildOutboundChannels(specs, false, coalesce.Config{}, slog.Default())
+	channels, err := buildOutboundChannels(specs, false, coalesce.Config{}, slog.Default(), nil)
 	require.NoError(t, err)
 	require.Len(t, channels, 1)
 }
@@ -137,11 +137,11 @@ func TestBuildOutboundChannels_AppliesCoalesceWrapperWhenEnabled(t *testing.T) {
 	specs := []channel.NotifierSpec{
 		{ID: "ops", Type: "slack", WebhookURL: "https://hooks.example/abc"},
 	}
-	channelsNoCoalesce, err := buildOutboundChannels(specs, false, coalesce.Config{Window: time.Second, EveryN: 3}, slog.Default())
+	channelsNoCoalesce, err := buildOutboundChannels(specs, false, coalesce.Config{Window: time.Second, EveryN: 3}, slog.Default(), nil)
 	require.NoError(t, err)
 	require.Len(t, channelsNoCoalesce, 1)
 
-	channelsCoalesce, err := buildOutboundChannels(specs, true, coalesce.Config{Window: time.Second, EveryN: 3}, slog.Default())
+	channelsCoalesce, err := buildOutboundChannels(specs, true, coalesce.Config{Window: time.Second, EveryN: 3}, slog.Default(), nil)
 	require.NoError(t, err)
 	require.Len(t, channelsCoalesce, 1)
 

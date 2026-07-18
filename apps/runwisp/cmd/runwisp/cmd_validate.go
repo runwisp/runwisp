@@ -52,7 +52,7 @@ func runValidate(w io.Writer, f Flags, asJSON bool) error {
 				Valid:         false,
 				ConfigPath:    f.CfgFile,
 				Warnings:      messagesFromStrings(nil),
-				Errors:        []messageJSON{messageFromError(err)},
+				Errors:        messagesFromError(err),
 			}); werr != nil {
 				return werr
 			}

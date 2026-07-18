@@ -165,4 +165,19 @@ describe("connectionStore.reportSourceStalled", () => {
         expect(connectionStore.status).toBe("disconnected");
         drain("a");
     });
+
+    // Regression (Bug 8): when the last live source goes down but a sibling is
+    // still stalled (waiting for a connection slot), the store must reflect
+    // "stalled" — not strand the UI on its prior "connected" status. Before the
+    // fix reportSourceDown only handled the all-empty case, so this transition
+    // was silently dropped.
+    it("shows 'stalled' when the last live source goes down while another is stalled", () => {
+        connectionStore.reportSourceUp("a");
+        connectionStore.reportSourceStalled("b");
+        // "a" is still up, so the stall of "b" doesn't change the connected status.
+        expect(connectionStore.status).toBe("connected");
+        connectionStore.reportSourceDown("a");
+        expect(connectionStore.status).toBe("stalled");
+        drain("a", "b");
+    });
 });

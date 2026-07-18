@@ -90,6 +90,8 @@ type mockDockerClient struct {
 	containerAttachFunc func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error)
 	containerStartFunc  func(ctx context.Context, ctr string, options client.ContainerStartOptions) (client.ContainerStartResult, error)
 	containerWaitFunc   func(ctx context.Context, ctr string, options client.ContainerWaitOptions) client.ContainerWaitResult
+	containerStopFunc   func(ctx context.Context, ctr string, options client.ContainerStopOptions) (client.ContainerStopResult, error)
+	containerKillFunc   func(ctx context.Context, ctr string, options client.ContainerKillOptions) (client.ContainerKillResult, error)
 	containerRemoveFunc func(ctx context.Context, ctr string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
 	imageRemoveFunc     func(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error)
 }
@@ -136,6 +138,20 @@ func (m *mockDockerClient) ContainerWait(ctx context.Context, ctr string, option
 	ch := make(chan container.WaitResponse, 1)
 	ch <- container.WaitResponse{StatusCode: 0}
 	return client.ContainerWaitResult{Result: ch, Error: make(chan error)}
+}
+
+func (m *mockDockerClient) ContainerStop(ctx context.Context, ctr string, options client.ContainerStopOptions) (client.ContainerStopResult, error) {
+	if m.containerStopFunc != nil {
+		return m.containerStopFunc(ctx, ctr, options)
+	}
+	return client.ContainerStopResult{}, nil
+}
+
+func (m *mockDockerClient) ContainerKill(ctx context.Context, ctr string, options client.ContainerKillOptions) (client.ContainerKillResult, error) {
+	if m.containerKillFunc != nil {
+		return m.containerKillFunc(ctx, ctr, options)
+	}
+	return client.ContainerKillResult{}, nil
 }
 
 func (m *mockDockerClient) ContainerRemove(ctx context.Context, ctr string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
@@ -469,6 +485,67 @@ func TestStartSuccess(t *testing.T) {
 	assert.Equal(t, 0, exitCode)
 
 	proc.Cleanup()
+}
+
+// Regression (Bug C): a container task must honor stop_signal + graceful_stop on
+// stop/timeout instead of always force-removing. Cancelling the run ctx must send
+// the configured stop_signal via ContainerStop with the graceful_stop window
+// (rounded up to whole seconds) and must NOT SIGKILL on this graceful path.
+func TestStartGracefulStopUsesSignalAndTimeout(t *testing.T) {
+	stopped := make(chan client.ContainerStopOptions, 1)
+	killed := make(chan struct{}, 1)
+	waitCh := make(chan container.WaitResponse, 1)
+
+	mock := &mockDockerClient{
+		imageBuildFunc: func(ctx context.Context, _ io.Reader, _ client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`))}, nil
+		},
+		containerAttachFunc: func(ctx context.Context, _ string, _ client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
+			return newHijackedResponse(""), nil
+		},
+		containerWaitFunc: func(ctx context.Context, _ string, _ client.ContainerWaitOptions) client.ContainerWaitResult {
+			// The container keeps running until it is signalled — mirror Docker's
+			// native stop by only delivering the exit once ContainerStop fires.
+			return client.ContainerWaitResult{Result: waitCh, Error: make(chan error)}
+		},
+		containerStopFunc: func(ctx context.Context, _ string, options client.ContainerStopOptions) (client.ContainerStopResult, error) {
+			stopped <- options
+			waitCh <- container.WaitResponse{StatusCode: 137}
+			return client.ContainerStopResult{}, nil
+		},
+		containerKillFunc: func(ctx context.Context, _ string, _ client.ContainerKillOptions) (client.ContainerKillResult, error) {
+			killed <- struct{}{}
+			return client.ContainerKillResult{}, nil
+		},
+	}
+	b := NewContainerBackendFromClient(mock)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	task := &model.Task{StopSignal: "SIGTERM", GracefulStop: 3 * time.Second}
+	proc, err := b.Start(ctx, task, nil, &model.ContainerExecution{Script: "sleep 100", BaseImage: "alpine"})
+	require.NoError(t, err)
+
+	cancel() // a stop/timeout cancels the run ctx
+
+	select {
+	case opts := <-stopped:
+		assert.Equal(t, "SIGTERM", opts.Signal, "the configured stop_signal must be sent")
+		require.NotNil(t, opts.Timeout)
+		assert.Equal(t, 3, *opts.Timeout, "graceful_stop must map to Docker's whole-second stop timeout")
+	case <-time.After(2 * time.Second):
+		t.Fatal("ctx cancellation did not trigger a graceful ContainerStop")
+	}
+
+	code, waitErr := proc.Wait()
+	require.NoError(t, waitErr)
+	assert.Equal(t, 137, code)
+	proc.Cleanup()
+
+	select {
+	case <-killed:
+		t.Fatal("the graceful stop path must not SIGKILL the container")
+	default:
+	}
 }
 
 func TestStartWaitError(t *testing.T) {

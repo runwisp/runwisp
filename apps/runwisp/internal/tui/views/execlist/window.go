@@ -40,11 +40,28 @@ type ExecWindow struct {
 
 // statusFilterCycle is the run-status filter the list cycles through with `f`.
 // It mirrors the web UI's five run-status buckets (Running / Succeeded / Failed
-// / Skipped / Stopped); the empty string means "no filter". Each entry is a
-// single status token matched against a run's phase or end reason, so the banner
-// stays a clean one-word label — narrower than the web UI's multi-status buckets
-// but enough to quick-filter to each outcome.
+// / Skipped / Stopped); the empty string means "no filter". Each entry is the
+// bucket's label — a clean one-word banner token that also keys StatusStyle —
+// which statusFilterWire expands to the full multi-status set sent to the
+// server, so the buckets match the web UI exactly (not just the literal token).
 var statusFilterCycle = []string{"", "running", "success", "failed", "skipped", "stopped"}
+
+// statusFilterWire maps each statusFilterCycle label to the comma-separated set
+// of run statuses (phases + end reasons) sent to the server, mirroring the web
+// UI's STATUS_BUCKETS (packages/ui .../run-filters.ts). Without this the TUI
+// "Failed" filter matched only literal "failed" and silently dropped
+// crashed/timeout/log_overflow/start_failed/missed; likewise Running dropped
+// pending, Skipped dropped dst_skipped/queue_full, Stopped dropped
+// daemon_stopped. The "failed" set must stay in sync with the web UI's
+// NEEDS_ATTENTION_STATUSES (FAILURE_END_REASONS + "missed").
+var statusFilterWire = map[string]string{
+	"":        "",
+	"running": "pending,running",
+	"success": "success",
+	"failed":  "failed,crashed,timeout,log_overflow,start_failed,missed",
+	"skipped": "skipped,dst_skipped,queue_full",
+	"stopped": "stopped,daemon_stopped",
+}
 
 func NewExecWindow(client *apiclient.Client) *ExecWindow {
 	return &ExecWindow{
@@ -96,7 +113,7 @@ func (w *ExecWindow) FilterTask() string {
 func (w *ExecWindow) CurrentFilter() model.RunFilter {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return model.RunFilter{Status: w.statusFilter, TaskName: w.filterTask}
+	return model.RunFilter{Status: statusFilterWire[w.statusFilter], TaskName: w.filterTask}
 }
 
 // clearLocked resets the loaded window so the next NeedsFetch returns true. The
@@ -198,7 +215,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]uikit.ExecListIte
 	}
 	w.loading = true
 	filter := w.filterTask
-	statusFilter := w.statusFilter
+	statusFilter := statusFilterWire[w.statusFilter]
 	w.mu.Unlock()
 
 	return func() ([]uikit.ExecListItem, int, int, error) {

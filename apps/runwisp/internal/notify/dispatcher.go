@@ -162,7 +162,7 @@ func (d *dispatcher) executeOne(ctx context.Context, id string, ch Channel, ev *
 		d.logger.Error("notify delivery exhausted retries", "action", id, "cause", err.Error())
 		return
 	}
-	reportDeliveryFailure(d.failures, d.clock, id, ev, err)
+	ReportDeliveryFailure(d.failures, d.clock, id, ev, err)
 	d.logger.Error("notify delivery exhausted retries; surfacing in-app",
 		"action", id, "cause", err.Error())
 }
@@ -173,7 +173,12 @@ func (d *dispatcher) DroppedActionCount() uint64 {
 	return d.droppedAction.Load()
 }
 
-func reportDeliveryFailure(sink SyntheticIngester, clock Clocker, actionID string, original *Event, cause error) {
+// ReportDeliveryFailure emits the synthetic in-app notify_delivery_failed event
+// for a permanently failed outbound delivery. Exported so the outbound-coalesce
+// wrapper (internal/notify/coalesce), whose window-close summary delivers
+// asynchronously outside the dispatcher's synchronous Execute path, can surface
+// its own permanent failures through the identical event shape and in-app sink.
+func ReportDeliveryFailure(sink SyntheticIngester, clock Clocker, actionID string, original *Event, cause error) {
 	syn := &Event{
 		ID:        ulid.Make().String(),
 		Kind:      KindNotifyDeliveryFailed,

@@ -1176,6 +1176,10 @@ func (a *testTaskRunnerAdapter) UpsertTask(task *model.Task) {
 	a.inner.UpsertTask(task)
 }
 
+func (a *testTaskRunnerAdapter) RemoveTask(taskName string) {
+	a.inner.RemoveTask(taskName)
+}
+
 func (a *testTaskRunnerAdapter) TriggerCloudRun(taskName, externalExecutionID string, params map[string]string) (*model.Run, error) {
 	return a.inner.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
 		TriggeredBy:         model.TriggeredByCloud,

@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -117,4 +118,27 @@ func TestRunValidate_MissingFileReturnsUserFacingError(t *testing.T) {
 	var ufe *userFacingError
 	require.True(t, errors.As(err, &ufe))
 	assert.Contains(t, ufe.title, "is not valid")
+}
+
+// Regression (Bug F): validate --json must report every configuration problem,
+// not just the first. A config with two unknown keys must yield two errors[]
+// entries, each with its own source location — before the fix the strict-decode
+// error collapsed to the first key alone.
+func TestRunValidate_JSONReportsEveryUnknownKey(t *testing.T) {
+	t.Parallel()
+	f := writeValidateConfig(t, `
+[tasks.t]
+run = "echo hi"
+boguskey = 1
+anotherbogus = 2
+`)
+	var buf bytes.Buffer
+	err := runValidate(&buf, f, true)
+	require.Error(t, err)
+
+	var doc validateJSONDoc
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc), "stdout must be valid JSON on failure")
+	assert.False(t, doc.Valid)
+	require.GreaterOrEqual(t, len(doc.Errors), 2, "each unknown key must get its own errors[] entry")
+	assert.NotEqual(t, doc.Errors[0].Line, doc.Errors[1].Line, "each error must carry its own source location")
 }

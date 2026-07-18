@@ -58,6 +58,34 @@ func TestPrettyHandler_QuotesValuesWithSpaces(t *testing.T) {
 	assert.Contains(t, buf.String(), `detail="two words"`)
 }
 
+// Regression (Bug 5): attribute values reach the pretty handler from untrusted
+// input (e.g. a task name in an HTTP/WS body). A bare ESC (0x1b) or other control
+// byte written raw to a terminal is an escape-injection vector, so the value must
+// be Go-quoted (control bytes rendered as visible \x escapes), never emitted raw.
+func TestPrettyHandler_EscapesControlBytesInAttrValue(t *testing.T) {
+	var buf bytes.Buffer
+	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, false))
+
+	log.Info("search", "task", "evil\x1b[2Jname")
+
+	out := buf.String()
+	assert.NotContains(t, out, "\x1b", "a raw ESC in an attr value must never reach the terminal")
+	assert.Contains(t, out, `\x1b`, "the control byte must be rendered as a visible escape")
+}
+
+// Regression (Bug 5): the record message is painted inline (not quoted) but can
+// also carry untrusted data, so control bytes there are escaped too.
+func TestPrettyHandler_EscapesControlBytesInMessage(t *testing.T) {
+	var buf bytes.Buffer
+	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, false))
+
+	log.Info("boot\x1b[31mred")
+
+	out := buf.String()
+	assert.NotContains(t, out, "\x1b", "a raw ESC in the message must never reach the terminal")
+	assert.Contains(t, out, `\x1b`, "the control byte must be rendered as a visible escape")
+}
+
 func TestPrettyHandler_AttrsAndGroups(t *testing.T) {
 	var buf bytes.Buffer
 	h := newPrettyHandler(&buf, slog.LevelInfo, false, false)
