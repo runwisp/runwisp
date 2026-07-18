@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -53,6 +54,23 @@ func TestNewExecJSONDoc_MapsFailedAndDuration(t *testing.T) {
 	assert.True(t, doc.Failed, "a failure end-reason must precompute failed=true")
 	require.NotNil(t, doc.DurationMS)
 	assert.Equal(t, int64(1500), *doc.DurationMS)
+}
+
+func TestNewExecErrorJSONDoc_CarriesErrorAndOmitsRunFields(t *testing.T) {
+	t.Parallel()
+	doc := newExecErrorJSONDoc("missing", errors.New(`task "missing" not found`))
+
+	assert.Equal(t, jsonSchemaVersion, doc.SchemaVersion)
+	assert.Equal(t, "missing", doc.Task)
+	assert.Equal(t, `task "missing" not found`, doc.Error)
+
+	// The identity fields are omitted on an error doc so stdout stays clean.
+	b, err := json.Marshal(doc)
+	require.NoError(t, err)
+	s := string(b)
+	assert.NotContains(t, s, `"run_id"`)
+	assert.NotContains(t, s, `"status"`)
+	assert.NotContains(t, s, `"triggered_by"`)
 }
 
 func TestRunStatus_JSONUnreachableEmitsUnhealthyDoc(t *testing.T) {

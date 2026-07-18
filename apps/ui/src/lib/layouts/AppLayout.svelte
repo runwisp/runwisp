@@ -232,7 +232,7 @@
             class="flex h-16 items-center justify-between border-b border-outline bg-surface-raised px-6 shadow-sm"
         >
             <!-- Breadcrumb / Title -->
-            <div class="flex items-center gap-3">
+            <div class="flex min-w-0 items-center gap-3">
                 <button
                     type="button"
                     aria-label="Open navigation"
@@ -248,7 +248,7 @@
                 {#if activeTaskName}
                     <!-- On a task page the breadcrumb is the page's primary heading:
                          the task name appears here and nowhere else. -->
-                    <h1 class="truncate text-base font-semibold text-on-surface">
+                    <h1 class="min-w-0 truncate text-base font-semibold text-on-surface">
                         {activeTaskName}
                     </h1>
                 {:else}
@@ -264,10 +264,10 @@
                 <HeaderSearch />
             </div>
 
-            <div class="flex items-center gap-3">
+            <div class="flex shrink-0 items-center gap-2 sm:gap-3">
                 {#if systemStore.timezone}
                     <span
-                        class="flex items-center gap-1.5 rounded-full border border-outline bg-surface-sunken px-2.5 py-1 text-xs font-medium text-on-surface-muted"
+                        class="hidden items-center gap-1.5 rounded-full border border-outline bg-surface-sunken px-2.5 py-1 text-xs font-medium whitespace-nowrap text-on-surface-muted lg:flex"
                         title={systemStore.timezoneSource === "system"
                             ? "Detected from the host system; pin [scheduler] timezone in runwisp.toml to make it explicit."
                             : "Set in runwisp.toml under [scheduler] timezone."}

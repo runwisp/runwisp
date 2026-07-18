@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`--json` output for `runwisp status`, `list`, and `validate`.** A schema-versioned, machine-readable document on stdout for headless and agent-driven use; failures still exit non-zero and emit JSON. See [CLI](https://docs.runwisp.com/operations/cli/#machine-readable-output-json).
 - **JSON Schema for `runwisp.toml`.** `runwisp schema` prints it (also published at `https://docs.runwisp.com/config.schema.json`); scaffolded and imported configs carry a `#:schema` line so editors validate and autocomplete them. See [Driving with an AI agent](https://docs.runwisp.com/operations/agents/).
-- **`runwisp exec --json`** prints a run's outcome (run id, status, exit code, duration, failed) as one JSON document on stdout, diverting log lines to stderr. See [CLI](https://docs.runwisp.com/operations/cli/).
+- **`runwisp exec --json`** prints a run's outcome (run id, status, exit code, duration, failed) as one JSON document on stdout, diverting log lines to stderr; a run that can't start (unknown task, unreachable daemon) emits an `error` document instead of nothing. See [CLI](https://docs.runwisp.com/operations/cli/).
 - **`runwisp agent-guide`** prints a paste-ready snippet for your project's `AGENTS.md`/`CLAUDE.md` so an AI coding agent knows how to drive RunWisp. See [Driving with an AI agent](https://docs.runwisp.com/operations/agents/).
 
 ### Changed
@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Deep-linking to a deleted or unknown run now shows a "Run not found" state** instead of silently displaying a different run under the dead URL. See [Web UI tour](https://docs.runwisp.com/getting-started/web-ui-tour/).
+- **The Web UI header no longer pushes the theme toggle and notification bell off-screen** on phone-width viewports; informational chips collapse and the controls stay reachable. See [Web UI tour](https://docs.runwisp.com/getting-started/web-ui-tour/).
+- **The login screen distinguishes rate-limiting from a wrong password** — after too many attempts it tells you to wait instead of reporting "Invalid password". See [Auth](https://docs.runwisp.com/operations/auth/).
+- **The TUI's quick status filter (`f`) now also reaches Skipped and Stopped**, matching the Web UI's status buckets. See [the TUI tour](https://docs.runwisp.com/getting-started/tui-tour/).
+- **`runwisp demo` rejects `--config`/`--data` it can't honor** instead of silently discarding them; use `--seed-only` to seed your own paths. See [CLI](https://docs.runwisp.com/operations/cli/).
+- **Task run-parameter form labels are wired to their inputs**, so clicking a label focuses its field and screen readers associate the two. See [Parameters](https://docs.runwisp.com/configuration/tasks/#parameters).
 - **`runwisp exec` no longer exits before a just-triggered run's output appears.** A freshly triggered run is handed back before its record is durably persisted, so the log stream could momentarily find no run and close empty; `exec` treated that as "the run produced nothing" and exited without printing its output. It now retries until the run becomes streamable.
 - **A plain `runwisp daemon` is no longer misreported as service-managed.** Detection dropped the unreliable systemd `INVOCATION_ID` heuristic (inherited by every process in a desktop terminal) and keys solely on the marker our generated units set, so the TUI quit dialog and cloud self-restart no longer treat a hand-launched daemon as init-managed. See [Autostart](https://docs.runwisp.com/operations/autostart/).
 
@@ -66,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tidier log directories.** Each run's index, timestamp, rotation, and frame-history sidecars are now consolidated into a single hidden `.log.meta` container, so an `ls` of a log directory shows only the `.log` files. See [Logs](https://docs.runwisp.com/concepts/logs/#the-sidecar-container-logmeta).
 - **Service instances are labelled 1-based.** A multi-instance service now shows every run as `name#1`, `name#2`, `name#3` in the Web UI and TUI instead of `name`, `name#1`, `name#2`; a single-instance service stays just `name`. See [Services](https://docs.runwisp.com/configuration/services/).
 - **TUI Run Now dialog tells you how to toggle a flag.** A focused flag shows an inline cue, the key legend names the action for whatever field is focused, and `←/→` toggle a flag alongside `space`/`x`. See [Parameters](https://docs.runwisp.com/configuration/tasks/#parameters).
-- **Port already taken by another RunWisp daemon.** Launching `runwisp` when a daemon from a *different* data directory holds the port now names that daemon's datadir and config and offers to connect to it or stop it and launch here, instead of the generic "another process" error. A new local-only `GET /api/instance` (loopback/socket; 403 over the network) backs the discovery.
+- **Port already taken by another RunWisp daemon.** Launching `runwisp` when a daemon from a _different_ data directory holds the port now names that daemon's datadir and config and offers to connect to it or stop it and launch here, instead of the generic "another process" error. A new local-only `GET /api/instance` (loopback/socket; 403 over the network) backs the discovery.
 - **Responsive TUI execution table.** Column widths now flex with the terminal — columns grow proportionally up to a per-column maximum and shrink toward sensible floors, and the main panel is capped to a readable max width so it stays left-aligned instead of stretching edge-to-edge on wide terminals.
 - **Web UI visual identity: teal brand, slate neutrals.** The dashboard now reads in a deep-teal brand accent over cool slate neutrals, with an instrument-style execution detail and a black-box console. Light and dark both retuned.
 - **Task view rebuilt around the run history.** The history rail and run detail now fill the page edge-to-edge as one card-less surface, divided by a single spine. Run controls live in the detail header: a split Run button triggers with defaults (and queues at max concurrency) with a dropdown to re-run a selected run pre-filled with its inputs; services show Stop/Restart in the same spot. Search moved into a single field in the app header — centered between the breadcrumb and status chips (⌘K focuses it) — that searches run output on a task and filters the run list elsewhere, and the All Runs page adopts the same card-less surface, instrument-style detail, dense status-led rows, and hover-revealed row selection.
@@ -154,7 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Task and service names may now contain `:`** (e.g. `[tasks."db:backup"]` — TOML needs the quotes). See [\[tasks.*\]](https://docs.runwisp.com/configuration/tasks/).
+- **Task and service names may now contain `:`** (e.g. `[tasks."db:backup"]` — TOML needs the quotes). See [\[tasks.\*\]](https://docs.runwisp.com/configuration/tasks/).
 - **Log console matches the app theme.** ANSI colors in run output now map to the RunWisp palette, and the console chrome uses the design-system grays.
 - **Breaking: `env_file` values are now visible in the API/UI** — use `secrets_file` for credentials.
 - **Breaking: notifier `*_env` / `*_file` keys are gone.** Set `webhook_url`, `bot_token`, `password` directly, with `${...}` substitution for env vars and files.

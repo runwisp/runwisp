@@ -494,17 +494,19 @@ func TestStatusFilterCycle(t *testing.T) {
 	if got := w.StatusFilter(); got != "" {
 		t.Fatalf("default StatusFilter = %q, want empty", got)
 	}
-	w.CycleStatusFilter() // "" → running
-	if !w.HasStatusFilter() {
-		t.Fatalf("HasStatusFilter = false after one cycle, want true")
-	}
-	if got := w.StatusFilter(); got != "running" {
-		t.Fatalf("StatusFilter after one cycle = %q, want running", got)
-	}
-	// The cycle wraps back to "all" (no filter) after the four entries.
-	for i := 1; i < len(statusFilterCycle); i++ {
+	// The cycle mirrors the web UI's five status buckets, in order.
+	want := []string{"running", "success", "failed", "skipped", "stopped"}
+	for _, exp := range want {
 		w.CycleStatusFilter()
+		if !w.HasStatusFilter() {
+			t.Fatalf("HasStatusFilter = false while cycling to %q, want true", exp)
+		}
+		if got := w.StatusFilter(); got != exp {
+			t.Fatalf("StatusFilter = %q, want %q", got, exp)
+		}
 	}
+	// The cycle wraps back to "all" (no filter) after every entry.
+	w.CycleStatusFilter()
 	if w.HasStatusFilter() {
 		t.Fatalf("HasStatusFilter = true after full cycle, want false")
 	}

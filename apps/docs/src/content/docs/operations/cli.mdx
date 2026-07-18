@@ -133,7 +133,9 @@ jump straight to the spot instead of parsing the message:
 ```
 
 `runwisp list --json` mirrors the config table. Like the human view it's
-offline and reads only `runwisp.toml`, so there's no run history here:
+offline and reads only `runwisp.toml`, so there's no run history here. Services
+report their `instances` and omit `max_concurrent` — a service's copy count is
+`instances`, not an overlap cap, so there's no value to report:
 
 ```json
 {
@@ -221,6 +223,19 @@ JSON value — ideal for an agent that needs the result, not the noise:
     "exit_code": 0,
     "duration_ms": 812,
     "failed": false
+}
+```
+
+If the run can't even start — an unknown task, an unreachable daemon, a failed
+login — the document carries an `error` string instead of a run outcome, and
+`exec` still exits non-zero. So a caller parsing stdout always gets JSON, never
+silence:
+
+```json
+{
+    "schema_version": 1,
+    "task": "backup",
+    "error": "task \"backup\" not found"
 }
 ```
 

@@ -47,6 +47,15 @@
         valid?: boolean;
     } = $props();
 
+    // A stable id per parameter, shared between each FormField's <label for> and
+    // the control it wraps, so clicking the label focuses the field and screen
+    // readers associate the two. Scoped to this form instance so two forms on a
+    // page never collide.
+    const idBase = `param-${Math.random().toString(36).slice(2, 10)}`;
+    function fieldId(key: string): string {
+        return `${idBase}-${key}`;
+    }
+
     function initialValue(p: TaskParam): string {
         if (p.kind === "flag") return p.default === "true" ? "true" : "false";
         return p.default ?? "";
@@ -184,11 +193,13 @@
             />
         {:else if p.choices && p.choices.length > 0 && !p.allow_custom}
             <FormField
+                id={fieldId(p.key)}
                 label={p.key}
                 required={p.required ?? false}
                 description={p.description ?? ""}
             >
                 <Select
+                    id={fieldId(p.key)}
                     value={vals[p.key] ?? ""}
                     options={choiceOptions(p.choices)}
                     placeholder="Select…"
@@ -201,12 +212,14 @@
             </FormField>
         {:else if p.choices && p.choices.length > 0 && p.allow_custom}
             <FormField
+                id={fieldId(p.key)}
                 label={p.key}
                 required={p.required ?? false}
                 description={p.description ?? ""}
             >
                 <div class="space-y-2">
                     <Select
+                        id={fieldId(p.key)}
                         value={customMode[p.key] ? CUSTOM_OPTION : (vals[p.key] ?? "")}
                         options={comboOptions(p.choices)}
                         placeholder="Select…"
@@ -231,11 +244,13 @@
             </FormField>
         {:else}
             <FormField
+                id={fieldId(p.key)}
                 label={p.key}
                 required={p.required ?? false}
                 description={p.description ?? ""}
             >
                 <Input
+                    id={fieldId(p.key)}
                     type={p.type === "number" ? "number" : "text"}
                     value={vals[p.key] ?? ""}
                     error={touched[p.key] ? fieldError(p) : undefined}

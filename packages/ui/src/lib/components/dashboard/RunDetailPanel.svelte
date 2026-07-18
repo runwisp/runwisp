@@ -21,6 +21,7 @@
         Maximize2,
         Minimize2,
         TextWrap,
+        SearchX,
     } from "@lucide/svelte";
     import Button from "../Button.svelte";
     import EmptyState from "../EmptyState.svelte";
@@ -67,6 +68,7 @@
         historyVisible = false,
         highlightLine = null,
         getInstanceCount = () => 1,
+        notFound = false,
     }: {
         run: Run | undefined;
         fetchLogs: (
@@ -112,6 +114,10 @@
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
         getInstanceCount?: (taskName: string) => number;
+        // True when a deep-linked run id resolved to no run (deleted by retention,
+        // or never existed). The empty state then says so plainly instead of the
+        // generic "Select a run" — the caller must not silently substitute another.
+        notFound?: boolean;
     } = $props();
 
     let canDelete = $derived.by(() => {
@@ -837,13 +843,15 @@
         class="flex min-w-0 flex-1 flex-col items-center justify-center gap-4 bg-surface-sunken/30"
     >
         <EmptyState
-            title={onRunTask ? "No runs yet" : "Select a run"}
-            description={onRunTask
-                ? "This task hasn't run yet. Trigger it to see its output here."
-                : "Pick a run from the list to view details and logs."}
-            icon={MousePointerClick}
+            title={notFound ? "Run not found" : onRunTask ? "No runs yet" : "Select a run"}
+            description={notFound
+                ? "This run doesn't exist — it may have been deleted by retention, or the link is wrong. Pick a run from the list to continue."
+                : onRunTask
+                  ? "This task hasn't run yet. Trigger it to see its output here."
+                  : "Pick a run from the list to view details and logs."}
+            icon={notFound ? SearchX : MousePointerClick}
         />
-        {#if onRunTask}
+        {#if onRunTask && !notFound}
             <button
                 type="button"
                 onclick={() => onRunTask()}

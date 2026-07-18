@@ -40,6 +40,7 @@
         initialRunId = null,
         initialHighlightLine = null,
         selectRunId = null,
+        runNotFound = false,
         onSelectRun,
     } = $props<{
         task: Task;
@@ -74,6 +75,10 @@
         initialRunId?: string | null;
         initialHighlightLine?: number | null;
         selectRunId?: string | null;
+        // True when the deep-linked run id (initialRunId) was fetched and doesn't
+        // exist under this task — surfaces a "not found" panel instead of quietly
+        // falling back to the running/newest run under a dead URL.
+        runNotFound?: boolean;
         // Notified whenever the user picks a run (click or freshly triggered),
         // so the route can mirror it into the address bar. The auto-fallback
         // selection (newest/running) is deliberately not reported.
@@ -246,10 +251,22 @@
         onSelectRun?.(userSelectedRunId);
     });
 
+    // The deep-linked run genuinely doesn't exist under this task: its id is the
+    // current URL selection, the fetch confirmed it missing, and it isn't in the
+    // list. Show a "not found" panel rather than silently falling back to the
+    // running/newest run while the URL still points at the dead id.
+    let deepLinkMissing = $derived(
+        runNotFound &&
+            userSelectedRunId !== null &&
+            userSelectedRunId === initialRunId &&
+            !items.some((r: Run) => r.id === userSelectedRunId),
+    );
+
     let selectedRunId = $derived.by(() => {
         if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
             return userSelectedRunId;
         }
+        if (deepLinkMissing) return null;
         const running = items.find((r: Run) => r.status === "running");
         if (running) return running.id;
         return items[0]?.id ?? null;
@@ -344,6 +361,7 @@
             historyVisible={historyExpanded}
             {highlightLine}
             getInstanceCount={() => instanceCount}
+            notFound={deepLinkMissing}
         />
     </div>
 </div>

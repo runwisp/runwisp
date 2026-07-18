@@ -80,11 +80,19 @@ are diverted to stderr so stdout stays machine-readable.`,
   runwisp exec build --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if execFlags.Daemon && execFlags.Standalone {
-			return errors.New("--daemon and --standalone are mutually exclusive")
-		}
-		exitCode, err := runExec(args[0], flags)
+		exitCode, err := func() (int, error) {
+			if execFlags.Daemon && execFlags.Standalone {
+				return 0, errors.New("--daemon and --standalone are mutually exclusive")
+			}
+			return runExec(args[0], flags)
+		}()
 		if err != nil {
+			if execFlags.JSON {
+				// The run never produced its own document (it failed before
+				// reaching a terminal state), so emit an error document — keeping
+				// stdout a single valid JSON document even on failure.
+				_ = writeJSON(os.Stdout, newExecErrorJSONDoc(args[0], err))
+			}
 			return err
 		}
 		if exitCode != 0 {

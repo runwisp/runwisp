@@ -164,17 +164,35 @@ func newLastRunJSON(r *model.Run) lastRunJSON {
 // stays a single JSON document. failed is precomputed (retry.IsFailureReason)
 // so an agent branches on one boolean without knowing the end-reason taxonomy.
 type execJSONDoc struct {
-	SchemaVersion int        `json:"schema_version"`
-	Task          string     `json:"task"`
-	RunID         string     `json:"run_id"`
-	Status        string     `json:"status"`
-	EndReason     *string    `json:"end_reason,omitempty"`
-	ExitCode      int        `json:"exit_code"`
-	TriggeredBy   string     `json:"triggered_by"`
-	StartAt       *time.Time `json:"start_at,omitempty"`
-	EndAt         *time.Time `json:"end_at,omitempty"`
-	DurationMS    *int64     `json:"duration_ms,omitempty"`
-	Failed        bool       `json:"failed"`
+	SchemaVersion int    `json:"schema_version"`
+	Task          string `json:"task"`
+	// Error is set only when the run never reached a terminal state (unknown
+	// task, daemon unreachable, auth failure). The identity fields below are then
+	// empty and omitted; on a real run they are always populated, so omitempty
+	// never hides them for a genuine outcome.
+	Error       string     `json:"error,omitempty"`
+	RunID       string     `json:"run_id,omitempty"`
+	Status      string     `json:"status,omitempty"`
+	EndReason   *string    `json:"end_reason,omitempty"`
+	ExitCode    int        `json:"exit_code"`
+	TriggeredBy string     `json:"triggered_by,omitempty"`
+	StartAt     *time.Time `json:"start_at,omitempty"`
+	EndAt       *time.Time `json:"end_at,omitempty"`
+	DurationMS  *int64     `json:"duration_ms,omitempty"`
+	Failed      bool       `json:"failed"`
+}
+
+// newExecErrorJSONDoc is the --json document emitted when a run never reaches a
+// terminal state (unknown task, daemon unreachable, auth failure, …). It carries
+// the task and the error text and nothing else, so an agent driving
+// `exec --json` learns of the failure from stdout — matching validate/list/status,
+// which also emit a JSON document on failure while still exiting non-zero.
+func newExecErrorJSONDoc(taskName string, err error) execJSONDoc {
+	return execJSONDoc{
+		SchemaVersion: jsonSchemaVersion,
+		Task:          taskName,
+		Error:         err.Error(),
+	}
 }
 
 func newExecJSONDoc(taskName string, r *model.Run) execJSONDoc {
@@ -212,11 +230,14 @@ type listJSONDoc struct {
 }
 
 type listTaskJSON struct {
-	Name          string `json:"name"`
-	Kind          string `json:"kind"`
-	Schedule      string `json:"schedule"`
-	Instances     int    `json:"instances,omitempty"`
-	MaxConcurrent int    `json:"max_concurrent"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	Schedule  string `json:"schedule"`
+	Instances int    `json:"instances,omitempty"`
+	// MaxConcurrent is a pointer so it can be omitted for services, which have no
+	// max_concurrent at all — their copy count is governed by `instances`, not an
+	// overlap cap. Emitting a fabricated `1` here would contradict the config docs.
+	MaxConcurrent *int   `json:"max_concurrent,omitempty"`
 	OnOverlap     string `json:"on_overlap"`
 	APITrigger    bool   `json:"api_trigger"`
 	Description   string `json:"description,omitempty"`
@@ -224,16 +245,18 @@ type listTaskJSON struct {
 
 func newListTaskJSON(t model.Task) listTaskJSON {
 	lt := listTaskJSON{
-		Name:          t.Name,
-		Kind:          taskKindString(t.Kind),
-		Schedule:      t.Cron,
-		MaxConcurrent: t.MaxConcurrent,
-		OnOverlap:     string(t.OnOverlap),
-		APITrigger:    t.APITrigger,
-		Description:   t.Description,
+		Name:        t.Name,
+		Kind:        taskKindString(t.Kind),
+		Schedule:    t.Cron,
+		OnOverlap:   string(t.OnOverlap),
+		APITrigger:  t.APITrigger,
+		Description: t.Description,
 	}
 	if t.Kind.IsService() {
 		lt.Instances = t.Instances
+	} else {
+		mc := t.MaxConcurrent
+		lt.MaxConcurrent = &mc
 	}
 	return lt
 }

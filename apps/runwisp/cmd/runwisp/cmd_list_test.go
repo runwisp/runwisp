@@ -110,6 +110,12 @@ func TestRunList_JSONServiceAndCron(t *testing.T) {
 	assert.Equal(t, "service", byName["worker"].Kind)
 	assert.Equal(t, 3, byName["worker"].Instances)
 	assert.True(t, byName["worker"].APITrigger)
+
+	// max_concurrent is a real setting for tasks but not services — services'
+	// copy count is `instances`. It must be present for the task and omitted
+	// (nil) for the service, never fabricated as a stray `1`.
+	require.NotNil(t, byName["hello"].MaxConcurrent)
+	assert.Nil(t, byName["worker"].MaxConcurrent)
 }
 
 func TestRunList_JSONMissingConfigEmitsErrorDoc(t *testing.T) {
