@@ -21,6 +21,7 @@
         fetchLineHistory,
         getInstanceCount = () => 1,
         initialRunId = null,
+        runNotFound = false,
         onSelectRun,
     } = $props<{
         items: Run[];
@@ -32,6 +33,10 @@
         onOptimisticRestore: (runs: Run[]) => void;
         getInstanceCount?: (taskName: string) => number;
         initialRunId?: string | null;
+        // True when the deep-linked run id (initialRunId) was fetched and doesn't
+        // exist. Distinguishes "deleted/bad permalink" from a stale selection that
+        // merely scrolled out of the loaded window.
+        runNotFound?: boolean;
         // Notified when the user picks a run, so the route can mirror it into
         // the address bar. The auto-fallback to newest is not reported.
         onSelectRun?: (runId: string | null) => void;
@@ -80,10 +85,22 @@
         },
     });
 
+    // The deep-linked run genuinely doesn't exist: its id is the current URL
+    // selection, the fetch confirmed it missing, and it isn't in the list. In
+    // that case we show a "not found" panel instead of silently falling back to
+    // the newest run under a URL that still points at the dead id.
+    let deepLinkMissing = $derived(
+        runNotFound &&
+            userSelectedRunId !== null &&
+            userSelectedRunId === initialRunId &&
+            !items.some((r: Run) => r.id === userSelectedRunId),
+    );
+
     let selectedRunId = $derived.by(() => {
         if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
             return userSelectedRunId;
         }
+        if (deepLinkMissing) return null;
         return items[0]?.id ?? null;
     });
 
@@ -125,5 +142,6 @@
         showTaskName
         onDelete={deleteSingle}
         {getInstanceCount}
+        notFound={deepLinkMissing}
     />
 </div>

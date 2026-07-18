@@ -35,6 +35,16 @@ export class AuthRequiredError extends Error {
     }
 }
 
+// Raised when the daemon's login rate limiter (shared by /challenge and /auth)
+// returns 429. Distinct from a bad password so the UI can tell the operator to
+// wait rather than mislabel a throttled-but-correct password as "invalid".
+export class RateLimitedError extends Error {
+    constructor() {
+        super("Too many attempts");
+        this.name = "RateLimitedError";
+    }
+}
+
 const authMiddleware: Middleware = {
     onRequest({ request }) {
         if (browser) {
@@ -70,6 +80,7 @@ function authHeader(): string | undefined {
 export const authApi = {
     login: async (password: string): Promise<{ token: string }> => {
         const challengeRes = await fetch(`${API_BASE_URL}/api/auth/challenge`);
+        if (challengeRes.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
         if (!challengeRes.ok) throw new Error("Failed to get auth challenge");
         const { nonce } = authChallengeResponseSchema.parse(await challengeRes.json());
 
@@ -80,6 +91,7 @@ export const authApi = {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ nonce, response }),
         });
+        if (res.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
         if (!res.ok) throw new Error("Authentication failed");
 
         return authLoginResponseSchema.parse(await res.json());

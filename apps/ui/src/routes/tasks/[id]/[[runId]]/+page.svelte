@@ -79,18 +79,37 @@
         return () => taskData.abort();
     });
 
+    // Whether the deep-linked run id resolved to no run under this task. Surfaced
+    // to TaskPage so a dead permalink shows a "not found" panel instead of quietly
+    // selecting the running/newest run.
+    let runNotFound = $state(false);
+    let checkedMissingId = $state<string | null>(null);
+
     $effect(() => {
         const initialRunId = runIdParam;
-        if (!initialRunId || !taskName || source.items.length === 0) return;
-        if (source.items.some((r) => r.id === initialRunId)) return;
+        if (!initialRunId || !taskName) {
+            runNotFound = false;
+            checkedMissingId = null;
+            return;
+        }
+        if (source.items.length === 0) return;
+        if (source.items.some((r) => r.id === initialRunId)) {
+            runNotFound = false;
+            return;
+        }
+        if (checkedMissingId === initialRunId) return; // already resolved as missing
         void (async () => {
             try {
                 const run = await tasksApi.getRun(taskName, initialRunId);
-                if (run) source.upsert(run);
+                if (run) {
+                    source.upsert(run);
+                    return;
+                }
             } catch {
-                // Run not found / not authorized — TaskPage's fallback selection
-                // (running run, else newest) keeps the UI usable.
+                // Fall through: not found / not authorized is treated as missing.
             }
+            checkedMissingId = initialRunId;
+            runNotFound = true;
         })();
     });
 
@@ -183,6 +202,7 @@
                     return Number.isFinite(n) ? n : null;
                 })()}
                 {selectRunId}
+                {runNotFound}
                 onSelectRun={selectRun}
             />
         {/if}

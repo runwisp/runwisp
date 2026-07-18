@@ -12,6 +12,11 @@
         required?: boolean;
         children: Snippet;
         class?: string;
+        // The id of the control this field labels. Pass the SAME id to the wrapped
+        // input/select so the <label for> actually points at it — otherwise the
+        // label is dead (clicking it does nothing; screen readers can't associate
+        // it). Falls back to a generated id when the field has no focusable target.
+        id?: string;
     }
 
     let {
@@ -22,14 +27,16 @@
         required = false,
         children,
         class: className = "",
+        id,
     }: Props = $props();
 
     const generatedId = `field-${Math.random().toString(36).slice(2, 10)}`;
+    const fieldId = $derived(id ?? generatedId);
 </script>
 
 <div class="space-y-1.5 {className}">
     {#if label}
-        <label for={generatedId} class="block text-sm font-medium text-on-surface-muted">
+        <label for={fieldId} class="block text-sm font-medium text-on-surface-muted">
             {label}
             {#if required}
                 <span class="text-danger-soft-text">*</span>

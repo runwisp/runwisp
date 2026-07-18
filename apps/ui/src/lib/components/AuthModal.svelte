@@ -4,7 +4,7 @@
 <script lang="ts">
     import { browser } from "$app/environment";
     import { Button, Input, Logo, Modal } from "@runwisp/ui";
-    import { authApi } from "$lib/api";
+    import { authApi, RateLimitedError } from "$lib/api";
     import { authStore } from "$lib/stores";
     import { browserTokenStorage, browserAuthEventBus } from "$lib/adapters/browser";
     import { createLogger } from "$lib/utils/logger";
@@ -73,7 +73,11 @@
 
             browserAuthEventBus.emitAuthSuccess();
         } catch (err) {
-            error = "Invalid password. Please try again.";
+            if (err instanceof RateLimitedError) {
+                error = "Too many attempts. Please wait a few minutes and try again.";
+            } else {
+                error = "Invalid password. Please try again.";
+            }
             logger.error("Authentication failed", err);
         } finally {
             loading = false;

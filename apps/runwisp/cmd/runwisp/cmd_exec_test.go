@@ -4,6 +4,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -167,6 +169,35 @@ func TestRunExec_StandaloneFlagForbidsDaemon(t *testing.T) {
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--standalone was set")
+}
+
+func TestRunExecCLI_MutuallyExclusiveFlags(t *testing.T) {
+	origDaemon, origStandalone := execFlags.Daemon, execFlags.Standalone
+	execFlags.Daemon, execFlags.Standalone = true, true
+	t.Cleanup(func() { execFlags.Daemon, execFlags.Standalone = origDaemon, origStandalone })
+
+	var buf bytes.Buffer
+	exitCode, err := runExecCLI(&buf, "anything", Flags{DataDir: t.TempDir()})
+	assert.Equal(t, 0, exitCode)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
+	assert.Empty(t, buf.String(), "no --json flag set → nothing written")
+}
+
+func TestRunExecCLI_JSONFlagEmitsErrorDocOnFailure(t *testing.T) {
+	origJSON := execFlags.JSON
+	execFlags.JSON = true
+	t.Cleanup(func() { execFlags.JSON = origJSON })
+
+	var buf bytes.Buffer
+	_, err := runExecCLI(&buf, "missing", Flags{CfgFile: "/does/not/exist/runwisp.toml", DataDir: t.TempDir()})
+	require.Error(t, err)
+
+	var doc execJSONDoc
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc), "stdout must be valid JSON even on failure")
+	assert.Equal(t, "missing", doc.Task)
+	assert.Equal(t, err.Error(), doc.Error)
+	assert.Empty(t, doc.RunID, "error doc omits the identity fields of a real run")
 }
 
 func TestRunExecStandalone_UnknownTaskName(t *testing.T) {

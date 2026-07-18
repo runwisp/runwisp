@@ -85,6 +85,24 @@ func TestRunDemoSeedOnlyWritesConfigAndSeeds(t *testing.T) {
 	assert.DirExists(t, f.LogDir())
 }
 
+func TestDemoPathFlagsRejection(t *testing.T) {
+	t.Parallel()
+	assert.NoError(t, demoPathFlagsRejection(false, false), "no explicit paths → demo proceeds")
+
+	for _, tc := range []struct {
+		name              string
+		config, dataFlags bool
+	}{
+		{"config only", true, false},
+		{"data only", false, true},
+		{"both", true, true},
+	} {
+		err := demoPathFlagsRejection(tc.config, tc.dataFlags)
+		require.Errorf(t, err, "%s must be rejected", tc.name)
+		assert.Contains(t, err.Error(), "--seed-only")
+	}
+}
+
 func TestRunDemoSeedOnlyRejectsCloud(t *testing.T) {
 	setSeedOnly(t, true)
 

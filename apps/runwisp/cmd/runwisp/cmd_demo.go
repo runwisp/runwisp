@@ -72,6 +72,19 @@ func init() {
 	demoCmd.Flags().BoolVar(&demoFlags.SeedOnly, "seed-only", false, "write the demo config to --config and seed --data, then exit without spawning a daemon or TUI (for tooling that boots its own daemon)")
 }
 
+// demoPathFlagsRejection reports the error the full demo returns when the
+// operator passed a --config/--data it can't honor: the demo runs against a
+// throwaway temp dir, so honoring either would be a lie. Both unset → nil, and
+// the demo proceeds. --seed-only takes a different path (it writes to the given
+// paths) and never reaches this check.
+func demoPathFlagsRejection(configChanged, dataChanged bool) error {
+	if !configChanged && !dataChanged {
+		return nil
+	}
+	return fmt.Errorf("demo runs against a throwaway temp directory and cannot honor --config/--data; " +
+		"use `runwisp demo --seed-only --config <path> --data <path>` to seed your own paths instead")
+}
+
 // runDemo sets up a throwaway temp dir, writes the embedded demo config, seeds
 // history (standalone only), spawns the background daemon against the temp dir,
 // and attaches the TUI — mirroring the plain `runwisp` flow.
@@ -86,6 +99,14 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 			return fmt.Errorf("demo: --seed-only cannot be combined with --cloud")
 		}
 		return setupDemoDir(cmd, f)
+	}
+
+	// The full demo runs against a throwaway temp dir it deletes on shutdown, so
+	// an explicit --config/--data can't be honored — silently overwriting them
+	// (as this used to) discards the operator's choice. Reject them and point at
+	// --seed-only, which does write to the supplied paths.
+	if err := demoPathFlagsRejection(cmd.Flags().Changed("config"), cmd.Flags().Changed("data")); err != nil {
+		return err
 	}
 
 	tmp, err := os.MkdirTemp("", "runwisp-demo-")

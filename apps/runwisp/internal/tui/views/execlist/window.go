@@ -39,9 +39,12 @@ type ExecWindow struct {
 }
 
 // statusFilterCycle is the run-status filter the list cycles through with `f`.
-// It mirrors the web UI's run filter (All / Running / Success / Failed); the
-// empty string means "no filter".
-var statusFilterCycle = []string{"", "running", "success", "failed"}
+// It mirrors the web UI's five run-status buckets (Running / Succeeded / Failed
+// / Skipped / Stopped); the empty string means "no filter". Each entry is a
+// single status token matched against a run's phase or end reason, so the banner
+// stays a clean one-word label — narrower than the web UI's multi-status buckets
+// but enough to quick-filter to each outcome.
+var statusFilterCycle = []string{"", "running", "success", "failed", "skipped", "stopped"}
 
 func NewExecWindow(client *apiclient.Client) *ExecWindow {
 	return &ExecWindow{
@@ -122,8 +125,9 @@ func (w *ExecWindow) HasStatusFilter() bool {
 	return w.statusFilter != ""
 }
 
-// StatusFilter returns the raw active status filter ("running"/"success"/
-// "failed"), or "" when no filter is active.
+// StatusFilter returns the raw active status filter (one of statusFilterCycle,
+// e.g. "running"/"success"/"failed"/"skipped"/"stopped"), or "" when no filter
+// is active.
 func (w *ExecWindow) StatusFilter() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()

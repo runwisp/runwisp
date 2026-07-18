@@ -48,20 +48,39 @@
         });
     });
 
+    // Whether the deep-linked run id resolved to no run. Surfaced to RunsPage so
+    // a dead permalink shows a "not found" panel instead of silently swapping in
+    // the newest run.
+    let runNotFound = $state(false);
+    let checkedMissingId = $state<string | null>(null);
+
     // Restore a deep-linked run (/runs/{runId}) that isn't on the loaded page.
     // The run ULID is globally unique, so we can fetch it without a task name.
     $effect(() => {
         const initialRunId = runIdParam;
-        if (!initialRunId || source.items.length === 0) return;
-        if (source.items.some((r) => r.id === initialRunId)) return;
+        if (!initialRunId) {
+            runNotFound = false;
+            checkedMissingId = null;
+            return;
+        }
+        if (source.items.length === 0) return;
+        if (source.items.some((r) => r.id === initialRunId)) {
+            runNotFound = false;
+            return;
+        }
+        if (checkedMissingId === initialRunId) return; // already resolved as missing
         void (async () => {
             try {
                 const run = await runsApi.getById(initialRunId);
-                if (run) source.upsert(run);
+                if (run) {
+                    source.upsert(run);
+                    return;
+                }
             } catch {
-                // Run not found / not authorized — RunsPage falls back to the
-                // newest run, keeping the view usable.
+                // Fall through: not found / not authorized is treated as missing.
             }
+            checkedMissingId = initialRunId;
+            runNotFound = true;
         })();
     });
 </script>
@@ -82,6 +101,7 @@
         fetchLineHistory={logSession.fetchLineHistory}
         {getInstanceCount}
         initialRunId={runIdParam}
+        {runNotFound}
         onSelectRun={selectRun}
     />
 {/if}

@@ -15,7 +15,6 @@
       "kind": "service",
       "schedule": "",
       "instances": 2,
-      "max_concurrent": 1,
       "on_overlap": "skip",
       "api_trigger": true
     }
