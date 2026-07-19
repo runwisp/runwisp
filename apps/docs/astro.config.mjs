@@ -167,6 +167,10 @@ export default defineConfig({
                         { label: "Reload", slug: "operations/reload" },
                         { label: "Logging", slug: "operations/logging" },
                         { label: "Metrics", slug: "operations/metrics" },
+                        {
+                            label: "Troubleshooting",
+                            slug: "operations/troubleshooting",
+                        },
                     ],
                 },
                 ...openAPISidebarGroups,

@@ -72,6 +72,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "operations/autostart",
             "operations/logging",
             "operations/metrics",
+            "operations/troubleshooting",
         ],
     },
     {

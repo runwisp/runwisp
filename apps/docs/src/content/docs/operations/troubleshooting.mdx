@@ -1,0 +1,344 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: Apache-2.0
+title: Troubleshooting
+description: A symptom-first guide to the things that trip people up when they first run RunWisp — the daemon won't start, the CLI can't reach it, the Web UI won't let you in, a task didn't fire, a reload was rejected, or state went missing — each with the cause and the fix.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Something's not behaving and you want the shortest path back to working.
+This page is organized by **symptom** — find the thing you're seeing, get
+the likely cause, and follow the fix. Most of it comes back to one of two
+ideas RunWisp leans on hard: [`runwisp.toml` is the only source of
+truth](/configuration/overview/), and the [data
+directory](/configuration/daemon/#cli-flags-config-data-directory--listen-address)
+is where all state lives. When something's off, those are the two places
+to look first.
+
+Every command below takes the same [`--data` and
+`--config`](/operations/cli/#global-flags) flags the daemon does — if you
+started the daemon with non-default paths, pass the **same** ones to the
+CLI or it'll look in the wrong place. That single mismatch is behind a
+surprising share of "it's broken" reports.
+
+## The daemon won't start
+
+### "Port already in use"
+
+Something is already sitting on `9477` (or whatever `--port` you picked).
+Two flavors:
+
+- **Another RunWisp daemon** — usually one you started from a _different_
+  data directory. Bare `runwisp` recognizes this: it tells you which data
+  dir and config that daemon is using and offers to connect to it, or to
+  stop it and launch here instead.
+- **Something that isn't RunWisp** — you get a plain "port in use" error
+  with a hint for tracking down the culprit. Find it with
+  `lsof -i :9477` (or `ss -ltnp | grep 9477`), then either stop it or move
+  RunWisp aside:
+
+    ```sh
+    runwisp daemon --port 9478
+    ```
+
+Prefer a different port permanently? It's a [CLI
+flag](/configuration/daemon/#cli-flags-config-data-directory--listen-address),
+not config — so pass `--port` (and `--host`) on every invocation, or bake
+it into your [systemd/launchd unit](/operations/autostart/).
+
+### It exits immediately with no daemon
+
+Two common reasons, and they look different on purpose:
+
+- **No `runwisp.toml`.** Bare `runwisp` in an interactive terminal offers
+  to [scaffold a starter config](/getting-started/quick-start/#2-first-run).
+  But `runwisp daemon` — the headless variant for cron, systemd, and
+  Docker — deliberately **exits non-zero** when there's no config rather
+  than hanging on a prompt nobody can answer. Point `--config` at the real
+  file, or `cd` to where it lives.
+- **The config won't parse or validate.** A parse error at startup stops
+  the boot cold — the daemon exits _before_ it opens its port, so nothing
+  half-starts. Run [`runwisp validate`](/operations/cli/#look-before-you-leap)
+  to see exactly what's wrong without touching anything live:
+
+    ```sh
+    runwisp validate --config runwisp.toml
+    ```
+
+### It complains about a timezone at boot
+
+If [`[scheduler] timezone`](/concepts/scheduling/#timezone) (or a per-task
+`timezone`) names a zone the host can't resolve — a typo, or a stripped-down
+container image with no `tzdata` — config load fails and tells you which
+scope is at fault. It never quietly falls back to UTC. Fix the name, or
+install `tzdata` in the image (`apk add tzdata`, `apt-get install tzdata`).
+
+### It warns that a task's `graceful_stop` is too long
+
+If a task's [`graceful_stop`](/configuration/tasks/#retries--timeout) is
+longer than the daemon-wide
+[`shutdown_timeout`](/configuration/daemon/#shutdown_timeout), the daemon
+warns you by name at boot — because on shutdown it'll `SIGKILL` that task
+before its own grace window is up. Raise `shutdown_timeout`, lower the
+per-task `graceful_stop`, or accept the cut-short cleanup. It's a warning,
+not a failure: the daemon still starts.
+
+## The CLI or TUI can't reach the daemon
+
+You run `runwisp status` (or `exec`) and get a message like _"daemon is
+not reachable at `<datadir>`"_ — or, from `runwisp reload`/`stop`, _"No
+daemon is running on data dir `<datadir>`"_.
+
+The CLI and TUI talk to the daemon over a [Unix
+socket](/operations/auth/#local-clients-cli-tui) at `<datadir>/runwisp.sock`
+— there's no quiet fallback to some other transport. So this means one of:
+
+- **No daemon is running** for that data dir. Start one, or check it's
+  actually up.
+- **A data-dir or socket mismatch.** If you started the daemon with
+  `--data /var/lib/runwisp` but run `runwisp status` from a directory whose
+  default `--data` is `./.runwisp`, they're looking at different sockets.
+  Pass the same `--data` (or `--socket`) to both. When the socket lives
+  somewhere custom, `runwisp status --socket /run/runwisp.sock` reaches it
+  without restating `--data`.
+- **A wrong-user problem.** The socket is locked to the user who started
+  the daemon (`0700` data dir, `0600` socket, plus a peer-UID check). If a
+  daemon _is_ running but the CLI still can't get through, it's almost
+  always ownership, not networking.
+
+:::note[After a `kill -9` or power loss]
+A hard-killed daemon can leave its PID file behind, but the socket goes
+with the process — so the next `runwisp status` correctly reports the
+daemon as down rather than trusting a stale PID. Just start a fresh daemon;
+there's nothing to clean up by hand.
+:::
+
+## I can't get into the Web UI
+
+### I don't know the password
+
+Unless you set [`RUNWISP_PASSWORD`](/operations/auth/#the-password), the
+daemon mints a **fresh random password every boot**, in memory only — it
+never lands in a log line or a startup banner. Pull it back out one of two
+ways:
+
+- **From the TUI:** the **Home** view has a `Password` row showing `••…`.
+  Focus it and press <kbd>Enter</kbd> to copy the real value.
+- **From a shell** that can reach the data dir:
+
+    ```sh
+    runwisp password | wl-copy      # or pbcopy / xclip
+    ```
+
+`runwisp password` only answers over the local socket — try it over the
+network and you get **403**; try it when the daemon was started with
+`RUNWISP_PASSWORD` and you get **404** (RunWisp never discloses a password
+_you_ chose — that one's yours to stash).
+
+### Every restart logs me out
+
+Same root cause. With no `RUNWISP_PASSWORD` set, each boot rotates the
+password, which rotates the derived session key, which invalidates every
+browser session. If you want sessions (and the password) to survive
+restarts, set a stable [`RUNWISP_PASSWORD`](/operations/auth/#the-password)
+— from a Docker secret, systemd `LoadCredential=`, or your secret store.
+It's read into memory only and never written to disk.
+
+### "Too many attempts" or the login is throttled
+
+Failed network logins are [rate-limited per source
+IP](/operations/auth/#rate-limiting) — cross the limit and you get **429
+Too Many Requests** until the window slides past. The login screen tells
+you to wait rather than reporting a wrong password. Restarting the daemon
+resets the counter; the local-socket path is exempt.
+
+### The browser warns the certificate isn't trusted
+
+Expected the moment you bind [beyond
+loopback](/configuration/daemon/#tls-tls_cert-tls_key). RunWisp self-signs
+a certificate and serves HTTPS automatically so your password and cookies
+never cross a real network in cleartext — and a self-signed cert always
+draws the browser's "not trusted" warning. Verify you're talking to the
+right daemon by matching the SHA-256 fingerprint the browser shows against
+the one printed in the startup log, then proceed. Want a
+publicly-trusted cert instead? [Bring your own
+pair](/configuration/daemon/#tls-tls_cert-tls_key) or terminate TLS at a
+[reverse proxy](/operations/auth/#reverse-proxies).
+
+:::caution[The CLI refuses after a cert change]
+The CLI and TUI pin the cert on first connect (trust-on-first-use, like
+SSH). If you regenerate it — deleting `<data>/tls/` and restarting — they
+refuse to connect with a "host identity changed" error until you clear the
+old pin. That's the guard working, not a bug.
+:::
+
+### There's an "Auth disabled" badge everywhere
+
+That's [`RUNWISP_NO_AUTH`](/operations/auth/#running-without-a-password) in
+effect — every `/api/` route answers without a password and the login
+screen is skipped. The badge (and the TUI's `Password disabled
+(RUNWISP_NO_AUTH)` line) exist so a passwordless instance can never be
+mistaken for a secured one. Only use it on a local or trusted-isolated
+network; **anyone who can reach the port has full control**. Unset the
+variable and restart to turn auth back on.
+
+:::note[`RUNWISP_NO_AUTH` and `RUNWISP_PASSWORD` together fail]
+The two are mutually exclusive — the daemon refuses to start with both set,
+because a password that's never checked is worse than none. And any value
+other than `1` / `true` for `RUNWISP_NO_AUTH` is a startup error, not a
+guess.
+:::
+
+## A task didn't run when I expected
+
+### The daemon is running the _old_ config
+
+RunWisp never watches `runwisp.toml` — it reloads only when you ask. So an
+edit you saved isn't live until you apply it. When the file on disk drifts
+from what the daemon is running, RunWisp flags it: `runwisp status` says
+so, the Web UI shows a banner, and the TUI header carries a notice. Apply
+the edit with:
+
+```sh
+runwisp reload      # add/change/remove tasks, tweak [defaults]
+```
+
+Reach for `runwisp restart` instead when you changed a
+[restart-only setting](/operations/reload/#what-reloads-live-and-what-needs-a-restart)
+or want a fresh boot to re-fire `run_on_start` and catch-up. See
+[Reload](/operations/reload/) for exactly what each does.
+
+### The schedule fired in a different timezone than you thought
+
+Cron expressions are evaluated in
+[`[scheduler] timezone`](/concepts/scheduling/#timezone) (or the task's own
+`timezone`), falling back to the **host's** system zone when unset — which
+may not be what you assumed, especially inside a container that defaults to
+UTC. The resolved zone is printed in the TUI startup banner and shown in
+the Web UI header, so you never have to guess which one is in play. Set it
+explicitly if the host's zone isn't what you want.
+
+### You expected it to run, but it isn't in the config
+
+There's no enable/disable toggle — a task exists exactly when it's in
+`runwisp.toml`. If you commented it out or it lives in an
+[`include`](/configuration/daemon/#include) file the daemon didn't pick up,
+it simply isn't scheduled. Confirm what the daemon actually sees:
+
+```sh
+runwisp list        # the tasks and schedules as configured
+runwisp status      # live view, including each task's next run
+```
+
+### It _did_ run — as skipped, queued, or missed
+
+A firing that doesn't produce fresh output still lands in history; it just
+might not be a normal success. Under
+[`on_overlap = "skip"`](/concepts/concurrency/) a tick that collides with a
+still-running job is recorded as **skipped**; under the default `queue` it
+**waits in line**. And a tick the daemon was **down** for is recorded as
+[**missed**](/concepts/scheduling/#alerting-on-missed-runs) and raises a
+failure-level alert. Open the task's run history — the status on each row
+tells you which of these happened. Nothing fires without leaving a trace.
+
+## A reload was rejected
+
+`runwisp reload` is **validate-first**: it loads and checks the _whole_ new
+config before touching anything live, so a bad edit can't take your
+scheduler down. On any of these it's rejected and the running task set is
+left exactly as it was:
+
+- **A parse or validation error** — same as `runwisp validate` would
+  report. Fix the file and reload again.
+- **A change to a restart-only setting** — `[daemon]`, `[scheduler]
+timezone`, `[storage]`, `[notify]`, or the bind host/port. You'll see
+  something like:
+
+    ```sh
+    $ runwisp reload
+    Error: reload rejected: [storage] changed; requires `runwisp restart`
+    ```
+
+    Those settings can't be swapped under a live process — run
+    [`runwisp restart`](/operations/cli/#apply-config-edits) to apply them.
+
+The full breakdown of what reloads live versus what needs a restart is on
+the [Reload](/operations/reload/#what-reloads-live-and-what-needs-a-restart)
+page.
+
+## After a crash, runs show "crashed"
+
+On a clean shutdown the daemon waits for in-flight runs to finish or time
+out. On a hard crash — power loss, `kill -9` — it doesn't get the chance.
+So the next time it starts, [any run still on the books as
+running](/concepts/scheduling/#on-startup-unfinished-runs-are-marked-crashed)
+is marked **`crashed`** with exit code **`-2`**. Those runs are **not**
+resumed — RunWisp can't know where the process left off — but the normal
+schedule and catch-up logic may spin up a fresh run. The point is that
+every row in your history ends with a real result; you'll never find one
+stuck on "running" because the daemon vanished. This is expected behavior,
+not corruption.
+
+## State or logs seem to have gone missing
+
+Almost always a **data-directory** confusion. Everything RunWisp persists —
+the SQLite database (`runwisp.db`), every task's logs, the PID file, and
+the socket — lives under one directory, `.runwisp` **relative to the
+working directory** by default. So running the daemon from a different
+folder (or a service manager with a different working directory) points it
+at a _different_ data dir, and the old history "disappears" simply because
+you're looking at a fresh one.
+
+The fix is to pick a `--data` path once and always pass it:
+
+```sh
+runwisp daemon --data /var/lib/runwisp
+runwisp status --data /var/lib/runwisp
+```
+
+Relocating later is just a directory move, not a config change — the whole
+directory is self-contained. See
+[`[storage]`](/configuration/storage/) for the retention and disk-usage
+knobs that govern what's kept, and [Logging](/operations/logging/) for
+where per-task log files sit and how they rotate.
+
+## Still stuck?
+
+Turn up the daemon's own logs and watch what it does on the next start or
+reload:
+
+```sh
+runwisp daemon --log-level debug
+```
+
+[`--log-level debug`](/operations/logging/) surfaces the scheduling and
+reconcile decisions the daemon is making. If you think you've found a bug,
+the [GitHub issue tracker](https://github.com/runwisp/runwisp/issues) is
+the place — a `--log-level debug` excerpt and your `runwisp validate`
+output make it far quicker to sort out.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="CLI reference"
+        href="/operations/cli/"
+        description="Every subcommand and flag — status, validate, reload, restart, stop."
+    />
+    <LinkCard
+        title="Auth"
+        href="/operations/auth/"
+        description="The password, the local socket, rate limits, and turning auth off."
+    />
+    <LinkCard
+        title="Reload"
+        href="/operations/reload/"
+        description="What runwisp reload picks up live, and what needs a restart."
+    />
+    <LinkCard
+        title="How scheduling works"
+        href="/concepts/scheduling/"
+        description="Timezones, missed-tick catch-up, and crash recovery."
+    />
+</CardGrid>
