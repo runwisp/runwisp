@@ -3,6 +3,9 @@
 
 package config
 
+// The blank import pulls in the embed package purely so the //go:embed directive
+// on schemaJSON below is honoured by the compiler. schemaJSON is a string, not an
+// embed.FS, so the package is never referenced by name and must be imported blank.
 import _ "embed"
 
 // SchemaURL is the canonical, stable URL where the runwisp.toml JSON Schema is
