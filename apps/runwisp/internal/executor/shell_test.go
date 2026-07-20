@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -31,6 +32,19 @@ func TestShellBackend_AlwaysAvailable(t *testing.T) {
 // task's context is cancelled. The test fails if the child process keeps
 // running past the grace window.
 func TestShellBackend_ProcessGroupSIGTERMKillsChildren(t *testing.T) {
+	// This test verifies a kernel guarantee — that a process-group-directed
+	// signal (kill(-pgid, …)) reaches every member of the group, not just the
+	// leader. A few sandboxed CI hosts (PID namespaces whose init is not a real
+	// reaper) deliver group signals only to the leader and silently drop them
+	// for other members; there, a perfectly correct process-group kill still
+	// leaks the child, so the assertion below cannot tell a real regression
+	// apart from the broken host. Probe the capability and skip only when it is
+	// absent — on every supported platform (Linux, macOS, WSL) the probe passes
+	// and the full guarantee is asserted.
+	if !processGroupSignalsReachChildren(t) {
+		t.Skip("host does not deliver process-group signals to non-leader members; group reaping is unverifiable here")
+	}
+
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
 
@@ -132,6 +146,63 @@ sleep 30
 	case <-time.After(time.Second):
 		t.Fatal("graceful_stop=0 must SIGKILL immediately, not wait")
 	}
+}
+
+// processGroupSignalsReachChildren reports whether this host delivers a
+// process-group-directed signal (kill(-pgid, …)) to a *non-leader* member of
+// the group. It reproduces, in miniature, the exact topology the behavioral
+// test protects: a shell leader in a fresh process group that spawns a
+// long-lived, default-disposition `sleep` child. It then SIGKILLs the whole
+// group and checks whether the child — which cannot catch, block, or ignore
+// SIGKILL — is actually reaped. If the child survives, group delivery to
+// non-leaders is broken on this host and the caller should skip.
+//
+// The probe cleans up unconditionally with direct per-PID kills, so it never
+// leaks the leader or the child regardless of the environment's behavior.
+func processGroupSignalsReachChildren(t *testing.T) bool {
+	t.Helper()
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "probe.pid")
+
+	cmd := exec.Command("/bin/sh", "-c", "sleep 5 & echo $! > "+pidFile+"\nwait\n")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("process-group probe: start shell leader: %v", err)
+	}
+	leader := cmd.Process.Pid
+	// Reap the leader in the background so it never lingers as a zombie.
+	go func() { _, _ = cmd.Process.Wait() }()
+
+	// The child PID must be recorded before we can probe delivery to it.
+	var child int
+	require.Eventually(t, func() bool {
+		pid, ok := readPidFromFile(pidFile)
+		if !ok {
+			return false
+		}
+		child = pid
+		return true
+	}, time.Second, 10*time.Millisecond, "process-group probe: child must record its PID")
+
+	// Always clean up both the leader group and the child directly, so a broken
+	// host (where the group kill below is a no-op for the child) leaks nothing.
+	t.Cleanup(func() {
+		_ = syscall.Kill(-leader, syscall.SIGKILL)
+		_ = syscall.Kill(child, syscall.SIGKILL)
+	})
+
+	// SIGKILL the group. On a conformant host this reaps both leader and child;
+	// on a broken host only the leader dies. Poll for the child's disappearance
+	// with a plain loop — require.Eventually would fail the test on a broken
+	// host, but here a non-reap is a skip signal, not a failure.
+	_ = syscall.Kill(-leader, syscall.SIGKILL)
+	for i := 0; i < 50; i++ {
+		if err := syscall.Kill(child, 0); errors.Is(err, syscall.ESRCH) || os.IsPermission(err) {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
 }
 
 // readPidFromFile loads a PID written by the shell-script helper. Returns

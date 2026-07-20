@@ -177,11 +177,13 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *mod
 
 	// The container's lifetime is decoupled from the run ctx so a stop/timeout
 	// runs the signal ladder instead of an instant force-remove: ContainerWait
-	// blocks on a background ctx (returns only when the container truly exits),
-	// while a watcher translates run-ctx cancellation into a graceful
-	// ContainerStop (stop_signal, then SIGKILL after graceful_stop). Mirrors the
-	// shell/compose cmd.Cancel ladder, using Docker's native stop semantics.
-	waitFn := b.waitFunc(context.Background(), containerID)
+	// blocks on a cancel-decoupled context derived from ctx via
+	// context.WithoutCancel (it keeps ctx's values but is never cancelled, so the
+	// wait returns only when the container truly exits), while a watcher
+	// translates run-ctx cancellation into a graceful ContainerStop (stop_signal,
+	// then SIGKILL after graceful_stop). Mirrors the shell/compose cmd.Cancel
+	// ladder, using Docker's native stop semantics.
+	waitFn := b.waitFunc(context.WithoutCancel(ctx), containerID)
 	done := make(chan struct{})
 	var doneOnce sync.Once
 	closeDone := func() { doneOnce.Do(func() { close(done) }) }
