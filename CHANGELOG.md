@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-21
+
 ### Added
 
 - **`--json` output for `runwisp status`, `list`, and `validate`.** A schema-versioned, machine-readable document on stdout for headless and agent-driven use; failures still exit non-zero and emit JSON. See [CLI](https://docs.runwisp.com/operations/cli/#machine-readable-output-json).
@@ -360,7 +362,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.12.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.13.0...main
+[0.13.0]: https://github.com/runwisp/runwisp/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/runwisp/runwisp/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/runwisp/runwisp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/runwisp/runwisp/compare/v0.9.0...v0.10.0
