@@ -262,7 +262,104 @@ func TestComposeExpansion_NoComposeFileFoundProducesClearError(t *testing.T) {
 	assert.Contains(t, err.Error(), "no compose file")
 }
 
+func TestComposeExpansion_PerServiceNotifyDesugarsToRoutes(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[[notifier]]
+id = "slack-prod"
+type = "slack"
+webhook_url = "https://example/hook"
+
+[[notifier]]
+id = "slack-ok"
+type = "slack"
+webhook_url = "https://example/ok"
+
+[compose.myapp]
+
+[compose.myapp.web]
+notify_on_failure = ["slack-prod"]
+notify_on_success = ["slack-ok"]
+`))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	failure := findRoute(t, cfg, "myapp.web", "run.failed")
+	// notify_on_failure fans out across all failure kinds plus the appended
+	// global default channel (inapp).
+	assert.ElementsMatch(t,
+		[]string{"run.failed", "run.timeout", "run.crashed", "run.missed", "service.fatal"},
+		failure.Kinds)
+	assert.ElementsMatch(t, []string{"slack-prod", "inapp"}, failure.NotifierID)
+
+	success := findRoute(t, cfg, "myapp.web", "run.succeeded")
+	assert.ElementsMatch(t, []string{"run.succeeded"}, success.Kinds)
+	assert.ElementsMatch(t, []string{"slack-ok", "inapp"}, success.NotifierID)
+
+	// A service without notify overrides produces no task-scoped route.
+	for _, r := range cfg.Notify.Routes {
+		assert.NotEqual(t, "myapp.worker", r.TaskGlob, "unconfigured service must not get a route")
+	}
+}
+
+func TestComposeExpansion_PerServiceNotifyInlineTokenMaterialisesNotifier(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[[notifier]]
+id = "slack-prod"
+type = "slack"
+webhook_url = "https://example/hook"
+channel = "#default"
+
+[compose.myapp]
+
+[compose.myapp.web]
+notify_on_failure = ["slack-prod:#alerts"]
+`))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	failure := findRoute(t, cfg, "myapp.web", "run.failed")
+	assert.Contains(t, failure.NotifierID, "slack-prod:#alerts")
+
+	// The late inline-token pass must materialise a synthetic notifier whose
+	// channel is the override, cloned from the parent's credentials.
+	var synth *NotifierSpec
+	for i := range cfg.Notify.Notifiers {
+		if cfg.Notify.Notifiers[i].ID == "slack-prod:#alerts" {
+			synth = &cfg.Notify.Notifiers[i]
+		}
+	}
+	require.NotNil(t, synth, "inline override token must materialise a synthetic notifier")
+	assert.Equal(t, "#alerts", synth.SlackChannel)
+	assert.Equal(t, "https://example/hook", synth.WebhookURL, "synthetic notifier inherits parent credentials")
+}
+
+func TestComposeExpansion_PerServiceNotifyUnknownNotifierRejected(t *testing.T) {
+	_, err := Load(writeConfig(t, `[compose.myapp]
+
+[compose.myapp.web]
+notify_on_failure = ["ghost"]
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ghost")
+}
+
 // --- test helpers ---
+
+// findRoute returns the notify route matching taskGlob that fires on kind.
+// Fails the test when no such route exists.
+func findRoute(t *testing.T, cfg *Config, taskGlob, kind string) NotificationRoute {
+	t.Helper()
+	for _, r := range cfg.Notify.Routes {
+		if r.TaskGlob != taskGlob {
+			continue
+		}
+		for _, k := range r.Kinds {
+			if k == kind {
+				return r
+			}
+		}
+	}
+	t.Fatalf("no notify route for task %q with kind %q", taskGlob, kind)
+	return NotificationRoute{}
+}
 
 func taskNames(cfg *Config) []string {
 	names := make([]string, 0, len(cfg.Tasks))
