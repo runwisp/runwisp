@@ -79,11 +79,12 @@ func expandComposeBlocks(cfg *Config, dirs sourceDirs) error {
 		existingNames[cfg.Tasks[i].Name] = struct{}{}
 	}
 
+	var notify []composeNotifySugar
 	for _, alias := range aliases {
 		if err := model.ValidateTaskName(alias); err != nil {
 			return fmt.Errorf("invalid compose alias %q: %w", alias, err)
 		}
-		newTasks, err := expandComposeAlias(alias, blocks[alias], dirs.dir(alias), existingNames)
+		newTasks, newNotify, err := expandComposeAlias(alias, blocks[alias], dirs.dir(alias), existingNames)
 		if err != nil {
 			return fmt.Errorf("compose.%s: %w", alias, err)
 		}
@@ -91,8 +92,38 @@ func expandComposeBlocks(cfg *Config, dirs sourceDirs) error {
 			existingNames[newTasks[i].Name] = struct{}{}
 		}
 		cfg.Tasks = append(cfg.Tasks, newTasks...)
+		notify = append(notify, newNotify...)
 	}
-	return nil
+
+	// Compose blocks expand after toNotifyConfig has already built cfg.Notify,
+	// so their per-service notify_on_* sugar desugars into synthetic routes on
+	// the finished config rather than through desugar{Task,Service}Notify.
+	return appendComposeNotify(&cfg.Notify, notify)
+}
+
+// composeNotifySugar carries one imported service's notify_on_failure /
+// notify_on_success selections, keyed by the generated task name, from
+// expansion to the notify-route desugaring step.
+type composeNotifySugar struct {
+	taskName  string
+	onFailure []string
+	onSuccess []string
+}
+
+// appendComposeNotify turns collected compose per-service notify sugar into
+// synthetic routes on an already-built NotifyConfig, then resolves any inline
+// "<id>:<override>" tokens the new routes introduced. This mirrors what
+// desugarServiceNotify + expandInlineTokens do for [services.*], but runs late
+// because compose expansion happens after toNotifyConfig.
+func appendComposeNotify(out *NotifyConfig, sugar []composeNotifySugar) error {
+	if len(sugar) == 0 {
+		return nil
+	}
+	from := len(out.Routes)
+	for _, s := range sugar {
+		appendSynthRoutes(out, s.taskName, s.onFailure, s.onSuccess)
+	}
+	return expandInlineTokensFrom(out, from)
 }
 
 // composeBlockWire is the TOML-decodable form of the scalar/array keys in a
@@ -168,30 +199,31 @@ type composeServiceOverrideWire struct {
 	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
 }
 
-func expandComposeAlias(alias string, raw map[string]any, baseDir string, existingNames map[string]struct{}) ([]model.Task, error) {
+func expandComposeAlias(alias string, raw map[string]any, baseDir string, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
 	block, err := parseComposeBlock(alias, raw)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	resolvedFile, err := resolveComposeFile(block.File, baseDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	block.File = resolvedFile
 
 	if err := resolveComposeBlockPaths(block, baseDir, resolvedFile); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	project, err := composespec.Load(resolvedFile, block.Profiles, block.EnvFile, block.WorkingDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	switch block.Mode {
 	case model.ComposeModeStack:
-		return expandComposeStack(block, project, existingNames)
+		tasks, err := expandComposeStack(block, project, existingNames)
+		return tasks, nil, err
 	default:
 		return expandComposeServices(block, project, existingNames)
 	}
@@ -347,7 +379,7 @@ func decodeServiceOverride(svcName string, raw map[string]any) (*composeServiceO
 	return &w, nil
 }
 
-func expandComposeServices(block *composeBlock, project *composespec.Project, existingNames map[string]struct{}) ([]model.Task, error) {
+func expandComposeServices(block *composeBlock, project *composespec.Project, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
 	available := project.ServiceNames()
 	availableSet := make(map[string]struct{}, len(available))
 	for _, n := range available {
@@ -356,7 +388,7 @@ func expandComposeServices(block *composeBlock, project *composespec.Project, ex
 
 	imported, err := selectImportedComposeServices(block, available, availableSet)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	importedSet := make(map[string]struct{}, len(imported))
 	for _, n := range imported {
@@ -364,28 +396,46 @@ func expandComposeServices(block *composeBlock, project *composespec.Project, ex
 	}
 
 	if err := validateComposeOverridesExist(block.Overrides, importedSet, availableSet); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	tasks := make([]model.Task, 0, len(imported))
+	var notify []composeNotifySugar
 	for _, svcName := range imported {
 		svc := project.Service(svcName)
 		taskName := applyNameFormat(block.NameFormat, block.Alias, svcName)
 		if err := model.ValidateTaskName(taskName); err != nil {
-			return nil, fmt.Errorf("name_format %q produced invalid task name %q: %w", block.NameFormat, taskName, err)
+			return nil, nil, fmt.Errorf("name_format %q produced invalid task name %q: %w", block.NameFormat, taskName, err)
 		}
 		if _, dup := existingNames[taskName]; dup {
-			return nil, fmt.Errorf("name %q (from compose service %q) collides with an existing task or service", taskName, svcName)
+			return nil, nil, fmt.Errorf("name %q (from compose service %q) collides with an existing task or service", taskName, svcName)
 		}
 
 		task, err := buildComposeServiceTask(block, svc, svcName, taskName)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		tasks = append(tasks, task)
+		if s, ok := composeServiceNotify(block.Overrides[svcName], taskName); ok {
+			notify = append(notify, s)
+		}
 		existingNames[taskName] = struct{}{}
 	}
-	return tasks, nil
+	return tasks, notify, nil
+}
+
+// composeServiceNotify extracts a service override's notify_on_* selections
+// into notify sugar keyed by the generated task name. Reports ok=false when the
+// override is absent or declares neither list, so the caller adds no route.
+func composeServiceNotify(w *composeServiceOverrideWire, taskName string) (composeNotifySugar, bool) {
+	if w == nil || (len(w.NotifyOnFailure) == 0 && len(w.NotifyOnSuccess) == 0) {
+		return composeNotifySugar{}, false
+	}
+	return composeNotifySugar{
+		taskName:  taskName,
+		onFailure: w.NotifyOnFailure,
+		onSuccess: w.NotifyOnSuccess,
+	}, true
 }
 
 // selectImportedComposeServices rejects service names colliding with a reserved
@@ -564,8 +614,11 @@ func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverride
 	}
 }
 
-// applyComposeOverrideEnv copies the override's env / secrets / notify fields
-// onto the task, leaving unset values at their compose-import default.
+// applyComposeOverrideEnv copies the override's env / secrets fields onto the
+// task, leaving unset values at their compose-import default. The notify_on_*
+// lists are handled separately (see composeNotifySugar): they never land on the
+// Task — like [services.*] they desugar into synthetic notify routes keyed by
+// the generated task name.
 func applyComposeOverrideEnv(task *model.Task, w *composeServiceOverrideWire) {
 	if len(w.Env) > 0 {
 		task.Env = w.Env
@@ -578,13 +631,6 @@ func applyComposeOverrideEnv(task *model.Task, w *composeServiceOverrideWire) {
 	}
 	if w.SecretsFile != "" {
 		task.SecretsFile = w.SecretsFile
-	}
-	if len(w.NotifyOnFailure) > 0 {
-		// Field not on Task today; consumed by notify config at expansion time.
-		// Stored on task via the same pathway as [services.*] — but the
-		// compose pipeline doesn't yet propagate notify lists. Leave a hook
-		// for a follow-up once notify wiring is extended.
-		_ = w.NotifyOnFailure
 	}
 }
 

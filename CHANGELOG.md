@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Compose per-service `notify_on_failure`/`notify_on_success` overrides now reach notifications.** A `[compose.<alias>.<svc>]` notify list was parsed and discarded; it now desugars into a notify route keyed by the imported service's task name, exactly like `[services.*]`. See [Compose](https://docs.runwisp.com/configuration/compose/#per-service-overrides).
+
 ## [0.13.0] - 2026-07-21
 
 ### Added
