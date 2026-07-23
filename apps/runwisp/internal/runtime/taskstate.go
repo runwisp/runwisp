@@ -27,6 +27,11 @@ type ActiveRun struct {
 	// coordinator to bound total shutdown time.
 	ForceKill func()
 	StartedAt time.Time
+	// RestartAttempt carries the non-service restart-chain depth from the
+	// triggering options so retireRun can escalate the restart backoff. Zero for
+	// original, cron, API, retry, and queued runs. Read only under the manager
+	// lock; not persisted.
+	RestartAttempt int
 }
 
 // taskState holds all per-task runtime state under the manager mutex.
@@ -135,7 +140,7 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 		}
 		run := ts.queue[0]
 		ts.queue = ts.queue[1:]
-		m.startRun(ts.task, run)
+		m.startRun(ts.task, run, 0)
 	}
 }
 
