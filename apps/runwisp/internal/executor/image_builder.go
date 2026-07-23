@@ -51,7 +51,11 @@ func (b *ImageBuilder) Build(ctx context.Context, ctr *model.ContainerExecution)
 			if err == io.EOF {
 				break
 			}
-			continue
+			// A non-EOF decode error means the stream is malformed; the decoder
+			// does not advance past a syntax error, so continuing would busy-loop
+			// forever on the same bytes. Bail out and surface the failure.
+			buildResp.Body.Close()
+			return "", fmt.Errorf("docker build: decode response stream: %w", err)
 		}
 		if msg.Error != "" {
 			buildResp.Body.Close()
