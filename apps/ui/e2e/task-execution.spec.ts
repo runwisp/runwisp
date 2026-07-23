@@ -4,8 +4,8 @@
 import { test, expect } from "./fixtures/test-base";
 import {
     expectRunDetailMatchesApi,
-    getLatestRun,
     triggerRunViaAPI,
+    triggerRunViaUI,
     waitForRunEnded,
 } from "./fixtures/api";
 
@@ -18,22 +18,21 @@ test.describe("task execution", () => {
 
         await expect(page.getByRole("heading", { name: "echo-task", level: 1 })).toBeVisible();
 
-        // Trigger from the empty-state Run button (no runs yet).
-        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
-        await page.getByRole("button", { name: "Run Now" }).click();
+        // Trigger via the Run button and capture the run it created. The panel
+        // may already show a prior run's SUCCESS badge (the daemon is shared
+        // across specs), so we anchor on *this* run's id rather than "the latest".
+        const triggered = await triggerRunViaUI(page, "echo-task");
 
-        // Wait for the run detail panel to settle on SUCCESS (exact match avoids
-        // the lowercase "success" in the run list, which uses CSS capitalize).
-        await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
-
-        // Cross-check the rendered outcome against the daemon's own record: the
-        // panel must show the API's status, exit code, and real timing — not a
-        // hardcoded badge.
-        const apiRun = await getLatestRun(page, "echo-task", daemonState.token);
-        expect(apiRun, "echo-task should have a run").toBeDefined();
-        if (!apiRun) return;
+        // Poll the API for this run's terminal record before asserting on it —
+        // this is the source of truth for the outcome, exit code, and timing.
+        const apiRun = await waitForRunEnded(page, "echo-task", triggered.id, daemonState.token);
         expect(apiRun.end_reason).toBe("success");
         expect(apiRun.exit_code).toBe(0);
+
+        // The panel settles on SUCCESS (exact match avoids the lowercase
+        // "success" in the run list, which uses CSS capitalize) and must show
+        // the API's status, exit code, and real timing — not a hardcoded badge.
+        await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
         await expectRunDetailMatchesApi(page, apiRun);
 
         // All captured stdout is present, in order — not just the first line.
@@ -50,17 +49,16 @@ test.describe("task execution", () => {
 
         await expect(page.getByRole("heading", { name: "fail-task", level: 1 })).toBeVisible();
 
-        // Trigger from the empty-state Run button (no runs yet).
-        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
-        await page.getByRole("button", { name: "Run Now" }).click();
+        // Trigger via the Run button and anchor on the run it created — a prior
+        // fail-task run's FAILED badge may already be on screen (shared daemon),
+        // so asserting on "the latest run" would race the run we just triggered.
+        const triggered = await triggerRunViaUI(page, "fail-task");
 
-        await expect(page.getByText("FAILED", { exact: true })).toBeVisible({ timeout: 30_000 });
-
-        const apiRun = await getLatestRun(page, "fail-task", daemonState.token);
-        expect(apiRun, "fail-task should have a run").toBeDefined();
-        if (!apiRun) return;
+        const apiRun = await waitForRunEnded(page, "fail-task", triggered.id, daemonState.token);
         expect(apiRun.end_reason).toBe("failed");
         expect(apiRun.exit_code).toBe(1);
+
+        await expect(page.getByText("FAILED", { exact: true })).toBeVisible({ timeout: 30_000 });
         await expectRunDetailMatchesApi(page, apiRun);
 
         // Both stdout and stderr are captured and surfaced in the console.
@@ -68,14 +66,15 @@ test.describe("task execution", () => {
         await expect(page.getByText("fail-line-2-stderr")).toBeVisible();
     });
 
-    test("run appears in task run history", async ({ authenticatedPage: page }) => {
+    test("run appears in task run history", async ({ authenticatedPage: page, daemonState }) => {
         await page.goto("/tasks/echo-task");
 
         await expect(page.getByRole("heading", { name: "echo-task", level: 1 })).toBeVisible();
 
-        // Trigger from the empty-state Run button (no runs yet).
-        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
-        await page.getByRole("button", { name: "Run Now" }).click();
+        // Trigger via the Run button and wait for this run to finish before
+        // asserting — the panel may otherwise show a prior run's badge.
+        const triggered = await triggerRunViaUI(page, "echo-task");
+        await waitForRunEnded(page, "echo-task", triggered.id, daemonState.token);
 
         await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
 
@@ -84,13 +83,17 @@ test.describe("task execution", () => {
         await expect(page.getByText("API").first()).toBeVisible();
     });
 
-    test("dashboard activity feed updates after task run", async ({ authenticatedPage: page }) => {
+    test("dashboard activity feed updates after task run", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
         await page.goto("/tasks/echo-task");
         await expect(page.getByRole("heading", { name: "echo-task", level: 1 })).toBeVisible();
 
-        // Trigger from the empty-state Run button (no runs yet).
-        await page.getByRole("button", { name: /^Run( task)?$/ }).click();
-        await page.getByRole("button", { name: "Run Now" }).click();
+        // Trigger via the Run button and wait for it to finish, so the activity
+        // feed has a completed run to surface.
+        const triggered = await triggerRunViaUI(page, "echo-task");
+        await waitForRunEnded(page, "echo-task", triggered.id, daemonState.token);
         await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
 
         // Navigate to dashboard

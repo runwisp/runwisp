@@ -27,6 +27,34 @@ export async function triggerRunViaAPI(page: Page, taskName: string, token: stri
     return (await response.json()) as Run;
 }
 
+/**
+ * Trigger a run through the UI — the "Run" button then the "Run Now" confirm —
+ * and return the run the daemon created, captured from the trigger POST.
+ *
+ * Anchoring later assertions to this run id is what makes them reliable. The
+ * run-detail panel defaults to the newest *existing* run on load, and the
+ * single shared daemon carries runs across specs, so "wait for a SUCCESS/FAILED
+ * badge" on its own can latch onto a prior run's badge while the run we just
+ * triggered is still in flight — the API's newest run would then still be
+ * mid-run (`end_reason` unset). Reading the created run's id here removes that
+ * race: we poll for *this* run's terminal state, not "the latest".
+ */
+export async function triggerRunViaUI(page: Page, taskName: string): Promise<Run> {
+    // Attach the response listener before the click that fires the POST. Match
+    // the exact path so the runs *list* (`…/runs`) can't be mistaken for the
+    // trigger (`…/run`).
+    const triggered = page.waitForResponse(
+        (response) =>
+            response.request().method() === "POST" &&
+            new URL(response.url()).pathname === `/api/tasks/${taskName}/run`,
+    );
+    await page.getByRole("button", { name: /^Run( task)?$/ }).click();
+    await page.getByRole("button", { name: "Run Now" }).click();
+    const response = await triggered;
+    expect(response.status(), `trigger ${taskName} via UI`).toBeLessThan(400);
+    return (await response.json()) as Run;
+}
+
 /** Fetch a single run via `GET /api/tasks/{name}/runs/{id}`. */
 export async function getRun(
     page: Page,
