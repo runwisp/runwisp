@@ -343,6 +343,9 @@ func validateDefaults(d *Defaults) error {
 	if err := validateKeepFor("defaults.keep_for", d.KeepFor); err != nil {
 		return err
 	}
+	if d.Timeout < 0 {
+		return fmt.Errorf("invalid defaults.timeout: must be zero or a positive duration")
+	}
 	if d.HealthyAfter < 0 {
 		return fmt.Errorf("invalid defaults.healthy_after: must be a positive duration")
 	}
@@ -913,6 +916,18 @@ func validateTaskLimits(task *model.Task) error {
 	}
 	if task.MaxCatchUpRuns < 0 {
 		return fmt.Errorf("invalid max_catch_up_runs for task %s: must be a positive integer", task.Name)
+	}
+	// A negative timeout would parse but then be silently ignored (the run
+	// manager only arms the timer when > 0), so the operator's intent to bound
+	// the run is dropped without a word. Reject it instead. Same for the delays.
+	if task.Timeout < 0 {
+		return fmt.Errorf("invalid timeout for task %s: must be zero or a positive duration", task.Name)
+	}
+	if task.RetryDelay < 0 {
+		return fmt.Errorf("invalid retry_delay for task %s: must be zero or a positive duration", task.Name)
+	}
+	if task.RestartDelay < 0 {
+		return fmt.Errorf("invalid restart_delay for task %s: must be zero or a positive duration", task.Name)
 	}
 	return validateExitCodes(fmt.Sprintf("exit_codes for task %s", task.Name), task.ExitCodes)
 }

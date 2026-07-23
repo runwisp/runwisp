@@ -413,6 +413,45 @@ func TestValidate(t *testing.T) {
 			wantErr: "graceful_stop",
 		},
 		{
+			name: "negative timeout",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "task1",
+					Run:           "echo hello",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicyQueue,
+					Timeout:       -time.Second,
+				}},
+			},
+			wantErr: "timeout",
+		},
+		{
+			name: "negative retry_delay",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "task1",
+					Run:           "echo hello",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicyQueue,
+					RetryDelay:    -time.Second,
+				}},
+			},
+			wantErr: "retry_delay",
+		},
+		{
+			name: "negative restart_delay",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "task1",
+					Run:           "echo hello",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicyQueue,
+					RestartDelay:  -time.Second,
+				}},
+			},
+			wantErr: "restart_delay",
+		},
+		{
 			name: "negative shutdown_timeout",
 			cfg: &Config{
 				Daemon: Daemon{ShutdownTimeout: -time.Second},
