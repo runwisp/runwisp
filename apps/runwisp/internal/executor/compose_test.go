@@ -438,6 +438,45 @@ func TestComposeBackend_Start_ContextCancelledBeforeStart(t *testing.T) {
 	assert.Contains(t, err.Error(), "start docker compose")
 }
 
+// TestLazyComposeBackend_ReprobesAfterTransientFailure pins the H5 fix: a
+// transient first-probe failure (docker still coming up) must not disable
+// compose for the daemon's whole lifetime. The old code latched probed=true on
+// the first failure and never retried. The shim fails `compose version` once,
+// then succeeds — so the second ensureProbed must report available.
+func TestLazyComposeBackend_ReprobesAfterTransientFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-shim depends on POSIX shell")
+	}
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "probe.count")
+	body := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n" +
+		"  n=$(cat '" + counter + "' 2>/dev/null || echo 0)\n" +
+		"  n=$((n+1))\n" +
+		"  echo $n > '" + counter + "'\n" +
+		"  if [ \"$n\" = \"1\" ]; then\n" +
+		"    exit 1\n" + // first probe: docker not up yet
+		"  fi\n" +
+		"  echo 'Docker Compose v2.test'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"exit 0\n"
+	installDockerShimScript(t, dir, body)
+
+	l := NewLazyComposeBackend("fp-test")
+
+	_, availFirst := l.ensureProbed(context.Background())
+	assert.False(t, availFirst, "the transient first-probe failure must report unavailable")
+
+	_, availSecond := l.ensureProbed(context.Background())
+	assert.True(t, availSecond, "compose must be re-probed and become available once docker is up")
+
+	data, err := os.ReadFile(counter)
+	require.NoError(t, err)
+	assert.Equal(t, "2", strings.TrimSpace(string(data)),
+		"ensureProbed must actually re-run the probe after a failure, not latch the failed result")
+}
+
 func TestLazyComposeBackend_ReturnsErrorWhenUnavailable(t *testing.T) {
 	t.Setenv("PATH", "")
 	l := NewLazyComposeBackend("fp-test")

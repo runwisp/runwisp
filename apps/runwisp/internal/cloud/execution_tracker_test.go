@@ -277,6 +277,45 @@ func TestBufferUpdateDropsOldestAtCap(t *testing.T) {
 		"newest update must be at the tail after the drop-oldest shift")
 }
 
+// TestFlushPendingDoesNotAliasBufferDuringSend pins the M3 fix: FlushPending
+// used to build its outbound slice with `append(t.pendingExecutionUpdates, …)`
+// and reset the field to `[:0]`, keeping the backing array live. A bufferUpdate
+// arriving after the unlock (while FlushPending still iterates the slice) would
+// then overwrite slots the flush had not sent yet, so a queued update got sent
+// as a *different* update's payload. The fix copies into a fresh slice and nils
+// the source. We reproduce the aliasing deterministically by buffering new
+// updates from inside the send callback (which runs after the unlock) and
+// asserting the still-unsent entries are delivered with their original IDs.
+func TestFlushPendingDoesNotAliasBufferDuringSend(t *testing.T) {
+	tracker := NewExecutionTracker()
+	// No active executions → runningSnapshots is empty, so the pre-fix
+	// `append(pending, nothing...)` returned the same backing array — the exact
+	// aliasing condition. Buffer three updates directly into that array.
+	tracker.bufferUpdate(NewExecutionUpdateMessage("a", protocol.ExecutionStatusOk, nil, nil, nil))
+	tracker.bufferUpdate(NewExecutionUpdateMessage("b", protocol.ExecutionStatusOk, nil, nil, nil))
+	tracker.bufferUpdate(NewExecutionUpdateMessage("c", protocol.ExecutionStatusOk, nil, nil, nil))
+
+	var delivered []string
+	first := true
+	tracker.FlushPending(func(msg any) error {
+		upd, ok := msg.(protocol.ExecutionUpdateMessage)
+		require.True(t, ok)
+		delivered = append(delivered, upd.ExecutionID)
+		if first {
+			first = false
+			// A concurrent-style write during the flush: on the pre-fix code these
+			// append into the shared backing array (len 0 after the [:0] reset),
+			// clobbering the not-yet-sent "b" and "c" slots the flush still holds.
+			tracker.bufferUpdate(NewExecutionUpdateMessage("X", protocol.ExecutionStatusErr, nil, nil, nil))
+			tracker.bufferUpdate(NewExecutionUpdateMessage("Y", protocol.ExecutionStatusErr, nil, nil, nil))
+		}
+		return nil
+	})
+
+	assert.Equal(t, []string{"a", "b", "c"}, delivered,
+		"buffering during the flush must not overwrite entries the flush has not sent yet")
+}
+
 // FlushPending must re-queue any updates that haven't been delivered yet when
 // send returns an error part-way through the slice.
 func TestFlushPendingPartialFailureRequeuesRemainder(t *testing.T) {

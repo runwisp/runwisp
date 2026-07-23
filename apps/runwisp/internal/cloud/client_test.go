@@ -367,6 +367,41 @@ func TestReconnectAfterSessionDrop(t *testing.T) {
 	cancel()
 }
 
+// TestRunConnectionAttempt_ShortSessionDoesNotResetBackoff pins the M8 fix:
+// runConnectionAttempt must only signal a backoff reset (its bool return) when
+// the session actually stayed up for minStableSessionDuration. A peer that
+// resets the connection immediately after sync used to reset backoff on every
+// attempt, turning the exponential curve into a tight reconnect loop. Here the
+// peer authenticates then closes at once, so the session lives far less than
+// the stability threshold and the reset must be withheld. (The stable==true
+// branch depends on a real ≥30s session, so it isn't unit-testable without an
+// injected clock; this guards the flap side, which is where the bug lived.)
+func TestRunConnectionAttempt_ShortSessionDoesNotResetBackoff(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		_ = sendJSON(conn, protocol.AuthResultMessage{
+			Type:         "auth:result",
+			Success:      true,
+			ConnectionID: "conn-flap",
+		})
+		// Close immediately after auth to mimic a control plane that flaps right
+		// after task sync — the session lasts only milliseconds.
+		conn.Close(websocket.StatusGoingAway, "flap")
+	})
+	defer env.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	resetBackoff, _ := env.client.runConnectionAttempt(ctx)
+	elapsed := time.Since(start)
+
+	require.Less(t, elapsed, minStableSessionDuration,
+		"test premise: the session must end well before the stability threshold")
+	assert.False(t, resetBackoff,
+		"a session shorter than minStableSessionDuration must not signal a backoff reset")
+}
+
 // ---------- State machine tests ----------
 
 func TestStateTransitions(t *testing.T) {
