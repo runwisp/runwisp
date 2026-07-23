@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Compose per-service `notify_on_failure`/`notify_on_success` overrides now reach notifications.** A `[compose.<alias>.<svc>]` notify list was parsed and discarded; it now desugars into a notify route keyed by the imported service's task name, exactly like `[services.*]`. See [Compose](https://docs.runwisp.com/configuration/compose/#per-service-overrides).
+- **Retention skips non-terminal runs.** Age- and count-based cleanup now only prunes runs that have ended, so a run still pending or running is never removed while in flight. See [Retention](https://docs.runwisp.com/configuration/tasks/#retention).
+- **Catch-up honors a task's timezone.** Missed-tick detection at startup evaluates each task's schedule in its own timezone (or the scheduler default) instead of the host's local zone. See [Missed runs](https://docs.runwisp.com/configuration/scheduling/#missed-runs).
+- **Non-service `restart` backoff now escalates.** Consecutive restarts of a non-service task apply the configured `restart_backoff` curve instead of repeating at the flat base delay. See [Tasks](https://docs.runwisp.com/configuration/tasks/).
+- **Negative `timeout`, `retry_delay`, and `restart_delay` are rejected at config load** instead of being silently ignored. See [Tasks](https://docs.runwisp.com/configuration/tasks/).
+- **`docker compose` availability is re-probed after a transient failure**, so a task using compose is no longer disabled for the daemon's lifetime when the first probe fails while Docker is still starting.
+- **A malformed Docker build response stream now fails the build** rather than spinning on the undecodable bytes.
+- **A container start cancelled mid-flight no longer leaks its container or image** — cleanup runs on a context detached from the cancelled run.
+- **Terminal events for runs that never execute are published off the runtime lock**, removing a re-entrancy deadlock reachable on skip-overlap, queue-full, catch-up, and DST-fallback paths.
+- **Assorted concurrency fixes** in run event publishing, the notification ingress path and outbound coalescer shutdown, and the cloud execution-update buffer and reconnect backoff.
 
 ## [0.13.0] - 2026-07-21
 
