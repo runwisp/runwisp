@@ -360,6 +360,18 @@ func (m *defaultTaskManager) TriggerRun(taskName string, triggeredBy model.Trigg
 
 func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*model.Run, error) {
 	m.mu.Lock()
+	// A terminal event for a run that never executes is published after the
+	// lock is released: EventRunFailed subscribers (the cloud bridge) re-enter
+	// the manager via ServiceSnapshot → m.mu.RLock, which would deadlock if we
+	// published while still holding the write lock. The deferred flush runs
+	// after m.mu.Unlock (LIFO defer order). EventRunCreated stays inline — it
+	// has no re-entrant subscriber and must precede run.started for the same run.
+	var publishTerminal func()
+	defer func() {
+		if publishTerminal != nil {
+			publishTerminal()
+		}
+	}()
 	defer m.mu.Unlock()
 
 	// Refuse new runs once shutdown has begun. Shutdown sets isShutdown before
@@ -457,12 +469,12 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	case actionRejected:
 		run.End(model.ReasonSkipped, -1, m.clock())
 		m.persistence.PersistExisting(run)
-		m.publishRun(events.EventRunFailed, run)
+		publishTerminal = func() { m.publishRun(events.EventRunFailed, run) }
 		return run.Copy(), actionErr
 	case actionQueueFull:
 		run.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(run)
-		m.publishRun(events.EventRunFailed, run)
+		publishTerminal = func() { m.publishRun(events.EventRunFailed, run) }
 		return run.Copy(), actionErr
 	case actionQueued:
 		// The run sits in the queue; queueProcessLoop will later hand it to a
@@ -519,6 +531,14 @@ func (m *defaultTaskManager) triggerJittered(taskName string, tick time.Time) (s
 // then immediately ended with the supplied reason.
 func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
 	m.mu.Lock()
+	// See TriggerRunWithOptions: the terminal event is published after the lock
+	// is released so a re-entrant EventRunFailed subscriber cannot deadlock us.
+	var publishTerminal func()
+	defer func() {
+		if publishTerminal != nil {
+			publishTerminal()
+		}
+	}()
 	defer m.mu.Unlock()
 
 	if _, exists := m.tasks[taskName]; !exists {
@@ -537,7 +557,7 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 	m.publishRun(events.EventRunCreated, run)
 	run.End(reason, -1, now)
 	m.persistence.PersistExisting(run)
-	m.publishRun(events.EventRunFailed, run)
+	publishTerminal = func() { m.publishRun(events.EventRunFailed, run) }
 	return nil
 }
 
@@ -552,6 +572,14 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 // exists; the run is created and immediately ended.
 func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.Time, reason string) error {
 	m.mu.Lock()
+	// See TriggerRunWithOptions: the terminal event is published after the lock
+	// is released so a re-entrant EventRunFailed subscriber cannot deadlock us.
+	var publishTerminal func()
+	defer func() {
+		if publishTerminal != nil {
+			publishTerminal()
+		}
+	}()
 	defer m.mu.Unlock()
 
 	if _, exists := m.tasks[taskName]; !exists {
@@ -569,7 +597,7 @@ func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.T
 	m.publishRun(events.EventRunCreated, run)
 	run.End(model.ReasonMissed, -1, scheduledAt)
 	m.persistence.PersistExisting(run)
-	m.publishRunErr(events.EventRunFailed, run, reason)
+	publishTerminal = func() { m.publishRunErr(events.EventRunFailed, run, reason) }
 	return nil
 }
 
