@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -289,10 +290,13 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 	task.RestartDelay = time.Millisecond
 	jm.UpsertTask(task)
 
-	// Each run fails fast, well under healthy_after.
-	exec.On("Execute", mock.Anything, task, mock.Anything).Return(
-		&executor.ExecuteResult{ExitCode: 1}, 5*time.Millisecond,
-	)
+	// Each run fails fast, well under healthy_after. Count executions via an
+	// atomic counter: reading testify's exec.Calls slice directly races with the
+	// restart goroutine appending to it inside MethodCalled.
+	var execCalls atomic.Int64
+	exec.On("Execute", mock.Anything, task, mock.Anything).
+		Run(func(mock.Arguments) { execCalls.Add(1) }).
+		Return(&executor.ExecuteResult{ExitCode: 1}, 5*time.Millisecond)
 
 	require.NoError(t, jm.StartServiceInstances("flapper", model.TriggeredByService))
 
@@ -317,10 +321,10 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 	require.Len(t, snap.Instances, 1)
 	assert.Equal(t, model.ServiceInstanceFatal, snap.Instances[0].State)
 
-	callsAtFatal := len(exec.Calls)
-	assert.Equal(t, 3, callsAtFatal, "start_retries=2 → 3 fast failures, then give up")
+	callsAtFatal := execCalls.Load()
+	assert.Equal(t, int64(3), callsAtFatal, "start_retries=2 → 3 fast failures, then give up")
 	time.Sleep(150 * time.Millisecond)
-	assert.Equal(t, callsAtFatal, len(exec.Calls), "no restarts after FATAL")
+	assert.Equal(t, callsAtFatal, execCalls.Load(), "no restarts after FATAL")
 
 	mu.Lock()
 	require.Len(t, fatalEvents, 1, "exactly one service.fatal event")
@@ -334,7 +338,7 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 	// An operator restart clears FATAL and re-attempts with a fresh budget.
 	require.NoError(t, jm.RestartServiceInstances("flapper"))
 	require.Eventually(t, func() bool {
-		return len(exec.Calls) > callsAtFatal
+		return execCalls.Load() > callsAtFatal
 	}, time.Second, 5*time.Millisecond, "restart must re-attempt a FATAL service")
 }
 
