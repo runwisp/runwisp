@@ -82,8 +82,15 @@ func (t *ExecutionTracker) FlushPending(send func(any) error) {
 	for executionID, active := range t.activeExecutions {
 		runningSnapshots = append(runningSnapshots, NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusRunning, nil, active.StartedAt, nil))
 	}
-	pending := append(t.pendingExecutionUpdates, runningSnapshots...)
-	t.pendingExecutionUpdates = t.pendingExecutionUpdates[:0]
+	// Copy into a fresh slice rather than appending onto pendingExecutionUpdates:
+	// append may reuse that slice's backing array, and resetting the field to
+	// [:0] keeps that array live, so a concurrent bufferUpdate would write into
+	// slots this goroutine iterates over after the unlock. Set the source to nil
+	// so the two slices share no storage.
+	pending := make([]protocol.ExecutionUpdateMessage, 0, len(t.pendingExecutionUpdates)+len(runningSnapshots))
+	pending = append(pending, t.pendingExecutionUpdates...)
+	pending = append(pending, runningSnapshots...)
+	t.pendingExecutionUpdates = nil
 	t.mu.Unlock()
 
 	for i, update := range pending {
