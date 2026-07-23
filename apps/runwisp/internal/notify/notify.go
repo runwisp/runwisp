@@ -19,9 +19,15 @@ import (
 // once at shutdown. A future SIGHUP-driven reload would simply call Stop and
 // then construct a fresh Service — no shared state survives the call.
 type Service struct {
-	bus         events.EventBus
-	ingressCh   chan *Event
-	ingressSize int
+	bus events.EventBus
+	// ingressCh carries mapped events from the bus publisher goroutine to
+	// runDispatch. ingressMu guards it against the send-on-closed race: Stop
+	// closes the channel while an in-flight onBusEvent (a publish that captured
+	// the handler list before unsubscribe) may still be trying to send.
+	ingressMu     sync.RWMutex
+	ingressCh     chan *Event
+	ingressClosed bool
+	ingressSize   int
 
 	router   *Router
 	disp     *dispatcher
@@ -177,7 +183,13 @@ func (s *Service) Stop(ctx context.Context) error {
 		s.retentionCancel = nil
 	}
 
+	// Close under the lock so any in-flight onBusEvent send completes first and
+	// later ones observe ingressClosed instead of sending on a closed channel.
+	// runDispatch then drains the buffered backlog and exits on the closed read.
+	s.ingressMu.Lock()
+	s.ingressClosed = true
 	close(s.ingressCh)
+	s.ingressMu.Unlock()
 
 	done := make(chan struct{})
 	go func() {
@@ -232,6 +244,15 @@ func (s *Service) onBusEvent(e events.Event) {
 		if _, muted := s.mutedMissed[ev.TaskName]; muted {
 			return
 		}
+	}
+	// RLock lets concurrent publishes send in parallel (channel sends are
+	// themselves safe) while excluding Stop's close. A closed ingress means the
+	// service is shutting down; drop rather than panic.
+	s.ingressMu.RLock()
+	defer s.ingressMu.RUnlock()
+	if s.ingressClosed {
+		s.droppedIngress.Add(1)
+		return
 	}
 	select {
 	case s.ingressCh <- ev:
