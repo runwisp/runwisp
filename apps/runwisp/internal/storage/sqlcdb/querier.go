@@ -76,7 +76,11 @@ type Querier interface {
 	SelectExistingForFingerprint(ctx context.Context, arg SelectExistingForFingerprintParams) (SelectExistingForFingerprintRow, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: Apache-2.0
+	// Only terminal (ended) runs are eligible for retention: a run that is still
+	// pending or running must never have its row or live log files removed.
 	SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAgeParams) ([]Run, error)
+	// Count-based retention likewise ranges over ended runs only, so in-flight
+	// runs neither count against the cap nor get purged.
 	SelectOldRunsByCount(ctx context.Context, arg SelectOldRunsByCountParams) ([]Run, error)
 	SelectRestoredRunsByFilter(ctx context.Context, arg SelectRestoredRunsByFilterParams) ([]Run, error)
 	SelectRestoredRunsByIDs(ctx context.Context, ids []string) ([]Run, error)

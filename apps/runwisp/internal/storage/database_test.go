@@ -206,11 +206,11 @@ func TestDeleteOldRuns(t *testing.T) {
 	old := now.Add(-25 * time.Hour)
 
 	// Run to be deleted by hours retention (24h)
-	run1 := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: old, TriggeredBy: model.TriggeredByAPI}
+	run1 := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), CreatedAt: old, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(ctx, &run1))
 
 	// Run to be kept
-	run2 := model.Run{ID: ulid.Make().String(), TaskName: "task1", CreatedAt: now, TriggeredBy: model.TriggeredByAPI}
+	run2 := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), CreatedAt: now, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(ctx, &run2))
 
 	task := &model.Task{
@@ -229,6 +229,38 @@ func TestDeleteOldRuns(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestDeleteOldRunsSkipsNonTerminal guards the retention invariant: a run that
+// is still pending or running must never be purged, even when it is older than
+// the retention cutoff. A service that runs longer than keep_for would otherwise
+// have its row (and, in production, its live log files) deleted mid-run.
+func TestDeleteOldRunsSkipsNonTerminal(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	old := time.Now().Add(-25 * time.Hour)
+
+	ended := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), CreatedAt: old, TriggeredBy: model.TriggeredByCron}
+	require.NoError(t, db.CreateRun(ctx, &ended))
+	// A long-lived service instance: created before the cutoff but still live.
+	running := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseRunning, CreatedAt: old, TriggeredBy: model.TriggeredByService}
+	require.NoError(t, db.CreateRun(ctx, &running))
+	pending := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, CreatedAt: old, TriggeredBy: model.TriggeredByCron}
+	require.NoError(t, db.CreateRun(ctx, &pending))
+
+	deleted, err := db.DeleteOldRuns(ctx, &model.Task{Name: "task1", KeepFor: 24 * time.Hour})
+	require.NoError(t, err)
+
+	require.Len(t, deleted, 1)
+	assert.Equal(t, ended.ID, deleted[0].ID)
+
+	// The non-terminal runs must survive.
+	_, err = db.GetRun(ctx, running.ID)
+	assert.NoError(t, err)
+	_, err = db.GetRun(ctx, pending.ID)
+	assert.NoError(t, err)
+}
+
 func TestDeleteOldRunsByCount(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)
@@ -239,6 +271,8 @@ func TestDeleteOldRunsByCount(t *testing.T) {
 		require.NoError(t, db.CreateRun(ctx, &model.Run{
 			ID:          ulid.Make().String(),
 			TaskName:    "task1",
+			Status:      model.PhaseEnded,
+			EndReason:   model.EndReasonPtr(model.ReasonSuccess),
 			CreatedAt:   time.Now().Add(time.Duration(i) * time.Second), // Different times
 			TriggeredBy: model.TriggeredByAPI,
 		}))
