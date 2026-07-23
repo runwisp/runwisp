@@ -114,7 +114,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		// Run catch-up now that notify is subscribed, so a missed-run gap
 		// detected from persisted history raises a run.missed alert instead of
 		// emitting into a bus nobody is listening on yet.
-		boot.catchUpResult = runMissedTickCatchUp(ctx, db, tasksMap, taskManager)
+		boot.catchUpResult = runMissedTickCatchUp(ctx, db, tasksMap, taskManager, boot.schedLoc)
 	}
 
 	return &daemonServices{
@@ -145,6 +145,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 // initDaemonServices can fold them into the returned daemonServices.
 type standaloneBoot struct {
 	scheduler        *runtime.Scheduler
+	schedLoc         *time.Location
 	schedResult      runtime.ScheduleResult
 	pendingSummary   uikit.PendingRunsSummary
 	runOnStartResult runtime.RunOnStartResult
@@ -167,6 +168,7 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 	if locErr != nil {
 		return boot, locErr
 	}
+	boot.schedLoc = schedLoc
 	scheduler := runtime.NewScheduler(taskManager, tasksMap, schedLoc)
 	boot.scheduler = scheduler
 	schedResult, err := scheduler.Start()
@@ -211,8 +213,8 @@ func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, ev
 // runMissedTickCatchUp runs missed-tick catch-up and narrates the outcome via
 // slog only when something went wrong; the banner already shows the triggered
 // total, so default-verbosity INFO output stays uncluttered.
-func runMissedTickCatchUp(ctx context.Context, db storage.Database, tasksMap map[string]*model.Task, taskManager runtime.TaskManager) runtime.CatchUpResult {
-	catchUpResult := runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now())
+func runMissedTickCatchUp(ctx context.Context, db storage.Database, tasksMap map[string]*model.Task, taskManager runtime.TaskManager, schedLoc *time.Location) runtime.CatchUpResult {
+	catchUpResult := runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now(), schedLoc)
 	if catchUpResult.Errors > 0 {
 		slog.Warn("Missed-tick catch-up completed with errors",
 			"triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)

@@ -65,7 +65,7 @@ func TestRunMissedTickCatchUp_RecordedRowAnchorsNextRestart(t *testing.T) {
 	}))
 
 	now1 := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
-	res1 := RunMissedTickCatchUp(context.Background(), db, tasks, jm, now1)
+	res1 := RunMissedTickCatchUp(context.Background(), db, tasks, jm, now1, time.UTC)
 	assert.Equal(t, 0, res1.Errors)
 	assert.Equal(t, 0, res1.Triggered, "skip re-fires nothing")
 
@@ -86,7 +86,7 @@ func TestRunMissedTickCatchUp_RecordedRowAnchorsNextRestart(t *testing.T) {
 	// Second restart two minutes later — still inside the same */5 window, so
 	// there is nothing new to miss.
 	now2 := time.Date(2026, 4, 7, 10, 22, 0, 0, time.UTC)
-	res2 := RunMissedTickCatchUp(context.Background(), db, tasks, jm, now2)
+	res2 := RunMissedTickCatchUp(context.Background(), db, tasks, jm, now2, time.UTC)
 	assert.Equal(t, 0, res2.Errors)
 	assert.Equal(t, 0, res2.Triggered)
 
