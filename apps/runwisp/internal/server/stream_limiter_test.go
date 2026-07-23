@@ -51,9 +51,11 @@ func TestStreamLimiter_GlobalCap(t *testing.T) {
 func TestStreamLimiter_Middleware503(t *testing.T) {
 	l := newStreamLimiter(1, 1)
 
+	entered := make(chan struct{})
 	called := 0
 	h := l.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called++
+		close(entered)
 		// hold the slot until we let the next request through
 		<-r.Context().Done()
 	}))
@@ -69,15 +71,8 @@ func TestStreamLimiter_Middleware503(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait briefly for the goroutine to enter the handler.
-	for {
-		l.mu.Lock()
-		busy := l.total > 0
-		l.mu.Unlock()
-		if busy {
-			break
-		}
-	}
+	// Wait for the goroutine to enter the handler.
+	<-entered
 
 	overReq := httptest.NewRequest("GET", "/", nil)
 	overReq = overReq.WithContext(context.WithValue(overReq.Context(), peerAddrContextKey, "127.0.0.2:1"))

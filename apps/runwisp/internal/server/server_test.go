@@ -102,17 +102,23 @@ func TestGetTasks(t *testing.T) {
 func TestTriggerRun(t *testing.T) {
 	s, _, exec, _ := setupServer(t)
 
-	// The executor signals when the async run reaches it, so the test blocks on
-	// that signal rather than sleeping and hoping.
-	executed := make(chan struct{}, 1)
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).
-		Run(func(mock.Arguments) {
-			select {
-			case executed <- struct{}{}:
-			default:
-			}
-		}).
 		Return(&executor.ExecuteResult{ExitCode: 0})
+
+	// The run executes asynchronously, and the manager keeps mutating the Run
+	// (Run.End) after Execute returns. Block on the terminal run event — the
+	// manager publishes it only once that mutation is done — before asserting on
+	// the mock, whose recorded call argument is that very same Run pointer.
+	// Waiting on an Execute-entry signal instead would race End against
+	// AssertExpectations formatting the stored argument.
+	done := make(chan struct{}, 1)
+	unsub := s.eventBus.Subscribe(events.EventRunCompleted, func(events.Event) {
+		select {
+		case done <- struct{}{}:
+		default:
+		}
+	})
+	defer unsub()
 
 	req := httptest.NewRequest("POST", "/api/tasks/task1/run", nil)
 	w := httptest.NewRecorder()
@@ -127,9 +133,9 @@ func TestTriggerRun(t *testing.T) {
 	assert.Equal(t, "task1", run.TaskName)
 
 	select {
-	case <-executed:
+	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("triggered run never reached the executor")
+		t.Fatal("triggered run never completed")
 	}
 	exec.AssertExpectations(t)
 }

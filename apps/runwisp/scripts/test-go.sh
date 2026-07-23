@@ -17,7 +17,18 @@ covdir="$(pwd)/.gocoverdir"
 rm -rf "${covdir}"
 mkdir -p "${covdir}"
 
-RUNWISP_E2E_COVDIR="${covdir}" go test -covermode=atomic -coverpkg=./... \
+# Run the unit suite under the race detector: several fixes are data-race /
+# shutdown-timing hardening that only a -race run can catch (-covermode=atomic
+# makes coverage counters atomic; it does NOT enable the detector). The detector
+# needs CGO and a C toolchain — reliable on Linux; skip it on macOS, matching the
+# CI matrix's "-race on the Ubuntu runner only" split. A scalar (not an array)
+# keeps this safe under `set -u` on macOS's bash 3.2 when the flag is empty.
+race_flag=-race
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  race_flag=
+fi
+
+RUNWISP_E2E_COVDIR="${covdir}" go test ${race_flag} -covermode=atomic -coverpkg=./... \
   -coverprofile=.coverage_unit.out ./...
 
 go tool covdata textfmt -i "${covdir}" -o .coverage_e2e.out 2>/dev/null || true
