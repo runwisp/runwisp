@@ -14,6 +14,11 @@ const (
 	reconnectMaxDelay       = 30 * time.Second
 	reconnectMultiplier     = 2.0
 	reconnectJitterFraction = 0.20
+	// minStableSessionDuration is how long a session must stay up before a clean
+	// reconnect resets the backoff. A session shorter than this is treated as a
+	// flap, so the backoff keeps escalating instead of resetting every attempt.
+	// One full max-delay window is comfortably past the reconnect churn.
+	minStableSessionDuration = reconnectMaxDelay
 )
 
 func newReconnectBackoff() backoff.BackOff {

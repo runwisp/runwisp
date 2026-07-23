@@ -255,7 +255,15 @@ func (client *Client) runConnectionAttempt(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	return true, client.startSession(ctx, connection)
+	// Only reset the reconnect backoff if the session actually stayed up. A peer
+	// that resets the connection immediately after sync would otherwise reset
+	// backoff on every attempt, turning the exponential curve into a tight
+	// reconnect loop that hammers a flapping control plane. startSession blocks
+	// until the session ends, so its wall-clock span is the session's lifetime.
+	sessionStart := time.Now()
+	sessionErr := client.startSession(ctx, connection)
+	stable := time.Since(sessionStart) >= minStableSessionDuration
+	return stable, sessionErr
 }
 
 func (client *Client) dialWebSocket(ctx context.Context) (*websocket.Conn, error) {
