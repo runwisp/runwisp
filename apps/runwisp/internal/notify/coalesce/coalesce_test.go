@@ -6,6 +6,7 @@ package coalesce
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -217,6 +218,60 @@ func TestCoalesce_WindowCloseFailureReportsInApp(t *testing.T) {
 
 	require.Len(t, sink.captured, 1, "a permanent window-close summary failure must surface in-app")
 	assert.Equal(t, notify.KindNotifyDeliveryFailed, sink.captured[0].Kind)
+}
+
+// TestTimerFlush_ConcurrentWithCloseNoPanic pins the M2 fix: a window-close
+// timer that fires just as Close begins used to call wg.Add(1) concurrently
+// with Close's wg.Wait, panicking with "WaitGroup is reused before previous
+// Wait has returned". The fix checks timerDone under c.mu before the wg.Add, so
+// once Close has run timerCancel() (which it does before taking the lock) a
+// racing timerFlush skips the Add. This is fundamentally a data-race guard: its
+// only observable symptom is the panic under concurrency, so we stress the
+// interleaving over many iterations and fail on any panic. It is most powerful
+// under `go test -race`; without it the panic is timing-dependent, so this is a
+// best-effort regression guard rather than a deterministic reproduction.
+func TestTimerFlush_ConcurrentWithCloseNoPanic(t *testing.T) {
+	const iterations = 300
+	fp := notify.FingerprintKey(failEvent("etl"))
+	panics := make(chan any, 2*iterations)
+
+	for i := 0; i < iterations; i++ {
+		inner := testutil.NewFakeChannel("slack-ops")
+		c := New(inner, Config{Window: time.Hour, EveryN: 1000}, testutil.NewFakeClock(time.Unix(0, 0)), nil, nil)
+		withManualTimers(c)
+
+		// Two events arm a window-close timer with a non-empty pending state, so
+		// timerFlush reaches the wg.Add path (rather than the empty-state return).
+		require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+		require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					panics <- r
+				}
+			}()
+			c.timerFlush(fp)
+		}()
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					panics <- r
+				}
+			}()
+			_ = c.Close(context.Background())
+		}()
+		wg.Wait()
+	}
+
+	close(panics)
+	for r := range panics {
+		t.Fatalf("timerFlush racing Close must not panic (WaitGroup reuse regression): %v", r)
+	}
 }
 
 func TestSummarize_NonNilExtra(t *testing.T) {

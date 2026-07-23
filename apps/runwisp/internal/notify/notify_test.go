@@ -208,6 +208,44 @@ func TestOnBusEvent_IgnoresUnknownEvents(t *testing.T) {
 	assert.Empty(t, svc.ingressCh)
 }
 
+// TestOnBusEvent_AfterStopDropsWithoutPanic pins the M1 fix: Stop closes
+// ingressCh, but an onBusEvent that captured the subscriber list just before
+// unsubscribe may still be mid-send. The old code did a bare close, so that
+// late send panicked ("send on closed channel"). The fix guards the close and
+// the send with ingressMu + an ingressClosed flag: a post-Stop onBusEvent must
+// observe the closed state and drop, never panic. We drive the send path
+// directly after Stop — with an empty (drained) channel the send branch, not
+// the backpressure default, is what would have panicked pre-fix.
+func TestOnBusEvent_AfterStopDropsWithoutPanic(t *testing.T) {
+	svc := New(Config{Bus: events.NewEventBus()})
+	require.NoError(t, svc.Start(context.Background()))
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, svc.Stop(stopCtx))
+
+	before := svc.droppedIngress.Load()
+
+	// Simulate the in-flight publish that raced Stop: onBusEvent runs after the
+	// channel was closed. Wrap in a goroutine with recover so a regression
+	// (bare send on the closed channel) fails the test instead of crashing it.
+	panicked := make(chan any, 1)
+	go func() {
+		defer func() { panicked <- recover() }()
+		svc.onBusEvent(failedRunEvent())
+	}()
+
+	select {
+	case r := <-panicked:
+		require.Nil(t, r, "onBusEvent after Stop must not panic on the closed ingress channel")
+	case <-time.After(2 * time.Second):
+		t.Fatal("onBusEvent did not return after Stop")
+	}
+
+	assert.Equal(t, before+1, svc.droppedIngress.Load(),
+		"an event arriving after Stop must be counted as a drop, not sent on the closed channel")
+}
+
 // TestServiceStop_RetentionTickerExits ensures the retention goroutine actually
 // returns rather than leaking. We invoke Stop with a generous deadline and
 // verify it doesn't hit the timeout branch (where ctx is cancelled).

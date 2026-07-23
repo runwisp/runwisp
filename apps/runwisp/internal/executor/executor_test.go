@@ -422,6 +422,51 @@ func TestRoutingExecutor_SetRunUpdateCallback_ReceivesUpdates(t *testing.T) {
 	assert.True(t, called)
 }
 
+// TestRoutingExecutor_notifyRunUpdated_PublishesCopy pins the H3 fix: the run
+// pointer handed to notifyRunUpdated is still being mutated by the execute
+// goroutine (recordRunOutcome → run.End()) while SSE/cloud subscribers marshal
+// the event on their own goroutines. notifyRunUpdated must publish a copy, not
+// the shared pointer, so a subscriber never races the mutation. We assert the
+// published Run is a distinct pointer and that a later mutation of the original
+// does not leak into the already-published event.
+func TestRoutingExecutor_notifyRunUpdated_PublishesCopy(t *testing.T) {
+	eb := events.NewEventBus()
+	e := newTestExecutor(t, Options{EventBus: eb})
+
+	var (
+		mu        sync.Mutex
+		published *model.Run
+	)
+	unsub := eb.Subscribe(events.EventRunUpdated, func(ev events.Event) {
+		re, ok := ev.Data.(events.RunEvent)
+		if !ok {
+			return
+		}
+		mu.Lock()
+		published = re.Run
+		mu.Unlock()
+	})
+	defer unsub()
+
+	original := &model.Run{ID: "r-copy", Status: model.PhaseRunning}
+	e.notifyRunUpdated(original, "")
+
+	mu.Lock()
+	got := published
+	mu.Unlock()
+
+	require.NotNil(t, got, "run.updated must carry a Run payload")
+	assert.NotSame(t, original, got, "notifyRunUpdated must publish a copy, not the shared pointer")
+	assert.Equal(t, original.ID, got.ID, "the copy must preserve the run's fields")
+
+	// The execute goroutine keeps mutating the original after publish; that
+	// must not be observable through the already-published (copied) event.
+	reason := model.ReasonSuccess
+	original.End(reason, 0, time.Now())
+	assert.Equal(t, model.PhaseRunning, got.Status,
+		"post-publish mutation of the original must not leak into the published copy")
+}
+
 func TestRoutingExecutor_SetOnProcessStarted_ReceivesCall(t *testing.T) {
 	e := newTestExecutor(t, Options{})
 

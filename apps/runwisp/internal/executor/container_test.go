@@ -548,6 +548,104 @@ func TestStartGracefulStopUsesSignalAndTimeout(t *testing.T) {
 	}
 }
 
+// TestImageBuilder_Build_MalformedStreamFailsPromptly pins the H4 fix: when the
+// build response body is not valid JSON, json.Decoder returns a non-EOF error
+// without advancing past the offending bytes. The old loop did `continue`,
+// busy-looping forever on the same bytes. Build must instead bail out with an
+// error — and do so promptly. The timeout catches a regression of the busy-loop.
+func TestImageBuilder_Build_MalformedStreamFailsPromptly(t *testing.T) {
+	bodyClosed := false
+	mock := &mockDockerClient{
+		imageBuildFunc: func(ctx context.Context, _ io.Reader, _ client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{
+				Body: &trackingCloser{
+					Reader:  strings.NewReader("this is not valid docker build json {{{"),
+					onClose: func() { bodyClosed = true },
+				},
+			}, nil
+		},
+	}
+	builder := &ImageBuilder{docker: mock}
+
+	type result struct {
+		tag string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		tag, err := builder.Build(context.Background(), &model.ContainerExecution{
+			Script:    "echo test",
+			BaseImage: "alpine",
+		})
+		done <- result{tag, err}
+	}()
+
+	select {
+	case r := <-done:
+		require.Error(t, r.err, "a malformed build stream must surface as an error, not spin forever")
+		assert.Contains(t, r.err.Error(), "decode response stream")
+		assert.Empty(t, r.tag, "no image tag must be returned on a decode failure")
+		assert.True(t, bodyClosed, "the build response body must be closed on the decode-error path")
+	case <-time.After(5 * time.Second):
+		t.Fatal("Build did not return on a malformed stream — the busy-loop regressed")
+	}
+}
+
+// TestStartCleanupUsesDetachedContextOnCtxCancel pins the M7 fix: when a start
+// fails *because* the run ctx was cancelled (a timeout or manager stop), the
+// cleanup must still run — ContainerRemove and ImageRemove must receive a
+// context that is NOT cancelled (context.WithoutCancel), or Docker rejects the
+// calls immediately and the container + image leak. We cancel the run ctx, fail
+// ContainerStart, and assert both cleanup calls fired on a live context.
+func TestStartCleanupUsesDetachedContextOnCtxCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var (
+		containerRemoveCalled bool
+		containerRemoveCtxErr error
+		imageRemoveCalled     bool
+		imageRemoveCtxErr     error
+	)
+	mock := &mockDockerClient{
+		imageBuildFunc: func(_ context.Context, _ io.Reader, _ client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`))}, nil
+		},
+		containerAttachFunc: func(_ context.Context, _ string, _ client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
+			return newHijackedResponse(""), nil
+		},
+		containerStartFunc: func(_ context.Context, _ string, _ client.ContainerStartOptions) (client.ContainerStartResult, error) {
+			// The run ctx was cancelled (timeout / manager stop); the start fails.
+			cancel()
+			return client.ContainerStartResult{}, fmt.Errorf("start failed: %w", context.Canceled)
+		},
+		containerRemoveFunc: func(rmCtx context.Context, _ string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
+			containerRemoveCalled = true
+			containerRemoveCtxErr = rmCtx.Err()
+			return client.ContainerRemoveResult{}, nil
+		},
+		imageRemoveFunc: func(rmCtx context.Context, _ string, _ client.ImageRemoveOptions) (client.ImageRemoveResult, error) {
+			imageRemoveCalled = true
+			imageRemoveCtxErr = rmCtx.Err()
+			return client.ImageRemoveResult{}, nil
+		},
+	}
+	b := NewContainerBackendFromClient(mock)
+
+	_, err := b.Start(ctx, &model.Task{}, nil, &model.ContainerExecution{
+		Script:    "echo test",
+		BaseImage: "alpine",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "container start")
+
+	require.True(t, containerRemoveCalled, "the orphaned container must still be removed")
+	require.True(t, imageRemoveCalled, "the built image must still be removed")
+	assert.NoError(t, containerRemoveCtxErr,
+		"ContainerRemove must run on a detached (non-cancelled) context, else the container leaks")
+	assert.NoError(t, imageRemoveCtxErr,
+		"ImageRemove must run on a detached (non-cancelled) context, else the image leaks")
+}
+
 func TestStartWaitError(t *testing.T) {
 	buildBody := `{"stream":"ok"}` + "\n"
 	mock := &mockDockerClient{
