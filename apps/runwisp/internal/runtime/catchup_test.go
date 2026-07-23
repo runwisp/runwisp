@@ -8,6 +8,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+	// Embed the zoneinfo database into the test binary so LoadLocation of a
+	// named zone (America/New_York, below) does not depend on the host's system
+	// tzdata — keeping the timezone catch-up test hermetic per the repo's
+	// unit-test philosophy. cmd/runwisp links this for the real binary; the
+	// runtime test binary does not, so it is pinned here.
+	_ "time/tzdata"
 
 	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
@@ -258,6 +264,42 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 
 		assert.Equal(t, 4, result.Triggered)
 		runner.AssertNumberOfCalls(t, "TriggerRun", 4)
+	})
+
+	t.Run("counts missed ticks in the task's own timezone, not the host's", func(t *testing.T) {
+		// End-to-end guard for M4: catchupOneTask must evaluate the schedule in
+		// the task's timezone before counting missed ticks (the helper-only test
+		// covers only that the schedule is *built* in the right zone). A daily
+		// midnight cron pinned to New York fires at 05:00 UTC (EST, UTC-5 in
+		// January); evaluated in UTC it would fire at 00:00 UTC — a different
+		// instant that yields a different missed count over the same window.
+		db := new(testutil.MockRunRepository)
+		runner := new(mockTaskRunner)
+
+		// Window straddles the offset so the two zones disagree on the count:
+		//   New York midnights (05:00 UTC): Jan 15 05:00 and Jan 16 05:00 both
+		//     fall in (anchor, now] → 2 missed ticks (the correct answer).
+		//   UTC midnights (00:00 UTC): only Jan 16 00:00 falls in the window → 1.
+		anchor := time.Date(2026, 1, 15, 3, 0, 0, 0, time.UTC)
+		now := time.Date(2026, 1, 16, 6, 0, 0, 0, time.UTC)
+
+		lastRun := &model.Run{ID: "last-run", TaskName: "my-task", CreatedAt: anchor}
+
+		task := catchupTask(model.MissedRunAll)
+		task.Cron = "0 0 * * *"
+		task.Timezone = "America/New_York"
+		tasks := map[string]*model.Task{"my-task": task}
+
+		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
+		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
+		runner.On("TriggerRun", "my-task", model.TriggeredByCron).Return(&model.Run{}, nil)
+		runner.On("RecordMissedRun", "my-task", mock.Anything, mock.Anything).Return(nil)
+
+		result := RunMissedTickCatchUp(context.Background(), db, tasks, runner, now, time.UTC)
+
+		assert.Equal(t, 2, result.Triggered,
+			"the New York midnights in the window must be counted in America/New_York, not UTC")
+		runner.AssertNumberOfCalls(t, "TriggerRun", 2)
 	})
 
 	t.Run("policy=skip records the gap but triggers nothing", func(t *testing.T) {

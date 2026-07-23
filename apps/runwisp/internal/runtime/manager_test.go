@@ -632,6 +632,75 @@ func TestRecordMissedRunUnknownTask(t *testing.T) {
 	require.Error(t, err, "recording a miss for an unknown task is an error, not a silent no-op")
 }
 
+// TestTerminalEventPublishedOffManagerLock is the regression test for the H2
+// re-entrancy deadlock. The three "run never executes" paths — a skip-overlap
+// firing (RecordSkippedFiring), a missed-tick firing (RecordMissedRun), and a
+// concurrency-policy rejection inside TriggerRunWithOptions — publish a terminal
+// EventRunFailed. In the pre-fix code that publish happened while the manager
+// still held m.mu (write lock). The cloud bridge subscribes to EventRunFailed
+// and re-enters the manager via ServiceSnapshot, which takes m.mu.RLock; an
+// RLock requested while the same goroutine already holds the write lock blocks
+// forever. The fix defers the terminal publish until after m.mu.Unlock. Each
+// subtest wires that exact re-entrant subscriber and a watchdog fails the test
+// if the publishing call deadlocks instead of returning.
+func TestTerminalEventPublishedOffManagerLock(t *testing.T) {
+	// assertReturns runs fn in a goroutine and fails if it does not return
+	// within the deadline — the observable symptom of the re-entrancy deadlock.
+	assertReturns := func(t *testing.T, name string, fn func()) {
+		t.Helper()
+		done := make(chan struct{})
+		go func() {
+			fn()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s deadlocked: the terminal event was published under the manager write lock, so the re-entrant ServiceSnapshot subscriber could not take the read lock", name)
+		}
+	}
+
+	t.Run("RecordSkippedFiring", func(t *testing.T) {
+		jm, _, eb := newTestManager(t)
+		jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
+		// The cloud bridge: an EventRunFailed handler that reaches back into the
+		// manager for a snapshot, re-acquiring m.mu as a reader.
+		eb.Subscribe(events.EventRunFailed, func(events.Event) { jm.ServiceSnapshot("task1") })
+		assertReturns(t, "RecordSkippedFiring", func() {
+			_ = jm.RecordSkippedFiring("task1", model.ReasonSkipped, model.TriggeredByCron)
+		})
+	})
+
+	t.Run("RecordMissedRun", func(t *testing.T) {
+		jm, _, eb := newTestManager(t)
+		jm.UpsertTask(testTask("task1", model.PolicyQueue, 1))
+		eb.Subscribe(events.EventRunFailed, func(events.Event) { jm.ServiceSnapshot("task1") })
+		scheduledAt := time.Date(2026, 6, 9, 3, 0, 0, 0, time.UTC)
+		assertReturns(t, "RecordMissedRun", func() {
+			_ = jm.RecordMissedRun("task1", scheduledAt, "daemon was down")
+		})
+	})
+
+	t.Run("TriggerRunWithOptions rejection", func(t *testing.T) {
+		jm, exec, eb := newGatedManager(t)
+		jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
+
+		// First run holds the only slot so the second firing is skip-rejected,
+		// which is the path that publishes the terminal event off the lock.
+		_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+		require.NoError(t, err)
+		exec.WaitStarted(t)
+
+		// Subscribe only now: the in-flight first run has already emitted its
+		// started event and has not failed, so the handler fires solely for the
+		// rejection we are about to trigger.
+		eb.Subscribe(events.EventRunFailed, func(events.Event) { jm.ServiceSnapshot("task1") })
+		assertReturns(t, "TriggerRun (skip rejection)", func() {
+			_, _ = jm.TriggerRun("task1", model.TriggeredByAPI)
+		})
+	})
+}
+
 func TestPersistenceHook(t *testing.T) {
 	jm, exec, eb := newTestManager(t)
 
@@ -790,6 +859,67 @@ func TestRetryNotFiredWhenRestartPolicySet(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return calls.Load() >= 5
 	}, time.Second, 10*time.Millisecond, "restart should keep firing past retry budget")
+}
+
+// TestNonServiceRestartBackoffEscalates is the regression test for M6: a
+// non-service task with restart=on_failure must escalate its restart backoff
+// across consecutive failures, exactly as the supervisor does for services.
+// Before the fix RestartAttempt never flowed through TriggerRunOptions →
+// ActiveRun → scheduleRestart, so computeRestartDelay saw attempt 0 on every
+// restart and the task hot-looped at the flat base delay. With an exponential
+// curve the inter-restart gaps must grow (base, 2×base, 4×base); a flat-base
+// regression keeps them all ≈ base.
+func TestNonServiceRestartBackoffEscalates(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	defer jm.Shutdown()
+
+	const base = 40 * time.Millisecond
+	task := &model.Task{
+		Name:           "task1",
+		Kind:           model.KindTask, // non-service: no supervisor to count attempts
+		Run:            "exit 1",
+		MaxConcurrent:  1,
+		OnOverlap:      model.PolicySkip,
+		Restart:        model.RestartOnFailure,
+		RestartDelay:   base,
+		RestartBackoff: model.BackoffExponential,
+	}
+	jm.UpsertTask(task)
+
+	var mu sync.Mutex
+	var starts []time.Time
+	exec.On("Execute", mock.Anything, task, mock.Anything).Run(func(mock.Arguments) {
+		mu.Lock()
+		starts = append(starts, time.Now())
+		mu.Unlock()
+	}).Return(&executor.ExecuteResult{ExitCode: 1})
+
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	// Four starts give three inter-restart gaps: base, 2×base, 4×base.
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(starts) >= 4
+	}, 5*time.Second, 5*time.Millisecond, "restart must keep firing on repeated failure")
+
+	mu.Lock()
+	defer mu.Unlock()
+	gap1 := starts[1].Sub(starts[0])
+	gap2 := starts[2].Sub(starts[1])
+	gap3 := starts[3].Sub(starts[2])
+
+	assert.Greater(t, gap2, gap1,
+		"second restart must wait longer than the first (backoff escalated): gaps %v, %v", gap1, gap2)
+	assert.Greater(t, gap3, gap2,
+		"third restart must wait longer than the second (backoff escalated): gaps %v, %v", gap2, gap3)
+	// A flat-base regression keeps every gap ≈ base; the escalated third gap
+	// (≈ 4×base) must clear that bar with room for scheduling jitter.
+	assert.Greater(t, gap3, 2*base,
+		"escalated gap must clearly exceed the flat base delay, got %v (base %v)", gap3, base)
 }
 
 // TestLoadPendingRunsResumed: a pending cron task with a free slot is
