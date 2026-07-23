@@ -254,12 +254,19 @@ func gracefulStopSeconds(d time.Duration) int {
 func (b *ContainerBackend) createAndStartContainer(ctx context.Context, imageTag string, ctr *model.ContainerExecution, task *model.Task, run *model.Run) (string, client.ContainerAttachResult, error) {
 	containerConfig, hostConfig := b.buildContainerConfig(imageTag, ctr, task, run)
 
+	// Cleanup must run on a context detached from ctx: a start that fails
+	// *because* ctx was cancelled (timeout, manager stop) would otherwise pass
+	// the already-cancelled ctx to ContainerRemove/ImageRemove, which return
+	// immediately and leak the container and image. WithoutCancel keeps ctx's
+	// values but is never cancelled itself.
+	cleanupCtx := context.WithoutCancel(ctx)
+
 	created, err := b.docker.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     containerConfig,
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		b.builder.Remove(ctx, imageTag)
+		b.builder.Remove(cleanupCtx, imageTag)
 		return "", client.ContainerAttachResult{}, fmt.Errorf("container create: %w", err)
 	}
 
@@ -272,15 +279,15 @@ func (b *ContainerBackend) createAndStartContainer(ctx context.Context, imageTag
 		Stderr: true,
 	})
 	if err != nil {
-		b.removeContainer(ctx, containerID)
-		b.builder.Remove(ctx, imageTag)
+		b.removeContainer(cleanupCtx, containerID)
+		b.builder.Remove(cleanupCtx, imageTag)
 		return "", client.ContainerAttachResult{}, fmt.Errorf("container attach: %w", err)
 	}
 
 	if _, err := b.docker.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
 		attachResp.Close()
-		b.removeContainer(ctx, containerID)
-		b.builder.Remove(ctx, imageTag)
+		b.removeContainer(cleanupCtx, containerID)
+		b.builder.Remove(cleanupCtx, imageTag)
 		return "", client.ContainerAttachResult{}, fmt.Errorf("container start: %w", err)
 	}
 
