@@ -249,15 +249,29 @@ func (c *Channel) timerFlush(fp string) {
 		c.mu.Unlock()
 		return
 	}
+	// Skip the flush if Close has begun. Close closes timerDone (via
+	// timerCancel) before it acquires c.mu, so checking it here — and doing the
+	// wg.Add below — under c.mu makes the check-and-register atomic against
+	// Close. Without this, a timer that fired just as Close started could call
+	// wg.Add concurrently with Close's wg.Wait and panic ("WaitGroup reused").
+	select {
+	case <-c.timerDone:
+		st.timer = nil
+		c.mu.Unlock()
+		return
+	default:
+	}
+
 	count := st.pending // suppressed events folded into the window-close summary
 	ev := st.lastEvent
 	st.pending = 0
 	st.lastSent = c.clock.Now()
 	st.lastEvent = nil
 	st.timer = nil
+	// Registered under c.mu, before Close can take the lock and start wg.Wait.
+	c.wg.Add(1)
 	c.mu.Unlock()
 
-	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
 		select {
