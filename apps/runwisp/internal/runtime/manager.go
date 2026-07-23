@@ -46,6 +46,12 @@ type TriggerRunOptions struct {
 	ExternalExecutionID string
 	RetryAttempt        int
 	RetryOfRunID        *string
+	// RestartAttempt is the number of consecutive restarts that precede this run
+	// in a non-service restart chain. It escalates the restart backoff the same
+	// way the supervisor's attempt counter does for services; without it every
+	// restart of a non-service task would wait only the flat base delay, hot-
+	// looping a task that fails immediately. In-memory only (not persisted).
+	RestartAttempt int
 	// InstanceIndex pins the run to a specific instance slot. Required for
 	// supervisor-driven restarts of services; nil for cron/API/retry runs.
 	InstanceIndex *int
@@ -337,7 +343,7 @@ func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, resu
 func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
 	concurrencyLimit := m.getConcurrencyLimit(ts.task)
 	if len(ts.active) < concurrencyLimit {
-		m.startRun(ts.task, r)
+		m.startRun(ts.task, r, 0)
 		result.Resumed++
 		return
 	}
@@ -354,6 +360,18 @@ func (m *defaultTaskManager) TriggerRun(taskName string, triggeredBy model.Trigg
 
 func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*model.Run, error) {
 	m.mu.Lock()
+	// A terminal event for a run that never executes is published after the
+	// lock is released: EventRunFailed subscribers (the cloud bridge) re-enter
+	// the manager via ServiceSnapshot → m.mu.RLock, which would deadlock if we
+	// published while still holding the write lock. The deferred flush runs
+	// after m.mu.Unlock (LIFO defer order). EventRunCreated stays inline — it
+	// has no re-entrant subscriber and must precede run.started for the same run.
+	var publishTerminal func()
+	defer func() {
+		if publishTerminal != nil {
+			publishTerminal()
+		}
+	}()
 	defer m.mu.Unlock()
 
 	// Refuse new runs once shutdown has begun. Shutdown sets isShutdown before
@@ -417,7 +435,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		// The caller must never read fields (Status, StartAt, ...) that the run
 		// goroutine concurrently writes, so it gets an independent copy.
 		snapshot := run.Copy()
-		m.startRun(ts.task, run)
+		m.startRun(ts.task, run, options.RestartAttempt)
 		return snapshot, nil
 	}
 
@@ -451,12 +469,12 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	case actionRejected:
 		run.End(model.ReasonSkipped, -1, m.clock())
 		m.persistence.PersistExisting(run)
-		m.publishRun(events.EventRunFailed, run)
+		publishTerminal = func() { m.publishRun(events.EventRunFailed, run) }
 		return run.Copy(), actionErr
 	case actionQueueFull:
 		run.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(run)
-		m.publishRun(events.EventRunFailed, run)
+		publishTerminal = func() { m.publishRun(events.EventRunFailed, run) }
 		return run.Copy(), actionErr
 	case actionQueued:
 		// The run sits in the queue; queueProcessLoop will later hand it to a
@@ -471,7 +489,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	// Snapshot before startRun spawns the execution goroutine (see service path).
 	snapshot := run.Copy()
-	m.startRun(ts.task, run)
+	m.startRun(ts.task, run, options.RestartAttempt)
 	return snapshot, nil
 }
 
@@ -513,6 +531,14 @@ func (m *defaultTaskManager) triggerJittered(taskName string, tick time.Time) (s
 // then immediately ended with the supplied reason.
 func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
 	m.mu.Lock()
+	// See TriggerRunWithOptions: the terminal event is published after the lock
+	// is released so a re-entrant EventRunFailed subscriber cannot deadlock us.
+	var publishTerminal func()
+	defer func() {
+		if publishTerminal != nil {
+			publishTerminal()
+		}
+	}()
 	defer m.mu.Unlock()
 
 	if _, exists := m.tasks[taskName]; !exists {
@@ -531,7 +557,7 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 	m.publishRun(events.EventRunCreated, run)
 	run.End(reason, -1, now)
 	m.persistence.PersistExisting(run)
-	m.publishRun(events.EventRunFailed, run)
+	publishTerminal = func() { m.publishRun(events.EventRunFailed, run) }
 	return nil
 }
 
@@ -546,6 +572,14 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 // exists; the run is created and immediately ended.
 func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.Time, reason string) error {
 	m.mu.Lock()
+	// See TriggerRunWithOptions: the terminal event is published after the lock
+	// is released so a re-entrant EventRunFailed subscriber cannot deadlock us.
+	var publishTerminal func()
+	defer func() {
+		if publishTerminal != nil {
+			publishTerminal()
+		}
+	}()
 	defer m.mu.Unlock()
 
 	if _, exists := m.tasks[taskName]; !exists {
@@ -563,7 +597,7 @@ func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.T
 	m.publishRun(events.EventRunCreated, run)
 	run.End(model.ReasonMissed, -1, scheduledAt)
 	m.persistence.PersistExisting(run)
-	m.publishRunErr(events.EventRunFailed, run, reason)
+	publishTerminal = func() { m.publishRunErr(events.EventRunFailed, run, reason) }
 	return nil
 }
 
@@ -793,9 +827,11 @@ func serviceRollupState(stopped bool, running, fatal, desired int) string {
 	}
 }
 
-// startRun registers the run and spawns the execution goroutine. Assumes
-// m.mu is held.
-func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
+// startRun registers the run and spawns the execution goroutine. restartAttempt
+// is the non-service restart-chain depth carried onto the ActiveRun so a later
+// failure escalates the restart backoff; it is zero for every path except a
+// non-service restart. Assumes m.mu is held.
+func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run, restartAttempt int) {
 	ctx := context.Background()
 	var cancel context.CancelFunc
 
@@ -806,9 +842,10 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 	}
 
 	active := &ActiveRun{
-		Run:       run,
-		Cancel:    cancel,
-		StartedAt: m.clock(),
+		Run:            run,
+		Cancel:         cancel,
+		StartedAt:      m.clock(),
+		RestartAttempt: restartAttempt,
 	}
 
 	m.tasks[task.Name].active = append(m.tasks[task.Name].active, active)
@@ -916,8 +953,10 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 	if ts == nil {
 		return nextRestartAttempt, serviceFatal, fatalAttempts
 	}
+	var retired *ActiveRun
 	for i, ar := range ts.active {
 		if ar.Run.ID == run.ID {
+			retired = ar
 			ts.active = append(ts.active[:i], ts.active[i+1:]...)
 			break
 		}
@@ -929,6 +968,12 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
 		}
+	} else if retry.IsFailureReason(endReason) && retired != nil {
+		// Non-service restart backoff has no supervisor to count attempts, so we
+		// carry the chain depth on the ActiveRun. Return it as the attempt the
+		// next restart delay is computed from; scheduleRestart advances it for the
+		// respawned run so consecutive failures escalate instead of hot-looping.
+		nextRestartAttempt = retired.RestartAttempt
 	}
 	if ts.cond != nil {
 		ts.cond.Signal()

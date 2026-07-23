@@ -24,10 +24,12 @@ type CatchUpResult struct {
 }
 
 // RunMissedTickCatchUp inspects each scheduled task and triggers catch-up runs
-// for cron ticks that were missed while the daemon was down.
-func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks map[string]*model.Task, runner TaskRunner, now time.Time) CatchUpResult {
+// for cron ticks that were missed while the daemon was down. defaultLoc is the
+// scheduler's resolved timezone ([scheduler] timezone); a task's own timezone
+// overrides it, exactly as the live scheduler resolves it.
+func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks map[string]*model.Task, runner TaskRunner, now time.Time, defaultLoc *time.Location) CatchUpResult {
 	var result CatchUpResult
-	parser := cronspec.NewParser()
+	parser := cronspec.NewScheduleParser()
 
 	for _, task := range tasks {
 		// Only the no-cron guard remains: detection is independent of the
@@ -36,7 +38,7 @@ func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks m
 		if task.Cron == "" {
 			continue
 		}
-		triggered, errors := catchupOneTask(ctx, db, parser, task, runner, now)
+		triggered, errors := catchupOneTask(ctx, db, parser, task, runner, now, defaultLoc)
 		result.Triggered += triggered
 		result.Errors += errors
 	}
@@ -44,9 +46,33 @@ func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks m
 	return result
 }
 
+// catchupSchedule builds a task's schedule and the location its ticks are
+// evaluated in, mirroring Scheduler.effectiveSpec: a per-task timezone is
+// applied via a CRON_TZ= prefix (and used as the reference location), otherwise
+// the scheduler default is used. Counting missed ticks in the wrong zone would
+// mis-detect the downtime gap for any task not on the host's local time.
+func catchupSchedule(parser cron.ScheduleParser, task *model.Task, defaultLoc *time.Location) (cron.Schedule, *time.Location, error) {
+	spec := task.Cron
+	loc := defaultLoc
+	if loc == nil {
+		loc = time.Local
+	}
+	if task.Timezone != "" {
+		spec = "CRON_TZ=" + task.Timezone + " " + task.Cron
+		if l, err := time.LoadLocation(task.Timezone); err == nil {
+			loc = l
+		}
+	}
+	schedule, err := parser.Parse(spec)
+	if err != nil {
+		return nil, nil, err
+	}
+	return schedule, loc, nil
+}
+
 // catchupOneTask processes a single task's catch-up logic and returns the
 // number of runs triggered and errors encountered.
-func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.Parser, task *model.Task, runner TaskRunner, now time.Time) (triggered, errors int) {
+func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.ScheduleParser, task *model.Task, runner TaskRunner, now time.Time, defaultLoc *time.Location) (triggered, errors int) {
 	// Persist first-seen timestamp; INSERT OR IGNORE is a no-op on every
 	// restart after the first. On first startup firstSeenAt == now, so
 	// countMissedTicks returns 0 — no spurious initial run.
@@ -55,16 +81,21 @@ func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.P
 		return 0, 1
 	}
 
-	schedule, err := parser.Parse(task.Cron)
+	schedule, loc, err := catchupSchedule(parser, task, defaultLoc)
 	if err != nil {
 		slog.Warn("Failed to parse schedule for catch-up", "task", task.Name, "err", err)
 		return 0, 1
 	}
+	// Evaluate ticks in the task's effective zone. For the scheduler-default
+	// case the schedule preserves the input location, so converting the anchor
+	// and now here is what pins evaluation to defaultLoc.
+	now = now.In(loc)
 
 	anchor, ok, errCount := resolveCatchupAnchor(ctx, db, task)
 	if !ok {
 		return 0, errCount
 	}
+	anchor = anchor.In(loc)
 
 	// Bound counting at max(cap, floor)+1: the +1 lets computeCatchupTriggers
 	// still see missedCount > MaxCatchUpRuns (so all/latest/skip cap correctly)

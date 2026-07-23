@@ -307,7 +307,6 @@ type LazyComposeBackend struct {
 	mu          sync.Mutex
 	backend     *ComposeBackend
 	fingerprint string
-	probed      bool
 	avail       bool
 }
 
@@ -321,12 +320,15 @@ func NewLazyComposeBackend(fingerprint string) *LazyComposeBackend {
 func (l *LazyComposeBackend) ensureProbed(ctx context.Context) (*ComposeBackend, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.probed {
-		return l.backend, l.avail
+	if l.backend == nil {
+		l.backend = NewComposeBackend(l.fingerprint)
 	}
-	l.backend = NewComposeBackend(l.fingerprint)
-	l.avail = l.backend.Available(ctx)
-	l.probed = true
+	// Cache only success. A transient first-probe failure (docker still coming
+	// up) must not disable compose for the daemon's lifetime, so re-probe until
+	// it reports available — mirroring LazyContainerBackend's retry-on-failure.
+	if !l.avail {
+		l.avail = l.backend.Available(ctx)
+	}
 	return l.backend, l.avail
 }
 

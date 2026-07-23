@@ -68,6 +68,10 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 		// Preserve the operator's inputs across a restart (no-op for services,
 		// which never carry parameters).
 		Params: model.SuppliedFromResolved(task.Parameters, previousRun.Params),
+		// Advance the restart-chain depth so the next failure of a non-service
+		// task backs off further (attempt was the delay just applied). Ignored
+		// for services, which track attempts via their supervisor.
+		RestartAttempt: attempt + 1,
 	}
 	if task.Kind.IsService() {
 		options.TriggeredBy = model.TriggeredByService

@@ -248,8 +248,12 @@ func (r *RoutingExecutor) notifyRunUpdated(run *model.Run, logPath string) {
 		r.onUpdate(run)
 	}
 	if r.eventBus != nil {
+		// Copy before publishing: the execute goroutine keeps mutating this
+		// *Run (recordRunOutcome → run.End()) while SSE/cloud subscribers
+		// marshal the event on their own goroutines. Sharing the pointer is a
+		// data race, matching every other publish site.
 		r.eventBus.Publish(events.EventRunUpdated, events.RunEvent{
-			Run:     run,
+			Run:     run.Copy(),
 			LogPath: logPath,
 		})
 	}

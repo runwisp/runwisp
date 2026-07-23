@@ -13,7 +13,7 @@ import (
 const selectOldRunsByAge = `-- name: SelectOldRunsByAge :many
 
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs
-WHERE task_name = ? AND created_at < ? AND deleted_at IS NULL
+WHERE task_name = ? AND created_at < ? AND status = 'ended' AND deleted_at IS NULL
 LIMIT ?
 `
 
@@ -25,6 +25,8 @@ type SelectOldRunsByAgeParams struct {
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
+// Only terminal (ended) runs are eligible for retention: a run that is still
+// pending or running must never have its row or live log files removed.
 func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAgeParams) ([]Run, error) {
 	rows, err := q.db.QueryContext(ctx, selectOldRunsByAge, arg.TaskName, arg.CreatedAt, arg.Limit)
 	if err != nil {
@@ -66,7 +68,7 @@ func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAge
 
 const selectOldRunsByCount = `-- name: SelectOldRunsByCount :many
 SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs
-WHERE task_name = ? AND deleted_at IS NULL
+WHERE task_name = ? AND status = 'ended' AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT ? OFFSET ?
 `
@@ -77,6 +79,8 @@ type SelectOldRunsByCountParams struct {
 	Offset   int64  `json:"offset"`
 }
 
+// Count-based retention likewise ranges over ended runs only, so in-flight
+// runs neither count against the cap nor get purged.
 func (q *Queries) SelectOldRunsByCount(ctx context.Context, arg SelectOldRunsByCountParams) ([]Run, error) {
 	rows, err := q.db.QueryContext(ctx, selectOldRunsByCount, arg.TaskName, arg.Limit, arg.Offset)
 	if err != nil {
