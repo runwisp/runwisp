@@ -19,6 +19,7 @@
     } from "$lib/stores";
     import { getApiUrl } from "$lib/utils/env";
     import { toTaskPageId } from "$lib/utils/task-id";
+    import { mergeRecentRuns, mergeRunningRuns } from "$lib/utils/overview-runs";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { type Run, type Task } from "$lib/types";
 
@@ -152,8 +153,19 @@
     $effect(() => {
         if (pageData.data) {
             dashState.tasks = pageData.data.tasks;
-            dashState.recentRuns = pageData.data.recentRuns;
-            dashState.runningRuns = pageData.data.runningRuns;
+            // Merge the snapshot through the same phase-order guard the SSE path
+            // uses, so a fetch that resolves with an older view can't revert a
+            // run the live stream already advanced (e.g. finished → running).
+            dashState.recentRuns = mergeRecentRuns(
+                dashState.recentRuns,
+                pageData.data.recentRuns,
+                RECENT_RUN_LIMIT,
+            );
+            dashState.runningRuns = mergeRunningRuns(
+                dashState.runningRuns,
+                pageData.data.runningRuns,
+                RUNNING_RUN_LIMIT,
+            );
         }
     });
 

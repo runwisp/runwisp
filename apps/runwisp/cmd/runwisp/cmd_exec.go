@@ -157,6 +157,25 @@ func isDaemonRunning(f Flags) bool {
 	return processAlive(pid, pidPath)
 }
 
+// ensureNoRunningDaemon returns an error when a live daemon already owns this
+// data dir, so a second `runwisp daemon` refuses to start rather than clobber
+// the shared PID file and open the same SQLite database. A missing, unreadable,
+// or stale PID file leaves the caller free to start.
+func ensureNoRunningDaemon(f Flags) error {
+	pidPath := datadir.PidFilePath(f.DataDir)
+	pid, err := datadir.ReadPidFile(f.DataDir)
+	if err != nil {
+		return nil
+	}
+	if pid == os.Getpid() {
+		return nil
+	}
+	if processAlive(pid, pidPath) {
+		return fmt.Errorf("a RunWisp daemon (pid %d) is already running for data dir %q; stop it first", pid, f.DataDir)
+	}
+	return nil
+}
+
 // runExecViaDaemon dispatches the run through the running daemon's REST API
 // (via its local Unix socket) and follows its SSE log stream until the run
 // reaches a terminal state.

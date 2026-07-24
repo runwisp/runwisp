@@ -47,6 +47,13 @@ type Model struct {
 	loading       bool
 	errMsg        string
 	client        *apiclient.Client
+
+	// lastSearched is the query string of the most recently dispatched search.
+	// Enter runs a new search while the query differs from it, and selects the
+	// highlighted hit once it matches — so the deep-link path is reachable
+	// without blurring the (always-focused) input.
+	lastSearched string
+	searched     bool
 }
 
 // New creates a fresh overlay for the given task.
@@ -148,10 +155,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-// handleEnter either fires a new search (when the input has focus and text)
-// or selects the highlighted hit.
+// handleEnter fires a new search whenever the query has changed since the last
+// one dispatched, and otherwise selects the highlighted hit. Keying on the
+// query (rather than input focus, which never clears) keeps both the search and
+// the deep-link select reachable from the same always-focused input.
 func (m Model) handleEnter() (Model, tea.Cmd) {
-	if m.input.Focused() && m.input.Value() != "" {
+	q := m.input.Value()
+	if q == "" {
+		return m, nil
+	}
+	if !m.searched || q != m.lastSearched {
 		return m.startSearch()
 	}
 	if h := m.SelectedHit(); h != nil {
@@ -183,6 +196,8 @@ func (m *Model) ErrorMessage() string { return m.errMsg }
 func (m Model) startSearch() (Model, tea.Cmd) {
 	m.loading = true
 	m.errMsg = ""
+	m.lastSearched = m.input.Value()
+	m.searched = true
 	client := m.client
 	taskName := m.taskName
 	opts := apiclient.SearchLogsOptions{

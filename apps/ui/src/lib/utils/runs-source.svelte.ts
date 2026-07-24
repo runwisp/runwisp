@@ -216,11 +216,14 @@ export function createRunsSource(): RunsSource {
 
     function remove(runId: string): void {
         const idx = items.findIndex((r) => r.id === runId);
-        if (idx !== -1) {
-            const next = [...items];
-            next.splice(idx, 1);
-            items = next;
-        }
+        // Only touch total when the run was actually present. The optimistic
+        // remove and the server's run.deleted SSE echo both call this for the
+        // same id; decrementing on the second (idx === -1) call would drift the
+        // count below the true total and can prematurely mark the list "done".
+        if (idx === -1) return;
+        const next = [...items];
+        next.splice(idx, 1);
+        items = next;
         if (total > 0) total -= 1;
     }
 

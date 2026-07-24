@@ -84,12 +84,29 @@ func TestWritePidFile_RefusesSymlink(t *testing.T) {
 func TestCleanPidFile_RemovesExisting(t *testing.T) {
 	dataDir := t.TempDir()
 	pid := PidFilePath(dataDir)
-	if err := os.WriteFile(pid, []byte("123"), 0600); err != nil {
+	if err := os.WriteFile(pid, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
 		t.Fatal(err)
 	}
 	CleanPidFile(dataDir)
 	if _, err := os.Stat(pid); !os.IsNotExist(err) {
 		t.Fatalf("expected PID file removed, got err=%v", err)
+	}
+}
+
+// TestCleanPidFile_LeavesForeignPid guards H1: when daemon.pid names a process
+// other than the caller (e.g. a second daemon clobbered it, or a stale file
+// from an unrelated process), CleanPidFile must leave it in place so the live
+// owner is not orphaned by another process's deferred cleanup.
+func TestCleanPidFile_LeavesForeignPid(t *testing.T) {
+	dataDir := t.TempDir()
+	pid := PidFilePath(dataDir)
+	foreign := os.Getpid() + 1
+	if err := os.WriteFile(pid, []byte(strconv.Itoa(foreign)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	CleanPidFile(dataDir)
+	if _, err := os.Stat(pid); err != nil {
+		t.Fatalf("expected foreign PID file to be left in place, got err=%v", err)
 	}
 }
 

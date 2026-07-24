@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -214,11 +213,7 @@ func seedDemoHistory(f Flags) error {
 // mode spawns the headless `cloud` subcommand; standalone reuses spawnDaemon.
 func spawnDemoDaemon(f Flags) error {
 	if demoFlags.Cloud {
-		return spawnDaemonProcess([]string{"cloud", "--no-tui",
-			"--config", f.CfgFile,
-			"--data", f.DataDir,
-			"--port", strconv.Itoa(f.Port),
-		}, f.DataDir)
+		return spawnDaemonProcess(daemonSpawnArgs([]string{"cloud", "--no-tui"}, f), f.DataDir)
 	}
 	return spawnDaemon(f)
 }

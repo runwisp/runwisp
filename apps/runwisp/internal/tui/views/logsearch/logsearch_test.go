@@ -4,6 +4,7 @@
 package logsearch
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -121,8 +122,11 @@ func TestUpdate_ArrowKeys_AlsoMoveCursor(t *testing.T) {
 func TestUpdate_EnterOnHitEmitsSelectMsg(t *testing.T) {
 	m := newTestModel(t)
 	m.hits = []server.LogSearchHit{{RunID: "rA", N: 42, Text: "hello"}}
-	// Defocus the input so Enter is treated as "select hit".
-	m.input.Blur()
+	// Simulate the post-search state: a query was dispatched and results
+	// arrived, so an Enter with the query unchanged selects the hit.
+	m.input.SetValue("hello")
+	m.lastSearched = "hello"
+	m.searched = true
 	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected select cmd")
@@ -268,11 +272,61 @@ func TestView_RendersHits_AndOverflow(t *testing.T) {
 		})
 	}
 	out := m.View(80, 24)
-	if !strings.Contains(out, "more hits") {
-		t.Fatalf("expected overflow marker, got:\n%s", out)
+	if !strings.Contains(out, fmt.Sprintf("of %d", MaxVisibleHits+5)) {
+		t.Fatalf("expected windowed hit-count marker, got:\n%s", out)
 	}
 	if !strings.Contains(out, "▶") {
 		t.Fatalf("expected selection cursor, got:\n%s", out)
+	}
+}
+
+// TestView_WindowFollowsCursor exercises M10: with more hits than the visible
+// window, the highlighted row must scroll into view instead of staying pinned
+// to a fixed [0:MaxVisibleHits] slice.
+func TestView_WindowFollowsCursor(t *testing.T) {
+	m := newTestModel(t)
+	for i := 0; i < MaxVisibleHits+8; i++ {
+		m.hits = append(m.hits, server.LogSearchHit{
+			RunID: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			N:     int64(i + 1),
+			Text:  fmt.Sprintf("match-%02d", i),
+		})
+	}
+	// Cursor well past the fixed window's bottom edge.
+	m.cursor = MaxVisibleHits + 4
+	out := m.View(120, 40)
+	want := fmt.Sprintf("match-%02d", m.cursor)
+	if !strings.Contains(out, want) {
+		t.Fatalf("expected selected hit %q to be visible, got:\n%s", want, out)
+	}
+	// The selection cursor must render on the highlighted row.
+	if !strings.Contains(out, "▶") {
+		t.Fatalf("expected selection cursor in view, got:\n%s", out)
+	}
+}
+
+// TestUpdate_EnterSelectsAfterSearch exercises M2: after a search runs and
+// results arrive, pressing Enter again (query unchanged, input still focused
+// as it always is in production) selects the highlighted hit rather than
+// re-running the search.
+func TestUpdate_EnterSelectsAfterSearch(t *testing.T) {
+	m := newTestModel(t)
+	m.input.SetValue("needle")
+	// First Enter dispatches the search; input stays focused.
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	// Results land.
+	m3, _ := m2.Update(resultsMsg{hits: []server.LogSearchHit{{RunID: "rX", N: 9, Text: "hit"}}})
+	// Second Enter must select, not search.
+	_, cmd := m3.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected a command from Enter")
+	}
+	sel, ok := cmd().(SelectMsg)
+	if !ok {
+		t.Fatalf("expected SelectMsg, got %T", cmd())
+	}
+	if sel.RunID != "rX" || sel.Line != 9 || sel.TaskName != "task1" {
+		t.Fatalf("SelectMsg fields wrong: %+v", sel)
 	}
 }
 

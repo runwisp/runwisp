@@ -5,6 +5,7 @@ package logstream
 
 import (
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2/sse"
@@ -399,4 +400,51 @@ func TestMakeTerminalHandler_NilRun(t *testing.T) {
 
 	handler(events.Event{Data: events.RunEvent{Run: nil}})
 	assert.Empty(t, termCh)
+}
+
+// TestStreamDropTracker_ConcurrentRecord guards M8: recordDrop runs on the
+// publisher goroutine while the SSE loop reads/commits, so the counter must be
+// mutex-guarded. Without the lock, concurrent increments lose updates and the
+// reported drop count undercounts.
+func TestStreamDropTracker_ConcurrentRecord(t *testing.T) {
+	const goroutines = 8
+	const perGoroutine = 5000
+
+	dt := &streamDropTracker{after: -1}
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < perGoroutine; i++ {
+				dt.recordDrop(int64(i))
+			}
+		}()
+	}
+	wg.Wait()
+
+	_, count := dt.snapshot()
+	if want := int64(goroutines * perGoroutine); count != want {
+		t.Fatalf("drop count: got %d want %d (lost updates → data race)", count, want)
+	}
+}
+
+// TestStreamDropTracker_CommitSentPreservesLaterDrops verifies that drops
+// recorded after a snapshot survive commitSent of the reported batch.
+func TestStreamDropTracker_CommitSentPreservesLaterDrops(t *testing.T) {
+	dt := &streamDropTracker{after: -1}
+	dt.recordDrop(5)
+	dt.recordDrop(6)
+	_, count := dt.snapshot()
+	require.Equal(t, int64(2), count)
+
+	// Two more drops land before the reported batch is committed.
+	dt.recordDrop(7)
+	dt.recordDrop(8)
+	dt.commitSent(count)
+
+	after, remaining := dt.snapshot()
+	assert.Equal(t, int64(2), remaining, "later drops must be preserved")
+	assert.Equal(t, int64(8), after)
 }
