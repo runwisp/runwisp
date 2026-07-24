@@ -312,6 +312,43 @@ a per-task `user`. The
 [Migrating from supervisord](/recipes/migrating-from-supervisord/) recipes
 walk through the whole flow.
 
+### Graduate an imported task with `promote`
+
+```sh
+runwisp promote backup            # move one staged task into runwisp.toml
+runwisp promote backup reindex    # move several
+runwisp promote --all --reload    # move everything, then reconcile the daemon
+```
+
+Staging is a waiting room, not a destination. When you're happy with an
+imported job, `runwisp promote` moves its block out of
+`runwisp.d/imported.toml` and into your own `runwisp.toml`. After that it's
+yours: a re-import leaves it alone, the `staged` marker is gone, and you edit
+it like anything else you wrote.
+
+The move is textual, and that's the point — the block's comments, its
+formatting, and any unresolved `# TODO` notes the import left behind travel
+with it byte-for-byte. Nothing is re-generated, so nothing is lost in
+translation. Both files are written as one transaction: if the result wouldn't
+load, neither file changes.
+
+| Flag        | What it does                                                         |
+| ----------- | -------------------------------------------------------------------- |
+| `--all`     | Promote every staged task. Exits 0 when there are none.              |
+| `--reload`  | Reload the running daemon afterwards, so the `staged` marker clears. |
+| `--dry-run` | Print the blocks that would move and write nothing.                  |
+
+Promoting doesn't change what the daemon runs — only which file defines it.
+So `runwisp reload` after a promote reports _no task changes_, and a promoted
+service keeps running without a restart. The reload is only there to refresh
+the `staged` marker the UI and `--json` report. Once the last task is
+promoted, the empty `runwisp.d/imported.toml` is removed; the next
+`import --write` recreates it.
+
+Promote refuses, and writes nothing, when you name a task it can't move: one
+that doesn't exist, one that's already native (it names the file it found it
+in), or one generated from a compose project, which has no block of its own.
+
 ## Autostart
 
 ```sh

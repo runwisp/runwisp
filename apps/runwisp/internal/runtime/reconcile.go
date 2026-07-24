@@ -105,7 +105,8 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 }
 
 // apply mutates the live set in an order that never leaves a half-state:
-// removals first, then additions, then in-place changes.
+// removals first, then additions, then in-place changes, then the provenance-only
+// restamps.
 func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*model.Task) {
 	for _, name := range diff.Removed {
 		r.applyRemoved(name, oldTasks[name])
@@ -115,6 +116,9 @@ func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*mode
 	}
 	for _, change := range diff.Changed {
 		r.applyChanged(change, oldTasks[change.Name], newTasks[change.Name])
+	}
+	for _, name := range diff.Restamped {
+		r.applyRestamped(newTasks[name])
 	}
 }
 
@@ -178,6 +182,18 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 	if newTask.Kind.IsService() {
 		r.recycleChangedService(newTask)
 	}
+}
+
+// applyRestamped swaps in a definition that differs only in derived provenance —
+// a task `runwisp promote` graduated out of the staging file into the operator's
+// own config. The registry and manager take the new pointer so the API, UI and
+// TUI stop reporting it as staged, and that is all: nothing is rescheduled and no
+// service is recycled, because what the task runs did not change. Bouncing a
+// running service because its definition moved between two files would be a
+// surprise the operator never asked for.
+func (r *Reconciler) applyRestamped(task *model.Task) {
+	r.registry.Set(task)
+	r.manager.UpsertTask(task)
 }
 
 // rescheduleChanged drops the cron entry for a changed task and re-adds it under

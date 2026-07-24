@@ -54,7 +54,16 @@ func runList(out io.Writer, f Flags, asJSON bool) error {
 		return writeJSON(out, doc)
 	}
 
-	return renderTaskTable(out, cfg.Tasks)
+	if err := renderTaskTable(out, cfg.Tasks); err != nil {
+		return err
+	}
+	// The staged tasks are already marked in --json; the table gets a footer
+	// instead of a column, both to keep its shape stable for anything parsing it
+	// and because the useful part is the command, not a per-row flag.
+	if footer := promoteStagedFooter(cfg, f.CfgFile); footer != "" {
+		fmt.Fprintf(out, "\n%s\n", footer)
+	}
+	return nil
 }
 
 // renderTaskTable writes the human-readable task listing (the default,

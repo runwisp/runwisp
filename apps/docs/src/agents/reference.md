@@ -224,6 +224,14 @@ runwisp import supervisord [FILE...] — convert supervisord config to runwisp.t
                                (tasks → machine-owned runwisp.d/imported.toml, root runwisp.toml's
                                [daemon].include wired to load it; both written atomically or rolled back).
                                Tasks from the staging file report "staged": true in list/status --json.
+runwisp promote [TASK...]    — move staged tasks out of runwisp.d/imported.toml into the root runwisp.toml; --all --reload --dry-run
+                             — surgical text move: the block's comments/formatting/# TODOs travel byte-for-byte.
+                               Both files written as one transaction gated on the merged load, else neither changes.
+                               Refuses (writing nothing) an unknown name, an already-native name, a compose-generated
+                               task, or a config that doesn't load. --all with nothing staged exits 0.
+                               Changes no behaviour — only which file defines the task — so a following reload
+                               reports no task changes and a promoted service is not restarted; the reload only
+                               refreshes the "staged" flag. Emptied staging file is deleted.
 runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_NO_AUTH, refuses if RUNWISP_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json

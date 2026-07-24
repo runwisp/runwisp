@@ -113,9 +113,33 @@ your daemon with a config it can't load.
 
 Imported tasks show up as `staged` in `runwisp list` and `status --json` —
 shorthand for "came from an import, not native TOML yet". It's a label, not a
-limitation: staged tasks are scheduled and run exactly like any other. When you
-want to own one, move it into your `runwisp.toml` and the badge clears itself on
-the next load.
+limitation: staged tasks are scheduled and run exactly like any other.
+
+### Graduating a job into your own config
+
+Staging is a waiting room. When you're happy with an imported job, promote it:
+
+```bash
+runwisp promote backup      # move this one into runwisp.toml
+runwisp promote --all       # move all of them
+```
+
+That moves the job's block out of `runwisp.d/imported.toml` and into your own
+`runwisp.toml`, comments and all — including any `# TODO` the import left for
+you. Nothing is re-generated, so nothing gets reformatted or lost on the way.
+From then on the job is yours: it's not `staged` any more, and a later
+re-import won't touch it.
+
+Nothing about the job's behaviour changes — only which file defines it. A
+promoted service keeps running, and `runwisp reload` afterwards will honestly
+report _no task changes_; the reload is just there to refresh the `staged`
+label on a live daemon. Use `--reload` to do both in one go, or `--dry-run`
+first if you want to see exactly which bytes would move.
+
+Convert one job a week or all of them at once — RunWisp doesn't mind. When the
+last one is promoted the empty staging file is cleaned up, and you're left with
+a single hand-maintained `runwisp.toml`, exactly as if you'd written it
+yourself.
 
 :::note
 If your root config already sets its own `include` list, `--write` won't edit it

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -72,4 +73,117 @@ func TestCheckNonReloadable_RUNWISPTLSDoesNotFlapReload(t *testing.T) {
 	require.Equal(t, "off", oldCfg.Daemon.TLS)
 	require.Equal(t, "off", newCfg.Daemon.TLS)
 	assert.NoError(t, checkNonReloadable(oldCfg, newCfg))
+}
+
+// recordingManager is a TaskManager that records the lifecycle calls a reconcile
+// makes. The embedded nil interface is deliberate: any method these tests don't
+// expect to be called panics loudly instead of silently succeeding.
+type recordingManager struct {
+	TaskManager
+	upserted  []string
+	restarted []string
+	started   []string
+	stopped   []string
+	removed   []string
+}
+
+func (m *recordingManager) UpsertTask(task *model.Task) {
+	m.upserted = append(m.upserted, task.Name)
+}
+
+func (m *recordingManager) RestartServiceInstances(name string) error {
+	m.restarted = append(m.restarted, name)
+	return nil
+}
+
+func (m *recordingManager) StartServiceInstances(name string, _ model.TriggeredBy) error {
+	m.started = append(m.started, name)
+	return nil
+}
+
+func (m *recordingManager) StopService(name string) error {
+	m.stopped = append(m.stopped, name)
+	return nil
+}
+
+func (m *recordingManager) RemoveTask(name string) {
+	m.removed = append(m.removed, name)
+}
+
+// applyDiff runs one reconcile's apply step over the two task sets, with no
+// scheduler (the nil checks in apply cover that) and no DB — neither the Changed
+// nor the Restamped path touches storage.
+func applyDiff(old, updated map[string]*model.Task) (*recordingManager, *TaskRegistry, config.Diff) {
+	mgr := &recordingManager{}
+	registry := NewTaskRegistry(old)
+	r := &Reconciler{registry: registry, manager: mgr}
+
+	diff := config.DiffTasks(old, updated)
+	r.apply(diff, old, updated)
+	return mgr, registry, diff
+}
+
+// taskSet indexes tasks by name for the diff helpers.
+func taskSet(tasks ...*model.Task) map[string]*model.Task {
+	out := make(map[string]*model.Task, len(tasks))
+	for _, t := range tasks {
+		out[t.Name] = t
+	}
+	return out
+}
+
+// TestReconcile_PromotedServiceIsNotRestarted is the regression `runwisp promote`
+// needs: promoting moves a definition from the staging file into the operator's
+// own config and changes nothing about what runs, so a reload must not recycle a
+// running service. Before Staged was masked out of the diff, the flipped flag read
+// as a settings change and bounced every promoted service.
+func TestReconcile_PromotedServiceIsNotRestarted(t *testing.T) {
+	staged := &model.Task{Name: "worker", Kind: model.KindService, Run: "worker --loop", Instances: 2, Staged: true}
+	promoted := *staged
+	promoted.Staged = false
+
+	mgr, registry, diff := applyDiff(taskSet(staged), taskSet(&promoted))
+
+	assert.Empty(t, diff.Changed, "provenance is not a task change")
+	assert.Equal(t, []string{"worker"}, diff.Restamped)
+	assert.Empty(t, mgr.restarted, "a promoted service must keep running")
+	assert.Empty(t, mgr.started)
+	assert.Empty(t, mgr.stopped)
+	assert.Empty(t, mgr.removed)
+
+	// The live set still picks up the new provenance, so the badge clears.
+	assert.Equal(t, []string{"worker"}, mgr.upserted)
+	assert.False(t, registry.Snapshot()["worker"].Staged)
+}
+
+// TestReconcile_PromotedTaskIsNotRescheduled is the cron-task half: a promoted
+// task keeps its schedule untouched. A nil scheduler would panic if apply tried to
+// reschedule, which is exactly the assertion.
+func TestReconcile_PromotedTaskIsNotRescheduled(t *testing.T) {
+	staged := &model.Task{Name: "backup", Cron: "0 3 * * *", Run: "backup.sh", Staged: true}
+	promoted := *staged
+	promoted.Staged = false
+
+	mgr, registry, diff := applyDiff(taskSet(staged), taskSet(&promoted))
+
+	assert.True(t, diff.IsEmpty(), "a promote is not a task change the operator needs to see")
+	assert.Equal(t, []string{"backup"}, diff.Restamped)
+	assert.Equal(t, []string{"backup"}, mgr.upserted)
+	assert.False(t, registry.Snapshot()["backup"].Staged)
+}
+
+// TestReconcile_ChangedServiceIsStillRecycled guards the masking from going too
+// far: a genuine definition change must still recycle the service.
+func TestReconcile_ChangedServiceIsStillRecycled(t *testing.T) {
+	before := &model.Task{Name: "worker", Kind: model.KindService, Run: "worker --loop", Staged: true}
+	after := *before
+	after.Run = "worker --loop --verbose"
+	after.Staged = false
+
+	mgr, _, diff := applyDiff(taskSet(before), taskSet(&after))
+
+	require.Len(t, diff.Changed, 1)
+	assert.True(t, diff.Changed[0].Has(config.ReasonCommand))
+	assert.Empty(t, diff.Restamped, "a real change is reported as a change, not a restamp")
+	assert.Equal(t, []string{"worker"}, mgr.restarted)
 }

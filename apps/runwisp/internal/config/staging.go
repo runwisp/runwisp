@@ -30,6 +30,13 @@ const ImportedStagingSubdir = "runwisp.d"
 // on every load and reload.
 const StagingIncludeGlob = ImportedStagingSubdir + "/*.toml"
 
+// StagingRelPath is the staging file's path relative to the root config's
+// directory — the way the wired include line spells it, and the way the CLI names
+// it in output. StagingFilePath is the absolute form used for comparisons.
+func StagingRelPath() string {
+	return filepath.Join(ImportedStagingSubdir, ImportedStagingBase)
+}
+
 // StagingFilePath returns the absolute path of the machine-owned staging file
 // (runwisp.d/imported.toml) relative to the given root config directory. It is the
 // single source of truth for where imports land and how provenance is derived,

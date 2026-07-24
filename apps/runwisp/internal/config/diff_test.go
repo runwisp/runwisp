@@ -43,6 +43,40 @@ func TestDiffTasks_IdenticalIsEmpty(t *testing.T) {
 	assert.True(t, DiffTasks(old, updated).IsEmpty())
 }
 
+// TestDiffTasks_ProvenanceOnlyChangeIsRestamped covers `runwisp promote`: moving a
+// task's block from the staging file into the operator's own config flips the
+// derived Staged flag and nothing else. That is not a change to what runs, so it
+// must not become a Changed entry — the reconciler acts on those by rescheduling
+// cron entries and recycling services.
+func TestDiffTasks_ProvenanceOnlyChangeIsRestamped(t *testing.T) {
+	staged := &model.Task{Name: "a", Run: "echo", Cron: "@daily", Staged: true}
+	promoted := *staged
+	promoted.Staged = false
+
+	d := DiffTasks(tasksMap(staged), tasksMap(&promoted))
+
+	assert.Empty(t, d.Changed)
+	assert.Empty(t, d.Added)
+	assert.Empty(t, d.Removed)
+	assert.Equal(t, []string{"a"}, d.Restamped)
+	assert.True(t, d.IsEmpty(), "reload reports no task changes, because nothing the daemon runs changed")
+	assert.Empty(t, d.ToResult().Changed, "provenance stays off the reload wire")
+}
+
+// TestDiffTasks_RealChangeIsNotRestamped keeps the masking honest: a definition
+// that genuinely differs is still a Changed entry, even when its provenance moved
+// in the same reload.
+func TestDiffTasks_RealChangeIsNotRestamped(t *testing.T) {
+	before := &model.Task{Name: "a", Run: "echo old", Cron: "@daily", Staged: true}
+	after := &model.Task{Name: "a", Run: "echo new", Cron: "@daily"}
+
+	d := DiffTasks(tasksMap(before), tasksMap(after))
+
+	require.Len(t, d.Changed, 1)
+	assert.True(t, d.Changed[0].Has(ReasonCommand))
+	assert.Empty(t, d.Restamped)
+}
+
 func TestDiffTasks_ChangeReasons(t *testing.T) {
 	base := func() *model.Task {
 		return &model.Task{Name: "a", Run: "echo", Cron: "0 2 * * *", Kind: model.KindTask}

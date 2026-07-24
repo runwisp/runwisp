@@ -22,6 +22,7 @@
 package configedit
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -45,6 +46,8 @@ type queuedWrite struct {
 	path string
 	data []byte
 	perm fs.FileMode
+	// remove inverts the operation: delete the file instead of writing data.
+	remove bool
 }
 
 // New returns an empty transaction.
@@ -60,14 +63,27 @@ func (t *Txn) Write(path string, data []byte, perm fs.FileMode) {
 	t.queued = append(t.queued, queuedWrite{path: path, data: data, perm: perm})
 }
 
+// Remove queues the deletion of a file. Its pre-image is captured at Apply like
+// any other operation, so a refused gate brings the file back byte-for-byte,
+// mode included. Deleting a path that doesn't exist is not an error — the
+// transaction's job is to reach the requested end state.
+//
+// This is how `promote` retires the staging file once its last entry has moved
+// into the operator's own config: an empty runwisp.d/imported.toml would only
+// look like it still had something to say.
+func (t *Txn) Remove(path string) {
+	t.queued = append(t.queued, queuedWrite{path: path, remove: true})
+}
+
 // Empty reports whether the transaction has nothing to write, so a caller can
 // skip Apply (and its gate) entirely.
 func (t *Txn) Empty() bool { return len(t.queued) == 0 }
 
-// Apply writes every queued file through temp+rename, then calls gate. When
-// gate returns an error — or any write fails — every file the transaction
-// touched is restored to exactly its previous state (removed if it didn't exist)
-// and that error is returned. A nil gate accepts the write unconditionally.
+// Apply writes every queued file through temp+rename (or removes it, for a
+// queued Remove), then calls gate. When gate returns an error — or any operation
+// fails — every file the transaction touched is restored to exactly its previous
+// state (removed if it didn't exist, recreated if it did) and that error is
+// returned. A nil gate accepts the write unconditionally.
 //
 // Parent directories are created as needed and are *not* removed on rollback: an
 // empty runwisp.d/ is harmless, and removing a directory we may not have created
@@ -82,7 +98,7 @@ func (t *Txn) Apply(gate func() error) error {
 
 	for _, w := range t.queued {
 		backups = append(backups, backupFile(w.path))
-		if err := writeFileAtomic(w.path, w.data, w.perm); err != nil {
+		if err := w.perform(); err != nil {
 			rollback()
 			return &WriteError{Path: w.path, Err: err}
 		}
@@ -97,8 +113,19 @@ func (t *Txn) Apply(gate func() error) error {
 	return nil
 }
 
-// WriteError reports a file the transaction could not write. The transaction has
-// already been rolled back by the time it is returned.
+// perform carries out one queued operation against the filesystem.
+func (w queuedWrite) perform() error {
+	if w.remove {
+		if err := os.Remove(w.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	return writeFileAtomic(w.path, w.data, w.perm)
+}
+
+// WriteError reports a file the transaction could not write or remove. The
+// transaction has already been rolled back by the time it is returned.
 type WriteError struct {
 	Path string
 	Err  error

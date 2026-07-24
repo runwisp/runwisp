@@ -293,6 +293,33 @@ run = "echo decoy"
 	assert.False(t, findTask(t, cfg, "decoy").Staged, "a stray imported.toml elsewhere must not be staged")
 }
 
+// TestInclude_StagedProvenanceWithRelativeConfigPath covers the shape every CLI
+// invocation actually uses: the default --config is the bare relative
+// "runwisp.toml". Provenance is decided by comparing the entry's origin against
+// the staging path, and both sides have to absolutize consistently for that
+// comparison to hold — every other test here loads an absolute temp path, which
+// would hide a mismatch that breaks `promote` in a real project directory.
+func TestInclude_StagedProvenanceWithRelativeConfigPath(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include = ["runwisp.d/*.toml"]
+
+[tasks.native]
+run = "echo root"
+`,
+		"runwisp.d/imported.toml": "[tasks.from_cron]\nrun = \"echo imported\"\n",
+	})
+	t.Chdir(dir)
+
+	cfg, err := Load("runwisp.toml")
+	require.NoError(t, err)
+
+	assert.True(t, findTask(t, cfg, "from_cron").Staged, "staged provenance must survive a relative config path")
+	assert.False(t, findTask(t, cfg, "native").Staged)
+	assert.Equal(t, StagingFilePath("."), cfg.OriginFile("from_cron"))
+}
+
 // TestInclude_StagedNotSetForSingleFileConfig verifies a plain single-file
 // config (no includes) never marks tasks staged — even the root itself named
 // imported.toml is native, since staging is always an included file.

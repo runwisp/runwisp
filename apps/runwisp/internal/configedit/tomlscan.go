@@ -3,7 +3,10 @@
 
 package configedit
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // This file is the one piece of TOML awareness the surgical editors share. They
 // work on text rather than a parsed document — that is the whole point, since a
@@ -136,4 +139,72 @@ func tableHeader(line string) (name string, array, ok bool) {
 		return "", false, false
 	}
 	return name, array, true
+}
+
+// splitDottedKey splits a table header's name into its segments, unquoting the
+// quoted ones: `tasks.backup` and `tasks."backup"` both yield
+// ["tasks", "backup"], and `tasks."my.job"` yields ["tasks", "my.job"] rather
+// than treating the dot inside the quotes as a separator. ok is false for a
+// malformed name (an unterminated quote, an empty segment, or trailing junk
+// after a quoted segment) — callers refuse to touch a header they can't read
+// rather than guess at its identity.
+func splitDottedKey(name string) (segs []string, ok bool) {
+	rest := strings.TrimSpace(name)
+	for {
+		seg, tail, ok := nextKeySegment(rest)
+		if !ok {
+			return nil, false
+		}
+		segs = append(segs, seg)
+		if tail == "" {
+			return segs, true
+		}
+		if tail[0] != '.' {
+			return nil, false // junk between segments
+		}
+		if rest = strings.TrimSpace(tail[1:]); rest == "" {
+			return nil, false // trailing dot
+		}
+	}
+}
+
+// nextKeySegment reads one segment off the front of a dotted key, returning it
+// unquoted along with the unconsumed remainder (which still carries its leading
+// dot, if any). ok is false for an empty or unterminated segment.
+func nextKeySegment(s string) (seg, rest string, ok bool) {
+	if s == "" {
+		return "", "", false
+	}
+	if s[0] == '"' || s[0] == '\'' {
+		n := skipSingleLineString(s, s[0] == '"')
+		if n < 2 || s[n-1] != s[0] {
+			return "", "", false // unterminated quote
+		}
+		if seg, ok = unquoteSegment(s[:n]); !ok {
+			return "", "", false
+		}
+		return seg, strings.TrimSpace(s[n:]), seg != ""
+	}
+	if end := strings.IndexByte(s, '.'); end >= 0 {
+		seg = strings.TrimSpace(s[:end])
+		return seg, s[end:], seg != ""
+	}
+	seg = strings.TrimSpace(s)
+	return seg, "", seg != ""
+}
+
+// unquoteSegment strips the surrounding quotes from one dotted-key segment. A
+// literal ('…') key has no escapes, so its body is taken as-is; a basic ("…")
+// key goes through strconv.Unquote, whose escape set matches TOML's for the
+// characters a table name can hold. ok is false when the escapes don't decode —
+// half-unescaping a name would make the caller edit the wrong table.
+func unquoteSegment(s string) (string, bool) {
+	if s[0] == '\'' {
+		return s[1 : len(s)-1], true
+	}
+	body, err := strconv.Unquote(s)
+	if err != nil {
+		return "", false
+	}
+	return body, true
 }

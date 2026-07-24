@@ -76,6 +76,31 @@ file to resolve the paths against. Pass the file path (not a pipe) if you use
 includes, and everything comes across in one shot.
 :::
 
+### If you already have a runwisp.toml
+
+`-o` writes one flat file, which is what you want when you're starting fresh.
+When you already have a `runwisp.toml` of your own, use `--write` instead:
+
+```bash
+runwisp import supervisord /etc/supervisor/supervisord.conf --write
+```
+
+The imported services land in a machine-owned `runwisp.d/imported.toml` and your
+root config is wired to load it, so nothing you hand-wrote is touched. They show
+up as `staged` — imported, not native yet — and run exactly like any other
+service in the meantime. When you're happy with one:
+
+```bash
+runwisp promote web        # move it into your runwisp.toml
+runwisp promote --all      # or move all of them
+```
+
+The block moves verbatim, comments and `# TODO` notes included, and the service
+keeps running while it happens. Re-running the import later skips programs you've
+already promoted rather than tripping over the duplicate name. The
+[cron recipe](/recipes/migrating-from-cron/#keeping-your-own-config-separate) has
+the full picture of the two-tier layout, which works identically here.
+
 ## How the pieces map
 
 A `[program]` is a long-running, auto-restarted process — which is exactly a

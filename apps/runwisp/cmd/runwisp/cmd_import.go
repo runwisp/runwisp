@@ -314,6 +314,14 @@ func stageError(err error, layout configedit.Layout) error {
 				"\n\nThat's a pre-existing problem, not a conflict with the import. Fix it, then re-run.",
 		}
 	}
+	return configEditError(err, layout)
+}
+
+// configEditError is the tail every config-writing command shares: a filesystem
+// failure names the file it couldn't touch, and anything else falls back to the
+// root config. Both `import --write` and `promote` end here, so the two never
+// drift in how they phrase "we couldn't update your config".
+func configEditError(err error, layout configedit.Layout) error {
 	var write *configedit.WriteError
 	if errors.As(err, &write) {
 		return &userFacingError{
@@ -321,7 +329,10 @@ func stageError(err error, layout configedit.Layout) error {
 			details: write.Err.Error(),
 		}
 	}
-	return &userFacingError{title: fmt.Sprintf("can't update %s", rootName), details: err.Error()}
+	return &userFacingError{
+		title:   fmt.Sprintf("can't update %s", filepath.Base(layout.RootPath)),
+		details: err.Error(),
+	}
 }
 
 // confirmAndWrite writes toml to target, prompting before clobbering an

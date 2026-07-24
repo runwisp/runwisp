@@ -49,6 +49,48 @@ func TestTxn_GateFailureRestoresEveryPreImage(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "a file that didn't exist must not survive a rollback")
 }
 
+// TestTxn_RemoveDeletesTheFile covers `promote` retiring the staging file once
+// its last entry has moved into the operator's own config.
+func TestTxn_RemoveDeletesTheFile(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{"staging.toml": "[tasks.a]\n"})
+	staging := filepath.Join(dir, "staging.toml")
+
+	txn := New()
+	txn.Remove(staging)
+	require.NoError(t, txn.Apply(nil))
+
+	_, err := os.Stat(staging)
+	assert.True(t, os.IsNotExist(err))
+}
+
+// TestTxn_RemoveOfAMissingFileIsNotAnError: the transaction's contract is the end
+// state, not the sequence of steps that got there.
+func TestTxn_RemoveOfAMissingFileIsNotAnError(t *testing.T) {
+	txn := New()
+	txn.Remove(filepath.Join(t.TempDir(), "never-existed.toml"))
+	assert.NoError(t, txn.Apply(nil))
+}
+
+// TestTxn_GateFailureRestoresARemovedFile is the rollback half of Remove: a
+// promote whose merged load fails must bring the staging file back, or the tasks
+// it held would vanish from the config entirely (Prime Directive #1).
+func TestTxn_GateFailureRestoresARemovedFile(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{"staging.toml": "[tasks.a]\nrun = \"a\"\n"})
+	staging := filepath.Join(dir, "staging.toml")
+	require.NoError(t, os.Chmod(staging, 0o640))
+
+	txn := New()
+	txn.Remove(staging)
+
+	sentinel := errors.New("gate says no")
+	require.ErrorIs(t, txn.Apply(func() error { return sentinel }), sentinel)
+
+	assert.Equal(t, "[tasks.a]\nrun = \"a\"\n", readFile(t, staging))
+	info, err := os.Stat(staging)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o640), info.Mode().Perm(), "the restored file keeps its mode")
+}
+
 // TestTxn_GateSeesTheWrittenFiles pins the ordering the merged-load gate depends
 // on: every queued file is on disk before the gate runs.
 func TestTxn_GateSeesTheWrittenFiles(t *testing.T) {

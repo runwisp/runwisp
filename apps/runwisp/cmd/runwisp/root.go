@@ -96,6 +96,7 @@ func init() {
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(importCmd)
+	rootCmd.AddCommand(promoteCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(statusCmd)
