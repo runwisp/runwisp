@@ -11,34 +11,8 @@ import (
 	"sort"
 )
 
-// ImportedStagingBase is the reserved basename of the machine-owned staging
-// file that `runwisp import` writes and `runwisp promote` rewrites. It lives at
-// <ImportedStagingSubdir>/<ImportedStagingBase> relative to the root config.
-// Tasks whose origin is this exact file are marked Staged (imported, not yet
-// promoted to native TOML) in the API/UI.
-const ImportedStagingBase = "imported.toml"
-
-// ImportedStagingSubdir is RunWisp's drop-in directory — the machine-managed
-// include dir the staging file lives in, relative to the root config directory.
-// Named after cron's own /etc/cron.d so migrating operators recognize it: their
-// cron.d/* jobs land in runwisp.d/*. (Distinct from a generic user-chosen
-// include dir like conf.d/; this one is owned by `import`/`promote`.)
-const ImportedStagingSubdir = "runwisp.d"
-
-// StagingFilePath returns the absolute path of the machine-owned staging file
-// (runwisp.d/imported.toml) relative to the given root config directory. It is the
-// single source of truth for where imports land and how provenance is derived,
-// shared by the loader, the importer, and `promote`.
-func StagingFilePath(rootDir string) string {
-	p := filepath.Join(rootDir, ImportedStagingSubdir, ImportedStagingBase)
-	if abs, err := filepath.Abs(p); err == nil {
-		return abs
-	}
-	return p
-}
-
 // loadWithIncludes loads the root config and any files pulled in via
-// [daemon].include, returning the merged result as a Config plus a sourceDirs
+// [daemon].include, returning the merged result as a Config plus an entrySources
 // map so later path resolution honors each entry's origin file.
 //
 // Merge semantics:
@@ -51,69 +25,60 @@ func StagingFilePath(rootDir string) string {
 //     [notify]) may appear only in the root — setting one in an included file
 //     is a hard error;
 //   - included files may not themselves include (flat-only).
-func loadWithIncludes(path string) (*Config, sourceDirs, error) {
+func loadWithIncludes(path string) (*Config, entrySources, error) {
 	rootDir := filepath.Dir(path)
+	rootAbs, err := filepath.Abs(path)
+	if err != nil {
+		rootAbs = path
+	}
 	rootData, err := os.ReadFile(path)
 	if err != nil {
-		return nil, sourceDirs{}, fmt.Errorf("failed to read config file: %w", err)
+		return nil, entrySources{}, fmt.Errorf("failed to read config file: %w", err)
 	}
 	root, err := parseWire(rootData, rootDir)
 	if err != nil {
-		return nil, sourceDirs{}, err
+		return nil, entrySources{}, err
 	}
 
-	dirs := sourceDirs{root: rootDir, byName: map[string]string{}}
-	// nameSource tracks which file defined each task/service/compose name so a
-	// cross-file collision can name both. Within-file collisions (a task and
-	// service sharing a name in one file) stay the job of buildConfig.
-	nameSource := map[string]string{}
+	src := entrySources{root: rootDir, byName: map[string]string{}}
 	for _, name := range entryNames(root) {
-		nameSource[name] = path
-		dirs.byName[name] = rootDir
+		src.byName[name] = rootAbs
 	}
 
 	globs, matched, err := resolveIncludes(root.Daemon.Include, rootDir, path)
 	if err != nil {
-		return nil, sourceDirs{}, err
+		return nil, entrySources{}, err
 	}
 
 	for _, incPath := range matched {
-		if err := mergeIncludeFile(root, incPath, path, nameSource, dirs.byName); err != nil {
-			return nil, sourceDirs{}, err
+		if err := mergeIncludeFile(root, incPath, path, src.byName); err != nil {
+			return nil, entrySources{}, err
 		}
 	}
 
 	cfg, err := buildConfig(root)
 	if err != nil {
-		return nil, sourceDirs{}, err
+		return nil, entrySources{}, err
 	}
-	markStaged(cfg, nameSource, rootDir)
+	cfg.origins = src.byName
+	markStaged(cfg, rootDir)
 	cfg.includeFiles = matched
 	cfg.includeGlobs = globs
-	return cfg, dirs, nil
+	return cfg, src, nil
 }
 
 // markStaged sets Task.Staged on every task whose origin file is the machine-
 // owned staging file, so the API/UI can surface the "imported, not yet native"
-// badge and Promote affordance. Origin is looked up from nameSource
-// (name → defining file); entries with no recorded origin — compose-generated
-// tasks, or any task in a single-file config — are never staged, and the root
-// config is never the staging file. Provenance is derived by exact path, not by
-// basename, so a stray file named imported.toml elsewhere is not mistaken for
-// the staging file. Re-derived every load, so promoting a task into the root
-// clears the flag automatically.
-func markStaged(cfg *Config, nameSource map[string]string, rootDir string) {
+// badge and Promote affordance. Entries with no recorded origin — compose-
+// generated tasks — are never staged, and the root config is never the staging
+// file. Provenance is derived by exact path, not by basename, so a stray file
+// named imported.toml elsewhere is not mistaken for the staging file.
+// Re-derived every load, so promoting a task into the root clears the flag
+// automatically.
+func markStaged(cfg *Config, rootDir string) {
 	staging := StagingFilePath(rootDir)
 	for i := range cfg.Tasks {
-		origin, ok := nameSource[cfg.Tasks[i].Name]
-		if !ok {
-			continue
-		}
-		originAbs, err := filepath.Abs(origin)
-		if err != nil {
-			continue
-		}
-		if originAbs == staging {
+		if cfg.OriginFile(cfg.Tasks[i].Name) == staging {
 			cfg.Tasks[i].Staged = true
 		}
 	}
@@ -122,7 +87,7 @@ func markStaged(cfg *Config, nameSource map[string]string, rootDir string) {
 // mergeIncludeFile reads and parses one included file, enforces the flat-only
 // (no nested include) and root-only-singleton rules, then folds its entries
 // into root. rootPath names the including file in error messages.
-func mergeIncludeFile(root *tomlConfig, incPath, rootPath string, nameSource, byName map[string]string) error {
+func mergeIncludeFile(root *tomlConfig, incPath, rootPath string, byName map[string]string) error {
 	incDir := filepath.Dir(incPath)
 	data, err := os.ReadFile(incPath)
 	if err != nil {
@@ -138,7 +103,7 @@ func mergeIncludeFile(root *tomlConfig, incPath, rootPath string, nameSource, by
 	if err := assertNoSingletons(inc, incPath); err != nil {
 		return err
 	}
-	return mergeWire(root, inc, incPath, incDir, nameSource, byName)
+	return mergeWire(root, inc, incPath, byName)
 }
 
 // entryNames returns the task, service, and compose-alias names declared in a
@@ -228,8 +193,8 @@ func assertNoSingletons(inc *tomlConfig, file string) error {
 // mergeWire folds an included wire into the root: it accumulates the
 // collections and records each entry's origin, rejecting any task / service /
 // compose-alias name already claimed by another file.
-func mergeWire(root, inc *tomlConfig, incPath, incDir string, nameSource, byName map[string]string) error {
-	if err := recordEntryOrigins(inc, incPath, incDir, nameSource, byName); err != nil {
+func mergeWire(root, inc *tomlConfig, incPath string, byName map[string]string) error {
+	if err := recordEntryOrigins(inc, incPath, byName); err != nil {
 		return err
 	}
 	mergeEntryTables(root, inc)
@@ -239,11 +204,11 @@ func mergeWire(root, inc *tomlConfig, incPath, incDir string, nameSource, byName
 }
 
 // recordEntryOrigins records each of the included file's entry names against
-// its origin file/dir, rejecting any name already claimed by another file. A
-// name repeated within the same file is left for buildConfig to report.
-func recordEntryOrigins(inc *tomlConfig, incPath, incDir string, nameSource, byName map[string]string) error {
+// its origin file, rejecting any name already claimed by another file. A name
+// repeated within the same file is left for buildConfig to report.
+func recordEntryOrigins(inc *tomlConfig, incPath string, byName map[string]string) error {
 	for _, name := range entryNames(inc) {
-		if prev, ok := nameSource[name]; ok {
+		if prev, ok := byName[name]; ok {
 			if prev == incPath {
 				// Two tables in this same file share a name (e.g. [tasks.x] and
 				// [services.x]); let buildConfig report it with its own phrasing.
@@ -251,8 +216,7 @@ func recordEntryOrigins(inc *tomlConfig, incPath, incDir string, nameSource, byN
 			}
 			return fmt.Errorf("duplicate task/service name %q defined in both %s and %s", name, prev, incPath)
 		}
-		nameSource[name] = incPath
-		byName[name] = incDir
+		byName[name] = incPath
 	}
 	return nil
 }

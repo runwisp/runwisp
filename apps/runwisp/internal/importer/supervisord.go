@@ -13,10 +13,19 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
+// SupervisordOptions tunes supervisord parsing.
+type SupervisordOptions struct {
+	// Existing carries the entries the live config already defines outside the
+	// machine-owned staging file that a re-import overwrites, so importing the
+	// same supervisord config twice after a `promote` skips the program it
+	// already owns instead of colliding on the merged load. See Owned.
+	Existing Owned
+}
+
 // ParseSupervisordFiles converts one or more supervisord config files into a
 // *Result, following [include] sections relative to each file's directory.
-func ParseSupervisordFiles(paths []string) (*Result, error) {
-	sd := newSupervisordState()
+func ParseSupervisordFiles(paths []string, opts SupervisordOptions) (*Result, error) {
+	sd := newSupervisordState(opts)
 	for _, p := range paths {
 		if err := sd.loadFile(p); err != nil {
 			return nil, err
@@ -28,25 +37,30 @@ func ParseSupervisordFiles(paths []string) (*Result, error) {
 // ParseSupervisordReader converts a single supervisord config read from r.
 // [include] directives can't be resolved without a base directory, so they
 // surface as a Note rather than being followed.
-func ParseSupervisordReader(r io.Reader) (*Result, error) {
+func ParseSupervisordReader(r io.Reader, opts SupervisordOptions) (*Result, error) {
 	sections, err := parseINI(r)
 	if err != nil {
 		return nil, err
 	}
-	sd := newSupervisordState()
+	sd := newSupervisordState(opts)
 	sd.collect(sections, "")
 	return sd.finish(), nil
 }
 
 type supervisordState struct {
 	res      *Result
-	dd       *deduper
+	names    *namer
 	sections []iniSection
 	visited  map[string]bool
 }
 
-func newSupervisordState() *supervisordState {
-	return &supervisordState{res: &Result{}, dd: newDeduper(), visited: map[string]bool{}}
+func newSupervisordState(opts SupervisordOptions) *supervisordState {
+	res := &Result{}
+	return &supervisordState{
+		res:     res,
+		names:   newNamer(res, opts.Existing),
+		visited: map[string]bool{},
+	}
 }
 
 func (sd *supervisordState) loadFile(path string) error {
@@ -170,8 +184,13 @@ func (sd *supervisordState) buildGroupMap() map[string]string {
 }
 
 func (sd *supervisordState) processProgram(rawName string, s *iniSection, group string) {
-	name := sd.dd.unique(sanitizeProgramName(rawName))
-	isService := sd.resolveIsService(s, name)
+	taskKind := programKind(s)
+	name, skip := sd.names.resolve(sanitizeProgramName(rawName), taskKind, programCommand(s, rawName))
+	if skip {
+		return
+	}
+	isService := taskKind.IsService()
+	sd.noteKindChoice(s, name)
 
 	prefix, kind, schedule := "services.", "service", "service"
 	if !isService {
@@ -194,27 +213,48 @@ func (sd *supervisordState) processProgram(rawName string, s *iniSection, group 
 	}
 }
 
-// resolveIsService decides whether a [program] maps onto a RunWisp service.
+// programKind decides whether a [program] maps onto a RunWisp service.
 // supervisord programs are long-running and restart by default, which maps onto
 // a RunWisp service (services are always-on and always restart). The one
 // exception is autorestart=false: that program runs once and is left alone,
 // which is a run-once task, not a service. supervisord's own default is
 // "unexpected", so an omitted autorestart still means service.
-func (sd *supervisordState) resolveIsService(s *iniSection, name string) bool {
+//
+// Pure, so the kind is available for identity dedup before any note is emitted —
+// noteKindChoice explains the non-obvious case once the final name is known.
+func programKind(s *iniSection) model.TaskKind {
 	v, ok := s.get("autorestart")
 	if !ok {
-		return true
+		return model.KindService
 	}
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "false":
-		return false
-	case "unexpected":
-		sd.res.addNote(LevelInfo, name,
-			"autorestart=unexpected → imported as an always-on service. RunWisp "+
-				"services restart on any exit, not only unexpected ones; set "+
-				"exit_codes if some non-zero codes should count as success.")
+	if strings.EqualFold(strings.TrimSpace(v), "false") {
+		return model.KindTask
 	}
-	return true
+	return model.KindService
+}
+
+// noteKindChoice explains an autorestart value whose mapping isn't obvious.
+func (sd *supervisordState) noteKindChoice(s *iniSection, name string) {
+	v, ok := s.get("autorestart")
+	if !ok || !strings.EqualFold(strings.TrimSpace(v), "unexpected") {
+		return
+	}
+	sd.res.addNote(LevelInfo, name,
+		"autorestart=unexpected → imported as an always-on service. RunWisp "+
+			"services restart on any exit, not only unexpected ones; set "+
+			"exit_codes if some non-zero codes should count as success.")
+}
+
+// programCommand returns the run line a program would import to, so identity
+// dedup can compare it before the block is built. Pure — applyCommand owns
+// emitting the notes and setting the field.
+func programCommand(s *iniSection, rawName string) string {
+	command, ok := s.get("command")
+	if !ok || strings.TrimSpace(command) == "" {
+		return ""
+	}
+	expanded, _ := expandSupervisordTokens(command, rawName)
+	return expanded
 }
 
 // applyCommand sets the run line from the program's command=, expanding the

@@ -14,6 +14,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/configedit"
 )
 
 // scaffoldIfMissing checks for a runwisp.toml at path. If it is absent and
@@ -66,10 +67,10 @@ func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "", "y", "yes":
 		if hasCompose {
-			if err := config.WriteInitWithCompose(path, composeFile, composeAlias); err != nil {
+			if err := configedit.WriteInitWithCompose(path, composeFile, composeAlias); err != nil {
 				return fmt.Errorf("write starter: %w", err)
 			}
-		} else if err := config.WriteInit(path); err != nil {
+		} else if err := configedit.WriteInit(path); err != nil {
 			return fmt.Errorf("write starter: %w", err)
 		}
 		fmt.Fprintf(out, "Created %s\n", path)

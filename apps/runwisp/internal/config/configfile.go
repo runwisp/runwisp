@@ -3,40 +3,24 @@
 
 package config
 
-import (
-	"fmt"
-	"os"
-	"strings"
-)
+import "strings"
 
-// WriteInit creates a starter runwisp.toml at path. It errors if the file
-// already exists. The contents are a minimal, self-documenting template;
-// the full schema reference lives in the docs.
-func WriteInit(path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("%s already exists", path)
-	}
-	return os.WriteFile(path, []byte(starterConfig), 0644)
+// This file holds the config templates RunWisp scaffolds from. They are content,
+// not I/O: internal/configedit owns writing them to disk, so the loader package
+// stays a pure reader.
+
+// StarterConfig returns the minimal, self-documenting runwisp.toml that
+// `runwisp init` / first-run scaffolds. The full schema reference lives in the
+// docs rather than in the template.
+func StarterConfig() string {
+	return starterConfig
 }
 
-// WriteInitForce creates a starter runwisp.toml at path, overwriting any
-// existing file.
-func WriteInitForce(path string) error {
-	return os.WriteFile(path, []byte(starterConfig), 0644)
-}
-
-// WriteInitWithCompose creates a runwisp.toml that imports an adjacent
-// docker-compose file. composeFilename is the basename of the discovered
-// compose file (e.g. "docker-compose.yml"); alias is the [compose.<alias>]
-// block name (usually the parent directory name, sanitized).
-func WriteInitWithCompose(path, composeFilename, alias string) error {
-	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("%s already exists", path)
-	}
-	return os.WriteFile(path, []byte(renderComposeStarter(composeFilename, alias)), 0644)
-}
-
-func renderComposeStarter(composeFilename, alias string) string {
+// ComposeStarterConfig returns the runwisp.toml that imports an adjacent
+// docker-compose file. composeFilename is the basename of the discovered compose
+// file (e.g. "docker-compose.yml"); alias is the [compose.<alias>] block name
+// (usually the parent directory name, sanitized).
+func ComposeStarterConfig(composeFilename, alias string) string {
 	r := strings.NewReplacer("{{compose}}", composeFilename, "{{alias}}", alias)
 	return r.Replace(composeStarterConfig)
 }

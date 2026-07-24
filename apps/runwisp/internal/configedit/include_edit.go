@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package config
+package configedit
 
 import (
 	"errors"
@@ -10,12 +10,8 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/runwisp/runwisp/internal/config"
 )
-
-// StagingIncludeGlob is the include pattern that `import` / `adopt` wire into the
-// root config so the machine-owned runwisp.d staging directory is picked up on
-// every load and reload.
-const StagingIncludeGlob = ImportedStagingSubdir + "/*.toml"
 
 // ErrIncludeNeedsManualWiring signals that the root config already declares a
 // [daemon].include that does not cover the staging file. RunWisp will not
@@ -38,7 +34,7 @@ var ErrIncludeNeedsManualWiring = errors.New("daemon.include needs manual wiring
 // rootDir is the directory the root config lives in, used to resolve include
 // patterns and locate the staging file.
 func EnsureStagingInclude(rootTOML []byte, rootDir string) (out []byte, changed bool, err error) {
-	staging := StagingFilePath(rootDir)
+	staging := config.StagingFilePath(rootDir)
 
 	var probe struct {
 		Daemon struct {
@@ -67,7 +63,7 @@ func EnsureStagingInclude(rootTOML []byte, rootDir string) (out []byte, changed 
 
 // stagingIncludeLine is the include declaration wired into the root config.
 func stagingIncludeLine() string {
-	return fmt.Sprintf("include = [%q]\n", StagingIncludeGlob)
+	return fmt.Sprintf("include = [%q]\n", config.StagingIncludeGlob)
 }
 
 // includeCovers reports whether any of the include patterns would match the
@@ -92,37 +88,19 @@ func includeCovers(patterns []string, rootDir, stagingAbs string) bool {
 
 // daemonHeaderEnd returns the byte offset just past the `[daemon]` table header
 // line (including its newline), so an inserted key becomes the table's first
-// entry. ok is false when there is no `[daemon]` header.
+// entry. ok is false when there is no `[daemon]` header. Lines inside a
+// multi-line string are skipped, so a `run = """ … [daemon] … """` body can't
+// lure the insertion into the middle of a value.
 func daemonHeaderEnd(text string) (int, bool) {
-	idx := 0
-	for idx < len(text) {
-		nl := strings.IndexByte(text[idx:], '\n')
-		lineEnd := len(text)
-		if nl >= 0 {
-			lineEnd = idx + nl + 1
+	for _, ln := range scanTOMLLines(text) {
+		if !ln.Code {
+			continue
 		}
-		line := text[idx:lineEnd]
-		if isTableHeader(line, "daemon") {
-			return lineEnd, true
+		if name, array, ok := tableHeader(ln.Text); ok && !array && name == "daemon" {
+			return ln.End, true
 		}
-		if nl < 0 {
-			break
-		}
-		idx = lineEnd
 	}
 	return 0, false
-}
-
-// isTableHeader reports whether a line is the `[name]` table header, allowing
-// surrounding whitespace and a trailing comment.
-func isTableHeader(line, name string) bool {
-	t := strings.TrimSpace(line)
-	prefix := "[" + name + "]"
-	if !strings.HasPrefix(t, prefix) {
-		return false
-	}
-	rest := strings.TrimSpace(t[len(prefix):])
-	return rest == "" || strings.HasPrefix(rest, "#")
 }
 
 // ensureTrailingNewline appends a newline when text doesn't end with one, so

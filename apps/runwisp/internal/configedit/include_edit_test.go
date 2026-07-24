@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-package config
+package configedit
 
 import (
 	"errors"
@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,6 +74,33 @@ func TestEnsureStagingInclude_AppendsWhenNoTrailingNewline(t *testing.T) {
 	assert.Contains(t, string(out), "[daemon]")
 }
 
+// TestEnsureStagingInclude_IgnoresHeaderInsideMultilineString guards the sharp
+// edge of editing TOML as text: a `run` body can contain a line that reads
+// exactly like a table header. Inserting the include line there would bury it
+// inside a shell script — a config that still parses but silently loads nothing.
+func TestEnsureStagingInclude_IgnoresHeaderInsideMultilineString(t *testing.T) {
+	root := "[tasks.deploy]\nrun = \"\"\"\n" +
+		"cat <<EOF > /tmp/other.toml\n" +
+		"[daemon]\n" +
+		"shutdown_timeout = \"1s\"\n" +
+		"EOF\n" +
+		"\"\"\"\n\n" +
+		"[daemon]\nshutdown_timeout = \"10s\"\n"
+
+	out, changed, err := EnsureStagingInclude([]byte(root), "/etc/runwisp")
+	require.NoError(t, err)
+	require.True(t, changed)
+	s := string(out)
+
+	// The include must land after the real table, not after the [daemon] line
+	// that lives inside the heredoc.
+	realDaemon := strings.LastIndex(s, "[daemon]\n")
+	include := strings.Index(s, `include = ["runwisp.d/*.toml"]`)
+	assert.Greater(t, include, realDaemon, "include line must follow the real [daemon] table:\n%s", s)
+	assert.Contains(t, s, "cat <<EOF > /tmp/other.toml\n[daemon]\nshutdown_timeout = \"1s\"\nEOF\n",
+		"the run body must come through untouched")
+}
+
 // TestEnsureStagingInclude_WiredConfigLoads proves the surgically-wired root
 // actually loads and picks up the staging file end-to-end.
 func TestEnsureStagingInclude_WiredConfigLoads(t *testing.T) {
@@ -89,7 +117,7 @@ func TestEnsureStagingInclude_WiredConfigLoads(t *testing.T) {
 	require.True(t, changed)
 	require.NoError(t, os.WriteFile(rootPath, wired, 0o600))
 
-	cfg, err := Load(rootPath)
+	cfg, err := config.Load(rootPath)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"native", "imported"}, taskNames(cfg))
 	assert.True(t, findTask(t, cfg, "imported").Staged)

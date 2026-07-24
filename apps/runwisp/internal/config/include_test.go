@@ -304,3 +304,50 @@ func TestInclude_StagedNotSetForSingleFileConfig(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, findTask(t, cfg, "solo").Staged, "root config is never the staging file")
 }
+
+// TestInclude_OriginFile pins the accessor the two-tier tooling reads: which file
+// defined each entry. `promote` needs it to know which file to move a task out
+// of, and Task.Staged is derived from it.
+func TestInclude_OriginFile(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include = ["runwisp.d/*.toml", "conf.d/*.toml"]
+
+[tasks.native]
+run = "echo root"
+`,
+		"runwisp.d/imported.toml":   "[tasks.staged]\nrun = \"echo staged\"\n",
+		"conf.d/hand_authored.toml": "[tasks.hand]\nrun = \"echo hand\"\n",
+	})
+	rootPath := filepath.Join(dir, "runwisp.toml")
+	cfg, err := Load(rootPath)
+	require.NoError(t, err)
+
+	assert.Equal(t, rootPath, cfg.OriginFile("native"))
+	assert.Equal(t, StagingFilePath(dir), cfg.OriginFile("staged"))
+	assert.Equal(t, filepath.Join(dir, "conf.d", "hand_authored.toml"), cfg.OriginFile("hand"))
+	assert.Empty(t, cfg.OriginFile("nonexistent"), "an unknown name has no origin")
+}
+
+// TestInclude_OriginFileForComposeTasks documents the one gap in origin
+// tracking: compose-generated tasks are named after the alias plus the compose
+// service, so they have no TOML table of their own to point at. They are
+// consequently never staged either.
+func TestInclude_OriginFileForComposeTasks(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml":       "[daemon]\ninclude = [\"runwisp.d/*.toml\"]\n",
+		"docker-compose.yml": "services:\n  web:\n    image: nginx\n",
+		"runwisp.d/imported.toml": `
+[compose.stack]
+file = "../docker-compose.yml"
+`,
+	})
+	cfg, err := Load(filepath.Join(dir, "runwisp.toml"))
+	require.NoError(t, err)
+
+	task := findTask(t, cfg, "stack.web")
+	assert.Empty(t, cfg.OriginFile(task.Name), "a compose-generated task has no defining table")
+	assert.False(t, task.Staged)
+	assert.Equal(t, StagingFilePath(dir), cfg.OriginFile("stack"), "the alias itself has an origin")
+}

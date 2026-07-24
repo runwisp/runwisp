@@ -6,6 +6,8 @@ package importer
 import (
 	"strings"
 	"testing"
+
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 func parseCron(t *testing.T, in string, opts CronOptions) *Result {
@@ -123,7 +125,7 @@ func TestCronExistingSkipsSameCommand(t *testing.T) {
 	// A job whose derived name AND command already exist in the live config
 	// (typically promoted into the root TOML) is skipped on re-import, with an
 	// info note so the skip is never silent.
-	opts := CronOptions{Existing: map[string]string{"backup": "/usr/bin/backup.sh --full"}}
+	opts := CronOptions{Existing: Owned{"backup": {Kind: model.KindTask, Run: "/usr/bin/backup.sh --full"}}}
 	res := parseCron(t, "30 2 * * * /usr/bin/backup.sh --full\n", opts)
 	if tasks, _ := res.Counts(); tasks != 0 {
 		t.Fatalf("expected the matching job to be skipped, got %d tasks", tasks)
@@ -137,7 +139,7 @@ func TestCronExistingSkipsSameCommand(t *testing.T) {
 func TestCronExistingRenamesDifferentCommand(t *testing.T) {
 	// Same derived name but a DIFFERENT command is a genuine clash: the job is
 	// preserved under name-2 rather than colliding with the existing task.
-	opts := CronOptions{Existing: map[string]string{"backup": "/opt/something-else"}}
+	opts := CronOptions{Existing: Owned{"backup": {Kind: model.KindTask, Run: "/opt/something-else"}}}
 	res := parseCron(t, "30 2 * * * /usr/bin/backup.sh --full\n", opts)
 	out := res.TOML()
 	mustNotContain(t, out, "[tasks.backup]")
@@ -149,13 +151,21 @@ func TestCronExistingRenamesDifferentCommand(t *testing.T) {
 }
 
 func TestCronExistingServiceForcesRename(t *testing.T) {
-	// A clash against a service (empty-command sentinel) always renames, never
-	// skips — a service and a task are different things even at the same name.
-	opts := CronOptions{Existing: map[string]string{"worker": ""}}
+	// A clash against a service always renames, never skips — a service and a
+	// task are different things even at the same name with the same command.
+	opts := CronOptions{Existing: Owned{"worker": {Kind: model.KindService, Run: "/usr/bin/worker"}}}
 	res := parseCron(t, "* * * * * /usr/bin/worker\n", opts)
 	out := res.TOML()
 	mustNotContain(t, out, "[tasks.worker]")
 	mustContain(t, out, "[tasks.worker-2]")
+}
+
+func TestCronExistingCommandlessEntryForcesRename(t *testing.T) {
+	// A compose-backed task has no comparable one-shot command. Two entries that
+	// merely both lack a command are not the same job, so this renames.
+	opts := CronOptions{Existing: Owned{"worker": {Kind: model.KindTask, Run: ""}}}
+	res := parseCron(t, "* * * * * \n", opts)
+	mustNotContain(t, res.TOML(), "[tasks.worker]")
 }
 
 func TestCronNameDedupe(t *testing.T) {

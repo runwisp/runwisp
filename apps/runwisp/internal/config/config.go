@@ -77,7 +77,7 @@ func applyTLSEnvOverride(cfg *Config) error {
 // the root config: included TOML files plus each env_file, each against the dir
 // of the config that declared it. secrets_file is intentionally excluded,
 // matching the pre-include behavior.
-func collectWatchFiles(cfg *Config, dirs sourceDirs) []string {
+func collectWatchFiles(cfg *Config, dirs entrySources) []string {
 	files := append([]string(nil), cfg.includeFiles...)
 	if cfg.Defaults.EnvFile != "" {
 		files = append(files, resolveAgainst(dirs.root, cfg.Defaults.EnvFile))
@@ -90,20 +90,22 @@ func collectWatchFiles(cfg *Config, dirs sourceDirs) []string {
 	return files
 }
 
-// sourceDirs maps each task/service/compose-alias name to the directory of the
-// config file that defined it, so an included file's relative paths (env_file,
-// secrets_file, compose_file, working_dir) resolve against its own location
-// rather than the root config. Names with no recorded origin — compose-
-// generated tasks, or any task in a single-file config — fall back to root.
-type sourceDirs struct {
+// entrySources maps each task/service/compose-alias name to the absolute path of
+// the config file that defined it. It answers two questions with one map: which
+// directory an entry's relative paths (env_file, secrets_file, compose_file,
+// working_dir) resolve against, and which file an entry came from — the latter
+// being what Task.Staged is derived from and what `promote` needs to know.
+// Names with no recorded origin — compose-generated tasks — fall back to the
+// root config dir.
+type entrySources struct {
 	root   string
 	byName map[string]string
 }
 
 // dir returns the base directory for the named entry's relative paths.
-func (s sourceDirs) dir(name string) string {
-	if d, ok := s.byName[name]; ok {
-		return d
+func (s entrySources) dir(name string) string {
+	if f, ok := s.byName[name]; ok {
+		return filepath.Dir(f)
 	}
 	return s.root
 }
@@ -113,7 +115,7 @@ func (s sourceDirs) dir(name string) string {
 // inline entries override file entries, docker-compose-style. Relative paths
 // are resolved against baseDir (the runwisp.toml directory). Dotenv file
 // contents are taken literally; ${...} substitution applies only to TOML.
-func resolveEnvLayers(cfg *Config, dirs sourceDirs) error {
+func resolveEnvLayers(cfg *Config, dirs entrySources) error {
 	var err error
 	// [defaults] is root-only, so its env_file/secrets_file always resolve
 	// against the root config dir.
@@ -155,7 +157,7 @@ func mergeEnvFileLayer(baseDir, file string, inline map[string]string, scope str
 // path already resolves to absolute during expansion, so those are skipped by
 // the IsAbs guard. WorkingDir defaults to the file's directory so the CLI runs
 // from there, matching docker compose's own behaviour.
-func resolveComposePaths(cfg *Config, dirs sourceDirs) error {
+func resolveComposePaths(cfg *Config, dirs entrySources) error {
 	for i := range cfg.Tasks {
 		ce, ok := cfg.Tasks[i].ExecutionDef.(*model.ComposeExecution)
 		if !ok || ce.File == "" || filepath.IsAbs(ce.File) {
@@ -180,7 +182,7 @@ func resolveComposePaths(cfg *Config, dirs sourceDirs) error {
 // Existence is checked at run time, not load — like shell, host paths are
 // resolved against the daemon's namespace, which may differ from the one
 // `runwisp validate` runs in.
-func resolveWorkingDirs(cfg *Config, dirs sourceDirs) error {
+func resolveWorkingDirs(cfg *Config, dirs entrySources) error {
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
 		if task.WorkingDir == "" {

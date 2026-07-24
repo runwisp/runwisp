@@ -35,6 +35,24 @@ type Config struct {
 	includeFiles []string
 	includeGlobs []string
 	watchFiles   []string
+
+	// origins maps each task/service/compose-alias name to the absolute path of
+	// the config file that defined it. Load-time bookkeeping behind OriginFile;
+	// never reaches the API/UI, which sees only the derived Task.Staged bool.
+	origins map[string]string
+}
+
+// OriginFile returns the absolute path of the config file that defined the
+// named task, service, or compose alias. It returns "" for a name the config
+// doesn't define and for compose-generated tasks, whose definition comes from
+// the compose file's alias rather than a TOML table of their own.
+//
+// This is how a caller tells a hand-authored entry from one that lives in the
+// machine-owned staging file (compare against StagingFilePath) — the loader
+// derives Task.Staged from it, and `promote` uses it to decide which file to
+// move a task out of.
+func (c *Config) OriginFile(name string) string {
+	return c.origins[name]
 }
 
 // Scheduler holds scheduler-wide settings. Timezone is the IANA name used to

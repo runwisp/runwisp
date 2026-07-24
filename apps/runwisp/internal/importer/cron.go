@@ -25,15 +25,11 @@ type CronOptions struct {
 	// TODO banner — when a job line looks like it carries a user column. It is
 	// left off when the operator forces the format with --system / --system=false.
 	Detect bool
-	// Existing carries the task/service names already defined in the live config's
-	// OTHER files — the merged config minus the machine-owned staging file that a
-	// re-import overwrites. It powers identity-aware dedup so re-importing after a
-	// `promote` doesn't collide: a job whose derived name AND command match an
-	// existing task is skipped (already owned by the root config); a name-only
-	// clash is renamed to name-2 rather than duplicating. The value is the
-	// existing task's run command, or "" for entries with no comparable command
-	// (services, compose) which therefore always force a rename, never a skip.
-	Existing map[string]string
+	// Existing carries the entries the live config already defines outside the
+	// machine-owned staging file that a re-import overwrites, so importing the
+	// same crontab twice after a `promote` skips the job it already owns instead
+	// of colliding on the merged load. See Owned.
+	Existing Owned
 }
 
 // cronWrappers are leading command tokens that don't name the real program, so
@@ -61,19 +57,14 @@ var cronInterpreters = map[string]bool{
 // losing them. The io.Reader contract makes it trivial to feed `crontab -l`
 // over a pipe.
 func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
+	res := &Result{}
 	cp := &crontabParser{
-		res:      &Result{},
-		dd:       newDeduper(),
-		opts:     opts,
-		existing: opts.Existing,
+		res:   res,
+		names: newNamer(res, opts.Existing),
+		opts:  opts,
 		// system can be flipped on mid-parse when Detect spots the header legend.
 		system: opts.System,
 		env:    map[string]string{},
-	}
-	// Reserve names the live config already owns so a name clash renames to
-	// name-2 instead of emitting a duplicate that fails the merged load.
-	for name := range opts.Existing {
-		cp.dd.reserve(name)
 	}
 
 	sc := bufio.NewScanner(r)
@@ -93,14 +84,13 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 // crontabParser carries the running state of a single crontab parse so the
 // per-line classification stays out of ParseCrontab's hot loop.
 type crontabParser struct {
-	res  *Result
-	dd   *deduper
-	opts CronOptions
+	res   *Result
+	names *namer
+	opts  CronOptions
 
 	system    bool
 	ambiguous bool
 
-	existing       map[string]string // name → run of tasks already owned by other config files
 	env            map[string]string
 	shell          string
 	timezone       string
@@ -201,29 +191,6 @@ func (cp *crontabParser) assemble() {
 	cp.res.blocks = append(cp.res.blocks, cp.jobs...)
 }
 
-// resolveJobName picks the task name for a job, applying identity-aware dedup
-// against the live config (populated on a two-tier re-import). It returns
-// skip=true when the job is already owned by the root config (same derived name
-// AND same command — typically a promoted job still in the crontab), and
-// otherwise a unique name, renamed when a different command already claims the
-// base. Both non-trivial outcomes leave an info note so the choice is never
-// silent.
-func (cp *crontabParser) resolveJobName(command string) (name string, skip bool) {
-	base := deriveCronName(command)
-	existingCmd, reserved := cp.existing[base]
-	if reserved && existingCmd != "" && sameCommand(existingCmd, command) {
-		cp.res.addNote(LevelInfo, base,
-			"already defined in runwisp.toml with the same command — skipped re-importing it.")
-		return "", true
-	}
-	name = cp.dd.unique(base)
-	if reserved && name != base {
-		cp.res.addNote(LevelInfo, name,
-			"runwisp.toml already defines \""+base+"\" with a different command — imported this one as \""+name+"\".")
-	}
-	return name, false
-}
-
 // buildJob turns one schedule+command line into its [tasks.NAME] block plus,
 // when the crontab set SHELL / CRON_TZ / env vars in effect above it, the
 // matching per-task fields and a [tasks.NAME.env] child block. Cron applies
@@ -235,7 +202,7 @@ func (cp *crontabParser) buildJob(line string) ([]block, bool) {
 		return nil, false
 	}
 
-	name, skip := cp.resolveJobName(command)
+	name, skip := cp.names.resolve(deriveCronName(command), model.KindTask, command)
 	if skip {
 		return nil, true
 	}
@@ -526,14 +493,6 @@ func splitFields(s string, n int) (tokens []string, rest string, ok bool) {
 		i++
 	}
 	return tokens, s[i:], true
-}
-
-// sameCommand reports whether an imported crontab command matches the run of a
-// task the live config already owns. `promote` preserves the command verbatim,
-// so trimmed equality reliably identifies "the same job" — the signal for
-// skipping a re-import rather than renaming it.
-func sameCommand(a, b string) bool {
-	return strings.TrimSpace(a) == strings.TrimSpace(b)
 }
 
 func truncate(s string, max int) string {

@@ -6,11 +6,18 @@ package importer
 import (
 	"strings"
 	"testing"
+
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 func parseSup(t *testing.T, in string) *Result {
 	t.Helper()
-	res, err := ParseSupervisordReader(strings.NewReader(in))
+	return parseSupWith(t, in, SupervisordOptions{})
+}
+
+func parseSupWith(t *testing.T, in string, opts SupervisordOptions) *Result {
+	t.Helper()
+	res, err := ParseSupervisordReader(strings.NewReader(in), opts)
 	if err != nil {
 		t.Fatalf("ParseSupervisordReader: %v", err)
 	}
@@ -194,4 +201,49 @@ func TestSupervisordContinuationLines(t *testing.T) {
 	out := parseSup(t, in).TOML()
 	mustContain(t, out, `A = "1"`)
 	mustContain(t, out, `B = "2"`)
+}
+
+func TestSupervisordExistingSkipsSameProgram(t *testing.T) {
+	// A program already promoted into the root TOML — same name, same kind, same
+	// command — is skipped on re-import rather than emitted a second time, which
+	// would fail the merged load. The cron path has always done this; supervisord
+	// must too, or `import supervisord --write` breaks after a promote.
+	opts := SupervisordOptions{Existing: Owned{"web": {Kind: model.KindService, Run: "/usr/bin/web --serve"}}}
+	res := parseSupWith(t, "[program:web]\ncommand=/usr/bin/web --serve\n", opts)
+	if _, services := res.Counts(); services != 0 {
+		t.Fatalf("expected the matching program to be skipped, got %d services", services)
+	}
+	mustNotContain(t, res.TOML(), "[services.web]")
+	if !hasNote(res, LevelInfo, "skipped re-importing") {
+		t.Fatalf("expected a skip note, got %+v", res.Notes)
+	}
+}
+
+func TestSupervisordExistingRenamesDifferentCommand(t *testing.T) {
+	opts := SupervisordOptions{Existing: Owned{"web": {Kind: model.KindService, Run: "/opt/other"}}}
+	res := parseSupWith(t, "[program:web]\ncommand=/usr/bin/web --serve\n", opts)
+	out := res.TOML()
+	mustNotContain(t, out, "[services.web]")
+	mustContain(t, out, "[services.web-2]")
+	if !hasNote(res, LevelInfo, "imported this one as") {
+		t.Fatalf("expected a rename note, got %+v", res.Notes)
+	}
+}
+
+func TestSupervisordExistingTaskDoesNotMatchService(t *testing.T) {
+	// autorestart is unset, so this program imports as a service. An existing
+	// *task* of the same name and command is a different thing — rename, not skip.
+	opts := SupervisordOptions{Existing: Owned{"web": {Kind: model.KindTask, Run: "/usr/bin/web --serve"}}}
+	res := parseSupWith(t, "[program:web]\ncommand=/usr/bin/web --serve\n", opts)
+	mustContain(t, res.TOML(), "[services.web-2]")
+}
+
+// TestSupervisordSkipEmitsNoOtherNotes makes sure a skipped program doesn't leave
+// behind commentary about a task that was never imported.
+func TestSupervisordSkipEmitsNoOtherNotes(t *testing.T) {
+	opts := SupervisordOptions{Existing: Owned{"web": {Kind: model.KindService, Run: "/usr/bin/web"}}}
+	res := parseSupWith(t, "[program:web]\ncommand=/usr/bin/web\nautorestart=unexpected\n", opts)
+	if hasNote(res, LevelInfo, "autorestart=unexpected") {
+		t.Fatalf("a skipped program must not explain a mapping that never happened: %+v", res.Notes)
+	}
 }

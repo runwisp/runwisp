@@ -97,7 +97,7 @@ func TestSupervisordGolden(t *testing.T) {
 				t.Fatalf("open fixture: %v", err)
 			}
 			defer f.Close()
-			res, err := ParseSupervisordReader(f)
+			res, err := ParseSupervisordReader(f, SupervisordOptions{})
 			if err != nil {
 				t.Fatalf("ParseSupervisordReader: %v", err)
 			}
@@ -112,7 +112,7 @@ func TestSupervisordGolden(t *testing.T) {
 // on disk. This can only be tested with real files, which is the whole point of
 // fixture-based tests.
 func TestSupervisordIncludeGolden(t *testing.T) {
-	res, err := ParseSupervisordFiles([]string{"testdata/supervisord/include/supervisord.conf"})
+	res, err := ParseSupervisordFiles([]string{"testdata/supervisord/include/supervisord.conf"}, SupervisordOptions{})
 	if err != nil {
 		t.Fatalf("ParseSupervisordFiles: %v", err)
 	}

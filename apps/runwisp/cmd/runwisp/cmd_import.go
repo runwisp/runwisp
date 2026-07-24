@@ -11,11 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/internal/importer"
 	"github.com/spf13/cobra"
 )
@@ -108,12 +107,7 @@ func init() {
 }
 
 func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cronOpts importer.CronOptions, f Flags, opts importOpts) error {
-	// A two-tier --write dedupes against what the root config already owns, so a
-	// re-import after `promote` skips the same job and renames a genuine clash
-	// instead of colliding on the merged load.
-	if opts.write && opts.output == "" {
-		cronOpts.Existing = existingEntryCommands(f.CfgFile)
-	}
+	cronOpts.Existing = ownedEntries(f, opts)
 
 	r, closeFn, err := openImportSource(source, stdin)
 	if err != nil {
@@ -129,6 +123,7 @@ func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cron
 }
 
 func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {
+	svOpts := importer.SupervisordOptions{Existing: ownedEntries(f, opts)}
 	var res *importer.Result
 	var err error
 	switch {
@@ -140,21 +135,39 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 				details: "Pass a config file, or pipe one in — e.g. `cat supervisord.conf | runwisp import supervisord`.",
 			}
 		}
-		res, err = importer.ParseSupervisordReader(stdin)
+		res, err = importer.ParseSupervisordReader(stdin, svOpts)
 	case len(sources) == 1 && sources[0] == "-":
-		res, err = importer.ParseSupervisordReader(stdin)
+		res, err = importer.ParseSupervisordReader(stdin, svOpts)
 	default:
 		for _, s := range sources {
 			if s == "-" {
 				return &userFacingError{title: "can't mix - (stdin) with file paths for supervisord import"}
 			}
 		}
-		res, err = importer.ParseSupervisordFiles(sources)
+		res, err = importer.ParseSupervisordFiles(sources, svOpts)
 	}
 	if err != nil {
 		return &userFacingError{title: "failed to read supervisord config", details: err.Error()}
 	}
 	return emitImport(stdout, stderr, stdin, res, "supervisord config", f, opts)
+}
+
+// ownedEntries snapshots what the live config already owns, so a two-tier
+// re-import skips a job it already holds and renames a genuine clash instead of
+// colliding on the merged load. Only the two-tier `--write` path merges into an
+// existing config; -o and stdout produce a standalone file that reserves
+// nothing. A config that doesn't load reserves nothing either — the write is
+// gated on the merged load anyway, and configedit reports an already-broken
+// config as such rather than blaming the import.
+func ownedEntries(f Flags, opts importOpts) importer.Owned {
+	if !opts.write || opts.output != "" {
+		return nil
+	}
+	cfg, err := config.Load(f.CfgFile)
+	if err != nil {
+		return nil
+	}
+	return importer.OwnedFrom(cfg.Tasks)
 }
 
 // resolveImportSource returns the given file path or "-" (stdin) for piped input.
@@ -231,7 +244,7 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 	// the root config's include is wired to pick them up. -o always means "give
 	// me a standalone file at this path", the unchanged single-file flow.
 	if opts.write && opts.output == "" {
-		return emitTwoTier(stderr, f.CfgFile, toml, res, sourceLabel, validationErr, opts)
+		return stageImport(stderr, f.CfgFile, toml, res, sourceLabel, validationErr, opts)
 	}
 
 	if opts.output == "" {
@@ -239,15 +252,76 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 		if _, err := io.WriteString(stdout, toml); err != nil {
 			return err
 		}
-		printImportSummary(stderr, res, sourceLabel, "", validationErr, opts)
+		printImportSummary(stderr, res, sourceLabel, opts, singleFileEpilogue("", validationErr))
 		return nil
 	}
 
 	if err := confirmAndWrite(stderr, stdin, opts.output, toml, opts); err != nil {
 		return err
 	}
-	printImportSummary(stderr, res, sourceLabel, opts.output, validationErr, opts)
+	printImportSummary(stderr, res, sourceLabel, opts, singleFileEpilogue(opts.output, validationErr))
 	return nil
+}
+
+// stageImport installs the import in the two-tier managed layout and reports
+// what happened. configedit owns the write itself — the atomic two-file
+// transaction, the include wiring, and the merged-load gate; this function maps
+// its outcomes onto the CLI's voice.
+//
+// contentErr is the pre-known validation error of the generated content itself
+// (an unparseable cron that became a `# TODO`). When set, the write skips the
+// load gate so the files are kept for the operator to fix in place — matching
+// the single-file --write behavior, and the reason the TODO was emitted at all.
+func stageImport(stderr io.Writer, rootPath, stagingContent string, res *importer.Result, sourceLabel string, contentErr error, opts importOpts) error {
+	layout := configedit.NewLayout(rootPath)
+	staged, err := configedit.Stage(configedit.StageRequest{
+		Layout:   layout,
+		Staging:  []byte(stagingContent),
+		Validate: contentErr == nil,
+	})
+	if err != nil {
+		return stageError(err, layout)
+	}
+	printImportSummary(stderr, res, sourceLabel, opts, twoTierEpilogue(res, staged, layout, contentErr))
+	return nil
+}
+
+// stageError translates a configedit failure into the CLI's voice. Every case
+// here left the operator's config exactly as it was.
+func stageError(err error, layout configedit.Layout) error {
+	rootName := filepath.Base(layout.RootPath)
+
+	if errors.Is(err, configedit.ErrIncludeNeedsManualWiring) {
+		return &userFacingError{
+			title: fmt.Sprintf("%s already sets a custom [daemon].include", rootName),
+			details: fmt.Sprintf(
+				"Add %q to that list, then re-run `runwisp import cron --write`. Nothing was written.",
+				config.StagingIncludeGlob),
+		}
+	}
+	var conflict *configedit.ConflictError
+	if errors.As(err, &conflict) {
+		return &userFacingError{
+			title:   "import conflicts with your existing config — nothing was written",
+			details: conflict.Err.Error(),
+		}
+	}
+	var preexisting *configedit.PreexistingError
+	if errors.As(err, &preexisting) {
+		return &userFacingError{
+			title: fmt.Sprintf("%s didn't load before this import either — nothing was written", rootName),
+			details: preexisting.Err.Error() +
+				"\n\nThat's a pre-existing problem, not a conflict with the import. Fix it, then re-run.",
+		}
+	}
+	var write *configedit.WriteError
+	if errors.As(err, &write) {
+		return &userFacingError{
+			title:   fmt.Sprintf("can't write %s", write.Path),
+			details: write.Err.Error(),
+		}
+	}
+	return &userFacingError{title: fmt.Sprintf("can't update %s", rootName), details: err.Error()}
 }
 
 // confirmAndWrite writes toml to target, prompting before clobbering an
@@ -297,98 +371,4 @@ func validateGeneratedTOML(toml string) error {
 	}
 	_, err = config.Load(path)
 	return err
-}
-
-// importStyles carries the small palette shared by the import summaries.
-type importStyles struct {
-	ok, attn, dim lipgloss.Style
-}
-
-func newImportStyles() importStyles {
-	return importStyles{
-		ok:   lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"}),
-		attn: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"}),
-		dim:  lipgloss.NewStyle().Faint(true),
-	}
-}
-
-// printImportItems renders the per-item list (✓ clean, ! needs attention).
-func printImportItems(w io.Writer, res *importer.Result, st importStyles) {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	for _, it := range res.Items() {
-		mark := st.ok.Render("✓")
-		if it.Attention {
-			mark = st.attn.Render("!")
-		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\n", mark, it.Name, st.dim.Render(it.Schedule))
-	}
-	_ = tw.Flush()
-}
-
-// printImportNotes renders the notes block, if any.
-func printImportNotes(w io.Writer, res *importer.Result, st importStyles) {
-	if len(res.Notes) == 0 {
-		return
-	}
-	fmt.Fprintln(w, "\nNotes:")
-	for _, n := range res.Notes {
-		bullet := st.dim.Render("•")
-		if n.Level == importer.LevelAttention {
-			bullet = st.attn.Render("!")
-		}
-		scope := ""
-		if n.Scope != "" {
-			scope = st.dim.Render("[" + n.Scope + "] ")
-		}
-		fmt.Fprintf(w, "  %s %s%s\n", bullet, scope, n.Message)
-	}
-}
-
-// printImportSummary writes the human-friendly overview to stderr: counts, a
-// per-item list (✓ clean, ! needs attention), the notes, and next steps.
-func printImportSummary(w io.Writer, res *importer.Result, sourceLabel, target string, validationErr error, opts importOpts) {
-	if opts.quiet {
-		return
-	}
-	st := newImportStyles()
-
-	tasks, services := res.Counts()
-	fmt.Fprintf(w, "\nImported %s → %s\n", sourceLabel, pluralizeCounts(tasks, services))
-	printImportItems(w, res, st)
-	printImportNotes(w, res, st)
-
-	fmt.Fprintln(w)
-	if validationErr != nil {
-		fmt.Fprintf(w, "%s the generated config didn't validate yet:\n  %s\n",
-			st.attn.Render("!"), validationErr.Error())
-		fmt.Fprintln(w, "Fix the items above, then re-run `runwisp validate`.")
-		return
-	}
-	switch {
-	case target != "":
-		fmt.Fprintf(w, "Wrote %s. Review it, then run `runwisp validate`.\n", target)
-	default:
-		fmt.Fprintln(w, "Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.")
-	}
-}
-
-func pluralizeCounts(tasks, services int) string {
-	var parts []string
-	if tasks > 0 {
-		parts = append(parts, fmt.Sprintf("%d %s", tasks, plural(tasks, "task", "tasks")))
-	}
-	if services > 0 {
-		parts = append(parts, fmt.Sprintf("%d %s", services, plural(services, "service", "services")))
-	}
-	if len(parts) == 0 {
-		return "nothing"
-	}
-	return strings.Join(parts, ", ")
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }

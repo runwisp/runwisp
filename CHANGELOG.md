@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`runwisp import supervisord --write` dedupes against your config like `import cron` does.** Re-importing a supervisord config after promoting one of its programs into your root TOML now skips the program you already own instead of failing the whole import on a duplicate name. See [Migrating from cron](https://docs.runwisp.com/recipes/migrating-from-cron/).
+- **An import into an already-broken config says so** instead of reporting it as a conflict with the incoming jobs. Either way nothing is written, but the message now points at the pre-existing problem rather than at a clash that doesn't exist.
+- **Wiring `[daemon].include` is not fooled by a `[daemon]` line inside a multi-line `run` script**, and rewriting a config keeps the file's existing permissions rather than widening them to the default.
+
 - **A second daemon started against a data dir already owned by a live daemon refuses to start**, and PID-file cleanup removes the file only while it still holds that daemon's own PID, so a running daemon stays managable via `stop`/`restart`/`reload`.
 - **`stop` and `restart` confirm the recorded PID still belongs to a RunWisp daemon before signalling it**, so a recycled stale PID leaves an unrelated process untouched.
 - **The background daemon spawned by the launcher (and `runwisp demo`) inherits the launcher's `--host` and `--socket`**, binding where the operator probed instead of defaulting to loopback and the default socket path.

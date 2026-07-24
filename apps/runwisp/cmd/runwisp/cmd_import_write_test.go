@@ -47,6 +47,17 @@ func importTwoTier(t *testing.T, cfgPath, crontab string) (stderr string, err er
 	return errb.String(), err
 }
 
+// importSupervisordTwoTier runs `import supervisord --write` against a config
+// path.
+func importSupervisordTwoTier(t *testing.T, cfgPath, conf string) (stderr string, err error) {
+	t.Helper()
+	src := tempFile(t, "supervisord.conf", conf)
+	var out, errb bytes.Buffer
+	err = runImportSupervisord(&out, &errb, openTempFile(t, ""), []string{src},
+		Flags{CfgFile: cfgPath}, importOpts{write: true})
+	return errb.String(), err
+}
+
 func TestImportCronTwoTierGreenfield(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
@@ -178,10 +189,12 @@ func TestImportCronTwoTierContentErrorKeepsFiles(t *testing.T) {
 	assert.Contains(t, stderr, "need a fix")
 }
 
-// TestEmitTwoTierRollsBackOnConflict drives the writer with staging content that
+// TestStageImportReportsConflict drives the writer with staging content that
 // duplicates a root task name (bypassing the importer's dedup) to prove the
-// merged-load failure rolls both files back rather than leaving a broken config.
-func TestEmitTwoTierRollsBackOnConflict(t *testing.T) {
+// merged-load failure surfaces as a conflict and rolls both files back rather
+// than leaving a broken config. configedit owns the rollback itself; what's
+// asserted here is that the CLI names the right cause.
+func TestStageImportReportsConflict(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
 	orig := "[tasks.dup]\nrun = \"echo original\"\n"
@@ -192,7 +205,7 @@ func TestEmitTwoTierRollsBackOnConflict(t *testing.T) {
 	require.NoError(t, err)
 
 	var stderr bytes.Buffer
-	err = emitTwoTier(&stderr, cfgPath, staging, res, "crontab", nil, importOpts{})
+	err = stageImport(&stderr, cfgPath, staging, res, "crontab", nil, importOpts{})
 	require.Error(t, err)
 	u, ok := isUserFacing(err)
 	require.True(t, ok)
@@ -203,4 +216,67 @@ func TestEmitTwoTierRollsBackOnConflict(t *testing.T) {
 	assert.Equal(t, orig, string(rootBytes), "root must be rolled back to its original bytes")
 	_, statErr := os.Stat(filepath.Join(dir, "runwisp.d", "imported.toml"))
 	assert.True(t, os.IsNotExist(statErr), "staging file must be rolled back")
+}
+
+// TestImportCronTwoTierAlreadyBrokenConfigIsNotBlamedOnTheImport covers the
+// difference between "your import clashes with your config" and "your config was
+// already broken". Both roll back, but only one of them is the import's fault,
+// and telling the operator the wrong one sends them hunting for a clash that
+// doesn't exist.
+func TestImportCronTwoTierAlreadyBrokenConfigIsNotBlamedOnTheImport(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	orig := "[tasks.broken]\ncron = \"not a cron expression\"\nrun = \"echo hi\"\n"
+	require.NoError(t, os.WriteFile(cfgPath, []byte(orig), 0o644))
+
+	_, err := importTwoTier(t, cfgPath, "0 3 * * * /usr/bin/imported.sh\n")
+	require.Error(t, err)
+	u, ok := isUserFacing(err)
+	require.True(t, ok)
+	assert.Contains(t, u.title, "didn't load before this import either")
+	assert.NotContains(t, u.title, "conflicts")
+
+	rootBytes, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(t, orig, string(rootBytes))
+}
+
+// TestImportSupervisordTwoTierReimportSkipsPromoted is the supervisord half of
+// identity-aware dedup. Before it existed, re-importing a supervisord config
+// after promoting one of its programs failed the merged load and rolled the whole
+// import back — while the identical cron flow worked.
+func TestImportSupervisordTwoTierReimportSkipsPromoted(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	// A promoted program: web lives natively in the root, which already includes runwisp.d.
+	root := "[daemon]\ninclude = [\"runwisp.d/*.toml\"]\n\n" +
+		"[services.web]\nrun = \"/usr/bin/gunicorn app:app\"\n"
+	require.NoError(t, os.WriteFile(cfgPath, []byte(root), 0o644))
+
+	stderr, err := importSupervisordTwoTier(t, cfgPath,
+		"[program:web]\ncommand=/usr/bin/gunicorn app:app\n\n[program:worker]\ncommand=/usr/bin/worker\n")
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "skipped re-importing")
+
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"web", "worker"}, taskNames(cfg), "no duplicate web created")
+	assert.False(t, loadedTask(t, cfg, "web").Staged, "the surviving web is the native one")
+	assert.True(t, loadedTask(t, cfg, "worker").Staged)
+}
+
+// TestImportTwoTierPreservesRestrictiveConfigMode covers an operator who locked
+// their runwisp.toml down because it carries inline secrets. Wiring the include
+// must not widen it to the world-readable default.
+func TestImportTwoTierPreservesRestrictiveConfigMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("[tasks.native]\nrun = \"echo native\"\n"), 0o600))
+
+	_, err := importTwoTier(t, cfgPath, "0 3 * * * /usr/bin/imported.sh\n")
+	require.NoError(t, err)
+
+	info, err := os.Stat(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
