@@ -209,7 +209,10 @@ func flattenResults(results []runResult, pending []RunRef, maxHits int) ([]Hit, 
 	for i, r := range results {
 		room := maxHits - len(flat)
 		if room <= 0 {
-			break
+			// A previous run filled the budget exactly at its boundary. This
+			// run's hits were scanned but not emitted, so resume from its
+			// first line next request rather than silently dropping it.
+			return flat, &Cursor{RunID: pending[i].ID, NextN: 0}
 		}
 		if len(r.hits) <= room {
 			flat = append(flat, r.hits...)

@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A container start cancelled mid-flight no longer leaks its container or image** — cleanup runs on a context detached from the cancelled run.
 - **Terminal events for runs that never execute are published off the runtime lock**, removing a re-entrancy deadlock reachable on skip-overlap, queue-full, catch-up, and DST-fallback paths.
 - **Assorted concurrency fixes** in run event publishing, the notification ingress path and outbound coalescer shutdown, and the cloud execution-update buffer and reconnect backoff.
+- **Log search now handles non-ASCII task output correctly**, and the cursor-based result window advances past the first 50 runs.
+- **Shell tasks no longer receive the daemon's own internal environment variables** (`RUNWISP_*`), matching the container and compose backends.
+- **Cloud log-archive uploads now validate the destination URL** before connecting.
+- **An unrecognized system timezone now falls back to UTC** instead of failing daemon startup.
+- **Byte-size parsing now rejects non-finite and overflowing values.**
+- **Rate-limited notification channels now clamp their `Retry-After` wait to the backoff budget.**
+- **Concurrent notification publish and unsubscribe no longer race.**
+- **Restoring soft-deleted runs by filter now returns only the rows it restored.**
 
 ## [0.13.0] - 2026-07-21
 

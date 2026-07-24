@@ -287,8 +287,7 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 func (db *SQLiteDatabase) RestoreRuns(ctx context.Context, sel model.RunSelector) ([]model.Run, error) {
 	if sel.MatchAll {
 		args := buildRunFilterArgs(sel.Filter)
-		exceptIDs := exceptIDsForSlice(sel.ExceptIDs)
-		if err := db.q.RestoreRunsByFilter(ctx, sqlcdb.RestoreRunsByFilterParams{
+		rows, err := db.q.RestoreRunsByFilter(ctx, sqlcdb.RestoreRunsByFilterParams{
 			StatusSet:         args.StatusSet,
 			TaskNameFilter:    args.TaskNameFilter,
 			SearchFilter:      args.SearchFilter,
@@ -299,32 +298,14 @@ func (db *SQLiteDatabase) RestoreRuns(ctx context.Context, sel model.RunSelector
 			ExitCodeMin:       args.ExitCodeMin,
 			ExitCodeMax:       args.ExitCodeMax,
 			RetriesOnly:       args.RetriesOnly,
-			ExceptIds:         exceptIDs,
-		}); err != nil {
-			return nil, err
-		}
-		rows, err := db.q.SelectRestoredRunsByFilter(ctx, sqlcdb.SelectRestoredRunsByFilterParams{
-			StatusSet:         args.StatusSet,
-			TaskNameFilter:    args.TaskNameFilter,
-			SearchFilter:      args.SearchFilter,
-			SearchPattern:     args.SearchPattern,
-			CreatedAfter:      args.CreatedAfter,
-			CreatedBefore:     args.CreatedBefore,
-			TriggeredByFilter: args.TriggeredByFilter,
-			ExitCodeMin:       args.ExitCodeMin,
-			ExitCodeMax:       args.ExitCodeMax,
-			RetriesOnly:       args.RetriesOnly,
-			ExceptIds:         exceptIDs,
+			ExceptIds:         exceptIDsForSlice(sel.ExceptIDs),
 		})
 		if err != nil {
 			return nil, err
 		}
 		return runsFromRows(rows), nil
 	}
-	if err := db.q.RestoreRunsByIDs(ctx, sel.IDs); err != nil {
-		return nil, err
-	}
-	rows, err := db.q.SelectRestoredRunsByIDs(ctx, sel.IDs)
+	rows, err := db.q.RestoreRunsByIDs(ctx, sel.IDs)
 	if err != nil {
 		return nil, err
 	}

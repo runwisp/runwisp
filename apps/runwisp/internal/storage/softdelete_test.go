@@ -188,6 +188,40 @@ func TestRestoreRunsMatchAllReversesSoftDelete(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
+// TestRestoreRunsMatchAllReturnsOnlyRestoredRows guards the regression where
+// RestoreRuns (MatchAll) re-selected every non-deleted run matching the filter
+// instead of only the rows it restored — inflating the affected count and
+// triggering a run.updated event storm for runs that were never soft-deleted.
+func TestRestoreRunsMatchAllReturnsOnlyRestoredRows(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// One soft-deleted run and several live runs, all matching the filter.
+	deleted := newTerminalRun("task1")
+	require.NoError(t, db.CreateRun(ctx, deleted))
+	var live []*model.Run
+	for i := 0; i < 5; i++ {
+		r := newTerminalRun("task1")
+		require.NoError(t, db.CreateRun(ctx, r))
+		live = append(live, r)
+	}
+
+	_, err := db.SoftDeleteRuns(ctx, model.RunSelector{IDs: []string{deleted.ID}}, time.Now())
+	require.NoError(t, err)
+
+	restored, err := db.RestoreRuns(ctx, model.RunSelector{MatchAll: true, Filter: model.RunFilter{TaskName: "task1"}})
+	require.NoError(t, err)
+	require.Len(t, restored, 1, "restore must return only the row it actually restored")
+	assert.Equal(t, deleted.ID, restored[0].ID)
+
+	// Sanity: the live rows were never touched and are still visible.
+	for _, r := range live {
+		_, err := db.GetRun(ctx, r.ID)
+		require.NoError(t, err)
+	}
+}
+
 func TestPurgeAllOnBoot(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)

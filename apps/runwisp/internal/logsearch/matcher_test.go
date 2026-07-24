@@ -4,6 +4,7 @@
 package logsearch
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -52,6 +53,27 @@ func TestSubstringMatcher_ReusesScratchBuffer(t *testing.T) {
 	// data race.
 	for i := 0; i < 1000; i++ {
 		m.Match([]byte("HELLO FOO BAR"))
+	}
+}
+
+func TestSubstringMatcher_CaseFoldLongNonASCII(t *testing.T) {
+	// A line longer than the initial scratch cap that ends in an invalid
+	// UTF-8 byte. Folding decodes that byte to U+FFFD (3 bytes), so the
+	// lowered remainder is longer than the input — this must not panic on
+	// the scratch buffer bounds.
+	m, err := NewMatcher("needle", false, false)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	line := append(bytes.Repeat([]byte("A"), 256), 0xff)
+	if m.Match(line) {
+		t.Fatal("did not expect a match")
+	}
+	// Fold correctness is still exercised: an ASCII match survives the
+	// non-ASCII tail.
+	line2 := append(bytes.Repeat([]byte("NEEDLE X"), 40), 0xff, 0xfe)
+	if !m.Match(line2) {
+		t.Fatal("expected case-folded match before the invalid tail")
 	}
 }
 

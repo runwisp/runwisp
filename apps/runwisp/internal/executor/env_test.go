@@ -58,6 +58,19 @@ func TestBuildProcessEnv(t *testing.T) {
 		got := buildProcessEnv(nil)
 		assert.Empty(t, got)
 	})
+
+	t.Run("strips RUNWISP_ daemon secrets from parent base", func(t *testing.T) {
+		got := buildProcessEnv([]string{
+			"PATH=/usr/bin",
+			"RUNWISP_PASSWORD=hunter2",
+			"RUNWISP_CLOUD_TOKEN=abc123",
+			"HOME=/root",
+		})
+		assert.Equal(t, []string{"HOME=/root", "PATH=/usr/bin"}, got)
+		for _, e := range got {
+			assert.NotContains(t, e, "RUNWISP_", "daemon secret leaked into child env: %s", e)
+		}
+	})
 }
 
 // TestShellBackend_NoEnvKeepsInheritedEnv guards the regression where naively

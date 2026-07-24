@@ -169,3 +169,13 @@ func TestResolveSystemTimezone_WithAmericaTZEnv(t *testing.T) {
 	result := ResolveSystemTimezone()
 	assert.Equal(t, "America/New_York", result)
 }
+
+// TestResolveSystemTimezone_PlausibleButInvalidFallsBackToUTC guards the
+// boot-brick regression: a TZ that passes the cheap shape check but names no
+// real zone (a typo) must resolve to UTC, not be stamped verbatim into the
+// scheduler where LoadLocation would later hard-fail startup.
+func TestResolveSystemTimezone_PlausibleButInvalidFallsBackToUTC(t *testing.T) {
+	t.Setenv("TZ", "Europe/Bratsilava") // misspelling of Bratislava
+	result := ResolveSystemTimezone()
+	assert.Equal(t, "UTC", result)
+}

@@ -189,7 +189,7 @@ func TestArchiveSuccessRemovesRowAndLogFile(t *testing.T) {
 	run := newTerminalRun("greet", "01HX-RUN", "exec-1")
 	logPath := writeRunLog(t, logDir, run, "hello\n")
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -284,7 +284,7 @@ func TestArchiveUploadFailureKeepsRow(t *testing.T) {
 	run := newTerminalRun("greet", "01HX-RUN", "exec-archive-err")
 	logPath := writeRunLog(t, logDir, run, "hello\n")
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden) // PermanentError → no retries
 	}))
 	defer srv.Close()
@@ -392,7 +392,7 @@ func TestRecoverOrphansRetriesTerminatedRun(t *testing.T) {
 	run := newTerminalRun("greet", "run-1", "exec-1")
 	writeRunLog(t, logDir, run, "tail of log\n")
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -539,7 +539,7 @@ func TestRecoverOrphansArchiveErrorKeepsRow(t *testing.T) {
 	run := newTerminalRun("greet", "01HX-RUN", "exec-archive-fail")
 	writeRunLog(t, logDir, run, "hello\n")
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer srv.Close()
@@ -569,7 +569,7 @@ func TestRecoverOrphansNilEmitIsSafe(t *testing.T) {
 	run := newTerminalRun("greet", "01HX-RUN", "exec-niloemit")
 	writeRunLog(t, logDir, run, "hi\n")
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()

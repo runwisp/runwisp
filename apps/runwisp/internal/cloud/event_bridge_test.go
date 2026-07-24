@@ -335,7 +335,7 @@ func TestEventBridge_FinalizeRun_TerminalBeforeArchiveThenAttach(t *testing.T) {
 	var mu sync.Mutex
 	var journal []string
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		journal = append(journal, "upload")
 		mu.Unlock()
@@ -344,6 +344,7 @@ func TestEventBridge_FinalizeRun_TerminalBeforeArchiveThenAttach(t *testing.T) {
 	defer srv.Close()
 
 	uploader := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, logDir, fixedClock())
+	uploader.httpClient = srv.Client()
 	if err := uploader.RegisterDispatch(context.Background(), execID, srv.URL, "logs/org/key.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
@@ -412,12 +413,13 @@ func TestEventBridge_FinalizeRun_ArchiveFailureSendsSingleUpdate(t *testing.T) {
 	run.EndReason = &reason
 	writeRunLog(t, logDir, run, "line 1\n")
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden) // 4xx = permanent, no retry loop
 	}))
 	defer srv.Close()
 
 	uploader := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, logDir, fixedClock())
+	uploader.httpClient = srv.Client()
 	if err := uploader.RegisterDispatch(context.Background(), execID, srv.URL, "logs/org/key.gz"); err != nil {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}

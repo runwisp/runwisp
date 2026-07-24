@@ -74,6 +74,22 @@ func ParseRetryAfterHeader(h http.Header) time.Duration {
 	return 0
 }
 
+// clampRetryAfter bounds a remote-supplied Retry-After / retry_after delay so a
+// hostile or misconfigured endpoint cannot stall a channel worker (and every
+// notification queued behind it) for an arbitrary duration. The honored delay
+// is capped at MaxInterval when set, otherwise MaxElapsedTime — keeping a 429
+// backoff within the same budget the exponential backoff already enforces.
+func clampRetryAfter(d time.Duration, cfg BackoffConfig) time.Duration {
+	limit := cfg.MaxInterval
+	if limit <= 0 {
+		limit = cfg.MaxElapsedTime
+	}
+	if limit > 0 && d > limit {
+		return limit
+	}
+	return d
+}
+
 // IsPermanentHTTPStatus reports whether an HTTP response status should cause
 // the dispatcher to give up immediately (no further retries).
 func IsPermanentHTTPStatus(code int) bool {

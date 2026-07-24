@@ -46,28 +46,22 @@ func (s *Subscriber) Channel() <-chan Update { return s.ch }
 // update is silently dropped. SSE is a best-effort surface; pages reload via
 // REST list to recover.
 type Hub struct {
-	mu       sync.RWMutex
-	subs     map[*Subscriber]struct{}
-	bufSize  int
-	recentID []string
-	recentAt int
-	maxIDs   int
+	mu      sync.RWMutex
+	subs    map[*Subscriber]struct{}
+	bufSize int
 }
 
 // NewHub constructs a Hub. bufSize is the per-subscriber channel capacity;
-// 32 is a sensible default for the SSE handler.
+// 32 is a sensible default for the SSE handler. recent is retained for call-site
+// compatibility but no longer used.
 func NewHub(bufSize, recent int) *Hub {
+	_ = recent
 	if bufSize <= 0 {
 		bufSize = 32
 	}
-	if recent <= 0 {
-		recent = 50
-	}
 	return &Hub{
-		subs:     make(map[*Subscriber]struct{}),
-		bufSize:  bufSize,
-		recentID: make([]string, recent),
-		maxIDs:   recent,
+		subs:    make(map[*Subscriber]struct{}),
+		bufSize: bufSize,
 	}
 }
 
@@ -87,19 +81,16 @@ func (h *Hub) Subscribe() (*Subscriber, func()) {
 
 // Publish broadcasts an update to all subscribers. Drop-oldest semantics: a
 // subscriber whose channel is full silently misses this update.
+//
+// The send happens under the read lock so it is mutually exclusive with the
+// exclusive-locked unsubscribe that closes the channel — otherwise a send could
+// land on an already-closed channel and panic (a send on a closed channel is
+// not saved by the select's default case). The send is non-blocking, so holding
+// the read lock never stalls: concurrent Publish calls are still allowed.
 func (h *Hub) Publish(u Update) {
-	h.mu.Lock()
-	if u.Notification.ID != "" {
-		h.recentID[h.recentAt%h.maxIDs] = u.Notification.ID
-		h.recentAt++
-	}
-	subs := make([]*Subscriber, 0, len(h.subs))
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	for s := range h.subs {
-		subs = append(subs, s)
-	}
-	h.mu.Unlock()
-
-	for _, s := range subs {
 		select {
 		case s.ch <- u:
 		default:
