@@ -49,6 +49,14 @@ func TestParseByteSize(t *testing.T) {
 		{"mb", 0, true},
 		// A trailing plural is not a recognized unit.
 		{"1gbs", 0, true},
+
+		// ParseFloat accepts these forms, but they must not slip past as a
+		// garbage int64 that silently disables the disk-full / retention guards.
+		{"infmb", 0, true},
+		{"+infmb", 0, true},
+		{"nanmb", 0, true},
+		{"1e30tb", 0, true},
+		{"0x1p1023tb", 0, true},
 	}
 
 	for _, tt := range tests {

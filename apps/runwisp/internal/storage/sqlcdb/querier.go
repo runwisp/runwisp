@@ -71,8 +71,8 @@ type Querier interface {
 	// then expands the slice. Putting `id IN (?, ?...)` first would shift the
 	// `?N` positions, so the slice is placed at the end.
 	ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelectorIDsByIDsParams) ([]ResolveSelectorIDsByIDsRow, error)
-	RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilterParams) error
-	RestoreRunsByIDs(ctx context.Context, ids []string) error
+	RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilterParams) ([]Run, error)
+	RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, error)
 	SelectExistingForFingerprint(ctx context.Context, arg SelectExistingForFingerprintParams) (SelectExistingForFingerprintRow, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: Apache-2.0
@@ -82,8 +82,6 @@ type Querier interface {
 	// Count-based retention likewise ranges over ended runs only, so in-flight
 	// runs neither count against the cap nor get purged.
 	SelectOldRunsByCount(ctx context.Context, arg SelectOldRunsByCountParams) ([]Run, error)
-	SelectRestoredRunsByFilter(ctx context.Context, arg SelectRestoredRunsByFilterParams) ([]Run, error)
-	SelectRestoredRunsByIDs(ctx context.Context, ids []string) ([]Run, error)
 	SetConfigValue(ctx context.Context, arg SetConfigValueParams) error
 	SoftDeleteRunsByFilter(ctx context.Context, arg SoftDeleteRunsByFilterParams) ([]SoftDeleteRunsByFilterRow, error)
 	SoftDeleteRunsByIDs(ctx context.Context, arg SoftDeleteRunsByIDsParams) ([]SoftDeleteRunsByIDsRow, error)

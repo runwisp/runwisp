@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -61,10 +62,21 @@ func parseByteSizeWithUnit(s, suffix string, mult int64) (int64, bool, error) {
 	if err != nil {
 		return 0, true, fmt.Errorf("invalid byte size %q: %w", s, err)
 	}
+	// ParseFloat accepts "inf", "nan", and out-of-range magnitudes. Reject the
+	// non-finite forms outright: they would otherwise slip past the n < 0 guard
+	// and produce a garbage int64 (float→int64 overflow is platform-dependent),
+	// silently disabling or inverting the disk-full and retention guards.
+	if math.IsInf(n, 0) || math.IsNaN(n) {
+		return 0, true, fmt.Errorf("invalid byte size %q: must be a finite number", s)
+	}
 	if n < 0 {
 		return 0, true, fmt.Errorf("invalid byte size %q: must be non-negative", s)
 	}
-	return int64(n * float64(mult)), true, nil
+	product := n * float64(mult)
+	if product >= float64(math.MaxInt64) {
+		return 0, true, fmt.Errorf("invalid byte size %q: exceeds the maximum supported size", s)
+	}
+	return int64(product), true, nil
 }
 
 // FormatByteSize formats a byte count as a human-readable string.

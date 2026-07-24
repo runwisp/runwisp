@@ -45,7 +45,7 @@ func TestArchiveSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	size, err := Archive(context.Background(), srv.Client(), srv.URL, logPath)
+	size, err := archive(context.Background(), srv.Client(), srv.URL, logPath)
 	if err != nil {
 		t.Fatalf("archive: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestArchiveRetriesOn5xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := Archive(context.Background(), srv.Client(), srv.URL, logPath); err != nil {
+	if _, err := archive(context.Background(), srv.Client(), srv.URL, logPath); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 	if got := attempts.Load(); got != 2 {
@@ -106,7 +106,7 @@ func TestArchivePermanentError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := Archive(context.Background(), srv.Client(), srv.URL, logPath)
+	_, err := archive(context.Background(), srv.Client(), srv.URL, logPath)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -123,6 +123,66 @@ func TestArchiveEmptyURL(t *testing.T) {
 	logPath := writeLog(t, "x")
 	if _, err := Archive(context.Background(), nil, "", logPath); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestValidateUploadURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{"https public host", "https://bucket.s3.amazonaws.com/key?sig=abc", false},
+		{"https public host with port", "https://s3.example.com:443/key", false},
+		{"http rejected", "http://bucket.s3.amazonaws.com/key", true},
+		{"empty scheme rejected", "bucket.s3.amazonaws.com/key", true},
+		{"no host rejected", "https:///key", true},
+		{"empty rejected", "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := validateUploadURL(c.url)
+			if c.wantErr && err == nil {
+				t.Fatalf("validateUploadURL(%q) = nil, want error", c.url)
+			}
+			if !c.wantErr && err != nil {
+				t.Fatalf("validateUploadURL(%q) = %v, want nil", c.url, err)
+			}
+		})
+	}
+}
+
+func TestArchiveRejectsNonHTTPSURL(t *testing.T) {
+	logPath := writeLog(t, "secret log data")
+	// A non-https URL is rejected as a permanent failure before any network
+	// call, so the daemon can't be used as a plaintext SSRF egress.
+	_, err := Archive(context.Background(), nil, "http://169.254.169.254/steal", logPath)
+	if err == nil {
+		t.Fatal("expected error for non-https URL")
+	}
+	var perm *PermanentError
+	if !errors.As(err, &perm) {
+		t.Fatalf("expected PermanentError, got %v", err)
+	}
+}
+
+func TestSafeClientRejectsInternalAddress(t *testing.T) {
+	// The hardened client's dialer must refuse to connect to internal
+	// addresses even when the URL passed scheme/host validation — this is the
+	// guard for IP-literal and DNS-rebind SSRF targets.
+	client := SafeClient()
+	for _, target := range []string{
+		"https://127.0.0.1:9/key",
+		"https://169.254.169.254/latest/meta-data",
+		"https://10.0.0.1/key",
+	} {
+		req, err := http.NewRequest(http.MethodPut, target, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		if _, err := client.Do(req); err == nil {
+			t.Fatalf("expected dial rejection for %q", target)
+		}
 	}
 }
 

@@ -558,7 +558,7 @@ func TestRecoverArchiveBacklog_SuccessfulUploadQueuesTerminalUpdate(t *testing.T
 	run.EndReason = &reason
 	writeRunLog(t, logDir, run, "recovered log body\n")
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()

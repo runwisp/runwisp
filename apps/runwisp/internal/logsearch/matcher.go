@@ -82,10 +82,21 @@ func (s *Substring) Match(line []byte) bool {
 		}
 		// Unicode-aware fallback: drop to per-rune ToLower for the whole
 		// remainder so we don't mis-fold multi-byte sequences split across
-		// the loop boundary.
+		// the loop boundary. Folding can grow the byte length — invalid
+		// UTF-8 bytes decode to U+FFFD (3 bytes each) — so the lowered
+		// remainder may exceed the scratch cap (sized to len(line)). Grow
+		// the buffer to the exact need before copying to avoid a slice-bounds
+		// panic on long non-ASCII lines.
 		lowered := strings.Map(unicode.ToLower, string(line[i:]))
+		need := i + len(lowered)
+		if cap(s.caseFoldScratch) < need {
+			grown := make([]byte, need)
+			copy(grown, s.caseFoldScratch[:i])
+			s.caseFoldScratch = grown
+		} else {
+			s.caseFoldScratch = s.caseFoldScratch[:need]
+		}
 		copy(s.caseFoldScratch[i:], lowered)
-		s.caseFoldScratch = s.caseFoldScratch[:i+len(lowered)]
 		break
 	}
 	return bytes.Contains(s.caseFoldScratch, s.needle)

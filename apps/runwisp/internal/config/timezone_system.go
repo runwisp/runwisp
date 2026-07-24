@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"strings"
+	"time"
 )
 
 // ResolveSystemTimezone returns the host's IANA timezone name, falling back to
@@ -23,15 +24,29 @@ import (
 // always safe, never silently wrong, never DST-affected.
 func ResolveSystemTimezone() string {
 	if name := tzFromEnv(os.Getenv("TZ")); name != "" {
-		return name
+		return validSystemZone(name)
 	}
 	if name := tzFromEtcTimezone(); name != "" {
-		return name
+		return validSystemZone(name)
 	}
 	if name := tzFromLocaltimeSymlink(); name != "" {
-		return name
+		return validSystemZone(name)
 	}
 	return "UTC"
+}
+
+// validSystemZone returns name only when it resolves against the tz database,
+// otherwise "UTC". The detection helpers pass a cheap shape check
+// (isPlausibleZoneName) that admits typos and stale entries; a value stamped
+// into Scheduler.Timezone by ApplyDefaults is later hard-validated by
+// ResolveTimezone, so an unvalidated system name would brick boot on a
+// misconfigured host. Falling back to UTC honors this file's contract:
+// always safe, never silently wrong.
+func validSystemZone(name string) string {
+	if _, err := time.LoadLocation(name); err != nil {
+		return "UTC"
+	}
+	return name
 }
 
 func tzFromEnv(raw string) string {

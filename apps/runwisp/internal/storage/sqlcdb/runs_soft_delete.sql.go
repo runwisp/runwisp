@@ -189,7 +189,7 @@ func (q *Queries) ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelect
 	return items, nil
 }
 
-const restoreRunsByFilter = `-- name: RestoreRunsByFilter :exec
+const restoreRunsByFilter = `-- name: RestoreRunsByFilter :many
 UPDATE runs SET deleted_at = NULL
 WHERE deleted_at IS NOT NULL
   AND (?1 IS NULL
@@ -204,6 +204,9 @@ WHERE deleted_at IS NOT NULL
   AND (?8 IS NULL OR task_name = ?8)
   AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
   AND id NOT IN (/*SLICE:except_ids*/?)
+RETURNING id, external_execution_id, task_name, status, end_reason, exit_code,
+  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
+  instance_index, params_json, deleted_at
 `
 
 type RestoreRunsByFilterParams struct {
@@ -220,87 +223,8 @@ type RestoreRunsByFilterParams struct {
 	ExceptIds         []string    `json:"except_ids"`
 }
 
-func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilterParams) error {
+func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilterParams) ([]Run, error) {
 	query := restoreRunsByFilter
-	var queryParams []interface{}
-	queryParams = append(queryParams, arg.StatusSet)
-	queryParams = append(queryParams, arg.CreatedAfter)
-	queryParams = append(queryParams, arg.CreatedBefore)
-	queryParams = append(queryParams, arg.TriggeredByFilter)
-	queryParams = append(queryParams, arg.ExitCodeMin)
-	queryParams = append(queryParams, arg.ExitCodeMax)
-	queryParams = append(queryParams, arg.RetriesOnly)
-	queryParams = append(queryParams, arg.TaskNameFilter)
-	queryParams = append(queryParams, arg.SearchFilter)
-	queryParams = append(queryParams, arg.SearchPattern)
-	if len(arg.ExceptIds) > 0 {
-		for _, v := range arg.ExceptIds {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:except_ids*/?", strings.Repeat(",?", len(arg.ExceptIds))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:except_ids*/?", "NULL", 1)
-	}
-	_, err := q.db.ExecContext(ctx, query, queryParams...)
-	return err
-}
-
-const restoreRunsByIDs = `-- name: RestoreRunsByIDs :exec
-UPDATE runs SET deleted_at = NULL
-WHERE deleted_at IS NOT NULL
-  AND id IN (/*SLICE:ids*/?)
-`
-
-func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) error {
-	query := restoreRunsByIDs
-	var queryParams []interface{}
-	if len(ids) > 0 {
-		for _, v := range ids {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
-	}
-	_, err := q.db.ExecContext(ctx, query, queryParams...)
-	return err
-}
-
-const selectRestoredRunsByFilter = `-- name: SelectRestoredRunsByFilter :many
-SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, params_json, deleted_at
-FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
-       OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-  AND id NOT IN (/*SLICE:except_ids*/?)
-`
-
-type SelectRestoredRunsByFilterParams struct {
-	StatusSet         interface{} `json:"status_set"`
-	CreatedAfter      interface{} `json:"created_after"`
-	CreatedBefore     interface{} `json:"created_before"`
-	TriggeredByFilter interface{} `json:"triggered_by_filter"`
-	ExitCodeMin       interface{} `json:"exit_code_min"`
-	ExitCodeMax       interface{} `json:"exit_code_max"`
-	RetriesOnly       interface{} `json:"retries_only"`
-	TaskNameFilter    interface{} `json:"task_name_filter"`
-	SearchFilter      interface{} `json:"search_filter"`
-	SearchPattern     string      `json:"search_pattern"`
-	ExceptIds         []string    `json:"except_ids"`
-}
-
-func (q *Queries) SelectRestoredRunsByFilter(ctx context.Context, arg SelectRestoredRunsByFilterParams) ([]Run, error) {
-	query := selectRestoredRunsByFilter
 	var queryParams []interface{}
 	queryParams = append(queryParams, arg.StatusSet)
 	queryParams = append(queryParams, arg.CreatedAfter)
@@ -358,16 +282,17 @@ func (q *Queries) SelectRestoredRunsByFilter(ctx context.Context, arg SelectRest
 	return items, nil
 }
 
-const selectRestoredRunsByIDs = `-- name: SelectRestoredRunsByIDs :many
-SELECT id, external_execution_id, task_name, status, end_reason, exit_code,
+const restoreRunsByIDs = `-- name: RestoreRunsByIDs :many
+UPDATE runs SET deleted_at = NULL
+WHERE deleted_at IS NOT NULL
+  AND id IN (/*SLICE:ids*/?)
+RETURNING id, external_execution_id, task_name, status, end_reason, exit_code,
   start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at
-FROM runs WHERE deleted_at IS NULL
-  AND id IN (/*SLICE:ids*/?)
 `
 
-func (q *Queries) SelectRestoredRunsByIDs(ctx context.Context, ids []string) ([]Run, error) {
-	query := selectRestoredRunsByIDs
+func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, error) {
+	query := restoreRunsByIDs
 	var queryParams []interface{}
 	if len(ids) > 0 {
 		for _, v := range ids {

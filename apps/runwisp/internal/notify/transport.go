@@ -95,6 +95,7 @@ func (p *HTTPProvider) handleRateLimit(ctx context.Context, statusCode int, head
 	if d == 0 && p.Body429Fn != nil {
 		d = p.Body429Fn(body)
 	}
+	d = clampRetryAfter(d, p.Backoff)
 	if d > 0 {
 		select {
 		case <-ctx.Done():

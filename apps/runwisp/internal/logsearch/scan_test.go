@@ -166,6 +166,57 @@ func TestScanTask_CursorResumes(t *testing.T) {
 	}
 }
 
+// TestScanTask_ExactFillAtRunBoundaryEmitsCursor guards the regression where
+// the budget filled exactly at a run boundary: earlier code broke out of the
+// flatten loop with no cursor, silently dropping the remaining (already
+// scanned) runs in the window. The scan must emit a cursor pointing at the
+// next run so the client can fetch the dropped hits.
+func TestScanTask_ExactFillAtRunBoundaryEmitsCursor(t *testing.T) {
+	dir := t.TempDir()
+	b := filepath.Join(dir, "b.log")
+	a := filepath.Join(dir, "a.log")
+	c := filepath.Join(dir, "c.log")
+	// B and A each contribute exactly one hit, filling maxHits=2 at A's
+	// boundary (both more=false). C is still pending in the window and holds
+	// matches. Old code broke out with no cursor, silently dropping C.
+	writeLog(t, b, "foo b1", "skip")
+	writeLog(t, a, "foo a1", "skip")
+	writeLog(t, c, "foo c1", "foo c2")
+
+	runs := []RunRef{
+		{ID: "01HRUNAAAAAAAAAAAAAAAAAAAC", LogPath: b, CreatedAt: time.Unix(3, 0)},
+		{ID: "01HRUNAAAAAAAAAAAAAAAAAAAB", LogPath: a, CreatedAt: time.Unix(2, 0)},
+		{ID: "01HRUNAAAAAAAAAAAAAAAAAAAA", LogPath: c, CreatedAt: time.Unix(1, 0)},
+	}
+	factory := func() Matcher {
+		m, _ := NewMatcher("foo", false, false)
+		return m
+	}
+
+	hits, cur, _, err := ScanTask(context.Background(), runs, factory, ScanOpts{MaxHits: 2}, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("want 2 hits, got %d", len(hits))
+	}
+	if cur == nil {
+		t.Fatal("expected a cursor: run C was scanned but not emitted")
+	}
+	if cur.RunID != "01HRUNAAAAAAAAAAAAAAAAAAAA" || cur.NextN != 0 {
+		t.Fatalf("cursor should resume run C from line 0, got %+v", cur)
+	}
+
+	// Resuming from that cursor must yield run C's hits.
+	hits2, _, _, err := ScanTask(context.Background(), runs, factory, ScanOpts{MaxHits: 2}, cur.RunID, cur.NextN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits2) != 2 || hits2[0].RunID != "01HRUNAAAAAAAAAAAAAAAAAAAA" {
+		t.Fatalf("resume should return run C's 2 hits, got %d", len(hits2))
+	}
+}
+
 func TestScanTask_CancelMidScan(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.log")

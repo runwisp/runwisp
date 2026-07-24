@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A container start cancelled mid-flight no longer leaks its container or image** — cleanup runs on a context detached from the cancelled run.
 - **Terminal events for runs that never execute are published off the runtime lock**, removing a re-entrancy deadlock reachable on skip-overlap, queue-full, catch-up, and DST-fallback paths.
 - **Assorted concurrency fixes** in run event publishing, the notification ingress path and outbound coalescer shutdown, and the cloud execution-update buffer and reconnect backoff.
+- **Log search no longer crashes the daemon on task output containing non-ASCII or binary bytes.** Case-insensitive matching on a long line ending near an invalid UTF-8 byte previously panicked mid-scan.
+- **Log search now scans a task's full run history.** Results could previously never reach beyond the newest 50 runs, and the final page reported itself exhausted while older matches remained; the cursor now advances the run window.
+- **Shell tasks no longer inherit daemon-internal `RUNWISP_*` environment variables**, matching the container and compose backends — the admin password and cloud token no longer reach task processes, including under a `run_user` privilege drop.
+- **Cloud log-archive uploads validate the peer-supplied URL** (https only) and refuse to follow redirects or connect to internal/loopback addresses.
+- **A plausible-but-invalid system timezone falls back to UTC** instead of aborting daemon startup when no `[scheduler] timezone` is configured.
+- **Byte-size values reject `inf`, `nan`, and overflowing magnitudes** so the disk-full and retention guards can't be silently disabled or inverted.
+- **A rate-limited notification channel bounds its `Retry-After` wait** to the backoff budget, so a hostile endpoint can't stall a channel's worker for an arbitrary duration.
+- **Concurrent in-app notification publish/unsubscribe no longer panics** on a send to a closed subscriber channel.
+- **Restoring soft-deleted runs by filter returns only the rows it actually restored**, so bulk restore no longer over-reports the affected count or emits `run.updated` events for untouched runs.
 
 ## [0.13.0] - 2026-07-21
 
