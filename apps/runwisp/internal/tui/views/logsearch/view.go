@@ -68,11 +68,9 @@ func (m *Model) renderHits(b *strings.Builder, width int) {
 	selStyle := lipgloss.NewStyle().Foreground(uikit.ColorBg).Background(uikit.ColorPrimary)
 	mutedStyle := lipgloss.NewStyle().Foreground(uikit.ColorTextMuted)
 
-	max := len(m.hits)
-	if max > MaxVisibleHits {
-		max = MaxVisibleHits
-	}
-	for i := 0; i < max; i++ {
+	total := len(m.hits)
+	start, end := hitWindow(m.cursor, total)
+	for i := start; i < end; i++ {
 		h := m.hits[i]
 		runShort := h.RunID
 		if len(runShort) > 6 {
@@ -91,7 +89,24 @@ func (m *Model) renderHits(b *strings.Builder, width int) {
 		b.WriteString(prefix + style.Render(line))
 		b.WriteString("\n")
 	}
-	if len(m.hits) > MaxVisibleHits {
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("…%d more hits", len(m.hits)-MaxVisibleHits)))
+	if total > MaxVisibleHits {
+		b.WriteString(mutedStyle.Render(fmt.Sprintf("hits %d–%d of %d", start+1, end, total)))
 	}
+}
+
+// hitWindow returns the [start, end) slice of hit indices to render so the
+// window of at most MaxVisibleHits rows always contains the cursor. Once the
+// cursor passes the bottom of the window the view scrolls to follow it.
+func hitWindow(cursor, total int) (start, end int) {
+	if total <= MaxVisibleHits {
+		return 0, total
+	}
+	start = 0
+	if cursor >= MaxVisibleHits {
+		start = cursor - MaxVisibleHits + 1
+	}
+	if start > total-MaxVisibleHits {
+		start = total - MaxVisibleHits
+	}
+	return start, start + MaxVisibleHits
 }

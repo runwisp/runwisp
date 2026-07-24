@@ -92,9 +92,24 @@ func ReadPidFile(dataDir string) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(string(data)))
 }
 
-// CleanPidFile removes the PID file.
+// CleanPidFile removes the PID file, but only when it still holds this
+// process's own PID. A second daemon that clobbered the file (or a stale file
+// belonging to an unrelated process) is left untouched so a live daemon is
+// never orphaned by another process's cleanup.
 func CleanPidFile(dataDir string) {
-	if err := os.Remove(PidFilePath(dataDir)); err != nil && !os.IsNotExist(err) {
+	path := PidFilePath(dataDir)
+	pid, err := ReadPidFile(dataDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("Failed to read PID file before cleanup", "err", err)
+		}
+		return
+	}
+	if pid != os.Getpid() {
+		// The file names a different process — not ours to remove.
+		return
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		slog.Warn("Failed to remove PID file", "err", err)
 	}
 }

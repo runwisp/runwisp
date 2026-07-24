@@ -40,11 +40,26 @@ func pollHealth(client *apiclient.Client, timeout time.Duration) error {
 // spawnDaemon starts a new daemon process in the background, detached from the
 // current terminal session so it survives after the TUI exits.
 func spawnDaemon(f Flags) error {
-	return spawnDaemonProcess([]string{"daemon",
+	return spawnDaemonProcess(daemonSpawnArgs([]string{"daemon"}, f), f.DataDir)
+}
+
+// daemonSpawnArgs builds the argument list for a spawned daemon, prefixed by
+// the given subcommand ("daemon", or "cloud --no-tui"). It carries the full
+// effective config — including --host and --socket — so the child binds exactly
+// where the launcher probed instead of silently re-defaulting to loopback / the
+// default socket path.
+func daemonSpawnArgs(subcommand []string, f Flags) []string {
+	args := append([]string{}, subcommand...)
+	args = append(args,
 		"--config", f.CfgFile,
 		"--data", f.DataDir,
 		"--port", strconv.Itoa(f.Port),
-	}, f.DataDir)
+		"--host", f.Host,
+	)
+	if f.Socket != "" {
+		args = append(args, "--socket", f.Socket)
+	}
+	return args
 }
 
 // spawnDaemonProcess execs `runwisp <args...>` as a detached background process
@@ -137,8 +152,11 @@ func waitForProcessExit(pid int, timeout time.Duration, dataDir string) error {
 	return fmt.Errorf("daemon (pid %d) did not shut down within %s", pid, timeout)
 }
 
-// processAlive returns true when the PID file exists AND the process
-// responds to signal 0. Either side failing means the daemon is gone.
+// processAlive returns true when the PID file exists, the process responds to
+// signal 0, AND the process still looks like a RunWisp daemon. The identity
+// check closes a PID-reuse hole: after an unclean death leaves a stale
+// daemon.pid, the OS may recycle that PID for an unrelated process, and
+// signalling it (stop/restart) would hit an innocent bystander.
 func processAlive(pid int, pidPath string) bool {
 	if _, err := os.Stat(pidPath); os.IsNotExist(err) {
 		return false
@@ -147,7 +165,35 @@ func processAlive(pid int, pidPath string) bool {
 	if err != nil {
 		return false
 	}
-	return proc.Signal(syscall.Signal(0)) == nil
+	if proc.Signal(syscall.Signal(0)) != nil {
+		return false
+	}
+	return processIsDaemon(pid)
+}
+
+// lookupProcessName resolves a PID to its process name. Swapped out in tests.
+var lookupProcessName = defaultLookupProcessName
+
+// defaultLookupProcessName reads the process name from /proc/<pid>/comm on
+// Linux. On platforms without procfs (macOS) the read fails and ok is false,
+// so processIsDaemon falls back to trusting the liveness check alone.
+func defaultLookupProcessName(pid int) (name string, ok bool) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(data)), true
+}
+
+// processIsDaemon reports whether the process with the given PID looks like a
+// RunWisp daemon. It is best-effort: when the process name can't be read it
+// returns true so a genuine daemon is never mistaken for a recycled stranger.
+func processIsDaemon(pid int) bool {
+	name, ok := lookupProcessName(pid)
+	if !ok {
+		return true
+	}
+	return strings.Contains(strings.ToLower(name), "runwisp")
 }
 
 // daemonLogDrainer tails the daemon's log file incrementally, emitting each

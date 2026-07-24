@@ -48,7 +48,12 @@ export class AsyncData<T> {
         this.#loading = true;
         this.#error = undefined;
         try {
-            this.#data = await this.#fetcher(ac.signal);
+            const data = await this.#fetcher(ac.signal);
+            // A newer fetch() aborts this controller; a fetcher that ignores its
+            // signal can still resolve late, so guard the assignment
+            // symmetrically with the catch path to keep the freshest data.
+            if (ac.signal.aborted) return;
+            this.#data = data;
             connectionStore.markConnected();
         } catch (err: unknown) {
             if (ac.signal.aborted) return;

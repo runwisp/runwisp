@@ -158,4 +158,25 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         src.upsert(makeRun("first", { retry_attempt: 0 }));
         expect(src.items.map((r) => r.id)).toEqual(["retried"]);
     });
+
+    // Guards M3: the optimistic remove and the server's run.deleted SSE echo
+    // both call remove() for the same id. Only the call that actually removes a
+    // row may decrement total, or the count drifts below the true value.
+    it("decrements total once even when remove is called twice for one id", async () => {
+        const src = createRunsSource();
+        vi.mocked(runsApi.getAll).mockResolvedValue({
+            runs: [makeRun("a"), makeRun("b")],
+            total: 2,
+        });
+        src.setFilters(baseFilters());
+        await vi.waitFor(() => {
+            expect(src.loaded).toBe(true);
+        });
+
+        src.remove("a"); // present → removes row, total 2 → 1
+        src.remove("a"); // already gone → must not touch total
+
+        expect(src.items.map((r) => r.id)).toEqual(["b"]);
+        expect(src.total).toBe(1);
+    });
 });

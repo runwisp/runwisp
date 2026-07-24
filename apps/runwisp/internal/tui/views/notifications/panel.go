@@ -89,9 +89,7 @@ func (p *Panel) Upsert(n server.NotificationDTO) bool {
 		idx := sort.Search(len(p.ordered), func(i int) bool {
 			return p.ordered[i] < n.ID
 		})
-		p.ordered = append(p.ordered, "")
-		copy(p.ordered[idx+1:], p.ordered[idx:])
-		p.ordered[idx] = n.ID
+		p.insertOrdered(idx, n.ID)
 		changed = true
 	} else if n.Count != prev.Count ||
 		!prev.LastOccurredAt.Equal(n.LastOccurredAt) ||
@@ -100,8 +98,26 @@ func (p *Panel) Upsert(n server.NotificationDTO) bool {
 	}
 	if changed {
 		p.rebuildContent()
+		if p.expanded {
+			p.ensureCursorVisible()
+		}
 	}
 	return changed
+}
+
+// insertOrdered splices id into p.ordered at idx and keeps the cursor pinned to
+// the same notification: an insert at or above the cursor shifts every tracked
+// row down by one, so the cursor must move with it or actions (open, toggle
+// read) would land on the neighbour that slid under the highlight.
+func (p *Panel) insertOrdered(idx int, id string) {
+	p.ordered = append(p.ordered, "")
+	copy(p.ordered[idx+1:], p.ordered[idx:])
+	p.ordered[idx] = id
+	// Only meaningful while expanded — a collapsed panel has no positioned
+	// cursor (Toggle snaps it into range on expand).
+	if p.expanded && idx <= p.cursor {
+		p.cursor++
+	}
 }
 
 // IsExpanded reports whether the panel is in expanded mode.
@@ -226,13 +242,14 @@ func (p *Panel) LoadHistorical(items []server.NotificationDTO) bool {
 		idx := sort.Search(len(p.ordered), func(i int) bool {
 			return p.ordered[i] < n.ID
 		})
-		p.ordered = append(p.ordered, "")
-		copy(p.ordered[idx+1:], p.ordered[idx:])
-		p.ordered[idx] = n.ID
+		p.insertOrdered(idx, n.ID)
 		changed = true
 	}
 	if changed {
 		p.rebuildContent()
+		if p.expanded {
+			p.ensureCursorVisible()
+		}
 	}
 	return changed
 }
@@ -536,14 +553,20 @@ func relativeTime(t time.Time) string {
 	return rhythm.Relative(t, time.Now())
 }
 
+// truncateLine trims a (possibly ANSI-styled) line to at most max display
+// columns. It slices by visible column via uikit.SliceLineColumns — never by
+// raw bytes — so a cut never lands mid escape-sequence or mid-rune and garbles
+// the styled collapsed summary.
 func truncateLine(s string, max int) string {
 	if max <= 1 || lipgloss.Width(s) <= max {
 		return s
 	}
 	if max <= 3 {
-		return s[:max]
+		sliced, _ := uikit.SliceLineColumns(s, 0, max)
+		return sliced
 	}
-	return s[:max-1] + "…"
+	sliced, _ := uikit.SliceLineColumns(s, 0, max-1)
+	return sliced + "…"
 }
 
 func isUnread(n server.NotificationDTO) bool { return n.ReadAt == nil }

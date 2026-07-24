@@ -19,6 +19,7 @@
     } from "$lib/stores";
     import { getApiUrl } from "$lib/utils/env";
     import { toTaskPageId } from "$lib/utils/task-id";
+    import { mergeRecentRuns, mergeRunningRuns } from "$lib/utils/overview-runs";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { type Run, type Task } from "$lib/types";
 
@@ -150,10 +151,27 @@
     });
 
     $effect(() => {
-        if (pageData.data) {
-            dashState.tasks = pageData.data.tasks;
-            dashState.recentRuns = pageData.data.recentRuns;
-            dashState.runningRuns = pageData.data.runningRuns;
+        const data = pageData.data;
+        if (data) {
+            dashState.tasks = data.tasks;
+            // Merge the snapshot through the same phase-order guard the SSE path
+            // uses, so a fetch that resolves with an older view can't revert a
+            // run the live stream already advanced (e.g. finished → running).
+            // Read the current runs untracked: the merge folds them into itself,
+            // so tracking them here would make this effect re-trigger on its own
+            // writes and loop until Svelte aborts it (effect_update_depth_exceeded).
+            untrack(() => {
+                dashState.recentRuns = mergeRecentRuns(
+                    dashState.recentRuns,
+                    data.recentRuns,
+                    RECENT_RUN_LIMIT,
+                );
+                dashState.runningRuns = mergeRunningRuns(
+                    dashState.runningRuns,
+                    data.runningRuns,
+                    RUNNING_RUN_LIMIT,
+                );
+            });
         }
     });
 

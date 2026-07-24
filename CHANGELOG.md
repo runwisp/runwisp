@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A second daemon started against a data dir already owned by a live daemon refuses to start**, and PID-file cleanup removes the file only while it still holds that daemon's own PID, so a running daemon stays managable via `stop`/`restart`/`reload`.
+- **`stop` and `restart` confirm the recorded PID still belongs to a RunWisp daemon before signalling it**, so a recycled stale PID leaves an unrelated process untouched.
+- **The background daemon spawned by the launcher (and `runwisp demo`) inherits the launcher's `--host` and `--socket`**, binding where the operator probed instead of defaulting to loopback and the default socket path.
+- **TUI log search opens the highlighted result on Enter** and scrolls the result list to keep the selected hit in view when there are more matches than fit the window.
+- **The TUI notification panel keeps its cursor on the highlighted notification** when a newer one streams in above it, so open and mark-read act on the intended row; the collapsed summary truncates by display width so styled output stays intact on narrow terminals.
+- **The web UI run count decrements once per deletion**, keeping the total accurate when the optimistic removal and the `run.deleted` event both fire for the same run.
+- **The web UI overview merges snapshot fetches through the same phase-order guard as live updates**, so a finished run keeps its final status when a fetch resolves with an older view.
+- **The web UI keeps the freshest data when overlapping fetches resolve out of order.**
+- **The SSE log-stream drop counter is guarded against concurrent access** between the publishing goroutine and the stream handler.
+
 ## [0.13.1] - 2026-07-24
 
 ### Fixed

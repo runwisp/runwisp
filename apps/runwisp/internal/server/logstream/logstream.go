@@ -10,6 +10,7 @@ package logstream
 
 import (
 	"context"
+	"sync"
 
 	"log/slog"
 
@@ -237,10 +238,43 @@ func resolveBackfillAnchor(from, replayLimit, totalLines, firstAvailable int64) 
 }
 
 // streamDropTracker holds the mutable drop-accounting state shared between
-// the bus subscription handler and the main event loop.
+// the bus subscription handler (publisher goroutine) and the SSE loop. The
+// bus invokes handlers synchronously on the publisher's goroutine, so the
+// writer and reader run concurrently — every field access goes through mu.
 type streamDropTracker struct {
+	mu    sync.Mutex
 	after int64 // highest dropped line number (-1 = none)
 	count int64 // total dropped since last flush
+}
+
+// recordDrop accounts for one dropped line at lineNum.
+func (dt *streamDropTracker) recordDrop(lineNum int64) {
+	dt.mu.Lock()
+	defer dt.mu.Unlock()
+	dt.count++
+	if lineNum > dt.after {
+		dt.after = lineNum
+	}
+}
+
+// snapshot returns the current drop accounting without resetting it.
+func (dt *streamDropTracker) snapshot() (after, count int64) {
+	dt.mu.Lock()
+	defer dt.mu.Unlock()
+	return dt.after, dt.count
+}
+
+// commitSent subtracts count already-reported drops, resetting the anchor once
+// the backlog is drained. Any drops recorded after the matching snapshot are
+// preserved for the next flush.
+func (dt *streamDropTracker) commitSent(count int64) {
+	dt.mu.Lock()
+	defer dt.mu.Unlock()
+	dt.count -= count
+	if dt.count <= 0 {
+		dt.count = 0
+		dt.after = -1
+	}
 }
 
 func (s *streamer) streamLoop(ctx context.Context, runID string, bus events.EventBus, db RunGetter, anchorFrom, replayLimit int64, runEnded bool) {
@@ -360,19 +394,13 @@ func bufferLogLine(le events.LogLineEvent, pendingCh chan events.LogLineEvent, d
 		// stays current, then try to enqueue the newest.
 		select {
 		case dropped := <-pendingCh:
-			if dropped.LineNum > dt.after {
-				dt.after = dropped.LineNum
-			}
-			dt.count++
+			dt.recordDrop(dropped.LineNum)
 		default:
 		}
 		select {
 		case pendingCh <- le:
 		default:
-			dt.count++
-			if le.LineNum > dt.after {
-				dt.after = le.LineNum
-			}
+			dt.recordDrop(le.LineNum)
 		}
 	}
 }
@@ -417,8 +445,8 @@ func (s *streamer) sendTerminalEvents(pendingCh <-chan events.LogLineEvent, dt *
 	if err := s.drainPendingCh(pendingCh); err != nil {
 		return
 	}
-	if dt.count > 0 {
-		_ = s.send.SendDropped(DroppedEvent{After: dt.after, Count: dt.count})
+	if after, count := dt.snapshot(); count > 0 {
+		_ = s.send.SendDropped(DroppedEvent{After: after, Count: count})
 	}
 	_ = s.send.SendDone(DoneEvent{FinalLine: s.lastSent, Status: "ended"})
 }
@@ -429,12 +457,11 @@ func (s *streamer) handleLiveLine(le events.LogLineEvent, dt *streamDropTracker)
 	if err := s.emitLine(lineFromBus(le)); err != nil {
 		return false
 	}
-	if dt.count > 0 {
-		if err := s.send.SendDropped(DroppedEvent{After: dt.after, Count: dt.count}); err != nil {
+	if after, count := dt.snapshot(); count > 0 {
+		if err := s.send.SendDropped(DroppedEvent{After: after, Count: count}); err != nil {
 			return false
 		}
-		dt.count = 0
-		dt.after = -1
+		dt.commitSent(count)
 	}
 	return true
 }

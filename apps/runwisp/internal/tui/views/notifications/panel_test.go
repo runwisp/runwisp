@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/internal/server"
 )
 
@@ -53,6 +55,46 @@ func TestNotificationsPanel_UpsertSameTimestampNoOp(t *testing.T) {
 	}
 	if p.Upsert(n) {
 		t.Fatal("identical re-upsert should be a no-op")
+	}
+}
+
+// TestNotificationsPanel_CursorTracksInsert guards M4: when a notification
+// streams in above the cursor while the panel is expanded, the cursor must
+// follow the item it was pointing at so open/toggle-read act on the right row.
+func TestNotificationsPanel_CursorTracksInsert(t *testing.T) {
+	p := NewPanel()
+	now := time.Now()
+	p.Upsert(unreadNotification("01A", "info", now, "a"))
+	p.Upsert(unreadNotification("01B", "info", now, "b"))
+	p.Upsert(unreadNotification("01C", "info", now, "c"))
+
+	p.Toggle() // expand; cursor 0 → highest ULID "01C"
+	if !p.MoveCursor(1) {
+		t.Fatal("expected cursor to move to the second row")
+	}
+	if sel := p.Selected(); sel == nil || sel.ID != "01B" {
+		t.Fatalf("precondition: cursor should highlight 01B, got %v", sel)
+	}
+
+	// A newer notification (highest ULID) inserts at index 0, above the cursor.
+	p.Upsert(unreadNotification("01Z", "warn", now, "z"))
+	if sel := p.Selected(); sel == nil || sel.ID != "01B" {
+		t.Fatalf("cursor should still track 01B after insert above it, got %v", sel)
+	}
+}
+
+// TestTruncateLine_ANSIAware guards M5: truncating an ANSI-styled line must cut
+// by display column, never by raw bytes, so the visible content stays intact
+// instead of slicing through an escape sequence. The input carries explicit SGR
+// escapes because lipgloss renders colorless under test.
+func TestTruncateLine_ANSIAware(t *testing.T) {
+	styled := "\x1b[31m" + strings.Repeat("x", 40) + "\x1b[0m"
+	out := truncateLine(styled, 10)
+	if w := lipgloss.Width(out); w != 10 {
+		t.Fatalf("truncated display width: got %d want 10", w)
+	}
+	if visible := ansi.Strip(out); visible != strings.Repeat("x", 9)+"…" {
+		t.Fatalf("visible content corrupted by byte-slice: %q", visible)
 	}
 }
 

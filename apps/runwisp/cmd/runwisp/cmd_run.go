@@ -96,6 +96,13 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		defer rerouteLogsToStderrOnError(&err)
 	}
 
+	// Refuse to boot if another daemon already owns this data dir. Two daemons
+	// on one data dir clobber the shared PID file (orphaning the first) and open
+	// the same SQLite database, so fail hard before touching any state.
+	if err := ensureNoRunningDaemon(f); err != nil {
+		return err
+	}
+
 	// Open database first — config values (fingerprint, jwt_secret) live there.
 	db, err := storage.New(f.DBPath())
 	if err != nil {
@@ -135,7 +142,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	defer svc.DB.Close()
 
 	if pidErr := datadir.WritePidFile(f.DataDir); pidErr != nil {
-		slog.Warn("Failed to write PID file", "err", pidErr)
+		return fmt.Errorf("write PID file: %w", pidErr)
 	}
 	defer datadir.CleanPidFile(f.DataDir)
 
