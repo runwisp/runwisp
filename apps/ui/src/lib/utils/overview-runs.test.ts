@@ -26,7 +26,7 @@ describe("mergeRecentRuns", () => {
     // must not revert the run's phase.
     it("does not regress an SSE-advanced run to an older phase", () => {
         const live = [makeRun("r1", { status: "ended", end_reason: "success" })];
-        const snapshot = [makeRun("r1", { status: "running", end_reason: undefined })];
+        const snapshot = [makeRun("r1", { status: "running" })];
 
         const merged = mergeRecentRuns(live, snapshot, 16);
         expect(merged).toHaveLength(1);
@@ -47,7 +47,7 @@ describe("mergeRecentRuns", () => {
 describe("mergeRunningRuns", () => {
     it("drops a stale snapshot's running copy of a finished run", () => {
         const live = [makeRun("r1", { status: "ended", end_reason: "success" })];
-        const snapshot = [makeRun("r1", { status: "running", end_reason: undefined })];
+        const snapshot = [makeRun("r1", { status: "running" })];
 
         const merged = mergeRunningRuns(live, snapshot, 8);
         expect(merged).toHaveLength(0);
@@ -55,7 +55,7 @@ describe("mergeRunningRuns", () => {
 
     it("keeps genuinely running runs", () => {
         const live: Run[] = [];
-        const snapshot = [makeRun("r1", { status: "running", end_reason: undefined })];
+        const snapshot = [makeRun("r1", { status: "running" })];
         const merged = mergeRunningRuns(live, snapshot, 8);
         expect(merged.map((r) => r.id)).toEqual(["r1"]);
     });
