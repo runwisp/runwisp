@@ -154,6 +154,12 @@ report their `instances` and omit `max_concurrent` — a service's copy count is
 }
 ```
 
+A task carries `"staged": true` when its definition lives in the machine-owned
+`runwisp.d/imported.toml` that [`import --write`](#migrate-an-existing-setup)
+manages — it came from an import and isn't native TOML yet. The field is derived
+from where the definition was loaded, so it's absent for your own tasks and
+disappears on its own once you move one into your root config.
+
 `runwisp status --json` is the live snapshot: daemon health, a system summary,
 and every task with its last run — the exit code, timing, and `failed`/`missed`
 flags are precomputed so you don't have to decode RunWisp's status names
@@ -276,13 +282,28 @@ Both read from a file or from stdin, print the generated TOML to stdout
 so you can review it, and write a `# TODO` comment for anything that
 doesn't map cleanly — nothing is silently dropped. Shared flags:
 
-| Flag             | What it does                                                  |
-| ---------------- | ------------------------------------------------------------- |
-| `--output`, `-o` | Write the TOML to this file instead of stdout.                |
-| `--write`        | Write to the `--config` path (default `runwisp.toml`).        |
-| `--force`        | Overwrite the target file without prompting.                  |
-| `--quiet`        | Suppress the summary on stderr.                               |
-| `--system`       | _(cron only)_ Force system-crontab parsing (the user column). |
+| Flag             | What it does                                                              |
+| ---------------- | ------------------------------------------------------------------------- |
+| `--output`, `-o` | Write the TOML to this standalone file instead of stdout.                 |
+| `--write`        | Install into the two-tier layout (see below) next to the `--config` path. |
+| `--force`        | Overwrite the target file without prompting.                              |
+| `--quiet`        | Suppress the summary on stderr.                                           |
+| `--system`       | _(cron only)_ Force system-crontab parsing (the user column).             |
+
+`--write` doesn't append to your `runwisp.toml`. It installs the import in a
+**two-tier layout**: the generated tasks land in a machine-owned
+`runwisp.d/imported.toml` (RunWisp's drop-in directory, named after cron's own
+`/etc/cron.d`), and your root `runwisp.toml` is created — or has its
+[`[daemon].include`](/configuration/daemon/) wired — so the daemon loads them.
+Your hand-authored config stays yours; the importer only ever owns the staging
+file. Both files are written together and rolled back as one, so a name that
+clashes with a task you already have leaves nothing behind but an error.
+
+If your root config already sets a custom `include` list, `import --write`
+won't second-guess it — it tells you the glob to add and writes nothing.
+
+Tasks that live in the staging file report `"staged": true` in
+`list`/`status --json` (and the API): imported, not yet native.
 
 System crontabs (`/etc/crontab`, `/etc/cron.d/*`) carry a user column;
 `runwisp import cron` detects that from the path or header and maps it to

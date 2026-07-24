@@ -41,6 +41,27 @@ func renderComposeStarter(composeFilename, alias string) string {
 	return r.Replace(composeStarterConfig)
 }
 
+// TwoTierRootConfig returns the root runwisp.toml `import`/`adopt` scaffold when
+// no config exists yet: it wires in the machine-owned runwisp.d staging directory
+// and explains the two-tier layout, while staying a file the operator owns and
+// keeps in git. Imported jobs land in runwisp.d/imported.toml; `runwisp promote`
+// graduates one into this file.
+func TwoTierRootConfig() string {
+	return twoTierRootConfig
+}
+
+const twoTierRootConfig = SchemaDirective + `# runwisp.toml
+# Docs: https://docs.runwisp.com/recipes/migrating-from-cron/
+#
+# Your imported jobs live in ` + ImportedStagingSubdir + `/` + ImportedStagingBase + ` (machine-managed by
+# ` + "`runwisp import`" + `). This root file is yours: add native [tasks.*] here,
+# and ` + "`runwisp promote <name>`" + ` graduates an imported job into it. Keep
+# this file in version control.
+
+[daemon]
+include = ["` + StagingIncludeGlob + `"]
+`
+
 const starterConfig = SchemaDirective + `# runwisp.toml
 # Docs: https://docs.runwisp.com/configuration/overview/
 

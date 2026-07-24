@@ -107,16 +107,31 @@ func TestRunImportCronWriteAndForce(t *testing.T) {
 }
 
 func TestRunImportCronWriteToConfigPath(t *testing.T) {
+	// --write installs the two-tier layout: the config path is created and wired,
+	// and the task itself lands in the machine-owned runwisp.d staging file.
 	src := tempFile(t, "crontab", "0 0 * * * /usr/bin/backup.sh\n")
-	cfg := filepath.Join(t.TempDir(), "runwisp.toml")
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "runwisp.toml")
 	var stdout, stderr bytes.Buffer
 	err := runImportCron(&stdout, &stderr, openTempFile(t, ""), src,
 		importer.CronOptions{}, Flags{CfgFile: cfg}, importOpts{write: true})
 	if err != nil {
 		t.Fatalf("runImportCron --write: %v", err)
 	}
-	if _, err := os.Stat(cfg); err != nil {
-		t.Errorf("--write should have written the config path: %v", err)
+	rootBytes, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatalf("--write should have created the config path: %v", err)
+	}
+	if !strings.Contains(string(rootBytes), `include = ["runwisp.d/*.toml"]`) {
+		t.Errorf("root config should be wired to load runwisp.d:\n%s", rootBytes)
+	}
+	staging := filepath.Join(dir, "runwisp.d", "imported.toml")
+	stagingBytes, err := os.ReadFile(staging)
+	if err != nil {
+		t.Fatalf("--write should have written the staging file: %v", err)
+	}
+	if !strings.Contains(string(stagingBytes), "[tasks.backup]") {
+		t.Errorf("staging file missing task block:\n%s", stagingBytes)
 	}
 }
 

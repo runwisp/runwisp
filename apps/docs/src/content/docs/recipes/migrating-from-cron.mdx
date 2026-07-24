@@ -42,26 +42,36 @@ MAILTO=ops@example.com
 you get:
 
 ```toml
-[defaults]
-shell = "/bin/bash"
-
-[defaults.env]
-PATH = "/usr/local/bin:/usr/bin"
-
 [tasks.backup]
 description = "Nightly database backup"
 cron = "30 2 * * *"
+shell = "/bin/bash"
 run = "/usr/local/bin/backup.sh --full"
+
+[tasks.backup.env]
+PATH = "/usr/local/bin:/usr/bin"
 
 # @reboot — runs once each time the daemon starts.
 [tasks.warmup]
 run_on_start = true
+shell = "/bin/bash"
 run = "/opt/app/warmup"
+
+[tasks.warmup.env]
+PATH = "/usr/local/bin:/usr/bin"
 
 [tasks.healthcheck]
 cron = "*/5 * * * *"
+shell = "/bin/bash"
 run = "/opt/healthcheck.sh"
+
+[tasks.healthcheck.env]
+PATH = "/usr/local/bin:/usr/bin"
 ```
+
+Every task carries the crontab's `SHELL` and `PATH` itself, rather than a shared
+`[defaults]` block — more verbose, but each task stands alone and your own global
+settings are left untouched.
 
 When it looks right, save it:
 
@@ -74,6 +84,43 @@ runwisp validate
 `--force`), and [`runwisp validate`](/configuration/overview/) confirms the
 result parses before you start the daemon. Then `runwisp daemon` — and the same
 jobs run on the same schedules, except now they're all on the dashboard.
+
+### Keeping your own config separate
+
+`-o` gives you one flat file, which is perfect when you're starting fresh. If
+you already have a `runwisp.toml` you've been hand-writing, use `--write`
+instead:
+
+```bash
+crontab -l | runwisp import cron --write
+```
+
+That installs the import in a **two-tier layout**:
+
+```
+runwisp.toml              # yours — hand-authored, keep it in git
+runwisp.d/imported.toml   # machine-owned — the importer writes this
+```
+
+Your root file is created (or has its
+[`[daemon].include`](/configuration/daemon/) wired) to load `runwisp.d/*.toml`,
+and the imported jobs land in the staging file. Nothing you wrote by hand is
+touched — the importer only ever owns `runwisp.d/imported.toml`, so you can
+re-run the import without worrying about what it'll do to your own tasks. Both
+files are written as one unit: if an imported job's name collides with a task
+you already have, the whole write rolls back and tells you, rather than leaving
+your daemon with a config it can't load.
+
+Imported tasks show up as `staged` in `runwisp list` and `status --json` —
+shorthand for "came from an import, not native TOML yet". It's a label, not a
+limitation: staged tasks are scheduled and run exactly like any other. When you
+want to own one, move it into your `runwisp.toml` and the badge clears itself on
+the next load.
+
+:::note
+If your root config already sets its own `include` list, `--write` won't edit it
+behind your back. It prints the glob to add and writes nothing.
+:::
 
 :::tip[System crontabs just work]
 `/etc/crontab` and files in `/etc/cron.d` put a **user** between the schedule
@@ -103,11 +150,18 @@ Most of a crontab translates one-to-one. Here's the whole picture:
 | `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.         |
 | `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.              |
 | user column (system crontab)   | `user = "..."`                | Detected automatically; force with `--system`. |
-| `SHELL=/bin/bash`              | `[defaults] shell`            | Must be an absolute path.                      |
-| `PATH=…`, other `VAR=val`      | `[defaults.env]`              | Applied to every task.                         |
-| `CRON_TZ=…` / `TZ=…`           | `[scheduler] timezone`        | Becomes the daemon-wide timezone.              |
+| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                      |
+| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.       |
+| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab's tasks.                |
 | `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.    |
 | `MAILTO=…`                     | _(nothing — see below)_       | RunWisp notifies instead of emailing.          |
+
+Crontab-wide settings become **per-task** values rather than daemon-wide ones.
+A crontab's `SHELL`, `CRON_TZ`/`TZ`, and top-of-file `VAR=val` lines are copied
+onto each task the importer emits from that file, so importing a second crontab
+with different values can't silently reach back and change the first one's
+tasks — and nothing an import writes touches your global `[defaults]` or
+`[scheduler]`.
 
 RunWisp's cron grammar is a superset of vixie-cron's: the standard five fields,
 descriptors like `@daily`, and a few extras (six-field specs with seconds,

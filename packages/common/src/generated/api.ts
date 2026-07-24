@@ -1269,6 +1269,7 @@ export interface components {
             on_overlap?: string;
             parameters?: components["schemas"]["TaskParam"][] | null;
             restart?: string;
+            staged?: boolean;
         };
         TaskComposeRef: {
             file: string;
@@ -1430,6 +1431,8 @@ export interface components {
             secrets_file?: string;
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
             shell?: string;
+            /** @description True when the task's definition lives in the machine-owned staging file — imported, not yet promoted to native TOML */
+            staged?: boolean;
             /**
              * Format: int64
              * @description For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting

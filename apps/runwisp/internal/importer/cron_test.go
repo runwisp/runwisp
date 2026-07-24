@@ -32,8 +32,12 @@ func mustNotContain(t *testing.T, haystack, needle string) {
 }
 
 func hasAttentionNote(r *Result, substr string) bool {
+	return hasNote(r, LevelAttention, substr)
+}
+
+func hasNote(r *Result, level Level, substr string) bool {
 	for _, n := range r.Notes {
-		if n.Level == LevelAttention && strings.Contains(n.Message, substr) {
+		if n.Level == level && strings.Contains(n.Message, substr) {
 			return true
 		}
 	}
@@ -88,9 +92,12 @@ func TestCronShellAndEnv(t *testing.T) {
 	in := "SHELL=/bin/bash\nPATH=/usr/local/bin:/usr/bin\nHOME=/home/deploy\n0 1 * * * /bin/job\n"
 	res := parseCron(t, in, CronOptions{})
 	out := res.TOML()
-	mustContain(t, out, "[defaults]")
+	// SHELL / env fold onto the task, not daemon-wide singletons, so the output
+	// is safe to live in an included staging file.
+	mustNotContain(t, out, "[defaults]")
+	mustContain(t, out, "[tasks.job]")
 	mustContain(t, out, `shell = "/bin/bash"`)
-	mustContain(t, out, "[defaults.env]")
+	mustContain(t, out, "[tasks.job.env]")
 	mustContain(t, out, `PATH = "/usr/local/bin:/usr/bin"`)
 	mustContain(t, out, `HOME = "/home/deploy"`)
 }
@@ -106,8 +113,49 @@ func TestCronRelativeShellNoted(t *testing.T) {
 func TestCronTimezone(t *testing.T) {
 	res := parseCron(t, "CRON_TZ=Europe/Bratislava\n0 4 * * * /bin/job\n", CronOptions{})
 	out := res.TOML()
-	mustContain(t, out, "[scheduler]")
+	// CRON_TZ/TZ folds onto each task's timezone, not the [scheduler] singleton.
+	mustNotContain(t, out, "[scheduler]")
+	mustContain(t, out, "[tasks.job]")
 	mustContain(t, out, `timezone = "Europe/Bratislava"`)
+}
+
+func TestCronExistingSkipsSameCommand(t *testing.T) {
+	// A job whose derived name AND command already exist in the live config
+	// (typically promoted into the root TOML) is skipped on re-import, with an
+	// info note so the skip is never silent.
+	opts := CronOptions{Existing: map[string]string{"backup": "/usr/bin/backup.sh --full"}}
+	res := parseCron(t, "30 2 * * * /usr/bin/backup.sh --full\n", opts)
+	if tasks, _ := res.Counts(); tasks != 0 {
+		t.Fatalf("expected the matching job to be skipped, got %d tasks", tasks)
+	}
+	mustNotContain(t, res.TOML(), "[tasks.backup]")
+	if !hasNote(res, LevelInfo, "skipped re-importing") {
+		t.Fatalf("expected a skip note, got %+v", res.Notes)
+	}
+}
+
+func TestCronExistingRenamesDifferentCommand(t *testing.T) {
+	// Same derived name but a DIFFERENT command is a genuine clash: the job is
+	// preserved under name-2 rather than colliding with the existing task.
+	opts := CronOptions{Existing: map[string]string{"backup": "/opt/something-else"}}
+	res := parseCron(t, "30 2 * * * /usr/bin/backup.sh --full\n", opts)
+	out := res.TOML()
+	mustNotContain(t, out, "[tasks.backup]")
+	mustContain(t, out, "[tasks.backup-2]")
+	mustContain(t, out, `run = "/usr/bin/backup.sh --full"`)
+	if !hasNote(res, LevelInfo, "imported this one as") {
+		t.Fatalf("expected a rename note, got %+v", res.Notes)
+	}
+}
+
+func TestCronExistingServiceForcesRename(t *testing.T) {
+	// A clash against a service (empty-command sentinel) always renames, never
+	// skips — a service and a task are different things even at the same name.
+	opts := CronOptions{Existing: map[string]string{"worker": ""}}
+	res := parseCron(t, "* * * * * /usr/bin/worker\n", opts)
+	out := res.TOML()
+	mustNotContain(t, out, "[tasks.worker]")
+	mustContain(t, out, "[tasks.worker-2]")
 }
 
 func TestCronNameDedupe(t *testing.T) {

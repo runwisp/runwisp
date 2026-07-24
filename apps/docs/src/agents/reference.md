@@ -220,6 +220,10 @@ runwisp restart              — stop + fresh start (applies restart-only settin
 runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed)
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --quiet
+                             — -o writes one standalone file; --write installs the two-tier layout
+                               (tasks → machine-owned runwisp.d/imported.toml, root runwisp.toml's
+                               [daemon].include wired to load it; both written atomically or rolled back).
+                               Tasks from the staging file report "staged": true in list/status --json.
 runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_NO_AUTH, refuses if RUNWISP_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json

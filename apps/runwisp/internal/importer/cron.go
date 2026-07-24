@@ -25,6 +25,15 @@ type CronOptions struct {
 	// TODO banner — when a job line looks like it carries a user column. It is
 	// left off when the operator forces the format with --system / --system=false.
 	Detect bool
+	// Existing carries the task/service names already defined in the live config's
+	// OTHER files — the merged config minus the machine-owned staging file that a
+	// re-import overwrites. It powers identity-aware dedup so re-importing after a
+	// `promote` doesn't collide: a job whose derived name AND command match an
+	// existing task is skipped (already owned by the root config); a name-only
+	// clash is renamed to name-2 rather than duplicating. The value is the
+	// existing task's run command, or "" for entries with no comparable command
+	// (services, compose) which therefore always force a rename, never a skip.
+	Existing map[string]string
 }
 
 // cronWrappers are leading command tokens that don't name the real program, so
@@ -53,12 +62,18 @@ var cronInterpreters = map[string]bool{
 // over a pipe.
 func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 	cp := &crontabParser{
-		res:  &Result{},
-		dd:   newDeduper(),
-		opts: opts,
+		res:      &Result{},
+		dd:       newDeduper(),
+		opts:     opts,
+		existing: opts.Existing,
 		// system can be flipped on mid-parse when Detect spots the header legend.
 		system: opts.System,
 		env:    map[string]string{},
+	}
+	// Reserve names the live config already owns so a name clash renames to
+	// name-2 instead of emitting a duplicate that fails the merged load.
+	for name := range opts.Existing {
+		cp.dd.reserve(name)
 	}
 
 	sc := bufio.NewScanner(r)
@@ -85,6 +100,7 @@ type crontabParser struct {
 	system    bool
 	ambiguous bool
 
+	existing       map[string]string // name → run of tasks already owned by other config files
 	env            map[string]string
 	shell          string
 	timezone       string
@@ -134,6 +150,11 @@ func (cp *crontabParser) handleEnv(name, value string) {
 	switch strings.ToUpper(name) {
 	case "SHELL":
 		cp.shell = value
+		if value != "" && !filepath.IsAbs(value) {
+			cp.res.addNote(LevelAttention, "",
+				"crontab SHELL="+value+" is not an absolute path; RunWisp needs an "+
+					"absolute shell path. The imported tasks keep the default shell.")
+		}
 	case "MAILTO":
 		cp.res.addNote(LevelAttention, "",
 			"crontab sets MAILTO="+value+" — RunWisp doesn't email job output. "+
@@ -147,14 +168,14 @@ func (cp *crontabParser) handleEnv(name, value string) {
 }
 
 func (cp *crontabParser) handleJob(line string) {
-	b, ok := cp.res.parseCronJob(line, cp.pendingComment, cp.system, cp.dd)
+	blocks, ok := cp.buildJob(line)
 	cp.pendingComment = ""
 	if !ok {
 		cp.res.addNote(LevelAttention, "",
 			"couldn't parse crontab line: "+truncate(line, 60))
 		return
 	}
-	cp.jobs = append(cp.jobs, b)
+	cp.jobs = append(cp.jobs, blocks...)
 }
 
 func (cp *crontabParser) warnIfAmbiguous() {
@@ -171,74 +192,93 @@ func (cp *crontabParser) warnIfAmbiguous() {
 			"--system=false to silence this if the commands really do start with that word.")
 }
 
-// assemble emits blocks in reading order: scheduler tz, defaults, then jobs.
+// assemble emits the job blocks in reading order. RunWisp has no daemon-wide
+// crontab singletons: SHELL, CRON_TZ/TZ, and top-of-file env vars are folded
+// onto the individual tasks in buildJob instead. That keeps every imported task
+// self-contained — and safe to live in an included staging file, which the
+// config loader forbids from setting the [defaults] / [scheduler] singletons.
 func (cp *crontabParser) assemble() {
-	if cp.timezone != "" {
-		tz := block{header: "scheduler"}
-		tz.set("timezone", tomlString(cp.timezone))
-		tz.lead = []string{"crontab CRON_TZ/TZ became the daemon-wide scheduler timezone."}
-		cp.res.blocks = append(cp.res.blocks, tz)
-	}
-	if cp.shell != "" || len(cp.env) > 0 {
-		cp.assembleDefaults()
-	}
 	cp.res.blocks = append(cp.res.blocks, cp.jobs...)
 }
 
-func (cp *crontabParser) assembleDefaults() {
-	def := block{header: "defaults"}
-	if cp.shell != "" {
-		if filepath.IsAbs(cp.shell) {
-			def.set("shell", tomlString(cp.shell))
-		} else {
-			cp.res.addNote(LevelAttention, "",
-				"crontab SHELL="+cp.shell+" is not an absolute path; RunWisp needs an "+
-					"absolute shell path. Left out of [defaults].shell.")
-		}
+// resolveJobName picks the task name for a job, applying identity-aware dedup
+// against the live config (populated on a two-tier re-import). It returns
+// skip=true when the job is already owned by the root config (same derived name
+// AND same command — typically a promoted job still in the crontab), and
+// otherwise a unique name, renamed when a different command already claims the
+// base. Both non-trivial outcomes leave an info note so the choice is never
+// silent.
+func (cp *crontabParser) resolveJobName(command string) (name string, skip bool) {
+	base := deriveCronName(command)
+	existingCmd, reserved := cp.existing[base]
+	if reserved && existingCmd != "" && sameCommand(existingCmd, command) {
+		cp.res.addNote(LevelInfo, base,
+			"already defined in runwisp.toml with the same command — skipped re-importing it.")
+		return "", true
 	}
-	if len(def.fields) > 0 {
-		cp.res.blocks = append(cp.res.blocks, def)
+	name = cp.dd.unique(base)
+	if reserved && name != base {
+		cp.res.addNote(LevelInfo, name,
+			"runwisp.toml already defines \""+base+"\" with a different command — imported this one as \""+name+"\".")
 	}
-	if eb, ok := envBlock("defaults.env", cp.env); ok {
-		eb.lead = []string{"Environment variables that sat at the top of the crontab."}
-		cp.res.blocks = append(cp.res.blocks, eb)
-	}
+	return name, false
 }
 
-// parseCronJob turns one schedule+command line into a [tasks.NAME] block.
-func (r *Result) parseCronJob(line, comment string, system bool, dd *deduper) (block, bool) {
-	schedule, command, runOnStart, ok := splitCronScheduleCommand(line, system)
+// buildJob turns one schedule+command line into its [tasks.NAME] block plus,
+// when the crontab set SHELL / CRON_TZ / env vars in effect above it, the
+// matching per-task fields and a [tasks.NAME.env] child block. Cron applies
+// those settings to every job that follows them in the file, so the state is
+// snapshotted at the job's position rather than folded globally.
+func (cp *crontabParser) buildJob(line string) ([]block, bool) {
+	schedule, command, runOnStart, ok := splitCronScheduleCommand(line, cp.system)
 	if !ok {
-		return block{}, false
+		return nil, false
 	}
 
-	name := dd.unique(deriveCronName(command))
+	name, skip := cp.resolveJobName(command)
+	if skip {
+		return nil, true
+	}
 	b := block{
 		header: "tasks." + name,
 		isItem: true,
 		name:   name,
 		kind:   "task",
 	}
-	if comment != "" {
-		b.set("description", tomlString(comment))
+	if cp.pendingComment != "" {
+		b.set("description", tomlString(cp.pendingComment))
 	}
 
-	r.applyCronSchedule(&b, name, schedule, runOnStart)
+	cp.res.applyCronSchedule(&b, name, schedule, runOnStart)
 
-	if system {
-		// tok[5] held the user column; re-split to recover it cleanly.
+	if cp.system {
+		// The user column sat between the schedule and the command; re-split to
+		// recover it cleanly.
 		if user, ok := systemCronUser(line); ok && user != "" {
 			b.set("user", tomlString(user))
 		}
 	}
+	if cp.timezone != "" {
+		b.set("timezone", tomlString(cp.timezone))
+	}
+	// A relative SHELL was already flagged in handleEnv; only an absolute path
+	// becomes a per-task shell.
+	if cp.shell != "" && filepath.IsAbs(cp.shell) {
+		b.set("shell", tomlString(cp.shell))
+	}
 
 	b.set("run", tomlString(command))
 	if command != "" && strings.Contains(command, "%") {
-		r.addNote(LevelInfo, name,
+		cp.res.addNote(LevelInfo, name,
 			"command contains '%' — in crontab that means a newline/stdin marker. "+
 				"RunWisp passes the command to the shell verbatim; adjust if you relied on it.")
 	}
-	return b, true
+
+	blocks := []block{b}
+	if eb, ok := envBlock("tasks."+name+".env", cp.env); ok {
+		blocks = append(blocks, eb)
+	}
+	return blocks, true
 }
 
 // splitCronScheduleCommand splits a crontab job line into its schedule and
@@ -486,6 +526,14 @@ func splitFields(s string, n int) (tokens []string, rest string, ok bool) {
 		i++
 	}
 	return tokens, s[i:], true
+}
+
+// sameCommand reports whether an imported crontab command matches the run of a
+// task the live config already owns. `promote` preserves the command verbatim,
+// so trimmed equality reliably identifies "the same job" — the signal for
+// skipping a re-import rather than renaming it.
+func sameCommand(a, b string) bool {
+	return strings.TrimSpace(a) == strings.TrimSpace(b)
 }
 
 func truncate(s string, max int) string {

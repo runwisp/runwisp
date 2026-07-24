@@ -147,6 +147,15 @@ type Task struct {
 	ExecutionDef ExecutionDef    `toml:"-"             json:"-"`
 	Compose      *TaskComposeRef `toml:"-"             json:"compose,omitempty" doc:"Provenance metadata for tasks imported from a docker compose file"`
 
+	// Staged marks a task whose definition lives in the machine-owned staging
+	// file (runwisp.d/imported.toml, written by `runwisp import` and rewritten by
+	// `runwisp promote`) rather than the hand-authored root config. It means
+	// "imported, not yet promoted to native TOML" and drives the API/UI "staged"
+	// badge + display-only Promote affordance. Derived from the entry's origin
+	// file at config load — re-derived every load, so promoting a task into the
+	// root clears it automatically. Never a TOML key.
+	Staged bool `toml:"-" json:"staged,omitempty" doc:"True when the task's definition lives in the machine-owned staging file — imported, not yet promoted to native TOML"`
+
 	// WorkingDir is resolved to an absolute path at config load (relative to
 	// the runwisp.toml directory). Empty inherits the daemon's working dir.
 	WorkingDir string `toml:"-" json:"working_dir,omitempty" doc:"Resolved working directory for the task's process; empty inherits the daemon's working directory"`
@@ -360,6 +369,7 @@ type TaskBrief struct {
 	Instances     int               `json:"instances,omitempty"`
 	DependsOn     []string          `json:"depends_on,omitempty"`
 	Compose       *TaskComposeRef   `json:"compose,omitempty"`
+	Staged        bool              `json:"staged,omitempty"`
 	Parameters    []TaskParam       `json:"parameters,omitempty"`
 }
 

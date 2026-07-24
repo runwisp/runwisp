@@ -1516,6 +1516,9 @@
           },
           "restart": {
             "type": "string"
+          },
+          "staged": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1814,6 +1817,10 @@
           "shell": {
             "description": "Absolute path to the shell interpreter for run scripts; defaults to /bin/sh",
             "type": "string"
+          },
+          "staged": {
+            "description": "True when the task's definition lives in the machine-owned staging file — imported, not yet promoted to native TOML",
+            "type": "boolean"
           },
           "start_retries": {
             "description": "For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting",

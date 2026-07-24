@@ -459,6 +459,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 			Instances:     j.Instances,
 			DependsOn:     j.DependsOn,
 			Compose:       j.Compose,
+			Staged:        j.Staged,
 			Parameters:    j.Parameters,
 		})
 	}

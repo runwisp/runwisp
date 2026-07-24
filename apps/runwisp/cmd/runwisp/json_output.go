@@ -83,6 +83,7 @@ type statusTaskJSON struct {
 	Kind       string       `json:"kind"`
 	Cron       string       `json:"cron,omitempty"`
 	APITrigger bool         `json:"api_trigger"`
+	Staged     bool         `json:"staged,omitempty"`
 	NextRunAt  *string      `json:"next_run_at,omitempty"`
 	LastRun    *lastRunJSON `json:"last_run"`
 }
@@ -125,6 +126,7 @@ func newStatusTaskJSON(tr model.TaskResponse, last *model.Run) statusTaskJSON {
 		Kind:       taskKindString(tr.Kind),
 		Cron:       tr.Cron,
 		APITrigger: tr.APITrigger,
+		Staged:     tr.Staged,
 		NextRunAt:  tr.NextRunAt,
 	}
 	if last != nil {
@@ -244,6 +246,7 @@ type listTaskJSON struct {
 	MaxConcurrent *int   `json:"max_concurrent,omitempty"`
 	OnOverlap     string `json:"on_overlap"`
 	APITrigger    bool   `json:"api_trigger"`
+	Staged        bool   `json:"staged,omitempty"`
 	Description   string `json:"description,omitempty"`
 }
 
@@ -254,6 +257,7 @@ func newListTaskJSON(t model.Task) listTaskJSON {
 		Schedule:    t.Cron,
 		OnOverlap:   string(t.OnOverlap),
 		APITrigger:  t.APITrigger,
+		Staged:      t.Staged,
 		Description: t.Description,
 	}
 	if t.Kind.IsService() {

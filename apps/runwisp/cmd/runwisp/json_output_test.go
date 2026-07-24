@@ -33,6 +33,31 @@ func TestRunValidate_JSONInvalidEmitsErrorDoc(t *testing.T) {
 	assert.Empty(t, doc.Warnings, "warnings is an empty array, not null")
 }
 
+func TestNewListTaskJSON_CarriesStaged(t *testing.T) {
+	t.Parallel()
+	staged := newListTaskJSON(model.Task{Name: "imported", Kind: model.KindTask, Cron: "0 0 * * *", Staged: true})
+	assert.True(t, staged.Staged)
+
+	native := newListTaskJSON(model.Task{Name: "native", Kind: model.KindTask})
+	assert.False(t, native.Staged)
+
+	// omitempty: a native task must not carry the key at all.
+	b, err := json.Marshal(native)
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "staged")
+	b, err = json.Marshal(staged)
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"staged":true`)
+}
+
+func TestNewStatusTaskJSON_CarriesStaged(t *testing.T) {
+	t.Parallel()
+	st := newStatusTaskJSON(model.TaskResponse{
+		Task: model.Task{Name: "imported", Kind: model.KindTask, Staged: true},
+	}, nil)
+	assert.True(t, st.Staged)
+}
+
 func TestNewExecJSONDoc_MapsFailedAndDuration(t *testing.T) {
 	t.Parallel()
 	start := time.Date(2026, 7, 15, 3, 0, 0, 0, time.UTC)

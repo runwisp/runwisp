@@ -252,3 +252,55 @@ func TestInclude_NoMatchesIsNotAnError(t *testing.T) {
 	assert.ElementsMatch(t, []string{"solo"}, taskNames(cfg))
 	assert.Empty(t, cfg.includeFiles)
 }
+
+// TestInclude_StagedProvenance verifies that only tasks whose origin is the
+// machine-owned staging file (runwisp.d/imported.toml) are flagged Staged: a
+// native root task is not, a task in another included file is not, and a stray
+// file merely named imported.toml elsewhere is not (provenance is by exact
+// path, not basename).
+func TestInclude_StagedProvenance(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include = ["runwisp.d/*.toml", "conf.d/*.toml", "other/*.toml"]
+
+[tasks.native_root]
+run = "echo root"
+`,
+		"runwisp.d/imported.toml": `
+[tasks.from_cron]
+cron = "0 3 * * *"
+run = "echo imported"
+`,
+		// A generic user-chosen include dir — not the reserved staging location.
+		"conf.d/hand_authored.toml": `
+[tasks.hand]
+run = "echo hand"
+`,
+		// A file named imported.toml but NOT at the reserved runwisp.d location:
+		// its tasks must be treated as native, not staged.
+		"other/imported.toml": `
+[tasks.decoy]
+run = "echo decoy"
+`,
+	})
+	cfg, err := Load(filepath.Join(dir, "runwisp.toml"))
+	require.NoError(t, err)
+
+	assert.False(t, findTask(t, cfg, "native_root").Staged, "root task must not be staged")
+	assert.True(t, findTask(t, cfg, "from_cron").Staged, "runwisp.d/imported.toml task must be staged")
+	assert.False(t, findTask(t, cfg, "hand").Staged, "another included file must not be staged")
+	assert.False(t, findTask(t, cfg, "decoy").Staged, "a stray imported.toml elsewhere must not be staged")
+}
+
+// TestInclude_StagedNotSetForSingleFileConfig verifies a plain single-file
+// config (no includes) never marks tasks staged — even the root itself named
+// imported.toml is native, since staging is always an included file.
+func TestInclude_StagedNotSetForSingleFileConfig(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"imported.toml": "[tasks.solo]\nrun = \"echo hi\"\n",
+	})
+	cfg, err := Load(filepath.Join(dir, "imported.toml"))
+	require.NoError(t, err)
+	assert.False(t, findTask(t, cfg, "solo").Staged, "root config is never the staging file")
+}

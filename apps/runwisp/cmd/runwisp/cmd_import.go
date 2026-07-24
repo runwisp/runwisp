@@ -108,6 +108,13 @@ func init() {
 }
 
 func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cronOpts importer.CronOptions, f Flags, opts importOpts) error {
+	// A two-tier --write dedupes against what the root config already owns, so a
+	// re-import after `promote` skips the same job and renames a genuine clash
+	// instead of colliding on the merged load.
+	if opts.write && opts.output == "" {
+		cronOpts.Existing = existingEntryCommands(f.CfgFile)
+	}
+
 	r, closeFn, err := openImportSource(source, stdin)
 	if err != nil {
 		return err
@@ -210,20 +217,24 @@ func openImportSource(source string, stdin *os.File) (io.Reader, func(), error) 
 	return file, func() { _ = file.Close() }, nil
 }
 
-// emitImport renders the result, validates it, and either prints it to stdout
-// or writes it to the target file, then prints the summary to stderr.
+// emitImport renders the result, validates it, and delivers it: stdout by
+// default, a standalone file with -o, or the two-tier managed layout with
+// --write. The summary always goes to stderr.
 func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, sourceLabel string, f Flags, opts importOpts) error {
 	// Prepend the schema directive so the imported file is editor-validated the
 	// moment it lands, just like a scaffolded one. It is a TOML comment.
 	toml := config.SchemaDirective + res.TOML()
 	validationErr := validateGeneratedTOML(toml)
 
-	target := opts.output
-	if target == "" && opts.write {
-		target = f.CfgFile
+	// --write (without an explicit -o path) installs the import in the two-tier
+	// managed layout: tasks land in the machine-owned runwisp.d/imported.toml and
+	// the root config's include is wired to pick them up. -o always means "give
+	// me a standalone file at this path", the unchanged single-file flow.
+	if opts.write && opts.output == "" {
+		return emitTwoTier(stderr, f.CfgFile, toml, res, sourceLabel, validationErr, opts)
 	}
 
-	if target == "" {
+	if opts.output == "" {
 		// stdout mode: TOML to stdout, summary to stderr.
 		if _, err := io.WriteString(stdout, toml); err != nil {
 			return err
@@ -232,10 +243,10 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 		return nil
 	}
 
-	if err := confirmAndWrite(stderr, stdin, target, toml, opts); err != nil {
+	if err := confirmAndWrite(stderr, stdin, opts.output, toml, opts); err != nil {
 		return err
 	}
-	printImportSummary(stderr, res, sourceLabel, target, validationErr, opts)
+	printImportSummary(stderr, res, sourceLabel, opts.output, validationErr, opts)
 	return nil
 }
 
@@ -288,49 +299,68 @@ func validateGeneratedTOML(toml string) error {
 	return err
 }
 
+// importStyles carries the small palette shared by the import summaries.
+type importStyles struct {
+	ok, attn, dim lipgloss.Style
+}
+
+func newImportStyles() importStyles {
+	return importStyles{
+		ok:   lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"}),
+		attn: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"}),
+		dim:  lipgloss.NewStyle().Faint(true),
+	}
+}
+
+// printImportItems renders the per-item list (✓ clean, ! needs attention).
+func printImportItems(w io.Writer, res *importer.Result, st importStyles) {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	for _, it := range res.Items() {
+		mark := st.ok.Render("✓")
+		if it.Attention {
+			mark = st.attn.Render("!")
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%s\n", mark, it.Name, st.dim.Render(it.Schedule))
+	}
+	_ = tw.Flush()
+}
+
+// printImportNotes renders the notes block, if any.
+func printImportNotes(w io.Writer, res *importer.Result, st importStyles) {
+	if len(res.Notes) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "\nNotes:")
+	for _, n := range res.Notes {
+		bullet := st.dim.Render("•")
+		if n.Level == importer.LevelAttention {
+			bullet = st.attn.Render("!")
+		}
+		scope := ""
+		if n.Scope != "" {
+			scope = st.dim.Render("[" + n.Scope + "] ")
+		}
+		fmt.Fprintf(w, "  %s %s%s\n", bullet, scope, n.Message)
+	}
+}
+
 // printImportSummary writes the human-friendly overview to stderr: counts, a
 // per-item list (✓ clean, ! needs attention), the notes, and next steps.
 func printImportSummary(w io.Writer, res *importer.Result, sourceLabel, target string, validationErr error, opts importOpts) {
 	if opts.quiet {
 		return
 	}
-	okStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"})
-	attnStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"})
-	dimStyle := lipgloss.NewStyle().Faint(true)
+	st := newImportStyles()
 
 	tasks, services := res.Counts()
 	fmt.Fprintf(w, "\nImported %s → %s\n", sourceLabel, pluralizeCounts(tasks, services))
-
-	items := res.Items()
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	for _, it := range items {
-		mark := okStyle.Render("✓")
-		if it.Attention {
-			mark = attnStyle.Render("!")
-		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\n", mark, it.Name, dimStyle.Render(it.Schedule))
-	}
-	_ = tw.Flush()
-
-	if len(res.Notes) > 0 {
-		fmt.Fprintln(w, "\nNotes:")
-		for _, n := range res.Notes {
-			bullet := dimStyle.Render("•")
-			if n.Level == importer.LevelAttention {
-				bullet = attnStyle.Render("!")
-			}
-			scope := ""
-			if n.Scope != "" {
-				scope = dimStyle.Render("[" + n.Scope + "] ")
-			}
-			fmt.Fprintf(w, "  %s %s%s\n", bullet, scope, n.Message)
-		}
-	}
+	printImportItems(w, res, st)
+	printImportNotes(w, res, st)
 
 	fmt.Fprintln(w)
 	if validationErr != nil {
 		fmt.Fprintf(w, "%s the generated config didn't validate yet:\n  %s\n",
-			attnStyle.Render("!"), validationErr.Error())
+			st.attn.Render("!"), validationErr.Error())
 		fmt.Fprintln(w, "Fix the items above, then re-run `runwisp validate`.")
 		return
 	}

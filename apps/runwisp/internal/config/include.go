@@ -11,6 +11,32 @@ import (
 	"sort"
 )
 
+// ImportedStagingBase is the reserved basename of the machine-owned staging
+// file that `runwisp import` writes and `runwisp promote` rewrites. It lives at
+// <ImportedStagingSubdir>/<ImportedStagingBase> relative to the root config.
+// Tasks whose origin is this exact file are marked Staged (imported, not yet
+// promoted to native TOML) in the API/UI.
+const ImportedStagingBase = "imported.toml"
+
+// ImportedStagingSubdir is RunWisp's drop-in directory — the machine-managed
+// include dir the staging file lives in, relative to the root config directory.
+// Named after cron's own /etc/cron.d so migrating operators recognize it: their
+// cron.d/* jobs land in runwisp.d/*. (Distinct from a generic user-chosen
+// include dir like conf.d/; this one is owned by `import`/`promote`.)
+const ImportedStagingSubdir = "runwisp.d"
+
+// StagingFilePath returns the absolute path of the machine-owned staging file
+// (runwisp.d/imported.toml) relative to the given root config directory. It is the
+// single source of truth for where imports land and how provenance is derived,
+// shared by the loader, the importer, and `promote`.
+func StagingFilePath(rootDir string) string {
+	p := filepath.Join(rootDir, ImportedStagingSubdir, ImportedStagingBase)
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
+}
+
 // loadWithIncludes loads the root config and any files pulled in via
 // [daemon].include, returning the merged result as a Config plus a sourceDirs
 // map so later path resolution honors each entry's origin file.
@@ -61,9 +87,36 @@ func loadWithIncludes(path string) (*Config, sourceDirs, error) {
 	if err != nil {
 		return nil, sourceDirs{}, err
 	}
+	markStaged(cfg, nameSource, rootDir)
 	cfg.includeFiles = matched
 	cfg.includeGlobs = globs
 	return cfg, dirs, nil
+}
+
+// markStaged sets Task.Staged on every task whose origin file is the machine-
+// owned staging file, so the API/UI can surface the "imported, not yet native"
+// badge and Promote affordance. Origin is looked up from nameSource
+// (name → defining file); entries with no recorded origin — compose-generated
+// tasks, or any task in a single-file config — are never staged, and the root
+// config is never the staging file. Provenance is derived by exact path, not by
+// basename, so a stray file named imported.toml elsewhere is not mistaken for
+// the staging file. Re-derived every load, so promoting a task into the root
+// clears the flag automatically.
+func markStaged(cfg *Config, nameSource map[string]string, rootDir string) {
+	staging := StagingFilePath(rootDir)
+	for i := range cfg.Tasks {
+		origin, ok := nameSource[cfg.Tasks[i].Name]
+		if !ok {
+			continue
+		}
+		originAbs, err := filepath.Abs(origin)
+		if err != nil {
+			continue
+		}
+		if originAbs == staging {
+			cfg.Tasks[i].Staged = true
+		}
+	}
 }
 
 // mergeIncludeFile reads and parses one included file, enforces the flat-only

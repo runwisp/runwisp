@@ -230,6 +230,15 @@ type deduper struct {
 
 func newDeduper() *deduper { return &deduper{seen: map[string]int{}} }
 
+// reserve claims a name up front so a later unique() for the same base skips
+// straight to base-2. Used to seed names the live config already owns, so a
+// re-import never emits a duplicate that would fail the merged load.
+func (d *deduper) reserve(name string) {
+	if _, ok := d.seen[name]; !ok {
+		d.seen[name] = 1
+	}
+}
+
 // unique returns base if unused, otherwise base-2, base-3, … The first
 // collision for a base claims "-2" so the suffixes read naturally.
 func (d *deduper) unique(base string) string {
