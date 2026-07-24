@@ -169,7 +169,9 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
             total: 2,
         });
         src.setFilters(baseFilters());
-        await vi.waitFor(() => expect(src.loaded).toBe(true));
+        await vi.waitFor(() => {
+            expect(src.loaded).toBe(true);
+        });
 
         src.remove("a"); // present → removes row, total 2 → 1
         src.remove("a"); // already gone → must not touch total
