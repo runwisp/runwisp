@@ -41,7 +41,11 @@ var cronGoldenCases = []struct {
 	{name: "user", file: "testdata/cron/user.crontab", validate: true},
 	// A system crontab (/etc/crontab) with the extra user column, including a
 	// descriptor line that carries one.
-	{name: "system", file: "testdata/cron/system.crontab", opts: CronOptions{System: true}, validate: true},
+	// The user column is the one thing a system crontab has that RunWisp can't
+	// fully reproduce: crond runs each job in that user's home, and working_dir
+	// resolves against the daemon's. Said once for the file, not once per row.
+	{name: "system", file: "testdata/cron/system.crontab", opts: CronOptions{System: true}, validate: true,
+		expectNotes: []NoteKind{NoteWorkingDirUser}},
 	// Notes-only edge cases (MAILTO, relative SHELL, both '%' forms, dedupe, an
 	// unparseable line) that must surface but still leave a valid config.
 	{name: "messy", file: "testdata/cron/messy.crontab", validate: true, expectNotes: []NoteKind{

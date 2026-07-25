@@ -5,6 +5,7 @@
 cron = "0 4 * * *"
 timezone = "Mars/Olympus"  # TODO: RunWisp couldn't use this timezone — fix it.
 env_base = "clean"
+working_dir = "~"
 run = "/usr/bin/rollup"
 
 # @reboot — runs once each time the daemon starts.
@@ -12,4 +13,5 @@ run = "/usr/bin/rollup"
 run_on_start = true
 timezone = "Mars/Olympus"  # TODO: RunWisp couldn't use this timezone — fix it.
 env_base = "clean"
+working_dir = "~"
 run = "/usr/bin/warmup"

@@ -78,6 +78,7 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 	}
 
 	cp.warnIfAmbiguous()
+	cp.warnIfWorkingDirUnresolvable()
 	return cp.res, nil
 }
 
@@ -90,6 +91,9 @@ type crontabParser struct {
 
 	system    bool
 	ambiguous bool
+	// userHomes records that at least one job named a user whose home crond
+	// would have run it in — see warnIfWorkingDirUnresolvable.
+	userHomes bool
 
 	env      map[string]string
 	shell    string
@@ -239,6 +243,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	// from a different shell. Any PATH= the crontab set lands in the task's own
 	// env and layers over this.
 	b.set("env_base", tomlString(string(model.EnvBaseClean)))
+	cp.applyWorkingDir(&b, j.user)
 
 	cp.applyCommand(&b, ref, cc)
 	blocks := []block{b}
@@ -338,6 +343,46 @@ func (cp *crontabParser) applyCommand(b *block, ref itemRef, cc cronCommand) {
 			`crond reads \% as a literal '%', so the command was imported with the `+
 				`backslashes already removed.`)
 	}
+}
+
+// applyWorkingDir reproduces crond's rule that a job runs in the home directory
+// of the user running it. RunWisp instead defaults to the daemon's own working
+// directory, so a relative path in a `run` script resolves somewhere else
+// entirely — the kind of difference that shows up as an empty output file
+// rather than an error.
+//
+// Whether that rule is expressible depends on which user the job ends up as:
+//
+//   - A per-user crontab emits no `user`, so the task runs as the daemon's own
+//     account and `~` resolves to that same account's home. Identity and home
+//     move together, exactly as they do under crond.
+//   - A system crontab's user column emits `user = "..."`, but `working_dir` is
+//     resolved once at config load against the *daemon's* home, not that user's.
+//     Writing `~` there would be confidently wrong, so it is left unset and the
+//     file says so once (warnIfWorkingDirUnresolvable) — every job in a system
+//     crontab has a user column, so a note per row would be the same sentence
+//     repeated down the whole report.
+func (cp *crontabParser) applyWorkingDir(b *block, user string) {
+	if !cp.system {
+		b.set("working_dir", tomlString("~"))
+		return
+	}
+	if user != "" {
+		cp.userHomes = true
+	}
+}
+
+// warnIfWorkingDirUnresolvable states the one execution-model difference this
+// importer knowingly leaves in place, once per file rather than once per job.
+func (cp *crontabParser) warnIfWorkingDirUnresolvable() {
+	if !cp.userHomes {
+		return
+	}
+	cp.res.fileNote(NoteWorkingDirUser,
+		"crond runs each of these in its own user's home directory. RunWisp resolves "+
+			"working_dir once at config load — against the daemon's home, not each task's "+
+			"user — so it is left unset and the tasks run in the daemon's working directory. "+
+			"Set working_dir on any job whose command uses relative paths.")
 }
 
 // cronCommand is a crontab command field with crond's own '%' rules applied.

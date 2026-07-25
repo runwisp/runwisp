@@ -243,6 +243,46 @@ func TestCronPathLayersOverTheCleanBase(t *testing.T) {
 	assertGeneratedConfigLoads(t, out)
 }
 
+// TestCronRunsInTheHomeDirectory: crond runs a job in the invoking user's home,
+// RunWisp defaults to the daemon's working directory. A per-user crontab emits
+// no `user`, so the task runs as the daemon's account and `~` is that same
+// account's home — the rule holds without knowing who either of them is.
+func TestCronRunsInTheHomeDirectory(t *testing.T) {
+	res := parseCron(t, "0 4 * * * ./maintenance.sh\n", CronOptions{})
+	mustContain(t, res.TOML(), `working_dir = "~"`)
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Fatalf("status = %v, want clean", got)
+	}
+}
+
+// TestCronSystemWorkingDirIsNotGuessed is the half that would be confidently
+// wrong: a system crontab's job runs as its user column, but working_dir
+// resolves once at config load against the *daemon's* home. Writing "~" would
+// point deploy's job at root's home.
+func TestCronSystemWorkingDirIsNotGuessed(t *testing.T) {
+	res := parseCron(t, "0 5 * * * deploy ./cleanup.sh\n", CronOptions{System: true})
+	out := res.TOML()
+	mustContain(t, out, `user = "deploy"`)
+	mustNotContain(t, out, "working_dir")
+	if !hasNoteKind(res, NoteWorkingDirUser) {
+		t.Fatalf("expected a working-dir note, got %+v", allNotes(res))
+	}
+	// It belongs to the file, not the job: every row of a system crontab has a
+	// user column, so a per-row note would be the same sentence down the report.
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Fatalf("status = %v, want clean", got)
+	}
+}
+
+// TestCronSystemWithoutUserColumnsSaysNothing keeps the note honest: it fires on
+// the thing it names, not on the --system flag.
+func TestCronSystemWithoutUserColumnsSaysNothing(t *testing.T) {
+	res := parseCron(t, "# nothing importable here\n", CronOptions{System: true})
+	if hasNoteKind(res, NoteWorkingDirUser) {
+		t.Fatalf("unexpected working-dir note, got %+v", allNotes(res))
+	}
+}
+
 func TestCronCommentBecomesDescription(t *testing.T) {
 	in := "# Rotate the nginx logs\n0 0 * * * /usr/sbin/logrotate\n"
 	res := parseCron(t, in, CronOptions{})

@@ -32,6 +32,7 @@ const (
 	// something RunWisp cannot express at all.
 	NotePercentTranslated
 	NotePercentStdin
+	NoteWorkingDirUser
 
 	// Naming and identity, shared by both parsers.
 	NoteAlreadyDefined
@@ -89,6 +90,8 @@ func (k NoteKind) info() (slug string, blocking bool) {
 		return "percent-translated", false
 	case NotePercentStdin:
 		return "percent-stdin", true
+	case NoteWorkingDirUser:
+		return "working-dir-user", false
 	case NoteAlreadyDefined:
 		return "already-defined", false
 	case NoteRenamedOwned:

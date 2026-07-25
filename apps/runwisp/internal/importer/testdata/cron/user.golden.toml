@@ -7,6 +7,7 @@ cron = "30 2 * * *"
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
+working_dir = "~"
 run = "/usr/local/bin/backup.sh --full"
 
 [tasks.backup.env]
@@ -18,6 +19,7 @@ cron = "0 0 * * 0"
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
+working_dir = "~"
 run = "/usr/sbin/logrotate /etc/logrotate.conf"
 
 [tasks.logrotate.env]
@@ -28,6 +30,7 @@ cron = "@daily"
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
+working_dir = "~"
 run = "/opt/app/cleanup"
 
 [tasks.cleanup.env]
@@ -39,6 +42,7 @@ run_on_start = true
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
+working_dir = "~"
 run = "/opt/app/warmup"
 
 [tasks.warmup.env]
@@ -50,6 +54,7 @@ cron = "*/15 * * * *"
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
+working_dir = "~"
 run = "/usr/bin/nice -n 19 /opt/sync.sh"
 
 [tasks.sync.env]

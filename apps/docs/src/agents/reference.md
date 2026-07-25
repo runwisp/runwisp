@@ -236,6 +236,12 @@ runwisp import supervisord [FILE...] — convert supervisord config to runwisp.t
                                Proves the generated content loads + reports a root that already
                                fails to load; prints that the merge is unchecked (needs the files
                                on disk). Two-tier plan comes from configedit.PlanStage.
+                             — per-user crontab: working_dir = "~" (crond runs a job in the running user's
+                               home; no user is emitted, so ~ is that same account). System crontab: left
+                               unset (working_dir resolves at load against the daemon's home, not the user
+                               column's) and reported once as a file-level note, not per row.
+                             — every imported task gets env_base = "clean"; the crontab's own PATH= lands in
+                               the task's env and layers over it.
                              — cron's '%' rules are applied, not copied: an unescaped % ends the command
                                (rest = stdin, further % = newline), \% is a literal %. run is emitted as
                                crond would run it; lost stdin input is quoted in a # TODO on the run line
