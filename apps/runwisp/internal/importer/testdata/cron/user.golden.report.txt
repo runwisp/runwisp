@@ -1,0 +1,5 @@
+clean	backup	backup	30 2 * * *	/usr/local/bin/backup.sh --full
+clean	logrotate	logrotate	0 0 * * 0	/usr/sbin/logrotate /etc/logrotate.conf
+clean	cleanup	cleanup	@daily	/opt/app/cleanup
+clean	warmup	warmup	@reboot	/opt/app/warmup
+clean	sync	sync	*/15 * * * *	/usr/bin/nice -n 19 /opt/sync.sh

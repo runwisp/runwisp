@@ -1,0 +1,4 @@
+blocked	rollup	rollup	0 4 * * *	/usr/bin/rollup
+	timezone-invalid
+blocked	warmup	warmup	@reboot	/usr/bin/warmup
+	timezone-invalid

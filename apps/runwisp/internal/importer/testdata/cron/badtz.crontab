@@ -1,0 +1,6 @@
+# A crontab whose CRON_TZ names a zone RunWisp can't load. The expressions
+# themselves are fine, so the TODO belongs on the timezone line — and the
+# @reboot job runs under that zone too.
+CRON_TZ=Mars/Olympus
+0 4 * * * /usr/bin/rollup
+@reboot /usr/bin/warmup

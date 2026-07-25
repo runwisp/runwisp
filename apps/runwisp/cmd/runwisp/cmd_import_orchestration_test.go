@@ -144,8 +144,49 @@ func TestRunImportCronInvalidGeneratesNote(t *testing.T) {
 		importer.CronOptions{}, Flags{}, importOpts{}); err != nil {
 		t.Fatalf("runImportCron: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "didn't validate yet") {
-		t.Errorf("summary should flag the validation failure:\n%s", stderr.String())
+	// The row itself carries the parser's own words for what's wrong, and the
+	// verdict says the config won't load — so the epilogue points at the rows
+	// rather than repeating config.Load's error underneath them.
+	out := stderr.String()
+	for _, want := range []string{
+		"! broken",
+		"didn't parse",
+		"needs a fix before this config loads",
+		"Fix the items above",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("summary should contain %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "didn't validate yet") {
+		t.Errorf("the raw config.Load dump adds nothing when the rows already explain it:\n%s", out)
+	}
+}
+
+// TestRunImportCronQuietStillReportsBlocking is the --quiet regression: a broken
+// crontab under --quiet used to print nothing and exit 0, so a script wrote a
+// config that would not load and said so nowhere. --quiet silences the
+// inventory, not the alarm — and naming the task is the difference between
+// "something's wrong somewhere" and an actionable message.
+func TestRunImportCronQuietStillReportsBlocking(t *testing.T) {
+	src := tempFile(t, "crontab", "0 0 * * * /usr/bin/fine.sh\n99 99 * * * /usr/bin/broken.sh\n")
+	var stdout, stderr bytes.Buffer
+	if err := runImportCron(&stdout, &stderr, openTempFile(t, ""), src,
+		importer.CronOptions{}, Flags{}, importOpts{quiet: true}); err != nil {
+		t.Fatalf("runImportCron: %v", err)
+	}
+	out := stderr.String()
+	for _, want := range []string{"broken", "didn't parse", "needs a fix before this config loads"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("quiet mode must still report %q:\n%s", want, out)
+		}
+	}
+	// The inventory itself stays silent: no header, and no row for the job that
+	// imported cleanly.
+	for _, unwanted := range []string{"Imported crontab", "fine.sh"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("quiet mode should not print %q:\n%s", unwanted, out)
+		}
 	}
 }
 

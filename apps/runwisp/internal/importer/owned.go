@@ -64,25 +64,35 @@ func newNamer(res *Result, owned Owned) *namer {
 // unique returns a name unique within this import, ignoring the live config.
 func (n *namer) unique(base string) string { return n.dd.unique(base) }
 
-// resolve picks the name for an imported entry whose identity is (base name,
-// kind, command). It returns skip=true when the live config already owns exactly
-// this entry — same name, same kind, same command, i.e. a job that was already
+// resolve opens this job's report row and picks its RunWisp name. source is what
+// the source file called the job; base is that name sanitized to RunWisp's
+// rules. It returns skip=true when the live config already owns exactly this
+// entry — same name, same kind, same command, i.e. a job that was already
 // promoted and is still sitting in the source file — and otherwise a unique
-// name, renamed when something else already claims the base. Both non-trivial
-// outcomes leave a note, so neither choice is silent.
-func (n *namer) resolve(base string, kind model.TaskKind, command string) (name string, skip bool) {
+// name, renamed when something else already claims the base.
+//
+// The row is opened here, before the skip return, because this is the one place
+// both parsers pass through on their way to a name and the one place that
+// decides a job won't be imported. A row opened later would be a row a skipped
+// job never gets, which is the silent drop this design exists to prevent.
+func (n *namer) resolve(source, base string, kind model.TaskKind, command string) (ref itemRef, name string, skip bool) {
+	ref = n.res.addItem(source)
 	existing, reserved := n.owned[base]
 	if reserved && sameEntry(existing, kind, command) {
-		n.res.addNote(LevelInfo, base,
-			"already defined in runwisp.toml with the same command — skipped re-importing it.")
-		return "", true
+		ref.note(NoteAlreadyDefined, "already defined in runwisp.toml with the same command")
+		return ref, "", true
 	}
 	name = n.unique(base)
-	if reserved && name != base {
-		n.res.addNote(LevelInfo, name,
+	switch {
+	case name == base:
+	case reserved:
+		ref.note(NoteRenamedOwned,
 			"runwisp.toml already defines \""+base+"\" with a different command — imported this one as \""+name+"\".")
+	default:
+		ref.note(NoteRenamedCollision,
+			"another job in this import already took the name \""+base+"\" — imported this one as \""+name+"\".")
 	}
-	return name, false
+	return ref, name, false
 }
 
 // sameEntry reports whether an imported entry is the same job the live config

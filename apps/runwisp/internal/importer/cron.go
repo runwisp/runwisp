@@ -91,9 +91,12 @@ type crontabParser struct {
 	system    bool
 	ambiguous bool
 
-	env            map[string]string
-	shell          string
-	timezone       string
+	env      map[string]string
+	shell    string
+	timezone string
+	// timezoneErr is why the crontab's CRON_TZ/TZ can't be used, checked once
+	// where it's assigned rather than per job.
+	timezoneErr    error
 	pendingComment string // a "# ..." line directly above a job
 	jobs           []block
 }
@@ -141,16 +144,17 @@ func (cp *crontabParser) handleEnv(name, value string) {
 	case "SHELL":
 		cp.shell = value
 		if value != "" && !filepath.IsAbs(value) {
-			cp.res.addNote(LevelAttention, "",
+			cp.res.fileNote(NoteShellNotAbsolute,
 				"crontab SHELL="+value+" is not an absolute path; RunWisp needs an "+
 					"absolute shell path. The imported tasks keep the default shell.")
 		}
 	case "MAILTO":
-		cp.res.addNote(LevelAttention, "",
+		cp.res.fileNote(NoteMailto,
 			"crontab sets MAILTO="+value+" — RunWisp doesn't email job output. "+
 				"Wire a notifier instead (see notify_on_failure).")
 	case "CRON_TZ", "TZ":
 		cp.timezone = value
+		cp.timezoneErr = validateCronTimezone(value)
 	default:
 		cp.env[name] = value
 	}
@@ -161,8 +165,12 @@ func (cp *crontabParser) handleJob(line string) {
 	blocks, ok := cp.buildJob(line)
 	cp.pendingComment = ""
 	if !ok {
-		cp.res.addNote(LevelAttention, "",
-			"couldn't parse crontab line: "+truncate(line, 60))
+		// A line the operator wrote that RunWisp can't read is still a job, so it
+		// gets a row rather than a note at the bottom of the report — carrying the
+		// line verbatim, since deciding which half of it matters is exactly the
+		// job the parser just failed at.
+		cp.res.addItem(line).note(NoteLineUnparseable,
+			"this isn't a schedule followed by a command, so nothing was imported for it.")
 		return
 	}
 	cp.jobs = append(cp.jobs, blocks...)
@@ -176,7 +184,7 @@ func (cp *crontabParser) warnIfAmbiguous() {
 		"⚠ TODO: some lines may carry a user column (this looks like a system",
 		"  crontab). If a `run = \"…\"` below begins with a username, re-run with",
 		"  `runwisp import cron --system`.")
-	cp.res.addNote(LevelAttention, "",
+	cp.res.fileNote(NoteSystemAmbiguous,
 		"this looks like a system crontab (a user column between the schedule and "+
 			"command). Re-run with --system to split out per-task users, or "+
 			"--system=false to silence this if the commands really do start with that word.")
@@ -203,27 +211,20 @@ func (cp *crontabParser) buildJob(line string) ([]block, bool) {
 	}
 	command := j.command
 
-	name, skip := cp.names.resolve(deriveCronName(command), model.KindTask, command)
+	base := deriveCronName(command)
+	ref, name, skip := cp.names.resolve(base, base, model.KindTask, command)
 	if skip {
 		return nil, true
 	}
-	b := block{
-		header: "tasks." + name,
-		isItem: true,
-		name:   name,
-		kind:   "task",
-	}
+	b := block{header: "tasks." + name}
 	if cp.pendingComment != "" {
 		b.set("description", tomlString(cp.pendingComment))
 	}
 
-	cp.res.applyCronSchedule(&b, name, j.schedule, j.runOnStart)
+	schedule := cp.applySchedule(&b, ref, j.schedule, j.runOnStart)
 
 	if j.user != "" {
 		b.set("user", tomlString(j.user))
-	}
-	if cp.timezone != "" {
-		b.set("timezone", tomlString(cp.timezone))
 	}
 	// A relative SHELL was already flagged in handleEnv; only an absolute path
 	// becomes a per-task shell.
@@ -233,10 +234,11 @@ func (cp *crontabParser) buildJob(line string) ([]block, bool) {
 
 	b.set("run", tomlString(command))
 	if command != "" && strings.Contains(command, "%") {
-		cp.res.addNote(LevelInfo, name,
+		ref.note(NotePercentInCommand,
 			"command contains '%' — in crontab that means a newline/stdin marker. "+
 				"RunWisp passes the command to the shell verbatim; adjust if you relied on it.")
 	}
+	ref.emit(name, model.KindTask, schedule, command)
 
 	blocks := []block{b}
 	if eb, ok := envBlock("tasks."+name+".env", cp.env); ok {
@@ -305,25 +307,60 @@ func splitCronJobLine(line string, system bool) (cronJobLine, bool) {
 	return j, true
 }
 
-// applyCronSchedule sets the schedule-related fields on b, validating a cron
-// expression and flagging it for the operator when it doesn't parse.
-func (r *Result) applyCronSchedule(b *block, name, schedule string, runOnStart bool) {
+// applySchedule sets the schedule-related fields on b — including the timezone,
+// which is part of when a job runs — and returns the schedule as the report
+// should show it. A cron expression that doesn't parse is emitted commented with
+// a TODO so the operator fixes the line they wrote.
+func (cp *crontabParser) applySchedule(b *block, ref itemRef, schedule string, runOnStart bool) string {
 	if runOnStart {
 		b.set("run_on_start", "true")
-		b.schedule = "@reboot"
 		b.lead = []string{"@reboot — runs once each time the daemon starts."}
-		return
+		// @reboot consults no cron grammar, but it still runs under the crontab's
+		// timezone, so a bad zone has to be caught here too.
+		cp.applyTimezone(b, ref)
+		return "@reboot"
 	}
-	b.schedule = schedule
+	// Validated without the timezone deliberately: applyTimezone checks the zone
+	// separately, so a bad CRON_TZ puts its TODO on the timezone line instead of
+	// blaming a cron expression that is perfectly fine.
 	if err := cronspec.Validate(schedule, ""); err != nil {
 		b.setComment("cron", tomlString(schedule),
 			"TODO: RunWisp couldn't parse this cron expression — fix it.")
-		b.attention = true
-		r.addNote(LevelAttention, name,
+		ref.note(NoteCronUnparseable,
 			"cron expression "+schedule+" didn't parse: "+err.Error())
+	} else {
+		b.set("cron", tomlString(schedule))
+	}
+	cp.applyTimezone(b, ref)
+	return schedule
+}
+
+// applyTimezone folds the crontab's CRON_TZ/TZ onto the task. A zone RunWisp
+// can't load gets its own TODO rather than a clean import that then fails
+// config.Load — the job doesn't run, so the report must not call it clean.
+func (cp *crontabParser) applyTimezone(b *block, ref itemRef) {
+	if cp.timezone == "" {
 		return
 	}
-	b.set("cron", tomlString(schedule))
+	if cp.timezoneErr != nil {
+		b.setComment("timezone", tomlString(cp.timezone),
+			"TODO: RunWisp couldn't use this timezone — fix it.")
+		ref.note(NoteTimezoneInvalid,
+			"the crontab's timezone "+cp.timezone+" isn't one RunWisp can use: "+cp.timezoneErr.Error())
+		return
+	}
+	b.set("timezone", tomlString(cp.timezone))
+}
+
+// validateCronTimezone reports whether a crontab CRON_TZ/TZ value names a
+// timezone RunWisp can use, via the same helper the scheduler and config loader
+// validate with — rather than a direct time.LoadLocation, which would put a
+// second, differently-behaved answer in the tree.
+func validateCronTimezone(tz string) error {
+	if tz == "" {
+		return nil
+	}
+	return cronspec.Validate("* * * * *", tz)
 }
 
 // isCronHeaderLegend reports whether a comment is the column legend that
@@ -510,11 +547,4 @@ func splitFields(s string, n int) (tokens []string, rest string, ok bool) {
 		i++
 	}
 	return tokens, s[i:], true
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "…"
 }

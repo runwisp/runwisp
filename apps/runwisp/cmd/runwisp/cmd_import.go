@@ -237,14 +237,14 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 	// Prepend the schema directive so the imported file is editor-validated the
 	// moment it lands, just like a scaffolded one. It is a TOML comment.
 	toml := config.SchemaDirective + res.TOML()
-	validationErr := validateGeneratedTOML(toml)
+	rep := importReport{res: res, sourceLabel: sourceLabel, validationErr: validateGeneratedTOML(toml)}
 
 	// --write (without an explicit -o path) installs the import in the two-tier
 	// managed layout: tasks land in the machine-owned runwisp.d/imported.toml and
 	// the root config's include is wired to pick them up. -o always means "give
 	// me a standalone file at this path", the unchanged single-file flow.
 	if opts.write && opts.output == "" {
-		return stageImport(stderr, f.CfgFile, toml, res, sourceLabel, validationErr, opts)
+		return stageImport(stderr, f.CfgFile, toml, rep, opts)
 	}
 
 	if opts.output == "" {
@@ -252,14 +252,14 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 		if _, err := io.WriteString(stdout, toml); err != nil {
 			return err
 		}
-		printImportSummary(stderr, res, sourceLabel, opts, singleFileEpilogue("", validationErr))
+		printImportSummary(stderr, rep, opts, singleFileEpilogue(rep, ""))
 		return nil
 	}
 
 	if err := confirmAndWrite(stderr, stdin, opts.output, toml, opts); err != nil {
 		return err
 	}
-	printImportSummary(stderr, res, sourceLabel, opts, singleFileEpilogue(opts.output, validationErr))
+	printImportSummary(stderr, rep, opts, singleFileEpilogue(rep, opts.output))
 	return nil
 }
 
@@ -268,21 +268,22 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 // transaction, the include wiring, and the merged-load gate; this function maps
 // its outcomes onto the CLI's voice.
 //
-// contentErr is the pre-known validation error of the generated content itself
-// (an unparseable cron that became a `# TODO`). When set, the write skips the
-// load gate so the files are kept for the operator to fix in place — matching
-// the single-file --write behavior, and the reason the TODO was emitted at all.
-func stageImport(stderr io.Writer, rootPath, stagingContent string, res *importer.Result, sourceLabel string, contentErr error, opts importOpts) error {
+// rep.validationErr is the pre-known validation error of the generated content
+// itself (an unparseable cron that became a `# TODO`). When set, the write skips
+// the load gate so the files are kept for the operator to fix in place —
+// matching the single-file --write behavior, and the reason the TODO was emitted
+// at all.
+func stageImport(stderr io.Writer, rootPath, stagingContent string, rep importReport, opts importOpts) error {
 	layout := configedit.NewLayout(rootPath)
 	staged, err := configedit.Stage(configedit.StageRequest{
 		Layout:   layout,
 		Staging:  []byte(stagingContent),
-		Validate: contentErr == nil,
+		Validate: rep.validationErr == nil,
 	})
 	if err != nil {
 		return stageError(err, layout)
 	}
-	printImportSummary(stderr, res, sourceLabel, opts, twoTierEpilogue(res, staged, layout, contentErr))
+	printImportSummary(stderr, rep, opts, twoTierEpilogue(rep, staged, layout))
 	return nil
 }
 

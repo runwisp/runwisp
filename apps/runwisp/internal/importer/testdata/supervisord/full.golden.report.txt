@@ -1,0 +1,7 @@
+changed	web	web	service	/usr/bin/gunicorn --workers 4 app:app
+	logs-dropped
+changed	worker	worker	service	/usr/local/bin/celery worker -A app --concurrency=2
+	instances
+file
+	section-daemon
+	section-daemon

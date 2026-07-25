@@ -148,7 +148,7 @@ func TestImportCronTwoTierReimportSkipsSameCommand(t *testing.T) {
 
 	stderr, err := importTwoTier(t, cfgPath, "30 2 * * * /usr/bin/backup.sh --full\n")
 	require.NoError(t, err)
-	assert.Contains(t, stderr, "skipped re-importing")
+	assert.Contains(t, stderr, "already defined in runwisp.toml with the same command")
 
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
@@ -186,7 +186,7 @@ func TestImportCronTwoTierContentErrorKeepsFiles(t *testing.T) {
 	assert.Contains(t, string(stagingBytes), "TODO")
 	_, err = os.Stat(cfgPath)
 	require.NoError(t, err, "root config should still be created")
-	assert.Contains(t, stderr, "need a fix")
+	assert.Contains(t, stderr, "needs a fix before this config loads")
 }
 
 // TestStageImportReportsConflict drives the writer with staging content that
@@ -205,7 +205,8 @@ func TestStageImportReportsConflict(t *testing.T) {
 	require.NoError(t, err)
 
 	var stderr bytes.Buffer
-	err = stageImport(&stderr, cfgPath, staging, res, "crontab", nil, importOpts{})
+	rep := importReport{res: res, sourceLabel: "crontab"}
+	err = stageImport(&stderr, cfgPath, staging, rep, importOpts{})
 	require.Error(t, err)
 	u, ok := isUserFacing(err)
 	require.True(t, ok)
@@ -256,7 +257,7 @@ func TestImportSupervisordTwoTierReimportSkipsPromoted(t *testing.T) {
 	stderr, err := importSupervisordTwoTier(t, cfgPath,
 		"[program:web]\ncommand=/usr/bin/gunicorn app:app\n\n[program:worker]\ncommand=/usr/bin/worker\n")
 	require.NoError(t, err)
-	assert.Contains(t, stderr, "skipped re-importing")
+	assert.Contains(t, stderr, "already defined in runwisp.toml with the same command")
 
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)

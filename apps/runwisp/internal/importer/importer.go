@@ -23,35 +23,8 @@ import (
 	"strings"
 )
 
-// Level classifies a Note. Info notes explain a mapping decision the operator
-// should know about; Attention notes flag something that needs a human before
-// the config is trustworthy.
-type Level int
-
-const (
-	LevelInfo Level = iota
-	LevelAttention
-)
-
-// Note is a single human-readable observation about the conversion. Scope is
-// the task/service name it concerns, or "" for file-level notes.
-type Note struct {
-	Level   Level
-	Scope   string
-	Message string
-}
-
-// Item is a summary row for one imported task or service, used by the CLI to
-// print the "✓ name  schedule" overview without re-parsing the TOML.
-type Item struct {
-	Name      string
-	Kind      string // "task" or "service"
-	Schedule  string // human-friendly: a cron expr, "@reboot", or "service"
-	Attention bool   // true when this item carries an unresolved TODO
-}
-
-// Result is the outcome of a conversion: the emitted TOML (built from blocks),
-// the notes, and per-item summaries.
+// Result is the outcome of a conversion: the emitted TOML (built from blocks)
+// and the report (rows and file-level notes, see report.go).
 type Result struct {
 	blocks []block
 	// topComments are `#` lines emitted at the very top of the TOML, right after
@@ -59,56 +32,10 @@ type Result struct {
 	// valid TOML) and land in the saved file where a reviewer will see them — the
 	// right place for a "this might need a human" banner.
 	topComments []string
-	Notes       []Note
-}
-
-// AddNote appends a note. attention=true escalates the most recent summary
-// item so the CLI flags it.
-func (r *Result) addNote(level Level, scope, msg string) {
-	r.Notes = append(r.Notes, Note{Level: level, Scope: scope, Message: msg})
-}
-
-// Items returns the summary rows in emission order.
-func (r *Result) Items() []Item {
-	items := make([]Item, 0, len(r.blocks))
-	for i := range r.blocks {
-		b := &r.blocks[i]
-		if !b.isItem {
-			continue
-		}
-		items = append(items, Item{
-			Name:      b.name,
-			Kind:      b.kind,
-			Schedule:  b.schedule,
-			Attention: b.attention,
-		})
-	}
-	return items
-}
-
-// Counts returns the number of imported tasks and services.
-func (r *Result) Counts() (tasks, services int) {
-	for i := range r.blocks {
-		switch {
-		case !r.blocks[i].isItem:
-		case r.blocks[i].kind == "service":
-			services++
-		default:
-			tasks++
-		}
-	}
-	return tasks, services
-}
-
-// AttentionCount returns how many notes need a human.
-func (r *Result) AttentionCount() int {
-	n := 0
-	for _, note := range r.Notes {
-		if note.Level == LevelAttention {
-			n++
-		}
-	}
-	return n
+	// items and notes are the report. Status on an item is derived by Items(),
+	// never stored, so a row's mark can't drift from the notes under it.
+	items []Item
+	notes []Note
 }
 
 // field is one `key = value` line. value is already TOML-formatted.
@@ -119,18 +46,13 @@ type field struct {
 }
 
 // block is one TOML table — a [tasks.x] / [services.x] / [defaults] header, the
-// comment lines that precede it, and its fields. A block may also describe a
-// summary item (isItem) for the CLI overview.
+// comment lines that precede it, and its fields. Nothing more: what the CLI
+// prints about a job is an Item (report.go), so a job that emits no block still
+// gets a row.
 type block struct {
 	header string   // dotted path, e.g. "tasks.backup" or "defaults.env"
 	lead   []string // comment lines emitted above the header, without "# "
 	fields []field
-
-	isItem    bool
-	name      string
-	kind      string
-	schedule  string
-	attention bool
 }
 
 func (b *block) set(key, value string) {

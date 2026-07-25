@@ -1,0 +1,4 @@
+clean	api	api	service	/srv/api/bin/serve
+clean	cache	cache	service	/usr/bin/redis-server /etc/redis/redis.conf
+file
+	section-daemon
