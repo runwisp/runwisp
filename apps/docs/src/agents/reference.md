@@ -218,12 +218,19 @@ runwisp exec <task>          — run a task and stream output;  --daemon (via ru
 runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHUP); validate-first, no run_on_start/catch-up
 runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed
 runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed)
-runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --quiet --system
-runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --quiet
+runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
+runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
                              — -o writes one standalone file; --write installs the two-tier layout
                                (tasks → machine-owned runwisp.d/imported.toml, root runwisp.toml's
                                [daemon].include wired to load it; both written atomically or rolled back).
                                Tasks from the staging file report "staged": true in list/status --json.
+                             — stderr summary gives every source job one row (name, schedule, the full command,
+                               wrapped not truncated) marked ✓ clean / ~ changed / ! needs a fix / - skipped,
+                               plus file-level notes and a verdict line. A job that emitted no TOML still gets
+                               a row. --quiet keeps only the ! rows; --quiet with a clean import prints nothing.
+                             — --dry-run: same summary + the files a real run would touch, writes nothing.
+                               Rejects --quiet (contradiction). No-op in stdout mode (already writes nothing).
+                               Proves the generated content loads, not that the merge does.
 runwisp promote [TASK...]    — move staged tasks out of runwisp.d/imported.toml into the root runwisp.toml; --all --reload --dry-run
                              — surgical text move: the block's comments/formatting/# TODOs travel byte-for-byte.
                                Both files written as one transaction gated on the merged load, else neither changes.

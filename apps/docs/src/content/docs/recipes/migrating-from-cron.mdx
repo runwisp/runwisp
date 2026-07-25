@@ -73,6 +73,39 @@ Every task carries the crontab's `SHELL` and `PATH` itself, rather than a shared
 `[defaults]` block — more verbose, but each task stands alone and your own global
 settings are left untouched.
 
+On stderr — so it stays out of the TOML you're piping somewhere — you get an
+account of every job:
+
+```
+Imported crontab → 3 tasks
+  ✓ backup        30 2 * * *
+      /usr/local/bin/backup.sh --full
+  ✓ warmup        @reboot
+      /opt/app/warmup
+  ✓ healthcheck   */5 * * * *
+      /opt/healthcheck.sh
+
+Notes:
+  ! crontab sets MAILTO=ops@example.com — RunWisp doesn't email job output.
+    Wire a notifier instead (see notify_on_failure).
+
+Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.
+```
+
+Every line of your crontab gets a row, and the row shows the command that will
+actually run — wrapped if it's long, never cut short, because a `2>&1` you can't
+see is a `2>&1` you can't check. The mark tells you how it landed:
+
+| Mark | Means                                                    |
+| ---- | -------------------------------------------------------- |
+| `✓`  | Mapped cleanly.                                          |
+| `~`  | Imported, but something changed — the row says what.     |
+| `!`  | Needs a fix from you before this config will load.       |
+| `-`  | Skipped, because your `runwisp.toml` already defines it. |
+
+Anything about the file rather than about one job — a `MAILTO`, an unresolvable
+`[include]` — lands in `Notes:` at the bottom. Nothing is dropped without a line.
+
 When it looks right, save it:
 
 ```bash
@@ -92,10 +125,21 @@ you already have a `runwisp.toml` you've been hand-writing, use `--write`
 instead:
 
 ```bash
-crontab -l | runwisp import cron --write
+crontab -l | runwisp import cron --write --dry-run   # look first
+crontab -l | runwisp import cron --write             # then do it
 ```
 
-That installs the import in a **two-tier layout**:
+`--dry-run` prints the same summary and names every file the real run would
+touch, without touching any of them:
+
+```
+Would stage 3 tasks in /etc/runwisp/runwisp.d/imported.toml
+Would create /etc/runwisp/runwisp.toml and wire it to load runwisp.d/*.toml.
+
+Nothing was written.
+```
+
+The real thing installs the import in a **two-tier layout**:
 
 ```
 runwisp.toml              # yours — hand-authored, keep it in git
@@ -167,18 +211,18 @@ crontab -l | runwisp import cron --system=false    # never treat a column as a u
 
 Most of a crontab translates one-to-one. Here's the whole picture:
 
-| crontab                        | runwisp.toml                  | Notes                                          |
-| ------------------------------ | ----------------------------- | ---------------------------------------------- |
-| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + `run` | The five fields are copied verbatim.           |
-| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …           | RunWisp speaks the same descriptors.           |
-| `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.         |
-| `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.              |
-| user column (system crontab)   | `user = "..."`                | Detected automatically; force with `--system`. |
-| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                      |
-| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.       |
-| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab's tasks.                |
-| `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.    |
-| `MAILTO=…`                     | _(nothing — see below)_       | RunWisp notifies instead of emailing.          |
+| crontab                        | runwisp.toml                  | Notes                                           |
+| ------------------------------ | ----------------------------- | ----------------------------------------------- |
+| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + `run` | The five fields are copied verbatim.            |
+| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …           | RunWisp speaks the same descriptors.            |
+| `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.          |
+| `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.               |
+| user column (system crontab)   | `user = "..."`                | Detected automatically, `@reboot` lines too.    |
+| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                       |
+| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.        |
+| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO. |
+| `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.     |
+| `MAILTO=…`                     | _(nothing — see below)_       | RunWisp notifies instead of emailing.           |
 
 Crontab-wide settings become **per-task** values rather than daemon-wide ones.
 A crontab's `SHELL`, `CRON_TZ`/`TZ`, and top-of-file `VAR=val` lines are copied

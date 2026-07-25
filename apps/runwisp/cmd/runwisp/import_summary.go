@@ -137,20 +137,40 @@ func singleFileEpilogue(rep importReport, target string) func(io.Writer, importS
 	}
 }
 
+// wiringMood is the tense the two-tier epilogues speak in: a real write reports
+// what it did, a dry run what it would do. Holding the two as data over one
+// shared switch is what keeps "Would wire" from drifting away from "Wired" the
+// next time either gets reworded.
+type wiringMood struct {
+	created string // RootCreated: two format args, root path then glob
+	wired   string // RootWired: same two
+}
+
+var (
+	moodDid   = wiringMood{created: "Created %s and wired it to load %s.", wired: "Wired %s to load %s."}
+	moodWould = wiringMood{created: "Would create %s and wire it to load %s.", wired: "Would wire %s to load %s."}
+)
+
+// line phrases one root outcome. RootAlreadyIncluded is tenseless — the file is
+// left alone in either mood — so it isn't part of the mood.
+func (m wiringMood) line(outcome configedit.RootOutcome, rootPath string) string {
+	glob := config.StagingIncludeGlob
+	switch outcome {
+	case configedit.RootCreated:
+		return fmt.Sprintf(m.created, rootPath, glob)
+	case configedit.RootWired:
+		return fmt.Sprintf(m.wired, rootPath, glob)
+	default:
+		return fmt.Sprintf("%s already loads %s.", rootPath, glob)
+	}
+}
+
 // twoTierEpilogue reports a two-tier `--write`: where the staging file landed,
 // what happened to the root config, and the nudge toward `runwisp promote`.
 func twoTierEpilogue(rep importReport, staged configedit.StageResult, layout configedit.Layout) func(io.Writer, importStyles) {
 	return func(w io.Writer, st importStyles) {
 		fmt.Fprintf(w, "Staged %s in %s\n", pluralizeCounts(rep.emitted()), staged.StagingPath)
-		glob := config.StagingIncludeGlob
-		switch staged.Root {
-		case configedit.RootCreated:
-			fmt.Fprintf(w, "Created %s and wired it to load %s.\n", layout.RootPath, glob)
-		case configedit.RootWired:
-			fmt.Fprintf(w, "Wired %s to load %s.\n", layout.RootPath, glob)
-		case configedit.RootAlreadyIncluded:
-			fmt.Fprintf(w, "%s already loads %s.\n", layout.RootPath, glob)
-		}
+		fmt.Fprintln(w, moodDid.line(staged.Root, layout.RootPath))
 
 		if rep.validationErr != nil {
 			fmt.Fprintln(w)
@@ -169,6 +189,56 @@ func twoTierEpilogue(rep importReport, staged configedit.StageResult, layout con
 		fmt.Fprintf(w, "%s when you want to own it:\n", filepath.Base(layout.RootPath))
 		fmt.Fprintln(w, "  runwisp promote <name>")
 	}
+}
+
+// singleFilePlanEpilogue is --dry-run for -o: the one file a real run would
+// write, and whether it would be allowed to.
+//
+// wouldOverwrite is decided by the caller, which is the half of this that has to
+// touch the filesystem. A dry run neither prompts nor errors on an existing
+// target — refusing to describe the import over a file it isn't going to touch
+// would answer a question nobody asked — but it does say that a real run needs
+// --force, because that's the run the operator is about to type.
+func singleFilePlanEpilogue(rep importReport, target string, wouldOverwrite bool) func(io.Writer, importStyles) {
+	return func(w io.Writer, st importStyles) {
+		if wouldOverwrite {
+			fmt.Fprintf(w, "Would overwrite %s — a real run needs --force (or -o elsewhere).\n", target)
+		} else {
+			fmt.Fprintf(w, "Would write %s.\n", target)
+		}
+		planTail(w, st, rep)
+	}
+}
+
+// twoTierPlanEpilogue is --dry-run for --write: both files a real run would
+// touch, the root one phrased in the same three moods the real epilogue uses.
+func twoTierPlanEpilogue(rep importReport, plan configedit.StageResult, layout configedit.Layout) func(io.Writer, importStyles) {
+	return func(w io.Writer, st importStyles) {
+		fmt.Fprintf(w, "Would stage %s in %s\n", pluralizeCounts(rep.emitted()), plan.StagingPath)
+		fmt.Fprintln(w, moodWould.line(plan.Root, layout.RootPath))
+
+		if plan.PreLoadErr != nil {
+			// The one merge failure a dry run can see coming, and it isn't the import's
+			// fault — a real run refuses on it, so saying so here saves that round trip.
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "%s %s doesn't load as it stands, so a real run would refuse:\n  %s\n",
+				st.attn.Render("!"), filepath.Base(layout.RootPath), plan.PreLoadErr.Error())
+		}
+		planTail(w, st, rep)
+	}
+}
+
+// planTail closes both dry-run epilogues: the raw validation error when the rows
+// above didn't already explain it, and then the promise that makes --dry-run
+// worth typing.
+func planTail(w io.Writer, st importStyles, rep importReport) {
+	if rep.validationErr != nil && rep.blockingRows() == 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "%s the generated config didn't validate yet:\n  %s\n",
+			st.attn.Render("!"), rep.validationErr.Error())
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Nothing was written.")
 }
 
 // pluralizeCounts names a count of tasks and services, shared by import and

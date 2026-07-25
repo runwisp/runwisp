@@ -287,8 +287,28 @@ doesn't map cleanly — nothing is silently dropped. Shared flags:
 | `--output`, `-o` | Write the TOML to this standalone file instead of stdout.                 |
 | `--write`        | Install into the two-tier layout (see below) next to the `--config` path. |
 | `--force`        | Overwrite the target file without prompting.                              |
-| `--quiet`        | Suppress the summary on stderr.                                           |
+| `--dry-run`      | Print the summary and name every file a real run would touch, and stop.   |
+| `--quiet`        | Drop the inventory, keep anything that needs a fix.                       |
 | `--system`       | _(cron only)_ Force system-crontab parsing (the user column).             |
+
+The summary on stderr gives every job in your crontab or supervisord config one
+line, with the command that will actually run and a mark for how it landed:
+`✓` mapped cleanly, `~` something changed, `!` needs a fix before this config
+loads, `-` skipped because you already have it. That's what `--quiet` trims down
+to: it drops the clean rows, not the ones that need you. Writing a config that
+won't load and saying nothing about it isn't a mode RunWisp has.
+
+`--dry-run` gives you the same summary plus a list of the files a real run would
+create or change — and changes none of them. It's the safe first move on a
+machine whose config you care about:
+
+```sh
+runwisp import cron /etc/crontab --write --dry-run
+```
+
+It proves the generated tasks are valid. What it can't prove is that they merge
+cleanly with the tasks you already have, since that means writing the files and
+loading the result — the real run does that, and rolls back if it fails.
 
 `--write` doesn't append to your `runwisp.toml`. It installs the import in a
 **two-tier layout**: the generated tasks land in a machine-owned

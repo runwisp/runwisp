@@ -61,6 +61,11 @@ type StageRequest struct {
 type StageResult struct {
 	StagingPath string
 	Root        RootOutcome
+	// PreLoadErr is the root config's load error from *before* this write, when
+	// there was one. A real Stage with Validate set never returns a result
+	// alongside one — the gate turns it into a *PreexistingError — so this matters
+	// to PlanStage, where it's the failure a real run would stop on.
+	PreLoadErr error
 }
 
 // ConflictError reports that the write made a config that used to load stop
@@ -98,6 +103,7 @@ func Stage(req StageRequest) (StageResult, error) {
 		return res, err
 	}
 	res.Root = plan.outcome
+	res.PreLoadErr = plan.preLoadErr
 
 	txn := New()
 	txn.Write(req.Layout.StagingPath, req.Staging, DefaultPerm)
@@ -120,6 +126,26 @@ func Stage(req StageRequest) (StageResult, error) {
 	if err := txn.Apply(gate); err != nil {
 		return res, err
 	}
+	return res, nil
+}
+
+// PlanStage reports what Stage would do to the root config without touching
+// disk beyond reading. It shares Stage's planning step rather than
+// reimplementing it, so a `--dry-run` account can't drift from what the real
+// write goes on to do.
+//
+// What it can't answer is whether the *merged* config loads: proving that means
+// writing both files and calling config.Load on the result. It does surface the
+// root's current load error in PreLoadErr, which is the one failure a real run
+// would refuse on that's knowable in advance.
+func PlanStage(layout Layout) (StageResult, error) {
+	res := StageResult{StagingPath: layout.StagingPath}
+	plan, err := planRoot(layout.RootPath)
+	if err != nil {
+		return res, err
+	}
+	res.Root = plan.outcome
+	res.PreLoadErr = plan.preLoadErr
 	return res, nil
 }
 

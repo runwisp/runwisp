@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -141,6 +142,69 @@ func TestStage_OverwritesTheMachineOwnedStagingFile(t *testing.T) {
 	cfg, err := config.Load(layout.RootPath)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"backup"}, taskNames(cfg), "staging is machine-owned and replaced wholesale")
+}
+
+// TestPlanStageMatchesStage is what makes `--dry-run` trustworthy: for every
+// shape the root config comes in, the plan reports the same outcome the real
+// write goes on to report. A plan that predicts one thing and a write that does
+// another is worse than no plan at all.
+func TestPlanStageMatchesStage(t *testing.T) {
+	roots := map[string]map[string]string{
+		"greenfield":      {},
+		"needs wiring":    {"runwisp.toml": "[tasks.native]\nrun = \"echo native\"\n"},
+		"already wired":   {"runwisp.toml": "[daemon]\ninclude = [\"runwisp.d/*.toml\"]\n"},
+		"already invalid": {"runwisp.toml": "[tasks.broken]\ncron = \"not a cron expression\"\nrun = \"echo hi\"\n"},
+	}
+	for name, tree := range roots {
+		t.Run(name, func(t *testing.T) {
+			dir := writeFileTree(t, tree)
+			layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
+
+			plan, planErr := PlanStage(layout)
+			require.NoError(t, planErr)
+			// Planning is read-only, so the real Stage below starts from the same tree
+			// the plan was made against.
+			before := testutil.SnapshotTree(t, dir)
+
+			// Validate false: this test is about the root outcome, not the load gate,
+			// and the "already invalid" root would fail that gate by design.
+			staged, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask), Validate: false})
+			require.NoError(t, err)
+
+			assert.Equal(t, staged.Root, plan.Root, "the plan promised a different root outcome")
+			assert.Equal(t, staged.StagingPath, plan.StagingPath)
+			if staged.PreLoadErr == nil {
+				assert.NoError(t, plan.PreLoadErr)
+			} else {
+				assert.EqualError(t, plan.PreLoadErr, staged.PreLoadErr.Error())
+			}
+			assert.NotEqual(t, before, testutil.SnapshotTree(t, dir), "the real Stage should have written something")
+		})
+	}
+}
+
+// TestPlanStageWritesNothing pins the read-only half directly, including the
+// staging directory a real Stage would create.
+func TestPlanStageWritesNothing(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{"runwisp.toml": "[tasks.native]\nrun = \"echo native\"\n"})
+	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
+	before := testutil.SnapshotTree(t, dir)
+
+	_, err := PlanStage(layout)
+	require.NoError(t, err)
+	assert.Equal(t, before, testutil.SnapshotTree(t, dir))
+	_, statErr := os.Stat(filepath.Dir(layout.StagingPath))
+	assert.True(t, os.IsNotExist(statErr), "planning must not create the staging dir")
+}
+
+// TestPlanStageRefusesACustomInclude: a root the real write can't wire is
+// something the plan has to refuse too, in the same words.
+func TestPlanStageRefusesACustomInclude(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{"runwisp.toml": "[daemon]\ninclude = [\"conf.d/*.toml\"]\n"})
+	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
+
+	_, err := PlanStage(layout)
+	require.ErrorIs(t, err, ErrIncludeNeedsManualWiring)
 }
 
 func TestNewLayout_PutsStagingUnderTheRootConfigDir(t *testing.T) {

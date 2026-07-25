@@ -28,6 +28,7 @@ type importOpts struct {
 	force  bool   // overwrite an existing file without prompting
 	system bool   // cron: treat input as a system crontab (user column)
 	quiet  bool   // suppress the stderr summary
+	dryRun bool   // --dry-run: print the summary, write nothing
 }
 
 var importFlags importOpts
@@ -41,7 +42,10 @@ annotated runwisp.toml.
 The generated TOML is printed to stdout by default so you can review it (and
 pipe it). Use -o/--output to save it, or --write to save it to the --config
 path. Anything that can't map cleanly onto a RunWisp setting becomes an inline
-# TODO comment and a note in the summary, so nothing is silently dropped.`,
+# TODO comment and a note in the summary, so nothing is silently dropped.
+
+Add --dry-run to a saving import to see the summary and every file it would
+touch, without touching any of them.`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -99,6 +103,7 @@ func init() {
 		c.Flags().BoolVar(&importFlags.write, "write", false, "write to the --config path (default runwisp.toml)")
 		c.Flags().BoolVar(&importFlags.force, "force", false, "overwrite the target file without prompting")
 		c.Flags().BoolVar(&importFlags.quiet, "quiet", false, "suppress the summary on stderr")
+		c.Flags().BoolVar(&importFlags.dryRun, "dry-run", false, "print the summary without writing anything")
 	}
 	importCronCmd.Flags().BoolVar(&importFlags.system, "system", false, "force system-crontab parsing (user column); --system=false forces per-user. Auto-detected when unset")
 
@@ -107,6 +112,9 @@ func init() {
 }
 
 func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cronOpts importer.CronOptions, f Flags, opts importOpts) error {
+	if err := checkImportFlags(opts); err != nil {
+		return err
+	}
 	cronOpts.Existing = ownedEntries(f, opts)
 
 	r, closeFn, err := openImportSource(source, stdin)
@@ -123,6 +131,9 @@ func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cron
 }
 
 func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {
+	if err := checkImportFlags(opts); err != nil {
+		return err
+	}
 	svOpts := importer.SupervisordOptions{Existing: ownedEntries(f, opts)}
 	var res *importer.Result
 	var err error
@@ -150,6 +161,20 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 		return &userFacingError{title: "failed to read supervisord config", details: err.Error()}
 	}
 	return emitImport(stdout, stderr, stdin, res, "supervisord config", f, opts)
+}
+
+// checkImportFlags rejects a combination that can't mean anything, before the
+// source is even opened. A dry run's entire output *is* the summary, so
+// suppressing it would leave a command that reads a file, writes nothing, and
+// says nothing — a request the operator can't have meant.
+func checkImportFlags(opts importOpts) error {
+	if opts.dryRun && opts.quiet {
+		return &userFacingError{
+			title:   "--dry-run and --quiet contradict each other",
+			details: "A dry run writes nothing, so the summary is all it has to show you. Drop one of the two.",
+		}
+	}
+	return nil
 }
 
 // ownedEntries snapshots what the live config already owns, so a two-tier
@@ -239,6 +264,13 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 	toml := config.SchemaDirective + res.TOML()
 	rep := importReport{res: res, sourceLabel: sourceLabel, validationErr: validateGeneratedTOML(toml)}
 
+	// --dry-run only has something to hold back when a write was going to happen.
+	// Plain stdout mode already writes nothing and already says so, so it keeps its
+	// own epilogue rather than growing a second way to phrase the same thing.
+	if opts.dryRun && (opts.write || opts.output != "") {
+		return printImportPlan(stderr, rep, f, opts)
+	}
+
 	// --write (without an explicit -o path) installs the import in the two-tier
 	// managed layout: tasks land in the machine-owned runwisp.d/imported.toml and
 	// the root config's include is wired to pick them up. -o always means "give
@@ -260,6 +292,33 @@ func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, 
 		return err
 	}
 	printImportSummary(stderr, rep, opts, singleFileEpilogue(rep, opts.output))
+	return nil
+}
+
+// printImportPlan is --dry-run for a saving import: the same report a real run
+// prints, with an epilogue naming every file that run would touch and then
+// saying plainly that none of them were.
+//
+// What a dry run does prove is that the generated content loads —
+// rep.validationErr comes from the same temp-file round-trip either way. What it
+// can't prove for the two-tier layout is that the *merge* loads, because that
+// means writing both files and loading the result, which is the thing being
+// deferred. The one merge failure knowable up front — a root config that doesn't
+// load as it stands — is reported.
+func printImportPlan(stderr io.Writer, rep importReport, f Flags, opts importOpts) error {
+	if opts.output != "" {
+		_, err := os.Stat(opts.output)
+		printImportSummary(stderr, rep, opts,
+			singleFilePlanEpilogue(rep, opts.output, err == nil && !opts.force))
+		return nil
+	}
+
+	layout := configedit.NewLayout(f.CfgFile)
+	plan, err := configedit.PlanStage(layout)
+	if err != nil {
+		return stageError(err, layout)
+	}
+	printImportSummary(stderr, rep, opts, twoTierPlanEpilogue(rep, plan, layout))
 	return nil
 }
 
