@@ -42,11 +42,11 @@ var cronGoldenCases = []struct {
 	// A system crontab (/etc/crontab) with the extra user column, including a
 	// descriptor line that carries one.
 	{name: "system", file: "testdata/cron/system.crontab", opts: CronOptions{System: true}, validate: true},
-	// Notes-only edge cases (MAILTO, relative SHELL, '%' command, dedupe, an
+	// Notes-only edge cases (MAILTO, relative SHELL, both '%' forms, dedupe, an
 	// unparseable line) that must surface but still leave a valid config.
 	{name: "messy", file: "testdata/cron/messy.crontab", validate: true, expectNotes: []NoteKind{
-		NoteMailto, NoteShellNotAbsolute, NotePercentInCommand, NoteLineUnparseable,
-		NoteRenamedCollision,
+		NoteMailto, NoteShellNotAbsolute, NotePercentStdin, NotePercentTranslated,
+		NoteLineUnparseable, NoteRenamedCollision,
 	}},
 	// An invalid cron expression becomes a `# TODO` and a non-loadable config —
 	// the import still succeeds and tells the operator exactly what to fix.

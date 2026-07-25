@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/cronspec"
@@ -205,7 +206,11 @@ func (cp *crontabParser) importJob(line string) bool {
 	if !ok {
 		return false
 	}
-	command := j.command
+	// Everything downstream — the derived name, the report row, the emitted
+	// `run` — works from what crond would actually execute, not from the raw
+	// field. See splitCronPercent.
+	cc := splitCronPercent(j.command)
+	command := cc.run
 
 	base := deriveCronName(command)
 	ref, name, skip := cp.names.resolve(base, base, model.KindTask, command)
@@ -228,12 +233,7 @@ func (cp *crontabParser) importJob(line string) bool {
 		b.set("shell", tomlString(cp.shell))
 	}
 
-	b.set("run", tomlString(command))
-	if command != "" && strings.Contains(command, "%") {
-		ref.note(NotePercentInCommand,
-			"command contains '%' — in crontab that means a newline/stdin marker. "+
-				"RunWisp passes the command to the shell verbatim; adjust if you relied on it.")
-	}
+	cp.applyCommand(&b, ref, cc)
 	blocks := []block{b}
 	if eb, ok := envBlock("tasks."+name+".env", cp.env); ok {
 		blocks = append(blocks, eb)
@@ -300,6 +300,111 @@ func splitCronJobLine(line string, system bool) (cronJobLine, bool) {
 		j.user = tok[5]
 	}
 	return j, true
+}
+
+// applyCommand sets `run` and reports how crond's '%' rules changed it. It is
+// the command-field sibling of applySchedule/applyTimezone: the field and the
+// note about the field are set together, so the emitted TOML and the report row
+// cannot describe different commands.
+func (cp *crontabParser) applyCommand(b *block, ref itemRef, cc cronCommand) {
+	if cc.stdin != "" {
+		// The command is emitted as crond would have run it — cut at the '%' —
+		// rather than verbatim, because a verbatim import runs something crond
+		// never ran. What that costs is the input, so the input is what the TODO
+		// names, quoted so an embedded newline is legible on one line.
+		b.setComment("run", tomlString(cc.run),
+			"TODO: crond also piped "+strconv.Quote(cc.stdin)+" to this on stdin.")
+		ref.note(NotePercentStdin,
+			"crond ended the command at the first '%' and piped "+strconv.Quote(cc.stdin)+
+				" to it on standard input. RunWisp has no stdin field — fold the input into "+
+				"the command itself (a here-doc, or `printf … | cmd`).")
+		return
+	}
+	b.set("run", tomlString(cc.run))
+	switch {
+	case cc.truncated:
+		ref.note(NotePercentTranslated,
+			"crond ends a command at its first unescaped '%', and this one's carried "+
+				"no input, so the trailing '%' was dropped.")
+	case cc.unescaped:
+		ref.note(NotePercentTranslated,
+			`crond reads \% as a literal '%', so the command was imported with the `+
+				`backslashes already removed.`)
+	}
+}
+
+// cronCommand is a crontab command field with crond's own '%' rules applied.
+type cronCommand struct {
+	// run is what crond would execute: everything up to the first unescaped
+	// '%', with `\%` collapsed to a literal '%'.
+	run string
+	// stdin is what crond would write to that command's standard input, with
+	// each further unescaped '%' as a newline. Empty when the field holds no
+	// unescaped '%', and also when the '%' is trailing — that carries no input.
+	stdin string
+	// truncated records that an unescaped '%' ended the command, so run is
+	// shorter than the source field even when stdin came out empty.
+	truncated bool
+	// unescaped records that at least one `\%` was collapsed, so run differs
+	// from the source field character for character.
+	unescaped bool
+}
+
+// splitCronPercent applies crond's '%' rules to a command field.
+//
+// Per crontab(5) the command ends at its first unescaped '%'; everything after
+// it is fed to the command on standard input with each further '%' becoming a
+// newline, and `\%` means a literal '%'. RunWisp hands `run` to a shell, where
+// '%' is an ordinary character and a backslash is a quoting artifact — so the
+// same text means two different things, and importing the field verbatim
+// imports a command crond never ran. Translating here is what lets the report
+// say which of those two happened, per job.
+func splitCronPercent(command string) cronCommand {
+	var cc cronCommand
+	var run strings.Builder
+	for i := 0; i < len(command); i++ {
+		switch command[i] {
+		case '\\':
+			if i+1 < len(command) && command[i+1] == '%' {
+				run.WriteByte('%')
+				cc.unescaped = true
+				i++
+				continue
+			}
+			run.WriteByte('\\')
+		case '%':
+			cc.truncated = true
+			cc.run = run.String()
+			cc.stdin = cronStdin(command[i+1:])
+			return cc
+		default:
+			run.WriteByte(command[i])
+		}
+	}
+	cc.run = run.String()
+	return cc
+}
+
+// cronStdin turns the remainder of a command field, after the '%' that ended
+// the command, into the bytes crond would write to standard input.
+func cronStdin(rest string) string {
+	var b strings.Builder
+	for i := 0; i < len(rest); i++ {
+		switch rest[i] {
+		case '\\':
+			if i+1 < len(rest) && rest[i+1] == '%' {
+				b.WriteByte('%')
+				i++
+				continue
+			}
+			b.WriteByte('\\')
+		case '%':
+			b.WriteByte('\n')
+		default:
+			b.WriteByte(rest[i])
+		}
+	}
+	return b.String()
 }
 
 // applySchedule sets the schedule-related fields on b — including the timezone,

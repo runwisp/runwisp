@@ -27,7 +27,11 @@ const (
 	NoteLineUnparseable
 	NoteCronUnparseable
 	NoteTimezoneInvalid
-	NotePercentInCommand
+	// The two '%' kinds are split because their severity differs: collapsing
+	// `\%` is a faithful translation, while input crond piped on stdin is
+	// something RunWisp cannot express at all.
+	NotePercentTranslated
+	NotePercentStdin
 
 	// Naming and identity, shared by both parsers.
 	NoteAlreadyDefined
@@ -81,8 +85,10 @@ func (k NoteKind) info() (slug string, blocking bool) {
 		return "cron-unparseable", true
 	case NoteTimezoneInvalid:
 		return "timezone-invalid", true
-	case NotePercentInCommand:
-		return "percent-in-command", false
+	case NotePercentTranslated:
+		return "percent-translated", false
+	case NotePercentStdin:
+		return "percent-stdin", true
 	case NoteAlreadyDefined:
 		return "already-defined", false
 	case NoteRenamedOwned:

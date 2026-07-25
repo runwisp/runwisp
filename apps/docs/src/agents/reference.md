@@ -233,6 +233,10 @@ runwisp import supervisord [FILE...] — convert supervisord config to runwisp.t
                                Proves the generated content loads + reports a root that already
                                fails to load; prints that the merge is unchecked (needs the files
                                on disk). Two-tier plan comes from configedit.PlanStage.
+                             — cron's '%' rules are applied, not copied: an unescaped % ends the command
+                               (rest = stdin, further % = newline), \% is a literal %. run is emitted as
+                               crond would run it; lost stdin input is quoted in a # TODO on the run line
+                               and blocks the row (!). A \%-only translation is a ~ row, no TODO.
                              — import COPIES; it never disables the source. Every summary ends with a "!" warning
                                that cron/supervisord still runs these jobs and each will run twice until the
                                operator turns the old one off. Suppressed only when there is no duplication yet

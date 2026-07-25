@@ -266,6 +266,8 @@ Most of a crontab translates one-to-one. Here's the whole picture:
 | `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.        |
 | `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO. |
 | `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.     |
+| `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.     |
+| `cmd % input`                  | `run = "cmd"` + a `# TODO`    | Cron piped `input` on stdin; see below.         |
 | `MAILTO=…`                     | _(nothing — see below)_       | RunWisp notifies instead of emailing.           |
 
 Crontab-wide settings become **per-task** values rather than daemon-wide ones.
@@ -292,9 +294,12 @@ shows up as a `# TODO` in the file and a note in the summary. The usual ones:
 - **`@reboot`.** Mapped to [`run_on_start`](/configuration/tasks/), which fires
   once each time the **daemon** starts (not the machine). That's usually what
   you wanted; double-check if you were relying on true boot timing.
-- **A `%` in a command.** In crontab, `%` means a newline / start-of-stdin.
-  RunWisp hands your command to the shell verbatim, so review any job that used
-  it.
+- **A `%` that fed a job input.** An unescaped `%` ends a crontab command;
+  everything after it is what cron pipes to the job on stdin. RunWisp has no
+  stdin field, so the command is imported cut at the `%` — exactly what cron
+  ran — and the input it can't reproduce is quoted in a `# TODO` on the `run`
+  line. Fold it back into the command yourself, usually with a here-doc or a
+  `printf … | cmd`.
 - **The task name.** Names are derived from the command (`/usr/local/bin/backup.sh`
   → `backup`). They're just labels — rename any that aren't obvious, and the
   full command is preserved either way.
