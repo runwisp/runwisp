@@ -168,6 +168,10 @@ type Task struct {
 	// Umask is the canonical 4-digit octal file-creation mask applied in the
 	// child before the run script executes. Empty inherits the daemon's umask.
 	Umask string `toml:"-" json:"umask,omitempty" doc:"Octal file-creation mask applied to the run's process; empty inherits the daemon's umask"`
+	// EnvBase selects what the run's environment starts from — the daemon's own
+	// ("inherit", the default) or crond's minimal set ("clean"). Host shell runs
+	// only; the container backends already build env from task.Env/Secrets alone.
+	EnvBase EnvBase `toml:"-" json:"env_base,omitempty" doc:"What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job)"`
 	// RunUser drops the run's process to another OS user (and optionally group)
 	// in `user` or `user:group` form; names or numeric ids are accepted on either
 	// side. Empty runs as the daemon's own uid/gid. Switching users needs the
@@ -206,7 +210,7 @@ func (t *Task) ResolvedExecutionDef() ExecutionDef {
 	if strings.TrimSpace(t.Run) == "" {
 		return nil
 	}
-	return &ShellExecution{Script: t.Run, Shell: t.Shell, WorkingDir: t.WorkingDir, Umask: t.Umask}
+	return &ShellExecution{Script: t.Run, Shell: t.Shell, WorkingDir: t.WorkingDir, Umask: t.Umask, EnvBase: t.EnvBase}
 }
 
 // ConcurrencyPolicy controls how overlapping runs are handled.
@@ -217,6 +221,32 @@ const (
 	PolicySkip      ConcurrencyPolicy = "skip"
 	PolicyTerminate ConcurrencyPolicy = "terminate"
 )
+
+// EnvBase selects what a host shell run's environment starts from, before the
+// task's own env, secrets, and parameters are layered on top.
+//
+// It exists because the two schedulers RunWisp replaces disagree: crond hands a
+// job a near-empty environment, while a supervisord program — and RunWisp
+// itself, until a task says otherwise — inherits the supervisor's. Inheriting
+// is the friendlier default (a task sees the PATH you tested it with), but it
+// also means a job's behaviour depends on how the daemon happened to be
+// started, which is exactly the surprise an operator migrating off cron does
+// not want.
+type EnvBase string
+
+const (
+	// EnvBaseInherit starts from the daemon's own environment, minus its
+	// RUNWISP_* internals. The default.
+	EnvBaseInherit EnvBase = "inherit"
+	// EnvBaseClean starts from the minimal set crond guarantees a job — PATH,
+	// SHELL, HOME, USER/LOGNAME — and nothing the daemon was started with.
+	EnvBaseClean EnvBase = "clean"
+)
+
+// Valid reports whether b is a value the executor knows how to honor. The empty
+// string is not valid: the config loader resolves it to EnvBaseInherit, so a
+// zero value reaching this check means it bypassed the loader.
+func (b EnvBase) Valid() bool { return b == EnvBaseInherit || b == EnvBaseClean }
 
 // RestartPolicy controls whether and when a task is restarted after completion.
 type RestartPolicy string

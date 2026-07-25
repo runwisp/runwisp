@@ -48,6 +48,7 @@ type taskServiceWireCore struct {
 	WorkingDir string `toml:"working_dir,omitempty"`
 	Shell      string `toml:"shell,omitempty"`
 	Umask      string `toml:"umask,omitempty"`
+	EnvBase    string `toml:"env_base,omitempty"`
 	User       string `toml:"user,omitempty"`
 
 	LogMaxSize string `toml:"log_max_size,omitempty"`
@@ -252,6 +253,10 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid umask for %s %q: %w", label, name, err)
 	}
+	envBase, err := parseEnvBase(w.EnvBase)
+	if err != nil {
+		return model.Task{}, fmt.Errorf("invalid env_base for %s %q: %w", label, name, err)
+	}
 	task := model.Task{
 		Name:           name,
 		Kind:           kind,
@@ -269,6 +274,7 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		WorkingDir:     w.WorkingDir,
 		Shell:          w.Shell,
 		Umask:          umask,
+		EnvBase:        envBase,
 		RunUser:        w.User,
 		ExitCodes:      w.ExitCodes,
 		Run:            w.Run,
@@ -310,6 +316,9 @@ func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label 
 	}
 	if w.User != "" {
 		return fmt.Errorf("user is not supported on compose-backed %s %q; the container runtime owns the container's user", label, name)
+	}
+	if w.EnvBase != "" {
+		return fmt.Errorf("env_base is not supported on compose-backed %s %q; a container never inherits the daemon's environment, so there is no base to choose", label, name)
 	}
 	svc := w.ComposeService
 	if svc == "" {

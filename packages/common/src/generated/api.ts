@@ -1319,6 +1319,8 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            /** @description What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job) */
+            env_base?: string;
             /** @description Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env. */
             env_file?: string;
             /** @description Process exit codes treated as success; defaults to [0] */

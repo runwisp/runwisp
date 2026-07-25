@@ -13,12 +13,30 @@ import (
 	"time"
 
 	str2duration "github.com/xhit/go-str2duration/v2"
+
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // umaskPattern requires 3 or 4 octal digits. Demanding at least three digits
 // rejects the decimal/octal-ambiguous "22" (did the operator mean octal 022 or
 // 0026?) — spelling it out as "022" removes all doubt.
 var umaskPattern = regexp.MustCompile(`^[0-7]{3,4}$`)
+
+// parseEnvBase resolves the `env_base` key. Empty means "omitted", which
+// resolves to model.EnvBaseInherit here rather than being left zero — the
+// executor's own check treats the zero value as invalid, so resolving at load
+// keeps "not configured" from looking like "configured wrong" at run time.
+func parseEnvBase(raw string) (model.EnvBase, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return model.EnvBaseInherit, nil
+	}
+	base := model.EnvBase(trimmed)
+	if !base.Valid() {
+		return "", fmt.Errorf("%q must be %q or %q", raw, model.EnvBaseInherit, model.EnvBaseClean)
+	}
+	return base, nil
+}
 
 // parseUmask validates an octal umask string and returns its canonical 4-digit
 // form (e.g. "022" → "0022"). Empty means "omitted, inherit the daemon's

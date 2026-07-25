@@ -4,4 +4,5 @@
 [tasks.bad]
 description = "Broken nightly job"
 cron = "99 99 * * *"  # TODO: RunWisp couldn't parse this cron expression — fix it.
+env_base = "clean"
 run = "/bin/bad"

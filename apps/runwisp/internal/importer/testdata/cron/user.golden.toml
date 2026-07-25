@@ -6,6 +6,7 @@ description = "Nightly full backup"
 cron = "30 2 * * *"
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
+env_base = "clean"
 run = "/usr/local/bin/backup.sh --full"
 
 [tasks.backup.env]
@@ -16,6 +17,7 @@ description = "Rotate logs every Sunday"
 cron = "0 0 * * 0"
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
+env_base = "clean"
 run = "/usr/sbin/logrotate /etc/logrotate.conf"
 
 [tasks.logrotate.env]
@@ -25,6 +27,7 @@ PATH = "/usr/local/bin:/usr/bin:/bin"
 cron = "@daily"
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
+env_base = "clean"
 run = "/opt/app/cleanup"
 
 [tasks.cleanup.env]
@@ -35,6 +38,7 @@ PATH = "/usr/local/bin:/usr/bin:/bin"
 run_on_start = true
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
+env_base = "clean"
 run = "/opt/app/warmup"
 
 [tasks.warmup.env]
@@ -45,6 +49,7 @@ description = "Heavy job, deprioritized"
 cron = "*/15 * * * *"
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
+env_base = "clean"
 run = "/usr/bin/nice -n 19 /opt/sync.sh"
 
 [tasks.sync.env]

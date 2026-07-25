@@ -218,6 +218,31 @@ func TestCronNameDedupe(t *testing.T) {
 	}
 }
 
+// TestCronImportsCronsEnvironment: a job that worked under crond was written
+// against crond's near-empty environment. Importing it without saying so hands
+// it the daemon's instead, which is how a `✓ clean` import starts behaving
+// differently the first time the daemon is launched from a different shell.
+func TestCronImportsCronsEnvironment(t *testing.T) {
+	res := parseCron(t, "0 4 * * * /bin/rollup\n", CronOptions{})
+	mustContain(t, res.TOML(), `env_base = "clean"`)
+	// It is fidelity, not a compromise, so it must not make the row read as a
+	// difference the operator has to review.
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Fatalf("status = %v, want clean", got)
+	}
+}
+
+// TestCronPathLayersOverTheCleanBase is the pair to it: a crontab's own PATH is
+// imported as task env, which the executor layers over the clean base. If the
+// importer ever stopped emitting one, jobs would silently drop to /usr/bin:/bin.
+func TestCronPathLayersOverTheCleanBase(t *testing.T) {
+	res := parseCron(t, "PATH=/opt/bin:/usr/bin\n0 4 * * * /bin/rollup\n", CronOptions{})
+	out := res.TOML()
+	mustContain(t, out, `env_base = "clean"`)
+	mustContain(t, out, `PATH = "/opt/bin:/usr/bin"`)
+	assertGeneratedConfigLoads(t, out)
+}
+
 func TestCronCommentBecomesDescription(t *testing.T) {
 	in := "# Rotate the nginx logs\n0 0 * * * /usr/sbin/logrotate\n"
 	res := parseCron(t, in, CronOptions{})

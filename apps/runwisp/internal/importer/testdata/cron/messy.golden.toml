@@ -4,18 +4,22 @@
 [tasks.job]
 description = "Two jobs that derive the same name → deduped"
 cron = "0 1 * * *"
+env_base = "clean"
 run = "/bin/job"
 
 [tasks.job-2]
 cron = "0 2 * * *"
+env_base = "clean"
 run = "/bin/job"
 
 [tasks.mail]
 description = "An unescaped percent ends the command; the rest is stdin, which RunWisp can't express."
 cron = "0 3 * * *"
+env_base = "clean"
 run = "/usr/bin/mail -s report ops"  # TODO: crond also piped "body line one\nbody line two" to this on stdin.
 
 [tasks.date]
 description = "An escaped percent is a literal one, and the backslash is crond's, not the shell's."
 cron = "0 4 * * *"
+env_base = "clean"
 run = "/bin/date +%Y-%m-%d >> /var/log/stamp"

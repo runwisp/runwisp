@@ -1650,6 +1650,10 @@
             "description": "Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries.",
             "type": "object"
           },
+          "env_base": {
+            "description": "What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job)",
+            "type": "string"
+          },
           "env_file": {
             "description": "Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env.",
             "type": "string"

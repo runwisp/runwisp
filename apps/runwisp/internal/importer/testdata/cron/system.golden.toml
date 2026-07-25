@@ -6,6 +6,7 @@ description = "Run the updater as root every morning"
 cron = "17 6 * * *"
 user = "root"
 shell = "/bin/sh"
+env_base = "clean"
 run = "/usr/bin/apt-get update"
 
 [tasks.apt-get.env]
@@ -16,6 +17,7 @@ description = "Per-user maintenance"
 cron = "*/10 * * * *"
 user = "deploy"
 shell = "/bin/sh"
+env_base = "clean"
 run = "/usr/local/bin/cleanup --quiet"
 
 [tasks.cleanup.env]
@@ -25,6 +27,7 @@ PATH = "/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
 cron = "0 4 * * 1"
 user = "postgres"
 shell = "/bin/sh"
+env_base = "clean"
 run = "/usr/bin/vacuumdb --all"
 
 [tasks.vacuumdb.env]
@@ -36,6 +39,7 @@ description = "A descriptor line carries the user column too"
 run_on_start = true
 user = "root"
 shell = "/bin/sh"
+env_base = "clean"
 run = "/usr/bin/warmup"
 
 [tasks.warmup.env]

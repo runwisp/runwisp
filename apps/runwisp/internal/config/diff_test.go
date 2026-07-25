@@ -94,6 +94,10 @@ func TestDiffTasks_ChangeReasons(t *testing.T) {
 		{"workdir", func(tk *model.Task) { tk.WorkingDir = "/tmp" }, ReasonCommand},
 		{"env", func(tk *model.Task) { tk.Env = map[string]string{"K": "V"} }, ReasonEnv},
 		{"env-file", func(tk *model.Task) { tk.EnvFile = ".env" }, ReasonEnv},
+		// A task switched to a clean base runs with a different environment; a
+		// reload that reported no change would leave it on the old one until the
+		// next restart.
+		{"env-base", func(tk *model.Task) { tk.EnvBase = model.EnvBaseClean }, ReasonEnv},
 		{"settings", func(tk *model.Task) { tk.MaxConcurrent = 4 }, ReasonSettings},
 	}
 

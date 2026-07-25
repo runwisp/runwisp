@@ -232,6 +232,13 @@ func (cp *crontabParser) importJob(line string) bool {
 	if cp.shell != "" && filepath.IsAbs(cp.shell) {
 		b.set("shell", tomlString(cp.shell))
 	}
+	// crond hands a job PATH, SHELL, HOME and LOGNAME and nothing else, so a job
+	// that worked under cron was written against that environment. Inheriting
+	// the daemon's instead — RunWisp's own default — is how an import that looks
+	// clean starts behaving differently the first time the daemon is launched
+	// from a different shell. Any PATH= the crontab set lands in the task's own
+	// env and layers over this.
+	b.set("env_base", tomlString(string(model.EnvBaseClean)))
 
 	cp.applyCommand(&b, ref, cc)
 	blocks := []block{b}

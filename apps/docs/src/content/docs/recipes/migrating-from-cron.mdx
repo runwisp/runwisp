@@ -264,6 +264,7 @@ Most of a crontab translates one-to-one. Here's the whole picture:
 | user column (system crontab)   | `user = "..."`                | Detected automatically, `@reboot` lines too.    |
 | `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                       |
 | `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.        |
+| cron's minimal environment     | `env_base = "clean"`          | Set on every imported task — see below.         |
 | `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO. |
 | `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.     |
 | `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.     |
@@ -276,6 +277,15 @@ onto each task the importer emits from that file, so importing a second crontab
 with different values can't silently reach back and change the first one's
 tasks — and nothing an import writes touches your global `[defaults]` or
 `[scheduler]`.
+
+Every imported task gets [`env_base = "clean"`](/configuration/tasks/#working-directory--shell).
+Cron hands a job a nearly empty environment — `PATH=/usr/bin:/bin`, `SHELL`,
+`HOME`, `LOGNAME` — so that's what your jobs were written against, and it's
+what they keep. RunWisp's own default is to inherit the daemon's environment,
+which is friendlier for a task you're writing today but wrong for one you're
+moving: it would run with whatever the daemon was launched with, and you'd
+find out weeks later. Your crontab's own `PATH=` line still lands in the
+task's `env` and layers on top, so nothing you set explicitly is lost.
 
 RunWisp's cron grammar is a superset of vixie-cron's: the standard five fields,
 descriptors like `@daily`, and a few extras (six-field specs with seconds,

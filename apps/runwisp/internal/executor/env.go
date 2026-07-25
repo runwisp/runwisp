@@ -4,6 +4,8 @@
 package executor
 
 import (
+	"log/slog"
+	"os/user"
 	"sort"
 	"strings"
 )
@@ -15,6 +17,35 @@ import (
 // from the parent base so shell tasks match the container/compose backends,
 // which build env from task.Env/Secrets only.
 const daemonEnvPrefix = "RUNWISP_"
+
+// cleanEnvPath is the PATH an env_base = "clean" run starts with: crond's own
+// compiled-in default (_PATH_DEFPATH). Deliberately not the daemon's PATH —
+// the whole point of a clean base is that the run doesn't depend on how the
+// daemon was launched. A task that needs more sets PATH in its own env, which
+// layers over this.
+const cleanEnvPath = "/usr/bin:/bin"
+
+// cleanEnvBase is the environment a host shell run with env_base = "clean"
+// starts from: the variables crond guarantees a job, and nothing else.
+//
+// HOME/USER/LOGNAME describe the account the child will actually run as. The
+// daemon's own account is the right answer here because a run-as identity, when
+// there is one, is layered over this base by the caller and wins.
+func cleanEnvBase(shellPath string) []string {
+	env := []string{"PATH=" + cleanEnvPath}
+	if shellPath != "" {
+		env = append(env, "SHELL="+shellPath)
+	}
+	u, err := user.Current()
+	if err != nil {
+		// Not fatal: the run is still better off with a clean PATH than with the
+		// daemon's whole environment. Loud, though — a job that reads $HOME will
+		// behave differently and this is the only warning of it.
+		slog.Warn("env_base=clean: cannot resolve the daemon's own account; this run gets no HOME/USER/LOGNAME", "err", err)
+		return env
+	}
+	return append(env, identityEnv(u.Username, u.HomeDir)...)
+}
 
 // buildProcessEnv merges KEY=VALUE entries from parent with successive overlay
 // maps. Later overlays override earlier ones; parent acts as the initial layer.

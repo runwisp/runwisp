@@ -273,10 +273,10 @@ secrets_file = "/etc/runwisp/api-secrets.env"
 Every instance of a multi-instance service receives the same merged
 environment.
 
-`working_dir`, `shell`, `umask`, and `user` also work the same as on tasks — see
-[`[tasks.*]` Working directory & shell](/configuration/tasks/#working-directory--shell).
-Every instance runs in the same directory, under the same interpreter and mask,
-as the same OS user (`user` needs the daemon running as root).
+`working_dir`, `shell`, `umask`, `env_base`, and `user` also work the same as on
+tasks — see [`[tasks.*]` Working directory & shell](/configuration/tasks/#working-directory--shell).
+Every instance runs in the same directory, under the same interpreter, mask and
+environment base, as the same OS user (`user` needs the daemon running as root).
 
 ## Compose-backed services
 

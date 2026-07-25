@@ -476,6 +476,7 @@ original run was given — including anything the operator deliberately omitted.
 | `working_dir` | _(daemon)_ | Directory the process runs in. Relative paths resolve against the `runwisp.toml` directory; `~` expands. Existence is checked at run time, not config load. |
 | `shell`       | `/bin/sh`  | Interpreter for `run`. Must be an **absolute** path (e.g. `/bin/bash`). Invoked as `<shell> -e -c <script>` — see [Fail-fast](#fail-fast).                  |
 | `umask`       | _(daemon)_ | Octal file-creation mask applied to the run, e.g. `"027"`. 3–4 octal digits, up to `0777`. Empty inherits the daemon's umask.                               |
+| `env_base`    | `inherit`  | What the run's environment starts from: `inherit` (the daemon's) or `clean` (`PATH`, `SHELL`, `HOME`, `USER`/`LOGNAME` only, the way cron does it).         |
 | `user`        | _(daemon)_ | Run as another OS user, in `user` or `user:group` form (name or numeric id). Empty keeps the daemon's identity. Needs the daemon running as root.           |
 
 By default a `run` script executes under `/bin/sh` in whatever directory
@@ -493,6 +494,23 @@ the daemon), and it's digit-only, so there's nothing to escape. Spell it
 with at least three digits — `"22"` is rejected because it's ambiguous;
 write `"022"`.
 
+`env_base` decides what your task's environment starts as. The default,
+`inherit`, gives it everything the daemon has (minus RunWisp's own internals)
+— friendly, because a task sees the same `PATH` you tested it with. The cost
+is that a job's behaviour depends on how the daemon happened to be started:
+launch it from a login shell one day and from systemd the next, and the same
+task runs with a different environment.
+
+`clean` cuts that link. The run starts with `PATH=/usr/bin:/bin`, `SHELL`,
+`HOME`, and `USER`/`LOGNAME` — exactly what cron gives a job — and nothing
+else. Anything your task actually needs, you declare in its own `env`, which
+layers on top. That's why `runwisp import cron` sets `env_base = "clean"` on
+everything it imports: those jobs were written against cron's environment,
+and handing them the daemon's is how a migration looks fine for a week and
+then breaks. It's a good default for any task you want reproducible, and it's
+host-shell only — a compose-backed task never inherits the daemon's
+environment to begin with, so setting it there is an error.
+
 `user` drops the run to another account. Write a name or a numeric id, and
 add `:group` (also name or id) when you want a specific group too — the same
 `user:group` shorthand `chown` and Docker Compose use. The daemon resolves
@@ -507,6 +525,7 @@ a start error rather than quietly staying as the daemon's user.
 working_dir = "/srv/app"
 shell       = "/bin/bash"
 umask       = "027"
+env_base    = "clean"
 user        = "reporter:reporter"
 run         = "./bin/generate-report --out reports/"
 ```

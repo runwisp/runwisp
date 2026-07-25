@@ -158,7 +158,8 @@ func commandChanged(oldTask, newTask *model.Task) bool {
 }
 
 func envChanged(oldTask, newTask *model.Task) bool {
-	return oldTask.EnvFile != newTask.EnvFile ||
+	return oldTask.EnvBase != newTask.EnvBase ||
+		oldTask.EnvFile != newTask.EnvFile ||
 		oldTask.SecretsFile != newTask.SecretsFile ||
 		!reflect.DeepEqual(oldTask.Env, newTask.Env) ||
 		!reflect.DeepEqual(oldTask.Secrets, newTask.Secrets)
