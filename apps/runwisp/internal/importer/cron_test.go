@@ -203,6 +203,37 @@ func TestCronSystemUserColumn(t *testing.T) {
 	mustContain(t, out, `run = "/usr/bin/cleanup"`)
 }
 
+func TestCronSystemUserColumnOnDescriptorLine(t *testing.T) {
+	// Vixie cron allows `@reboot root /usr/bin/foo` in /etc/crontab. The user
+	// column has to come off the descriptor form too, or it rides into `run`.
+	res := parseCron(t, "@reboot root /usr/bin/warmup\n", CronOptions{System: true})
+	out := res.TOML()
+	mustContain(t, out, "run_on_start = true")
+	mustContain(t, out, `user = "root"`)
+	mustContain(t, out, `run = "/usr/bin/warmup"`)
+	mustNotContain(t, out, `run = "root /usr/bin/warmup"`)
+}
+
+func TestCronSystemUserColumnOnLongDescriptorLine(t *testing.T) {
+	// The other half of the same bug: the user used to be recovered by a second
+	// six-field split of the line, so a descriptor job with enough arguments
+	// handed a command argument to `user =` instead of dropping it.
+	res := parseCron(t, "@reboot deploy /usr/bin/warmup --a --b --c --d\n", CronOptions{System: true})
+	out := res.TOML()
+	mustContain(t, out, `user = "deploy"`)
+	mustContain(t, out, `run = "/usr/bin/warmup --a --b --c --d"`)
+	mustNotContain(t, out, `user = "--b"`)
+}
+
+func TestCronDescriptorLinePerUserInventsNoUser(t *testing.T) {
+	// Per-user mode has no user column, so the same line keeps every token in
+	// run — peeling one off here would invent a user the crontab never named.
+	res := parseCron(t, "@reboot root /usr/bin/warmup\n", CronOptions{})
+	out := res.TOML()
+	mustContain(t, out, `run = "root /usr/bin/warmup"`)
+	mustNotContain(t, out, `user =`)
+}
+
 func TestCronWrapperNameSkip(t *testing.T) {
 	res := parseCron(t, "0 1 * * * /usr/bin/nice -n 19 /opt/sync.sh\n", CronOptions{})
 	mustContain(t, res.TOML(), "[tasks.sync]")

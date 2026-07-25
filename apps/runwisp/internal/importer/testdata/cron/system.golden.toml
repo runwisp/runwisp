@@ -29,3 +29,14 @@ run = "/usr/bin/vacuumdb --all"
 
 [tasks.vacuumdb.env]
 PATH = "/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
+
+# @reboot — runs once each time the daemon starts.
+[tasks.warmup]
+description = "A descriptor line carries the user column too"
+run_on_start = true
+user = "root"
+shell = "/bin/sh"
+run = "/usr/bin/warmup"
+
+[tasks.warmup.env]
+PATH = "/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"

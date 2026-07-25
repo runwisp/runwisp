@@ -197,10 +197,11 @@ func (cp *crontabParser) assemble() {
 // those settings to every job that follows them in the file, so the state is
 // snapshotted at the job's position rather than folded globally.
 func (cp *crontabParser) buildJob(line string) ([]block, bool) {
-	schedule, command, runOnStart, ok := splitCronScheduleCommand(line, cp.system)
+	j, ok := splitCronJobLine(line, cp.system)
 	if !ok {
 		return nil, false
 	}
+	command := j.command
 
 	name, skip := cp.names.resolve(deriveCronName(command), model.KindTask, command)
 	if skip {
@@ -216,14 +217,10 @@ func (cp *crontabParser) buildJob(line string) ([]block, bool) {
 		b.set("description", tomlString(cp.pendingComment))
 	}
 
-	cp.res.applyCronSchedule(&b, name, schedule, runOnStart)
+	cp.res.applyCronSchedule(&b, name, j.schedule, j.runOnStart)
 
-	if cp.system {
-		// The user column sat between the schedule and the command; re-split to
-		// recover it cleanly.
-		if user, ok := systemCronUser(line); ok && user != "" {
-			b.set("user", tomlString(user))
-		}
+	if j.user != "" {
+		b.set("user", tomlString(j.user))
 	}
 	if cp.timezone != "" {
 		b.set("timezone", tomlString(cp.timezone))
@@ -248,26 +245,49 @@ func (cp *crontabParser) buildJob(line string) ([]block, bool) {
 	return blocks, true
 }
 
-// splitCronScheduleCommand splits a crontab job line into its schedule and
-// command. It handles both the `@keyword command` shorthand (where @reboot maps
-// to run-on-start and @annually/@midnight normalize to their canonical names)
-// and the classic five-field schedule, with an extra user column when system.
-func splitCronScheduleCommand(line string, system bool) (schedule, command string, runOnStart, ok bool) {
+// cronJobLine is one crontab job line, split into the parts RunWisp maps.
+type cronJobLine struct {
+	schedule   string // five fields or an @descriptor; empty when runOnStart
+	user       string // the system-crontab user column; empty in per-user mode
+	command    string
+	runOnStart bool // set by @reboot
+}
+
+// splitCronJobLine splits a crontab job line into schedule, user, and command.
+// It handles both the `@keyword command` shorthand (where @reboot maps to
+// run-on-start and @annually/@midnight normalize to their canonical names) and
+// the classic five-field schedule.
+//
+// In system mode it peels the user column off *both* forms — Vixie cron allows
+// `@reboot root /usr/bin/foo` in /etc/crontab and /etc/cron.d. Returning the
+// user from here is the point: it used to be recovered by a second,
+// differently-shaped split of the same line, which dropped it on a short
+// @reboot line and handed a command argument to `user =` on a long one.
+func splitCronJobLine(line string, system bool) (cronJobLine, bool) {
 	if strings.HasPrefix(line, "@") {
 		tok, rest, ok := splitFields(line, 1)
 		if !ok {
-			return "", "", false, false
+			return cronJobLine{}, false
 		}
+		j := cronJobLine{command: rest}
 		switch strings.ToLower(tok[0]) {
 		case "@reboot":
-			return "", rest, true, true
+			j.runOnStart = true
 		case "@annually":
-			return "@yearly", rest, false, true
+			j.schedule = "@yearly"
 		case "@midnight":
-			return "@daily", rest, false, true
+			j.schedule = "@daily"
 		default:
-			return tok[0], rest, false, true
+			j.schedule = tok[0]
 		}
+		if system {
+			userTok, command, ok := splitFields(rest, 1)
+			if !ok || command == "" {
+				return cronJobLine{}, false // a user column with no command isn't a job
+			}
+			j.user, j.command = userTok[0], command
+		}
+		return j, true
 	}
 
 	nFields := 5
@@ -276,9 +296,13 @@ func splitCronScheduleCommand(line string, system bool) (schedule, command strin
 	}
 	tok, rest, ok := splitFields(line, nFields)
 	if !ok || rest == "" {
-		return "", "", false, false
+		return cronJobLine{}, false
 	}
-	return strings.Join(tok[:5], " "), rest, false, true
+	j := cronJobLine{schedule: strings.Join(tok[:5], " "), command: rest}
+	if system {
+		j.user = tok[5]
+	}
+	return j, true
 }
 
 // applyCronSchedule sets the schedule-related fields on b, validating a cron
@@ -326,14 +350,16 @@ func looksLikeUserColumn(line string) bool {
 	if strings.HasPrefix(line, "@") {
 		return false
 	}
-	tok, rest, ok := splitFields(line, 6)
-	if !ok || rest == "" {
+	j, ok := splitCronJobLine(line, true)
+	if !ok {
 		return false
 	}
-	if cronspec.Validate(strings.Join(tok[:5], " "), "") != nil {
+	// Validated with an empty timezone on purpose: this is a shape sniff, and a
+	// bad CRON_TZ must not change what a line *looks* like.
+	if cronspec.Validate(j.schedule, "") != nil {
 		return false
 	}
-	return isLikelyUsername(tok[5])
+	return isLikelyUsername(j.user)
 }
 
 // isLikelyUsername reports whether a token looks like a POSIX login name and is
@@ -352,15 +378,6 @@ func isLikelyUsername(s string) bool {
 		}
 	}
 	return !cronWrappers[s] && !cronInterpreters[s]
-}
-
-// systemCronUser recovers the user column (6th field) of a system crontab line.
-func systemCronUser(line string) (string, bool) {
-	tok, _, ok := splitFields(line, 6)
-	if !ok {
-		return "", false
-	}
-	return tok[5], true
 }
 
 // cronEnvLine reports whether line is a cron environment assignment and, if so,
