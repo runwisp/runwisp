@@ -179,6 +179,15 @@ func twoTierEpilogue(rep importReport, staged configedit.StageResult, layout con
 					st.attn.Render("!"), rep.validationErr.Error())
 			}
 			fmt.Fprintf(w, "Resolve the # TODO items in %s, then run `runwisp validate`.\n", staged.StagingPath)
+			if staged.PreLoadErr != nil {
+				// This write skipped the load gate because the import itself has a TODO,
+				// so a root that was already broken went unmentioned — and the operator
+				// would fix every TODO, run validate, and be told about something they
+				// never touched. Two problems named up front beat one discovered later.
+				fmt.Fprintln(w)
+				fmt.Fprintf(w, "%s separately, %s didn't load before this import either:\n  %s\n",
+					st.attn.Render("!"), filepath.Base(layout.RootPath), staged.PreLoadErr.Error())
+			}
 			return
 		}
 

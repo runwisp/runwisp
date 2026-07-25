@@ -58,6 +58,27 @@ func importSupervisordTwoTier(t *testing.T, cfgPath, conf string) (stderr string
 	return errb.String(), err
 }
 
+// TestImportCronTwoTierNamesAPreexistingBreakageToo covers the one write that
+// skips the load gate: the import has its own `# TODO`, so the files are kept for
+// the operator to fix. Without this, a root config that was already broken went
+// unmentioned — they'd resolve every TODO, run validate, and be told about
+// something they never touched.
+func TestImportCronTwoTierNamesAPreexistingBreakageToo(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	// Valid TOML, invalid config: a task with a schedule and no command.
+	require.NoError(t, os.WriteFile(cfgPath, []byte("[tasks.web]\ncron = \"@daily\"\n"), 0o600))
+
+	// An unparseable cron expression is what makes the import itself carry a TODO.
+	stderr, err := importTwoTier(t, cfgPath, "99 99 * * * /bin/bad\n")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "Resolve the # TODO items in")
+	assert.Contains(t, stderr, "didn't load before this import either:")
+	assert.FileExists(t, filepath.Join(dir, "runwisp.d", "imported.toml"),
+		"the files are kept precisely so the operator can fix them in place")
+}
+
 func TestImportCronTwoTierGreenfield(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
