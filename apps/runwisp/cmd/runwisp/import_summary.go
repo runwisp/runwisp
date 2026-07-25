@@ -223,6 +223,14 @@ func twoTierPlanEpilogue(rep importReport, plan configedit.StageResult, layout c
 			fmt.Fprintln(w)
 			fmt.Fprintf(w, "%s %s doesn't load as it stands, so a real run would refuse:\n  %s\n",
 				st.attn.Render("!"), filepath.Base(layout.RootPath), plan.PreLoadErr.Error())
+		} else if rep.validationErr == nil {
+			// A plan with nothing flagged reads as "this will work", and there is one
+			// thing it didn't check. Naming the gap is the difference between a
+			// guarantee and an implication — proving it would mean writing both files
+			// and loading the result, which is the thing --dry-run exists to defer.
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, "Not checked: whether these merge with the tasks you already have.")
+			fmt.Fprintln(w, "A real run checks that, and rolls both files back if it fails.")
 		}
 		planTail(w, st, rep)
 	}

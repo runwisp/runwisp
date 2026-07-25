@@ -230,7 +230,9 @@ runwisp import supervisord [FILE...] — convert supervisord config to runwisp.t
                                a row. --quiet keeps only the ! rows; --quiet with a clean import prints nothing.
                              — --dry-run: same summary + the files a real run would touch, writes nothing.
                                Rejects --quiet (contradiction). No-op in stdout mode (already writes nothing).
-                               Proves the generated content loads, not that the merge does.
+                               Proves the generated content loads + reports a root that already
+                               fails to load; prints that the merge is unchecked (needs the files
+                               on disk). Two-tier plan comes from configedit.PlanStage.
 runwisp promote [TASK...]    — move staged tasks out of runwisp.d/imported.toml into the root runwisp.toml; --all --reload --dry-run
                              — surgical text move: the block's comments/formatting/# TODOs travel byte-for-byte.
                                Both files written as one transaction gated on the merged load, else neither changes.

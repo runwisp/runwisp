@@ -67,6 +67,27 @@ func TestImportDryRunLeavesAnExistingConfigByteIdentical(t *testing.T) {
 	assert.Equal(t, before, testutil.SnapshotTree(t, dir), "a dry run must leave the tree byte-identical")
 }
 
+// TestImportDryRunNamesWhatItDidNotCheck is the honesty rule applied to the
+// feature's own limits: a plan with nothing flagged reads as a guarantee, and the
+// merge is the one thing it can't prove without writing the files. Saying so is
+// what keeps a clean dry run from over-promising.
+func TestImportDryRunNamesWhatItDidNotCheck(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfgPath,
+		[]byte("[tasks.web]\nrun = \"/usr/bin/web\"\ncron = \"@daily\"\n"), 0o600))
+
+	_, stderr, err := importDry(t, cfgPath, dryCrontab, importOpts{write: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "Not checked: whether these merge with the tasks you already have.")
+
+	// It stays quiet when there's already something concrete to report — a caveat
+	// stacked under a real failure is noise, and the failure is the news.
+	_, stderr, err = importDry(t, cfgPath, "99 99 * * * /bin/bad\n", importOpts{write: true})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, "Not checked:")
+}
+
 // TestImportDryRunReportsAnAlreadyWiredRoot pins the third mood: a root that
 // needs no change says so in the same words the real write uses, because
 // "already loads" is tenseless.

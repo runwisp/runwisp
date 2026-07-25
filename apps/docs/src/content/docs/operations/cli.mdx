@@ -306,9 +306,12 @@ machine whose config you care about:
 runwisp import cron /etc/crontab --write --dry-run
 ```
 
-It proves the generated tasks are valid. What it can't prove is that they merge
-cleanly with the tasks you already have, since that means writing the files and
-loading the result — the real run does that, and rolls back if it fails.
+It proves the generated tasks are valid, and it says so when it can already see
+that a real run would refuse — a root `runwisp.toml` that doesn't load today, for
+instance. The one thing it can't prove is that the imported tasks merge cleanly
+with the ones you already have, since that means writing both files and loading
+the result. The output says as much rather than leaving you to assume; the real
+run does check it, and rolls both files back if it fails.
 
 `--write` doesn't append to your `runwisp.toml`. It installs the import in a
 **two-tier layout**: the generated tasks land in a machine-owned
