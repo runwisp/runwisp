@@ -90,7 +90,7 @@ run          = "node /app/worker.js"
 
 Already running things under `docker compose`? Add `[compose.myapp]` next to your `docker-compose.yml` and every service in it becomes an observable RunWisp service — logs, restart policies, notifications, trigger/stop — without rewriting your compose file. See [`[compose.*]`](https://docs.runwisp.com/configuration/compose/).
 
-Already on crond or supervisord? `runwisp import cron /etc/crontab` (or `runwisp import supervisord`) converts an existing config into an annotated `runwisp.toml` to start from, with inline `# TODO`s for anything that needs a human. Add `--write` and the imported jobs are staged alongside your own config instead of replacing it; `runwisp promote <name>` graduates one into your `runwisp.toml` when you're ready to own it. See [Migrating from cron](https://docs.runwisp.com/recipes/migrating-from-cron/).
+Already on crond or supervisord? `runwisp import cron /etc/crontab` (or `runwisp import supervisord`) converts an existing config into an annotated `runwisp.toml` to start from, with inline `# TODO`s for anything that needs a human. Add `--write` and the imported jobs are staged alongside your own config instead of replacing it; `runwisp promote <name>` graduates one into your `runwisp.toml` when you're ready to own it. Importing copies the jobs, it doesn't disable them where they came from — comment them out of your crontab before starting the daemon, or they'll run twice. See [Migrating from cron](https://docs.runwisp.com/recipes/migrating-from-cron/).
 
 **2. Run it:**
 

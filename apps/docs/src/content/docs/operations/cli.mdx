@@ -328,6 +328,20 @@ won't second-guess it — it tells you the glob to add and writes nothing.
 Tasks that live in the staging file report `"staged": true` in
 `list`/`status --json` (and the API): imported, not yet native.
 
+An import **copies** definitions — it never touches the thing you imported
+_from_. Your crontab is still installed, supervisord is still supervising, so
+starting the daemon on a fresh import means every job has two schedulers firing
+it. Nothing errors, which is what makes it worth saying out loud, so every
+import summary ends with the `!` line that says so:
+
+```
+! cron still runs these jobs. Comment them out (`crontab -e`, or move the
+  file out of /etc/cron.d) before starting RunWisp, or each one runs twice.
+```
+
+Turn the old scheduler off for the jobs you imported before `runwisp daemon`.
+Both migration recipes have the commands.
+
 System crontabs (`/etc/crontab`, `/etc/cron.d/*`) carry a user column;
 `runwisp import cron` detects that from the path or header and maps it to
 a per-task `user`. The

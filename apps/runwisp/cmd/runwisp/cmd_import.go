@@ -127,7 +127,7 @@ func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cron
 	if err != nil {
 		return &userFacingError{title: "failed to read crontab", details: err.Error()}
 	}
-	return emitImport(stdout, stderr, stdin, res, "crontab", f, opts)
+	return emitImport(stdout, stderr, stdin, res, sourceCrontab, f, opts)
 }
 
 func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {
@@ -160,7 +160,7 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 	if err != nil {
 		return &userFacingError{title: "failed to read supervisord config", details: err.Error()}
 	}
-	return emitImport(stdout, stderr, stdin, res, "supervisord config", f, opts)
+	return emitImport(stdout, stderr, stdin, res, sourceSupervisord, f, opts)
 }
 
 // checkImportFlags rejects a combination that can't mean anything, before the
@@ -258,11 +258,11 @@ func openImportSource(source string, stdin *os.File) (io.Reader, func(), error) 
 // emitImport renders the result, validates it, and delivers it: stdout by
 // default, a standalone file with -o, or the two-tier managed layout with
 // --write. The summary always goes to stderr.
-func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, sourceLabel string, f Flags, opts importOpts) error {
+func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, src importSource, f Flags, opts importOpts) error {
 	// Prepend the schema directive so the imported file is editor-validated the
 	// moment it lands, just like a scaffolded one. It is a TOML comment.
 	toml := config.SchemaDirective + res.TOML()
-	rep := importReport{res: res, sourceLabel: sourceLabel, validationErr: validateGeneratedTOML(toml)}
+	rep := importReport{res: res, source: src, validationErr: validateGeneratedTOML(toml)}
 
 	// --dry-run only has something to hold back when a write was going to happen.
 	// Plain stdout mode already writes nothing and already says so, so it keeps its

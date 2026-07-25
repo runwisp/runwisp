@@ -233,6 +233,10 @@ runwisp import supervisord [FILE...] — convert supervisord config to runwisp.t
                                Proves the generated content loads + reports a root that already
                                fails to load; prints that the merge is unchecked (needs the files
                                on disk). Two-tier plan comes from configedit.PlanStage.
+                             — import COPIES; it never disables the source. Every summary ends with a "!" warning
+                               that cron/supervisord still runs these jobs and each will run twice until the
+                               operator turns the old one off. Suppressed only when there is no duplication yet
+                               (nothing emitted, or the generated config doesn't validate).
 runwisp promote [TASK...]    — move staged tasks out of runwisp.d/imported.toml into the root runwisp.toml; --all --reload --dry-run
                              — surgical text move: the block's comments/formatting/# TODOs travel byte-for-byte.
                                Both files written as one transaction gated on the merged load, else neither changes.

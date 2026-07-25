@@ -90,6 +90,9 @@ Notes:
     Wire a notifier instead (see notify_on_failure).
 
 Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.
+
+! cron still runs these jobs. Comment them out (`crontab -e`, or move the
+  file out of /etc/cron.d) before starting RunWisp, or each one runs twice.
 ```
 
 Every line of your crontab gets a row, and the row shows the command that will
@@ -115,8 +118,12 @@ runwisp validate
 
 `-o` writes the file (it won't clobber an existing `runwisp.toml` without
 `--force`), and [`runwisp validate`](/configuration/overview/) confirms the
-result parses before you start the daemon. Then `runwisp daemon` — and the same
-jobs run on the same schedules, except now they're all on the dashboard.
+result parses before you start the daemon.
+
+One thing left before `runwisp daemon`: importing **copied** your jobs, it
+didn't take them away from cron. Turn cron off for them first — see
+[nothing has retired cron yet](#nothing-has-retired-cron-yet) — and then the
+same jobs run on the same schedules, except now they're all on the dashboard.
 
 ### Keeping your own config separate
 
@@ -135,6 +142,12 @@ touch, without touching any of them:
 ```
 Would stage 3 tasks in /etc/runwisp/runwisp.d/imported.toml
 Would create /etc/runwisp/runwisp.toml and wire it to load runwisp.d/*.toml.
+
+Not checked: whether these merge with the tasks you already have.
+A real run checks that, and rolls both files back if it fails.
+
+! cron still runs these jobs. Comment them out (`crontab -e`, or move the
+  file out of /etc/cron.d) before starting RunWisp, or each one runs twice.
 
 Nothing was written.
 ```
@@ -207,6 +220,37 @@ crontab -l | runwisp import cron --system=false    # never treat a column as a u
 
 :::
 
+## Nothing has retired cron yet
+
+This is the one step nobody expects, so it gets its own heading: an import
+**copies** your jobs into `runwisp.toml`. It doesn't touch your crontab, and it
+can't — that's yours. Start the daemon with cron still enabled and every
+imported job now has two schedulers firing it. Two backups. Two `find -delete`
+sweeps. Nothing errors, so nothing tells you, which is exactly the kind of quiet
+failure RunWisp exists to prevent — hence the `!` line at the bottom of every
+import summary.
+
+So before `runwisp daemon`, take the jobs away from cron:
+
+```bash
+crontab -l > ~/crontab.backup    # keep a copy, always
+crontab -e                       # comment out the lines you imported
+```
+
+For a system crontab, move the file instead of editing it — cron picks up
+`/etc/cron.d` by directory listing:
+
+```bash
+sudo mv /etc/cron.d/myjobs /root/myjobs.crontab.backup
+```
+
+Going all-in? `crontab -r` drops your user crontab entirely. Take the backup
+first — it's unrecoverable, and it's the one command in this page you can't undo.
+
+If you'd rather cut over gradually, that works too: comment out one job, let
+RunWisp own it for a few days, then do the next. Just don't leave a job enabled
+in both places — pick one owner per job and the schedules stay honest.
+
 ## How the pieces map
 
 Most of a crontab translates one-to-one. Here's the whole picture:
@@ -267,9 +311,8 @@ shows up as a `# TODO` in the file and a note in the summary. The usual ones:
 - **Manual runs.** Trigger any job by hand from the dashboard or
   `runwisp exec <name>` without editing the schedule.
 
-Once the daemon is running and you're happy, retire the crontab with
-`crontab -r` (back it up first). From then on `runwisp.toml` is the one place
-your schedule lives.
+With the crontab lines gone, `runwisp.toml` is the one place your schedule
+lives.
 
 ---
 

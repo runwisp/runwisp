@@ -41,14 +41,62 @@ func newImportStyles(w io.Writer) importStyles {
 	}
 }
 
+// importSource is what an import read from. It carries both the label the summary
+// names and the advice for retiring that source, so adding a third one can't
+// teach half the output about it and leave the other half silent.
+type importSource struct {
+	label string
+	// stillRuns is the warning that importing did not retire the source. An import
+	// copies definitions; it does not disable anything, so until the operator turns
+	// the old scheduler off, both are running the same jobs. That is the most
+	// expensive thing this command can fail to mention — a backup that runs twice
+	// at 3am costs real money, and nothing else in the output implies cron stopped.
+	stillRuns []string
+}
+
+var (
+	sourceCrontab = importSource{
+		label: "crontab",
+		stillRuns: []string{
+			"cron still runs these jobs. Comment them out (`crontab -e`, or move the",
+			"file out of /etc/cron.d) before starting RunWisp, or each one runs twice.",
+		},
+	}
+	sourceSupervisord = importSource{
+		label: "supervisord config",
+		stillRuns: []string{
+			"supervisord still manages these programs. Stop them there before starting",
+			"RunWisp, or each one runs twice.",
+		},
+	}
+)
+
 // importReport is everything the summary renders: the parsed result, what it was
 // parsed from, and whether the generated config actually loads. validationErr
 // lives here rather than only inside the epilogue closure because the verdict
 // line needs it too — see importFooterLine.
 type importReport struct {
 	res           *importer.Result
-	sourceLabel   string
+	source        importSource
 	validationErr error
+}
+
+// writeStillRuns prints the "the old scheduler is still running these" warning.
+//
+// It is gated twice, because the warning is only true when RunWisp is about to
+// run something: an invalid config runs nothing, and an import that emitted
+// nothing has nothing to double up on. In both cases there is no duplication to
+// warn about yet — and in the first, the operator has a nearer problem on screen.
+func (rep importReport) writeStillRuns(w io.Writer, st importStyles) {
+	tasks, services := rep.emitted()
+	if rep.validationErr != nil || tasks+services == 0 || len(rep.source.stillRuns) == 0 {
+		return
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%s %s\n", st.attn.Render("!"), rep.source.stillRuns[0])
+	for _, line := range rep.source.stillRuns[1:] {
+		fmt.Fprintf(w, "  %s\n", line)
+	}
 }
 
 // emitted is what this import actually produced: the tasks and services that
@@ -84,7 +132,7 @@ func printImportSummary(w io.Writer, rep importReport, opts importOpts, epilogue
 		}
 		items = onlyBlocking(items)
 	} else {
-		fmt.Fprintf(w, "\nImported %s → %s\n", rep.sourceLabel, pluralizeCounts(rep.emitted()))
+		fmt.Fprintf(w, "\nImported %s → %s\n", rep.source.label, pluralizeCounts(rep.emitted()))
 	}
 
 	lay := newItemLayout(items, width)
@@ -131,9 +179,10 @@ func singleFileEpilogue(rep importReport, target string) func(io.Writer, importS
 		}
 		if target != "" {
 			fmt.Fprintf(w, "Wrote %s. Review it, then run `runwisp validate`.\n", target)
-			return
+		} else {
+			fmt.Fprintln(w, "Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.")
 		}
-		fmt.Fprintln(w, "Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.")
+		rep.writeStillRuns(w, st)
 	}
 }
 
@@ -193,6 +242,7 @@ func twoTierEpilogue(rep importReport, staged configedit.StageResult, layout con
 
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "Validated — the daemon loads these on next start or `runwisp reload`.\n")
+		rep.writeStillRuns(w, st)
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "They show as %s: imported, not yet native. Graduate one into\n", st.dim.Render("staged"))
 		fmt.Fprintf(w, "%s when you want to own it:\n", filepath.Base(layout.RootPath))
@@ -254,6 +304,7 @@ func planTail(w io.Writer, st importStyles, rep importReport) {
 		fmt.Fprintf(w, "%s the generated config didn't validate yet:\n  %s\n",
 			st.attn.Render("!"), rep.validationErr.Error())
 	}
+	rep.writeStillRuns(w, st)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Nothing was written.")
 }

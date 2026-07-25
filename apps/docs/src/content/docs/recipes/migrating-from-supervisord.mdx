@@ -84,6 +84,11 @@ Imported supervisord config → 2 services
         RUNWISP_INSTANCE_INDEX (0-based) in place of %(process_num)s.
 
 1 item carries a # TODO — fix it before you rely on it.
+
+Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.
+
+! supervisord still manages these programs. Stop them there before starting
+  RunWisp, or each one runs twice.
 ```
 
 `~` means it's imported but something changed, `!` that it needs you before you
@@ -91,8 +96,10 @@ rely on it, `✓` that it mapped cleanly, and `-` that your `runwisp.toml` alrea
 had it. Every `[program]` in the file gets a row either way — including the ones
 that produced no TOML at all, which is the case worth seeing.
 
-Save it, `runwisp validate`, then `runwisp daemon` — your processes come up
-under RunWisp, and you can watch them from the dashboard.
+Save it and run `runwisp validate`. Then stop the programs in supervisord —
+see [nothing has retired supervisord yet](#nothing-has-retired-supervisord-yet)
+— and `runwisp daemon` brings them up under RunWisp, where you can watch them
+from the dashboard.
 
 :::note[Piping vs. a path]
 When you pipe a config in, `[include]` directives can't be resolved — there's no
@@ -128,6 +135,36 @@ keeps running while it happens. Re-running the import later skips programs you'v
 already promoted rather than tripping over the duplicate name. The
 [cron recipe](/recipes/migrating-from-cron/#keeping-your-own-config-separate) has
 the full picture of the two-tier layout, which works identically here.
+
+## Nothing has retired supervisord yet
+
+An import **copies** your programs into `runwisp.toml`. It doesn't stop
+supervisord, and it doesn't edit its config — that's yours. So if you start the
+daemon while supervisord is still running the same programs, you get two of
+every process, each with its own supervisor determined to restart it.
+
+That's not a subtle problem for services the way it is for cron jobs: two
+`gunicorn` instances fight over a port, two workers double-consume a queue, and
+whichever one loses the race gets restarted by its supervisor, forever. Worth
+doing first, then:
+
+```bash
+sudo supervisorctl stop web worker     # just the ones you imported
+sudo supervisorctl stop all           # or everything
+```
+
+Then take them out of supervisord's config for good, so a `supervisorctl
+reload` or a host reboot doesn't quietly bring the second copy back:
+
+```bash
+sudo cp /etc/supervisor/supervisord.conf ~/supervisord.conf.backup
+sudo $EDITOR /etc/supervisor/supervisord.conf   # or the conf.d/ file
+sudo supervisorctl reread && sudo supervisorctl update
+```
+
+Once nothing is left in there, `sudo systemctl disable --now supervisor`
+retires the daemon itself. Migrating a few programs at a time works fine too —
+just never leave one enabled in both places.
 
 ## How the pieces map
 
@@ -202,8 +239,8 @@ mattered. The ones to know about:
   TUI, or REST API; stops are graceful, honoring your `stop_signal` and
   `graceful_stop`.
 
-Once it's running and you're happy, stop supervisord and let RunWisp own
-supervision. `runwisp.toml` is now the single place your processes are defined.
+With supervisord out of the picture, `runwisp.toml` is the single place your
+processes are defined.
 
 ---
 

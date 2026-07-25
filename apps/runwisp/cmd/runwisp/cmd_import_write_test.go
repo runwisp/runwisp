@@ -226,7 +226,7 @@ func TestStageImportReportsConflict(t *testing.T) {
 	require.NoError(t, err)
 
 	var stderr bytes.Buffer
-	rep := importReport{res: res, sourceLabel: "crontab"}
+	rep := importReport{res: res, source: sourceCrontab}
 	err = stageImport(&stderr, cfgPath, staging, rep, importOpts{})
 	require.Error(t, err)
 	u, ok := isUserFacing(err)
