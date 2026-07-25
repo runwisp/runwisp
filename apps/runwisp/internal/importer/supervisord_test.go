@@ -120,7 +120,7 @@ func TestSupervisordUnresolvedExpansion(t *testing.T) {
 	}
 	// The run line is syntactically fine, so the config loads — and then runs the
 	// wrong command. That's scarier than a refusal, so the row still reads blocked.
-	if got := res.Items()[0].Status; got != StatusBlocked {
+	if got := res.Items()[0].Status(); got != StatusBlocked {
 		t.Fatalf("status = %v, want blocked", got)
 	}
 }
@@ -155,7 +155,7 @@ stderr_logfile=/var/log/x.err
 	if got := len(res.Items()[0].Notes); got != 1 {
 		t.Fatalf("expected exactly one log note, got %d", got)
 	}
-	if got := res.Items()[0].Status; got != StatusChanged {
+	if got := res.Items()[0].Status(); got != StatusChanged {
 		t.Fatalf("status = %v, want changed", got)
 	}
 }
@@ -190,8 +190,8 @@ func TestUnsupportedProgramIsBlockedNotSkipped(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("an eventlistener is a process the operator runs, so it gets a row: %+v", items)
 	}
-	if items[0].Status != StatusBlocked {
-		t.Fatalf("status = %v, want blocked", items[0].Status)
+	if items[0].Status() != StatusBlocked {
+		t.Fatalf("status = %v, want blocked", items[0].Status())
 	}
 	if items[0].Source != "eventlistener:memmon" || items[0].Name != "" {
 		t.Fatalf("row should name the section and emit nothing: %+v", items[0])
@@ -228,7 +228,7 @@ func TestSupervisordExistingSkipsSameProgram(t *testing.T) {
 	}
 	// A skipped program still gets a row — it used to disappear from the report.
 	items := res.Items()
-	if len(items) != 1 || items[0].Status != StatusSkipped {
+	if len(items) != 1 || items[0].Status() != StatusSkipped {
 		t.Fatalf("expected one skipped row, got %+v", items)
 	}
 }

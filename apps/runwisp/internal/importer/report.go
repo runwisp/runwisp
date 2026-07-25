@@ -204,16 +204,24 @@ type Item struct {
 	// multi-line. Wrapping and truncation are the CLI's business, not this
 	// package's.
 	Run string
-	// Status is derived by Items; a zero value here means nothing yet.
-	Status ItemStatus
 	// Notes are the differences and blockers belonging to this job.
 	Notes []Note
 }
 
+// Status is the mark this row earned, computed from the row itself every time it
+// is asked for.
+//
+// It is a method rather than a field on purpose. As a field its zero value was
+// StatusClean, so any Item that reached a renderer without being stamped printed
+// a green ✓ — the safest-looking mark as the default, which is the failure mode
+// this whole report exists to remove. A derived status cannot be stale and cannot
+// disagree with the notes printed under it.
+func (i Item) Status() ItemStatus { return deriveStatus(i) }
+
 // SkipReason is the one-clause "why" for a skipped row, or "" for any other
 // status. Total by construction, so a formatter never has to index Notes.
 func (i Item) SkipReason() string {
-	if i.Status != StatusSkipped {
+	if i.Status() != StatusSkipped {
 		return ""
 	}
 	if len(i.Notes) > 0 {
@@ -243,13 +251,11 @@ func deriveStatus(it Item) ItemStatus {
 	return StatusClean
 }
 
-// Items returns the report rows in source order, each with its status derived.
+// Items returns the report rows in source order. The slice is a copy, so a
+// caller filtering or sorting it can't reach back into the parse.
 func (r *Result) Items() []Item {
 	items := make([]Item, len(r.items))
 	copy(items, r.items)
-	for i := range items {
-		items[i].Status = deriveStatus(items[i])
-	}
 	return items
 }
 
@@ -258,9 +264,12 @@ func (r *Result) Items() []Item {
 // Item.
 func (r *Result) Notes() []Note { return r.notes }
 
-// Tally counts the report. Tasks and Services count only rows that emitted
-// something, so Tasks+Services+Skipped-with-no-emit accounts for every row and
-// the arithmetic can be asserted.
+// Tally counts the report two independent ways. The four statuses partition the
+// rows, so Clean+Changed+Blocked+Skipped is always the row count — that is what
+// makes "every job gets exactly one row" assertable as arithmetic. Tasks and
+// Services count only the rows that emitted something, which is a different
+// question ("what landed in the file") and deliberately does not add up to the
+// same number.
 type Tally struct {
 	Tasks, Services                  int
 	Clean, Changed, Blocked, Skipped int
@@ -273,7 +282,7 @@ func (t Tally) Total() int { return t.Clean + t.Changed + t.Blocked + t.Skipped 
 func (r *Result) Tally() Tally {
 	var t Tally
 	for _, it := range r.Items() {
-		switch it.Status {
+		switch it.Status() {
 		case StatusClean:
 			t.Clean++
 		case StatusChanged:
@@ -312,11 +321,16 @@ func (r *Result) addItem(source string) itemRef {
 	return itemRef{res: r, i: len(r.items) - 1}
 }
 
-// emit records what this job actually became. A row that never gets an emit is
-// a job that produced no configuration.
-func (ir itemRef) emit(name string, kind model.TaskKind, schedule, run string) {
+// emit records what this job became *and* the TOML it produced, in one call.
+//
+// Blocks reach the generated config only through here. That is the structural
+// half of this package's promise: a table cannot appear in the emitted file
+// without a row in the report, because there is no other way to add one. A row
+// that never gets an emit is a job that produced no configuration.
+func (ir itemRef) emit(name string, kind model.TaskKind, schedule, run string, blocks ...block) {
 	it := &ir.res.items[ir.i]
 	it.Name, it.Kind, it.Schedule, it.Run = name, kind, schedule, run
+	ir.res.blocks = append(ir.res.blocks, blocks...)
 }
 
 // note records a difference or a blocker belonging to this job.

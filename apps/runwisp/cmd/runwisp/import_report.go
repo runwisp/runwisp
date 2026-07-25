@@ -74,8 +74,14 @@ func rowLabel(it importer.Item) string {
 // itemMark returns the one-cell mark for a status. `~` is cyan rather than
 // yellow on purpose: "imported, but different" is information, and `!` should
 // stay the only mark that reads as an alarm.
+//
+// The unreachable default is `?`, not `✓`. A fifth ItemStatus added later must
+// not inherit the mark that means "nothing to look at here" — that is how a
+// difference goes unnoticed, and it is the bug this report was built to prevent.
 func itemMark(s importer.ItemStatus, st importStyles) string {
 	switch s {
+	case importer.StatusClean:
+		return st.ok.Render("✓")
 	case importer.StatusChanged:
 		return st.changed.Render("~")
 	case importer.StatusBlocked:
@@ -83,7 +89,7 @@ func itemMark(s importer.ItemStatus, st importStyles) string {
 	case importer.StatusSkipped:
 		return st.dim.Render("-")
 	default:
-		return st.ok.Render("✓")
+		return st.attn.Render("?")
 	}
 }
 
@@ -94,12 +100,13 @@ func itemMark(s importer.ItemStatus, st importStyles) string {
 // what a job does with its output, so hiding it to save a column would be
 // hiding the thing the operator is here to check.
 func importItemLines(it importer.Item, lay itemLayout, st importStyles) []string {
-	mark := itemMark(it.Status, st)
+	status := it.Status()
+	mark := itemMark(status, st)
 	label := rowLabel(it)
 
 	// A skipped row is the one shape exception: the reason sits where the schedule
 	// would, and nothing is nested, because nothing about it will run.
-	if it.Status == importer.StatusSkipped {
+	if status == importer.StatusSkipped {
 		return []string{headLine(mark, padTo(label, lay.nameCol)+st.dim.Render(it.SkipReason()))}
 	}
 
@@ -185,7 +192,7 @@ func importFooterLine(res *importer.Result, validationErr error) string {
 func onlyBlocking(items []importer.Item) []importer.Item {
 	out := make([]importer.Item, 0, len(items))
 	for _, it := range items {
-		if it.Status == importer.StatusBlocked {
+		if it.Status() == importer.StatusBlocked {
 			out = append(out, it)
 		}
 	}

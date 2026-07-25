@@ -27,18 +27,18 @@ func plainStyles() importStyles { return newImportStyles(&bytes.Buffer{}) }
 func TestImportItemLinesMarksAndShape(t *testing.T) {
 	items := []importer.Item{
 		{Source: "backup", Name: "backup", Kind: "task", Schedule: "0 3 * * *",
-			Run: "/usr/local/bin/backup.sh --full", Status: importer.StatusClean},
+			Run: "/usr/local/bin/backup.sh --full"},
 		{Source: "reaper", Name: "tmp-reaper", Kind: "task", Schedule: "0 4 * * *",
-			Run: "/usr/bin/find /tmp -delete", Status: importer.StatusChanged,
+			Run: "/usr/bin/find /tmp -delete",
 			Notes: []importer.Note{
 				{Kind: importer.NoteLogsDropped, Message: "log file settings were dropped."},
 			}},
 		{Source: "report", Name: "nightly", Kind: "task", Schedule: "0 0 * * 8",
-			Run: "/opt/bin/report.sh", Status: importer.StatusBlocked,
+			Run: "/opt/bin/report.sh",
 			Notes: []importer.Note{
 				{Kind: importer.NoteCronUnparseable, Message: "cron expression 0 0 * * 8 didn't parse."},
 			}},
-		{Source: "deploy", Status: importer.StatusSkipped, Notes: []importer.Note{
+		{Source: "deploy", Notes: []importer.Note{
 			{Kind: importer.NoteAlreadyDefined, Message: "already defined in runwisp.toml with the same command"},
 		}},
 	}
@@ -64,6 +64,22 @@ func TestImportItemLinesMarksAndShape(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+// TestImportItemMarkNeverDefaultsToClean guards the renderer half of the same
+// rule the derived status guards in the importer: `✓` must be reachable only by
+// actually being clean. A fifth ItemStatus added later falls into the default
+// arm, and if that arm rendered ✓ the new state would announce itself as
+// "nothing to look at" — the one thing this report may never say wrongly.
+func TestImportItemMarkNeverDefaultsToClean(t *testing.T) {
+	st := plainStyles()
+	clean := itemMark(importer.StatusClean, st)
+	require.Equal(t, "✓", clean)
+
+	// Every value outside the enum, including a future addition just past its end.
+	for _, s := range []importer.ItemStatus{-1, 4, 99} {
+		assert.NotEqual(t, clean, itemMark(s, st), "ItemStatus(%d) rendered as clean", s)
+	}
+}
+
 // parseCronForReport builds a real report from a crontab, for the assertions
 // that are about what the importer derives rather than about layout.
 func parseCronForReport(t *testing.T, in string) *importer.Result {
@@ -80,7 +96,7 @@ func TestImportItemLinesWrapsWithoutLosingTheTail(t *testing.T) {
 	run := "/usr/bin/find /tmp -type f -mtime +7 -delete " +
 		strings.Repeat("--exclude /tmp/keep ", 8) + ">> /var/log/reap.log 2>&1"
 	it := importer.Item{Source: "find", Name: "tmp-reaper", Kind: "task",
-		Schedule: "0 4 * * *", Run: run, Status: importer.StatusClean}
+		Schedule: "0 4 * * *", Run: run}
 
 	const width = 60
 	lines := importItemLines(it, newItemLayout([]importer.Item{it}, width), plainStyles())
@@ -108,7 +124,7 @@ func TestImportItemLinesWrapsWithoutLosingTheTail(t *testing.T) {
 func TestImportItemLinesUnwrappedWithoutAWidth(t *testing.T) {
 	run := "/usr/bin/reap " + strings.Repeat("--flag ", 40) + ">> /var/log/reap.log 2>&1"
 	it := importer.Item{Source: "reap", Name: "reap", Kind: "task",
-		Schedule: "@daily", Run: run, Status: importer.StatusClean}
+		Schedule: "@daily", Run: run}
 
 	lines := importItemLines(it, newItemLayout([]importer.Item{it}, 0), plainStyles())
 	require.Len(t, lines, 2)
@@ -120,7 +136,7 @@ func TestImportItemLinesUnwrappedWithoutAWidth(t *testing.T) {
 // fiction either way.
 func TestImportItemLinesExpandsTabs(t *testing.T) {
 	it := importer.Item{Source: "deploy", Name: "deploy", Kind: "task", Schedule: "@reboot",
-		Run: "cd /srv\n\tmake build\n\tmake deploy", Status: importer.StatusClean}
+		Run: "cd /srv\n\tmake build\n\tmake deploy"}
 
 	lines := importItemLines(it, newItemLayout([]importer.Item{it}, 0), plainStyles())
 	require.Len(t, lines, 4, "each script line gets its own output line")
@@ -137,8 +153,8 @@ func TestImportItemLinesExpandsTabs(t *testing.T) {
 // the wrong two numbers puts the schedules out of line.
 func TestImportItemLayoutMeasuresInCells(t *testing.T) {
 	items := []importer.Item{
-		{Source: "备份", Name: "备份", Kind: "task", Schedule: "0 3 * * *", Status: importer.StatusClean},
-		{Source: "abc", Name: "abc", Kind: "task", Schedule: "0 4 * * *", Status: importer.StatusClean},
+		{Source: "备份", Name: "备份", Kind: "task", Schedule: "0 3 * * *"},
+		{Source: "abc", Name: "abc", Kind: "task", Schedule: "0 4 * * *"},
 	}
 	lay := newItemLayout(items, 0)
 	require.Equal(t, 4+itemNameGap, lay.nameCol, "两 wide glyphs are 4 cells, not 2 runes or 6 bytes")
@@ -158,8 +174,8 @@ func TestImportItemLayoutMeasuresInCells(t *testing.T) {
 func TestImportItemMarkAlignmentWithColor(t *testing.T) {
 	st := colorStyles()
 	items := []importer.Item{
-		{Source: "clean", Name: "clean", Kind: "task", Schedule: "0 3 * * *", Status: importer.StatusClean},
-		{Source: "bad", Name: "bad", Kind: "task", Schedule: "0 4 * * *", Status: importer.StatusBlocked,
+		{Source: "clean", Name: "clean", Kind: "task", Schedule: "0 3 * * *"},
+		{Source: "bad", Name: "bad", Kind: "task", Schedule: "0 4 * * *",
 			Notes: []importer.Note{{Kind: importer.NoteCronUnparseable, Message: "nope"}}},
 	}
 	lay := newItemLayout(items, 0)

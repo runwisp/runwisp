@@ -155,7 +155,7 @@ func TestCronExistingSkipsSameCommand(t *testing.T) {
 	// The skip still gets a row: a job that vanishes from the report is a job
 	// that was silently dropped, which is the whole point of the report.
 	items := res.Items()
-	if len(items) != 1 || items[0].Status != StatusSkipped || items[0].Source != "backup" {
+	if len(items) != 1 || items[0].Status() != StatusSkipped || items[0].Source != "backup" {
 		t.Fatalf("expected one skipped row named backup, got %+v", items)
 	}
 }
@@ -173,7 +173,7 @@ func TestCronExistingRenamesDifferentCommand(t *testing.T) {
 		t.Fatalf("expected a rename note, got %+v", allNotes(res))
 	}
 	// Renamed is not the same as imported-as-written, so the row can't read clean.
-	if got := res.Items()[0].Status; got != StatusChanged {
+	if got := res.Items()[0].Status(); got != StatusChanged {
 		t.Fatalf("a renamed job is a difference, got %v", got)
 	}
 }
@@ -207,7 +207,7 @@ func TestCronNameDedupe(t *testing.T) {
 	// difference the operator has to know about — it used to happen in silence.
 	var got []ItemStatus
 	for _, it := range res.Items() {
-		got = append(got, it.Status)
+		got = append(got, it.Status())
 	}
 	want := []ItemStatus{StatusClean, StatusChanged, StatusChanged}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
@@ -231,7 +231,7 @@ func TestCronInvalidExpression(t *testing.T) {
 	if !hasBlockingNote(res, "didn't parse") {
 		t.Fatalf("expected parse-failure note, got %+v", allNotes(res))
 	}
-	if got := res.Items()[0].Status; got != StatusBlocked {
+	if got := res.Items()[0].Status(); got != StatusBlocked {
 		t.Fatalf("expected the row blocked, got %v", got)
 	}
 }
@@ -248,7 +248,7 @@ func TestCronBadTimezoneBlocksTheJob(t *testing.T) {
 	mustContain(t, out, `timezone = "Mars/Olympus"  # TODO`)
 	mustContain(t, out, `cron = "0 4 * * *"`)
 	mustNotContain(t, out, `cron = "0 4 * * *"  # TODO`)
-	if got := res.Items()[0].Status; got != StatusBlocked {
+	if got := res.Items()[0].Status(); got != StatusBlocked {
 		t.Fatalf("status = %v, want blocked", got)
 	}
 	if !hasNoteKind(res, NoteTimezoneInvalid) {
@@ -264,7 +264,7 @@ func TestCronBadTimezoneBlocksTheJob(t *testing.T) {
 func TestCronBadTimezoneBlocksARebootJob(t *testing.T) {
 	res := parseCron(t, "CRON_TZ=Mars/Olympus\n@reboot /bin/warmup\n", CronOptions{})
 	mustContain(t, res.TOML(), `timezone = "Mars/Olympus"  # TODO`)
-	if got := res.Items()[0].Status; got != StatusBlocked {
+	if got := res.Items()[0].Status(); got != StatusBlocked {
 		t.Fatalf("status = %v, want blocked", got)
 	}
 }
@@ -274,7 +274,7 @@ func TestCronBadTimezoneBlocksARebootJob(t *testing.T) {
 func TestCronGoodTimezoneStaysClean(t *testing.T) {
 	res := parseCron(t, "CRON_TZ=Europe/Bratislava\n0 4 * * * /bin/rollup\n", CronOptions{})
 	mustNotContain(t, res.TOML(), "TODO")
-	if got := res.Items()[0].Status; got != StatusClean {
+	if got := res.Items()[0].Status(); got != StatusClean {
 		t.Fatalf("status = %v, want clean", got)
 	}
 }

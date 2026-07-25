@@ -77,7 +77,6 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 	}
 
 	cp.warnIfAmbiguous()
-	cp.assemble()
 	return cp.res, nil
 }
 
@@ -98,7 +97,6 @@ type crontabParser struct {
 	// where it's assigned rather than per job.
 	timezoneErr    error
 	pendingComment string // a "# ..." line directly above a job
-	jobs           []block
 }
 
 // feedLine classifies one raw crontab line and routes it to the right handler.
@@ -162,18 +160,16 @@ func (cp *crontabParser) handleEnv(name, value string) {
 }
 
 func (cp *crontabParser) handleJob(line string) {
-	blocks, ok := cp.buildJob(line)
+	parsed := cp.importJob(line)
 	cp.pendingComment = ""
-	if !ok {
+	if !parsed {
 		// A line the operator wrote that RunWisp can't read is still a job, so it
 		// gets a row rather than a note at the bottom of the report — carrying the
 		// line verbatim, since deciding which half of it matters is exactly the
 		// job the parser just failed at.
 		cp.res.addItem(line).note(NoteLineUnparseable,
 			"this isn't a schedule followed by a command, so nothing was imported for it.")
-		return
 	}
-	cp.jobs = append(cp.jobs, blocks...)
 }
 
 func (cp *crontabParser) warnIfAmbiguous() {
@@ -190,31 +186,31 @@ func (cp *crontabParser) warnIfAmbiguous() {
 			"--system=false to silence this if the commands really do start with that word.")
 }
 
-// assemble emits the job blocks in reading order. RunWisp has no daemon-wide
-// crontab singletons: SHELL, CRON_TZ/TZ, and top-of-file env vars are folded
-// onto the individual tasks in buildJob instead. That keeps every imported task
-// self-contained — and safe to live in an included staging file, which the
-// config loader forbids from setting the [defaults] / [scheduler] singletons.
-func (cp *crontabParser) assemble() {
-	cp.res.blocks = append(cp.res.blocks, cp.jobs...)
-}
-
-// buildJob turns one schedule+command line into its [tasks.NAME] block plus,
+// importJob turns one schedule+command line into its [tasks.NAME] block plus,
 // when the crontab set SHELL / CRON_TZ / env vars in effect above it, the
 // matching per-task fields and a [tasks.NAME.env] child block. Cron applies
 // those settings to every job that follows them in the file, so the state is
 // snapshotted at the job's position rather than folded globally.
-func (cp *crontabParser) buildJob(line string) ([]block, bool) {
+//
+// There is no daemon-wide counterpart: a crontab's SHELL, CRON_TZ/TZ, and
+// top-of-file env vars are folded onto the individual tasks here rather than
+// becoming [defaults] / [scheduler] singletons. That keeps every imported task
+// self-contained — and safe to live in an included staging file, which the config
+// loader forbids from setting those singletons at all.
+//
+// It reports whether the line was a job; false means the line couldn't be read
+// as one, which the caller turns into its own report row.
+func (cp *crontabParser) importJob(line string) bool {
 	j, ok := splitCronJobLine(line, cp.system)
 	if !ok {
-		return nil, false
+		return false
 	}
 	command := j.command
 
 	base := deriveCronName(command)
 	ref, name, skip := cp.names.resolve(base, base, model.KindTask, command)
 	if skip {
-		return nil, true
+		return true
 	}
 	b := block{header: "tasks." + name}
 	if cp.pendingComment != "" {
@@ -238,13 +234,12 @@ func (cp *crontabParser) buildJob(line string) ([]block, bool) {
 			"command contains '%' — in crontab that means a newline/stdin marker. "+
 				"RunWisp passes the command to the shell verbatim; adjust if you relied on it.")
 	}
-	ref.emit(name, model.KindTask, schedule, command)
-
 	blocks := []block{b}
 	if eb, ok := envBlock("tasks."+name+".env", cp.env); ok {
 		blocks = append(blocks, eb)
 	}
-	return blocks, true
+	ref.emit(name, model.KindTask, schedule, command, blocks...)
+	return true
 }
 
 // cronJobLine is one crontab job line, split into the parts RunWisp maps.

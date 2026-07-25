@@ -71,6 +71,7 @@ func TestCronGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseCrontab: %v", err)
 			}
+			assertReportAccountsForTOML(t, res)
 			checkGolden(t, goldenPath(tc.file), res.TOML(), tc.validate)
 			checkReportGolden(t, reportGoldenPath(tc.file), res)
 			assertNotes(t, res, tc.expectNotes)
@@ -119,6 +120,7 @@ func TestSupervisordGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseSupervisordReader: %v", err)
 			}
+			assertReportAccountsForTOML(t, res)
 			checkGolden(t, goldenPath(tc.file), res.TOML(), true)
 			checkReportGolden(t, reportGoldenPath(tc.file), res)
 			assertNotes(t, res, tc.expectNotes)
@@ -135,8 +137,48 @@ func TestSupervisordIncludeGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseSupervisordFiles: %v", err)
 	}
+	assertReportAccountsForTOML(t, res)
 	checkGolden(t, "testdata/supervisord/include/expected.golden.toml", res.TOML(), true)
 	checkReportGolden(t, "testdata/supervisord/include/expected.golden.report.txt", res)
+}
+
+// assertReportAccountsForTOML is this package's central invariant, checked
+// against every fixture: the set of tables in the emitted TOML and the set of
+// rows that claim to have emitted something are the same set.
+//
+// One direction catches the bug the report was split out to fix — a table in the
+// file that no row accounts for, i.e. config appearing from nowhere. The other
+// catches its mirror image, a row claiming a name that never made it into the
+// file, which would have the operator looking for a task the daemon won't have.
+// itemRef.emit is the only path to either, so this is really a check that no
+// future code path routes around it.
+func assertReportAccountsForTOML(t *testing.T, res *Result) {
+	t.Helper()
+	inTOML := map[string]bool{}
+	for _, name := range res.tableNames() {
+		if inTOML[name] {
+			t.Errorf("the TOML defines %q twice", name)
+		}
+		inTOML[name] = true
+	}
+	inReport := map[string]bool{}
+	for _, it := range res.Items() {
+		if it.Name == "" {
+			continue // a row that emitted nothing, which is the point of having rows
+		}
+		inReport[it.Name] = true
+		if !inTOML[it.Name] {
+			t.Errorf("the report lists %q but the TOML defines no table for it\n--- report ---\n%s",
+				it.Name, formatReport(res))
+		}
+	}
+	for name := range inTOML {
+		if !inReport[name] {
+			t.Errorf("the TOML defines %q but no report row accounts for it — a silently "+
+				"imported job is exactly what this report exists to prevent\n--- report ---\n%s",
+				name, formatReport(res))
+		}
+	}
 }
 
 // assertNotes checks that the fixture produced EXACTLY the expected set of note
@@ -176,7 +218,7 @@ func assertNotes(t *testing.T, res *Result, want []NoteKind) {
 func formatReport(res *Result) string {
 	var sb strings.Builder
 	for _, it := range res.Items() {
-		fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\t%s\n", it.Status, it.Source, it.Name, it.Schedule, it.Run)
+		fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\t%s\n", it.Status(), it.Source, it.Name, it.Schedule, it.Run)
 		for _, n := range it.Notes {
 			fmt.Fprintf(&sb, "\t%s\n", n.Kind)
 		}

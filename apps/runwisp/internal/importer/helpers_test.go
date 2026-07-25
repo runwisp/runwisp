@@ -97,6 +97,17 @@ func TestDeriveStatusRanksBlockingAboveSkipped(t *testing.T) {
 	}
 }
 
+// TestZeroItemIsNotClean is why Status is a method and not a field. As a field
+// its zero value was StatusClean, so any Item that reached a renderer without
+// being stamped rendered a green ✓ — the safest-looking mark as the default,
+// which is precisely the silent-success this report was built to remove. Derived,
+// an unfilled row reads as "nothing was imported for this", which is true.
+func TestZeroItemIsNotClean(t *testing.T) {
+	if got := (Item{}).Status(); got == StatusClean {
+		t.Error("an Item nobody filled in must not read as cleanly imported")
+	}
+}
+
 // TestDeriveStatusMakesADifferenceVisible is gap 4: a job that lost a setting
 // used to render with the same green mark as one that mapped perfectly, because
 // the note's severity and the row's mark were decided in different places.
@@ -171,8 +182,8 @@ func TestUnparseableLineGetsARow(t *testing.T) {
 	if items[0].Source != line {
 		t.Errorf("Source = %q, want the line verbatim", items[0].Source)
 	}
-	if items[0].Status != StatusBlocked {
-		t.Errorf("status = %v, want blocked", items[0].Status)
+	if items[0].Status() != StatusBlocked {
+		t.Errorf("status = %v, want blocked", items[0].Status())
 	}
 	if len(res.Notes()) != 0 {
 		t.Errorf("the unreadable line belongs on its row, not at file level: %+v", res.Notes())

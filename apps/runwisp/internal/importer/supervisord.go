@@ -213,11 +213,11 @@ func (sd *supervisordState) processProgram(rawName string, s *iniSection, group 
 	}
 	env := sd.applyProgramKeys(&b, s, ref, isService)
 
-	sd.res.blocks = append(sd.res.blocks, b)
+	blocks := []block{b}
 	if eb, ok := envBlock(prefix+name+".env", env); ok {
-		sd.res.blocks = append(sd.res.blocks, eb)
+		blocks = append(blocks, eb)
 	}
-	ref.emit(name, taskKind, schedule, run)
+	ref.emit(name, taskKind, schedule, run, blocks...)
 }
 
 // programKind decides whether a [program] maps onto a RunWisp service.

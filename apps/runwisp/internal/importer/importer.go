@@ -32,10 +32,28 @@ type Result struct {
 	// valid TOML) and land in the saved file where a reviewer will see them — the
 	// right place for a "this might need a human" banner.
 	topComments []string
-	// items and notes are the report. Status on an item is derived by Items(),
-	// never stored, so a row's mark can't drift from the notes under it.
+	// items and notes are the report. An item's status is derived on read (see
+	// Item.Status), never stored, so a row's mark can't drift from the notes under
+	// it. Blocks are only ever appended by itemRef.emit, so a table can't reach the
+	// TOML without a row here to account for it.
 	items []Item
 	notes []Note
+}
+
+// tableNames lists the top-level tables the emitted TOML defines — the
+// [tasks.x] / [services.x] headers, without their .env children. It exists for
+// the test that checks the emitted file against the report; nothing in the
+// package's behavior depends on it.
+func (r *Result) tableNames() []string {
+	var out []string
+	for _, b := range r.blocks {
+		path := strings.Split(b.header, ".")
+		if len(path) != 2 {
+			continue // a .env child, or a table that names no job
+		}
+		out = append(out, path[1])
+	}
+	return out
 }
 
 // field is one `key = value` line. value is already TOML-formatted.
