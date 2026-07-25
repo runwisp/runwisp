@@ -9,6 +9,7 @@
     import Select from "@runwisp/ui/components/Select.svelte";
     import Tooltip from "@runwisp/ui/components/Tooltip.svelte";
     import ComposeBadge from "../ComposeBadge.svelte";
+    import StagedBadge from "../StagedBadge.svelte";
     import { getRunStatusConfig } from "@runwisp/ui";
     import { isFailureEndReason } from "@runwisp/common";
     import type {
@@ -250,6 +251,9 @@ run  = "echo hello"</pre>
                                         service={task.task.compose.service}
                                         projectName={task.task.compose.project_name}
                                     />
+                                {/if}
+                                {#if task.task.staged}
+                                    <StagedBadge name={task.task.name} />
                                 {/if}
                                 {#if task.task.kind === "service"}
                                     <Badge variant="info" size="sm">

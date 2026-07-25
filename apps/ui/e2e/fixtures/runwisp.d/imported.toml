@@ -1,0 +1,6 @@
+# Stands in for what `runwisp import cron --write` would have written, so the
+# dashboard has a genuinely staged task to badge. Manual (no cron) on purpose:
+# it must never fire and add runs the other specs would see.
+[tasks.staged-task]
+description = "Imported into the machine-owned staging file, not yet promoted"
+run = "echo staged-line"

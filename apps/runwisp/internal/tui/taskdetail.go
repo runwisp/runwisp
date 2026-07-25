@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
@@ -123,6 +124,14 @@ func (d *TaskDetailDialog) definitionRows(row func(label, value string, color li
 			ref += " (" + task.Compose.Service + ")"
 		}
 		add("Compose", ref)
+	}
+	if task.Staged {
+		// Provenance, not a warning: a staged task runs like any other. Two rows
+		// rather than one because the value column clips around 40 columns, and
+		// the command is the half an operator actually needs. The TUI only ever
+		// names that command — writing TOML is the CLI's job.
+		add("Source", config.StagingRelPath()+" (staged)")
+		add("Promote", "runwisp promote "+task.Name)
 	}
 	if len(task.Parameters) > 0 {
 		add("Parameters", strings.Join(paramNames(task.Parameters), ", "))

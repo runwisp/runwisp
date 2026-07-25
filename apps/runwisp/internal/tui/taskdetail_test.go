@@ -127,6 +127,29 @@ func TestTaskDetailDialog_View_ServiceWithAllFields(t *testing.T) {
 	}
 }
 
+func TestTaskDetailDialog_View_StagedTaskNamesItsFileAndThePromoteCommand(t *testing.T) {
+	d := NewTaskDetailDialog("backup", &model.TaskBrief{
+		Name:   "backup",
+		Kind:   model.KindTask,
+		Cron:   "0 3 * * *",
+		Staged: true,
+	})
+
+	out := d.View(80, 40)
+	// Both halves must survive the value column's clipping — the command is the
+	// half the operator acts on.
+	for _, want := range []string{"Source", "runwisp.d/imported.toml", "Promote", "runwisp promote backup"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("staged view should contain %q, got:\n%s", want, out)
+		}
+	}
+
+	native := NewTaskDetailDialog("backup", &model.TaskBrief{Name: "backup", Kind: model.KindTask})
+	if strings.Contains(native.View(80, 40), "imported.toml") {
+		t.Fatal("a task defined in the root config should not report a staging source")
+	}
+}
+
 func TestTaskDetailDialog_View_HealthWithFailuresAndOther(t *testing.T) {
 	d := NewTaskDetailDialog("backup", &model.TaskBrief{Name: "backup", Kind: model.KindTask})
 	now := time.Now()
