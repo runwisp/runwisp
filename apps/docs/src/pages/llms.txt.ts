@@ -63,6 +63,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "notifications/providers/slack",
             "notifications/providers/telegram",
             "notifications/providers/smtp",
+            "notifications/providers/sendmail",
         ],
     },
     {

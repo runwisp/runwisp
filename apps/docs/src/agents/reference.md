@@ -170,7 +170,7 @@ coalesce_outbound: bool =true           — coalesce outbound bursts too
 
 ### [[notifier]] (outbound channel; repeatable)
 
-Common: `id` (req, non-empty, not "inapp", no ":"), `type` (req: `slack`|`discord`|`telegram`|`smtp`|`webhook`), `template_path` (optional).
+Common: `id` (req, non-empty, not "inapp", no ":"), `type` (req: `slack`|`discord`|`telegram`|`smtp`|`sendmail`|`webhook`), `template_path` (optional).
 
 ```
 slack:    webhook_url (req); channel (optional; starts # or @)
@@ -179,6 +179,11 @@ telegram: bot_token (req); chat_id (req); parse_mode (MarkdownV2 needs template_
 smtp:     host(req); port 0..65535; tls starttls|implicit|none (default: 465→implicit else starttls);
           tls_skip_verify bool; from(req email); reply_to(email); to(req,>=1) + cc/bcc(emails);
           username + password (set together or both omitted); tls=none forbids credentials
+sendmail: from(req email); to(req,>=1) + cc/bcc(emails); reply_to(email);
+          sendmail_path (optional, must be absolute; default: /usr/sbin/sendmail,
+          /usr/lib/sendmail, /usr/bin/sendmail, then $PATH — resolved at send time, not load).
+          Pipes a text/plain RFC 5322 message to `<bin> -t -i`; no address on argv.
+          Retries exit 75 (EX_TEMPFAIL) only; every other exit is permanent.
 webhook:  url (req; http/https); headers (optional map<str,str>)
 ```
 
@@ -190,7 +195,7 @@ Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final
 match.kind:     []string — run.started | run.succeeded | run.failed | run.timeout | run.stopped | run.crashed | run.missed | service.fatal | notify.delivery_failed
 match.severity: string   — info | warn | error (optional)
 match.task:     string   — glob over task name (optional)
-notify:         []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp email)
+notify:         []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
 ```
 
 ### FAIL-FAST (run script execution)

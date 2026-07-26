@@ -152,9 +152,7 @@ func (cp *crontabParser) handleEnv(name, value string) {
 					"absolute shell path. The imported tasks keep the default shell.")
 		}
 	case "MAILTO":
-		cp.res.fileNote(NoteMailto,
-			"crontab sets MAILTO="+value+" — RunWisp doesn't email job output. "+
-				"Wire a notifier instead (see notify_on_failure).")
+		cp.noteMailto(value)
 	case "CRON_TZ", "TZ":
 		cp.timezone = value
 		cp.timezoneErr = validateCronTimezone(value)
@@ -175,6 +173,41 @@ func (cp *crontabParser) handleJob(line string) {
 		cp.res.addItem(line).note(NoteLineUnparseable,
 			"this isn't a schedule followed by a command, so nothing was imported for it.")
 	}
+}
+
+// noteMailto explains what happens to a crontab's MAILTO.
+//
+// The note deliberately hands over the exact TOML rather than naming a feature.
+// "Wire a notifier instead" is the shape of advice that reads as complete and
+// leaves the operator to go and find out that a notifier needs a type, an id, a
+// from and a route — at which point the mail their crontab was sending has been
+// off for a week.
+//
+// An empty MAILTO is cron's "mail nobody", which is not a gap to fill.
+//
+// The importer stops at telling: writing [[notifier]] would mean an import
+// reaching into daemon-wide settings, which is the line Phase A drew when it
+// stopped emitting [defaults] and [scheduler]. It is also the operator's
+// identity to choose, not a machine-owned staging file's.
+func (cp *crontabParser) noteMailto(value string) {
+	addr := strings.TrimSpace(value)
+	if addr == "" || strings.EqualFold(addr, `""`) {
+		cp.res.fileNote(NoteMailto,
+			"crontab sets an empty MAILTO, which tells crond to mail nobody. "+
+				"Nothing to carry over — RunWisp is silent by default too.")
+		return
+	}
+	cp.res.fileNote(NoteMailto,
+		"crontab sets MAILTO="+addr+". crond mails a job's output; RunWisp notifies on "+
+			"the event instead, so the closest equivalent is a sendmail notifier through "+
+			"the same MTA. Add to your root runwisp.toml:\n"+
+			"    [[notifier]]\n"+
+			"    id   = \"mta\"\n"+
+			"    type = \"sendmail\"\n"+
+			"    from = \"runwisp@localhost\"\n"+
+			"    to   = [\""+addr+"\"]\n"+
+			"then put notify_on_failure = [\"mta\"] on the tasks you want mail from. "+
+			"Note the difference: crond mailed any output at all, this mails failures.")
 }
 
 func (cp *crontabParser) warnIfAmbiguous() {

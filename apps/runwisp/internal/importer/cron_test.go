@@ -65,6 +65,19 @@ func hasNoteKind(r *Result, kind NoteKind) bool {
 	return false
 }
 
+// findNote returns the one note of a kind, for the cases where the note's prose
+// is the deliverable — a paste-able config block, say — and not just a marker.
+func findNote(t *testing.T, r *Result, kind NoteKind) Note {
+	t.Helper()
+	for _, n := range allNotes(r) {
+		if n.Kind == kind {
+			return n
+		}
+	}
+	t.Fatalf("no note of kind %q in the report: %+v", kind.Slug(), allNotes(r))
+	return Note{}
+}
+
 func TestCronBasicFiveField(t *testing.T) {
 	res := parseCron(t, "30 2 * * * /usr/local/bin/backup.sh --full\n", CronOptions{})
 	out := res.TOML()
@@ -280,6 +293,40 @@ func TestCronSystemWithoutUserColumnsSaysNothing(t *testing.T) {
 	res := parseCron(t, "# nothing importable here\n", CronOptions{System: true})
 	if hasNoteKind(res, NoteWorkingDirUser) {
 		t.Fatalf("unexpected working-dir note, got %+v", allNotes(res))
+	}
+}
+
+// TestCronMailtoHandsOverTheNotifier: "wire a notifier instead" reads as
+// complete advice and isn't — a notifier needs a type, an id, a from, and a
+// route, and the operator finds that out only after their cron mail has been
+// off for a week. The note carries the block to paste.
+func TestCronMailtoHandsOverTheNotifier(t *testing.T) {
+	res := parseCron(t, "MAILTO=ops@example.com\n0 4 * * * /bin/rollup\n", CronOptions{})
+	note := findNote(t, res, NoteMailto)
+
+	for _, want := range []string{
+		`type = "sendmail"`,          // the type that reuses the MTA cron already used
+		`to   = ["ops@example.com"]`, // their address, not a placeholder
+		"notify_on_failure",          // the half that actually routes it
+	} {
+		if !strings.Contains(note.Message, want) {
+			t.Errorf("MAILTO note is missing %q:\n%s", want, note.Message)
+		}
+	}
+	// cron mailed any output; RunWisp mails an event. Handing over a config
+	// without saying that is how the difference gets discovered in production.
+	if !strings.Contains(note.Message, "failures") {
+		t.Errorf("MAILTO note doesn't name the behaviour difference:\n%s", note.Message)
+	}
+}
+
+// TestCronEmptyMailtoIsNotAGapToFill: MAILTO= means "mail nobody", so proposing
+// a mail notifier for it would invent a requirement the crontab disclaimed.
+func TestCronEmptyMailtoIsNotAGapToFill(t *testing.T) {
+	res := parseCron(t, "MAILTO=\"\"\n0 4 * * * /bin/rollup\n", CronOptions{})
+	note := findNote(t, res, NoteMailto)
+	if strings.Contains(note.Message, "sendmail") {
+		t.Errorf("an empty MAILTO should not propose a notifier:\n%s", note.Message)
 	}
 }
 

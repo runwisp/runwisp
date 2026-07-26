@@ -125,6 +125,10 @@ type NotifierSpec struct {
 	CC            []string
 	BCC           []string
 
+	// sendmail-specific: an explicit MTA binary, empty meaning "find the system
+	// one". Addressing (From/Recipients/CC/BCC) is shared with SMTP.
+	SendmailPath string
+
 	// Webhook-specific
 	URL     string
 	Headers map[string]string

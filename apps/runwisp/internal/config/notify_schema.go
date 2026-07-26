@@ -15,7 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/kinds"
 )
 
-var allowedNotifierTypes = []string{"slack", "discord", "telegram", "smtp", "webhook"}
+var allowedNotifierTypes = []string{"slack", "discord", "telegram", "smtp", "sendmail", "webhook"}
 
 // allowedSMTPTLSModes enumerates the values accepted for [[notifier]].tls. An
 // empty string falls back to a port-derived default (465 → implicit; everything
@@ -150,6 +150,8 @@ func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
 			Recipients:    append([]string(nil), n.To...),
 			CC:            append([]string(nil), n.CC...),
 			BCC:           append([]string(nil), n.BCC...),
+
+			SendmailPath: n.SendmailPath,
 		}
 		if spec.ID == "" {
 			return fmt.Errorf("notifier #%d: id is required", i)
@@ -254,9 +256,9 @@ func cloneNotifierWithOverride(parent NotifierSpec, syntheticID, override string
 		spec.SlackChannel = override
 	case "telegram":
 		spec.ChatID = override
-	case "smtp":
+	case "smtp", "sendmail":
 		if _, err := mail.ParseAddress(override); err != nil {
-			return NotifierSpec{}, fmt.Errorf("notify token %q: smtp recipient override %q is not a valid email address: %w", syntheticID, override, err)
+			return NotifierSpec{}, fmt.Errorf("notify token %q: %s recipient override %q is not a valid email address: %w", syntheticID, parent.Type, override, err)
 		}
 		spec.Recipients = []string{override}
 		spec.CC = nil
@@ -428,6 +430,8 @@ func validateNotifierByType(spec *NotifierSpec) error {
 		return validateTelegramNotifier(spec)
 	case "smtp":
 		return validateSMTPNotifier(spec)
+	case "sendmail":
+		return validateSendmailNotifier(spec)
 	case "webhook":
 		return validateWebhookNotifier(spec)
 	}
@@ -456,16 +460,32 @@ func validateSMTPNotifier(spec *NotifierSpec) error {
 		spec.TLSMode, allowedSMTPTLSModes, true); err != nil {
 		return err
 	}
-	if err := validateSMTPAddresses(spec); err != nil {
+	if err := validateMailAddresses(spec, "smtp"); err != nil {
 		return err
 	}
 	return validateSMTPAuth(spec)
 }
 
-func validateSMTPAddresses(spec *NotifierSpec) error {
+// validateSendmailNotifier checks a local-MTA notifier. It shares the
+// addressing rules with SMTP and has no relay settings of its own: the MTA
+// already holds the host, the port and the credentials, which is the reason to
+// use it. sendmail_path is validated for shape only — whether the binary is
+// actually there is resolved at send time, since an MTA can be installed after
+// the daemon boots.
+func validateSendmailNotifier(spec *NotifierSpec) error {
+	if p := strings.TrimSpace(spec.SendmailPath); p != "" && !path.IsAbs(p) {
+		return fmt.Errorf("notifier %q: sendmail_path %q must be an absolute path", spec.ID, p)
+	}
+	return validateMailAddresses(spec, "sendmail")
+}
+
+// validateMailAddresses checks the From/Reply-To/To/Cc/Bcc set shared by every
+// mail-shaped notifier. typeName appears in the messages so an operator is told
+// which type they got the requirement from.
+func validateMailAddresses(spec *NotifierSpec, typeName string) error {
 	from := strings.TrimSpace(spec.From)
 	if from == "" {
-		return fmt.Errorf("notifier %q: from is required for type=smtp", spec.ID)
+		return fmt.Errorf("notifier %q: from is required for type=%s", spec.ID, typeName)
 	}
 	if _, err := mail.ParseAddress(from); err != nil {
 		return fmt.Errorf("notifier %q: from %q is not a valid email address: %w", spec.ID, from, err)
@@ -476,7 +496,7 @@ func validateSMTPAddresses(spec *NotifierSpec) error {
 		}
 	}
 	if len(spec.Recipients) == 0 {
-		return fmt.Errorf("notifier %q: to is required for type=smtp (at least one recipient)", spec.ID)
+		return fmt.Errorf("notifier %q: to is required for type=%s (at least one recipient)", spec.ID, typeName)
 	}
 	groups := []struct {
 		label string

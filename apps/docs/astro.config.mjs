@@ -123,6 +123,10 @@ export default defineConfig({
                                     slug: "notifications/providers/smtp",
                                 },
                                 {
+                                    label: "Email (local MTA)",
+                                    slug: "notifications/providers/sendmail",
+                                },
+                                {
                                     label: "Webhook",
                                     slug: "notifications/providers/webhook",
                                 },

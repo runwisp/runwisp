@@ -322,10 +322,10 @@ func TestSMTP_BuildMsg_RejectsCRLFInRecipients(t *testing.T) {
 }
 
 func TestSMTP_RejectCRLFEdgeCases(t *testing.T) {
-	require.NoError(t, rejectCRLF("subject", ""))
-	require.NoError(t, rejectCRLF("subject", "no crlf here"))
-	require.Error(t, rejectCRLF("subject", "with\rCR"))
-	require.Error(t, rejectCRLF("subject", "with\nLF"))
+	require.NoError(t, notify.RejectHeaderCRLF("subject", ""))
+	require.NoError(t, notify.RejectHeaderCRLF("subject", "no crlf here"))
+	require.Error(t, notify.RejectHeaderCRLF("subject", "with\rCR"))
+	require.Error(t, notify.RejectHeaderCRLF("subject", "with\nLF"))
 }
 
 func TestSMTP_Dial_PrefersInjectedClient(t *testing.T) {

@@ -337,7 +337,7 @@
       "required": ["id", "type"],
       "properties": {
         "id": { "type": "string", "description": "Notifier id; non-empty, not \"inapp\", no \":\"." },
-        "type": { "type": "string", "enum": ["slack", "discord", "telegram", "smtp", "webhook"] },
+        "type": { "type": "string", "enum": ["slack", "discord", "telegram", "smtp", "sendmail", "webhook"] },
         "template_path": { "type": "string" },
         "webhook_url": { "type": "string", "description": "slack/discord webhook URL." },
         "channel": { "type": "string", "description": "slack channel; starts with # or @." },
@@ -350,11 +350,12 @@
         "tls_skip_verify": { "type": "boolean" },
         "username": { "type": "string" },
         "password": { "type": "string" },
-        "from": { "type": "string", "description": "smtp from email." },
+        "from": { "type": "string", "description": "smtp/sendmail from email." },
         "reply_to": { "type": "string" },
         "to": { "type": "array", "items": { "type": "string" } },
         "cc": { "type": "array", "items": { "type": "string" } },
         "bcc": { "type": "array", "items": { "type": "string" } },
+        "sendmail_path": { "type": "string", "description": "sendmail: absolute path to the MTA binary. Omit to find the system one." },
         "url": { "type": "string", "description": "webhook URL (http/https)." },
         "headers": { "type": "object", "additionalProperties": { "type": "string" } }
       }

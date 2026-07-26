@@ -60,6 +60,7 @@ provider — see the **Providers** section:
 [Discord](/notifications/providers/discord/) ·
 [Telegram](/notifications/providers/telegram/) ·
 [Email (SMTP)](/notifications/providers/smtp/) ·
+[Email (local MTA)](/notifications/providers/sendmail/) ·
 [Webhook](/notifications/providers/webhook/).
 
 ## `[[notifier]]` — declaring a channel
@@ -69,7 +70,7 @@ Every notifier needs two things:
 | Key    | Type   | Required | What it does                                                                                                                                                                                                                |
 | ------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`   | string | yes      | Name you use to refer to the channel from routes and per-task fields. Must be unique. `"inapp"` is reserved. Cannot contain `:` (reserved for [inline target overrides](/notifications/per-task/#inline-target-overrides)). |
-| `type` | enum   | yes      | `"slack"`, `"discord"`, `"telegram"`, `"smtp"`, or `"webhook"`.                                                                                                                                                             |
+| `type` | enum   | yes      | `"slack"`, `"discord"`, `"telegram"`, `"smtp"`, `"sendmail"`, or `"webhook"`.                                                                                                                                               |
 
 Everything beyond those two depends on the `type` — the provider page
 has the full list for each.

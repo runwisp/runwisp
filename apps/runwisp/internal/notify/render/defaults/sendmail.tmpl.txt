@@ -1,0 +1,19 @@
+{{- /* sendmail notification — plain text, the shape cron mail had. No markup: this goes straight down a pipe to the system MTA and is read in a terminal MUA as often as not. */ -}}
+{{- $tail := "" }}{{ if or (eq .Kind "run.failed") (eq .Kind "run.timeout") }}{{ $tail = outputTail . }}{{ end -}}
+{{- $url := "" }}{{ if eq .Kind "log.disk_pressure" }}{{ $url = taskURL .TaskName }}{{ else }}{{ $url = runURL .Run }}{{ end -}}
+{{ .TaskName }} {{ statusVerb .Kind }}
+
+{{ eventSentence . }}
+
+{{ eventTrigger . }} · {{ humanTime .Timestamp }}.
+{{- if $tail }}
+
+{{ $tail }}
+{{- end }}
+{{- if $url }}
+
+{{ linkLabel .Kind }}: {{ $url }}
+{{- end }}
+
+--
+from runwisp{{ with fingerprint }} · {{ . }}{{ end }}

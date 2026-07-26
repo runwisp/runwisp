@@ -707,6 +707,8 @@ type notifierWire struct {
 	CC            []string `toml:"cc,omitempty"`
 	BCC           []string `toml:"bcc,omitempty"`
 
+	SendmailPath string `toml:"sendmail_path,omitempty"`
+
 	URL     string            `toml:"url,omitempty"`
 	Headers map[string]string `toml:"headers,omitempty"`
 

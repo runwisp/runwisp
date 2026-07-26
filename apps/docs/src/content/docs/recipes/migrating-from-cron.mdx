@@ -46,6 +46,8 @@ you get:
 description = "Nightly database backup"
 cron = "30 2 * * *"
 shell = "/bin/bash"
+env_base = "clean"
+working_dir = "~"
 run = "/usr/local/bin/backup.sh --full"
 
 [tasks.backup.env]
@@ -55,6 +57,8 @@ PATH = "/usr/local/bin:/usr/bin"
 [tasks.warmup]
 run_on_start = true
 shell = "/bin/bash"
+env_base = "clean"
+working_dir = "~"
 run = "/opt/app/warmup"
 
 [tasks.warmup.env]
@@ -63,6 +67,8 @@ PATH = "/usr/local/bin:/usr/bin"
 [tasks.healthcheck]
 cron = "*/5 * * * *"
 shell = "/bin/bash"
+env_base = "clean"
+working_dir = "~"
 run = "/opt/healthcheck.sh"
 
 [tasks.healthcheck.env]
@@ -71,7 +77,9 @@ PATH = "/usr/local/bin:/usr/bin"
 
 Every task carries the crontab's `SHELL` and `PATH` itself, rather than a shared
 `[defaults]` block — more verbose, but each task stands alone and your own global
-settings are left untouched.
+settings are left untouched. The `env_base` and `working_dir` lines reproduce
+cron's execution model rather than the daemon's — see
+[How the pieces map](#how-the-pieces-map) below.
 
 On stderr — so it stays out of the TOML you're piping somewhere — you get an
 account of every job:
@@ -86,8 +94,16 @@ Imported crontab → 3 tasks
       /opt/healthcheck.sh
 
 Notes:
-  ! crontab sets MAILTO=ops@example.com — RunWisp doesn't email job output.
-    Wire a notifier instead (see notify_on_failure).
+  ! crontab sets MAILTO=ops@example.com. crond mails a job's output; RunWisp
+    notifies on the event instead, so the closest equivalent is a sendmail
+    notifier through the same MTA. Add to your root runwisp.toml:
+        [[notifier]]
+        id   = "mta"
+        type = "sendmail"
+        from = "runwisp@localhost"
+        to   = ["ops@example.com"]
+    then put notify_on_failure = ["mta"] on the tasks you want mail from. Note
+    the difference: crond mailed any output at all, this mails failures.
 
 Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.
 
@@ -255,22 +271,22 @@ in both places — pick one owner per job and the schedules stay honest.
 
 Most of a crontab translates one-to-one. Here's the whole picture:
 
-| crontab                        | runwisp.toml                  | Notes                                           |
-| ------------------------------ | ----------------------------- | ----------------------------------------------- |
-| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + `run` | The five fields are copied verbatim.            |
-| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …           | RunWisp speaks the same descriptors.            |
-| `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.          |
-| `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.               |
-| user column (system crontab)   | `user = "..."`                | Detected automatically, `@reboot` lines too.    |
-| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                       |
-| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.        |
-| cron's minimal environment     | `env_base = "clean"`          | Set on every imported task — see below.         |
-| jobs run in `$HOME`            | `working_dir = "~"`           | Per-user crontabs only — see below.             |
-| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO. |
-| `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.     |
-| `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.     |
-| `cmd % input`                  | `run = "cmd"` + a `# TODO`    | Cron piped `input` on stdin; see below.         |
-| `MAILTO=…`                     | _(nothing — see below)_       | RunWisp notifies instead of emailing.           |
+| crontab                        | runwisp.toml                  | Notes                                            |
+| ------------------------------ | ----------------------------- | ------------------------------------------------ |
+| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + `run` | The five fields are copied verbatim.             |
+| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …           | RunWisp speaks the same descriptors.             |
+| `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.           |
+| `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.                |
+| user column (system crontab)   | `user = "..."`                | Detected automatically, `@reboot` lines too.     |
+| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                        |
+| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.         |
+| cron's minimal environment     | `env_base = "clean"`          | Set on every imported task — see below.          |
+| jobs run in `$HOME`            | `working_dir = "~"`           | Per-user crontabs only — see below.              |
+| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO.  |
+| `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.      |
+| `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.      |
+| `cmd % input`                  | `run = "cmd"` + a `# TODO`    | Cron piped `input` on stdin; see below.          |
+| `MAILTO=…`                     | a `sendmail` notifier         | Handed to you as a paste-able block — see below. |
 
 Crontab-wide settings become **per-task** values rather than daemon-wide ones.
 A crontab's `SHELL`, `CRON_TZ`/`TZ`, and top-of-file `VAR=val` lines are copied
@@ -310,11 +326,26 @@ descriptors like `@daily`, and a few extras (six-field specs with seconds,
 The importer never drops anything silently — anything it can't map cleanly
 shows up as a `# TODO` in the file and a note in the summary. The usual ones:
 
-- **`MAILTO`.** Cron emails job output; RunWisp doesn't. Instead it captures
-  output for every run and can alert you on failure through Slack, Telegram,
-  email, or a webhook. Wire one up and point your tasks'
-  [`notify_on_failure`](/notifications/per-task/) at it — it's strictly better
-  than a wall of cron mail you've long since filtered to a folder.
+- **`MAILTO`.** The summary hands you a
+  [`sendmail` notifier](/notifications/providers/sendmail/) addressed to
+  whoever the crontab named, ready to paste into your root `runwisp.toml`.
+  It goes through the same local MTA cron used, so there's no relay host or
+  password to find. It's a note rather than something the import writes,
+  because a notifier is a daemon-wide setting and an import shouldn't reach
+  into those.
+
+    Two things to know. First, you still have to point the tasks you want mail
+    from at it with [`notify_on_failure`](/notifications/per-task/) — the
+    notifier alone sends nothing. Second, **cron mailed any output at all;
+    RunWisp mails an event.** A job that printed a line and exited 0 used to
+    generate mail and now doesn't. That's usually the improvement people wanted
+    from cron mail, but it is a different rule — add `notify_on_success` if you
+    really did want the chatty version.
+
+    If the box has no MTA, or you'd rather point RunWisp straight at
+    Gmail/SES/Postmark, [`type = "smtp"`](/notifications/providers/smtp/) is the
+    same notifier with relay settings instead.
+
 - **`@reboot`.** Mapped to [`run_on_start`](/configuration/tasks/), which fires
   once each time the **daemon** starts (not the machine). That's usually what
   you wanted; double-check if you were relying on true boot timing.
@@ -357,9 +388,9 @@ lives.
         description="Every task key the importer can produce — and the ones it can't."
     />
     <LinkCard
-        title="Per-task notifications"
-        href="/notifications/per-task/"
-        description="The MAILTO replacement: alert on failure, the loud way."
+        title="Email (local MTA)"
+        href="/notifications/providers/sendmail/"
+        description="The MAILTO replacement: mail through the sendmail binary cron already used."
     />
     <LinkCard
         title="Migrating from supervisord"
