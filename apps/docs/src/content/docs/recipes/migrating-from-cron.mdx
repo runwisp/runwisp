@@ -281,7 +281,7 @@ Most of a crontab translates one-to-one. Here's the whole picture:
 | `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                        |
 | `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.         |
 | cron's minimal environment     | `env_base = "clean"`          | Set on every imported task — see below.          |
-| jobs run in `$HOME`            | `working_dir = "~"`           | Per-user crontabs only — see below.              |
+| jobs run in `$HOME`            | `working_dir = "~"`           | The home of whoever the job runs as.             |
 | `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO.  |
 | `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.      |
 | `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.      |
@@ -306,16 +306,12 @@ task's `env` and layers on top, so nothing you set explicitly is lost.
 
 Cron also runs every job in the home directory of the user running it, while
 RunWisp defaults to whatever directory the daemon was started in — so a `run`
-script with a relative path in it would quietly write somewhere else. Importing
-a **per-user** crontab sets `working_dir = "~"`, which is the same rule: no
-`user` is emitted, so the task runs as the daemon's own account and `~` is that
-account's home.
-
-A **system** crontab is the exception. Each job names its own user, and
-`working_dir` is resolved once when the config loads — against the daemon's
-home, not each task's user — so guessing `~` there would point `deploy`'s job
-at root's home. The import leaves it unset, says so once in the summary, and
-lets you write the real path on the jobs that need one.
+script with a relative path in it would quietly write somewhere else. Every
+imported job gets `working_dir = "~"`, and
+[`~` means the home of whoever the task runs as](/configuration/tasks/#working-directory--shell):
+the daemon's own account for a per-user crontab, and the user column's account
+for a system crontab. Both formats end up with cron's rule, and neither needs
+you to write a path.
 
 RunWisp's cron grammar is a superset of vixie-cron's: the standard five fields,
 descriptors like `@daily`, and a few extras (six-field specs with seconds,

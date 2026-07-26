@@ -267,31 +267,21 @@ func TestCronRunsInTheHomeDirectory(t *testing.T) {
 	}
 }
 
-// TestCronSystemWorkingDirIsNotGuessed is the half that would be confidently
-// wrong: a system crontab's job runs as its user column, but working_dir
-// resolves once at config load against the *daemon's* home. Writing "~" would
-// point deploy's job at root's home.
-func TestCronSystemWorkingDirIsNotGuessed(t *testing.T) {
+// TestCronSystemWorkingDirIsTheUsersHome is the half that used to be left out.
+// A system crontab's job runs as its user column, and crond runs it in that
+// user's home — so `~` is the right answer for both crontab formats. It only
+// became expressible once the executor resolved `~` from the credential it looks
+// up per run, instead of the config loader resolving it once against the daemon's
+// own home.
+func TestCronSystemWorkingDirIsTheUsersHome(t *testing.T) {
 	res := parseCron(t, "0 5 * * * deploy ./cleanup.sh\n", CronOptions{System: true})
 	out := res.TOML()
 	mustContain(t, out, `user = "deploy"`)
-	mustNotContain(t, out, "working_dir")
-	if !hasNoteKind(res, NoteWorkingDirUser) {
-		t.Fatalf("expected a working-dir note, got %+v", allNotes(res))
-	}
-	// It belongs to the file, not the job: every row of a system crontab has a
-	// user column, so a per-row note would be the same sentence down the report.
+	mustContain(t, out, `working_dir = "~"`)
+	// Reproducing crond exactly is fidelity, not a compromise, so it must not
+	// make the row read as a difference the operator has to review.
 	if got := res.Items()[0].Status(); got != StatusClean {
 		t.Fatalf("status = %v, want clean", got)
-	}
-}
-
-// TestCronSystemWithoutUserColumnsSaysNothing keeps the note honest: it fires on
-// the thing it names, not on the --system flag.
-func TestCronSystemWithoutUserColumnsSaysNothing(t *testing.T) {
-	res := parseCron(t, "# nothing importable here\n", CronOptions{System: true})
-	if hasNoteKind(res, NoteWorkingDirUser) {
-		t.Fatalf("unexpected working-dir note, got %+v", allNotes(res))
 	}
 }
 

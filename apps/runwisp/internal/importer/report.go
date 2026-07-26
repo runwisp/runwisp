@@ -32,7 +32,6 @@ const (
 	// something RunWisp cannot express at all.
 	NotePercentTranslated
 	NotePercentStdin
-	NoteWorkingDirUser
 	NoteUserColumnSuspect
 
 	// Naming and identity, shared by both parsers.
@@ -91,8 +90,6 @@ func (k NoteKind) info() (slug string, blocking bool) {
 		return "percent-translated", false
 	case NotePercentStdin:
 		return "percent-stdin", true
-	case NoteWorkingDirUser:
-		return "working-dir-user", false
 	case NoteUserColumnSuspect:
 		return "user-column-suspect", true
 	case NoteAlreadyDefined:

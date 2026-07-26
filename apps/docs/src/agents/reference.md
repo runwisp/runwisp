@@ -90,7 +90,8 @@ retry_attempts:    int  =0          — retries after a failed attempt; 0..100
 retry_delay:       dur  =5s         — delay between retries (<=0 floors to 5s)
 retry_backoff:     enum             — constant | linear | exponential
 exit_codes:        []int =[0]       — exit codes treated as success (inherits [defaults]); 0..255
-working_dir:       path             — process cwd; relative to runwisp.toml dir, ~ expands (else daemon cwd)
+working_dir:       path             — process cwd; relative to runwisp.toml dir; ~ = home of whoever the
+                                     task runs as (daemon's, or `user`'s — resolved at run time). Default: daemon cwd
 shell:             path =/bin/sh    — interpreter for run (absolute path); invoked as <shell> -e -c <script>; see FAIL-FAST
 umask:             string           — octal file-creation mask, e.g. "027" (else daemon umask)
 env_base:          enum =inherit    — inherit (daemon's env, minus RUNWISP_*) | clean (PATH=/usr/bin:/bin,
@@ -241,10 +242,11 @@ runwisp import supervisord [FILE...] — convert supervisord config to runwisp.t
                                Proves the generated content loads + reports a root that already
                                fails to load; prints that the merge is unchecked (needs the files
                                on disk). Two-tier plan comes from configedit.PlanStage.
-                             — per-user crontab: working_dir = "~" (crond runs a job in the running user's
-                               home; no user is emitted, so ~ is that same account). System crontab: left
-                               unset (working_dir resolves at load against the daemon's home, not the user
-                               column's) and reported once as a file-level note, not per row.
+                             — both crontab formats: working_dir = "~" (crond runs a job in the running
+                               user's home). ~ resolves against whoever the task runs as — the daemon's
+                               account when no `user` is emitted, the user column's when one is. A ~ on a
+                               task with `user` stays literal through config.Load and is joined in
+                               executor.resolveWorkingDir from the resolved credential's home.
                              — every imported task gets env_base = "clean"; the crontab's own PATH= lands in
                                the task's env and layers over it.
                              — cron's '%' rules are applied, not copied: an unescaped % ends the command

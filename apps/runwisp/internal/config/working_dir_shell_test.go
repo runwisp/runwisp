@@ -102,3 +102,64 @@ shell           = "/bin/bash"
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "shell is not supported on compose")
 }
+
+// TestWorkingDir_TildeResolvesToTheDaemonsHomeWithoutAUser is the ordinary case:
+// with no `user`, the task runs as the daemon's own account and `~` is that
+// account's home — resolvable here, and checkable by `runwisp validate`.
+func TestWorkingDir_TildeResolvesToTheDaemonsHomeWithoutAUser(t *testing.T) {
+	cfgPath, _ := writePlainConfig(t, `[tasks.job]
+run = "echo hi"
+working_dir = "~"
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+	assert.Equal(t, home, findTask(t, cfg, "job").WorkingDir)
+}
+
+// TestWorkingDir_TildeStaysLiteralForARunAsUser is why a system crontab is
+// importable. `~` on a task that drops to another user means that user's home,
+// and resolving it here would resolve it against the daemon's — pointing
+// deploy's job at root's home, and making `runwisp validate` on a laptop
+// disagree with the daemon on the server. It stays literal for the executor,
+// which resolves it from the credential it looks up per run.
+func TestWorkingDir_TildeStaysLiteralForARunAsUser(t *testing.T) {
+	cfgPath, _ := writePlainConfig(t, `[tasks.job]
+run = "echo hi"
+user = "deploy"
+working_dir = "~"
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(t, "~", findTask(t, cfg, "job").WorkingDir,
+		"a ~ on a run-as task must reach the executor unresolved")
+}
+
+// TestWorkingDir_TildeSubpathStaysLiteralForARunAsUser: the join happens in the
+// executor too, so `~/logs` can't be half-resolved here.
+func TestWorkingDir_TildeSubpathStaysLiteralForARunAsUser(t *testing.T) {
+	cfgPath, _ := writePlainConfig(t, `[tasks.job]
+run = "echo hi"
+user = "deploy"
+working_dir = "~/logs"
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(t, "~/logs", findTask(t, cfg, "job").WorkingDir)
+}
+
+// TestWorkingDir_RelativeStillResolvesForARunAsUser keeps the exemption narrow:
+// only a leading `~` is the run user's business. A relative path still resolves
+// against the config's directory, which has nothing to do with who runs it.
+func TestWorkingDir_RelativeStillResolvesForARunAsUser(t *testing.T) {
+	cfgPath, dir := writePlainConfig(t, `[tasks.job]
+run = "echo hi"
+user = "deploy"
+working_dir = "sub"
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "sub"), findTask(t, cfg, "job").WorkingDir)
+}

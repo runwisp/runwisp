@@ -158,7 +158,11 @@ type Task struct {
 
 	// WorkingDir is resolved to an absolute path at config load (relative to
 	// the runwisp.toml directory). Empty inherits the daemon's working dir.
-	WorkingDir string `toml:"-" json:"working_dir,omitempty" doc:"Resolved working directory for the task's process; empty inherits the daemon's working directory"`
+	//
+	// One case stays literal: a `~` on a task that also sets RunUser means that
+	// user's home, which the executor resolves per run from the credential it
+	// looked up. See config.homeIsTheRunUsers and executor.resolveWorkingDir.
+	WorkingDir string `toml:"-" json:"working_dir,omitempty" doc:"Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal \"~\" means the run-as user's home, resolved at run time"`
 	// Shell is the interpreter for `run` scripts, defaulting to /bin/sh. Must
 	// be an absolute path. The invocation is `<shell> -e -c <script>` when the
 	// interpreter is a recognised POSIX shell (ShellSupportsErrexit), so a

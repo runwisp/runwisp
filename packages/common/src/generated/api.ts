@@ -1456,7 +1456,7 @@ export interface components {
             umask?: string;
             /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
             user?: string;
-            /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory */
+            /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
             working_dir?: string;
         };
         TriggerRunInputBody: {

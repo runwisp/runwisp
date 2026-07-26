@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -57,6 +58,7 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 	// a uid — privilege drop is a TOML-only capability.
 	var cred *syscall.Credential
 	var identity []string
+	var runUserHome string
 	if task.RunUser != "" {
 		ra, err := resolveRunAs(task.RunUser)
 		if err != nil {
@@ -64,6 +66,7 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 		}
 		cred = ra.cred
 		identity = ra.identity
+		runUserHome = ra.home
 	}
 
 	// env_base = "clean" replaces the daemon's environment with the minimal set
@@ -86,11 +89,35 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 		cmd.Env = buildProcessEnv(append(base, identity...), task.Env, task.Secrets, paramEnv)
 	}
 
-	if shell.WorkingDir != "" {
-		cmd.Dir = shell.WorkingDir
+	dir, err := resolveWorkingDir(shell.WorkingDir, runUserHome)
+	if err != nil {
+		return nil, fmt.Errorf("working_dir for task %q: %w", task.Name, err)
 	}
+	cmd.Dir = dir
 
 	return startCmd(cmd, task.GracefulStop, signalFromName(task.StopSignal), cred, "start command")
+}
+
+// resolveWorkingDir expands a leading `~` against the run-as user's home.
+//
+// config.Load absolutizes working_dir already, and leaves exactly one case for
+// here: a `~` on a task that also drops to another user. That means *that* user's
+// home — cron's rule, which is what makes a system crontab reproducible — and it
+// can only be answered once the credential has been looked up, next to the
+// lookup that produced it. Everything else arrives absolute and passes through.
+//
+// An empty home is an error rather than a fallback: the daemon's own home would
+// be a directory the dropped process may not even be able to read, and silently
+// running somewhere other than where the task said is how a job writes its
+// output into the void.
+func resolveWorkingDir(spec, runUserHome string) (string, error) {
+	if spec != "~" && !strings.HasPrefix(spec, "~/") {
+		return spec, nil
+	}
+	if runUserHome == "" {
+		return "", fmt.Errorf("cannot expand %q: the run-as user has no home directory", spec)
+	}
+	return filepath.Join(runUserHome, strings.TrimPrefix(spec, "~")), nil
 }
 
 // startCmd sets up process-group isolation, graceful-stop cancellation, stdio

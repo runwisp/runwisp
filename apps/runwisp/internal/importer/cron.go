@@ -78,7 +78,6 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 	}
 
 	cp.warnIfAmbiguous()
-	cp.warnIfWorkingDirUnresolvable()
 	return cp.res, nil
 }
 
@@ -91,9 +90,6 @@ type crontabParser struct {
 
 	system    bool
 	ambiguous bool
-	// userHomes records that at least one job named a user whose home crond
-	// would have run it in — see warnIfWorkingDirUnresolvable.
-	userHomes bool
 
 	env      map[string]string
 	shell    string
@@ -279,7 +275,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	// from a different shell. Any PATH= the crontab set lands in the task's own
 	// env and layers over this.
 	b.set("env_base", tomlString(string(model.EnvBaseClean)))
-	cp.applyWorkingDir(&b, j.user)
+	cp.applyWorkingDir(&b)
 
 	cp.applyCommand(&b, ref, cc)
 	blocks := []block{b}
@@ -412,38 +408,15 @@ func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
 // entirely — the kind of difference that shows up as an empty output file
 // rather than an error.
 //
-// Whether that rule is expressible depends on which user the job ends up as:
-//
-//   - A per-user crontab emits no `user`, so the task runs as the daemon's own
-//     account and `~` resolves to that same account's home. Identity and home
-//     move together, exactly as they do under crond.
-//   - A system crontab's user column emits `user = "..."`, but `working_dir` is
-//     resolved once at config load against the *daemon's* home, not that user's.
-//     Writing `~` there would be confidently wrong, so it is left unset and the
-//     file says so once (warnIfWorkingDirUnresolvable) — every job in a system
-//     crontab has a user column, so a note per row would be the same sentence
-//     repeated down the whole report.
-func (cp *crontabParser) applyWorkingDir(b *block, user string) {
-	if !cp.system {
-		b.set("working_dir", tomlString("~"))
-		return
-	}
-	if user != "" {
-		cp.userHomes = true
-	}
-}
-
-// warnIfWorkingDirUnresolvable states the one execution-model difference this
-// importer knowingly leaves in place, once per file rather than once per job.
-func (cp *crontabParser) warnIfWorkingDirUnresolvable() {
-	if !cp.userHomes {
-		return
-	}
-	cp.res.fileNote(NoteWorkingDirUser,
-		"crond runs each of these in its own user's home directory. RunWisp resolves "+
-			"working_dir once at config load — against the daemon's home, not each task's "+
-			"user — so it is left unset and the tasks run in the daemon's working directory. "+
-			"Set working_dir on any job whose command uses relative paths.")
+// `~` says it for both crontab formats, because `~` is resolved against whoever
+// the task runs as: the daemon's own account for a per-user crontab that emits no
+// `user`, and the user column's account for a system crontab. The system case
+// used to be left unset with a note, because working_dir was resolved once at
+// config load against the daemon's home; the executor now resolves a `~` from the
+// credential it looked up for that task, so the rule holds either way without the
+// importer having to know who anyone is.
+func (cp *crontabParser) applyWorkingDir(b *block) {
+	b.set("working_dir", tomlString("~"))
 }
 
 // cronCommand is a crontab command field with crond's own '%' rules applied.

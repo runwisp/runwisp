@@ -182,10 +182,13 @@ func resolveComposePaths(cfg *Config, dirs entrySources) error {
 // Existence is checked at run time, not load — like shell, host paths are
 // resolved against the daemon's namespace, which may differ from the one
 // `runwisp validate` runs in.
+//
+// A `~` on a task that also sets `user` is the one path left unresolved here;
+// see homeIsTheRunUsers.
 func resolveWorkingDirs(cfg *Config, dirs entrySources) error {
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
-		if task.WorkingDir == "" {
+		if task.WorkingDir == "" || homeIsTheRunUsers(task) {
 			continue
 		}
 		resolved, err := resolvePath(dirs.dir(task.Name), task.WorkingDir)
@@ -198,6 +201,24 @@ func resolveWorkingDirs(cfg *Config, dirs entrySources) error {
 		}
 	}
 	return nil
+}
+
+// homeIsTheRunUsers reports whether a task's working_dir is a `~` that has to
+// stay literal until the executor knows whose home it means.
+//
+// `~` on a task with no `user` is the daemon's own home and resolves here, which
+// is both correct and what `runwisp validate` can check. `~` on a task that
+// drops to another user means *that* user's home — cron's rule, and the reason a
+// system crontab is importable at all — and the daemon can't resolve it at load
+// for the same reason resolveRunAs doesn't: the account may not exist on the
+// machine running `runwisp validate`, and looking it up here would make a config
+// mean different things in different places. The executor resolves it from the
+// credential it just looked up.
+func homeIsTheRunUsers(task *model.Task) bool {
+	if task.RunUser == "" {
+		return false
+	}
+	return task.WorkingDir == "~" || strings.HasPrefix(task.WorkingDir, "~/")
 }
 
 // Warnings reports non-fatal findings an operator should see after a

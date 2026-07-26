@@ -471,13 +471,13 @@ original run was given — including anything the operator deliberately omitted.
 
 ## Working directory & shell
 
-| Key           | Default    | What it does                                                                                                                                                |
-| ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `working_dir` | _(daemon)_ | Directory the process runs in. Relative paths resolve against the `runwisp.toml` directory; `~` expands. Existence is checked at run time, not config load. |
-| `shell`       | `/bin/sh`  | Interpreter for `run`. Must be an **absolute** path (e.g. `/bin/bash`). Invoked as `<shell> -e -c <script>` — see [Fail-fast](#fail-fast).                  |
-| `umask`       | _(daemon)_ | Octal file-creation mask applied to the run, e.g. `"027"`. 3–4 octal digits, up to `0777`. Empty inherits the daemon's umask.                               |
-| `env_base`    | `inherit`  | What the run's environment starts from: `inherit` (the daemon's) or `clean` (`PATH`, `SHELL`, `HOME`, `USER`/`LOGNAME` only, the way cron does it).         |
-| `user`        | _(daemon)_ | Run as another OS user, in `user` or `user:group` form (name or numeric id). Empty keeps the daemon's identity. Needs the daemon running as root.           |
+| Key           | Default    | What it does                                                                                                                                                                                |
+| ------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `working_dir` | _(daemon)_ | Directory the process runs in. Relative paths resolve against the `runwisp.toml` directory; `~` is the home of whoever the task runs as. Existence is checked at run time, not config load. |
+| `shell`       | `/bin/sh`  | Interpreter for `run`. Must be an **absolute** path (e.g. `/bin/bash`). Invoked as `<shell> -e -c <script>` — see [Fail-fast](#fail-fast).                                                  |
+| `umask`       | _(daemon)_ | Octal file-creation mask applied to the run, e.g. `"027"`. 3–4 octal digits, up to `0777`. Empty inherits the daemon's umask.                                                               |
+| `env_base`    | `inherit`  | What the run's environment starts from: `inherit` (the daemon's) or `clean` (`PATH`, `SHELL`, `HOME`, `USER`/`LOGNAME` only, the way cron does it).                                         |
+| `user`        | _(daemon)_ | Run as another OS user, in `user` or `user:group` form (name or numeric id). Empty keeps the daemon's identity. Needs the daemon running as root.                                           |
 
 By default a `run` script executes under `/bin/sh` in whatever directory
 the daemon was started from. Set `working_dir` when a script expects to be
@@ -485,6 +485,14 @@ somewhere specific, and `shell` when you want bash-isms (arrays, `[[ ]]`,
 brace expansion). A relative shell path fails at config load; a missing
 `working_dir` fails at run time. `shell` can also be set
 once in [`[defaults]`](/configuration/defaults/) for every task.
+
+`working_dir = "~"` means the home of the user the task actually runs as — the
+daemon's own account normally, and the account named by `user` when the task
+drops privileges. That's cron's rule, and it's what makes an imported crontab
+behave the same way it did before. The lookup happens per run, alongside the
+one that resolves `user`, so a `~` on a task that runs as someone else stays
+literal in the loaded config and `runwisp validate` doesn't need that account
+to exist on the machine you're validating from.
 
 `umask` controls the permission bits stripped from files the run creates —
 `"027"` makes new files `rw-r-----` and directories `rwxr-x---`, handy when

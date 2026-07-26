@@ -2,5 +2,3 @@ clean	apt-get	apt-get	17 6 * * *	/usr/bin/apt-get update
 clean	cleanup	cleanup	*/10 * * * *	/usr/local/bin/cleanup --quiet
 clean	vacuumdb	vacuumdb	0 4 * * 1	/usr/bin/vacuumdb --all
 clean	warmup	warmup	@reboot	/usr/bin/warmup
-file
-	working-dir-user
