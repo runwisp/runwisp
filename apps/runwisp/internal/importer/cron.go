@@ -31,6 +31,12 @@ type CronOptions struct {
 	// same crontab twice after a `promote` skips the job it already owns instead
 	// of colliding on the merged load. See Owned.
 	Existing Owned
+	// NameSuffix is the stable tie-breaker appended when a derived name collides,
+	// in place of the positional -2/-3. Set it to something derived from the source
+	// file (its basename, say) when parsing several crontabs whose set can change
+	// between loads; leave it empty for a one-off import, where -2 is stable
+	// because there is only one file in one order. See deduper.uniqueIn.
+	NameSuffix string
 }
 
 // cronWrappers are leading command tokens that don't name the real program, so
@@ -61,7 +67,7 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 	res := &Result{}
 	cp := &crontabParser{
 		res:   res,
-		names: newNamer(res, opts.Existing),
+		names: newNamer(res, opts.Existing, opts.NameSuffix),
 		opts:  opts,
 		// system can be flipped on mid-parse when Detect spots the header legend.
 		system: opts.System,
@@ -70,14 +76,15 @@ func ParseCrontab(r io.Reader, opts CronOptions) (*Result, error) {
 
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
+	for line := 1; sc.Scan(); line++ {
+		cp.line = line
 		cp.feedLine(sc.Text())
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
 
-	cp.warnIfAmbiguous()
+	cp.bannerIfAmbiguous()
 	return cp.res, nil
 }
 
@@ -88,8 +95,19 @@ type crontabParser struct {
 	names *namer
 	opts  CronOptions
 
-	system    bool
-	ambiguous bool
+	system bool
+	// ambiguous is set once for the file; lineAmbiguous for the line being fed.
+	// Both exist because the two readers need different things: the operator
+	// reviewing an import wants one banner at the top of the file, and the live
+	// cron loader has no reader at all — it needs to know *which* rows are
+	// suspect, because those are the ones it must not schedule.
+	ambiguous     bool
+	lineAmbiguous bool
+	// line is the 1-based number of the line being fed, stamped onto each row so a
+	// job can be named as `file:line`. Parser state rather than a parameter: every
+	// row-opening path is several calls deep, and threading it would put the same
+	// argument on a dozen signatures for one field.
+	line int
 
 	env      map[string]string
 	shell    string
@@ -98,6 +116,12 @@ type crontabParser struct {
 	// where it's assigned rather than per job.
 	timezoneErr    error
 	pendingComment string // a "# ..." line directly above a job
+}
+
+// addItem opens a report row for the line currently being fed, stamped with its
+// line number.
+func (cp *crontabParser) addItem(source string) itemRef {
+	return cp.res.addItemAt(source, cp.line)
 }
 
 // feedLine classifies one raw crontab line and routes it to the right handler.
@@ -120,9 +144,8 @@ func (cp *crontabParser) feedLine(raw string) {
 	}
 	// In per-user mode, flag a line that looks like it smuggles a user column
 	// rather than silently folding the username into the command.
-	if cp.opts.Detect && !cp.system && looksLikeUserColumn(line) {
-		cp.ambiguous = true
-	}
+	cp.lineAmbiguous = cp.opts.Detect && !cp.system && looksLikeUserColumn(line)
+	cp.ambiguous = cp.ambiguous || cp.lineAmbiguous
 	cp.handleJob(line)
 }
 
@@ -166,7 +189,7 @@ func (cp *crontabParser) handleJob(line string) {
 		// gets a row rather than a note at the bottom of the report — carrying the
 		// line verbatim, since deciding which half of it matters is exactly the
 		// job the parser just failed at.
-		cp.res.addItem(line).note(NoteLineUnparseable,
+		cp.addItem(line).note(NoteLineUnparseable,
 			"this isn't a schedule followed by a command, so nothing was imported for it.")
 	}
 }
@@ -206,7 +229,7 @@ func (cp *crontabParser) noteMailto(value string) {
 			"Note the difference: crond mailed any output at all, this mails failures.")
 }
 
-func (cp *crontabParser) warnIfAmbiguous() {
+func (cp *crontabParser) bannerIfAmbiguous() {
 	if !cp.ambiguous {
 		return
 	}
@@ -214,10 +237,6 @@ func (cp *crontabParser) warnIfAmbiguous() {
 		"⚠ TODO: some lines may carry a user column (this looks like a system",
 		"  crontab). If a `run = \"…\"` below begins with a username, re-run with",
 		"  `runwisp import cron --system`.")
-	cp.res.fileNote(NoteSystemAmbiguous,
-		"this looks like a system crontab (a user column between the schedule and "+
-			"command). Re-run with --system to split out per-task users, or "+
-			"--system=false to silence this if the commands really do start with that word.")
 }
 
 // importJob turns one schedule+command line into its [tasks.NAME] block plus,
@@ -249,9 +268,15 @@ func (cp *crontabParser) importJob(line string) bool {
 	command := cc.run
 
 	base := deriveCronName(command)
-	ref, name, skip := cp.names.resolve(base, base, model.KindTask, command)
+	ref, name, skip := cp.names.resolve(base, base, model.KindTask, command, cp.line)
 	if skip {
 		return true
+	}
+	if cp.lineAmbiguous {
+		ref.note(NoteSystemAmbiguous,
+			"the sixth field on this line looks like a username, so this may be a system "+
+				"crontab line whose user column has been read as part of the command. "+
+				"Re-run with --system to split it out, or --system=false to accept it as written.")
 	}
 	b := block{header: "tasks." + name}
 	if cp.pendingComment != "" {
@@ -396,7 +421,7 @@ func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
 	if user == "" || isLikelyUsername(user) {
 		return false
 	}
-	cp.res.addItem(line).note(NoteUserColumnSuspect,
+	cp.addItem(line).note(NoteUserColumnSuspect,
 		"the sixth field is "+user+", which isn't a username — a system crontab line needs a "+
 			"user column between the schedule and the command, so nothing was imported for this.")
 	return true

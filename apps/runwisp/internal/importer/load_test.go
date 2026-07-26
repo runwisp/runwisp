@@ -164,3 +164,74 @@ func TestCronSubstitutionSyntaxSurvivesTheRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// cronFixtures lists every crontab fixture with the options it should be read
+// under, so a new fixture is covered by TestLiveTOMLAlwaysLoads without anyone
+// remembering to add it. Discovered rather than enumerated, with the
+// system-format ones named because that fact isn't in the filename.
+func cronFixtures(t *testing.T) map[string]importer.CronOptions {
+	t.Helper()
+	system := map[string]bool{"testdata/cron/system.crontab": true}
+	paths, err := filepath.Glob("testdata/cron/*.crontab")
+	if err != nil {
+		t.Fatalf("glob fixtures: %v", err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no crontab fixtures found — this test would pass by vacuum")
+	}
+	out := make(map[string]importer.CronOptions, len(paths))
+	for _, p := range paths {
+		p = filepath.ToSlash(p)
+		out[p] = importer.CronOptions{System: system[p]}
+	}
+	return out
+}
+
+// TestLiveTOMLAlwaysLoads is the guard the daemon's boot depends on. `include_cron`
+// renders LiveTOML and hands it to the config loader, so a crontab that produces
+// TOML the loader rejects doesn't degrade one task — it takes down the whole
+// reload, including every task the file has nothing to do with.
+//
+// It runs over *every* fixture, including `invalid` and `badtz` whose full TOML
+// deliberately does not load: filtering out the jobs that can't run is exactly
+// what has to make the difference.
+func TestLiveTOMLAlwaysLoads(t *testing.T) {
+	for path, opts := range cronFixtures(t) {
+		t.Run(path, func(t *testing.T) {
+			in, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read fixture: %v", err)
+			}
+			res, err := importer.ParseCrontab(strings.NewReader(string(in)), opts)
+			if err != nil {
+				t.Fatalf("ParseCrontab: %v", err)
+			}
+			live := res.LiveTOML()
+			if _, err := loadTOML(t, live); err != nil {
+				t.Fatalf("LiveTOML does not load: %v\n--- live toml ---\n%s\n--- skipped ---\n%+v",
+					err, live, res.SkippedLive())
+			}
+		})
+	}
+}
+
+// TestLiveTOMLOfAWhollyUnusableCrontabIsStillValid is the degenerate case: a file
+// where nothing survives the filter must render an empty-but-loadable config, not
+// a syntax error and not a config with a dangling table.
+func TestLiveTOMLOfAWhollyUnusableCrontabIsStillValid(t *testing.T) {
+	res, err := importer.ParseCrontab(strings.NewReader("99 99 * * * /bin/bad\nnot-a-cron-line\n"),
+		importer.CronOptions{})
+	if err != nil {
+		t.Fatalf("ParseCrontab: %v", err)
+	}
+	cfg, err := loadTOML(t, res.LiveTOML())
+	if err != nil {
+		t.Fatalf("load: %v\n--- live toml ---\n%s", err, res.LiveTOML())
+	}
+	if len(cfg.Tasks) != 0 {
+		t.Errorf("expected no tasks, got %d", len(cfg.Tasks))
+	}
+	if len(res.SkippedLive()) != 2 {
+		t.Errorf("expected both jobs reported as skipped, got %+v", res.SkippedLive())
+	}
+}

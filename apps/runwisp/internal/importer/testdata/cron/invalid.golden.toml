@@ -7,3 +7,6 @@ cron = "99 99 * * *"  # TODO: RunWisp couldn't parse this cron expression — fi
 env_base = "clean"
 working_dir = "~"
 run = "/bin/bad"
+
+[tasks.bad.env]
+PATH = "/opt/bin:/usr/bin"

@@ -58,7 +58,7 @@ func newSupervisordState(opts SupervisordOptions) *supervisordState {
 	res := &Result{}
 	return &supervisordState{
 		res:     res,
-		names:   newNamer(res, opts.Existing),
+		names:   newNamer(res, opts.Existing, ""),
 		visited: map[string]bool{},
 	}
 }
@@ -191,7 +191,7 @@ func (sd *supervisordState) buildGroupMap() map[string]string {
 
 func (sd *supervisordState) processProgram(rawName string, s *iniSection, group string) {
 	taskKind := programKind(s)
-	ref, name, skip := sd.names.resolve(rawName, sanitizeProgramName(rawName), taskKind, programCommand(s, rawName))
+	ref, name, skip := sd.names.resolve(rawName, sanitizeProgramName(rawName), taskKind, programCommand(s, rawName), 0)
 	if skip {
 		return
 	}

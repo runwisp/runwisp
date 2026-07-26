@@ -63,84 +63,105 @@ const (
 	noteKindCount
 )
 
-// info returns the kind's stable slug and whether it blocks — i.e. whether the
-// job it belongs to needs a human before anyone should rely on it. A blocking
-// note is one an operator has to act on: the TOML carries a `# TODO`, the
-// command is wrong, or the job didn't import at all. Everything else is a
-// difference worth knowing about.
+// info returns the kind's stable slug and its two severity answers.
+//
+// blocking is whether the job it belongs to needs a human before anyone should
+// rely on it: the TOML carries a `# TODO`, the command is wrong, or the job
+// didn't import at all. Everything else is a difference worth knowing about.
+//
+// unsafeLive is whether the job may be *run* as-imported. The two are separate
+// axes and collapsing them would be wrong in both directions. A MAILTO is
+// blocking — nobody gets the mail until a notifier exists — but the job itself
+// runs exactly as crond ran it, so refusing to schedule it would be a worse
+// answer than scheduling it. A `%`-stdin command is the reverse shape: the TODO
+// is not advice, it is the input the command needed and didn't get, so running
+// it means running something the crontab never asked for. Only the second kind
+// disqualifies a job from `include_cron`.
 //
 // An unlisted kind returns an empty slug on purpose: that is what makes
 // "adding a kind without deciding its severity" a red test rather than a
-// silently non-blocking note.
-func (k NoteKind) info() (slug string, blocking bool) {
+// silently harmless note.
+func (k NoteKind) info() (slug string, blocking, unsafeLive bool) {
 	switch k {
 	case NoteShellNotAbsolute:
-		return "shell-not-absolute", true
+		// The crontab's bash isn't invoked, so a bash-ism fails — loudly, with the
+		// error in the run's captured output. A visible failure is still a run.
+		return "shell-not-absolute", true, false
 	case NoteMailto:
-		return "mailto", true
+		// Nobody gets the mail until a notifier exists, but the job runs exactly as
+		// crond ran it. Refusing to schedule it would be the worse answer.
+		return "mailto", true, false
 	case NoteSystemAmbiguous:
-		return "system-crontab-ambiguous", true
+		// The format was guessed, so the command may still have a username glued to
+		// its front — running it would run the wrong thing as the wrong user.
+		return "system-crontab-ambiguous", true, true
 	case NoteLineUnparseable:
-		return "line-unparseable", true
+		return "line-unparseable", true, true
 	case NoteCronUnparseable:
-		return "cron-unparseable", true
+		return "cron-unparseable", true, true
 	case NoteTimezoneInvalid:
-		return "timezone-invalid", true
+		// The zone decides when it fires, so the wrong zone is the wrong schedule.
+		return "timezone-invalid", true, true
 	case NotePercentTranslated:
-		return "percent-translated", false
+		return "percent-translated", false, false
 	case NotePercentStdin:
-		return "percent-stdin", true
+		// The TODO is not advice, it is the input the command needed and did not
+		// get. Running it runs something the crontab never asked for.
+		return "percent-stdin", true, true
 	case NoteUserColumnSuspect:
-		return "user-column-suspect", true
+		// Both halves of the split are wrong: neither the identity nor the command
+		// is one the operator wrote.
+		return "user-column-suspect", true, true
 	case NoteAlreadyDefined:
-		return "already-defined", false
+		return "already-defined", false, false
 	case NoteRenamedOwned:
-		return "renamed-owned", false
+		return "renamed-owned", false, false
 	case NoteRenamedCollision:
-		return "renamed-collision", false
+		return "renamed-collision", false, false
 	case NoteIncludeUnresolved:
-		return "include-unresolved", true
+		return "include-unresolved", true, false
 	case NoteIncludeNoMatch:
-		return "include-no-match", true
+		return "include-no-match", true, false
 	case NoteIncludeUnreadable:
-		return "include-unreadable", true
+		return "include-unreadable", true, false
 	case NoteGroup:
-		return "group", false
+		return "group", false, false
 	case NoteSectionUnsupported:
-		return "section-unsupported", true
+		return "section-unsupported", true, true
 	case NoteSectionDaemon:
-		return "section-daemon", false
+		return "section-daemon", false, false
 	case NoteSectionUnrecognized:
-		return "section-unrecognized", false
+		return "section-unrecognized", false, false
 	case NoteAutorestartUnexpected:
-		return "autorestart-unexpected", false
+		return "autorestart-unexpected", false, false
 	case NoteNoCommand:
-		return "no-command", true
+		return "no-command", true, true
 	case NoteCommandExpansion:
-		return "command-expansion", true
+		// A %(...)s that didn't expand leaves a command that isn't the real one.
+		return "command-expansion", true, true
 	case NoteRunOnce:
-		return "run-once", false
+		return "run-once", false, false
 	case NoteLogsDropped:
-		return "logs-dropped", false
+		return "logs-dropped", false, false
 	case NoteSignalScope:
-		return "signal-scope", false
+		return "signal-scope", false, false
 	case NoteRelativeDirectory:
-		return "relative-directory", false
+		return "relative-directory", false, false
 	case NoteServiceKeyDropped:
-		return "service-key-dropped", false
+		return "service-key-dropped", false, false
 	case NoteInstances:
-		return "instances", false
+		return "instances", false, false
 	case NoteKeysUnsupported:
-		return "keys-unsupported", false
+		return "keys-unsupported", false, false
 	case NoteKeyUnreadable:
-		return "key-unreadable", false
+		return "key-unreadable", false, false
 	default:
-		return "", false
+		return "", false, false
 	}
 }
 
 // Slug is the kind's stable identifier, for tests and structured dumps.
-func (k NoteKind) Slug() string { slug, _ := k.info(); return slug }
+func (k NoteKind) Slug() string { slug, _, _ := k.info(); return slug }
 
 // String makes a NoteKind readable in test failures.
 func (k NoteKind) String() string {
@@ -161,7 +182,12 @@ type Note struct {
 
 // Blocking reports whether this note needs a human before the job is
 // trustworthy. See NoteKind.info.
-func (n Note) Blocking() bool { _, blocking := n.Kind.info(); return blocking }
+func (n Note) Blocking() bool { _, blocking, _ := n.Kind.info(); return blocking }
+
+// UnsafeLive reports whether this note means the job must not be run as
+// imported. See NoteKind.info for why this is a different question from
+// Blocking.
+func (n Note) UnsafeLive() bool { _, _, unsafe := n.Kind.info(); return unsafe }
 
 // ItemStatus is the mark one source job earned. It is always derived from what
 // the parser recorded — never assigned — so a row's mark and the notes under it
@@ -215,6 +241,31 @@ type Item struct {
 	Run string
 	// Notes are the differences and blockers belonging to this job.
 	Notes []Note
+	// Line is the 1-based line in the source file this job came from, or 0 when
+	// the source isn't line-oriented (a supervisord section) or the note is about
+	// the file. It exists so a skipped job can be named as `file:line` — an
+	// operator staring at a crontab needs the line, not a derived task name they
+	// have never seen.
+	Line int
+}
+
+// LiveEligible reports whether this job may be scheduled as-imported, which is
+// the question `[daemon] include_cron` asks of every row.
+//
+// Two things disqualify a job: emitting no TOML at all (nothing to schedule),
+// and carrying a note whose kind says the imported form isn't what the source
+// would have run. See NoteKind.info for why that is a different question from
+// Status() == StatusBlocked — a MAILTO blocks and is perfectly safe to run.
+func (i Item) LiveEligible() bool {
+	if i.Name == "" {
+		return false
+	}
+	for _, n := range i.Notes {
+		if n.UnsafeLive() {
+			return false
+		}
+	}
+	return true
 }
 
 // Status is the mark this row earned, computed from the row itself every time it
@@ -326,7 +377,12 @@ type itemRef struct {
 
 // addItem opens a report row for a job the source described.
 func (r *Result) addItem(source string) itemRef {
-	r.items = append(r.items, Item{Source: source})
+	return r.addItemAt(source, 0)
+}
+
+// addItemAt opens a row for a job that came from a known line of the source.
+func (r *Result) addItemAt(source string, line int) itemRef {
+	r.items = append(r.items, Item{Source: source, Line: line})
 	return itemRef{res: r, i: len(r.items) - 1}
 }
 
@@ -339,7 +395,14 @@ func (r *Result) addItem(source string) itemRef {
 func (ir itemRef) emit(name string, kind model.TaskKind, schedule, run string, blocks ...block) {
 	it := &ir.res.items[ir.i]
 	it.Name, it.Kind, it.Schedule, it.Run = name, kind, schedule, run
-	ir.res.blocks = append(ir.res.blocks, blocks...)
+	// Stamping the owning row onto each block is what lets TOMLFor render a
+	// subset without inferring ownership from table names. Inference would have
+	// to re-derive the header→row mapping that emit already knows, and would get
+	// a `[tasks.x.env]` child wrong.
+	for _, b := range blocks {
+		b.item = ir.i
+		ir.res.blocks = append(ir.res.blocks, b)
+	}
 }
 
 // note records a difference or a blocker belonging to this job.

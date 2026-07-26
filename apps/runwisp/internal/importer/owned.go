@@ -49,12 +49,16 @@ type namer struct {
 	res   *Result
 	dd    *deduper
 	owned Owned
+	// suffix is the stable collision tie-breaker for the file being parsed — see
+	// deduper.uniqueIn. Empty for a single-source import, where positional
+	// suffixes are stable because there is only one order.
+	suffix string
 }
 
 // newNamer seeds the deduper with every owned name, so a clash renames to
 // name-2 instead of emitting a duplicate that would fail the merged load.
-func newNamer(res *Result, owned Owned) *namer {
-	n := &namer{res: res, dd: newDeduper(), owned: owned}
+func newNamer(res *Result, owned Owned, suffix string) *namer {
+	n := &namer{res: res, dd: newDeduper(), owned: owned, suffix: suffix}
 	for name := range owned {
 		n.dd.reserve(name)
 	}
@@ -62,7 +66,7 @@ func newNamer(res *Result, owned Owned) *namer {
 }
 
 // unique returns a name unique within this import, ignoring the live config.
-func (n *namer) unique(base string) string { return n.dd.unique(base) }
+func (n *namer) unique(base string) string { return n.dd.uniqueIn(base, n.suffix) }
 
 // resolve opens this job's report row and picks its RunWisp name. source is what
 // the source file called the job; base is that name sanitized to RunWisp's
@@ -75,8 +79,10 @@ func (n *namer) unique(base string) string { return n.dd.unique(base) }
 // both parsers pass through on their way to a name and the one place that
 // decides a job won't be imported. A row opened later would be a row a skipped
 // job never gets, which is the silent drop this design exists to prevent.
-func (n *namer) resolve(source, base string, kind model.TaskKind, command string) (ref itemRef, name string, skip bool) {
-	ref = n.res.addItem(source)
+//
+// line is the 1-based source line, or 0 for a source that isn't line-oriented.
+func (n *namer) resolve(source, base string, kind model.TaskKind, command string, line int) (ref itemRef, name string, skip bool) {
+	ref = n.res.addItemAt(source, line)
 	existing, reserved := n.owned[base]
 	if reserved && sameEntry(existing, kind, command) {
 		ref.note(NoteAlreadyDefined, "already defined in runwisp.toml with the same command")

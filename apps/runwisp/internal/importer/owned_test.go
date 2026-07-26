@@ -92,7 +92,7 @@ func TestSameEntry(t *testing.T) {
 // same name lands on name-2 instead of colliding on the merged load.
 func TestNamer_ReservesOwnedNamesForFreshImports(t *testing.T) {
 	res := &Result{}
-	n := newNamer(res, Owned{"job": {Kind: model.KindTask, Run: "/bin/original"}})
+	n := newNamer(res, Owned{"job": {Kind: model.KindTask, Run: "/bin/original"}}, "")
 
 	if got := n.unique("job"); got != "job-2" {
 		t.Errorf("unique(job) = %q, want job-2", got)
