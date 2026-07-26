@@ -120,10 +120,32 @@ func (r *Result) TOML() string {
 
 // --- TOML value formatting helpers ---
 
-// tomlString formats a Go string as a TOML basic string, switching to a
-// multi-line basic string when the value contains newlines (the common case
-// for multi-step `run` scripts).
+// tomlString formats an imported value as a TOML string, escaping it so the
+// config loader hands it back unchanged.
+//
+// The escaping is the part that matters. config.Load runs ${...} substitution
+// over every string field except the handful tagged expand:"-", so a `${DB}`
+// that appears anywhere in a crontab or supervisord config — a comment that
+// becomes a description, an environment value, a CRON_TZ — would either fail the
+// load outright ("environment variable DB is not set") or, worse, substitute a
+// value the original supervisor never would have. Neither program does ${...}
+// substitution, so the imported config must not either: `${` is emitted as the
+// `$${` the expander unescapes back to a literal `${`.
+//
+// This is the default on purpose. Use tomlVerbatimString only for a field the
+// loader is documented to skip, so a new call site is safe by default rather
+// than safe by whoever wrote it having remembered.
 func tomlString(s string) string {
+	return tomlVerbatimString(strings.ReplaceAll(s, "${", "$${"))
+}
+
+// tomlVerbatimString formats a Go string as a TOML basic string with no
+// substitution escaping, switching to a multi-line basic string when the value
+// contains newlines (the common case for multi-step `run` scripts).
+//
+// Only for fields config.Load tags expand:"-" — in practice `run`, where the
+// shell does its own expansion and an escaped `$${` would reach it literally.
+func tomlVerbatimString(s string) string {
 	if !strings.Contains(s, "\n") {
 		return strconv.Quote(s)
 	}

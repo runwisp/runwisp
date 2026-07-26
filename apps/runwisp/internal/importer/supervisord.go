@@ -270,7 +270,7 @@ func programCommand(s *iniSection, rawName string) string {
 func (sd *supervisordState) applyCommand(b *block, s *iniSection, ref itemRef, rawName string) string {
 	command, hasCmd := s.get("command")
 	if !hasCmd || strings.TrimSpace(command) == "" {
-		b.setComment("run", tomlString(""), "TODO: original [program] had no command.")
+		b.setComment("run", tomlVerbatimString(""), "TODO: original [program] had no command.")
 		ref.note(NoteNoCommand, "the original [program] had no command= line, so there is nothing to run.")
 		return ""
 	}
@@ -280,7 +280,7 @@ func (sd *supervisordState) applyCommand(b *block, s *iniSection, ref itemRef, r
 			"command uses supervisord %(...)s expansions RunWisp doesn't fill in "+
 				"(e.g. %(ENV_x)s, %(process_num)s). Review the run line.")
 	}
-	b.set("run", tomlString(expanded))
+	b.set("run", tomlVerbatimString(expanded))
 	return expanded
 }
 

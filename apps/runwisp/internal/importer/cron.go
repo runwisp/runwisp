@@ -357,7 +357,7 @@ func (cp *crontabParser) applyCommand(b *block, ref itemRef, cc cronCommand) {
 		// rather than verbatim, because a verbatim import runs something crond
 		// never ran. What that costs is the input, so the input is what the TODO
 		// names, quoted so an embedded newline is legible on one line.
-		b.setComment("run", tomlString(cc.run),
+		b.setComment("run", tomlVerbatimString(cc.run),
 			"TODO: crond also piped "+strconv.Quote(cc.stdin)+" to this on stdin.")
 		ref.note(NotePercentStdin,
 			"crond ended the command at the first '%' and piped "+strconv.Quote(cc.stdin)+
@@ -365,7 +365,7 @@ func (cp *crontabParser) applyCommand(b *block, ref itemRef, cc cronCommand) {
 				"the command itself (a here-doc, or `printf … | cmd`).")
 		return
 	}
-	b.set("run", tomlString(cc.run))
+	b.set("run", tomlVerbatimString(cc.run))
 	switch {
 	case cc.truncated:
 		ref.note(NotePercentTranslated,

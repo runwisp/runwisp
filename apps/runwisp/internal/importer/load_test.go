@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/importer"
 )
 
 // goldensThatMustNotLoad names the golden files whose whole point is that the
@@ -121,4 +122,45 @@ func loadTOML(t *testing.T, toml string) (*config.Config, error) {
 		t.Fatalf("write temp config: %v", err)
 	}
 	return config.Load(path)
+}
+
+// TestCronSubstitutionSyntaxSurvivesTheRoundTrip is the other half of the
+// escaping fix, and the half only this package can assert: it proves the escape
+// the importer writes is the escape config.Load unescapes, so a `${...}` in a
+// crontab arrives at the daemon as the same bytes cron would have handed the
+// shell.
+//
+// The variables are deliberately *set* to a canary. Leaving them unset would
+// make an unescaped `${DB}` fail the load, which the test would notice — but it
+// would notice for the wrong reason, and it would say nothing about the far worse
+// case where the variable happens to exist in whatever shell launched the daemon
+// and the value silently changes.
+func TestCronSubstitutionSyntaxSurvivesTheRoundTrip(t *testing.T) {
+	t.Setenv("DB", "LEAKED")
+	t.Setenv("BAR", "LEAKED")
+	t.Setenv("DEST", "LEAKED")
+
+	const in = "FOO=${BAR}\n# nightly ${DB} dump\n0 3 * * * /bin/dump --to ${DEST}\n"
+	res, err := importer.ParseCrontab(strings.NewReader(in), importer.CronOptions{})
+	if err != nil {
+		t.Fatalf("ParseCrontab: %v", err)
+	}
+	cfg, err := loadTOML(t, res.TOML())
+	if err != nil {
+		t.Fatalf("load: %v\n--- toml ---\n%s", err, res.TOML())
+	}
+	if len(cfg.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(cfg.Tasks))
+	}
+	task := cfg.Tasks[0]
+	for _, tc := range []struct{ field, got, want string }{
+		{"description", task.Description, "nightly ${DB} dump"},
+		{"env[FOO]", task.Env["FOO"], "${BAR}"},
+		{"run", task.Run, "/bin/dump --to ${DEST}"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %q, want %q — cron does no ${} substitution, so neither may the import",
+				tc.field, tc.got, tc.want)
+		}
+	}
 }

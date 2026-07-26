@@ -494,3 +494,64 @@ func TestCronForcedPerUserSilencesDetection(t *testing.T) {
 		t.Fatalf("did not expect a note when detection is off, got %+v", allNotes(res))
 	}
 }
+
+// TestCronEscapesSubstitutionSyntaxEverywhereButRun is the bug: config.Load runs
+// ${...} substitution over every string field except `run`, and cron does no
+// substitution at all. A `${DB}` in a crontab comment therefore used to import as
+// `description = "nightly ${DB} dump"`, which either failed the load outright or
+// — with DB set in whatever shell the daemon was launched from — quietly
+// substituted a value crond would never have produced.
+//
+// Every position the importer can put crontab text in is checked, because the
+// escaping has to be a property of the formatter and not of the six call sites
+// that happened to remember.
+func TestCronEscapesSubstitutionSyntaxEverywhereButRun(t *testing.T) {
+	in := "SHELL=/bin/${SH}sh\n" +
+		"FOO=${BAR}\n" +
+		"CRON_TZ=${ZONE}\n" +
+		"# nightly ${DB} dump\n" +
+		"0 3 * * * /bin/dump --to ${DEST}\n"
+	out := parseCron(t, in, CronOptions{}).TOML()
+
+	mustContain(t, out, `description = "nightly $${DB} dump"`)
+	mustContain(t, out, `shell = "/bin/$${SH}sh"`)
+	mustContain(t, out, `FOO = "$${BAR}"`)
+	mustContain(t, out, `timezone = "$${ZONE}"`)
+
+	// `run` is expand:"-", so escaping it would send a literal `$${DEST}` to the
+	// shell — the same class of bug pointing the other way.
+	mustContain(t, out, `run = "/bin/dump --to ${DEST}"`)
+}
+
+// TestCronEscapesTheSystemUserColumn covers the one position the per-user format
+// can't reach.
+func TestCronEscapesTheSystemUserColumn(t *testing.T) {
+	res := parseCron(t, "0 3 * * * ${WHO} /bin/x\n", CronOptions{System: true})
+	mustContain(t, res.TOML(), `user = "$${WHO}"`)
+}
+
+// TestCronLeavesNoUnescapedSubstitutionOutsideRun is the structural form of the
+// two tests above: it does not name the fields, so a field added later is covered
+// without anyone extending a list.
+func TestCronLeavesNoUnescapedSubstitutionOutsideRun(t *testing.T) {
+	in := "SHELL=/bin/${SH}sh\nFOO=${BAR}\nCRON_TZ=${ZONE}\n# ${DB} dump\n0 3 * * * /bin/dump ${DEST}\n"
+	for _, line := range strings.Split(parseCron(t, in, CronOptions{}).TOML(), "\n") {
+		key, value, ok := strings.Cut(line, " = ")
+		if !ok || key == "run" {
+			continue
+		}
+		// An escaped `$${` still contains `${`, so look for a `${` whose preceding
+		// byte is not a `$`.
+		for i := strings.Index(value, "${"); i >= 0; {
+			if i == 0 || value[i-1] != '$' {
+				t.Errorf("%s carries an unescaped ${ that config.Load would substitute: %s", key, line)
+				break
+			}
+			next := strings.Index(value[i+2:], "${")
+			if next < 0 {
+				break
+			}
+			i += 2 + next
+		}
+	}
+}

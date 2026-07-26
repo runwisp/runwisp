@@ -190,16 +190,38 @@ func TestUnparseableLineGetsARow(t *testing.T) {
 	}
 }
 
+// TestTomlStringEscapesSubstitution pins the difference between the two
+// formatters. tomlString is the default and escapes `${` because config.Load
+// substitutes it; tomlVerbatimString is the opt-out for the expand:"-" fields.
+func TestTomlStringEscapesSubstitution(t *testing.T) {
+	if got, want := tomlString("nightly ${DB} dump"), `"nightly $${DB} dump"`; got != want {
+		t.Errorf("tomlString = %s, want %s", got, want)
+	}
+	if got, want := tomlVerbatimString("nightly ${DB} dump"), `"nightly ${DB} dump"`; got != want {
+		t.Errorf("tomlVerbatimString = %s, want %s", got, want)
+	}
+	// A lone `$` passes through the expander untouched, so it must not be escaped
+	// either — `awk '{print $1}'` in a description is common and harmless.
+	if got, want := tomlString("print $1"), `"print $1"`; got != want {
+		t.Errorf("tomlString = %s, want %s", got, want)
+	}
+	// An already-escaped-looking `$${` in the source is still literal text to
+	// cron, so it needs escaping too or it would come back as `${`.
+	if got, want := tomlString("$${X}"), `"$$${X}"`; got != want {
+		t.Errorf("tomlString = %s, want %s", got, want)
+	}
+}
+
 func TestTomlStringMultiline(t *testing.T) {
 	// A single-line value is a basic quoted string.
-	if got := tomlString("echo hi"); got != `"echo hi"` {
-		t.Errorf("tomlString single-line = %q", got)
+	if got := tomlVerbatimString("echo hi"); got != `"echo hi"` {
+		t.Errorf("tomlVerbatimString single-line = %q", got)
 	}
 	// A multi-line value becomes a multi-line basic string with escaped
 	// backslashes and a guarded embedded triple-quote.
-	got := tomlString("line1\n\\path\n\"\"\"oops")
+	got := tomlVerbatimString("line1\n\\path\n\"\"\"oops")
 	if !strings.HasPrefix(got, "\"\"\"\n") || !strings.HasSuffix(got, "\"\"\"") {
-		t.Errorf("multi-line tomlString missing triple-quote fences: %q", got)
+		t.Errorf("multi-line tomlVerbatimString missing triple-quote fences: %q", got)
 	}
 	if strings.Contains(got, `\path`) == false {
 		t.Errorf("backslash should be escaped (doubled): %q", got)
