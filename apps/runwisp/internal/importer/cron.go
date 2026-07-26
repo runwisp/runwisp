@@ -243,6 +243,9 @@ func (cp *crontabParser) importJob(line string) bool {
 	if !ok {
 		return false
 	}
+	if cp.noteSuspectUserColumn(line, j.user) {
+		return true // a row was added; nothing to emit for a line this shape
+	}
 	// Everything downstream — the derived name, the report row, the emitted
 	// `run` — works from what crond would actually execute, not from the raw
 	// field. See splitCronPercent.
@@ -376,6 +379,31 @@ func (cp *crontabParser) applyCommand(b *block, ref itemRef, cc cronCommand) {
 			`crond reads \% as a literal '%', so the command was imported with the `+
 				`backslashes already removed.`)
 	}
+}
+
+// noteSuspectUserColumn reports whether a system crontab line's sixth field is
+// too unlike a username to be treated as one, adding the row that says so.
+//
+// A /etc/cron.d line written without its user column — common enough that
+// Debian ships a warning about it — reads as `0 3 * * * /usr/bin/foo bar`, and a
+// six-field split hands `/usr/bin/foo` to `user =` and `bar` to `run =`.
+// model.ParseRunUserSpec accepts any string and config.Load passes, so the row
+// used to read clean and the job failed at run time as
+// `unknown user "/usr/bin/foo"` — once per firing, forever.
+//
+// Nothing is emitted for such a line, the same treatment an unreadable line
+// gets: both halves of the split are wrong, so importing the truncated command
+// under a made-up identity would run something the crontab never asked for.
+// Skipping the entry and saying so loudly is also what crond itself does with a
+// malformed line, which keeps the rest of the file importable.
+func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
+	if user == "" || isLikelyUsername(user) {
+		return false
+	}
+	cp.res.addItem(line).note(NoteUserColumnSuspect,
+		"the sixth field is "+user+", which isn't a username — a system crontab line needs a "+
+			"user column between the schedule and the command, so nothing was imported for this.")
+	return true
 }
 
 // applyWorkingDir reproduces crond's rule that a job runs in the home directory

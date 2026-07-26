@@ -523,12 +523,9 @@ func TestCronEscapesSubstitutionSyntaxEverywhereButRun(t *testing.T) {
 	mustContain(t, out, `run = "/bin/dump --to ${DEST}"`)
 }
 
-// TestCronEscapesTheSystemUserColumn covers the one position the per-user format
-// can't reach.
-func TestCronEscapesTheSystemUserColumn(t *testing.T) {
-	res := parseCron(t, "0 3 * * * ${WHO} /bin/x\n", CronOptions{System: true})
-	mustContain(t, res.TOML(), `user = "$${WHO}"`)
-}
+// The system crontab's `user` column is the one position no ${} can reach:
+// isLikelyUsername only admits [a-z0-9_-], so a column carrying a substitution
+// is refused outright — see TestCronSystemLineMissingItsUserColumnIsNotImported.
 
 // TestCronLeavesNoUnescapedSubstitutionOutsideRun is the structural form of the
 // two tests above: it does not name the fields, so a field added later is covered
@@ -554,4 +551,53 @@ func TestCronLeavesNoUnescapedSubstitutionOutsideRun(t *testing.T) {
 			i += 2 + next
 		}
 	}
+}
+
+// TestCronSystemLineMissingItsUserColumnIsNotImported is the bug: a /etc/cron.d
+// line written without its user column split six ways anyway, so `/usr/bin/foo`
+// became `user =` and the rest of the line became `run =`. Both halves were
+// wrong, model.ParseRunUserSpec accepts any string, config.Load passed, and the
+// row read clean — the job then failed once per firing, forever, as
+// `unknown user "/usr/bin/foo"`.
+func TestCronSystemLineMissingItsUserColumnIsNotImported(t *testing.T) {
+	res := parseCron(t, "0 3 * * * /usr/bin/foo --flag\n", CronOptions{System: true})
+	out := res.TOML()
+	mustNotContain(t, out, "[tasks.")
+	mustNotContain(t, out, "user =")
+
+	items := res.Items()
+	if len(items) != 1 {
+		t.Fatalf("expected the line to still get a row, got %+v", items)
+	}
+	if got := items[0].Status(); got != StatusBlocked {
+		t.Errorf("status = %v, want blocked", got)
+	}
+	if got := items[0].Source; got != "0 3 * * * /usr/bin/foo --flag" {
+		t.Errorf("Source = %q, want the line verbatim", got)
+	}
+	note := findNote(t, res, NoteUserColumnSuspect)
+	mustContain(t, note.Message, "/usr/bin/foo")
+}
+
+// TestCronSystemLineWithARealUserColumnStillImports is the other side: the sniff
+// must not start rejecting the ordinary case it was added to protect.
+func TestCronSystemLineWithARealUserColumnStillImports(t *testing.T) {
+	res := parseCron(t, "0 3 * * * postgres /usr/bin/vacuumdb --all\n", CronOptions{System: true})
+	out := res.TOML()
+	mustContain(t, out, `user = "postgres"`)
+	mustContain(t, out, `run = "/usr/bin/vacuumdb --all"`)
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Errorf("status = %v, want clean", got)
+	}
+}
+
+// TestCronSystemUserColumnSniffCoversTheDescriptorForm: @reboot carries a user
+// column in /etc/crontab too, so the same line can be malformed the same way.
+func TestCronSystemUserColumnSniffCoversTheDescriptorForm(t *testing.T) {
+	res := parseCron(t, "@reboot /usr/bin/warmup --now\n", CronOptions{System: true})
+	mustNotContain(t, res.TOML(), "[tasks.")
+	if got := res.Items()[0].Status(); got != StatusBlocked {
+		t.Errorf("status = %v, want blocked", got)
+	}
+	findNote(t, res, NoteUserColumnSuspect)
 }

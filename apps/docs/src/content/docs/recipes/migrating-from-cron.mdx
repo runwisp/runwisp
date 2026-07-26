@@ -355,6 +355,12 @@ shows up as a `# TODO` in the file and a note in the summary. The usual ones:
   ran — and the input it can't reproduce is quoted in a `# TODO` on the `run`
   line. Fold it back into the command yourself, usually with a here-doc or a
   `printf … | cmd`.
+- **A system crontab line with no user column.** In `/etc/crontab` and
+  `/etc/cron.d/*` the sixth field is the user to run as, and a line written
+  without one is a mistake cron itself skips. RunWisp skips it too rather than
+  guessing — reading the first word of the command as a username would give you a
+  task that runs the wrong command as a user who doesn't exist. The line gets a
+  `!` row quoting itself; add the user and re-import.
 - **The task name.** Names are derived from the command (`/usr/local/bin/backup.sh`
   → `backup`). They're just labels — rename any that aren't obvious, and the
   full command is preserved either way.

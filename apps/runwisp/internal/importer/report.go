@@ -33,6 +33,7 @@ const (
 	NotePercentTranslated
 	NotePercentStdin
 	NoteWorkingDirUser
+	NoteUserColumnSuspect
 
 	// Naming and identity, shared by both parsers.
 	NoteAlreadyDefined
@@ -92,6 +93,8 @@ func (k NoteKind) info() (slug string, blocking bool) {
 		return "percent-stdin", true
 	case NoteWorkingDirUser:
 		return "working-dir-user", false
+	case NoteUserColumnSuspect:
+		return "user-column-suspect", true
 	case NoteAlreadyDefined:
 		return "already-defined", false
 	case NoteRenamedOwned:
