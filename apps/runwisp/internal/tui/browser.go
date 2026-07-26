@@ -30,8 +30,15 @@ func canOpenBrowserDefault() bool {
 }
 
 // openBrowser opens the given URL in the user's default browser.
-// Uses platform-specific commands: xdg-open (Linux), open (macOS), cmd /c start (Windows).
-func openBrowser(url string) error {
+//
+// Indirected through a function variable for the same reason as the clipboard
+// seam: it spawns a real process against the developer's own desktop session.
+// The package's TestMain replaces it so no test can put a window on screen.
+var openBrowser = openBrowserDefault
+
+// openBrowserDefault uses platform-specific commands: xdg-open (Linux),
+// open (macOS), cmd /c start (Windows).
+func openBrowserDefault(url string) error {
 	switch runtime.GOOS {
 	case "linux":
 		return exec.Command("xdg-open", url).Start()

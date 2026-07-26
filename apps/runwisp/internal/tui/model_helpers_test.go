@@ -17,15 +17,41 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
 
-// TestMain neutralizes the clipboard seam package-wide before any test runs.
-// atotto/clipboard.WriteAll shells out to wl-copy/xclip, which blocks
+// TestMain neutralizes the two seams that reach out of the test process and
+// into the developer's live desktop session, package-wide, before any test runs.
+//
+// Clipboard: atotto/clipboard.WriteAll shells out to wl-copy/xclip, which blocks
 // indefinitely on a live Wayland/X11 session — so any copy path a test reaches
 // (CopyToClipboard, copyExecField, the Web-UI/password home fields) would hang
 // the whole package. The default no-op reports success; a test that needs the
 // failure/fallback path overrides clipboardWriteAll itself and restores it.
+//
+// Browser: openBrowser spawns `open`/`xdg-open`. Guarding each call site with
+// stubCanOpenBrowser was a convention, and conventions get forgotten — four
+// tests reached for DISPLAY/WAYLAND_DISPLAY instead, which macOS ignores
+// entirely, so running the suite there threw real browser tabs at whoever ran
+// it. Recording the URL rather than opening it also makes it assertable.
 func TestMain(m *testing.M) {
 	clipboardWriteAll = func(string) error { return nil }
+	openBrowser = func(url string) error {
+		browserOpens = append(browserOpens, url)
+		return nil
+	}
 	os.Exit(m.Run())
+}
+
+// browserOpens records every URL the code under test asked to open. The tui
+// tests are entirely sequential (no t.Parallel anywhere in the package), so a
+// plain slice needs no lock.
+var browserOpens []string
+
+// takeBrowserOpens returns the URLs opened so far and clears the record, so
+// each test starts from a clean slate without an explicit reset.
+func takeBrowserOpens(t *testing.T) []string {
+	t.Helper()
+	opened := browserOpens
+	browserOpens = nil
+	return opened
 }
 
 // newDummyClient returns a non-nil apiclient.Client suitable for confirm-dialog
@@ -788,9 +814,6 @@ func TestFocusHomeField_ClearsExecViewFocus(t *testing.T) {
 // TestActivateHomeField_OpenWebUI verifies the FieldOpenWebUI path produces a
 // non-nil cmd when a launch ticket function is present.
 func TestActivateHomeField_OpenWebUI(t *testing.T) {
-	t.Setenv("DISPLAY", "")
-	t.Setenv("WAYLAND_DISPLAY", "")
-
 	m := newTestModel(nil)
 	m.info.Port = 8181
 	m.launchTicketFunc = func() (string, error) { return "tkt", nil }

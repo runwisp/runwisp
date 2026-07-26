@@ -33,9 +33,6 @@ func TestIsInsecureRemoteURL(t *testing.T) {
 // over a plain-HTTP remote connection is gated behind a confirmation dialog
 // rather than firing the browser (and leaking a session ticket) immediately.
 func TestOpenLaunchURL_InsecureRemoteShowsConfirm(t *testing.T) {
-	t.Setenv("DISPLAY", "")
-	t.Setenv("WAYLAND_DISPLAY", "")
-
 	m := newTestModel(nil)
 	m.launchTicketFunc = func() (string, error) { return "tkt", nil }
 	m.info.ListenURL = "http://192.168.1.10:9477"

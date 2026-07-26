@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCanOpenBrowser(t *testing.T) {
@@ -31,12 +32,25 @@ func TestCanOpenBrowser(t *testing.T) {
 }
 
 func TestOpenBrowser_UnsupportedPlatformErrors(t *testing.T) {
-	// openBrowser on the actual platform spawns a real process, which we
-	// don't want in unit tests. We only assert it doesn't panic for an
-	// empty URL on the current platform: Start() either succeeds (browser
-	// launched) or returns an error from exec. Either is acceptable.
+	// openBrowserDefault, not openBrowser: this is the one test that wants the
+	// real implementation rather than the seam TestMain installed. Calling it on
+	// a supported platform would spawn a browser, so only the fallback arm is
+	// exercised — everywhere else the switch reaches exec and there is nothing
+	// to assert that wouldn't put a window on someone's screen.
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
-		err := openBrowser("about:blank")
+		err := openBrowserDefault("about:blank")
 		assert.ErrorContains(t, err, "unsupported platform")
 	}
+}
+
+// TestBrowserSeamIsNeutralizedInTests is the guard for the whole package: if
+// TestMain ever stops replacing openBrowser, every test that reaches a launch
+// path starts throwing real tabs at whoever runs the suite. That regression is
+// invisible in a passing run — the tests still pass, they just open a browser —
+// so it needs an assertion of its own.
+func TestBrowserSeamIsNeutralizedInTests(t *testing.T) {
+	require.NoError(t, openBrowser("about:blank#seam-check"))
+	opened := takeBrowserOpens(t)
+	assert.Equal(t, []string{"about:blank#seam-check"}, opened,
+		"openBrowser must route to the recorder, not to xdg-open/open")
 }

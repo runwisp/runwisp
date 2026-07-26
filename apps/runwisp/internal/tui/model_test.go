@@ -173,9 +173,6 @@ func TestModel_OpenLaunchURL_TicketSuccess_ReturnsURLMsg(t *testing.T) {
 }
 
 func TestModel_OpenLaunchURL_TicketError_ReturnsErrMsg(t *testing.T) {
-	t.Setenv("DISPLAY", "")
-	t.Setenv("WAYLAND_DISPLAY", "")
-
 	m := newTestModel(nil)
 	m.launchTicketFunc = func() (string, error) { return "", errBoom() }
 	cmd := m.openLaunchURL("/")
@@ -190,11 +187,16 @@ func TestModel_OpenLaunchURL_TicketError_ReturnsErrMsg(t *testing.T) {
 	if bMsg.Err == nil {
 		t.Fatal("expected non-nil err on ticket failure")
 	}
+	// A ticket that never minted has no URL to open, on any platform.
+	if opened := takeBrowserOpens(t); len(opened) != 0 {
+		t.Fatalf("a failed ticket must not reach the browser, opened %q", opened)
+	}
 }
 
 func TestModel_DownloadExecLog_HappyPath(t *testing.T) {
-	t.Setenv("DISPLAY", "")
-	t.Setenv("WAYLAND_DISPLAY", "")
+	// Exercise the branch that reaches openBrowser on every platform, not just
+	// the graphical ones — TestMain has made that safe.
+	stubCanOpenBrowser(t, true)
 
 	m := newTestModel(nil)
 	m.info.Port = 9090
@@ -214,8 +216,16 @@ func TestModel_DownloadExecLog_HappyPath(t *testing.T) {
 		t.Fatalf("got %T, want OpenBrowserMsg", msg)
 	}
 	// The redirect param is URL-encoded; check the encoded form.
-	if !strings.Contains(bMsg.URL, "%2Fapi%2Ftasks%2Ftask-A%2Fruns%2Fr-1%2Flog%2Fraw") {
-		t.Fatalf("URL missing raw-log target: %q", bMsg.URL)
+	want := "http://localhost:9090/api/auth/launch?ticket=tkt-dl&redirect=%2Fapi%2Ftasks%2Ftask-A%2Fruns%2Fr-1%2Flog%2Fraw"
+	if bMsg.URL != want {
+		t.Fatalf("URL = %q, want %q", bMsg.URL, want)
+	}
+	if !bMsg.BrowserOpened {
+		t.Fatal("BrowserOpened must be true when canOpenBrowser is true")
+	}
+	// And it went to the seam rather than to a real browser.
+	if opened := takeBrowserOpens(t); len(opened) != 1 || opened[0] != want {
+		t.Fatalf("browser opens = %q, want exactly [%q]", opened, want)
 	}
 }
 
