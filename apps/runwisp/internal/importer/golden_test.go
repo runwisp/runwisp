@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/runwisp/runwisp/internal/config"
 )
 
 // updateGolden regenerates the *.golden.toml fixtures from the current parser
@@ -27,10 +25,9 @@ var updateGolden = flag.Bool("update", false, "rewrite the .golden.toml fixtures
 // be read under. Each case's expected TOML lives next to the input with the
 // .crontab suffix replaced by .golden.toml.
 var cronGoldenCases = []struct {
-	name     string
-	file     string
-	opts     CronOptions
-	validate bool // false when the fixture deliberately emits a TODO that won't validate
+	name string
+	file string
+	opts CronOptions
 	// expectNotes is the EXACT set of note kinds the fixture must produce — not a
 	// subset. An import that starts saying something new about a fixture is a
 	// change to what the operator reads, so it should have to be written down
@@ -38,28 +35,28 @@ var cronGoldenCases = []struct {
 	expectNotes []NoteKind
 }{
 	// A per-user `crontab -l` dump: descriptors, wrappers, comments, env, TZ.
-	{name: "user", file: "testdata/cron/user.crontab", validate: true},
+	{name: "user", file: "testdata/cron/user.crontab"},
 	// A system crontab (/etc/crontab) with the extra user column, including a
 	// descriptor line that carries one.
 	// The user column is the one thing a system crontab has that RunWisp can't
 	// fully reproduce: crond runs each job in that user's home, and working_dir
 	// resolves against the daemon's. Said once for the file, not once per row.
-	{name: "system", file: "testdata/cron/system.crontab", opts: CronOptions{System: true}, validate: true,
+	{name: "system", file: "testdata/cron/system.crontab", opts: CronOptions{System: true},
 		expectNotes: []NoteKind{NoteWorkingDirUser}},
 	// Notes-only edge cases (MAILTO, relative SHELL, both '%' forms, dedupe, an
 	// unparseable line) that must surface but still leave a valid config.
-	{name: "messy", file: "testdata/cron/messy.crontab", validate: true, expectNotes: []NoteKind{
+	{name: "messy", file: "testdata/cron/messy.crontab", expectNotes: []NoteKind{
 		NoteMailto, NoteShellNotAbsolute, NotePercentStdin, NotePercentTranslated,
 		NoteLineUnparseable, NoteRenamedCollision,
 	}},
 	// An invalid cron expression becomes a `# TODO` and a non-loadable config —
 	// the import still succeeds and tells the operator exactly what to fix.
-	{name: "invalid", file: "testdata/cron/invalid.crontab", validate: false, expectNotes: []NoteKind{
+	{name: "invalid", file: "testdata/cron/invalid.crontab", expectNotes: []NoteKind{
 		NoteCronUnparseable,
 	}},
 	// A CRON_TZ RunWisp can't load: the expression is fine, the zone isn't, and
 	// the config genuinely doesn't load — so the row must not read clean.
-	{name: "badtz", file: "testdata/cron/badtz.crontab", validate: false, expectNotes: []NoteKind{
+	{name: "badtz", file: "testdata/cron/badtz.crontab", expectNotes: []NoteKind{
 		NoteTimezoneInvalid,
 	}},
 }
@@ -76,7 +73,7 @@ func TestCronGolden(t *testing.T) {
 				t.Fatalf("ParseCrontab: %v", err)
 			}
 			assertReportAccountsForTOML(t, res)
-			checkGolden(t, goldenPath(tc.file), res.TOML(), tc.validate)
+			checkGolden(t, goldenPath(tc.file), res.TOML())
 			checkReportGolden(t, reportGoldenPath(tc.file), res)
 			assertNotes(t, res, tc.expectNotes)
 		})
@@ -125,7 +122,7 @@ func TestSupervisordGolden(t *testing.T) {
 				t.Fatalf("ParseSupervisordReader: %v", err)
 			}
 			assertReportAccountsForTOML(t, res)
-			checkGolden(t, goldenPath(tc.file), res.TOML(), true)
+			checkGolden(t, goldenPath(tc.file), res.TOML())
 			checkReportGolden(t, reportGoldenPath(tc.file), res)
 			assertNotes(t, res, tc.expectNotes)
 		})
@@ -142,7 +139,7 @@ func TestSupervisordIncludeGolden(t *testing.T) {
 		t.Fatalf("ParseSupervisordFiles: %v", err)
 	}
 	assertReportAccountsForTOML(t, res)
-	checkGolden(t, "testdata/supervisord/include/expected.golden.toml", res.TOML(), true)
+	checkGolden(t, "testdata/supervisord/include/expected.golden.toml", res.TOML())
 	checkReportGolden(t, "testdata/supervisord/include/expected.golden.report.txt", res)
 }
 
@@ -248,7 +245,7 @@ func reportGoldenPath(input string) string {
 // TOML doesn't mention.
 func checkReportGolden(t *testing.T, path string, res *Result) {
 	t.Helper()
-	checkGolden(t, path, formatReport(res), false)
+	checkGolden(t, path, formatReport(res))
 }
 
 // goldenPath maps an input fixture path to its sibling golden file by swapping
@@ -259,10 +256,13 @@ func goldenPath(input string) string {
 }
 
 // checkGolden compares got against the golden file at path, or rewrites it when
-// -update is set. Every golden output is also round-tripped through
-// config.Load: the generated TOML is the import command's promise, and an
-// import that doesn't even parse would be a silent failure.
-func checkGolden(t *testing.T, path, got string, validate bool) {
+// -update is set.
+//
+// It deliberately does not round-trip through config.Load: this package's tests
+// cannot import config (see load_test.go), and the round-trip now runs against
+// the committed golden files in TestGoldenTOMLLoadBehaviour, which covers every
+// fixture instead of the ones that opted in.
+func checkGolden(t *testing.T, path, got string) {
 	t.Helper()
 	if *updateGolden {
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
@@ -276,39 +276,5 @@ func checkGolden(t *testing.T, path, got string, validate bool) {
 	if got != string(want) {
 		t.Errorf("output does not match %s (run with -update to refresh)\n--- got ---\n%s\n--- want ---\n%s",
 			path, got, want)
-	}
-	if validate {
-		assertGeneratedConfigLoads(t, got)
-	}
-}
-
-// assertGeneratedConfigDoesNotLoad is the inverse assertion, for the fixtures
-// whose whole point is that the operator has something to fix: it proves the
-// import flagged a real load failure rather than a hypothetical one.
-func assertGeneratedConfigDoesNotLoad(t *testing.T, toml string) {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "runwisp.toml")
-	if err := os.WriteFile(path, []byte(toml), 0o600); err != nil {
-		t.Fatalf("write temp config: %v", err)
-	}
-	if _, err := config.Load(path); err == nil {
-		t.Fatalf("expected this config NOT to load\n--- toml ---\n%s", toml)
-	}
-}
-
-// assertGeneratedConfigLoads proves the emitted TOML parses and validates,
-// mirroring the config.Load round-trip the CLI performs after an import. The
-// fixtures are curated to be clean (no unresolved TODOs), so a load failure is
-// a real regression in the importer.
-func assertGeneratedConfigLoads(t *testing.T, toml string) {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "runwisp.toml")
-	if err := os.WriteFile(path, []byte(toml), 0o600); err != nil {
-		t.Fatalf("write temp config: %v", err)
-	}
-	if _, err := config.Load(path); err != nil {
-		t.Fatalf("generated TOML failed to validate via config.Load: %v\n--- toml ---\n%s", err, toml)
 	}
 }

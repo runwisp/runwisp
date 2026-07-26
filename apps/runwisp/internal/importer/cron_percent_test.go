@@ -112,7 +112,6 @@ func TestCronPercentStdinBlocksTheJob(t *testing.T) {
 	// operator will read — naming the loss without naming what was lost leaves
 	// them re-reading the crontab.
 	mustContain(t, out, "the body")
-	assertGeneratedConfigLoads(t, out)
 }
 
 // TestCronPercentStdinIsNotInTheDerivedName guards a quieter consequence of
@@ -140,7 +139,6 @@ func TestCronEscapedPercentIsTranslated(t *testing.T) {
 	if !hasNoteKind(res, NotePercentTranslated) {
 		t.Fatalf("expected a translation note, got %+v", allNotes(res))
 	}
-	assertGeneratedConfigLoads(t, out)
 }
 
 // TestCronPercentFreeCommandStaysClean is the other side: the translation must

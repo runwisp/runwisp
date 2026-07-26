@@ -253,7 +253,6 @@ func TestCronPathLayersOverTheCleanBase(t *testing.T) {
 	out := res.TOML()
 	mustContain(t, out, `env_base = "clean"`)
 	mustContain(t, out, `PATH = "/opt/bin:/usr/bin"`)
-	assertGeneratedConfigLoads(t, out)
 }
 
 // TestCronRunsInTheHomeDirectory: crond runs a job in the invoking user's home,
@@ -366,7 +365,6 @@ func TestCronBadTimezoneBlocksTheJob(t *testing.T) {
 	if !hasNoteKind(res, NoteTimezoneInvalid) {
 		t.Fatalf("expected a timezone note, got %+v", allNotes(res))
 	}
-	assertGeneratedConfigDoesNotLoad(t, out)
 }
 
 // TestCronBadTimezoneBlocksARebootJob is the half a one-line fix would miss.
