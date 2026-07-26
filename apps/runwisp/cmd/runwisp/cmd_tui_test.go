@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/chap"
@@ -66,10 +67,34 @@ func (d fakeDaemon) start(t *testing.T) *httptest.Server {
 }
 
 // isolatedTokenCache points the token cache at a fresh temp dir so tests neither
-// read a developer's real cache nor leak into it.
-func isolatedTokenCache(t *testing.T) {
+// read a developer's real cache nor leak into it. It returns the directory so a
+// test can assert on where the cache landed.
+//
+// HOME is what actually does the work on macOS: os.UserCacheDir resolves
+// $HOME/Library/Caches there and ignores XDG_CACHE_HOME entirely. XDG_CACHE_HOME
+// stays for Linux, where it takes precedence over $HOME/.cache.
+func isolatedTokenCache(t *testing.T) string {
 	t.Helper()
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", dir)
+	return dir
+}
+
+// TestIsolatedTokenCacheActuallyIsolates guards the helper itself. Setting only
+// XDG_CACHE_HOME left macOS runs pointed at the developer's real
+// ~/Library/Caches/runwisp/tokens.json, keyed by base URL — so a test whose
+// httptest server happened to reuse a port a previous run had authenticated
+// against found a live token and skipped the handshake it was written to
+// exercise. That failure surfaced as an unreproducible flake in whichever test
+// drew the unlucky port.
+func TestIsolatedTokenCacheActuallyIsolates(t *testing.T) {
+	dir := isolatedTokenCache(t)
+	path, err := tokenCachePath()
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(path, dir),
+		"token cache resolved to %q, outside the test's temp dir %q — the suite is reading and writing the developer's real cache",
+		path, dir)
 }
 
 func TestRunTUIViaRemote_Unreachable(t *testing.T) {
