@@ -83,7 +83,7 @@ func DiffTasks(old, updated map[string]*model.Task) Diff {
 			d.Changed = append(d.Changed, TaskChange{Name: name, Reasons: reasons})
 			continue
 		}
-		if oldTask.Staged != newTask.Staged {
+		if oldTask.Source != newTask.Source || oldTask.SourceFile != newTask.SourceFile {
 			d.Restamped = append(d.Restamped, name)
 		}
 	}
@@ -105,7 +105,7 @@ func DiffTasks(old, updated map[string]*model.Task) Diff {
 // when they are identical. The whole-struct DeepEqual short-circuits the common
 // "nothing changed" case; the grouped comparisons then attribute the diff.
 //
-// Staged is masked out before the comparison because it is derived provenance,
+// Provenance is masked out before the comparison because it is derived,
 // not definition: `runwisp promote` moves a task's block from the staging file
 // into the root without touching a single thing about what it runs. Leaving it in
 // would make a promote look like a settings change and bounce a running service
@@ -139,11 +139,17 @@ func changeReasons(oldTask, newTask *model.Task) []ChangeReason {
 
 // sameDefinition reports whether two resolved definitions of one task are
 // identical apart from derived provenance. The structs are copied so masking
-// Staged never mutates the caller's config; the copies share the same maps and
-// slices, which DeepEqual compares by value anyway.
+// never mutates the caller's config; the copies share the same maps and slices,
+// which DeepEqual compares by value anyway.
+//
+// Both provenance fields are masked, not just Source. A cron-sourced task whose
+// crontab was renamed, or one promoted into the root, changes SourceFile without
+// changing a thing about what runs — and an unmasked field here would report it
+// as Changed, which reschedules the cron entry and recycles a service.
 func sameDefinition(oldTask, newTask *model.Task) bool {
 	a, b := *oldTask, *newTask
-	a.Staged, b.Staged = false, false
+	a.Source, b.Source = model.SourceNative, model.SourceNative
+	a.SourceFile, b.SourceFile = "", ""
 	return reflect.DeepEqual(&a, &b)
 }
 

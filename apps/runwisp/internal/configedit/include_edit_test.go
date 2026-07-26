@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -120,8 +121,8 @@ func TestEnsureStagingInclude_WiredConfigLoads(t *testing.T) {
 	cfg, err := config.Load(rootPath)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"native", "imported"}, taskNames(cfg))
-	assert.True(t, findTask(t, cfg, "imported").Staged)
-	assert.False(t, findTask(t, cfg, "native").Staged)
+	assert.True(t, findTask(t, cfg, "imported").Source == model.SourceStaged)
+	assert.False(t, findTask(t, cfg, "native").Source == model.SourceStaged)
 }
 
 func TestEnsureStagingInclude_InvalidTOMLErrors(t *testing.T) {

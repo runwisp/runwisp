@@ -214,29 +214,11 @@ func resolveCronOptions(source string, systemFlag, systemSet bool) importer.Cron
 	switch {
 	case systemSet:
 		return importer.CronOptions{System: systemFlag}
-	case isSystemCrontabPath(source):
+	case importer.IsSystemCrontabPath(source):
 		return importer.CronOptions{System: true}
 	default:
 		return importer.CronOptions{Detect: true}
 	}
-}
-
-// isSystemCrontabPath reports whether a source path is a conventional
-// system-crontab location, whose lines carry a user column.
-func isSystemCrontabPath(source string) bool {
-	if source == "" || source == "-" {
-		return false
-	}
-	clean := filepath.Clean(source)
-	if clean == "/etc/crontab" {
-		return true
-	}
-	for _, part := range strings.Split(clean, string(filepath.Separator)) {
-		if part == "cron.d" {
-			return true
-		}
-	}
-	return false
 }
 
 // openImportSource returns a reader for a file path, or stdin when source is

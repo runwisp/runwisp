@@ -85,7 +85,11 @@ func snapshotInputs(path string, cfg *Config) (files []fileDigest, root string, 
 	if cfg != nil {
 		paths = append(paths, cfg.watchFiles...)
 		globs = cfg.includeGlobs
-		bootMatched = append([]string(nil), cfg.includeFiles...)
+		// includeGlobs covers both [daemon].include and [daemon].include_cron, so
+		// bootMatched must cover both too: Stale compares one against the other, and
+		// a glob whose matches were never recorded reads as "a file appeared" on
+		// every single call.
+		bootMatched = append(append([]string(nil), cfg.includeFiles...), cfg.cronFiles...)
 		sort.Strings(bootMatched)
 	}
 

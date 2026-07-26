@@ -171,6 +171,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		TrustedProxies:    os.Getenv("RUNWISP_TRUST_PROXY"),
 		DaemonInfo:        daemonInfo,
 		ConfigStale:       configSnap.Stale,
+		ConfigWarnings:    configWarningsFn(reconciler, cfg.Config),
 		DaemonLogBuffer:   logBuffer,
 		MetricsEnabled:    cfg.Config.Daemon.MetricsEnabled,
 		MetricsListen:     cfg.Config.Daemon.MetricsListen,
@@ -286,6 +287,17 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 		Now:        time.Now,
 	})
 	return r, r.Reconcile
+}
+
+// configWarningsFn returns the hook /api/info calls for the live config's
+// non-fatal findings. It prefers the reconciler's baseline so a reload's warnings
+// replace boot's; in a mode with no reconciler (cloud) the boot config is the live
+// one and can't change.
+func configWarningsFn(r *runtime.Reconciler, boot *config.Config) func() []string {
+	if r != nil {
+		return r.Warnings
+	}
+	return func() []string { return config.Warnings(boot) }
 }
 
 // isInteractiveTerminal reports whether both stdin (TUI key input) and stdout

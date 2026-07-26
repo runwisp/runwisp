@@ -87,15 +87,15 @@ func runPromote(cmd *cobra.Command, args []string, f Flags, opts promoteOpts) er
 		// Only reachable via --all: nothing is staged, so the config is already
 		// where the operator wants it. Exit 0 so re-running this in a script is a
 		// no-op rather than a failure.
-		fmt.Fprintln(out, "Nothing to promote — no staged tasks.")
+		fmt.Fprintln(out, "Nothing to promote — every task in your config is already native.")
 		return nil
 	}
 
 	if opts.dryRun {
-		return printPromotePlan(out, layout, names)
+		return printPromotePlan(out, layout, names, cfg)
 	}
 
-	res, err := configedit.Promote(configedit.PromoteRequest{Layout: layout, Names: names})
+	res, err := configedit.Promote(configedit.PromoteRequest{Layout: layout, Names: names, Config: cfg})
 	if err != nil {
 		return promoteError(err, layout)
 	}
@@ -120,18 +120,19 @@ func checkPromoteArgs(args []string, opts promoteOpts, cfg *config.Config, layou
 	if !opts.all && len(args) == 0 {
 		return &userFacingError{
 			title:   "name a task to promote, or pass --all",
-			details: stagedHint(configedit.StagedNames(cfg, layout)),
+			details: promotableHint(configedit.PromotableNames(cfg)),
 		}
 	}
 	return nil
 }
 
-// stagedHint lists what is currently promotable, or says plainly that nothing is.
-func stagedHint(staged []string) string {
-	if len(staged) == 0 {
-		return "No tasks are staged right now — everything in your config is already native."
+// promotableHint lists what is currently promotable, or says plainly that nothing
+// is.
+func promotableHint(names []string) string {
+	if len(names) == 0 {
+		return "Nothing is promotable right now — everything in your config is already native."
 	}
-	return "Staged tasks:\n  " + strings.Join(staged, "\n  ")
+	return "Promotable tasks:\n  " + strings.Join(names, "\n  ")
 }
 
 // promoteSelectError phrases a refused selection. Naming a task that is already
@@ -180,14 +181,13 @@ func promoteError(err error, layout configedit.Layout) error {
 
 // printPromotePlan is --dry-run: exactly what would move, and where to, without
 // touching a file.
-func printPromotePlan(out io.Writer, layout configedit.Layout, names []string) error {
-	_, blocks, err := configedit.PreviewBlocks(layout, names)
+func printPromotePlan(out io.Writer, layout configedit.Layout, names []string, cfg *config.Config) error {
+	_, blocks, err := configedit.PreviewBlocks(layout, names, cfg)
 	if err != nil {
 		return promoteError(err, layout)
 	}
 
-	fmt.Fprintf(out, "Would move %s from %s into %s:\n",
-		pluralizeCounts(countBlocks(blocks)), config.StagingRelPath(), layout.RootPath)
+	fmt.Fprintf(out, "Would add %s to %s:\n", pluralizeCounts(countBlocks(blocks)), layout.RootPath)
 	for _, b := range blocks {
 		fmt.Fprintf(out, "\n%s\n", strings.TrimRight(b.Text, "\n"))
 	}
@@ -208,7 +208,7 @@ func printPromoted(out io.Writer, res configedit.PromoteResult, layout configedi
 
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "What the daemon runs did not change — only which file defines it.\n")
-	fmt.Fprintf(out, "Run `runwisp reload` to clear the staged marker on a running daemon.\n")
+	fmt.Fprintf(out, "Run `runwisp reload` to clear the provenance marker on a running daemon.\n")
 }
 
 // countBlocks splits promoted blocks into task and service counts for the
@@ -225,17 +225,17 @@ func countBlocks(blocks []configedit.Block) (tasks, services int) {
 }
 
 // promoteStagedFooter is the nudge `runwisp list` prints when the config still
-// holds imported tasks, so the promote path is discoverable from the command an
-// operator already runs.
+// holds tasks RunWisp derived rather than the operator writing them, so the promote
+// path is discoverable from the command an operator already runs.
 func promoteStagedFooter(cfg *config.Config, cfgPath string) string {
-	staged := configedit.StagedNames(cfg, configedit.NewLayout(cfgPath))
-	if len(staged) == 0 {
+	names := configedit.PromotableNames(cfg)
+	if len(names) == 0 {
 		return ""
 	}
 	noun := "task is"
-	if len(staged) > 1 {
+	if len(names) > 1 {
 		noun = "tasks are"
 	}
-	return fmt.Sprintf("%d %s staged (imported, not yet native) — `runwisp promote <name>` moves one into %s.",
-		len(staged), noun, filepath.Base(cfgPath))
+	return fmt.Sprintf("%d %s imported or read from a crontab, not yet native — `runwisp promote <name>` moves one into %s.",
+		len(names), noun, filepath.Base(cfgPath))
 }

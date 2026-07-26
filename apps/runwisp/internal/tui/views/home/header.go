@@ -89,6 +89,15 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 			Render("\u26a0 runwisp.toml changed \u2014 press R to reload")
 		parts = append(parts, warn)
 	}
+	if n := len(info.ConfigWarnings); n > 0 {
+		// Warning color for the same reason as the stale notice: these name jobs the
+		// daemon is not running, and nothing else in the TUI would ever mention them.
+		warn := lipgloss.NewStyle().
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorWarning).
+			Render(fmt.Sprintf("\u26a0 %s \u2014 see `runwisp validate`", pluralWarnings(n)))
+		parts = append(parts, warn)
+	}
 	if len(parts) > 0 {
 		sub := muted.Render("  ") + strings.Join(parts, muted.Render("  \u00b7  "))
 		b.WriteString(uikit.PadLine(sub, w, uikit.ColorBgLight))
@@ -298,4 +307,12 @@ func NextCronRun(schedule string) string {
 	}
 
 	return next.Format("15:04:05") + " (in " + relative + ")"
+}
+
+// pluralWarnings labels a config-warning count without the bare "1 warnings".
+func pluralWarnings(n int) string {
+	if n == 1 {
+		return "1 config warning"
+	}
+	return fmt.Sprintf("%d config warnings", n)
 }

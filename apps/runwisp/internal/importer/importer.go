@@ -126,6 +126,28 @@ func (r *Result) TOMLFor(keep func(Item) bool) string {
 		sb.WriteString(line)
 		sb.WriteByte('\n')
 	}
+	r.renderBlocks(&sb, keep)
+	return sb.String()
+}
+
+// BlockTOML renders just the blocks belonging to the named entry — its table and
+// any child tables like [tasks.x.env] — with no generated-file banner, so the
+// result can be appended to a config the operator maintains.
+//
+// This is what `runwisp promote` moves for a cron-sourced task. A crontab has no
+// TOML bytes on disk to move, so the promoted definition is the same rendering the
+// live loader decoded, which is what makes the promotion provably behaviour-
+// preserving rather than a re-derivation that might differ.
+func (r *Result) BlockTOML(name string) string {
+	var sb strings.Builder
+	r.renderBlocks(&sb, func(it Item) bool { return it.Name == name })
+	return strings.TrimPrefix(sb.String(), "\n")
+}
+
+// renderBlocks writes every block whose owning row keep accepts. Blocks are
+// emitted in the order the parser produced them; fields keep their insertion order
+// so the output mirrors the source file's logical flow.
+func (r *Result) renderBlocks(sb *strings.Builder, keep func(Item) bool) {
 	for i := range r.blocks {
 		b := &r.blocks[i]
 		if !keep(r.items[b.item]) {
@@ -151,7 +173,6 @@ func (r *Result) TOMLFor(keep func(Item) bool) string {
 			sb.WriteByte('\n')
 		}
 	}
-	return sb.String()
 }
 
 // --- TOML value formatting helpers ---

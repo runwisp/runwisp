@@ -28,7 +28,7 @@ test.describe("dashboard", () => {
 
         // staged-task is defined in fixtures/runwisp.d/imported.toml, so its
         // provenance is derived by the daemon rather than declared — this asserts
-        // the whole path: two-tier TOML → Task.Staged → /api/tasks → the badge.
+        // the whole path: two-tier TOML → Task.Source → /api/tasks → the badge.
         const card = page.getByRole("button", { name: /staged-task/ });
         await expect(card).toBeVisible();
         await expect(card.getByText("staged", { exact: true })).toBeVisible();

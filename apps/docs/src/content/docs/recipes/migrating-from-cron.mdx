@@ -13,8 +13,47 @@ exact same schedules and turns every one of them into something you can watch:
 per-run history, captured stdout/stderr, exit codes, and a notification when
 something breaks.
 
-You don't have to hand-translate your crontab. `runwisp import cron` reads it
-and writes the `runwisp.toml` for you.
+You don't have to hand-translate your crontab. There are two ways in, and you
+can start with either:
+
+- **Point RunWisp at your crontabs and leave them there.** One line of config,
+  no conversion, nothing rewritten. Best if you want visibility today and will
+  tidy up later. Jump to [Read your crontabs as-is](#read-your-crontabs-as-is).
+- **Convert to TOML with `runwisp import cron`.** You end up with a config you
+  own, annotated with anything that needed a human's attention. Best if you want
+  the crontab gone. That's the rest of this page.
+
+## Read your crontabs as-is
+
+If you'd rather not convert anything yet, hand RunWisp the files cron already
+reads:
+
+```toml
+# runwisp.toml
+[daemon]
+include_cron = ["/etc/crontab", "/etc/cron.d/*"]
+```
+
+Start the daemon and every job in those files is a RunWisp task — captured
+output, run history, notifications, a page in the UI — while the crontabs stay
+exactly as they are. Edit one with `crontab -e`, run
+[`runwisp reload`](/operations/reload/), and the change is live. When a job is
+worth owning properly, `runwisp promote <task>` copies its definition into your
+`runwisp.toml` and you delete the cron line whenever you feel like it.
+
+Two things to know before you do this:
+
+- **Disable cron first**, or every job fires twice — once from each scheduler.
+  RunWisp warns at boot if it sees a cron daemon running, but it won't stop it
+  for you.
+- **A job RunWisp can't reproduce is skipped, not guessed at**, and the skip is
+  reported by `file:line` at boot and by `runwisp validate`. The rest of the file
+  keeps running. Run `runwisp import cron` on that file to see the full
+  explanation for each one.
+
+The full rules — which paths parse as the system format, what identity a job
+runs as, how name collisions are resolved — are in
+[`include_cron`](/configuration/daemon/#include_cron).
 
 ## The one-liner
 
@@ -184,8 +223,8 @@ files are written as one unit: if an imported job's name collides with a task
 you already have, the whole write rolls back and tells you, rather than leaving
 your daemon with a config it can't load.
 
-Imported tasks show up as `staged` in `runwisp list` and `status --json` —
-shorthand for "came from an import, not native TOML yet". It's a label, not a
+Imported tasks report `"source": "staged"` in `runwisp list` and `status --json`
+— shorthand for "came from an import, not native TOML yet". It's a label, not a
 limitation: staged tasks are scheduled and run exactly like any other.
 
 ### Graduating a job into your own config
@@ -200,12 +239,12 @@ runwisp promote --all       # move all of them
 That moves the job's block out of `runwisp.d/imported.toml` and into your own
 `runwisp.toml`, comments and all — including any `# TODO` the import left for
 you. Nothing is re-generated, so nothing gets reformatted or lost on the way.
-From then on the job is yours: it's not `staged` any more, and a later
+From then on the job is yours: it reports no `source` any more, and a later
 re-import won't touch it.
 
 Nothing about the job's behaviour changes — only which file defines it. A
 promoted service keeps running, and `runwisp reload` afterwards will honestly
-report _no task changes_; the reload is just there to refresh the `staged`
+report _no task changes_; the reload is just there to refresh the provenance
 label on a live daemon. Use `--reload` to do both in one go, or `--dry-run`
 first if you want to see exactly which bytes would move.
 

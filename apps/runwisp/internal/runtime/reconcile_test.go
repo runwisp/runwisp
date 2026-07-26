@@ -138,9 +138,9 @@ func taskSet(tasks ...*model.Task) map[string]*model.Task {
 // running service. Before Staged was masked out of the diff, the flipped flag read
 // as a settings change and bounced every promoted service.
 func TestReconcile_PromotedServiceIsNotRestarted(t *testing.T) {
-	staged := &model.Task{Name: "worker", Kind: model.KindService, Run: "worker --loop", Instances: 2, Staged: true}
+	staged := &model.Task{Name: "worker", Kind: model.KindService, Run: "worker --loop", Instances: 2, Source: model.SourceStaged}
 	promoted := *staged
-	promoted.Staged = false
+	promoted.Source = model.SourceNative
 
 	mgr, registry, diff := applyDiff(taskSet(staged), taskSet(&promoted))
 
@@ -153,32 +153,32 @@ func TestReconcile_PromotedServiceIsNotRestarted(t *testing.T) {
 
 	// The live set still picks up the new provenance, so the badge clears.
 	assert.Equal(t, []string{"worker"}, mgr.upserted)
-	assert.False(t, registry.Snapshot()["worker"].Staged)
+	assert.False(t, registry.Snapshot()["worker"].Source == model.SourceStaged)
 }
 
 // TestReconcile_PromotedTaskIsNotRescheduled is the cron-task half: a promoted
 // task keeps its schedule untouched. A nil scheduler would panic if apply tried to
 // reschedule, which is exactly the assertion.
 func TestReconcile_PromotedTaskIsNotRescheduled(t *testing.T) {
-	staged := &model.Task{Name: "backup", Cron: "0 3 * * *", Run: "backup.sh", Staged: true}
+	staged := &model.Task{Name: "backup", Cron: "0 3 * * *", Run: "backup.sh", Source: model.SourceStaged}
 	promoted := *staged
-	promoted.Staged = false
+	promoted.Source = model.SourceNative
 
 	mgr, registry, diff := applyDiff(taskSet(staged), taskSet(&promoted))
 
 	assert.True(t, diff.IsEmpty(), "a promote is not a task change the operator needs to see")
 	assert.Equal(t, []string{"backup"}, diff.Restamped)
 	assert.Equal(t, []string{"backup"}, mgr.upserted)
-	assert.False(t, registry.Snapshot()["backup"].Staged)
+	assert.False(t, registry.Snapshot()["backup"].Source == model.SourceStaged)
 }
 
 // TestReconcile_ChangedServiceIsStillRecycled guards the masking from going too
 // far: a genuine definition change must still recycle the service.
 func TestReconcile_ChangedServiceIsStillRecycled(t *testing.T) {
-	before := &model.Task{Name: "worker", Kind: model.KindService, Run: "worker --loop", Staged: true}
+	before := &model.Task{Name: "worker", Kind: model.KindService, Run: "worker --loop", Source: model.SourceStaged}
 	after := *before
 	after.Run = "worker --loop --verbose"
-	after.Staged = false
+	after.Source = model.SourceNative
 
 	mgr, _, diff := applyDiff(taskSet(before), taskSet(&after))
 

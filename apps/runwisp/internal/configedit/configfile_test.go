@@ -69,5 +69,5 @@ func TestWriteInit_ScaffoldIsNotStaged(t *testing.T) {
 
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
-	assert.False(t, findTask(t, cfg, "hello").Staged)
+	assert.False(t, findTask(t, cfg, "hello").Source == model.SourceStaged)
 }

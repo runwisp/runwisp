@@ -850,6 +850,7 @@ func (m Model) handleSystemStats(msg uikit.SystemStatsMsg) (tea.Model, tea.Cmd) 
 func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
 	if msg.Err == nil && msg.Info != nil {
 		m.info.ConfigStale = msg.Info.ConfigStale
+		m.info.ConfigWarnings = msg.Info.ConfigWarnings
 		m.info.ServiceManaged = msg.Info.ServiceManaged
 	}
 	return m, nil
@@ -877,6 +878,7 @@ func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd
 	if msg.Info != nil {
 		m.info.Tasks = msg.Info.Tasks
 		m.info.ConfigStale = msg.Info.ConfigStale
+		m.info.ConfigWarnings = msg.Info.ConfigWarnings
 		m.sidebar.Rebuild(msg.Info.Tasks)
 		m.execList.SetFilter(m.sidebar.ActiveTask())
 		m.recalcExecListHeight()

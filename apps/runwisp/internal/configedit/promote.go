@@ -10,14 +10,25 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 )
 
-// Promotion is the second half of the import story. `import` stages jobs in the
-// machine-owned runwisp.d/imported.toml; promoting one moves its block into the
-// operator's own runwisp.toml, where they own it outright — no more `staged`
-// marker, no more risk of a re-import touching it.
+// Promotion is the second half of both migration stories. `import` stages jobs in
+// the machine-owned runwisp.d/imported.toml and `[daemon] include_cron` reads them
+// straight out of a crontab; promoting one puts its block in the operator's own
+// runwisp.toml, where they own it outright — no more provenance marker, no more
+// risk of a re-import touching it.
 //
 // It is a move, not a conversion: the bytes that leave the staging file are the
 // bytes that arrive in the root (see block.go). Nothing about what the daemon
 // runs changes, which is why `promote` is safe to run against a live daemon.
+//
+// A cron-sourced task is the one asymmetry. Its definition has no TOML bytes on
+// disk to move — the crontab is the definition, and RunWisp never writes to it —
+// so promoting one *copies* the block the live loader rendered
+// (config.CronBlockTOML) into the root and leaves the crontab alone. That still
+// preserves behaviour exactly, because it is the same text the daemon decoded to
+// build the running task. On the next load the operator's TOML and the crontab say
+// the same thing, the cron copy is skipped as already-defined, and the provenance
+// flips to native on its own — so the cron line can be deleted whenever they get
+// round to it, or never.
 
 // UnknownEntryError reports a requested name that the config doesn't define at
 // all.
@@ -41,9 +52,27 @@ func (e *NotStagedError) Error() string {
 	return fmt.Sprintf("%q is not staged; it is defined in %s", e.Name, e.File)
 }
 
-// StagedNames returns the entries whose definitions live in the staging file, in
+// PromotableNames returns the entries whose definitions RunWisp derived rather
+// than the operator writing them — staged imports and cron-sourced jobs — in
 // config order. It is the set `promote --all` acts on and the set the CLI lists
 // when nudging the operator.
+//
+// It keys off Task.Source rather than comparing origin paths, so a new provenance
+// becomes promotable by being stamped rather than by every caller learning to
+// recognise one more kind of file.
+func PromotableNames(cfg *config.Config) []string {
+	var names []string
+	for i := range cfg.Tasks {
+		if cfg.Tasks[i].Source.Promotable() {
+			names = append(names, cfg.Tasks[i].Name)
+		}
+	}
+	return names
+}
+
+// StagedNames returns just the entries whose definitions live in the staging file,
+// in config order. Distinct from PromotableNames because these are the only ones
+// whose bytes are *moved* out of a file — the rest are copied.
 func StagedNames(cfg *config.Config, layout Layout) []string {
 	var names []string
 	for i := range cfg.Tasks {
@@ -66,11 +95,11 @@ func StagedNames(cfg *config.Config, layout Layout) []string {
 // something specific and deserves to hear why it didn't happen.
 func Select(cfg *config.Config, layout Layout, names []string, all bool) ([]string, error) {
 	if all {
-		return StagedNames(cfg, layout), nil
+		return PromotableNames(cfg), nil
 	}
 
 	staged := make(map[string]struct{}, len(cfg.Tasks))
-	for _, name := range StagedNames(cfg, layout) {
+	for _, name := range PromotableNames(cfg) {
 		staged[name] = struct{}{}
 	}
 
@@ -105,6 +134,12 @@ func notPromotable(cfg *config.Config, name string) error {
 type PromoteRequest struct {
 	Layout Layout
 	Names  []string
+	// Config is the loaded config the names came from — required, since Select
+	// needed one to decide what was promotable in the first place. Promote asks it
+	// which file each name lives in and, for a cron-sourced one, for the block the
+	// live loader rendered. Passing the config rather than a pre-built block map
+	// keeps the caller from having to get that mapping right.
+	Config *config.Config
 }
 
 // PromoteResult reports what moved.
@@ -117,15 +152,56 @@ type PromoteResult struct {
 	StagingRemoved bool
 }
 
-// PreviewBlocks cuts the named entries out of the staging file in memory and
-// returns the residue plus the blocks, without touching a thing on disk. Promote
-// builds on it, so a `--dry-run` preview can't drift from the move it describes.
-func PreviewBlocks(layout Layout, names []string) (remaining []byte, blocks []Block, err error) {
+// PreviewBlocks resolves what a promotion would append and what would be left in
+// the staging file, without touching a thing on disk. Promote builds on it, so a
+// `--dry-run` preview can't drift from the move it describes.
+//
+// blocks come back in the order the operator's names were resolved: staged ones cut
+// out of the staging file, cron-sourced ones rendered from the config. remaining is
+// the staging file's residue, and is nil when nothing staged was selected — a
+// cron-only promotion must not rewrite a file it isn't touching.
+func PreviewBlocks(layout Layout, names []string, cfg *config.Config) (remaining []byte, blocks []Block, err error) {
+	stagedSel, cronSel := splitByProvenance(names, layout, cfg)
+
+	for _, name := range cronSel {
+		text, _ := cfg.CronBlockTOML(name)
+		blocks = append(blocks, Block{Name: name, Table: "tasks", Text: text})
+	}
+	if len(stagedSel) == 0 {
+		return nil, blocks, nil
+	}
+
 	staging, err := os.ReadFile(layout.StagingPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read %s: %w", layout.StagingPath, err)
 	}
-	return ExtractBlocks(staging, names)
+	remaining, staged, err := ExtractBlocks(staging, stagedSel)
+	if err != nil {
+		return nil, nil, err
+	}
+	return remaining, append(staged, blocks...), nil
+}
+
+// splitByProvenance sorts selected names into the ones whose bytes are moved out
+// of the staging file and the ones copied from a cron source, each keeping the
+// caller's order.
+//
+// A name is cron-sourced only if the config positively has a rendered block for
+// it. Identifying the new case rather than everything-that-isn't-staged means a
+// name the config can't classify falls through to the staging path, which is the
+// behaviour that predates cron sources and the one whose failure mode is a clear
+// "no such block in the staging file".
+func splitByProvenance(names []string, layout Layout, cfg *config.Config) (staged, cron []string) {
+	for _, name := range names {
+		if cfg != nil {
+			if _, ok := cfg.CronBlockTOML(name); ok {
+				cron = append(cron, name)
+				continue
+			}
+		}
+		staged = append(staged, name)
+	}
+	return staged, cron
 }
 
 // Promote moves the named entries out of the staging file and into the root
@@ -143,7 +219,7 @@ func Promote(req PromoteRequest) (PromoteResult, error) {
 		return res, nil
 	}
 
-	remaining, blocks, err := PreviewBlocks(req.Layout, req.Names)
+	remaining, blocks, err := PreviewBlocks(req.Layout, req.Names, req.Config)
 	if err != nil {
 		return res, err
 	}
@@ -152,14 +228,18 @@ func Promote(req PromoteRequest) (PromoteResult, error) {
 		return res, fmt.Errorf("read %s: %w", req.Layout.RootPath, err)
 	}
 	res.Promoted = blocks
-	res.StagingRemoved = !HasEntries(remaining)
 
 	txn := New()
 	txn.Write(req.Layout.RootPath, AppendBlocks(root, blocks), DefaultPerm)
-	if res.StagingRemoved {
-		txn.Remove(req.Layout.StagingPath)
-	} else {
-		txn.Write(req.Layout.StagingPath, remaining, DefaultPerm)
+	// remaining is nil for a cron-only promotion: there is no staging file in play,
+	// so neither rewriting nor deleting it is correct.
+	if remaining != nil {
+		res.StagingRemoved = !HasEntries(remaining)
+		if res.StagingRemoved {
+			txn.Remove(req.Layout.StagingPath)
+		} else {
+			txn.Write(req.Layout.StagingPath, remaining, DefaultPerm)
+		}
 	}
 
 	if err := txn.Apply(func() error {

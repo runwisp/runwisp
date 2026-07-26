@@ -73,8 +73,8 @@ func TestCLIImportThenPromote(t *testing.T) {
 	assert.Contains(t, out, "Nothing to promote")
 }
 
-// listedStaged reports each configured task's staged flag via `list --json`, the
-// surface the UI and any agent reads.
+// listedStaged reports, per configured task, whether `list --json` calls it
+// staged — the surface the UI and any agent reads.
 func listedStaged(t *testing.T, workDir, binaryPath string) map[string]bool {
 	t.Helper()
 
@@ -84,14 +84,14 @@ func listedStaged(t *testing.T, workDir, binaryPath string) map[string]bool {
 	var doc struct {
 		Tasks []struct {
 			Name   string `json:"name"`
-			Staged bool   `json:"staged"`
+			Source string `json:"source"`
 		} `json:"tasks"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(out), &doc), "list --json output: %s", out)
 
 	staged := make(map[string]bool, len(doc.Tasks))
 	for _, task := range doc.Tasks {
-		staged[task.Name] = task.Staged
+		staged[task.Name] = task.Source == "staged"
 	}
 	return staged
 }

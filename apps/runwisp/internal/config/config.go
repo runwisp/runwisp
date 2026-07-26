@@ -75,10 +75,13 @@ func applyTLSEnvOverride(cfg *Config) error {
 
 // collectWatchFiles resolves every on-disk input Snapshot should watch beyond
 // the root config: included TOML files plus each env_file, each against the dir
-// of the config that declared it. secrets_file is intentionally excluded,
-// matching the pre-include behavior.
+// of the config that declared it, plus every crontab read via include_cron — so
+// `crontab -e` makes Snapshot.Stale() report "config changed on disk" with no
+// machinery of its own. secrets_file is intentionally excluded, matching the
+// pre-include behavior.
 func collectWatchFiles(cfg *Config, dirs entrySources) []string {
 	files := append([]string(nil), cfg.includeFiles...)
+	files = append(files, cfg.cronFiles...)
 	if cfg.Defaults.EnvFile != "" {
 		files = append(files, resolveAgainst(dirs.root, cfg.Defaults.EnvFile))
 	}
@@ -226,7 +229,8 @@ func homeIsTheRunUsers(task *model.Task) bool {
 // here, so future advisory checks land in one place and stay in sync.
 func Warnings(cfg *Config) []string {
 	w := append(gracefulStopWarnings(cfg), nonPosixShellWarnings(cfg)...)
-	return append(w, composeExecServiceWarnings(cfg)...)
+	w = append(w, composeExecServiceWarnings(cfg)...)
+	return append(w, cronSourceWarnings(cfg)...)
 }
 
 // composeExecServiceWarnings reports long-running services running in compose

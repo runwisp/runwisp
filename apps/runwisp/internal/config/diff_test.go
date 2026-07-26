@@ -49,9 +49,9 @@ func TestDiffTasks_IdenticalIsEmpty(t *testing.T) {
 // must not become a Changed entry — the reconciler acts on those by rescheduling
 // cron entries and recycling services.
 func TestDiffTasks_ProvenanceOnlyChangeIsRestamped(t *testing.T) {
-	staged := &model.Task{Name: "a", Run: "echo", Cron: "@daily", Staged: true}
+	staged := &model.Task{Name: "a", Run: "echo", Cron: "@daily", Source: model.SourceStaged}
 	promoted := *staged
-	promoted.Staged = false
+	promoted.Source = model.SourceNative
 
 	d := DiffTasks(tasksMap(staged), tasksMap(&promoted))
 
@@ -67,7 +67,7 @@ func TestDiffTasks_ProvenanceOnlyChangeIsRestamped(t *testing.T) {
 // that genuinely differs is still a Changed entry, even when its provenance moved
 // in the same reload.
 func TestDiffTasks_RealChangeIsNotRestamped(t *testing.T) {
-	before := &model.Task{Name: "a", Run: "echo old", Cron: "@daily", Staged: true}
+	before := &model.Task{Name: "a", Run: "echo old", Cron: "@daily", Source: model.SourceStaged}
 	after := &model.Task{Name: "a", Run: "echo new", Cron: "@daily"}
 
 	d := DiffTasks(tasksMap(before), tasksMap(after))

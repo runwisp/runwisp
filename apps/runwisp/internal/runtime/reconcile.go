@@ -99,9 +99,23 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 	r.snapshot.Refresh(r.configPath, newCfg, r.now())
 
 	result := diff.ToResult()
+	result.Warnings = config.Warnings(newCfg)
 	slog.Info("Configuration reloaded",
 		"added", len(result.Added), "removed", len(result.Removed), "changed", len(result.Changed))
 	return result, nil
+}
+
+// Warnings reports the live config's non-fatal findings — chiefly the crontab
+// jobs include_cron declined to schedule.
+//
+// It reads the reconciler's baseline rather than a boot-time copy because a
+// reload can introduce a skip (or fix one), and a count captured at startup would
+// keep saying whatever was true then. The whole point of reporting a skipped job
+// is that nothing else will.
+func (r *Reconciler) Warnings() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return config.Warnings(r.baseline)
 }
 
 // apply mutates the live set in an order that never leaves a half-state:

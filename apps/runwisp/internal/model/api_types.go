@@ -16,6 +16,11 @@ type ReloadResult struct {
 	Added   []string           `json:"added" doc:"Names of tasks added by the reload"`
 	Removed []string           `json:"removed" doc:"Names of tasks removed by the reload"`
 	Changed []ReloadTaskChange `json:"changed" doc:"Tasks whose definition changed, with the reasons"`
+	// Warnings carries the newly-live config's non-fatal findings — chiefly the
+	// crontab jobs include_cron declined to schedule. Without it a `crontab -e`
+	// followed by `runwisp reload` would report nothing about the job that didn't
+	// come back, and the reload is exactly the moment the operator is watching.
+	Warnings []string `json:"warnings,omitempty" doc:"Non-fatal findings in the newly-live config, e.g. crontab jobs that could not be scheduled"`
 }
 
 // ReloadTaskChange names a changed task and the human-readable reasons its

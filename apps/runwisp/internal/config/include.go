@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // loadWithIncludes loads the root config and any files pulled in via
@@ -56,31 +58,52 @@ func loadWithIncludes(path string) (*Config, entrySources, error) {
 		}
 	}
 
+	// Cron sources merge after the TOML includes and before buildConfig, so
+	// defaults, validation, and the reload diff treat a cron-sourced task exactly
+	// like a hand-written one. Doing it after buildConfig would need a second,
+	// differently-behaved path from crontab to running task.
+	cron, err := mergeCronSources(root, root.Daemon.IncludeCron, rootDir, path, src.byName, matched)
+	if err != nil {
+		return nil, entrySources{}, err
+	}
+
 	cfg, err := buildConfig(root)
 	if err != nil {
 		return nil, entrySources{}, err
 	}
 	cfg.origins = src.byName
-	markStaged(cfg, rootDir)
+	markProvenance(cfg, rootDir, cron.originSet())
 	cfg.includeFiles = matched
-	cfg.includeGlobs = globs
+	cfg.includeGlobs = append(globs, cron.globs...)
+	cfg.cronFiles = cron.files
+	cfg.CronFindings = cron.findings
+	cfg.cronBlocks = cron.blocks
 	return cfg, src, nil
 }
 
-// markStaged sets Task.Staged on every task whose origin file is the machine-
-// owned staging file, so the API/UI can surface the "imported, not yet native"
-// badge and Promote affordance. Entries with no recorded origin — compose-
-// generated tasks — are never staged, and the root config is never the staging
-// file. Provenance is derived by exact path, not by basename, so a stray file
-// named imported.toml elsewhere is not mistaken for the staging file.
-// Re-derived every load, so promoting a task into the root clears the flag
-// automatically.
-func markStaged(cfg *Config, rootDir string) {
+// markProvenance stamps Task.Source and Task.SourceFile from each task's origin
+// file, so the API/UI can surface the "staged"/"cron" badge and the Promote
+// affordance, and so the TUI can name the file a definition actually lives in.
+//
+// Derived by exact path, not by basename, so a stray file named imported.toml
+// elsewhere is not mistaken for the staging file. Entries with no recorded origin
+// — compose-generated tasks — stay native. Re-derived every load, so promoting a
+// task into the root flips it to native on its own.
+func markProvenance(cfg *Config, rootDir string, cronFiles map[string]bool) {
 	staging := StagingFilePath(rootDir)
 	for i := range cfg.Tasks {
-		if cfg.OriginFile(cfg.Tasks[i].Name) == staging {
-			cfg.Tasks[i].Staged = true
+		origin := cfg.OriginFile(cfg.Tasks[i].Name)
+		switch {
+		case origin == "":
+			continue
+		case cronFiles[origin]:
+			cfg.Tasks[i].Source = model.SourceCron
+		case origin == staging:
+			cfg.Tasks[i].Source = model.SourceStaged
+		default:
+			continue // the operator's own TOML
 		}
+		cfg.Tasks[i].SourceFile = origin
 	}
 }
 

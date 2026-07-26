@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -70,7 +71,7 @@ func loadLayout(t *testing.T, layout Layout) *config.Config {
 func TestPromote_MovesTheBlockIntoTheRoot(t *testing.T) {
 	layout := twoTierLayout(t, twoTierRoot, twoTierStaging)
 
-	res, err := Promote(PromoteRequest{Layout: layout, Names: []string{"backup"}})
+	res, err := Promote(PromoteRequest{Layout: layout, Config: loadLayout(t, layout), Names: []string{"backup"}})
 	require.NoError(t, err)
 
 	assert.False(t, res.StagingRemoved, "reindex is still staged")
@@ -97,8 +98,8 @@ func TestPromote_MovesTheBlockIntoTheRoot(t *testing.T) {
 	// And the merged config still sees both tasks exactly once.
 	cfg := loadLayout(t, layout)
 	assert.ElementsMatch(t, []string{"mine", "backup", "reindex"}, taskNames(cfg))
-	assert.False(t, findTask(t, cfg, "backup").Staged, "the promoted task is native now")
-	assert.True(t, findTask(t, cfg, "reindex").Staged)
+	assert.False(t, findTask(t, cfg, "backup").Source == model.SourceStaged, "the promoted task is native now")
+	assert.True(t, findTask(t, cfg, "reindex").Source == model.SourceStaged)
 }
 
 // TestPromote_UnresolvedTODOTravelsWithTheTask is why promote is a text move: the
@@ -107,7 +108,7 @@ func TestPromote_MovesTheBlockIntoTheRoot(t *testing.T) {
 func TestPromote_UnresolvedTODOTravelsWithTheTask(t *testing.T) {
 	layout := twoTierLayout(t, twoTierRoot, twoTierStaging)
 
-	_, err := Promote(PromoteRequest{Layout: layout, Names: []string{"reindex"}})
+	_, err := Promote(PromoteRequest{Layout: layout, Config: loadLayout(t, layout), Names: []string{"reindex"}})
 	require.NoError(t, err)
 
 	assert.Contains(t, readFile(t, layout.RootPath),
@@ -119,7 +120,7 @@ func TestPromote_UnresolvedTODOTravelsWithTheTask(t *testing.T) {
 func TestPromote_RemovesTheEmptiedStagingFile(t *testing.T) {
 	layout := twoTierLayout(t, twoTierRoot, twoTierStaging)
 
-	res, err := Promote(PromoteRequest{Layout: layout, Names: []string{"backup", "reindex"}})
+	res, err := Promote(PromoteRequest{Layout: layout, Config: loadLayout(t, layout), Names: []string{"backup", "reindex"}})
 	require.NoError(t, err)
 
 	assert.True(t, res.StagingRemoved)
@@ -137,7 +138,7 @@ func TestPromote_RemovesTheEmptiedStagingFile(t *testing.T) {
 func TestPromote_KeepsTheStagingFileWhenSomethingElseRemains(t *testing.T) {
 	layout := twoTierLayout(t, twoTierRoot, twoTierStaging)
 
-	res, err := Promote(PromoteRequest{Layout: layout, Names: []string{"reindex"}})
+	res, err := Promote(PromoteRequest{Layout: layout, Config: loadLayout(t, layout), Names: []string{"reindex"}})
 	require.NoError(t, err)
 
 	assert.False(t, res.StagingRemoved)
@@ -168,6 +169,8 @@ run = "spare"
 	rootBefore := readFile(t, layout.RootPath)
 	stagingBefore := readFile(t, layout.StagingPath)
 
+	// No Config: this root deliberately doesn't load, so there is none to pass.
+	// Promote must still classify "backup" as staged and roll the move back.
 	_, err := Promote(PromoteRequest{Layout: layout, Names: []string{"backup"}})
 
 	var conflict *ConflictError
@@ -183,7 +186,7 @@ func TestPromote_PreservesRestrictiveModes(t *testing.T) {
 	require.NoError(t, os.Chmod(layout.RootPath, 0o600))
 	require.NoError(t, os.Chmod(layout.StagingPath, 0o600))
 
-	_, err := Promote(PromoteRequest{Layout: layout, Names: []string{"backup"}})
+	_, err := Promote(PromoteRequest{Layout: layout, Config: loadLayout(t, layout), Names: []string{"backup"}})
 	require.NoError(t, err)
 
 	for _, path := range []string{layout.RootPath, layout.StagingPath} {

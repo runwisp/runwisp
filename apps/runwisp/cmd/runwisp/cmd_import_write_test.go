@@ -97,7 +97,7 @@ func TestImportCronTwoTierGreenfield(t *testing.T) {
 
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
-	assert.True(t, loadedTask(t, cfg, "backup").Staged, "imported task should be marked staged")
+	assert.True(t, loadedTask(t, cfg, "backup").Source == model.SourceStaged, "imported task should be marked staged")
 	assert.Contains(t, stderr, "runwisp promote")
 }
 
@@ -117,8 +117,8 @@ func TestImportCronTwoTierBrownfieldWiresInclude(t *testing.T) {
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"native", "imported"}, taskNames(cfg))
-	assert.False(t, loadedTask(t, cfg, "native").Staged)
-	assert.True(t, loadedTask(t, cfg, "imported").Staged)
+	assert.False(t, loadedTask(t, cfg, "native").Source == model.SourceStaged)
+	assert.True(t, loadedTask(t, cfg, "imported").Source == model.SourceStaged)
 }
 
 func TestImportCronTwoTierAlreadyIncludesLeavesRootByteIdentical(t *testing.T) {
@@ -174,7 +174,7 @@ func TestImportCronTwoTierReimportSkipsSameCommand(t *testing.T) {
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"backup"}, taskNames(cfg), "no duplicate backup created")
-	assert.False(t, loadedTask(t, cfg, "backup").Staged, "the surviving backup is the native one")
+	assert.False(t, loadedTask(t, cfg, "backup").Source == model.SourceStaged, "the surviving backup is the native one")
 }
 
 func TestImportCronTwoTierReimportRenamesDifferentCommand(t *testing.T) {
@@ -191,8 +191,8 @@ func TestImportCronTwoTierReimportRenamesDifferentCommand(t *testing.T) {
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"backup", "backup-2"}, taskNames(cfg))
-	assert.False(t, loadedTask(t, cfg, "backup").Staged)
-	assert.True(t, loadedTask(t, cfg, "backup-2").Staged)
+	assert.False(t, loadedTask(t, cfg, "backup").Source == model.SourceStaged)
+	assert.True(t, loadedTask(t, cfg, "backup-2").Source == model.SourceStaged)
 }
 
 func TestImportCronTwoTierContentErrorKeepsFiles(t *testing.T) {
@@ -283,8 +283,8 @@ func TestImportSupervisordTwoTierReimportSkipsPromoted(t *testing.T) {
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"web", "worker"}, taskNames(cfg), "no duplicate web created")
-	assert.False(t, loadedTask(t, cfg, "web").Staged, "the surviving web is the native one")
-	assert.True(t, loadedTask(t, cfg, "worker").Staged)
+	assert.False(t, loadedTask(t, cfg, "web").Source == model.SourceStaged, "the surviving web is the native one")
+	assert.True(t, loadedTask(t, cfg, "worker").Source == model.SourceStaged)
 }
 
 // TestImportTwoTierPreservesRestrictiveConfigMode covers an operator who locked

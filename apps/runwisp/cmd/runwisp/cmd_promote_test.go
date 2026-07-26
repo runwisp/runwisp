@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -84,8 +85,8 @@ func TestPromoteCmd_MovesOneTask(t *testing.T) {
 
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
-	assert.False(t, loadedTask(t, cfg, "backup").Staged)
-	assert.True(t, loadedTask(t, cfg, "worker").Staged)
+	assert.False(t, loadedTask(t, cfg, "backup").Source == model.SourceStaged)
+	assert.True(t, loadedTask(t, cfg, "worker").Source == model.SourceStaged)
 }
 
 func TestPromoteCmd_All(t *testing.T) {
@@ -105,7 +106,7 @@ func TestPromoteCmd_All(t *testing.T) {
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"mine", "backup", "worker"}, taskNames(cfg))
 	for _, name := range []string{"mine", "backup", "worker"} {
-		assert.False(t, loadedTask(t, cfg, name).Staged, "%s should be native now", name)
+		assert.False(t, loadedTask(t, cfg, name).Source == model.SourceStaged, "%s should be native now", name)
 	}
 }
 
@@ -131,7 +132,7 @@ func TestPromoteCmd_DryRunWritesNothing(t *testing.T) {
 	stdout, err := promote(t, cfgPath, nil, promoteOpts{all: true, dryRun: true})
 	require.NoError(t, err)
 
-	assert.Contains(t, stdout, "Would move 1 task, 1 service")
+	assert.Contains(t, stdout, "Would add 1 task, 1 service")
 	assert.Contains(t, stdout, "[tasks.backup]", "the plan shows the block that would move")
 	assert.Contains(t, stdout, "Nothing was written.")
 
@@ -214,7 +215,7 @@ func TestPromoteStagedFooter(t *testing.T) {
 	require.NoError(t, err)
 
 	footer := promoteStagedFooter(cfg, cfgPath)
-	assert.Contains(t, footer, "2 tasks are staged")
+	assert.Contains(t, footer, "2 tasks are imported or read from a crontab")
 	assert.Contains(t, footer, "runwisp promote <name>")
 
 	// Promoting one leaves singular phrasing; promoting the rest drops the footer.
@@ -222,7 +223,7 @@ func TestPromoteStagedFooter(t *testing.T) {
 	require.NoError(t, err)
 	cfg, err = config.Load(cfgPath)
 	require.NoError(t, err)
-	assert.Contains(t, promoteStagedFooter(cfg, cfgPath), "1 task is staged")
+	assert.Contains(t, promoteStagedFooter(cfg, cfgPath), "1 task is imported or read from a crontab")
 
 	_, err = promote(t, cfgPath, nil, promoteOpts{all: true})
 	require.NoError(t, err)
@@ -239,7 +240,7 @@ func TestListCmd_FooterOnlyWhenSomethingIsStaged(t *testing.T) {
 	var staged bytes.Buffer
 	require.NoError(t, runList(&staged, Flags{CfgFile: cfgPath}, false))
 	assert.Contains(t, staged.String(), "NAME")
-	assert.Contains(t, staged.String(), "2 tasks are staged")
+	assert.Contains(t, staged.String(), "2 tasks are imported or read from a crontab")
 
 	_, err := promote(t, cfgPath, nil, promoteOpts{all: true})
 	require.NoError(t, err)

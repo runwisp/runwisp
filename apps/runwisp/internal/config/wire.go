@@ -612,11 +612,13 @@ func (w *storageWire) toStorage() (Storage, error) {
 // daemonWire mirrors [daemon] before parsing — the duration string for
 // shutdown_timeout is parsed at config-load time.
 //
-// Include is consumed entirely at load time by loadWithIncludes (glob, merge)
-// and is deliberately absent from the Daemon model: it never reaches the API,
-// UI, or any runtime consumer — the merged task set is the only observable
-// result. Only the root config may set it; [daemon].include in an included
-// file is a hard error.
+// Include and IncludeCron are consumed entirely at load time by loadWithIncludes
+// (glob, merge) and are deliberately absent from the Daemon model: they never
+// reach the API, UI, or any runtime consumer — the merged task set is the only
+// observable result. That absence is what makes editing either one a *reloadable*
+// change: checkNonReloadable compares the Daemon structs, so a field there would
+// make adding a crontab require a restart. Only the root config may set them;
+// either key in an included file is a hard error.
 type daemonWire struct {
 	AllowCloudDispatch bool     `toml:"allow_cloud_dispatch,omitempty"`
 	ShutdownTimeout    string   `toml:"shutdown_timeout,omitempty"`
@@ -627,6 +629,7 @@ type daemonWire struct {
 	TLSCert            string   `toml:"tls_cert,omitempty"`
 	TLSKey             string   `toml:"tls_key,omitempty"`
 	Include            []string `toml:"include,omitempty"`
+	IncludeCron        []string `toml:"include_cron,omitempty"`
 }
 
 func (w *daemonWire) toDaemon() (Daemon, error) {

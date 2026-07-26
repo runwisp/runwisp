@@ -59,6 +59,29 @@ var cronInterpreters = map[string]bool{
 	"curl": true, "wget": true, "make": true, "go": true, "java": true,
 }
 
+// IsSystemCrontabPath reports whether a path is a conventional system-crontab
+// location, whose lines carry a user column between the schedule and the command.
+//
+// It lives here rather than in a caller because it is a fact about the crontab
+// format, and two callers now need the same answer: `runwisp import cron`
+// choosing a default for one file, and the `[daemon] include_cron` loader
+// choosing per file for a whole glob. Two copies of this would be two answers.
+func IsSystemCrontabPath(path string) bool {
+	if path == "" || path == "-" {
+		return false
+	}
+	clean := filepath.Clean(path)
+	if clean == "/etc/crontab" {
+		return true
+	}
+	for _, part := range strings.Split(clean, string(filepath.Separator)) {
+		if part == "cron.d" {
+			return true
+		}
+	}
+	return false
+}
+
 // ParseCrontab converts a crontab into a *Result. It never errors on bad
 // content — malformed lines become Notes so the operator sees them rather than
 // losing them. The io.Reader contract makes it trivial to feed `crontab -l`

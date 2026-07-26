@@ -80,6 +80,11 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 	if srv.configStale != nil {
 		info.ConfigStale = srv.configStale()
 	}
+	// Same reasoning as staleness: a reload can add or clear a warning, and the
+	// DaemonInfo the provider holds was built at boot.
+	if srv.configWarnings != nil {
+		info.ConfigWarnings = srv.configWarnings()
+	}
 	return &DaemonInfoOutput{Body: info}, nil
 }
 

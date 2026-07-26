@@ -41,6 +41,7 @@ include          = ["conf.d/*.toml"]
 | `metrics_enabled`  | `false`  | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                 |
 | `metrics_listen`   | _unset_  | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`.      |
 | `include`          | _unset_  | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                          |
+| `include_cron`     | _unset_  | Glob patterns for real crontabs to read as live task definitions at every load and reload. Point RunWisp at what cron already reads instead of converting everything up front. Only valid in the root config.                        |
 
 ### `shutdown_timeout`
 
@@ -204,6 +205,75 @@ way a root-config edit does: the daemon flags the config as stale in
 (or a restart) re-globs the patterns and picks up the change. Includes
 are resolved fresh on every load, so dropping a new `conf.d/*.toml` in
 place gets it merged on the next reload — no restart required.
+
+### `include_cron`
+
+`include` merges RunWisp TOML. `include_cron` does the same thing with
+**real crontabs** — files in cron's own format, which RunWisp reads and
+never writes:
+
+```toml
+# runwisp.toml
+[daemon]
+include_cron = ["/etc/crontab", "/etc/cron.d/*"]
+```
+
+That's the whole cutover. Every job in those files becomes a RunWisp
+task with captured output, run history, and a page in the UI, and you
+haven't rewritten a single line of cron yet. Editing a crontab works
+exactly the way editing an included TOML file works: the daemon flags the
+config stale, and [`runwisp reload`](/operations/reload/) re-reads it.
+So `crontab -e` followed by `runwisp reload` is the whole workflow.
+
+When you're ready to convert a job to native TOML, `runwisp promote
+
+<task>` writes its definition into `runwisp.toml` — verbatim, the
+definition that was already running. On the next load RunWisp notices
+your TOML says the same thing the crontab does and takes the TOML copy,
+so you can leave the crontab line where it is and delete it whenever you
+feel like it.
+
+:::caution[Stop cron first]
+RunWisp scheduling `/etc/crontab` does not stop cron from also scheduling
+it. Both daemons firing means every job runs twice, which looks like
+nothing at all until a non-idempotent one does it. Disable cron
+(`systemctl disable --now cron`) before you point RunWisp at its files —
+RunWisp warns at boot if it spots a running cron daemon, but it can't
+stop it for you.
+:::
+
+Some details worth knowing:
+
+- **A job RunWisp can't reproduce is skipped, and the rest of the file
+  still runs.** That's what cron does with a malformed entry, so it's
+  what RunWisp does too. Every skip is reported by `file:line` at boot
+  and by `runwisp validate`, so you know exactly which jobs aren't
+  running. `runwisp import cron` on the same file explains each one in
+  more detail.
+- **`/etc/crontab` and `**/cron.d/\*`are read as the system format** —
+the sixth field is a username, and RunWisp runs the job as that user.
+Any other path is read as a`crontab -l`dump with no user column, and
+its jobs run as the account the daemon itself runs as. RunWisp never
+guesses an identity from a filename: naming`/var/spool/cron/crontabs/alice`works, but those jobs run as the
+daemon, not as`alice`.
+- **Task names are derived from the command**, so two crontabs can derive
+  the same one. The second becomes `backup-<crontab name>` rather than
+  quietly replacing the first, and the rename is reported alongside the
+  skips.
+- **RunWisp won't take commands from a file anyone could have written.**
+  A crontab (or its directory) that's group- or world-writable, or owned
+  by neither root nor the daemon's own user, is refused — the whole load
+  fails rather than running shell from it. `chmod 0644` and `chown root`
+  is what cron expects too.
+- **No `${...}` substitution happens on cron text.** Cron doesn't
+  expand it, so neither do we; `0 3 * * * dump.sh ${DB}` reaches the
+  shell exactly as written.
+- **Overlap with `include` is an error.** A file is either RunWisp TOML
+  or a crontab; RunWisp won't guess which.
+
+Everything else about a cron-sourced task is ordinary: `[defaults]`
+applies, notifications fire, `runwisp exec` triggers it, and the reload
+diff treats it exactly like a hand-written one.
 
 ## CLI flags: config, data directory & listen address
 

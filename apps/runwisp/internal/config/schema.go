@@ -36,10 +36,36 @@ type Config struct {
 	includeGlobs []string
 	watchFiles   []string
 
+	// cronFiles are the absolute paths of the crontabs read as live task sources
+	// via [daemon].include_cron at this load, in the order they were merged.
+	cronFiles []string
+
+	// cronBlocks maps a cron-sourced task name to the TOML that produced it, so
+	// `runwisp promote` can move the definition the daemon is actually running
+	// rather than re-deriving one that might differ.
+	cronBlocks map[string]string
+
+	// CronFindings lists what an operator should know about those crontabs: the
+	// jobs RunWisp declined to schedule, and the ones running under a name the
+	// crontab doesn't mention. Exported, unlike the bookkeeping above, because a
+	// skipped job is a failure with no run record to make it visible — Warnings and
+	// /api/info are the only places it can surface. See CronFinding.
+	CronFindings []CronFinding
+
 	// origins maps each task/service/compose-alias name to the absolute path of
 	// the config file that defined it. Load-time bookkeeping behind OriginFile;
-	// never reaches the API/UI, which sees only the derived Task.Staged bool.
+	// never reaches the API/UI, which sees the derived Task.Source instead.
 	origins map[string]string
+}
+
+// CronFiles returns the crontabs this config read live task definitions from.
+func (c *Config) CronFiles() []string { return c.cronFiles }
+
+// CronBlockTOML returns the TOML block behind a cron-sourced task, and false for
+// any other name. `runwisp promote` appends it to the operator's root config.
+func (c *Config) CronBlockTOML(name string) (string, bool) {
+	block, ok := c.cronBlocks[name]
+	return block, ok
 }
 
 // OriginFile returns the absolute path of the config file that defined the
@@ -48,9 +74,9 @@ type Config struct {
 // the compose file's alias rather than a TOML table of their own.
 //
 // This is how a caller tells a hand-authored entry from one that lives in the
-// machine-owned staging file (compare against StagingFilePath) — the loader
-// derives Task.Staged from it, and `promote` uses it to decide which file to
-// move a task out of.
+// machine-owned staging file (compare against StagingFilePath) or a crontab read
+// via include_cron — the loader derives Task.Source from it, and `promote` uses it
+// to decide which file to move a task out of.
 func (c *Config) OriginFile(name string) string {
 	return c.origins[name]
 }

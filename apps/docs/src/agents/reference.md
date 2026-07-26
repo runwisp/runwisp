@@ -42,6 +42,16 @@ external_url:         string      — public Web UI base for notification deep-l
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; REQUIRES metrics_enabled=true
 include:              []string    — glob(s) of extra TOML files merged at load; root config only, no nesting
+include_cron:         []string    — glob(s) of REAL crontabs read as live task defs at every load/reload; root
+                                    config only. /etc/crontab + **/cron.d/* parse as system format (6th field =
+                                    user, job runs as them); any other path = per-user format, runs as the daemon
+                                    (never inferred from the filename). Hard errors: unreadable file, a file also
+                                    matched by [daemon].include, group/world-writable file or dir, owner neither
+                                    root nor the daemon's euid. A job RunWisp can't reproduce is SKIPPED (rest of
+                                    the file still runs) and reported via config.Warnings by file:line; derived
+                                    name collisions rename to <base>-<crontab basename> and are reported too.
+                                    No ${...} expansion on cron text. Tasks report "source": "cron" +
+                                    "source_file" in list/status --json; `runwisp promote` graduates them.
 ```
 
 ### [defaults] (inherited by every task & service)
@@ -225,6 +235,11 @@ runwisp list                 — list configured tasks and schedules
 runwisp status               — is the daemon alive?
 runwisp exec <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
 runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHUP); validate-first, no run_on_start/catch-up
+                             — prints the diff, then the newly-live config's warnings on `!` lines
+                               (ReloadResult.warnings). Same set as boot / `validate` / status /
+                               GET /api/info's config_warnings, re-derived per request so a reload's
+                               replace boot's. A crontab job include_cron skipped is NOT a task
+                               change — it only appears here.
 runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed
 runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed)
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
@@ -232,7 +247,7 @@ runwisp import supervisord [FILE...] — convert supervisord config to runwisp.t
                              — -o writes one standalone file; --write installs the two-tier layout
                                (tasks → machine-owned runwisp.d/imported.toml, root runwisp.toml's
                                [daemon].include wired to load it; both written atomically or rolled back).
-                               Tasks from the staging file report "staged": true in list/status --json.
+                               Tasks from the staging file report "source": "staged" in list/status --json.
                              — stderr summary gives every source job one row (name, schedule, the full command,
                                wrapped not truncated) marked ✓ clean / ~ changed / ! needs a fix / - skipped,
                                plus file-level notes and a verdict line. A job that emitted no TOML still gets
@@ -257,7 +272,12 @@ runwisp import supervisord [FILE...] — convert supervisord config to runwisp.t
                                that cron/supervisord still runs these jobs and each will run twice until the
                                operator turns the old one off. Suppressed only when there is no duplication yet
                                (nothing emitted, or the generated config doesn't validate).
-runwisp promote [TASK...]    — move staged tasks out of runwisp.d/imported.toml into the root runwisp.toml; --all --reload --dry-run
+runwisp promote [TASK...]    — put a derived task's block in the root runwisp.toml; --all --reload --dry-run
+                             — acts on Task.Source.Promotable(): staged (MOVED out of
+                               runwisp.d/imported.toml, file deleted when emptied) and cron (COPIED from
+                               config.CronBlockTOML — the crontab is the definition and is never written).
+                               A promoted cron job then dedupes against its crontab line via sameEntry,
+                               so the line can stay indefinitely.
                              — surgical text move: the block's comments/formatting/# TODOs travel byte-for-byte.
                                Both files written as one transaction gated on the merged load, else neither changes.
                                Refuses (writing nothing) an unknown name, an already-native name, a compose-generated

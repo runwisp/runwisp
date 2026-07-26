@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ func TestStage_GreenfieldCreatesRootAndStaging(t *testing.T) {
 	cfg, err := config.Load(layout.RootPath)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"backup"}, taskNames(cfg))
-	assert.True(t, findTask(t, cfg, "backup").Staged)
+	assert.True(t, findTask(t, cfg, "backup").Source == model.SourceStaged)
 }
 
 func TestStage_BrownfieldWiresIncludeAndKeepsOperatorBytes(t *testing.T) {

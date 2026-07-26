@@ -129,6 +129,11 @@
           "type": "array",
           "description": "Glob(s) of extra TOML files merged at load. Root config only, no nesting.",
           "items": { "type": "string" }
+        },
+        "include_cron": {
+          "type": "array",
+          "description": "Glob(s) of real crontabs read as live task sources at every load and reload. Root config only. A job RunWisp can't reproduce is skipped and reported; the rest of the file still runs.",
+          "items": { "type": "string" }
         }
       }
     },

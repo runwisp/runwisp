@@ -71,6 +71,14 @@ func runStatus(out io.Writer, f Flags, asJSON bool) error {
 	if infoErr == nil && info.ConfigStale {
 		fmt.Fprintln(out, "\n⚠ runwisp.toml has changed since the daemon started — run 'runwisp restart' to apply")
 	}
+	// Findings the daemon printed at boot, re-derived from the live config so a
+	// reload's are shown instead. Chiefly crontab jobs include_cron couldn't
+	// schedule: they have no runs, so `status` is one of the few places they exist.
+	if infoErr == nil {
+		for _, w := range info.ConfigWarnings {
+			fmt.Fprintf(out, "! %s\n", w)
+		}
+	}
 	return nil
 }
 
@@ -91,6 +99,7 @@ func buildStatusDoc(client *apiclient.Client) statusJSONDoc {
 		doc.ExternalURL = info.ExternalURL
 		doc.SchedulingActive = info.SchedulingActive
 		doc.ConfigStale = info.ConfigStale
+		doc.ConfigWarnings = info.ConfigWarnings
 		doc.ResolvedTimezone = info.ResolvedTimezone
 		doc.TimezoneSource = info.TimezoneSource
 	}

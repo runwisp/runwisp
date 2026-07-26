@@ -132,7 +132,7 @@ func TestTaskDetailDialog_View_StagedTaskNamesItsFileAndThePromoteCommand(t *tes
 		Name:   "backup",
 		Kind:   model.KindTask,
 		Cron:   "0 3 * * *",
-		Staged: true,
+		Source: model.SourceStaged,
 	})
 
 	out := d.View(80, 40)

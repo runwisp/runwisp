@@ -147,14 +147,16 @@ type Task struct {
 	ExecutionDef ExecutionDef    `toml:"-"             json:"-"`
 	Compose      *TaskComposeRef `toml:"-"             json:"compose,omitempty" doc:"Provenance metadata for tasks imported from a docker compose file"`
 
-	// Staged marks a task whose definition lives in the machine-owned staging
-	// file (runwisp.d/imported.toml, written by `runwisp import` and rewritten by
-	// `runwisp promote`) rather than the hand-authored root config. It means
-	// "imported, not yet promoted to native TOML" and drives the API/UI "staged"
-	// badge + display-only Promote affordance. Derived from the entry's origin
-	// file at config load — re-derived every load, so promoting a task into the
-	// root clears it automatically. Never a TOML key.
-	Staged bool `toml:"-" json:"staged,omitempty" doc:"True when the task's definition lives in the machine-owned staging file — imported, not yet promoted to native TOML"`
+	// Source is where this task's definition came from, which is what the API/UI
+	// "staged"/"cron" badge and the display-only Promote affordance are built on.
+	// Derived from the entry's origin file at config load — re-derived every load,
+	// so promoting a task into the root flips it to native automatically. Never a
+	// TOML key.
+	Source TaskSource `toml:"-" json:"source,omitempty" enum:"staged,cron" doc:"Where this task's definition came from: native (hand-authored TOML), staged (imported, not yet promoted), or cron (read live from a crontab via daemon.include_cron)"`
+	// SourceFile is the absolute path of the file the definition came from, for
+	// the sources where naming it is the useful part: which crontab a cron-sourced
+	// task lives in, or which staging file to promote out of. Empty for native.
+	SourceFile string `toml:"-" json:"source_file,omitempty" doc:"Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML"`
 
 	// WorkingDir is resolved to an absolute path at config load (relative to
 	// the runwisp.toml directory). Empty inherits the daemon's working dir.
@@ -274,6 +276,35 @@ const (
 // IsService reports whether the task is an always-on service.
 func (k TaskKind) IsService() bool { return k == KindService }
 
+// TaskSource is where a task's definition came from. It is derived provenance,
+// not part of the definition: the same task reads as SourceStaged before
+// `runwisp promote` and SourceNative after, with nothing about what runs having
+// changed. config.sameDefinition masks it for exactly that reason.
+//
+// A string enum rather than a pair of bools so the three cases stay mutually
+// exclusive by construction — "staged and cron" is not a state that exists, and a
+// bool pair would let it be represented.
+type TaskSource string
+
+const (
+	// SourceNative is a task the operator wrote in their own TOML. The zero value,
+	// so a Task nobody stamped reads as native — which is the honest answer for a
+	// compose-generated task, and the one that offers no Promote affordance.
+	SourceNative TaskSource = ""
+	// SourceStaged is a task whose definition lives in the machine-owned staging
+	// file (runwisp.d/imported.toml, written by `runwisp import` and rewritten by
+	// `runwisp promote`): imported, not yet promoted to native TOML.
+	SourceStaged TaskSource = "staged"
+	// SourceCron is a task read live from a real crontab via [daemon] include_cron.
+	// The crontab is the definition — RunWisp never writes to it — so the task
+	// changes when the operator runs `crontab -e`, not when they edit TOML.
+	SourceCron TaskSource = "cron"
+)
+
+// Promotable reports whether this source has a `runwisp promote` path into the
+// operator's own TOML.
+func (s TaskSource) Promotable() bool { return s == SourceStaged || s == SourceCron }
+
 // Service instance/roll-up state strings reported to cloud. They mirror the
 // asyncapi ServiceInstanceState / ServiceState enums so the cloud bridge maps
 // them without translation.
@@ -349,7 +380,9 @@ const (
 // ConfigLoadedAt is when the daemon read runwisp.toml; ConfigStale flips to
 // true when the file (or a referenced env_file) has changed on disk since —
 // config reload is restart-only, so UIs surface a "restart to apply" hint.
-// ConfigStale is recomputed per request, not cached.
+// ConfigStale is recomputed per request, not cached. So is ConfigWarnings, which
+// carries what the daemon would print at boot — a skipped crontab job has no runs,
+// so this is one of the few places it can be seen at all.
 //
 // SchedulingActive is false when the local scheduler is inactive — e.g.
 // `runwisp cloud`, where the cloud owns scheduling — so UIs hide next-run
@@ -367,6 +400,7 @@ type DaemonInfo struct {
 	AuthDisabled     bool        `json:"auth_disabled"`
 	ConfigLoadedAt   time.Time   `json:"config_loaded_at"`
 	ConfigStale      bool        `json:"config_stale"`
+	ConfigWarnings   []string    `json:"config_warnings,omitempty" doc:"Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads."`
 	ResolvedTimezone string      `json:"resolved_timezone"`
 	TimezoneSource   string      `json:"timezone_source" enum:"config,system"`
 	Tasks            []TaskBrief `json:"tasks"`
@@ -403,7 +437,8 @@ type TaskBrief struct {
 	Instances     int               `json:"instances,omitempty"`
 	DependsOn     []string          `json:"depends_on,omitempty"`
 	Compose       *TaskComposeRef   `json:"compose,omitempty"`
-	Staged        bool              `json:"staged,omitempty"`
+	Source        TaskSource        `json:"source,omitempty" enum:"staged,cron"`
+	SourceFile    string            `json:"source_file,omitempty"`
 	Parameters    []TaskParam       `json:"parameters,omitempty"`
 }
 

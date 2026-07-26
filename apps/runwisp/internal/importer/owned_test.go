@@ -33,7 +33,7 @@ func TestOwnedFrom_SnapshotsKindAndCommand(t *testing.T) {
 func TestOwnedFrom_SkipsStaged(t *testing.T) {
 	owned := OwnedFrom([]model.Task{
 		{Name: "native", Kind: model.KindTask, Run: "echo native"},
-		{Name: "imported", Kind: model.KindTask, Run: "echo imported", Staged: true},
+		{Name: "imported", Kind: model.KindTask, Run: "echo imported", Source: model.SourceStaged},
 	})
 
 	if _, ok := owned["native"]; !ok {

@@ -651,6 +651,8 @@ export interface components {
             /** Format: date-time */
             config_loaded_at: string;
             config_stale: boolean;
+            /** @description Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads. */
+            config_warnings?: string[] | null;
             external_url: string;
             fingerprint: string;
             /** Format: int64 */
@@ -1024,6 +1026,8 @@ export interface components {
             changed: components["schemas"]["ReloadTaskChange"][] | null;
             /** @description Names of tasks removed by the reload */
             removed: string[] | null;
+            /** @description Non-fatal findings in the newly-live config, e.g. crontab jobs that could not be scheduled */
+            warnings?: string[] | null;
         };
         ReloadTaskChange: {
             /** @description Task name */
@@ -1269,7 +1273,9 @@ export interface components {
             on_overlap?: string;
             parameters?: components["schemas"]["TaskParam"][] | null;
             restart?: string;
-            staged?: boolean;
+            /** @enum {string} */
+            source?: "staged" | "cron";
+            source_file?: string;
         };
         TaskComposeRef: {
             file: string;
@@ -1433,8 +1439,13 @@ export interface components {
             secrets_file?: string;
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
             shell?: string;
-            /** @description True when the task's definition lives in the machine-owned staging file — imported, not yet promoted to native TOML */
-            staged?: boolean;
+            /**
+             * @description Where this task's definition came from: native (hand-authored TOML), staged (imported, not yet promoted), or cron (read live from a crontab via daemon.include_cron)
+             * @enum {string}
+             */
+            source?: "staged" | "cron";
+            /** @description Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML */
+            source_file?: string;
             /**
              * Format: int64
              * @description For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting

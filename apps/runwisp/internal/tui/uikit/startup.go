@@ -64,6 +64,12 @@ type StartupInfo struct {
 	// after the daemon loaded it. Kept current by the TUI's periodic
 	// /api/info poll; renders as a "restart to apply" notice in the header.
 	ConfigStale bool
+	// ConfigWarnings holds the live config's non-fatal findings, chiefly crontab
+	// jobs [daemon] include_cron declined to schedule. Kept current by the same
+	// /api/info poll as ConfigStale, because a reload can add or clear one. The
+	// header shows a count; a skipped job has no runs, so this is the only place
+	// the TUI can mention it at all.
+	ConfigWarnings []string
 
 	// Headless is set when the daemon runs without an interactive TUI. The
 	// startup banner renders one extra dim line ("Press Ctrl+C to stop.") in

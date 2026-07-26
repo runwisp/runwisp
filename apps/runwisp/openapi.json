@@ -115,6 +115,16 @@
           "config_stale": {
             "type": "boolean"
           },
+          "config_warnings": {
+            "description": "Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "external_url": {
             "type": "string"
           },
@@ -950,6 +960,16 @@
               "array",
               "null"
             ]
+          },
+          "warnings": {
+            "description": "Non-fatal findings in the newly-live config, e.g. crontab jobs that could not be scheduled",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1517,8 +1537,15 @@
           "restart": {
             "type": "string"
           },
-          "staged": {
-            "type": "boolean"
+          "source": {
+            "enum": [
+              "staged",
+              "cron"
+            ],
+            "type": "string"
+          },
+          "source_file": {
+            "type": "string"
           }
         },
         "required": [
@@ -1822,9 +1849,17 @@
             "description": "Absolute path to the shell interpreter for run scripts; defaults to /bin/sh",
             "type": "string"
           },
-          "staged": {
-            "description": "True when the task's definition lives in the machine-owned staging file — imported, not yet promoted to native TOML",
-            "type": "boolean"
+          "source": {
+            "description": "Where this task's definition came from: native (hand-authored TOML), staged (imported, not yet promoted), or cron (read live from a crontab via daemon.include_cron)",
+            "enum": [
+              "staged",
+              "cron"
+            ],
+            "type": "string"
+          },
+          "source_file": {
+            "description": "Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML",
+            "type": "string"
           },
           "start_retries": {
             "description": "For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting",

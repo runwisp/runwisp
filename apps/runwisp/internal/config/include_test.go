@@ -287,10 +287,10 @@ run = "echo decoy"
 	cfg, err := Load(filepath.Join(dir, "runwisp.toml"))
 	require.NoError(t, err)
 
-	assert.False(t, findTask(t, cfg, "native_root").Staged, "root task must not be staged")
-	assert.True(t, findTask(t, cfg, "from_cron").Staged, "runwisp.d/imported.toml task must be staged")
-	assert.False(t, findTask(t, cfg, "hand").Staged, "another included file must not be staged")
-	assert.False(t, findTask(t, cfg, "decoy").Staged, "a stray imported.toml elsewhere must not be staged")
+	assert.False(t, findTask(t, cfg, "native_root").Source == model.SourceStaged, "root task must not be staged")
+	assert.True(t, findTask(t, cfg, "from_cron").Source == model.SourceStaged, "runwisp.d/imported.toml task must be staged")
+	assert.False(t, findTask(t, cfg, "hand").Source == model.SourceStaged, "another included file must not be staged")
+	assert.False(t, findTask(t, cfg, "decoy").Source == model.SourceStaged, "a stray imported.toml elsewhere must not be staged")
 }
 
 // TestInclude_StagedProvenanceWithRelativeConfigPath covers the shape every CLI
@@ -315,8 +315,8 @@ run = "echo root"
 	cfg, err := Load("runwisp.toml")
 	require.NoError(t, err)
 
-	assert.True(t, findTask(t, cfg, "from_cron").Staged, "staged provenance must survive a relative config path")
-	assert.False(t, findTask(t, cfg, "native").Staged)
+	assert.True(t, findTask(t, cfg, "from_cron").Source == model.SourceStaged, "staged provenance must survive a relative config path")
+	assert.False(t, findTask(t, cfg, "native").Source == model.SourceStaged)
 	assert.Equal(t, StagingFilePath("."), cfg.OriginFile("from_cron"))
 }
 
@@ -329,7 +329,7 @@ func TestInclude_StagedNotSetForSingleFileConfig(t *testing.T) {
 	})
 	cfg, err := Load(filepath.Join(dir, "imported.toml"))
 	require.NoError(t, err)
-	assert.False(t, findTask(t, cfg, "solo").Staged, "root config is never the staging file")
+	assert.False(t, findTask(t, cfg, "solo").Source == model.SourceStaged, "root config is never the staging file")
 }
 
 // TestInclude_OriginFile pins the accessor the two-tier tooling reads: which file
@@ -375,6 +375,6 @@ file = "../docker-compose.yml"
 
 	task := findTask(t, cfg, "stack.web")
 	assert.Empty(t, cfg.OriginFile(task.Name), "a compose-generated task has no defining table")
-	assert.False(t, task.Staged)
+	assert.False(t, task.Source == model.SourceStaged)
 	assert.Equal(t, StagingFilePath(dir), cfg.OriginFile("stack"), "the alias itself has an origin")
 }
