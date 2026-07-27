@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // This file is package importer_test, not package importer, and that is
 // load-bearing rather than stylistic: internal/config imports internal/importer

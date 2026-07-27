@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package sendmail implements the local-MTA notify channel: it composes a
 // plain-text RFC 5322 message and pipes it to the host's sendmail binary,

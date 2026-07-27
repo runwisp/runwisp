@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package configedit writes RunWisp's config files. It is the only place that
 // puts bytes into an operator's runwisp.toml or into the machine-owned staging
