@@ -600,6 +600,22 @@ func TestCronSystemUserColumnMustNameARealAccount(t *testing.T) {
 	mustContain(t, note.Message, "no account on this machine")
 }
 
+// TestCronSystemUserColumnSuspectNoteNamesTheNSSCaveat: the note used to claim
+// "crond skips it too," which is only true when both schedulers see the same
+// account database. A RunWisp binary built with CGO_ENABLED=0 (the default
+// release build) resolves os/user through /etc/passwd alone, so on an
+// NSS/LDAP/SSSD box it can decline a line that a dynamically-linked crond runs
+// just fine — the opposite of what the old wording promised.
+func TestCronSystemUserColumnSuspectNoteNamesTheNSSCaveat(t *testing.T) {
+	exists := func(name string) bool { return name == "deploy" }
+	res := parseCron(t, "* * * * * echo \"hi\"\n", CronOptions{System: true, UserExists: exists})
+
+	note := findNote(t, res, NoteUserColumnSuspect)
+	mustNotContain(t, note.Message, "crond skips it too")
+	mustContain(t, note.Message, "CGO_ENABLED=0")
+	mustContain(t, note.Message, "NSS")
+}
+
 // TestCronSystemUserColumnAccountCheckAcceptsRealUsers is the other side: a line
 // naming an account that does exist is an ordinary system crontab line.
 func TestCronSystemUserColumnAccountCheckAcceptsRealUsers(t *testing.T) {

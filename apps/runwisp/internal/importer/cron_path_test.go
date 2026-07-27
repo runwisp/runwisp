@@ -67,6 +67,27 @@ func TestUserSpoolOwner(t *testing.T) {
 	}
 }
 
+// TestIsSpoolCrontabDir pins the directory half of the spool check, split out
+// so a caller with only a directory (no filename yet) can still ask the
+// question — `[daemon] include_cron`'s glob-eligibility filter needs exactly
+// that to avoid guessing "spool" for a directory that merely happens to be
+// named crontabs.
+func TestIsSpoolCrontabDir(t *testing.T) {
+	cases := map[string]bool{
+		"/var/spool/cron/crontabs": true,
+		"/var/spool/cron":          true,
+		"/var/spool/cron/":         true,
+		"/var/spool/anacron":       false,
+		"/home/alice/crontabs":     false,
+		"":                         false,
+	}
+	for dir, want := range cases {
+		if got := IsSpoolCrontabDir(dir); got != want {
+			t.Errorf("IsSpoolCrontabDir(%q) = %v, want %v", dir, got, want)
+		}
+	}
+}
+
 // TestSpoolCrontabRunsAsItsOwner: a spool crontab has no user column, so without
 // CronOptions.User every job would run as the daemon — the same commands under the
 // wrong identity, writing to the wrong home, with nothing saying so.

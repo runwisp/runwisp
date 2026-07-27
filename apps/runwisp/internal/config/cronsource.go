@@ -4,12 +4,16 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/runwisp/runwisp/internal/importer"
 	"github.com/runwisp/runwisp/internal/model"
@@ -100,12 +104,31 @@ func (m cronMerge) originSet() map[string]bool {
 // pulled in twice under two different readings is a hard error rather than a
 // merge conflict nobody can explain.
 //
-// Errors are for the file, never the job. An unreadable crontab, an untrusted
-// one, or rendered TOML that won't decode rejects the whole load — which, on a
-// reload, means the running task set is left exactly as it was. An individual job
-// RunWisp can't reproduce is skipped and reported, because that is what crond
-// does with a malformed entry and because taking down every other job in the file
-// over one bad line would make include_cron unusable on a real machine.
+// An individual job RunWisp can't reproduce is skipped and reported, because
+// that is what crond does with a malformed entry and because taking down
+// every other job in the file over one bad line would make include_cron
+// unusable on a real machine. A whole file RunWisp can't read at all —
+// unreadable, untrusted, a spool crontab this daemon can't become the owner
+// of — gets the same treatment: a CronFinding{Skipped: true} rather than a
+// rejected load. The trigger is mundane (a userdel'd account whose spool file
+// shadow-utils left behind, one file at the wrong mode from an Ansible
+// playbook, an NSS-only account) and none of it should be able to take the
+// rest of the config down with it — under Restart=on-failure that used to be
+// a five-second restart loop on a box that now runs nothing at all, cron
+// included, since a prior version of this masked cron before restarting.
+//
+// The one case that still hard-fails here is every matched source failing at
+// once: nothing parsed suggests a broken include_cron pattern rather than one
+// bad file, and that is worth surfacing as loudly as a config that doesn't
+// load at all rather than a wall of findings on an otherwise-quiet boot.
+// assertNoIncludeOverlap and a resolvePath failure also stay hard errors —
+// both mean the config specifies something nobody wrote, not that one
+// crontab has gone bad.
+//
+// Reload atomicity is unaffected either way: the whole config is parsed and
+// validated (including every cron source's refusal) before any live task is
+// touched, so a bad crontab lands as one CronFinding and one excluded file,
+// never a half-applied reconcile.
 func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath string,
 	byName map[string]string, tomlMatched []string) (cronMerge, error) {
 	if len(patterns) == 0 {
@@ -127,18 +150,31 @@ func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath str
 	// already claimed, so cron-vs-cron and cron-vs-TOML dedup both happen by
 	// construction rather than by a second reconciliation pass.
 	owned := ownedFromWire(root)
+	var refusals []error
 	for _, path := range matched {
 		res, err := parseCronSource(path, owned)
 		if err != nil {
-			return cronMerge{}, err
+			refusals = append(refusals, err)
+			m.findings = append(m.findings, CronFinding{
+				File: path, Source: filepath.Base(path), Reason: err.Error(), Skipped: true,
+			})
+			continue
 		}
 		if err := mergeCronResult(root, res, path, byName); err != nil {
+			// Not a file refusal: RunWisp generated this TOML itself and failed to
+			// read it back, which is a bug in RunWisp rather than anything the
+			// operator's crontab did. Stays a hard error so it can't hide behind
+			// a wall of per-file findings.
 			return cronMerge{}, err
 		}
 		claimOwned(owned, res)
 		m.collectBlocks(res)
 		m.files = append(m.files, path)
 		m.findings = append(m.findings, findingsFrom(res, path)...)
+	}
+	if len(matched) > 0 && len(refusals) == len(matched) {
+		return cronMerge{}, fmt.Errorf("daemon.include_cron: none of the %d matched cron source(s) could be read: %w",
+			len(matched), errors.Join(refusals...))
 	}
 	return m, nil
 }
@@ -437,6 +473,9 @@ func resolveCronIncludes(patterns []string, rootDir, rootPath string) (globs, ma
 			return nil, nil, nil, fmt.Errorf("daemon.include_cron %q: %w", pat, err)
 		}
 		if hasGlobMeta(abs) {
+			if ig := unlistableDirFinding(abs); ig != nil {
+				ignored = append(ignored, *ig)
+			}
 			hits, ignored = partitionCrondEligible(hits, ignored)
 		}
 		matched = appendGlobHits(matched, hits, rootAbs, seen)
@@ -449,6 +488,34 @@ func resolveCronIncludes(patterns []string, rootDir, rootPath string) (globs, ma
 type ignoredSource struct {
 	Path   string
 	Reason string
+	// Skipped marks a source crond itself would run — an unlistable spool
+	// directory, say — as distinct from one crond passes over too (a
+	// .dpkg-old, a bare README). See CronFinding.Skipped.
+	Skipped bool
+}
+
+// unlistableDirFinding catches the one thing a plain filepath.Glob can never
+// report: a directory that exists but isn't readable by this process.
+// filepath.Glob ignores readdir errors by contract and returns zero matches,
+// indistinguishable from a directory that is genuinely empty — so
+// /var/spool/cron/crontabs at its usual `1730 root:crontab` returns nothing at
+// all to a non-root daemon, which then boots clean, schedules nothing, and
+// says nothing. A directory crond itself can read (it runs as root) is exactly
+// the case where this silence is most dangerous, so this finding is Skipped.
+func unlistableDirFinding(pattern string) *ignoredSource {
+	dir := filepath.Dir(pattern)
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+	if _, err := os.ReadDir(dir); err != nil {
+		return &ignoredSource{
+			Path:    dir,
+			Reason:  fmt.Sprintf("cannot list this directory (%v); any crontabs inside are not being read", err),
+			Skipped: true,
+		}
+	}
+	return nil
 }
 
 // hasGlobMeta reports whether a resolved pattern can expand to more than the one
@@ -468,13 +535,19 @@ func hasGlobMeta(pattern string) bool {
 // partitionCrondEligible splits glob hits into the ones crond would read and the
 // ones it would pass over, appending the latter to ignored.
 //
-// crond's own /etc/cron.d scan accepts only regular files whose names are made of
-// letters, digits, hyphens and underscores — no dots. That rule is not cosmetic:
-// it is precisely how a package upgrade's `backup.dpkg-old`, a hand-disabled
-// `job.disabled`, and a `README` stay out of the schedule. Reading them because
-// they matched `*` is the worst kind of divergence, because it runs jobs the
-// operator believes are switched off, and a matched subdirectory would fail the
-// whole load on a read error.
+// crond applies two different naming rules depending on where a file lives.
+// Its /etc/cron.d-style run-parts scan accepts only regular files whose names
+// are letters, digits, hyphens and underscores — no dots — which is precisely
+// how a package upgrade's `backup.dpkg-old`, a hand-disabled `job.disabled`,
+// and a `README` stay out of the schedule. A per-user spool directory has no
+// such rule: crond takes the filename as-is and looks it up with getpwnam, so
+// `john.doe` or a `$`-suffixed service account is a perfectly legitimate
+// crontab there. Applying the run-parts rule to a spool glob — as this
+// function used to, unconditionally — silently dropped those crontabs with a
+// message ("crond ignores this name") that was simply false for that account.
+// Reading a file crond passes over is the worse divergence in the other
+// direction, because it runs jobs the operator believes are switched off, and
+// a matched subdirectory would fail the whole load on a read error.
 func partitionCrondEligible(hits []string, ignored []ignoredSource) ([]string, []ignoredSource) {
 	kept := make([]string, 0, len(hits))
 	for _, h := range hits {
@@ -489,14 +562,42 @@ func partitionCrondEligible(hits []string, ignored []ignoredSource) ([]string, [
 			ignored = append(ignored, ignoredSource{Path: h, Reason: "it is a directory"})
 		case !info.Mode().IsRegular():
 			ignored = append(ignored, ignoredSource{Path: h, Reason: "it is not a regular file"})
-		case !isCrondEligibleName(filepath.Base(h)):
-			ignored = append(ignored, ignoredSource{Path: h,
-				Reason: "crond ignores this name (letters, digits, - and _ only), so it is not part of the schedule"})
+		case !crondGlobEligibleName(h):
+			ignored = append(ignored, ignoredSource{Path: h, Reason: crondIneligibleReason(h)})
 		default:
 			kept = append(kept, h)
 		}
 	}
 	return kept, ignored
+}
+
+// crondGlobEligibleName picks the right naming rule for where h lives: the
+// spool's own account-name rule for one of the two canonical spool
+// directories, run-parts everywhere else (a system crontab directory, or
+// anything else an operator's own glob might point at).
+func crondGlobEligibleName(h string) bool {
+	base := filepath.Base(h)
+	if importer.IsSpoolCrontabDir(filepath.Dir(h)) {
+		// vixie cron's `crontab -e` writes tmp.<pid> inside the spool directory
+		// before its atomic rename into place. It happens to satisfy
+		// IsPlausibleAccountName (a dot is a legal account-name character), so a
+		// reload racing an in-progress `crontab -e` must exclude it explicitly —
+		// otherwise it is read as a real crontab for account "tmp".
+		if strings.HasPrefix(base, "tmp.") {
+			return false
+		}
+		return importer.IsPlausibleAccountName(base)
+	}
+	return isCrondEligibleName(base)
+}
+
+// crondIneligibleReason explains crondGlobEligibleName's verdict in the same
+// terms it was reached.
+func crondIneligibleReason(h string) string {
+	if importer.IsSpoolCrontabDir(filepath.Dir(h)) {
+		return "crond ignores this name (not a plausible account name), so it is not part of the schedule"
+	}
+	return "crond ignores this name (letters, digits, - and _ only), so it is not part of the schedule"
 }
 
 // isCrondEligibleName applies crond's run-parts naming rule to one basename.
@@ -516,18 +617,21 @@ func isCrondEligibleName(name string) bool {
 
 // ignoredFindings reports the passed-over hits, one finding per file.
 //
-// Skipped is false: nothing stopped running because of this. crond wasn't running
-// these either, so the machine is doing exactly what it did before — but an
-// operator who dropped a file in and can't find its tasks needs to be told the
-// name is why, and the alternative (say nothing) is how `job.disabled` becomes a
-// twenty-minute mystery.
+// Skipped is false for most of these: nothing stopped running because of them.
+// crond wasn't running a `.dpkg-old` or a `README` either, so the machine is
+// doing exactly what it did before — but an operator who dropped a file in and
+// can't find its tasks needs to be told the name is why, and the alternative
+// (say nothing) is how `job.disabled` becomes a twenty-minute mystery.
+// unlistableDirFinding is the exception: crond, running as root, can read a
+// directory this daemon can't, so that one sets Skipped.
 func ignoredFindings(ignored []ignoredSource) []CronFinding {
 	out := make([]CronFinding, 0, len(ignored))
 	for _, ig := range ignored {
 		out = append(out, CronFinding{
-			File:   ig.Path,
-			Source: filepath.Base(ig.Path),
-			Reason: "not read as a cron source: " + ig.Reason,
+			File:    ig.Path,
+			Source:  filepath.Base(ig.Path),
+			Reason:  "not read as a cron source: " + ig.Reason,
+			Skipped: ig.Skipped,
 		})
 	}
 	return out
@@ -578,29 +682,116 @@ func cronSourceWarnings(cfg *Config) []string {
 // in rather than read directly so the check is testable without a real cron daemon.
 var crondPidFiles = []string{"/run/crond.pid", "/run/cron.pid", "/var/run/crond.pid", "/var/run/cron.pid"}
 
-// crondStillRunningWarning fires when RunWisp is reading a system crontab that a
-// live crond is presumably also reading. Both schedulers firing the same jobs is
-// the single most likely way an include_cron setup goes wrong, and it goes wrong
-// silently: every job simply runs twice, which looks like nothing at all until a
-// non-idempotent one does.
-func crondStillRunningWarning(cronFiles, pidCandidates []string) []string {
-	var system []string
-	for _, f := range cronFiles {
-		if importer.IsSystemCrontabPath(f) {
-			system = append(system, f)
+// cronServiceCandidates are the systemd unit names the common cron
+// implementations register under (Debian/Ubuntu, then RHEL/SUSE).
+var cronServiceCandidates = []string{"cron.service", "crond.service"}
+
+// cronServiceProbe asks the init system whether a cron service is active or
+// enabled. A package var for the same reason cronUserExists is one: the real
+// answer comes from systemd, and a test needs to ask the question about an
+// init system it can describe. ok is false when the probe itself couldn't run
+// (no systemctl on this box — a non-systemd Linux, or macOS), telling the
+// caller to fall back to the pid-file check. Never assigned outside tests.
+var cronServiceProbe = systemctlCronServiceState
+
+// systemctlCronServiceState checks each of cronServiceCandidates with
+// `systemctl is-active`/`is-enabled`. Both matter: active covers a daemon
+// running right now, enabled covers "stopped for this boot but will start on
+// the next one", which carries the same double-fire risk with no process to
+// see today.
+func systemctlCronServiceState() (active, enabled, ok bool) {
+	systemctlPath, err := exec.LookPath("systemctl")
+	if err != nil {
+		return false, false, false
+	}
+	for _, unit := range cronServiceCandidates {
+		if exec.Command(systemctlPath, "is-active", unit).Run() == nil {
+			active = true
+		}
+		if exec.Command(systemctlPath, "is-enabled", unit).Run() == nil {
+			enabled = true
 		}
 	}
-	if len(system) == 0 {
-		return nil
-	}
-	for _, pid := range pidCandidates {
-		if _, err := os.Stat(pid); err != nil {
+	return active, enabled, true
+}
+
+// cronPidRunning is the fallback for a box with no systemctl: read each
+// candidate pid file and check that the pid it names is an actual live
+// process, not just that the file exists. The old version only checked file
+// existence, so a crond that crashed without cleaning up its pid file (or a
+// stale file left by an image build) warned forever about a daemon that
+// wasn't there.
+func cronPidRunning(pidCandidates []string) bool {
+	for _, path := range pidCandidates {
+		data, err := os.ReadFile(path)
+		if err != nil {
 			continue
 		}
-		return []string{fmt.Sprintf(
-			"cron source: %s looks like a live cron daemon (%s exists) and RunWisp is also "+
-				"running the jobs in %s — every one of them will fire twice. Stop and disable cron first.",
-			pid, pid, strings.Join(system, ", "))}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err != nil {
+			continue
+		}
+		if processAlive(pid) {
+			return true
+		}
 	}
-	return nil
+	return false
+}
+
+// processAlive checks liveness with signal 0, which the kernel refuses to
+// actually deliver but still reports ESRCH for a pid that doesn't exist. Used
+// instead of a /proc/<pid> stat because /proc doesn't exist on macOS, and this
+// package runs on both.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+// crondStillRunningWarning fires when RunWisp is reading crontabs that a live
+// system crond is presumably also reading. Both schedulers firing the same
+// jobs is the single most likely way an include_cron setup goes wrong, and it
+// goes wrong silently: every job simply runs twice, which looks like nothing
+// at all until a non-idempotent one does.
+//
+// Unlike an earlier version, this does not filter cronFiles down to system
+// crontab paths first: a live crond reads /var/spool/cron just as much as
+// /etc/cron.d, so a spool-only include_cron — the most likely first attempt,
+// since it needs no root-privileged system crontab at all — used to get no
+// warning whatsoever.
+func crondStillRunningWarning(cronFiles, pidCandidates []string) []string {
+	if len(cronFiles) == 0 {
+		return nil
+	}
+	live, state := crondLiveState(pidCandidates)
+	if !live {
+		return nil
+	}
+	return []string{fmt.Sprintf(
+		"cron source: a system cron daemon %s, and RunWisp is also running the jobs in %s — "+
+			"every one of them will fire twice. Stop and disable cron first.",
+		state, strings.Join(cronFiles, ", "))}
+}
+
+// crondLiveState reports whether a system crond looks live and, if so, in what
+// sense — prefers asking the init system directly over guessing from a pid
+// file, since a stopped-but-enabled service carries the same risk with
+// nothing running yet to find in a pidfile.
+func crondLiveState(pidCandidates []string) (live bool, state string) {
+	if active, enabled, ok := cronServiceProbe(); ok {
+		switch {
+		case active:
+			return true, "is running"
+		case enabled:
+			return true, "is enabled and will start on the next boot"
+		default:
+			return false, ""
+		}
+	}
+	if cronPidRunning(pidCandidates) {
+		return true, "looks like it's running (a live pidfile was found)"
+	}
+	return false, ""
 }

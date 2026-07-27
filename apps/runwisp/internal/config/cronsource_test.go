@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -364,6 +365,160 @@ include_cron = ["crontabs/missing"]
 	assert.Contains(t, err.Error(), "missing")
 }
 
+// TestIncludeCron_OneBadFileDoesNotTakeDownTheRest is the fail-open guard.
+// Before this, one unreadable crontab rejected the whole config load — under
+// Restart=on-failure that is a five-second restart loop on a box that now
+// runs nothing at all, cron included, if an earlier boot already masked it.
+// The trigger is mundane (an account that got userdel'd, one file at the
+// wrong mode) and shouldn't be able to take every other task down with it.
+func TestIncludeCron_OneBadFileDoesNotTakeDownTheRest(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read a 0000 file")
+	}
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+
+[tasks.native]
+run = "echo hi"
+`,
+		"crontabs/good": "0 3 * * * /usr/local/bin/good.sh\n",
+	})
+	bad := filepath.Join(dir, "crontabs", "bad")
+	require.NoError(t, os.WriteFile(bad, []byte("0 4 * * * /usr/local/bin/bad.sh\n"), 0o000))
+
+	cfg := loadTree(t, dir)
+	assert.ElementsMatch(t, []string{"native", "good"}, taskNames(cfg),
+		"the good source and the native task both still load")
+
+	var badFinding *CronFinding
+	for i, f := range cfg.CronFindings {
+		if f.File == bad {
+			badFinding = &cfg.CronFindings[i]
+		}
+	}
+	require.NotNil(t, badFinding, "the unreadable file is reported, not silently dropped")
+	assert.True(t, badFinding.Skipped)
+}
+
+// TestIncludeCron_EveryMatchedSourceFailingIsStillAHardError: unlike one bad
+// file among several good ones, nothing at all parsing suggests the
+// include_cron pattern itself is wrong rather than one crontab having gone
+// bad, and that is worth surfacing as loudly as a config that fails to load.
+func TestIncludeCron_EveryMatchedSourceFailingIsStillAHardError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read a 0000 file")
+	}
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+`,
+	})
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "crontabs"), 0o755))
+	for _, name := range []string{"one", "two"} {
+		path := filepath.Join(dir, "crontabs", name)
+		require.NoError(t, os.WriteFile(path, []byte("0 3 * * * /bin/true\n"), 0o000))
+	}
+
+	_, err := Load(filepath.Join(dir, "runwisp.toml"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "none of the 2 matched cron source")
+}
+
+// TestCrondGlobEligibleName is the guard on the divergence between two rules
+// for "is this a crontab crond would read": the strict run-parts rule for a
+// system crontab directory, and the much looser account-name rule for a
+// per-user spool. A prior version applied the strict rule everywhere,
+// including to spool globs, and silently dropped a spool crontab for any
+// account whose name has a dot or a trailing $ — both legal, common
+// characters in a real account name that importer.IsPlausibleAccountName
+// already accepts.
+func TestCrondGlobEligibleName(t *testing.T) {
+	t.Run("a system crontab directory uses the strict run-parts rule", func(t *testing.T) {
+		assert.True(t, crondGlobEligibleName("/etc/cron.d/backup"))
+		assert.False(t, crondGlobEligibleName("/etc/cron.d/backup.dpkg-old"))
+	})
+	t.Run("a spool directory allows a dotted or $-suffixed account name", func(t *testing.T) {
+		assert.True(t, crondGlobEligibleName("/var/spool/cron/crontabs/john.doe"))
+		assert.True(t, crondGlobEligibleName("/var/spool/cron/crontabs/svc$"))
+		assert.True(t, crondGlobEligibleName("/var/spool/cron/deploy"))
+	})
+	t.Run("a spool directory still excludes crontab -e's tmp file", func(t *testing.T) {
+		assert.False(t, crondGlobEligibleName("/var/spool/cron/crontabs/tmp.12345"),
+			"vixie cron writes tmp.<pid> here before its atomic rename; it is never a real crontab")
+	})
+	t.Run("a directory that merely happens to be named crontabs is not a spool", func(t *testing.T) {
+		assert.False(t, crondGlobEligibleName("/home/alice/crontabs/john.doe"),
+			"only the two canonical spool paths get the looser rule")
+		assert.True(t, crondGlobEligibleName("/home/alice/crontabs/john-doe"))
+	})
+}
+
+// TestUnlistableDirFinding is the guard on the other direction of the same
+// bug family: filepath.Glob ignores a readdir permission error by contract
+// and returns zero matches, which is indistinguishable from a directory that
+// is genuinely empty. /var/spool/cron/crontabs ships 1730 root:crontab on a
+// real box, so a non-root daemon following the documented include_cron
+// example would boot clean, schedule nothing, and say nothing at all.
+func TestUnlistableDirFinding(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can list any directory")
+	}
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "crontabs")
+	require.NoError(t, os.Mkdir(sub, 0o700))
+	require.NoError(t, os.Chmod(sub, 0o300))
+	t.Cleanup(func() { _ = os.Chmod(sub, 0o700) })
+
+	got := unlistableDirFinding(filepath.Join(sub, "*"))
+	require.NotNil(t, got)
+	assert.Equal(t, sub, got.Path)
+	assert.True(t, got.Skipped, "crond, running as root, could read this directory even if RunWisp can't")
+	assert.Contains(t, got.Reason, "cannot list")
+}
+
+func TestUnlistableDirFinding_ReadableDirIsFine(t *testing.T) {
+	dir := t.TempDir()
+	assert.Nil(t, unlistableDirFinding(filepath.Join(dir, "*")))
+}
+
+func TestUnlistableDirFinding_MissingDirIsFine(t *testing.T) {
+	assert.Nil(t, unlistableDirFinding(filepath.Join(t.TempDir(), "nope", "*")),
+		"a directory that doesn't exist yet is a normal machine, not a finding")
+}
+
+// TestIncludeCron_UnlistableDirIsReportedNotSilent is the end-to-end version
+// of TestUnlistableDirFinding: the finding has to actually reach
+// Config.CronFindings through resolveCronIncludes, and the rest of the config
+// must still load around it.
+func TestIncludeCron_UnlistableDirIsReportedNotSilent(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can list any directory")
+	}
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+
+[tasks.native]
+run = "echo hi"
+`,
+	})
+	sub := filepath.Join(dir, "crontabs")
+	require.NoError(t, os.MkdirAll(sub, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(sub, "alice"), []byte("* * * * * echo hi\n"), 0o600))
+	require.NoError(t, os.Chmod(sub, 0o300))
+	t.Cleanup(func() { _ = os.Chmod(sub, 0o700) })
+
+	cfg := loadTree(t, dir)
+	assert.Equal(t, []string{"native"}, taskNames(cfg), "the rest of the config still loads")
+	require.Len(t, cfg.CronFindings, 1)
+	assert.True(t, cfg.CronFindings[0].Skipped)
+	assert.Contains(t, cfg.CronFindings[0].Reason, "cannot list")
+}
+
 // TestIncludeCron_GlobMatchingNothingIsFine: an empty /etc/cron.d is a normal
 // machine, and a glob that matches nothing today may match tomorrow.
 func TestIncludeCron_GlobMatchingNothingIsFine(t *testing.T) {
@@ -680,30 +835,71 @@ include_cron = ["crontabs/*"]
 	assert.Empty(t, cfg.CronFindings, "and nothing to warn about")
 }
 
+// stubCronServiceProbe replaces the systemctl-backed liveness probe for the
+// duration of one test, so a test can assert both branches (active/enabled
+// via the init system, and the pid-file fallback when it's unavailable)
+// without a real systemd on the machine running the suite.
+func stubCronServiceProbe(t *testing.T, active, enabled, ok bool) {
+	t.Helper()
+	prev := cronServiceProbe
+	cronServiceProbe = func() (bool, bool, bool) { return active, enabled, ok }
+	t.Cleanup(func() { cronServiceProbe = prev })
+}
+
 // TestCrondStillRunningWarning is the guard on the most likely way an include_cron
 // setup goes wrong, and the one that goes wrong silently: RunWisp and cron both
-// scheduling /etc/crontab means every job fires twice, which looks like nothing at
-// all until a non-idempotent one does it.
+// scheduling the same crontabs means every job fires twice, which looks like
+// nothing at all until a non-idempotent one does it.
 func TestCrondStillRunningWarning(t *testing.T) {
 	dir := t.TempDir()
 	livePid := filepath.Join(dir, "crond.pid")
-	require.NoError(t, os.WriteFile(livePid, []byte("1234\n"), 0o600))
+	require.NoError(t, os.WriteFile(livePid, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600))
+	deadPid := filepath.Join(dir, "dead.pid")
+	require.NoError(t, os.WriteFile(deadPid, []byte("999999999\n"), 0o600))
 	missingPid := filepath.Join(dir, "nope.pid")
 
-	t.Run("system crontab plus a live pidfile warns", func(t *testing.T) {
-		got := crondStillRunningWarning([]string{"/etc/cron.d/backup"}, []string{missingPid, livePid})
+	t.Run("systemctl reports active warns", func(t *testing.T) {
+		stubCronServiceProbe(t, true, false, true)
+		got := crondStillRunningWarning([]string{"/etc/cron.d/backup"}, []string{missingPid})
 		require.Len(t, got, 1)
 		assert.Contains(t, got[0], "/etc/cron.d/backup")
 		assert.Contains(t, got[0], "twice")
 	})
 
-	t.Run("no pidfile, no warning", func(t *testing.T) {
-		assert.Empty(t, crondStillRunningWarning([]string{"/etc/crontab"}, []string{missingPid}))
+	t.Run("systemctl reports enabled but not active still warns", func(t *testing.T) {
+		stubCronServiceProbe(t, false, true, true)
+		got := crondStillRunningWarning([]string{"/etc/crontab"}, []string{missingPid})
+		require.Len(t, got, 1)
+		assert.Contains(t, got[0], "next boot")
 	})
 
-	// A per-user file the operator handed us is not something cron reads on its
-	// own, so warning about it would be crying wolf on every single boot.
-	t.Run("per-user source alone does not warn", func(t *testing.T) {
-		assert.Empty(t, crondStillRunningWarning([]string{"/home/me/crontab"}, []string{livePid}))
+	t.Run("systemctl reports neither active nor enabled, no warning", func(t *testing.T) {
+		stubCronServiceProbe(t, false, false, true)
+		assert.Empty(t, crondStillRunningWarning([]string{"/etc/crontab"}, []string{livePid}),
+			"the init system is the authority when it can answer at all")
+	})
+
+	// A spool-only include used to never warn at all, because the old check
+	// filtered cronFiles down to system crontab paths before looking at any
+	// pidfile. A live crond reads /var/spool/cron just as much as
+	// /etc/cron.d, so it has to warn here too.
+	t.Run("systemctl unavailable, live pidfile warns even for a spool-only include", func(t *testing.T) {
+		stubCronServiceProbe(t, false, false, false)
+		got := crondStillRunningWarning([]string{"/var/spool/cron/crontabs/alice"}, []string{missingPid, livePid})
+		require.Len(t, got, 1)
+		assert.Contains(t, got[0], "crontabs/alice")
+	})
+
+	// The old version only checked that the pidfile existed, not that the pid
+	// inside it was still a live process — so a crond that crashed without
+	// cleaning up, or a stale file baked into an image, warned forever.
+	t.Run("systemctl unavailable, stale pidfile does not warn", func(t *testing.T) {
+		stubCronServiceProbe(t, false, false, false)
+		assert.Empty(t, crondStillRunningWarning([]string{"/etc/crontab"}, []string{deadPid}))
+	})
+
+	t.Run("no cron files, no warning even if crond is live", func(t *testing.T) {
+		stubCronServiceProbe(t, true, true, true)
+		assert.Empty(t, crondStillRunningWarning(nil, []string{livePid}))
 	})
 }

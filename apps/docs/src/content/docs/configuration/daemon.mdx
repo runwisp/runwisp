@@ -241,8 +241,10 @@ RunWisp scheduling `/etc/crontab` does not stop cron from also scheduling
 it. Both daemons firing means every job runs twice, which looks like
 nothing at all until a non-idempotent one does it. Disable cron
 (`systemctl disable --now cron`) before you point RunWisp at its files —
-RunWisp warns at boot if it spots a running cron daemon, but it can't
-stop it for you.
+RunWisp warns at boot if cron looks live, whether that's a process running
+right now or a systemd unit that's merely enabled (stopped this boot, back
+on the next one), and whether your `include_cron` reads `/etc/cron.d` or
+only per-user spool files. It can't stop cron for you either way.
 :::
 
 #### Which files, and who the jobs run as
@@ -268,15 +270,34 @@ check cron makes.
 
 #### Globs read what cron would read
 
-A glob only picks up the files cron itself would schedule: regular files
-whose names are made of letters, digits, `-` and `_`. That rule is how
-`/etc/cron.d/backup.dpkg-old`, a hand-renamed `job.disabled`, and a
-`README` stay out of your schedule — so RunWisp skips them too, and says
-which ones it skipped.
+A glob only picks up the files cron itself would schedule, and the rule
+depends on which kind of directory it's globbing:
+
+- **`/etc/crontab` and any `cron.d/*`** — regular files whose names are
+  made of letters, digits, `-` and `_`. That's how
+  `/etc/cron.d/backup.dpkg-old`, a hand-renamed `job.disabled`, and a
+  `README` stay out of your schedule.
+- **A spool directory (`/var/spool/cron/crontabs/*`)** — any name that
+  could be an account, which is a much looser rule: cron takes the
+  filename as-is and looks it up, so `john.doe` or a `$`-suffixed service
+  account is a perfectly normal crontab there. The one thing excluded on
+  purpose is `tmp.*`, which is the temp file `crontab -e` writes before
+  its atomic rename — never a real crontab, even mid-edit.
+
+Either way RunWisp skips what cron would skip too, and says which files
+it skipped and why.
 
 Name a path outright and it's read whatever it's called:
 `include_cron = ["/etc/cron.d/backup.cron"]` is you overruling the rule on
 purpose, which is allowed.
+
+A spool directory that exists but isn't readable by this daemon
+(`/var/spool/cron/crontabs` ships `1730 root:crontab` on Debian, so a
+non-root RunWisp can't list it at all) is reported too — a plain glob
+can't tell "empty directory" apart from "directory I'm not allowed to
+open," and the second one means cron itself may be running jobs your
+`include_cron` can't see at all. Run RunWisp as root, or as the account
+that owns the crontabs you want, to read it.
 
 #### Everything else worth knowing
 
@@ -286,6 +307,21 @@ purpose, which is allowed.
   by [`runwisp reload`](/operations/reload/), `runwisp status` and
   `runwisp validate`, so you know exactly which jobs aren't running.
   `runwisp import cron` on the same file explains each one in more detail.
+- **A whole file RunWisp can't read gets the same treatment as one bad
+  line: it's skipped, and every other `include_cron` file still loads.**
+  A spool crontab for a `userdel`'d account, a file at the wrong mode, an
+  NSS-only owner — none of it takes your other tasks down with it. The
+  only time this becomes a hard config error is every matched file
+  failing at once, since that's a sign the pattern itself is wrong rather
+  than one file being bad.
+- **A user column (or a spool filename) that names an NSS/LDAP/SSSD
+  account isn't visible to a statically-linked RunWisp binary.**
+  `CGO_ENABLED=0` — the default release build — makes `os/user` read only
+  `/etc/passwd`, so a job that belongs to a directory-only account is
+  skipped even though crond, which is usually dynamically linked, runs it
+  fine. `getent passwd <name>` tells you whether that's what's happening
+  on a given box; a CGO-enabled build (or the account also existing in
+  `/etc/passwd`) fixes it.
 - **A `MAILTO=` gets reported, not honoured.** Cron mailed a job's output;
   RunWisp captures it instead and notifies on failure. Wire up a
   [`sendmail` notifier](/notifications/providers/sendmail/) — it needs no

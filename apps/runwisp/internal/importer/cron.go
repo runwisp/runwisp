@@ -117,23 +117,38 @@ func UserSpoolOwner(path string) (string, bool) {
 	}
 	clean := filepath.Clean(path)
 	dir, base := filepath.Split(clean)
-	dir = filepath.Clean(dir)
-	if dir != "/var/spool/cron" && dir != "/var/spool/cron/crontabs" {
+	if !IsSpoolCrontabDir(filepath.Clean(dir)) {
 		return "", false
 	}
 	// A spool filename is a bare account name. Anything else in there — a lock
 	// file, an editor's leftover — is not a crontab, and guessing an owner from it
 	// would be inventing an identity.
-	if base == "" || !isPlausibleAccountName(base) {
+	if base == "" || !IsPlausibleAccountName(base) {
 		return "", false
 	}
 	return base, true
 }
 
-// isPlausibleAccountName reports whether a spool basename can be an account name.
-// Deliberately strict: a name that has to survive being handed to the OS as a
-// run-as identity, so anything exotic is better refused than resolved.
-func isPlausibleAccountName(name string) bool {
+// IsSpoolCrontabDir reports whether dir is one of the two canonical per-user
+// cron spool directories: Debian/Ubuntu's /var/spool/cron/crontabs and
+// RHEL/SUSE's /var/spool/cron. Exported so a caller can apply the spool
+// naming rule (see IsPlausibleAccountName) to a directory before it has any
+// filenames to check — `[daemon] include_cron`'s glob-eligibility filter
+// needs exactly that to avoid guessing "spool" for an arbitrary directory
+// that merely happens to be named `crontabs`.
+func IsSpoolCrontabDir(dir string) bool {
+	clean := filepath.Clean(dir)
+	return clean == "/var/spool/cron" || clean == "/var/spool/cron/crontabs"
+}
+
+// IsPlausibleAccountName reports whether a spool basename can be an account
+// name. Deliberately strict: a name that has to survive being handed to the OS
+// as a run-as identity, so anything exotic is better refused than resolved.
+// Exported because `[daemon] include_cron`'s own glob-eligibility filter needs
+// the same rule — crond takes a spool filename as-is (getpwnam, no naming
+// restriction beyond what a real account name allows), so a stricter local
+// rule there would silently drop crontabs crond runs just fine.
+func IsPlausibleAccountName(name string) bool {
 	for _, r := range name {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
@@ -524,10 +539,13 @@ func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
 	}
 	if cp.opts.UserExists != nil && !cp.opts.UserExists(user) {
 		cp.addItem(line).note(NoteUserColumnSuspect,
-			"the sixth field is "+user+", which is no account on this machine — a system crontab "+
-				"line needs a user column between the schedule and the command, and this line looks "+
-				"like one written without it, so nothing was imported for this. crond skips it too. "+
-				"Add the user (or create the account) and reload.")
+			"the sixth field is "+user+", which resolves to no account on this machine — a system "+
+				"crontab line needs a user column between the schedule and the command, and this "+
+				"line looks like one written without it, so nothing was imported for this. If "+
+				user+" is an NSS/LDAP/SSSD account rather than one in /etc/passwd, a RunWisp binary "+
+				"built with CGO_ENABLED=0 (the default release build) can't see it either and will "+
+				"refuse this line the same way — check with `getent passwd "+user+"` if that's the "+
+				"box. Otherwise, add the user (or create the account) and reload.")
 		return true
 	}
 	return false
