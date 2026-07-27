@@ -16,6 +16,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var restartOpts struct {
+	System bool
+}
+
 var restartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart the background daemon (applies runwisp.toml changes)",
@@ -28,17 +32,24 @@ apply config changes.
 When the daemon is managed by systemd or launchd (wired up via
 'runwisp service install'), the restart is delegated to the service
 manager. Otherwise the daemon is stopped gracefully (SIGTERM) and a
-fresh one is spawned in the background.`,
+fresh one is spawned in the background.
+
+Pass --system if the daemon was installed with 'service install --system',
+so the service-managed delegation checks the right unit.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return runRestart(cmd, flags)
 	},
 }
 
+func init() {
+	restartCmd.Flags().BoolVar(&restartOpts.System, "system", false, "the daemon was installed system-wide (Linux, advanced)")
+}
+
 func runRestart(cmd *cobra.Command, f Flags) error {
 	out := cmd.OutOrStdout()
 
-	installer, opts, st, ok := serviceState(cmd, f)
+	installer, opts, st, ok := serviceState(cmd, f, restartOpts.System)
 	if ok && shouldDelegateRestart(st) {
 		return restartViaService(out, installer, opts, st, f)
 	}

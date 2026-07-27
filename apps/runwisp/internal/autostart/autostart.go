@@ -141,6 +141,13 @@ type UninstallOptions struct {
 	DataDir string
 	// Force overrides PlanConflict on uninstall (hand-edited unit).
 	Force bool
+	// System must match the System the unit was installed with — it
+	// picks the unit path (system vs user dir) and the systemctl
+	// invocation (sudo systemctl vs systemctl --user). Without it,
+	// uninstalling a --system install looks at the user unit path,
+	// finds nothing, and reports "Nothing to uninstall ✓" while the
+	// system unit stays enabled and running.
+	System bool
 }
 
 // Status answers `service status` — five rows of state on one screen.

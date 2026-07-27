@@ -148,8 +148,39 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags) (au
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning)
 	}
 
+	dataDir, err := resolveServiceDataDir(cmd, deps, f)
+	if err != nil {
+		return autostart.InstallOptions{}, err
+	}
+
+	configPath, err := resolveServiceConfigPath(cmd, deps, f)
+	if err != nil {
+		return autostart.InstallOptions{}, err
+	}
+
+	return autostart.InstallOptions{
+		Binary:  binary,
+		Config:  configPath,
+		DataDir: dataDir,
+		Host:    f.Host,
+		Port:    f.Port,
+	}, nil
+}
+
+// resolveServiceDataDir picks the data dir to bake into the unit. A
+// --system install has one canonical location (/var/lib/runwisp) — the
+// same euid-derived default `runwisp daemon` itself picks with no flags
+// (see resolvePathDefaults in root.go) — so an explicit --data aside,
+// it's used directly rather than through the interactive XDG/bare-cwd
+// resolution below, which is designed for the per-user install prompt
+// flow and would otherwise offer ~/.local/share/runwisp instead.
+func resolveServiceDataDir(cmd *cobra.Command, deps autostart.Deps, f Flags) (string, error) {
 	dataDirFlag := cmd.Flag("data")
 	dataDirExplicit := dataDirFlag != nil && dataDirFlag.Changed
+	if serviceInstallOpts.System && !dataDirExplicit {
+		return f.DataDir, nil
+	}
+
 	bareDBExists := false
 	if _, err := os.Stat(filepath.Join(".runwisp", "runwisp.db")); err == nil {
 		bareDBExists = true
@@ -162,19 +193,27 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags) (au
 		BareDefaultHasDB: bareDBExists,
 	})
 	if err != nil {
-		return autostart.InstallOptions{}, err
+		return "", err
 	}
-	dataDir, err := resolveDataDirInteractive(cmd, deps, dataRes)
-	if err != nil {
-		return autostart.InstallOptions{}, err
-	}
+	return resolveDataDirInteractive(cmd, deps, dataRes)
+}
 
+// resolveServiceConfigPath picks the config path to bake into the unit,
+// mirroring resolveServiceDataDir's --system bypass: with no explicit
+// --config, a --system install uses the same /etc/runwisp/runwisp.toml
+// that root.go's euid-derived default already put in f.CfgFile, rather
+// than the interactive XDG/bare-cwd resolution meant for per-user installs.
+func resolveServiceConfigPath(cmd *cobra.Command, deps autostart.Deps, f Flags) (string, error) {
 	cfgFlag := cmd.Flag("config")
 	cfgExplicit := cfgFlag != nil && cfgFlag.Changed
+	if serviceInstallOpts.System && !cfgExplicit {
+		return f.CfgFile, nil
+	}
+
 	xdgCfg := autostart.XDGConfigPath(deps.Home, deps.XDGConfHome)
 	xdgExists := xdgCfg != "" && fileExists(xdgCfg)
 	bareCfgExists := fileExists("runwisp.toml")
-	configPath, err := autostart.ResolveConfigPath(autostart.ResolveConfigOptions{
+	return autostart.ResolveConfigPath(autostart.ResolveConfigOptions{
 		Explicit:    f.CfgFile,
 		ExplicitSet: cfgExplicit,
 		HomeDir:     deps.Home,
@@ -182,17 +221,6 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags) (au
 		XDGExists:   xdgExists,
 		BareExists:  bareCfgExists,
 	})
-	if err != nil {
-		return autostart.InstallOptions{}, err
-	}
-
-	return autostart.InstallOptions{
-		Binary:  binary,
-		Config:  configPath,
-		DataDir: dataDir,
-		Host:    f.Host,
-		Port:    f.Port,
-	}, nil
 }
 
 // resolveDataDirInteractive folds in operator confirmation when

@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`env_base` picks what a task's environment starts from**: `inherit` (the default, unchanged behaviour) or `clean`, the minimal set cron gives a job. Host shell runs only. See [Tasks](https://docs.runwisp.com/configuration/tasks/#working-directory--shell).
 - **`working_dir = "~"` is the home of whoever the task runs as**, resolved per run — so it works for a `user` that doesn't exist on the machine you validated from. See [Tasks](https://docs.runwisp.com/configuration/tasks/#working-directory--shell).
 - **A `sendmail` notifier mails through the MTA already on the box.** No relay host, port, or password — the same mechanism crond used for `MAILTO`, which `import cron` now answers with a paste-ready notifier block. See [Email (local MTA)](https://docs.runwisp.com/notifications/providers/sendmail/).
+- **Running as root picks crond's config and data paths by default.** With no `-c`/`--data`, `runwisp` now defaults to `/etc/runwisp/runwisp.toml` and `/var/lib/runwisp` at euid 0, and to the usual `./runwisp.toml`/`./.runwisp` otherwise; `RUNWISP_CONFIG`/`RUNWISP_DATA` override either. See [CLI](https://docs.runwisp.com/operations/cli/#global-flags).
 
 ### Changed
 
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`runwisp exec` no longer exits 0 for a run that failed in a few milliseconds.** Runs are persisted asynchronously, and a task that finished quickly could have its "run ended" event overtake its own database write — so `exec` read back a run still marked `running`, with no end reason, and reported success for a command that had failed. `exec chained && on-success` sailed past the failure, and `--json` printed `"status": "running"` for a finished run. The terminal state is now readable before the run is announced as ended, and `exec` re-reads rather than trusting a non-terminal state. See [CLI](https://docs.runwisp.com/operations/cli/#run-a-task-now).
 - **A system crontab line missing its user column is skipped, not scheduled under a made-up user.** `* * * * * echo "tick"` in `/etc/cron.d` was read as the command `"tick"` running as user `echo` — a live task nobody wrote, failing on every firing. The sixth field now has to name an account that exists on the machine, the same test cron applies, and a line that fails it is reported by `file:line` while the rest of the file keeps running. See [Migrating from cron](https://docs.runwisp.com/recipes/migrating-from-cron/#what-needs-a-human).
+- **`service install --system` can now be found again by `service status`, `service uninstall`, `stop`, and `restart`.** Those all now take a matching `--system` flag; without this fix a `--system` install looked, disabled, and behaved like a stray per-user unit under every other command, and `--purge` deleted the per-user data dir instead of the system one. See [Autostart](https://docs.runwisp.com/operations/autostart/#-system-install-specifics).
 
 ### Security
 

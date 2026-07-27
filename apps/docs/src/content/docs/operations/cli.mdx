@@ -25,20 +25,28 @@ These apply to every subcommand. They decide which config gets read,
 where state lives, where the HTTP server listens, and how the daemon
 logs.
 
-| Flag             | Default        | What it does                                                                          |
-| ---------------- | -------------- | ------------------------------------------------------------------------------------- |
-| `--config`, `-c` | `runwisp.toml` | Path to the TOML config file, resolved against the working directory.                 |
-| `--data`         | `.runwisp`     | Directory for all persistent state — SQLite DB, per-task logs, PID file, Unix socket. |
-| `--port`, `-p`   | `9477`         | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                      |
-| `--host`         | `127.0.0.1`    | Bind address. Use `0.0.0.0` to listen on every interface.                             |
-| `--log-level`    | `info`         | Verbosity: `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`.                |
-| `--log-format`   | `auto`         | Log shape: `auto`, `text`, `json`. Env: `RUNWISP_LOG_FORMAT`.                         |
+| Flag             | Default                                            | What it does                                                                                               |
+| ---------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `--config`, `-c` | `runwisp.toml` (root: `/etc/runwisp/runwisp.toml`) | Path to the TOML config file. Env: `RUNWISP_CONFIG`.                                                       |
+| `--data`         | `.runwisp` (root: `/var/lib/runwisp`)              | Directory for all persistent state — SQLite DB, per-task logs, PID file, Unix socket. Env: `RUNWISP_DATA`. |
+| `--port`, `-p`   | `9477`                                             | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                                           |
+| `--host`         | `127.0.0.1`                                        | Bind address. Use `0.0.0.0` to listen on every interface.                                                  |
+| `--log-level`    | `info`                                             | Verbosity: `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`.                                     |
+| `--log-format`   | `auto`                                             | Log shape: `auto`, `text`, `json`. Env: `RUNWISP_LOG_FORMAT`.                                              |
 
 `--data` is the one to pick once and keep: the database (`runwisp.db`),
 the socket (`runwisp.sock`), and every task's logs all live under it, so
 moving it later is a plain directory move, not a config change. The two
 logging flags get the full treatment in
 [Logging](/operations/logging/).
+
+**Running as root changes the defaults**, precisely so `sudo runwisp
+reload` (or `stop` / `restart` / `status`) finds the same daemon a root
+`runwisp daemon` started with no flags: euid 0 defaults `--config` to
+`/etc/runwisp/runwisp.toml` and `--data` to `/var/lib/runwisp` instead of
+the cwd-relative paths every other user gets. `RUNWISP_CONFIG` /
+`RUNWISP_DATA` override that (and everything else) — precedence is
+flag > env var > euid-derived default.
 
 ## Start the daemon and attach
 
@@ -271,7 +279,9 @@ catch-up. `runwisp stop` takes the daemon down without starting a new one.
 When the daemon is managed by systemd or launchd (via
 [`runwisp service install`](/operations/autostart/)), both `restart` and
 `stop` delegate to the service manager so its view of the unit stays in
-sync.
+sync. If that install used `--system`, pass `--system` here too — there's
+no stored record of how the unit was installed, so a mismatch looks at
+the wrong unit and falls back to a plain SIGTERM instead of delegating.
 
 ## Migrate an existing setup
 
@@ -408,9 +418,12 @@ OS plumbing only, never touching `runwisp.toml`. `install` takes `--yes`
 (`-y`), `--print` (render the unit to stdout), `--dry-run`, `--force`
 (overwrite a hand-edited unit), `--system` (a system-wide unit on Linux),
 and `--binary <path>` (override the baked-in binary path). `uninstall`
-takes `--yes`, `--force`, and `--purge` (also delete the data dir — which
-makes you type the literal word `delete` to confirm). It's all covered in
-depth on the [Autostart](/operations/autostart/) page.
+takes `--yes`, `--force`, `--system`, and `--purge` (also delete the data
+dir — which makes you type the literal word `delete` to confirm).
+`status` also takes `--system`. Whichever of `install`'s `--system` or
+its absence you used, repeat it on `status` / `uninstall` — there's no
+stored record of which one a given unit was installed with. It's all
+covered in depth on the [Autostart](/operations/autostart/) page.
 
 Don't confuse `runwisp service status` ("will the daemon come back after a
 reboot?") with `runwisp status` ("is it alive right now?").

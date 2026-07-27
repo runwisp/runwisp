@@ -303,6 +303,73 @@ func TestResolveServiceOptions_BinaryOverrideIsUsed(t *testing.T) {
 	assert.Equal(t, binary, opts.Binary, "binary override must be honoured")
 }
 
+// TestResolveServiceOptions_SystemUsesEuidDefaultsWhenNotExplicit guards the
+// bug where a --system install with no explicit --config/--data would route
+// through the interactive XDG resolution (~/.config/runwisp/runwisp.toml)
+// instead of the euid-derived root default (/etc/runwisp/runwisp.toml)
+// resolvePathDefaults already put in f.CfgFile/f.DataDir — so
+// `service install --system` failed preflight even though the config exists
+// right where root's own default put it.
+func TestResolveServiceOptions_SystemUsesEuidDefaultsWhenNotExplicit(t *testing.T) {
+	restoreInstallOpts(t)
+	serviceInstallOpts.System = true
+
+	binary := filepath.Join(t.TempDir(), "runwisp-binary")
+	require.NoError(t, os.WriteFile(binary, []byte("\x7fELF"), 0o755))
+	serviceInstallOpts.Binary = binary
+
+	// f already holds what resolvePathDefaults(0) would have filled in — the
+	// point under test is that resolveServiceOptions passes it through
+	// rather than consulting XDG/bare-cwd (deps.Home here is a decoy: if the
+	// XDG path were consulted, opts.Config would end up under it instead).
+	f := Flags{CfgFile: "/etc/runwisp/runwisp.toml", DataDir: "/var/lib/runwisp"}
+	cmd := installFlagsCmd(t, f, &bytes.Buffer{}, &bytes.Buffer{})
+	// Deliberately not calling cmd.Flags().Set — neither flag was passed.
+
+	deps := autostart.Deps{
+		Home:        t.TempDir(),
+		User:        "root",
+		Fingerprint: "fp-test",
+		Prompter:    &autostart.ScriptedPrompter{},
+	}
+	opts, err := resolveServiceOptions(cmd, deps, f)
+	require.NoError(t, err)
+	assert.Equal(t, "/etc/runwisp/runwisp.toml", opts.Config)
+	assert.Equal(t, "/var/lib/runwisp", opts.DataDir)
+}
+
+// TestResolveServiceOptions_SystemStillHonorsExplicitFlags guards the other
+// direction: an explicit --config/--data under --system must still go
+// through the normal validated path (so e.g. a relative --data still gets
+// absolutized), not the euid-default bypass.
+func TestResolveServiceOptions_SystemStillHonorsExplicitFlags(t *testing.T) {
+	restoreInstallOpts(t)
+	serviceInstallOpts.System = true
+	dir := durableTempDir(t)
+	tomlPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
+
+	binary := filepath.Join(dir, "runwisp-binary")
+	require.NoError(t, os.WriteFile(binary, []byte("\x7fELF"), 0o755))
+	serviceInstallOpts.Binary = binary
+
+	f := Flags{CfgFile: tomlPath, DataDir: dir}
+	cmd := installFlagsCmd(t, f, &bytes.Buffer{}, &bytes.Buffer{})
+	require.NoError(t, cmd.Flags().Set("data", dir))
+	require.NoError(t, cmd.Flags().Set("config", tomlPath))
+
+	deps := autostart.Deps{
+		Home:        t.TempDir(),
+		User:        "root",
+		Fingerprint: "fp-test",
+		Prompter:    &autostart.ScriptedPrompter{},
+	}
+	opts, err := resolveServiceOptions(cmd, deps, f)
+	require.NoError(t, err)
+	assert.Equal(t, tomlPath, opts.Config)
+	assert.Equal(t, dir, opts.DataDir)
+}
+
 func TestRunServiceInstall_PrintRendersUnit(t *testing.T) {
 	// service install picks the platform's autostart backend: systemd on
 	// Linux, launchd on macOS, scm on Windows. The [Unit]/[Service] section

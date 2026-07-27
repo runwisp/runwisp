@@ -14,9 +14,10 @@ import (
 )
 
 var serviceUninstallOpts struct {
-	Yes   bool
-	Purge bool
-	Force bool
+	Yes    bool
+	Purge  bool
+	Force  bool
+	System bool
 }
 
 var serviceUninstallCmd = &cobra.Command{
@@ -27,7 +28,11 @@ disables autostart, and deletes the managed unit/plist. The data dir is
 preserved by default.
 
 Pass --purge to also remove the data dir. --purge requires typing the
-literal word 'delete' to confirm; --yes does NOT skip that prompt.`,
+literal word 'delete' to confirm; --yes does NOT skip that prompt.
+
+Pass --system when the unit was installed with 'service install --system' —
+it must match, or this looks at the wrong unit and reports nothing to do
+while the real one stays installed and running.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runServiceUninstall(cmd, flags)
 	},
@@ -37,6 +42,7 @@ func init() {
 	serviceUninstallCmd.Flags().BoolVarP(&serviceUninstallOpts.Yes, "yes", "y", false, "skip confirmation prompt (does not skip --purge literal word)")
 	serviceUninstallCmd.Flags().BoolVar(&serviceUninstallOpts.Purge, "purge", false, "also remove the data dir (irreversible)")
 	serviceUninstallCmd.Flags().BoolVar(&serviceUninstallOpts.Force, "force", false, "also remove a hand-edited (non-managed) unit")
+	serviceUninstallCmd.Flags().BoolVar(&serviceUninstallOpts.System, "system", false, "the unit was installed system-wide (Linux, advanced) — must match the install")
 }
 
 func runServiceUninstall(cmd *cobra.Command, f Flags) error {
@@ -54,6 +60,7 @@ func runServiceUninstall(cmd *cobra.Command, f Flags) error {
 		Purge:   serviceUninstallOpts.Purge,
 		Force:   serviceUninstallOpts.Force,
 		DataDir: f.DataDir,
+		System:  serviceUninstallOpts.System,
 	}
 
 	if err := installer.Uninstall(context.Background(), uopts, cmd.OutOrStdout()); err != nil {

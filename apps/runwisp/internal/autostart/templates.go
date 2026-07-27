@@ -24,6 +24,13 @@ type SystemdParams struct {
 	Path       string
 	ConfigHash string
 	BinarySHA  string
+	// System selects the system-wide unit shape: WantedBy=multi-user.target
+	// instead of default.target, and the extra After= ordering a system
+	// daemon needs (remote-fs.target / nss-user-lookup.target for a config
+	// or account database that may live on a network mount or NSS backend,
+	// time-sync.target so a boot-time clock step lands before scheduling
+	// starts on an RTC-less box).
+	System bool
 }
 
 // LaunchdParams is the data passed to com.runwisp.daemon.plist.tmpl.

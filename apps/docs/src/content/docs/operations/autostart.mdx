@@ -198,6 +198,31 @@ Use `--system` to target `/etc/systemd/system/` directly from the
 interactive command (requires root; documented as advanced — the
 default path is the per-user unit).
 
+### `--system` install specifics
+
+A system-wide unit is named `runwisp.service` — no fingerprint suffix.
+There's exactly one system daemon per host, so the name can't depend on
+which directory `service install --system` happened to run from (a
+per-user unit does carry the fingerprint, since several of those can
+coexist on one host). It's also ordered after `remote-fs.target` and
+`nss-user-lookup.target` (same as `cron.service`, in case the config or
+an account database lives on a network mount or an NSS backend) and
+`time-sync.target` (so a boot-time NTP clock step lands before
+scheduling starts on an RTC-less box), and `WantedBy=multi-user.target`
+instead of `default.target`.
+
+**`--system` has to be repeated on every subcommand that touches the
+unit** — `service status --system`, `service uninstall --system`,
+`stop --system`, `restart --system`. There's no stored "how was this
+installed" state to read back, so a mismatched or missing `--system`
+looks at the wrong unit: `service uninstall` against a `--system`
+install without the flag reports "Nothing to uninstall ✓" while the
+real unit stays installed and running.
+
+As root, the `sudo` prefix on every `systemctl`/`journalctl` call is
+skipped — a minimal container root image may not have `sudo` installed
+at all, and root already has the privilege.
+
 ## `--purge` for full removal
 
 `runwisp service uninstall --purge` removes the data dir in addition
@@ -248,6 +273,13 @@ runwisp service uninstall
   -y, --yes       skip the uninstall confirmation
       --purge     also remove the data dir (typed 'delete' to confirm)
       --force     remove a hand-edited unit
+      --system    the unit was installed with --system — must match
+
+runwisp service status
+      --system    the unit was installed with --system — must match
+
+runwisp stop / runwisp restart
+      --system    the daemon was installed with --system — must match
 ```
 
 ---

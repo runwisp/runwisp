@@ -236,7 +236,8 @@ opt out         `set +e` as the script's first line; no TOML key exists for this
 
 ## CLI
 
-Persistent flags: `-c/--config` (=`runwisp.toml`), `--data` (=`.runwisp`), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`), `--log-level` (debug|info|warn|error), `--log-format` (auto|text|json). Each has an env fallback the flag wins over: `RUNWISP_CONFIG`, `RUNWISP_DATA`, `RUNWISP_PORT`, `RUNWISP_HOST`, `RUNWISP_LOG_LEVEL`, `RUNWISP_LOG_FORMAT`.
+Persistent flags: `-c/--config` (=`runwisp.toml`, or `/etc/runwisp/runwisp.toml` at euid 0), `--data` (=`.runwisp`, or `/var/lib/runwisp` at euid 0), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`), `--log-level` (debug|info|warn|error), `--log-format` (auto|text|json). Each has an env fallback the flag wins over: `RUNWISP_CONFIG`, `RUNWISP_DATA`, `RUNWISP_PORT`, `RUNWISP_HOST`, `RUNWISP_LOG_LEVEL`, `RUNWISP_LOG_FORMAT`.
+Precedence for `-c`/`--data`: explicit flag > `RUNWISP_CONFIG`/`RUNWISP_DATA` env var > euid-derived default.
 Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_NO_AUTH` (1/true disables auth; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, applied on every load incl. reload), `RUNWISP_TRUST_PROXY` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`.
 
 Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64). Binds `0.0.0.0`, `RUNWISP_TLS=off`, requires `RUNWISP_PASSWORD` or `RUNWISP_NO_AUTH=1` set or the entrypoint refuses to start; mount config at `/etc/runwisp/runwisp.toml` and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
@@ -255,8 +256,8 @@ runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHU
                                GET /api/info's config_warnings, re-derived per request so a reload's
                                replace boot's. A crontab job include_cron skipped is NOT a task
                                change — it only appears here.
-runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed
-runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed)
+runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed; --system must match how it was installed
+runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed); --system must match how it was installed
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
                              — -o writes one standalone file; --write installs the two-tier layout
@@ -307,8 +308,10 @@ runwisp agent-guide          — print a paste-ready AGENTS.md/CLAUDE.md snippet
 runwisp cloud                — start in cloud mode; --token --url --env-file(=.env) --no-tui
 runwisp demo                 — boot a throwaway, fully-populated instance; --cloud --token --url --env-file
 runwisp service install      — install autostart (systemd/launchd); -y --print --dry-run --force --system --binary <path>
-runwisp service uninstall    — remove autostart; -y --purge (also data dir) --force
-runwisp service status       — show autostart status
+runwisp service uninstall    — remove autostart; -y --purge (also data dir) --force --system
+runwisp service status       — show autostart status; --system
+                             — --system must be repeated identically on install/status/uninstall/stop/restart —
+                               there's no stored record of which mode a unit was installed with
 ```
 
 ## REST API

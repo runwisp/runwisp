@@ -20,6 +20,10 @@ const (
 	serviceStatusExitNotInstalled = 2
 )
 
+var serviceStatusOpts struct {
+	System bool
+}
+
 var serviceStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show autostart status (is the daemon wired into systemd / launchd?)",
@@ -30,6 +34,8 @@ recorded settings hash, on-disk unit, and binary SHA.
 This answers "will the daemon come up after a reboot?". For
 "is the daemon alive right now?" use 'runwisp status'.
 
+Pass --system when the unit was installed with 'service install --system'.
+
 Exit codes:
   0  healthy (installed, enabled, running, no drift)
   1  degraded (installed but disabled / stopped / drift detected)
@@ -37,6 +43,10 @@ Exit codes:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runServiceStatus(cmd, flags)
 	},
+}
+
+func init() {
+	serviceStatusCmd.Flags().BoolVar(&serviceStatusOpts.System, "system", false, "the unit was installed system-wide (Linux, advanced)")
 }
 
 func runServiceStatus(cmd *cobra.Command, f Flags) error {
@@ -50,7 +60,7 @@ func runServiceStatus(cmd *cobra.Command, f Flags) error {
 		return err
 	}
 
-	opts, err := resolveStatusOptions(f)
+	opts, err := resolveStatusOptions(f, serviceStatusOpts.System)
 	if err != nil {
 		return err
 	}
@@ -72,7 +82,9 @@ func runServiceStatus(cmd *cobra.Command, f Flags) error {
 // prompt — it tolerates ambiguous defaults and only complains when a
 // caller-supplied explicit value is invalid. Also reused by
 // `runwisp stop` / `runwisp restart` for their service-managed probe.
-func resolveStatusOptions(f Flags) (autostart.InstallOptions, error) {
+// systemWide must match how the unit was installed — it picks the unit
+// path and the systemctl scope, not just a display detail.
+func resolveStatusOptions(f Flags, systemWide bool) (autostart.InstallOptions, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return autostart.InstallOptions{}, fmt.Errorf("locate runwisp binary: %w", err)
@@ -83,6 +95,7 @@ func resolveStatusOptions(f Flags) (autostart.InstallOptions, error) {
 		DataDir: f.DataDir,
 		Host:    f.Host,
 		Port:    f.Port,
+		System:  systemWide,
 	}, nil
 }
 

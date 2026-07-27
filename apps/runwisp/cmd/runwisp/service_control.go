@@ -46,7 +46,9 @@ func serviceManagerName(st autostart.Status) string {
 // Any failure — unsupported OS, missing HOME, status probe error — returns
 // ok=false and the caller falls back to the direct PID/SIGTERM path. The
 // service layer is best-effort sugar; it must never block a plain stop.
-func serviceState(cmd *cobra.Command, f Flags) (autostart.Installer, autostart.InstallOptions, autostart.Status, bool) {
+// systemWide must match how the unit was installed, same as
+// resolveStatusOptions.
+func serviceState(cmd *cobra.Command, f Flags, systemWide bool) (autostart.Installer, autostart.InstallOptions, autostart.Status, bool) {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, true)
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
@@ -55,7 +57,7 @@ func serviceState(cmd *cobra.Command, f Flags) (autostart.Installer, autostart.I
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
 	}
-	opts, err := resolveStatusOptions(f)
+	opts, err := resolveStatusOptions(f, systemWide)
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
 	}

@@ -22,13 +22,21 @@ func TestResolveStatusOptions_PullsFromFlags(t *testing.T) {
 		Port:    9911,
 	}
 
-	opts, err := resolveStatusOptions(f)
+	opts, err := resolveStatusOptions(f, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, opts.Binary, "binary path must come from os.Executable")
 	assert.Equal(t, "/tmp/status-test.toml", opts.Config)
 	assert.Equal(t, "/tmp/status-data", opts.DataDir)
 	assert.Equal(t, "10.0.0.1", opts.Host)
 	assert.Equal(t, 9911, opts.Port)
+	assert.False(t, opts.System)
+}
+
+func TestResolveStatusOptions_SystemWide(t *testing.T) {
+	t.Parallel()
+	opts, err := resolveStatusOptions(Flags{}, true)
+	require.NoError(t, err)
+	assert.True(t, opts.System)
 }
 
 func TestRenderAutostartLine(t *testing.T) {
