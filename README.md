@@ -100,7 +100,8 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 | **systemd timers**            | One `.timer` + one `.service` per job, OS-locked, painful in Docker | One TOML file. Cross-platform. Same binary on your MacBook, in CI, and in production.                                |
 | **supervisord**               | No scheduling, Python install, dated XML-RPC API, basic web UI      | Cron scheduling and process supervision in one binary. Modern REST API. Svelte dashboard. Built-in log rotation.     |
 | **supercronic / Ofelia**      | Docker-scoped; supercronic is stdout-only, and Ofelia's history/UI (fork's `--enable-web`) stays in-memory/flat-file and container-bound | Same Docker-friendly footprint, plus host-and-container cron *with* resident-service supervision, persistent queryable per-run history in SQLite, live streaming, and one-click re-trigger. |
-| **Airflow / Cronicle / Dagu** | Heavy, multi-process, requires an external DB and a team to operate | Single binary. ~25 MB RAM idle. No external DB. No ops team. Running in five minutes.                                |
+| **Airflow**                   | Heavy, multi-process, needs an external metadata DB and ongoing operation | Single binary. ~25 MB RAM idle. No external DB. No ops team. Running in five minutes.                          |
+| **Dagu / Cronicle**           | Also single-node and DB-free by default, but built around DAG/workflow runs, not resident-service supervision (and Cronicle needs a Node.js runtime) | Same lightweight single-binary footprint — **no Node/Python** — **plus** always-on service supervision (instances, restart backoff, crash recovery): a supervisord replacement, not just a workflow runner. |
 
 ---
 
