@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -158,14 +159,40 @@ func (m *cronMerge) collectBlocks(res *importer.Result) {
 // parseCronSource reads and parses one crontab, refusing a file that isn't
 // trustworthy to take daemon-privileged shell from.
 func parseCronSource(path string, owned importer.Owned) (*importer.Result, error) {
-	if err := assertCronFileTrusted(path); err != nil {
+	opts := cronOptionsFor(path, owned)
+	if err := assertSpoolRunnable(path, opts.User); err != nil {
+		return nil, fmt.Errorf("daemon.include_cron: %w", err)
+	}
+	if err := assertCronFileTrusted(path, opts.User); err != nil {
 		return nil, fmt.Errorf("daemon.include_cron: %w", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read cron source %s: %w", path, err)
 	}
-	return importer.ParseCrontab(strings.NewReader(string(data)), cronOptionsFor(path, owned))
+	return importer.ParseCrontab(strings.NewReader(string(data)), opts)
+}
+
+// assertSpoolRunnable refuses a spool crontab the daemon could read but not honour.
+//
+// Every job in /var/spool/cron/crontabs/alice runs as alice, and only root can
+// become another account. A non-root daemon that loaded the file anyway would run
+// her jobs as itself: the same commands, the wrong identity, writing to the wrong
+// home, with nothing on screen saying so. Refusing the source names the reason
+// while there is still somewhere to print it.
+func assertSpoolRunnable(path, runAs string) error {
+	if runAs == "" || os.Geteuid() == 0 {
+		return nil
+	}
+	if current, err := user.Current(); err == nil && current.Username == runAs {
+		// The daemon already *is* that account — no privilege drop needed. This is the
+		// unprivileged single-user case: alice running her own daemon over her own
+		// crontab, which is the one this feature should be easiest for.
+		return nil
+	}
+	return fmt.Errorf("cron source %s holds %s's jobs, which only a root daemon can run as them; "+
+		"this daemon runs as uid %d — run RunWisp as root to adopt other users' crontabs, "+
+		"or point include_cron only at your own", path, runAs, os.Geteuid())
 }
 
 // cronOptionsFor decides how to read one crontab.
@@ -183,14 +210,18 @@ func parseCronSource(path string, owned importer.Owned) (*importer.Result, error
 // guess is wrong anyway the job fails loudly with the error in its captured output,
 // where a dropped job has no run to fail in.
 //
-// Note what is deliberately not here: guessing a run-as identity from a path. A
-// file under /var/spool/cron/crontabs is conventionally that user's, but making a
-// filename decide a uid is a privilege *escalation* dressed as a convenience.
-// Naming such a file in include_cron works and runs its jobs as the daemon's own
-// account, which is documented rather than inferred.
+// A spool crontab (/var/spool/cron/crontabs/alice) is the third format: no user
+// column, and the owner is the filename. Taking the identity from the name is safe
+// *because* assertCronFileTrusted then requires the file to be owned by that
+// account — an inference nothing has to agree with would be an escalation, and this
+// one has to agree with the filesystem. crond pairs the same two checks on the same
+// files. A file whose jobs run as someone else is refused unless the daemon can
+// actually become them; see assertSpoolRunnable.
 func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
+	spoolOwner, _ := importer.UserSpoolOwner(path)
 	return importer.CronOptions{
 		System:   importer.IsSystemCrontabPath(path),
+		User:     spoolOwner,
 		Existing: owned,
 		// The collision tie-breaker is the file's own name, so a derived name is a
 		// function of where the job came from rather than of how many files the glob

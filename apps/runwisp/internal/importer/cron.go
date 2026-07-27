@@ -31,6 +31,11 @@ type CronOptions struct {
 	// same crontab twice after a `promote` skips the job it already owns instead
 	// of colliding on the merged load. See Owned.
 	Existing Owned
+	// User is the account every job in this crontab runs as, for a source that
+	// carries its owner outside the file's contents — a per-user spool crontab, whose
+	// owner is its filename. Mutually exclusive with System: a file either names a
+	// user per line or has one for the whole file, never both.
+	User string
 	// NameSuffix is the stable tie-breaker appended when a derived name collides,
 	// in place of the positional -2/-3. Set it to something derived from the source
 	// file (its basename, say) when parsing several crontabs whose set can change
@@ -80,6 +85,52 @@ func IsSystemCrontabPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// UserSpoolOwner returns the account a per-user crontab in a cron spool belongs
+// to, and whether the path is in a spool at all.
+//
+// A spool crontab has no user column — crond knows who it belongs to because the
+// *filename* is the account name. Both conventional layouts are recognized:
+// Debian/Ubuntu's /var/spool/cron/crontabs/<user> and RHEL/SUSE's
+// /var/spool/cron/<user>.
+//
+// The name is only a claim. What makes acting on it safe is that the caller then
+// requires the file to be owned by that account (see config.assertCronFileTrusted)
+// — deriving an identity from a filename is an escalation only when nothing has to
+// agree with it, and crond makes exactly the same pair of checks on the same files.
+func UserSpoolOwner(path string) (string, bool) {
+	if path == "" || path == "-" {
+		return "", false
+	}
+	clean := filepath.Clean(path)
+	dir, base := filepath.Split(clean)
+	dir = filepath.Clean(dir)
+	if dir != "/var/spool/cron" && dir != "/var/spool/cron/crontabs" {
+		return "", false
+	}
+	// A spool filename is a bare account name. Anything else in there — a lock
+	// file, an editor's leftover — is not a crontab, and guessing an owner from it
+	// would be inventing an identity.
+	if base == "" || !isPlausibleAccountName(base) {
+		return "", false
+	}
+	return base, true
+}
+
+// isPlausibleAccountName reports whether a spool basename can be an account name.
+// Deliberately strict: a name that has to survive being handed to the OS as a
+// run-as identity, so anything exotic is better refused than resolved.
+func isPlausibleAccountName(name string) bool {
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '-', r == '_', r == '.', r == '$':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ParseCrontab converts a crontab into a *Result. It never errors on bad
@@ -308,8 +359,10 @@ func (cp *crontabParser) importJob(line string) bool {
 
 	schedule := cp.applySchedule(&b, ref, j.schedule, j.runOnStart)
 
-	if j.user != "" {
-		b.set("user", tomlString(j.user))
+	// The per-line user column, or the whole file's owner for a spool crontab.
+	// applyOwner resolves which, so buildJob doesn't have to know the difference.
+	if owner := cp.applyOwner(j); owner != "" {
+		b.set("user", tomlString(owner))
 	}
 	// A relative SHELL was already flagged in handleEnv; only an absolute path
 	// becomes a per-task shell.
@@ -466,6 +519,18 @@ func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
 // importer having to know who anyone is.
 func (cp *crontabParser) applyWorkingDir(b *block) {
 	b.set("working_dir", tomlString("~"))
+}
+
+// applyOwner returns the account this job runs as: the line's own user column in a
+// system crontab, or the file-wide owner of a spool crontab. Empty means "whoever
+// the daemon runs as", which is what a piped `crontab -l` gets — there is nothing
+// in that text naming anyone, and inventing a user for it would run the job as
+// somebody the source never mentioned.
+func (cp *crontabParser) applyOwner(j cronJobLine) string {
+	if j.user != "" {
+		return j.user
+	}
+	return cp.opts.User
 }
 
 // applyFiringPolicies pins the two firing decisions where RunWisp's defaults are

@@ -408,7 +408,7 @@ include_cron = ["crontabs/*"]
 
 	_, err := Load(filepath.Join(dir, "runwisp.toml"))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "writable by group or others")
+	assert.Contains(t, err.Error(), "world-writable")
 }
 
 // TestIncludeCron_WorldWritableDirRefused: a writable directory lets an attacker
@@ -428,7 +428,60 @@ include_cron = ["crontabs/*"]
 
 	_, err := Load(filepath.Join(dir, "runwisp.toml"))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "writable by group or others")
+	assert.Contains(t, err.Error(), "world-writable")
+}
+
+// TestCronTrust_StickyGroupWritableDirAccepted is what made per-user crontabs
+// readable at all. A cron spool is 1730 root:crontab on every Debian box — group
+// writable so the setgid crontab(1) can drop a file in, sticky so a group member
+// still cannot touch anyone else's. Refusing group-writable outright refused the
+// exact configuration the OS ships, which is why the spool was a hard load error
+// rather than merely unmapped.
+func TestCronTrust_StickyGroupWritableDirAccepted(t *testing.T) {
+	dir := t.TempDir()
+	spool := filepath.Join(dir, "crontabs")
+	require.NoError(t, os.Mkdir(spool, 0o700))
+	path := filepath.Join(spool, "alice")
+	require.NoError(t, os.WriteFile(path, []byte("0 3 * * * /bin/true\n"), 0o600))
+	require.NoError(t, os.Chmod(spool, os.ModeSticky|0o730))
+
+	require.NoError(t, assertCronFileTrusted(path, ""),
+		"a sticky group-writable directory is what a real cron spool looks like")
+
+	// Without the sticky bit the same mode is a genuine hole: a group member can
+	// rename the file out of the way and put their own there.
+	require.NoError(t, os.Chmod(spool, 0o730))
+	err := assertCronFileTrusted(path, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "writable by its group")
+}
+
+// TestCronTrust_GroupWritableFileRefusedEvenIfSticky: the carve-out is for the
+// directory only. A sticky bit on a regular file means something else entirely and
+// buys no protection against whoever can write it.
+func TestCronTrust_GroupWritableFileRefusedEvenIfSticky(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "backup")
+	require.NoError(t, os.WriteFile(path, []byte("0 3 * * * /bin/true\n"), 0o600))
+	require.NoError(t, os.Chmod(path, os.ModeSticky|0o660))
+
+	err := assertCronFileTrusted(path, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "writable by its group")
+}
+
+// TestCronTrust_UnresolvableRunAsRefused: the run-as account is what corroborates
+// the ownership of a spool file, so an account this machine can't resolve leaves
+// the one check standing between that file and daemon-privileged execution
+// unmakeable. Refuse while there's still a place to say why.
+func TestCronTrust_UnresolvableRunAsRefused(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nobody-by-that-name")
+	require.NoError(t, os.WriteFile(path, []byte("0 3 * * * /bin/true\n"), 0o600))
+
+	err := assertCronFileTrusted(path, "runwisp-no-such-account-9f3a")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot resolve that account")
 }
 
 // TestIncludeCron_NoExpansionOfCronText pairs with the importer's ${...}
