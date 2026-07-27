@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 import js from "@eslint/js";
 import eslintConfigPrettier from "eslint-config-prettier";

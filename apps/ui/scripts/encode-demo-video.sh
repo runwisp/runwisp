@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Encodes the two committed docs assets from the lossless PNG frames captured by
 # the demo-video tour (screencast.ts writes them + a frames.txt concat list):

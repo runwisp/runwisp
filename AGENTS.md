@@ -1,6 +1,6 @@
 # RunWisp — Agent Directives
 
-**License**: Apache-2.0 · **Status**: Pre-1.0 (breaking changes permitted)
+**License**: GPL-3.0-or-later (`apps/`) · Apache-2.0 (`packages/`) · **Status**: Pre-1.0 (breaking changes permitted)
 **Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + moon (`bunx moon`), embedded SQLite (`database/sql` + `modernc.org/sqlite`), AsyncAPI-defined optional control-plane protocol.
 
 ## 🎯 PRODUCT VISION (read this first — it outranks everything below)
@@ -68,6 +68,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 - `packages/common`: Shared types, constants (Apache-2.0). _No duplicating these in apps._
 - `packages/asyncapi`: `asyncapi.yaml` is the **single source of truth** for the optional control-plane WebSocket protocol. Generates Go types into `apps/runwisp/internal/generated/protocol/`. **Never hand-write message types.**
 - `packages/{ui, eslint-config, typescript-config}`: Shared Svelte component library and tooling configs.
+- **License boundary**: `packages/*` stays Apache-2.0 because it's also consumed by the separate, unpublished `runwisp/cloud` repo, which cannot take a GPL dependency. `apps/*` (the daemon and UI you actually ship) is GPL-3.0-or-later. This is one-way: `apps/*` may depend on `packages/*`, but nothing in `packages/*` may import from `apps/*`.
 - `apps/runwisp`: Go standalone cron daemon binary. Single binary with embedded SQLite, REST API, SSE log streaming, and optional outbound control-plane integration (`internal/cloud/`).
   - `cmd/runwisp/`: CLI entry point. Root command boots the TUI; subcommands: `daemon`, `validate`, `status`, `list`, `exec`, `tui`, `cloud`, `openapi`. Also: first-run setup, password handling, port checks, daemon spawn/lifecycle.
   - `cmd/e2e-fake-daemon/`: Test-only binary that impersonates a daemon for cloud E2E tests. Not shipped.

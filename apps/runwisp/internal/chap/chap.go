@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package chap holds the daemon's challenge-response computation — the one
 // formula every responder must agree on byte-for-byte: the Go server that

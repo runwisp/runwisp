@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package smtp implements the email (SMTP) notify channel. It assembles a
 // multipart/alternative message — HTML rendered from the embedded template,

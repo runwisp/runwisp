@@ -2,7 +2,7 @@
   "name": "runwisp",
   "description": "Open-source cron replacement and process supervisor with a built-in web UI. A modern alternative to crond and supervisord.",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "https://github.com/runwisp/runwisp.git"

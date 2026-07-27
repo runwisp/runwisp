@@ -1,4 +1,4 @@
-# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
 # Workspace orchestration; the root package.json scripts alias these targets.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Serves the hand-written dense agent reference at /agents/reference.md.
 // The source lives outside public/ so Prettier manages it (a BOM in a static

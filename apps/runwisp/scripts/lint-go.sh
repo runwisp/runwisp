@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Install pinned golangci-lint into <repo>/.bin if needed, then run it.
 # Mirrors scripts/sqlc-generate.sh so the version is single-sourced and the
 # tool stays out of go.mod (its dependency tree is enormous).

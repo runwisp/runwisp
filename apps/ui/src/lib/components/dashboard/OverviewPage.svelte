@@ -1,5 +1,5 @@
 <!-- SPDX-FileCopyrightText: PoppyCake, s.r.o. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
     import PageContainer from "@runwisp/ui/components/PageContainer.svelte";

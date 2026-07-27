@@ -1,5 +1,5 @@
 -- SPDX-FileCopyrightText: PoppyCake, s.r.o.
--- SPDX-License-Identifier: Apache-2.0
+-- SPDX-License-Identifier: GPL-3.0-or-later
 
 -- Baseline schema. This migration keeps IF NOT EXISTS so databases created
 -- before the migration system existed adopt cleanly (their objects already

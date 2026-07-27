@@ -10,7 +10,7 @@ The open-source, self-hosted cron job manager and process supervisor — with a 
 
 [runwisp.com](https://runwisp.com) · [Documentation](https://docs.runwisp.com) · [Install](#install) · [Quick Start](#quick-start) · [Why RunWisp](#why-runwisp)
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/runwisp/runwisp?include_prereleases&sort=semver&color=00ADD8)](https://github.com/runwisp/runwisp/releases)
 [![CI](https://github.com/runwisp/runwisp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/runwisp/runwisp/actions/workflows/ci.yml)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=runwisp_runwisp&metric=coverage)](https://sonarcloud.io/component_measures?id=runwisp_runwisp&metric=coverage)
@@ -179,7 +179,9 @@ Full user and operator documentation lives at **[docs.runwisp.com](https://docs.
 
 ## License
 
-Apache-2.0. Use it however you want: personal projects, startups, enterprises. No CLA, no dual-licensing, no strings attached. See [LICENSE](LICENSE).
+The RunWisp daemon and web UI are GPL-3.0-or-later: use it however you want, and if you distribute a modified version, keep it open. No CLA, no dual-licensing, no strings beyond that. See [LICENSE](LICENSE).
+
+The shared libraries under `packages/` are Apache-2.0 instead — see [LICENSE-APACHE](LICENSE-APACHE) and each package's own `LICENSE`.
 
 ---
 

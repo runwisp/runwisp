@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package autostart wires the daemon into the host's init system
 // (systemd user unit on Linux/WSL, launchd LaunchAgent on macOS).

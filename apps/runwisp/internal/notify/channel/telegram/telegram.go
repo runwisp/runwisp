@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package telegram implements the Telegram bot notify channel. Bot token is
 // secret; chat_id is not. Token is resolved at config load.

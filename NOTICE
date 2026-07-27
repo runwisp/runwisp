@@ -1,5 +1,11 @@
 RunWisp
 Copyright PoppyCake, s.r.o.
 
-This product is licensed under the Apache License, Version 2.0.
-See the LICENSE file for the full license text.
+The RunWisp daemon and web UI (apps/runwisp, apps/ui, apps/docs) are licensed
+under the GNU General Public License, Version 3.0 or later. See the LICENSE
+file for the full license text.
+
+The shared libraries under packages/ (packages/common, packages/ui,
+packages/asyncapi, packages/eslint-config, packages/typescript-config) are
+licensed separately under the Apache License, Version 2.0. See LICENSE-APACHE
+and each package's own LICENSE file for the full license text.

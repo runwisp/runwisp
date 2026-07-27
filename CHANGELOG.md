@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The daemon and web UI (`apps/`) are now licensed GPL-3.0-or-later**, up from Apache-2.0. The shared libraries under `packages/` remain Apache-2.0. See [LICENSE](LICENSE) and [LICENSE-APACHE](LICENSE-APACHE).
+
 ## [0.13.2] - 2026-07-26
 
 ### Fixed

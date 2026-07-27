@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package jitter computes deterministic per-task start slots within their
 // jitter windows. It is pure geometry — no cron, no clock, no state — so

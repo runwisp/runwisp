@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package uikit holds the shared styles, colours, message types, and helper
 // functions used across every TUI view subpackage. It is the lowest-level

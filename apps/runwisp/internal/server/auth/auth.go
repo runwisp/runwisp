@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package auth implements the daemon's CHAP login + JWT issuance flow. It
 // owns the Service struct, its single-use stores (nonces, launch

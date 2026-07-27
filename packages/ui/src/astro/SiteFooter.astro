@@ -7,7 +7,7 @@ interface Props {
     class?: string;
 }
 
-const { tagline = "Apache-2.0 · Built by operators, for operators.", class: className = "" } =
+const { tagline = "Built by operators, for operators.", class: className = "" } =
     Astro.props;
 
 const hasTeaser = Astro.slots.has("teaser");

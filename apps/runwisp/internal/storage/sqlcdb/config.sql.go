@@ -15,7 +15,7 @@ SELECT value FROM config_entries WHERE key = ?
 `
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 func (q *Queries) GetConfigValue(ctx context.Context, key string) (string, error) {
 	row := q.db.QueryRowContext(ctx, getConfigValue, key)
 	var value string

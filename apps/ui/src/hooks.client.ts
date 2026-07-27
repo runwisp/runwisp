@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { HandleClientError } from "@sveltejs/kit";
 import { connectionStore } from "$lib/stores/connection.svelte";

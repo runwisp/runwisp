@@ -14,16 +14,16 @@ type Querier interface {
 	CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error)
 	CountUnreadNotifications(ctx context.Context) (int64, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-	// SPDX-License-Identifier: Apache-2.0
+	// SPDX-License-Identifier: GPL-3.0-or-later
 	CreateRun(ctx context.Context, arg CreateRunParams) error
 	DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error
 	DeleteRun(ctx context.Context, id string) error
 	DeleteRunsByIDs(ctx context.Context, ids []string) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-	// SPDX-License-Identifier: Apache-2.0
+	// SPDX-License-Identifier: GPL-3.0-or-later
 	EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegisteredParams) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-	// SPDX-License-Identifier: Apache-2.0
+	// SPDX-License-Identifier: GPL-3.0-or-later
 	GetConfigValue(ctx context.Context, key string) (string, error)
 	GetLastRunByTask(ctx context.Context, taskName string) (Run, error)
 	GetNotificationByID(ctx context.Context, id string) (Notification, error)
@@ -40,7 +40,7 @@ type Querier interface {
 	GetTaskRegistration(ctx context.Context, taskName string) (TaskRegistration, error)
 	InsertNotification(ctx context.Context, arg InsertNotificationParams) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-	// SPDX-License-Identifier: Apache-2.0
+	// SPDX-License-Identifier: GPL-3.0-or-later
 	ListNotifications(ctx context.Context, limit int64) ([]Notification, error)
 	ListNotificationsBefore(ctx context.Context, arg ListNotificationsBeforeParams) ([]Notification, error)
 	ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error)
@@ -51,7 +51,7 @@ type Querier interface {
 	PruneNotificationsByAge(ctx context.Context, lastOccurredAt time.Time) (int64, error)
 	PruneNotificationsByCount(ctx context.Context, offset int64) (int64, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-	// SPDX-License-Identifier: Apache-2.0
+	// SPDX-License-Identifier: GPL-3.0-or-later
 	PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]PurgeExpiredSoftDeletesRow, error)
 	QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]QueryRunsCreatedAtAscRow, error)
 	QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreatedAtDescParams) ([]QueryRunsCreatedAtDescRow, error)
@@ -75,7 +75,7 @@ type Querier interface {
 	RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, error)
 	SelectExistingForFingerprint(ctx context.Context, arg SelectExistingForFingerprintParams) (SelectExistingForFingerprintRow, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-	// SPDX-License-Identifier: Apache-2.0
+	// SPDX-License-Identifier: GPL-3.0-or-later
 	// Only terminal (ended) runs are eligible for retention: a run that is still
 	// pending or running must never have its row or live log files removed.
 	SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAgeParams) ([]Run, error)
@@ -88,7 +88,7 @@ type Querier interface {
 	UpdateNotificationCoalesced(ctx context.Context, arg UpdateNotificationCoalescedParams) error
 	UpdateRun(ctx context.Context, arg UpdateRunParams) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-	// SPDX-License-Identifier: Apache-2.0
+	// SPDX-License-Identifier: GPL-3.0-or-later
 	UpsertPendingLogUpload(ctx context.Context, arg UpsertPendingLogUploadParams) error
 }
 

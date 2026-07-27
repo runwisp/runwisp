@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 import { EventSourcePolyfill } from "event-source-polyfill";
 import { AUTH_TOKEN_KEY, AUTH_EVENTS } from "$lib/config/constants";

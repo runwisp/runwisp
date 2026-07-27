@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, describe, expect, it } from "vitest";
 import { headerSearchStore, type HeaderSearchSpec } from "./header-search.svelte";

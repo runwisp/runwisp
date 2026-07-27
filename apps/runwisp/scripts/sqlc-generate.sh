@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Install pinned sqlc into <repo>/.bin if needed, then run `sqlc generate`.
 set -euo pipefail
 

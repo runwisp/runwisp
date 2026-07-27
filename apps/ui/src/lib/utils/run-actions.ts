@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { Run, RunSelector } from "@runwisp/common";
 import { toast, extractErrorMessage } from "@runwisp/ui";

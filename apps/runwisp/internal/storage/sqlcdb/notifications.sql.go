@@ -91,7 +91,7 @@ SELECT id, fingerprint, kind, severity, task_name, run_id, title, body, count, o
 `
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 func (q *Queries) ListNotifications(ctx context.Context, limit int64) ([]Notification, error) {
 	rows, err := q.db.QueryContext(ctx, listNotifications, limit)
 	if err != nil {

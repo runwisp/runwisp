@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package cronspec is the single definition of the cron grammar RunWisp
 // accepts. Every component that parses a task's cron expression — the

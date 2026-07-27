@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package logpane is the scrollable log viewer shared by the exec-view and
 // debug pages. It owns vertical/horizontal scroll, follow-mode, ANSI-aware

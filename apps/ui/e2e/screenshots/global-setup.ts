@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Boots a demo-seeded daemon for the docs screenshot run. Unlike the e2e
 // harness (which uses a tiny fixtures/runwisp.e2e.toml), this one seeds the rich
