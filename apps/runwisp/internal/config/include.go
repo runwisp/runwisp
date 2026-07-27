@@ -78,6 +78,9 @@ func loadWithIncludes(path string) (*Config, entrySources, error) {
 	cfg.cronFiles = cron.files
 	cfg.CronFindings = cron.findings
 	cfg.cronBlocks = cron.blocks
+	// After buildConfig, so the notifier set is known: a crontab's MAILTO stops being
+	// something to report once the config can actually deliver mail.
+	dropAnsweredFindings(cfg)
 	return cfg, src, nil
 }
 

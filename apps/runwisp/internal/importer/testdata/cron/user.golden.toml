@@ -8,6 +8,8 @@ timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/local/bin/backup.sh --full"
 
 [tasks.backup.env]
@@ -20,6 +22,8 @@ timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/sbin/logrotate /etc/logrotate.conf"
 
 [tasks.logrotate.env]
@@ -31,6 +35,8 @@ timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/opt/app/cleanup"
 
 [tasks.cleanup.env]
@@ -43,6 +49,8 @@ timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/opt/app/warmup"
 
 [tasks.warmup.env]
@@ -55,6 +63,8 @@ timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/bin/nice -n 19 /opt/sync.sh"
 
 [tasks.sync.env]

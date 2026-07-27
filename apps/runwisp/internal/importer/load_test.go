@@ -18,6 +18,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // goldensThatMustNotLoad names the golden files whose whole point is that the
@@ -210,6 +211,49 @@ func TestLiveTOMLAlwaysLoads(t *testing.T) {
 			if _, err := loadTOML(t, live); err != nil {
 				t.Fatalf("LiveTOML does not load: %v\n--- live toml ---\n%s\n--- skipped ---\n%+v",
 					err, live, res.SkippedLive())
+			}
+		})
+	}
+}
+
+// TestImportedJobsKeepCrondFiringSemantics asserts the two firing policies where
+// RunWisp's defaults differ from crond's, on every fixture and after a real load.
+//
+// Asserted post-load rather than against the emitted text on purpose: what matters
+// is the policy the scheduler ends up with, and that is a function of both what the
+// importer writes and what applyDefaults fills in. A test that only grepped the
+// TOML would keep passing if `catch_up = "skip"` stopped surviving the round trip,
+// and would say nothing if RunWisp's own default changed underneath it.
+func TestImportedJobsKeepCrondFiringSemantics(t *testing.T) {
+	for path, opts := range cronFixtures(t) {
+		t.Run(path, func(t *testing.T) {
+			in, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read fixture: %v", err)
+			}
+			res, err := importer.ParseCrontab(strings.NewReader(string(in)), opts)
+			if err != nil {
+				t.Fatalf("ParseCrontab: %v", err)
+			}
+			cfg, err := loadTOML(t, res.LiveTOML())
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if len(cfg.Tasks) == 0 {
+				t.Skip("fixture emits no live tasks")
+			}
+			for _, task := range cfg.Tasks {
+				// crond has no missed-tick concept, so a restart must not re-fire
+				// yesterday's ticks. The gap is still recorded either way.
+				if task.CatchUp != model.MissedRunSkip {
+					t.Errorf("task %q: catch_up = %q, want %q — a daemon restart would re-fire missed ticks crond dropped",
+						task.Name, task.CatchUp, model.MissedRunSkip)
+				}
+				// Deliberately queue rather than crond's unbounded overlap, but it
+				// has to be the policy we chose and not one inherited by accident.
+				if task.OnOverlap != model.PolicyQueue {
+					t.Errorf("task %q: on_overlap = %q, want %q", task.Name, task.OnOverlap, model.PolicyQueue)
+				}
 			}
 		})
 	}

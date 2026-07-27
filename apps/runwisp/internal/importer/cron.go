@@ -324,6 +324,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	// env and layers over this.
 	b.set("env_base", tomlString(string(model.EnvBaseClean)))
 	cp.applyWorkingDir(&b)
+	cp.applyFiringPolicies(&b)
 
 	cp.applyCommand(&b, ref, cc)
 	blocks := []block{b}
@@ -465,6 +466,33 @@ func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
 // importer having to know who anyone is.
 func (cp *crontabParser) applyWorkingDir(b *block) {
 	b.set("working_dir", tomlString("~"))
+}
+
+// applyFiringPolicies pins the two firing decisions where RunWisp's defaults are
+// not crond's. Both are about *when* a job runs, which is the one thing a
+// migration must not change quietly.
+//
+// catch_up: crond has no concept of a missed tick. A tick that arrives while
+// nothing is listening is simply gone. RunWisp defaults to `latest`, so a daemon
+// started at 15:00 re-fires the 02:00 backup — an extra run that looks entirely
+// legitimate in the history and is impossible to distinguish from a scheduled
+// one. `skip` restores crond's rule and costs nothing in visibility: the missed
+// row is recorded either way (catch-up detection is policy-independent — see
+// runtime.computeCatchupTriggers), so RunWisp still shows the gap crond dropped
+// in silence.
+//
+// on_overlap: this one is emitted at its default value on purpose. crond runs
+// overlapping copies of a job that outlives its own interval; RunWisp queues
+// them. Queueing is the better behaviour — an unbounded pile-up is the reason
+// cron jobs get wrapped in flock — so we keep it rather than reproducing the
+// footgun, but an operator whose job relied on parallel firing has to be able to
+// find the knob. A key they can see and change beats a default they'd have to
+// know to go looking for.
+func (cp *crontabParser) applyFiringPolicies(b *block) {
+	b.setComment("catch_up", tomlString(string(model.MissedRunSkip)),
+		"crond never re-fires a missed tick; the gap is still recorded.")
+	b.setComment("on_overlap", tomlString(string(model.PolicyQueue)),
+		"crond would run these overlapping instead of queueing.")
 }
 
 // cronCommand is a crontab command field with crond's own '%' rules applied.

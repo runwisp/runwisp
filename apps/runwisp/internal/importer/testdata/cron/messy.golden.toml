@@ -6,12 +6,16 @@ description = "Two jobs that derive the same name → deduped"
 cron = "0 1 * * *"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/bin/job"
 
 [tasks.job-2]
 cron = "0 2 * * *"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/bin/job"
 
 [tasks.mail]
@@ -19,6 +23,8 @@ description = "An unescaped percent ends the command; the rest is stdin, which R
 cron = "0 3 * * *"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/bin/mail -s report ops"  # TODO: crond also piped "body line one\nbody line two" to this on stdin.
 
 [tasks.date]
@@ -26,4 +32,6 @@ description = "An escaped percent is a literal one, and the backslash is crond's
 cron = "0 4 * * *"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/bin/date +%Y-%m-%d >> /var/log/stamp"

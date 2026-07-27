@@ -6,6 +6,8 @@ cron = "0 4 * * *"
 timezone = "Mars/Olympus"  # TODO: RunWisp couldn't use this timezone — fix it.
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/bin/rollup"
 
 # @reboot — runs once each time the daemon starts.
@@ -14,4 +16,6 @@ run_on_start = true
 timezone = "Mars/Olympus"  # TODO: RunWisp couldn't use this timezone — fix it.
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/bin/warmup"

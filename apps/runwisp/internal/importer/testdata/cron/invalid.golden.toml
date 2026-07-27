@@ -6,6 +6,8 @@ description = "Broken nightly job"
 cron = "99 99 * * *"  # TODO: RunWisp couldn't parse this cron expression — fix it.
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/bin/bad"
 
 [tasks.bad.env]

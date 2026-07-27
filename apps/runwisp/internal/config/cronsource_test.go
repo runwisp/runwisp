@@ -180,6 +180,154 @@ include_cron = ["crontabs/*"]
 	assert.Contains(t, warnings, "not running")
 }
 
+// TestIncludeCron_GlobIgnoresWhatCrondIgnores is the wrong-direction guard: every
+// other skip in this file stops something from running, but reading a file crond
+// passes over *starts* something running — jobs the operator believes are disabled,
+// or a superseded copy of jobs that also run from the live file.
+func TestIncludeCron_GlobIgnoresWhatCrondIgnores(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+`,
+		"crontabs/live":          "0 3 * * * /usr/local/bin/live.sh\n",
+		"crontabs/old.dpkg-old":  "0 4 * * * /usr/local/bin/superseded.sh\n",
+		"crontabs/held.disabled": "0 5 * * * /usr/local/bin/switched-off.sh\n",
+		"crontabs/README":        "notes for whoever maintains this directory\n",
+		"crontabs/nested/deep":   "0 6 * * * /usr/local/bin/nested.sh\n",
+	})
+
+	cfg := loadTree(t, dir)
+	assert.Equal(t, []string{"live"}, taskNames(cfg),
+		"only files crond would read may contribute tasks")
+
+	// README is dotless, so crond reads it too and complains about its contents —
+	// which is exactly what happens here: it is opened as a crontab and its prose
+	// becomes an ordinary unparseable-job finding. Parity, not an oversight.
+	assert.Equal(t, []string{
+		filepath.Join(dir, "crontabs", "README"),
+		filepath.Join(dir, "crontabs", "live"),
+	}, cfg.CronFiles())
+
+	// The name rule accounts for the two dotted files; the directory for the nested
+	// one.
+	byBase := map[string]CronFinding{}
+	for _, f := range cfg.CronFindings {
+		byBase[filepath.Base(f.File)] = f
+	}
+	for base, want := range map[string]string{
+		"old.dpkg-old":  "crond ignores this name",
+		"held.disabled": "crond ignores this name",
+		"nested":        "it is a directory",
+	} {
+		finding, ok := byBase[base]
+		require.True(t, ok, "no finding for %s — it was passed over silently", base)
+		assert.Contains(t, finding.Reason, want)
+		assert.False(t, finding.Skipped,
+			"nothing stopped running: crond wasn't running this either")
+	}
+
+	// The operator who dropped in `held.disabled` and can't find its tasks has to be
+	// able to learn that the name is the reason.
+	warnings := strings.Join(Warnings(cfg), "\n")
+	assert.Contains(t, warnings, "held.disabled")
+}
+
+// TestIncludeCron_MailtoIsReported is the quietest regression include_cron could
+// have shipped: a crontab that had been mailing its output for years goes silent on
+// the switch, and every job still reports success. The note existed the whole time —
+// it just belonged to the file rather than to a job, and only the per-job notes were
+// being read.
+func TestIncludeCron_MailtoIsReported(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+`,
+		"crontabs/nightly": "MAILTO=ops@example.com\n0 3 * * * /usr/local/bin/backup.sh\n",
+	})
+
+	cfg := loadTree(t, dir)
+	assert.Equal(t, []string{"backup"}, taskNames(cfg), "the job still runs; only the mail is missing")
+
+	require.Len(t, cfg.CronFindings, 1)
+	finding := cfg.CronFindings[0]
+	assert.False(t, finding.Skipped, "nothing stopped running")
+	assert.Equal(t, filepath.Join(dir, "crontabs", "nightly"), finding.File)
+	assert.Zero(t, finding.Line, "a file-level finding has no line")
+	assert.Contains(t, finding.Reason, "MAILTO")
+
+	warnings := strings.Join(Warnings(cfg), "\n")
+	assert.Contains(t, warnings, "MAILTO")
+}
+
+// TestIncludeCron_MailtoIsSilentOnceMailWorks: the finding names an unmet need, so
+// it has to stop once the need is met. A warning that keeps firing after it's been
+// dealt with is how an operator learns to stop reading warnings.
+func TestIncludeCron_MailtoIsSilentOnceMailWorks(t *testing.T) {
+	for _, notifierType := range []string{"sendmail", "smtp"} {
+		t.Run(notifierType, func(t *testing.T) {
+			extra := ""
+			if notifierType == "smtp" {
+				extra = "host = \"mail.example.com\"\nport = 587\n"
+			}
+			dir := writeFileTree(t, map[string]string{
+				"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+
+[[notifier]]
+id = "mail"
+type = "` + notifierType + `"
+from = "runwisp@example.com"
+to = ["ops@example.com"]
+` + extra,
+				"crontabs/nightly": "MAILTO=ops@example.com\n0 3 * * * /usr/local/bin/backup.sh\n",
+			})
+
+			cfg := loadTree(t, dir)
+			assert.Empty(t, cfg.CronFindings,
+				"mail is configured, so the crontab's MAILTO is no longer an open question")
+		})
+	}
+}
+
+// TestIncludeCron_NonAbsoluteShellIsReported: the other file-level note. crond's
+// SHELL=bash is not honoured (RunWisp needs an absolute path), so a bash-ism in a
+// job fails — visibly, in the run's output, but the operator should not have to
+// diagnose it from there.
+func TestIncludeCron_NonAbsoluteShellIsReported(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+`,
+		"crontabs/nightly": "SHELL=bash\n0 3 * * * /usr/local/bin/backup.sh\n",
+	})
+
+	cfg := loadTree(t, dir)
+	require.Len(t, cfg.CronFindings, 1)
+	assert.Contains(t, cfg.CronFindings[0].Reason, "SHELL")
+	assert.False(t, cfg.CronFindings[0].Skipped)
+}
+
+// TestIncludeCron_LiterallyNamedFileIsReadWhateverItsName: the name rule filters a
+// glob's hits, never a path the operator typed. Declining to read a file that was
+// asked for by name would be the daemon overruling an explicit instruction.
+func TestIncludeCron_LiterallyNamedFileIsReadWhateverItsName(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/backup.cron"]
+`,
+		"crontabs/backup.cron": "0 3 * * * /usr/local/bin/backup.sh\n",
+	})
+
+	cfg := loadTree(t, dir)
+	assert.Equal(t, []string{"backup"}, taskNames(cfg))
+	assert.Empty(t, cfg.CronFindings)
+}
+
 func TestIncludeCron_UnreadableFileIsHardError(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{
 		"runwisp.toml": `
@@ -222,12 +370,17 @@ run = "echo hi"
 // TestIncludeCron_OverlapWithIncludeIsHardError: the two readings of one file
 // produce different task sets, and silently picking one would make the config
 // mean something nobody wrote.
+//
+// include_cron names the file literally rather than globbing it, because a glob
+// can no longer reach a `.toml` at all — crond's naming rule filters dotted names
+// out of a glob's hits. A literal path is the operator overriding that, and so the
+// one route by which the same file can still arrive down both readings.
 func TestIncludeCron_OverlapWithIncludeIsHardError(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{
 		"runwisp.toml": `
 [daemon]
 include = ["conf.d/*"]
-include_cron = ["conf.d/*"]
+include_cron = ["conf.d/a.toml"]
 `,
 		"conf.d/a.toml": "[tasks.a]\nrun = \"echo a\"\n",
 	})

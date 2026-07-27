@@ -8,6 +8,8 @@ user = "root"
 shell = "/bin/sh"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/bin/apt-get update"
 
 [tasks.apt-get.env]
@@ -20,6 +22,8 @@ user = "deploy"
 shell = "/bin/sh"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/local/bin/cleanup --quiet"
 
 [tasks.cleanup.env]
@@ -31,6 +35,8 @@ user = "postgres"
 shell = "/bin/sh"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/bin/vacuumdb --all"
 
 [tasks.vacuumdb.env]
@@ -44,6 +50,8 @@ user = "root"
 shell = "/bin/sh"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # crond never re-fires a missed tick; the gap is still recorded.
+on_overlap = "queue"  # crond would run these overlapping instead of queueing.
 run = "/usr/bin/warmup"
 
 [tasks.warmup.env]

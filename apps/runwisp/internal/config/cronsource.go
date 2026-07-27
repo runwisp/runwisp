@@ -49,6 +49,11 @@ type CronFinding struct {
 	// Skipped distinguishes "not running" from "running, with a caveat". Both are
 	// worth a warning; only the first is a job the machine isn't doing.
 	Skipped bool
+	// kind is the note this finding came from, for the few findings whose relevance
+	// depends on the rest of the config. Unexported: which importer note produced a
+	// finding is this package's business, and a NoteKind on the public type would put
+	// an internal/importer enum on the daemon's API surface. See dropAnsweredFindings.
+	kind importer.NoteKind
 }
 
 // String renders the finding as one line for a warning list.
@@ -107,11 +112,12 @@ func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath str
 	}
 
 	var m cronMerge
-	globs, matched, err := resolveCronIncludes(patterns, rootDir, rootPath)
+	globs, matched, ignored, err := resolveCronIncludes(patterns, rootDir, rootPath)
 	if err != nil {
 		return cronMerge{}, err
 	}
 	m.globs = globs
+	m.findings = append(m.findings, ignoredFindings(ignored)...)
 	if err := assertNoIncludeOverlap(matched, tomlMatched); err != nil {
 		return cronMerge{}, err
 	}
@@ -269,6 +275,23 @@ func claimOwned(owned importer.Owned, res *importer.Result) {
 // task looks like something RunWisp invented.
 func findingsFrom(res *importer.Result, path string) []CronFinding {
 	var out []CronFinding
+	// File-level notes first: they describe the crontab's own structure — a MAILTO
+	// nobody is honouring, a SHELL that isn't an absolute path — and belong to no
+	// single job, so nothing in the per-item walk below would ever reach them. Until
+	// this existed a crontab that had been mailing its output for years went quiet on
+	// the switch to include_cron and said nothing, which is the exact failure this
+	// type was introduced to prevent.
+	for _, n := range res.Notes() {
+		if !n.Blocking() {
+			continue
+		}
+		out = append(out, CronFinding{
+			File:   path,
+			Source: filepath.Base(path),
+			Reason: n.Message,
+			kind:   n.Kind,
+		})
+	}
 	for _, it := range res.Items() {
 		live := it.LiveEligible()
 		for _, n := range it.Notes {
@@ -291,6 +314,42 @@ func findingsFrom(res *importer.Result, path string) []CronFinding {
 	return out
 }
 
+// dropAnsweredFindings removes findings whose need the rest of the config already
+// meets. Called once the whole Config exists, because the answer lives outside the
+// crontab that raised the question.
+//
+// Only MAILTO so far. It is a real gap on a box that hasn't wired up mail — crond
+// delivered that output and RunWisp doesn't — but it is a gap the operator closes
+// once, daemon-wide, and a warning that keeps firing after it has been dealt with
+// is how an operator learns to stop reading warnings. The findings list is
+// re-derived every load, so this stays correct if the notifier is later removed.
+func dropAnsweredFindings(cfg *Config) {
+	if !hasMailNotifier(cfg) {
+		return
+	}
+	kept := make([]CronFinding, 0, len(cfg.CronFindings))
+	for _, f := range cfg.CronFindings {
+		if f.kind == importer.NoteMailto {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	cfg.CronFindings = kept
+}
+
+// hasMailNotifier reports whether the config can deliver mail at all. Both mail
+// types count: `sendmail` is what the importer suggests because it needs no
+// configuration on a box that already ran cron, but an operator who reached for
+// `smtp` instead has answered the same question.
+func hasMailNotifier(cfg *Config) bool {
+	for _, n := range cfg.Notify.Notifiers {
+		if n.Type == "sendmail" || n.Type == "smtp" {
+			return true
+		}
+	}
+	return false
+}
+
 // isRenameNote reports whether a note explains that a job is running under a name
 // the crontab doesn't mention. Non-blocking — the job runs fine — but the operator
 // cannot find the task without being told.
@@ -299,26 +358,118 @@ func isRenameNote(n importer.Note) bool {
 }
 
 // resolveCronIncludes expands each include_cron pattern against the root config
-// dir and returns the resolved patterns plus the deduplicated, lexically sorted
-// matches. Zero matches is not an error: an empty /etc/cron.d is a normal machine,
-// and a glob that matches nothing today may match tomorrow.
-func resolveCronIncludes(patterns []string, rootDir, rootPath string) (globs, matched []string, err error) {
+// dir and returns the resolved patterns, the deduplicated lexically sorted
+// matches, and the glob hits deliberately passed over. Zero matches is not an
+// error: an empty /etc/cron.d is a normal machine, and a glob that matches nothing
+// today may match tomorrow.
+func resolveCronIncludes(patterns []string, rootDir, rootPath string) (globs, matched []string, ignored []ignoredSource, err error) {
 	rootAbs, _ := filepath.Abs(rootPath)
 	seen := map[string]struct{}{}
 	for _, pat := range patterns {
 		abs, err := resolvePath(rootDir, pat)
 		if err != nil {
-			return nil, nil, fmt.Errorf("daemon.include_cron %q: %w", pat, err)
+			return nil, nil, nil, fmt.Errorf("daemon.include_cron %q: %w", pat, err)
 		}
 		globs = append(globs, abs)
 		hits, err := filepath.Glob(abs)
 		if err != nil {
-			return nil, nil, fmt.Errorf("daemon.include_cron %q: %w", pat, err)
+			return nil, nil, nil, fmt.Errorf("daemon.include_cron %q: %w", pat, err)
+		}
+		if hasGlobMeta(abs) {
+			hits, ignored = partitionCrondEligible(hits, ignored)
 		}
 		matched = appendGlobHits(matched, hits, rootAbs, seen)
 	}
 	sort.Strings(matched)
-	return globs, matched, nil
+	return globs, matched, ignored, nil
+}
+
+// ignoredSource is one glob hit that was not read, and why.
+type ignoredSource struct {
+	Path   string
+	Reason string
+}
+
+// hasGlobMeta reports whether a resolved pattern can expand to more than the one
+// path it names.
+//
+// It gates the crond-eligibility filter, because the filter must apply to a
+// *glob's* hits and never to a path the operator typed out. `include_cron =
+// ["/etc/cron.d/backup.cron"]` names one file deliberately; silently declining to
+// read it because crond's own directory scan would have skipped that name is the
+// daemon overruling an explicit instruction. A glob is the opposite case: the
+// operator asked for "whatever is in this directory", and what crond considers to
+// be in it is the only sane reading of that.
+func hasGlobMeta(pattern string) bool {
+	return strings.ContainsAny(pattern, "*?[")
+}
+
+// partitionCrondEligible splits glob hits into the ones crond would read and the
+// ones it would pass over, appending the latter to ignored.
+//
+// crond's own /etc/cron.d scan accepts only regular files whose names are made of
+// letters, digits, hyphens and underscores — no dots. That rule is not cosmetic:
+// it is precisely how a package upgrade's `backup.dpkg-old`, a hand-disabled
+// `job.disabled`, and a `README` stay out of the schedule. Reading them because
+// they matched `*` is the worst kind of divergence, because it runs jobs the
+// operator believes are switched off, and a matched subdirectory would fail the
+// whole load on a read error.
+func partitionCrondEligible(hits []string, ignored []ignoredSource) ([]string, []ignoredSource) {
+	kept := make([]string, 0, len(hits))
+	for _, h := range hits {
+		info, err := os.Lstat(h)
+		switch {
+		case err != nil:
+			// Vanished between glob and stat, or unreadable. Leave it in: the read
+			// that follows reports a real error against a real path, which beats
+			// this function inventing a reason for a file it couldn't look at.
+			kept = append(kept, h)
+		case info.IsDir():
+			ignored = append(ignored, ignoredSource{Path: h, Reason: "it is a directory"})
+		case !info.Mode().IsRegular():
+			ignored = append(ignored, ignoredSource{Path: h, Reason: "it is not a regular file"})
+		case !isCrondEligibleName(filepath.Base(h)):
+			ignored = append(ignored, ignoredSource{Path: h,
+				Reason: "crond ignores this name (letters, digits, - and _ only), so it is not part of the schedule"})
+		default:
+			kept = append(kept, h)
+		}
+	}
+	return kept, ignored
+}
+
+// isCrondEligibleName applies crond's run-parts naming rule to one basename.
+func isCrondEligibleName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ignoredFindings reports the passed-over hits, one finding per file.
+//
+// Skipped is false: nothing stopped running because of this. crond wasn't running
+// these either, so the machine is doing exactly what it did before — but an
+// operator who dropped a file in and can't find its tasks needs to be told the
+// name is why, and the alternative (say nothing) is how `job.disabled` becomes a
+// twenty-minute mystery.
+func ignoredFindings(ignored []ignoredSource) []CronFinding {
+	out := make([]CronFinding, 0, len(ignored))
+	for _, ig := range ignored {
+		out = append(out, CronFinding{
+			File:   ig.Path,
+			Source: filepath.Base(ig.Path),
+			Reason: "not read as a cron source: " + ig.Reason,
+		})
+	}
+	return out
 }
 
 // assertNoIncludeOverlap rejects a file claimed by both include and include_cron.
