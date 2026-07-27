@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The daemon and web UI (`apps/`) are now licensed GPL-3.0-or-later**, up from Apache-2.0. The shared libraries under `packages/` remain Apache-2.0. See [LICENSE](LICENSE) and [LICENSE-APACHE](LICENSE-APACHE).
 
+### Security
+
+- **Compose tasks hand their environment and secrets to the `docker compose` CLI through its process environment** and forward each variable with a value-less `-e KEY` flag, so docker resolves values from its own environment and no secret value is ever placed on the command line. See [Compose](https://docs.runwisp.com/configuration/compose/).
+
 ## [0.13.2] - 2026-07-26
 
 ### Fixed
