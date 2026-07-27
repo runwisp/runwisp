@@ -97,10 +97,15 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 		cmd.Dir = ce.WorkingDir
 	}
 
-	// Compose CLI inherits the daemon's env so users' DOCKER_HOST etc. work;
-	// task env is passed to the container itself via -e flags (see
-	// buildComposeArgs).
+	// Compose CLI inherits the daemon's env so users' DOCKER_HOST etc. work.
+	// Task env/secrets/params are then appended so the value-less `-e KEY`
+	// flags (see buildComposeArgs) resolve their values from the CLI's own
+	// environment — keeping secret values off argv (and out of `ps` output).
+	// Stack mode forwards env via compose itself, not `-e`, so it's exempt.
 	cmd.Env = os.Environ()
+	if ce.Mode != model.ComposeModeStack {
+		cmd.Env = append(cmd.Env, composeEnv(task, run, instanceIndex)...)
+	}
 
 	proc, err := startCmd(cmd, task.GracefulStop, signalFromName(task.StopSignal), nil, "start docker compose")
 	if err != nil {
@@ -178,7 +183,9 @@ func parseContainerIDs(out []byte) []string {
 // buildComposeArgs assembles the argv tail (after the docker binary) for
 // either per-service (`run --rm`) or stack-mode (`up --abort-on-container-exit`)
 // invocations. RUNWISP_INSTANCE_INDEX + task.Env + task.Secrets flow into
-// the target container via repeated -e flags, deterministically ordered.
+// the target container via repeated value-less `-e KEY` flags, deterministically
+// ordered; docker resolves each value from the CLI's environment (injected in
+// Start), so no value ever appears on argv.
 // fingerprint scopes the ownership labels stamped on the container.
 func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.Run, fingerprint string) []string {
 	args := []string{"compose", "-f", ce.File}
@@ -221,8 +228,8 @@ func appendComposeRunArgs(args []string, ce *model.ComposeExecution, task *model
 	for _, l := range composeManagedLabels(task.Name, instanceIndex, fingerprint) {
 		args = append(args, "--label", l)
 	}
-	for _, kv := range composeEnvFlags(task, run, instanceIndex) {
-		args = append(args, "-e", kv)
+	for _, k := range composeEnvFlags(task, run, instanceIndex) {
+		args = append(args, "-e", k)
 	}
 	args = append(args, ce.Service)
 	// Per-execution arg/option/flag tokens pass as real argv after the
@@ -265,13 +272,13 @@ func composeContainerName(project, service string, idx int) string {
 	}
 }
 
-// composeEnvFlags returns deterministically ordered KEY=VALUE strings suitable
-// for passing as -e arguments to `docker compose run`. RUNWISP_INSTANCE_INDEX
-// is always injected; task.Env wins over the daemon's environment because we
-// only forward the user's declared variables, not os.Environ(). The per-run
+// composeMergedEnv builds the deterministic variable set forwarded into the
+// target container. RUNWISP_INSTANCE_INDEX is always injected; task.Env wins
+// over the daemon's environment because we only forward the user's declared
+// variables, not os.Environ(). Secrets override plain env, and the per-run
 // param env layer is applied last so manual intent wins (collisions are
 // rejected at config load, so order is immaterial in valid configs).
-func composeEnvFlags(task *model.Task, run *model.Run, instanceIndex int) []string {
+func composeMergedEnv(task *model.Task, run *model.Run, instanceIndex int) map[string]string {
 	merged := map[string]string{
 		"RUNWISP_INSTANCE_INDEX": strconv.Itoa(instanceIndex),
 	}
@@ -288,11 +295,36 @@ func composeEnvFlags(task *model.Task, run *model.Run, instanceIndex int) []stri
 	for k, v := range model.ParamEnvLayer(task.Parameters, runParams) {
 		merged[k] = v
 	}
-	keys := make([]string, 0, len(merged))
-	for k := range merged {
+	return merged
+}
+
+// sortedKeys returns the map's keys in ascending order — the single source of
+// the deterministic ordering shared by composeEnvFlags and composeEnv.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	return keys
+}
+
+// composeEnvFlags returns the deterministically ordered variable NAMES to
+// forward into the container as value-less `-e KEY` flags. Docker's `-e KEY`
+// form reads each value from the calling process's environment — which Start
+// populates via composeEnv — so secret values never appear on argv (and thus
+// never in `ps` output).
+func composeEnvFlags(task *model.Task, run *model.Run, instanceIndex int) []string {
+	return sortedKeys(composeMergedEnv(task, run, instanceIndex))
+}
+
+// composeEnv returns the forwarded variables as deterministically ordered
+// KEY=VALUE pairs, for appending to the docker CLI child process's environment
+// in Start. Pairing with composeEnvFlags' value-less `-e KEY` flags, this is
+// how the actual values reach the container without ever touching argv.
+func composeEnv(task *model.Task, run *model.Run, instanceIndex int) []string {
+	merged := composeMergedEnv(task, run, instanceIndex)
+	keys := sortedKeys(merged)
 	out := make([]string, len(keys))
 	for i, k := range keys {
 		out[i] = k + "=" + merged[k]

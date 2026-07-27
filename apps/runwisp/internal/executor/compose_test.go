@@ -55,8 +55,11 @@ func TestComposeBackend_BuildArgs_ServicesMode(t *testing.T) {
 	assert.Contains(t, joined, "--label com.runwisp.task=boxes.web")
 	assert.Contains(t, joined, "--label com.runwisp.instance=2")
 	assert.Contains(t, joined, "--label com.runwisp.instance-fp=fp-123")
-	assert.Contains(t, joined, "-e RUNWISP_INSTANCE_INDEX=2")
-	assert.Contains(t, joined, "-e LOG_LEVEL=info")
+	// Values are injected into the docker CLI's own environment, not argv, so
+	// only the value-less `-e KEY` flags appear here.
+	assert.Contains(t, joined, "-e RUNWISP_INSTANCE_INDEX")
+	assert.Contains(t, joined, "-e LOG_LEVEL")
+	assert.NotContains(t, joined, "LOG_LEVEL=info", "env values must never appear on argv")
 	// service name is the final positional argument
 	assert.Equal(t, "web", args[len(args)-1])
 }
@@ -103,12 +106,13 @@ func TestComposeBackend_EnvFlags_DeterministicOrder(t *testing.T) {
 		Secrets: map[string]string{"ZED": "secret"},
 	}
 	flags := composeEnvFlags(task, nil, 0)
-	// alphabetical ordering keeps test assertions stable
+	// composeEnvFlags returns NAMES only (values go into the CLI env, not argv);
+	// alphabetical ordering keeps test assertions stable.
 	assert.Equal(t, []string{
-		"BAR=2",
-		"FOO=1",
-		"RUNWISP_INSTANCE_INDEX=0",
-		"ZED=secret",
+		"BAR",
+		"FOO",
+		"RUNWISP_INSTANCE_INDEX",
+		"ZED",
 	}, flags)
 }
 
@@ -117,9 +121,13 @@ func TestComposeBackend_EnvFlags_SecretOverridesEnv(t *testing.T) {
 		Env:     map[string]string{"PASSWORD": "plain"},
 		Secrets: map[string]string{"PASSWORD": "from-secret"},
 	}
-	flags := composeEnvFlags(task, nil, 0)
-	assert.Contains(t, flags, "PASSWORD=from-secret")
-	assert.NotContains(t, flags, "PASSWORD=plain")
+	// composeEnv carries the resolved KEY=VALUE pairs (injected into the CLI
+	// env); it's where the secret-over-env precedence is observable.
+	env := composeEnv(task, nil, 0)
+	assert.Contains(t, env, "PASSWORD=from-secret")
+	assert.NotContains(t, env, "PASSWORD=plain")
+	// The value-less flags carry only the name.
+	assert.Equal(t, []string{"PASSWORD", "RUNWISP_INSTANCE_INDEX"}, composeEnvFlags(task, nil, 0))
 }
 
 func TestComposeContainerName(t *testing.T) {
@@ -175,8 +183,50 @@ func TestComposeBackend_Start_RecordsArgs(t *testing.T) {
 	assert.Contains(t, rec, "-f /tmp/dc.yml")
 	assert.Contains(t, rec, "-p demo")
 	assert.Contains(t, rec, "--name demo_web_1")
-	assert.Contains(t, rec, "RUNWISP_INSTANCE_INDEX=1")
-	assert.Contains(t, rec, "FOO=bar")
+	// Only the value-less `-e KEY` flags reach argv; the values are injected
+	// into the docker CLI's environment instead (see the env-injection test).
+	assert.Contains(t, rec, "-e RUNWISP_INSTANCE_INDEX")
+	assert.Contains(t, rec, "-e FOO")
+	assert.NotContains(t, rec, "FOO=bar", "env values must never appear on argv")
+	assert.NotContains(t, rec, "RUNWISP_INSTANCE_INDEX=1", "env values must never appear on argv")
+}
+
+// TestComposeBackend_Start_InjectsEnvIntoChildProcess pins the hardening: the
+// actual env/secret values are delivered to docker through the CLI child's
+// environment (so `-e KEY` can resolve them), never through argv. The shim
+// dumps its own environment and the test asserts the secret value is present
+// there.
+func TestComposeBackend_Start_InjectsEnvIntoChildProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH-shim depends on POSIX shell")
+	}
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, "env.txt")
+	body := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n" +
+		"  echo 'Docker Compose v2.test'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"env > '" + envFile + "'\n" +
+		"exit 0\n"
+	installDockerShimScript(t, dir, body)
+
+	b := &ComposeBackend{dockerCmd: "docker"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeServices}
+	task := &model.Task{Secrets: map[string]string{"API_TOKEN": "s3cr3t"}}
+
+	proc, err := b.Start(context.Background(), task, &model.Run{InstanceIndex: 0}, ce)
+	require.NoError(t, err)
+	go drain(proc.Stdout)
+	go drain(proc.Stderr)
+	proc.Wait()
+
+	recorded, err := os.ReadFile(envFile)
+	require.NoError(t, err)
+	env := string(recorded)
+	assert.Contains(t, env, "API_TOKEN=s3cr3t",
+		"secret value must reach the docker CLI via its environment, not argv")
+	assert.Contains(t, env, "RUNWISP_INSTANCE_INDEX=0")
 }
 
 // TestComposeBackend_Start_ReclaimsStaleInstance verifies that, before
