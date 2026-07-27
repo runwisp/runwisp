@@ -225,9 +225,8 @@ exactly the way editing an included TOML file works: the daemon flags the
 config stale, and [`runwisp reload`](/operations/reload/) re-reads it.
 So `crontab -e` followed by `runwisp reload` is the whole workflow.
 
-When you're ready to convert a job to native TOML, `runwisp promote
-
-<task>` writes its definition into `runwisp.toml` — verbatim, the
+When you're ready to convert a job to native TOML,
+`runwisp promote <task>` writes its definition into `runwisp.toml` — verbatim, the
 definition that was already running. On the next load RunWisp notices
 your TOML says the same thing the crontab does and takes the TOML copy,
 so you can leave the crontab line where it is and delete it whenever you
