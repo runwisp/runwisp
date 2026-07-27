@@ -223,6 +223,12 @@ func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
 		System:   importer.IsSystemCrontabPath(path),
 		User:     spoolOwner,
 		Existing: owned,
+		// These are this machine's crontabs, so the sixth field of a system line can be
+		// checked against the account database rather than only sniffed for shape — see
+		// CronOptions.UserExists. Without it, `* * * * * echo hi` dropped into
+		// /etc/cron.d schedules `"hi"` as user `echo`, which is a live task that cannot
+		// run and a schedule the operator never wrote.
+		UserExists: cronUserExists,
 		// The collision tie-breaker is the file's own name, so a derived name is a
 		// function of where the job came from rather than of how many files the glob
 		// happened to match first. Dropping a lexically-earlier file into
@@ -230,6 +236,12 @@ func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
 		NameSuffix: cronNameSuffix(path),
 	}
 }
+
+// cronUserExists answers "is this an account on this box" for the user column of a
+// system crontab line. A package var for the same reason crondPidFiles is one: the
+// real answer comes from the machine, and a test needs to ask the question about a
+// machine it can describe. Never assigned outside tests.
+var cronUserExists = importer.SystemUserExists
 
 // cronNameSuffix derives the stable collision suffix from a source path: the
 // basename with its extension dropped, sanitized to a task-name-safe form.

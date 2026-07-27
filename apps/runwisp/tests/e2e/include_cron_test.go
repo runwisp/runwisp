@@ -7,6 +7,7 @@ package e2e
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"testing"
 	"time"
@@ -83,4 +84,44 @@ include_cron = ["crontabs/*"]
 	assert.Contains(t, out, "jobs:2", "the reload still reports the skipped job")
 
 	assert.Equal(t, []string{"echo", "nightly"}, taskNames(t, client))
+}
+
+// TestIncludeCron_MissingUserColumnIsNotScheduled: a /etc/cron.d line written
+// without its user column reads as user `echo` running `"…"`. `echo` is a
+// well-shaped login name, so nothing about the line's *shape* gives it away —
+// what does is that no such account exists, which is the test cron applies too.
+// The daemon must not schedule it, and must say why.
+func TestIncludeCron_MissingUserColumnIsNotScheduled(t *testing.T) {
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	me, err := user.Current()
+	require.NoError(t, err)
+
+	configDir := t.TempDir()
+	// A path component named cron.d is what makes these lines the system format,
+	// user column and all.
+	cronDir := filepath.Join(configDir, "cron.d")
+	require.NoError(t, os.MkdirAll(cronDir, 0o755))
+
+	configPath := filepath.Join(configDir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+[daemon]
+shutdown_timeout = "500ms"
+include_cron = ["cron.d/*"]
+`), 0o600))
+
+	require.NoError(t, os.WriteFile(filepath.Join(cronDir, "jobs"), []byte(
+		"* * * * * echo \"no user column, should never run\"\n"+
+			"0 3 * * * "+me.Username+" /usr/local/bin/nightly.sh\n"), 0o600))
+
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+	client := socketClient(t, daemon.dataDir)
+
+	require.Equal(t, []string{"nightly"}, taskNames(t, client),
+		"the malformed line must not be scheduled, and must not take the good line with it")
+
+	validate, err := runCLI(t, projectDir, binaryPath, "validate", "--config", configPath)
+	require.NoError(t, err, "one bad line still validates: %s", validate)
+	assert.Contains(t, validate, "not running")
 }

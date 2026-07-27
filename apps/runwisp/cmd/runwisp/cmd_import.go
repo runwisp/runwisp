@@ -210,15 +210,27 @@ func resolveImportSource(args []string, stdin *os.File, what string) (string, er
 }
 
 // resolveCronOptions decides whether to parse as a system crontab.
+//
+// A file path is one of this machine's crontabs, so the user column of a system
+// line is checked against the account database — the same check the live
+// include_cron loader makes, which is what keeps `import cron` and `promote`
+// agreeing with what the daemon would schedule. A piped crontab is not
+// necessarily ours: `crontab -l` from another host names accounts that don't
+// exist here and legitimately so, so that case stays shape-only.
 func resolveCronOptions(source string, systemFlag, systemSet bool) importer.CronOptions {
+	opts := importer.CronOptions{}
+	if source != "" && source != "-" {
+		opts.UserExists = importer.SystemUserExists
+	}
 	switch {
 	case systemSet:
-		return importer.CronOptions{System: systemFlag}
+		opts.System = systemFlag
 	case importer.IsSystemCrontabPath(source):
-		return importer.CronOptions{System: true}
+		opts.System = true
 	default:
-		return importer.CronOptions{Detect: true}
+		opts.Detect = true
 	}
+	return opts
 }
 
 // openImportSource returns a reader for a file path, or stdin when source is

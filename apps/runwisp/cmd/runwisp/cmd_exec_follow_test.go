@@ -121,3 +121,43 @@ func TestFollowRun_RetriesEmptyStreamUntilRunIsStreamable(t *testing.T) {
 	assert.Greater(t, streamHits.Load(), int32(emptyStreamsBeforeReady),
 		"followRun must retry past the empty (not-yet-persisted) streams")
 }
+
+// TestFollowRun_RereadsNonTerminalRowAfterDone is the regression test for the
+// exec --json stale-status bug seen from the client side: the stream says done
+// while the run row still reads "running". A non-terminal row means a write that
+// has not landed yet, never the truth — trusting it yields a nil end_reason,
+// which reads as success, so a run that failed with exit 7 would exit 0.
+// followRun must re-read until the terminal row is visible.
+func TestFollowRun_RereadsNonTerminalRowAfterDone(t *testing.T) {
+	var runHits atomic.Int32
+	const staleReadsBeforeTerminal = 2
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/log/stream"):
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "event: done\ndata: {\"final_line\":-1,\"status\":\"ended\"}\n\n")
+
+		case strings.Contains(r.URL.Path, "/runs/"):
+			run := model.Run{ID: "run-1", TaskName: "alpha", Status: model.PhaseRunning}
+			if runHits.Add(1) > staleReadsBeforeTerminal {
+				reason := model.ReasonFailed
+				run.Status = model.PhaseEnded
+				run.EndReason = &reason
+				run.ExitCode = 7
+			}
+			_ = json.NewEncoder(w).Encode(run)
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	code, final, err := followRun(apiclient.New(srv.URL, ""), "alpha", "run-1", os.Stdout)
+	require.NoError(t, err)
+	require.NotNil(t, final)
+	assert.Equal(t, model.PhaseEnded, final.Status, "a non-terminal row after done must be re-read")
+	assert.Equal(t, 7, code, "a failed run must not be reported as exit 0")
+}

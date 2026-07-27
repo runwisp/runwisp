@@ -36,6 +36,18 @@ type CronOptions struct {
 	// owner is its filename. Mutually exclusive with System: a file either names a
 	// user per line or has one for the whole file, never both.
 	User string
+	// UserExists reports whether a name identifies an account on this machine. Set
+	// it — normally to SystemUserExists — whenever the crontab being parsed belongs
+	// to the machine doing the parsing, so a system line missing its user column is
+	// recognized by the same rule crond uses: the sixth field has to name a real
+	// account. The shape sniff alone cannot do that job, because `* * * * * echo
+	// hello` in /etc/cron.d hands `echo` to the user column and `echo` is a
+	// perfectly well-shaped login name.
+	//
+	// Nil means shape-only, for a crontab that isn't this machine's (a file piped in
+	// from another host): the accounts it names are not ours to look up, and
+	// refusing every job on a foreign crontab would make the report useless.
+	UserExists func(string) bool
 	// NameSuffix is the stable tie-breaker appended when a derived name collides,
 	// in place of the positional -2/-3. Set it to something derived from the source
 	// file (its basename, say) when parsing several crontabs whose set can change
@@ -494,14 +506,31 @@ func (cp *crontabParser) applyCommand(b *block, ref itemRef, cc cronCommand) {
 // under a made-up identity would run something the crontab never asked for.
 // Skipping the entry and saying so loudly is also what crond itself does with a
 // malformed line, which keeps the rest of the file importable.
+//
+// The shape sniff is only half the test, and on its own it is the weaker half:
+// `* * * * * echo "ticked"` in /etc/cron.d reads as user `echo` running `"ticked"`,
+// and `echo` is a flawless login name by shape. When the caller can look accounts
+// up (CronOptions.UserExists), the field also has to *be* an account — which is
+// exactly the rule crond applies before it declines the line.
 func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
-	if user == "" || isLikelyUsername(user) {
+	if user == "" {
 		return false
 	}
-	cp.addItem(line).note(NoteUserColumnSuspect,
-		"the sixth field is "+user+", which isn't a username — a system crontab line needs a "+
-			"user column between the schedule and the command, so nothing was imported for this.")
-	return true
+	if !isLikelyUsername(user) {
+		cp.addItem(line).note(NoteUserColumnSuspect,
+			"the sixth field is "+user+", which isn't a username — a system crontab line needs a "+
+				"user column between the schedule and the command, so nothing was imported for this.")
+		return true
+	}
+	if cp.opts.UserExists != nil && !cp.opts.UserExists(user) {
+		cp.addItem(line).note(NoteUserColumnSuspect,
+			"the sixth field is "+user+", which is no account on this machine — a system crontab "+
+				"line needs a user column between the schedule and the command, and this line looks "+
+				"like one written without it, so nothing was imported for this. crond skips it too. "+
+				"Add the user (or create the account) and reload.")
+		return true
+	}
+	return false
 }
 
 // applyWorkingDir reproduces crond's rule that a job runs in the home directory

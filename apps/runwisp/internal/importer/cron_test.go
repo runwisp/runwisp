@@ -581,6 +581,46 @@ func TestCronSystemLineWithARealUserColumnStillImports(t *testing.T) {
 	}
 }
 
+// TestCronSystemUserColumnMustNameARealAccount closes the half of the missing
+// user column the shape sniff cannot see: `echo` is a flawless login name by
+// shape, so `* * * * * echo "hi"` in /etc/cron.d imported as user `echo` running
+// `"hi"` — a job the crontab never described, under an identity that doesn't
+// exist. With an account database to ask, the line is declined the way crond
+// declines it.
+func TestCronSystemUserColumnMustNameARealAccount(t *testing.T) {
+	exists := func(name string) bool { return name == "deploy" }
+	res := parseCron(t, "* * * * * echo \"hi\"\n", CronOptions{System: true, UserExists: exists})
+
+	mustNotContain(t, res.TOML(), "[tasks.")
+	if got := res.Items()[0].Status(); got != StatusBlocked {
+		t.Errorf("status = %v, want blocked", got)
+	}
+	note := findNote(t, res, NoteUserColumnSuspect)
+	mustContain(t, note.Message, "echo")
+	mustContain(t, note.Message, "no account on this machine")
+}
+
+// TestCronSystemUserColumnAccountCheckAcceptsRealUsers is the other side: a line
+// naming an account that does exist is an ordinary system crontab line.
+func TestCronSystemUserColumnAccountCheckAcceptsRealUsers(t *testing.T) {
+	exists := func(name string) bool { return name == "deploy" }
+	res := parseCron(t, "0 3 * * * deploy /usr/local/bin/backup.sh\n",
+		CronOptions{System: true, UserExists: exists})
+
+	mustContain(t, res.TOML(), `user = "deploy"`)
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Errorf("status = %v, want clean", got)
+	}
+}
+
+// TestCronSystemUserColumnUncheckedWithoutAnAccountDatabase: a crontab piped in
+// from another host names accounts that are legitimately absent here, so with no
+// UserExists the shape sniff stands alone rather than rejecting every job.
+func TestCronSystemUserColumnUncheckedWithoutAnAccountDatabase(t *testing.T) {
+	res := parseCron(t, "0 3 * * * someoneelse /usr/local/bin/backup.sh\n", CronOptions{System: true})
+	mustContain(t, res.TOML(), `user = "someoneelse"`)
+}
+
 // TestCronSystemUserColumnSniffCoversTheDescriptorForm: @reboot carries a user
 // column in /etc/crontab too, so the same line can be malformed the same way.
 func TestCronSystemUserColumnSniffCoversTheDescriptorForm(t *testing.T) {

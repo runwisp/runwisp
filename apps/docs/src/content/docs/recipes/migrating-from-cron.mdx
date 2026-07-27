@@ -429,8 +429,13 @@ shows up as a `# TODO` in the file and a note in the summary. The usual ones:
   `/etc/cron.d/*` the sixth field is the user to run as, and a line written
   without one is a mistake cron itself skips. RunWisp skips it too rather than
   guessing — reading the first word of the command as a username would give you a
-  task that runs the wrong command as a user who doesn't exist. The line gets a
-  `!` row quoting itself; add the user and re-import.
+  task that runs the wrong command as a user who doesn't exist. It applies the
+  same test cron does: the sixth field has to name an account that exists on the
+  box, so `* * * * * echo "tick"` is declined even though `echo` is a
+  perfectly good-looking username. The line gets a `!` row quoting itself; add
+  the user (or create the account) and re-import. A crontab piped in from
+  _another_ machine is judged on shape alone — the accounts it names aren't
+  this box's to check.
 - **The task name.** Names are derived from the command (`/usr/local/bin/backup.sh`
   → `backup`). They're just labels — rename any that aren't obvious, and the
   full command is preserved either way.

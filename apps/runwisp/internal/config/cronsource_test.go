@@ -23,6 +23,20 @@ func loadTree(t *testing.T, dir string) *Config {
 	return cfg
 }
 
+// stubCronUsers replaces the machine's account database with the given names for
+// the duration of one test, so a system crontab naming `postgres` or `deploy`
+// loads the same on a laptop as on the box it was written for.
+func stubCronUsers(t *testing.T, names ...string) {
+	t.Helper()
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	prev := cronUserExists
+	cronUserExists = func(name string) bool { return set[name] }
+	t.Cleanup(func() { cronUserExists = prev })
+}
+
 func TestIncludeCron_TasksBecomeLive(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{
 		"runwisp.toml": `
@@ -556,6 +570,7 @@ run = "echo a"
 // carries a user column, and honoring it is privilege-*reducing* — the job runs
 // as the account the crontab names rather than as the daemon.
 func TestIncludeCron_SystemCrontabTakesItsUserColumn(t *testing.T) {
+	stubCronUsers(t, "postgres")
 	dir := writeFileTree(t, map[string]string{
 		"runwisp.toml": `
 [daemon]
@@ -571,6 +586,41 @@ include_cron = ["cron.d/*"]
 	assert.Equal(t, "postgres", task.RunUser)
 	assert.Equal(t, "/usr/local/bin/backup.sh", task.Run, "the user column is not part of the command")
 	assert.Equal(t, "~", task.WorkingDir, "crond runs a system job in its own user's home")
+}
+
+// TestIncludeCron_SystemLineMissingItsUserColumnIsNotScheduled is the bug this
+// check exists for: a /etc/cron.d line written without its user column reads as
+// user `echo` running `"…"`, and `echo` is a perfectly well-shaped login name, so
+// the shape sniff alone let it through — the daemon scheduled a task nobody wrote,
+// which then failed as `user "echo" not found` once a minute, forever.
+//
+// crond declines the line because the sixth field is no account. So does RunWisp.
+func TestIncludeCron_SystemLineMissingItsUserColumnIsNotScheduled(t *testing.T) {
+	stubCronUsers(t, "root", "deploy")
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["cron.d/*"]
+`,
+		"cron.d/broken": "* * * * * echo \"no user column, should never run\"\n" +
+			"0 4 * * * deploy /usr/local/bin/backup.sh\n",
+	})
+
+	cfg := loadTree(t, dir)
+	assert.Equal(t, []string{"backup"}, taskNames(cfg),
+		"the malformed line must not become a task, and must not take the good line with it")
+
+	require.Len(t, cfg.CronFindings, 1)
+	f := cfg.CronFindings[0]
+	assert.True(t, f.Skipped, "a job that isn't running has to say so")
+	assert.Equal(t, 1, f.Line, "the operator needs file:line, not a derived task name")
+	assert.Contains(t, f.Reason, "echo")
+
+	// And it reaches the operator: this is the warning list boot and `runwisp
+	// validate` both print.
+	warnings := strings.Join(cronSourceWarnings(cfg), "\n")
+	assert.Contains(t, warnings, "cron source: skipped")
+	assert.Contains(t, warnings, "cron.d/broken")
 }
 
 // TestIncludeCron_PerUserFileRunsAsTheDaemon: nothing infers a run identity from
