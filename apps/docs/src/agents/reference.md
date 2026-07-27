@@ -43,15 +43,30 @@ metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; REQUIRES metrics_enabled=true
 include:              []string    — glob(s) of extra TOML files merged at load; root config only, no nesting
 include_cron:         []string    — glob(s) of REAL crontabs read as live task defs at every load/reload; root
-                                    config only. /etc/crontab + **/cron.d/* parse as system format (6th field =
-                                    user, job runs as them); any other path = per-user format, runs as the daemon
-                                    (never inferred from the filename). Hard errors: unreadable file, a file also
-                                    matched by [daemon].include, group/world-writable file or dir, owner neither
-                                    root nor the daemon's euid. A job RunWisp can't reproduce is SKIPPED (rest of
-                                    the file still runs) and reported via config.Warnings by file:line; derived
-                                    name collisions rename to <base>-<crontab basename> and are reported too.
-                                    No ${...} expansion on cron text. Tasks report "source": "cron" +
-                                    "source_file" in list/status --json; `runwisp promote` graduates them.
+                                    config only. Format is PATH-DERIVED, never flagged: /etc/crontab + **/cron.d/*
+                                    = system format (6th field = user, job runs as them);
+                                    /var/spool/cron/crontabs/<u> and /var/spool/cron/<u> = per-user spool, jobs run
+                                    as <u> taken from the FILENAME (requires a root daemon unless <u> IS the
+                                    daemon's account; the file must also be owned by <u>, which is what makes the
+                                    filename safe to trust); any other path = `crontab -l` dump, runs as the daemon.
+                                    Glob hits are filtered to what crond itself reads — regular files named
+                                    [A-Za-z0-9_-]+ only, so *.dpkg-old / *.disabled / README / subdirs are skipped
+                                    and reported. A LITERAL path (no glob metachars) is never filtered.
+                                    Hard errors: unreadable file, a file also matched by [daemon].include,
+                                    world-writable file/dir, group-writable file (or non-sticky dir — a sticky
+                                    group-writable dir is accepted, that's what a real cron spool is), owner
+                                    neither root nor the daemon's euid nor the run-as account, unresolvable run-as
+                                    account, spool file the daemon can't become. A job RunWisp can't reproduce is
+                                    SKIPPED (rest of the file still runs) and reported via config.Warnings by
+                                    file:line; derived name collisions rename to <base>-<crontab basename> and are
+                                    reported too. File-level notes are reported the same way: MAILTO= (suppressed
+                                    once a sendmail/smtp notifier exists) and a non-absolute SHELL=.
+                                    Emitted per job for crond parity: env_base="clean", working_dir="~",
+                                    catch_up="skip" (crond never re-fires a missed tick; the missed row is still
+                                    recorded), on_overlap="queue" (deliberately NOT crond's unbounded overlap).
+                                    No ${...} expansion on cron text. /etc/anacrontab is not read.
+                                    Tasks report "source": "cron" + "source_file" in list/status --json;
+                                    `runwisp promote` graduates them.
 ```
 
 ### [defaults] (inherited by every task & service)

@@ -31,17 +31,17 @@ metrics_listen   = ""
 include          = ["conf.d/*.toml"]
 ```
 
-| Key                | Default  | What it does                                                                                                                                                                                                                         |
-| ------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `shutdown_timeout` | `"10s"`  | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                       |
-| `external_url`     | _unset_  | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                                |
-| `tls`              | `"auto"` | `"auto"` serves HTTPS automatically whenever the bind address is non-loopback (self-signing a cert on first boot); `"off"` always serves plain HTTP. Loopback binds stay HTTP either way. Ignored when `tls_cert`/`tls_key` are set. |
-| `tls_cert`         | _unset_  | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                  |
-| `tls_key`          | _unset_  | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                           |
-| `metrics_enabled`  | `false`  | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                 |
-| `metrics_listen`   | _unset_  | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`.      |
-| `include`          | _unset_  | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                          |
-| `include_cron`     | _unset_  | Glob patterns for real crontabs to read as live task definitions at every load and reload. Point RunWisp at what cron already reads instead of converting everything up front. Only valid in the root config.                        |
+| Key                | Default  | What it does                                                                                                                                                                                                                                        |
+| ------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shutdown_timeout` | `"10s"`  | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                                      |
+| `external_url`     | _unset_  | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                                               |
+| `tls`              | `"auto"` | `"auto"` serves HTTPS automatically whenever the bind address is non-loopback (self-signing a cert on first boot); `"off"` always serves plain HTTP. Loopback binds stay HTTP either way. Ignored when `tls_cert`/`tls_key` are set.                |
+| `tls_cert`         | _unset_  | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                                 |
+| `tls_key`          | _unset_  | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                                          |
+| `metrics_enabled`  | `false`  | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                                |
+| `metrics_listen`   | _unset_  | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`.                     |
+| `include`          | _unset_  | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                                         |
+| `include_cron`     | _unset_  | Glob patterns for real crontabs (system, `cron.d`, or per-user spool) to read as live task definitions at every load and reload. Point RunWisp at what cron already reads instead of converting everything up front. Only valid in the root config. |
 
 ### `shutdown_timeout`
 
@@ -215,7 +215,11 @@ never writes:
 ```toml
 # runwisp.toml
 [daemon]
-include_cron = ["/etc/crontab", "/etc/cron.d/*"]
+include_cron = [
+  "/etc/crontab",
+  "/etc/cron.d/*",
+  "/var/spool/cron/crontabs/*", # everyone's own crontabs (needs a root daemon)
+]
 ```
 
 That's the whole cutover. Every job in those files becomes a RunWisp
@@ -241,34 +245,80 @@ RunWisp warns at boot if it spots a running cron daemon, but it can't
 stop it for you.
 :::
 
-Some details worth knowing:
+#### Which files, and who the jobs run as
+
+The path decides how a file is read — you don't flag it:
+
+| Path                              | Format            | Jobs run as                         |
+| --------------------------------- | ----------------- | ----------------------------------- |
+| `/etc/crontab`, any `cron.d/*`    | system crontab    | the line's own sixth-field username |
+| `/var/spool/cron/crontabs/<user>` | per-user spool    | `<user>` — taken from the filename  |
+| `/var/spool/cron/<user>`          | per-user spool    | `<user>` (RHEL/SUSE layout)         |
+| anything else                     | `crontab -l` dump | whoever the daemon runs as          |
+
+Per-user crontabs need a **root daemon**, because only root can run a job
+as somebody else. If RunWisp can't become the account a spool file belongs
+to, it says so and refuses that file rather than running those jobs as
+itself. Reading your _own_ crontab without root works fine.
+
+The filename is only a claim about who owns a spool crontab; RunWisp also
+requires the file to actually be owned by that account. That pairing is
+what makes taking an identity from a filename safe, and it's the same
+check cron makes.
+
+#### Globs read what cron would read
+
+A glob only picks up the files cron itself would schedule: regular files
+whose names are made of letters, digits, `-` and `_`. That rule is how
+`/etc/cron.d/backup.dpkg-old`, a hand-renamed `job.disabled`, and a
+`README` stay out of your schedule — so RunWisp skips them too, and says
+which ones it skipped.
+
+Name a path outright and it's read whatever it's called:
+`include_cron = ["/etc/cron.d/backup.cron"]` is you overruling the rule on
+purpose, which is allowed.
+
+#### Everything else worth knowing
 
 - **A job RunWisp can't reproduce is skipped, and the rest of the file
   still runs.** That's what cron does with a malformed entry, so it's
-  what RunWisp does too. Every skip is reported by `file:line` at boot
-  and by `runwisp validate`, so you know exactly which jobs aren't
-  running. `runwisp import cron` on the same file explains each one in
-  more detail.
-- **`/etc/crontab` and `**/cron.d/\*`are read as the system format** —
-the sixth field is a username, and RunWisp runs the job as that user.
-Any other path is read as a`crontab -l`dump with no user column, and
-its jobs run as the account the daemon itself runs as. RunWisp never
-guesses an identity from a filename: naming`/var/spool/cron/crontabs/alice`works, but those jobs run as the
-daemon, not as`alice`.
+  what RunWisp does too. Every skip is reported by `file:line` at boot,
+  by [`runwisp reload`](/operations/reload/), `runwisp status` and
+  `runwisp validate`, so you know exactly which jobs aren't running.
+  `runwisp import cron` on the same file explains each one in more detail.
+- **A `MAILTO=` gets reported, not honoured.** Cron mailed a job's output;
+  RunWisp captures it instead and notifies on failure. Wire up a
+  [`sendmail` notifier](/notifications/providers/sendmail/) — it needs no
+  configuration on a box that was already mailing cron output — and the
+  warning stops. A `SHELL=` that isn't an absolute path is reported the
+  same way.
+- **Missed ticks aren't re-fired.** Cron has no concept of one, so neither
+  does a cron-sourced task: starting the daemon at 15:00 will not run
+  last night's 02:00 job. The gap is still recorded as a missed run, which
+  is more than cron gave you. `promote` the task if you want catch-up.
+- **Overlapping runs queue instead of piling up.** Cron starts another
+  copy of a job that outruns its own schedule; RunWisp queues the next
+  one. This is deliberate — an unbounded pile-up is why cron jobs get
+  wrapped in `flock` — and `promote` plus `max_concurrent` gets the old
+  behaviour back if you actually wanted it.
 - **Task names are derived from the command**, so two crontabs can derive
   the same one. The second becomes `backup-<crontab name>` rather than
   quietly replacing the first, and the rename is reported alongside the
   skips.
 - **RunWisp won't take commands from a file anyone could have written.**
-  A crontab (or its directory) that's group- or world-writable, or owned
-  by neither root nor the daemon's own user, is refused — the whole load
-  fails rather than running shell from it. `chmod 0644` and `chown root`
-  is what cron expects too.
+  A crontab that's group- or world-writable, or owned by nobody relevant,
+  is refused — the whole load fails rather than running shell from it.
+  A cron spool directory is the one exception: those are group-writable
+  and sticky by design, which is what makes them safe, so they're
+  accepted as they ship.
 - **No `${...}` substitution happens on cron text.** Cron doesn't
   expand it, so neither do we; `0 3 * * * dump.sh ${DB}` reaches the
   shell exactly as written.
 - **Overlap with `include` is an error.** A file is either RunWisp TOML
   or a crontab; RunWisp won't guess which.
+- **anacron isn't read.** `/etc/anacrontab` and its timestamps are
+  untouched, so on a box where anacron (not cron) is what really runs
+  `cron.daily`, those jobs keep their existing behaviour.
 
 Everything else about a cron-sourced task is ordinary: `[defaults]`
 applies, notifications fire, `runwisp exec` triggers it, and the reload

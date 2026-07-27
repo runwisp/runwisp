@@ -305,13 +305,18 @@ func claimOwned(owned importer.Owned, res *importer.Result) {
 // who wrote `backup` and finds `backup-db` in the UI has to be told why, or the
 // task looks like something RunWisp invented.
 func findingsFrom(res *importer.Result, path string) []CronFinding {
+	return append(fileFindings(res, path), jobFindings(res, path)...)
+}
+
+// fileFindings reports the notes about the crontab itself rather than about any one
+// job — a MAILTO nobody is honouring, a SHELL that isn't an absolute path.
+//
+// These belong to no Item, so the per-job walk could never reach them. Until this
+// existed, a crontab that had been mailing its output for years went quiet on the
+// switch to include_cron and said nothing at all, which is the exact failure this
+// type was introduced to prevent.
+func fileFindings(res *importer.Result, path string) []CronFinding {
 	var out []CronFinding
-	// File-level notes first: they describe the crontab's own structure — a MAILTO
-	// nobody is honouring, a SHELL that isn't an absolute path — and belong to no
-	// single job, so nothing in the per-item walk below would ever reach them. Until
-	// this existed a crontab that had been mailing its output for years went quiet on
-	// the switch to include_cron and said nothing, which is the exact failure this
-	// type was introduced to prevent.
 	for _, n := range res.Notes() {
 		if !n.Blocking() {
 			continue
@@ -323,16 +328,17 @@ func findingsFrom(res *importer.Result, path string) []CronFinding {
 			kind:   n.Kind,
 		})
 	}
+	return out
+}
+
+// jobFindings reports the per-job rows: every job that won't run, plus every job
+// running under a name the crontab doesn't mention.
+func jobFindings(res *importer.Result, path string) []CronFinding {
+	var out []CronFinding
 	for _, it := range res.Items() {
 		live := it.LiveEligible()
 		for _, n := range it.Notes {
-			if !n.Blocking() && !isRenameNote(n) {
-				continue
-			}
-			// A dropped job's unsafe-live note is the reason it dropped; anything else
-			// on that row is downstream of a job that isn't running, so one finding per
-			// row is the whole story.
-			if !live && !n.UnsafeLive() {
+			if !worthReporting(n, live) {
 				continue
 			}
 			f := CronFinding{File: path, Line: it.Line, Source: it.Source, Reason: n.Message, Skipped: !live}
@@ -343,6 +349,18 @@ func findingsFrom(res *importer.Result, path string) []CronFinding {
 		}
 	}
 	return out
+}
+
+// worthReporting decides whether one job note earns a finding.
+//
+// A dropped job's unsafe-live note is the reason it dropped; anything else on that
+// row is downstream of a job that isn't running, so a skipped job yields exactly
+// one finding rather than a pile explaining consequences of the first.
+func worthReporting(n importer.Note, live bool) bool {
+	if !n.Blocking() && !isRenameNote(n) {
+		return false
+	}
+	return live || n.UnsafeLive()
 }
 
 // dropAnsweredFindings removes findings whose need the rest of the config already

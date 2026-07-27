@@ -377,7 +377,7 @@ func (cp *crontabParser) importJob(line string) bool {
 	// env and layers over this.
 	b.set("env_base", tomlString(string(model.EnvBaseClean)))
 	cp.applyWorkingDir(&b)
-	cp.applyFiringPolicies(&b)
+	cp.applyFiringPolicies(&b, !j.runOnStart)
 
 	cp.applyCommand(&b, ref, cc)
 	blocks := []block{b}
@@ -553,11 +553,15 @@ func (cp *crontabParser) applyOwner(j cronJobLine) string {
 // footgun, but an operator whose job relied on parallel firing has to be able to
 // find the knob. A key they can see and change beats a default they'd have to
 // know to go looking for.
-func (cp *crontabParser) applyFiringPolicies(b *block) {
-	b.setComment("catch_up", tomlString(string(model.MissedRunSkip)),
-		"crond never re-fires a missed tick; the gap is still recorded.")
+func (cp *crontabParser) applyFiringPolicies(b *block, scheduled bool) {
+	if scheduled {
+		// Gated on having a schedule: a @reboot job has no ticks to miss, and a key
+		// that cannot affect anything is noise in a file the operator has to read.
+		b.setComment("catch_up", tomlString(string(model.MissedRunSkip)),
+			"cron never re-fires a missed tick")
+	}
 	b.setComment("on_overlap", tomlString(string(model.PolicyQueue)),
-		"crond would run these overlapping instead of queueing.")
+		"cron would overlap instead of queueing")
 }
 
 // cronCommand is a crontab command field with crond's own '%' rules applied.

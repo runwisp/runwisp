@@ -31,7 +31,11 @@ reads:
 ```toml
 # runwisp.toml
 [daemon]
-include_cron = ["/etc/crontab", "/etc/cron.d/*"]
+include_cron = [
+  "/etc/crontab",
+  "/etc/cron.d/*",
+  "/var/spool/cron/crontabs/*", # everyone's own crontabs (needs a root daemon)
+]
 ```
 
 Start the daemon and every job in those files is a RunWisp task — captured
@@ -41,18 +45,22 @@ exactly as they are. Edit one with `crontab -e`, run
 worth owning properly, `runwisp promote <task>` copies its definition into your
 `runwisp.toml` and you delete the cron line whenever you feel like it.
 
-Two things to know before you do this:
+A few things to know before you do this:
 
 - **Disable cron first**, or every job fires twice — once from each scheduler.
   RunWisp warns at boot if it sees a cron daemon running, but it won't stop it
   for you.
 - **A job RunWisp can't reproduce is skipped, not guessed at**, and the skip is
-  reported by `file:line` at boot and by `runwisp validate`. The rest of the file
-  keeps running. Run `runwisp import cron` on that file to see the full
-  explanation for each one.
+  reported by `file:line` at boot, by `runwisp reload` and by `runwisp validate`.
+  The rest of the file keeps running. Run `runwisp import cron` on that file to
+  see the full explanation for each one.
+- **Per-user crontabs run as their owner**, which only a root daemon can do. If
+  you're reading just your own, no root needed.
+- **A glob picks up what cron would pick up** — so a `backup.dpkg-old` left
+  behind by a package upgrade doesn't quietly start running.
 
-The full rules — which paths parse as the system format, what identity a job
-runs as, how name collisions are resolved — are in
+The full rules — which paths parse as which format, what identity a job runs as,
+how name collisions are resolved — are in
 [`include_cron`](/configuration/daemon/#include_cron).
 
 ## The one-liner
@@ -87,6 +95,8 @@ cron = "30 2 * * *"
 shell = "/bin/bash"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # cron never re-fires a missed tick
+on_overlap = "queue"  # cron would overlap instead of queueing
 run = "/usr/local/bin/backup.sh --full"
 
 [tasks.backup.env]
@@ -98,6 +108,7 @@ run_on_start = true
 shell = "/bin/bash"
 env_base = "clean"
 working_dir = "~"
+on_overlap = "queue"  # cron would overlap instead of queueing
 run = "/opt/app/warmup"
 
 [tasks.warmup.env]
@@ -108,6 +119,8 @@ cron = "*/5 * * * *"
 shell = "/bin/bash"
 env_base = "clean"
 working_dir = "~"
+catch_up = "skip"  # cron never re-fires a missed tick
+on_overlap = "queue"  # cron would overlap instead of queueing
 run = "/opt/healthcheck.sh"
 
 [tasks.healthcheck.env]
@@ -116,9 +129,10 @@ PATH = "/usr/local/bin:/usr/bin"
 
 Every task carries the crontab's `SHELL` and `PATH` itself, rather than a shared
 `[defaults]` block — more verbose, but each task stands alone and your own global
-settings are left untouched. The `env_base` and `working_dir` lines reproduce
-cron's execution model rather than the daemon's — see
-[How the pieces map](#how-the-pieces-map) below.
+settings are left untouched. The `env_base`, `working_dir`, `catch_up` and
+`on_overlap` lines reproduce cron's execution model rather than the daemon's —
+see [How the pieces map](#how-the-pieces-map) below. (`warmup` gets no
+`catch_up`: a `@reboot` job has no ticks to miss.)
 
 On stderr — so it stays out of the TOML you're piping somewhere — you get an
 account of every job:
@@ -310,22 +324,24 @@ in both places — pick one owner per job and the schedules stay honest.
 
 Most of a crontab translates one-to-one. Here's the whole picture:
 
-| crontab                        | runwisp.toml                  | Notes                                            |
-| ------------------------------ | ----------------------------- | ------------------------------------------------ |
-| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + `run` | The five fields are copied verbatim.             |
-| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …           | RunWisp speaks the same descriptors.             |
-| `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.           |
-| `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.                |
-| user column (system crontab)   | `user = "..."`                | Detected automatically, `@reboot` lines too.     |
-| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                        |
-| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.         |
-| cron's minimal environment     | `env_base = "clean"`          | Set on every imported task — see below.          |
-| jobs run in `$HOME`            | `working_dir = "~"`           | The home of whoever the job runs as.             |
-| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO.  |
-| `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.      |
-| `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.      |
-| `cmd % input`                  | `run = "cmd"` + a `# TODO`    | Cron piped `input` on stdin; see below.          |
-| `MAILTO=…`                     | a `sendmail` notifier         | Handed to you as a paste-able block — see below. |
+| crontab                        | runwisp.toml                  | Notes                                              |
+| ------------------------------ | ----------------------------- | -------------------------------------------------- |
+| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + `run` | The five fields are copied verbatim.               |
+| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …           | RunWisp speaks the same descriptors.               |
+| `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.             |
+| `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.                  |
+| user column (system crontab)   | `user = "..."`                | Detected automatically, `@reboot` lines too.       |
+| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                          |
+| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.           |
+| cron's minimal environment     | `env_base = "clean"`          | Set on every imported task — see below.            |
+| jobs run in `$HOME`            | `working_dir = "~"`           | The home of whoever the job runs as.               |
+| a missed tick is simply gone   | `catch_up = "skip"`           | Cron never re-fires one. Still recorded as missed. |
+| overlapping copies of a job    | `on_overlap = "queue"`        | Deliberately not cron's pile-up — see below.       |
+| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO.    |
+| `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.        |
+| `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.        |
+| `cmd % input`                  | `run = "cmd"` + a `# TODO`    | Cron piped `input` on stdin; see below.            |
+| `MAILTO=…`                     | a `sendmail` notifier         | Handed to you as a paste-able block — see below.   |
 
 Crontab-wide settings become **per-task** values rather than daemon-wide ones.
 A crontab's `SHELL`, `CRON_TZ`/`TZ`, and top-of-file `VAR=val` lines are copied
@@ -351,6 +367,25 @@ imported job gets `working_dir = "~"`, and
 the daemon's own account for a per-user crontab, and the user column's account
 for a system crontab. Both formats end up with cron's rule, and neither needs
 you to write a path.
+
+The last two rows are about **when** a job fires, which is the one thing a
+migration really mustn't change quietly.
+
+Cron has no concept of a missed tick — a tick that arrives while nothing is
+listening is just gone. RunWisp normally catches up, which is a feature you
+want for a task you wrote deliberately and a surprise for one you moved:
+starting the daemon at 15:00 would run last night's 02:00 backup, and the run
+would look exactly like a scheduled one. So imported jobs get
+[`catch_up = "skip"`](/concepts/scheduling/#missed-ticks-catchup). You lose nothing
+by it — the gap is still recorded as a missed run you can see, which is more
+than cron ever gave you. Drop the line if you'd rather have catch-up.
+
+`on_overlap = "queue"` is written out at its default value, on purpose. When a
+job outruns its own schedule, cron starts another copy; RunWisp queues the next
+one instead. That's the better behaviour — an unbounded pile-up is why cron jobs
+end up wrapped in `flock` — but if yours genuinely relied on running in
+parallel, this is the line to change, and
+[`max_concurrent`](/concepts/concurrency/) is how.
 
 RunWisp's cron grammar is a superset of vixie-cron's: the standard five fields,
 descriptors like `@daily`, and a few extras (six-field specs with seconds,

@@ -245,7 +245,10 @@ func TestImportedJobsKeepCrondFiringSemantics(t *testing.T) {
 			for _, task := range cfg.Tasks {
 				// crond has no missed-tick concept, so a restart must not re-fire
 				// yesterday's ticks. The gap is still recorded either way.
-				if task.CatchUp != model.MissedRunSkip {
+				//
+				// Scheduled tasks only: a @reboot job has no ticks to miss, so the key
+				// is deliberately not emitted for one and it keeps RunWisp's default.
+				if task.Cron != "" && task.CatchUp != model.MissedRunSkip {
 					t.Errorf("task %q: catch_up = %q, want %q — a daemon restart would re-fire missed ticks crond dropped",
 						task.Name, task.CatchUp, model.MissedRunSkip)
 				}
