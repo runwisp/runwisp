@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Config for the docs screenshot generator (`bun run screenshots`). Separate
 // from playwright.config.ts: it boots the rich demo-seeded daemon and runs only

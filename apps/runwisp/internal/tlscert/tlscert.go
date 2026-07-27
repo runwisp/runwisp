@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package tlscert generates and persists the daemon's self-signed TLS
 // certificate. It is the offline-complete alternative to ACME: a long-lived

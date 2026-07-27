@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package inapp is the in-app notification sink: it ingests events from the
 // notify dispatcher (and synthesized delivery-failure events from the

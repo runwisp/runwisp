@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Copies the daemon's machine-readable contracts into the docs site's public/
 // so they are served at stable URLs: the REST API's openapi.json and the

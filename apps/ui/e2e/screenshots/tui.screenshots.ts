@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Generates the TUI screenshots embedded in the docs (apps/docs). The capture
 // half (apps/runwisp tests/e2e TestCaptureTUIScreenshots) drives the real

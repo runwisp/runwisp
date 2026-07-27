@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package demo provides the embedded "Acme Notes" demo configuration and a
 // seeder that populates a throwaway data directory with believable historical

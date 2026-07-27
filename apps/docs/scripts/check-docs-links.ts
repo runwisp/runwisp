@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // check-docs-links.ts — validate every docs-to-docs link in
 // apps/docs/src/content/docs resolves to a real file and, when an anchor is

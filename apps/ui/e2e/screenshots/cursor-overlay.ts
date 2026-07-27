@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // A synthetic on-screen cursor for the demo-video recording. Playwright drives a
 // real mouse (dispatching mousemove/mousedown), but the browser renders no

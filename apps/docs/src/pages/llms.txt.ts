@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Curated llms.txt index (https://llmstxt.org). Section order is hand-defined
 // here; per-page titles/descriptions are pulled from frontmatter so the index

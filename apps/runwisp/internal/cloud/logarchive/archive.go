@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package logarchive uploads a single gzipped log file to a signed PUT URL
 // supplied by the control plane in the dispatch payload. It is intentionally

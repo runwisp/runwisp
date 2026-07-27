@@ -21,6 +21,10 @@ builds:
 
 archives:
   - format: tar.gz
+    files:
+      - src: ../../LICENSE
+      - src: ../../NOTICE
+      - src: ../../README.md
     # this name template makes the OS and Arch compatible with the results of uname.
     name_template: >-
       {{ .ProjectName }}_

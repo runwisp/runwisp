@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package webhook implements a generic HTTP webhook notify channel. The
 // operator supplies a URL and optional custom headers; RunWisp POSTs a

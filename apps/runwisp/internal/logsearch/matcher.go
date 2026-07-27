@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package logsearch performs on-demand substring or regex search across the
 // on-disk log files of a task's runs. There is no in-memory index, no

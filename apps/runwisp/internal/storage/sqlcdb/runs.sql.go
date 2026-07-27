@@ -96,7 +96,7 @@ type CreateRunParams struct {
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) error {
 	_, err := q.db.ExecContext(ctx, createRun,
 		arg.ID,

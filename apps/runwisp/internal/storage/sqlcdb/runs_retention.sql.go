@@ -24,7 +24,7 @@ type SelectOldRunsByAgeParams struct {
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Only terminal (ended) runs are eligible for retention: a run that is still
 // pending or running must never have its row or live log files removed.
 func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAgeParams) ([]Run, error) {

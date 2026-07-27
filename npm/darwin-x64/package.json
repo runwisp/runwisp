@@ -2,7 +2,7 @@
   "name": "@runwisp/darwin-x64",
   "version": "0.0.0-bootstrap.0",
   "description": "The darwin-x64 binary for runwisp",
-  "license": "Apache-2.0",
+  "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/runwisp/runwisp.git"

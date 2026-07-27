@@ -22,7 +22,7 @@ type EnsureTaskRegisteredParams struct {
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 func (q *Queries) EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegisteredParams) error {
 	_, err := q.db.ExecContext(ctx, ensureTaskRegistered, arg.TaskName, arg.FirstSeenAt)
 	return err

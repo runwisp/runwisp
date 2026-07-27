@@ -1,6 +1,6 @@
 # Contributing to RunWisp
 
-Thanks for taking the time to look at the code. RunWisp is Apache-2.0 and there is no CLA — your contribution stays yours, licensed under the same terms.
+Thanks for taking the time to look at the code. The daemon and web UI (`apps/`) are GPL-3.0-or-later; the shared libraries under `packages/` are Apache-2.0. There is no CLA — your contribution stays yours, licensed under the terms of whichever tree it lands in.
 
 > RunWisp is **pre-1.0**. Breaking changes are permitted; back-compat shims are not. Read [AGENTS.md](AGENTS.md) for the project's design principles, prime directives, and non-goals before proposing significant changes.
 
@@ -138,4 +138,4 @@ The dashboard is embedded into the binary at build time. REST in `src/lib/api.ts
 
 ## License
 
-Apache-2.0. By submitting a pull request you agree your contribution is licensed under those terms. You keep your copyright; we don't require a CLA.
+Contributions to `apps/` are licensed GPL-3.0-or-later; contributions to `packages/` are licensed Apache-2.0. By submitting a pull request you agree your contribution is licensed under the terms of the tree it lands in. You keep your copyright; we don't require a CLA.

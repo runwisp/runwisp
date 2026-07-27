@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package logstream drives a single SSE connection to a run's log. It
 // resolves the requested anchor (`from` / `Last-Event-ID`) against

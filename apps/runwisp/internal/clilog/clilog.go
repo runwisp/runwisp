@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package clilog owns how the RunWisp CLI and daemon write logs: slog handler
 // selection (level, text/json, timestamps) and TTY-aware color gating for the

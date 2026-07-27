@@ -26,7 +26,7 @@ type PurgeExpiredSoftDeletesRow struct {
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 func (q *Queries) PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]PurgeExpiredSoftDeletesRow, error) {
 	rows, err := q.db.QueryContext(ctx, purgeExpiredSoftDeletes, deletedAt)
 	if err != nil {

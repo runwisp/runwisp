@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // The RunWisp Web UI showcase clip (README hero + social). One continuous,
 // light-theme, ~15s tour with a visible synthetic cursor, driven against the

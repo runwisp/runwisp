@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Focused lint pass that mirrors the SonarCloud rules we actually hit, so they
 # fail `bun run ci` (via runwisp:check) before the cloud scan does. go vet and

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package retry holds pure policy functions for the runtime's retry and
 // service-restart loops. Everything here is stateless and side-effect free:

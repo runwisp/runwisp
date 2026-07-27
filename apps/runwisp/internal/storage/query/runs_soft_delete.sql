@@ -1,5 +1,5 @@
 -- SPDX-FileCopyrightText: PoppyCake, s.r.o.
--- SPDX-License-Identifier: Apache-2.0
+-- SPDX-License-Identifier: GPL-3.0-or-later
 
 -- name: PurgeExpiredSoftDeletes :many
 DELETE FROM runs WHERE deleted_at IS NOT NULL AND deleted_at <= ?

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package runlog emits one concise slog line per run lifecycle transition for
 // the headless daemon. Without it a `docker logs` / journald operator sees a

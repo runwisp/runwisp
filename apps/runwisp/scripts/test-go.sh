@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Go tests with coverage. E2E tests spawn real binaries that write coverage
 # into RUNWISP_E2E_COVDIR; merge-coverage.sh merges it with the unit profile
 # into coverage.out.

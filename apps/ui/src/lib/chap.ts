@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // chapResponse mirrors chap.Response in Go
 // (apps/runwisp/internal/chap/chap.go): the daemon's challenge-response

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Shared daemon-boot helpers used by both the e2e harness (global-setup.ts) and
 // the docs screenshot harness (screenshots/global-setup.ts). Both spawn the real
