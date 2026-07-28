@@ -83,6 +83,9 @@ func (l *launchdInstaller) Render(opts InstallOptions) ([]byte, error) {
 }
 
 func (l *launchdInstaller) ComputePlan(_ context.Context, opts InstallOptions) (Plan, error) {
+	if opts.TakeOverCron {
+		return Plan{}, ErrCronTakeoverUnsupported
+	}
 	desired, _, err := l.renderPlist(opts)
 	if err != nil {
 		return Plan{}, err

@@ -31,6 +31,11 @@ type SystemdParams struct {
 	// time-sync.target so a boot-time clock step lands before scheduling
 	// starts on an RTC-less box).
 	System bool
+	// MaskedCronUnit, when non-empty, is recorded as a
+	// # runwisp-masked-cron: <unit> marker line — the standing record of
+	// which cron unit this install has masked, so uninstall knows it may
+	// unmask it and Status can show the post-cutover check.
+	MaskedCronUnit string
 }
 
 // LaunchdParams is the data passed to com.runwisp.daemon.plist.tmpl.

@@ -370,6 +370,69 @@ func TestResolveServiceOptions_SystemStillHonorsExplicitFlags(t *testing.T) {
 	assert.Equal(t, dir, opts.DataDir)
 }
 
+// TestResolveServiceOptions_SystemRejectsUntrustedConfig closes the hole a
+// --system install otherwise leaves open: `sudo runwisp service install
+// --system --config <path>` bakes whatever that path resolves to into a
+// root-owned unit, so the file needs the same ownership guarantee a cron
+// source already gets before anything is written.
+func TestResolveServiceOptions_SystemRejectsUntrustedConfig(t *testing.T) {
+	restoreInstallOpts(t)
+	serviceInstallOpts.System = true
+	dir := durableTempDir(t)
+	tomlPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
+	require.NoError(t, os.Chmod(tomlPath, 0o666)) // force world-writable past umask
+
+	binary := filepath.Join(dir, "runwisp-binary")
+	require.NoError(t, os.WriteFile(binary, []byte("\x7fELF"), 0o755))
+	serviceInstallOpts.Binary = binary
+
+	f := Flags{CfgFile: tomlPath, DataDir: dir}
+	cmd := installFlagsCmd(t, f, &bytes.Buffer{}, &bytes.Buffer{})
+	require.NoError(t, cmd.Flags().Set("data", dir))
+	require.NoError(t, cmd.Flags().Set("config", tomlPath))
+
+	deps := autostart.Deps{
+		Home:        t.TempDir(),
+		User:        "root",
+		Fingerprint: "fp-test",
+		Prompter:    &autostart.ScriptedPrompter{},
+	}
+	_, err := resolveServiceOptions(cmd, deps, f)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "world-writable")
+}
+
+// TestResolveServiceOptions_NonSystemAllowsUntrustedConfig: the trust check
+// is specific to --system, since a per-user install only ever runs with the
+// operator's own privilege — there is no escalation to guard against.
+func TestResolveServiceOptions_NonSystemAllowsUntrustedConfig(t *testing.T) {
+	restoreInstallOpts(t)
+	dir := durableTempDir(t)
+	tomlPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
+	require.NoError(t, os.Chmod(tomlPath, 0o666))
+
+	binary := filepath.Join(dir, "runwisp-binary")
+	require.NoError(t, os.WriteFile(binary, []byte("\x7fELF"), 0o755))
+	serviceInstallOpts.Binary = binary
+
+	f := Flags{CfgFile: tomlPath, DataDir: dir}
+	cmd := installFlagsCmd(t, f, &bytes.Buffer{}, &bytes.Buffer{})
+	require.NoError(t, cmd.Flags().Set("data", dir))
+	require.NoError(t, cmd.Flags().Set("config", tomlPath))
+
+	deps := autostart.Deps{
+		Home:        t.TempDir(),
+		User:        "alice",
+		Fingerprint: "fp-test",
+		Prompter:    &autostart.ScriptedPrompter{},
+	}
+	opts, err := resolveServiceOptions(cmd, deps, f)
+	require.NoError(t, err)
+	assert.Equal(t, tomlPath, opts.Config)
+}
+
 func TestRunServiceInstall_PrintRendersUnit(t *testing.T) {
 	// service install picks the platform's autostart backend: systemd on
 	// Linux, launchd on macOS, scm on Windows. The [Unit]/[Service] section
@@ -456,6 +519,80 @@ func TestRunServiceUninstall_NoUnitExists(t *testing.T) {
 
 	// Uninstall against an empty home is a no-op success on the systemd path.
 	require.NoError(t, runServiceUninstall(cmd, f))
+}
+
+// writeGateTestConfig writes a minimal runwisp.toml with include_cron
+// pointed at a one-line cron.d file, and returns the config path.
+func writeGateTestConfig(t *testing.T, cronLine string) string {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "cron.d"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "cron.d", "backup"), []byte(cronLine), 0o600))
+	tomlPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(tomlPath,
+		[]byte("[daemon]\ninclude_cron = [\"cron.d/*\"]\n"), 0o600))
+	return tomlPath
+}
+
+func TestGateTakeOverCron_RequiresSystemAndRoot(t *testing.T) {
+	restoreInstallOpts(t)
+
+	err := gateTakeOverCron(autostart.InstallOptions{TakeOverCron: true, System: false}, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires --system and root")
+
+	err = gateTakeOverCron(autostart.InstallOptions{TakeOverCron: true, System: true}, 1000)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires --system and root")
+}
+
+func TestGateTakeOverCron_NoOpWhenFlagNotSet(t *testing.T) {
+	restoreInstallOpts(t)
+	assert.NoError(t, gateTakeOverCron(autostart.InstallOptions{System: false}, 1000))
+}
+
+func TestGateTakeOverCron_RefusesWhenNothingIsBeingRead(t *testing.T) {
+	restoreInstallOpts(t)
+	dir := t.TempDir()
+	tomlPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
+
+	err := gateTakeOverCron(autostart.InstallOptions{TakeOverCron: true, System: true, Config: tomlPath}, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no cron jobs are being read")
+}
+
+func TestGateTakeOverCron_RefusesSkippedJobsUnlessAllowed(t *testing.T) {
+	restoreInstallOpts(t)
+	// A line with no user column in a cron.d file is structurally invalid —
+	// it produces a CronFinding{Skipped: true}, not a load error.
+	tomlPath := writeGateTestConfig(t, "* * * * * echo \"no user column\"\n")
+	opts := autostart.InstallOptions{TakeOverCron: true, System: true, Config: tomlPath}
+
+	err := gateTakeOverCron(opts, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cron job(s) failed to load")
+
+	serviceInstallOpts.AllowSkippedCronJobs = true
+	err = gateTakeOverCron(opts, 0)
+	assert.NoError(t, err)
+}
+
+// TestGateTakeOverCron_AllowsCleanConfigAsRoot also stands in for gate #3
+// (run-as-user): gate #4 already requires euid 0 to reach this point, and a
+// --system unit always runs the daemon as root with no privilege-drop
+// option today, so config.RunUserFindings(cfg, 0) is always empty here —
+// gate #3 cannot fire through this function as currently wired. It stays in
+// gateTakeOverCron as defense-in-depth (see the comment there) and is
+// exercised directly, with a non-root euid, by the RunUserFindings tests in
+// internal/config/cronsource_test.go.
+func TestGateTakeOverCron_AllowsCleanConfigAsRoot(t *testing.T) {
+	restoreInstallOpts(t)
+	tomlPath := writeGateTestConfig(t, "0 3 * * * root /usr/local/bin/backup.sh\n")
+	opts := autostart.InstallOptions{TakeOverCron: true, System: true, Config: tomlPath}
+
+	// euid 0 can become root, so gate #3 does not fire.
+	assert.NoError(t, gateTakeOverCron(opts, 0))
 }
 
 func TestResolveDataDirInteractive_UnknownActionFallsThrough(t *testing.T) {

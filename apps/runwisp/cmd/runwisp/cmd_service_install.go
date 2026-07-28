@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/runwisp/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +29,14 @@ var serviceInstallOpts struct {
 	// unit. Useful for Ansible/Nix where the running binary is not
 	// the one that will end up on disk.
 	Binary string
+	// TakeOverCron stops and masks the system cron service once RunWisp
+	// is confirmed running (Linux, --system, root only). Gated by
+	// gateTakeOverCron before the installer ever sees it.
+	TakeOverCron bool
+	// AllowSkippedCronJobs overrides gate #2 (a cron job that failed to
+	// load) but not gate #3 (a job this daemon cannot become the user
+	// for) — that one has no override.
+	AllowSkippedCronJobs bool
 }
 
 var serviceInstallCmd = &cobra.Command{
@@ -47,7 +57,8 @@ Flags:
   --print      write the rendered unit to stdout and exit
   --dry-run    print the plan and exit without writing anything
   --force      overwrite a hand-edited unit
-  --system     install /etc/systemd/system/ instead (Linux, advanced)`,
+  --system     install /etc/systemd/system/ instead (Linux, advanced)
+  --take-over-cron  stop and mask the system cron service (Linux, --system, root only)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runServiceInstall(cmd, flags)
 	},
@@ -60,6 +71,8 @@ func init() {
 	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.Force, "force", false, "overwrite a hand-edited unit")
 	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.System, "system", false, "install a system-wide unit (Linux, advanced)")
 	serviceInstallCmd.Flags().StringVar(&serviceInstallOpts.Binary, "binary", "", "override the binary path baked into the unit (default: auto-detect)")
+	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.TakeOverCron, "take-over-cron", false, "stop and mask the system cron service once RunWisp is running (Linux, --system, root only)")
+	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.AllowSkippedCronJobs, "allow-skipped-cron-jobs", false, "proceed with --take-over-cron even though some cron jobs failed to load")
 }
 
 func runServiceInstall(cmd *cobra.Command, f Flags) error {
@@ -74,6 +87,11 @@ func runServiceInstall(cmd *cobra.Command, f Flags) error {
 	}
 	opts.System = serviceInstallOpts.System
 	opts.Force = serviceInstallOpts.Force
+	opts.TakeOverCron = serviceInstallOpts.TakeOverCron
+
+	if err := gateTakeOverCron(opts, deps.Euid); err != nil {
+		return err
+	}
 
 	installer, err := autostart.New(deps)
 	if err != nil {
@@ -115,6 +133,91 @@ func runServiceInstall(cmd *cobra.Command, f Flags) error {
 		}
 		return err
 	}
+	return nil
+}
+
+// gateTakeOverCron is a no-op when --take-over-cron wasn't passed. Otherwise
+// it refuses up front, before the installer touches anything, whenever
+// proceeding would leave the box worse off than leaving cron alone. It lives
+// here rather than in internal/autostart so that package never needs to
+// import internal/config.
+//
+// Four refusals. The euid/--system check runs first since it is free (no
+// config load); the rest run in the order an operator would want explained:
+//  1. --take-over-cron itself requires --system and euid 0: systemctl
+//     --user has no bus for root under sudo, and a user-scoped daemon
+//     cannot execute another account's jobs regardless.
+//  2. Nothing is being read (no include_cron match at all) — masking cron
+//     would silently stop every job on the box. Not overridable.
+//  3. Any cron source failed to load (CronFinding.Skipped) — overridable
+//     via --allow-skipped-cron-jobs, since the operator may already know
+//     about it and want the jobs that DID load taken over anyway.
+//  4. A cron task would run as a user this daemon cannot become — a
+//     non-root process cannot switch OS user at all (dropping supplementary
+//     groups alone needs CAP_SETGID), so the job fails at exec time on
+//     every run. Not overridable: there is no flag that makes this work.
+//     Gate #1 already forces euid 0 here, and a --system unit always runs
+//     as root with no privilege-drop option today, so this specific check
+//     cannot actually fire through this function yet — it stays as
+//     defense-in-depth against a future --system privilege-drop option,
+//     and config.RunUserFindings is unit-tested directly with a non-root
+//     euid for exactly that reason.
+func gateTakeOverCron(opts autostart.InstallOptions, euid int) error {
+	if !opts.TakeOverCron {
+		return nil
+	}
+
+	if !opts.System || euid != 0 {
+		return &userFacingError{
+			title: "--take-over-cron requires --system and root",
+			details: "A user-scoped daemon cannot execute another account's cron jobs, and " +
+				"systemctl --user has no bus for root under sudo. Re-run as root with " +
+				"'--system --take-over-cron'.",
+		}
+	}
+
+	cfg, err := config.Load(opts.Config)
+	if err != nil {
+		return err
+	}
+
+	if len(cfg.CronFiles()) == 0 {
+		return &userFacingError{
+			title: "--take-over-cron refused: no cron jobs are being read",
+			details: "This config has no [daemon] include_cron pattern matching a crontab. " +
+				"Masking the system cron service now would silently stop every job on this box. " +
+				"Add include_cron first — see 'runwisp import cron' or the migrating-from-cron guide.",
+		}
+	}
+
+	if !serviceInstallOpts.AllowSkippedCronJobs {
+		var skipped []string
+		for _, f := range cfg.CronFindings {
+			if f.Skipped {
+				skipped = append(skipped, f.String())
+			}
+		}
+		if len(skipped) > 0 {
+			return &userFacingError{
+				title: fmt.Sprintf("--take-over-cron refused: %d cron job(s) failed to load", len(skipped)),
+				details: strings.Join(skipped, "\n") +
+					"\n\nFix these first, or pass --allow-skipped-cron-jobs to take over cron anyway " +
+					"(those jobs stay stopped).",
+			}
+		}
+	}
+
+	if names := config.RunUserFindings(cfg, euid); len(names) > 0 {
+		return &userFacingError{
+			title: fmt.Sprintf("--take-over-cron refused: %d cron task(s) run as a user this daemon cannot become", len(names)),
+			details: fmt.Sprintf(
+				"This daemon does not run as root (uid %d), so it cannot switch to another OS user at "+
+					"run time: %s. These jobs would fail on every run once cron stops running them. "+
+					"Install with --system as root, or remove the 'user =' override on these tasks.",
+				euid, strings.Join(names, ", ")),
+		}
+	}
+
 	return nil
 }
 
@@ -207,13 +310,13 @@ func resolveServiceConfigPath(cmd *cobra.Command, deps autostart.Deps, f Flags) 
 	cfgFlag := cmd.Flag("config")
 	cfgExplicit := cfgFlag != nil && cfgFlag.Changed
 	if serviceInstallOpts.System && !cfgExplicit {
-		return f.CfgFile, nil
+		return assertTrustedIfSystem(f.CfgFile)
 	}
 
 	xdgCfg := autostart.XDGConfigPath(deps.Home, deps.XDGConfHome)
 	xdgExists := xdgCfg != "" && fileExists(xdgCfg)
 	bareCfgExists := fileExists("runwisp.toml")
-	return autostart.ResolveConfigPath(autostart.ResolveConfigOptions{
+	path, err := autostart.ResolveConfigPath(autostart.ResolveConfigOptions{
 		Explicit:    f.CfgFile,
 		ExplicitSet: cfgExplicit,
 		HomeDir:     deps.Home,
@@ -221,6 +324,36 @@ func resolveServiceConfigPath(cmd *cobra.Command, deps autostart.Deps, f Flags) 
 		XDGExists:   xdgExists,
 		BareExists:  bareCfgExists,
 	})
+	if err != nil {
+		return "", err
+	}
+	return assertTrustedIfSystem(path)
+}
+
+// assertTrustedIfSystem applies AssertFileTrusted to a resolved config path
+// whenever --system is set. A --system unit runs as root, so whatever config
+// path ends up baked into it needs the same ownership guarantee a cron
+// source already gets — otherwise `sudo runwisp service install --system`
+// run from a directory holding someone else's runwisp.toml would silently
+// hand that file root's shell.
+//
+// A path that doesn't exist yet is not this check's problem — preflightDaemon
+// already refuses the install with ErrConfigMissing before anything is
+// written, and there is no owner to distrust on a file that isn't there.
+func assertTrustedIfSystem(path string) (string, error) {
+	if !serviceInstallOpts.System {
+		return path, nil
+	}
+	if _, err := os.Stat(path); err != nil {
+		return path, nil
+	}
+	if err := config.AssertFileTrusted(path, "the config file"); err != nil {
+		return "", &userFacingError{
+			title:   "config file is not trusted for a --system install",
+			details: err.Error(),
+		}
+	}
+	return path, nil
 }
 
 // resolveDataDirInteractive folds in operator confirmation when

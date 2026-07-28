@@ -210,7 +210,7 @@ result parses before you start the daemon.
 
 One thing left before `runwisp daemon`: importing **copied** your jobs, it
 didn't take them away from cron. Turn cron off for them first — see
-[nothing has retired cron yet](#nothing-has-retired-cron-yet) — and then the
+[retiring cron](#retiring-cron) — and then the
 same jobs run on the same schedules, except now they're all on the dashboard.
 
 ### Keeping your own config separate
@@ -308,7 +308,7 @@ crontab -l | runwisp import cron --system=false    # never treat a column as a u
 
 :::
 
-## Nothing has retired cron yet
+## Retiring cron
 
 This is the one step nobody expects, so it gets its own heading: an import
 **copies** your jobs into `runwisp.toml`. It doesn't touch your crontab, and it
@@ -318,7 +318,20 @@ sweeps. Nothing errors, so nothing tells you, which is exactly the kind of quiet
 failure RunWisp exists to prevent — hence the `!` line at the bottom of every
 import summary.
 
-So before `runwisp daemon`, take the jobs away from cron:
+If you're installing system-wide as root and every job you care about is
+already loading cleanly (`runwisp validate` and `runwisp status` show no
+skipped cron sources), one flag does the whole cutover:
+
+```bash
+sudo runwisp service install --system --take-over-cron
+```
+
+This stops and masks the system cron service only once RunWisp is confirmed
+running, and refuses up front if anything would silently stop working — see
+[`--take-over-cron`](/operations/autostart/#--take-over-cron) for the exact
+checks and how to undo it. It's Linux-only and all-or-nothing for the box; for
+a user-level install, a partial migration, or macOS, take the jobs away from
+cron by hand instead:
 
 ```bash
 crontab -l > ~/crontab.backup    # keep a copy, always

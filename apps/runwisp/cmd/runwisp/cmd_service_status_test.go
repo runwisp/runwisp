@@ -193,6 +193,27 @@ func TestRenderLingerLine(t *testing.T) {
 	})
 }
 
+func TestRenderCronLine(t *testing.T) {
+	t.Run("no marker, omitted entirely", func(t *testing.T) {
+		var buf bytes.Buffer
+		degraded := renderCronLine(&buf, autostart.Status{})
+		assert.False(t, degraded)
+		assert.Empty(t, buf.String())
+	})
+	t.Run("masked by this instance, healthy", func(t *testing.T) {
+		var buf bytes.Buffer
+		degraded := renderCronLine(&buf, autostart.Status{CronUnit: "cron.service", CronMasked: true})
+		assert.False(t, degraded)
+		assert.Contains(t, buf.String(), "masked by this instance")
+	})
+	t.Run("active again, double-fire warning", func(t *testing.T) {
+		var buf bytes.Buffer
+		degraded := renderCronLine(&buf, autostart.Status{CronUnit: "cron.service", CronActive: true})
+		assert.True(t, degraded)
+		assert.Contains(t, buf.String(), "firing twice")
+	})
+}
+
 func TestRenderLastStartLine(t *testing.T) {
 	t.Run("zero time skips", func(t *testing.T) {
 		var buf bytes.Buffer

@@ -12,6 +12,17 @@ import (
 	"syscall"
 )
 
+// AssertFileTrusted refuses a path that someone other than root or this daemon
+// could have written — the general form of the check assertCronFileTrusted
+// applies to a cron source, with no run-as account to widen the acceptable
+// owners by. Callers that bake a path into a privileged context without
+// asking the operator first (a --system unit's config path, say) use this so
+// that trust decision isn't silently skipped just because the path came from
+// a shell default rather than an explicit flag.
+func AssertFileTrusted(path, what string) error {
+	return assertPathTrusted(path, what, -1)
+}
+
 // assertCronFileTrusted refuses to take task definitions from a file that someone
 // other than the job's own identity could have written.
 //

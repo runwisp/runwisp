@@ -116,16 +116,17 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 	}
 	configHash := SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
 	body, err := RenderSystemdUnit(SystemdParams{
-		Binary:     opts.Binary,
-		Config:     opts.Config,
-		DataDir:    opts.DataDir,
-		Host:       opts.Host,
-		Port:       opts.Port,
-		Home:       s.deps.Home,
-		Path:       envPath(),
-		ConfigHash: configHash,
-		BinarySHA:  binarySHA,
-		System:     opts.System,
+		Binary:         opts.Binary,
+		Config:         opts.Config,
+		DataDir:        opts.DataDir,
+		Host:           opts.Host,
+		Port:           opts.Port,
+		Home:           s.deps.Home,
+		Path:           envPath(),
+		ConfigHash:     configHash,
+		BinarySHA:      binarySHA,
+		System:         opts.System,
+		MaskedCronUnit: opts.maskedCronUnit,
 	})
 	return body, binarySHA, err
 }
@@ -133,13 +134,26 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 // Render returns the rendered unit file without touching disk. Used
 // by `service install --print`.
 func (s *systemdInstaller) Render(opts InstallOptions) ([]byte, error) {
-	body, _, err := s.renderUnit(opts)
+	resolved := opts
+	maskedUnit, err := s.resolveMaskedCronUnit(context.Background(), opts)
+	if err != nil {
+		return nil, err
+	}
+	resolved.maskedCronUnit = maskedUnit
+	body, _, err := s.renderUnit(resolved)
 	return body, err
 }
 
 // ComputePlan implements Installer.
-func (s *systemdInstaller) ComputePlan(_ context.Context, opts InstallOptions) (Plan, error) {
-	desired, _, err := s.renderUnit(opts)
+func (s *systemdInstaller) ComputePlan(ctx context.Context, opts InstallOptions) (Plan, error) {
+	resolved := opts
+	maskedUnit, err := s.resolveMaskedCronUnit(ctx, opts)
+	if err != nil {
+		return Plan{}, err
+	}
+	resolved.maskedCronUnit = maskedUnit
+
+	desired, _, err := s.renderUnit(resolved)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -162,6 +176,7 @@ func (s *systemdInstaller) ComputePlan(_ context.Context, opts InstallOptions) (
 	plan.Host = opts.Host
 	plan.Port = opts.Port
 	plan.LingerOn = lingerOn
+	plan.CronUnit = maskedUnit
 	plan.Steps = s.planSteps(plan, opts)
 	return plan, nil
 }
@@ -186,6 +201,12 @@ func (s *systemdInstaller) planSteps(plan Plan, opts InstallOptions) []Step {
 			Action:      ActionEnableLinger,
 			Description: fmt.Sprintf("Run:  loginctl enable-linger %s         ← needs sudo", s.deps.User),
 		})
+	}
+	if opts.TakeOverCron && plan.CronUnit != "" {
+		steps = append(steps,
+			Step{Action: ActionStopCron, Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "stop", plan.CronUnit)},
+			Step{Action: ActionMaskCron, Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "mask", plan.CronUnit)},
+		)
 	}
 	steps = append(steps, Step{
 		Action:      ActionEnableService,
@@ -269,7 +290,22 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 		}
 	}
 
+	var cronWasActive bool
+	if opts.TakeOverCron {
+		var err error
+		cronWasActive, err = s.stopAndMaskCron(ctx, plan.CronUnit, out)
+		if err != nil {
+			return fmt.Errorf("take over cron: %w", err)
+		}
+	}
+
 	if err := s.runEnableNow(ctx, opts.System); err != nil {
+		if opts.TakeOverCron {
+			if rbErr := s.unmaskCron(ctx, plan.CronUnit, cronWasActive, out); rbErr != nil {
+				fmt.Fprintf(out, "Warning: RunWisp failed to start AND cron could not be restored: %v\n", rbErr)
+				fmt.Fprintf(out, "Warning: run 'sudo systemctl unmask %s' by hand to bring back a scheduler.\n", plan.CronUnit)
+			}
+		}
 		return err
 	}
 
@@ -350,6 +386,16 @@ func (s *systemdInstaller) ComputeUninstallPlan(_ context.Context, opts Uninstal
 			{Action: ActionRemoveUnit, Description: "Remove unit file\n       " + unitPath},
 			{Action: ActionDaemonReload, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, systemctlDaemonReload)},
 		}
+		// Only ever unmask a unit this instance can prove it masked —
+		// the marker in its own unit file. Cron masked some other way
+		// (by hand, or by a different instance) is not ours to touch.
+		if unit := s.cronMarkerFromUnitFile(unitPath); unit != "" {
+			plan.CronUnit = unit
+			plan.Steps = append(plan.Steps, Step{
+				Action:      ActionUnmaskCron,
+				Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "unmask", unit) + " (and restart it)",
+			})
+		}
 	}
 	return plan, nil
 }
@@ -411,6 +457,15 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 	if _, stderr, err := s.runSystemctl(ctx, opts.System, systemctlDaemonReload); err != nil {
 		fmt.Fprintf(out, "Warning: %s: %v %s\n", systemctlErrLabel(opts.System, systemctlDaemonReload), err, string(stderr))
 	}
+	if plan.CronUnit != "" {
+		// Best-effort, like stop/disable above: RunWisp's own unit is
+		// already gone, so failing to restore cron must not turn into a
+		// failed uninstall — it would just leave the operator with no
+		// way to remove a unit that no longer exists.
+		if err := s.unmaskCron(ctx, plan.CronUnit, true, out); err != nil {
+			fmt.Fprintf(out, "Warning: %v\n", err)
+		}
+	}
 	if opts.Purge && opts.DataDir != "" {
 		if err := os.RemoveAll(opts.DataDir); err != nil {
 			return fmt.Errorf("remove data dir %s: %w", opts.DataDir, err)
@@ -440,6 +495,16 @@ func (s *systemdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 		st.ExpectedBinarySHA = parsed.binarySHA
 		st.Installed = parsed.managed
 		st.ExpectedConfigHash = SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
+		// Only probe cron when this instance's own marker says it took
+		// it over — an operator who never touches --take-over-cron pays
+		// zero extra systemctl calls for this row.
+		if parsed.maskedCron != "" {
+			st.CronUnit = parsed.maskedCron
+			if _, activeState, unitFileState, err := s.probeCronUnit(ctx, parsed.maskedCron); err == nil {
+				st.CronMasked = unitFileState == "masked"
+				st.CronActive = activeState == "active"
+			}
+		}
 	}
 	if data, err := os.ReadFile(opts.Binary); err == nil {
 		st.BinaryExists = true

@@ -25,7 +25,10 @@ func hashContent(b []byte) string {
 
 // stripGeneratedHashes removes our own hash markers from a unit body
 // before computing the *settings* hash. Otherwise the hash would
-// depend on itself — and a NoOp install would oscillate.
+// depend on itself — and a NoOp install would oscillate. The
+// runwisp-masked-cron marker is stripped for the same reason even though
+// it isn't self-referential: it records live take-over state, not a
+// setting, so it must not be able to flip the settings hash on its own.
 func stripGeneratedHashes(body []byte) []byte {
 	lines := strings.Split(string(body), "\n")
 	kept := make([]string, 0, len(lines))
@@ -33,8 +36,10 @@ func stripGeneratedHashes(body []byte) []byte {
 		t := strings.TrimSpace(l)
 		if strings.HasPrefix(t, "# runwisp-config-hash:") ||
 			strings.HasPrefix(t, "# runwisp-binary-sha256:") ||
+			strings.HasPrefix(t, "# runwisp-masked-cron:") ||
 			strings.HasPrefix(t, "<!-- runwisp-config-hash:") ||
-			strings.HasPrefix(t, "<!-- runwisp-binary-sha256:") {
+			strings.HasPrefix(t, "<!-- runwisp-binary-sha256:") ||
+			strings.HasPrefix(t, "<!-- runwisp-masked-cron:") {
 			continue
 		}
 		kept = append(kept, l)
@@ -56,6 +61,12 @@ type parsedUnit struct {
 	managed    bool
 	configHash string
 	binarySHA  string
+	// maskedCron is the cron unit this file's runwisp-masked-cron marker
+	// names, empty if the file has none. Only ever set on a file we wrote
+	// ourselves — reading it back is how a later plain `service install`
+	// (TakeOverCron false) knows to carry the marker forward instead of
+	// erasing it, and how uninstall knows it may unmask that unit.
+	maskedCron string
 }
 
 // managedMarkerBare is the text following the comment-syntax leader.
@@ -68,10 +79,32 @@ const managedMarkerBare = "Managed by runwisp service install — DO NOT EDIT"
 // and reports whether it is a managed unit and what hashes it carries.
 // It tolerates both the systemd "#" comment form and the launchd
 // "<!-- … -->" comment form.
+// markerFields lists every "# key: value" / "<!-- key: value -->" marker
+// extractMarkers looks for, in both the systemd-comment and launchd-XML
+// spellings, so adding a new marker never grows extractMarkers itself.
+func markerFields(out *parsedUnit) []struct {
+	prefix string
+	suffix string
+	dest   *string
+} {
+	return []struct {
+		prefix string
+		suffix string
+		dest   *string
+	}{
+		{"# runwisp-config-hash:", "", &out.configHash},
+		{"# runwisp-binary-sha256:", "", &out.binarySHA},
+		{"# runwisp-masked-cron:", "", &out.maskedCron},
+		{"<!-- runwisp-config-hash:", "-->", &out.configHash},
+		{"<!-- runwisp-binary-sha256:", "-->", &out.binarySHA},
+		{"<!-- runwisp-masked-cron:", "-->", &out.maskedCron},
+	}
+}
+
 func extractMarkers(body []byte) parsedUnit {
 	out := parsedUnit{}
-	scanner := strings.Split(string(body), "\n")
-	for i, l := range scanner {
+	fields := markerFields(&out)
+	for i, l := range strings.Split(string(body), "\n") {
 		if i > 12 { // markers live in the first ~6 lines, allow some slack
 			break
 		}
@@ -80,17 +113,10 @@ func extractMarkers(body []byte) parsedUnit {
 			out.managed = true
 			continue
 		}
-		if v, ok := strings.CutPrefix(t, "# runwisp-config-hash:"); ok {
-			out.configHash = strings.TrimSpace(v)
-		}
-		if v, ok := strings.CutPrefix(t, "# runwisp-binary-sha256:"); ok {
-			out.binarySHA = strings.TrimSpace(v)
-		}
-		if v, ok := strings.CutPrefix(t, "<!-- runwisp-config-hash:"); ok {
-			out.configHash = strings.TrimSpace(strings.TrimSuffix(v, "-->"))
-		}
-		if v, ok := strings.CutPrefix(t, "<!-- runwisp-binary-sha256:"); ok {
-			out.binarySHA = strings.TrimSpace(strings.TrimSuffix(v, "-->"))
+		for _, f := range fields {
+			if v, ok := strings.CutPrefix(t, f.prefix); ok {
+				*f.dest = strings.TrimSpace(strings.TrimSuffix(v, f.suffix))
+			}
 		}
 	}
 	return out

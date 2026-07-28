@@ -417,9 +417,13 @@ These wire the daemon into the host init system so it survives a reboot —
 OS plumbing only, never touching `runwisp.toml`. `install` takes `--yes`
 (`-y`), `--print` (render the unit to stdout), `--dry-run`, `--force`
 (overwrite a hand-edited unit), `--system` (a system-wide unit on Linux),
-and `--binary <path>` (override the baked-in binary path). `uninstall`
-takes `--yes`, `--force`, `--system`, and `--purge` (also delete the data
-dir — which makes you type the literal word `delete` to confirm).
+`--binary <path>` (override the baked-in binary path), and
+`--take-over-cron` (Linux, `--system`, root only: stop and mask the system
+cron service once RunWisp is confirmed running — see
+[`--take-over-cron`](/operations/autostart/#--take-over-cron) for the gates
+and rollback behavior; `--allow-skipped-cron-jobs` overrides one of them).
+`uninstall` takes `--yes`, `--force`, `--system`, and `--purge` (also delete
+the data dir — which makes you type the literal word `delete` to confirm).
 `status` also takes `--system`. Whichever of `install`'s `--system` or
 its absence you used, repeat it on `status` / `uninstall` — there's no
 stored record of which one a given unit was installed with. It's all

@@ -122,6 +122,7 @@ func renderServiceStatus(w io.Writer, st autostart.Status) int {
 	degraded = renderBinaryLine(w, st) || degraded
 	degraded = renderDataDirLine(w, st) || degraded
 	degraded = renderLingerLine(w, st) || degraded
+	degraded = renderCronLine(w, st) || degraded
 	renderLastStartLine(w, st)
 	renderLogsHintLine(w, st)
 
@@ -200,6 +201,26 @@ func renderLingerLine(w io.Writer, st autostart.Status) bool {
 		return false
 	}
 	fmt.Fprintf(w, "  Linger:     OFF — user sessions exit will stop the daemon\n")
+	return true
+}
+
+// renderCronLine shows the standing post-cutover check once this instance
+// has recorded a take-over marker. Omitted entirely for an operator who
+// never engaged --take-over-cron — there is nothing to report and nothing
+// was probed to find that out.
+func renderCronLine(w io.Writer, st autostart.Status) bool {
+	if st.CronUnit == "" {
+		return false
+	}
+	if st.CronActive {
+		fmt.Fprintf(w, "  Cron:       %s active — jobs may be firing twice\n", st.CronUnit)
+		return true
+	}
+	if st.CronMasked {
+		fmt.Fprintf(w, "  Cron:       %s masked by this instance\n", st.CronUnit)
+		return false
+	}
+	fmt.Fprintf(w, "  Cron:       %s unmasked but not running (unexpected — check by hand)\n", st.CronUnit)
 	return true
 }
 

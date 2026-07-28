@@ -903,3 +903,44 @@ func TestCrondStillRunningWarning(t *testing.T) {
 		assert.Empty(t, crondStillRunningWarning(nil, []string{livePid}))
 	})
 }
+
+// TestRunUserFindings_NonRootDaemonCannotBecomeCronsUser is the gap
+// --take-over-cron's gate #3 exists to close: a non-root daemon reads
+// /etc/crontab's or cron.d's root-column jobs cleanly today — no
+// CronFinding, nothing — and every one of them fails at exec time because
+// switching OS user needs a capability only root has.
+func TestRunUserFindings_NonRootDaemonCannotBecomeCronsUser(t *testing.T) {
+	stubCronUsers(t, "root")
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["cron.d/*"]
+`,
+		"cron.d/backup": "0 3 * * * root /usr/local/bin/backup.sh\n",
+	})
+
+	cfg := loadTree(t, dir)
+	task := findTask(t, cfg, "backup")
+	require.Equal(t, "root", task.RunUser)
+	require.Empty(t, cfg.CronFindings, "it loads clean today — that's exactly the gap this closes")
+
+	assert.Equal(t, []string{"backup"}, RunUserFindings(cfg, 1000),
+		"a non-root daemon cannot switch to root at run time")
+	assert.Empty(t, RunUserFindings(cfg, 0), "root can become anyone")
+}
+
+// TestRunUserFindings_IgnoresNativeTasks scopes the check to cron-sourced
+// tasks only. A hand-written `user =` on a native TOML task is the
+// operator's own explicit choice, already a general (not cron-specific)
+// question the take-over gate has no business blocking on.
+func TestRunUserFindings_IgnoresNativeTasks(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[tasks.native]
+run = "true"
+user = "root"
+`,
+	})
+	cfg := loadTree(t, dir)
+	assert.Empty(t, RunUserFindings(cfg, 1000))
+}

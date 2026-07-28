@@ -1,7 +1,8 @@
 # Managed by runwisp service install — DO NOT EDIT
 # runwisp-config-hash: {{.ConfigHash}}
 # runwisp-binary-sha256: {{.BinarySHA}}
-[Unit]
+{{if .MaskedCronUnit}}# runwisp-masked-cron: {{.MaskedCronUnit}}
+{{end}}[Unit]
 Description=RunWisp — lightweight cron daemon
 Documentation=https://docs.runwisp.com/
 {{if .System}}After=network.target remote-fs.target nss-user-lookup.target time-sync.target{{else}}After=network.target{{end}}
