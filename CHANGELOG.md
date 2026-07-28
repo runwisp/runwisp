@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`working_dir = "~"` is the home of whoever the task runs as**, resolved per run — so it works for a `user` that doesn't exist on the machine you validated from. See [Tasks](https://docs.runwisp.com/configuration/tasks/#working-directory--shell).
 - **A `sendmail` notifier mails through the MTA already on the box.** No relay host, port, or password — the same mechanism crond used for `MAILTO`, which `import cron` now answers with a paste-ready notifier block. See [Email (local MTA)](https://docs.runwisp.com/notifications/providers/sendmail/).
 - **Running as root picks crond's config and data paths by default.** With no `-c`/`--data`, `runwisp` now defaults to `/etc/runwisp/runwisp.toml` and `/var/lib/runwisp` at euid 0, and to the usual `./runwisp.toml`/`./.runwisp` otherwise; `RUNWISP_CONFIG`/`RUNWISP_DATA` override either. See [CLI](https://docs.runwisp.com/operations/cli/#global-flags).
+- **First run now finds a readable crontab on its own and offers to read it live**, the same way it already offers to import an adjacent `docker-compose.yml` — both can fire together, sharing one prompt. A crontab this account can't safely read (wrong permissions, an unresolvable owner) is reported instead of being scaffolded into a config that wouldn't load. See [Migrating from cron](https://docs.runwisp.com/recipes/migrating-from-cron/#read-your-crontabs-as-is).
 
 ### Changed
 

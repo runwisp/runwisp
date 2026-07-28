@@ -88,7 +88,7 @@ func IsSystemCrontabPath(path string) bool {
 		return false
 	}
 	clean := filepath.Clean(path)
-	if clean == "/etc/crontab" {
+	if clean == SystemCrontabPath {
 		return true
 	}
 	for _, part := range strings.Split(clean, string(filepath.Separator)) {
@@ -103,9 +103,9 @@ func IsSystemCrontabPath(path string) bool {
 // to, and whether the path is in a spool at all.
 //
 // A spool crontab has no user column — crond knows who it belongs to because the
-// *filename* is the account name. Both conventional layouts are recognized:
-// Debian/Ubuntu's /var/spool/cron/crontabs/<user> and RHEL/SUSE's
-// /var/spool/cron/<user>.
+// *filename* is the account name. Every layout UserSpoolDirs recognizes is
+// checked: Debian/Ubuntu's /var/spool/cron/crontabs/<user>, RHEL/SUSE's
+// /var/spool/cron/<user>, and the rest.
 //
 // The name is only a claim. What makes acting on it safe is that the caller then
 // requires the file to be owned by that account (see config.assertCronFileTrusted)
@@ -129,16 +129,20 @@ func UserSpoolOwner(path string) (string, bool) {
 	return base, true
 }
 
-// IsSpoolCrontabDir reports whether dir is one of the two canonical per-user
-// cron spool directories: Debian/Ubuntu's /var/spool/cron/crontabs and
-// RHEL/SUSE's /var/spool/cron. Exported so a caller can apply the spool
-// naming rule (see IsPlausibleAccountName) to a directory before it has any
-// filenames to check — `[daemon] include_cron`'s glob-eligibility filter
+// IsSpoolCrontabDir reports whether dir is one of the per-user cron spool
+// directories UserSpoolDirs recognizes. Exported so a caller can apply the
+// spool naming rule (see IsPlausibleAccountName) to a directory before it has
+// any filenames to check — `[daemon] include_cron`'s glob-eligibility filter
 // needs exactly that to avoid guessing "spool" for an arbitrary directory
 // that merely happens to be named `crontabs`.
 func IsSpoolCrontabDir(dir string) bool {
 	clean := filepath.Clean(dir)
-	return clean == "/var/spool/cron" || clean == "/var/spool/cron/crontabs"
+	for _, d := range UserSpoolDirs() {
+		if clean == d {
+			return true
+		}
+	}
+	return false
 }
 
 // IsPlausibleAccountName reports whether a spool basename can be an account

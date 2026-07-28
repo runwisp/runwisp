@@ -25,6 +25,20 @@ func WriteInitWithCompose(path, composeFilename, alias string) error {
 	return writeNew(path, config.ComposeStarterConfig(composeFilename, alias))
 }
 
+// WriteInitWithCron creates a runwisp.toml that reads real crontabs live via
+// [daemon] include_cron. patterns are the include_cron globs to bake in —
+// normally CronScan.Globs from the detection that decided to offer this.
+func WriteInitWithCron(path string, patterns []string) error {
+	return writeNew(path, config.CronStarterConfig(patterns))
+}
+
+// WriteInitWithComposeAndCron creates a runwisp.toml combining an adjacent
+// compose import with a live include_cron — the first-run scaffold's
+// both-detected case, one file for one yes/no answer.
+func WriteInitWithComposeAndCron(path, composeFilename, alias string, patterns []string) error {
+	return writeNew(path, config.ComposeAndCronStarterConfig(composeFilename, alias, patterns))
+}
+
 // writeNew creates path with the given contents, refusing to clobber an
 // existing file. The write goes through a Txn so a scaffold is never left
 // half-written; there is no gate, because a freshly rendered template has

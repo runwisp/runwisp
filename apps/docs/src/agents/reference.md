@@ -244,6 +244,10 @@ Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, am
 
 ```
 runwisp                      — no subcommand: attach TUI to running daemon, else scaffold toml + spawn daemon + attach
+                             — scaffold prompt (TTY only) also detects an adjacent compose file and/or a readable
+                               crontab (DefaultCronPatterns: root gets /etc/crontab + /etc/cron.d/* + every spool,
+                               others get only their own spool file) and offers to wire either/both into the starter;
+                               a Blocked cron source falls back to the plain starter instead
 runwisp daemon               — start headless daemon (no TUI)
 runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything

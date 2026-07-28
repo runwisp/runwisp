@@ -25,6 +25,55 @@ func ComposeStarterConfig(composeFilename, alias string) string {
 	return r.Replace(composeStarterConfig)
 }
 
+// CronStarterConfig returns the runwisp.toml that reads real crontabs live via
+// `[daemon] include_cron`. patterns are the globs to bake in — normally
+// CronScan.Globs from the first-run detection that decided to offer this.
+func CronStarterConfig(patterns []string) string {
+	return SchemaDirective + `# runwisp.toml
+# Docs: https://docs.runwisp.com/recipes/migrating-from-cron/
+#
+# RunWisp found cron jobs on this box and scaffolded this file to read them
+# live. Nothing is converted or rewritten: crontab -e keeps working, and
+# ` + "`runwisp reload`" + ` picks up edits. Run ` + "`runwisp promote <task>`" + ` when
+# you're ready to move one into native TOML.
+
+` + cronIncludeBlock(patterns)
+}
+
+// ComposeAndCronStarterConfig combines ComposeStarterConfig and
+// CronStarterConfig into one file, for the first run where an adjacent
+// compose file and a readable crontab are both detected — the interactive
+// scaffold asks a single yes/no question, so a "yes" has to cover both.
+func ComposeAndCronStarterConfig(composeFilename, alias string, patterns []string) string {
+	r := strings.NewReplacer("{{compose}}", composeFilename, "{{alias}}", alias)
+	body := SchemaDirective + `# runwisp.toml
+# Docs: https://docs.runwisp.com/configuration/compose/ and
+#       https://docs.runwisp.com/recipes/migrating-from-cron/
+#
+# RunWisp detected {{compose}} alongside, and found cron jobs it can read
+# live. Neither is converted or rewritten.
+
+[compose.{{alias}}]
+file = "./{{compose}}"
+
+` + cronIncludeBlock(patterns)
+	return r.Replace(body)
+}
+
+// cronIncludeBlock renders a `[daemon] include_cron = [...]` table listing
+// patterns, one per line.
+func cronIncludeBlock(patterns []string) string {
+	var b strings.Builder
+	b.WriteString("[daemon]\ninclude_cron = [\n")
+	for _, p := range patterns {
+		b.WriteString("  \"")
+		b.WriteString(p)
+		b.WriteString("\",\n")
+	}
+	b.WriteString("]\n")
+	return b.String()
+}
+
 // TwoTierRootConfig returns the root runwisp.toml `import`/`adopt` scaffold when
 // no config exists yet: it wires in the machine-owned runwisp.d staging directory
 // and explains the two-tier layout, while staying a file the operator owns and

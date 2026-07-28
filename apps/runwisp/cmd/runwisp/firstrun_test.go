@@ -10,9 +10,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestMain stubs scanForCron to a no-op for every test in this file: it
+// otherwise touches the real filesystem (see scanForCron's doc comment),
+// which would make these tests flaky and machine-dependent. Tests that
+// exercise cron detection itself override the var locally and restore it.
+func TestMain(m *testing.M) {
+	scanForCron = func(string) (config.CronScan, bool) { return config.CronScan{}, false }
+	os.Exit(m.Run())
+}
+
+func stubCronScan(t *testing.T, scan config.CronScan, ok bool) {
+	t.Helper()
+	prev := scanForCron
+	scanForCron = func(string) (config.CronScan, bool) { return scan, ok }
+	t.Cleanup(func() { scanForCron = prev })
+}
 
 func TestPromptAndScaffoldAcceptsYes(t *testing.T) {
 	cases := []string{"y\n", "Y\n", "yes\n", "YES\n", "\n", "  y  \n"}
@@ -121,4 +138,73 @@ func TestConfigLocation_CustomNameReturnsAbsPath(t *testing.T) {
 	if got != path {
 		t.Fatalf("configLocation custom = %q, want %q", got, path)
 	}
+}
+
+func TestPromptAndScaffoldOffersDetectedCron(t *testing.T) {
+	stubCronScan(t, config.CronScan{
+		Globs: []string{"/etc/crontab"},
+		Files: []string{"/etc/crontab"},
+		Jobs:  3,
+		Live:  3,
+	}, true)
+
+	path := filepath.Join(t.TempDir(), "runwisp.toml")
+	var out bytes.Buffer
+	require.NoError(t, promptAndScaffold(path, strings.NewReader("\n"), &out))
+
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "include_cron")
+	assert.Contains(t, string(body), `"/etc/crontab"`)
+	assert.Contains(t, out.String(), "Found 3 cron job(s)")
+	assert.Contains(t, out.String(), "Read them as RunWisp tasks?")
+}
+
+func TestPromptAndScaffoldOffersComposeAndCronTogether(t *testing.T) {
+	stubCronScan(t, config.CronScan{
+		Globs: []string{"/etc/crontab"},
+		Files: []string{"/etc/crontab"},
+		Jobs:  1,
+		Live:  1,
+	}, true)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"),
+		[]byte("services:\n  web: {image: nginx}\n"), 0644))
+	path := filepath.Join(dir, "runwisp.toml")
+
+	var out bytes.Buffer
+	require.NoError(t, promptAndScaffold(path, strings.NewReader("\n"), &out))
+
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "[compose.")
+	assert.Contains(t, string(body), "include_cron")
+	assert.Contains(t, out.String(), "imports the compose services and reads these live")
+}
+
+func TestPromptAndScaffoldFallsBackWhenCronIsBlocked(t *testing.T) {
+	stubCronScan(t, config.CronScan{
+		Blocked: []string{"/etc/cron.d/backup: refused to trust world-writable file"},
+	}, false)
+
+	path := filepath.Join(t.TempDir(), "runwisp.toml")
+	var out bytes.Buffer
+	require.NoError(t, promptAndScaffold(path, strings.NewReader("\n"), &out))
+
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "include_cron")
+	assert.Contains(t, out.String(), "Found a cron source RunWisp can't read yet: /etc/cron.d/backup")
+	assert.Contains(t, out.String(), "Create a starter with one example task?")
+}
+
+func TestDescribeCronSources(t *testing.T) {
+	got := describeCronSources([]string{
+		"/etc/crontab",
+		"/etc/cron.d/backup",
+		"/etc/cron.d/logrotate",
+		"/var/spool/cron/crontabs/root",
+	})
+	assert.Equal(t, []string{"/etc/crontab", "/etc/cron.d", "root's crontab"}, got)
 }

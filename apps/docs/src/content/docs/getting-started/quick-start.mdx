@@ -131,6 +131,14 @@ No runwisp.toml at /home/user/myproject.
 Create a starter with one example task? [Y/n]
 ```
 
+That's the plain case. If RunWisp also finds a `docker-compose.yml`
+next to you, or a crontab it can read, the prompt says so and the
+starter it writes wires that in too — see
+[Migrating from cron](/recipes/migrating-from-cron/) for the cron
+case. Either way, answering with anything but yes leaves your
+directory untouched and tells you how to write `runwisp.toml`
+yourself.
+
 Hit <kbd>Enter</kbd>. RunWisp writes a starter file, fires up its
 daemon in the background, and drops you into the **TUI**. (The
 screenshot below shows a demo instance with some history; yours

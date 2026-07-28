@@ -59,6 +59,43 @@ func TestWriteInitWithCompose(t *testing.T) {
 	}
 }
 
+// TestWriteInitWithCron verifies the cron-scaffold template loads through the
+// normal Load pipeline and actually reads the crontab it points at.
+func TestWriteInitWithCron(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "crontab"),
+		[]byte("0 3 * * * /usr/local/bin/backup.sh\n"), 0644))
+	path := filepath.Join(dir, "runwisp.toml")
+
+	require.NoError(t, WriteInitWithCron(path, []string{"crontab"}))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Tasks, 1)
+}
+
+// TestWriteInitWithComposeAndCron verifies the combined scaffold loads both
+// the compose services and the crontab in one file.
+func TestWriteInitWithComposeAndCron(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"),
+		[]byte("services:\n  web:\n    image: nginx\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "crontab"),
+		[]byte("0 3 * * * /usr/local/bin/backup.sh\n"), 0644))
+	path := filepath.Join(dir, "runwisp.toml")
+
+	require.NoError(t, WriteInitWithComposeAndCron(path, "docker-compose.yml", "myapp", []string{"crontab"}))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	names := make([]string, len(cfg.Tasks))
+	for i := range cfg.Tasks {
+		names[i] = cfg.Tasks[i].Name
+	}
+	assert.Contains(t, names, "myapp.web")
+	assert.Greater(t, len(cfg.Tasks), 1, "compose service plus the cron job")
+}
+
 // TestWriteInit_ScaffoldIsNotStaged pins the provenance boundary: a scaffolded
 // runwisp.toml is the operator's own file, so nothing in it wears the staged
 // badge.

@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 
 	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/internal/importer"
 )
 
 // scaffoldIfMissing checks for a runwisp.toml at path. If it is absent and
@@ -55,8 +57,25 @@ func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 	composeFile, composeAlias, hasCompose := detectAdjacentCompose(path)
 	if hasCompose {
 		fmt.Fprintf(out, "Detected %s alongside.\n", composeFile)
+	}
+
+	scan, hasCron := scanForCron(path)
+	for _, reason := range scan.Blocked {
+		fmt.Fprintf(out, "Found a cron source RunWisp can't read yet: %s\n", reason)
+	}
+
+	switch {
+	case hasCron:
+		fmt.Fprintf(out, "Found %d cron job(s) on this box (%s).\n",
+			scan.Jobs, strings.Join(describeCronSources(scan.Files), ", "))
+		if hasCompose {
+			fmt.Fprint(out, "Create a starter that imports the compose services and reads these live? [Y/n] ")
+		} else {
+			fmt.Fprint(out, "Read them as RunWisp tasks? [Y/n] ")
+		}
+	case hasCompose:
 		fmt.Fprint(out, "Create a starter that imports its services? [Y/n] ")
-	} else {
+	default:
 		fmt.Fprint(out, "Create a starter with one example task? [Y/n] ")
 	}
 
@@ -66,17 +85,29 @@ func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 	}
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "", "y", "yes":
-		if hasCompose {
-			if err := configedit.WriteInitWithCompose(path, composeFile, composeAlias); err != nil {
-				return fmt.Errorf("write starter: %w", err)
-			}
-		} else if err := configedit.WriteInit(path); err != nil {
+		if err := writeScaffold(path, composeFile, composeAlias, hasCompose, scan.Globs, hasCron); err != nil {
 			return fmt.Errorf("write starter: %w", err)
 		}
 		fmt.Fprintf(out, "Created %s\n", path)
 		return nil
 	default:
 		return fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://docs.runwisp.com/configuration/overview/)", loc)
+	}
+}
+
+// writeScaffold picks the one starter template matching what was detected.
+// Compose and cron are not exclusive — a directory can have both an adjacent
+// compose file and readable crontabs — so all four combinations get a path.
+func writeScaffold(path, composeFile, composeAlias string, hasCompose bool, cronPatterns []string, hasCron bool) error {
+	switch {
+	case hasCompose && hasCron:
+		return configedit.WriteInitWithComposeAndCron(path, composeFile, composeAlias, cronPatterns)
+	case hasCron:
+		return configedit.WriteInitWithCron(path, cronPatterns)
+	case hasCompose:
+		return configedit.WriteInitWithCompose(path, composeFile, composeAlias)
+	default:
+		return configedit.WriteInit(path)
 	}
 }
 
@@ -116,6 +147,67 @@ func composeAliasFromDir(dir string) string {
 	out := strings.Trim(b.String(), "-_")
 	if out == "" || out == "." {
 		return "myapp"
+	}
+	return out
+}
+
+// scanForCron scans for real crontabs this account can read — the cron
+// counterpart of detectAdjacentCompose. ok is false both when nothing was
+// found and when every matched source was blocked outright (untrusted, or
+// one this account can't become the owner of): scaffolding an include_cron
+// that can't schedule anything on its first load would be worse than not
+// offering it. Either way, scan.Blocked comes back so the caller can explain
+// why nothing was offered.
+//
+// A package-level var, like the codebase's other OS-probing seams
+// (cronUserExists, cronServiceProbe): it touches the real filesystem, which
+// unit tests for promptAndScaffold must not do — a CI image with real crontabs
+// under /etc/cron.d, or one running as root, would otherwise make the first-run
+// prompt tests flaky and machine-dependent. Tests override this var directly.
+var scanForCron = func(cfgPath string) (scan config.CronScan, ok bool) {
+	patterns := config.DefaultCronPatterns(os.Geteuid(), currentUsername())
+	scan = config.ScanCronSources(patterns, cfgPath)
+	return scan, scan.Jobs > 0 && len(scan.Blocked) == 0
+}
+
+// currentUsername looks up the account running this process, for
+// DefaultCronPatterns' unprivileged branch. "" (rather than an error) tells
+// the caller to skip cron detection entirely — there is no safe pattern to
+// offer without a name to match a spool file against.
+func currentUsername() string {
+	u, err := user.Current()
+	if err != nil {
+		return ""
+	}
+	return u.Username
+}
+
+// describeCronSources renders the matched cron files as a short, friendly
+// list for the first-run prompt: every file under a cron.d directory
+// collapses to one mention of the directory, and a spool file names its
+// owner rather than its path.
+func describeCronSources(files []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(s string) {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	for _, f := range files {
+		switch {
+		case f == importer.SystemCrontabPath:
+			add(f)
+		case importer.IsSystemCrontabPath(f):
+			add(filepath.Dir(f))
+		default:
+			if owner, ok := importer.UserSpoolOwner(f); ok {
+				add(owner + "'s crontab")
+			} else {
+				add(f)
+			}
+		}
 	}
 	return out
 }

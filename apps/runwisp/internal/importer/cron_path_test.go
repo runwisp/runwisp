@@ -38,9 +38,12 @@ func TestIsSystemCrontabPath(t *testing.T) {
 // this function claims — so the claim has to be narrow.
 func TestUserSpoolOwner(t *testing.T) {
 	cases := map[string]string{
-		// The two conventional layouts.
+		// Every recognized layout.
 		"/var/spool/cron/crontabs/alice": "alice", // Debian, Ubuntu
-		"/var/spool/cron/bob":            "bob",   // RHEL, SUSE
+		"/var/spool/cron/bob":            "bob",   // RHEL, classic SUSE
+		"/var/spool/cron/tabs/carol":     "carol", // openSUSE
+		"/usr/lib/cron/tabs/dave":        "dave",  // macOS
+		"/var/at/tabs/erin":              "erin",  // macOS/BSD
 		"/var/spool/cron/crontabs/svc-1": "svc-1",
 		"/var/spool/cron/crontabs/a_b.c": "a_b.c",
 
@@ -74,9 +77,12 @@ func TestUserSpoolOwner(t *testing.T) {
 // named crontabs.
 func TestIsSpoolCrontabDir(t *testing.T) {
 	cases := map[string]bool{
-		"/var/spool/cron/crontabs": true,
-		"/var/spool/cron":          true,
+		"/var/spool/cron/crontabs": true, // Debian, Ubuntu
+		"/var/spool/cron":          true, // RHEL, classic SUSE
 		"/var/spool/cron/":         true,
+		"/var/spool/cron/tabs":     true, // openSUSE
+		"/usr/lib/cron/tabs":       true, // macOS
+		"/var/at/tabs":             true, // macOS/BSD
 		"/var/spool/anacron":       false,
 		"/home/alice/crontabs":     false,
 		"":                         false,

@@ -25,8 +25,27 @@ can start with either:
 
 ## Read your crontabs as-is
 
-If you'd rather not convert anything yet, hand RunWisp the files cron already
-reads:
+You don't have to write `include_cron` yourself. If there's no `runwisp.toml`
+yet, running `runwisp` for the first time looks for a crontab it can read and
+offers to wire it in on the spot:
+
+```
+No runwisp.toml at /root.
+Found 14 cron job(s) on this box (/etc/crontab, /etc/cron.d, root's crontab).
+Read them as RunWisp tasks? [Y/n]
+```
+
+Say yes and the starter file it writes already has the right `include_cron`
+patterns for your account — a root daemon gets `/etc/crontab`, `/etc/cron.d/*`,
+and every recognized per-user spool; anyone else gets just their own spool
+file, since only root can run someone else's jobs. If a crontab exists but
+RunWisp can't read it yet — wrong permissions, an ownership it can't resolve —
+it prints why and falls back to the plain starter instead of scaffolding a
+config that wouldn't load. Nothing here fires outside an interactive first run:
+`runwisp daemon`, systemd, and Docker never touch a crontab behind your back.
+
+If you'd rather write it by hand, or add sources later, hand RunWisp the files
+cron already reads:
 
 ```toml
 # runwisp.toml
