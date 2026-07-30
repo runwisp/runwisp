@@ -96,6 +96,20 @@ dependencies, so as soon as it lands on your `PATH`, you're done.
 
         Your binary will be at `apps/runwisp/runwisp`.
     </TabItem>
+    <TabItem label="Docker" icon="seti:docker">
+        Prefer a container? See the [Docker](/getting-started/docker/) page
+        for the full picture — image variants, tags, and how the required
+        auth setting and `runwisp.toml` mount work. The short version:
+
+        ```bash
+        docker run -d --name runwisp \
+          -p 9477:9477 \
+          -e RUNWISP_PASSWORD=change-me \
+          -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
+          -v runwisp-data:/var/lib/runwisp \
+          runwisp/runwisp:latest
+        ```
+    </TabItem>
 
 </Tabs>
 

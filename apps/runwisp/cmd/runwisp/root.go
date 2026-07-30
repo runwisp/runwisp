@@ -4,8 +4,11 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"log/slog"
 
@@ -68,6 +71,9 @@ Dense agent reference: https://docs.runwisp.com/agents/reference.md`,
 		if err := resolveLogConfig(); err != nil {
 			return err
 		}
+		if err := resolvePortConfig(cmd); err != nil {
+			return err
+		}
 		return datadir.EnsureDir(flags.DataDir)
 	},
 }
@@ -77,11 +83,11 @@ func init() {
 	// PersistentPreRunE finalizes level/format from flags + env.
 	clilog.Configure(clilog.Options{Level: slog.LevelInfo, Format: clilog.FormatAuto})
 
-	rootCmd.PersistentFlags().StringVarP(&flags.CfgFile, "config", "c", "runwisp.toml", "path to configuration file")
-	rootCmd.PersistentFlags().StringVar(&flags.DataDir, "data", ".runwisp", "directory for all persistent data (db, logs, secrets)")
+	rootCmd.PersistentFlags().StringVarP(&flags.CfgFile, "config", "c", firstNonEmpty(os.Getenv("RUNWISP_CONFIG"), "runwisp.toml"), "path to configuration file (env: RUNWISP_CONFIG)")
+	rootCmd.PersistentFlags().StringVar(&flags.DataDir, "data", firstNonEmpty(os.Getenv("RUNWISP_DATA"), ".runwisp"), "directory for all persistent data (db, logs, secrets) (env: RUNWISP_DATA)")
 	rootCmd.PersistentFlags().StringVar(&flags.Socket, "socket", os.Getenv("RUNWISP_SOCKET"), "control socket path; daemon binds it, CLI connects to it (default: <data>/runwisp.sock; env: RUNWISP_SOCKET)")
-	rootCmd.PersistentFlags().IntVarP(&flags.Port, "port", "p", 9477, "HTTP server port")
-	rootCmd.PersistentFlags().StringVar(&flags.Host, "host", "127.0.0.1", "HTTP server bind address (use 0.0.0.0 to listen on all interfaces)")
+	rootCmd.PersistentFlags().IntVarP(&flags.Port, "port", "p", 9477, "HTTP server port (env: RUNWISP_PORT)")
+	rootCmd.PersistentFlags().StringVar(&flags.Host, "host", firstNonEmpty(os.Getenv("RUNWISP_HOST"), "127.0.0.1"), "HTTP server bind address (use 0.0.0.0 to listen on all interfaces) (env: RUNWISP_HOST)")
 	rootCmd.PersistentFlags().StringVar(&flags.logLevelRaw, "log-level", "", "log verbosity: debug, info, warn, error (env: RUNWISP_LOG_LEVEL)")
 	rootCmd.PersistentFlags().StringVar(&flags.logFormatRaw, "log-format", "", "log format: auto, text, json (env: RUNWISP_LOG_FORMAT)")
 
@@ -123,6 +129,26 @@ func resolveLogConfig() error {
 	flags.LogLevel = level
 	flags.LogFormat = format
 	clilog.Configure(clilog.Options{Level: level, Format: format})
+	return nil
+}
+
+// resolvePortConfig applies the RUNWISP_PORT env fallback for --port. It only
+// consults the env when the flag was left at its default (not explicitly
+// passed on the command line), so an explicit --port always wins. A malformed
+// RUNWISP_PORT is a startup error, not a silently ignored value.
+func resolvePortConfig(cmd *cobra.Command) error {
+	if cmd.Flags().Changed("port") {
+		return nil
+	}
+	raw := strings.TrimSpace(os.Getenv("RUNWISP_PORT"))
+	if raw == "" {
+		return nil
+	}
+	port, err := strconv.Atoi(raw)
+	if err != nil || port <= 0 || port > 65535 {
+		return &userFacingError{title: fmt.Sprintf("RUNWISP_PORT must be a valid port number (got %q)", raw)}
+	}
+	flags.Port = port
 	return nil
 }
 

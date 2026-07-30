@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Official Docker images**: `runwisp/runwisp` on Docker Hub (Alpine by default, `-debian` variant, `amd64` + `arm64`), built from the same release binaries as the tarballs and the npm package. See [Docker](https://docs.runwisp.com/getting-started/docker/).
+- **`RUNWISP_CONFIG`, `RUNWISP_DATA`, `RUNWISP_HOST`, `RUNWISP_PORT`, and `RUNWISP_TLS` environment variables**, mirroring `--config`, `--data`, `--host`, `--port`, and `[daemon] tls` respectively — a flag or TOML value always wins over its env var. See [`[daemon]`](https://docs.runwisp.com/configuration/daemon/).
+- **`compose_mode` on `[tasks.*]` / `[services.*]`**: set `run` alongside `compose_service` and the command runs inside that service's already-running container (`docker compose exec`), with env, secrets, params, and fail-fast applied. `compose_mode = "run"` starts a fresh container instead. See [`compose_mode`](https://docs.runwisp.com/configuration/compose/#running-a-command-in-a-service-compose_mode).
+
 ### Changed
 
+- **`run` scripts now execute with the shell's fail-fast flag** (`<shell> -e -c`), so a multi-line script stops at its first failing command instead of running on and inheriting the last command's exit code — a script that failed halfway used to be recorded as a successful run. Write `set +e` as the script's first line to opt out. See [Fail-fast](https://docs.runwisp.com/configuration/tasks/#fail-fast).
+- **`run` set together with `compose_file` is no longer rejected** — it now selects exec mode and runs inside the service's container. Tasks that set only `compose_service` are unaffected and still start a fresh container. See [`compose_mode`](https://docs.runwisp.com/configuration/compose/#running-a-command-in-a-service-compose_mode).
 - **The daemon and web UI (`apps/`) are now licensed GPL-3.0-or-later**, up from Apache-2.0. The shared libraries under `packages/` remain Apache-2.0. See [LICENSE](LICENSE) and [LICENSE-APACHE](LICENSE-APACHE).
 
 ### Security

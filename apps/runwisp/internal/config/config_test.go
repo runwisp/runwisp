@@ -1268,6 +1268,88 @@ func TestGracefulStopWarnings(t *testing.T) {
 	})
 }
 
+func TestNonPosixShellWarnings(t *testing.T) {
+	t.Run("warns when a shell cannot have fail-fast armed", func(t *testing.T) {
+		cfg := &Config{Tasks: []model.Task{testTask("t1")}}
+		cfg.Tasks[0].Shell = "/usr/bin/python3"
+
+		warnings := nonPosixShellWarnings(cfg)
+
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0], `task "t1"`)
+		assert.Contains(t, warnings[0], "/usr/bin/python3")
+		assert.Contains(t, warnings[0], "fail-fast")
+	})
+
+	t.Run("names the unit kind so services read correctly", func(t *testing.T) {
+		cfg := &Config{Tasks: []model.Task{testTask("worker")}}
+		cfg.Tasks[0].Kind = model.KindService
+		cfg.Tasks[0].Shell = "/usr/bin/fish"
+
+		warnings := nonPosixShellWarnings(cfg)
+
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0], `service "worker"`)
+	})
+
+	t.Run("stays quiet for POSIX shells and for an unset shell", func(t *testing.T) {
+		for _, shell := range []string{"", "/bin/sh", "/bin/bash", "/usr/local/bin/dash"} {
+			cfg := &Config{Tasks: []model.Task{testTask("t1")}}
+			cfg.Tasks[0].Shell = shell
+
+			assert.Empty(t, nonPosixShellWarnings(cfg), "shell %q", shell)
+		}
+	})
+}
+
+func TestComposeExecServiceWarnings(t *testing.T) {
+	execDef := func(mode string) *model.ComposeExecution {
+		return &model.ComposeExecution{
+			File:    "./compose.yaml",
+			Service: "app",
+			Mode:    mode,
+			Command: "consume-queue",
+		}
+	}
+
+	t.Run("warns for a service, where the orphan compounds on every restart", func(t *testing.T) {
+		cfg := &Config{Tasks: []model.Task{testTask("myapp.worker")}}
+		cfg.Tasks[0].Kind = model.KindService
+		cfg.Tasks[0].ExecutionDef = execDef(model.ComposeModeExec)
+
+		warnings := composeExecServiceWarnings(cfg)
+
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0], `service "myapp.worker"`)
+		assert.Contains(t, warnings[0], "cannot cancel an exec")
+		assert.Contains(t, warnings[0], `"app"`)
+	})
+
+	t.Run("stays quiet for a task, where a timeout inside the command is enough", func(t *testing.T) {
+		cfg := &Config{Tasks: []model.Task{testTask("myapp.schedule")}}
+		cfg.Tasks[0].Kind = model.KindTask
+		cfg.Tasks[0].ExecutionDef = execDef(model.ComposeModeExec)
+
+		assert.Empty(t, composeExecServiceWarnings(cfg))
+	})
+
+	t.Run("stays quiet for a compose service RunWisp owns the container of", func(t *testing.T) {
+		cfg := &Config{Tasks: []model.Task{testTask("myapp.web")}}
+		cfg.Tasks[0].Kind = model.KindService
+		cfg.Tasks[0].ExecutionDef = execDef(model.ComposeModeServices)
+
+		assert.Empty(t, composeExecServiceWarnings(cfg))
+	})
+
+	t.Run("is reachable from Warnings", func(t *testing.T) {
+		cfg := &Config{Tasks: []model.Task{testTask("myapp.worker")}}
+		cfg.Tasks[0].Kind = model.KindService
+		cfg.Tasks[0].ExecutionDef = execDef(model.ComposeModeExec)
+
+		assert.NotEmpty(t, Warnings(cfg))
+	})
+}
+
 func TestLoad_ParseErrors(t *testing.T) {
 	tests := []struct {
 		name    string

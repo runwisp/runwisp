@@ -41,11 +41,36 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	ApplyDefaults(cfg)
+	if err := applyTLSEnvOverride(cfg); err != nil {
+		return nil, err
+	}
 	if err := Validate(cfg); err != nil {
 		return nil, err
 	}
 	cfg.watchFiles = collectWatchFiles(cfg, dirs)
 	return cfg, nil
+}
+
+// applyTLSEnvOverride lets RUNWISP_TLS override [daemon] tls. It runs on every
+// Load — including the reload path in internal/runtime/reconcile.go — so the
+// override is applied identically on boot and on every subsequent reload;
+// applying it only once at boot would make checkNonReloadable see a changed
+// [daemon] section on every reload and reject it. An unset or empty
+// RUNWISP_TLS leaves the TOML value untouched.
+func applyTLSEnvOverride(cfg *Config) error {
+	raw := strings.TrimSpace(os.Getenv("RUNWISP_TLS"))
+	if raw == "" {
+		return nil
+	}
+	mode, err := parseTLSMode(raw)
+	if err != nil {
+		return fmt.Errorf("RUNWISP_TLS: %w", err)
+	}
+	if mode == "" {
+		mode = TLSModeAuto
+	}
+	cfg.Daemon.TLS = mode
+	return nil
 }
 
 // collectWatchFiles resolves every on-disk input Snapshot should watch beyond
@@ -177,7 +202,64 @@ func resolveWorkingDirs(cfg *Config, dirs sourceDirs) error {
 // successful config load. Both daemon boot and `runwisp validate` print from
 // here, so future advisory checks land in one place and stay in sync.
 func Warnings(cfg *Config) []string {
-	return gracefulStopWarnings(cfg)
+	w := append(gracefulStopWarnings(cfg), nonPosixShellWarnings(cfg)...)
+	return append(w, composeExecServiceWarnings(cfg)...)
+}
+
+// composeExecServiceWarnings reports long-running services running in compose
+// exec mode. Docker offers no way to cancel an exec — the API has ExecCreate,
+// ExecStart, ExecAttach and ExecInspect, and nothing that stops one — so when
+// RunWisp stops or restarts the unit it can only kill the local `docker compose
+// exec` client. The process inside the target container keeps running, and the
+// restart then starts a second copy alongside it.
+//
+// For a task that's a bounded annoyance the operator can solve with a `timeout`
+// inside the command. For a service it compounds on every restart, silently, so
+// it's worth saying out loud at boot rather than leaving them to find N copies
+// of their worker later.
+func composeExecServiceWarnings(cfg *Config) []string {
+	var warnings []string
+	for i := range cfg.Tasks {
+		task := &cfg.Tasks[i]
+		if task.Kind != model.KindService {
+			continue
+		}
+		ce, ok := task.ExecutionDef.(*model.ComposeExecution)
+		if !ok || ce.Mode != model.ComposeModeExec {
+			continue
+		}
+		warnings = append(warnings, fmt.Sprintf(
+			"service %q uses compose_mode = %q; Docker cannot cancel an exec, so stopping or restarting this service kills only the local client and leaves the process running inside %q — a restart then adds a second copy. Bound it inside the container (e.g. `timeout`), or run it as a fresh container with compose_mode = %q",
+			task.Name, model.ComposeModeExec, ce.Service, composeModeRun,
+		))
+	}
+	return warnings
+}
+
+// nonPosixShellWarnings reports units whose `shell` RunWisp cannot arm
+// fail-fast on. The executor passes `-e` only to interpreters it recognises as
+// POSIX shells, because handing the flag to something else can turn a loud
+// failure into a silent success (see model.ShellSupportsErrexit). That gate is
+// the right call, but a silent behaviour fork would be worse than the problem
+// it avoids — so the operator hears about it at boot and from `runwisp
+// validate` rather than discovering it via a run that passed when it shouldn't.
+func nonPosixShellWarnings(cfg *Config) []string {
+	var warnings []string
+	for i := range cfg.Tasks {
+		task := &cfg.Tasks[i]
+		if task.Shell == "" || model.ShellSupportsErrexit(task.Shell) {
+			continue
+		}
+		kind := task.Kind
+		if kind == "" {
+			kind = model.KindTask
+		}
+		warnings = append(warnings, fmt.Sprintf(
+			"%s %q uses shell %q, which RunWisp does not recognise as a POSIX shell; fail-fast (-e) is not armed for it, so a command failing partway through `run` will not fail the run",
+			kind, task.Name, task.Shell,
+		))
+	}
+	return warnings
 }
 
 // gracefulStopWarnings reports tasks whose graceful_stop exceeds the daemon
@@ -821,10 +903,21 @@ func validateTaskIdentity(task *model.Task, seen map[string]struct{}) error {
 }
 
 func validateTaskCommand(task *model.Task) error {
-	// `run` and a compose backend are mutually exclusive — both set is
-	// ambiguous, so fail fast rather than pick a precedence rule.
-	if _, isCompose := task.ExecutionDef.(*model.ComposeExecution); isCompose && strings.TrimSpace(task.Run) != "" {
-		return fmt.Errorf("task %s sets both `run` and `compose_file`; pick one execution backend", task.Name)
+	// `run` alongside a compose backend means "run this command in that
+	// service" — exec mode consumes it as the script. It stays an error for the
+	// modes that have no place to put it: stack mode runs the whole project, and
+	// services mode runs the service's own compose-declared command.
+	if ce, isCompose := task.ExecutionDef.(*model.ComposeExecution); isCompose && strings.TrimSpace(task.Run) != "" {
+		switch ce.Mode {
+		case model.ComposeModeExec:
+			// The script; consumed by ComposeExecution.Command.
+		case model.ComposeModeStack:
+			return fmt.Errorf("task %s sets `run` on a stack-mode compose unit, which brings the whole project up; move the command to its own task", task.Name)
+		default:
+			return fmt.Errorf(
+				"task %s sets `run` with compose_mode = %q, which runs the service's own command; use compose_mode = %q to run your command inside the container",
+				task.Name, composeModeRun, model.ComposeModeExec)
+		}
 	}
 	execDef := task.ResolvedExecutionDef()
 	if execDef == nil {
@@ -1144,8 +1237,9 @@ const (
 	// start_retries.
 	DefaultStartRetries = 3
 	// DefaultShell is the interpreter used for `run` scripts when neither the
-	// task nor [defaults] selects one. The invocation is always
-	// `<shell> -c <script>`.
+	// task nor [defaults] selects one. The invocation is
+	// `<shell> -e -c <script>` for a recognised POSIX shell (see
+	// model.ShellSupportsErrexit) and `<shell> -c <script>` otherwise.
 	DefaultShell = "/bin/sh"
 	// DefaultStopSignal is the first signal of the stop ladder when neither the
 	// task nor [defaults] selects one. The daemon always follows with SIGKILL

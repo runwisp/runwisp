@@ -28,11 +28,12 @@ cron        = "30 2 * * *"          # 02:30 every day, daemon-local time
 on_overlap  = "skip"                 # never two dumps at once
 keep_for    = "90d"                  # three months of forensic history
 notify_on_failure = ["slack-ops"]
+shell       = "/bin/bash"            # for pipefail — see below
 
 # timeout = "..."                    # see below — size to your DB, or omit
 
 run = """
-set -euo pipefail
+set -o pipefail
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 DEST=/srv/backups/postgres
 mkdir -p "$DEST"
@@ -126,18 +127,23 @@ the Web UI.
 
 [pertask]: /notifications/per-task/
 
-### `set -euo pipefail` inside `run`
+### `shell = "/bin/bash"` and `set -o pipefail`
 
-Bash's `-e` exits on the first failed command, `-u` errors on
-unset variables, `-o pipefail` makes a pipeline fail if any command
-in it fails (instead of only the last one). Without these, a
-`pg_dump` that fails mid-stream can produce a partial gzipped file
-while the script still exits 0 — because without `pipefail`, the
-pipeline's exit code comes from `gzip` alone, not `pg_dump`.
+You don't need `set -e` here — RunWisp runs your script with the
+shell's fail-fast flag already on, so the first failing command ends
+the run. See [Fail-fast](/configuration/tasks/#fail-fast).
 
-This is the pattern for **every** non-trivial `run` block.
-RunWisp itself has no opinion on shell flags — the burden is on
-your script.
+What fail-fast can't see is a **pipeline**. `pg_dump | gzip` reports
+only `gzip`'s exit code, so a `pg_dump` that dies mid-stream leaves you
+a truncated archive and a green run. `pipefail` fixes that by failing
+the pipeline if any stage fails — and it's a bash builtin, not POSIX,
+which is why this task pins `shell = "/bin/bash"`. On the default
+`/bin/sh` (dash, on most Linux) `set -o pipefail` is an error, and with
+fail-fast armed it would kill your script on line one.
+
+So the rule of thumb: pipe something into something else, reach for
+bash and `pipefail`. Otherwise the default shell is fine and you write
+no flags at all.
 
 ## Off-host copy
 
@@ -167,9 +173,10 @@ description = "Restore last night's dump into a scratch DB and run a smoke query
 cron        = "0 5 * * *"            # 02:30 dump → 05:00 restore-test
 on_overlap  = "skip"
 notify_on_failure = ["slack-ops"]
+shell       = "/bin/bash"            # pipelines again — same reason as above
 
 run = """
-set -euo pipefail
+set -o pipefail
 LATEST=$(ls -1t /srv/backups/postgres/app_production-*.dump.gz | head -n1)
 test -n "$LATEST" || { echo "no dump found"; exit 1; }
 

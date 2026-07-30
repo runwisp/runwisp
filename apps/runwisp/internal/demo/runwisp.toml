@@ -102,7 +102,6 @@ notify_on_failure = ["slack-ops:#backups"]
 # A single-line `\r` progress bar: the daemon collapses every percentage frame
 # into one clean final line on disk, while live viewers watch the bar fill.
 run = '''
-set -eu
 ESC=$(printf '\033')
 BOLD="${ESC}[1m"; GREEN="${ESC}[32m"; RST="${ESC}[0m"
 echo "${BOLD}[backup]${RST} starting snapshot at $(date -u +%FT%TZ)"
@@ -145,8 +144,8 @@ retry_attempts    = 1
 retry_delay       = "5m"
 retry_backoff     = "exponential"
 notify_on_failure = ["slack-ops"]
+shell             = "/bin/bash" # $RANDOM below is a bash-ism
 run = '''
-set -euo pipefail
 echo "[restore-test] booting throwaway cluster on :15432"
 echo "[restore-test] restoring $(date -u -d 'yesterday' +%F 2>/dev/null || date -u -v -1d +%F).dump (482M)"
 sleep 2
@@ -168,8 +167,8 @@ timeout           = "30s"
 retry_attempts    = 2
 retry_delay       = "10s"
 notify_on_failure = ["slack-ops"]
+shell             = "/bin/bash" # $RANDOM below is a bash-ism
 run = '''
-set -eu
 if [ $((RANDOM % 12)) -eq 0 ]; then
   echo "[health] api probe failed: upstream returned 502" >&2
   exit 1
@@ -185,7 +184,6 @@ cron              = "0 */6 * * *"
 timeout           = "1m"
 notify_on_failure = ["slack-ops:#certs"]
 run = '''
-set -eu
 host=github.com
 exp=$(date -u -d '+71 days' '+%b %e %H:%M:%S %Y GMT' 2>/dev/null || date -u -v+71d '+%b %e %H:%M:%S %Y GMT')
 echo "[tls] $host cert valid; expires $exp"
@@ -198,8 +196,8 @@ cron        = "*/15 * * * *"
 timeout     = "2s"
 keep_runs   = 30
 notify_on_failure = ["slack-ops"]
+shell       = "/bin/bash" # $RANDOM below is a bash-ism
 run = '''
-set -eu
 echo "[prewarm] priming edge cache"
 if [ $((RANDOM % 6)) -eq 0 ]; then
   echo "[prewarm] origin slow; still waiting on cold keys..." >&2
@@ -219,7 +217,6 @@ keep_for    = "180d"
 # A multi-line ANSI redraw (cursor-up + erase-line, like `docker pull`): four
 # per-file bars animate in place, and only the settled final frame is committed.
 run = '''
-set -eu
 ESC=$(printf '\033')
 GREEN="${ESC}[32m"; DIM="${ESC}[2m"; RST="${ESC}[0m"
 echo "[rotate] scanning /var/log/acme-notes"
@@ -279,7 +276,6 @@ notify_on_failure = ["slack-ops", "telegram-oncall"]
 # so live viewers see the in-flight step before its "ok" lands and the line is
 # committed whole.
 run = '''
-set -eu
 ESC=$(printf '\033')
 GREEN="${ESC}[32m"; DIM="${ESC}[2m"; RST="${ESC}[0m"
 echo "[migrate] HEAD = a1b2c3d"
@@ -305,7 +301,6 @@ timeout     = "1h"
 keep_runs   = 20
 log_max_size = "200mb"
 run = '''
-set -eu
 echo "[reindex] dropping search index 'notes_v4'"
 echo "[reindex] streaming documents from primary"
 n=0
@@ -325,7 +320,6 @@ timeout     = "2h"
 keep_runs   = 20
 log_max_size = "200mb"
 run = '''
-set -eu
 echo "[import] opening legacy_dump.sql (3.2 GB)"
 now=$(date -u +%FT%TZ)
 for table in users orgs notes attachments audit_log; do
@@ -372,7 +366,6 @@ params = [
 # log echoes exactly what RunWisp handed the command. The closing ''' sits on
 # the same line as that printf so the tokens append to it, not a new statement.
 run = '''
-set -eu
 echo "[export] tenant=${ORG_ID} — preparing export"
 printf '[export] arg → %s\n' '''
 
@@ -385,7 +378,6 @@ cron              = "0 6 * * 1"
 timeout           = "30m"
 notify_on_success = ["slack-deploys:#finance"]
 run = '''
-set -eu
 since=$(date -u -d 'last monday' +%F 2>/dev/null || date -u -v -monday +%F)
 echo "[billing] window: ${since} → $(date -u +%F)"
 echo "[billing] 18,432 events processed"
@@ -403,8 +395,8 @@ graceful_stop       = "15s"
 restart_delay       = "2s"
 restart_backoff     = "exponential"
 healthy_after       = "2m"
+shell               = "/bin/bash" # $RANDOM below is a bash-ism
 run = '''
-set -eu
 echo "[worker $$] starting"
 while true; do
   printf "[worker %s] processed %s jobs (last: %s)\n" "$$" "$((RANDOM % 8 + 1))" "$(date -u +%H:%M:%S)"
@@ -418,7 +410,6 @@ description   = "Keeps the hottest Redis keys warm so cold deploys don't stall t
 graceful_stop = "5s"
 restart_delay = "5s"
 run = '''
-set -eu
 echo "[warmer $$] booting"
 while true; do
   echo "[warmer $$] refreshed 14 keys ($(date -u +%H:%M:%SZ))"

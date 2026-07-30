@@ -74,6 +74,7 @@ export default defineConfig({
                     label: "Getting Started",
                     items: [
                         { label: "Quick start", slug: "getting-started/quick-start" },
+                        { label: "Docker", slug: "getting-started/docker" },
                         { label: "The Web UI tour", slug: "getting-started/web-ui-tour" },
                         { label: "The TUI tour", slug: "getting-started/tui-tour" },
                     ],

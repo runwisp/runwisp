@@ -248,8 +248,10 @@ func ParamEnvLayer(params []TaskParam, resolved map[string]string) map[string]st
 
 // ParamArgTokens returns the arg/option/flag parameters as argv tokens in
 // declaration order. A flag that is off, or an optional value param that was
-// never set, contributes no token. The tokens are plain argv — the shell
-// backend quotes them, the compose backend passes them verbatim.
+// never set, contributes no token. The tokens are plain argv: callers that
+// splice them into script text quote them first (the host shell backend, and
+// compose exec mode, both via executor.appendArgTokens), while compose run mode
+// passes them as the container's real argv where no quoting applies.
 func ParamArgTokens(params []TaskParam, resolved map[string]string) []string {
 	var tokens []string
 	for _, p := range params {

@@ -1,7 +1,6 @@
 [tasks.echo-task]
 description = "Emits a few lines of stdout for basic streaming tests"
 run = """
-set -eu
 echo "echo-line-1"
 echo "echo-line-2"
 echo "echo-line-3"
@@ -10,7 +9,6 @@ echo "echo-line-3"
 [tasks.fail-task]
 description = "Exits non-zero after a little output"
 run = """
-set -eu
 echo "fail-line-1"
 >&2 echo "fail-line-2-stderr"
 exit 1
@@ -19,7 +17,6 @@ exit 1
 [tasks.slow-task]
 description = "Blocks until stopped, so the UI can observe a running run + the Stop control"
 run = """
-set -eu
 echo "slow-start"
 # Block until the test stops the run — no arbitrary sleep, no wall-clock cost.
 tail -f /dev/null
@@ -28,7 +25,6 @@ tail -f /dev/null
 [tasks.timed-task]
 description = "Emits staggered output over ~6s then exits 0, so the UI can observe status transitions, log streaming, and a natural finish without a refresh"
 run = """
-set -eu
 echo "timed-phase-1"
 sleep 2
 echo "timed-phase-2"
@@ -41,7 +37,6 @@ echo "timed-done"
 [tasks.progress-task]
 description = "Paints a carriage-return progress bar so the UI can render a settled redraw with rewindable frame history"
 run = """
-set -eu
 for p in 10 40 70 100; do
   printf 'progress: %d%%\r' "$p"
   sleep 0.2

@@ -111,7 +111,10 @@ func (e *ContainerExecution) BuildDockerfile() string {
 
 	b.WriteString("\nCOPY script.sh /runwisp-script.sh\n")
 	b.WriteString("RUN chmod +x /runwisp-script.sh\n")
-	b.WriteString("ENTRYPOINT [\"/bin/sh\", \"/runwisp-script.sh\"]\n")
+	// -e for the same reason the host shell backend passes it: a multi-line
+	// script whose middle line fails must not exit 0 and be recorded as a
+	// successful run. See executor.shellArgs.
+	b.WriteString("ENTRYPOINT [\"/bin/sh\", \"-e\", \"/runwisp-script.sh\"]\n")
 
 	return b.String()
 }
@@ -146,10 +149,17 @@ func (e *ConfigExecution) ExecType() string { return "config" }
 
 // --- Compose execution ---
 
-// ComposeMode discriminates per-service runs from whole-stack runs.
+// ComposeMode discriminates per-service runs from whole-stack runs and from
+// exec-into-the-running-container runs.
 const (
 	ComposeModeServices = "services"
 	ComposeModeStack    = "stack"
+	// ComposeModeExec runs Command inside the service's *already running*
+	// container (`docker compose exec`) instead of starting a new one. The
+	// container is not ours: RunWisp neither creates, names, labels, nor
+	// removes it, so the reclaim/cleanup paths that guard services mode are
+	// deliberately skipped.
+	ComposeModeExec = "exec"
 )
 
 // ComposePull controls the --pull flag passed to docker compose run.
@@ -166,12 +176,16 @@ type ComposeExecution struct {
 	File        string   `json:"file"`
 	ProjectName string   `json:"project_name"`
 	Service     string   `json:"service,omitempty"` // empty when Mode == stack
-	Mode        string   `json:"mode"`              // "services" | "stack"
+	Mode        string   `json:"mode"`              // "services" | "stack" | "exec"
 	Profiles    []string `json:"profiles,omitempty"`
 	EnvFile     []string `json:"env_file,omitempty"`
 	WorkingDir  string   `json:"working_dir,omitempty"`
 	WithDeps    bool     `json:"with_deps,omitempty"`
 	Pull        string   `json:"pull,omitempty"` // "missing" | "always" | "never"
+	// Command is the script handed to the container's shell. Required when
+	// Mode == exec (there is nothing to exec otherwise) and unused by the
+	// other modes, which run the service's own compose-declared command.
+	Command string `json:"command,omitempty"`
 }
 
 func (e *ComposeExecution) ExecType() string { return "compose" }

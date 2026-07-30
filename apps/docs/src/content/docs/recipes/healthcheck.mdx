@@ -31,7 +31,6 @@ keep_runs   = 500             # several days of 5-minute checks for forensics
 notify_on_failure = ["slack-ops"]
 
 run = """
-set -euo pipefail
 curl --silent --show-error --fail-with-body \\
      --max-time 25 \\
      --connect-timeout 5 \\

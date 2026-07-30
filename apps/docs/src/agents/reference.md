@@ -49,7 +49,7 @@ include:              []string    — glob(s) of extra TOML files merged at load
 ```
 timeout:             dur          — per-attempt wall-clock cap; unset = no timeout (TASKS only)
 jitter:              dur          — start-spread window inherited by cron tasks; off when unset (TASKS only)
-shell:               path =/bin/sh — interpreter for run scripts (absolute path)
+shell:               path =/bin/sh — interpreter for run scripts (absolute path); see FAIL-FAST
 stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
 exit_codes:          []int =[0]   — exit codes treated as success (0..255)
 log_max_size:        size =100mb  — per-run log cap (effective task default)
@@ -67,7 +67,7 @@ secrets_file:        path         — dotenv file merged beneath secrets; only t
 
 ### [tasks.&lt;name&gt;] (run-to-exit)
 
-Required: the table + `run` (unless `compose_file`). `restart="always"` and `instances` are rejected on tasks (use `[services.*]`).
+Required: the table + `run` (unless `compose_file`, where `run` is optional and selects `compose_mode`). `restart="always"` and `instances` are rejected on tasks (use `[services.*]`).
 
 ```
 group:             string =Tasks   — UI grouping label
@@ -91,16 +91,23 @@ retry_delay:       dur  =5s         — delay between retries (<=0 floors to 5s)
 retry_backoff:     enum             — constant | linear | exponential
 exit_codes:        []int =[0]       — exit codes treated as success (inherits [defaults]); 0..255
 working_dir:       path             — process cwd; relative to runwisp.toml dir, ~ expands (else daemon cwd)
-shell:             path =/bin/sh    — interpreter for run (absolute path); invoked as <shell> -c <script>
+shell:             path =/bin/sh    — interpreter for run (absolute path); invoked as <shell> -e -c <script>; see FAIL-FAST
 umask:             string           — octal file-creation mask, e.g. "027" (else daemon umask)
 user:              string           — run as user or user:group (name/numeric id); needs daemon as root
 log_max_size:      size =100mb      — per-run log cap
 log_on_full:       enum =drop_old   — drop_new | drop_old | kill_task
 keep_runs:         int              — row retention (inherits [defaults]); 1..1000000
 keep_for:          dur              — age retention (inherits [defaults])
-run:               string (req)     — shell command; mutually exclusive with compose_file
+run:               string (req)     — shell command; with compose_file it is the command run in the service (see compose_mode)
 compose_file:      path             — run a compose service instead of run=
 compose_service:   string =taskname — which compose service; requires compose_file
+compose_mode:      enum             — exec | run. exec = `docker compose exec` into the service's RUNNING container (requires run);
+                                      run = `docker compose run --rm` fresh container (runs `run` if set, else the service's own
+                                      command). Default: exec when run is set, else run. Command runs as `/bin/sh -e -c` inside the
+                                      target; `shell` is rejected on compose units. exec ignores pull/with_deps/instances naming and
+                                      never removes the container. Docker cannot cancel an exec: `timeout` kills only the local
+                                      client, so bound long work inside (`timeout N …`); exec on a [services.*] unit emits a
+                                      startup warning
 env:               map<str,str>     — inline env (merged over defaults.env)
 env_file:          path             — dotenv file
 secrets:           map<str,str>     — inline secrets (merged over defaults.secrets); never shown in API/UI
@@ -183,10 +190,22 @@ match.task:     string   — glob over task name (optional)
 notify:         []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp email)
 ```
 
+### FAIL-FAST (run script execution)
+
+```
+invocation      <shell> -e -c <script>   — POSIX shells (sh bash dash ash busybox ksh mksh zsh yash ...)
+                <shell> -c <script>      — anything else (python3, perl, fish, ...); warned at boot + validate
+effect          multi-line run stops at the first failing command; that command's exit code is the run's
+NOT set         -u (write `set -u` yourself); -o pipefail (not POSIX — needs shell="/bin/bash")
+opt out         `set +e` as the script's first line; no TOML key exists for this
+```
+
 ## CLI
 
-Persistent flags: `-c/--config` (=`runwisp.toml`), `--data` (=`.runwisp`), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`), `--log-level` (debug|info|warn|error), `--log-format` (auto|text|json).
-Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_NO_AUTH` (1/true disables auth; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TRUST_PROXY` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`, `RUNWISP_LOG_LEVEL`, `RUNWISP_LOG_FORMAT`.
+Persistent flags: `-c/--config` (=`runwisp.toml`), `--data` (=`.runwisp`), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`), `--log-level` (debug|info|warn|error), `--log-format` (auto|text|json). Each has an env fallback the flag wins over: `RUNWISP_CONFIG`, `RUNWISP_DATA`, `RUNWISP_PORT`, `RUNWISP_HOST`, `RUNWISP_LOG_LEVEL`, `RUNWISP_LOG_FORMAT`.
+Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_NO_AUTH` (1/true disables auth; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, applied on every load incl. reload), `RUNWISP_TRUST_PROXY` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`.
+
+Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64). Binds `0.0.0.0`, `RUNWISP_TLS=off`, requires `RUNWISP_PASSWORD` or `RUNWISP_NO_AUTH=1` set or the entrypoint refuses to start; mount config at `/etc/runwisp/runwisp.toml` and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
 
 ```
 runwisp                      — no subcommand: attach TUI to running daemon, else scaffold toml + spawn daemon + attach

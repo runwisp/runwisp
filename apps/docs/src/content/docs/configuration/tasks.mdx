@@ -221,6 +221,46 @@ run        = "rsync --quiet ... ; exit $?"
 exit_codes = [0, 24]   # 24 = "some files vanished during transfer", harmless here
 ```
 
+### Fail-fast
+
+RunWisp invokes your script as `<shell> -e -c <script>`, so a multi-line
+`run` block **stops at the first command that fails** and that command's
+exit code becomes the run's.
+
+This matters more than it sounds. Without `-e`, a shell runs a script to
+the end and reports only the _last_ command's status — so a three-line
+script whose middle line blows up finishes green, and you find out weeks
+later that the thing you thought was running hasn't been. You don't have
+to write `set -e` yourself; it's on.
+
+Two things it deliberately doesn't do:
+
+- **`-u`** (error on unset variables) is a lint, not a failure detector,
+  and it breaks scripts that legitimately read optional env vars. If you
+  want it, write `set -u`.
+- **`-o pipefail`** isn't POSIX — dash, which is `/bin/sh` on most Linux
+  distros, rejects it outright. When you pipe one thing into another and
+  care about the upstream side's exit code, set `shell = "/bin/bash"` and
+  write `set -o pipefail` yourself. The
+  [nightly backup recipe](/recipes/backup/#shell--binbash-and-set--o-pipefail)
+  does exactly that.
+
+To turn fail-fast off for one task, make `set +e` the first line of its
+`run` — a runtime `set` overrides the flag, so there's no config key for
+this. Reach for it when a script's _last_ command is the one whose exit
+code you want and the earlier ones are allowed to fail. For a single
+command that's expected to return non-zero, `exit_codes` above is the
+better tool.
+
+:::note[Non-POSIX interpreters]
+`shell` accepts any absolute path, including things that aren't shells at
+all (`/usr/bin/python3`). RunWisp only passes `-e` to interpreters it
+recognises as POSIX shells, because handing the flag to something else
+can do anything from erroring out to quietly succeeding without running
+your script. When it can't arm fail-fast, it says so at daemon boot and
+in `runwisp validate` rather than leaving you to guess.
+:::
+
 Retries fire on `failed`, `timeout`, `crashed`, `log_overflow`, and
 `start_failed`. A manual stop or
 an `on_overlap = "terminate"` ends the chain — see the
@@ -434,7 +474,7 @@ original run was given — including anything the operator deliberately omitted.
 | Key           | Default    | What it does                                                                                                                                                |
 | ------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `working_dir` | _(daemon)_ | Directory the process runs in. Relative paths resolve against the `runwisp.toml` directory; `~` expands. Existence is checked at run time, not config load. |
-| `shell`       | `/bin/sh`  | Interpreter for `run`. Must be an **absolute** path (e.g. `/bin/bash`). The invocation is always `<shell> -c <script>`.                                     |
+| `shell`       | `/bin/sh`  | Interpreter for `run`. Must be an **absolute** path (e.g. `/bin/bash`). Invoked as `<shell> -e -c <script>` — see [Fail-fast](#fail-fast).                  |
 | `umask`       | _(daemon)_ | Octal file-creation mask applied to the run, e.g. `"027"`. 3–4 octal digits, up to `0777`. Empty inherits the daemon's umask.                               |
 | `user`        | _(daemon)_ | Run as another OS user, in `user` or `user:group` form (name or numeric id). Empty keeps the daemon's identity. Needs the daemon running as root.           |
 
@@ -540,7 +580,6 @@ keep_runs      = 200
 keep_for       = "14d"
 notify_on_failure = ["slack-ops"]
 run = """
-set -eu
 trap 'echo "draining gracefully"; /usr/local/bin/process-queue --drain' TERM
 echo "Draining queue at $(date -Iseconds)"
 /usr/local/bin/process-queue

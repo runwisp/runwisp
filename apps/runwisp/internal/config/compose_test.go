@@ -180,15 +180,113 @@ pull = "sometimes"
 	assert.Contains(t, err.Error(), "pull")
 }
 
-func TestComposeExpansion_RunMutuallyExclusiveWithComposeFile(t *testing.T) {
-	cfgPath := writeConfig(t, `[services.svc]
-run = "echo hi"
-compose_file = "./docker-compose.yml"
+// `run` alongside compose_file used to be a hard error. It now selects exec
+// mode, which is the whole point of the feature — so this pins the new
+// resolution rather than the old rejection.
+func TestComposeExpansion_RunWithComposeFileDefaultsToExec(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[tasks.artisan]
+cron            = "* * * * *"
+run             = "php artisan schedule:run"
+compose_file    = "./docker-compose.yml"
 compose_service = "web"
-`)
-	_, err := Load(cfgPath)
+`))
+	require.NoError(t, err)
+	require.Len(t, cfg.Tasks, 1)
+
+	ce, ok := cfg.Tasks[0].ExecutionDef.(*model.ComposeExecution)
+	require.True(t, ok, "expected a compose execution, got %T", cfg.Tasks[0].ExecutionDef)
+	assert.Equal(t, model.ComposeModeExec, ce.Mode)
+	assert.Equal(t, "php artisan schedule:run", ce.Command)
+	assert.Equal(t, "web", ce.Service)
+}
+
+// Exec mode must not stamp a project name. RunWisp's own task name is the right
+// namespace for a container it creates, but exec targets someone else's
+// container: passing `-p <task name>` made compose search a project that does
+// not exist and report the service as not running for every single run.
+func TestComposeExpansion_ExecModeLeavesProjectToCompose(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[tasks.artisan]
+cron            = "* * * * *"
+run             = "php artisan schedule:run"
+compose_file    = "./docker-compose.yml"
+compose_service = "app"
+`))
+	require.NoError(t, err)
+
+	ce, ok := cfg.Tasks[0].ExecutionDef.(*model.ComposeExecution)
+	require.True(t, ok)
+	assert.Empty(t, ce.ProjectName,
+		"exec mode must let compose resolve the project the way `docker compose -f … exec` does")
+}
+
+// Run mode still names the project after the unit: it creates the container, so
+// it owns the namespace and the deterministic --name built from it.
+func TestComposeExpansion_RunModeKeepsProjectName(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[tasks.nightly-backup]
+cron            = "0 3 * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+`))
+	require.NoError(t, err)
+
+	ce, ok := cfg.Tasks[0].ExecutionDef.(*model.ComposeExecution)
+	require.True(t, ok)
+	assert.Equal(t, "nightly-backup", ce.ProjectName)
+}
+
+// No `run` keeps the historical behaviour: a fresh container running the
+// service's own compose-declared command.
+func TestComposeExpansion_ComposeFileWithoutRunStaysServicesMode(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[tasks.backup]
+cron            = "0 3 * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+`))
+	require.NoError(t, err)
+	require.Len(t, cfg.Tasks, 1)
+
+	ce, ok := cfg.Tasks[0].ExecutionDef.(*model.ComposeExecution)
+	require.True(t, ok)
+	assert.Equal(t, model.ComposeModeServices, ce.Mode)
+	assert.Empty(t, ce.Command)
+}
+
+// The combination the old error existed to prevent is still rejected, but now
+// only when the operator explicitly asks for the mode that has nowhere to put a
+// command — and the message names the fix.
+func TestComposeExpansion_RunWithExplicitRunModeRejected(t *testing.T) {
+	_, err := Load(writeConfig(t, `[tasks.artisan]
+cron            = "* * * * *"
+run             = "php artisan schedule:run"
+compose_file    = "./docker-compose.yml"
+compose_service = "web"
+compose_mode    = "run"
+`))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "both")
+	assert.Contains(t, err.Error(), "compose_mode")
+	assert.Contains(t, err.Error(), model.ComposeModeExec)
+}
+
+func TestComposeExpansion_ExecModeWithoutRunRejected(t *testing.T) {
+	_, err := Load(writeConfig(t, `[tasks.artisan]
+cron            = "* * * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "web"
+compose_mode    = "exec"
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "needs a command")
+}
+
+func TestComposeExpansion_InvalidComposeModeRejected(t *testing.T) {
+	_, err := Load(writeConfig(t, `[tasks.artisan]
+cron            = "* * * * *"
+run             = "true"
+compose_file    = "./docker-compose.yml"
+compose_mode    = "attach"
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid compose_mode")
 }
 
 func TestComposeExpansion_ServiceLevelComposeFileBuildsExecutionDef(t *testing.T) {
