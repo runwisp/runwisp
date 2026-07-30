@@ -441,23 +441,30 @@ jobs:
         run: |
           image="runwisp/runwisp"
           minor_version="${VERSION%.*}"
+          major_version="${VERSION%%.*}"
           suffix=""
           if [[ "${BASE}" == "debian" ]]; then
             suffix="-debian"
           fi
 
-          tags=("${image}:${VERSION}${suffix}")
+          # Alpine is the default base, so it claims both the bare tag and the
+          # explicit -alpine one.
+          suffixes=("${suffix}")
           if [[ "${BASE}" == "alpine" ]]; then
-            tags+=("${image}:${VERSION}-alpine")
+            suffixes+=("-alpine")
           fi
+
+          names=("${VERSION}")
           if [[ "${PRERELEASE}" != "true" ]]; then
-            tags+=("${image}:${minor_version}${suffix}")
-            tags+=("${image}:latest${suffix}")
-            if [[ "${BASE}" == "alpine" ]]; then
-              tags+=("${image}:${minor_version}-alpine")
-              tags+=("${image}:latest-alpine")
-            fi
+            names+=("${minor_version}" "${major_version}" "latest")
           fi
+
+          tags=()
+          for name in "${names[@]}"; do
+            for sfx in "${suffixes[@]}"; do
+              tags+=("${image}:${name}${sfx}")
+            done
+          done
 
           {
             echo "TAGS<<TAGS_EOF"

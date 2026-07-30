@@ -202,14 +202,19 @@ run record, and pruning without shooting yourself in the foot.
 
 ## Image variants and tags
 
-| Base             | Tags                                                        | Notes                      |
-| ---------------- | ----------------------------------------------------------- | -------------------------- |
-| Alpine (default) | `latest`, `X.Y.Z`, `X.Y`, and the same three with `-alpine` | Smaller; busybox and `apk` |
-| Debian slim      | `latest-debian`, `X.Y.Z-debian`, `X.Y-debian`               | glibc and `apt-get`        |
+| Base             | Tags                                                            | Notes                      |
+| ---------------- | --------------------------------------------------------------- | -------------------------- |
+| Alpine (default) | `latest`, `X.Y.Z`, `X.Y`, `X`, and the same four with `-alpine` | Smaller; busybox and `apk` |
+| Debian slim      | `latest-debian`, `X.Y.Z-debian`, `X.Y-debian`, `X-debian`       | glibc and `apt-get`        |
 
 Pick Debian if your tasks need glibc or a package only Debian carries;
 otherwise Alpine. A prerelease only ever gets its exact pinned tag, so
 `latest` never lands on an rc.
+
+`X.Y.Z` is the only immutable tag — `X.Y`, `X`, and `latest` move as new
+releases land. While RunWisp is pre-1.0, `0` floats across every `0.x`
+release, and those may carry breaking changes; pin `X.Y` or `X.Y.Z` if that
+matters to you.
 
 ## Quick start
 
