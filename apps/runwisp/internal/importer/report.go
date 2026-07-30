@@ -82,82 +82,80 @@ const (
 // "adding a kind without deciding its severity" a red test rather than a
 // silently harmless note.
 func (k NoteKind) info() (slug string, blocking, unsafeLive bool) {
-	switch k {
-	case NoteShellNotAbsolute:
-		// The crontab's bash isn't invoked, so a bash-ism fails — loudly, with the
-		// error in the run's captured output. A visible failure is still a run.
-		return "shell-not-absolute", true, false
-	case NoteMailto:
-		// Nobody gets the mail until a notifier exists, but the job runs exactly as
-		// crond ran it. Refusing to schedule it would be the worse answer.
-		return "mailto", true, false
-	case NoteSystemAmbiguous:
-		// The format was guessed, so the command may still have a username glued to
-		// its front — running it would run the wrong thing as the wrong user.
-		return "system-crontab-ambiguous", true, true
-	case NoteLineUnparseable:
-		return "line-unparseable", true, true
-	case NoteCronUnparseable:
-		return "cron-unparseable", true, true
-	case NoteTimezoneInvalid:
-		// The zone decides when it fires, so the wrong zone is the wrong schedule.
-		return "timezone-invalid", true, true
-	case NotePercentTranslated:
-		return "percent-translated", false, false
-	case NotePercentStdin:
-		// The TODO is not advice, it is the input the command needed and did not
-		// get. Running it runs something the crontab never asked for.
-		return "percent-stdin", true, true
-	case NoteUserColumnSuspect:
-		// Both halves of the split are wrong: neither the identity nor the command
-		// is one the operator wrote.
-		return "user-column-suspect", true, true
-	case NoteAlreadyDefined:
-		return "already-defined", false, false
-	case NoteRenamedOwned:
-		return "renamed-owned", false, false
-	case NoteRenamedCollision:
-		return "renamed-collision", false, false
-	case NoteIncludeUnresolved:
-		return "include-unresolved", true, false
-	case NoteIncludeNoMatch:
-		return "include-no-match", true, false
-	case NoteIncludeUnreadable:
-		return "include-unreadable", true, false
-	case NoteGroup:
-		return "group", false, false
-	case NoteSectionUnsupported:
-		return "section-unsupported", true, true
-	case NoteSectionDaemon:
-		return "section-daemon", false, false
-	case NoteSectionUnrecognized:
-		return "section-unrecognized", false, false
-	case NoteAutorestartUnexpected:
-		return "autorestart-unexpected", false, false
-	case NoteNoCommand:
-		return "no-command", true, true
-	case NoteCommandExpansion:
-		// A %(...)s that didn't expand leaves a command that isn't the real one.
-		return "command-expansion", true, true
-	case NoteRunOnce:
-		return "run-once", false, false
-	case NoteLogsDropped:
-		return "logs-dropped", false, false
-	case NoteSignalScope:
-		return "signal-scope", false, false
-	case NoteRelativeDirectory:
-		return "relative-directory", false, false
-	case NoteServiceKeyDropped:
-		return "service-key-dropped", false, false
-	case NoteInstances:
-		return "instances", false, false
-	case NoteKeysUnsupported:
-		return "keys-unsupported", false, false
-	case NoteKeyUnreadable:
-		return "key-unreadable", false, false
-	default:
+	inf, ok := noteKindInfo[k]
+	if !ok {
 		return "", false, false
 	}
+	return inf.slug, inf.blocking, inf.unsafeLive
+}
+
+// noteSeverity is one kind's entry in noteKindInfo. See NoteKind.info for what
+// blocking and unsafeLive each mean.
+type noteSeverity struct {
+	slug                 string
+	blocking, unsafeLive bool
+}
+
+// noteKindInfo is the single table NoteKind.info reads. It is a lookup table
+// rather than logic — every kind's severity is an independent fact, decided
+// once here and never re-derived — so it is a map literal, not a switch.
+var noteKindInfo = map[NoteKind]noteSeverity{
+	NoteShellNotAbsolute: {
+		// The crontab's bash isn't invoked, so a bash-ism fails — loudly, with the
+		// error in the run's captured output. A visible failure is still a run.
+		slug: "shell-not-absolute", blocking: true, unsafeLive: false,
+	},
+	NoteMailto: {
+		// Nobody gets the mail until a notifier exists, but the job runs exactly as
+		// crond ran it. Refusing to schedule it would be the worse answer.
+		slug: "mailto", blocking: true, unsafeLive: false,
+	},
+	NoteSystemAmbiguous: {
+		// The format was guessed, so the command may still have a username glued to
+		// its front — running it would run the wrong thing as the wrong user.
+		slug: "system-crontab-ambiguous", blocking: true, unsafeLive: true,
+	},
+	NoteLineUnparseable: {slug: "line-unparseable", blocking: true, unsafeLive: true},
+	NoteCronUnparseable: {slug: "cron-unparseable", blocking: true, unsafeLive: true},
+	NoteTimezoneInvalid: {
+		// The zone decides when it fires, so the wrong zone is the wrong schedule.
+		slug: "timezone-invalid", blocking: true, unsafeLive: true,
+	},
+	NotePercentTranslated: {slug: "percent-translated", blocking: false, unsafeLive: false},
+	NotePercentStdin: {
+		// The TODO is not advice, it is the input the command needed and did not
+		// get. Running it runs something the crontab never asked for.
+		slug: "percent-stdin", blocking: true, unsafeLive: true,
+	},
+	NoteUserColumnSuspect: {
+		// Both halves of the split are wrong: neither the identity nor the command
+		// is one the operator wrote.
+		slug: "user-column-suspect", blocking: true, unsafeLive: true,
+	},
+	NoteAlreadyDefined:        {slug: "already-defined", blocking: false, unsafeLive: false},
+	NoteRenamedOwned:          {slug: "renamed-owned", blocking: false, unsafeLive: false},
+	NoteRenamedCollision:      {slug: "renamed-collision", blocking: false, unsafeLive: false},
+	NoteIncludeUnresolved:     {slug: "include-unresolved", blocking: true, unsafeLive: false},
+	NoteIncludeNoMatch:        {slug: "include-no-match", blocking: true, unsafeLive: false},
+	NoteIncludeUnreadable:     {slug: "include-unreadable", blocking: true, unsafeLive: false},
+	NoteGroup:                 {slug: "group", blocking: false, unsafeLive: false},
+	NoteSectionUnsupported:    {slug: "section-unsupported", blocking: true, unsafeLive: true},
+	NoteSectionDaemon:         {slug: "section-daemon", blocking: false, unsafeLive: false},
+	NoteSectionUnrecognized:   {slug: "section-unrecognized", blocking: false, unsafeLive: false},
+	NoteAutorestartUnexpected: {slug: "autorestart-unexpected", blocking: false, unsafeLive: false},
+	NoteNoCommand:             {slug: "no-command", blocking: true, unsafeLive: true},
+	NoteCommandExpansion: {
+		// A %(...)s that didn't expand leaves a command that isn't the real one.
+		slug: "command-expansion", blocking: true, unsafeLive: true,
+	},
+	NoteRunOnce:           {slug: "run-once", blocking: false, unsafeLive: false},
+	NoteLogsDropped:       {slug: "logs-dropped", blocking: false, unsafeLive: false},
+	NoteSignalScope:       {slug: "signal-scope", blocking: false, unsafeLive: false},
+	NoteRelativeDirectory: {slug: "relative-directory", blocking: false, unsafeLive: false},
+	NoteServiceKeyDropped: {slug: "service-key-dropped", blocking: false, unsafeLive: false},
+	NoteInstances:         {slug: "instances", blocking: false, unsafeLive: false},
+	NoteKeysUnsupported:   {slug: "keys-unsupported", blocking: false, unsafeLive: false},
+	NoteKeyUnreadable:     {slug: "key-unreadable", blocking: false, unsafeLive: false},
 }
 
 // Slug is the kind's stable identifier, for tests and structured dumps.

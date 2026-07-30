@@ -103,7 +103,7 @@ func TestDeriveStatusRanksBlockingAboveSkipped(t *testing.T) {
 // which is precisely the silent-success this report was built to remove. Derived,
 // an unfilled row reads as "nothing was imported for this", which is true.
 func TestZeroItemIsNotClean(t *testing.T) {
-	if got := (Item{}).Status(); got == StatusClean {
+	if (Item{}).Status() == StatusClean {
 		t.Error("an Item nobody filled in must not read as cleanly imported")
 	}
 }
@@ -145,7 +145,7 @@ func TestFileLevelNotesGetNoRow(t *testing.T) {
 	if got := len(res.Items()); got != 1 {
 		t.Errorf("expected 1 row for 1 job line, got %d: %+v", got, res.Items())
 	}
-	if got := len(res.Notes()); got != 1 {
+	if len(res.Notes()) != 1 {
 		t.Errorf("expected the MAILTO note at file level, got %+v", res.Notes())
 	}
 	for _, it := range res.Items() {

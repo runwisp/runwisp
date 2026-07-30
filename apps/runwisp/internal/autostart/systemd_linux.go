@@ -193,7 +193,7 @@ func (s *systemdInstaller) ComputePlan(ctx context.Context, opts InstallOptions)
 	// about a system-wide unit, which starts under PID 1 regardless.
 	var lingerOn bool
 	if !opts.System {
-		lingerOn, _ = s.checkLinger(context.Background())
+		lingerOn, _ = s.checkLinger(ctx)
 	}
 	plan.UnitPath = unitPath
 	plan.Binary = opts.Binary
@@ -310,28 +310,17 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 		return err
 	}
 
-	if !opts.System && !plan.LingerOn {
-		if err := s.enableLinger(ctx, out); err != nil {
-			return err
-		}
+	if err := s.enableLingerIfNeeded(ctx, opts, plan, out); err != nil {
+		return err
 	}
 
-	var cronWasActive bool
-	if opts.TakeOverCron {
-		var err error
-		cronWasActive, err = s.stopAndMaskCron(ctx, plan.CronUnit, out)
-		if err != nil {
-			return fmt.Errorf("take over cron: %w", err)
-		}
+	cronWasActive, err := s.takeOverCronIfRequested(ctx, opts, plan, out)
+	if err != nil {
+		return err
 	}
 
 	if err := s.runEnableNow(ctx, opts.System); err != nil {
-		if opts.TakeOverCron {
-			if rbErr := s.unmaskCron(ctx, plan.CronUnit, cronWasActive, out); rbErr != nil {
-				fmt.Fprintf(out, "Warning: RunWisp failed to start AND cron could not be restored: %v\n", rbErr)
-				fmt.Fprintf(out, "Warning: run 'sudo systemctl unmask %s' by hand to bring back a scheduler.\n", plan.CronUnit)
-			}
-		}
+		s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
 		return err
 	}
 
@@ -341,6 +330,42 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 		fmt.Fprint(out, "\n"+wslTaskSchedulerPostscript()+"\n")
 	}
 	return nil
+}
+
+// enableLingerIfNeeded runs loginctl enable-linger when the unit is a
+// per-user unit that needs it to survive logout. System-wide units start
+// under PID 1 and have no session to linger.
+func (s *systemdInstaller) enableLingerIfNeeded(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) error {
+	if opts.System || plan.LingerOn {
+		return nil
+	}
+	return s.enableLinger(ctx, out)
+}
+
+// takeOverCronIfRequested stops and masks the detected cron unit when the
+// operator opted into --take-over-cron.
+func (s *systemdInstaller) takeOverCronIfRequested(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) (bool, error) {
+	if !opts.TakeOverCron {
+		return false, nil
+	}
+	cronWasActive, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
+	if err != nil {
+		return false, fmt.Errorf("take over cron: %w", err)
+	}
+	return cronWasActive, nil
+}
+
+// rollbackCronTakeover restores cron after `enable --now` fails. Best-effort:
+// the install has already failed, so a restore failure gets a warning rather
+// than masking the original error.
+func (s *systemdInstaller) rollbackCronTakeover(ctx context.Context, opts InstallOptions, plan Plan, cronWasActive bool, out io.Writer) {
+	if !opts.TakeOverCron {
+		return
+	}
+	if rbErr := s.unmaskCron(ctx, plan.CronUnit, cronWasActive, out); rbErr != nil {
+		fmt.Fprintf(out, "Warning: RunWisp failed to start AND cron could not be restored: %v\n", rbErr)
+		fmt.Fprintf(out, "Warning: run 'sudo systemctl unmask %s' by hand to bring back a scheduler.\n", plan.CronUnit)
+	}
 }
 
 // systemctlErrLabel names a systemctl call for an error message. It omits
@@ -522,29 +547,49 @@ func (s *systemdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 		DataDir:  opts.DataDir,
 		LogsHint: logsHint(opts.System, name),
 	}
-	if existing, err := s.deps.FS.ReadFile(unitPath); err == nil {
-		st.UnitExists = true
-		parsed := extractMarkers(existing)
-		st.UnitManaged = parsed.managed
-		st.UnitConfigHash = parsed.configHash
-		st.ExpectedBinarySHA = parsed.binarySHA
-		st.Installed = parsed.managed
-		st.ExpectedConfigHash = SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
-		// Only probe cron when this instance's own marker says it took
-		// it over — an operator who never touches --take-over-cron pays
-		// zero extra systemctl calls for this row.
-		if parsed.maskedCron != "" {
-			st.CronUnit = parsed.maskedCron
-			if _, activeState, unitFileState, err := s.probeCronUnit(ctx, parsed.maskedCron); err == nil {
-				st.CronMasked = unitFileState == "masked"
-				st.CronActive = activeState == "active"
-			}
-		}
-	}
+	s.populateUnitStatus(ctx, opts, unitPath, &st)
 	if data, err := os.ReadFile(opts.Binary); err == nil {
 		st.BinaryExists = true
 		st.BinaryOnDiskSHA = hashContent(data)
 	}
+	s.populateRuntimeStatus(ctx, opts, name, &st)
+	if info, err := s.deps.FS.Stat(opts.DataDir); err == nil && info.IsDir() {
+		st.DataDirWritable = isDirWritable(opts.DataDir)
+		st.DataDirLastWrite = info.ModTime()
+	}
+	return st, nil
+}
+
+// populateUnitStatus fills in the fields derived from reading the unit file
+// on disk and, when it says this instance took over cron, probing that unit.
+func (s *systemdInstaller) populateUnitStatus(ctx context.Context, opts InstallOptions, unitPath string, st *Status) {
+	existing, err := s.deps.FS.ReadFile(unitPath)
+	if err != nil {
+		return
+	}
+	st.UnitExists = true
+	parsed := extractMarkers(existing)
+	st.UnitManaged = parsed.managed
+	st.UnitConfigHash = parsed.configHash
+	st.ExpectedBinarySHA = parsed.binarySHA
+	st.Installed = parsed.managed
+	st.ExpectedConfigHash = SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
+	// Only probe cron when this instance's own marker says it took
+	// it over — an operator who never touches --take-over-cron pays
+	// zero extra systemctl calls for this row.
+	if parsed.maskedCron == "" {
+		return
+	}
+	st.CronUnit = parsed.maskedCron
+	if _, activeState, unitFileState, err := s.probeCronUnit(ctx, parsed.maskedCron); err == nil {
+		st.CronMasked = unitFileState == "masked"
+		st.CronActive = activeState == "active"
+	}
+}
+
+// populateRuntimeStatus fills in the fields that come from live
+// systemctl/loginctl queries against the running unit.
+func (s *systemdInstaller) populateRuntimeStatus(ctx context.Context, opts InstallOptions, name string, st *Status) {
 	if stdout, _, err := s.runSystemctl(ctx, opts.System, "is-enabled", name); err == nil {
 		st.Autostart = strings.TrimSpace(string(stdout)) == "enabled"
 	}
@@ -561,11 +606,6 @@ func (s *systemdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 			st.Linger = true
 		}
 	}
-	if info, err := s.deps.FS.Stat(opts.DataDir); err == nil && info.IsDir() {
-		st.DataDirWritable = isDirWritable(opts.DataDir)
-		st.DataDirLastWrite = info.ModTime()
-	}
-	return st, nil
 }
 
 // logsHint renders the journalctl invocation `service status` prints. A
