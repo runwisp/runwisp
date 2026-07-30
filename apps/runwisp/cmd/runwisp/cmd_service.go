@@ -4,6 +4,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 )
 
@@ -24,10 +26,21 @@ var serviceCmd = &cobra.Command{
 This is OS integration only — it never edits runwisp.toml.
 
 For "is the daemon alive right now?" use 'runwisp status' instead.`,
-	// Service commands describe a future data dir (baked into the
-	// unit) — they do not write to it. Skip the root PersistentPreRunE
-	// that would otherwise mkdir paths the user has not consented to.
-	PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
+	// Service commands describe a future data dir (baked into the unit) —
+	// they do not write to it, so this replaces the root PersistentPreRunE
+	// rather than inheriting it: that one would mkdir paths the operator
+	// has not consented to yet. Cobra runs only the nearest hook, so
+	// everything else the root one does has to be repeated here — in
+	// particular resolvePathDefaults, without which --config/--data left
+	// unset stay empty strings and a system install bakes an empty path
+	// into the unit.
+	PersistentPreRunE: func(*cobra.Command, []string) error {
+		if err := resolveLogConfig(); err != nil {
+			return err
+		}
+		resolvePathDefaults(os.Geteuid())
+		return nil
+	},
 }
 
 func init() {

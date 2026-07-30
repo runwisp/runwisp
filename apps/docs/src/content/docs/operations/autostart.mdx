@@ -2,27 +2,46 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Autostart
-description: Wire RunWisp into systemd (Linux, WSL) or launchd (macOS) with one command, so the daemon survives a reboot. Covers install, status, uninstall, --purge, --print for Ansible/Nix, secrets-on-systemd patterns, and the WSL Task Scheduler recipe.
+description: Wire RunWisp into systemd (Linux, WSL) or launchd (macOS) with one command, so the daemon survives a reboot. Covers the system service, per-user installs with --local, retiring cron, status, uninstall, --purge, --print for Ansible/Nix, secrets-on-systemd patterns, and the WSL Task Scheduler recipe.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-`runwisp service install` writes a managed systemd user unit (Linux,
-WSL) or a launchd LaunchAgent (macOS), enables it, and turns on linger
-so the daemon survives logout. No root, no surprise sudo — the only
-escalation is `loginctl enable-linger`, which is printed and confirmed
-before it runs.
+```sh
+sudo runwisp service install
+```
 
-It never touches `runwisp.toml` — this is purely OS plumbing.
+That's the whole thing on a Linux box. It writes
+`/etc/systemd/system/runwisp.service`, enables it, starts it, and — if
+cron is still running and RunWisp is reading its crontabs — asks whether
+you'd like cron retired while it's at it.
+
+One host, one system service, running as root, named `runwisp.service`.
+That's the shape almost everyone wants, so it's the default.
+
+If you'd rather have a daemon that belongs to your user account, pass
+`--local`: you get `~/.config/systemd/user/runwisp-<fingerprint>.service`
+on Linux (with linger enabled so it survives logout) or
+`~/Library/LaunchAgents/com.runwisp.daemon.<fingerprint>.plist` on macOS.
+Several of those can coexist on one host — that's what the fingerprint in
+the name is for. macOS has no system-wide install yet, so `--local` is
+required there.
+
+Either way it never touches `runwisp.toml` — this is purely OS plumbing.
 
 ## The four commands
 
 ```sh
-runwisp service install     # wire up systemd / launchd
-runwisp service status      # show autostart wiring and any drift
-runwisp service uninstall   # remove the unit (data dir is preserved)
+sudo runwisp service install   # wire up systemd (or launchd, with --local)
+runwisp service status         # show autostart wiring and any drift
+runwisp service uninstall      # remove the unit (data dir is preserved)
 runwisp service install --print > custom.service   # Ansible / Nix
 ```
+
+`status`, `uninstall`, `stop`, and `restart` find whichever unit is
+actually installed — you don't have to tell them how you installed it.
+Pass `--local` only to disambiguate when a system unit _and_ a user unit
+are both present; they'll say so and ask.
 
 Don't mix up the two `status` commands: `runwisp status` answers "is the
 daemon alive right now?", while `runwisp service status` answers "will it
@@ -54,21 +73,44 @@ host/port) or want a fresh boot to re-fire `run_on_start` and catch-up.
 
 ## What `install` does
 
-On Linux and WSL:
+The system install (the default, Linux and WSL, needs root):
 
-1. Writes `~/.config/systemd/user/runwisp-<fingerprint>.service` with
-   the operator's resolved binary path, config path, data dir, port,
-   and host baked in. The unit name carries the daemon's
-   human-readable fingerprint (e.g. `bright-falcon`) so multiple
-   RunWisp instances on the same host install side-by-side. The file
-   starts with a `# Managed by runwisp service install` marker so a
-   later re-run can tell whether it can safely overwrite.
+1. Writes `/etc/systemd/system/runwisp.service` with the resolved binary
+   path, config path, data dir, port, and host baked in. The file starts
+   with a `# Managed by runwisp service install` marker so a later re-run
+   can tell whether it can safely overwrite.
+2. `systemctl daemon-reload`.
+3. Offers to stop and mask cron, if cron is running and RunWisp is
+   reading its crontabs. See [retiring cron](#retiring-cron).
+4. `systemctl enable --now runwisp.service`.
+
+There's no fingerprint in the name: there's exactly one system daemon per
+host, so the unit name mustn't depend on which directory you happened to
+run the install from — otherwise `cd /etc && sudo runwisp service status`
+would report "not installed" against the unit `cd /` created.
+
+The unit is ordered after `remote-fs.target` and `nss-user-lookup.target`
+(same as `cron.service`, in case the config or an account database lives
+on a network mount or an NSS backend) and `time-sync.target` (so a
+boot-time NTP clock step lands before scheduling starts on an RTC-less
+box), and it's `WantedBy=multi-user.target`.
+
+Running as root, the `sudo` prefix on every `systemctl`/`journalctl` call
+is skipped — a minimal container root image may not have `sudo` installed
+at all, and root already has the privilege.
+
+`--local` on Linux and WSL instead:
+
+1. Writes `~/.config/systemd/user/runwisp-<fingerprint>.service`. The unit
+   name carries the daemon's human-readable fingerprint (e.g.
+   `bright-falcon`) so multiple RunWisp instances on the same host install
+   side-by-side.
 2. `systemctl --user daemon-reload`.
-3. `sudo loginctl enable-linger <user>` — only when linger isn't
-   already on. This is the single privileged step.
+3. `sudo loginctl enable-linger <user>` — only when linger isn't already
+   on. This is the single privileged step.
 4. `systemctl --user enable --now runwisp-<fingerprint>.service`.
 
-On macOS:
+`--local` on macOS:
 
 1. Writes `~/Library/LaunchAgents/com.runwisp.daemon.<fingerprint>.plist`
    with the same managed-marker preamble. The LaunchAgent label
@@ -80,6 +122,25 @@ On macOS:
 On WSL, the systemd path runs as on Linux **and** the command prints a
 `Register-ScheduledTask` PowerShell snippet you paste into a Windows
 shell so the distro boots on login.
+
+### When install refuses
+
+Three combinations can't work, and each stops before anything is written:
+
+- **`runwisp service install` without root.** The system service needs
+  root. Re-run with `sudo`, or pass `--local` if you meant a user-scoped
+  daemon. RunWisp won't silently downgrade you to one — a unit that dies
+  with your login session is not what someone typing the bare command on
+  a VPS is after.
+- **`runwisp service install` on macOS.** There's no root LaunchDaemon
+  implementation yet, so `--local` is required.
+- **`sudo runwisp service install --local`.** `systemctl --user` has no
+  bus for root under sudo, so the unit would be written and then never
+  start.
+
+The same rules apply to `--print` and `--dry-run`, which resolve the scope
+before rendering anything — `sudo runwisp service install --print` is how
+you inspect the system unit without installing it.
 
 A confirmation banner lists every action and the resolved settings
 before anything is written. `--yes` skips the prompt for CI; it does
@@ -97,22 +158,33 @@ the data dir. Here's how `runwisp service install` works them out:
   It **warns** on awkward-but-acceptable ones (`~/go/bin`,
   `~/.cache`, paths with spaces) and suggests copying to
   `~/.local/bin/runwisp`. Override with `--binary` for Ansible/Nix.
-- **Data dir**: an absolute
+- **Data dir and config, system install**: `/var/lib/runwisp` and
+  `/etc/runwisp/runwisp.toml` — the same defaults `runwisp daemon` itself
+  picks when it runs as root, so `sudo runwisp reload` later finds the
+  same paths. An explicit `--data` / `--config` overrides either, and then
+  goes through the same validation as below. `--data` and `--config` never
+  change the _scope_ — only `--local` does that.
+- **Data dir, `--local`**: an absolute
   [`--data`](/configuration/daemon/#cli-flags-config-data-directory--listen-address)
   is accepted silently. A relative `--data` is resolved to its absolute
   form and baked into the unit — a boot-launched unit has `cwd=/`, so the
   absolute path is what makes it work. That means `runwisp service install
---data .` installs the daemon **right here**, storing its data in the
-  current directory. The one hard limit is durability: a path under `/tmp`,
-  `/var/tmp`, or `/dev/shm` is still rejected because it won't survive a
-  reboot. The default `./.runwisp` is upgraded interactively: if a DB
-  already exists there, the installer asks whether to keep using it (default
-  yes); otherwise it offers `$XDG_DATA_HOME/runwisp` (or
+--local --data .` installs the daemon **right here**, storing its data in
+  the current directory. The one hard limit is durability: a path under
+  `/tmp`, `/var/tmp`, or `/dev/shm` is still rejected because it won't
+  survive a reboot. The default `./.runwisp` is upgraded interactively: if
+  a DB already exists there, the installer asks whether to keep using it
+  (default yes); otherwise it offers `$XDG_DATA_HOME/runwisp` (or
   `~/.local/share/runwisp` if XDG is unset), and if you decline that it
   offers the current directory before giving up.
-- **Config**: same resolution as the daemon. When both
+- **Config, `--local`**: same resolution as the daemon. When both
   `~/.config/runwisp/runwisp.toml` and `./runwisp.toml` exist, the
   XDG location wins.
+
+A system install also checks that the resolved config is root-owned and
+not group- or world-writable before baking it into the unit — that unit
+runs as root, so `sudo runwisp service install` from a directory holding
+someone else's `runwisp.toml` must not hand that file root's shell.
 
 ### Idempotent re-install
 
@@ -137,17 +209,18 @@ RunWisp service status
   Installed:  yes
   Autostart:  enabled
   Running:    yes
-  Unit file:  /home/alice/.config/systemd/user/runwisp-bright-falcon.service  (matches recorded settings)
-  Binary:     /home/alice/.local/bin/runwisp
-  Data dir:   /home/alice/.local/share/runwisp  (last write 2026-05-20 10:32:01)
-  Linger:     on
+  Unit file:  /etc/systemd/system/runwisp.service  (matches recorded settings)
+  Binary:     /usr/local/bin/runwisp
+  Data dir:   /var/lib/runwisp  (last write 2026-05-20 10:32:01)
   Last start: 2026-05-19 09:00:11 UTC
-  Logs:       journalctl --user -u runwisp-bright-falcon.service
+  Logs:       sudo journalctl -u runwisp.service
 ```
 
-A `--system` install that used [`--take-over-cron`](#--take-over-cron)
-adds one more line, right after `Linger:`, reporting whether the
-masked cron unit is still masked:
+A `--local` install adds a `Linger:` row (a system unit starts under PID 1
+and has no session to linger).
+
+An install that [retired cron](#retiring-cron) adds one more line
+reporting whether the masked cron unit is still masked:
 
 ```
   Cron:       cron.service masked by this instance
@@ -168,8 +241,20 @@ Exit codes are part of the contract:
 unit — secrets stay off disk. The recommended pattern is a drop-in
 file alongside the managed unit:
 
-Replace `<fingerprint>` with the slug your `runwisp service status`
-reports for this instance (e.g. `bright-falcon`):
+```sh
+sudo mkdir -p /etc/systemd/system/runwisp.service.d
+sudo tee /etc/systemd/system/runwisp.service.d/password.conf > /dev/null <<'EOF'
+[Service]
+Environment=RUNWISP_PASSWORD=…
+EOF
+sudo chmod 600 /etc/systemd/system/runwisp.service.d/password.conf
+sudo systemctl daemon-reload
+sudo systemctl restart runwisp.service
+```
+
+For a `--local` install the same pattern applies under
+`~/.config/systemd/user/`, with `<fingerprint>` replaced by the slug
+`runwisp service status` reports for that instance (e.g. `bright-falcon`):
 
 ```sh
 unit=runwisp-<fingerprint>.service
@@ -195,55 +280,45 @@ to stdout and exits 0. It does not touch the filesystem. Combine with
 values in:
 
 ```sh
-runwisp service install --print \
+sudo runwisp service install --print \
   --binary /opt/runwisp/bin/runwisp \
   --config /etc/runwisp/runwisp.toml \
   --data /var/lib/runwisp \
-  --port 9477 --host 127.0.0.1 > /etc/systemd/system/runwisp-bright-falcon.service
+  --port 9477 --host 127.0.0.1 > /etc/systemd/system/runwisp.service
 ```
 
-Use `--system` to target `/etc/systemd/system/` directly from the
-interactive command (requires root; documented as advanced — the
-default path is the per-user unit).
+Add `--local` to render the per-user unit instead. `--print` never
+prompts, so it never offers a cron take-over; pass `--take-over-cron` if
+you want the rendered unit to carry the marker.
 
-### `--system` install specifics
-
-A system-wide unit is named `runwisp.service` — no fingerprint suffix.
-There's exactly one system daemon per host, so the name can't depend on
-which directory `service install --system` happened to run from (a
-per-user unit does carry the fingerprint, since several of those can
-coexist on one host). It's also ordered after `remote-fs.target` and
-`nss-user-lookup.target` (same as `cron.service`, in case the config or
-an account database lives on a network mount or an NSS backend) and
-`time-sync.target` (so a boot-time NTP clock step lands before
-scheduling starts on an RTC-less box), and `WantedBy=multi-user.target`
-instead of `default.target`.
-
-**`--system` has to be repeated on every subcommand that touches the
-unit** — `service status --system`, `service uninstall --system`,
-`stop --system`, `restart --system`. There's no stored "how was this
-installed" state to read back, so a mismatched or missing `--system`
-looks at the wrong unit: `service uninstall` against a `--system`
-install without the flag reports "Nothing to uninstall ✓" while the
-real unit stays installed and running.
-
-As root, the `sudo` prefix on every `systemctl`/`journalctl` call is
-skipped — a minimal container root image may not have `sudo` installed
-at all, and root already has the privilege.
-
-## `--take-over-cron`
+## Retiring cron
 
 Once your cron jobs are running as RunWisp tasks via
 [`include_cron`](/configuration/daemon/#include_cron) or
-[`runwisp promote`](/recipes/migrating-from-cron/), the last step of
-retiring cron is one flag: `sudo runwisp service install --system
---take-over-cron`. On top of the normal `--system` install, it stops and
-masks the system cron unit (`cron.service`, `crond.service`, or
-`cronie.service`, whichever systemd knows about) once RunWisp is
-confirmed running — so the two schedulers never fire the same job
-twice.
+[`runwisp promote`](/recipes/migrating-from-cron/), leaving cron running
+means every job fires twice — once from cron, once from RunWisp. So
+`sudo runwisp service install` asks about it:
 
-It refuses before touching anything if:
+```
+cron.service is running, and RunWisp is reading 12 crontab(s) from this host.
+Leaving cron up means those jobs fire twice — once from cron, once from RunWisp.
+Stop and mask cron.service so RunWisp is the only scheduler? [y/N]
+```
+
+Say yes and it stops and masks the system cron unit (`cron.service`,
+`crond.service`, or `cronie.service`, whichever systemd knows about) once
+RunWisp is confirmed running. Say no and cron is left exactly as it was.
+
+For scripted installs, `--take-over-cron` answers the question up front
+and skips the prompt. `--yes` deliberately does **not** answer it: masking
+cron is destructive and not something to imply from a blanket "yes to
+everything".
+
+The question is only ever asked when it's live and actionable — a
+terminal, root, the system scope, cron actually running, and a config
+that's actually reading crontabs. Otherwise nothing is asked. With
+`--take-over-cron`, the same conditions become hard refusals, before
+anything is written:
 
 - **Nothing is being read.** No `include_cron` pattern matched a
   crontab. Masking cron here would silently stop every job on the box.
@@ -254,9 +329,13 @@ validate` warning about a skipped cron file or job blocks the
 - **A cron job would run as a user this daemon can't become.** Not
   overridable — there's no flag that makes a `user =` cron task run
   correctly once cron stops covering it.
-- **`--system` or root is missing.** `--take-over-cron` only makes
+- **Root or the system scope is missing.** Retiring cron only makes
   sense for the one system-wide daemon that can execute every
   account's jobs.
+
+If cron _is_ running but one of those refusals applies, the install says
+so in a one-line note rather than staying silent — you're about to end up
+with two schedulers and should know why RunWisp isn't offering to fix it.
 
 Order matters for the mechanics: cron is stopped and masked only
 _after_ RunWisp's unit is written and reloaded, and RunWisp is started
@@ -264,11 +343,11 @@ only after cron is confirmed masked. If starting RunWisp then fails,
 the installer unmasks cron (and restarts it, if it was running) rather
 than leaving the box with no scheduler at all.
 
-`service uninstall --system` reverses it: it unmasks (and restarts) the
-cron unit, but only when this instance's own unit recorded the
-take-over — a `# runwisp-masked-cron: <unit>` marker line, next to the
-existing config-hash and binary-SHA lines. RunWisp will never unmask a
-service it can't prove it masked itself.
+`service uninstall` reverses it: it unmasks (and restarts) the cron unit,
+but only when this instance's own unit recorded the take-over — a
+`# runwisp-masked-cron: <unit>` marker line, next to the existing
+config-hash and binary-SHA lines. RunWisp will never unmask a service it
+can't prove it masked itself.
 
 `service status` gains a `Cron:` row once that marker exists:
 
@@ -282,9 +361,9 @@ and both schedulers are now running the same jobs.
 
 **Linux only.** macOS's cron (`com.vix.cron`) lives under
 SIP-protected `/System/Library/LaunchDaemons` — nothing running as your
-user can mask it. `--take-over-cron` refuses on macOS with a pointer to
-`runwisp import cron` followed by removing the crontab by hand
-(`crontab -r`).
+user can mask it. There's nothing to offer there, and `--take-over-cron`
+refuses with a pointer to `runwisp import cron` followed by removing the
+crontab by hand (`crontab -r`).
 
 ## `--purge` for full removal
 
@@ -316,6 +395,10 @@ snippet at the end of a successful install with `<distro>` filled in.
 
 ## macOS notes
 
+macOS installs are `--local` only — there's no root LaunchDaemon yet, and
+the bare `runwisp service install` says so rather than quietly installing
+a LaunchAgent you didn't ask for.
+
 The LaunchAgent runs as the logged-in user, on every login. macOS has
 no equivalent of `loginctl enable-linger` — the LaunchAgent is per-user
 by design. Logs go to `<data-dir>/daemon.log`; `service status`
@@ -325,27 +408,31 @@ prints a `tail -f` hint to the same file.
 
 ```
 runwisp service install
-  -y, --yes       skip the install confirmation (does not skip --purge)
+  -y, --yes       skip the install confirmation (never answers the cron question)
       --print     write the rendered unit to stdout and exit
       --dry-run   print the plan and exit without writing
       --force     overwrite a hand-edited unit
-      --system    install /etc/systemd/system/ (Linux, advanced)
+      --local     install a per-user unit instead of the system service
       --binary    override the binary path baked into the unit
-      --take-over-cron           stop and mask the system cron unit (Linux, --system, root)
+      --take-over-cron           stop and mask the system cron unit without asking
       --allow-skipped-cron-jobs  proceed even if a cron source failed to load
 
 runwisp service uninstall
   -y, --yes       skip the uninstall confirmation
       --purge     also remove the data dir (typed 'delete' to confirm)
       --force     remove a hand-edited unit
-      --system    the unit was installed with --system — must match
+      --local     act on the per-user unit
 
 runwisp service status
-      --system    the unit was installed with --system — must match
+      --local     report on the per-user unit
 
 runwisp stop / runwisp restart
-      --system    the daemon was installed with --system — must match
+      --local     delegate to the per-user unit
 ```
+
+`--local` is only needed to disambiguate: without it, everything except
+`install` finds whichever unit is installed, and `install` targets the
+system service.
 
 ---
 

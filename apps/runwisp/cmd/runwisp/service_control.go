@@ -43,13 +43,17 @@ func serviceManagerName(st autostart.Status) string {
 }
 
 // serviceState resolves the autostart installer and probes its Status.
-// Any failure — unsupported OS, missing HOME, status probe error — returns
-// ok=false and the caller falls back to the direct PID/SIGTERM path. The
-// service layer is best-effort sugar; it must never block a plain stop.
-// systemWide must match how the unit was installed, same as
-// resolveStatusOptions.
-func serviceState(cmd *cobra.Command, f Flags, systemWide bool) (autostart.Installer, autostart.InstallOptions, autostart.Status, bool) {
+// Any failure — unsupported OS, missing HOME, an ambiguous scope, status
+// probe error — returns ok=false and the caller falls back to the direct
+// PID/SIGTERM path. The service layer is best-effort sugar; it must never
+// block a plain stop. local mirrors the --local flag; without it the scope
+// is detected from what is actually installed.
+func serviceState(cmd *cobra.Command, f Flags, local bool) (autostart.Installer, autostart.InstallOptions, autostart.Status, bool) {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, true)
+	if err != nil {
+		return nil, autostart.InstallOptions{}, autostart.Status{}, false
+	}
+	systemWide, err := resolveManagedScope(deps, local)
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
 	}

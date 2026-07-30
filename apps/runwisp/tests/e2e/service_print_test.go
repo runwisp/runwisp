@@ -6,13 +6,44 @@
 package e2e
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestCLIServiceInstallRefusesSystemScopeUnprivileged pins the new default:
+// a bare `runwisp service install` targets the system-wide service, so an
+// unprivileged run has to stop and say so rather than quietly installing a
+// per-user unit the operator didn't ask for. The message must name both
+// ways forward, since either could be what they meant.
+func TestCLIServiceInstallRefusesSystemScopeUnprivileged(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("autostart is only built for linux and darwin")
+	}
+	if os.Geteuid() == 0 && runtime.GOOS == "linux" {
+		t.Skip("running as root — the system scope is allowed")
+	}
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	cmd := exec.Command(binaryPath, "service", "install", "--dry-run")
+	cmd.Dir = projectDir
+	cmd.Env = subprocEnv()
+	out, err := cmd.CombinedOutput()
+
+	require.Errorf(t, err, "expected a refusal, got:\n%s", string(out))
+	if runtime.GOOS == "darwin" {
+		assert.Contains(t, string(out), "not supported on macOS")
+	} else {
+		assert.Contains(t, string(out), "requires root")
+	}
+	assert.Contains(t, string(out), "--local")
+}
 
 // TestCLIServicePrintGolden exercises `runwisp service install --print`
 // with a fully-specified set of flags so the rendered unit is
@@ -26,15 +57,22 @@ import (
 //
 // The native real-install path needs systemd/launchd in CI, which we
 // don't have — this test stays at the rendering layer.
+//
+// --local because the tests run unprivileged: the default scope is the
+// system-wide service, which refuses without root (see
+// TestCLIServiceInstallRefusesSystemScopeUnprivileged).
 func TestCLIServicePrintGolden(t *testing.T) {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skip("autostart is only built for linux and darwin")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("--local refuses as root on Linux; this golden describes the user unit")
 	}
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
 	args := []string{
-		"service", "install", "--print",
+		"service", "install", "--print", "--local",
 		"--binary", "/opt/runwisp/bin/runwisp",
 		"--config", "/etc/runwisp/runwisp.toml",
 		"--data", "/var/lib/runwisp",

@@ -21,7 +21,7 @@ const (
 )
 
 var serviceStatusOpts struct {
-	System bool
+	Local bool
 }
 
 var serviceStatusCmd = &cobra.Command{
@@ -34,7 +34,9 @@ recorded settings hash, on-disk unit, and binary SHA.
 This answers "will the daemon come up after a reboot?". For
 "is the daemon alive right now?" use 'runwisp status'.
 
-Pass --system when the unit was installed with 'service install --system'.
+With no flags this reports on whichever unit is installed — the system-wide
+service or a per-user one. Pass --local to pin the per-user unit when both
+are present.
 
 Exit codes:
   0  healthy (installed, enabled, running, no drift)
@@ -46,11 +48,16 @@ Exit codes:
 }
 
 func init() {
-	serviceStatusCmd.Flags().BoolVar(&serviceStatusOpts.System, "system", false, "the unit was installed system-wide (Linux, advanced)")
+	serviceStatusCmd.Flags().BoolVar(&serviceStatusOpts.Local, "local", false, localFlagUsage)
 }
 
 func runServiceStatus(cmd *cobra.Command, f Flags) error {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, true)
+	if err != nil {
+		return err
+	}
+
+	systemWide, err := resolveManagedScope(deps, serviceStatusOpts.Local)
 	if err != nil {
 		return err
 	}
@@ -60,7 +67,7 @@ func runServiceStatus(cmd *cobra.Command, f Flags) error {
 		return err
 	}
 
-	opts, err := resolveStatusOptions(f, serviceStatusOpts.System)
+	opts, err := resolveStatusOptions(f, systemWide)
 	if err != nil {
 		return err
 	}
@@ -82,8 +89,8 @@ func runServiceStatus(cmd *cobra.Command, f Flags) error {
 // prompt — it tolerates ambiguous defaults and only complains when a
 // caller-supplied explicit value is invalid. Also reused by
 // `runwisp stop` / `runwisp restart` for their service-managed probe.
-// systemWide must match how the unit was installed — it picks the unit
-// path and the systemctl scope, not just a display detail.
+// systemWide comes from resolveManagedScope — it picks the unit path and
+// the systemctl scope, not just a display detail.
 func resolveStatusOptions(f Flags, systemWide bool) (autostart.InstallOptions, error) {
 	exe, err := os.Executable()
 	if err != nil {

@@ -17,7 +17,7 @@ import (
 )
 
 var restartOpts struct {
-	System bool
+	Local bool
 }
 
 var restartCmd = &cobra.Command{
@@ -34,8 +34,8 @@ When the daemon is managed by systemd or launchd (wired up via
 manager. Otherwise the daemon is stopped gracefully (SIGTERM) and a
 fresh one is spawned in the background.
 
-Pass --system if the daemon was installed with 'service install --system',
-so the service-managed delegation checks the right unit.`,
+The delegation finds whichever unit is installed on its own. Pass --local to
+pin the per-user one when both a system and a user unit are present.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return runRestart(cmd, flags)
@@ -43,13 +43,13 @@ so the service-managed delegation checks the right unit.`,
 }
 
 func init() {
-	restartCmd.Flags().BoolVar(&restartOpts.System, "system", false, "the daemon was installed system-wide (Linux, advanced)")
+	restartCmd.Flags().BoolVar(&restartOpts.Local, "local", false, localFlagUsage)
 }
 
 func runRestart(cmd *cobra.Command, f Flags) error {
 	out := cmd.OutOrStdout()
 
-	installer, opts, st, ok := serviceState(cmd, f, restartOpts.System)
+	installer, opts, st, ok := serviceState(cmd, f, restartOpts.Local)
 	if ok && shouldDelegateRestart(st) {
 		return restartViaService(out, installer, opts, st, f)
 	}

@@ -67,6 +67,30 @@ func (s *systemdInstaller) discoverCronUnit(ctx context.Context) (string, error)
 	return "", ErrNoCronUnit
 }
 
+// CronStatus implements Installer: it reports which cron unit this host has
+// and whether it is running right now. It exists so the CLI can decide
+// whether asking about a take-over is even meaningful — offering to retire
+// cron on a box with no cron, or with cron already down, is noise, and
+// going ahead anyway would fail later on ErrNoCronUnit.
+//
+// A host with no cron unit is not an error here (unlike discoverCronUnit,
+// whose caller explicitly asked for a take-over); it just answers "nothing
+// to take over".
+func (s *systemdInstaller) CronStatus(ctx context.Context) (unit string, active bool, err error) {
+	unit, err = s.discoverCronUnit(ctx)
+	if err != nil {
+		if errors.Is(err, ErrNoCronUnit) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	_, activeState, _, err := s.probeCronUnit(ctx, unit)
+	if err != nil {
+		return unit, false, err
+	}
+	return unit, activeState == "active", nil
+}
+
 // resolveMaskedCronUnit decides what runwisp-masked-cron marker the
 // rendered unit should carry. When TakeOverCron is requested it discovers
 // the live cron unit; otherwise it carries forward whatever marker the

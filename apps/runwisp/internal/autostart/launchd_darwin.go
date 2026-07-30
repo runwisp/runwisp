@@ -22,7 +22,9 @@ const (
 	launchdPlistDir    = "Library/LaunchAgents"
 )
 
-// New returns the launchd installer.
+// New returns the launchd installer. macOS only ever installs a per-user
+// LaunchAgent today (there is no system-wide LaunchDaemon scope yet), so
+// every unit here is fingerprint-named and the fingerprint is required.
 func New(deps Deps) (Installer, error) {
 	if deps.Home == "" {
 		return nil, errors.New("autostart: HOME is not set")
@@ -38,6 +40,23 @@ func New(deps Deps) (Installer, error) {
 
 type launchdInstaller struct {
 	deps Deps
+}
+
+// ScopeCandidates implements the per-OS half of DetectScope. macOS has no
+// system-wide scope, so the system path is always empty.
+func ScopeCandidates(deps Deps) (systemPath, userPath string) {
+	if deps.Fingerprint == "" {
+		return "", ""
+	}
+	l := &launchdInstaller{deps: deps}
+	return "", l.plistPath()
+}
+
+// CronStatus implements Installer. macOS's cron (com.vix.cron) lives under
+// SIP-protected /System/Library/LaunchDaemons, so there is never anything
+// RunWisp can offer to take over here.
+func (l *launchdInstaller) CronStatus(_ context.Context) (string, bool, error) {
+	return "", false, nil
 }
 
 // label is the per-instance launchd label, e.g.

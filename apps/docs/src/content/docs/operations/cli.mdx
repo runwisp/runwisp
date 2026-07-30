@@ -279,9 +279,9 @@ catch-up. `runwisp stop` takes the daemon down without starting a new one.
 When the daemon is managed by systemd or launchd (via
 [`runwisp service install`](/operations/autostart/)), both `restart` and
 `stop` delegate to the service manager so its view of the unit stays in
-sync. If that install used `--system`, pass `--system` here too — there's
-no stored record of how the unit was installed, so a mismatch looks at
-the wrong unit and falls back to a plain SIGTERM instead of delegating.
+sync. They find whichever unit is installed on their own; pass `--local`
+only when a system unit and a per-user unit both exist and you mean the
+per-user one.
 
 ## Migrate an existing setup
 
@@ -408,26 +408,33 @@ in), or one generated from a compose project, which has no block of its own.
 ## Autostart
 
 ```sh
-runwisp service install     # wire up systemd (Linux/WSL) or launchd (macOS)
-runwisp service uninstall   # remove the unit/plist (data dir is preserved)
-runwisp service status      # is autostart wired up, and has anything drifted?
+sudo runwisp service install   # wire up the system-wide systemd service
+runwisp service uninstall      # remove the unit/plist (data dir is preserved)
+runwisp service status         # is autostart wired up, and has anything drifted?
 ```
 
 These wire the daemon into the host init system so it survives a reboot —
-OS plumbing only, never touching `runwisp.toml`. `install` takes `--yes`
-(`-y`), `--print` (render the unit to stdout), `--dry-run`, `--force`
-(overwrite a hand-edited unit), `--system` (a system-wide unit on Linux),
+OS plumbing only, never touching `runwisp.toml`.
+
+`install` defaults to the system-wide service (`/etc/systemd/system/runwisp.service`,
+Linux, root). `--local` installs a per-user unit instead — a systemd user
+unit on Linux, a LaunchAgent on macOS, where it's currently the only
+option. Without root and without `--local`, install refuses rather than
+guessing.
+
+Other `install` flags: `--yes` (`-y`), `--print` (render the unit to
+stdout), `--dry-run`, `--force` (overwrite a hand-edited unit),
 `--binary <path>` (override the baked-in binary path), and
-`--take-over-cron` (Linux, `--system`, root only: stop and mask the system
-cron service once RunWisp is confirmed running — see
-[`--take-over-cron`](/operations/autostart/#--take-over-cron) for the gates
-and rollback behavior; `--allow-skipped-cron-jobs` overrides one of them).
-`uninstall` takes `--yes`, `--force`, `--system`, and `--purge` (also delete
+`--take-over-cron`, which answers the "stop and mask the system cron
+service?" question the install otherwise asks on a terminal — see
+[Retiring cron](/operations/autostart/#retiring-cron) for the refusals and
+rollback behavior; `--allow-skipped-cron-jobs` overrides one of them.
+
+`uninstall` takes `--yes`, `--force`, `--local`, and `--purge` (also delete
 the data dir — which makes you type the literal word `delete` to confirm).
-`status` also takes `--system`. Whichever of `install`'s `--system` or
-its absence you used, repeat it on `status` / `uninstall` — there's no
-stored record of which one a given unit was installed with. It's all
-covered in depth on the [Autostart](/operations/autostart/) page.
+`status` takes `--local`. Neither needs to be told how the unit was
+installed: they look for it. It's all covered in depth on the
+[Autostart](/operations/autostart/) page.
 
 Don't confuse `runwisp service status` ("will the daemon come back after a
 reboot?") with `runwisp status` ("is it alive right now?").

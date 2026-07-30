@@ -318,20 +318,29 @@ sweeps. Nothing errors, so nothing tells you, which is exactly the kind of quiet
 failure RunWisp exists to prevent — hence the `!` line at the bottom of every
 import summary.
 
-If you're installing system-wide as root and every job you care about is
-already loading cleanly (`runwisp validate` and `runwisp status` show no
-skipped cron sources), one flag does the whole cutover:
+If you're installing as root and every job you care about is already loading
+cleanly (`runwisp validate` and `runwisp status` show no skipped cron
+sources), the install does the whole cutover and asks first:
 
 ```bash
-sudo runwisp service install --system --take-over-cron
+sudo runwisp service install
 ```
 
-This stops and masks the system cron service only once RunWisp is confirmed
-running, and refuses up front if anything would silently stop working — see
-[`--take-over-cron`](/operations/autostart/#--take-over-cron) for the exact
-checks and how to undo it. It's Linux-only and all-or-nothing for the box; for
-a user-level install, a partial migration, or macOS, take the jobs away from
-cron by hand instead:
+```
+cron.service is running, and RunWisp is reading 12 crontab(s) from this host.
+Leaving cron up means those jobs fire twice — once from cron, once from RunWisp.
+Stop and mask cron.service so RunWisp is the only scheduler? [y/N]
+```
+
+Say yes and it stops and masks the system cron service, but only once
+RunWisp is confirmed running. Anything that would silently stop working
+means the question isn't asked at all — see
+[Retiring cron](/operations/autostart/#retiring-cron) for the exact checks
+and how to undo it. For a scripted install, `--take-over-cron` answers the
+question up front.
+
+It's Linux-only and all-or-nothing for the box; for a `--local` install, a
+partial migration, or macOS, take the jobs away from cron by hand instead:
 
 ```bash
 crontab -l > ~/crontab.backup    # keep a copy, always

@@ -47,6 +47,53 @@ func TestDiscoverCronUnit_FallsThroughToCrond(t *testing.T) {
 	assert.Equal(t, "crond.service", unit)
 }
 
+// CronStatus is what the install prompt consults before asking whether to
+// retire cron, so "no cron on this host" has to be a plain answer rather
+// than the error discoverCronUnit returns to a caller who asked for a
+// take-over outright.
+func TestCronStatus_NoCronUnitIsNotAnError(t *testing.T) {
+	inst, _, cmd, _, _ := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	for _, name := range cronUnitCandidates {
+		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", name},
+			[]byte("not-found\n\n\n"), nil, nil)
+	}
+
+	unit, active, err := inst.CronStatus(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, unit)
+	assert.False(t, active)
+}
+
+func TestCronStatus_ReportsRunningUnit(t *testing.T) {
+	inst, _, cmd, _, _ := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	// Once for discovery, once for the active-state read.
+	for range 2 {
+		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+			[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	}
+
+	unit, active, err := inst.CronStatus(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "cron.service", unit)
+	assert.True(t, active)
+}
+
+func TestCronStatus_ReportsStoppedUnit(t *testing.T) {
+	inst, _, cmd, _, _ := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	for range 2 {
+		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+			[]byte("loaded\ninactive\nenabled\n"), nil, nil)
+	}
+
+	unit, active, err := inst.CronStatus(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "cron.service", unit)
+	assert.False(t, active, "a stopped cron is nothing to take over")
+}
+
 func TestDiscoverCronUnit_NoneFound(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
 	inst.deps.Euid = 0

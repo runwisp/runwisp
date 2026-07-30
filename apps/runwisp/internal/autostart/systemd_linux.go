@@ -35,16 +35,16 @@ const (
 	systemctlDaemonReload = "daemon-reload"
 )
 
-// New returns the systemd installer.
+// New returns the systemd installer. It deliberately does not require a
+// fingerprint: the default (system-wide) install names its unit
+// `runwisp.service` and never reads one. The user scope does, and says so
+// at the entry points via requireFingerprint.
 func New(deps Deps) (Installer, error) {
 	if deps.Home == "" {
 		return nil, errors.New("autostart: HOME is not set")
 	}
 	if deps.User == "" {
 		return nil, errors.New("autostart: user is not set")
-	}
-	if deps.Fingerprint == "" {
-		return nil, errors.New("autostart: fingerprint is required")
 	}
 	return &systemdInstaller{deps: deps}, nil
 }
@@ -53,13 +53,23 @@ type systemdInstaller struct {
 	deps Deps
 }
 
+// requireFingerprint guards the operations whose unit name is a function of
+// the per-instance fingerprint. Only the user scope is; the system unit has
+// a fixed name.
+func (s *systemdInstaller) requireFingerprint(systemWide bool) error {
+	if systemWide || s.deps.Fingerprint != "" {
+		return nil
+	}
+	return errors.New("autostart: fingerprint is required for a user-scoped unit")
+}
+
 // serviceName returns the unit basename. A system-wide install drops the
 // per-instance fingerprint suffix: there is exactly one system daemon per
 // host, the suffix exists only to let several user-scoped daemons (several
 // data dirs / cwd) coexist, and keeping it would make the unit name a
-// function of the directory `service install --system` happened to run
-// from — so `cd /etc && sudo runwisp service status` would report "not
-// installed" against the unit `cd /` created.
+// function of the directory `service install` happened to run from — so
+// `cd /etc && sudo runwisp service status` would report "not installed"
+// against the unit `cd /` created.
 func (s *systemdInstaller) serviceName(systemWide bool) string {
 	if systemWide {
 		return "runwisp.service"
@@ -73,6 +83,16 @@ func (s *systemdInstaller) unitPath(systemWide bool) string {
 		return filepath.Join(systemdSystemUnitDir, s.serviceName(systemWide))
 	}
 	return filepath.Join(s.deps.Home, systemdUserUnitDir, s.serviceName(systemWide))
+}
+
+// ScopeCandidates implements the per-OS half of DetectScope.
+func ScopeCandidates(deps Deps) (systemPath, userPath string) {
+	s := &systemdInstaller{deps: deps}
+	systemPath = s.unitPath(true)
+	if deps.Fingerprint != "" {
+		userPath = s.unitPath(false)
+	}
+	return systemPath, userPath
 }
 
 // systemctlInvocation is the one place that decides how a systemctl call is
@@ -134,6 +154,9 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 // Render returns the rendered unit file without touching disk. Used
 // by `service install --print`.
 func (s *systemdInstaller) Render(opts InstallOptions) ([]byte, error) {
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return nil, err
+	}
 	resolved := opts
 	maskedUnit, err := s.resolveMaskedCronUnit(context.Background(), opts)
 	if err != nil {
@@ -146,6 +169,9 @@ func (s *systemdInstaller) Render(opts InstallOptions) ([]byte, error) {
 
 // ComputePlan implements Installer.
 func (s *systemdInstaller) ComputePlan(ctx context.Context, opts InstallOptions) (Plan, error) {
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return Plan{}, err
+	}
 	resolved := opts
 	maskedUnit, err := s.resolveMaskedCronUnit(ctx, opts)
 	if err != nil {
@@ -363,6 +389,9 @@ func (s *systemdInstaller) Restart(ctx context.Context, opts InstallOptions) err
 }
 
 func (s *systemdInstaller) runSystemctlVerb(ctx context.Context, systemWide bool, verb string) error {
+	if err := s.requireFingerprint(systemWide); err != nil {
+		return err
+	}
 	_, stderr, err := s.runSystemctl(ctx, systemWide, verb, s.serviceName(systemWide))
 	if err != nil {
 		return fmt.Errorf("%s: %w: %s", systemctlErrLabel(systemWide, verb), err, string(stderr))
@@ -372,6 +401,9 @@ func (s *systemdInstaller) runSystemctlVerb(ctx context.Context, systemWide bool
 
 // ComputeUninstallPlan implements Installer.
 func (s *systemdInstaller) ComputeUninstallPlan(_ context.Context, opts UninstallOptions) (Plan, error) {
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return Plan{}, err
+	}
 	unitPath := s.unitPath(opts.System)
 	plan, err := ClassifyUninstall(s.deps.FS, unitPath, opts.Force)
 	if err != nil {
@@ -478,6 +510,9 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 
 // Status implements Installer.
 func (s *systemdInstaller) Status(ctx context.Context, opts InstallOptions) (Status, error) {
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return Status{}, err
+	}
 	unitPath := s.unitPath(opts.System)
 	name := s.serviceName(opts.System)
 	st := Status{

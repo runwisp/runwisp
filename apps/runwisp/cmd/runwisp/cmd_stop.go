@@ -15,7 +15,7 @@ import (
 )
 
 var stopOpts struct {
-	System bool
+	Local bool
 }
 
 var stopCmd = &cobra.Command{
@@ -34,8 +34,8 @@ In-flight runs get [daemon] shutdown_timeout to finish; anything still
 running after that is recorded with a terminal status — nothing is lost
 silently.
 
-Pass --system if the daemon was installed with 'service install --system',
-so the service-managed delegation checks the right unit.`,
+The delegation finds whichever unit is installed on its own. Pass --local to
+pin the per-user one when both a system and a user unit are present.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return runStop(cmd, flags)
@@ -43,13 +43,13 @@ so the service-managed delegation checks the right unit.`,
 }
 
 func init() {
-	stopCmd.Flags().BoolVar(&stopOpts.System, "system", false, "the daemon was installed system-wide (Linux, advanced)")
+	stopCmd.Flags().BoolVar(&stopOpts.Local, "local", false, localFlagUsage)
 }
 
 func runStop(cmd *cobra.Command, f Flags) error {
 	out := cmd.OutOrStdout()
 
-	installer, opts, st, ok := serviceState(cmd, f, stopOpts.System)
+	installer, opts, st, ok := serviceState(cmd, f, stopOpts.Local)
 	if ok && shouldDelegateStop(st) {
 		return stopViaService(out, installer, opts, st, f)
 	}

@@ -905,7 +905,7 @@ func TestCrondStillRunningWarning(t *testing.T) {
 }
 
 // TestRunUserFindings_NonRootDaemonCannotBecomeCronsUser is the gap
-// --take-over-cron's gate #3 exists to close: a non-root daemon reads
+// evaluateCronTakeover's refusal #4 exists to close: a non-root daemon reads
 // /etc/crontab's or cron.d's root-column jobs cleanly today — no
 // CronFinding, nothing — and every one of them fails at exec time because
 // switching OS user needs a capability only root has.

@@ -260,8 +260,8 @@ runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHU
                                GET /api/info's config_warnings, re-derived per request so a reload's
                                replace boot's. A crontab job include_cron skipped is NOT a task
                                change — it only appears here.
-runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed; --system must match how it was installed
-runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed); --system must match how it was installed
+runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed; --local to pin the per-user unit
+runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed); --local to pin the per-user unit
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
                              — -o writes one standalone file; --write installs the two-tier layout
@@ -311,11 +311,23 @@ runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-
 runwisp agent-guide          — print a paste-ready AGENTS.md/CLAUDE.md snippet for driving RunWisp from an agent
 runwisp cloud                — start in cloud mode; --token --url --env-file(=.env) --no-tui
 runwisp demo                 — boot a throwaway, fully-populated instance; --cloud --token --url --env-file
-runwisp service install      — install autostart (systemd/launchd); -y --print --dry-run --force --system --binary <path>
-runwisp service uninstall    — remove autostart; -y --purge (also data dir) --force --system
-runwisp service status       — show autostart status; --system
-                             — --system must be repeated identically on install/status/uninstall/stop/restart —
-                               there's no stored record of which mode a unit was installed with
+runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path>
+                               --take-over-cron --allow-skipped-cron-jobs
+                             — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service
+                               (Linux, root, no fingerprint in the name). Refuses without root, naming
+                               `sudo` and `--local`. macOS has no system scope yet: --local is required.
+                             — --local installs ~/.config/systemd/user/runwisp-<fingerprint>.service (Linux,
+                               + loginctl enable-linger) or ~/Library/LaunchAgents/com.runwisp.daemon.<fp>.plist.
+                               Refused as root on Linux (systemctl --user has no bus for root under sudo).
+                             — --data/--config override paths but never the scope; a system install also
+                               requires the resolved config to be root-owned and not group/world-writable.
+                             — on a TTY, a system install asks whether to stop+mask the live cron unit when
+                               include_cron is matching crontabs; --take-over-cron answers it non-interactively,
+                               --yes does NOT. --print/--dry-run never prompt.
+runwisp service uninstall    — remove autostart; -y --purge (also data dir) --force --local
+runwisp service status       — show autostart status; --local
+                             — install/status/uninstall/stop/restart all detect the installed scope; --local is
+                               only needed to disambiguate when a system AND a per-user unit both exist
 ```
 
 ## REST API

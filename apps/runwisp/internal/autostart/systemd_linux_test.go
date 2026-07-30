@@ -258,7 +258,6 @@ func TestSystemdNew_Validation(t *testing.T) {
 	}{
 		{"missing-home", Deps{User: "alice", Fingerprint: "fp"}, "HOME is not set"},
 		{"missing-user", Deps{Home: "/h", Fingerprint: "fp"}, "user is not set"},
-		{"missing-fingerprint", Deps{Home: "/h", User: "alice"}, "fingerprint is required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -267,6 +266,39 @@ func TestSystemdNew_Validation(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
+}
+
+// The system unit is named runwisp.service outright, so a host that cannot
+// produce a fingerprint can still install, inspect, and remove it. Only the
+// user scope, whose unit name embeds the fingerprint, needs one — and it
+// says so where the name would be derived rather than at construction.
+func TestSystemdNew_FingerprintOnlyRequiredForUserScope(t *testing.T) {
+	inst, err := New(Deps{Home: "/h", User: "alice", FS: NewFakeFS()})
+	require.NoError(t, err)
+
+	// The system plan may still fail for unrelated reasons (no cron probe
+	// wired up here) — what matters is that it never fails for want of a
+	// fingerprint.
+	if _, err = inst.ComputePlan(t.Context(), InstallOptions{System: true}); err != nil {
+		assert.NotContains(t, err.Error(), "fingerprint is required")
+	}
+
+	_, err = inst.ComputePlan(t.Context(), InstallOptions{System: false})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "fingerprint is required")
+}
+
+// ScopeCandidates reports the user path only when it can actually be
+// named — DetectScope treats an empty path as "that scope does not exist
+// here" rather than statting a truncated `runwisp-.service`.
+func TestScopeCandidates_UserPathNeedsFingerprint(t *testing.T) {
+	systemPath, userPath := ScopeCandidates(Deps{Home: "/home/alice", User: "alice"})
+	assert.Equal(t, "/etc/systemd/system/runwisp.service", systemPath)
+	assert.Empty(t, userPath)
+
+	systemPath, userPath = ScopeCandidates(Deps{Home: "/home/alice", User: "alice", Fingerprint: "bright-falcon"})
+	assert.Equal(t, "/etc/systemd/system/runwisp.service", systemPath)
+	assert.Equal(t, "/home/alice/.config/systemd/user/runwisp-bright-falcon.service", userPath)
 }
 
 func TestWSLTaskSchedulerPostscript_KnownDistro(t *testing.T) {

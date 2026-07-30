@@ -240,6 +240,13 @@ type Installer interface {
 	// Restart restarts the managed daemon through the init system
 	// (systemctl --user restart / launchctl kickstart -k).
 	Restart(ctx context.Context, opts InstallOptions) error
+
+	// CronStatus reports the host's system cron unit and whether it is
+	// currently running. An empty unit name means there is nothing to take
+	// over — no cron unit on this host, or an OS where masking cron is not
+	// something RunWisp can do. It never errors just because cron is
+	// absent; that is a legitimate answer.
+	CronStatus(ctx context.Context) (unit string, active bool, err error)
 }
 
 // ServiceManagedEnv is set to "1" in the generated systemd unit and

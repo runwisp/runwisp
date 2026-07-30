@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -214,6 +215,16 @@ func TestResolveDataDirInteractive_PromptErrorPropagates(t *testing.T) {
 	assert.False(t, errors.As(err, &ufe), "prompter errors must propagate raw, not wrapped")
 }
 
+// requireUnprivileged skips a test that installs with --local when the
+// suite happens to run as root (a bare container, typically): --local is
+// refused there because systemctl --user has no bus for root.
+func requireUnprivileged(t *testing.T) {
+	t.Helper()
+	if os.Geteuid() == 0 && runtime.GOOS == "linux" {
+		t.Skip("--local is refused as root")
+	}
+}
+
 // restoreInstallOpts snapshots serviceInstallOpts so individual tests can flip
 // the flags without bleeding into siblings.
 func restoreInstallOpts(t *testing.T) {
@@ -267,7 +278,7 @@ func TestResolveServiceOptions_BuildsAbsolutePaths(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f)
+	opts, err := resolveServiceOptions(cmd, deps, f, false)
 	require.NoError(t, err)
 	assert.Equal(t, binary, opts.Binary)
 	assert.Equal(t, tomlPath, opts.Config)
@@ -298,23 +309,24 @@ func TestResolveServiceOptions_BinaryOverrideIsUsed(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f)
+	opts, err := resolveServiceOptions(cmd, deps, f, false)
 	require.NoError(t, err)
 	assert.Equal(t, binary, opts.Binary, "binary override must be honoured")
 }
 
 // TestResolveServiceOptions_SystemUsesEuidDefaultsWhenNotExplicit guards the
-// bug where a --system install with no explicit --config/--data would route
+// bug where a system install with no explicit --config/--data would route
 // through the interactive XDG resolution (~/.config/runwisp/runwisp.toml)
 // instead of the euid-derived root default (/etc/runwisp/runwisp.toml)
 // resolvePathDefaults already put in f.CfgFile/f.DataDir — so
-// `service install --system` failed preflight even though the config exists
-// right where root's own default put it.
+// `sudo runwisp service install` failed preflight even though the config
+// exists right where root's own default put it.
 func TestResolveServiceOptions_SystemUsesEuidDefaultsWhenNotExplicit(t *testing.T) {
 	restoreInstallOpts(t)
-	serviceInstallOpts.System = true
 
-	binary := filepath.Join(t.TempDir(), "runwisp-binary")
+	// durableTempDir, not t.TempDir: ResolveBinary refuses a binary under
+	// /tmp, which is exactly where TMPDIR points on Linux.
+	binary := filepath.Join(durableTempDir(t), "runwisp-binary")
 	require.NoError(t, os.WriteFile(binary, []byte("\x7fELF"), 0o755))
 	serviceInstallOpts.Binary = binary
 
@@ -332,19 +344,19 @@ func TestResolveServiceOptions_SystemUsesEuidDefaultsWhenNotExplicit(t *testing.
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f)
+	opts, err := resolveServiceOptions(cmd, deps, f, true)
 	require.NoError(t, err)
 	assert.Equal(t, "/etc/runwisp/runwisp.toml", opts.Config)
 	assert.Equal(t, "/var/lib/runwisp", opts.DataDir)
+	assert.True(t, opts.System, "system scope must be recorded on the options")
 }
 
 // TestResolveServiceOptions_SystemStillHonorsExplicitFlags guards the other
-// direction: an explicit --config/--data under --system must still go
+// direction: an explicit --config/--data on a system install must still go
 // through the normal validated path (so e.g. a relative --data still gets
 // absolutized), not the euid-default bypass.
 func TestResolveServiceOptions_SystemStillHonorsExplicitFlags(t *testing.T) {
 	restoreInstallOpts(t)
-	serviceInstallOpts.System = true
 	dir := durableTempDir(t)
 	tomlPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
@@ -364,20 +376,19 @@ func TestResolveServiceOptions_SystemStillHonorsExplicitFlags(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f)
+	opts, err := resolveServiceOptions(cmd, deps, f, true)
 	require.NoError(t, err)
 	assert.Equal(t, tomlPath, opts.Config)
 	assert.Equal(t, dir, opts.DataDir)
 }
 
 // TestResolveServiceOptions_SystemRejectsUntrustedConfig closes the hole a
-// --system install otherwise leaves open: `sudo runwisp service install
-// --system --config <path>` bakes whatever that path resolves to into a
-// root-owned unit, so the file needs the same ownership guarantee a cron
-// source already gets before anything is written.
+// system install otherwise leaves open: `sudo runwisp service install
+// --config <path>` bakes whatever that path resolves to into a root-owned
+// unit, so the file needs the same ownership guarantee a cron source
+// already gets before anything is written.
 func TestResolveServiceOptions_SystemRejectsUntrustedConfig(t *testing.T) {
 	restoreInstallOpts(t)
-	serviceInstallOpts.System = true
 	dir := durableTempDir(t)
 	tomlPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
@@ -398,14 +409,15 @@ func TestResolveServiceOptions_SystemRejectsUntrustedConfig(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	_, err := resolveServiceOptions(cmd, deps, f)
+	_, err := resolveServiceOptions(cmd, deps, f, true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "world-writable")
 }
 
 // TestResolveServiceOptions_NonSystemAllowsUntrustedConfig: the trust check
-// is specific to --system, since a per-user install only ever runs with the
-// operator's own privilege — there is no escalation to guard against.
+// is specific to the system scope, since a --local install only ever runs
+// with the operator's own privilege — there is no escalation to guard
+// against.
 func TestResolveServiceOptions_NonSystemAllowsUntrustedConfig(t *testing.T) {
 	restoreInstallOpts(t)
 	dir := durableTempDir(t)
@@ -428,7 +440,7 @@ func TestResolveServiceOptions_NonSystemAllowsUntrustedConfig(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f)
+	opts, err := resolveServiceOptions(cmd, deps, f, false)
 	require.NoError(t, err)
 	assert.Equal(t, tomlPath, opts.Config)
 }
@@ -450,6 +462,9 @@ func TestRunServiceInstall_PrintRendersUnit(t *testing.T) {
 
 	// Force --print so install path skips disk I/O.
 	serviceInstallOpts.Print = true
+	// The tests run unprivileged, so the default (system) scope would refuse.
+	requireUnprivileged(t)
+	serviceInstallOpts.Local = true
 	// Point the binary override at a real file so ResolveBinary succeeds.
 	binary := filepath.Join(dir, "runwisp-binary")
 	require.NoError(t, os.WriteFile(binary, []byte("\x7fELF"), 0o755))
@@ -482,6 +497,8 @@ func TestRunServiceInstall_DryRunPrintsPlan(t *testing.T) {
 	f := Flags{CfgFile: tomlPath, DataDir: dir, Host: "127.0.0.1", Port: 9477}
 
 	serviceInstallOpts.DryRun = true
+	requireUnprivileged(t)
+	serviceInstallOpts.Local = true
 	binary := filepath.Join(dir, "runwisp-binary")
 	require.NoError(t, os.WriteFile(binary, []byte("\x7fELF"), 0o755))
 	serviceInstallOpts.Binary = binary
@@ -534,65 +551,160 @@ func writeGateTestConfig(t *testing.T, cronLine string) string {
 	return tomlPath
 }
 
-func TestGateTakeOverCron_RequiresSystemAndRoot(t *testing.T) {
-	restoreInstallOpts(t)
+func TestEvaluateCronTakeover_RequiresSystemAndRoot(t *testing.T) {
+	_, refusal := evaluateCronTakeover("", false, 0, false)
+	require.NotNil(t, refusal)
+	assert.Contains(t, refusal.title, "requires the system service and root")
 
-	err := gateTakeOverCron(autostart.InstallOptions{TakeOverCron: true, System: false}, 0)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "requires --system and root")
-
-	err = gateTakeOverCron(autostart.InstallOptions{TakeOverCron: true, System: true}, 1000)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "requires --system and root")
+	_, refusal = evaluateCronTakeover("", true, 1000, false)
+	require.NotNil(t, refusal)
+	assert.Contains(t, refusal.title, "requires the system service and root")
 }
 
-func TestGateTakeOverCron_NoOpWhenFlagNotSet(t *testing.T) {
-	restoreInstallOpts(t)
-	assert.NoError(t, gateTakeOverCron(autostart.InstallOptions{System: false}, 1000))
+func TestEvaluateCronTakeover_RefusesWhenNothingIsBeingRead(t *testing.T) {
+	dir := t.TempDir()
+	tomlPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
+
+	_, refusal := evaluateCronTakeover(tomlPath, true, 0, false)
+	require.NotNil(t, refusal)
+	assert.Contains(t, refusal.title, "no cron jobs are being read")
 }
 
-func TestGateTakeOverCron_RefusesWhenNothingIsBeingRead(t *testing.T) {
+func TestEvaluateCronTakeover_RefusesUnreadableConfig(t *testing.T) {
+	_, refusal := evaluateCronTakeover(filepath.Join(t.TempDir(), "absent.toml"), true, 0, false)
+	require.NotNil(t, refusal)
+	assert.Contains(t, refusal.title, "cannot take over cron")
+}
+
+func TestEvaluateCronTakeover_RefusesSkippedJobsUnlessAllowed(t *testing.T) {
+	// A line with no user column in a cron.d file is structurally invalid —
+	// it produces a CronFinding{Skipped: true}, not a load error.
+	tomlPath := writeGateTestConfig(t, "* * * * * echo \"no user column\"\n")
+
+	_, refusal := evaluateCronTakeover(tomlPath, true, 0, false)
+	require.NotNil(t, refusal)
+	assert.Contains(t, refusal.title, "cron job(s) failed to load")
+
+	cfg, refusal := evaluateCronTakeover(tomlPath, true, 0, true)
+	assert.Nil(t, refusal)
+	assert.NotNil(t, cfg)
+}
+
+// TestEvaluateCronTakeover_AllowsCleanConfigAsRoot also stands in for
+// refusal #4 (run-as-user): refusal #1 already requires euid 0 to reach
+// this point, and a system unit always runs the daemon as root with no
+// privilege-drop option today, so config.RunUserFindings(cfg, 0) is always
+// empty here — refusal #4 cannot fire through this function as currently
+// wired. It stays as defense-in-depth (see the comment there) and is
+// exercised directly, with a non-root euid, by the RunUserFindings tests in
+// internal/config/cronsource_test.go.
+func TestEvaluateCronTakeover_AllowsCleanConfigAsRoot(t *testing.T) {
+	tomlPath := writeGateTestConfig(t, "0 3 * * * root /usr/local/bin/backup.sh\n")
+
+	cfg, refusal := evaluateCronTakeover(tomlPath, true, 0, false)
+	require.Nil(t, refusal)
+	require.NotNil(t, cfg)
+	assert.Len(t, cfg.CronFiles(), 1)
+}
+
+// fakeCronInstaller stubs the one Installer method offerCronTakeover uses.
+// Everything else panics: reaching it would mean the prompt path grew a
+// dependency this test is not describing.
+type fakeCronInstaller struct {
+	autostart.Installer
+	unit   string
+	active bool
+	err    error
+}
+
+func (f fakeCronInstaller) CronStatus(context.Context) (string, bool, error) {
+	return f.unit, f.active, f.err
+}
+
+// offerTakeoverFor runs the prompt path against a clean take-over-able
+// config and reports whether it ended up setting TakeOverCron.
+func offerTakeoverFor(t *testing.T, deps autostart.Deps, installer autostart.Installer, systemWide bool) (bool, string) {
+	t.Helper()
+	tomlPath := writeGateTestConfig(t, "0 3 * * * root /usr/local/bin/backup.sh\n")
+	opts := autostart.InstallOptions{Config: tomlPath, System: systemWide}
+	var stderr bytes.Buffer
+	cmd := newInstallTestCmd(&bytes.Buffer{}, &stderr)
+	require.NoError(t, offerCronTakeover(cmd, deps, installer, &opts))
+	return opts.TakeOverCron, stderr.String()
+}
+
+// promptDeps is a Deps that would let the cron prompt through, answering it
+// with the supplied yes/no.
+func promptDeps(answer bool) autostart.Deps {
+	return autostart.Deps{
+		Euid:       0,
+		StdinIsTTY: true,
+		Prompter:   &autostart.ScriptedPrompter{YesNo: []bool{answer}},
+	}
+}
+
+func TestOfferCronTakeover_AcceptedSetsTakeOverCron(t *testing.T) {
+	restoreInstallOpts(t)
+	took, _ := offerTakeoverFor(t, promptDeps(true), fakeCronInstaller{unit: "cron.service", active: true}, true)
+	assert.True(t, took)
+}
+
+func TestOfferCronTakeover_DeclinedLeavesCronAlone(t *testing.T) {
+	restoreInstallOpts(t)
+	took, _ := offerTakeoverFor(t, promptDeps(false), fakeCronInstaller{unit: "cron.service", active: true}, true)
+	assert.False(t, took)
+}
+
+// The prompt is only ever asked when the answer could be acted on. Each of
+// these would otherwise be a question whose "yes" we could not honour — or,
+// for --yes, a destructive default nobody typed.
+func TestOfferCronTakeover_SkippedWhenNotAskable(t *testing.T) {
+	restoreInstallOpts(t)
+	live := fakeCronInstaller{unit: "cron.service", active: true}
+
+	cases := []struct {
+		name       string
+		deps       autostart.Deps
+		installer  autostart.Installer
+		systemWide bool
+	}{
+		{"user scope", promptDeps(true), live, false},
+		{"not root", autostart.Deps{Euid: 1000, StdinIsTTY: true, Prompter: &autostart.ScriptedPrompter{}}, live, true},
+		{"no tty", autostart.Deps{Euid: 0, Prompter: &autostart.ScriptedPrompter{}}, live, true},
+		{"--yes", autostart.Deps{Euid: 0, StdinIsTTY: true, AutoOK: true, Prompter: &autostart.ScriptedPrompter{}}, live, true},
+		{"no cron unit", promptDeps(true), fakeCronInstaller{}, true},
+		{"cron not running", promptDeps(true), fakeCronInstaller{unit: "cron.service"}, true},
+		{"probe failed", promptDeps(true), fakeCronInstaller{err: errors.New("systemctl exploded")}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// A ScriptedPrompter with no queued answer errors if consulted,
+			// so "no prompt" is enforced, not merely assumed.
+			took, _ := offerTakeoverFor(t, tc.deps, tc.installer, tc.systemWide)
+			assert.False(t, took)
+		})
+	}
+}
+
+// A refusal on a host where cron IS running is worth a word: the operator
+// is about to end up with two schedulers and should know why RunWisp isn't
+// offering to fix it.
+func TestOfferCronTakeover_NotesRefusalWhenCronIsRunning(t *testing.T) {
 	restoreInstallOpts(t)
 	dir := t.TempDir()
 	tomlPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
 
-	err := gateTakeOverCron(autostart.InstallOptions{TakeOverCron: true, System: true, Config: tomlPath}, 0)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no cron jobs are being read")
-}
+	opts := autostart.InstallOptions{Config: tomlPath, System: true}
+	var stderr bytes.Buffer
+	cmd := newInstallTestCmd(&bytes.Buffer{}, &stderr)
+	deps := autostart.Deps{Euid: 0, StdinIsTTY: true, Prompter: &autostart.ScriptedPrompter{}}
 
-func TestGateTakeOverCron_RefusesSkippedJobsUnlessAllowed(t *testing.T) {
-	restoreInstallOpts(t)
-	// A line with no user column in a cron.d file is structurally invalid —
-	// it produces a CronFinding{Skipped: true}, not a load error.
-	tomlPath := writeGateTestConfig(t, "* * * * * echo \"no user column\"\n")
-	opts := autostart.InstallOptions{TakeOverCron: true, System: true, Config: tomlPath}
-
-	err := gateTakeOverCron(opts, 0)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cron job(s) failed to load")
-
-	serviceInstallOpts.AllowSkippedCronJobs = true
-	err = gateTakeOverCron(opts, 0)
-	assert.NoError(t, err)
-}
-
-// TestGateTakeOverCron_AllowsCleanConfigAsRoot also stands in for gate #3
-// (run-as-user): gate #4 already requires euid 0 to reach this point, and a
-// --system unit always runs the daemon as root with no privilege-drop
-// option today, so config.RunUserFindings(cfg, 0) is always empty here —
-// gate #3 cannot fire through this function as currently wired. It stays in
-// gateTakeOverCron as defense-in-depth (see the comment there) and is
-// exercised directly, with a non-root euid, by the RunUserFindings tests in
-// internal/config/cronsource_test.go.
-func TestGateTakeOverCron_AllowsCleanConfigAsRoot(t *testing.T) {
-	restoreInstallOpts(t)
-	tomlPath := writeGateTestConfig(t, "0 3 * * * root /usr/local/bin/backup.sh\n")
-	opts := autostart.InstallOptions{TakeOverCron: true, System: true, Config: tomlPath}
-
-	// euid 0 can become root, so gate #3 does not fire.
-	assert.NoError(t, gateTakeOverCron(opts, 0))
+	require.NoError(t, offerCronTakeover(cmd, deps, fakeCronInstaller{unit: "cron.service", active: true}, &opts))
+	assert.False(t, opts.TakeOverCron)
+	assert.Contains(t, stderr.String(), "cron.service is running")
+	assert.Contains(t, stderr.String(), "no cron jobs are being read")
 }
 
 func TestResolveDataDirInteractive_UnknownActionFallsThrough(t *testing.T) {
