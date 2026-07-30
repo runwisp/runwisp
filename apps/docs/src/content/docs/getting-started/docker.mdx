@@ -1,0 +1,394 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Docker
+description: Run RunWisp in a Docker container — the official runwisp/runwisp image, the two ways to give tasks the tools they need (bake them in, or docker exec into another container), plus env vars, volumes, healthchecks, and reverse proxies.
+head:
+    - tag: title
+      content: "Run RunWisp in Docker: official image, env vars, volumes"
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+The official image is `runwisp/runwisp`, built from the same release
+binaries as the install script and the npm package — same binary, same
+version, for `amd64` and `arm64`.
+
+## Your tasks run inside this container
+
+Start here, because it's the one thing about containerising a cron
+daemon that surprises people.
+
+RunWisp doesn't send your tasks anywhere. When a task fires, the daemon
+runs `/bin/sh -c` **inside its own container**. So the image isn't just a
+home for the daemon — it's the runtime for every task you write. If your
+`run =` calls `pg_dump`, `pg_dump` has to be in the image.
+
+The default Alpine base is deliberately tiny: busybox, `ca-certificates`,
+and the RunWisp binary. That means **no bash, no curl, no git, no python,
+no database clients.** Take the [nightly backup recipe](/recipes/backup/),
+drop it into a container unchanged, and you get:
+
+```
+pg_dump: not found
+```
+
+…as a failed run with that message in the log. Loud, at least — but not
+what you wanted at 02:30.
+
+:::tip[Check before you deploy]
+`docker run --rm --entrypoint sh runwisp/runwisp:latest -c 'command -v pg_dump curl bash'`
+tells you in a second which of your tools are missing. `runwisp validate`
+won't catch a missing binary, but it catches everything else.
+:::
+
+So there are two ways to give a task what it needs: put the tools in
+RunWisp's image, or run the task in the container that already has them.
+Neither is a workaround — pick per task, and most real setups end up
+using both.
+
+## Bake the tools into the image
+
+Extend the image and install what your tasks shell out to:
+
+```dockerfile
+FROM runwisp/runwisp:latest
+
+# Whatever your tasks actually shell out to.
+RUN apk add --no-cache postgresql17-client curl bash
+```
+
+On the `-debian` variant it's `apt-get install` instead. Either way the
+entrypoint, healthcheck, and environment defaults are inherited, so
+extending the image costs you one line.
+
+This is the right shape for work that belongs to the machine rather than
+to any one app — pruning, `restic` to S3, `curl`-ing a URL, rsyncing a
+volume. The tradeoff is that the list grows: every task that needs a new
+binary means editing the Dockerfile and rebuilding.
+
+## Run the task in another container
+
+If the work belongs to an app you already run in a container — an
+`artisan` command, a `manage.py` job, `psql` against your own database —
+you don't have to duplicate that app's toolchain inside RunWisp's image.
+Reach into the container that already has it.
+
+Two prerequisites, and together they're the whole cost of this approach:
+
+1. **A Docker CLI in the RunWisp image.** One line, written once, and you
+   never revisit it as your tasks change:
+
+    ```dockerfile
+    FROM runwisp/runwisp:latest
+    RUN apk add --no-cache docker-cli docker-cli-compose
+    ```
+
+2. **The host's Docker socket, mounted in:**
+
+    ```yaml
+    volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+    ```
+
+Then name the compose service and give the task a command. RunWisp runs it
+in that service's running container:
+
+```toml
+[tasks.laravel-schedule]
+cron            = "* * * * *"
+compose_file    = "/srv/myapp/compose.yaml"
+compose_service = "app"
+run             = "php artisan schedule:run"
+```
+
+That's `docker compose exec` under the hood, and setting `run` is what
+picks it — see [`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode)
+for the full rule and for how to ask for a fresh container instead.
+
+It works whether you brought the app up yourself with `docker compose up`
+or RunWisp supervises it via [`[compose.*]`](/configuration/compose/) —
+either way the task lands in the container that's already running.
+
+Because RunWisp is running the command rather than watching you run one,
+you get the things a hand-written `docker exec` string doesn't give you:
+[`env`, `secrets`, and `params`](/configuration/tasks/#environment--secrets)
+are passed into the container, [fail-fast](/configuration/tasks/#fail-fast)
+is armed on your script inside it, and the TTY is explicitly disabled so
+stdout and stderr stay separate in the run log instead of arriving
+interleaved with stray `\r`s.
+
+Two limits are worth knowing up front:
+
+- **The container has to be up.** If it isn't, the run fails with exit 1
+  and `container … is not running` in the log. Loud, not a silent skip.
+- **[`timeout`](/concepts/retries/#timeout) can't reach inside.** Docker
+  has no way to cancel an exec, so a timeout kills RunWisp's local client
+  while the process inside the container carries on. Bound long work on
+  the inside too: `run = "timeout 3600 php artisan long-job"`. RunWisp
+  warns at startup if you put a long-running **service** in exec mode,
+  where a leftover process would pile up on every restart.
+
+### Writing the command by hand instead
+
+If the container isn't compose-managed at all, or you'd rather not point
+RunWisp at your compose file, a plain shell task still does the job:
+
+```toml
+[tasks.laravel-schedule]
+cron = "* * * * *"
+run  = "docker exec myapp-app-1 php artisan schedule:run"
+```
+
+Exit code, stdout, and stderr still pass through unchanged. Three things
+to get right that the native mode handles for you:
+
+- **Don't force a TTY.** A RunWisp run has no terminal. `docker exec -it`
+  fails outright with `the input device is not a TTY`, and `-t` alone is
+  sneakier — it works, but every line lands in your log with a trailing
+  `\r` and stderr gets folded into stdout.
+- **Use a name you can predict.** `myapp-app-1` is a name Compose
+  generated and may change. Pin it with `container_name:`, or address the
+  service with `docker compose -f … exec <service>`.
+- **Bound it on the inside.** Same orphan story as above:
+  `docker exec myapp-app-1 timeout 3600 php artisan long-job`.
+
+### Or a fresh container each run
+
+Third variant, worth knowing because it's often the best fit for batch
+work: if the job is already declared as a service in your compose file,
+point a task straight at it.
+
+```toml
+[tasks.nightly-backup]
+cron            = "0 3 * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+```
+
+With no `run`, that's `docker compose run --rm` — a **new** container each
+time, built from the image, env, and networks your compose file already
+defines, then thrown away. Fresh wins when the job shouldn't inherit a
+long-lived process's state; exec wins when the task needs the running
+app's context, or when booting a second copy of a heavy image for 200ms of
+work is silly.
+
+To get a fresh container running _your_ command rather than the service's
+own, ask for it explicitly with `compose_mode = "run"`.
+
+This route needs the Docker CLI from step 1 too —
+[`[compose.*]`](/configuration/compose/) shells out to `docker compose`,
+so without it every such run fails with
+`docker compose unavailable: install Docker (with the compose plugin) …`.
+
+### Which one?
+
+| The task…                                                                  | Approach                                  |
+| -------------------------------------------------------------------------- | ----------------------------------------- |
+| belongs to an app you run in a container (`artisan`, `manage.py`, your DB) | `compose_service` + `run` (exec)          |
+| is already a compose service (`backup`, `migrate`)                         | `compose_service` alone (fresh container) |
+| targets a container that isn't compose-managed                             | `run = "docker exec …"`                   |
+| is infrastructure that belongs to no app (prune, `restic`, `curl` a URL)   | bake it into the RunWisp image            |
+
+One thing to weigh once for both container-reaching approaches: mounting
+that socket means a task can do anything to the host's Docker, including
+starting a privileged container. The socket is effectively root on the
+host. Usually fine — your TOML is yours, written by you — but it's a
+decision rather than a detail.
+
+Writing those tasks well is its own topic:
+[Docker patterns](/recipes/docker/) covers `--rm`, why `-d` breaks the
+run record, and pruning without shooting yourself in the foot.
+
+## Image variants and tags
+
+| Base             | Tags                                                            | Notes                      |
+| ---------------- | --------------------------------------------------------------- | -------------------------- |
+| Alpine (default) | `latest`, `X.Y.Z`, `X.Y`, `X`, and the same four with `-alpine` | Smaller; busybox and `apk` |
+| Debian slim      | `latest-debian`, `X.Y.Z-debian`, `X.Y-debian`, `X-debian`       | glibc and `apt-get`        |
+
+Pick Debian if your tasks need glibc or a package only Debian carries;
+otherwise Alpine. A prerelease only ever gets its exact pinned tag, so
+`latest` never lands on an rc.
+
+`X.Y.Z` is the only immutable tag — `X.Y`, `X`, and `latest` move as new
+releases land. While RunWisp is pre-1.0, `0` floats across every `0.x`
+release, and those may carry breaking changes; pin `X.Y` or `X.Y.Z` if that
+matters to you.
+
+## Quick start
+
+```yaml
+# compose.yaml
+services:
+    runwisp:
+        image: runwisp/runwisp:latest
+        restart: unless-stopped
+        ports:
+            - "9477:9477"
+        environment:
+            - RUNWISP_PASSWORD=change-me
+        volumes:
+            - ./runwisp.toml:/etc/runwisp/runwisp.toml:ro
+            - runwisp-data:/var/lib/runwisp
+
+volumes:
+    runwisp-data:
+```
+
+`docker compose up -d`, then open `http://localhost:9477` and log in with
+that password. As a one-liner:
+
+```bash
+docker run -d --name runwisp \
+  -p 9477:9477 \
+  -e RUNWISP_PASSWORD=change-me \
+  -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
+  -v runwisp-data:/var/lib/runwisp \
+  runwisp/runwisp:latest
+```
+
+## What the image requires
+
+The entrypoint refuses to start a daemon until two things are true, so a
+misconfigured container fails immediately and says why instead of coming
+up subtly wrong.
+
+**An explicit auth setting** — either `RUNWISP_PASSWORD` or
+`RUNWISP_NO_AUTH=1` (no login at all; trusted networks only). Set neither
+and the container exits 1 telling you to pick one. Not because it would
+otherwise run unauthenticated — it would generate a random password in
+memory, which in a container is arguably worse: nobody can log into the
+Web UI, and every restart invalidates the sessions of anyone who already
+had. [Auth](/operations/auth/) covers why the two settings are mutually
+exclusive.
+
+**A mounted `runwisp.toml`** at `/etc/runwisp/runwisp.toml`. Read-only is
+fine; RunWisp never writes to it. On a host, a missing config gets you an
+offer to scaffold one — there's no interactive prompt here, so you get a
+mount hint and exit 1 instead.
+
+Both checks cover every invocation that would bring a daemon up —
+`daemon`, `cloud`, `restart`, `demo`, and bare `runwisp` — and anything
+the entrypoint doesn't recognise is treated as one of those. One-shot
+subcommands (`validate`, `exec`, `list`, `status`, `stop`, `reload`,
+`password`, `import`, `schema`, `openapi`, `tui`, `service`) skip both,
+since they need neither a password nor a long-lived config:
+
+```bash
+docker run --rm -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
+  runwisp/runwisp:latest runwisp validate
+```
+
+## Environment defaults
+
+Everything else the image presets is a container-appropriate default you
+can override with a normal `-e`:
+
+| Variable             | Image default               | Why                                                                                                                  |
+| -------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `RUNWISP_CONFIG`     | `/etc/runwisp/runwisp.toml` | Where the entrypoint looks for your mounted config.                                                                  |
+| `RUNWISP_DATA`       | `/var/lib/runwisp`          | SQLite database, per-task logs, and the control socket — mount a volume here so state survives a container recreate. |
+| `RUNWISP_HOST`       | `0.0.0.0`                   | Containers need a non-loopback bind for port mapping to reach anything.                                              |
+| `RUNWISP_TLS`        | `off`                       | See [Plain HTTP by default](#plain-http-by-default).                                                                 |
+| `RUNWISP_LOG_FORMAT` | `text`                      | Human-readable `docker logs`. Set `json` if something downstream parses them.                                        |
+
+Prefer `-e RUNWISP_DATA=…` over `--data` on the command line. Both reach
+the daemon, but the healthcheck reads only the environment, so a flag
+makes the two disagree — the entrypoint warns you if you try.
+
+## Volumes
+
+Two mounts, one of which is easy to forget:
+
+- **`/etc/runwisp/runwisp.toml`** — your config, read-only. It has to be a
+  _file_. To split config across several files, mount the directory at
+  `/etc/runwisp` with `runwisp.toml` inside it and pull the rest in via
+  [`[daemon] include`](/configuration/daemon/#include).
+- **`/var/lib/runwisp`** — a named volume or bind mount for the database
+  and task logs. **Skip it and every container recreate wipes your run
+  history and sessions**, which is most of why you installed RunWisp.
+
+## Healthcheck
+
+The image ships a `HEALTHCHECK` that runs `runwisp status`, so `docker ps`
+and compose's `depends_on: condition: service_healthy` work with no setup.
+
+It probes the Unix control socket rather than the TCP port deliberately: a
+port check is satisfied by anything listening on 9477, a socket check only
+by RunWisp. The catch is that it resolves that socket from `RUNWISP_DATA` /
+`RUNWISP_SOCKET`, and healthchecks never see command-line flags — so move
+the data dir with `--data` and the container reports unhealthy forever
+while the daemon is perfectly fine. Use the env var, or `--no-healthcheck`
+if you'd rather supply your own.
+
+## Plain HTTP by default
+
+Outside a container, RunWisp's [auto-TLS](/configuration/daemon/#tls-tls_cert-tls_key)
+generates a self-signed certificate the moment you bind anywhere other
+than loopback. Good default on a bare host, wrong one here, where a
+reverse proxy is usually already terminating TLS. So the image sets
+`RUNWISP_TLS=off` and expects you to either:
+
+- put a proxy in front and set `RUNWISP_TRUST_PROXY` to its CIDR, so the
+  daemon honors `X-Forwarded-Proto` and still marks session cookies
+  `Secure`; or
+- set `-e RUNWISP_TLS=auto` and let RunWisp terminate TLS itself with a
+  self-signed cert you trust out of band.
+
+## Timezone
+
+The IANA timezone database is embedded in the binary, so
+`[scheduler] timezone = "Europe/Copenhagen"` resolves on either base with
+no extra package. To follow the **host's** local time instead, set
+`-e TZ=Europe/Helsinki` or bind-mount `/etc/localtime:/etc/localtime:ro`.
+
+## Running as non-root
+
+The image runs as root on purpose: per-task privilege dropping needs root
+to switch users, and the daemon has to write to whatever you mount for
+data. If no task uses `user`, set `user:` in compose (or `--user`) — just
+make sure that UID can write to the `/var/lib/runwisp` volume, or the
+entrypoint will tell you it can't.
+
+## Operating the container
+
+`docker exec` behaves exactly like running `runwisp` on a host — the CLI
+talks to the daemon over the local socket and needs no password:
+
+```bash
+docker exec runwisp runwisp status
+docker exec runwisp runwisp list
+docker exec runwisp runwisp exec hello
+```
+
+Edited `runwisp.toml` on the host? Pick it up without a restart:
+
+```bash
+docker exec runwisp runwisp reload
+```
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Auth"
+        href="/operations/auth/"
+        description="RUNWISP_PASSWORD, RUNWISP_NO_AUTH, and the tradeoffs between them."
+    />
+    <LinkCard
+        title="[daemon] reference"
+        href="/configuration/daemon/"
+        description="Every daemon-wide flag and env var, including TLS."
+    />
+    <LinkCard
+        title="Docker patterns"
+        href="/recipes/docker/"
+        description="Writing tasks that run containers, rather than running tasks inside one."
+    />
+    <LinkCard
+        title="Reload"
+        href="/operations/reload/"
+        description="What runwisp reload does and doesn't pick up live."
+    />
+</CardGrid>

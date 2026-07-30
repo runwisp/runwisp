@@ -25,6 +25,13 @@ import (
 // payoff to a longer wait.
 const composeAvailableTimeout = 2 * time.Second
 
+// composeExecShell is the interpreter exec-mode hands the script to *inside the
+// target container*. It is not the daemon's `shell` setting: that key is
+// rejected on compose-backed units because it configures a host process, and
+// the host's shell path says nothing about what exists in someone else's image.
+// /bin/sh is the one path a POSIX image is required to provide.
+const composeExecShell = "/bin/sh"
+
 // Ownership labels stamped on every services-mode container so the daemon can
 // recognise and reclaim containers it launched in a previous lifetime. The
 // instance-fp label scopes reclaim/cleanup to *this* daemon, so two daemons
@@ -86,8 +93,9 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	// previous daemon life left behind for this slot before launching, so a
 	// kill -9 / restart can't collide with our own orphan. Label-scoped to this
 	// daemon's fingerprint, so a user's unrelated same-named container is never
-	// touched. Stack mode lets compose own container lifecycle, so it's exempt.
-	if ce.Mode != model.ComposeModeStack {
+	// touched. Stack mode lets compose own container lifecycle, and exec mode
+	// targets a container we never created, so both are exempt.
+	if ce.Mode == model.ComposeModeServices {
 		b.removeManagedInstance(ctx, task.Name, instanceIndex)
 	}
 
@@ -118,7 +126,11 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	// never fires. Background context: the run's ctx is already cancelled by the
 	// time cleanup runs. Reclaim-on-start (above) is the backstop for kill -9 of
 	// the daemon itself, where cleanup never gets to run.
-	if ce.Mode != model.ComposeModeStack {
+	//
+	// Exec mode is exempt for a much sharper reason than stack mode: the target
+	// container belongs to the user, so tearing it down because a cron task
+	// inside it overran would take their application with it.
+	if ce.Mode == model.ComposeModeServices {
 		taskName := task.Name
 		proc.Cleanup = func() {
 			b.removeManagedInstance(context.Background(), taskName, instanceIndex)
@@ -202,10 +214,51 @@ func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.R
 	switch ce.Mode {
 	case model.ComposeModeStack:
 		args = append(args, "up", "--abort-on-container-exit", "--no-log-prefix")
+	case model.ComposeModeExec:
+		args = appendComposeExecArgs(args, ce, task, run)
 	default:
 		args = appendComposeRunArgs(args, ce, task, run, fingerprint)
 	}
 	return args
+}
+
+// appendComposeExecArgs appends the `compose exec`-specific flags: the command
+// runs inside the service's already-running container, so none of the
+// create-time flags (--rm, --name, --label, --service-ports, --pull, --no-deps)
+// apply and none are passed.
+//
+// -T is explicit rather than implied. Compose does detect the absent TTY on its
+// own, but a RunWisp run has no terminal and we never want to depend on that
+// detection: with a TTY allocated, stderr folds into stdout and every captured
+// line gains a trailing \r, which would corrupt the run log the whole product
+// exists to make readable.
+//
+// The command goes through `sh -e -c` for the same reason the host shell backend
+// does it (see executor.shellArgs): a multi-line script whose middle line fails
+// must fail the run rather than inherit the last command's exit code. That makes
+// fail-fast uniform across backends — the target container needs a POSIX `sh`,
+// which every image carrying a shell has.
+func appendComposeExecArgs(args []string, ce *model.ComposeExecution, task *model.Task, run *model.Run) []string {
+	args = append(args, "exec", "-T")
+
+	instanceIndex := 0
+	if run != nil {
+		instanceIndex = run.InstanceIndex
+	}
+	for _, kv := range composeEnvFlags(task, run, instanceIndex) {
+		args = append(args, "-e", kv)
+	}
+
+	// Arg/option/flag parameters are appended to the script text shell-quoted,
+	// exactly as the host shell backend does it (executor.appendArgTokens), so a
+	// task reads the same whether it runs on the host or inside a container.
+	var runParams map[string]string
+	if run != nil {
+		runParams = run.Params
+	}
+	script := appendArgTokens(ce.Command, model.ParamArgTokens(task.Parameters, runParams))
+
+	return append(args, ce.Service, composeExecShell, "-e", "-c", script)
 }
 
 // appendComposeRunArgs appends the `compose run`-specific flags (one-off

@@ -151,7 +151,10 @@ type Task struct {
 	// the runwisp.toml directory). Empty inherits the daemon's working dir.
 	WorkingDir string `toml:"-" json:"working_dir,omitempty" doc:"Resolved working directory for the task's process; empty inherits the daemon's working directory"`
 	// Shell is the interpreter for `run` scripts, defaulting to /bin/sh. Must
-	// be an absolute path. The invocation is always `<shell> -c <script>`.
+	// be an absolute path. The invocation is `<shell> -e -c <script>` when the
+	// interpreter is a recognised POSIX shell (ShellSupportsErrexit), so a
+	// multi-line script stops at its first failing command, and
+	// `<shell> -c <script>` otherwise.
 	Shell string `toml:"-" json:"shell,omitempty" doc:"Absolute path to the shell interpreter for run scripts; defaults to /bin/sh"`
 	// Umask is the canonical 4-digit octal file-creation mask applied in the
 	// child before the run script executes. Empty inherits the daemon's umask.

@@ -172,7 +172,6 @@ shutdown_timeout = "500ms"
 
 [tasks.alpha-stream]
 run = """
-set -eu
 echo "alpha-line-1"
 sleep 1
 echo "alpha-line-2"
@@ -182,7 +181,6 @@ echo "alpha-line-3"
 
 [tasks.bravo-fail]
 run = """
-set -eu
 echo "bravo-line-1"
 sleep 1
 >&2 echo "bravo-line-2"

@@ -49,6 +49,18 @@ bun add -g runwisp     # or: npm install -g runwisp
 
 Prefer manual? Grab a tarball from [GitHub Releases](https://github.com/runwisp/runwisp/releases); assets are named `runwisp-{linux,darwin}-{x64,arm64}.tar.gz` with a matching `checksums-sha256.txt`. **Supported platforms:** Linux, macOS, WSL (x86_64 and arm64).
 
+Prefer a container? `runwisp/runwisp` on Docker Hub ships the same binary (Alpine by default, `-debian` variant, amd64 + arm64):
+
+```bash
+docker run -d --name runwisp -p 9477:9477 \
+  -e RUNWISP_PASSWORD=change-me \
+  -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
+  -v runwisp-data:/var/lib/runwisp \
+  runwisp/runwisp:latest
+```
+
+See [Docker](https://docs.runwisp.com/getting-started/docker/) for image variants, required env vars, and volumes.
+
 ---
 
 ## Quick Start

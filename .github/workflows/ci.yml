@@ -190,6 +190,114 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
 
+  docker:
+    name: Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # On PRs, moon diffs changed files against vcs.defaultBranch, but the
+      # checkout only has the merge ref — give it a local `main` to resolve.
+      - name: Fetch base branch for moon
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin main:main
+
+      # Lint and unit-test the shell first: these need no Go toolchain, no bun,
+      # and no image, so a broken entrypoint fails the job in seconds instead of
+      # after a multi-minute build.
+      - name: Lint shell scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -s sh docker/docker-entrypoint.sh docker/tests/entrypoint_test.sh
+          shellcheck docker/build-local.sh docker/tests/smoke.sh
+
+      - name: Entrypoint unit tests (dash and bash)
+        run: |
+          for shell in dash bash; do
+            echo "::group::entrypoint under ${shell}"
+            ENTRYPOINT_SH="${shell}" sh docker/tests/entrypoint_test.sh
+            echo "::endgroup::"
+          done
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/runwisp/go.mod
+          cache-dependency-path: apps/runwisp/go.sum
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build web UI and sync into Go embed directory
+        run: bunx moon run runwisp:sync-ui-dist
+
+      # Build the binary once and feed it to both bases via --dist. Letting each
+      # build-local.sh invocation compile from source cross-compiles the same
+      # target twice.
+      - name: Build the linux/amd64 binary
+        working-directory: apps/runwisp
+        run: TARGETS=linux-x64 RELEASE=1 ./scripts/build-all.sh
+
+      - name: Build alpine and debian images (linux/amd64)
+        run: |
+          ./docker/build-local.sh --base alpine --dist apps/runwisp/dist --load -t runwisp:ci-alpine
+          ./docker/build-local.sh --base debian --dist apps/runwisp/dist --load -t runwisp:ci-debian
+
+      # The entrypoint's own shell differs by base — busybox ash on alpine, dash
+      # on debian — so run the unit tests inside each image too, against the
+      # shell that will actually interpret them in production.
+      - name: Entrypoint unit tests inside each image
+        run: |
+          for image in runwisp:ci-alpine runwisp:ci-debian; do
+            echo "::group::${image}"
+            docker run --rm -v "${PWD}/docker:/docker:ro" --entrypoint sh "${image}" \
+              /docker/tests/entrypoint_test.sh
+            echo "::endgroup::"
+          done
+
+      - name: Container smoke tests
+        run: |
+          for image in runwisp:ci-alpine runwisp:ci-debian; do
+            echo "::group::${image}"
+            ./docker/tests/smoke.sh "${image}"
+            echo "::endgroup::"
+          done
+
+      - name: Smoke test — serves /health and shuts down cleanly (both bases)
+        run: |
+          mkdir -p /tmp/runwisp-ci
+          cat > /tmp/runwisp-ci/runwisp.toml <<'EOF'
+          [tasks.hello]
+          run = "echo hello from container"
+          run_on_start = true
+          EOF
+
+          for image in runwisp:ci-alpine runwisp:ci-debian; do
+            echo "::group::${image}"
+            docker run -d --name runwisp-ci -e RUNWISP_NO_AUTH=1 -p 19477:9477 \
+              -v /tmp/runwisp-ci/runwisp.toml:/etc/runwisp/runwisp.toml:ro "${image}"
+
+            for _ in $(seq 1 20); do
+              if curl -sf http://localhost:19477/health >/dev/null; then break; fi
+              sleep 0.5
+            done
+            curl -sf http://localhost:19477/health
+
+            docker stop runwisp-ci
+            status=$(docker inspect runwisp-ci --format '{{.State.ExitCode}}')
+            docker logs runwisp-ci
+            docker rm runwisp-ci
+
+            if [ "${status}" != "0" ]; then
+              echo "expected exit code 0 on graceful stop, got ${status}" >&2
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+
   e2e:
     name: Browser E2E Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

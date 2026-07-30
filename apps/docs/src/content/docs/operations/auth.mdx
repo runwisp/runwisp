@@ -183,16 +183,17 @@ A few sharp edges, sanded:
 
 ### Docker for local dev
 
-This is the headline use case. Inside a container the daemon has to
-bind `0.0.0.0` for port mapping to work, so pair the two:
+This is the headline use case. The official `runwisp/runwisp` image
+already binds `0.0.0.0` and requires you to pick an auth setting
+explicitly (see [Docker](/getting-started/docker/) for the full
+picture), so for local dev it's just:
 
 ```bash
 docker run --rm \
   -e RUNWISP_NO_AUTH=1 \
   -p 127.0.0.1:9477:9477 \
   -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
-  your-runwisp-image \
-  runwisp --config /etc/runwisp/runwisp.toml --host 0.0.0.0 daemon
+  runwisp/runwisp:latest
 ```
 
 Or in a `compose.yaml`:
@@ -200,14 +201,16 @@ Or in a `compose.yaml`:
 ```yaml
 services:
     runwisp:
-        image: your-runwisp-image
-        command: runwisp --config /etc/runwisp/runwisp.toml --host 0.0.0.0 daemon
+        image: runwisp/runwisp:latest
         environment:
             - RUNWISP_NO_AUTH=1
         ports:
             - "127.0.0.1:9477:9477"
         volumes:
             - ./runwisp.toml:/etc/runwisp/runwisp.toml:ro
+            - runwisp-data:/var/lib/runwisp
+volumes:
+    runwisp-data:
 ```
 
 Note the `127.0.0.1:` prefix on the port mapping — it keeps the

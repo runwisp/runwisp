@@ -225,8 +225,54 @@ compose_file    = "./docker-compose.yml"
 compose_service = "backup"
 ```
 
-`run` and `compose_file` are mutually exclusive on the same table —
-RunWisp rejects the config at load if both are set.
+## Running a command in a service: `compose_mode`
+
+Set `run` alongside `compose_service` and RunWisp runs your command
+**inside the service's already-running container** — `docker compose exec`,
+not a new container:
+
+```toml
+[tasks.laravel-schedule]
+cron            = "* * * * *"
+compose_file    = "/srv/myapp/compose.yaml"
+compose_service = "app"
+run             = "php artisan schedule:run"
+```
+
+That's what most people want from a cron task attached to a running app:
+it executes in the live container, with that container's env, code
+version, and credentials, and nothing new gets started.
+
+`compose_mode` names the choice explicitly when you need the other one:
+
+| Value  | What happens                                                                                                     |
+| ------ | ---------------------------------------------------------------------------------------------------------------- |
+| `exec` | `docker compose exec` into the service's running container. Requires `run`.                                      |
+| `run`  | `docker compose run --rm` — a fresh container. With `run` set, it runs your command; without, the service's own. |
+
+The default is whichever one your config can actually mean: `exec` when
+`run` is set, `run` when it isn't. So the snippet above needs no
+`compose_mode`, and neither does a plain `compose_service` task — while
+`compose_mode = "run"` gets you a fresh container running your command
+instead of the live one.
+
+Two things to know before you lean on `exec`:
+
+- **The container has to be up.** If it isn't, the run fails with
+  `container … is not running` — visibly, as a failed run with that in the
+  log, not a silent skip.
+- **`timeout` can't reach inside.** Docker offers no way to cancel an
+  exec, so when a run times out RunWisp kills the local client and the
+  process inside the container carries on. Bound long work on the inside
+  too — `run = "timeout 3600 php artisan long-job"`. RunWisp warns at
+  startup if you put a long-running **service** in `exec` mode, because
+  there the leftover process compounds on every restart.
+
+Your command runs under the container's `/bin/sh` with fail-fast armed,
+the same as [`run` on the host](/configuration/tasks/#fail-fast) — so a
+multi-line script stops at the first failing line. The `shell` key isn't
+accepted here: it configures a host process, and the host's shell path
+says nothing about what exists in someone else's image.
 
 ## Supervision boundary
 
@@ -261,5 +307,10 @@ system-log message pointing at install docs.
         title="Docker patterns"
         href="/recipes/docker/"
         description="Using Docker from inside plain RunWisp tasks."
+    />
+    <LinkCard
+        title="Running RunWisp in Docker"
+        href="/getting-started/docker/"
+        description="Running the daemon in a container — and the one line that makes compose-backed units work there."
     />
 </CardGrid>

@@ -16,6 +16,11 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
+// defaultShell mirrors config.DefaultShell. It is duplicated rather than
+// imported because the executor must not depend on the config package; the two
+// are pinned together by TestShellArgs_DefaultShellMatchesConfig.
+const defaultShell = "/bin/sh"
+
 // ShellBackend executes shell scripts on the host via /bin/sh.
 type ShellBackend struct{}
 
@@ -43,9 +48,9 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 
 	shellPath := shell.Shell
 	if shellPath == "" {
-		shellPath = "/bin/sh"
+		shellPath = defaultShell
 	}
-	cmd := exec.CommandContext(ctx, shellPath, "-c", script)
+	cmd := exec.CommandContext(ctx, shellPath, shellArgs(shellPath, script)...)
 
 	// Resolve run-as (user[:group]) at run time. RunUser is read from the task,
 	// never from the execution def, so a cloud-dispatched ad-hoc run can't pick
@@ -172,6 +177,39 @@ func startError(err error, cred *syscall.Credential, startErrPrefix string) erro
 		return fmt.Errorf("%s as uid=%d gid=%d: %w (the daemon must run as root to drop privileges)", startErrPrefix, cred.Uid, cred.Gid, err)
 	}
 	return fmt.Errorf("%s: %w", startErrPrefix, err)
+}
+
+// shellArgs builds the interpreter argv for a run script. Fail-fast (`-e`,
+// errexit) is armed here so a multi-line `run` block stops at the first failing
+// command instead of running on and reporting the *last* command's exit code —
+// without it, a script whose middle line fails is persisted as a successful
+// run, which is the invisible failure the daemon exists to prevent.
+//
+// Why `-e` in argv rather than a `set -e` line prepended to the script: both
+// dash and bash number `-c` diagnostics relative to the script string, so
+// prepending a line shifts every error message in every failing run by one.
+// The operator reads "line 7", counts to line 7 of their `run` block, and finds
+// the wrong command. Passing the flag costs no offset and leaves the executed
+// script byte-identical to what the TOML says.
+//
+// Only `-e`. `-u` (unset variables) is unrelated strictness and breaks scripts
+// that legitimately read optional env vars. `-o pipefail` is not POSIX — dash
+// rejects it outright — so a task that needs it selects `shell = "/bin/bash"`
+// and writes `set -o pipefail` itself.
+//
+// Opting out needs no config key: `set +e` as the script's first line turns
+// errexit back off, because a runtime `set` overrides the argv flag.
+//
+// One fidelity cost, accepted knowingly: bash-as-/bin/sh (macOS) reports exit 1
+// instead of 127 when errexit aborts on a missing *absolute path*, though a
+// failed PATH lookup still reports 127 and dash reports 127 for both. A less
+// specific exit code on one dev platform is a small price for not recording
+// failed runs as successes on every platform.
+func shellArgs(shellPath, script string) []string {
+	if model.ShellSupportsErrexit(shellPath) {
+		return []string{"-e", "-c", script}
+	}
+	return []string{"-c", script}
 }
 
 // wrapScriptUmask prepends a `umask <octal>` line to the run script when a mask

@@ -421,6 +421,14 @@ func logStartupSummary(info uikit.StartupInfo) {
 	if info.UsingDemo {
 		slog.Warn("no runwisp.toml found — running built-in demo task; create runwisp.toml to define your own tasks")
 	}
+	// The TTY banner and the TUI header both surface the ephemeral password, so
+	// only the headless path — every container, every systemd unit — could
+	// otherwise come up with a login nobody can perform and say nothing about
+	// it in the log.
+	if info.PasswordEphemeral && !info.AuthDisabled {
+		slog.Warn("no RUNWISP_PASSWORD set — generated a random password for this boot; the Web UI cannot be logged into until you set one, and every restart invalidates existing sessions",
+			"hint", "runwisp password")
+	}
 	if info.CrashedRuns > 0 {
 		slog.Warn("marked crashed runs from previous session", "count", info.CrashedRuns)
 	}

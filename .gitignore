@@ -29,6 +29,7 @@ apps/runwisp/.gocoverdir/
 # Build Outputs
 build
 dist
+docker/context/
 
 # AI
 .claude

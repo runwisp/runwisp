@@ -268,17 +268,27 @@ func TestExecuteCommandStartFailure(t *testing.T) {
 	eb := events.NewEventBus()
 	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
 
-	task := &model.Task{
-		Name: "fail-start",
-		Run:  "/path/to/non/existent/command",
-	}
-	run := &model.Run{
-		ID:     ulid.Make().String(),
-		Status: model.PhaseRunning,
-	}
+	// A bare name that PATH lookup misses reports 127 ("command not found") on
+	// every shell we arm errexit for. An absolute path that does not exist is
+	// less portable: dash still reports 127, but bash-as-/bin/sh collapses it to
+	// 1 under -e, so all we can pin there is "the run failed".
+	t.Run("missing command on PATH reports 127", func(t *testing.T) {
+		task := &model.Task{Name: "fail-start", Run: "nonexistent_runwisp_command"}
+		run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
 
-	result := exec.Execute(context.Background(), task, run)
-	assert.Equal(t, 127, result.ExitCode) // Shell returns 127 for command not found
+		result := exec.Execute(context.Background(), task, run)
+
+		assert.Equal(t, 127, result.ExitCode)
+	})
+
+	t.Run("missing absolute path fails the run", func(t *testing.T) {
+		task := &model.Task{Name: "fail-start-abs", Run: "/path/to/non/existent/command"}
+		run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+
+		result := exec.Execute(context.Background(), task, run)
+
+		assert.NotEqual(t, 0, result.ExitCode)
+	})
 }
 
 // recordingBackend is a Backend that records the def it was asked to start and

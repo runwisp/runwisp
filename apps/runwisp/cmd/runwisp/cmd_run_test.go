@@ -356,3 +356,27 @@ func TestEmitStartupBanner_DoesNotPanic(t *testing.T) {
 	emitStartupBanner(info, Flags{LogFormat: clilog.FormatJSON}) // forces non-fancy branch
 	emitStartupBanner(info, Flags{LogFormat: clilog.FormatText}) // whichever stderrTTY says
 }
+
+// TestLogStartupSummary_WarnsAboutEphemeralPassword covers the headless path
+// that a container takes: the fancy banner needs a TTY and the TUI header is
+// not running, so without this line `docker logs` would never mention that the
+// generated password makes the Web UI unloggable.
+func TestLogStartupSummary_WarnsAboutEphemeralPassword(t *testing.T) {
+	capture := func(info uikit.StartupInfo) string {
+		var buf bytes.Buffer
+		prev := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+		defer slog.SetDefault(prev)
+		logStartupSummary(info)
+		return buf.String()
+	}
+
+	assert.Contains(t, capture(uikit.StartupInfo{PasswordEphemeral: true}), "no RUNWISP_PASSWORD set",
+		"a headless boot with a generated password must say so")
+
+	assert.NotContains(t, capture(uikit.StartupInfo{PasswordEphemeral: true, AuthDisabled: true}), "no RUNWISP_PASSWORD set",
+		"RUNWISP_NO_AUTH already gets its own louder banner; no password to warn about")
+
+	assert.NotContains(t, capture(uikit.StartupInfo{}), "no RUNWISP_PASSWORD set",
+		"an operator-supplied password needs no warning")
+}

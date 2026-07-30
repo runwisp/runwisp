@@ -61,9 +61,12 @@ type taskServiceWireCore struct {
 	Run string `toml:"run,omitempty" expand:"-"`
 
 	// ComposeFile / ComposeService route the task through ComposeBackend
-	// instead of ShellBackend. Mutually exclusive with Run.
+	// instead of ShellBackend. ComposeMode picks what that means: "exec" runs
+	// Run inside the service's already-running container, "run" starts a fresh
+	// one. Empty resolves per Run's presence — see resolveComposeMode.
 	ComposeFile    string `toml:"compose_file,omitempty"`
 	ComposeService string `toml:"compose_service,omitempty"`
+	ComposeMode    string `toml:"compose_mode,omitempty"`
 
 	Env         map[string]string `toml:"env,omitempty"`
 	EnvFile     string            `toml:"env_file,omitempty"`
@@ -312,11 +315,30 @@ func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label 
 	if svc == "" {
 		svc = name
 	}
+	mode, err := w.resolveComposeMode(name, label)
+	if err != nil {
+		return err
+	}
+	command := ""
+	// Exec mode targets a container someone else created, so the project name
+	// has to be the one that container actually runs under — and RunWisp cannot
+	// know it. Using the task name (fine for `run`, which creates the container
+	// in its own namespace) would make `compose exec` search a project that does
+	// not exist and report the service as not running. Leaving it empty lets
+	// compose resolve the project exactly as a hand-typed `docker compose -f …
+	// exec` would: from the file's directory, its top-level `name:`, or
+	// COMPOSE_PROJECT_NAME.
+	projectName := name
+	if mode == model.ComposeModeExec {
+		command = w.Run
+		projectName = ""
+	}
 	task.ExecutionDef = &model.ComposeExecution{
 		File:        w.ComposeFile,
-		ProjectName: name,
+		ProjectName: projectName,
 		Service:     svc,
-		Mode:        model.ComposeModeServices,
+		Mode:        mode,
+		Command:     command,
 	}
 	task.Compose = &model.TaskComposeRef{
 		File:        w.ComposeFile,
@@ -325,6 +347,53 @@ func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label 
 	}
 	return nil
 }
+
+// resolveComposeMode decides between exec-into-the-running-container and
+// start-a-fresh-one for a compose-backed unit.
+//
+// The default is conditional, and deliberately so. `run` is what disambiguates:
+// supply a command and exec is what you almost always meant — the container is
+// already up, and starting a second copy of the image to run one command in it
+// is the surprising reading. Supply no command and exec is impossible (there is
+// nothing to execute), so the only coherent behaviour is a fresh container
+// running the service's own compose-declared command.
+//
+// Both are reachable explicitly, so "fresh container, my command" stays
+// expressible via compose_mode = "run" — that combination used to be a hard
+// error, which is why relaxing it needed a deliberate decision rather than a
+// silent precedence rule.
+func (w *taskServiceWireCore) resolveComposeMode(name, label string) (string, error) {
+	hasRun := strings.TrimSpace(w.Run) != ""
+
+	switch w.ComposeMode {
+	case "":
+		if hasRun {
+			return model.ComposeModeExec, nil
+		}
+		return model.ComposeModeServices, nil
+	case model.ComposeModeExec:
+		if !hasRun {
+			return "", fmt.Errorf(
+				"%s %q sets compose_mode = %q but no `run` command; exec needs a command to run inside the container",
+				label, name, model.ComposeModeExec)
+		}
+		return model.ComposeModeExec, nil
+	case composeModeRun:
+		return model.ComposeModeServices, nil
+	default:
+		return "", fmt.Errorf(
+			"%s %q has invalid compose_mode %q; valid values are %q and %q",
+			label, name, w.ComposeMode, model.ComposeModeExec, composeModeRun)
+	}
+}
+
+// composeModeRun is the TOML spelling of services mode on a [tasks.*] /
+// [services.*] table. The internal constant is model.ComposeModeServices, whose
+// name reads correctly on a [compose.*] block ("one RunWisp service per compose
+// service") but not on a single task, where what the operator is choosing is
+// "start a fresh container to run this" — hence "run", matching the
+// `docker compose run` it turns into.
+const composeModeRun = "run"
 
 // taskWire is the over-the-wire task shape used only during TOML decoding.
 // It exists so api_trigger can be distinguished between "absent" (nil, default true)

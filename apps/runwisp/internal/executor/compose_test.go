@@ -64,6 +64,91 @@ func TestComposeBackend_BuildArgs_ServicesMode(t *testing.T) {
 	assert.Equal(t, "web", args[len(args)-1])
 }
 
+func TestComposeBackend_BuildArgs_ExecMode(t *testing.T) {
+	ce := &model.ComposeExecution{
+		File:        "./compose.yaml",
+		ProjectName: "myapp",
+		Service:     "app",
+		Mode:        model.ComposeModeExec,
+		Command:     "php artisan schedule:run",
+		Profiles:    []string{"prod"},
+		EnvFile:     []string{"./.env"},
+		// Create-time settings are meaningless for exec and must not leak into
+		// the argv even when a [compose.*] block set them.
+		Pull:     model.ComposePullAlways,
+		WithDeps: true,
+	}
+	task := &model.Task{Name: "myapp.schedule", Env: map[string]string{"LOG_LEVEL": "info"}}
+
+	args := buildComposeArgs(ce, task, &model.Run{InstanceIndex: 0}, "fp-123")
+	joined := strings.Join(args, " ")
+
+	assert.Contains(t, joined, "compose -f ./compose.yaml")
+	assert.Contains(t, joined, "-p myapp")
+	assert.Contains(t, joined, "--profile prod")
+	assert.Contains(t, joined, "--env-file ./.env")
+	assert.Contains(t, joined, "exec -T")
+	// Values are injected into the docker CLI's own environment, not argv, so
+	// only the value-less `-e KEY` flag appears here.
+	assert.Contains(t, joined, "-e LOG_LEVEL")
+	assert.NotContains(t, joined, "LOG_LEVEL=info", "env values must never appear on argv")
+
+	// The script reaches the container's shell with fail-fast armed, byte-identical.
+	require.GreaterOrEqual(t, len(args), 5)
+	tail := args[len(args)-5:]
+	assert.Equal(t, []string{"app", "/bin/sh", "-e", "-c", "php artisan schedule:run"}, tail)
+
+	// None of the create-a-container flags belong here: the container already
+	// exists and is not ours.
+	for _, forbidden := range []string{"--rm", "--name", "--label", "--pull", "--no-deps", "--service-ports", "--use-aliases", "run"} {
+		assert.NotContains(t, args, forbidden, "exec mode must not pass %q", forbidden)
+	}
+}
+
+// -T is passed explicitly rather than relying on compose's TTY detection: an
+// allocated TTY folds stderr into stdout and appends \r to every captured line.
+func TestComposeBackend_BuildArgs_ExecModeAlwaysDisablesTTY(t *testing.T) {
+	ce := &model.ComposeExecution{
+		File:    "./compose.yaml",
+		Service: "app",
+		Mode:    model.ComposeModeExec,
+		Command: "true",
+	}
+	args := buildComposeArgs(ce, &model.Task{}, nil, "")
+
+	execIdx := -1
+	for i, a := range args {
+		if a == "exec" {
+			execIdx = i
+			break
+		}
+	}
+	require.NotEqual(t, -1, execIdx, "expected an `exec` token in %v", args)
+	assert.Equal(t, "-T", args[execIdx+1], "-T must immediately follow exec")
+}
+
+func TestComposeBackend_BuildArgs_ExecModeAppendsParamTokens(t *testing.T) {
+	ce := &model.ComposeExecution{
+		File:    "./compose.yaml",
+		Service: "app",
+		Mode:    model.ComposeModeExec,
+		Command: "./backup.sh",
+	}
+	task := &model.Task{
+		Name: "backup",
+		Parameters: []model.TaskParam{
+			{Kind: model.ParamArg, Key: "target"},
+		},
+	}
+	run := &model.Run{Params: map[string]string{"target": "nightly; rm -rf /"}}
+
+	args := buildComposeArgs(ce, task, run, "")
+	// Shell-quoted into the script text, exactly as the host shell backend does,
+	// so a hostile parameter value is an inert literal rather than a second
+	// command running inside the user's container.
+	assert.Equal(t, `./backup.sh 'nightly; rm -rf /'`, args[len(args)-1])
+}
+
 func TestComposeBackend_BuildArgs_StackMode(t *testing.T) {
 	ce := &model.ComposeExecution{
 		File:        "./docker-compose.yml",

@@ -11,10 +11,18 @@
 #        - workspace TS packages (@runwisp/{typescript-config,eslint-config,common,ui}) in parallel
 #        - binary platform packages (@runwisp/{linux,darwin}-{x64,arm64}) in parallel
 #        - main `runwisp` package (waits for the platform packages to be live first)
+#      → build and push the runwisp/runwisp Docker image (alpine + debian,
+#        linux/amd64 + linux/arm64) to Docker Hub, from the same release tarballs.
 #
-# Auth is OIDC Trusted Publisher (per-package, configured on npmjs.com).
-# Each package must already exist with a Trusted Publisher row pointing at this repo
-# + workflow before CI can publish to it.
+# Auth is OIDC Trusted Publisher (per-package, configured on npmjs.com) for npm,
+# and a Docker Hub access token (DOCKERHUB_USERNAME / DOCKERHUB_TOKEN repo
+# secrets) for the image push.
+# Each npm package must already exist with a Trusted Publisher row pointing at
+# this repo + workflow before CI can publish to it.
+#
+# docker-publish can also be re-run manually (workflow_dispatch, given an
+# existing release tag) without touching the npm jobs — for retrying a failed
+# Docker Hub push, or a dry run against an already-published release.
 
 name: Release
 
@@ -24,6 +32,11 @@ on:
       - "v*"
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to (re-)publish the Docker image for"
+        required: true
 
 jobs:
   build:
@@ -368,3 +381,146 @@ jobs:
           NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
         working-directory: npm/runwisp
         run: npm publish --access public --tag "${NPM_TAG}" --provenance
+
+  docker-publish:
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    name: Publish Docker image (${{ matrix.base }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        base: [alpine, debian]
+    steps:
+      # On a real release, check out the tag itself so docker/ matches exactly
+      # what that release shipped. A manual workflow_dispatch re-run instead
+      # keeps whatever ref it was dispatched from — letting a Dockerfile/
+      # entrypoint fix be re-published against an existing release's binaries
+      # without cutting a new one.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
+          sparse-checkout: docker
+
+      - name: Compute version and prerelease flag
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          VERSION="${TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${VERSION}" == *-* ]]; then
+            echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "PRERELEASE=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          mkdir -p /tmp/dl docker/context/amd64 docker/context/arm64
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --pattern 'runwisp-linux-x64.tar.gz' --dir /tmp/dl
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --pattern 'runwisp-linux-arm64.tar.gz' --dir /tmp/dl
+          tar xzf /tmp/dl/runwisp-linux-x64.tar.gz -C docker/context/amd64
+          tar xzf /tmp/dl/runwisp-linux-arm64.tar.gz -C docker/context/arm64
+          chmod +x docker/context/amd64/runwisp docker/context/arm64/runwisp
+
+      # Stable releases get the floating tags (X.Y, latest[-<base>]); a
+      # prerelease (version contains "-") only ever gets its exact pinned tags,
+      # so an rc/beta build never becomes the thing `docker pull` gives you by
+      # default.
+      - name: Compute image tags
+        id: tags
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          PRERELEASE: ${{ steps.version.outputs.PRERELEASE }}
+          BASE: ${{ matrix.base }}
+        run: |
+          image="runwisp/runwisp"
+          minor_version="${VERSION%.*}"
+          major_version="${VERSION%%.*}"
+          suffix=""
+          if [[ "${BASE}" == "debian" ]]; then
+            suffix="-debian"
+          fi
+
+          # Alpine is the default base, so it claims both the bare tag and the
+          # explicit -alpine one.
+          suffixes=("${suffix}")
+          if [[ "${BASE}" == "alpine" ]]; then
+            suffixes+=("-alpine")
+          fi
+
+          names=("${VERSION}")
+          if [[ "${PRERELEASE}" != "true" ]]; then
+            names+=("${minor_version}" "${major_version}" "latest")
+          fi
+
+          tags=()
+          for name in "${names[@]}"; do
+            for sfx in "${suffixes[@]}"; do
+              tags+=("${image}:${name}${sfx}")
+            done
+          done
+
+          {
+            echo "TAGS<<TAGS_EOF"
+            printf '%s\n' "${tags[@]}"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+
+      - uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: docker
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            BASE=${{ matrix.base }}
+            VERSION=${{ steps.version.outputs.VERSION }}
+          tags: ${{ steps.tags.outputs.TAGS }}
+
+      # Pull back what we just published and check it actually runs. Without
+      # this the release path has zero runtime verification: a mismatched binary
+      # in the hand-arranged context, or a broken entrypoint, would only be
+      # discovered by whoever pulled the image next.
+      - name: Verify the published image
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          TAGS: ${{ steps.tags.outputs.TAGS }}
+        run: |
+          tag=$(printf '%s\n' "${TAGS}" | head -1)
+          echo "verifying ${tag}"
+
+          reported=$(docker run --rm --platform linux/amd64 "${tag}" runwisp --version)
+          echo "${reported}"
+          case "${reported}" in
+            *"${VERSION}"*) ;;
+            *)
+              echo "image reports '${reported}', expected version ${VERSION}" >&2
+              exit 1
+              ;;
+          esac
+
+          # The entrypoint must still refuse a daemon with no auth setting.
+          if docker run --rm --platform linux/amd64 "${tag}" >/tmp/gate.log 2>&1; then
+            echo "expected a non-zero exit with no auth setting" >&2
+            cat /tmp/gate.log >&2
+            exit 1
+          fi
+          grep -q 'explicit auth setting' /tmp/gate.log || {
+            echo "auth gate did not produce the expected message" >&2
+            cat /tmp/gate.log >&2
+            exit 1
+          }

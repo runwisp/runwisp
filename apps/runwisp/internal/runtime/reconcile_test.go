@@ -4,6 +4,8 @@
 package runtime
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
@@ -46,4 +48,28 @@ func TestCheckNonReloadable_RejectsEachSection(t *testing.T) {
 			assert.Contains(t, err.Error(), "runwisp restart")
 		})
 	}
+}
+
+// TestCheckNonReloadable_RUNWISPTLSDoesNotFlapReload proves reload survives
+// RUNWISP_TLS disagreeing with the TOML: config.Load re-applies the same env
+// override on every call (boot and every reconcile), so two configs loaded
+// under the same RUNWISP_TLS resolve to the same [daemon].TLS regardless of
+// what their TOML says — the reconcile gate must not see that as a change.
+func TestCheckNonReloadable_RUNWISPTLSDoesNotFlapReload(t *testing.T) {
+	t.Setenv("RUNWISP_TLS", "off")
+
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.toml")
+	require.NoError(t, os.WriteFile(oldPath, []byte("[daemon]\ntls = \"auto\"\n\n[tasks.t]\nrun = \"/bin/true\"\n"), 0o600))
+	newPath := filepath.Join(dir, "new.toml")
+	require.NoError(t, os.WriteFile(newPath, []byte("[tasks.t]\nrun = \"/bin/true\"\n"), 0o600))
+
+	oldCfg, err := config.Load(oldPath)
+	require.NoError(t, err)
+	newCfg, err := config.Load(newPath)
+	require.NoError(t, err)
+
+	require.Equal(t, "off", oldCfg.Daemon.TLS)
+	require.Equal(t, "off", newCfg.Daemon.TLS)
+	assert.NoError(t, checkNonReloadable(oldCfg, newCfg))
 }

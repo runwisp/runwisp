@@ -30,7 +30,6 @@ notify_on_success = ["slack-deploys"]
 # timeout = "..."           # see below — size to your worst deploy
 
 run = """
-set -euo pipefail
 echo "[$(date -Iseconds)] starting deploy"
 
 cd /srv/app
@@ -206,7 +205,6 @@ notify_on_failure = ["slack-ops", "tg-oncall"]
                        # fast-fail target.
 
 run = """
-set -euo pipefail
 docker run --rm --env-file=/etc/app/migrate.env \\
   ghcr.io/example/app:current \\
   /usr/local/bin/migrate up
