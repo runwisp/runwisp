@@ -16,6 +16,9 @@
     "apps/*",
     "packages/*"
   ],
+  "overrides": {
+    "sharp": "^0.35.0"
+  },
   "scripts": {
     "dev": "moon run runwisp:dev",
     "demo": "moon run runwisp:demo",

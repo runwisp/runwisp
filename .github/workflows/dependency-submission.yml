@@ -1,0 +1,36 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
+
+# GitHub's static dependency graph doesn't parse bun.lock, so every npm
+# manifest in this repo shows up with its raw package.json semver range
+# instead of a resolved version — Dependabot alerts then can't tell whether
+# an installed version is actually vulnerable. This job submits an accurate
+# snapshot, built from bun.lock's own resolved versions, via the Dependency
+# Submission API instead.
+name: Dependency Submission
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  submit:
+    name: Submit npm dependency snapshot
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Generate SPDX SBOM from bun.lock
+        run: bun scripts/bun-lock-to-spdx.ts bun.lock.spdx.json
+
+      - name: Submit dependency snapshot
+        uses: advanced-security/spdx-dependency-submission-action@169d22427d74f3faf93504e70b03eede8dab272a # v0.2.0
+        with:
+          filePath: "."
+          filePattern: "bun.lock.spdx.json"
