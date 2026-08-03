@@ -15,7 +15,7 @@
         RotateCw,
         RefreshCcw,
         ChevronDown,
-        History,
+        RotateCcwClock,
         PanelLeftClose,
         SlidersHorizontal,
         Maximize2,
@@ -486,7 +486,7 @@
                                 {#if historyVisible}
                                     <PanelLeftClose size={15} />
                                 {:else}
-                                    <History size={15} />
+                                    <RotateCcwClock size={15} />
                                 {/if}
                             </button>
                         {/if}
