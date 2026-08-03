@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { ArrowRight, History } from "@lucide/svelte";
+    import { ArrowRight, RotateCcwClock } from "@lucide/svelte";
     import Card from "@runwisp/ui/components/Card.svelte";
     import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
     import { getRunStatusConfig, runDisplayStatus, instanceSuffix } from "@runwisp/ui";
@@ -49,7 +49,7 @@
             <EmptyState
                 title="No recent activity"
                 description="Runs will appear here once tasks begin executing."
-                icon={History}
+                icon={RotateCcwClock}
             />
         </div>
     {:else}

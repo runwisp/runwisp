@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { Activity, History, Globe, Menu, X } from "@lucide/svelte";
+    import { Activity, RotateCcwClock, Globe, Menu, X } from "@lucide/svelte";
     import Logo from "@runwisp/ui/components/Logo.svelte";
     import { type Snippet, type Component, tick } from "svelte";
     import { resolve } from "$app/paths";
@@ -154,7 +154,7 @@
                         ? 'bg-primary-soft text-primary-soft-text shadow-sm shadow-wisp-500/5'
                         : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}"
                 >
-                    <History
+                    <RotateCcwClock
                         size={18}
                         class={activePage === "runs"
                             ? "text-primary"

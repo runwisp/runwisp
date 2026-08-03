@@ -20,15 +20,15 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@apidevtools/json-schema-ref-parser": "^15.2.2",
+    "@apidevtools/json-schema-ref-parser": "^15.5.1",
     "@asyncapi/modelina": "^5.10.1",
     "@runwisp/eslint-config": "workspace:*",
     "@runwisp/typescript-config": "workspace:*",
-    "eslint": "^9.39.1",
-    "typescript": "5.9.2",
-    "yaml": "^2.8.2"
+    "eslint": "^10.8.0",
+    "typescript": "6.0.3",
+    "yaml": "^2.9.0"
   }
 }

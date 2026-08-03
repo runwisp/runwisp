@@ -125,13 +125,7 @@ export const tasksApi = {
             exit_code_max?: string;
             retries_only?: boolean;
             sort_field?:
-                | "task_name"
-                | "status"
-                | "start_at"
-                | "exit_code"
-                | "duration"
-                | "created_at"
-                | "";
+                "task_name" | "status" | "start_at" | "exit_code" | "duration" | "created_at" | "";
             sort_direction?: "asc" | "desc" | "";
             search?: string;
         },
@@ -303,13 +297,7 @@ export const runsApi = {
         exit_code_max?: string;
         retries_only?: boolean;
         sort_field?:
-            | "task_name"
-            | "status"
-            | "start_at"
-            | "exit_code"
-            | "duration"
-            | "created_at"
-            | "";
+            "task_name" | "status" | "start_at" | "exit_code" | "duration" | "created_at" | "";
         sort_direction?: "asc" | "desc" | "";
         search?: string;
     }) => {

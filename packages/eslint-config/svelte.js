@@ -49,6 +49,11 @@ export function createSvelteConfig({ svelteConfig, extraIgnores = [] }) {
                 "@typescript-eslint/no-floating-promises": "error",
                 "@typescript-eslint/no-misused-promises": "error",
                 "no-unused-vars": "off",
+                // `let { value = $bindable("") } = $props()` reads as a dead store to
+                // core ESLint — the component only ever writes `value`, so the
+                // initializer looks unused. It isn't: it is the prop's fallback when
+                // the parent doesn't bind. Runes make this pattern legitimate.
+                "no-useless-assignment": "off",
             },
         },
     ];

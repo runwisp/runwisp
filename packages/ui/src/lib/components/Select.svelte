@@ -341,7 +341,7 @@
                 {/if}
 
                 <div
-                    class="scrollbar-thin scrollbar-thumb-mist-200 scrollbar-track-transparent max-h-60 overflow-x-hidden overflow-y-auto p-1"
+                    class="max-h-60 scrollbar-thin scrollbar-thumb-mist-200 scrollbar-track-transparent overflow-x-hidden overflow-y-auto p-1"
                 >
                     {#if flattenedVisibleOptions.length === 0}
                         <div class="px-4 py-8 text-center text-sm text-on-surface-muted">

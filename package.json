@@ -35,12 +35,11 @@
     "clean": "./scripts/clean.sh"
   },
   "devDependencies": {
-    "@astrojs/svelte": "^8.0.0",
-    "@moonrepo/cli": "^2.3.0",
-    "ajv": "^8.17.1",
-    "prettier": "^3.8.3",
-    "prettier-plugin-svelte": "^3.5.1",
-    "prettier-plugin-tailwindcss": "^0.7.2",
-    "typescript": "5.9.2"
+    "@moonrepo/cli": "^2.4.6",
+    "ajv": "^8.20.0",
+    "prettier": "^3.9.6",
+    "prettier-plugin-svelte": "^4.1.1",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "typescript": "6.0.3"
   }
 }

@@ -5,13 +5,7 @@
     import { fade } from "svelte/transition";
 
     type Status =
-        | "running"
-        | "success"
-        | "failed"
-        | "pending"
-        | "paused"
-        | "scheduled"
-        | "cancelled";
+        "running" | "success" | "failed" | "pending" | "paused" | "scheduled" | "cancelled";
     type Size = "sm" | "md" | "lg";
 
     interface Props {

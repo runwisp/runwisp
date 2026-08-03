@@ -5,6 +5,10 @@
         "checkJs": true,
         "jsx": "preserve",
         "lib": ["ESNext", "DOM", "DOM.Iterable"],
+        // TypeScript 6 defaults `types` to [] and turns on
+        // noUncheckedSideEffectImports, so `import "./layout.css"` needs Vite's
+        // asset module declarations to be pulled in explicitly.
+        "types": ["vite/client"],
         "paths": {
             "$lib": ["./src/lib"],
             "$lib/*": ["./src/lib/*"]

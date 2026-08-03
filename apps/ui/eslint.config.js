@@ -3,8 +3,7 @@
 
 import { createSvelteConfig } from "@runwisp/eslint-config/svelte";
 import { fileURLToPath } from "node:url";
-import { includeIgnoreFile } from "@eslint/compat";
-import { defineConfig } from "eslint/config";
+import { defineConfig, includeIgnoreFile } from "eslint/config";
 import svelteConfig from "./svelte.config.js";
 
 const gitignorePath = fileURLToPath(new URL("./.gitignore", import.meta.url));

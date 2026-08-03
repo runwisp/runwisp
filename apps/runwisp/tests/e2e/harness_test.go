@@ -447,22 +447,30 @@ func (s *tuiSession) snapshot() string {
 func (s *tuiSession) waitForAll(t testing.TB, timeout time.Duration, values ...string) string {
 	t.Helper()
 
+	return s.waitForScreen(t, timeout, strings.Join(values, ", "), func(screen string) bool {
+		for _, value := range values {
+			if !strings.Contains(screen, value) {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// waitForScreen is the predicate form of waitForAll, for readiness conditions no
+// set of substrings can express — "the table has at least one data row" being the
+// motivating case, since a table paints its headers before its rows arrive.
+// description names what is being waited for in the failure message.
+func (s *tuiSession) waitForScreen(t testing.TB, timeout time.Duration, description string, ready func(screen string) bool) string {
+	t.Helper()
+
 	deadline := time.Now().Add(timeout)
-	description := strings.Join(values, ", ")
 	lastScreen := s.snapshot()
 
 	for time.Now().Before(deadline) {
 		lastScreen = s.snapshot()
 
-		allMatch := true
-		for _, value := range values {
-			if !strings.Contains(lastScreen, value) {
-				allMatch = false
-				break
-			}
-		}
-
-		if allMatch {
+		if ready(lastScreen) {
 			return lastScreen
 		}
 		if s.exited() {
