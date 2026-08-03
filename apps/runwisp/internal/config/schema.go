@@ -40,6 +40,17 @@ type Config struct {
 	// via [daemon].include_cron at this load, in the order they were merged.
 	cronFiles []string
 
+	// cronDaemon records whether a system cron daemon looked live when this config
+	// was loaded, and in what sense ("is running", "is enabled and will start on
+	// the next boot", …). Probed once per load rather than per question: it costs a
+	// systemctl exec, and Warnings is answered on every /api/info request.
+	//
+	// Snapshotting it at load is also what makes the hold gate behave: the set of
+	// tasks the scheduler will fire is fixed by a load, so a cron daemon that
+	// stops (or comes back) mid-flight cannot change what fires until the operator
+	// reloads. Scheduling stays a pure function of the loaded config.
+	cronDaemon cronDaemonState
+
 	// cronBlocks maps a cron-sourced task name to the TOML that produced it, so
 	// `runwisp promote` can move the definition the daemon is actually running
 	// rather than re-deriving one that might differ.

@@ -22,9 +22,14 @@ type RunOnStartResult struct {
 // and not subject to max_catch_up_runs. A run_on_start task with no cron still
 // fires here; one with a cron fires here in addition to its schedule.
 //
-// Services are skipped — they already start every instance at boot. Tasks are
-// visited in name order so the firing sequence is deterministic; the function
-// reads no clock, filesystem, or randomness.
+// Services are skipped — they already start every instance at boot. Held tasks
+// are skipped too, and this is the one place that has to check Held rather than
+// Schedulable: a crontab's `@reboot` line imports as run_on_start with no cron at
+// all, so the clock-based predicate would let it through while a live cron daemon
+// is firing the very same line on its own startup.
+//
+// Tasks are visited in name order so the firing sequence is deterministic; the
+// function reads no clock, filesystem, or randomness.
 func RunStartupTasks(tasks map[string]*model.Task, runner TaskRunner) RunOnStartResult {
 	var result RunOnStartResult
 	names := make([]string, 0, len(tasks))
@@ -35,7 +40,7 @@ func RunStartupTasks(tasks map[string]*model.Task, runner TaskRunner) RunOnStart
 
 	for _, name := range names {
 		task := tasks[name]
-		if !task.RunOnStart || task.Kind.IsService() {
+		if !task.RunOnStart || task.Kind.IsService() || task.Held() {
 			continue
 		}
 		if _, err := runner.TriggerRunWithOptions(name, TriggerRunOptions{

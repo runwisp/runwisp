@@ -34,13 +34,18 @@ For "is the daemon alive right now?" use 'runwisp status' instead.`,
 	// particular resolvePathDefaults, without which --config/--data left
 	// unset stay empty strings and a system install bakes an empty path
 	// into the unit.
-	PersistentPreRunE: func(*cobra.Command, []string) error {
-		if err := resolveLogConfig(); err != nil {
-			return err
-		}
-		resolvePathDefaults(os.Geteuid())
-		return nil
-	},
+	PersistentPreRunE: servicePathPreRun,
+}
+
+// servicePathPreRun is the pre-run for commands that describe a data dir they are
+// about to bake into a unit rather than one they write to now. Shared with
+// `runwisp takeover`, which installs the same unit from outside this subtree.
+func servicePathPreRun(*cobra.Command, []string) error {
+	if err := resolveLogConfig(); err != nil {
+		return err
+	}
+	resolvePathDefaults(os.Geteuid())
+	return nil
 }
 
 func init() {

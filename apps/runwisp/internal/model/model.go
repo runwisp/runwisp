@@ -157,6 +157,17 @@ type Task struct {
 	// the sources where naming it is the useful part: which crontab a cron-sourced
 	// task lives in, or which staging file to promote out of. Empty for native.
 	SourceFile string `toml:"-" json:"source_file,omitempty" doc:"Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML"`
+	// HeldBy records that something other than RunWisp owns this task's schedule,
+	// so the scheduler must not register it. Derived at config load from the
+	// machine's state — currently only "a live cron daemon reads this crontab
+	// itself" — and re-derived every load, so retiring cron and reloading clears
+	// it. Never a TOML key: a hold is not something the operator configures.
+	//
+	// Unlike Source/SourceFile, this is NOT masked by config.sameDefinition: it
+	// changes what fires, so a flip has to reach the reconciler as a schedule
+	// change and get the cron entry registered (or dropped). Masking it would turn
+	// "held, and visibly so" into "silently never runs".
+	HeldBy HoldReason `toml:"-" json:"held_by,omitempty" enum:"cron" doc:"Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule."`
 
 	// WorkingDir is resolved to an absolute path at config load (relative to
 	// the runwisp.toml directory). Empty inherits the daemon's working dir.
@@ -200,6 +211,19 @@ type Task struct {
 	// Runtime-only: never serialized to API/UI/cloud/TOML.
 	Ephemeral bool `toml:"-" json:"-"`
 }
+
+// Held reports whether something other than RunWisp owns this task's firing.
+// Checked directly (rather than via Schedulable) by the boot paths that fire a
+// task without consulting a clock at all: a crontab's `@reboot` line becomes
+// run_on_start with no cron, and cron fires it too.
+func (t *Task) Held() bool { return t.HeldBy != HeldByNothing }
+
+// Schedulable reports whether the scheduler should fire this task on a clock.
+// The one predicate every clock-driven site consults, so "has no schedule" and
+// "something else owns the schedule" can never drift apart: a task that is not
+// schedulable gets no cron entry, no jitter plan, and no missed-tick accounting —
+// while staying fully visible and manually triggerable.
+func (t *Task) Schedulable() bool { return t.Cron != "" && !t.Held() }
 
 // NotifiesOnMissed reports whether missed-run alerts are enabled for this task.
 // Defaults to true when unset so a Task literal built outside the config loader
@@ -304,6 +328,27 @@ const (
 // Promotable reports whether this source has a `runwisp promote` path into the
 // operator's own TOML.
 func (s TaskSource) Promotable() bool { return s == SourceStaged || s == SourceCron }
+
+// HoldReason names why a task is loaded and visible but deliberately not on the
+// scheduler. Derived at config load like TaskSource, never a TOML key: the
+// operator does not ask for a hold, the machine's state produces one.
+//
+// A hold withholds *automatic firing only*. A held task still appears in the task
+// list with its schedule, and `runwisp exec` / the API trigger still run it — the
+// point of a migration is to be able to check a job works under RunWisp before
+// handing the schedule over.
+type HoldReason string
+
+const (
+	// HeldByNothing is the zero value: this task is the scheduler's to fire.
+	HeldByNothing HoldReason = ""
+	// HeldByCron is a task read from a crontab that a live system cron daemon is
+	// still reading itself. Both schedulers firing the same job is invisible
+	// until a non-idempotent one runs twice, so RunWisp stands down and says so
+	// rather than racing cron for it. Cleared by retiring cron — `runwisp
+	// takeover`, or stopping cron and reloading.
+	HeldByCron HoldReason = "cron"
+)
 
 // Service instance/roll-up state strings reported to cloud. They mirror the
 // asyncapi ServiceInstanceState / ServiceState enums so the cloud bridge maps
@@ -439,6 +484,7 @@ type TaskBrief struct {
 	Compose       *TaskComposeRef   `json:"compose,omitempty"`
 	Source        TaskSource        `json:"source,omitempty" enum:"staged,cron"`
 	SourceFile    string            `json:"source_file,omitempty"`
+	HeldBy        HoldReason        `json:"held_by,omitempty" enum:"cron" doc:"Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work."`
 	Parameters    []TaskParam       `json:"parameters,omitempty"`
 }
 

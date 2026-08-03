@@ -1263,6 +1263,11 @@ export interface components {
             cron?: string;
             depends_on?: string[] | null;
             group?: string;
+            /**
+             * @description Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work.
+             * @enum {string}
+             */
+            held_by?: "cron";
             /** Format: int64 */
             instances?: number;
             /** @enum {string} */
@@ -1342,6 +1347,11 @@ export interface components {
              * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds
              */
             healthy_after?: number;
+            /**
+             * @description Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule.
+             * @enum {string}
+             */
+            held_by?: "cron";
             /**
              * Format: int64
              * @description For services: number of always-running instances

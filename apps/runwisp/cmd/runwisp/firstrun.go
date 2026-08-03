@@ -19,21 +19,25 @@ import (
 	"github.com/runwisp/runwisp/internal/importer"
 )
 
-// scaffoldIfMissing checks for a runwisp.toml at path. If it is absent and
+// scaffoldIfMissing checks for a runwisp.toml at f.CfgFile. If it is absent and
 // stdin is attached to a terminal, prompts the operator to create a starter
 // config and writes one on confirmation. Non-TTY callers (background daemon,
 // systemd, Docker) are a no-op — the daemon falls back to the built-in demo
 // task and emits a warning.
-func scaffoldIfMissing(path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
+//
+// installed reports that the first run also installed and started the system
+// service (the cron cutover), so the caller must attach to that daemon rather
+// than spawning one of its own.
+func scaffoldIfMissing(f Flags) (installed bool, err error) {
+	if _, err := os.Stat(f.CfgFile); err == nil {
+		return false, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return false, err
 	}
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
-		return nil
+		return false, nil
 	}
-	return promptAndScaffold(path, os.Stdin, os.Stderr)
+	return promptAndScaffold(f, os.Stdin, os.Stderr)
 }
 
 // configLocation returns a human-readable location for path. When the file has
@@ -50,7 +54,8 @@ func configLocation(path string) string {
 	return abs
 }
 
-func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
+func promptAndScaffold(f Flags, in io.Reader, out io.Writer) (installed bool, err error) {
+	path := f.CfgFile
 	loc := configLocation(path)
 	fmt.Fprintf(out, "No runwisp.toml at %s.\n", loc)
 
@@ -64,13 +69,25 @@ func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 		fmt.Fprintf(out, "Found a cron source RunWisp can't read yet: %s\n", reason)
 	}
 
+	// The cutover is only ever offered alongside crontabs to read: masking cron
+	// on a box RunWisp is not reading is how you stop every job on it.
+	var cutover *cutoverOffer
+	if hasCron {
+		cutover = offerFirstRunCutover(f, out)
+	}
+
 	switch {
 	case hasCron:
 		fmt.Fprintf(out, "Found %d cron job(s) on this box (%s).\n",
 			scan.Jobs, strings.Join(describeCronSources(scan.Files), ", "))
-		if hasCompose {
+		switch {
+		case cutover != nil:
+			fmt.Fprint(out, describeCutover(cutover.unit, describeCronSources(scan.Files)))
+		case hasCompose:
+			fmt.Fprint(out, heldNote)
 			fmt.Fprint(out, "Create a starter that imports the compose services and reads these live? [Y/n] ")
-		} else {
+		default:
+			fmt.Fprint(out, heldNote)
 			fmt.Fprint(out, "Read them as RunWisp tasks? [Y/n] ")
 		}
 	case hasCompose:
@@ -81,19 +98,33 @@ func promptAndScaffold(path string, in io.Reader, out io.Writer) error {
 
 	answer, err := bufio.NewReader(in).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("read prompt response: %w", err)
+		return false, fmt.Errorf("read prompt response: %w", err)
 	}
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "", "y", "yes":
-		if err := writeScaffold(path, composeFile, composeAlias, hasCompose, scan.Globs, hasCron); err != nil {
-			return fmt.Errorf("write starter: %w", err)
-		}
-		fmt.Fprintf(out, "Created %s\n", path)
-		return nil
 	default:
-		return fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://docs.runwisp.com/configuration/overview/)", loc)
+		return false, fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://docs.runwisp.com/configuration/overview/)", loc)
 	}
+
+	// Scaffold before installing: the installer's preflight refuses to write a
+	// unit pointing at a config that does not exist yet.
+	if err := writeScaffold(path, composeFile, composeAlias, hasCompose, scan.Globs, hasCron); err != nil {
+		return false, fmt.Errorf("write starter: %w", err)
+	}
+	fmt.Fprintf(out, "Created %s\n", path)
+
+	if cutover == nil {
+		return false, nil
+	}
+	return cutover.perform(f, out)
 }
+
+// heldNote is the truthful version of the offer for a host that cannot retire
+// cron itself — non-root, no systemd, macOS's SIP-protected cron, or any of
+// evaluateCronTakeover's refusals. Saying nothing here is what made the old
+// prompt misleading: RunWisp reads the jobs but cron keeps running them.
+const heldNote = "cron keeps running them for now, so RunWisp holds those jobs — nothing fires twice.\n" +
+	"Run 'sudo runwisp takeover' when you want RunWisp to own them (needs root and systemd).\n"
 
 // writeScaffold picks the one starter template matching what was detected.
 // Compose and cron are not exclusive — a directory can have both an adjacent

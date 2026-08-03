@@ -1,0 +1,158 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Held jobs & ownership
+description: What "held" means, why a cron-owned job can never fire twice, and every place RunWisp shows you which jobs are held.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Point RunWisp at `/etc/crontab` while cron is still running and you've got an
+obvious problem: two schedulers, one job, two backups a night. Nothing errors,
+so nothing tells you — exactly the kind of quiet failure RunWisp exists to
+prevent.
+
+A **held** job is the answer. RunWisp loads it, lists it, shows its schedule —
+and deliberately does not fire it, because cron already is. This is the one
+concept worth understanding before you run RunWisp alongside cron, because it's
+what makes "turn it on today, retire cron whenever" safe.
+
+## What makes a task held
+
+Two things have to be true. Both, per file:
+
+1. **A live system cron daemon is detected.** Either a cron unit that
+   `systemctl` reports as active, or one that's merely _enabled_ — stopped this
+   boot, back on the next one. Both count as live, because both carry the same
+   risk. On a box with no `systemctl`, RunWisp falls back to cron's pidfiles and
+   checks the process named inside is actually alive.
+2. **The task's source file is one cron reads itself.** That means `/etc/crontab`,
+   any path with a `cron.d` component, or a file sitting directly in a known
+   per-user spool directory.
+
+So it's a per-file question, not a per-machine one. A crontab in `/etc/cron.d`
+is held; a crontab-format file you keep at `/opt/myapp/jobs.cron` is not, because
+cron never looks there. The [`include_cron` path
+table](/configuration/daemon/#which-files-and-who-the-jobs-run-as) lists exactly
+which paths are which.
+
+## Re-derived every load, never persisted
+
+`held` is not something you configure and not something RunWisp stores. There's
+no TOML key for it. It's recomputed from scratch on every config load and every
+[`runwisp reload`](/operations/reload/), by asking the box afresh whether cron is
+alive.
+
+That's why stopping cron and running `runwisp reload` is all it takes to end a
+hold — there's no state to clear.
+
+## Why a held job can never double-fire
+
+A hold isn't a warning label on a job that's still scheduled. RunWisp genuinely
+never puts a held job on its own scheduler, so there is nothing on RunWisp's
+side to collide with cron. Specifically, a held task gets:
+
+- no cron entry, so no clock-driven firing at all;
+- no start-up jitter plan;
+- no `run_on_start` firing, so an imported `@reboot` job stays cron's;
+- no catch-up runs;
+- no missed-tick detection, and therefore no missed-run notifications;
+- no catch-up anchor, so the hold window doesn't leave a gap to reconcile later.
+
+That last one matters more than it sounds. Because nothing is recorded while a
+job is held, handing it over doesn't arrive with a backlog of alerts for ticks
+cron ran perfectly well.
+
+So: **you do not need to disable cron before turning on `include_cron`.** RunWisp
+will not double-fire a job cron owns, full stop. Turn it on, watch the schedule
+appear in the dashboard, and retire cron when you're ready.
+
+## What a held task still does
+
+Everything except fire on its own schedule. A held task is loaded like any
+other, appears in `runwisp list` and the dashboard, and shows the schedule it
+came from.
+
+And you can still run it on demand — `runwisp exec <name>`, the API trigger, or
+`r` in the TUI. That's the point: you can prove a job works under RunWisp,
+captured output and all, before you commit to letting RunWisp own it.
+
+## The one real double-fire risk
+
+The exception is a crontab-format file in a path cron never looks at, say
+`/opt/myapp/jobs.cron`. Those jobs are yours alone, so holding them would stop
+them dead for no reason — RunWisp schedules them normally.
+
+If something _else_ is reading that file too, RunWisp can't tell. So when cron is
+live and you're reading a file outside cron's own paths, you get a warning saying
+exactly that, and the job stays scheduled. It's the one case where you have to
+make the call yourself.
+
+## Where held shows up
+
+A hold is never silent. It surfaces in every place you'd look:
+
+- **At boot** — a banner on stderr, alongside the no-auth and non-loopback
+  banners, naming the held tasks (up to eight, then a count) and the command
+  that ends the hold.
+- **`runwisp status`** — a `⏸` block listing the held tasks.
+- **`runwisp validate`** — the same block. It's not a warning and doesn't change
+  the exit code; a hold isn't a config problem.
+- **JSON** — `held_by` on each task in `runwisp list --json` and
+  `runwisp status --json`.
+- **The API** — `held_by` on `Task` and `TaskBrief`, with `"cron"` as its only
+  value today. Empty means RunWisp owns the schedule.
+- **The TUI** — a header chip reading ``⏸ N held by cron — `sudo runwisp takeover` ``,
+  and on each held task a `⏸ held — cron still owns this job` line, with the
+  "Next:" time suppressed since there isn't one.
+- **The dashboard** — a `held` badge on the task in the list, with the whole
+  explanation in its tooltip.
+
+What you don't get for a held job is history or output. Cron is running it, so
+there's nothing for RunWisp to capture — which is the reason to finish the
+handover rather than leave it half-done.
+
+## Ending the hold
+
+One command:
+
+```bash
+sudo runwisp takeover
+```
+
+That installs the system service, masks cron, and reloads, so the held jobs
+become RunWisp's in one step. See
+[Take over from cron](/replacing-cron/take-over-from-cron/) for the exact
+ordering, the refusals, and how to undo it.
+
+Prefer to do it by hand? Stop cron yourself and reload:
+
+```bash
+sudo systemctl disable --now cron
+runwisp reload
+```
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Take over from cron"
+        href="/replacing-cron/take-over-from-cron/"
+        description="The one command that ends the hold, and what it does in what order."
+    />
+    <LinkCard
+        title="The TUI tour"
+        href="/getting-started/tui-tour/"
+        description="Where the held chip and the per-task held line appear."
+    />
+    <LinkCard
+        title="The Web UI tour"
+        href="/getting-started/web-ui-tour/"
+        description="The held badge in the dashboard task list."
+    />
+    <LinkCard
+        title="[daemon] include_cron"
+        href="/configuration/daemon/#include_cron"
+        description="Which paths are read, in which format, and who each job runs as."
+    />
+</CardGrid>

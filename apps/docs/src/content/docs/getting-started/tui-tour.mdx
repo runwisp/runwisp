@@ -43,6 +43,10 @@ lockouts from typos. On a server with no browser available, it copies
 the URL to your clipboard instead so you can paste it from another
 machine.
 
+If any tasks came from a crontab a live cron daemon still owns, the
+header carries a chip reading ``⏸ N held by cron — `sudo runwisp takeover` ``.
+See [Held jobs & ownership](/replacing-cron/held-jobs/).
+
 This works for a remote daemon too (`runwisp tui --url …`): the TUI
 mints a short-lived, single-use launch ticket from your authenticated
 session and hands it to the browser. One caveat — if you're connected
@@ -87,7 +91,10 @@ The default view. Two modes:
   described above, plus a recent-activity feed across all tasks.
 - **Task detail** (a task or service selected from the sidebar) —
   schedule line, a **Run Now** / **Restart** button, and the run
-  history for that one task. **Run Now** asks you to confirm before it
+  history for that one task. A [held](/replacing-cron/held-jobs/) task
+  shows `⏸ held — cron still owns this job` on its schedule line and no
+  "Next:" time, because RunWisp isn't the one firing it — **Run Now**
+  still works. **Run Now** asks you to confirm before it
   fires. If the task declares
   [parameters](/configuration/tasks/#parameters), **Run Now** opens a
   form instead — fill in the values, then submit to trigger with those

@@ -12,6 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/runwisp/runwisp/internal/importer"
 )
 
 func systemInstallOpts(binary string) InstallOptions {
@@ -54,7 +56,7 @@ func TestDiscoverCronUnit_FallsThroughToCrond(t *testing.T) {
 func TestCronStatus_NoCronUnitIsNotAnError(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
-	for _, name := range cronUnitCandidates {
+	for _, name := range importer.CronUnits() {
 		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", name},
 			[]byte("not-found\n\n\n"), nil, nil)
 	}
@@ -97,7 +99,7 @@ func TestCronStatus_ReportsStoppedUnit(t *testing.T) {
 func TestDiscoverCronUnit_NoneFound(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
-	for _, name := range cronUnitCandidates {
+	for _, name := range importer.CronUnits() {
 		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", name},
 			[]byte("not-found\n\n\n"), nil, nil)
 	}

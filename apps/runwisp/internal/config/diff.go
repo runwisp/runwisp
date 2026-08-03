@@ -116,7 +116,11 @@ func changeReasons(oldTask, newTask *model.Task) []ChangeReason {
 	}
 
 	var reasons []ChangeReason
-	if oldTask.Cron != newTask.Cron || oldTask.Timezone != newTask.Timezone {
+	// HeldBy belongs with the schedule fields: it decides whether the cron entry
+	// exists at all, so a flip has to route through the reconciler's reschedule
+	// path — registering the entry when a hold lifts, dropping it when one lands.
+	if oldTask.Cron != newTask.Cron || oldTask.Timezone != newTask.Timezone ||
+		oldTask.HeldBy != newTask.HeldBy {
 		reasons = append(reasons, ReasonSchedule)
 	}
 	if oldTask.Kind != newTask.Kind {
@@ -146,6 +150,12 @@ func changeReasons(oldTask, newTask *model.Task) []ChangeReason {
 // crontab was renamed, or one promoted into the root, changes SourceFile without
 // changing a thing about what runs — and an unmasked field here would report it
 // as Changed, which reschedules the cron entry and recycles a service.
+//
+// HeldBy is derived too, but is deliberately NOT masked. It is not provenance: it
+// decides whether the task fires at all. Masking it would make retiring cron and
+// reloading a Restamped no-op — the registry would take the new pointer, the
+// scheduler would never be told, and jobs the operator just handed over would go
+// from "held, and visibly so" to silently never running.
 func sameDefinition(oldTask, newTask *model.Task) bool {
 	a, b := *oldTask, *newTask
 	a.Source, b.Source = model.SourceNative, model.SourceNative

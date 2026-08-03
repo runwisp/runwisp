@@ -32,10 +32,18 @@ func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks m
 	parser := cronspec.NewScheduleParser()
 
 	for _, task := range tasks {
-		// Only the no-cron guard remains: detection is independent of the
-		// re-run policy, so even catch_up = "skip" records and alerts on the
-		// gap. Services (no cron) have no schedule to miss.
-		if task.Cron == "" {
+		// The re-run policy is not consulted: detection is independent of it, so
+		// even catch_up = "skip" records and alerts on the gap. What is consulted
+		// is whether this task's schedule is ours at all — a service has none, and
+		// a held task's ticks belong to whatever is holding it.
+		//
+		// Skipping a held task also skips its EnsureTaskRegistered below, which is
+		// what keeps the hold window out of its history: it gets no first-seen
+		// anchor until the load where it becomes schedulable, so the first
+		// catch-up pass after cron is retired stamps the anchor at "now" and counts
+		// zero missed ticks. Anchoring while held would instead page the operator
+		// once for every tick cron had been running perfectly.
+		if !task.Schedulable() {
 			continue
 		}
 		triggered, errors := catchupOneTask(ctx, db, parser, task, runner, now, defaultLoc)

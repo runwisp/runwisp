@@ -92,12 +92,12 @@ rule is _nothing silently fails_, so there's a backstop.
 Every time an instance exits, RunWisp checks how long it stayed up. Reach
 `healthy_after` and it counts as a successful start: the failed-start
 counter resets to zero. Exit _faster_ than `healthy_after` with a failure
-([what counts as failure](/configuration/tasks/#exit_codes) — a clean exit
+([what counts as failure](/configuration/tasks/#retries--timeout) — a clean exit
 on a success code never does), and that's a failed start. Rack up more
 than `start_retries` failed starts in a row and the instance goes
 **FATAL**: it stops restarting, a `start_failed` run is recorded, and a
 `service.fatal` notification lights the in-app bell and any configured
-[notifiers](/configuration/notifications/). The loud terminal failure you
+[notifiers](/notifications/model/). The loud terminal failure you
 want instead of an invisible flap.
 
 `healthy_after` is the one bar for both jobs: the same uptime that resets

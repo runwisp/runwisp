@@ -78,7 +78,10 @@ The landing page after login.
   a separate System resources panel with live sparklines.
 - **Task overview** — filter tabs (All · Attention · Running ·
   Scheduled · Manual) with a sort selector, so you see the part you
-  care about without scrolling.
+  care about without scrolling. A task read from a crontab a live cron
+  daemon still owns carries a `held` badge here, with the full
+  explanation in its tooltip — see
+  [Held jobs & ownership](/replacing-cron/held-jobs/).
 - **Recent activity** — the most recent runs across all tasks,
   updated live. Next to it, three side panels (Needs attention,
   Running now, Up next).

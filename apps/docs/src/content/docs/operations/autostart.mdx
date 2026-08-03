@@ -81,7 +81,8 @@ The system install (the default, Linux and WSL, needs root):
    can tell whether it can safely overwrite.
 2. `systemctl daemon-reload`.
 3. Offers to stop and mask cron, if cron is running and RunWisp is
-   reading its crontabs. See [retiring cron](#retiring-cron).
+   reading its crontabs. See
+   [Take over from cron](/replacing-cron/take-over-from-cron/).
 4. `systemctl enable --now runwisp.service`.
 
 There's no fingerprint in the name: there's exactly one system daemon per
@@ -219,8 +220,10 @@ RunWisp service status
 A `--local` install adds a `Linger:` row (a system unit starts under PID 1
 and has no session to linger).
 
-An install that [retired cron](#retiring-cron) adds one more line
-reporting whether the masked cron unit is still masked:
+An install that [retired cron](/replacing-cron/take-over-from-cron/)
+adds one more line reporting whether the masked cron unit is still
+masked. `active — jobs may be firing twice` there means something brought
+cron back after the take-over:
 
 ```
   Cron:       cron.service masked by this instance
@@ -293,77 +296,17 @@ you want the rendered unit to carry the marker.
 
 ## Retiring cron
 
-Once your cron jobs are running as RunWisp tasks via
-[`include_cron`](/configuration/daemon/#include_cron) or
-[`runwisp promote`](/recipes/migrating-from-cron/), leaving cron running
-means every job fires twice — once from cron, once from RunWisp. So
-`sudo runwisp service install` asks about it:
+`sudo runwisp service install` also offers to stop and mask the system
+cron service, when cron is running and RunWisp is reading its crontabs.
+For scripted installs, `--take-over-cron` answers that question up front;
+`--yes` deliberately doesn't. `service uninstall` hands cron back, and
+`service status` grows a `Cron:` row while the mask is in place.
 
-```
-cron.service is running, and RunWisp is reading 12 crontab(s) from this host.
-Leaving cron up means those jobs fire twice — once from cron, once from RunWisp.
-Stop and mask cron.service so RunWisp is the only scheduler? [y/N]
-```
-
-Say yes and it stops and masks the system cron unit (`cron.service`,
-`crond.service`, or `cronie.service`, whichever systemd knows about) once
-RunWisp is confirmed running. Say no and cron is left exactly as it was.
-
-For scripted installs, `--take-over-cron` answers the question up front
-and skips the prompt. `--yes` deliberately does **not** answer it: masking
-cron is destructive and not something to imply from a blanket "yes to
-everything".
-
-The question is only ever asked when it's live and actionable — a
-terminal, root, the system scope, cron actually running, and a config
-that's actually reading crontabs. Otherwise nothing is asked. With
-`--take-over-cron`, the same conditions become hard refusals, before
-anything is written:
-
-- **Nothing is being read.** No `include_cron` pattern matched a
-  crontab. Masking cron here would silently stop every job on the box.
-- **A cron source failed to load.** Any `runwisp status`/`runwisp
-validate` warning about a skipped cron file or job blocks the
-  take-over too — pass `--allow-skipped-cron-jobs` to proceed anyway
-  (those jobs stay stopped).
-- **A cron job would run as a user this daemon can't become.** Not
-  overridable — there's no flag that makes a `user =` cron task run
-  correctly once cron stops covering it.
-- **Root or the system scope is missing.** Retiring cron only makes
-  sense for the one system-wide daemon that can execute every
-  account's jobs.
-
-If cron _is_ running but one of those refusals applies, the install says
-so in a one-line note rather than staying silent — you're about to end up
-with two schedulers and should know why RunWisp isn't offering to fix it.
-
-Order matters for the mechanics: cron is stopped and masked only
-_after_ RunWisp's unit is written and reloaded, and RunWisp is started
-only after cron is confirmed masked. If starting RunWisp then fails,
-the installer unmasks cron (and restarts it, if it was running) rather
-than leaving the box with no scheduler at all.
-
-`service uninstall` reverses it: it unmasks (and restarts) the cron unit,
-but only when this instance's own unit recorded the take-over — a
-`# runwisp-masked-cron: <unit>` marker line, next to the existing
-config-hash and binary-SHA lines. RunWisp will never unmask a service it
-can't prove it masked itself.
-
-`service status` gains a `Cron:` row once that marker exists:
-
-```
-  Cron:       cron.service masked by this instance
-```
-
-If it instead reads `active — jobs may be firing twice`, something
-(an operator, a package upgrade) brought cron back after the take-over
-and both schedulers are now running the same jobs.
-
-**Linux only.** macOS's cron (`com.vix.cron`) lives under
-SIP-protected `/System/Library/LaunchDaemons` — nothing running as your
-user can mask it. There's nothing to offer there, and `--take-over-cron`
-refuses with a pointer to `runwisp import cron` followed by removing the
-crontab by hand (`crontab -r`).
+`sudo runwisp takeover` is the same thing plus a reload of the running
+daemon, and it's the command to reach for. See
+[Take over from cron](/replacing-cron/take-over-from-cron/) for the full
+walkthrough: what happens in what order, the five refusals, the first-run
+prompt, how to undo it, and why macOS can't do it at all.
 
 ## `--purge` for full removal
 
@@ -451,5 +394,10 @@ system service.
         title="Logging"
         href="/operations/logging/"
         description="What you'll see in journalctl once the unit is running."
+    />
+    <LinkCard
+        title="Take over from cron"
+        href="/replacing-cron/take-over-from-cron/"
+        description="Install and retire cron in one command, with rollback if RunWisp won't start."
     />
 </CardGrid>

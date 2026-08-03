@@ -29,6 +29,7 @@ tls_key          = ""
 metrics_enabled  = false
 metrics_listen   = ""
 include          = ["conf.d/*.toml"]
+# include_cron   = ["/etc/crontab", "/etc/cron.d/*"]
 ```
 
 | Key                | Default  | What it does                                                                                                                                                                                                                                        |
@@ -236,15 +237,15 @@ your TOML says the same thing the crontab does and takes the TOML copy,
 so you can leave the crontab line where it is and delete it whenever you
 feel like it.
 
-:::caution[Stop cron first]
-RunWisp scheduling `/etc/crontab` does not stop cron from also scheduling
-it. Both daemons firing means every job runs twice, which looks like
-nothing at all until a non-idempotent one does it. Disable cron
-(`systemctl disable --now cron`) before you point RunWisp at its files —
-RunWisp warns at boot if cron looks live, whether that's a process running
-right now or a systemd unit that's merely enabled (stopped this boot, back
-on the next one), and whether your `include_cron` reads `/etc/cron.d` or
-only per-user spool files. It can't stop cron for you either way.
+:::note[Held jobs]
+While a system cron daemon is alive and still owns these files, RunWisp
+**holds** the jobs it read from them: they load, they're listed, they show
+their schedule, and RunWisp does not fire them — cron already is. So you
+can point `include_cron` at `/etc/crontab` today and nothing runs twice.
+
+`sudo runwisp takeover` ends the hold in one step. See
+[Held jobs & ownership](/replacing-cron/held-jobs/) for exactly what a hold
+stops, where you'll see it, and the one case that gets a warning instead.
 :::
 
 #### Which files, and who the jobs run as

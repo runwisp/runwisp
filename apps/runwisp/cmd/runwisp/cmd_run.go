@@ -577,6 +577,15 @@ func logSecurityWarnings(cfg *daemonConfig, f Flags, tlsCfg tlsSetup) {
 	for _, w := range config.Warnings(cfg.Config) {
 		slog.Warn(w)
 	}
+	// Held jobs get a banner rather than a warning line: the operator has to see
+	// that a set of their jobs is deliberately not being scheduled, and a single
+	// slog.Warn among the boot INFO lines is exactly what the TUI's alt-screen
+	// switch then wipes off the terminal.
+	if held := config.Held(cfg.Config); held.Any() {
+		slog.Warn("cron still owns some tasks; RunWisp is holding them",
+			"count", len(held.Tasks), "cron", held.CronState)
+		printHeldBanner(os.Stderr, held.Tasks, held.CronState)
+	}
 }
 
 // printNonLoopbackBanner writes an unmissable stderr banner when the daemon

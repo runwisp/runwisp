@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,10 +17,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// serviceInstallOpts holds flags specific to `service install`. They
-// are wired in init() and read by RunE — package-level state is OK
-// here because cobra owns the singleton lifecycle.
-var serviceInstallOpts struct {
+// installRequest is every decision an install needs that doesn't come from the
+// global --config/--data flags. A named type, and passed down rather than read
+// off the package global, because `service install` is no longer the only caller:
+// `runwisp takeover` and the first-run cutover build one of these too, and a
+// shared path that reached back into one command's flag block would silently pick
+// up whatever that command last parsed.
+type installRequest struct {
 	Yes    bool
 	Print  bool
 	DryRun bool
@@ -39,6 +43,11 @@ var serviceInstallOpts struct {
 	// for) — that one has no override.
 	AllowSkippedCronJobs bool
 }
+
+// serviceInstallOpts holds the flags `service install` parses. They are wired in
+// init() and copied into an installRequest by RunE — package-level state is OK
+// here because cobra owns the singleton lifecycle.
+var serviceInstallOpts installRequest
 
 var serviceInstallCmd = &cobra.Command{
 	Use:   "install",
@@ -84,63 +93,73 @@ func init() {
 }
 
 func runServiceInstall(cmd *cobra.Command, f Flags) error {
-	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, serviceInstallOpts.Yes)
+	_, err := installService(cmd, f, serviceInstallOpts)
+	return err
+}
+
+// installService is the shared install path behind `service install`, `takeover`,
+// and the first-run cutover. installed reports whether a unit was actually
+// written and started, so a caller that has to decide what to do next (first run
+// choosing between attaching to the new service and spawning its own daemon) can
+// tell a real install from an abort, a no-op, or an inspect-only run.
+func installService(cmd *cobra.Command, f Flags, req installRequest) (installed bool, err error) {
+	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, req.Yes)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	systemWide, err := resolveInstallScope(serviceInstallOpts.Local, deps.Euid)
+	systemWide, err := resolveInstallScope(req.Local, deps.Euid)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	opts, err := resolveServiceOptions(cmd, deps, f, systemWide)
+	opts, err := resolveServiceOptions(cmd, deps, f, systemWide, req)
 	if err != nil {
-		return err
+		return false, err
 	}
-	opts.Force = serviceInstallOpts.Force
+	opts.Force = req.Force
 
 	installer, err := autostart.New(deps)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// --print and --dry-run still validate an explicit --take-over-cron (so
 	// they show the plan a real run would produce) but never ask: a
 	// question whose answer is then thrown away is worse than no question.
-	inspectOnly := serviceInstallOpts.Print || serviceInstallOpts.DryRun
-	if err := resolveCronTakeover(cmd, deps, installer, &opts, !inspectOnly); err != nil {
-		return err
+	inspectOnly := req.Print || req.DryRun
+	if err := resolveCronTakeover(cmd, deps, installer, &opts, req, !inspectOnly); err != nil {
+		return false, err
 	}
 
 	if inspectOnly {
-		return inspectServiceInstall(cmd, installer, opts)
+		return false, inspectServiceInstall(cmd, installer, opts, req)
 	}
 
 	if err := preflightDaemon(opts, f); err != nil {
-		return err
+		return false, err
 	}
 
 	if err := installer.Install(context.Background(), opts, cmd.OutOrStdout()); err != nil {
 		if errors.Is(err, autostart.ErrAborted) {
 			fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
-			return nil
+			return false, nil
 		}
 		if errors.Is(err, autostart.ErrConfigMissing) {
-			return &userFacingError{
+			return false, &userFacingError{
 				title:   "runwisp.toml is missing",
 				details: "Run 'runwisp' interactively in this directory once to scaffold a starter config, then re-run 'runwisp service install'.",
 			}
 		}
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // inspectServiceInstall serves --print and --dry-run: both answer "what
 // would this install produce" and return without touching disk.
-func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, opts autostart.InstallOptions) error {
-	if serviceInstallOpts.Print {
+func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, opts autostart.InstallOptions, req installRequest) error {
+	if req.Print {
 		body, err := installer.Render(opts)
 		if err != nil {
 			return err
@@ -165,9 +184,9 @@ func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, op
 // both firing the same jobs. Otherwise, on a terminal, we ask — which is
 // the point: an operator migrating off cron shouldn't have to already know
 // a flag exists to avoid double-firing every job on the box.
-func resolveCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer autostart.Installer, opts *autostart.InstallOptions, mayPrompt bool) error {
-	if serviceInstallOpts.TakeOverCron {
-		if _, refusal := evaluateCronTakeover(opts.Config, opts.System, deps.Euid, serviceInstallOpts.AllowSkippedCronJobs); refusal != nil {
+func resolveCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer autostart.Installer, opts *autostart.InstallOptions, req installRequest, mayPrompt bool) error {
+	if req.TakeOverCron {
+		if _, refusal := evaluateCronTakeover(opts.Config, opts.System, deps.Euid, req.AllowSkippedCronJobs); refusal != nil {
 			return refusal
 		}
 		opts.TakeOverCron = true
@@ -176,7 +195,7 @@ func resolveCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer auto
 	if !mayPrompt {
 		return nil
 	}
-	return offerCronTakeover(cmd, deps, installer, opts)
+	return offerCronTakeover(cmd, deps, installer, opts, req)
 }
 
 // offerCronTakeover asks, on a terminal, whether to retire cron.
@@ -192,7 +211,7 @@ func resolveCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer auto
 // --yes deliberately does not answer this question. Masking cron is
 // destructive and not obviously reversible mid-script; a CI run that wants
 // it says --take-over-cron.
-func offerCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer autostart.Installer, opts *autostart.InstallOptions) error {
+func offerCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer autostart.Installer, opts *autostart.InstallOptions, req installRequest) error {
 	// Scope and privilege first: they're free, and a user-scoped install
 	// has no business masking a system unit even to mention it.
 	if !opts.System || deps.Euid != 0 || !deps.StdinIsTTY || deps.AutoOK {
@@ -204,7 +223,7 @@ func offerCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer autost
 		return nil
 	}
 
-	cfg, refusal := evaluateCronTakeover(opts.Config, opts.System, deps.Euid, serviceInstallOpts.AllowSkippedCronJobs)
+	cfg, refusal := evaluateCronTakeover(opts.Config, opts.System, deps.Euid, req.AllowSkippedCronJobs)
 	if refusal != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(),
 			"Note: %s is running, but RunWisp is not offering to take it over — %s\n",
@@ -214,7 +233,8 @@ func offerCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer autost
 
 	ok, err := deps.Prompter.Confirm(fmt.Sprintf(
 		"\n%s is running, and RunWisp is reading %d crontab(s) from this host.\n"+
-			"Leaving cron up means those jobs fire twice — once from cron, once from RunWisp.\n"+
+			"While cron owns those jobs RunWisp holds them, so they keep running from cron\n"+
+			"and you get none of RunWisp's history or output for them.\n"+
 			"Stop and mask %s so RunWisp is the only scheduler?",
 		unit, len(cfg.CronFiles()), unit), false)
 	if err != nil {
@@ -276,7 +296,7 @@ func evaluateCronTakeover(configPath string, systemWide bool, euid int, allowSki
 			title: "no cron jobs are being read",
 			details: "This config has no [daemon] include_cron pattern matching a crontab. " +
 				"Masking the system cron service now would silently stop every job on this box. " +
-				"Add include_cron first — see 'runwisp import cron' or the migrating-from-cron guide.",
+				"Add include_cron first — see 'runwisp import cron' or the Replacing cron guide.",
 		}
 	}
 
@@ -317,28 +337,10 @@ func evaluateCronTakeover(configPath string, systemWide bool, euid int, allowSki
 // "./data" with no DB, the bare ./runwisp.toml shadowing the XDG one,
 // etc.). The returned options are fully absolute — what we'd bake
 // into the unit.
-func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, systemWide bool) (autostart.InstallOptions, error) {
-	exe := serviceInstallOpts.Binary
-	if exe == "" {
-		var err error
-		exe, err = os.Executable()
-		if err != nil {
-			return autostart.InstallOptions{}, fmt.Errorf("locate runwisp binary: %w", err)
-		}
-	}
-	binary, warning, err := autostart.ResolveBinary(autostart.ResolveBinaryOptions{
-		ExecutablePath: exe,
-		EvalSymlinks:   filepath.EvalSymlinks,
-		HomeDir:        deps.Home,
-	})
+func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, systemWide bool, req installRequest) (autostart.InstallOptions, error) {
+	binary, err := resolveUnitBinary(cmd.ErrOrStderr(), deps, req.Binary)
 	if err != nil {
-		return autostart.InstallOptions{}, &userFacingError{
-			title:   "binary path is not durable",
-			details: err.Error(),
-		}
-	}
-	if warning != "" {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning)
+		return autostart.InstallOptions{}, err
 	}
 
 	dataDir, err := resolveServiceDataDir(cmd, deps, f, systemWide)
@@ -359,6 +361,37 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, sys
 		Port:    f.Port,
 		System:  systemWide,
 	}, nil
+}
+
+// resolveUnitBinary resolves the durable binary path to bake into the unit —
+// either an explicit --binary override or this process's own executable. Shared
+// with the first-run cutover, which builds its InstallOptions without cobra.
+// Any non-fatal warning (a path under /tmp, a symlink that may not survive an
+// upgrade) goes to stderr rather than blocking the install.
+func resolveUnitBinary(stderr io.Writer, deps autostart.Deps, override string) (string, error) {
+	exe := override
+	if exe == "" {
+		var err error
+		exe, err = os.Executable()
+		if err != nil {
+			return "", fmt.Errorf("locate runwisp binary: %w", err)
+		}
+	}
+	binary, warning, err := autostart.ResolveBinary(autostart.ResolveBinaryOptions{
+		ExecutablePath: exe,
+		EvalSymlinks:   filepath.EvalSymlinks,
+		HomeDir:        deps.Home,
+	})
+	if err != nil {
+		return "", &userFacingError{
+			title:   "binary path is not durable",
+			details: err.Error(),
+		}
+	}
+	if warning != "" {
+		fmt.Fprintf(stderr, "Warning: %s\n", warning)
+	}
+	return binary, nil
 }
 
 // resolveServiceDataDir picks the data dir to bake into the unit. A

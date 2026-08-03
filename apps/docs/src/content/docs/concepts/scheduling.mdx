@@ -12,6 +12,18 @@ plain cron expressions, fires the matching tasks when their time comes,
 and writes a row for every firing. No dependency graph, no leader
 election — one daemon owns its tasks and that's it.
 
+:::note[Cron-sourced tasks]
+Everything on this page applies to a task read live from a real crontab
+through [`include_cron`](/configuration/daemon/#include_cron) too, once RunWisp
+owns its schedule — with one difference: those tasks keep cron's firing
+semantics, so a missed tick is recorded but never re-fired (`catch_up = "skip"`).
+
+While a system cron daemon still owns the file, though, the task isn't scheduled
+at all, and RunWisp isn't tracking its ticks either — so nothing is recorded
+during that window, not even as missed. See
+[Held jobs & ownership](/replacing-cron/held-jobs/).
+:::
+
 ## The cron field
 
 ```toml
@@ -53,7 +65,7 @@ where it lands on the wall clock.
 
 ## Timezone
 
-Cron expressions get evaluated in whatever zone [`[scheduler] timezone`](/configuration/overview/#sections-at-a-glance)
+Cron expressions get evaluated in whatever zone [`[scheduler] timezone`](/configuration/overview/#section-by-section)
 says. Leave it unset and the daemon just uses the host's system
 timezone.
 

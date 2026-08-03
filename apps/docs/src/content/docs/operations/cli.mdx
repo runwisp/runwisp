@@ -357,7 +357,7 @@ Both migration recipes have the commands.
 System crontabs (`/etc/crontab`, `/etc/cron.d/*`) carry a user column;
 `runwisp import cron` detects that from the path or header and maps it to
 a per-task `user`. The
-[Migrating from cron](/recipes/migrating-from-cron/) and
+[Converting crontabs](/replacing-cron/converting-crontabs/) and
 [Migrating from supervisord](/recipes/migrating-from-supervisord/) recipes
 walk through the whole flow.
 
@@ -427,8 +427,9 @@ stdout), `--dry-run`, `--force` (overwrite a hand-edited unit),
 `--binary <path>` (override the baked-in binary path), and
 `--take-over-cron`, which answers the "stop and mask the system cron
 service?" question the install otherwise asks on a terminal — see
-[Retiring cron](/operations/autostart/#retiring-cron) for the refusals and
-rollback behavior; `--allow-skipped-cron-jobs` overrides one of them.
+[Take over from cron](/replacing-cron/take-over-from-cron/) for the
+refusals and rollback behavior; `--allow-skipped-cron-jobs` overrides one
+of them.
 
 `uninstall` takes `--yes`, `--force`, `--local`, and `--purge` (also delete
 the data dir — which makes you type the literal word `delete` to confirm).
@@ -438,6 +439,24 @@ installed: they look for it. It's all covered in depth on the
 
 Don't confuse `runwisp service status` ("will the daemon come back after a
 reboot?") with `runwisp status` ("is it alive right now?").
+
+## Retire cron
+
+```sh
+sudo runwisp takeover   # install the service, mask cron, reload — in that order
+```
+
+The front door for the last step of a cron migration. While cron is alive,
+RunWisp [holds](/replacing-cron/held-jobs/) the jobs it read from
+cron's own files rather than firing them alongside cron; `takeover` hands
+them over. It's `service install --take-over-cron` plus a reload of the
+running daemon, so held jobs go live immediately instead of waiting for you
+to reload by hand.
+
+Takes `--dry-run`, `--force`, `--yes` (`-y`),
+`--allow-skipped-cron-jobs`, and `--binary <path>`. Needs root and
+systemd; see [Take over from cron](/replacing-cron/take-over-from-cron/)
+for the refusals, the ordering, and how to undo it.
 
 ## Auth and introspection
 
@@ -524,5 +543,10 @@ open the Web UI in a browser; stop it later with `runwisp stop --data <dir>`
         title="Logging"
         href="/operations/logging/"
         description="What --log-level and --log-format do to the daemon's own output."
+    />
+    <LinkCard
+        title="Take over from cron"
+        href="/replacing-cron/take-over-from-cron/"
+        description="takeover, import cron, and promote — the whole cron migration in one place."
     />
 </CardGrid>

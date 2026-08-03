@@ -89,6 +89,15 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 			Render("\u26a0 runwisp.toml changed \u2014 press R to reload")
 		parts = append(parts, warn)
 	}
+	if n := HeldTaskCount(info.Tasks); n > 0 {
+		// Warning color: these are the operator's own jobs, loaded and listed, that
+		// RunWisp is deliberately not firing. The chip names the way out.
+		warn := lipgloss.NewStyle().
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorWarning).
+			Render(fmt.Sprintf("⏸ %d held by cron — `sudo runwisp takeover`", n))
+		parts = append(parts, warn)
+	}
 	if n := len(info.ConfigWarnings); n > 0 {
 		// Warning color for the same reason as the stale notice: these name jobs the
 		// daemon is not running, and nothing else in the TUI would ever mention them.
@@ -230,8 +239,9 @@ func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 	case task != nil && task.Cron != "":
 		schedule = task.Cron
 	}
+	held := task != nil && task.HeldBy != model.HeldByNothing
 	schedInfo := "  Schedule: " + schedule
-	if task != nil && !task.Kind.IsService() {
+	if !held && task != nil && !task.Kind.IsService() {
 		if nextRun := NextCronRun(schedule); nextRun != "" {
 			schedInfo += "  •  Next: " + nextRun
 		}
@@ -240,6 +250,15 @@ func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHover
 		Background(uikit.ColorBgLight).
 		Foreground(uikit.ColorTextMuted).
 		Render(schedInfo)
+	if held {
+		// A next-run time would be a lie here: the scheduler stood down for cron, so
+		// that tick comes and goes without RunWisp firing anything. This is the only
+		// per-task metadata slot in the TUI, so it is where the fact belongs.
+		schedText += lipgloss.NewStyle().
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorWarning).
+			Render("  •  ⏸ held — cron still owns this job")
+	}
 
 	style := uikit.BtnRunNowStyle
 	if runNowHovered {
@@ -307,6 +326,20 @@ func NextCronRun(schedule string) string {
 	}
 
 	return next.Format("15:04:05") + " (in " + relative + ")"
+}
+
+// HeldTaskCount counts the tasks a live cron daemon still owns, which the
+// scheduler stood down for. Exported because the header is not the only view that
+// needs the count, and deriving it from the task list rather than a separate field
+// means it can never disagree with the per-task badge.
+func HeldTaskCount(tasks []model.TaskBrief) int {
+	n := 0
+	for _, t := range tasks {
+		if t.HeldBy != model.HeldByNothing {
+			n++
+		}
+	}
+	return n
 }
 
 // pluralWarnings labels a config-warning count without the bare "1 warnings".

@@ -675,16 +675,12 @@ func cronSourceWarnings(cfg *Config) []string {
 			"cron source: %d job(s) in your crontabs are not running \u2014 fix the lines above, "+
 				"or convert them with `runwisp import cron`", skipped))
 	}
-	return append(out, crondStillRunningWarning(cfg.cronFiles, crondPidFiles)...)
+	return append(out, unownedCronFilesWarning(cfg)...)
 }
 
 // crondPidFiles are where the common cron implementations write their pid. Passed
 // in rather than read directly so the check is testable without a real cron daemon.
 var crondPidFiles = []string{"/run/crond.pid", "/run/cron.pid", "/var/run/crond.pid", "/var/run/cron.pid"}
-
-// cronServiceCandidates are the systemd unit names the common cron
-// implementations register under (Debian/Ubuntu, then RHEL/SUSE).
-var cronServiceCandidates = []string{"cron.service", "crond.service"}
 
 // cronServiceProbe asks the init system whether a cron service is active or
 // enabled. A package var for the same reason cronUserExists is one: the real
@@ -694,7 +690,7 @@ var cronServiceCandidates = []string{"cron.service", "crond.service"}
 // caller to fall back to the pid-file check. Never assigned outside tests.
 var cronServiceProbe = systemctlCronServiceState
 
-// systemctlCronServiceState checks each of cronServiceCandidates with
+// systemctlCronServiceState checks each of importer.CronUnits() with
 // `systemctl is-active`/`is-enabled`. Both matter: active covers a daemon
 // running right now, enabled covers "stopped for this boot but will start on
 // the next one", which carries the same double-fire risk with no process to
@@ -704,7 +700,7 @@ func systemctlCronServiceState() (active, enabled, ok bool) {
 	if err != nil {
 		return false, false, false
 	}
-	for _, unit := range cronServiceCandidates {
+	for _, unit := range importer.CronUnits() {
 		if exec.Command(systemctlPath, "is-active", unit).Run() == nil {
 			active = true
 		}
@@ -750,29 +746,94 @@ func processAlive(pid int) bool {
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
-// crondStillRunningWarning fires when RunWisp is reading crontabs that a live
-// system crond is presumably also reading. Both schedulers firing the same
-// jobs is the single most likely way an include_cron setup goes wrong, and it
-// goes wrong silently: every job simply runs twice, which looks like nothing
-// at all until a non-idempotent one does.
+// cronDaemonState is the answer to "is a system cron daemon live, and in what
+// sense", snapshotted at config load. state is prose for a warning ("is
+// running"), empty when live is false.
+type cronDaemonState struct {
+	live  bool
+	state string
+}
+
+// probeCronDaemon asks the machine whether a system cron daemon is live. Called
+// once per load from mergeCronSources; the result lands on Config.cronDaemon.
 //
-// Unlike an earlier version, this does not filter cronFiles down to system
-// crontab paths first: a live crond reads /var/spool/cron just as much as
-// /etc/cron.d, so a spool-only include_cron — the most likely first attempt,
-// since it needs no root-privileged system crontab at all — used to get no
-// warning whatsoever.
-func crondStillRunningWarning(cronFiles, pidCandidates []string) []string {
+// Skipped entirely when nothing is reading crontabs, so a config with no
+// include_cron never execs systemctl: the answer could not change any decision.
+// pidCandidates is passed in rather than read from crondPidFiles directly, for
+// the same reason cronServiceProbe is a var: the fallback branch has to be
+// testable without a real crond on the machine running the suite.
+func probeCronDaemon(cronFiles, pidCandidates []string) cronDaemonState {
 	if len(cronFiles) == 0 {
-		return nil
+		return cronDaemonState{}
 	}
 	live, state := crondLiveState(pidCandidates)
-	if !live {
+	return cronDaemonState{live: live, state: state}
+}
+
+// HeldSummary is what a live system cron daemon still owns: the tasks RunWisp
+// loaded but stood down for, and the sense in which cron is live.
+//
+// It is a value rather than a warning string because every surface renders it
+// differently — a boot banner, a block in `status` and `validate`, a chip in the
+// TUI, a badge in the Web UI — and a held job is not really a warning about the
+// config anyway. Nothing is wrong: RunWisp is refusing to fire jobs cron is
+// already firing, and the operator has one command to finish the handover.
+type HeldSummary struct {
+	// Tasks names the held tasks in config order.
+	Tasks []string
+	// CronState is prose for the live daemon ("is running", "is enabled to start
+	// on boot"), empty when nothing is held.
+	CronState string
+}
+
+func (h HeldSummary) Any() bool { return len(h.Tasks) > 0 }
+
+// Held reports the cron-owned tasks the scheduler stood down for. Derived from
+// the same markers the scheduler consults, so it can never disagree with what is
+// actually running.
+func Held(cfg *Config) HeldSummary {
+	if cfg == nil || !cfg.cronDaemon.live {
+		return HeldSummary{}
+	}
+	var names []string
+	for i := range cfg.Tasks {
+		if cfg.Tasks[i].HeldBy == model.HeldByCron {
+			names = append(names, cfg.Tasks[i].Name)
+		}
+	}
+	if len(names) == 0 {
+		return HeldSummary{}
+	}
+	return HeldSummary{Tasks: names, CronState: cfg.cronDaemon.state}
+}
+
+// unownedCronFilesWarning covers the one live-crond case a hold cannot: a
+// crontab-format file cron never looks in.
+//
+// A crontab cron reads itself (importer.CronOwnsPath) is held instead — the
+// scheduler stood down, so those jobs are not firing twice, they are firing once
+// from cron, and Held above is how that gets reported. But a file outside cron's
+// own paths is nobody's but RunWisp's, so it is deliberately not held; if a live
+// crond somehow does read it too, that genuinely is a double fire and RunWisp
+// cannot tell. That is a warning.
+func unownedCronFilesWarning(cfg *Config) []string {
+	if !cfg.cronDaemon.live {
+		return nil
+	}
+	var unowned []string
+	for _, f := range cfg.cronFiles {
+		if !importer.CronOwnsPath(f) {
+			unowned = append(unowned, f)
+		}
+	}
+	if len(unowned) == 0 {
 		return nil
 	}
 	return []string{fmt.Sprintf(
 		"cron source: a system cron daemon %s, and RunWisp is also running the jobs in %s — "+
-			"every one of them will fire twice. Stop and disable cron first.",
-		state, strings.Join(cronFiles, ", "))}
+			"if cron reads that file too, every one of them fires twice. RunWisp can't tell: "+
+			"it isn't a path cron looks in, so those jobs are not held.",
+		cfg.cronDaemon.state, strings.Join(unowned, ", "))}
 }
 
 // crondLiveState reports whether a system crond looks live and, if so, in what

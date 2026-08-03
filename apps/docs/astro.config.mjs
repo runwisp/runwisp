@@ -8,6 +8,12 @@ import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 
 export default defineConfig({
     site: "https://docs.runwisp.com",
+    // The cron-migration guide grew into its own "Replacing cron" section, so
+    // the single old recipe URL — the one linked from release notes, the
+    // README, and the daemon's own output — has to keep resolving.
+    redirects: {
+        "/recipes/migrating-from-cron": "/replacing-cron/take-over-from-cron/",
+    },
     integrations: [
         starlight({
             plugins: [
@@ -80,6 +86,27 @@ export default defineConfig({
                     ],
                 },
                 {
+                    label: "Replacing cron",
+                    items: [
+                        {
+                            label: "Take over from cron",
+                            slug: "replacing-cron/take-over-from-cron",
+                        },
+                        {
+                            label: "Held jobs & ownership",
+                            slug: "replacing-cron/held-jobs",
+                        },
+                        {
+                            label: "Converting crontabs",
+                            slug: "replacing-cron/converting-crontabs",
+                        },
+                        {
+                            label: "How cron maps to TOML",
+                            slug: "replacing-cron/cron-mapping",
+                        },
+                    ],
+                },
+                {
                     label: "Concepts",
                     items: [
                         { label: "Tasks vs Services", slug: "concepts/tasks-vs-services" },
@@ -140,10 +167,6 @@ export default defineConfig({
                 {
                     label: "Recipes",
                     items: [
-                        {
-                            label: "Migrating from cron",
-                            slug: "recipes/migrating-from-cron",
-                        },
                         {
                             label: "Migrating from supervisord",
                             slug: "recipes/migrating-from-supervisord",

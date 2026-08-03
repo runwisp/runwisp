@@ -49,9 +49,12 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     as <u> taken from the FILENAME (requires a root daemon unless <u> IS the
                                     daemon's account; the file must also be owned by <u>, which is what makes the
                                     filename safe to trust); any other path = `crontab -l` dump, runs as the daemon.
-                                    Glob hits are filtered to what crond itself reads — regular files named
-                                    [A-Za-z0-9_-]+ only, so *.dpkg-old / *.disabled / README / subdirs are skipped
-                                    and reported. A LITERAL path (no glob metachars) is never filtered.
+                                    Glob hits are filtered to what crond itself reads, and the rule depends on
+                                    the dir: in /etc/cron.d-style dirs, regular files named [A-Za-z0-9_-]+ only, so
+                                    *.dpkg-old / *.disabled / README / subdirs are skipped and reported; in a spool
+                                    dir, any plausible account name (letters, digits, - _ . $) EXCEPT tmp.* (the
+                                    temp file `crontab -e` writes). A LITERAL path (no glob metachars) is never
+                                    filtered.
                                     Hard errors: unreadable file, a file also matched by [daemon].include,
                                     world-writable file/dir, group-writable file (or non-sticky dir — a sticky
                                     group-writable dir is accepted, that's what a real cron spool is), owner
@@ -67,6 +70,20 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     No ${...} expansion on cron text. /etc/anacrontab is not read.
                                     Tasks report "source": "cron" + "source_file" in list/status --json;
                                     `runwisp promote` graduates them.
+                                    HELD GATE: while a system cron daemon is live (systemctl is-active OR
+                                    is-enabled on cron.service/crond.service/cronie.service, else a live pidfile
+                                    naming a process that is actually alive), every task
+                                    whose source_file is a path cron itself reads (/etc/crontab, **/cron.d/*,
+                                    /var/spool/cron[/crontabs]/*) is HELD: loaded, listed, schedule shown, but
+                                    NOT registered with the scheduler — no cron firing, no jitter plan, no
+                                    catch-up, no run_on_start/@reboot, no missed-run rows, no FirstSeenAt anchor.
+                                    Reported as "held_by": "cron" on each task in list/status --json and
+                                    /api/info. Manual triggers (exec, API, TUI r) STILL RUN a held task.
+                                    Unholding is explicit only — `runwisp reload`/SIGHUP re-probes and re-anchors
+                                    catch-up to now, so a hold window leaves no history and no missed-tick alerts.
+                                    A crontab-format file OUTSIDE cron's own paths is NOT held (nothing to hand
+                                    over) and keeps a fire-twice warning instead. `sudo runwisp takeover` is the
+                                    one-command way out.
 ```
 
 ### [defaults] (inherited by every task & service)
@@ -248,6 +265,11 @@ runwisp                      — no subcommand: attach TUI to running daemon, el
                                crontab (DefaultCronPatterns: root gets /etc/crontab + /etc/cron.d/* + every spool,
                                others get only their own spool file) and offers to wire either/both into the starter;
                                a Blocked cron source falls back to the plain starter instead
+                             — CRON CUTOVER: when the box also has a live cron unit and the install would be
+                               system-scoped root-on-a-TTY, that one prompt does all three (scaffold include_cron,
+                               install the system service, mask cron) and the caller attaches to the systemd
+                               daemon instead of spawning its own. When the take-over isn't possible the prompt
+                               says so and offers the plain scaffold; those jobs are then held (see include_cron)
 runwisp daemon               — start headless daemon (no TUI)
 runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything
@@ -323,7 +345,15 @@ runwisp service install      — install autostart; -y --print --dry-run --force
                                requires the resolved config to be root-owned and not group/world-writable.
                              — on a TTY, a system install asks whether to stop+mask the live cron unit when
                                include_cron is matching crontabs; --take-over-cron answers it non-interactively,
-                               --yes does NOT. --print/--dry-run never prompt.
+                               --yes does NOT. --print/--dry-run never prompt. Prefer `runwisp takeover`, which
+                               also reloads. Declining is safe: the cron gate holds those jobs either way.
+runwisp takeover             — retire cron in one step; --dry-run --force -y --allow-skipped-cron-jobs --binary
+                             — `service install --take-over-cron` PLUS a reload of the running daemon, so the
+                               tasks held by the cron gate go live immediately (enable --now on an already-active
+                               unit is a no-op, so a plain install would leave them held). Needs root + systemd.
+                             — order: unit written -> daemon-reload -> cron masked -> RunWisp started -> reload.
+                               A failed start unmasks and restarts cron rather than leaving no scheduler.
+                             — same refusals as --take-over-cron; a refusal is a hard error here, not a downgrade.
 runwisp service uninstall    — remove autostart; -y --purge (also data dir) --force --local
 runwisp service status       — show autostart status; --local
                              — install/status/uninstall/stop/restart all detect the installed scope; --local is

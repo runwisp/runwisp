@@ -152,8 +152,15 @@ func (r *Reconciler) applyRemoved(name string, _ *model.Task) {
 // does NOT run catch-up — those are boot-only.
 func (r *Reconciler) applyAdded(task *model.Task) {
 	r.registry.Set(task)
-	if err := r.db.EnsureTaskRegistered(context.Background(), task.Name, r.now()); err != nil {
-		slog.Warn("Failed to register added task for catch-up tracking", "task", task.Name, "err", err)
+	// A held task is deliberately left unregistered: the anchor is what catch-up
+	// measures the downtime gap from, and stamping it now would make the whole
+	// hold window look like RunWisp's missed ticks the moment the hold lifts. It
+	// gets its anchor on the first load where it is schedulable, which is exactly
+	// when RunWisp starts being responsible for it.
+	if !task.Held() {
+		if err := r.db.EnsureTaskRegistered(context.Background(), task.Name, r.now()); err != nil {
+			slog.Warn("Failed to register added task for catch-up tracking", "task", task.Name, "err", err)
+		}
 	}
 	r.manager.UpsertTask(task)
 
@@ -165,7 +172,7 @@ func (r *Reconciler) applyAdded(task *model.Task) {
 		}
 		return
 	}
-	if r.scheduler != nil && task.Cron != "" {
+	if r.scheduler != nil && task.Schedulable() {
 		if err := r.scheduler.AddTask(task); err != nil {
 			slog.Warn("Failed to schedule added task", "task", task.Name, "err", err)
 		}
@@ -188,6 +195,7 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 	}
 
 	r.manager.UpsertTask(newTask)
+	r.anchorUnheld(oldTask, newTask)
 
 	if r.scheduler != nil && (change.Has(config.ReasonSchedule) || change.Has(config.ReasonKind)) {
 		r.rescheduleChanged(newTask)
@@ -211,13 +219,32 @@ func (r *Reconciler) applyRestamped(task *model.Task) {
 }
 
 // rescheduleChanged drops the cron entry for a changed task and re-adds it under
-// the new definition when it still has a schedule.
+// the new definition when the schedule is still RunWisp's to fire. A task that
+// just became held loses its entry here and gains nothing back, which is how
+// retiring-cron-in-reverse (cron coming back) stops RunWisp firing again.
 func (r *Reconciler) rescheduleChanged(newTask *model.Task) {
 	r.scheduler.RemoveTask(newTask.Name)
-	if newTask.Cron != "" {
+	if newTask.Schedulable() {
 		if err := r.scheduler.AddTask(newTask); err != nil {
 			slog.Warn("Failed to reschedule changed task", "task", newTask.Name, "err", err)
 		}
+	}
+}
+
+// anchorUnheld stamps the catch-up anchor at the moment a task stops being held,
+// because that is the moment RunWisp becomes responsible for its ticks. Without
+// it the task would carry no anchor until the next boot's catch-up pass, and a
+// crash in between would leave the real downtime gap unmeasurable — the anchor
+// would be stamped at the *restart*, silently swallowing it.
+//
+// INSERT OR IGNORE, so a task that already has an anchor keeps it.
+func (r *Reconciler) anchorUnheld(oldTask, newTask *model.Task) {
+	if !oldTask.Held() || newTask.Held() {
+		return
+	}
+	if err := r.db.EnsureTaskRegistered(context.Background(), newTask.Name, r.now()); err != nil {
+		slog.Warn("Failed to register unheld task for catch-up tracking",
+			"task", newTask.Name, "err", err)
 	}
 }
 

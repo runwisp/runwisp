@@ -1,0 +1,176 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: How cron maps to TOML
+description: Field-by-field reference for what a crontab becomes in runwisp.toml, and the handful of things that need a human.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+This is the reference page for both routes into RunWisp — it's what
+`runwisp import cron` writes out, and it's equally what a job read live through
+[`include_cron`](/configuration/daemon/#include_cron) behaves like. If you want
+the narrative version, start with
+[Take over from cron](/replacing-cron/take-over-from-cron/) or
+[Converting crontabs](/replacing-cron/converting-crontabs/) instead.
+
+## The mapping table
+
+Most of a crontab translates one-to-one. Here's the whole picture:
+
+| crontab                        | runwisp.toml                  | Notes                                              |
+| ------------------------------ | ----------------------------- | -------------------------------------------------- |
+| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + `run` | The five fields are copied verbatim.               |
+| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …           | RunWisp speaks the same descriptors.               |
+| `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.             |
+| `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.                  |
+| user column (system crontab)   | `user = "..."`                | Detected automatically, `@reboot` lines too.       |
+| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                          |
+| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.           |
+| cron's minimal environment     | `env_base = "clean"`          | Set on every imported task — see below.            |
+| jobs run in `$HOME`            | `working_dir = "~"`           | The home of whoever the job runs as.               |
+| a missed tick is simply gone   | `catch_up = "skip"`           | Cron never re-fires one. Still recorded as missed. |
+| overlapping copies of a job    | `on_overlap = "queue"`        | Deliberately not cron's pile-up — see below.       |
+| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO.    |
+| `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.        |
+| `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.        |
+| `cmd % input`                  | `run = "cmd"` + a `# TODO`    | Cron piped `input` on stdin; see below.            |
+| `MAILTO=…`                     | a `sendmail` notifier         | Handed to you as a paste-able block — see below.   |
+
+Crontab-wide settings become **per-task** values rather than daemon-wide ones.
+A crontab's `SHELL`, `CRON_TZ`/`TZ`, and top-of-file `VAR=val` lines are copied
+onto each task the importer emits from that file, so importing a second crontab
+with different values can't silently reach back and change the first one's
+tasks — and nothing an import writes touches your global `[defaults]` or
+`[scheduler]`.
+
+## Environment and shell
+
+Every imported task gets [`env_base = "clean"`](/configuration/tasks/#working-directory--shell).
+Cron hands a job a nearly empty environment — `PATH=/usr/bin:/bin`, `SHELL`,
+`HOME`, `LOGNAME` — so that's what your jobs were written against, and it's
+what they keep. RunWisp's own default is to inherit the daemon's environment,
+which is friendlier for a task you're writing today but wrong for one you're
+moving: it would run with whatever the daemon was launched with, and you'd
+find out weeks later. Your crontab's own `PATH=` line still lands in the
+task's `env` and layers on top, so nothing you set explicitly is lost.
+
+Cron also runs every job in the home directory of the user running it, while
+RunWisp defaults to whatever directory the daemon was started in — so a `run`
+script with a relative path in it would quietly write somewhere else. Every
+imported job gets `working_dir = "~"`, and
+[`~` means the home of whoever the task runs as](/configuration/tasks/#working-directory--shell):
+the daemon's own account for a per-user crontab, and the user column's account
+for a system crontab. Both formats end up with cron's rule, and neither needs
+you to write a path.
+
+## Timing: catch-up and overlap
+
+These two are about **when** a job fires, which is the one thing a migration
+really mustn't change quietly.
+
+Cron has no concept of a missed tick — a tick that arrives while nothing is
+listening is just gone. RunWisp normally catches up, which is a feature you
+want for a task you wrote deliberately and a surprise for one you moved:
+starting the daemon at 15:00 would run last night's 02:00 backup, and the run
+would look exactly like a scheduled one. So imported jobs get
+[`catch_up = "skip"`](/concepts/scheduling/#missed-ticks-catchup). You lose nothing
+by it — the gap is still recorded as a missed run you can see, which is more
+than cron ever gave you. Drop the line if you'd rather have catch-up.
+
+`on_overlap = "queue"` is written out at its default value, on purpose. When a
+job outruns its own schedule, cron starts another copy; RunWisp queues the next
+one instead. That's the better behaviour — an unbounded pile-up is why cron jobs
+end up wrapped in `flock` — but if yours genuinely relied on running in
+parallel, this is the line to change, and
+[`max_concurrent`](/concepts/concurrency/) is how.
+
+RunWisp's cron grammar is a superset of vixie-cron's: the standard five fields,
+descriptors like `@daily`, and a few extras (six-field specs with seconds,
+`@every 30s`). [How scheduling works](/concepts/scheduling/) has the details.
+
+## What needs a human
+
+The importer never drops anything silently — anything it can't map cleanly
+shows up as a `# TODO` in the file and a note in the summary. The usual ones:
+
+- **`MAILTO`.** The summary hands you a
+  [`sendmail` notifier](/notifications/providers/sendmail/) addressed to
+  whoever the crontab named, ready to paste into your root `runwisp.toml`.
+  It goes through the same local MTA cron used, so there's no relay host or
+  password to find. It's a note rather than something the import writes,
+  because a notifier is a daemon-wide setting and an import shouldn't reach
+  into those.
+
+    Two things to know. First, you still have to point the tasks you want mail
+    from at it with [`notify_on_failure`](/notifications/per-task/) — the
+    notifier alone sends nothing. Second, **cron mailed any output at all;
+    RunWisp mails an event.** A job that printed a line and exited 0 used to
+    generate mail and now doesn't. That's usually the improvement people wanted
+    from cron mail, but it is a different rule — add `notify_on_success` if you
+    really did want the chatty version.
+
+    If the box has no MTA, or you'd rather point RunWisp straight at
+    Gmail/SES/Postmark, [`type = "smtp"`](/notifications/providers/smtp/) is the
+    same notifier with relay settings instead.
+
+- **`@reboot`.** Mapped to [`run_on_start`](/configuration/tasks/), which fires
+  once each time the **daemon** starts (not the machine). That's usually what
+  you wanted; double-check if you were relying on true boot timing.
+- **A `%` that fed a job input.** An unescaped `%` ends a crontab command;
+  everything after it is what cron pipes to the job on stdin. RunWisp has no
+  stdin field, so the command is imported cut at the `%` — exactly what cron
+  ran — and the input it can't reproduce is quoted in a `# TODO` on the `run`
+  line. Fold it back into the command yourself, usually with a here-doc or a
+  `printf … | cmd`.
+- **A system crontab line with no user column.** In `/etc/crontab` and
+  `/etc/cron.d/*` the sixth field is the user to run as, and a line written
+  without one is a mistake cron itself skips. RunWisp skips it too rather than
+  guessing — reading the first word of the command as a username would give you a
+  task that runs the wrong command as a user who doesn't exist. It applies the
+  same test cron does: the sixth field has to name an account that exists on the
+  box, so `* * * * * echo "tick"` is declined even though `echo` is a
+  perfectly good-looking username. The line gets a `!` row quoting itself; add
+  the user (or create the account) and re-import. A crontab piped in from
+  _another_ machine is judged on shape alone — the accounts it names aren't
+  this box's to check.
+- **The task name.** Names are derived from the command (`/usr/local/bin/backup.sh`
+  → `backup`). They're just labels — rename any that aren't obvious, and the
+  full command is preserved either way.
+
+## What you get that cron never gave you
+
+- **History.** Every fire is a run with a start time, duration, exit code, and
+  captured output — browsable in the Web UI and TUI, queryable over REST.
+- **Failure that's loud.** A non-zero exit (or a missed tick while the daemon
+  was down) can [notify you](/notifications/model/) instead of vanishing.
+- **Overlap control.** A slow job that's still running when its next tick
+  arrives no longer silently double-runs — pick
+  [queue, skip, or terminate](/concepts/concurrency/).
+- **Manual runs.** Trigger any job by hand from the dashboard or
+  `runwisp exec <name>` without editing the schedule.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Converting crontabs"
+        href="/replacing-cron/converting-crontabs/"
+        description="The command that produces all of the above, and the staging workflow around it."
+    />
+    <LinkCard
+        title="How scheduling works"
+        href="/concepts/scheduling/"
+        description="The cron grammar RunWisp accepts, timezones, and catch-up."
+    />
+    <LinkCard
+        title="[tasks.*] reference"
+        href="/configuration/tasks/"
+        description="Every task key the importer can produce — and the ones it can't."
+    />
+    <LinkCard
+        title="Email (local MTA)"
+        href="/notifications/providers/sendmail/"
+        description="The MAILTO replacement: mail through the sendmail binary cron already used."
+    />
+</CardGrid>

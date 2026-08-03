@@ -1,0 +1,211 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Take over from cron
+description: One command hands every job cron was running to RunWisp — same schedules, same crontabs, now with history, output, and notifications.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Cron runs your jobs, but it doesn't _tell you anything_. A job fails at 3am and
+the first you hear of it is a missing file the next morning.
+
+RunWisp is a drop-in replacement for crond. It reads the crontabs you already
+have — no conversion, nothing rewritten — keeps every schedule exactly as it is,
+and turns each job into something you can watch: per-run history, captured
+stdout/stderr, exit codes, and a notification when something breaks. Then it
+takes cron's place, so exactly one scheduler owns your jobs.
+
+## The one-command path
+
+On a Linux box with systemd, this is the front door:
+
+```bash
+sudo runwisp takeover
+```
+
+That installs the system service, stops and masks cron, and reloads the running
+daemon so the jobs cron was holding become RunWisp's. It's
+`runwisp service install --take-over-cron` plus the reload at the end, which is
+the part a plain install can't do for a daemon that's already up:
+`systemctl enable --now` on an already-active unit is a no-op, so without it the
+jobs stay [held](/replacing-cron/held-jobs/) until you reload by hand.
+
+Nothing is racing in the meantime. While cron is alive RunWisp **holds** the
+jobs it read from cron's own files — they load and they're listed, but the
+scheduler stands down, so each job fires once, from cron. `takeover` is what
+hands them over. See [Held jobs & ownership](/replacing-cron/held-jobs/) for
+what that means in detail.
+
+## What happens, in order
+
+Nothing is destructive until RunWisp is in place, and the order is the whole
+safety argument:
+
+1. **Write the unit.** `/etc/systemd/system/runwisp.service`, with the resolved
+   binary path, config path, data dir, port, and host baked in.
+2. **`systemctl daemon-reload`.**
+3. **Stop and mask cron.** Only now, and only after the unit exists.
+4. **Start RunWisp** (`systemctl enable --now runwisp.service`).
+
+If step 4 fails, the installer unmasks cron — and restarts it, if it was
+running before — rather than leaving the box with no scheduler at all. The
+original error is what you see. If even that rollback fails, it tells you the
+exact `systemctl unmask` to run by hand.
+
+## The first-run prompt
+
+On a fresh root box with a live cron unit and no `runwisp.toml`, plain `runwisp`
+does the whole cutover from one prompt:
+
+```
+No runwisp.toml at /etc/runwisp.
+Found 12 cron job(s) on this box (/etc/crontab, /etc/cron.d).
+
+RunWisp can take over from cron. It will:
+  · read /etc/crontab and /etc/cron.d as RunWisp tasks (nothing rewritten — crontab -e still works)
+  · install itself as a system service, so it starts on boot
+  · stop and mask cron.service, so nothing fires twice
+
+Take over from cron? [Y/n]
+```
+
+Boot persistence isn't optional in that prompt: masking cron in favour of a
+daemon that dies with your terminal would trade double-firing for nothing firing
+at all.
+
+You get that prompt only when all five of these hold:
+
+- a crontab RunWisp can actually read was found on this box,
+- the install would be system-wide (not `--local`),
+- you're running as root (euid 0),
+- stdin is a terminal, and
+- a cron systemd unit exists and is **active**.
+
+Miss any one and you get the plain starter-config prompt instead, plus a note
+that the jobs will be held and `sudo runwisp takeover` is how you finish later.
+
+It's one question covering all three effects, so answering **no** declines the
+whole thing: nothing is written, and RunWisp tells you where to read about
+writing `runwisp.toml` yourself. Say yes and the config is written first — and
+from that point a refusal is no longer fatal. If RunWisp then finds it can't
+retire cron after all (see [When it refuses](#when-it-refuses)), or you abort
+the install, you keep the config, RunWisp prints why, and it points you at
+`sudo runwisp takeover` for later. The jobs stay held throughout, so nothing
+fires twice either way.
+
+Nothing here happens outside an interactive first run. `runwisp daemon`,
+systemd, and Docker never touch a crontab behind your back.
+
+## `--yes` vs `--take-over-cron`
+
+`sudo runwisp service install` asks the same question, if you're installing that
+way. For scripted installs, `--take-over-cron` answers it up front and skips the
+prompt.
+
+`--yes` deliberately does **not** answer it. Masking cron is destructive and not
+something to imply from a blanket "yes to everything" — it stays its own
+decision, with its own flag.
+
+`--print` and `--dry-run` never prompt, so they never offer a take-over. Pass
+`--take-over-cron` if you want the rendered unit to carry the marker.
+
+## When it refuses
+
+The question is only ever asked when it's live and actionable. With
+`--take-over-cron` (or `runwisp takeover`, where saying yes is the entire point)
+the same conditions become hard refusals, checked before anything is written, in
+this order:
+
+1. **Root or the system scope is missing.** A user-scoped daemon can't execute
+   another account's cron jobs, and `systemctl --user` has no bus for root under
+   sudo. Re-run as root without `--local`.
+2. **The config won't load.** Whatever's wrong with `runwisp.toml` has to be
+   fixed before RunWisp can be trusted with the schedule.
+3. **Nothing is being read.** No `include_cron` pattern matched a crontab.
+   Masking cron here would silently stop every job on the box. **Not
+   overridable** — add [`include_cron`](/configuration/daemon/#include_cron)
+   first.
+4. **A cron source failed to load.** Any skipped cron file or job blocks the
+   take-over too. Pass `--allow-skipped-cron-jobs` to proceed anyway, and those
+   jobs stay stopped.
+5. **A cron job would run as a user this daemon can't become.** **Not
+   overridable** — there's no flag that makes a `user =` cron task run correctly
+   once cron stops covering it.
+
+If cron _is_ running but one of those applies, the install says so in a one-line
+note rather than staying silent — you need to know why RunWisp isn't offering to
+fix it. The jobs stay held either way, so nothing fires twice while you sort it
+out.
+
+## Undoing it
+
+`runwisp service uninstall` reverses the take-over: it unmasks the cron unit and
+starts it again. It only does that when this instance's own unit recorded the
+take-over — a `# runwisp-masked-cron: <unit>` marker line, next to the existing
+config-hash and binary-SHA lines. RunWisp will never unmask a service it can't
+prove it masked itself.
+
+`runwisp service status` gains a `Cron:` row once that marker exists:
+
+```
+  Cron:       cron.service masked by this instance
+```
+
+If it instead reads `active — jobs may be firing twice`, something (an operator,
+a package upgrade) brought cron back after the take-over, and both schedulers
+are now running the same jobs.
+
+## macOS: not possible
+
+macOS's cron (`com.vix.cron`) lives under SIP-protected
+`/System/Library/LaunchDaemons` — nothing running as your user can mask it.
+There's nothing to offer there, and `runwisp takeover` / `--take-over-cron`
+refuse with a pointer to the manual route: convert the jobs with
+[`runwisp import cron`](/replacing-cron/converting-crontabs/), then remove the
+crontab yourself (`crontab -r`).
+
+Don't count on the hold to cover you in the meantime, either. Detecting a live
+cron daemon needs `systemctl` or one of cron's Linux pidfiles, and macOS has
+neither — so in practice a hold is never derived there. Retire the crontab line
+by hand as you go.
+
+## Flags
+
+`runwisp takeover` takes the install flags that still make sense for it:
+
+| Flag                        | What it does                                                      |
+| --------------------------- | ----------------------------------------------------------------- |
+| `--dry-run`                 | Print the plan and exit without writing anything.                 |
+| `--force`                   | Overwrite a hand-edited unit.                                     |
+| `--yes`, `-y`               | Skip the install confirmation.                                    |
+| `--allow-skipped-cron-jobs` | Take over even though some cron jobs failed to load.              |
+| `--binary`                  | Override the binary path baked into the unit (default: detected). |
+
+The full set, including everything `service install` accepts, is in the
+[CLI reference](/operations/cli/#retire-cron).
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Held jobs & ownership"
+        href="/replacing-cron/held-jobs/"
+        description="Why a cron-owned job can never fire twice, and where RunWisp shows you it's held."
+    />
+    <LinkCard
+        title="Converting crontabs"
+        href="/replacing-cron/converting-crontabs/"
+        description="The other route: turn crontabs into TOML you own with runwisp import cron."
+    />
+    <LinkCard
+        title="CLI reference"
+        href="/operations/cli/#retire-cron"
+        description="Every flag on takeover, service install, and service uninstall."
+    />
+    <LinkCard
+        title="[daemon] include_cron"
+        href="/configuration/daemon/#include_cron"
+        description="Which paths are read, in which format, and who each job runs as."
+    />
+</CardGrid>

@@ -278,7 +278,7 @@ func TestResolveServiceOptions_BuildsAbsolutePaths(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f, false)
+	opts, err := resolveServiceOptions(cmd, deps, f, false, serviceInstallOpts)
 	require.NoError(t, err)
 	assert.Equal(t, binary, opts.Binary)
 	assert.Equal(t, tomlPath, opts.Config)
@@ -309,7 +309,7 @@ func TestResolveServiceOptions_BinaryOverrideIsUsed(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f, false)
+	opts, err := resolveServiceOptions(cmd, deps, f, false, serviceInstallOpts)
 	require.NoError(t, err)
 	assert.Equal(t, binary, opts.Binary, "binary override must be honoured")
 }
@@ -344,7 +344,7 @@ func TestResolveServiceOptions_SystemUsesEuidDefaultsWhenNotExplicit(t *testing.
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f, true)
+	opts, err := resolveServiceOptions(cmd, deps, f, true, serviceInstallOpts)
 	require.NoError(t, err)
 	assert.Equal(t, "/etc/runwisp/runwisp.toml", opts.Config)
 	assert.Equal(t, "/var/lib/runwisp", opts.DataDir)
@@ -376,7 +376,7 @@ func TestResolveServiceOptions_SystemStillHonorsExplicitFlags(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f, true)
+	opts, err := resolveServiceOptions(cmd, deps, f, true, serviceInstallOpts)
 	require.NoError(t, err)
 	assert.Equal(t, tomlPath, opts.Config)
 	assert.Equal(t, dir, opts.DataDir)
@@ -409,7 +409,7 @@ func TestResolveServiceOptions_SystemRejectsUntrustedConfig(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	_, err := resolveServiceOptions(cmd, deps, f, true)
+	_, err := resolveServiceOptions(cmd, deps, f, true, serviceInstallOpts)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "world-writable")
 }
@@ -440,7 +440,7 @@ func TestResolveServiceOptions_NonSystemAllowsUntrustedConfig(t *testing.T) {
 		Fingerprint: "fp-test",
 		Prompter:    &autostart.ScriptedPrompter{},
 	}
-	opts, err := resolveServiceOptions(cmd, deps, f, false)
+	opts, err := resolveServiceOptions(cmd, deps, f, false, serviceInstallOpts)
 	require.NoError(t, err)
 	assert.Equal(t, tomlPath, opts.Config)
 }
@@ -630,7 +630,7 @@ func offerTakeoverFor(t *testing.T, deps autostart.Deps, installer autostart.Ins
 	opts := autostart.InstallOptions{Config: tomlPath, System: systemWide}
 	var stderr bytes.Buffer
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &stderr)
-	require.NoError(t, offerCronTakeover(cmd, deps, installer, &opts))
+	require.NoError(t, offerCronTakeover(cmd, deps, installer, &opts, serviceInstallOpts))
 	return opts.TakeOverCron, stderr.String()
 }
 
@@ -701,7 +701,7 @@ func TestOfferCronTakeover_NotesRefusalWhenCronIsRunning(t *testing.T) {
 	cmd := newInstallTestCmd(&bytes.Buffer{}, &stderr)
 	deps := autostart.Deps{Euid: 0, StdinIsTTY: true, Prompter: &autostart.ScriptedPrompter{}}
 
-	require.NoError(t, offerCronTakeover(cmd, deps, fakeCronInstaller{unit: "cron.service", active: true}, &opts))
+	require.NoError(t, offerCronTakeover(cmd, deps, fakeCronInstaller{unit: "cron.service", active: true}, &opts, serviceInstallOpts))
 	assert.False(t, opts.TakeOverCron)
 	assert.Contains(t, stderr.String(), "cron.service is running")
 	assert.Contains(t, stderr.String(), "no cron jobs are being read")

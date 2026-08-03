@@ -1504,6 +1504,13 @@
           "group": {
             "type": "string"
           },
+          "held_by": {
+            "description": "Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work.",
+            "enum": [
+              "cron"
+            ],
+            "type": "string"
+          },
           "instances": {
             "format": "int64",
             "type": "integer"
@@ -1708,6 +1715,13 @@
             "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds",
             "format": "int64",
             "type": "integer"
+          },
+          "held_by": {
+            "description": "Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule.",
+            "enum": [
+              "cron"
+            ],
+            "type": "string"
           },
           "instances": {
             "description": "For services: number of always-running instances",

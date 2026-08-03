@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,12 +16,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMain stubs scanForCron to a no-op for every test in this file: it
-// otherwise touches the real filesystem (see scanForCron's doc comment),
-// which would make these tests flaky and machine-dependent. Tests that
-// exercise cron detection itself override the var locally and restore it.
+// TestMain stubs the two host-probing seams the first-run prompt reaches for, so
+// no test in this package depends on the machine it runs on: scanForCron touches
+// the real filesystem (see its doc comment) and offerFirstRunCutover reaches for
+// the real systemd and euid. A CI image with crontabs under /etc/cron.d, or one
+// running as root, would otherwise make these tests machine-dependent. Tests
+// that exercise either behaviour override the var locally and restore it.
 func TestMain(m *testing.M) {
 	scanForCron = func(string) (config.CronScan, bool) { return config.CronScan{}, false }
+	offerFirstRunCutover = func(Flags, io.Writer) *cutoverOffer { return nil }
 	os.Exit(m.Run())
 }
 
@@ -38,7 +42,9 @@ func TestPromptAndScaffoldAcceptsYes(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "runwisp.toml")
 			var out bytes.Buffer
 
-			require.NoError(t, promptAndScaffold(path, strings.NewReader(answer), &out))
+			installed, err := promptAndScaffold(Flags{CfgFile: path}, strings.NewReader(answer), &out)
+			require.NoError(t, err)
+			assert.False(t, installed)
 
 			assert.FileExists(t, path)
 			assert.Contains(t, out.String(), "No runwisp.toml at "+filepath.Dir(path))
@@ -53,7 +59,7 @@ func TestPromptAndScaffoldDeclines(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "runwisp.toml")
 			var out bytes.Buffer
 
-			err := promptAndScaffold(path, strings.NewReader(answer), &out)
+			_, err := promptAndScaffold(Flags{CfgFile: path}, strings.NewReader(answer), &out)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "no runwisp.toml at "+filepath.Dir(path))
@@ -66,7 +72,9 @@ func TestScaffoldIfMissingNoopWhenFileExists(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
 	require.NoError(t, os.WriteFile(path, []byte("[tasks.x]\nrun = \"true\"\n"), 0644))
 
-	assert.NoError(t, scaffoldIfMissing(path))
+	installed, err := scaffoldIfMissing(Flags{CfgFile: path})
+	assert.NoError(t, err)
+	assert.False(t, installed)
 }
 
 func TestPromptAndScaffoldDetectsAdjacentCompose(t *testing.T) {
@@ -76,7 +84,8 @@ func TestPromptAndScaffoldDetectsAdjacentCompose(t *testing.T) {
 	path := filepath.Join(dir, "runwisp.toml")
 
 	var out bytes.Buffer
-	require.NoError(t, promptAndScaffold(path, strings.NewReader("\n"), &out))
+	_, err := promptAndScaffold(Flags{CfgFile: path}, strings.NewReader("\n"), &out)
+	require.NoError(t, err)
 
 	body, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -105,7 +114,8 @@ func TestScaffoldIfMissing_NoTTYReturnsNilWithoutWritingFile(t *testing.T) {
 	// go test invocation has no TTY on stdin, so missing config path
 	// short-circuits to nil without creating a file.
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
-	require.NoError(t, scaffoldIfMissing(path))
+	_, err := scaffoldIfMissing(Flags{CfgFile: path})
+	require.NoError(t, err)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("expected no file created, got %v", err)
 	}
@@ -118,7 +128,7 @@ func TestScaffoldIfMissing_StatErrorBubblesUp(t *testing.T) {
 	regular := filepath.Join(dir, "blocker")
 	require.NoError(t, os.WriteFile(regular, []byte("x"), 0600))
 	bad := filepath.Join(regular, "subdir", "runwisp.toml")
-	if err := scaffoldIfMissing(bad); err == nil {
+	if _, err := scaffoldIfMissing(Flags{CfgFile: bad}); err == nil {
 		t.Fatal("expected ENOTDIR-style error to bubble up")
 	}
 }
@@ -150,7 +160,8 @@ func TestPromptAndScaffoldOffersDetectedCron(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
 	var out bytes.Buffer
-	require.NoError(t, promptAndScaffold(path, strings.NewReader("\n"), &out))
+	_, err := promptAndScaffold(Flags{CfgFile: path}, strings.NewReader("\n"), &out)
+	require.NoError(t, err)
 
 	body, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -174,7 +185,8 @@ func TestPromptAndScaffoldOffersComposeAndCronTogether(t *testing.T) {
 	path := filepath.Join(dir, "runwisp.toml")
 
 	var out bytes.Buffer
-	require.NoError(t, promptAndScaffold(path, strings.NewReader("\n"), &out))
+	_, err := promptAndScaffold(Flags{CfgFile: path}, strings.NewReader("\n"), &out)
+	require.NoError(t, err)
 
 	body, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -190,7 +202,8 @@ func TestPromptAndScaffoldFallsBackWhenCronIsBlocked(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
 	var out bytes.Buffer
-	require.NoError(t, promptAndScaffold(path, strings.NewReader("\n"), &out))
+	_, err := promptAndScaffold(Flags{CfgFile: path}, strings.NewReader("\n"), &out)
+	require.NoError(t, err)
 
 	body, err := os.ReadFile(path)
 	require.NoError(t, err)

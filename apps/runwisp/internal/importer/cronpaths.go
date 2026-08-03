@@ -3,6 +3,8 @@
 
 package importer
 
+import "path/filepath"
+
 // This file is the one place that may know where a crontab lives on disk.
 // IsSystemCrontabPath and UserSpoolOwner already read it; first-run cron
 // detection (internal/config/crondetect.go) needs the same paths to offer
@@ -20,6 +22,47 @@ const SystemCrontabPath = "/etc/crontab"
 // pattern ready to hand to `[daemon] include_cron`.
 func SystemCronDirGlob() string {
 	return "/etc/cron.d/*"
+}
+
+// CronOwnsPath reports whether a live system cron daemon would read this file
+// itself. It answers one question for the scheduler: is this crontab something
+// cron is already firing, or a file only RunWisp knows about?
+//
+// `include_cron` can legitimately point at a crontab-format file that lives
+// nowhere cron looks — /opt/myapp/jobs.cron is a normal thing to keep under an
+// app's own directory — and those jobs are RunWisp's alone even while cron runs.
+// Holding them would stop them dead for no reason, so the answer has to be
+// per-file rather than "is cron running at all".
+//
+// Deliberately broader than UserSpoolOwner for a spool file: any file sitting
+// directly in a spool directory counts, whatever it is named. The two ways to be
+// wrong here are not symmetric — treating a cron-owned file as ours means both
+// schedulers fire the job, which is invisible, while treating one of ours as
+// cron's means it is held and badged as held, which the operator can see and act
+// on. When in doubt, say cron owns it.
+func CronOwnsPath(path string) bool {
+	if path == "" || path == "-" {
+		return false
+	}
+	clean := filepath.Clean(path)
+	if IsSystemCrontabPath(clean) {
+		return true
+	}
+	return IsSpoolCrontabDir(filepath.Dir(clean))
+}
+
+// CronUnits returns every systemd unit name cron ships under across the distros
+// RunWisp targets: Debian/Ubuntu's cron.service, and cronie's crond.service
+// (RHEL/Fedora) or cronie.service (some derivatives).
+//
+// One list, because two callers ask the same question for opposite reasons and
+// disagreeing is a silent double-fire: internal/config probes these to decide
+// whether cron is live and its jobs must be held, and internal/autostart probes
+// them to decide which unit `--take-over-cron` masks. A unit missing from the
+// hold-side list but present on the mask-side one is a box where cron runs, the
+// jobs fire twice, and nothing says so.
+func CronUnits() []string {
+	return []string{"cron.service", "crond.service", "cronie.service"}
 }
 
 // UserSpoolDirs returns every per-user cron spool directory this codebase

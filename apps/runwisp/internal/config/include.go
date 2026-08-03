@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/runwisp/runwisp/internal/importer"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -78,6 +79,10 @@ func loadWithIncludes(path string) (*Config, entrySources, error) {
 	cfg.cronFiles = cron.files
 	cfg.CronFindings = cron.findings
 	cfg.cronBlocks = cron.blocks
+	// After markProvenance, which is what says which tasks came from a crontab,
+	// and before Warnings can be asked anything.
+	cfg.cronDaemon = probeCronDaemon(cron.files, crondPidFiles)
+	markCronHold(cfg)
 	// After buildConfig, so the notifier set is known: a crontab's MAILTO stops being
 	// something to report once the config can actually deliver mail.
 	dropAnsweredFindings(cfg)
@@ -107,6 +112,33 @@ func markProvenance(cfg *Config, rootDir string, cronFiles map[string]bool) {
 			continue // the operator's own TOML
 		}
 		cfg.Tasks[i].SourceFile = origin
+	}
+}
+
+// markCronHold stamps Task.HeldBy on the cron-sourced tasks a live system cron
+// daemon is still firing itself, so the scheduler leaves them alone. This is the
+// gate that makes double execution impossible rather than merely warned about:
+// both schedulers running the same job is invisible until a non-idempotent one
+// runs twice, and by then it has already happened.
+//
+// Per source file, not per machine. `include_cron` may legitimately point at a
+// crontab-format file cron never looks at (importer.CronOwnsPath) — those jobs are
+// RunWisp's alone even while cron runs, and holding them would stop them for no
+// reason.
+//
+// Re-derived every load like markProvenance, which is what makes retiring cron
+// and reloading the whole cure: nothing persists a hold.
+func markCronHold(cfg *Config) {
+	if !cfg.cronDaemon.live {
+		return
+	}
+	for i := range cfg.Tasks {
+		if cfg.Tasks[i].Source != model.SourceCron {
+			continue
+		}
+		if importer.CronOwnsPath(cfg.Tasks[i].SourceFile) {
+			cfg.Tasks[i].HeldBy = model.HeldByCron
+		}
 	}
 }
 

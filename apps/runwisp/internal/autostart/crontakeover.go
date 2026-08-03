@@ -11,17 +11,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
-)
 
-// cronUnitCandidates are the systemd unit names cron ships under across the
-// distros RunWisp targets: Debian/Ubuntu's cron, and cronie's crond.service
-// (RHEL/Fedora) or cronie.service (some derivatives).
-var cronUnitCandidates = []string{"cron.service", "crond.service", "cronie.service"}
+	"github.com/runwisp/runwisp/internal/importer"
+)
 
 // ErrNoCronUnit means none of the known cron unit names are known to systemd
 // on this host — Docker, sysvinit, openrc, or cron genuinely not installed.
 // --take-over-cron has nothing to take over.
-var ErrNoCronUnit = errors.New("autostart: no cron systemd unit found (looked for " + strings.Join(cronUnitCandidates, ", ") + ")")
+var ErrNoCronUnit = errors.New("autostart: no cron systemd unit found (looked for " + strings.Join(importer.CronUnits(), ", ") + ")")
 
 // runSystemctlSystem runs a systemctl call scoped to the system manager
 // regardless of whether this InstallOptions itself is --system — the cron
@@ -55,7 +52,7 @@ func (s *systemdInstaller) probeCronUnit(ctx context.Context, unit string) (load
 // probes — this must only be called when InstallOptions.TakeOverCron is
 // set, or every existing ComputePlan test would see an unexpected call.
 func (s *systemdInstaller) discoverCronUnit(ctx context.Context) (string, error) {
-	for _, name := range cronUnitCandidates {
+	for _, name := range importer.CronUnits() {
 		loadState, _, _, err := s.probeCronUnit(ctx, name)
 		if err != nil {
 			continue

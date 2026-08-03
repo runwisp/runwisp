@@ -86,6 +86,7 @@ type statusTaskJSON struct {
 	APITrigger bool         `json:"api_trigger"`
 	Source     string       `json:"source,omitempty"`
 	SourceFile string       `json:"source_file,omitempty"`
+	HeldBy     string       `json:"held_by,omitempty"`
 	NextRunAt  *string      `json:"next_run_at,omitempty"`
 	LastRun    *lastRunJSON `json:"last_run"`
 }
@@ -130,6 +131,7 @@ func newStatusTaskJSON(tr model.TaskResponse, last *model.Run) statusTaskJSON {
 		APITrigger: tr.APITrigger,
 		Source:     string(tr.Source),
 		SourceFile: tr.SourceFile,
+		HeldBy:     string(tr.HeldBy),
 		NextRunAt:  tr.NextRunAt,
 	}
 	if last != nil {
@@ -251,6 +253,7 @@ type listTaskJSON struct {
 	APITrigger    bool   `json:"api_trigger"`
 	Source        string `json:"source,omitempty"`
 	SourceFile    string `json:"source_file,omitempty"`
+	HeldBy        string `json:"held_by,omitempty"`
 	Description   string `json:"description,omitempty"`
 }
 
@@ -263,6 +266,7 @@ func newListTaskJSON(t model.Task) listTaskJSON {
 		APITrigger:  t.APITrigger,
 		Source:      string(t.Source),
 		SourceFile:  t.SourceFile,
+		HeldBy:      string(t.HeldBy),
 		Description: t.Description,
 	}
 	if t.Kind.IsService() {

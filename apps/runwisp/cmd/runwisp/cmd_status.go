@@ -78,6 +78,10 @@ func runStatus(out io.Writer, f Flags, asJSON bool) error {
 		for _, w := range info.ConfigWarnings {
 			fmt.Fprintf(out, "! %s\n", w)
 		}
+		// Held tasks come from the daemon's own task list, so this reports what the
+		// live scheduler is actually doing rather than re-probing cron from here.
+		// They have no runs — `status` is one of the few places they exist at all.
+		printHeldBlock(out, heldTaskNames(info.Tasks), "")
 	}
 	return nil
 }

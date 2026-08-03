@@ -133,11 +133,24 @@ Create a starter with one example task? [Y/n]
 
 That's the plain case. If RunWisp also finds a `docker-compose.yml`
 next to you, or a crontab it can read, the prompt says so and the
-starter it writes wires that in too — see
-[Migrating from cron](/recipes/migrating-from-cron/) for the cron
-case. Either way, answering with anything but yes leaves your
-directory untouched and tells you how to write `runwisp.toml`
-yourself.
+starter it writes wires that in too. Either way, answering with
+anything but yes leaves your directory untouched and tells you how to
+write `runwisp.toml` yourself.
+
+On a root Linux box with systemd and cron actually running, that
+crontab case becomes the whole cutover in one question:
+
+```
+RunWisp can take over from cron. It will:
+  · read /etc/crontab and /etc/cron.d as RunWisp tasks (nothing rewritten — crontab -e still works)
+  · install itself as a system service, so it starts on boot
+  · stop and mask cron.service, so nothing fires twice
+
+Take over from cron? [Y/n]
+```
+
+[Take over from cron](/replacing-cron/take-over-from-cron/) covers when
+you get that prompt and what to do when you don't.
 
 Hit <kbd>Enter</kbd>. RunWisp writes a starter file, fires up its
 daemon in the background, and drops you into the **TUI**. (The

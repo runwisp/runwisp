@@ -114,6 +114,7 @@ func init() {
 	rootCmd.AddCommand(schemaCmd)
 	rootCmd.AddCommand(agentGuideCmd)
 	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(takeoverCmd)
 	rootCmd.AddCommand(demoCmd)
 }
 

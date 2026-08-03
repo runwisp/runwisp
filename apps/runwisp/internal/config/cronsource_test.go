@@ -4,6 +4,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -846,11 +847,32 @@ func stubCronServiceProbe(t *testing.T, active, enabled, ok bool) {
 	t.Cleanup(func() { cronServiceProbe = prev })
 }
 
-// TestCrondStillRunningWarning is the guard on the most likely way an include_cron
-// setup goes wrong, and the one that goes wrong silently: RunWisp and cron both
-// scheduling the same crontabs means every job fires twice, which looks like
-// nothing at all until a non-idempotent one does it.
-func TestCrondStillRunningWarning(t *testing.T) {
+// cronHoldConfig builds the Config shape the hold gate and its warning read: one
+// cron-sourced task per file, then the real probe and the real stamping pass. It
+// goes through markCronHold rather than setting HeldBy by hand so a test can't
+// assert a hold the loader wouldn't actually produce.
+func cronHoldConfig(files, pidCandidates []string) *Config {
+	cfg := &Config{}
+	for i, f := range files {
+		cfg.Tasks = append(cfg.Tasks, model.Task{
+			Name:       fmt.Sprintf("job%d", i),
+			Cron:       "* * * * *",
+			Run:        "true",
+			Source:     model.SourceCron,
+			SourceFile: f,
+		})
+	}
+	cfg.cronFiles = files
+	cfg.cronDaemon = probeCronDaemon(files, pidCandidates)
+	markCronHold(cfg)
+	return cfg
+}
+
+// TestHeld is the guard on the most likely way an include_cron setup goes wrong:
+// RunWisp and cron both owning the same crontabs. The gate stops the jobs from
+// actually firing twice, so what the surfaces need from here is which tasks are
+// held and in what sense cron is live.
+func TestHeld(t *testing.T) {
 	dir := t.TempDir()
 	livePid := filepath.Join(dir, "crond.pid")
 	require.NoError(t, os.WriteFile(livePid, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600))
@@ -858,50 +880,132 @@ func TestCrondStillRunningWarning(t *testing.T) {
 	require.NoError(t, os.WriteFile(deadPid, []byte("999999999\n"), 0o600))
 	missingPid := filepath.Join(dir, "nope.pid")
 
-	t.Run("systemctl reports active warns", func(t *testing.T) {
+	t.Run("systemctl reports active holds the jobs", func(t *testing.T) {
 		stubCronServiceProbe(t, true, false, true)
-		got := crondStillRunningWarning([]string{"/etc/cron.d/backup"}, []string{missingPid})
-		require.Len(t, got, 1)
-		assert.Contains(t, got[0], "/etc/cron.d/backup")
-		assert.Contains(t, got[0], "twice")
+		held := Held(cronHoldConfig([]string{"/etc/cron.d/backup"}, []string{missingPid}))
+		assert.True(t, held.Any())
+		assert.Equal(t, []string{"job0"}, held.Tasks)
+		assert.Contains(t, held.CronState, "is running")
 	})
 
-	t.Run("systemctl reports enabled but not active still warns", func(t *testing.T) {
+	t.Run("systemctl reports enabled but not active still holds", func(t *testing.T) {
 		stubCronServiceProbe(t, false, true, true)
-		got := crondStillRunningWarning([]string{"/etc/crontab"}, []string{missingPid})
-		require.Len(t, got, 1)
-		assert.Contains(t, got[0], "next boot")
+		held := Held(cronHoldConfig([]string{"/etc/crontab"}, []string{missingPid}))
+		require.True(t, held.Any())
+		assert.Contains(t, held.CronState, "next boot")
 	})
 
-	t.Run("systemctl reports neither active nor enabled, no warning", func(t *testing.T) {
+	t.Run("systemctl reports neither active nor enabled, nothing held", func(t *testing.T) {
 		stubCronServiceProbe(t, false, false, true)
-		assert.Empty(t, crondStillRunningWarning([]string{"/etc/crontab"}, []string{livePid}),
+		cfg := cronHoldConfig([]string{"/etc/crontab"}, []string{livePid})
+		assert.False(t, Held(cfg).Any(),
 			"the init system is the authority when it can answer at all")
+		assert.Empty(t, cfg.Tasks[0].HeldBy)
 	})
 
 	// A spool-only include used to never warn at all, because the old check
 	// filtered cronFiles down to system crontab paths before looking at any
 	// pidfile. A live crond reads /var/spool/cron just as much as
-	// /etc/cron.d, so it has to warn here too.
-	t.Run("systemctl unavailable, live pidfile warns even for a spool-only include", func(t *testing.T) {
+	// /etc/cron.d, so it has to be held here too.
+	t.Run("systemctl unavailable, live pidfile holds a spool-only include", func(t *testing.T) {
 		stubCronServiceProbe(t, false, false, false)
-		got := crondStillRunningWarning([]string{"/var/spool/cron/crontabs/alice"}, []string{missingPid, livePid})
-		require.Len(t, got, 1)
-		assert.Contains(t, got[0], "crontabs/alice")
+		cfg := cronHoldConfig([]string{"/var/spool/cron/crontabs/alice"}, []string{missingPid, livePid})
+		held := Held(cfg)
+		require.True(t, held.Any())
+		assert.Contains(t, held.CronState, "live pidfile")
+		assert.Equal(t, model.HeldByCron, cfg.Tasks[0].HeldBy)
 	})
 
 	// The old version only checked that the pidfile existed, not that the pid
 	// inside it was still a live process — so a crond that crashed without
 	// cleaning up, or a stale file baked into an image, warned forever.
-	t.Run("systemctl unavailable, stale pidfile does not warn", func(t *testing.T) {
+	t.Run("systemctl unavailable, stale pidfile holds nothing", func(t *testing.T) {
 		stubCronServiceProbe(t, false, false, false)
-		assert.Empty(t, crondStillRunningWarning([]string{"/etc/crontab"}, []string{deadPid}))
+		cfg := cronHoldConfig([]string{"/etc/crontab"}, []string{deadPid})
+		assert.False(t, Held(cfg).Any())
+		assert.Empty(t, cfg.Tasks[0].HeldBy)
 	})
 
-	t.Run("no cron files, no warning even if crond is live", func(t *testing.T) {
+	t.Run("no cron files, nothing held even if crond is live", func(t *testing.T) {
 		stubCronServiceProbe(t, true, true, true)
-		assert.Empty(t, crondStillRunningWarning(nil, []string{livePid}))
+		assert.False(t, Held(cronHoldConfig(nil, []string{livePid})).Any())
 	})
+
+	t.Run("a nil config holds nothing", func(t *testing.T) {
+		assert.False(t, Held(nil).Any())
+	})
+
+	t.Run("every held task is named, in config order", func(t *testing.T) {
+		stubCronServiceProbe(t, true, false, true)
+		cfg := cronHoldConfig(
+			[]string{"/etc/cron.d/backup", "/etc/cron.d/vacuum"}, []string{missingPid})
+		assert.Equal(t, []string{"job0", "job1"}, Held(cfg).Tasks)
+	})
+}
+
+// TestUnownedCronFilesWarning covers the one live-crond case a hold cannot: the
+// gate is per-file, so a crontab-format file cron never looks in is RunWisp's
+// alone and must not be held — but if cron somehow does read it, that is a real
+// double fire, and saying so is the only honest thing left.
+func TestUnownedCronFilesWarning(t *testing.T) {
+	missingPid := filepath.Join(t.TempDir(), "nope.pid")
+
+	t.Run("a file cron does not own is not held and warns", func(t *testing.T) {
+		stubCronServiceProbe(t, true, false, true)
+		cfg := cronHoldConfig([]string{"/opt/myapp/jobs.cron"}, []string{missingPid})
+		got := unownedCronFilesWarning(cfg)
+		require.Len(t, got, 1)
+		assert.Contains(t, got[0], "/opt/myapp/jobs.cron")
+		assert.Contains(t, got[0], "twice")
+		assert.Empty(t, cfg.Tasks[0].HeldBy)
+		assert.False(t, Held(cfg).Any())
+	})
+
+	t.Run("a cron-owned file is held instead of warned about", func(t *testing.T) {
+		stubCronServiceProbe(t, true, false, true)
+		cfg := cronHoldConfig([]string{"/etc/cron.d/backup"}, []string{missingPid})
+		assert.Empty(t, unownedCronFilesWarning(cfg),
+			"the gate held it, so nothing is firing twice — warning about it would be false")
+		assert.True(t, Held(cfg).Any())
+	})
+
+	t.Run("a mixed include splits into a hold and a warning", func(t *testing.T) {
+		stubCronServiceProbe(t, true, false, true)
+		cfg := cronHoldConfig(
+			[]string{"/etc/cron.d/backup", "/opt/myapp/jobs.cron"}, []string{missingPid})
+		got := unownedCronFilesWarning(cfg)
+		require.Len(t, got, 1)
+		assert.Contains(t, got[0], "/opt/myapp/jobs.cron")
+		assert.NotContains(t, got[0], "/etc/cron.d/backup")
+		assert.Equal(t, []string{"job0"}, Held(cfg).Tasks)
+		assert.Empty(t, cfg.Tasks[1].HeldBy)
+	})
+
+	t.Run("a dead crond warns about nothing", func(t *testing.T) {
+		stubCronServiceProbe(t, false, false, true)
+		cfg := cronHoldConfig([]string{"/opt/myapp/jobs.cron"}, []string{missingPid})
+		assert.Empty(t, unownedCronFilesWarning(cfg))
+	})
+}
+
+// TestMarkCronHoldLeavesNonCronTasksAlone pins the gate to provenance: a task the
+// operator wrote in their own TOML is theirs to schedule no matter what cron is
+// doing, and one imported into TOML by `runwisp import cron` is deliberately out
+// of scope for the gate.
+func TestMarkCronHoldLeavesNonCronTasksAlone(t *testing.T) {
+	stubCronServiceProbe(t, true, false, true)
+	cfg := &Config{Tasks: []model.Task{
+		{Name: "native", Cron: "* * * * *", Run: "true"},
+		{Name: "staged", Cron: "* * * * *", Run: "true",
+			Source: model.SourceStaged, SourceFile: "/etc/runwisp/runwisp.d/imported.toml"},
+	}}
+	cfg.cronFiles = []string{"/etc/crontab"}
+	cfg.cronDaemon = probeCronDaemon(cfg.cronFiles, nil)
+	markCronHold(cfg)
+
+	require.True(t, cfg.cronDaemon.live, "the probe has to be reporting live for this to prove anything")
+	assert.Empty(t, cfg.Tasks[0].HeldBy)
+	assert.Empty(t, cfg.Tasks[1].HeldBy)
 }
 
 // TestRunUserFindings_NonRootDaemonCannotBecomeCronsUser is the gap
