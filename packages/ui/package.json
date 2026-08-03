@@ -47,7 +47,7 @@
         "svelte": "^5.0.0"
     },
     "devDependencies": {
-        "@chromatic-com/storybook": "^4.1.3",
+        "@chromatic-com/storybook": "^5.2.1",
         "@eslint/js": "^10.0.1",
         "@runwisp/eslint-config": "workspace:*",
         "@runwisp/typescript-config": "workspace:*",
@@ -62,7 +62,7 @@
         "@tailwindcss/vite": "^4.3.3",
         "@types/dlv": "^1.1.5",
         "@types/ms": "^2.1.0",
-        "@types/node": "^24.13.3",
+        "@types/node": "^26.1.2",
         "eslint": "^10.8.0",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-sonarjs": "^4.2.0",
