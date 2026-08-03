@@ -28,7 +28,7 @@
     "@runwisp/eslint-config": "workspace:*",
     "@runwisp/typescript-config": "workspace:*",
     "eslint": "^10.8.0",
-    "typescript": "5.9.2",
+    "typescript": "6.0.3",
     "yaml": "^2.9.0"
   }
 }

@@ -27,7 +27,7 @@
         "eslint-plugin-sonarjs": "^4.2.0",
         "eslint-plugin-svelte": "^3.22.0",
         "globals": "^17.9.0",
-        "typescript": "5.9.2",
+        "typescript": "6.0.3",
         "typescript-eslint": "^8.65.0"
     }
 }
