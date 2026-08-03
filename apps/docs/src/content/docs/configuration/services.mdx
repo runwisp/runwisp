@@ -97,7 +97,7 @@ on a success code never does), and that's a failed start. Rack up more
 than `start_retries` failed starts in a row and the instance goes
 **FATAL**: it stops restarting, a `start_failed` run is recorded, and a
 `service.fatal` notification lights the in-app bell and any configured
-[notifiers](/configuration/notifications/). The loud terminal failure you
+[notifiers](/notifications/model/). The loud terminal failure you
 want instead of an invisible flap.
 
 `healthy_after` is the one bar for both jobs: the same uptime that resets

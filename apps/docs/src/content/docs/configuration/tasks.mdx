@@ -523,10 +523,13 @@ compose_file    = "./docker-compose.yml"
 compose_service = "backup"
 ```
 
-Each firing invokes `docker compose run --rm <svc>`; the container is
-removed after exit and the exit code is captured. `run` and
-`compose_file` are mutually exclusive. For importing every service in a
-compose file as observable RunWisp services, see [`[compose.*]`](/configuration/compose/).
+When only `compose_file` is set (no `run`), each firing invokes
+`docker compose run --rm <svc>` with the service's own command. When you
+need to run your own command inside the service's already-running
+container instead, set both `compose_file` and `run` together with
+`compose_mode = "exec"` — see [`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode).
+For importing every service in a compose file as observable RunWisp
+services, see [`[compose.*]`](/configuration/compose/).
 
 ## Notifications
 
