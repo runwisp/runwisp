@@ -20,7 +20,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^15.5.1",
