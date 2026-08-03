@@ -71,7 +71,7 @@ required`. The daemon itself keeps running; only that run fails.
   about the output you're no longer seeing. What happens to
   the process itself comes down to the task's `log_on_full`: - `drop_new` / `drop_old`: a system line `"Log output stopped:
 disk space critically low"` goes into the log and the process
-  keeps running. - `kill_task`: the run is cancelled (`end_reason = "stopped"`)
+  keeps running. - `kill_task`: the run is cancelled (`end_reason = "log_overflow"`)
   with a system line `"Process killed: disk space critically low
 …; log_on_full=\"kill_task\""`. You asked for loud failure over
   disk safety, and RunWisp honours that.
