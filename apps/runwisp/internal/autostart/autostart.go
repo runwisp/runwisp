@@ -122,7 +122,7 @@ type Plan struct {
 	// CronUnit is the systemd cron unit (e.g. "cron.service") this plan
 	// will mask, or has already recorded masking, via its own
 	// runwisp-masked-cron marker. Empty means no take-over is in play —
-	// either --take-over-cron was not requested on install, or an
+	// either the install was not asked to retire cron, or an
 	// uninstall found no marker it can prove it wrote itself.
 	CronUnit string
 }
@@ -140,9 +140,21 @@ type InstallOptions struct {
 	Force bool
 	// TakeOverCron requests that ComputePlan/Install also stop and mask
 	// the system cron unit once RunWisp is confirmed running (Linux
-	// system-wide installs only). The CLI gate in cmd/runwisp enforces
-	// the preconditions; this package only executes the mechanics.
+	// system-wide installs only). internal/cutover decides whether the
+	// preconditions hold; this package only executes the mechanics.
 	TakeOverCron bool
+
+	// PreConfirmed says the caller has already rendered a plan covering
+	// every step below and taken the operator's consent, so Install must
+	// not banner-and-ask again. internal/cutover sets it: its plan is a
+	// superset of this one (it also writes the config), and asking twice
+	// for one decision is how an operator learns to stop reading prompts.
+	//
+	// It suppresses the up-front "Proceed?" for a plan the caller showed.
+	// Nothing further down asks either: the mask is spelled out in both that
+	// plan and this package's own banner, so consent for it has always been
+	// taken by the time any cron unit is touched.
+	PreConfirmed bool
 
 	// maskedCronUnit is the cron unit name to record in the rendered
 	// unit's marker comment. It is unexported so only this package can
@@ -311,9 +323,13 @@ var ErrAlreadyRunning = errors.New("autostart: a daemon is already running again
 // never creates one — the operator runs `runwisp` interactively first.
 var ErrConfigMissing = errors.New("autostart: runwisp.toml is missing — run `runwisp` interactively to create one first")
 
-// ErrCronTakeoverUnsupported means --take-over-cron was requested on an OS
+// ErrCronTakeoverUnsupported means InstallOptions.TakeOverCron was set on an OS
 // without a systemd cron unit this package can mask. macOS's cron
 // (com.vix.cron) lives under SIP-protected /System/Library/LaunchDaemons —
 // nothing running as the operator's user can touch it — so the honest path
 // is `runwisp import cron` followed by removing the crontab by hand.
-var ErrCronTakeoverUnsupported = errors.New("autostart: --take-over-cron is only supported on Linux with systemd — run `runwisp import cron` then remove the crontab yourself (`crontab -r`)")
+//
+// internal/cutover reports this as a plan blocker before it ever gets here (with
+// the same manual route spelled out), so reaching this error means a caller
+// bypassed the plan.
+var ErrCronTakeoverUnsupported = errors.New("autostart: retiring cron is only supported on Linux with systemd — run `runwisp import cron` then remove the crontab yourself (`crontab -r`)")

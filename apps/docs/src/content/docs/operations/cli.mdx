@@ -423,13 +423,12 @@ option. Without root and without `--local`, install refuses rather than
 guessing.
 
 Other `install` flags: `--yes` (`-y`), `--print` (render the unit to
-stdout), `--dry-run`, `--force` (overwrite a hand-edited unit),
-`--binary <path>` (override the baked-in binary path), and
-`--take-over-cron`, which answers the "stop and mask the system cron
-service?" question the install otherwise asks on a terminal — see
-[Take over from cron](/replacing-cron/take-over-from-cron/) for the
-refusals and rollback behavior; `--allow-skipped-cron-jobs` overrides one
-of them.
+stdout), `--dry-run`, `--force` (overwrite a hand-edited unit), and
+`--binary <path>` (override the baked-in binary path).
+
+`install` never touches cron. If cron is still running jobs on the box when
+it finishes, it says so and points at `sudo runwisp takeover` — see
+[Take over from cron](/replacing-cron/take-over-from-cron/).
 
 `uninstall` takes `--yes`, `--force`, `--local`, and `--purge` (also delete
 the data dir — which makes you type the literal word `delete` to confirm).
@@ -446,12 +445,20 @@ reboot?") with `runwisp status` ("is it alive right now?").
 sudo runwisp takeover   # install the service, mask cron, reload — in that order
 ```
 
-The front door for the last step of a cron migration. While cron is alive,
-RunWisp [holds](/replacing-cron/held-jobs/) the jobs it read from
-cron's own files rather than firing them alongside cron; `takeover` hands
-them over. It's `service install --take-over-cron` plus a reload of the
-running daemon, so held jobs go live immediately instead of waiting for you
-to reload by hand.
+The front door for a cron migration, and it works from nothing: no
+`runwisp.toml` needed. It finds your crontabs, writes a config that reads
+them live, installs the system service, masks cron, and reloads a daemon
+that was already running — one plan, one question, in that order.
+
+While cron is alive, RunWisp [holds](/replacing-cron/held-jobs/) the jobs it
+read from cron's own files rather than firing them alongside cron;
+`takeover` is what hands them over. The reload is the part a plain
+`service install` can't do, so held jobs go live immediately instead of
+waiting for you to reload by hand.
+
+`--dry-run` always prints a plan, including on a box where the take-over is
+blocked, and re-running a finished take-over is a no-op — both make it safe
+in a provisioning script.
 
 Takes `--dry-run`, `--force`, `--yes` (`-y`),
 `--allow-skipped-cron-jobs`, and `--binary <path>`. Needs root and

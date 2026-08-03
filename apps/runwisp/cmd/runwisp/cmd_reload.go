@@ -36,8 +36,13 @@ This is equivalent to sending the daemon a SIGHUP.`,
 }
 
 func runReload(cmd *cobra.Command, f Flags) error {
-	out := cmd.OutOrStdout()
+	return reloadRunningDaemon(f, cmd.OutOrStdout())
+}
 
+// reloadRunningDaemon is the cobra-free half, so callers without a command can
+// reload too — internal/cutover hands the held cron jobs to a daemon that was
+// already running, and the first-run flow has no *cobra.Command to hand it.
+func reloadRunningDaemon(f Flags, out io.Writer) error {
 	if !isDaemonRunning(f) {
 		fmt.Fprintf(out, "No daemon is running on data dir %s — nothing to reload.\n", absPathOrFallback(f.DataDir))
 		return nil

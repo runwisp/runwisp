@@ -253,6 +253,112 @@ func TestApplyInstall_TakeOverCron_NoRestartWhenCronWasAlreadyStopped(t *testing
 	assert.NotContains(t, out.String(), "Starting cron.service")
 }
 
+// takenOverUnitOnDisk writes the unit a completed take-over leaves behind, so
+// ComputePlan sees no drift and returns PlanNoop — the state `runwisp takeover`
+// finds on a box it has already been run on.
+func takenOverUnitOnDisk(t *testing.T, inst *systemdInstaller, fs *FakeFS, opts InstallOptions) {
+	t.Helper()
+	recorded := opts
+	recorded.maskedCronUnit = "cron.service"
+	body, _, err := inst.renderUnit(recorded)
+	require.NoError(t, err)
+	require.NoError(t, fs.WriteFile(inst.unitPath(true), body, 0644))
+}
+
+// Cron coming back after a take-over (an operator unmasking it, a package
+// upgrade) used to leave `runwisp takeover` unable to fix it: the unit already
+// matched, so the install reported "Already installed ✓" and returned without
+// looking at cron — two schedulers, and a success message.
+func TestInstall_NoopReassertsTakeOverWhenCronCameBack(t *testing.T) {
+	// No answer is queued on the prompter, and a ScriptedPrompter errors when
+	// consulted without one — so "the repair asks no second question" is
+	// enforced here, not merely assumed. Consent for the mask is the caller's,
+	// taken once against a plan that spells it out.
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.TakeOverCron = true
+	takenOverUnitOnDisk(t, inst, fs, opts)
+
+	// Discovery for the plan, then the standing-state probe, then the
+	// stop/mask/start repair.
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"stop", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"mask", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"}, nil, nil, nil)
+
+	out := &bytes.Buffer{}
+	require.NoError(t, inst.Install(context.Background(), opts, out))
+	assert.Zero(t, cmd.Remaining())
+	assert.Contains(t, out.String(), "Already installed")
+	assert.Contains(t, out.String(), "cron.service is back since the take-over")
+	assert.Contains(t, out.String(), "Masking cron.service")
+}
+
+// The repair keeps the install's own ordering: if RunWisp will not start, cron
+// goes back rather than leaving the box with no scheduler.
+func TestInstall_NoopRepairRollsBackWhenServiceWontStart(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.TakeOverCron = true
+	takenOverUnitOnDisk(t, inst, fs, opts)
+
+	for range 3 {
+		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+			[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	}
+	cmd.Expect("systemctl", []string{"stop", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"mask", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"},
+		nil, []byte("bind: address already in use"), assertErrFake("enable failed"))
+	cmd.Expect("systemctl", []string{"unmask", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"start", "cron.service"}, nil, nil, nil)
+
+	out := &bytes.Buffer{}
+	require.Error(t, inst.Install(context.Background(), opts, out))
+	assert.Zero(t, cmd.Remaining(), "rollback must run every scripted call")
+	assert.Contains(t, out.String(), "Unmasking cron.service")
+}
+
+// Nothing to repair costs one probe and says nothing: a re-run of `takeover` on
+// a box where the take-over still holds is not an excuse to bounce cron.
+func TestInstall_NoopLeavesAlreadyRetiredCronAlone(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.TakeOverCron = true
+	takenOverUnitOnDisk(t, inst, fs, opts)
+
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\ninactive\nmasked\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\ninactive\nmasked\n"), nil, nil)
+
+	out := &bytes.Buffer{}
+	require.NoError(t, inst.Install(context.Background(), opts, out))
+	assert.Zero(t, cmd.Remaining(), "no stop, no mask, no enable scripted — none must be attempted")
+	assert.NotContains(t, out.String(), "Masking")
+}
+
+// A plain re-install carries the marker forward without being asked to retire
+// anything, so it must not touch cron either way.
+func TestInstall_NoopWithoutTakeOverFlagNeverProbesCron(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	takenOverUnitOnDisk(t, inst, fs, opts)
+
+	out := &bytes.Buffer{}
+	require.NoError(t, inst.Install(context.Background(), opts, out))
+	assert.Zero(t, cmd.Remaining(), "no systemctl call scripted for a plain no-op re-install")
+}
+
 func TestComputeUninstallPlan_UnmasksOnlyOwnMarker(t *testing.T) {
 	inst, fs, _, _, binary := newFakeInstaller(t, false)
 	inst.deps.Euid = 0

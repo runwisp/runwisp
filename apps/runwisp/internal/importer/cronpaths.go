@@ -58,7 +58,7 @@ func CronOwnsPath(path string) bool {
 // One list, because two callers ask the same question for opposite reasons and
 // disagreeing is a silent double-fire: internal/config probes these to decide
 // whether cron is live and its jobs must be held, and internal/autostart probes
-// them to decide which unit `--take-over-cron` masks. A unit missing from the
+// them to decide which unit a take-over masks. A unit missing from the
 // hold-side list but present on the mask-side one is a box where cron runs, the
 // jobs fire twice, and nothing says so.
 func CronUnits() []string {

@@ -213,7 +213,7 @@ func renderLingerLine(w io.Writer, st autostart.Status) bool {
 
 // renderCronLine shows the standing post-cutover check once this instance
 // has recorded a take-over marker. Omitted entirely for an operator who
-// never engaged --take-over-cron — there is nothing to report and nothing
+// never retired cron — there is nothing to report and nothing
 // was probed to find that out.
 func renderCronLine(w io.Writer, st autostart.Status) bool {
 	if st.CronUnit == "" {

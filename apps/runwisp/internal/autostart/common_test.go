@@ -50,12 +50,29 @@ func TestRenderInstallBanner_PrintsStepsAndSettings(t *testing.T) {
 		Host:     "0.0.0.0",
 		UnitPath: "/etc/systemd/system/runwisp.service",
 	}
-	renderInstallBanner(&buf, plan)
+	renderInstallBanner(&buf, plan, InstallOptions{})
 	out := buf.String()
+	assert.Contains(t, out, "RunWisp service install")
 	assert.Contains(t, out, "Write unit file")
 	assert.Contains(t, out, "/usr/local/bin/runwisp")
 	assert.Contains(t, out, "9477")
 	assert.Contains(t, out, "ALL INTERFACES")
+}
+
+// `runwisp takeover` goes through the same install path, so a headline naming the
+// command would have read "service install" to an operator who asked to retire
+// cron. It names the consequence instead.
+func TestRenderInstallBanner_TakeOverNamesTheCronUnitNotTheCommand(t *testing.T) {
+	var buf bytes.Buffer
+	plan := Plan{
+		Kind:     PlanInstall,
+		Steps:    []Step{{Action: ActionMaskCron, Description: "Run:  systemctl mask cron.service"}},
+		CronUnit: "cron.service",
+	}
+	renderInstallBanner(&buf, plan, InstallOptions{TakeOverCron: true})
+	out := buf.String()
+	assert.Contains(t, out, "taking over from cron.service")
+	assert.NotContains(t, out, "service install")
 }
 
 func TestRenderInstallBanner_UpdateShowsDiff(t *testing.T) {
@@ -65,7 +82,7 @@ func TestRenderInstallBanner_UpdateShowsDiff(t *testing.T) {
 		Steps: []Step{{Description: "Update unit"}},
 		Diff:  "--- a\n+++ b\n@@\n-old\n+new",
 	}
-	renderInstallBanner(&buf, plan)
+	renderInstallBanner(&buf, plan, InstallOptions{})
 	out := buf.String()
 	assert.Contains(t, out, "drifted")
 	assert.Contains(t, out, "+new")

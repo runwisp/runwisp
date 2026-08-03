@@ -267,21 +267,23 @@ func (s *systemdInstaller) Install(ctx context.Context, opts InstallOptions, out
 		return fmt.Errorf("%w: %s", ErrConflict, plan.UnitPath)
 	case PlanNoop:
 		fmt.Fprintf(out, "Already installed. ✓\n  Unit: %s\n", plan.UnitPath)
-		return nil
+		return s.reassertCronTakeover(ctx, opts, plan, out)
 	}
 
 	if err := s.preflight(ctx, opts); err != nil {
 		return err
 	}
 
-	renderInstallBanner(out, plan)
+	if !opts.PreConfirmed {
+		renderInstallBanner(out, plan, opts)
 
-	ok, err := s.deps.Prompter.Confirm("Proceed?", false)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return ErrAborted
+		ok, err := s.deps.Prompter.Confirm("Proceed?", false)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrAborted
+		}
 	}
 
 	return s.applyInstall(ctx, plan, opts, out)
@@ -343,7 +345,7 @@ func (s *systemdInstaller) enableLingerIfNeeded(ctx context.Context, opts Instal
 }
 
 // takeOverCronIfRequested stops and masks the detected cron unit when the
-// operator opted into --take-over-cron.
+// caller asked for a take-over.
 func (s *systemdInstaller) takeOverCronIfRequested(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) (bool, error) {
 	if !opts.TakeOverCron {
 		return false, nil
@@ -575,7 +577,7 @@ func (s *systemdInstaller) populateUnitStatus(ctx context.Context, opts InstallO
 	st.Installed = parsed.managed
 	st.ExpectedConfigHash = SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
 	// Only probe cron when this instance's own marker says it took
-	// it over — an operator who never touches --take-over-cron pays
+	// it over — an operator who never asks for a take-over pays
 	// zero extra systemctl calls for this row.
 	if parsed.maskedCron == "" {
 		return

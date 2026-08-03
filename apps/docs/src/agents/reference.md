@@ -334,7 +334,6 @@ runwisp agent-guide          — print a paste-ready AGENTS.md/CLAUDE.md snippet
 runwisp cloud                — start in cloud mode; --token --url --env-file(=.env) --no-tui
 runwisp demo                 — boot a throwaway, fully-populated instance; --cloud --token --url --env-file
 runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path>
-                               --take-over-cron --allow-skipped-cron-jobs
                              — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service
                                (Linux, root, no fingerprint in the name). Refuses without root, naming
                                `sudo` and `--local`. macOS has no system scope yet: --local is required.
@@ -343,17 +342,29 @@ runwisp service install      — install autostart; -y --print --dry-run --force
                                Refused as root on Linux (systemctl --user has no bus for root under sudo).
                              — --data/--config override paths but never the scope; a system install also
                                requires the resolved config to be root-owned and not group/world-writable.
-                             — on a TTY, a system install asks whether to stop+mask the live cron unit when
-                               include_cron is matching crontabs; --take-over-cron answers it non-interactively,
-                               --yes does NOT. --print/--dry-run never prompt. Prefer `runwisp takeover`, which
-                               also reloads. Declining is safe: the cron gate holds those jobs either way.
+                             — unit lifecycle ONLY: it never touches cron. When a `takeover` would do something,
+                               a successful install prints a note naming the live cron unit, its job count, and
+                               `sudo runwisp takeover`. There is no --take-over-cron flag.
 runwisp takeover             — retire cron in one step; --dry-run --force -y --allow-skipped-cron-jobs --binary
-                             — `service install --take-over-cron` PLUS a reload of the running daemon, so the
-                               tasks held by the cron gate go live immediately (enable --now on an already-active
-                               unit is a no-op, so a plain install would leave them held). Needs root + systemd.
-                             — order: unit written -> daemon-reload -> cron masked -> RunWisp started -> reload.
-                               A failed start unmasks and restarts cron rather than leaving no scheduler.
-                             — same refusals as --take-over-cron; a refusal is a hard error here, not a downgrade.
+                             — works from NOTHING: no runwisp.toml needed. Computes one plan (internal/cutover),
+                               prints it, asks once, executes. Steps: write runwisp.toml reading the crontabs it
+                               found (or insert [daemon] include_cron into an existing config, surgically) ->
+                               install the system service -> stop+mask cron -> start RunWisp -> reload a daemon
+                               that was already running (so tasks the cron gate held go live immediately;
+                               `enable --now` on an already-active unit is a no-op). Needs root + systemd.
+                             — a failed start unmasks and restarts cron rather than leaving no scheduler.
+                             — --dry-run ALWAYS prints a plan, blocked or not, then exits non-zero if blocked.
+                               A finished take-over re-runs as a no-op (exit 0), so it is script-safe.
+                             — blocked by (all reported at once, nothing written): not Linux/systemd; not root;
+                               no cron jobs on the box; the config does not load; the config is not trusted for a
+                               system-wide install; an operator-maintained include_cron that misses crontabs
+                               (never rewritten — it prints the array to paste); a cron source that failed to
+                               load (--allow-skipped-cron-jobs overrides only this one).
+                             — a port held by RunWisp's OWN service is not a conflict (that daemon is the one being
+                               handed the jobs); a hand-started daemon on that data dir must be stopped first.
+                             — re-running it repairs a cron that came back: unit already installed -> re-mask only.
+                             — off Linux it is blocked and names the manual route (`runwisp import cron
+                               --write`, then `crontab -r`); masking cron needs systemd.
 runwisp service uninstall    — remove autostart; -y --purge (also data dir) --force --local
 runwisp service status       — show autostart status; --local
                              — install/status/uninstall/stop/restart all detect the installed scope; --local is

@@ -17,7 +17,7 @@ import (
 
 // ErrNoCronUnit means none of the known cron unit names are known to systemd
 // on this host — Docker, sysvinit, openrc, or cron genuinely not installed.
-// --take-over-cron has nothing to take over.
+// a take-over has nothing to take over.
 var ErrNoCronUnit = errors.New("autostart: no cron systemd unit found (looked for " + strings.Join(importer.CronUnits(), ", ") + ")")
 
 // runSystemctlSystem runs a systemctl call scoped to the system manager
@@ -148,6 +148,47 @@ func (s *systemdInstaller) unmaskCron(ctx context.Context, unit string, restoreA
 	fmt.Fprintf(out, "Starting %s\n", unit)
 	if _, stderr, err := s.runSystemctlSystem(ctx, "start", unit); err != nil {
 		return fmt.Errorf("systemctl start %s: %w: %s", unit, err, string(stderr))
+	}
+	return nil
+}
+
+// reassertCronTakeover re-runs the take-over on an install that had nothing to
+// write. A unit whose marker already records the take-over renders byte-for-byte
+// like the one a fresh take-over would produce, so ComputePlan calls it a
+// no-op — but cron can have come back since (an operator unmasked it, a package
+// upgrade brought it back), and reporting "already installed ✓" on a box with
+// two schedulers is exactly the silent double-fire the take-over exists to end.
+//
+// Cheap when there is nothing wrong: one probe, no output, no writes.
+//
+// It does not ask. Consent for stopping and masking cron is the caller's, taken
+// once against a plan that spells the mask out: either internal/cutover's (which
+// sets PreConfirmed) or this package's own banner and "Proceed?" for anyone else.
+// Asking a second question here for the same decision is how an operator learns
+// to stop reading prompts.
+func (s *systemdInstaller) reassertCronTakeover(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) error {
+	if !opts.TakeOverCron || plan.CronUnit == "" {
+		return nil
+	}
+	_, activeState, unitFileState, err := s.probeCronUnit(ctx, plan.CronUnit)
+	if err != nil {
+		return fmt.Errorf("systemctl show %s: %w", plan.CronUnit, err)
+	}
+	if activeState != "active" && unitFileState == "masked" {
+		return nil
+	}
+	fmt.Fprintf(out, "%s is back since the take-over — it and RunWisp are both running your jobs.\n", plan.CronUnit)
+	cronWasActive, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
+	if err != nil {
+		return fmt.Errorf("take over cron: %w", err)
+	}
+	// The unit was already on disk, but nothing so far proves the service is
+	// actually up, and masking cron while RunWisp is down would leave the box
+	// with no scheduler at all. Same order and same rollback as a real install;
+	// `enable --now` is a no-op when the unit is already running.
+	if err := s.runEnableNow(ctx, opts.System); err != nil {
+		s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
+		return err
 	}
 	return nil
 }

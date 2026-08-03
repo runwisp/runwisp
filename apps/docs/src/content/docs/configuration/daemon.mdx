@@ -225,7 +225,16 @@ include_cron = [
 
 That's the whole cutover. Every job in those files becomes a RunWisp
 task with captured output, run history, and a page in the UI, and you
-haven't rewritten a single line of cron yet. Editing a crontab works
+haven't rewritten a single line of cron yet.
+
+You don't have to write that block by hand. `sudo runwisp takeover` finds the
+crontabs on the box and writes exactly this for you — scaffolding a
+`runwisp.toml` if there isn't one, or inserting the `include_cron` key into the
+one you have, comments and formatting untouched. The one thing it won't do is
+edit an `include_cron` you already maintain: that list is yours, so if it misses
+a crontab RunWisp prints what to add rather than changing it.
+
+Editing a crontab works
 exactly the way editing an included TOML file works: the daemon flags the
 config stale, and [`runwisp reload`](/operations/reload/) re-reads it.
 So `crontab -e` followed by `runwisp reload` is the whole workflow.

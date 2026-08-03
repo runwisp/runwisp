@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,9 +15,10 @@ import (
 	"strings"
 
 	"github.com/mattn/go-isatty"
+	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/configedit"
-	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/internal/cutover"
 )
 
 // scaffoldIfMissing checks for a runwisp.toml at f.CfgFile. If it is absent and
@@ -71,18 +73,18 @@ func promptAndScaffold(f Flags, in io.Reader, out io.Writer) (installed bool, er
 
 	// The cutover is only ever offered alongside crontabs to read: masking cron
 	// on a box RunWisp is not reading is how you stop every job on it.
-	var cutover *cutoverOffer
+	var offer *firstRunCutover
 	if hasCron {
-		cutover = offerFirstRunCutover(f, out)
+		offer = offerFirstRunCutover(f, out, cronScaffoldWriter(composeFile, composeAlias, hasCompose))
 	}
 
 	switch {
 	case hasCron:
 		fmt.Fprintf(out, "Found %d cron job(s) on this box (%s).\n",
-			scan.Jobs, strings.Join(describeCronSources(scan.Files), ", "))
+			scan.Jobs, strings.Join(cutover.DescribeSources(scan.Files), ", "))
 		switch {
-		case cutover != nil:
-			fmt.Fprint(out, describeCutover(cutover.unit, describeCronSources(scan.Files)))
+		case offer != nil:
+			fmt.Fprintf(out, "%s [Y/n] ", cutover.DescribeOffer(offer.plan))
 		case hasCompose:
 			fmt.Fprint(out, heldNote)
 			fmt.Fprint(out, "Create a starter that imports the compose services and reads these live? [Y/n] ")
@@ -106,25 +108,125 @@ func promptAndScaffold(f Flags, in io.Reader, out io.Writer) (installed bool, er
 		return false, fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://docs.runwisp.com/configuration/overview/)", loc)
 	}
 
-	// Scaffold before installing: the installer's preflight refuses to write a
-	// unit pointing at a config that does not exist yet.
+	if offer != nil {
+		return offer.perform(out)
+	}
+
 	if err := writeScaffold(path, composeFile, composeAlias, hasCompose, scan.Globs, hasCron); err != nil {
 		return false, fmt.Errorf("write starter: %w", err)
 	}
 	fmt.Fprintf(out, "Created %s\n", path)
-
-	if cutover == nil {
-		return false, nil
-	}
-	return cutover.perform(f, out)
+	return false, nil
 }
 
 // heldNote is the truthful version of the offer for a host that cannot retire
-// cron itself — non-root, no systemd, macOS's SIP-protected cron, or any of
-// evaluateCronTakeover's refusals. Saying nothing here is what made the old
-// prompt misleading: RunWisp reads the jobs but cron keeps running them.
+// cron itself — non-root, no systemd, macOS's SIP-protected cron, or any other
+// cutover blocker. Saying nothing here is what made the old prompt misleading:
+// RunWisp reads the jobs but cron keeps running them.
 const heldNote = "cron keeps running them for now, so RunWisp holds those jobs — nothing fires twice.\n" +
 	"Run 'sudo runwisp takeover' when you want RunWisp to own them (needs root and systemd).\n"
+
+// firstRunCutover is a cron take-over this host can actually perform, paired with
+// the plan the operator is being shown. Both halves are built before the prompt:
+// the plan has to name the real cron unit it would mask, and writing the config is
+// the plan's own first step — so nothing can be scaffolded until the answer is in.
+type firstRunCutover struct {
+	c    *cutover.Cutover
+	plan cutover.Plan
+}
+
+// offerFirstRunCutover is the seam the first-run prompt consults. The default
+// implementation probes the real host — systemd, the real executable path, the
+// real euid — so tests substitute it, exactly like scanForCron.
+var offerFirstRunCutover = probeFirstRunCutover
+
+// probeFirstRunCutover returns the offer, or nil when this box would not benefit
+// from one. Every nil is a non-error: the operator did not ask for a take-over, so
+// a host that cannot do one just gets the plain scaffold prompt plus heldNote,
+// which already names `sudo runwisp takeover` and what it needs. Printing the
+// blockers here instead would greet every ordinary laptop first run with a wall of
+// text about root and systemd.
+//
+// writeConfig is threaded in so the plan's config step writes the *right*
+// scaffold: a directory with both crontabs and a docker-compose.yml gets both, off
+// the one question already on screen.
+func probeFirstRunCutover(f Flags, out io.Writer, writeConfig func(path string, patterns []string) error) *firstRunCutover {
+	deps, err := autostart.DefaultDeps(out, out, os.Stdin, false)
+	if err != nil {
+		return nil
+	}
+	// No terminal, no question — and a take-over is not something to assume.
+	if !deps.StdinIsTTY {
+		return nil
+	}
+	installer, err := autostart.New(deps)
+	if err != nil {
+		return nil
+	}
+	binary, err := resolveUnitBinary(out, deps, "")
+	if err != nil {
+		return nil
+	}
+
+	// Built straight from Flags rather than through resolveServiceOptions: that one
+	// reads cobra's Flag().Changed to tell an explicit --data/--config from a
+	// default, and first run has no command to ask. It does not need to — root's
+	// path defaults (/etc/runwisp/runwisp.toml, /var/lib/runwisp, resolvePathDefaults
+	// in root.go) are already exactly what a system install would pick.
+	c := newCutover(f, deps, installer, autostart.InstallOptions{
+		Binary:  binary,
+		Config:  f.CfgFile,
+		DataDir: f.DataDir,
+		Host:    f.Host,
+		Port:    f.Port,
+		System:  true,
+	}, cutover.Options{}, func(d *cutover.Deps) { d.WriteConfig = writeConfig })
+
+	// This re-scans the crontabs scanForCron just looked at. Cheap (a glob and a
+	// few small files), and worth it: the plan owns its own evidence, so what the
+	// prompt describes is what Execute will act on.
+	plan, err := c.Compute(context.Background())
+	if err != nil {
+		return nil
+	}
+	// Only offer when cron is live. An inactive cron unit is nothing to retire —
+	// the jobs are not held and nothing is firing twice — and a blocked plan is a
+	// take-over this box cannot do at all.
+	if plan.Blocked() || !plan.MasksCron || !plan.Evidence.CronActive {
+		return nil
+	}
+	return &firstRunCutover{c: c, plan: plan}
+}
+
+// perform runs the offered cutover: config first, then the unit, then cron. It
+// reports whether a service ended up installed and started, so the caller knows
+// to attach to that daemon rather than spawn one of its own.
+//
+// An abort at the installer's own prompt is not an error — the config is on disk
+// and cron is untouched, so the first run carries on with its own daemon.
+func (o *firstRunCutover) perform(out io.Writer) (installed bool, err error) {
+	res, err := o.c.Execute(context.Background(), o.plan, out)
+	if err != nil {
+		if res.ConfigWritten != "" {
+			fmt.Fprintf(out, "\n%s was created and cron is untouched — fix the above, then run "+
+				"'sudo runwisp takeover'.\n", res.ConfigWritten)
+		}
+		return false, asUserFacing(err)
+	}
+	return res.ServiceInstalled, nil
+}
+
+// cronScaffoldWriter adapts writeScaffold to internal/cutover's WriteConfig seam.
+// hasCron is true by construction: this writer only exists on the path where
+// crontabs were found.
+func cronScaffoldWriter(composeFile, composeAlias string, hasCompose bool) func(string, []string) error {
+	return func(path string, patterns []string) error {
+		if err := writeScaffold(path, composeFile, composeAlias, hasCompose, patterns, true); err != nil {
+			return fmt.Errorf("write starter: %w", err)
+		}
+		return nil
+	}
+}
 
 // writeScaffold picks the one starter template matching what was detected.
 // Compose and cron are not exclusive — a directory can have both an adjacent
@@ -183,12 +285,13 @@ func composeAliasFromDir(dir string) string {
 }
 
 // scanForCron scans for real crontabs this account can read — the cron
-// counterpart of detectAdjacentCompose. ok is false both when nothing was
-// found and when every matched source was blocked outright (untrusted, or
-// one this account can't become the owner of): scaffolding an include_cron
-// that can't schedule anything on its first load would be worse than not
-// offering it. Either way, scan.Blocked comes back so the caller can explain
-// why nothing was offered.
+// counterpart of detectAdjacentCompose. ok is false when nothing was found and
+// when *any* matched source was blocked outright (untrusted, or one this account
+// can't become the owner of): an include_cron whose first load already reports a
+// refusal is worse than not offering one, and the operator has a better next
+// step (fix the file, or `runwisp import cron`) than a config that half-works.
+// Either way, scan.Blocked comes back so the caller can explain why nothing was
+// offered.
 //
 // A package-level var, like the codebase's other OS-probing seams
 // (cronUserExists, cronServiceProbe): it touches the real filesystem, which
@@ -211,34 +314,4 @@ func currentUsername() string {
 		return ""
 	}
 	return u.Username
-}
-
-// describeCronSources renders the matched cron files as a short, friendly
-// list for the first-run prompt: every file under a cron.d directory
-// collapses to one mention of the directory, and a spool file names its
-// owner rather than its path.
-func describeCronSources(files []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	add := func(s string) {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	for _, f := range files {
-		switch {
-		case f == importer.SystemCrontabPath:
-			add(f)
-		case importer.IsSystemCrontabPath(f):
-			add(filepath.Dir(f))
-		default:
-			if owner, ok := importer.UserSpoolOwner(f); ok {
-				add(owner + "'s crontab")
-			} else {
-				add(f)
-			}
-		}
-	}
-	return out
 }

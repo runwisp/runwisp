@@ -60,11 +60,19 @@ file = "./{{compose}}"
 	return r.Replace(body)
 }
 
-// cronIncludeBlock renders a `[daemon] include_cron = [...]` table listing
-// patterns, one per line.
+// cronIncludeBlock renders a whole `[daemon]` table whose only key is
+// include_cron — what a scaffolded config needs, where no [daemon] exists yet.
 func cronIncludeBlock(patterns []string) string {
+	return "[daemon]\n" + CronIncludeArray(patterns)
+}
+
+// CronIncludeArray renders just the `include_cron = [...]` key, one pattern per
+// line, with no table header. Scaffolding wraps it in a fresh `[daemon]`;
+// internal/configedit inserts it under an existing one. Both go through here so
+// a wired config and a scaffolded one are formatted identically.
+func CronIncludeArray(patterns []string) string {
 	var b strings.Builder
-	b.WriteString("[daemon]\ninclude_cron = [\n")
+	b.WriteString("include_cron = [\n")
 	for _, p := range patterns {
 		b.WriteString("  \"")
 		b.WriteString(p)

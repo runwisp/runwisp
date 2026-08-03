@@ -249,14 +249,10 @@ you feel like it.
 
 ## Retiring the crontab
 
-An import copies your jobs into `runwisp.toml`. It doesn't touch your crontab,
-and it can't — that's yours. Because the copy has no link back to the line it
-came from, RunWisp can't tell it's the same job, so it can't
-[hold](/replacing-cron/held-jobs/) it either. Start the daemon with cron still
-enabled and every imported job now has two schedulers firing it. Two backups.
-Two `find -delete` sweeps.
-
-So for imported jobs, take them away from cron by hand:
+An import copies your jobs; it never touches your crontab. And because a copy
+[can't be held](/replacing-cron/held-jobs/), starting the daemon with cron still
+enabled means every imported job has two schedulers firing it — two backups a
+night. So take the imported jobs away from cron by hand:
 
 ```bash
 crontab -l > ~/crontab.backup    # keep a copy, always
@@ -270,8 +266,8 @@ For a system crontab, move the file instead of editing it — cron picks up
 sudo mv /etc/cron.d/myjobs /root/myjobs.crontab.backup
 ```
 
-Going all-in? `crontab -r` drops your user crontab entirely. Take the backup
-first — it's unrecoverable, and it's the one command on this page you can't undo.
+To go all-in, `crontab -r` drops your user crontab entirely. Take the backup
+first — it's unrecoverable, the one command on this page you can't undo.
 
 If you'd rather cut over gradually, that works too: comment out one job, let
 RunWisp own it for a few days, then do the next. Just don't leave a job enabled

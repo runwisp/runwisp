@@ -202,6 +202,14 @@ The hashes embedded in the unit's `# runwisp-config-hash:` and
 `# runwisp-binary-sha256:` lines are how `service status` notices that
 the operator replaced the binary or changed a flag since installing.
 
+Installing over a service that's already running is allowed — that's what
+a [cron take-over](/replacing-cron/take-over-from-cron/) does — but systemd
+keeps a running unit on the settings it started with, so an install that
+changed the port, config, or data dir says as much and points at
+`runwisp restart`. A daemon you started by hand is the one thing install
+still refuses to work around: nothing can start the unit while another
+process owns the data dir, so stop it (`runwisp stop --data <dir>`) first.
+
 ## `service status`
 
 ```
@@ -223,7 +231,8 @@ and has no session to linger).
 An install that [retired cron](/replacing-cron/take-over-from-cron/)
 adds one more line reporting whether the masked cron unit is still
 masked. `active — jobs may be firing twice` there means something brought
-cron back after the take-over:
+cron back after the take-over; re-run `sudo runwisp takeover` to retire it
+again:
 
 ```
   Cron:       cron.service masked by this instance
@@ -290,22 +299,20 @@ sudo runwisp service install --print \
   --port 9477 --host 127.0.0.1 > /etc/systemd/system/runwisp.service
 ```
 
-Add `--local` to render the per-user unit instead. `--print` never
-prompts, so it never offers a cron take-over; pass `--take-over-cron` if
-you want the rendered unit to carry the marker.
+Add `--local` to render the per-user unit instead. `--print` never prompts and
+never touches cron.
 
 ## Retiring cron
 
-`sudo runwisp service install` also offers to stop and mask the system
-cron service, when cron is running and RunWisp is reading its crontabs.
-For scripted installs, `--take-over-cron` answers that question up front;
-`--yes` deliberately doesn't. `service uninstall` hands cron back, and
-`service status` grows a `Cron:` row while the mask is in place.
+`sudo runwisp service install` wires up the unit and nothing else. If cron is
+still running jobs on this box, the install says so and points you at
+`sudo runwisp takeover` — that's the one command that retires cron, and it
+works even on a box with no `runwisp.toml` yet.
 
-`sudo runwisp takeover` is the same thing plus a reload of the running
-daemon, and it's the command to reach for. See
+`service uninstall` hands cron back, and `service status` grows a `Cron:` row
+while the mask is in place. See
 [Take over from cron](/replacing-cron/take-over-from-cron/) for the full
-walkthrough: what happens in what order, the five refusals, the first-run
+walkthrough: what happens in what order, the refusals, the first-run
 prompt, how to undo it, and why macOS can't do it at all.
 
 ## `--purge` for full removal
@@ -351,14 +358,19 @@ prints a `tail -f` hint to the same file.
 
 ```
 runwisp service install
-  -y, --yes       skip the install confirmation (never answers the cron question)
+  -y, --yes       skip the install confirmation
       --print     write the rendered unit to stdout and exit
-      --dry-run   print the plan and exit without writing
+      --dry-run   print the plan, run the same checks, and exit without writing
       --force     overwrite a hand-edited unit
       --local     install a per-user unit instead of the system service
       --binary    override the binary path baked into the unit
-      --take-over-cron           stop and mask the system cron unit without asking
-      --allow-skipped-cron-jobs  proceed even if a cron source failed to load
+
+runwisp takeover
+  -y, --yes       take over without asking (for provisioning scripts)
+      --dry-run   print the plan and exit without writing
+      --force     overwrite a hand-edited unit
+      --binary    override the binary path baked into the unit
+      --allow-skipped-cron-jobs  take over even if a cron source failed to load
 
 runwisp service uninstall
   -y, --yes       skip the uninstall confirmation

@@ -157,7 +157,7 @@ func (l *launchdInstaller) Install(ctx context.Context, opts InstallOptions, out
 		return fmt.Errorf("stat config: %w", err)
 	}
 
-	renderInstallBanner(out, plan)
+	renderInstallBanner(out, plan, opts)
 	ok, err := l.deps.Prompter.Confirm("Proceed?", false)
 	if err != nil {
 		return err

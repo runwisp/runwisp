@@ -40,8 +40,15 @@ For "is the daemon alive right now?" use 'runwisp status' instead.`,
 // servicePathPreRun is the pre-run for commands that describe a data dir they are
 // about to bake into a unit rather than one they write to now. Shared with
 // `runwisp takeover`, which installs the same unit from outside this subtree.
-func servicePathPreRun(*cobra.Command, []string) error {
+func servicePathPreRun(cmd *cobra.Command, _ []string) error {
 	if err := resolveLogConfig(); err != nil {
+		return err
+	}
+	// The port is baked into the unit, so the RUNWISP_PORT fallback has to
+	// apply here too: without it `RUNWISP_PORT=8080 sudo runwisp takeover`
+	// writes a unit pinned to a port the operator never asked for, and the
+	// daemon it starts binds somewhere they aren't looking.
+	if err := resolvePortConfig(cmd); err != nil {
 		return err
 	}
 	resolvePathDefaults(os.Geteuid())

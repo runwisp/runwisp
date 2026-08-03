@@ -10,10 +10,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/cutover"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/spf13/cobra"
 )
 
@@ -33,15 +34,6 @@ type installRequest struct {
 	// unit. Useful for Ansible/Nix where the running binary is not
 	// the one that will end up on disk.
 	Binary string
-	// TakeOverCron stops and masks the system cron service once RunWisp
-	// is confirmed running (Linux, system scope, root only). It is the
-	// non-interactive answer to the question offerCronTakeover asks on a
-	// terminal; either way evaluateCronTakeover has the final say.
-	TakeOverCron bool
-	// AllowSkippedCronJobs overrides refusal #3 (a cron job that failed to
-	// load) but not refusal #4 (a job this daemon cannot become the user
-	// for) — that one has no override.
-	AllowSkippedCronJobs bool
 }
 
 // serviceInstallOpts holds the flags `service install` parses. They are wired in
@@ -56,8 +48,9 @@ var serviceInstallCmd = &cobra.Command{
 
 By default this installs the system-wide service: /etc/systemd/system/
 runwisp.service, running as root, one per host. That needs root, so run it
-with sudo. On a box where cron is still running and RunWisp is reading its
-crontabs, the install asks whether to retire cron for you.
+with sudo. It wires up the unit and nothing else — if cron is still running
+jobs on this box, the install says so and points you at ` + "`runwisp takeover`" + `,
+which is the command that retires it.
 
 Pass --local for a per-user unit instead — ~/.config/systemd/user/
 runwisp-<fingerprint>.service on Linux (with linger enabled so it survives
@@ -67,15 +60,7 @@ macOS. Several of those can coexist on one host; the system service cannot.
 macOS has no system-wide install yet, so --local is required there.
 
 Re-running is idempotent: a matching unit is a no-op, a drifted unit
-prompts before overwrite, a hand-edited unit refuses without --force.
-
-Flags:
-  --yes        skip confirmation (CI-safe; never implies a cron take-over)
-  --print      write the rendered unit to stdout and exit
-  --dry-run    print the plan and exit without writing anything
-  --force      overwrite a hand-edited unit
-  --local      install a per-user unit instead of the system service
-  --take-over-cron  stop and mask the system cron service without asking`,
+prompts before overwrite, a hand-edited unit refuses without --force.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runServiceInstall(cmd, flags)
 	},
@@ -88,8 +73,6 @@ func init() {
 	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.Force, "force", false, "overwrite a hand-edited unit")
 	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.Local, "local", false, localFlagUsage)
 	serviceInstallCmd.Flags().StringVar(&serviceInstallOpts.Binary, "binary", "", "override the binary path baked into the unit (default: auto-detect)")
-	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.TakeOverCron, "take-over-cron", false, "stop and mask the system cron service without asking (Linux, root, system scope)")
-	serviceInstallCmd.Flags().BoolVar(&serviceInstallOpts.AllowSkippedCronJobs, "allow-skipped-cron-jobs", false, "proceed with --take-over-cron even though some cron jobs failed to load")
 }
 
 func runServiceInstall(cmd *cobra.Command, f Flags) error {
@@ -97,11 +80,16 @@ func runServiceInstall(cmd *cobra.Command, f Flags) error {
 	return err
 }
 
-// installService is the shared install path behind `service install`, `takeover`,
-// and the first-run cutover. installed reports whether a unit was actually
-// written and started, so a caller that has to decide what to do next (first run
-// choosing between attaching to the new service and spawning its own daemon) can
-// tell a real install from an abort, a no-op, or an inspect-only run.
+// installService is the shared install path behind `service install` and the
+// first-run flow. installed reports whether a unit was actually written and
+// started, so a caller that has to decide what to do next (first run choosing
+// between attaching to the new service and spawning its own daemon) can tell a
+// real install from an abort, a no-op, or an inspect-only run.
+//
+// It installs a unit and nothing else. Retiring cron used to be a flag on this
+// path, which is why three commands each re-derived whether that was legal; the
+// decision now lives in internal/cutover, and all this does about cron is point
+// at `runwisp takeover` when one would help.
 func installService(cmd *cobra.Command, f Flags, req installRequest) (installed bool, err error) {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, req.Yes)
 	if err != nil {
@@ -113,30 +101,32 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 		return false, err
 	}
 
-	opts, err := resolveServiceOptions(cmd, deps, f, systemWide, req)
+	opts, err := resolveServiceOptions(cmd, deps, f, systemWide, req.Binary)
 	if err != nil {
 		return false, err
 	}
 	opts.Force = req.Force
+
+	// A system unit runs as root and executes whatever the config says, so the
+	// path baked into it needs the same ownership guarantee a cron source gets.
+	// Checked here rather than during path resolution because `takeover` shares
+	// that resolution and reports this as a plan blocker instead, so a dry run
+	// can print it alongside everything else.
+	if _, err := assertTrustedIfSystem(opts.Config, systemWide); err != nil {
+		return false, err
+	}
 
 	installer, err := autostart.New(deps)
 	if err != nil {
 		return false, err
 	}
 
-	// --print and --dry-run still validate an explicit --take-over-cron (so
-	// they show the plan a real run would produce) but never ask: a
-	// question whose answer is then thrown away is worse than no question.
-	inspectOnly := req.Print || req.DryRun
-	if err := resolveCronTakeover(cmd, deps, installer, &opts, req, !inspectOnly); err != nil {
-		return false, err
+	if req.Print || req.DryRun {
+		return false, inspectServiceInstall(cmd, installer, opts, req, f)
 	}
 
-	if inspectOnly {
-		return false, inspectServiceInstall(cmd, installer, opts, req)
-	}
-
-	if err := preflightDaemon(opts, f); err != nil {
+	settingsStale, err := preflightDaemon(context.Background(), installer, opts, f)
+	if err != nil {
 		return false, err
 	}
 
@@ -153,12 +143,43 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 		}
 		return false, err
 	}
+	if settingsStale {
+		fmt.Fprintln(cmd.OutOrStdout(), staleSettingsNote)
+	}
+	printCronStillOwnsNote(cmd, f, deps, installer, opts)
 	return true, nil
+}
+
+// printCronStillOwnsNote is what an install says about cron: nothing, unless a
+// `takeover` on this box would actually do something.
+//
+// The condition is the take-over plan itself rather than a hand-rolled "is cron
+// running" check. That is deliberate — a note pointing at a command that would
+// then refuse (no jobs to find, not root, wrong OS) is worse than silence, and
+// the only thing that reliably knows is the plan that command would compute.
+//
+// Prime directive #1 is why it exists at all: a box left with cron firing jobs
+// RunWisp also reads runs them twice, and nothing else on this path would say so.
+func printCronStillOwnsNote(cmd *cobra.Command, f Flags, deps autostart.Deps, installer autostart.Installer, opts autostart.InstallOptions) {
+	plan, err := newCutover(f, deps, installer, opts, cutover.Options{}).Compute(context.Background())
+	if err != nil || plan.Blocked() || plan.NothingToDo() || !plan.MasksCron || !plan.Evidence.CronActive {
+		return
+	}
+	fmt.Fprintf(cmd.OutOrStdout(),
+		"\nNote: %s is still running, and owns %d cron job(s) on this box.\n"+
+			"      Run 'sudo runwisp takeover' to hand them to RunWisp.\n",
+		plan.Evidence.CronUnit, plan.Evidence.Scan.Jobs)
 }
 
 // inspectServiceInstall serves --print and --dry-run: both answer "what
 // would this install produce" and return without touching disk.
-func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, opts autostart.InstallOptions, req installRequest) error {
+//
+// --dry-run also runs the port preflight, after printing the plan. The plan
+// describes the unit; the preflight describes whether the install could get as
+// far as writing it, and a dry run that reported a clean plan for an install
+// that stops before step one is the kind of quiet lie this flag exists to
+// prevent. --print stays byte-clean for piping.
+func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, opts autostart.InstallOptions, req installRequest, f Flags) error {
 	if req.Print {
 		body, err := installer.Render(opts)
 		if err != nil {
@@ -172,163 +193,15 @@ func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, op
 		return err
 	}
 	printDryRun(cmd.OutOrStdout(), plan)
-	return nil
-}
 
-// resolveCronTakeover decides whether this install also retires the system
-// cron service, and is the only place that sets opts.TakeOverCron.
-//
-// Two ways in. An explicit --take-over-cron is the non-interactive answer:
-// a refusal is a hard error, because the operator asked for something we
-// cannot deliver and silently not doing it would leave cron and RunWisp
-// both firing the same jobs. Otherwise, on a terminal, we ask — which is
-// the point: an operator migrating off cron shouldn't have to already know
-// a flag exists to avoid double-firing every job on the box.
-func resolveCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer autostart.Installer, opts *autostart.InstallOptions, req installRequest, mayPrompt bool) error {
-	if req.TakeOverCron {
-		if _, refusal := evaluateCronTakeover(opts.Config, opts.System, deps.Euid, req.AllowSkippedCronJobs); refusal != nil {
-			return refusal
-		}
-		opts.TakeOverCron = true
-		return nil
-	}
-	if !mayPrompt {
-		return nil
-	}
-	return offerCronTakeover(cmd, deps, installer, opts, req)
-}
-
-// offerCronTakeover asks, on a terminal, whether to retire cron.
-//
-// It only ever asks when the answer could be yes, and only when the
-// question is live: cron has to actually be running, and the config has to
-// actually be reading its crontabs. Everything evaluateCronTakeover would
-// refuse means we don't offer — the operator didn't ask for a take-over, so
-// a refusal is not an error, just a reason to stay quiet. The one exception
-// is a refusal on a host where cron *is* running: that's worth a note,
-// since the operator is about to end up with two schedulers.
-//
-// --yes deliberately does not answer this question. Masking cron is
-// destructive and not obviously reversible mid-script; a CI run that wants
-// it says --take-over-cron.
-func offerCronTakeover(cmd *cobra.Command, deps autostart.Deps, installer autostart.Installer, opts *autostart.InstallOptions, req installRequest) error {
-	// Scope and privilege first: they're free, and a user-scoped install
-	// has no business masking a system unit even to mention it.
-	if !opts.System || deps.Euid != 0 || !deps.StdinIsTTY || deps.AutoOK {
-		return nil
-	}
-
-	unit, active, err := installer.CronStatus(context.Background())
-	if err != nil || unit == "" || !active {
-		return nil
-	}
-
-	cfg, refusal := evaluateCronTakeover(opts.Config, opts.System, deps.Euid, req.AllowSkippedCronJobs)
-	if refusal != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(),
-			"Note: %s is running, but RunWisp is not offering to take it over — %s\n",
-			unit, refusal.title)
-		return nil
-	}
-
-	ok, err := deps.Prompter.Confirm(fmt.Sprintf(
-		"\n%s is running, and RunWisp is reading %d crontab(s) from this host.\n"+
-			"While cron owns those jobs RunWisp holds them, so they keep running from cron\n"+
-			"and you get none of RunWisp's history or output for them.\n"+
-			"Stop and mask %s so RunWisp is the only scheduler?",
-		unit, len(cfg.CronFiles()), unit), false)
+	settingsStale, err := preflightDaemon(context.Background(), installer, opts, f)
 	if err != nil {
 		return err
 	}
-	opts.TakeOverCron = ok
+	if settingsStale {
+		fmt.Fprintln(cmd.OutOrStdout(), staleSettingsNote)
+	}
 	return nil
-}
-
-// evaluateCronTakeover reports whether retiring cron is something RunWisp
-// can safely do for this config, returning the loaded config when it is and
-// the reason when it isn't. It is pure with respect to the decision — the
-// caller decides whether a refusal is an error or a reason not to ask. It
-// lives here rather than in internal/autostart so that package never needs
-// to import internal/config.
-//
-// Four refusals. The euid/scope check runs first since it is free (no
-// config load); the rest run in the order an operator would want explained:
-//  1. Taking over cron needs the system scope and euid 0: systemctl --user
-//     has no bus for root under sudo, and a user-scoped daemon cannot
-//     execute another account's jobs regardless.
-//  2. Nothing is being read (no include_cron match at all) — masking cron
-//     would silently stop every job on the box. Not overridable.
-//  3. Any cron source failed to load (CronFinding.Skipped) — overridable
-//     via --allow-skipped-cron-jobs, since the operator may already know
-//     about it and want the jobs that DID load taken over anyway.
-//  4. A cron task would run as a user this daemon cannot become — a
-//     non-root process cannot switch OS user at all (dropping supplementary
-//     groups alone needs CAP_SETGID), so the job fails at exec time on
-//     every run. Not overridable: there is no flag that makes this work.
-//     Refusal #1 already forces euid 0 here, and a system unit always runs
-//     as root with no privilege-drop option today, so this specific check
-//     cannot actually fire through this function yet — it stays as
-//     defense-in-depth against a future privilege-drop option, and
-//     config.RunUserFindings is unit-tested directly with a non-root euid
-//     for exactly that reason.
-//
-// A config that fails to load is reported as a refusal rather than
-// returned as an error: the caller that cares (an explicit
-// --take-over-cron) surfaces it, and the install itself will fail on the
-// same unreadable config a moment later with a better message.
-func evaluateCronTakeover(configPath string, systemWide bool, euid int, allowSkipped bool) (*config.Config, *userFacingError) {
-	if !systemWide || euid != 0 {
-		return nil, &userFacingError{
-			title: "taking over cron requires the system service and root",
-			details: "A user-scoped daemon cannot execute another account's cron jobs, and " +
-				"systemctl --user has no bus for root under sudo. Re-run as root without " +
-				"--local.",
-		}
-	}
-
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return nil, &userFacingError{title: "cannot take over cron", details: err.Error()}
-	}
-
-	if len(cfg.CronFiles()) == 0 {
-		return nil, &userFacingError{
-			title: "no cron jobs are being read",
-			details: "This config has no [daemon] include_cron pattern matching a crontab. " +
-				"Masking the system cron service now would silently stop every job on this box. " +
-				"Add include_cron first — see 'runwisp import cron' or the Replacing cron guide.",
-		}
-	}
-
-	if !allowSkipped {
-		var skipped []string
-		for _, f := range cfg.CronFindings {
-			if f.Skipped {
-				skipped = append(skipped, f.String())
-			}
-		}
-		if len(skipped) > 0 {
-			return nil, &userFacingError{
-				title: fmt.Sprintf("%d cron job(s) failed to load", len(skipped)),
-				details: strings.Join(skipped, "\n") +
-					"\n\nFix these first, or pass --allow-skipped-cron-jobs to take over cron anyway " +
-					"(those jobs stay stopped).",
-			}
-		}
-	}
-
-	if names := config.RunUserFindings(cfg, euid); len(names) > 0 {
-		return nil, &userFacingError{
-			title: fmt.Sprintf("%d cron task(s) run as a user this daemon cannot become", len(names)),
-			details: fmt.Sprintf(
-				"This daemon does not run as root (uid %d), so it cannot switch to another OS user at "+
-					"run time: %s. These jobs would fail on every run once cron stops running them. "+
-					"Remove the 'user =' override on these tasks, or run the daemon as root.",
-				euid, strings.Join(names, ", ")),
-		}
-	}
-
-	return cfg, nil
 }
 
 // resolveServiceOptions turns the global --config / --data flags plus
@@ -337,8 +210,12 @@ func evaluateCronTakeover(configPath string, systemWide bool, euid int, allowSki
 // "./data" with no DB, the bare ./runwisp.toml shadowing the XDG one,
 // etc.). The returned options are fully absolute — what we'd bake
 // into the unit.
-func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, systemWide bool, req installRequest) (autostart.InstallOptions, error) {
-	binary, err := resolveUnitBinary(cmd.ErrOrStderr(), deps, req.Binary)
+//
+// It deliberately does not apply the system-scope trust check: `service install`
+// treats an untrusted config as an error and `takeover` reports it as a plan
+// blocker, so the caller decides. See assertTrustedIfSystem.
+func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, systemWide bool, binaryOverride string) (autostart.InstallOptions, error) {
+	binary, err := resolveUnitBinary(cmd.ErrOrStderr(), deps, binaryOverride)
 	if err != nil {
 		return autostart.InstallOptions{}, err
 	}
@@ -434,13 +311,13 @@ func resolveServiceConfigPath(cmd *cobra.Command, deps autostart.Deps, f Flags, 
 	cfgFlag := cmd.Flag("config")
 	cfgExplicit := cfgFlag != nil && cfgFlag.Changed
 	if systemWide && !cfgExplicit {
-		return assertTrustedIfSystem(f.CfgFile, systemWide)
+		return f.CfgFile, nil
 	}
 
 	xdgCfg := autostart.XDGConfigPath(deps.Home, deps.XDGConfHome)
 	xdgExists := xdgCfg != "" && fileExists(xdgCfg)
 	bareCfgExists := fileExists("runwisp.toml")
-	path, err := autostart.ResolveConfigPath(autostart.ResolveConfigOptions{
+	return autostart.ResolveConfigPath(autostart.ResolveConfigOptions{
 		Explicit:    f.CfgFile,
 		ExplicitSet: cfgExplicit,
 		HomeDir:     deps.Home,
@@ -448,10 +325,6 @@ func resolveServiceConfigPath(cmd *cobra.Command, deps autostart.Deps, f Flags, 
 		XDGExists:   xdgExists,
 		BareExists:  bareCfgExists,
 	})
-	if err != nil {
-		return "", err
-	}
-	return assertTrustedIfSystem(path, systemWide)
 }
 
 // assertTrustedIfSystem applies AssertFileTrusted to a resolved config path
@@ -460,6 +333,10 @@ func resolveServiceConfigPath(cmd *cobra.Command, deps autostart.Deps, f Flags, 
 // cron source already gets — otherwise `sudo runwisp service install` run
 // from a directory holding someone else's runwisp.toml would silently hand
 // that file root's shell.
+//
+// Called by the install rather than by the path resolution it shares with
+// `takeover`, which reports the same condition as a plan blocker so a --dry-run
+// can print it instead of dying before it says anything.
 //
 // A path that doesn't exist yet is not this check's problem — preflightDaemon
 // already refuses the install with ErrConfigMissing before anything is
@@ -556,14 +433,88 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
-// preflightDaemon refuses to install while a daemon is already up
-// against the same data dir. Without this guard, the install path
-// would race the live process and end up double-binding the port.
-func preflightDaemon(opts autostart.InstallOptions, f Flags) error {
-	if bindErr := probePortAvailable(f.Host, opts.Port); bindErr != nil {
-		return nonInteractivePortConflict(f.Host, opts.Port, bindErr)
+// preflightDaemon refuses to install while something other than this install's
+// own service holds the port the unit would bind — otherwise the unit gets
+// enabled and then fights the live process for the port and the SQLite file.
+//
+// The one holder that isn't a conflict is the reason `runwisp takeover` exists:
+// on a box already running RunWisp as this very service, the port is held by the
+// daemon the install is about to hand the cron jobs to. `systemctl enable --now`
+// on it is a no-op and the caller reloads it afterwards, so refusing there would
+// block the command a cron migration ends with.
+//
+// The data dir is what tells the two apart. It is what makes two daemons collide
+// — one PID file, one SQLite database — and what ensureNoRunningDaemon refuses
+// on, so it is also what identifies "the daemon this unit is for".
+//
+// settingsStale reports that our own service holds the port and the settings
+// baked into its unit are about to change: systemd keeps a running unit on the
+// settings it started with, so "Installed and started" would otherwise mean
+// "…and still serving the old port".
+func preflightDaemon(ctx context.Context, installer autostart.Installer, opts autostart.InstallOptions, f Flags) (settingsStale bool, err error) {
+	bindErr := probePortAvailable(f.Host, opts.Port)
+	if bindErr == nil {
+		return false, nil
 	}
-	return nil
+
+	// A daemon bound beyond loopback withholds its paths (403), so it comes
+	// back nil here and is treated like any other unidentifiable holder.
+	info := probeRunwispInstance(f.Host, opts.Port)
+	if info == nil || !samePath(info.DataDir, opts.DataDir) {
+		return false, portConflictMessage(f.Host, opts.Port, bindErr, info)
+	}
+
+	// Our own data dir — but only the init system can say whether the process
+	// on it is the service or one the operator started by hand. A failed probe
+	// counts as "not the service": guessing the other way waves the install
+	// through into a port fight.
+	st, statusErr := installer.Status(ctx, opts)
+	if statusErr != nil || !st.Installed || !st.Running {
+		return false, handStartedDaemonError(info, f.Host, opts.Port)
+	}
+	return st.UnitConfigHash != st.ExpectedConfigHash, nil
+}
+
+// samePath compares two filesystem paths for "names the same place", the
+// cheap way: absolute and lexically clean, no symlink resolution. An empty
+// path matches nothing — "unknown" is not "the same".
+func samePath(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	return absA == absB
+}
+
+// staleSettingsNote is what an install prints when it re-described a service
+// that was already running: the unit on disk is current, the process is not.
+const staleSettingsNote = "Note: the running daemon keeps the settings it started with — " +
+	"'runwisp restart' to pick up the new unit."
+
+// handStartedDaemonError covers the one port conflict that is nobody's mistake:
+// the operator's own daemon, started by hand, holding the data dir the service
+// is about to own. The generic message ("another RunWisp daemon … run on a
+// different port") is wrong advice here — a different port would leave two
+// daemons on one database. Stopping it is the answer, and then the service
+// starts the same daemon back up under systemd.
+func handStartedDaemonError(info *model.InstanceInfo, host string, port int) error {
+	displayHost := host
+	if displayHost == "" {
+		displayHost = "127.0.0.1"
+	}
+	return &userFacingError{
+		title: fmt.Sprintf("a RunWisp daemon started by hand (pid %d) is holding %s:%d", info.Pid, displayHost, port),
+		details: fmt.Sprintf(
+			"It owns the data dir this service would own (%s), so the unit could not start while it runs.\n\n"+
+				"  1. Stop it:  runwisp stop --data %s\n"+
+				"  2. Re-run this command — the service starts the daemon back up\n\n"+
+				"Nothing has been written, and cron has not been touched.",
+			info.DataDir, info.DataDir),
+	}
 }
 
 // printDryRun emits a plan summary for --dry-run.

@@ -64,8 +64,8 @@ job is held, handing it over doesn't arrive with a backlog of alerts for ticks
 cron ran perfectly well.
 
 So: **you do not need to disable cron before turning on `include_cron`.** RunWisp
-will not double-fire a job cron owns, full stop. Turn it on, watch the schedule
-appear in the dashboard, and retire cron when you're ready.
+will not double-fire a job cron owns. Turn it on, watch the schedule appear in
+the dashboard, and retire cron when you're ready.
 
 ## What a held task still does
 
@@ -120,10 +120,11 @@ One command:
 sudo runwisp takeover
 ```
 
-That installs the system service, masks cron, and reloads, so the held jobs
-become RunWisp's in one step. See
+That writes whatever config is still missing, installs the system service, masks
+cron, and reloads — so the held jobs become RunWisp's in one step. It shows you
+the whole plan and asks once before touching anything. See
 [Take over from cron](/replacing-cron/take-over-from-cron/) for the exact
-ordering, the refusals, and how to undo it.
+ordering, what stops it, and how to undo it.
 
 Prefer to do it by hand? Stop cron yourself and reload:
 
