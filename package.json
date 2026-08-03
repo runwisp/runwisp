@@ -39,8 +39,8 @@
     "@moonrepo/cli": "^2.4.6",
     "ajv": "^8.20.0",
     "prettier": "^3.9.6",
-    "prettier-plugin-svelte": "^3.5.2",
-    "prettier-plugin-tailwindcss": "^0.7.4",
+    "prettier-plugin-svelte": "^4.1.1",
+    "prettier-plugin-tailwindcss": "^0.8.1",
     "typescript": "5.9.2"
   }
 }
