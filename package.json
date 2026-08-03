@@ -35,7 +35,6 @@
     "clean": "./scripts/clean.sh"
   },
   "devDependencies": {
-    "@astrojs/svelte": "^8.1.2",
     "@moonrepo/cli": "^2.4.6",
     "ajv": "^8.20.0",
     "prettier": "^3.9.6",

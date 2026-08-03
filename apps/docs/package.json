@@ -20,6 +20,7 @@
     "devDependencies": {
         "@astrojs/check": "^0.9.10",
         "@runwisp/eslint-config": "workspace:*",
+        "cookie": "^2.0.1",
         "eslint": "^10.8.0",
         "eslint-plugin-astro": "^3.1.0",
         "prettier": "^3.9.6",

@@ -63,8 +63,7 @@
             {disabled}
             {id}
             bind:value
-            {...restProps}
-        ></textarea>
+            {...restProps}></textarea>
 
         {#if error}
             <div class="pointer-events-none absolute top-3 right-3 text-danger-soft-text">

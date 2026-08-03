@@ -21,6 +21,7 @@
         "@types/node": "^24.13.3",
         "@vitest/coverage-v8": "^4.1.10",
         "@xterm/xterm": "5.5.0",
+        "cookie": "^0.6.0",
         "eslint": "^10.8.0",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-sonarjs": "^4.2.0",
