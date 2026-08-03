@@ -26,7 +26,7 @@
     "@runwisp/eslint-config": "workspace:*",
     "@runwisp/typescript-config": "workspace:*",
     "@types/node": "^24.13.3",
-    "eslint": "^9.39.5",
+    "eslint": "^10.8.0",
     "openapi-typescript": "^7.13.0",
     "typescript": "5.9.2"
   }
