@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { fileURLToPath } from "node:url";
-import { includeIgnoreFile } from "@eslint/compat";
-import { defineConfig } from "eslint/config";
+import { defineConfig, includeIgnoreFile } from "eslint/config";
 import astro from "eslint-plugin-astro";
 import { config as baseConfig } from "@runwisp/eslint-config/base";
 

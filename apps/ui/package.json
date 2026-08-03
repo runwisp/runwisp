@@ -7,7 +7,6 @@
         "prepare": "bunx @sveltejs/kit sync"
     },
     "devDependencies": {
-        "@eslint/compat": "^2.1.0",
         "@eslint/js": "^10.0.1",
         "@fontsource/jetbrains-mono": "^5.3.0",
         "@playwright/test": "^1.62.1",

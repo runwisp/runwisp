@@ -8,17 +8,17 @@
         "build": "bun scripts/sync-openapi.ts && bunx --bun astro build"
     },
     "dependencies": {
-        "@astrojs/starlight": "^0.39.3",
+        "@astrojs/starlight": "^0.41.6",
         "@fontsource/jetbrains-mono": "^5.3.0",
         "@fontsource/tasa-orbiter": "^5.3.0",
         "@runwisp/ui": "workspace:*",
-        "astro": "^6.4.8",
-        "sharp": "^0.34.5",
-        "starlight-openapi": "^0.25.3"
+        "astro": "^7.1.6",
+        "js-yaml": "^4.3.1",
+        "sharp": "^0.35.3",
+        "starlight-openapi": "^0.26.0"
     },
     "devDependencies": {
         "@astrojs/check": "^0.9.10",
-        "@eslint/compat": "^2.1.0",
         "@runwisp/eslint-config": "workspace:*",
         "eslint": "^10.8.0",
         "eslint-plugin-astro": "^3.1.0",
