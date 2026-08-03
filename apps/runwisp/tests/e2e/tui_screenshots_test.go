@@ -44,10 +44,10 @@ func TestCaptureTUIScreenshots(t *testing.T) {
 
 	shots := []tuiShot{
 		// Home: the landing screen. Wait for the recent-activity table to
-		// populate (column headers + the footer run count) so the capture isn't
+		// populate — headers *and* at least one run row — so the capture isn't
 		// taken mid-load.
 		{name: "home", capture: func(t *testing.T, s *tuiSession) {
-			s.waitForAll(t, 10*time.Second, "TASK", "TRIGGER", "executions")
+			s.waitForScreen(t, 10*time.Second, "populated recent-activity table", recentActivityPopulated)
 		}},
 		// Task detail: a scheduled health check with run history + Run Now.
 		{name: "task-detail", capture: func(t *testing.T, s *tuiSession) {
@@ -101,6 +101,30 @@ func TestCaptureTUIScreenshots(t *testing.T) {
 type tuiShot struct {
 	name    string
 	capture func(t *testing.T, s *tuiSession)
+}
+
+// recentActivityPopulated reports whether the home screen's recent-activity table
+// has rendered its header row *and* at least one execution beneath it.
+//
+// Waiting on the header alone is not enough: the table paints its columns before
+// the first rows arrive, so a header-only match can capture an empty table. Rows
+// are identified by the relative time in the STARTED column ("9s ago", "41m ago"),
+// which every seeded run has and no chrome above the table does.
+func recentActivityPopulated(screen string) bool {
+	lines := strings.Split(screen, "\n")
+
+	for i, line := range lines {
+		if !strings.Contains(line, "TASK") || !strings.Contains(line, "TRIGGER") {
+			continue
+		}
+		for _, row := range lines[i+1:] {
+			if strings.Contains(row, " ago") {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }
 
 // seedDemoConfig writes the embedded demo config to configPath and seeds dataDir

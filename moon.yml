@@ -27,11 +27,27 @@ tasks:
     options:
       cache: false
 
+  check-installed-deps:
+    description: 'Verify node_modules matches every workspace manifest.'
+    command: 'bun scripts/check-installed-deps.ts'
+    inputs:
+      - 'scripts/check-installed-deps.ts'
+      - 'package.json'
+      - 'bun.lock'
+      - 'apps/*/package.json'
+      - 'packages/*/package.json'
+
   check:
     deps:
+      - '~:check-installed-deps'
       - 'runwisp:check'
       - 'web-ui:check'
+      # docs:build, not just docs:check — `astro check` type-checks the sources
+      # but never runs the MDX→JSX compile or the prerender pass, so an Astro or
+      # transitive-dep break can pass `check` cleanly and fail only on
+      # Cloudflare after push. Building here is the only thing that catches it.
       - 'docs:check'
+      - 'docs:build'
       - 'ui:check'
       - 'common:check'
       - 'asyncapi:check'
