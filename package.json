@@ -43,8 +43,6 @@
     "typescript": "6.0.3"
   },
   "overrides": {
-    "@storybook/csf-plugin": "10.5.5",
-    "@storybook/react-dom-shim": "10.5.5",
     "jsonpath-plus": "10.4.0",
     "form-data": "4.0.6"
   }
