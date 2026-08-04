@@ -754,28 +754,3 @@ func unownedCronFilesWarning(cfg *Config) []string {
 			"it isn't a path cron looks in, so those jobs are not held.",
 		cfg.cronDaemon.State, strings.Join(unowned, ", "))}
 }
-
-// RunUserFindings reports the live cron-sourced tasks a non-root daemon
-// loaded cleanly but cannot actually run: switching the child process to
-// another OS user needs CAP_SETUID/CAP_SETGID, which only root has, so a
-// `user =` cron task fails at exec time on every single run regardless of
-// which account it names — even the daemon's own, since dropping
-// supplementary groups needs the same capability. validateTaskRunUser only
-// checks the spec's shape and assertSpoolRunnable only guards the spool
-// format, so a non-root daemon reading /etc/crontab's root-column jobs (or
-// any cron.d file) loads them without a single CronFinding today, and every
-// one of them silently fails the moment it tries to run. Root can become
-// anyone, so this only ever fires for a non-root install.
-func RunUserFindings(cfg *Config, euid int) []string {
-	if euid == 0 {
-		return nil
-	}
-	var names []string
-	for _, task := range cfg.Tasks {
-		if task.Source != model.SourceCron || task.RunUser == "" {
-			continue
-		}
-		names = append(names, task.Name)
-	}
-	return names
-}

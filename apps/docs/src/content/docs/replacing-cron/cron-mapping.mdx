@@ -13,7 +13,7 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 This is the reference page for both routes into RunWisp — what
 `runwisp import cron` writes out, and equally how a job read live through
 [`include_cron`](/configuration/daemon/#include_cron) behaves. For the narrative
-version, start with [Take over from cron](/replacing-cron/take-over-from-cron/) or
+version, start with [Replacing cron](/replacing-cron/) or
 [Converting crontabs](/replacing-cron/converting-crontabs/) instead.
 
 ## The mapping table
@@ -60,41 +60,36 @@ tasks — and nothing an import writes touches your global `[defaults]` or
 
 ## Environment and shell
 
-Every imported task gets [`env_base = "clean"`](/configuration/tasks/#working-directory--shell).
-Cron hands a job a nearly empty environment — `PATH=/usr/bin:/bin`, `SHELL`,
-`HOME`, `LOGNAME` — so that's what your jobs were written against, and it's what
-they keep. RunWisp's own default is to inherit the daemon's environment, which
-would run your job with whatever the daemon was launched with. Your crontab's own
-`PATH=` line still lands in the task's `env` and layers on top, so nothing you set
-explicitly is lost.
+Every imported task gets [`env_base = "clean"`](/configuration/tasks/#working-directory--shell)
+and [`working_dir = "~"`](/configuration/tasks/#working-directory--shell), because
+cron and RunWisp default differently and your jobs were written for cron's rules:
 
-Cron also runs every job in the home directory of the user running it, while
-RunWisp defaults to the directory the daemon was started in — so a `run` script
-with a relative path in it would quietly write somewhere else. Every imported job
-gets `working_dir = "~"`, and
-[`~` means the home of whoever the task runs as](/configuration/tasks/#working-directory--shell):
-the daemon's own account for a per-user crontab, the user column's account for a
-system crontab. Neither needs you to write a path.
+- **Environment.** Cron hands a job a nearly empty environment (`PATH=/usr/bin:/bin`,
+  `SHELL`, `HOME`, `LOGNAME`); RunWisp otherwise inherits the daemon's. `env_base = "clean"`
+  keeps cron's. Your crontab's own `PATH=` line still lands in the task's `env` and
+  layers on top, so nothing you set explicitly is lost.
+- **Working directory.** Cron runs each job in the running user's home; RunWisp
+  otherwise uses the directory it was started in — so a relative path in your script
+  would write somewhere else. `~` means
+  [the home of whoever the task runs as](/configuration/tasks/#working-directory--shell):
+  the daemon's account for a per-user crontab, the user column's for a system one.
 
 ## Timing: catch-up and overlap
 
-These two are about **when** a job fires, which is the one thing a migration
-mustn't change quietly. Both are written out explicitly, so each is one line to
-change if you want RunWisp's behaviour instead of cron's.
+These two are about **when** a job fires — the one thing a migration mustn't change
+quietly — so both are written out explicitly, each one line to change if you'd
+rather have RunWisp's behaviour:
 
-Cron has no concept of a missed tick — a tick that arrives while nothing is
-listening is just gone. RunWisp normally catches up, so starting the daemon at
-15:00 would run last night's 02:00 backup, and the run would look exactly like a
-scheduled one. Imported jobs get
-[`catch_up = "skip"`](/concepts/scheduling/#missed-ticks-catchup) instead. The gap
-is still recorded as a missed run you can see, which is more than cron gave you.
-**Delete the line if you'd rather have catch-up.**
-
-`on_overlap = "queue"` is written out at its default value. When a job outruns its
-own schedule, cron starts another copy; RunWisp queues the next one instead — an
-unbounded pile-up is why cron jobs end up wrapped in `flock`. If yours genuinely
-relied on running in parallel, this is the line to change, and
-[`max_concurrent`](/concepts/concurrency/) is how.
+- **`catch_up = "skip"`.** Cron has no concept of a missed tick; one that arrives
+  while nothing is listening is just gone. RunWisp normally
+  [catches up](/concepts/scheduling/#missed-ticks-catchup) — starting the daemon at
+  15:00 would run last night's 02:00 backup as a normal run. `skip` keeps cron's
+  behaviour, while still recording the gap as a missed run you can see. Delete the
+  line for catch-up.
+- **`on_overlap = "queue"`.** When a job outruns its own schedule, cron starts
+  another copy; RunWisp queues the next instead — the unbounded pile-up is why cron
+  jobs end up wrapped in `flock`. If yours genuinely relied on running in parallel,
+  change this and reach for [`max_concurrent`](/concepts/concurrency/).
 
 RunWisp's cron grammar is a superset of vixie-cron's: the standard five fields,
 descriptors like `@daily`, and a few extras (six-field specs with seconds,
@@ -170,18 +165,8 @@ shows up as a `# TODO` in the file and a note in the summary. The usual ones:
         description="The command that produces all of the above, and the staging workflow around it."
     />
     <LinkCard
-        title="How scheduling works"
-        href="/concepts/scheduling/"
-        description="The cron grammar RunWisp accepts, timezones, and catch-up."
-    />
-    <LinkCard
         title="[tasks.*] reference"
         href="/configuration/tasks/"
         description="Every task key the importer can produce — and the ones it can't."
-    />
-    <LinkCard
-        title="Email (local MTA)"
-        href="/notifications/providers/sendmail/"
-        description="The MAILTO replacement: mail through the sendmail binary cron already used."
     />
 </CardGrid>

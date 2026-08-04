@@ -11,22 +11,28 @@ head:
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 `runwisp import cron` turns a crontab into a `runwisp.toml` you own, annotated
-with anything that needed a human's attention. Use it when you want the crontab
-gone. (If you'd rather leave the crontabs where they are and have RunWisp read
-them live, that's [Take over from cron](/replacing-cron/take-over-from-cron/) —
-one line of config and nothing to retire by hand.)
+with anything that needed a human's attention. There are two reasons you'd land
+here, and they're different:
+
+- **You already [took over](/replacing-cron/) and want a job
+  as hand-written TOML in git.** Skip to
+  [Graduating a job into your own config](#graduating-a-job-into-your-own-config)
+  and `promote` it. Cron is gone, so nothing double-fires — the easy path.
+- **You're converting by hand** — on macOS or a box without systemd, where
+  `takeover` can't retire cron for you, or because you just want a clean generated
+  TOML from the start. `import cron` copies your jobs; you then
+  [retire the old crontab lines yourself](#retiring-the-crontab).
 
 ## The one-liner
 
-Pipe your current crontab in, or point it at a file — both work the same way:
+Pipe your current crontab in, or point it at a file:
 
 ```bash
 crontab -l | runwisp import cron        # whatever's installed for you
 runwisp import cron /etc/crontab        # a specific file
 ```
 
-That prints an annotated `runwisp.toml` to your terminal and a summary of what it
-did. Given a crontab like:
+Given a crontab like:
 
 ```text
 SHELL=/bin/bash
@@ -39,7 +45,7 @@ MAILTO=ops@example.com
 */5 * * * * /opt/healthcheck.sh
 ```
 
-you get:
+you get an annotated `runwisp.toml` on stdout:
 
 ```toml
 #:schema https://docs.runwisp.com/config.schema.json
@@ -84,12 +90,14 @@ run = "/opt/healthcheck.sh"
 PATH = "/usr/local/bin:/usr/bin"
 ```
 
-Every task carries the crontab's `SHELL` and `PATH` itself rather than a shared
-`[defaults]` block, so each task stands alone and your own global settings are
-left untouched. The `env_base`, `working_dir`, `catch_up` and `on_overlap` lines
-reproduce cron's execution model rather than the daemon's — see
+Each task carries the crontab's `SHELL` and `PATH` itself rather than a shared
+`[defaults]` block, so it stands alone and your own global settings stay
+untouched. The `env_base`, `working_dir`, `catch_up` and `on_overlap` lines
+reproduce cron's execution model, not the daemon's — see
 [How cron maps to TOML](/replacing-cron/cron-mapping/). (`warmup` gets no
 `catch_up`: a `@reboot` job has no ticks to miss.)
+
+### The summary
 
 On stderr — so it stays out of the TOML you're piping somewhere — you get an
 account of every job:
@@ -121,9 +129,8 @@ Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.
   file out of /etc/cron.d) before starting RunWisp, or each one runs twice.
 ```
 
-Every line of your crontab gets a row, and the row shows the command that will
-actually run, wrapped if it's long and never cut short. The mark tells you how it
-landed:
+Every line of your crontab gets a row showing the command that will actually run,
+wrapped if it's long and never cut short. The mark tells you how it landed:
 
 | Mark | Means                                                    |
 | ---- | -------------------------------------------------------- |
@@ -132,33 +139,30 @@ landed:
 | `!`  | Needs a fix from you before this config will load.       |
 | `-`  | Skipped, because your `runwisp.toml` already defines it. |
 
-Anything about the file rather than about one job — a `MAILTO`, an unresolvable
+Anything about the file rather than one job — a `MAILTO`, an unresolvable
 `[include]` — lands in `Notes:` at the bottom. Nothing is dropped without a line.
-
-That closing `!` about double-firing is the one thing this route asks of you; see
+The closing `!` about double-firing is the one thing this route asks of you; see
 [Retiring the crontab](#retiring-the-crontab).
 
-When it looks right, save it:
+When it looks right, save it and check it parses:
 
 ```bash
 crontab -l | runwisp import cron -o runwisp.toml
 runwisp validate
 ```
 
-`-o` writes the file, and [`runwisp validate`](/configuration/overview/) confirms
-the result parses before you start the daemon.
-
 ## Keeping your own config separate
 
-`-o` gives you one flat file, which is perfect when you're starting fresh. If you
-already have a `runwisp.toml` you've been hand-writing, use `--write` instead:
+`-o` gives you one flat file, perfect when you're starting fresh. If you already
+have a `runwisp.toml` you've been hand-writing, use `--write` instead — it never
+touches what you wrote:
 
 ```bash
 crontab -l | runwisp import cron --write --dry-run   # look first
 crontab -l | runwisp import cron --write             # then do it
 ```
 
-`--dry-run` prints the same summary and names every file the real run would touch,
+`--dry-run` prints the same summary and names every file a real run would touch,
 without touching any of them:
 
 ```
@@ -174,29 +178,28 @@ A real run checks that, and rolls both files back if it fails.
 Nothing was written.
 ```
 
-The real thing installs the import in a **two-tier layout**:
+The real run installs the import in a **two-tier layout**:
 
 ```
 runwisp.toml              # yours — hand-authored, keep it in git
 runwisp.d/imported.toml   # machine-owned — the importer writes this
 ```
 
-Your root file is created (or has its
+Your root file is created (or its
 [`[daemon].include`](/configuration/daemon/) wired) to load `runwisp.d/*.toml`,
-and the imported jobs land in the staging file. Nothing you wrote by hand is
-touched — the importer only ever owns `runwisp.d/imported.toml`, so you can re-run
-the import without worrying about what it'll do to your own tasks.
+and the imported jobs land in the staging file. The importer only ever owns
+`runwisp.d/imported.toml`, so you can re-run the import without worrying what it'll
+do to your own tasks.
 
-A name that clashes with a task you already have doesn't break anything either. If
-your `runwisp.toml` already defines that name with the **same** command, the job is
-skipped as already-yours (a `-` row). If it defines it with a _different_ command,
-the imported one is renamed — `backup` becomes `backup-2` — and the row says so.
-Both files are written as one unit, so a merge that fails for any other reason
-rolls both back rather than leaving your daemon half-updated.
+A name clash doesn't break anything: if your config already defines that name with
+the **same** command, the job is skipped as already-yours (a `-` row); with a
+_different_ command, the import is renamed — `backup` becomes `backup-2` — and the
+row says so. Both files are written as one unit, so any failure rolls both back
+rather than leaving your daemon half-updated.
 
 Imported tasks report `"source": "staged"` in `runwisp list --json` and
 `status --json` — shorthand for "came from an import, not native TOML yet". It's a
-label, not a limitation: staged tasks are scheduled and run exactly like any other.
+label, not a limitation: staged tasks are scheduled and run like any other.
 
 :::note[A custom include list is yours]
 If your root config already sets its own `include` list, `--write` won't edit it
@@ -205,41 +208,39 @@ behind your back. It prints the glob to add and writes nothing.
 
 ## Graduating a job into your own config
 
-Staging is a waiting room. When you're happy with an imported job, promote it:
+`promote` turns a job RunWisp already runs into a block in your own
+`runwisp.toml`:
 
 ```bash
-runwisp promote backup      # move this one into runwisp.toml
-runwisp promote --all       # move all of them
+runwisp promote backup      # this one
+runwisp promote --all       # all of them
 ```
 
-That moves the job's block out of `runwisp.d/imported.toml` and into your own
-`runwisp.toml`, comments and all — including any `# TODO` the import left for you.
-Nothing is re-generated, so nothing gets reformatted or lost on the way. From then
-on the job is yours: it reports no `source` any more, and a later re-import won't
-touch it.
+The definition is _copied_ into your `runwisp.toml` — the source is never written.
+It works the same on a job you [took over](/replacing-cron/)
+from cron and on a **staged import**; `--all` covers both.
 
-Nothing about the job's behaviour changes — only which file defines it. A promoted
-service keeps running, and `runwisp reload` afterwards will honestly report _no
-task changes_; the reload is only there to refresh the provenance label on a live
-daemon. Use `--reload` to do both in one go.
+- **From a take-over:** on the next load RunWisp sees your TOML says the same thing
+  the crontab does and takes the TOML copy. Delete the cron line whenever you feel
+  like it, or leave it — cron was retired at take-over, so it just sits there inert.
+- **From a staged import:** staging is a waiting room. `promote` moves the block
+  out of `runwisp.d/imported.toml` into your `runwisp.toml`, comments and all —
+  including any `# TODO` the import left. Nothing is re-generated, so nothing gets
+  reformatted or lost. When the last staged job is promoted, the empty staging file
+  is cleaned up and you're left with a single hand-maintained `runwisp.toml`.
 
-When the last job is promoted the empty staging file is cleaned up, and you're
-left with a single hand-maintained `runwisp.toml`, exactly as if you'd written it
-yourself.
-
-`promote` also works on a **crontab-sourced** task, and `--all` includes them.
-There the definition is _copied_ into your `runwisp.toml` — the crontab is never
-written. On the next load RunWisp notices your TOML says the same thing the
-crontab does and takes the TOML copy, so you can delete the cron line whenever you
-feel like it.
+From then on the job is yours: it reports no `source`, and a later re-import won't
+touch it. Its behaviour doesn't change — only which file defines it. A `runwisp reload`
+afterwards honestly reports _no task changes_; the reload only refreshes the
+provenance label on a live daemon, so use `--reload` to do both at once.
 
 ## Retiring the crontab
 
-An import copies your jobs; it never touches your crontab. And because a copy
-[can't be held](/replacing-cron/held-jobs/#an-imported-copy-is-never-held),
-starting the daemon with cron still enabled means every imported job has two
-schedulers firing it — two backups a night. So take the imported jobs away from
-cron by hand:
+An import copies your jobs; it never touches your crontab. A copy has no link back
+to the crontab line it came from, so — unlike a job read live through
+`include_cron` — RunWisp can't recognise it as the same one cron runs and stand it
+down. Starting the daemon with cron still enabled means two schedulers firing each
+job. So take the imported jobs away from cron by hand:
 
 ```bash
 crontab -l > ~/crontab.backup    # keep a copy, always
@@ -258,32 +259,25 @@ sudo mv /etc/cron.d/myjobs /root/myjobs.crontab.backup
 Take the backup above first. It's the one command on this page you can't reverse.
 :::
 
-If you'd rather cut over gradually, that works too: comment out one job, let
-RunWisp own it for a few days, then do the next. Just don't leave a job enabled in
-both places — pick one owner per job and the schedules stay honest.
+Cutting over gradually works too: comment out one job, let RunWisp own it for a few
+days, then do the next. Just don't leave a job enabled in both places — one owner
+per job keeps the schedules honest.
 
 :::tip[Or skip all of this]
-Point [`include_cron`](/configuration/daemon/#include_cron) at the crontabs
-instead of importing them and none of this is yours to manage:
-`sudo runwisp takeover` retires cron in one step, and nothing can double-fire in
-the meantime. See [Take over from cron](/replacing-cron/take-over-from-cron/).
+On Linux with systemd, point [`include_cron`](/configuration/daemon/#include_cron)
+at the crontabs instead of importing them, and none of this is yours to manage:
+`sudo runwisp takeover` retires cron in one step, and nothing double-fires in the
+meantime. See [Replacing cron](/replacing-cron/).
 :::
 
 ## System crontabs and the user column
 
 `/etc/crontab` and files in `/etc/cron.d` put a **user** between the schedule and
-the command. RunWisp spots those automatically — from the path, or from the
-`# m h dom mon dow user command` header — and maps that column to the task's
-[`user`](/configuration/tasks/). You don't have to flag it.
-
-If a piped crontab is ambiguous, the importer leaves a `# TODO` at the top of the
-file rather than guessing wrong. Force the decision either way with `--system` or
-`--system=false`:
-
-```bash
-runwisp import cron /etc/crontab -o runwisp.toml   # auto-detected
-crontab -l | runwisp import cron --system=false    # never treat a column as a user
-```
+the command. RunWisp maps that column to the task's [`user`](/configuration/tasks/)
+automatically — from the path or the `# ... user command` header. Force it either
+way with `--system` / `--system=false` when a piped crontab is ambiguous; the
+[mapping reference](/replacing-cron/cron-mapping/#what-needs-a-human) covers what
+happens when a line is missing its user column.
 
 ## Flag reference
 
@@ -330,18 +324,8 @@ run writes nothing, so the summary is all it has to show you.
         description="Field by field: what the importer produces, and what it can't map without you."
     />
     <LinkCard
-        title="Take over from cron"
-        href="/replacing-cron/take-over-from-cron/"
-        description="The other route: read the crontabs where they are, and retire cron in one command."
-    />
-    <LinkCard
-        title="Held jobs"
-        href="/replacing-cron/held-jobs/"
-        description="Why the other route never double-fires, and why a copy can't be held."
-    />
-    <LinkCard
-        title="CLI reference"
-        href="/operations/cli/#migrate-an-existing-setup"
-        description="Every flag on import, promote, and validate."
+        title="Replacing cron"
+        href="/replacing-cron/"
+        description="The Linux + systemd route: read the crontabs where they are, retire cron in one command."
     />
 </CardGrid>

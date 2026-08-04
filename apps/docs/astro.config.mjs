@@ -10,9 +10,14 @@ export default defineConfig({
     site: "https://docs.runwisp.com",
     // The cron-migration guide grew into its own "Replacing cron" section, so
     // the single old recipe URL — the one linked from the README and the
-    // daemon's own output — has to keep resolving.
+    // daemon's own output — has to keep resolving. The take-over and held-jobs
+    // pages were later folded into the section index; their URLs are linked
+    // from the README, CHANGELOG, and generated runwisp.toml, so they redirect
+    // too.
     redirects: {
-        "/recipes/migrating-from-cron": "/replacing-cron/take-over-from-cron/",
+        "/recipes/migrating-from-cron": "/replacing-cron/",
+        "/replacing-cron/take-over-from-cron": "/replacing-cron/",
+        "/replacing-cron/held-jobs": "/replacing-cron/",
     },
     integrations: [
         starlight({
@@ -88,11 +93,7 @@ export default defineConfig({
                 {
                     label: "Replacing cron",
                     items: [
-                        {
-                            label: "Take over from cron",
-                            slug: "replacing-cron/take-over-from-cron",
-                        },
-                        { label: "Held jobs", slug: "replacing-cron/held-jobs" },
+                        { label: "Start here", slug: "replacing-cron" },
                         {
                             label: "Converting crontabs",
                             slug: "replacing-cron/converting-crontabs",

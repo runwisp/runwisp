@@ -297,23 +297,6 @@ func (c *Cutover) cronSourceBlockers(ev Evidence) []Blocker {
 		})
 	}
 
-	// Defense in depth. The euid check above already forces root here, and a
-	// system unit runs as root with no privilege-drop option today, so this
-	// cannot currently fire — it stays for the day one is added, and
-	// config.RunUserFindings is unit-tested directly with a non-root euid.
-	if ev.Cfg != nil {
-		if names := config.RunUserFindings(ev.Cfg, c.deps.Euid); len(names) > 0 {
-			out = append(out, Blocker{
-				Kind:  BlockerRunUserImpossible,
-				Title: fmt.Sprintf("%d cron task(s) run as a user this daemon cannot become", len(names)),
-				Details: fmt.Sprintf(
-					"This daemon does not run as root (uid %d), so it cannot switch to another OS user at "+
-						"run time: %s. These jobs would fail on every run once cron stops running them. "+
-						"Remove the 'user =' override on these tasks, or run the daemon as root.",
-					c.deps.Euid, strings.Join(names, ", ")),
-			})
-		}
-	}
 	return out
 }
 

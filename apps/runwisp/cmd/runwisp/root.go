@@ -60,6 +60,7 @@ surfaces for scripts and AI agents:
   runwisp exec <t> --json  run a task and print its outcome as JSON
   runwisp status --json    daemon + task snapshot as JSON
   runwisp openapi          the REST API's OpenAPI 3.1 spec
+On a box that already runs cron: sudo runwisp takeover retires cron and adopts its jobs.
 Dense agent reference: https://docs.runwisp.com/agents/reference.md`,
 	Version: version.Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
