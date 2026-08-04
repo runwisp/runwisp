@@ -271,7 +271,7 @@
     },
     "composeAlias": {
       "type": "object",
-      "description": "One [compose.<alias>] block: reserved scalar keys plus per-service override sub-tables.",
+      "description": "One [compose.<alias>] block: reserved scalar keys plus per-service override sub-tables. The reserved [compose.<alias>.defaults] sub-table applies its override keys to every imported service (per-service tables win).",
       "properties": {
         "file": { "type": "string", "description": "Compose file path; auto-discovered when omitted." },
         "include": { "type": "array", "items": { "type": "string" }, "description": "Services to import; mutually exclusive with exclude." },

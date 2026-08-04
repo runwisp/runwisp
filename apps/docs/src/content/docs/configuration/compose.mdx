@@ -53,6 +53,39 @@ pull         = "missing"                 # "missing" (default) | "always" | "nev
 name_format  = "{alias}.{service}"       # RunWisp task naming; default shown
 ```
 
+## Block defaults
+
+Got a stack of near-identical workers that all want the same policy? Instead of
+repeating a sub-table per service, set them once in `[compose.<alias>.defaults]`.
+Every imported service inherits those keys, and any per-service sub-table still
+wins:
+
+```toml
+[compose.stack]
+include = ["worker-a", "worker-b", "worker-c"]
+
+[compose.stack.defaults]
+restart       = "always"   # applies to all three workers
+start_retries = 5
+
+[compose.stack.worker-a]
+restart = "on_failure"     # worker-a opts out; the other two stay "always"
+```
+
+This is worth knowing about because the compose-import default is
+`restart = "on_failure"` — a worker that exits **0** (batch-then-quit,
+memory-guard restart, idle timeout) counts as "done" and won't be relaunched.
+If you're migrating workers that carried `restart: unless-stopped` under plain
+Compose, a one-line `[compose.<alias>.defaults] restart = "always"` restores that
+behavior for the whole block.
+
+`defaults` accepts the same keys as a per-service override (below). Its
+`notify_on_failure` / `notify_on_success` lists add routes to _every_ service, on
+top of any a service declares for itself. Because `defaults` is a reserved
+sub-table name, a compose service literally named `defaults` is rejected with a
+rename hint. Block defaults aren't available in `mode = "stack"` (there's only one
+task there — set its knobs on the block).
+
 ## Per-service overrides
 
 Per-service sub-tables apply RunWisp knobs to a single compose service.

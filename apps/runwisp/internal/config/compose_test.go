@@ -154,6 +154,97 @@ restart = "always"
 	assert.Contains(t, err.Error(), "stack")
 }
 
+func TestComposeExpansion_BlockDefaultsApplyToAllServices(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[compose.myapp]
+
+[compose.myapp.defaults]
+restart = "always"
+`))
+	require.NoError(t, err)
+
+	for _, name := range []string{"myapp.web", "myapp.worker", "myapp.db"} {
+		assert.Equal(t, model.RestartAlways, findTask(t, cfg, name).Restart, "%s inherits the block default", name)
+	}
+}
+
+func TestComposeExpansion_PerServiceOverrideBeatsBlockDefaults(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[compose.myapp]
+
+[compose.myapp.defaults]
+restart = "always"
+
+[compose.myapp.web]
+restart = "on_failure"
+`))
+	require.NoError(t, err)
+
+	assert.Equal(t, model.RestartOnFailure, findTask(t, cfg, "myapp.web").Restart, "per-service override wins")
+	assert.Equal(t, model.RestartAlways, findTask(t, cfg, "myapp.worker").Restart, "others keep the block default")
+}
+
+func TestComposeExpansion_BlockDefaultsNonPolicyKnobs(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[compose.myapp]
+
+[compose.myapp.defaults]
+start_retries = 3
+exit_codes    = [0, 2]
+`))
+	require.NoError(t, err)
+
+	for _, name := range []string{"myapp.web", "myapp.worker", "myapp.db"} {
+		task := findTask(t, cfg, name)
+		assert.Equal(t, 3, task.StartRetries, "%s inherits start_retries", name)
+		assert.Equal(t, []int{0, 2}, task.ExitCodes, "%s inherits exit_codes", name)
+	}
+}
+
+func TestComposeExpansion_BlockDefaultsNotifyDesugarsPerService(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `[[notifier]]
+id = "slack-prod"
+type = "slack"
+webhook_url = "https://example/hook"
+
+[compose.myapp]
+
+[compose.myapp.defaults]
+notify_on_failure = ["slack-prod"]
+`))
+	require.NoError(t, err)
+	require.NoError(t, Validate(cfg))
+
+	for _, name := range []string{"myapp.web", "myapp.worker", "myapp.db"} {
+		route := findRoute(t, cfg, name, "run.failed")
+		assert.Contains(t, route.NotifierID, "slack-prod", "%s gets the block-default failure route", name)
+	}
+}
+
+func TestComposeExpansion_ServiceNamedDefaultsRejected(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(`services:
+  defaults:
+    image: alpine
+`), 0644))
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`[compose.myapp]
+`), 0644))
+
+	_, err := Load(cfgPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "defaults")
+	assert.Contains(t, err.Error(), "rename")
+}
+
+func TestComposeExpansion_StackRejectsBlockDefaults(t *testing.T) {
+	_, err := Load(writeConfig(t, `[compose.myapp]
+mode = "stack"
+
+[compose.myapp.defaults]
+restart = "always"
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "stack")
+}
+
 func TestComposeExpansion_NameFormatMustContainService(t *testing.T) {
 	_, err := Load(writeConfig(t, `[compose.myapp]
 name_format = "static"
