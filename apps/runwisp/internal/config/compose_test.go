@@ -186,14 +186,14 @@ func TestComposeExpansion_BlockDefaultsNonPolicyKnobs(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
 
 [compose.myapp.defaults]
-start_retries = 3
-exit_codes    = [0, 2]
+restart_attempts = 3
+exit_codes       = [0, 2]
 `))
 	require.NoError(t, err)
 
 	for _, name := range []string{"myapp.web", "myapp.worker", "myapp.db"} {
 		task := findTask(t, cfg, name)
-		assert.Equal(t, 3, task.StartRetries, "%s inherits start_retries", name)
+		assert.Equal(t, 3, task.RestartAttempts, "%s inherits restart_attempts", name)
 		assert.Equal(t, []int{0, 2}, task.ExitCodes, "%s inherits exit_codes", name)
 	}
 }

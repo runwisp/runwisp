@@ -65,8 +65,8 @@ wins:
 include = ["worker-a", "worker-b", "worker-c"]
 
 [compose.stack.defaults]
-restart       = "always"   # applies to all three workers
-start_retries = 5
+restart          = "always"   # applies to all three workers
+restart_attempts = 5
 
 [compose.stack.worker-a]
 restart = "on_failure"     # worker-a opts out; the other two stay "always"
