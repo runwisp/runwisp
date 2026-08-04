@@ -279,7 +279,33 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 		}
 	}
 
+	if err := h.checkEnvOverrideAllowed(task, svc.TaskConfig); err != nil {
+		return err
+	}
+
 	applyServiceTaskConfig(task, svc.TaskConfig)
+	return nil
+}
+
+// checkEnvOverrideAllowed puts a peer-supplied env override on the same
+// allow_cloud_dispatch surface as a script override. env can change what a
+// disk-defined command actually executes (NODE_OPTIONS, GIT_SSH_COMMAND,
+// *_proxy) and it overlays on top of the inherited environment, so a peer must
+// not reshape a TOML service's spawn env without the opt-in.
+//
+// Only env is gated. The instances/restart/log knobs are what the cloud
+// legitimately re-asserts on every reconnect, so gating those would break sync
+// on a dispatch-off daemon.
+func (h *InboundHandler) checkEnvOverrideAllowed(task *model.Task, cfg *protocol.ServiceTaskConfig) error {
+	if cfg == nil || len(cfg.Env) == 0 {
+		return nil
+	}
+	if status := h.availability.ForType(task.ExecutionDef.ExecType()); !status.Available {
+		return &CloudError{
+			Kind:    CloudErrorKindConflict,
+			Message: fmt.Sprintf("env override for service %q not available: %s", task.Name, status.Reason),
+		}
+	}
 	return nil
 }
 

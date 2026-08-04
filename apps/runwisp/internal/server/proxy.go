@@ -68,6 +68,28 @@ func normalizeTrustProxyCIDR(raw string) (string, error) {
 	return cidr, nil
 }
 
+// isProxiedRequest reports whether the request looks relayed rather than
+// direct: it carries a hop header, or its peer is a configured trusted proxy.
+//
+// It exists because a loopback peer is not proof of a local client. The
+// documented public-exposure setup puts nginx / Caddy / Traefik / a Cloudflare
+// Tunnel on the same host forwarding to 127.0.0.1, so every internet request
+// arrives from loopback. Gates that mean "only a process on this machine" must
+// therefore reject proxied requests as well as non-loopback ones.
+//
+// Header presence is a heuristic, not a proof — a bare `proxy_pass` with no
+// proxy_set_header sends none of them — but every common proxy sets at least
+// one, and the local launcher probe sets none, so it closes the realistic cases
+// without costing the port-conflict UX.
+func isProxiedRequest(r *http.Request, trusted *xff.Options) bool {
+	for _, h := range forwardedHeaders {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return isFromTrustedProxy(r, trusted)
+}
+
 // isFromTrustedProxy reports whether the request's TCP peer is within the
 // configured trusted-proxy CIDR set. It uses the original peer address
 // (captured by savePeerAddr) so that an attacker cannot inject a header to

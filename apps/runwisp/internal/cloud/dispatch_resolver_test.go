@@ -271,6 +271,49 @@ func TestResolveDispatchTask_HTTPAllowedWithoutDispatch(t *testing.T) {
 	assert.False(t, configBacked)
 }
 
+// Regression: sanitizeCloudTaskName only prefixes "cloud-", so a peer picks the
+// rest of the name and can aim an inline dispatch at a locally-defined task
+// called cloud-*. Upserting over it would replace a disk-defined task's
+// execution — and the ephemeral reaper would then delete the task outright — so
+// the collision must be rejected. http is reachable with allow_cloud_dispatch
+// off, so this is not gated by the availability check above.
+func TestResolveDispatchTask_RejectsConfigTaskNameCollision(t *testing.T) {
+	origExec := &model.ShellExecution{Script: "sync.sh"}
+	local := &model.Task{Name: "cloud-sync", Kind: model.KindTask, Cron: "* * * * *", ExecutionDef: origExec}
+	h := newDispatchHandler(executor.Availability{HTTP: executor.BackendStatus{Available: true}},
+		map[string]*model.Task{"cloud-sync": local})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	_, _, err := h.resolveDispatchTask(&protocol.Execution{
+		TaskID: "sync",
+		Script: httpScript(t, "https://attacker.example/p"),
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+	assert.Empty(t, runner.upserted, "the local task definition must survive untouched")
+	assert.Same(t, origExec, local.ExecutionDef)
+}
+
+// An inline dispatch reusing the name of an earlier inline dispatch is the
+// normal retry case and must still upsert.
+func TestResolveDispatchTask_EphemeralNameCollisionAllowed(t *testing.T) {
+	prior := &model.Task{Name: "cloud-probe", Ephemeral: true, ExecutionDef: &model.ShellExecution{Script: "old"}}
+	h := newDispatchHandler(executor.Availability{HTTP: executor.BackendStatus{Available: true}},
+		map[string]*model.Task{"cloud-probe": prior})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{
+		TaskID: "probe",
+		Script: httpScript(t, "https://example.com"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "cloud-probe", name)
+	assert.False(t, configBacked)
+	assert.Len(t, runner.upserted, 1)
+}
+
 // --- buildDynamicCloudTask ---
 
 func TestBuildDynamicCloudTask_UsesTaskID(t *testing.T) {

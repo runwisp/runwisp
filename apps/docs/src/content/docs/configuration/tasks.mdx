@@ -531,6 +531,29 @@ container instead, set both `compose_file` and `run` together with
 For importing every service in a compose file as observable RunWisp
 services, see [`[compose.*]`](/configuration/compose/).
 
+### Parameters on a compose task
+
+[Parameters](#parameters) work here, with one difference in the
+fresh-container mode above (`compose_file` and `compose_service`, no
+`run`): `arg`, `option`, and `flag` values go to the container the way
+`docker compose run <svc> …` passes them, so they replace the service's
+`command:` and arrive as arguments to the image's `ENTRYPOINT`.
+
+```toml
+[tasks.nightly-backup]
+cron            = "0 3 * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+params          = [{ arg = "since", default = "yesterday" }]
+```
+
+Trigger that with `since = "2026-01-01"` and the container runs its
+entrypoint with `2026-01-01`.
+
+Use `env` params to pass values without touching the command line, or
+`compose_mode = "exec"` with your own `run` to append tokens to that
+command instead.
+
 ## Notifications
 
 | Key                 | Default  | What it does                                                                                                                                                                                                              |

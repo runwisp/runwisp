@@ -33,15 +33,23 @@ func IsLocalTrustedCtx(ctx context.Context) bool {
 	return v
 }
 
-// isLocalCtx is the context-only equivalent of isLocalRequest: true when the
-// request arrived on the Unix socket (PEERCRED-verified) or from a TCP
-// loopback peer. The peer address comes from the value savePeerAddr stored
+// isLocalCtx reports whether the request came from this machine: it arrived on
+// the Unix socket (PEERCRED-verified), or from a TCP loopback peer that was not
+// relayed by a proxy. The peer address comes from the value savePeerAddr stored
 // before the trusted-proxy XFF middleware could overwrite it, so a spoofed
-// X-Forwarded-For cannot forge loopback. Used to gate GET /api/instance, whose payload (datadir, config and
-// socket paths) must never reach a non-loopback caller.
+// X-Forwarded-For cannot forge loopback.
+//
+// The proxied check is load-bearing, not defence in depth: with a same-host
+// reverse proxy (the documented public-exposure setup) every internet request
+// has a loopback peer, so loopback alone would hand the payload to anyone.
+// Used to gate GET /api/instance, whose payload (datadir, config and socket
+// paths) must never reach the network.
 func isLocalCtx(ctx context.Context) bool {
 	if IsLocalTrustedCtx(ctx) {
 		return true
+	}
+	if proxied, _ := ctx.Value(proxiedContextKey).(bool); proxied {
+		return false
 	}
 	addr, _ := ctx.Value(peerAddrContextKey).(string)
 	host, _, err := net.SplitHostPort(addr)

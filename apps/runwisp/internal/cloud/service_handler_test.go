@@ -402,6 +402,100 @@ func TestHandleServiceApply_MergeUnavailableBackendRejected(t *testing.T) {
 	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
 }
 
+// Regression: a peer must not reshape the spawn environment of a TOML-defined
+// service while allow_cloud_dispatch is off. env can change what a disk-defined
+// command actually executes (NODE_OPTIONS, GIT_SSH_COMMAND, *_proxy) and it
+// overlays on top of the inherited env, so it belongs on the same availability
+// gate as a script override. Before the fix the gate was only consulted when the
+// payload carried a script — and the cloud sends script: null for synced TOML
+// services — so taskConfig.env sailed straight through.
+func TestHandleServiceApply_MergeEnvGatedOnAvailability(t *testing.T) {
+	existing := &model.Task{
+		Name:          "web",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		Env:           map[string]string{"NODE_ENV": "production"},
+		ExecutionDef:  &model.ShellExecution{Script: "node server.js"},
+	}
+	h := newDispatchHandler(executor.Availability{}, map[string]*model.Task{"web": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:   "web",
+			TaskName: "web",
+			Script:   json.RawMessage("null"),
+			TaskConfig: &protocol.ServiceTaskConfig{
+				Env: map[string]string{"NODE_OPTIONS": "--inspect=0.0.0.0:9229"},
+			},
+		},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+	assert.Empty(t, runner.upserted, "a rejected env override must not reach the task set")
+	assert.Equal(t, map[string]string{"NODE_ENV": "production"}, existing.Env,
+		"the operator's env must be left intact")
+}
+
+// The same merge with the backend available is the legitimate case and must
+// still apply. Guards against over-gating the fix above.
+func TestHandleServiceApply_MergeEnvAppliedWhenAvailable(t *testing.T) {
+	existing := &model.Task{
+		Name:          "web",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		ExecutionDef:  &model.ShellExecution{Script: "node server.js"},
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"web": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:     "web",
+			TaskName:   "web",
+			Script:     json.RawMessage("null"),
+			TaskConfig: &protocol.ServiceTaskConfig{Env: map[string]string{"LOG_LEVEL": "debug"}},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, runner.upserted, 1)
+	assert.Equal(t, "debug", runner.upserted[0].Env["LOG_LEVEL"])
+}
+
+// A merge that carries no env at all must not be gated: the instances/restart/log
+// knobs are what the cloud re-asserts on every reconnect, and gating those would
+// break sync on a dispatch-off daemon.
+func TestHandleServiceApply_MergeWithoutEnvNotGated(t *testing.T) {
+	existing := &model.Task{
+		Name:          "web",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		ExecutionDef:  &model.ShellExecution{Script: "node server.js"},
+	}
+	h := newDispatchHandler(executor.Availability{}, map[string]*model.Task{"web": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:    "web",
+			TaskName:  "web",
+			Script:    json.RawMessage("null"),
+			Instances: 2,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, runner.upserted, 1)
+	assert.Equal(t, 2, runner.upserted[0].Instances)
+}
+
 // Regression (Bug 1): a service:apply addressed by the bare name of a
 // *non-service* TOML task (a cron/one-shot) must be rejected outright and must
 // never overwrite that task's disk-defined run=. Before the fix, resolveServiceTarget

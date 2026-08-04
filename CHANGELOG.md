@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`/api/instance` no longer answers a request that arrived through a proxy**, so the datadir, config, and socket paths it discloses stay local when the daemon sits behind a same-host reverse proxy. See [Reverse proxies](https://docs.runwisp.com/operations/auth/#reverse-proxies).
+- **A control-plane peer can no longer override a TOML-defined service's `env` unless `[daemon] allow_cloud_dispatch` is on**, and an inline cloud execution can no longer overwrite a task defined in `runwisp.toml`.
 - **Compose tasks hand their environment and secrets to the `docker compose` CLI through its process environment** and forward each variable with a value-less `-e KEY` flag, so docker resolves values from its own environment and no secret value is ever placed on the command line. See [Compose](https://docs.runwisp.com/configuration/compose/).
 
 ## [0.13.2] - 2026-07-26
