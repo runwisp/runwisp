@@ -253,6 +253,60 @@ func TestApplyInstall_TakeOverCron_NoRestartWhenCronWasAlreadyStopped(t *testing
 	assert.NotContains(t, out.String(), "Starting cron.service")
 }
 
+// TestApplyInstall_TakeOverCron_NoRollbackOnStopFailure is the B2 correction:
+// a failed `systemctl stop` means cron was never actually stopped or masked,
+// so there is nothing for the rollback to undo. Unmasking (or starting) a
+// unit that was never touched would just poke cron for no reason.
+func TestApplyInstall_TakeOverCron_NoRollbackOnStopFailure(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.TakeOverCron = true
+	prompter.YesNo = []bool{true}
+	require.NoError(t, fs.WriteFile(opts.Config, []byte("[scheduler]\n"), 0644))
+
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"daemon-reload"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"stop", "cron.service"},
+		nil, []byte("Failed to stop unit: access denied"), assertErrFake("stop failed"))
+
+	out := &bytes.Buffer{}
+	err := inst.Install(context.Background(), opts, out)
+	require.Error(t, err)
+	assert.Zero(t, cmd.Remaining(), "no mask, unmask, or start scripted — none must be attempted")
+	assert.NotContains(t, out.String(), "Masking")
+	assert.NotContains(t, out.String(), "Unmasking")
+	assert.NotContains(t, out.String(), "Starting cron.service")
+}
+
+// TestApplyInstall_TakeOverCron_NoRollbackOnProbeFailure is the other half:
+// the re-probe inside stopAndMaskCron fails before `stop` is ever attempted,
+// so cron was never touched at all.
+func TestApplyInstall_TakeOverCron_NoRollbackOnProbeFailure(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.TakeOverCron = true
+	prompter.YesNo = []bool{true}
+	require.NoError(t, fs.WriteFile(opts.Config, []byte("[scheduler]\n"), 0644))
+
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"daemon-reload"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		nil, []byte("connection refused"), assertErrFake("probe failed"))
+
+	out := &bytes.Buffer{}
+	err := inst.Install(context.Background(), opts, out)
+	require.Error(t, err)
+	assert.Zero(t, cmd.Remaining(), "no stop, mask, unmask, or start scripted — none must be attempted")
+	assert.NotContains(t, out.String(), "Stopping")
+	assert.NotContains(t, out.String(), "Unmasking")
+}
+
 // TestApplyInstall_TakeOverCron_RollsBackOnMaskFailure is the regression for the
 // bug where a successful `stop` followed by a failed `mask` left the box with
 // cron stopped, unmasked, and never restarted — no scheduler running at all —
@@ -343,6 +397,53 @@ func TestInstall_NoopReassertRollsBackOnMaskFailure(t *testing.T) {
 	assert.Zero(t, cmd.Remaining(), "rollback must run every scripted call")
 	assert.Contains(t, out.String(), "Unmasking cron.service")
 	assert.Contains(t, out.String(), "Starting cron.service")
+}
+
+// TestInstall_NoopReassertNoRollbackOnStopFailure is the reassert-path half of
+// the same B2 correction: a failed `systemctl stop` during the repair means
+// cron was never actually stopped or masked, so there is nothing to roll back.
+func TestInstall_NoopReassertNoRollbackOnStopFailure(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.TakeOverCron = true
+	takenOverUnitOnDisk(t, inst, fs, opts)
+
+	for range 3 {
+		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+			[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	}
+	cmd.Expect("systemctl", []string{"stop", "cron.service"},
+		nil, []byte("Failed to stop unit: access denied"), assertErrFake("stop failed"))
+
+	out := &bytes.Buffer{}
+	require.Error(t, inst.Install(context.Background(), opts, out))
+	assert.Zero(t, cmd.Remaining(), "no mask, unmask, or start scripted — none must be attempted")
+	assert.NotContains(t, out.String(), "Unmasking")
+	assert.NotContains(t, out.String(), "Starting cron.service")
+}
+
+// TestInstall_NoopReassertNoRollbackOnProbeFailure covers the probe-failure
+// half: stopAndMaskCron's own re-probe fails before `stop` is ever attempted.
+func TestInstall_NoopReassertNoRollbackOnProbeFailure(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.TakeOverCron = true
+	takenOverUnitOnDisk(t, inst, fs, opts)
+
+	for range 2 {
+		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+			[]byte("loaded\nactive\nenabled\n"), nil, nil)
+	}
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		nil, []byte("connection refused"), assertErrFake("probe failed"))
+
+	out := &bytes.Buffer{}
+	require.Error(t, inst.Install(context.Background(), opts, out))
+	assert.Zero(t, cmd.Remaining(), "no stop, mask, unmask, or start scripted — none must be attempted")
+	assert.NotContains(t, out.String(), "Stopping")
+	assert.NotContains(t, out.String(), "Unmasking")
 }
 
 // takenOverUnitOnDisk writes the unit a completed take-over leaves behind, so

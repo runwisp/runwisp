@@ -348,14 +348,19 @@ func (s *systemdInstaller) enableLingerIfNeeded(ctx context.Context, opts Instal
 // caller asked for a take-over. A stop that lands but a mask that fails would
 // otherwise leave the box with cron stopped, unmasked, and never restarted —
 // no scheduler at all — so a failure here rolls back the same way a failed
-// `enable --now` does, before the error reaches the caller.
+// `enable --now` does, before the error reaches the caller. A failure before
+// a successful stop (the initial probe, or the stop itself) means cron was
+// never touched, so there is nothing to roll back — doing so anyway would
+// unmask or start a unit RunWisp never masked or stopped.
 func (s *systemdInstaller) takeOverCronIfRequested(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) (bool, error) {
 	if !opts.TakeOverCron {
 		return false, nil
 	}
-	cronWasActive, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
+	cronWasActive, stopped, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
 	if err != nil {
-		s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
+		if stopped {
+			s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
+		}
 		return false, fmt.Errorf("take over cron: %w", err)
 	}
 	return cronWasActive, nil

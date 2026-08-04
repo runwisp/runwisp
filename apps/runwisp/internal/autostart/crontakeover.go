@@ -113,23 +113,29 @@ func (s *systemdInstaller) resolveMaskedCronUnit(ctx context.Context, opts Insta
 // masking first would leave a window where a running cron could still fire
 // a job on the old schedule before the stop takes effect. It reports
 // whether cron was active beforehand so a failed RunWisp start can roll
-// back to exactly that state.
-func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, unit string, out io.Writer) (wasActive bool, err error) {
+// back to exactly that state, and separately whether `systemctl stop`
+// itself succeeded: a probe or stop failure means cron was never actually
+// stopped, so the caller must not roll back a take-over that never took —
+// unmasking a unit that was never masked, or starting one that was never
+// stopped, would just poke cron for no reason.
+func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, unit string, out io.Writer) (wasActive bool, stopped bool, err error) {
 	_, activeState, _, err := s.probeCronUnit(ctx, unit)
 	if err != nil {
-		return false, fmt.Errorf("systemctl show %s: %w", unit, err)
+		return false, false, fmt.Errorf("systemctl show %s: %w", unit, err)
 	}
 	wasActive = activeState == "active"
 
 	fmt.Fprintf(out, "Stopping %s\n", unit)
 	if _, stderr, err := s.runSystemctlSystem(ctx, "stop", unit); err != nil {
-		return wasActive, fmt.Errorf("systemctl stop %s: %w: %s", unit, err, string(stderr))
+		return wasActive, false, fmt.Errorf("systemctl stop %s: %w: %s", unit, err, string(stderr))
 	}
+	stopped = true
+
 	fmt.Fprintf(out, "Masking %s\n", unit)
 	if _, stderr, err := s.runSystemctlSystem(ctx, "mask", unit); err != nil {
-		return wasActive, fmt.Errorf("systemctl mask %s: %w: %s", unit, err, string(stderr))
+		return wasActive, stopped, fmt.Errorf("systemctl mask %s: %w: %s", unit, err, string(stderr))
 	}
-	return wasActive, nil
+	return wasActive, stopped, nil
 }
 
 // unmaskCron reverses stopAndMaskCron. mask is self-inverting — it writes a
@@ -178,9 +184,11 @@ func (s *systemdInstaller) reassertCronTakeover(ctx context.Context, opts Instal
 		return nil
 	}
 	fmt.Fprintf(out, "%s is back since the take-over — it and RunWisp are both running your jobs.\n", plan.CronUnit)
-	cronWasActive, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
+	cronWasActive, stopped, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
 	if err != nil {
-		s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
+		if stopped {
+			s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
+		}
 		return fmt.Errorf("take over cron: %w", err)
 	}
 	// The unit was already on disk, but nothing so far proves the service is
