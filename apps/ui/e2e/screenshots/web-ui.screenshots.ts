@@ -137,7 +137,9 @@ test("login modal", async ({ page }) => {
     for (const theme of THEMES) {
         await page.emulateMedia({ colorScheme: theme });
         await page.goto("/");
-        await expect(page.getByRole("dialog", { name: "RunWisp" })).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByRole("dialog", { name: "RunWisp" })).toBeVisible({
+            timeout: 15_000,
+        });
         await settle(page);
         await shoot(page, `web-ui-login-${theme}`);
     }
