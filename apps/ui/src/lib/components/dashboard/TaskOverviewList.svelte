@@ -132,7 +132,7 @@
     <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div class="flex items-center gap-3">
             <h2 class="text-sm font-semibold text-on-surface">Tasks</h2>
-            <span class="text-xs text-on-surface-muted">
+            <span class="font-mono text-xs text-on-surface-muted tabular-nums">
                 {taskOverviews.length} total
             </span>
         </div>
@@ -156,17 +156,17 @@
                     {#each filterOptions as filter (filter.value)}
                         <button
                             class={[
-                                "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-all",
+                                "inline-flex items-center gap-1.5 rounded-[3px] border px-2.5 py-1 font-mono text-xs font-medium ",
                                 taskFilter === filter.value
                                     ? "border-primary-soft-border bg-primary-soft text-primary-soft-text"
-                                    : "border-outline bg-surface-raised text-on-surface-muted hover:border-outline-hover hover:text-on-surface",
+                                    : "border-outline bg-surface-raised text-on-surface-muted hover:border-outline-hover hover:text-primary",
                             ]}
                             onclick={() => (taskFilter = filter.value)}
                         >
                             {filter.label}
                             <span
                                 class={[
-                                    "rounded-md px-1.5 py-0.5 text-2xs font-semibold",
+                                    "rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums",
                                     taskFilter === filter.value
                                         ? "bg-surface-raised text-primary-soft-text"
                                         : "bg-surface-sunken text-on-surface-muted",
@@ -195,7 +195,7 @@
             {#snippet actions()}
                 <div class="flex flex-col items-center gap-3">
                     <pre
-                        class="rounded-lg border border-outline bg-surface-sunken px-4 py-3 text-left font-mono text-xs text-on-surface-muted">[tasks.hello]
+                        class="rounded-[4px] border border-outline bg-surface-sunken px-4 py-3 text-left font-mono text-xs text-on-surface-muted">[tasks.hello]
 cron = "*/5 * * * *"
 run  = "echo hello"</pre>
                     <a
@@ -225,7 +225,7 @@ run  = "echo hello"</pre>
                 {@const TaskIcon = taskIcon(task.task)}
 
                 <button
-                    class="group w-full rounded-xl border border-l-4 border-outline bg-surface-raised px-4 py-3 text-left transition-all hover:border-outline-hover hover:shadow-sm {taskState.accentClass}"
+                    class="group w-full rounded-[4px] border border-l-4 border-outline bg-surface-raised px-4 py-3 text-left hover:border-outline-hover hover:shadow-sm {taskState.accentClass}"
                     onclick={() => viewTask(task.task.name)}
                 >
                     <div class="flex items-center gap-4">
@@ -237,7 +237,7 @@ run  = "echo hello"</pre>
                                     aria-hidden="true"
                                 />
                                 <span
-                                    class="text-sm font-semibold text-on-surface"
+                                    class="font-mono text-sm font-semibold text-on-surface"
                                     title={taskTriggerTooltip(task.task)}
                                 >
                                     {task.task.name}
@@ -279,7 +279,11 @@ run  = "echo hello"</pre>
 
                         <div class="hidden shrink-0 items-center gap-4 text-xs sm:flex">
                             <div class="w-28">
-                                <p class="text-on-surface-faint">Latest</p>
+                                <p
+                                    class="font-mono text-2xs tracking-[0.12em] text-on-surface-faint uppercase"
+                                >
+                                    Latest
+                                </p>
                                 {#if lastStatusConfig}
                                     <Tooltip
                                         content={lastStatusConfig.description}
@@ -288,7 +292,7 @@ run  = "echo hello"</pre>
                                     >
                                         <span
                                             class={[
-                                                "inline-flex rounded-full px-1.5 py-0.5 text-2xs font-semibold",
+                                                "inline-flex rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold",
                                                 lastStatusConfig.badge,
                                             ]}
                                         >
@@ -298,7 +302,7 @@ run  = "echo hello"</pre>
                                 {:else}
                                     <span
                                         class={[
-                                            "inline-flex rounded-full px-1.5 py-0.5 text-2xs font-semibold",
+                                            "inline-flex rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold",
                                             taskState.toneClass,
                                         ]}
                                     >
@@ -309,14 +313,24 @@ run  = "echo hello"</pre>
 
                             {#if schedulingActive}
                                 <div class="w-32">
-                                    <p class="text-on-surface-faint">Next run</p>
-                                    <p class="font-medium text-on-surface">
+                                    <p
+                                        class="font-mono text-2xs tracking-[0.12em] text-on-surface-faint uppercase"
+                                    >
+                                        Next run
+                                    </p>
+                                    <p
+                                        class="font-mono text-xs font-medium text-on-surface tabular-nums"
+                                    >
                                         {formatTaskNextRunLabel(task, now)}
                                     </p>
                                 </div>
 
                                 <div class="w-24">
-                                    <p class="text-on-surface-faint">Trigger</p>
+                                    <p
+                                        class="font-mono text-2xs tracking-[0.12em] text-on-surface-faint uppercase"
+                                    >
+                                        Trigger
+                                    </p>
                                     {#if task.task.cron && task.task.kind !== "service"}
                                         <Tooltip
                                             content={taskTriggerTooltip(task.task)}
@@ -334,7 +348,7 @@ run  = "echo hello"</pre>
                                             </p>
                                         </Tooltip>
                                     {:else}
-                                        <p class="font-medium text-on-surface">
+                                        <p class="font-mono font-medium text-on-surface">
                                             {formatTaskTriggerLabel(task)}
                                         </p>
                                     {/if}
@@ -344,15 +358,17 @@ run  = "echo hello"</pre>
 
                         <ArrowRight
                             size={14}
-                            class="shrink-0 text-on-surface-faint transition-colors group-hover:text-primary"
+                            class="shrink-0 text-on-surface-faint group-hover:text-primary"
                         />
                     </div>
 
                     {#if isFailureEndReason(task.lastRun?.end_reason)}
                         <div
-                            class="mt-2 rounded-lg border border-danger-soft-border bg-danger-soft/80 px-3 py-2 text-xs text-danger-soft-text"
+                            class="mt-2 rounded-[3px] border border-danger-soft-border bg-danger-soft/80 px-3 py-2 text-xs text-danger-soft-text"
                         >
-                            Last run exited with code {task.lastRun?.exit_code}
+                            Last run exited with code <span class="font-mono tabular-nums"
+                                >{task.lastRun?.exit_code}</span
+                            >
                         </div>
                     {/if}
                 </button>

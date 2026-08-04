@@ -67,11 +67,11 @@
          bar, and the icon tints to primary. The input's own focus outline is
          suppressed (below) so the pill reads as one control, not two rings. -->
     <div
-        class="group/search relative flex h-9 w-full max-w-md items-center gap-2.5 rounded-xl border border-outline bg-surface-sunken/60 px-3 text-sm shadow-sm transition-all duration-150 focus-within:border-ring focus-within:bg-surface-raised focus-within:shadow-md focus-within:ring-2 focus-within:ring-ring/35"
+        class="group/search relative flex h-9 w-full max-w-md items-center gap-2.5 rounded-[3px] border border-outline bg-surface-sunken/60 px-3 font-mono text-sm shadow-sm focus-within:border-ring focus-within:bg-surface-raised focus-within:shadow-md focus-within:ring-2 focus-within:ring-ring/35"
     >
         <Search
             size={15}
-            class="shrink-0 text-on-surface-faint transition-colors group-focus-within/search:text-primary"
+            class="shrink-0 text-on-surface-faint group-focus-within/search:text-primary"
         />
         <input
             bind:this={inputEl}
@@ -97,13 +97,13 @@
                 }}
                 title="Clear search"
                 aria-label="Clear search"
-                class="shrink-0 cursor-pointer rounded-md p-0.5 text-on-surface-faint transition-colors hover:bg-surface-sunken hover:text-on-surface"
+                class="shrink-0 cursor-pointer rounded-[3px] p-0.5 text-on-surface-faint hover:bg-surface-sunken hover:text-primary"
             >
                 <X size={14} />
             </button>
         {:else}
             <kbd
-                class="pointer-events-none hidden shrink-0 items-center rounded-md border border-outline-faint bg-surface-raised px-1.5 py-0.5 font-sans text-2xs font-medium text-on-surface-faint shadow-sm sm:flex"
+                class="pointer-events-none hidden shrink-0 items-center rounded-[3px] border border-outline-faint bg-surface-raised px-1.5 py-0.5 font-mono text-2xs font-medium text-on-surface-faint shadow-sm sm:flex"
             >
                 {shortcut}
             </kbd>

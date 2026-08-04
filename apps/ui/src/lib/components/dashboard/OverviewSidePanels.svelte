@@ -58,7 +58,7 @@
         </div>
 
         {#if attentionTasks.length === 0}
-            <div class="mt-4 flex items-center gap-2 rounded-lg bg-success-soft px-3 py-2.5">
+            <div class="mt-4 flex items-center gap-2 rounded-[3px] bg-success-soft px-3 py-2.5">
                 <ShieldCheck size={14} class="text-success-soft-text" />
                 <span class="text-sm text-success-soft-text">Nothing waiting for triage</span>
             </div>
@@ -73,12 +73,14 @@
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-center gap-1.5">
-                                    <span class="truncate text-sm font-medium text-on-surface">
+                                    <span
+                                        class="truncate font-mono text-sm font-medium text-on-surface"
+                                    >
                                         {task.task.name}
                                     </span>
                                     {#if statusConfig}
                                         <span
-                                            class="rounded-full px-1.5 py-0.5 text-2xs font-semibold uppercase {statusConfig.badge}"
+                                            class="rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold uppercase {statusConfig.badge}"
                                         >
                                             {formatStatusLabel(task.lastStatus ?? "")}
                                         </span>
@@ -96,7 +98,7 @@
                         >
                             <span>Next {formatTaskNextRunLabel(task, now)}</span>
                             {#if isFailureEndReason(task.lastRun?.end_reason)}
-                                <span class="text-danger-soft-text">
+                                <span class="font-mono text-danger-soft-text tabular-nums">
                                     Exit {task.lastRun?.exit_code}
                                 </span>
                             {/if}
@@ -117,7 +119,7 @@
         </div>
 
         {#if runningNow.length === 0}
-            <div class="mt-4 flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2.5">
+            <div class="mt-4 flex items-center gap-2 rounded-[3px] bg-surface-sunken px-3 py-2.5">
                 <Activity size={14} class="text-on-surface-muted" />
                 <span class="text-sm text-on-surface-muted">Nothing is running</span>
             </div>
@@ -140,13 +142,17 @@
                                             class="relative inline-flex h-2 w-2 rounded-full bg-primary"
                                         ></span>
                                     </span>
-                                    <span class="truncate text-sm font-medium text-on-surface">
+                                    <span
+                                        class="truncate font-mono text-sm font-medium text-on-surface"
+                                    >
                                         {run.task_name}{#if suffix}<span
                                                 class="text-on-surface-muted">{suffix}</span
                                             >{/if}
                                     </span>
                                 </div>
-                                <p class="mt-1 text-xs text-on-surface-muted">
+                                <p
+                                    class="mt-1 font-mono text-xs text-on-surface-muted tabular-nums"
+                                >
                                     {formatRunDurationLabel(run)} &middot; {formatTriggeredByLabel(
                                         run.triggered_by,
                                     )}
@@ -154,7 +160,7 @@
                             </div>
                             <ArrowRight
                                 size={14}
-                                class="shrink-0 text-on-surface-faint transition-colors group-hover:text-primary"
+                                class="shrink-0 text-on-surface-faint group-hover:text-primary"
                             />
                         </div>
                     </TaskCard>
@@ -172,7 +178,9 @@
             </div>
 
             {#if upcomingTasks.length === 0}
-                <div class="mt-4 flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2.5">
+                <div
+                    class="mt-4 flex items-center gap-2 rounded-[3px] bg-surface-sunken px-3 py-2.5"
+                >
                     <Clock3 size={14} class="text-on-surface-muted" />
                     <span class="text-sm text-on-surface-muted">No scheduled runs queued</span>
                 </div>
@@ -183,7 +191,9 @@
                             <div class="flex items-start justify-between gap-2">
                                 <div class="min-w-0 flex-1">
                                     <div class="flex flex-wrap items-center gap-1.5">
-                                        <span class="truncate text-sm font-medium text-on-surface">
+                                        <span
+                                            class="truncate font-mono text-sm font-medium text-on-surface"
+                                        >
                                             {task.task.name}
                                         </span>
                                         {#if task.task.group}
@@ -212,7 +222,7 @@
                                 </div>
                                 <ArrowRight
                                     size={14}
-                                    class="shrink-0 text-on-surface-faint transition-colors group-hover:text-info"
+                                    class="shrink-0 text-on-surface-faint group-hover:text-info"
                                 />
                             </div>
 

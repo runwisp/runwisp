@@ -41,14 +41,14 @@
 
     const IconComponent = $derived(icon ?? (variant === "disconnected" ? WifiOff : TriangleAlert));
 
-    const iconBg = $derived(variant === "disconnected" ? "bg-danger-soft" : "bg-warning-soft");
+    const iconBg = $derived(variant === "disconnected" ? "bg-warning-soft" : "bg-danger-soft");
     const iconColor = $derived(
-        variant === "disconnected" ? "text-danger-surface" : "text-warning-surface",
+        variant === "disconnected" ? "text-warning-soft-text" : "text-danger-soft-text",
     );
 </script>
 
 <div
-    class="flex flex-col items-center justify-center gap-4 rounded-xl border border-outline bg-surface-raised px-6 py-12 text-center {className}"
+    class="flex flex-col items-center justify-center gap-4 rounded-[4px] border border-outline bg-surface-raised px-6 py-12 text-center {className}"
     role="alert"
 >
     <div class="rounded-full {iconBg} p-3">
@@ -56,7 +56,7 @@
     </div>
 
     <div class="space-y-1">
-        <h3 class="text-lg font-semibold text-on-surface">{defaultTitle}</h3>
+        <h3 class="font-mono text-lg font-semibold text-on-surface">{defaultTitle}</h3>
         <p class="max-w-sm text-sm text-on-surface-muted">{message}</p>
     </div>
 

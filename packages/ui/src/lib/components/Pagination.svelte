@@ -43,7 +43,7 @@
 </script>
 
 <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between {className}">
-    <div class="flex items-center gap-4 text-sm text-on-surface-muted">
+    <div class="flex items-center gap-4 font-mono text-sm text-on-surface-muted">
         {#if totalItems === 0}
             <span>No results</span>
         {:else}
@@ -57,8 +57,8 @@
                     value={pageSize}
                     onchange={handlePageSizeChange}
                     class="
-                        appearance-none rounded-lg border border-outline bg-surface-raised py-1 pr-7 pl-2 text-sm
-                        font-medium text-on-surface-muted shadow-sm focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none
+                        appearance-none rounded-[3px] border border-outline bg-surface-raised py-1 pr-7 pl-2 font-mono
+                        text-sm text-on-surface-muted shadow-sm hover:border-outline-hover focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none
                     "
                 >
                     {#each pageSizeOptions as size (size)}
@@ -81,7 +81,7 @@
             disabled={safePage <= 1}
             onclick={() => goTo(safePage - 1)}>Prev</Button
         >
-        <div class="min-w-[4rem] text-center text-xs text-on-surface-muted">
+        <div class="min-w-[4rem] text-center font-mono text-xs text-on-surface-muted">
             Page {safePage} of {totalPages}
         </div>
         <Button

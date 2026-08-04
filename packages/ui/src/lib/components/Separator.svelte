@@ -22,7 +22,10 @@
 {:else if label}
     <div role="separator" class="flex items-center gap-3 {className}">
         <div class="h-px flex-1 bg-outline"></div>
-        <span class="text-xs font-medium text-on-surface-faint select-none">{label}</span>
+        <span
+            class="font-mono text-xs font-medium tracking-wider text-on-surface-faint uppercase select-none"
+            >{label}</span
+        >
         <div class="h-px flex-1 bg-outline"></div>
     </div>
 {:else}

@@ -271,7 +271,7 @@
     {#if supportsInclude(p)}
         <button
             type="button"
-            class="text-xs text-on-surface-faint transition-colors hover:text-on-surface-muted"
+            class="text-xs text-on-surface-faint hover:text-on-surface-muted"
             onclick={() => toggleInclude(p)}
         >
             {includeHint(p)}

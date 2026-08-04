@@ -68,17 +68,9 @@ export default defineConfig({
             editLink: {
                 baseUrl: "https://github.com/runwisp/runwisp/edit/main/apps/docs/",
             },
-            customCss: [
-                "@runwisp/ui/theme-tokens.css",
-                "./src/styles/theme-bridge.css",
-                "@fontsource/tasa-orbiter/400.css",
-                "@fontsource/tasa-orbiter/500.css",
-                "@fontsource/tasa-orbiter/600.css",
-                "@fontsource/tasa-orbiter/700.css",
-                "@fontsource/jetbrains-mono/400.css",
-                "@fontsource/jetbrains-mono/500.css",
-                "@fontsource/jetbrains-mono/700.css",
-            ],
+            // theme-tokens.css @imports the webfonts it names, so the font
+            // stack is declared in exactly one place for every consumer.
+            customCss: ["@runwisp/ui/theme-tokens.css", "./src/styles/theme-bridge.css"],
             sidebar: [
                 { label: "Welcome", link: "/" },
                 {

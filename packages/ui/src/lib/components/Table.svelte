@@ -12,7 +12,7 @@
     let { children, class: className = "" }: Props = $props();
 </script>
 
-<div class="overflow-x-auto rounded-xl border border-outline {className}">
+<div class="overflow-x-auto rounded-[4px] border border-outline {className}">
     <table class="w-full text-sm">
         {@render children()}
     </table>

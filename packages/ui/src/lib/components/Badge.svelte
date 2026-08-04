@@ -29,34 +29,34 @@
 
     const baseClasses = `
 		inline-flex items-center gap-1.5
-		font-medium rounded-full
+		font-mono tracking-wide rounded-[3px]
 		whitespace-nowrap
 	`;
 
     const variantClasses: Record<BadgeVariant, { solid: string; outline: string }> = {
         default: {
-            solid: "bg-surface-sunken text-on-surface-muted",
+            solid: "bg-surface-sunken text-on-surface-muted border border-outline",
             outline: "bg-transparent border border-outline-hover text-on-surface-muted",
         },
         primary: {
-            solid: "bg-primary-soft text-primary-soft-text",
-            outline: "bg-transparent border border-wisp-300 text-primary-soft-text",
+            solid: "bg-primary-soft text-primary-soft-text border border-primary-soft-border",
+            outline: "bg-transparent border border-primary-soft-border text-primary-soft-text",
         },
         success: {
-            solid: "bg-success-soft text-success-soft-text",
-            outline: "bg-transparent border border-success-300 text-success-soft-text",
+            solid: "bg-success-soft text-success-soft-text border border-success-soft-border",
+            outline: "bg-transparent border border-success-soft-border text-success-soft-text",
         },
         warning: {
-            solid: "bg-warning-soft text-warning-soft-text",
-            outline: "bg-transparent border border-warning-400 text-warning-soft-text",
+            solid: "bg-warning-soft text-warning-soft-text border border-warning-soft-border",
+            outline: "bg-transparent border border-warning-soft-border text-warning-soft-text",
         },
         danger: {
-            solid: "bg-danger-soft text-danger-soft-text",
-            outline: "bg-transparent border border-danger-300 text-danger-soft-text",
+            solid: "bg-danger-soft text-danger-soft-text border border-danger-soft-border",
+            outline: "bg-transparent border border-danger-soft-border text-danger-soft-text",
         },
         info: {
-            solid: "bg-info-soft text-info-soft-text",
-            outline: "bg-transparent border border-aurora-300 text-info-soft-text",
+            solid: "bg-info-soft text-info-soft-text border border-info-soft-border",
+            outline: "bg-transparent border border-info-soft-border text-info-soft-text",
         },
     };
 
@@ -67,7 +67,7 @@
     };
 
     const dotColors: Record<BadgeVariant, string> = {
-        default: "bg-mist-500",
+        default: "bg-on-surface-faint",
         primary: "bg-primary",
         success: "bg-success-surface",
         warning: "bg-warning-surface",

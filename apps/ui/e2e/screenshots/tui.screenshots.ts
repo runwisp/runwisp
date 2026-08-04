@@ -43,7 +43,10 @@ const ROWS = 40;
 
 const xtermJs = require.resolve("@xterm/xterm");
 const xtermCss = join(dirname(xtermJs), "../css/xterm.css");
-const fontDir = join(dirname(require.resolve("@fontsource/jetbrains-mono/package.json")), "files");
+const fontDir = join(
+    dirname(require.resolve("@fontsource-variable/geist-mono/package.json")),
+    "files",
+);
 
 declare global {
     interface Window {
@@ -51,12 +54,11 @@ declare global {
     }
 }
 
+// One variable face covers the whole 100–900 range, so regular and bold cells
+// both come from a single embedded woff2.
 async function fontFaceCss(): Promise<string> {
-    const face = async (weight: number): Promise<string> => {
-        const data = await readFile(join(fontDir, `jetbrains-mono-latin-${weight}-normal.woff2`));
-        return `@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:${weight};font-display:block;src:url(data:font/woff2;base64,${data.toString("base64")}) format('woff2');}`;
-    };
-    return (await Promise.all([face(400), face(700)])).join("\n");
+    const data = await readFile(join(fontDir, "geist-mono-latin-wght-normal.woff2"));
+    return `@font-face{font-family:'Geist Mono Variable';font-style:normal;font-weight:100 900;font-display:block;src:url(data:font/woff2;base64,${data.toString("base64")}) format('woff2-variations');}`;
 }
 
 // A terminal-window frame: rounded body, a title bar with traffic lights and a
@@ -94,14 +96,14 @@ interface RenderArgs {
 // Runs in the browser: load the font, build the terminal, replay the captured
 // stream, and resolve once xterm reports the write is flushed.
 async function renderFrame({ base64, cols, rows }: RenderArgs): Promise<void> {
-    await document.fonts.load("16px 'JetBrains Mono'");
-    await document.fonts.load("bold 16px 'JetBrains Mono'");
+    await document.fonts.load("16px 'Geist Mono Variable'");
+    await document.fonts.load("bold 16px 'Geist Mono Variable'");
     await document.fonts.ready;
 
     const options: ITerminalOptions = {
         cols,
         rows,
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: "'Geist Mono Variable', monospace",
         fontSize: 15,
         lineHeight: 1.0,
         letterSpacing: 0,

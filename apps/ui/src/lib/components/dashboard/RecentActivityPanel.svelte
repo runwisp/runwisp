@@ -36,7 +36,7 @@
     <div class="flex items-center justify-between gap-3">
         <h2 class="text-sm font-semibold text-on-surface">Recent activity</h2>
         <button
-            class="inline-flex items-center gap-1 text-xs font-medium text-on-surface-muted transition-colors hover:text-on-surface"
+            class="inline-flex items-center gap-1 font-mono text-xs font-medium text-on-surface-muted hover:text-primary"
             onclick={() => onViewAllRuns?.()}
         >
             All runs
@@ -64,11 +64,11 @@
                 )}
 
                 <button
-                    class="group flex w-full items-start gap-3 rounded-lg p-2.5 text-left transition-colors hover:bg-surface-sunken"
+                    class="group flex w-full items-start gap-3 rounded-[3px] p-2.5 text-left hover:bg-surface-sunken"
                     onclick={() => viewRun(run)}
                 >
                     <div
-                        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg {statusConfig.bg}"
+                        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[3px] {statusConfig.bg}"
                     >
                         <StatusIcon size={14} class={statusConfig.color} />
                     </div>
@@ -76,24 +76,26 @@
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex min-w-0 items-center gap-1.5">
-                                <span class="truncate text-sm font-medium text-on-surface">
+                                <span
+                                    class="truncate font-mono text-sm font-medium text-on-surface"
+                                >
                                     {run.task_name}{#if suffix}<span class="text-on-surface-muted"
                                             >{suffix}</span
                                         >{/if}
                                 </span>
                                 <span
-                                    class="shrink-0 rounded-full px-1.5 py-0.5 text-2xs font-semibold uppercase {statusConfig.badge}"
+                                    class="shrink-0 rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold uppercase {statusConfig.badge}"
                                 >
                                     {status}
                                 </span>
                             </div>
                             <ArrowRight
                                 size={12}
-                                class="shrink-0 text-on-surface-faint transition-colors group-hover:text-on-surface-muted"
+                                class="shrink-0 text-on-surface-faint group-hover:text-on-surface-muted"
                             />
                         </div>
 
-                        <p class="mt-0.5 text-xs text-on-surface-muted">
+                        <p class="mt-0.5 font-mono text-xs text-on-surface-muted tabular-nums">
                             {formatRunStartedLabel(run, now)} &middot;
                             {formatRunDurationLabel(run)}
                             &middot; {formatTriggeredByLabel(run.triggered_by)}

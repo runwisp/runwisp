@@ -36,7 +36,7 @@
 
 <fieldset class="space-y-3 {className}" role="radiogroup" aria-label={label}>
     {#if label}
-        <legend class="text-sm font-medium text-on-surface-muted">{label}</legend>
+        <legend class="font-mono text-xs font-medium text-on-surface-muted">{label}</legend>
     {/if}
 
     <div class={orientationClasses[orientation]}>
@@ -44,12 +44,10 @@
     </div>
 
     {#if error}
-        <p
-            class="animate-in slide-in-from-top-1 fade-in text-sm text-danger-soft-text duration-200"
-        >
+        <p class="font-sans text-xs text-danger-soft-text">
             {error}
         </p>
     {:else if hint}
-        <p class="text-sm text-on-surface-muted">{hint}</p>
+        <p class="font-sans text-xs text-on-surface-muted">{hint}</p>
     {/if}
 </fieldset>

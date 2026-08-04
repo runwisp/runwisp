@@ -19,20 +19,20 @@ const hasBadges = Astro.slots.has("badges");
     <div class="mx-auto max-w-6xl px-6 py-12">
         {
             hasTeaser && (
-                <div class="bg-surface-raised mb-10 rounded-2xl border border-outline p-6">
+                <div class="bg-surface-raised mb-10 rounded-[4px] border border-outline p-6 shadow-sm">
                     <slot name="teaser" />
                 </div>
             )
         }
         {
             hasColumns && (
-                <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="grid gap-8 font-mono sm:grid-cols-2 lg:grid-cols-4 [&_a]:block [&_a]:text-on-surface-muted [&_a]:[&_a:hover]:text-primary [&_h4]:mb-3 [&_h4]:text-xs [&_h4]:font-medium [&_h4]:uppercase [&_h4]:tracking-[0.16em] [&_h4]:text-on-surface-faint [&_h4]:before:mr-1.5 [&_h4]:before:content-['──']">
                     <slot name="columns" />
                 </div>
             )
         }
         <div
-            class="text-on-surface-muted mt-10 flex flex-col items-start justify-between gap-4 border-t border-outline-faint pt-6 text-sm sm:flex-row sm:items-center"
+            class="text-on-surface-muted mt-10 flex flex-col items-start justify-between gap-4 border-t border-outline-faint pt-6 font-mono text-xs sm:flex-row sm:items-center"
         >
             <p>{tagline}</p>
             {

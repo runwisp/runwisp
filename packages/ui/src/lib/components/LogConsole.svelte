@@ -564,8 +564,8 @@
         >
             {#if cache.firstAvailableLine > 0}
                 <div
-                    class="absolute right-0 left-0 flex items-center bg-warning-700/20 text-warning-400"
-                    style="top: 0px; height: {lineHeight}px;"
+                    class="absolute right-0 left-0 flex items-center text-term-warn"
+                    style="top: 0px; height: {lineHeight}px; background-color: color-mix(in srgb, var(--rw-term-warn) 15%, transparent);"
                 >
                     <div
                         class="sticky left-0 z-10 flex-shrink-0 pr-3 text-right select-none"
@@ -585,10 +585,7 @@
                 <div
                     class="log-line absolute right-0 left-0 flex {wrap
                         ? 'items-start'
-                        : 'items-center'} hover:bg-[rgb(255_255_255_/_0.025)] {flashLine ===
-                    line.num
-                        ? 'log-line--flash'
-                        : ''}"
+                        : 'items-center'} {flashLine === line.num ? 'log-line--flash' : ''}"
                     style="top: {lineTop(line.num)}px; height: {lineHeightPx(line.num)}px;"
                 >
                     <div
@@ -783,12 +780,11 @@
 
     {#if userScrolledUp && cache.totalLines > 0}
         <button
-            class="absolute right-4 bottom-12 z-10 flex items-center gap-2 rounded-full border
-                   border-[rgb(255_255_255_/_0.1)] bg-[var(--rw-con-panel)]
+            class="absolute right-4 bottom-12 z-10 flex items-center gap-2 rounded-[3px] border
+                   border-[var(--rw-con-gutter)] bg-[var(--rw-con-panel)]
                    px-3 py-1.5 text-xs
-                   font-medium text-[var(--rw-con-text)] shadow-lg
-                   transition-all duration-200 hover:scale-105
-                   hover:bg-[rgb(255_255_255_/_0.06)] active:scale-95"
+                   text-[var(--rw-con-text)]
+                                      hover:border-term-teal hover:text-term-teal active:translate-y-[1px]"
             onclick={enableAutoScroll}
         >
             <svg
@@ -805,8 +801,8 @@
     {/if}
 
     <div
-        class="flex flex-shrink-0 items-center justify-between border-t border-[rgb(255_255_255_/_0.06)]
-               bg-[var(--rw-con-panel)] px-3.5 py-2 text-[11px] text-[var(--rw-con-dim)]"
+        class="flex flex-shrink-0 items-center justify-between border-t border-[var(--rw-con-gutter)]
+               bg-[var(--rw-con-panel)] px-3.5 py-2 text-[11px] tracking-wide text-[var(--rw-con-dim)]"
     >
         <div class="flex items-center gap-3">
             {#if isStreaming}
@@ -827,7 +823,7 @@
                 <span>{formatBytes(cache.totalBytes)}</span>
             {/if}
             {#if isAutoScroll}
-                <span class="inline-flex items-center gap-1.5 text-[#7fe0b0]">
+                <span class="inline-flex items-center gap-1.5 text-term-ok">
                     <svg
                         class="h-3 w-3"
                         viewBox="0 0 24 24"
@@ -857,15 +853,21 @@
        way the approved design closes a finished capture. */
     .sentinel--muted {
         color: var(--rw-con-gutter);
-        border-top-color: rgb(255 255 255 / 0.08);
+        border-top-color: var(--rw-con-gutter);
     }
     .sentinel--warn {
-        color: #e5a552;
-        border-top-color: rgb(229 165 82 / 0.3);
+        color: var(--rw-term-warn);
+        border-top-color: color-mix(in srgb, var(--rw-term-warn) 30%, transparent);
+    }
+
+    /* Subtle row hover on the fixed-dark console surface — a faint lift of the
+       console text colour, never a theme-flipping fill. */
+    .log-line:hover {
+        background-color: color-mix(in srgb, var(--rw-con-text) 4%, transparent);
     }
 
     .log-line--flash {
-        animation: log-line-flash 1.5s ease-out;
+        animation: log-line-flash 1.5s;
     }
 
     .frame-toggle {
@@ -875,12 +877,11 @@
         background: transparent;
         border: none;
         padding: 0;
-        transition: color 120ms ease;
     }
 
     @keyframes log-line-flash {
         0% {
-            background-color: oklch(0.8 0.18 70 / 0.45);
+            background-color: color-mix(in srgb, var(--rw-term-warn) 45%, transparent);
         }
         100% {
             background-color: transparent;
@@ -924,7 +925,7 @@
         height: 4px;
         border-radius: 50%;
         background-color: currentColor;
-        animation: dot-pulse 1s ease-in-out infinite;
+        animation: dot-pulse 1s infinite;
     }
 
     @keyframes dot-pulse {

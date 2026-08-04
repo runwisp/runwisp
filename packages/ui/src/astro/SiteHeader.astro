@@ -15,20 +15,20 @@ const hasNav = Astro.slots.has("nav");
 const hasActions = Astro.slots.has("actions");
 ---
 
-<header class:list={["rw-bg-glass sticky top-0 z-40 border-b border-outline-faint", className]}>
-    <div class="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3">
+<header class:list={["rw-bg-glass sticky top-0 z-40 border-b border-outline", className]}>
+    <div class="mx-auto flex h-[52px] max-w-6xl items-center justify-between gap-6 px-6">
         <a
             href={homeHref}
             class="text-on-surface flex items-center gap-2"
             aria-label={`${wordmark} home`}
         >
             <Logo size="md" />
-            <span class="font-bold tracking-tight">{wordmark}</span>
+            <span class="font-mono font-bold tracking-tight">{wordmark}</span>
         </a>
         {
             hasNav && (
                 <nav
-                    class="text-on-surface-muted hidden gap-6 text-sm font-medium sm:flex"
+                    class="text-on-surface-muted hidden gap-6 font-mono text-sm sm:flex [&_a]:[&_a:hover]:text-primary"
                     aria-label="Primary"
                 >
                     <slot name="nav" />

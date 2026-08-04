@@ -24,8 +24,8 @@
             title: "Connected to the runner API",
             labelColor: "text-on-surface-muted",
             subtitleColor: "text-on-surface-muted",
-            dot: "bg-emerald-500",
-            ping: "bg-emerald-400",
+            dot: "bg-success-surface",
+            ping: "bg-success-surface",
         },
         connecting: {
             label: "Connecting",
@@ -87,8 +87,8 @@
         <span class="relative inline-flex h-2 w-2 rounded-full {theme.dot}"></span>
     </div>
     <div class="flex min-w-0 flex-col">
-        <span class="text-xs font-medium {theme.labelColor}">{theme.label}</span>
-        <span class="truncate text-2xs {theme.subtitleColor}">{subtitle}</span>
+        <span class="font-mono text-xs font-medium {theme.labelColor}">{theme.label}</span>
+        <span class="truncate font-mono text-2xs {theme.subtitleColor}">{subtitle}</span>
     </div>
 {/snippet}
 
@@ -102,7 +102,7 @@
         onclick={connectionStore.retryNow}
         disabled={status === "connecting"}
         title={theme.title}
-        class="flex w-full items-center gap-3 border-t p-4 text-left transition-colors disabled:cursor-progress {theme.container}"
+        class="flex w-full items-center gap-3 border-t p-4 text-left disabled:cursor-progress {theme.container}"
     >
         {@render body()}
     </button>

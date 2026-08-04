@@ -169,7 +169,7 @@
 </script>
 
 <div
-    class="relative flex flex-col rounded-xl border border-outline bg-surface-raised shadow-sm {className}"
+    class="relative flex flex-col rounded-[4px] border border-outline bg-surface-raised shadow-sm {className}"
 >
     {#if filterable}
         <div class="border-b border-outline p-3">
@@ -188,7 +188,7 @@
     {/if}
 
     <div
-        class="relative min-h-0 flex-1 rounded-t-xl rounded-b-xl {wrapperClass ??
+        class="relative min-h-0 flex-1 rounded-[4px] {wrapperClass ??
             (stickyHeader ? '' : 'overflow-x-auto')}"
     >
         {#if loading}
@@ -196,7 +196,7 @@
                 class="absolute inset-0 z-10 flex items-center justify-center bg-surface-raised/50 backdrop-blur-[1px]"
             >
                 <div
-                    class="flex items-center gap-3 rounded-full border border-outline-faint bg-surface-raised px-4 py-2 shadow-lg"
+                    class="flex items-center gap-3 rounded-full border border-outline bg-surface-raised px-4 py-2 shadow-md"
                 >
                     <svg class="h-5 w-5 animate-spin text-primary" viewBox="0 0 24 24" fill="none">
                         <circle
@@ -213,7 +213,7 @@
                             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                         ></path>
                     </svg>
-                    <span class="text-sm font-medium text-on-surface-muted">Loading...</span>
+                    <span class="font-mono text-sm text-on-surface-muted">Loading...</span>
                 </div>
             </div>
         {/if}
@@ -239,7 +239,7 @@
                         <th
                             class="
 							    group px-4 {compact ? 'py-2' : 'py-3'}
-							    font-medium text-on-surface-muted
+							    font-mono text-xs tracking-wide text-on-surface-faint uppercase
 							    {column.align === 'center' ? 'text-center' : ''}
 							    {column.align === 'right' ? 'text-right' : ''}
 						    "
@@ -249,7 +249,7 @@
                                 <button
                                     onclick={() => handleSort(column.key as string)}
                                     class="
-                                        inline-flex items-center gap-1 transition-colors group-hover:text-on-surface
+                                        inline-flex items-center gap-1 group-hover:text-on-surface
                                         {sortKey === column.key ? 'text-on-surface' : ''}
                                     "
                                 >
@@ -263,7 +263,7 @@
                                     {:else}
                                         <ArrowUpDown
                                             size={14}
-                                            class="text-on-surface-faint opacity-0 transition-opacity group-hover:opacity-100"
+                                            class="text-on-surface-faint opacity-0 group-hover:opacity-100"
                                         />
                                     {/if}
                                 </button>
@@ -295,13 +295,12 @@
                     {#each pagedData as row, idx (idx)}
                         <tr
                             class="
-							    border-b border-outline-faint last:border-b-0
+							    border-b border-outline last:border-b-0
 							    {striped && idx % 2 === 1 ? 'bg-surface-sunken/30' : ''}
 							    {hoverable ? 'hover:bg-surface-sunken' : ''}
 							    {isSelected(row) ? 'bg-primary-soft/30' : ''}
 							    {onRowClick ? 'cursor-pointer' : ''}
-							    transition-colors duration-200
-						    "
+							    						    "
                             onclick={() => onRowClick?.(row)}
                         >
                             {#if selectable}
@@ -329,7 +328,11 @@
                                     {#if column.render}
                                         {@render column.render(row)}
                                     {:else}
-                                        {dlv(row, column.key as string) ?? "-"}
+                                        <!-- Raw field value: a token, so mono. Snippet-rendered
+                                             cells choose their own voice. -->
+                                        <span class="font-mono"
+                                            >{dlv(row, column.key as string) ?? "-"}</span
+                                        >
                                     {/if}
                                 </td>
                             {/each}

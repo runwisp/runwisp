@@ -18,7 +18,6 @@
 <script lang="ts">
     import { tick, onDestroy } from "svelte";
     import { ChevronDown, Check, Search } from "@lucide/svelte";
-    import { fade } from "svelte/transition";
     import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
     import { generateUlid } from "@runwisp/common";
 
@@ -231,18 +230,17 @@
     };
 
     const triggerBase = `
-        relative w-full text-left cursor-pointer
-        rounded-lg border bg-surface-raised
-        transition-all duration-normal ease-out
-        flex items-center justify-between
-        focus:outline-none focus:ring-4 focus:ring-ring/10 focus:border-ring
+        relative w-full text-left cursor-pointer font-mono
+        rounded-[3px] border bg-surface-raised
+                flex items-center justify-between
+        focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:border-ring
     `;
 
     const borderClass = $derived(
         error
-            ? "border-danger-300 ring-danger-500/20"
+            ? "border-danger-surface"
             : isOpen
-              ? "border-ring ring-4 ring-ring/10"
+              ? "border-ring ring-2 ring-ring ring-offset-2"
               : "border-outline hover:border-outline-hover shadow-sm hover:shadow-md",
     );
 </script>
@@ -251,7 +249,7 @@
 
 <div class="relative w-full {className}">
     {#if label}
-        <label for={id} class="mb-1.5 block text-sm font-medium text-on-surface-muted">
+        <label for={id} class="mb-1.5 block font-mono text-xs font-medium text-on-surface-muted">
             {label}
         </label>
     {/if}
@@ -292,10 +290,7 @@
         <div
             class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-on-surface-faint"
         >
-            <ChevronDown
-                size={16}
-                class="transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
-            />
+            <ChevronDown size={16} class={isOpen ? "rotate-180" : ""} />
         </div>
     </button>
 
@@ -306,16 +301,10 @@
 
     <!-- Dropdown Menu -->
     {#if isOpen}
-        <div
-            use:portal
-            bind:this={menuEl}
-            transition:fade={{ duration: 100 }}
-            class="z-[9999] min-w-[200px]"
-        >
+        <div use:portal bind:this={menuEl} class="z-[9999] min-w-[200px]">
             <div
                 class="
-                overflow-hidden rounded-xl border border-outline bg-surface-overlay shadow-xl
-                ring-1 shadow-on-surface/5 ring-black/5
+                overflow-hidden rounded-[4px] border border-outline bg-surface-overlay shadow-md
             "
             >
                 {#if searchable}
@@ -331,8 +320,8 @@
                                 onkeydown={handleKeydown}
                                 placeholder="Search..."
                                 class="
-                                    w-full rounded-lg border border-outline bg-surface-raised py-1.5 pr-3 pl-8 text-xs
-                                    text-on-surface placeholder:text-on-surface-faint focus:border-ring focus:ring-1
+                                    w-full rounded-[3px] border border-outline bg-surface-raised py-1.5 pr-3 pl-8 font-mono text-xs
+                                    text-on-surface placeholder:text-on-surface-faint focus:border-ring focus:ring-2
                                     focus:ring-ring focus:outline-none
                                 "
                             />
@@ -363,7 +352,7 @@
 
                     {#each Object.entries(groupedOptions.groups) as [groupName, groupOptions] (groupName)}
                         <div
-                            class="sticky top-0 z-10 mt-1 bg-surface-sunken/50 px-2 py-1.5 text-xs font-semibold tracking-wider text-on-surface-faint uppercase backdrop-blur-sm first:mt-0"
+                            class="sticky top-0 z-10 mt-1 bg-surface-sunken/50 px-2 py-1.5 font-mono text-xs font-semibold tracking-wider text-on-surface-faint uppercase backdrop-blur-sm first:mt-0"
                         >
                             {groupName}
                         </div>
@@ -385,11 +374,11 @@
     {/if}
 
     {#if error}
-        <p class="animate-in slide-in-from-top-1 fade-in mt-1.5 text-sm text-danger-soft-text">
+        <p class="mt-1.5 font-sans text-xs text-danger-soft-text">
             {error}
         </p>
     {:else if hint}
-        <p class="mt-1.5 text-xs text-on-surface-muted">
+        <p class="mt-1.5 font-sans text-xs text-on-surface-muted">
             {hint}
         </p>
     {/if}
@@ -416,8 +405,9 @@
         {onclick}
         onmouseenter={onsemiactive}
         class="
-            flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors
-            {active ? 'bg-surface-sunken' : 'hover:bg-surface-sunken/50'}
+            flex w-full items-start gap-3 rounded-[3px] px-2.5 py-2 text-left {active
+            ? 'bg-surface-sunken'
+            : 'hover:bg-surface-sunken/50'}
             {selected ? 'bg-primary-soft/50 font-medium text-on-surface' : 'text-on-surface-muted'}
             {option.disabled
             ? 'pointer-events-none cursor-not-allowed opacity-50'
@@ -433,14 +423,14 @@
 
         <div class="min-w-0 flex-1">
             <div class="flex items-center justify-between gap-2">
-                <span class="block truncate text-sm font-medium">{option.label}</span>
+                <span class="block truncate font-mono text-sm font-medium">{option.label}</span>
                 {#if selected}
                     <Check size={14} class="shrink-0 text-primary" />
                 {/if}
             </div>
             {#if option.description}
                 <div
-                    class="mt-0.5 line-clamp-2 text-xs leading-normal text-wrap text-on-surface-muted"
+                    class="mt-0.5 line-clamp-2 font-sans text-xs leading-normal text-wrap text-on-surface-muted"
                 >
                     {option.description}
                 </div>

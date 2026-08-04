@@ -17,7 +17,25 @@
  *   - apps/ui toggles the `.dark` class on <html>.
  *   - Starlight (apps/docs) writes data-theme="dark" on the documentElement.
  *   The union selector covers both. Light mode is the default.
+ *
+ * Webfonts are @imported here (not in theme.css) so every consumer that reads
+ * these tokens also gets the faces they name — apps/docs imports this file
+ * alone. Both families ship in the binary; nothing is fetched from a CDN.
  */
+
+@import "@fontsource/tasa-orbiter/400.css";
+@import "@fontsource/tasa-orbiter/500.css";
+@import "@fontsource/tasa-orbiter/600.css";
+@import "@fontsource/tasa-orbiter/700.css";
+@import "@fontsource-variable/geist-mono/index.css";
+
+:root {
+    /* Typography — body sans for prose, mono for all chrome and identifiers.
+     * Geist Mono is variable (100–900), so heading weight 800 is a real cut. */
+    --rw-font-sans: "TASA Orbiter", system-ui, -apple-system, sans-serif;
+    --rw-font-mono:
+        "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 
 :root {
     /* Primary — Wisp Teal (brand = #0E7C86, the artifact's deep teal). Deeper
@@ -46,20 +64,21 @@
     --rw-color-aurora-800: oklch(0.35 0.07 192);
     --rw-color-aurora-900: oklch(0.28 0.055 192);
 
-    /* Mist — cool slate-blue neutrals (the artifact's #EDF1F4 / #E0E6EC /
-     * #18212E family). No purple tint; hue ~248, low chroma rising into the
-     * mids the way the design's slate does. */
-    --rw-color-mist-50: oklch(0.985 0.004 240);
-    --rw-color-mist-100: oklch(0.956 0.006 240); /* ≈ ground #EDF1F4 */
-    --rw-color-mist-200: oklch(0.922 0.01 248); /* ≈ line #E0E6EC */
-    --rw-color-mist-300: oklch(0.83 0.016 248);
-    --rw-color-mist-400: oklch(0.676 0.026 248); /* ≈ faint #8B99A7 */
-    --rw-color-mist-500: oklch(0.6 0.03 248);
-    --rw-color-mist-600: oklch(0.531 0.032 248); /* ≈ muted #5E6E7E */
-    --rw-color-mist-700: oklch(0.4 0.031 252);
-    --rw-color-mist-800: oklch(0.31 0.029 255);
-    --rw-color-mist-900: oklch(0.245 0.028 258); /* ≈ ink #18212E */
-    --rw-color-mist-950: oklch(0.17 0.022 258);
+    /* Mist — teal-gray neutrals (the runbook's #F3F6F6 / #E0E7E7 /
+     * #14262A / #0C1719 family). No purple tint; hue ~195-205, low chroma,
+     * so bg-mist-* utilities agree with the new teal-black surfaces. The light
+     * end stays near-neutral to match the desaturated canvas. */
+    --rw-color-mist-50: oklch(0.972 0.003 200); /* ≈ #F3F6F6 */
+    --rw-color-mist-100: oklch(0.945 0.004 200); /* ≈ #E9EEEE */
+    --rw-color-mist-200: oklch(0.925 0.005 200); /* ≈ #E0E7E7 */
+    --rw-color-mist-300: oklch(0.83 0.016 198);
+    --rw-color-mist-400: oklch(0.676 0.02 200);
+    --rw-color-mist-500: oklch(0.6 0.022 200);
+    --rw-color-mist-600: oklch(0.531 0.024 202);
+    --rw-color-mist-700: oklch(0.42 0.024 203);
+    --rw-color-mist-800: oklch(0.32 0.024 204);
+    --rw-color-mist-900: oklch(0.266 0.025 204); /* ≈ #16292B */
+    --rw-color-mist-950: oklch(0.195 0.016 208); /* ≈ #0C1719 */
 
     /* Success — Field Green (success status = #1F9D57, a true grass green) */
     --rw-color-success-50: oklch(0.97 0.02 150);
@@ -112,8 +131,11 @@
     --rw-ansi-bright-cyan: var(--rw-color-aurora-300);
     --rw-ansi-bright-white: var(--rw-color-mist-50);
 
-    /* Console device surface — the log console is a "black box" instrument
-     * with its own fixed palette that never follows the light/dark UI theme.
+    /* Fixed-dark sibling palettes — the `--rw-con-*` log console (a "black box"
+     * device) and the `--rw-term-*`/`--rw-syn-*` website terminal surfaces both
+     * keep their own dark palette in BOTH themes; they never flip light/dark. */
+
+    /* Console device surface — the log console instrument.
      * Exact values from the approved execution-detail design. */
     --rw-con-bg: #0e141b; /* body / gutter backing */
     --rw-con-panel: #11181f; /* toolbar + footer chrome */
@@ -121,62 +143,97 @@
     --rw-con-dim: #6c7d8c; /* footer + muted readouts */
     --rw-con-gutter: #3c4a58; /* line numbers + sentinel rule */
 
-    /* Light-mode semantic tokens (default) */
+    /* Terminal surface — always dark in both themes (website --term-* set) */
+    --rw-term: #0a1116;
+    --rw-term-2: #0d151b;
+    --rw-term-line: #1d2932;
+    --rw-term-line-2: #2a3a45;
+    --rw-term-text: #dbe6ec;
+    --rw-term-muted: #7d919c;
+    --rw-term-faint: #566873;
+    --rw-term-teal: #2fd4dd;
+    --rw-term-ok: #3fc26b;
+    --rw-term-warn: #e0a52e;
+    --rw-term-bad: #f15a4d;
+    /* Syntax highlighting */
+    --rw-syn-comment: #5b6b75;
+    --rw-syn-kw: #79c7ff;
+    --rw-syn-str: #7fd6a0;
+    --rw-syn-num: #e0a52e;
+    --rw-syn-punc: #9aa7b0;
+    --rw-syn-fn: #2fd4dd;
+
+    /* Elevation — light-mode drop shadows; flipped to `none` in dark so the
+     * UI reads as borders-only there. */
+    --rw-shadow-xs: 0 1px 2px rgba(16, 41, 43, 0.04);
+    --rw-shadow-sm: 0 1px 2px rgba(16, 41, 43, 0.04), 0 12px 28px -20px rgba(16, 41, 43, 0.22);
+    --rw-shadow-md: 0 1px 2px rgba(16, 41, 43, 0.06), 0 22px 44px -26px rgba(16, 41, 43, 0.4);
+    --rw-shadow-lg: 0 1px 2px rgba(16, 41, 43, 0.06), 0 30px 60px -28px rgba(16, 41, 43, 0.45);
+    --rw-shadow-xl: 0 1px 2px rgba(16, 41, 43, 0.06), 0 40px 80px -30px rgba(16, 41, 43, 0.5);
+
+    /* Light-mode semantic tokens (default) — runbook palette (exact hex).
+     *
+     * The canvas carries only a whisper of the brand teal. The website can
+     * afford a minty `--ground` because dark panes and terminals cover most
+     * of it; in a dashboard the canvas is most of the pixels, and a saturated
+     * mint under white panels reads washed-out. Structure comes from the
+     * hairline outlines, not from tinting the page. */
     /* Surfaces */
-    --rw-surface: var(--rw-color-mist-50);
-    --rw-surface-raised: white;
-    --rw-surface-overlay: white;
-    --rw-surface-sunken: var(--rw-color-mist-100);
+    --rw-surface: #f3f6f6;
+    --rw-surface-raised: #ffffff;
+    --rw-surface-sunken: #e9eeee;
+    --rw-surface-overlay: #ffffff;
     /* On-surface text */
-    --rw-on-surface: var(--rw-color-mist-900);
-    --rw-on-surface-muted: var(--rw-color-mist-600);
-    --rw-on-surface-faint: var(--rw-color-mist-400);
+    --rw-on-surface: #14262a;
+    --rw-on-surface-muted: #5a6d70;
+    --rw-on-surface-faint: #869798;
     /* Borders / outlines */
-    --rw-outline: var(--rw-color-mist-200);
-    --rw-outline-hover: var(--rw-color-mist-300);
-    --rw-outline-faint: var(--rw-color-mist-100);
-    --rw-ring: var(--rw-color-wisp-500);
-    --rw-backdrop: oklch(0.12 0.012 280 / 0.5);
+    --rw-outline: #e0e7e7;
+    --rw-outline-hover: #c8d2d2;
+    --rw-outline-faint: #edf1f1;
+    --rw-ring: #15a0a8;
+    --rw-backdrop: rgba(243, 246, 246, 0.78);
     /* Primary */
-    --rw-primary: var(--rw-color-wisp-600);
-    --rw-primary-hover: var(--rw-color-wisp-700);
-    --rw-primary-active: var(--rw-color-wisp-800);
-    --rw-on-primary: white;
-    --rw-primary-soft: var(--rw-color-wisp-100);
-    --rw-primary-soft-text: var(--rw-color-wisp-700);
-    /* Danger */
-    --rw-danger: var(--rw-color-danger-600);
-    --rw-danger-hover: var(--rw-color-danger-700);
-    --rw-danger-active: var(--rw-color-danger-800);
-    --rw-on-danger: white;
-    --rw-danger-soft: var(--rw-color-danger-50);
-    --rw-danger-soft-text: var(--rw-color-danger-700);
+    --rw-primary: #15a0a8;
+    --rw-primary-hover: #0e7c86;
+    --rw-primary-active: #0a6068;
+    --rw-on-primary: #ffffff;
+    --rw-primary-soft: rgba(21, 160, 168, 0.1);
+    --rw-primary-soft-text: #15a0a8;
+    --rw-primary-soft-border: rgba(21, 160, 168, 0.25);
     /* Success */
-    --rw-success: var(--rw-color-success-600);
-    --rw-success-hover: var(--rw-color-success-700);
-    --rw-on-success: white;
-    --rw-success-soft: var(--rw-color-success-50);
-    --rw-success-soft-text: var(--rw-color-success-700);
+    --rw-success: #1e8a4a;
+    --rw-success-hover: #1a753e;
+    --rw-success-active: #156033;
+    --rw-on-success: #ffffff;
+    --rw-success-soft: rgba(30, 138, 74, 0.1);
+    --rw-success-soft-text: #1e8a4a;
+    --rw-success-soft-border: rgba(30, 138, 74, 0.25);
+    /* Danger */
+    --rw-danger: #d6453d;
+    --rw-danger-hover: #b8352b;
+    --rw-danger-active: #9a2a22;
+    --rw-on-danger: #ffffff;
+    --rw-danger-soft: rgba(214, 69, 61, 0.1);
+    --rw-danger-soft-text: #d6453d;
+    --rw-danger-soft-border: rgba(214, 69, 61, 0.25);
     /* Warning */
-    --rw-warning: var(--rw-color-warning-500);
-    --rw-warning-hover: var(--rw-color-warning-600);
-    --rw-on-warning: white;
-    --rw-warning-soft: var(--rw-color-warning-50);
-    --rw-warning-soft-text: var(--rw-color-warning-700);
-    /* Info */
-    --rw-info: var(--rw-color-aurora-600);
-    --rw-info-hover: var(--rw-color-aurora-700);
-    --rw-on-info: white;
-    --rw-info-soft: var(--rw-color-aurora-50);
-    --rw-info-soft-text: var(--rw-color-aurora-700);
-    /* Soft callout borders — sit on the matching *-soft surface */
-    --rw-primary-soft-border: var(--rw-color-wisp-200);
-    --rw-danger-soft-border: var(--rw-color-danger-200);
-    --rw-success-soft-border: var(--rw-color-success-200);
-    --rw-warning-soft-border: var(--rw-color-warning-200);
-    --rw-info-soft-border: var(--rw-color-aurora-200);
+    --rw-warning: #c4781a;
+    --rw-warning-hover: #a36414;
+    --rw-warning-active: #82500f;
+    --rw-on-warning: #ffffff;
+    --rw-warning-soft: rgba(196, 120, 26, 0.1);
+    --rw-warning-soft-text: #c4781a;
+    --rw-warning-soft-border: rgba(196, 120, 26, 0.25);
+    /* Info — matches primary teal */
+    --rw-info: #15a0a8;
+    --rw-info-hover: #0e7c86;
+    --rw-on-info: #ffffff;
+    --rw-info-soft: rgba(21, 160, 168, 0.1);
+    --rw-info-soft-text: #15a0a8;
+    --rw-info-soft-border: rgba(21, 160, 168, 0.25);
     /* Glass */
-    --rw-glass: oklch(1 0 0 / 0.8);
+    --rw-glass: rgba(255, 255, 255, 0.78);
     --rw-glass-blur: blur(12px);
 }
 
@@ -184,58 +241,66 @@
  * attribute for Starlight. Both selectors apply the same token set. */
 :root.dark,
 :root[data-theme="dark"] {
-    --rw-surface: var(--rw-color-mist-950);
-    --rw-surface-raised: var(--rw-color-mist-900);
-    --rw-surface-overlay: var(--rw-color-mist-900);
-    --rw-surface-sunken: oklch(0.08 0.012 280);
-    --rw-on-surface: var(--rw-color-mist-100);
-    --rw-on-surface-muted: var(--rw-color-mist-400);
-    --rw-on-surface-faint: var(--rw-color-mist-600);
-    --rw-outline: var(--rw-color-mist-800);
-    --rw-outline-hover: var(--rw-color-mist-700);
-    --rw-outline-faint: var(--rw-color-mist-800);
-    --rw-ring: var(--rw-color-wisp-400);
-    --rw-backdrop: oklch(0 0 0 / 0.7);
-    /* Primary */
-    --rw-primary: var(--rw-color-wisp-500);
-    --rw-primary-hover: var(--rw-color-wisp-400);
-    --rw-primary-active: var(--rw-color-wisp-300);
-    --rw-on-primary: white;
-    --rw-primary-soft: oklch(0.22 0.06 270);
-    --rw-primary-soft-text: var(--rw-color-wisp-300);
-    /* Danger */
-    --rw-danger: var(--rw-color-danger-500);
-    --rw-danger-hover: var(--rw-color-danger-400);
-    --rw-danger-active: var(--rw-color-danger-300);
-    --rw-on-danger: white;
-    --rw-danger-soft: oklch(0.2 0.04 355);
-    --rw-danger-soft-text: var(--rw-color-danger-300);
+    /* Surfaces */
+    --rw-surface: #0c1719;
+    --rw-surface-raised: #122226;
+    --rw-surface-sunken: #080f11;
+    --rw-surface-overlay: rgba(8, 15, 17, 0.86);
+    /* On-surface text */
+    --rw-on-surface: #e8eff4;
+    --rw-on-surface-muted: #94a6b1;
+    --rw-on-surface-faint: #5f7079;
+    /* Borders / outlines */
+    --rw-outline: #1d2932;
+    --rw-outline-hover: #2a3a45;
+    --rw-outline-faint: #1d2932;
+    --rw-ring: #2fd4dd;
+    --rw-backdrop: rgba(4, 10, 12, 0.7);
+    /* Primary — bright teal in dark, matches info */
+    --rw-primary: #2fd4dd;
+    --rw-primary-hover: #5fe3ea;
+    --rw-primary-active: #5fe3ea;
+    --rw-on-primary: #04181a;
+    --rw-primary-soft: rgba(21, 160, 168, 0.14);
+    --rw-primary-soft-text: #2fd4dd;
+    --rw-primary-soft-border: rgba(47, 212, 221, 0.28);
     /* Success */
-    --rw-success: var(--rw-color-success-500);
-    --rw-success-hover: var(--rw-color-success-400);
-    --rw-on-success: white;
-    --rw-success-soft: oklch(0.2 0.04 165);
-    --rw-success-soft-text: var(--rw-color-success-300);
+    --rw-success: #3fc26b;
+    --rw-success-hover: #5fd487;
+    --rw-on-success: #04181a;
+    --rw-success-soft: rgba(63, 194, 107, 0.14);
+    --rw-success-soft-text: #3fc26b;
+    --rw-success-soft-border: rgba(63, 194, 107, 0.28);
+    /* Danger */
+    --rw-danger: #f15a4d;
+    --rw-danger-hover: #ff7568;
+    --rw-danger-active: #ff8a7e;
+    --rw-on-danger: #04181a;
+    --rw-danger-soft: rgba(241, 90, 77, 0.14);
+    --rw-danger-soft-text: #f15a4d;
+    --rw-danger-soft-border: rgba(241, 90, 77, 0.28);
     /* Warning */
-    --rw-warning: var(--rw-color-warning-400);
-    --rw-warning-hover: var(--rw-color-warning-300);
-    --rw-on-warning: var(--rw-color-mist-950);
-    --rw-warning-soft: oklch(0.2 0.04 85);
-    --rw-warning-soft-text: var(--rw-color-warning-300);
-    /* Info */
-    --rw-info: var(--rw-color-aurora-500);
-    --rw-info-hover: var(--rw-color-aurora-400);
-    --rw-on-info: white;
-    --rw-info-soft: oklch(0.2 0.04 180);
-    --rw-info-soft-text: var(--rw-color-aurora-300);
-    /* Soft callout borders */
-    --rw-primary-soft-border: oklch(0.32 0.06 270);
-    --rw-danger-soft-border: oklch(0.32 0.06 355);
-    --rw-success-soft-border: oklch(0.32 0.06 165);
-    --rw-warning-soft-border: oklch(0.32 0.06 85);
-    --rw-info-soft-border: oklch(0.32 0.06 180);
+    --rw-warning: #e0a52e;
+    --rw-warning-hover: #ecb845;
+    --rw-on-warning: #04181a;
+    --rw-warning-soft: rgba(224, 165, 46, 0.14);
+    --rw-warning-soft-text: #e0a52e;
+    --rw-warning-soft-border: rgba(224, 165, 46, 0.28);
+    /* Info — bright teal in dark */
+    --rw-info: #2fd4dd;
+    --rw-info-hover: #5fe3ea;
+    --rw-on-info: #04181a;
+    --rw-info-soft: rgba(47, 212, 221, 0.14);
+    --rw-info-soft-text: #2fd4dd;
+    --rw-info-soft-border: rgba(47, 212, 221, 0.28);
     /* Glass */
-    --rw-glass: oklch(0.12 0.012 280 / 0.9);
+    --rw-glass: rgba(8, 15, 17, 0.9);
+    /* Elevation — borders-only in dark, no drop shadow */
+    --rw-shadow-xs: none;
+    --rw-shadow-sm: none;
+    --rw-shadow-md: none;
+    --rw-shadow-lg: none;
+    --rw-shadow-xl: none;
 }
 
 /* Platform polish — focus ring, text selection, scrollbar. Lifted from

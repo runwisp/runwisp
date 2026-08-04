@@ -30,7 +30,7 @@
         <button
             type="button"
             aria-label="Dismiss"
-            class="rounded-md p-1 hover:bg-warning-soft-border/50"
+            class="rounded-[3px] p-1 hover:bg-warning-soft-border/50"
             onclick={() => (dismissed = true)}
         >
             <X size={16} />

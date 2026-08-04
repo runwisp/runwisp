@@ -36,7 +36,7 @@
 
 <div class="space-y-1.5 {className}">
     {#if label}
-        <label for={fieldId} class="block text-sm font-medium text-on-surface-muted">
+        <label for={fieldId} class="block font-mono text-xs font-medium text-on-surface-muted">
             {label}
             {#if required}
                 <span class="text-danger-soft-text">*</span>
@@ -45,18 +45,16 @@
     {/if}
 
     {#if description}
-        <p class="text-sm text-on-surface-faint">{description}</p>
+        <p class="font-sans text-xs text-on-surface-faint">{description}</p>
     {/if}
 
     {@render children()}
 
     {#if error}
-        <p
-            class="animate-in slide-in-from-top-1 fade-in text-sm text-danger-soft-text duration-200"
-        >
+        <p class="font-sans text-xs text-danger-soft-text">
             {error}
         </p>
     {:else if hint}
-        <p class="text-sm text-on-surface-muted">{hint}</p>
+        <p class="font-sans text-xs text-on-surface-muted">{hint}</p>
     {/if}
 </div>

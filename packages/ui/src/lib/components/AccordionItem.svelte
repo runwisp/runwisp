@@ -34,9 +34,8 @@
         onclick={toggle}
         {disabled}
         class="
-            flex w-full items-center justify-between gap-3 py-4 text-left text-sm font-medium
-            text-on-surface transition-colors
-            hover:text-on-surface-muted
+            flex w-full items-center justify-between gap-3 py-4 text-left font-mono text-sm
+            text-on-surface hover:text-primary
             disabled:cursor-not-allowed disabled:opacity-50
         "
         aria-expanded={open}
@@ -48,16 +47,11 @@
                 {title}
             {/if}
         </span>
-        <ChevronDown
-            size={16}
-            class="shrink-0 text-on-surface-faint transition-transform duration-200 {open
-                ? 'rotate-180'
-                : ''}"
-        />
+        <ChevronDown size={16} class="shrink-0 text-on-surface-faint {open ? 'rotate-180' : ''}" />
     </button>
 
     <div
-        class="grid transition-[grid-template-rows] duration-200 ease-out {open
+        class="grid transition-[grid-template-rows] duration-150 ease-out {open
             ? 'grid-rows-[1fr]'
             : 'grid-rows-[0fr]'}"
     >

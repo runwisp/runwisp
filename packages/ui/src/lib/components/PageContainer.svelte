@@ -33,6 +33,6 @@
     };
 </script>
 
-<div class="animate-in fade-in duration-300 {variantClasses[variant]} {className}">
+<div class="{variantClasses[variant]} {className}">
     {@render children()}
 </div>

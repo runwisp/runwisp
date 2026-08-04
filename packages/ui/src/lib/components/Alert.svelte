@@ -34,28 +34,28 @@
         { bg: string; border: string; icon: typeof Info; iconColor: string }
     > = {
         info: {
-            bg: "bg-info-soft",
+            bg: "bg-info-soft text-info-soft-text",
             border: "border-info-soft-border",
             icon: Info,
-            iconColor: "text-info",
+            iconColor: "text-info-soft-text",
         },
         success: {
-            bg: "bg-success-soft",
+            bg: "bg-success-soft text-success-soft-text",
             border: "border-success-soft-border",
             icon: CircleCheckBig,
-            iconColor: "text-success-surface",
+            iconColor: "text-success-soft-text",
         },
         warning: {
-            bg: "bg-warning-soft",
+            bg: "bg-warning-soft text-warning-soft-text",
             border: "border-warning-soft-border",
             icon: TriangleAlert,
-            iconColor: "text-warning-surface",
+            iconColor: "text-warning-soft-text",
         },
         danger: {
-            bg: "bg-danger-soft",
+            bg: "bg-danger-soft text-danger-soft-text",
             border: "border-danger-soft-border",
             icon: CircleX,
-            iconColor: "text-danger-surface",
+            iconColor: "text-danger-soft-text",
         },
     };
 
@@ -64,7 +64,7 @@
 
 <div
     class="
-		flex gap-3 rounded-xl border p-4
+		flex gap-3 rounded-[4px] border p-4
 		{config.bg} {config.border}
 		{className}
 	"
@@ -81,7 +81,7 @@
 
     <div class="min-w-0 flex-1">
         {#if title}
-            <h4 class="mb-1 text-sm font-semibold text-on-surface">{title}</h4>
+            <h4 class="mb-1 font-mono text-sm font-semibold text-on-surface">{title}</h4>
         {/if}
         {#if children}
             <div class="text-sm text-on-surface-muted">
@@ -98,7 +98,7 @@
     {#if dismissible}
         <button
             onclick={onDismiss}
-            class="shrink-0 rounded-lg p-1 text-on-surface-faint transition-colors hover:bg-surface-raised/50 hover:text-on-surface-muted"
+            class="shrink-0 rounded-[3px] p-1 text-on-surface-faint hover:bg-surface-raised hover:text-on-surface-muted"
             aria-label="Dismiss"
         >
             <X size={16} />

@@ -21,7 +21,7 @@
 </script>
 
 <nav aria-label="Breadcrumb" class={className}>
-    <ol class="flex items-center gap-1.5 text-sm">
+    <ol class="flex items-center gap-1.5 font-mono text-sm">
         {#each items as item, idx (idx)}
             <li class="flex items-center gap-1.5">
                 {#if idx > 0}
@@ -35,7 +35,7 @@
                 {#if item.href && idx < items.length - 1}
                     <a
                         href={item.href}
-                        class="flex items-center gap-1.5 text-on-surface-muted transition-colors hover:text-on-surface"
+                        class="flex items-center gap-1.5 text-on-surface-muted hover:text-primary"
                     >
                         {#if item.icon}
                             {@const Icon = item.icon}
@@ -44,7 +44,7 @@
                         <span>{item.label}</span>
                     </a>
                 {:else}
-                    <span class="flex items-center gap-1.5 font-medium text-on-surface">
+                    <span class="flex items-center gap-1.5 text-on-surface">
                         {#if item.icon}
                             {@const Icon = item.icon}
                             <Icon size={14} />

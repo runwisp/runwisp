@@ -53,9 +53,8 @@
         const baseClasses = `
             ${fullWidth ? "flex-1" : ""}
             inline-flex items-center justify-center gap-2 px-4 py-2.5
-            text-sm font-medium
-            transition-colors duration-150
-            disabled:cursor-not-allowed disabled:opacity-50
+            text-sm font-mono
+                        disabled:cursor-not-allowed disabled:opacity-50
         `;
 
         const isActive = activeTab === tab.id;
@@ -63,16 +62,16 @@
         if (variant === "underline") {
             return `${baseClasses} -mb-px border-b-2 ${
                 isActive
-                    ? "border-primary text-primary-soft-text"
-                    : "border-transparent text-on-surface-muted hover:border-outline-hover hover:text-on-surface"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-on-surface-muted hover:border-outline-hover hover:text-primary"
             }`;
         }
 
         if (variant === "pills" || variant === "enclosed") {
-            return `${baseClasses} rounded-lg ${
+            return `${baseClasses} rounded-[3px] ${
                 isActive
-                    ? "bg-surface-raised text-on-surface shadow-sm"
-                    : "text-on-surface-muted hover:text-on-surface"
+                    ? "bg-primary-soft text-primary-soft-text"
+                    : "text-on-surface-muted hover:text-primary"
             }`;
         }
 
@@ -85,8 +84,8 @@
     <div
         class="
 			{variant === 'underline' ? 'border-b border-outline' : ''}
-			{variant === 'pills' ? 'rounded-xl bg-surface-sunken p-1' : ''}
-			{variant === 'enclosed' ? 'rounded-xl border border-outline bg-surface-sunken p-1' : ''}
+			{variant === 'pills' ? 'rounded-[4px] bg-surface-sunken p-1' : ''}
+			{variant === 'enclosed' ? 'rounded-[4px] border border-outline bg-surface-sunken p-1' : ''}
 		"
         role="tablist"
     >
@@ -120,7 +119,7 @@
                     {#if tab.badge || tab.badge === 0}
                         <span
                             class="
-							rounded-full px-1.5 py-0.5 text-xs font-medium
+							rounded-[3px] px-1.5 py-0.5 font-mono text-xs
 							{activeTab === tab.id
                                 ? 'bg-primary-soft text-primary-soft-text'
                                 : 'bg-surface-sunken text-on-surface-muted'}

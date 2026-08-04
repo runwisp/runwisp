@@ -2,11 +2,10 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { ArrowRight, CircleAlert, Cloud, ShieldCheck, Sparkles, Zap } from "@lucide/svelte";
+    import { ArrowRight, Cloud } from "@lucide/svelte";
     import Badge from "@runwisp/ui/components/Badge.svelte";
     import Card from "@runwisp/ui/components/Card.svelte";
     import { formatBytes, Sparkline } from "@runwisp/ui";
-    import { type Component } from "svelte";
     import type { MetricsSample } from "$lib/api";
     import { pluralize } from "./overview-format.js";
     import type { OverviewSummary } from "./overview.js";
@@ -14,14 +13,17 @@
 
     type BadgeTone = "default" | "primary" | "success" | "warning" | "danger" | "info";
 
+    // A stat pane, in the website's tmux-pane language: the label rides the top
+    // hairline as a lowercase tab. State is carried by the number itself — it
+    // stays neutral while things are fine and takes on a tone when they aren't,
+    // so a bad pane is the single lit thing on the page instead of a second
+    // label in the opposite corner arguing with the first.
     interface SummaryCard {
         label: string;
         value: string;
         detail: string;
-        icon: Component;
+        valueClass: string;
         accentClass: string;
-        iconWrapClass: string;
-        iconClass: string;
     }
 
     interface SystemHealth {
@@ -97,26 +99,30 @@
         ];
     }
 
+    const CALM_PANE = "border-outline bg-surface-raised";
+    const ALARM_PANE = "border-danger-soft-border bg-danger-soft/60";
+
+    const NEUTRAL_VALUE = "text-on-surface";
+    const IDLE_VALUE = "text-on-surface-faint";
+    const WARNING_VALUE = "text-warning-soft-text";
+    const DANGER_VALUE = "text-danger-soft-text";
+    const LIVE_VALUE = "text-primary";
+
     function createHealthyTasksCard(
         currentSummary: OverviewSummary,
         currentHealthyTasksCount: number,
     ): SummaryCard {
-        const isFullyHealthy =
-            currentSummary.totalTasks > 0 && currentHealthyTasksCount === currentSummary.totalTasks;
+        const hasTasks = currentSummary.totalTasks > 0;
+        const isFullyHealthy = hasTasks && currentHealthyTasksCount === currentSummary.totalTasks;
 
         return {
-            label: "Healthy tasks",
+            label: "healthy tasks",
             value: `${currentHealthyTasksCount}/${currentSummary.totalTasks}`,
-            detail:
-                currentSummary.totalTasks > 0
-                    ? `${currentHealthyTasksCount} task${pluralize(currentHealthyTasksCount)} without active failures`
-                    : "No tasks loaded yet",
-            icon: ShieldCheck,
-            accentClass: isFullyHealthy
-                ? "border-success-soft-border bg-success-soft/80"
-                : "border-outline bg-surface-raised/80",
-            iconWrapClass: isFullyHealthy ? "bg-success-soft" : "bg-surface-sunken",
-            iconClass: isFullyHealthy ? "text-success-soft-text" : "text-on-surface-muted",
+            detail: hasTasks
+                ? `${currentHealthyTasksCount} task${pluralize(currentHealthyTasksCount)} without active failures`
+                : "No tasks loaded yet",
+            valueClass: !hasTasks ? IDLE_VALUE : isFullyHealthy ? NEUTRAL_VALUE : WARNING_VALUE,
+            accentClass: CALM_PANE,
         };
     }
 
@@ -124,17 +130,13 @@
         const hasAttentionTasks = attentionTasksCount > 0;
 
         return {
-            label: "Needs attention",
+            label: "needs attention",
             value: String(attentionTasksCount),
             detail: hasAttentionTasks
                 ? "Failures, crashes, stops, and timeouts"
                 : "No incidents waiting",
-            icon: CircleAlert,
-            accentClass: hasAttentionTasks
-                ? "border-danger-soft-border bg-danger-soft/80"
-                : "border-outline bg-surface-raised/80",
-            iconWrapClass: hasAttentionTasks ? "bg-danger-soft" : "bg-surface-sunken",
-            iconClass: hasAttentionTasks ? "text-danger-soft-text" : "text-on-surface-muted",
+            valueClass: hasAttentionTasks ? DANGER_VALUE : IDLE_VALUE,
+            accentClass: hasAttentionTasks ? ALARM_PANE : CALM_PANE,
         };
     }
 
@@ -142,17 +144,13 @@
         const hasRunningTasks = activeRunsCount > 0;
 
         return {
-            label: "Running now",
+            label: "running now",
             value: String(activeRunsCount),
             detail: hasRunningTasks
                 ? `${activeRunsCount} live execution${pluralize(activeRunsCount)}`
                 : "Nothing executing",
-            icon: Zap,
-            accentClass: hasRunningTasks
-                ? "border-primary-soft-border bg-primary-soft/80"
-                : "border-outline bg-surface-raised/80",
-            iconWrapClass: hasRunningTasks ? "bg-primary-soft" : "bg-surface-sunken",
-            iconClass: hasRunningTasks ? "text-primary-soft-text" : "text-on-surface-muted",
+            valueClass: hasRunningTasks ? LIVE_VALUE : IDLE_VALUE,
+            accentClass: CALM_PANE,
         };
     }
 
@@ -164,27 +162,17 @@
         const isPerfectSuccessRate = hasCompletedRuns && successRate >= 100;
 
         return {
-            label: "Recent success",
-            value: hasCompletedRuns ? `${successRate}%` : "-",
+            label: "recent success",
+            value: hasCompletedRuns ? `${successRate}%` : "—",
             detail: hasCompletedRuns
                 ? `Across ${currentCompletedRunsCount} completed run${pluralize(currentCompletedRunsCount)}`
                 : "Waiting for first completed run",
-            icon: Sparkles,
-            accentClass: isPerfectSuccessRate
-                ? "border-success-soft-border bg-success-soft/80"
-                : hasCompletedRuns
-                  ? "border-warning-soft-border bg-warning-soft/80"
-                  : "border-outline bg-surface-raised/80",
-            iconWrapClass: isPerfectSuccessRate
-                ? "bg-success-soft"
-                : hasCompletedRuns
-                  ? "bg-warning-soft"
-                  : "bg-surface-sunken",
-            iconClass: isPerfectSuccessRate
-                ? "text-success-soft-text"
-                : hasCompletedRuns
-                  ? "text-warning-soft-text"
-                  : "text-on-surface-muted",
+            valueClass: !hasCompletedRuns
+                ? IDLE_VALUE
+                : isPerfectSuccessRate
+                  ? NEUTRAL_VALUE
+                  : WARNING_VALUE,
+            accentClass: CALM_PANE,
         };
     }
 
@@ -192,7 +180,7 @@
         return [
             {
                 label: "RunWisp",
-                value: `${currentDaemonState.name} v${currentDaemonState.version}`,
+                value: `v${currentDaemonState.version}`,
             },
             {
                 label: "Host",
@@ -236,7 +224,7 @@
 </script>
 
 <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-    <div class="space-y-5">
+    <div class="flex flex-col gap-5">
         {#if cloudMode}
             <p class="flex items-center gap-1.5 text-xs text-on-surface-muted">
                 <Cloud size={12} class="shrink-0 text-info" />
@@ -260,13 +248,13 @@
                 <Badge variant={systemHealth.variant} class="px-3 py-1">
                     {systemHealth.label}
                 </Badge>
-                <span class="text-sm text-on-surface-muted">
+                <span class="font-mono text-sm text-on-surface-muted tabular-nums">
                     {summary.totalTasks} task{pluralize(summary.totalTasks)}
                 </span>
             </div>
 
             <button
-                class="inline-flex items-center gap-1.5 text-sm font-medium text-on-surface-muted transition-colors hover:text-on-surface"
+                class="inline-flex items-center gap-1.5 font-mono text-sm font-medium text-on-surface-muted hover:text-primary"
                 onclick={() => onViewAllRuns?.()}
             >
                 View all runs
@@ -274,44 +262,54 @@
             </button>
         </Card>
 
-        <!-- Stat cards -->
+        <!-- Stat panes. The label sits ON the top hairline as a tmux pane title;
+             the number owns the body and carries the state in its tone; the
+             sentence is the pane foot. -->
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {#each summaryCards as card (card.label)}
-                {@const Icon = card.icon}
-                <div class="rounded-xl border p-4 {card.accentClass}">
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="space-y-1">
-                            <p
-                                class="text-2xs font-semibold tracking-widest text-on-surface-muted uppercase"
-                            >
-                                {card.label}
-                            </p>
-                            <p class="text-2xl font-semibold tracking-tight text-on-surface">
-                                {card.value}
-                            </p>
-                        </div>
-                        <div
-                            class="flex h-9 w-9 items-center justify-center rounded-lg {card.iconWrapClass}"
-                        >
-                            <Icon size={16} class={card.iconClass} />
-                        </div>
-                    </div>
-                    <p class="mt-2 text-xs text-on-surface-muted">{card.detail}</p>
+                <div class="relative rounded-[4px] border shadow-sm {card.accentClass}">
+                    <span
+                        class="absolute top-0 left-3.5 max-w-[calc(100%-2rem)] -translate-y-1/2 truncate bg-surface-sunken px-2 font-mono text-[10.5px] leading-[1.6] font-medium tracking-[0.06em] text-on-surface-muted"
+                    >
+                        {card.label}
+                    </span>
+                    <p
+                        class="px-4 pt-5 pb-4 font-mono text-[28px] leading-none font-extrabold tracking-[-0.02em] tabular-nums {card.valueClass}"
+                    >
+                        {card.value}
+                    </p>
+                    <p
+                        class="border-t border-outline-faint px-4 py-2.5 text-xs text-on-surface-muted"
+                    >
+                        {card.detail}
+                    </p>
                 </div>
             {/each}
         </div>
 
-        <!-- Runner facts -->
+        <!-- Runner facts. Grows to eat the leftover height so its bottom edge
+             lands on the resources card's. -->
         <div
-            class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-outline-faint bg-surface-sunken/60 px-5 py-3 text-sm"
+            class="flex grow flex-wrap content-center items-center gap-x-4 gap-y-2 rounded-[4px] border border-outline-faint bg-surface-sunken/60 px-5 py-3 text-sm lg:gap-x-6"
         >
             {#each daemonFacts as fact, i (fact.label)}
-                {#if i > 0}
-                    <span class="hidden text-on-surface-faint sm:inline">|</span>
-                {/if}
-                <span>
-                    <span class="font-medium text-on-surface-muted">{fact.label}</span>
-                    <span class="ml-1.5 text-on-surface">{fact.value}</span>
+                <!-- The separator travels inside its fact so a wrap never leaves
+                     a dangling | at the end of a line. -->
+                <span class="inline-flex items-center gap-x-4 lg:gap-x-6">
+                    {#if i > 0}
+                        <span class="hidden text-on-surface-faint sm:inline" aria-hidden="true"
+                            >|</span
+                        >
+                    {/if}
+                    <span>
+                        <span
+                            class="font-mono text-xs font-medium tracking-wide text-on-surface-muted"
+                            >{fact.label}</span
+                        >
+                        <span class="ml-1.5 font-mono text-xs text-on-surface tabular-nums"
+                            >{fact.value}</span
+                        >
+                    </span>
                 </span>
             {/each}
         </div>
@@ -329,11 +327,13 @@
         <div class="mt-4 space-y-4">
             <div>
                 <div class="mb-1.5 flex items-center justify-between text-sm">
-                    <span class="text-on-surface-muted">CPU</span>
-                    <span class="font-semibold text-on-surface">{formatUsage(stats.cpuUsage)}</span>
+                    <span class="font-mono text-xs tracking-wide text-on-surface-muted">CPU</span>
+                    <span class="font-mono font-semibold text-on-surface tabular-nums"
+                        >{formatUsage(stats.cpuUsage)}</span
+                    >
                 </div>
                 <div
-                    class="overflow-hidden rounded-lg border border-outline-faint bg-surface-sunken/50 text-primary"
+                    class="overflow-hidden rounded-[4px] border border-outline-faint bg-surface-sunken/50 text-primary"
                 >
                     <Sparkline data={cpuData} height={44} />
                 </div>
@@ -341,22 +341,23 @@
 
             <div>
                 <div class="mb-1.5 flex items-baseline justify-between text-sm">
-                    <span class="text-on-surface-muted">Memory</span>
+                    <span class="font-mono text-xs tracking-wide text-on-surface-muted">Memory</span
+                    >
                     <span class="flex items-baseline gap-2">
                         {#if latestSample}
-                            <span class="text-xs text-on-surface-faint">
+                            <span class="font-mono text-xs text-on-surface-faint tabular-nums">
                                 {formatBytes(latestSample.mem_used)} / {formatBytes(
                                     latestSample.mem_total,
                                 )}
                             </span>
                         {/if}
-                        <span class="font-semibold text-on-surface"
+                        <span class="font-mono font-semibold text-on-surface tabular-nums"
                             >{formatUsage(stats.memUsage)}</span
                         >
                     </span>
                 </div>
                 <div
-                    class="overflow-hidden rounded-lg border border-outline-faint bg-surface-sunken/50 text-info"
+                    class="overflow-hidden rounded-[4px] border border-outline-faint bg-surface-sunken/50 text-info"
                 >
                     <Sparkline data={memData} height={44} />
                 </div>

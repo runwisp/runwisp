@@ -382,7 +382,7 @@
 <div
     class={flush
         ? "flex h-full w-full flex-col overflow-hidden border-b border-outline bg-surface md:w-[300px] md:shrink-0 md:border-r md:border-b-0"
-        : "flex flex-col overflow-hidden rounded-xl border border-outline bg-surface-raised shadow-sm md:col-span-4 lg:col-span-3"}
+        : "flex flex-col overflow-hidden rounded-[4px] border border-outline bg-surface-raised shadow-sm md:col-span-4 lg:col-span-3"}
 >
     <div
         class="flex shrink-0 items-center gap-2 border-b px-3 py-2 {hasSelection
@@ -408,7 +408,7 @@
         {/if}
 
         {#if hasSelection}
-            <span class="text-xs font-medium text-on-surface">
+            <span class="font-mono text-xs font-medium text-on-surface tabular-nums">
                 {selectionCount} selected
             </span>
             <div class="ml-auto flex items-center gap-1">
@@ -451,10 +451,14 @@
                 {/if}
             </div>
         {:else}
-            <span class="text-xs font-semibold tracking-wider text-on-surface-muted uppercase">
+            <span
+                class="shrink-0 font-mono text-xs font-semibold tracking-[0.14em] whitespace-nowrap text-on-surface-muted uppercase"
+            >
                 {headerLabel}
             </span>
-            <span class="text-xs text-on-surface-faint">
+            <span
+                class="shrink-0 font-mono text-xs whitespace-nowrap text-on-surface-faint tabular-nums"
+            >
                 {#if outputSearchActive}
                     {matchedRuns.length} of {items.length}
                 {:else}
@@ -464,7 +468,7 @@
             </span>
             <div class="ml-auto flex items-center gap-1">
                 {#if showFilters}
-                    <RunFilterPopover bind:filters {showTask} {tasks} />
+                    <RunFilterPopover bind:filters {showTask} {tasks} compact={flush} />
                 {/if}
                 <Button
                     variant="ghost"
@@ -495,13 +499,13 @@
         >
             {#each filterChips as chip (chip.dimension)}
                 <span
-                    class="inline-flex items-center gap-1 rounded-full bg-surface-raised py-0.5 pr-1 pl-2 text-2xs font-medium text-on-surface-muted ring-1 ring-outline-faint ring-inset"
+                    class="inline-flex items-center gap-1 rounded-[3px] border border-primary-soft-border bg-primary-soft py-0.5 pr-1 pl-2 font-mono text-2xs font-medium text-primary-soft-text"
                 >
                     {chip.label}
                     <button
                         type="button"
                         onclick={() => removeChip(chip.dimension)}
-                        class="flex size-3.5 items-center justify-center rounded-full text-on-surface-faint transition-colors hover:bg-surface-sunken hover:text-on-surface"
+                        class="flex size-3.5 items-center justify-center rounded-[3px] text-primary-soft-text/70 hover:bg-primary/15 hover:text-primary-soft-text"
                         aria-label="Remove {chip.label} filter"
                     >
                         <X size={11} />
@@ -519,7 +523,7 @@
                 <!-- Searching: shimmer placeholders shaped like result rows. -->
                 <div class="flex flex-col gap-0.5" aria-busy="true" aria-label="Searching output">
                     {#each [0, 1, 2, 3, 4] as i (i)}
-                        <div class="flex items-center gap-2.5 rounded-[10px] px-3 py-2.5">
+                        <div class="flex items-center gap-2.5 rounded-[3px] px-3 py-2.5">
                             <span
                                 class="size-[9px] shrink-0 animate-pulse rounded-full bg-surface-sunken"
                             ></span>
@@ -535,7 +539,7 @@
             {:else if matchedRuns.length === 0}
                 <div class="px-4 py-8 text-center text-xs leading-relaxed text-on-surface-muted">
                     No output matches
-                    <b class="text-on-surface">“{outputQuery.trim()}”</b>.<br />
+                    <b class="font-mono text-on-surface">“{outputQuery.trim()}”</b>.<br />
                     Try a different term.
                 </div>
             {:else}
@@ -601,7 +605,7 @@
             : ''} {bulkActions
             ? selectionActive
                 ? 'opacity-0'
-                : 'transition-opacity group-hover/row:opacity-0'
+                : 'group-hover/row:opacity-0'
             : ''}"
         aria-hidden="true"
     ></span>
@@ -623,7 +627,7 @@
             onchange={() => toggleRow(run.id)}
             onclick={(e) => e.stopPropagation()}
             aria-label={`Select run from ${formatDateTime(run.start_at ?? run.created_at)}`}
-            class="size-3.5 cursor-pointer rounded border-outline accent-primary opacity-0 transition-opacity {selectionActive
+            class="size-3.5 cursor-pointer rounded border-outline accent-primary opacity-0 {selectionActive
                 ? 'opacity-100'
                 : 'group-hover/row:opacity-100'}"
         />
@@ -639,11 +643,11 @@
     {@const retry = runRetryLabel(run)}
     {@const suffix = instanceSuffix(run.instance_index, getInstanceCount(run.task_name))}
     <button
-        class="btn-scale group relative w-full rounded-[10px] border text-left transition-all select-none {showTaskName
+        class="btn-scale group relative w-full rounded-[3px] border text-left select-none {showTaskName
             ? 'p-3'
             : 'px-3 py-[11px]'} {isActive
             ? 'border-outline bg-surface-raised shadow-sm'
-            : 'border-transparent hover:bg-surface-sunken'}"
+            : 'border-transparent hover:border-outline-hover hover:bg-surface-sunken'}"
         onclick={() => selectRun(run.id)}
         onkeydown={(e) => e.key === "Enter" && selectRun(run.id)}
     >
@@ -655,18 +659,19 @@
                 {@render statusDot(config.color, running)}
                 <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span class="flex items-center gap-1.5">
-                        <span class="truncate text-[13px] font-semibold text-on-surface">
+                        <span class="truncate font-mono text-[13px] font-semibold text-on-surface">
                             {run.task_name}{#if suffix}<span class="text-on-surface-muted"
                                     >{suffix}</span
                                 >{/if}
                         </span>
                         <span class="shrink-0 text-on-surface-faint">·</span>
-                        <span class="shrink-0 text-[12px] font-semibold capitalize {config.color}"
+                        <span
+                            class="shrink-0 font-mono text-[12px] font-semibold capitalize {config.color}"
                             >{dstatus}</span
                         >
                     </span>
                     <span
-                        class="flex min-w-0 items-center gap-1.5 text-2xs text-on-surface-faint"
+                        class="flex min-w-0 items-center gap-1.5 font-mono text-2xs text-on-surface-faint"
                         title={formatFullDateTime(startedAt)}
                     >
                         <span class="truncate">{formatDateTime(startedAt)}</span>
@@ -695,13 +700,13 @@
                 {@render statusDot(config.color, running)}
                 <span class="flex min-w-0 flex-1 items-center gap-1.5 truncate">
                     <span
-                        class="text-[12.5px] font-semibold tracking-tight text-on-surface"
+                        class="font-mono text-[12.5px] font-semibold tracking-tight text-on-surface tabular-nums"
                         title={formatFullDateTime(startedAt)}
                     >
                         {formatTimeHM(startedAt)} · {formatDayMonth(startedAt)}
                     </span>
                     <span class="text-on-surface-faint">·</span>
-                    <span class="text-[12.5px] font-semibold capitalize {config.color}"
+                    <span class="font-mono text-[12.5px] font-semibold capitalize {config.color}"
                         >{dstatus}</span
                     >
                     {#if suffix}
@@ -718,10 +723,10 @@
             {#if match}
                 {@const hl = highlightParts(match.text, outputQuery)}
                 <div
-                    class="mt-1.5 truncate rounded-md bg-surface-sunken px-2 py-1 font-mono text-2xs text-on-surface-muted"
+                    class="mt-1.5 truncate rounded-[3px] border border-outline-faint bg-surface-sunken px-2 py-1 font-mono text-2xs text-on-surface-muted"
                 >
                     {hl.before}<mark
-                        class="rounded-sm bg-primary-soft px-0.5 text-primary-soft-text"
+                        class="rounded-[3px] bg-primary-soft px-0.5 text-primary-soft-text"
                         >{hl.match}</mark
                     >{hl.after}
                 </div>
@@ -729,7 +734,7 @@
         {/if}
 
         <div
-            class="duration-normal absolute inset-y-2 left-[-6px] w-[3px] rounded-[3px] transition-all {spine} {isActive
+            class="absolute inset-y-2 left-[-6px] w-[3px] rounded-[3px] {spine} {isActive
                 ? 'opacity-100'
                 : 'opacity-0'}"
             aria-hidden="true"

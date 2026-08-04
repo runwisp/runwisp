@@ -46,15 +46,15 @@
 
 <div
     class="
-		overflow-hidden rounded-xl bg-surface-raised
+		overflow-hidden rounded-[4px] bg-surface-raised
 		{border ? 'border border-outline' : ''}
 		{shadowClasses[shadow]}
-		{hover ? 'duration-fast transition-shadow hover:border-outline-hover hover:shadow-md' : ''}
+		{hover ? 'hover:border-outline-hover hover:shadow-md' : ''}
 		{className}
 	"
 >
     {#if header}
-        <div class="border-b border-outline-faint bg-surface-sunken/50 px-4 py-3">
+        <div class="border-b border-outline bg-surface-sunken/50 px-4 py-3">
             {@render header()}
         </div>
     {/if}
@@ -66,7 +66,7 @@
     </div>
 
     {#if footer}
-        <div class="border-t border-outline-faint bg-surface-sunken/50 px-4 py-3">
+        <div class="border-t border-outline bg-surface-sunken/50 px-4 py-3">
             {@render footer()}
         </div>
     {/if}

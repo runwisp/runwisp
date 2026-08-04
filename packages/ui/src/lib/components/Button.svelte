@@ -54,7 +54,7 @@
             ></path>
         </svg>
     {:else if icon}
-        <span class="shrink-0 transition-transform group-active:scale-95">
+        <span class="shrink-0 group-active:scale-95">
             {@render icon()}
         </span>
     {/if}
@@ -62,7 +62,7 @@
         {@render children()}
     {/if}
     {#if iconRight && !loading}
-        <span class="shrink-0 transition-transform group-active:scale-95">
+        <span class="shrink-0 group-active:scale-95">
             {@render iconRight()}
         </span>
     {/if}

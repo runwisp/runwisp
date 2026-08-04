@@ -2,9 +2,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 /* Maps Starlight's --sl-* CSS variables onto the RunWisp semantic tokens
- * declared in @runwisp/ui/theme-tokens.css. Also overrides Starlight's
- * neutral gray scale with the mist palette so chrome reads in the wisp
- * design language.
+ * declared in @runwisp/ui/theme-tokens.css, and applies the "runbook"
+ * chrome (mono headings, hairline borders, small radii, soft-teal nav
+ * pills). apps/docs consumes theme-tokens.css directly — it does NOT load
+ * theme.css (that's the Tailwind entrypoint) — so the mono-heading rule,
+ * the small-radius tokens, and the hero gradient are re-declared here.
  *
  * Starlight ships its theme variables inside @layer starlight.base. The
  * neutral-scale flip needs to win the cascade against Starlight's own
@@ -18,7 +20,12 @@
     starlight.components, starlight.utils, runwisp;
 
 :root {
-    /* Accent — wisp violet */
+    /* Small radii live in theme.css (Tailwind @theme), which docs doesn't
+     * import — re-declare the two the chrome below relies on. */
+    --radius-sm: 0.1875rem; /* 3px — controls / pills */
+    --radius-md: 0.25rem; /* 4px — panels / cards / code */
+
+    /* Accent — wisp teal */
     --sl-color-accent: var(--rw-primary);
     --sl-color-accent-low: var(--rw-primary-soft);
     --sl-color-accent-high: var(--rw-primary-active);
@@ -60,13 +67,14 @@
     --sl-color-purple-low: var(--rw-primary-soft);
     --sl-color-purple-high: var(--rw-primary-soft-text);
 
-    /* Typography */
-    --sl-font: "TASA Orbiter", system-ui, -apple-system, sans-serif;
-    --sl-font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace;
+    /* Typography — body stays the brand sans; chrome + headings go mono. Both
+     * stacks come from theme-tokens.css so docs can't drift from the apps. */
+    --sl-font: var(--rw-font-sans);
+    --sl-font-mono: var(--rw-font-mono);
 }
 
-/* Mist-tinted neutrals — declared in the runwisp layer so they always win
- * against Starlight's own [data-theme='light'] block in starlight.base.
+/* Teal-black / mist neutrals — declared in the runwisp layer so they always
+ * win against Starlight's own [data-theme='light'] block in starlight.base.
  * Starlight uses "white" for highest-contrast text and "black" for page bg
  * by default (dark theme); the [data-theme="light"] block inverts the scale. */
 
@@ -96,32 +104,45 @@
     }
 }
 
-/* ─── Chrome parity with the dashboard (apps/ui/src/lib/layouts/AppLayout.svelte)
- * Soft wisp-tinted shadow on the fixed top header + sidebar right edge so the
- * chrome reads with the same depth as the dashboard's bg-white + shadow-sm. */
+/* ─── Mono headings (runbook voice). theme.css sets this globally for the
+ * Svelte apps, but docs doesn't load it — mirror the rule here. */
+h1,
+h2,
+h3,
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3 {
+    font-family: var(--sl-font-mono);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+}
+
+/* ─── Chrome depth: hairline borders carry the structure. Light gets a
+ * whisper of shadow; --rw-shadow-xs resolves to `none` in dark, so dark is
+ * borders-only per the design contract. Starlight already draws the header
+ * bottom / sidebar edge from --sl-color-hairline (= --rw-outline). */
 
 header.header {
-    box-shadow:
-        0 1px 3px 0 oklch(0.18 0.02 280 / 0.08),
-        0 1px 2px -1px oklch(0.18 0.02 280 / 0.08);
+    box-shadow: var(--rw-shadow-xs);
 }
 
 @media (min-width: 50rem) {
     nav.sidebar .sidebar-pane {
-        box-shadow:
-            1px 0 3px 0 oklch(0.18 0.02 280 / 0.05),
-            1px 0 2px -1px oklch(0.18 0.02 280 / 0.05);
+        box-shadow: var(--rw-shadow-xs);
     }
 }
 
-/* Site title — match the dashboard sidebar brand: 32px logo, 12px gap to the
- * wordmark, bold neutral text. A "D O C S" sub-label sits under the wordmark,
- * left-aligned with it (icon stays vertically centered against the stack). */
+/* Site title — same lockup as the web UI nav: wordmark in the brand sans at
+ * 700, with a mono, teal, tracked "DOCS" eyebrow beneath it (left-aligned with
+ * the wordmark; icon stays vertically centered against the stack). */
 .site-title {
     color: var(--rw-on-surface);
+    font-family: var(--rw-font-sans);
     font-weight: 700;
-    letter-spacing: -0.025em;
-    font-size: var(--sl-text-base);
+    letter-spacing: -0.02em;
+    font-size: 18px;
     gap: 0.75rem;
 }
 
@@ -138,28 +159,30 @@ header.header {
 
 .site-title > span::after {
     content: "DOCS";
+    font-family: var(--sl-font-mono);
     font-size: 0.625rem;
-    font-weight: 600;
-    letter-spacing: 0.18em;
-    color: var(--rw-on-surface-muted);
-    margin-top: 0.125rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--rw-info);
+    margin-top: 0.2rem;
 }
 
-/* Header padding-inline-start: 20px on desktop to match the dashboard's px-5
- * brand area, so the logo lands at the same offset from the screen edge. */
+/* Header padding-inline-start: 20px on desktop to line the logo up at the
+ * same offset from the screen edge as the dashboard brand area. */
 @media (min-width: 50rem) {
     header.header {
         padding-inline-start: 1.25rem;
     }
 }
 
-/* ─── Sidebar nav: pill-shaped items, mist hover, wisp-soft active.
- * Mirrors the dashboard's `bg-wisp-50 text-wisp-700` active pill and
- * `text-mist-600 hover:bg-mist-50 hover:text-mist-900` baseline. */
+/* ─── Sidebar nav: small-radius pills, sunken hover, soft-teal active.
+ * Mirrors the dashboard's active `bg-primary-soft text-primary-soft-text`
+ * pill over a muted baseline. */
 
 nav.sidebar .sidebar-content a {
     color: var(--rw-on-surface-muted);
-    border-radius: var(--radius-lg, 0.5rem);
+    border-radius: var(--radius-md);
     font-weight: 500;
     transition:
         background-color 150ms ease-out,
@@ -178,7 +201,6 @@ nav.sidebar .sidebar-content a[aria-current="page"]:focus {
     background-color: var(--rw-primary-soft);
     color: var(--rw-primary-soft-text);
     font-weight: 600;
-    box-shadow: 0 1px 2px 0 oklch(0.5 0.18 268 / 0.08);
 }
 
 /* Top-level direct links (Welcome, API Reference): same pill, no oversized text. */
@@ -188,16 +210,37 @@ nav.sidebar .sidebar-content a.large {
     color: var(--rw-on-surface);
 }
 
-/* Section headers — the small uppercase "TASKS"-style label from the dashboard. */
+/* Section eyebrows — mono uppercase tracked teal, the runbook "tab" voice. */
 nav.sidebar .sidebar-content .group-label .large {
+    font-family: var(--sl-font-mono);
     font-size: 0.6875rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
+    font-weight: 500;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--rw-on-surface-faint);
+    color: var(--rw-info);
 }
 
-/* ─── Splash hero brand flourish — mirrors .rw-text-gradient from theme.css. */
+/* ─── Small radii + hairline borders on the boxed content surfaces
+ * (asides, code frames, cards). The runbook uses 3–4px everywhere; docs
+ * doesn't load the Tailwind radius tokens, so pin them locally. */
+
+.starlight-aside,
+.sl-markdown-content .expressive-code .frame,
+.sl-markdown-content .expressive-code .frame pre,
+.sl-markdown-content > pre,
+.sl-markdown-content :not(pre) > code,
+.card {
+    border-radius: var(--radius-md);
+}
+
+/* Expressive Code: keep Starlight's syntax theme, just tint the frame edge
+ * to a hairline so terminal blocks read like every other bordered surface. */
+.sl-markdown-content .expressive-code .frame pre {
+    border-color: var(--rw-outline);
+}
+
+/* ─── Splash hero brand flourish — the teal .rw-text-gradient (docs doesn't
+ * load theme.css, so the gradient is inlined here). */
 
 .hero h1 {
     background: linear-gradient(135deg, var(--rw-color-wisp-600), var(--rw-color-aurora-500));

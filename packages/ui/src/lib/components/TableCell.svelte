@@ -27,7 +27,7 @@
 <svelte:element
     this={tag}
     class="px-4 py-3 {alignClasses[align]} {header
-        ? 'text-xs font-medium tracking-wider text-on-surface-muted uppercase'
+        ? 'font-mono text-xs tracking-wide text-on-surface-faint uppercase'
         : 'text-on-surface'} {className}"
 >
     {@render children()}

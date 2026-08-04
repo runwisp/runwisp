@@ -7,45 +7,44 @@ export type ButtonSize = "xs" | "sm" | "md" | "lg";
 export const BUTTON_BASE = `
     group
     inline-flex items-center justify-center gap-2
-    font-medium cursor-pointer select-none
-    border border-transparent
-    focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/10 focus-visible:border-ring
+    font-mono font-medium tracking-normal
+    cursor-pointer select-none border
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
     disabled:opacity-50 disabled:cursor-not-allowed
-    transition-all duration-normal ease-out
-    active:scale-[0.98]
+        active:translate-y-px
 `;
 
 export const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
     primary: `
-        bg-primary text-on-primary shadow-sm shadow-primary/20
-        hover:bg-primary-hover hover:shadow-md hover:shadow-primary/30
+        bg-primary text-on-primary border-transparent
+        hover:bg-primary-hover
         active:bg-primary-active
     `,
     secondary: `
-        bg-surface-raised text-on-surface-muted border-outline shadow-sm
-        hover:bg-surface-sunken hover:text-on-surface hover:border-outline-hover
+        bg-surface-raised text-on-surface border-outline
+        hover:border-outline-hover hover:text-primary
         active:bg-surface-sunken
     `,
     ghost: `
-        bg-transparent text-on-surface-muted
+        bg-transparent text-on-surface-muted border-transparent
         hover:bg-surface-sunken hover:text-on-surface
         active:bg-surface-sunken
     `,
     danger: `
-        bg-danger-surface text-on-danger shadow-sm shadow-danger-surface/20
-        hover:bg-danger-hover hover:shadow-md hover:shadow-danger-surface/30
+        bg-danger-surface text-on-danger border-transparent
+        hover:bg-danger-hover
         active:bg-danger-active
     `,
     success: `
-        bg-success-surface text-on-success shadow-sm shadow-success-surface/20
-        hover:bg-success-hover hover:shadow-md hover:shadow-success-surface/30
+        bg-success-surface text-on-success border-transparent
+        hover:bg-success-hover
         active:bg-success-surface
     `,
 };
 
 export const BUTTON_SIZES: Record<ButtonSize, string> = {
-    xs: "text-xs px-2 py-1 rounded-md",
-    sm: "text-sm px-3 py-1.5 rounded-lg",
-    md: "text-sm px-4 py-2 rounded-lg",
-    lg: "text-base px-6 py-3 rounded-xl",
+    xs: "text-xs px-2.5 py-1 rounded-[3px]",
+    sm: "text-sm px-3 py-1.5 rounded-[3px]",
+    md: "text-sm px-4 py-2 rounded-[3px]",
+    lg: "text-base px-6 py-2.5 rounded-[3px]",
 };

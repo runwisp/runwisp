@@ -39,7 +39,7 @@
 
 {#if stalled}
     <div
-        class="flex flex-col items-center justify-center gap-5 rounded-xl border border-warning-soft-border bg-warning-soft/40 px-6 py-12 text-center"
+        class="flex flex-col items-center justify-center gap-5 rounded-[4px] border border-warning-soft-border bg-warning-soft/40 px-6 py-12 text-center"
         role="alert"
         aria-live="polite"
     >
@@ -54,7 +54,7 @@
     </div>
 {:else}
     <div
-        class="flex flex-col items-center justify-center gap-5 rounded-xl border border-danger-soft-border bg-danger-soft/40 px-6 py-12 text-center"
+        class="flex flex-col items-center justify-center gap-5 rounded-[4px] border border-danger-soft-border bg-danger-soft/40 px-6 py-12 text-center"
         role="alert"
         aria-live="polite"
     >
@@ -70,14 +70,14 @@
             <h3 class="text-lg font-semibold text-on-surface">Connection Lost</h3>
             <p class="text-sm text-on-surface-muted">
                 The UI can't reach the runner API at <span
-                    class="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-on-surface"
+                    class="rounded-[3px] bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-on-surface"
                     >{endpoint}</span
                 >. The daemon may be restarting or your network is down.
             </p>
         </div>
 
         <dl
-            class="grid w-full max-w-md grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-outline bg-surface-raised px-5 py-3 text-left text-xs"
+            class="grid w-full max-w-md grid-cols-2 gap-x-6 gap-y-2 rounded-[4px] border border-outline bg-surface-raised px-5 py-3 text-left font-mono text-xs"
         >
             {#if downFor}
                 <dt class="text-on-surface-muted">Down for</dt>
@@ -110,7 +110,7 @@
                     >Details</summary
                 >
                 <pre
-                    class="mt-2 overflow-x-auto rounded-md bg-surface-sunken p-3 font-mono text-2xs text-on-surface-muted">{c.lastError}</pre>
+                    class="mt-2 overflow-x-auto rounded-[3px] bg-surface-sunken p-3 font-mono text-2xs text-on-surface-muted">{c.lastError}</pre>
             </details>
         {/if}
     </div>

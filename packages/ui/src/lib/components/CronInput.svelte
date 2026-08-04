@@ -63,10 +63,10 @@
 
 <div class="space-y-2">
     <div class="flex items-center justify-between">
-        <div class="text-sm font-medium text-on-surface-muted">Cron Schedule</div>
+        <div class="font-mono text-xs font-medium text-on-surface-muted">Cron Schedule</div>
         <button
             type="button"
-            class="flex items-center gap-1 text-xs text-primary hover:text-primary-hover"
+            class="flex items-center gap-1 font-mono text-xs text-primary hover:text-primary-hover"
             onclick={() => (examplesModalOpen = true)}
         >
             Examples <Info size={12} />
@@ -79,27 +79,28 @@
                 placeholder="* * * * *"
                 bind:value
                 {disabled}
-                class="font-mono {isError
-                    ? '!focus:border-danger-500 !focus:ring-danger-500 border-danger-300!'
-                    : ''}"
+                class="font-mono {isError ? 'border-danger-surface!' : ''}"
             />
         </div>
     </div>
     <!-- Live Feedback -->
     <div
-        class="flex items-start gap-3 rounded-md border p-3 transition-colors duration-200
-        {isError ? 'border-danger-soft-border bg-danger-soft' : 'border-outline bg-surface-sunken'}"
+        class="flex items-start gap-3 rounded-[4px] border p-3 {isError
+            ? 'border-danger-soft-border bg-danger-soft'
+            : 'border-outline bg-surface-sunken'}"
     >
         <Info size={18} class="mt-0.5 {isError ? 'text-danger-surface' : 'text-primary'}" />
         <div>
             <div
-                class="text-sm font-medium {isError ? 'text-danger-soft-text' : 'text-on-surface'}"
+                class="font-sans text-sm font-medium {isError
+                    ? 'text-danger-soft-text'
+                    : 'text-on-surface'}"
             >
                 {explanation.text}
             </div>
             {#if explanation.next}
-                <div class="mt-0.5 text-xs text-on-surface-muted">
-                    Next run: <span class="font-medium text-on-surface"
+                <div class="mt-0.5 font-sans text-xs text-on-surface-muted">
+                    Next run: <span class="font-mono font-medium text-on-surface"
                         >{explanation.next.toLocaleString()}</span
                     >
                 </div>
@@ -118,7 +119,7 @@
             {#each cronExamples as example (example.cron)}
                 <button
                     type="button"
-                    class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-sunken"
+                    class="flex w-full items-center justify-between rounded-[3px] px-3 py-2 text-left hover:bg-surface-sunken"
                     onclick={() => selectExample(example.cron)}
                 >
                     <code class="font-mono text-sm text-on-surface">{example.cron}</code>

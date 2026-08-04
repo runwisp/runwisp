@@ -31,7 +31,7 @@
 <div class="relative">
     <button
         type="button"
-        class="relative flex h-9 w-9 items-center justify-center rounded-lg text-on-surface-muted transition-colors hover:bg-surface-sunken hover:text-on-surface"
+        class="relative flex h-9 w-9 items-center justify-center rounded-[3px] border border-transparent text-on-surface-muted hover:border-outline-hover hover:bg-surface-sunken hover:text-primary"
         aria-label="Notifications"
         aria-expanded={open}
         onclick={toggle}
@@ -39,7 +39,7 @@
         <Bell size={18} />
         {#if unread > 0}
             <span
-                class="absolute -top-0.5 -right-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-2xs font-bold text-white {hasError
+                class="absolute -top-0.5 -right-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 font-mono text-2xs font-bold text-on-primary tabular-nums {hasError
                     ? 'bg-danger-surface'
                     : 'bg-primary'}"
                 aria-label={`${unread.toString()} unread notifications`}

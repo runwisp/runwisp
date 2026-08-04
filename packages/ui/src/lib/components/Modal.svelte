@@ -82,7 +82,7 @@
             class="
 				relative z-10 w-full {sizeClasses[size]}
 				flex max-h-[90vh] flex-col
-				rounded-2xl bg-surface-overlay shadow-xl
+				rounded-[4px] border border-outline bg-surface-overlay shadow-lg
 				{className}
 			"
             role="dialog"
@@ -91,16 +91,19 @@
         >
             <!-- Header -->
             {#if header}
-                <div class="border-b border-outline-faint px-6 py-4">
+                <div class="border-b border-outline px-6 py-4">
                     {@render header()}
                 </div>
             {:else if title || closable}
                 <div
-                    class="flex items-start justify-between gap-4 border-b border-outline-faint px-6 py-4"
+                    class="flex items-start justify-between gap-4 border-b border-outline px-6 py-4"
                 >
                     <div>
                         {#if title}
-                            <h2 id="modal-title" class="text-lg font-semibold text-on-surface">
+                            <h2
+                                id="modal-title"
+                                class="font-mono text-lg font-semibold text-on-surface"
+                            >
                                 {title}
                             </h2>
                         {/if}
@@ -111,7 +114,7 @@
                     {#if closable}
                         <button
                             onclick={handleClose}
-                            class="-m-2 shrink-0 rounded-lg p-2 text-on-surface-faint transition-colors hover:bg-surface-sunken hover:text-on-surface-muted"
+                            class="-m-2 shrink-0 rounded-[3px] p-2 text-on-surface-faint hover:bg-surface-sunken hover:text-on-surface-muted"
                             aria-label="Close"
                         >
                             <X size={20} />
@@ -129,9 +132,7 @@
 
             <!-- Footer -->
             {#if footer}
-                <div
-                    class="rounded-b-2xl border-t border-outline-faint bg-surface-sunken/50 px-6 py-4"
-                >
+                <div class="rounded-b-[4px] border-t border-outline bg-surface-sunken px-6 py-4">
                     {@render footer()}
                 </div>
             {/if}

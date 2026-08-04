@@ -40,7 +40,7 @@
     {...restProps}
 >
     {#if icon}
-        <span class="shrink-0 transition-transform group-active:scale-95">
+        <span class="shrink-0 group-active:scale-95">
             {@render icon()}
         </span>
     {/if}
@@ -48,7 +48,7 @@
         {@render children()}
     {/if}
     {#if iconRight}
-        <span class="shrink-0 transition-transform group-active:scale-95">
+        <span class="shrink-0 group-active:scale-95">
             {@render iconRight()}
         </span>
     {/if}

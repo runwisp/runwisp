@@ -6,8 +6,6 @@
     import type { Component } from "svelte";
     import { tick, onDestroy } from "svelte";
     import { EllipsisVertical, Check } from "@lucide/svelte";
-    import { scale } from "svelte/transition";
-    import { quintOut } from "svelte/easing";
     import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
 
     interface MenuItem {
@@ -127,7 +125,7 @@
         bind:this={triggerEl}
         aria-label={triggerLabel}
         aria-expanded={open}
-        class="rounded-lg p-2 text-on-surface-muted transition-colors hover:bg-surface-sunken hover:text-on-surface focus:ring-2 focus:ring-outline focus:outline-none active:bg-surface-sunken"
+        class="rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface focus:ring-2 focus:ring-outline focus:outline-none active:bg-surface-sunken"
     >
         {#if trigger}
             {@render trigger()}
@@ -141,12 +139,11 @@
             use:portal
             bind:this={menuEl}
             role="menu"
-            transition:scale={{ duration: 150, start: 0.95, easing: quintOut }}
             class="
 				z-[9999]
 				min-w-48 overflow-y-auto
-				rounded-xl
-				border border-outline bg-surface-overlay py-1 shadow-xl shadow-on-surface/5
+				rounded-[4px]
+				border border-outline bg-surface-overlay py-1 shadow-lg
 			"
             style="transform-origin: {transformOrigin};"
         >
@@ -155,20 +152,19 @@
             {:else}
                 {#each items as item, idx (idx)}
                     {#if item.divider}
-                        <hr class="my-1 border-outline-faint" />
+                        <hr class="my-1 border-outline" />
                     {:else if item.href}
                         <a
                             href={item.href}
                             title={item.title}
                             role="menuitem"
                             class="
-									mx-1 flex items-center gap-3 rounded-lg px-3 py-2 text-sm
+									mx-1 flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm
 									{item.danger
                                 ? 'text-danger-soft-text hover:bg-danger-soft'
-                                : 'text-on-surface-muted hover:bg-surface-sunken'}
+                                : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}
 									{item.disabled ? 'cursor-not-allowed opacity-50' : ''}
-								transition-colors
-							"
+															"
                         >
                             {#if item.icon}
                                 {@const Icon = item.icon}
@@ -183,11 +179,11 @@
                             title={item.title}
                             role="menuitem"
                             class="
-									mx-1 box-border flex w-full max-w-[calc(100%-8px)] items-center gap-3 rounded-lg px-3 py-2 text-left text-sm
+									mx-1 box-border flex w-full max-w-[calc(100%-8px)] items-center gap-3 rounded-[3px] px-3 py-2 text-left font-mono text-sm
 									{item.danger
                                 ? 'text-danger-soft-text hover:bg-danger-soft'
-                                : 'text-on-surface-muted hover:bg-surface-sunken'}
-									transition-colors disabled:cursor-not-allowed
+                                : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}
+									disabled:cursor-not-allowed
 									disabled:opacity-50
 							"
                         >

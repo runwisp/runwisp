@@ -137,7 +137,9 @@ test("login modal", async ({ page }) => {
     for (const theme of THEMES) {
         await page.emulateMedia({ colorScheme: theme });
         await page.goto("/");
-        await expect(page.getByText("Authentication Required")).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByRole("dialog", { name: "RunWisp" })).toBeVisible({
+            timeout: 15_000,
+        });
         await settle(page);
         await shoot(page, `web-ui-login-${theme}`);
     }
@@ -167,7 +169,9 @@ test("notifications", async ({ authenticatedPage: page, daemonState }) => {
 
         // Full notifications page
         await page.goto("/notifications");
-        await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
+        await expect(
+            page.getByRole("heading", { name: "Notifications", exact: true }),
+        ).toBeVisible();
         await expect(page.locator('[data-testid="notification-item"]').first()).toBeVisible();
         await settle(page);
         await shoot(page, `web-ui-notifications-page-${theme}`);

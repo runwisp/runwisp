@@ -31,10 +31,10 @@
     };
 
     const arrowClasses: Record<TooltipPosition, string> = {
-        top: "top-full left-1/2 -translate-x-1/2 border-t-mist-800 border-x-transparent border-b-transparent",
-        bottom: "bottom-full left-1/2 -translate-x-1/2 border-b-mist-800 border-x-transparent border-t-transparent",
-        left: "left-full top-1/2 -translate-y-1/2 border-l-mist-800 border-y-transparent border-r-transparent",
-        right: "right-full top-1/2 -translate-y-1/2 border-r-mist-800 border-y-transparent border-l-transparent",
+        top: "top-full left-1/2 -translate-x-1/2 border-t-outline border-x-transparent border-b-transparent",
+        bottom: "bottom-full left-1/2 -translate-x-1/2 border-b-outline border-x-transparent border-t-transparent",
+        left: "left-full top-1/2 -translate-y-1/2 border-l-outline border-y-transparent border-r-transparent",
+        right: "right-full top-1/2 -translate-y-1/2 border-r-outline border-y-transparent border-l-transparent",
     };
 </script>
 
@@ -44,12 +44,11 @@
     <div
         class="
 			absolute z-50 {positionClasses[position]}
-			pointer-events-none invisible rounded-lg
-			bg-mist-800 px-2.5 py-1.5 text-xs
-			font-medium
+			pointer-events-none invisible rounded-[3px]
+			border border-outline bg-surface-overlay px-2.5 py-1.5 font-sans
+			text-xs
 			{wide ? 'w-max max-w-xs whitespace-normal' : 'whitespace-nowrap'}
-			text-white opacity-0 transition-opacity
-			duration-150 group-hover:visible
+			text-on-surface opacity-0 group-hover:visible
 			group-hover:opacity-100
 		"
         role="tooltip"

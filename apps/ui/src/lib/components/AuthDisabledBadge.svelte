@@ -12,7 +12,7 @@
 
 {#if visible}
     <span
-        class="flex shrink-0 items-center gap-1.5 rounded-full border border-warning-soft-border bg-warning-soft px-2.5 py-1 text-xs font-medium whitespace-nowrap text-warning-soft-text"
+        class="flex shrink-0 items-center gap-1.5 rounded-[3px] border border-warning-soft-border bg-warning-soft px-2.5 py-1 font-mono text-xs whitespace-nowrap text-warning-soft-text"
         title="RUNWISP_NO_AUTH is set — the API and Web UI are reachable without a password. Local/dev use only."
     >
         <ShieldOff size={12} class="shrink-0" />

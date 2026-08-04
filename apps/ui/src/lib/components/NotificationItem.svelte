@@ -66,7 +66,7 @@
 
         {#if notification.run_id}
             <span
-                class="inline-flex items-center gap-1 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-2xs font-medium text-primary-soft-text"
+                class="inline-flex items-center gap-1 rounded-[3px] border border-primary-soft-border bg-primary-soft px-1.5 py-0.5 font-mono text-2xs font-medium text-primary-soft-text"
             >
                 View run #{formatShortId(notification.run_id)} <span aria-hidden="true">→</span>
             </span>
@@ -74,7 +74,7 @@
 
         <div class="flex items-center justify-between gap-2 text-2xs text-on-surface-faint">
             {#if notification.task_name}
-                <span class="truncate">{notification.task_name}</span>
+                <span class="truncate font-mono">{notification.task_name}</span>
             {:else}
                 <span></span>
             {/if}
@@ -96,7 +96,7 @@
             : resolve(`/tasks/${encodeURIComponent(notification.task_name)}`)}
         {onclick}
         data-testid="notification-item"
-        class="flex gap-3 rounded-lg border border-outline-faint bg-surface-raised p-3 no-underline transition-colors hover:bg-surface-sunken"
+        class="flex gap-3 rounded-[4px] border border-outline-faint bg-surface-raised p-3 no-underline hover:border-outline-hover hover:bg-surface-sunken"
         aria-label={notification.title || notification.kind}
     >
         {@render body()}
@@ -104,7 +104,7 @@
 {:else}
     <article
         data-testid="notification-item"
-        class="flex gap-3 rounded-lg border border-outline-faint bg-surface-raised p-3 transition-colors hover:bg-surface-sunken"
+        class="flex gap-3 rounded-[4px] border border-outline-faint bg-surface-raised p-3 hover:border-outline-hover hover:bg-surface-sunken"
         aria-label={notification.title || notification.kind}
     >
         {@render body()}
