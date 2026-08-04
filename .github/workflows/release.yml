@@ -382,6 +382,23 @@ jobs:
         working-directory: npm/runwisp
         run: npm publish --access public --tag "${NPM_TAG}" --provenance
 
+  deploy-docs:
+    # Cloudflare Pages builds/deploys the docs site from its Git integration.
+    # Its production branch is `docs-release` (not `main`), so the docs only go
+    # live when we fast-forward that branch to a freshly published stable
+    # release — never on an ordinary main push or a prerelease.
+    if: github.event_name == 'release' && github.event.release.prerelease == false
+    name: Point docs-release at the release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - name: Move docs-release to the released commit
+        run: git push origin "HEAD:refs/heads/docs-release" --force
+
   docker-publish:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     name: Publish Docker image (${{ matrix.base }})
