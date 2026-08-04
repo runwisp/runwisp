@@ -893,8 +893,8 @@ func deriveCronName(command string) string {
 // || …` after `system`, and `command -v x > /dev/null && x` after `null` — the
 // path-like tokens in those lines are arguments to a guard, not the program.
 func firstCommandProgram(tokens []string) string {
-	atCmd := true         // is the next token the start of a simple command?
-	skipTarget := false   // is the next token a redirection target to ignore?
+	atCmd := true       // is the next token the start of a simple command?
+	skipTarget := false // is the next token a redirection target to ignore?
 	for _, t := range tokens {
 		switch {
 		case skipTarget:
